@@ -47,12 +47,17 @@ export async function saveOwnerFactAnswers(businessId:string,answers:readonly Ow
  return data as {id:string;writeThroughApplied:boolean}[];
 }
 
-/** Closes the current saved fact (history kept, who forgot it recorded). Only the
- * owner's own "Forget this" on a change card calls this. Returns false when nothing
- * was saved under that key. */
-export async function forgetOwnerFact(businessId:string,factKey:string):Promise<boolean>{
+/** A change card with "Forget this": forgets and new values commit in ONE
+ * transaction (history kept, who forgot recorded), so a refused value never
+ * leaves a fact half-changed. */
+export async function changeOwnerFacts(businessId:string,answers:readonly OwnerFactAnswer[],
+ forget:readonly string[]):Promise<{saved:{id:string;writeThroughApplied:boolean}[];forgotten:number}>{
  const db=await createServerSupabaseClient();
- const {data,error}=await db.rpc("forget_owner_fact",{p_business_id:businessId,p_fact_key:factKey});
- if(error||typeof data!=="boolean")throw new Error("owner_facts_forget_failed");
- return data;
+ const {data,error}=await db.rpc("change_owner_facts",{p_business_id:businessId,
+  p_answers:answers.map(answer=>({factKey:answer.fieldKey,value:answer.value,unit:answer.unit??null,
+   periodScope:answer.periodScope??null})),p_forget:forget});
+ const result=data as {saved?:unknown;forgotten?:unknown}|null;
+ if(error||!result||!Array.isArray(result.saved)||result.saved.length!==answers.length||
+  typeof result.forgotten!=="number")throw new Error("owner_facts_write_failed");
+ return {saved:result.saved as {id:string;writeThroughApplied:boolean}[],forgotten:result.forgotten};
 }

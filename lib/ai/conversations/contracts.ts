@@ -122,7 +122,7 @@ export const clarifyBlockSchema=z.union([
      choices:z.array(z.strictObject({label:z.string().min(1).max(80),value:z.string().min(1).max(100)})).max(12).optional(),
      // Absent = saved for future chats (every card before this field existed).
      remember:z.literal("this_question").optional(),
-     current:z.strictObject({value:z.string().max(200),savedOn:z.iso.date(),canForget:z.boolean()}).optional()
+     current:z.strictObject({value:z.string().max(1000),savedOn:z.iso.date(),canForget:z.boolean()}).optional()
    })).min(1).max(6)})
 ]);
 const howBlockSchema=z.strictObject({type:z.literal("how"),lines:z.array(explainLineSchema).min(1).max(20)});

@@ -3,7 +3,7 @@ import {authenticatedConversationContext,ConversationApiError} from "@/lib/ai/co
 import {conversationJson,conversationError,parseInput,readBoundedJson,requireSameOrigin} from "@/lib/ai/conversations/http.server";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import {validateOwnerAnswers} from "@/lib/ownerFacts/answers";
-import {saveOwnerFactAnswers,forgetOwnerFact} from "@/lib/ownerFacts/store.server";
+import {saveOwnerFactAnswers,changeOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {splitOwnerAnswers} from "@/lib/ownerFacts/change";
 
 export const runtime="nodejs";
@@ -42,9 +42,9 @@ export async function POST(request:Request,{params}:Params){
    split=splitOwnerAnswers(block.data,input.answers);
    if(split.keep.length)answers=validateOwnerAnswers(block.data.fields,split.keep,input.locale);
   }catch{throw new ConversationApiError(422,"invalid_owner_answers");}
-  let forgotten=0;
-  for(const key of split.forget)if(await forgetOwnerFact(scope.businessId,key))forgotten++;
-  const saved=answers.length?await saveOwnerFactAnswers(scope.businessId,answers):[];
+  // Forgets and new values on one card commit together or not at all.
+  const {saved,forgotten}=split.forget.length?await changeOwnerFacts(scope.businessId,answers,split.forget):
+   {saved:answers.length?await saveOwnerFactAnswers(scope.businessId,answers):[],forgotten:0};
   return conversationJson({saved:true,writeThroughApplied:saved.every(row=>row.writeThroughApplied),
    remembered:saved.length,forgotten});
  }catch(error){return conversationError(error);}

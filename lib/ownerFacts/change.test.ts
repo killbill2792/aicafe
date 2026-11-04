@@ -18,6 +18,12 @@ describe("a saved fact as a change card shows it",()=>{
   expect(savedFactCurrent(facts,"monthly_bills_cents","money")?.canForget).toBe(false);
   expect(savedFactCurrent([fact("card_fee_rate_percent",2.9)],"card_fee_rate_percent","percent")?.canForget).toBe(false);
  });
+ it("keeps a long saved text whole, so saving the card never shortens it",()=>{
+  const long="x".repeat(900);
+  expect(savedFactCurrent([fact("delivery_notes",long)],"delivery_notes","text")?.value).toBe(long);
+  // Longer than a card answer can hold: not offered for editing at all.
+  expect(savedFactCurrent([fact("delivery_notes","x".repeat(1001))],"delivery_notes","text")).toBeNull();
+ });
  it("has nothing to show for a fact that is not saved, or a mismatched value",()=>{
   expect(savedFactCurrent(facts,"rent_monthly_cents","money")).toBeNull();
   expect(savedFactCurrent(facts,"supplier","money")).toBeNull();

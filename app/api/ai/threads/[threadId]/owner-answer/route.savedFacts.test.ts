@@ -1,7 +1,7 @@
 import {describe,it,expect,vi,beforeEach} from "vitest";
 vi.mock("server-only",()=>({}));
-const m=vi.hoisted(()=>({save:vi.fn(),forget:vi.fn(),messages:[] as unknown[]}));
-vi.mock("@/lib/ownerFacts/store.server",()=>({saveOwnerFactAnswers:m.save,forgetOwnerFact:m.forget}));
+const m=vi.hoisted(()=>({save:vi.fn(),change:vi.fn(),messages:[] as unknown[]}));
+vi.mock("@/lib/ownerFacts/store.server",()=>({saveOwnerFactAnswers:m.save,changeOwnerFacts:m.change}));
 vi.mock("@/lib/ai/conversations/auth.server",async()=>{
  class ConversationApiError extends Error{constructor(public status:number,public code:string){super(code);}}
  return {ConversationApiError,authenticatedConversationContext:async()=>({scope:{businessId:"cafe-1"},
@@ -15,9 +15,9 @@ const post=(answers:unknown[])=>POST(new Request("https://cafe.test/api/ai/threa
  headers:{origin:"https://cafe.test","content-type":"application/json"},body:JSON.stringify({questionId,locale:"en",answers})}),
  {params:Promise.resolve({threadId:thread})});
 const text=(key:string,extra:Record<string,unknown>={})=>({key,label:key,inputType:"text",units:[],defaultUnit:"",...extra});
-beforeEach(()=>{m.save.mockReset();m.forget.mockReset();
+beforeEach(()=>{m.save.mockReset();m.change.mockReset();
  m.save.mockImplementation(async(_b:string,a:unknown[])=>a.map(()=>({id:"f",writeThroughApplied:true})));
- m.forget.mockResolvedValue(true);});
+ m.change.mockImplementation(async(_b:string,a:unknown[],f:string[])=>({saved:a.map(()=>({id:"f",writeThroughApplied:true})),forgotten:f.length}));});
 
 describe("answering a question card saves only what should last",()=>{
  it("saves lasting answers and never saves a this-question answer",async()=>{
@@ -36,13 +36,28 @@ describe("answering a question card saves only what should last",()=>{
  it("forgets a saved fact from the owner's change card",async()=>{
   m.messages=[cardMessage({changeSaved:true,fields:[text("supplier",{current:{value:"Mill St",savedOn:"2026-10-30",canForget:true}})]})];
   const res=await post([{fieldKey:"supplier",value:"",forget:true}]);
-  expect(m.forget).toHaveBeenCalledWith("cafe-1","supplier");
+  expect(m.change).toHaveBeenCalledWith("cafe-1",[],["supplier"]);
+  expect(m.save).not.toHaveBeenCalled();
   expect(await res.json()).toMatchObject({remembered:0,forgotten:1});
+ });
+ it("sends a forget and a new value together, in one save that succeeds or fails whole",async()=>{
+  m.messages=[cardMessage({changeSaved:true,fields:[
+   text("supplier",{current:{value:"Mill St",savedOn:"2026-10-30",canForget:true}}),
+   text("opening_note",{current:{value:"Open 7",savedOn:"2026-10-30",canForget:true}})]})];
+  const ok=await post([{fieldKey:"supplier",value:"",forget:true},{fieldKey:"opening_note",value:"Open 6:30"}]);
+  expect(m.change).toHaveBeenCalledTimes(1);
+  expect(m.change).toHaveBeenCalledWith("cafe-1",[expect.objectContaining({fieldKey:"opening_note",value:"Open 6:30"})],["supplier"]);
+  expect(m.save).not.toHaveBeenCalled();
+  expect(await ok.json()).toMatchObject({remembered:1,forgotten:1});
+  m.change.mockRejectedValueOnce(new Error("owner_facts_write_failed"));
+  const failed=await post([{fieldKey:"supplier",value:"",forget:true},{fieldKey:"opening_note",value:"Open 6:30"}]);
+  expect(failed.ok).toBe(false);
+  expect(m.save).not.toHaveBeenCalled();
  });
  it("refuses a forget the card never offered, and saves nothing",async()=>{
   m.messages=[cardMessage({fields:[text("supplier")]})];
   const res=await post([{fieldKey:"supplier",value:"",forget:true}]);
   expect(res.status).toBe(422);
-  expect(m.forget).not.toHaveBeenCalled();expect(m.save).not.toHaveBeenCalled();
+  expect(m.change).not.toHaveBeenCalled();expect(m.save).not.toHaveBeenCalled();
  });
 });

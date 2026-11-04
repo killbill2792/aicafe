@@ -1,6 +1,8 @@
 import {catalogForMissing} from "./catalog";
 import type {SavedFact} from "./inject";
 export type SavedFactCurrent={value:string;savedOn:string;canForget:boolean};
+/** The longest answer a card accepts (the owner-answer route's limit). */
+export const OWNER_ANSWER_MAX=1000;
 /** What a change card shows for one saved fact: the value as the owner would type it,
  * the day it was saved, and whether it can be forgotten here. Facts that were also
  * copied to a screen (bills, card fees, payroll extras) are changed, not forgotten,
@@ -15,7 +17,9 @@ export function savedFactCurrent(facts:readonly SavedFact[],key:string,inputType
   value=(v/100).toFixed(2);
  }else if(typeof v==="number"||typeof v==="string"||typeof v==="boolean")value=String(v);
  else return null;
- return {value:value.slice(0,200),savedOn:fact.created_at.slice(0,10),
+ // The card edits the whole value; never a shortened copy that a save would keep.
+ if(value.length>OWNER_ANSWER_MAX)return null;
+ return {value,savedOn:fact.created_at.slice(0,10),
   canForget:catalogForMissing(key).target==="owner_facts"};
 }
 

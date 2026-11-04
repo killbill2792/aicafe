@@ -30,3 +30,30 @@ begin
 end $$;
 revoke all on function public.forget_owner_fact(uuid,text) from public,anon;
 grant execute on function public.forget_owner_fact(uuid,text) to authenticated;
+
+-- One change card is applied whole or not at all: its forgets and its new values
+-- commit together, so a refused value (for example a card fee above 50%) never
+-- leaves a fact forgotten while the owner sees "couldn't save".
+create or replace function public.change_owner_facts(
+ p_business_id uuid, p_answers jsonb, p_forget text[]
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+ v_key text;
+ v_forgotten integer := 0;
+ v_saved jsonb := '[]'::jsonb;
+begin
+ if p_forget is null or cardinality(p_forget) not between 1 and 6
+    or cardinality(p_forget)<>(select count(distinct k) from unnest(p_forget) k)
+    or p_answers is null or jsonb_typeof(p_answers)<>'array'
+    or exists(select 1 from jsonb_array_elements(p_answers) a where a->>'factKey' = any(p_forget))
+ then raise exception 'invalid_owner_answers'; end if;
+ foreach v_key in array p_forget loop
+   if public.forget_owner_fact(p_business_id,v_key) then v_forgotten := v_forgotten+1; end if;
+ end loop;
+ if jsonb_array_length(p_answers)>0 then
+   v_saved := public.save_owner_fact_answers(p_business_id,p_answers);
+ end if;
+ return jsonb_build_object('saved',v_saved,'forgotten',v_forgotten);
+end $$;
+revoke all on function public.change_owner_facts(uuid,jsonb,text[]) from public,anon;
+grant execute on function public.change_owner_facts(uuid,jsonb,text[]) to authenticated;
