@@ -2934,6 +2934,7 @@
     "posReviewAcceptToast": "Usar la corrección de Toast en la próxima sincronización",
     "posReviewKeepOwner": "Mantener el turno del propietario",
     "posReviewsTruncated": "Hay más revisiones; resuelve estas y actualiza.",
+    "calendarPartial": "Algunas fuentes del calendario no están disponibles; los turnos mostrados pueden estar incompletos.",
     "toastPlannedLabel": "Previsto en Toast",
     "toastActualLabel": "Real en Toast",
     "aiDraftLabel": "Borrador de IA",
