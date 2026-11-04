@@ -23,3 +23,24 @@ export function reconcileStaffCalendar(entries:readonly CalendarEntry[]):Calenda
   .sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start)||
     a.employeeName.localeCompare(b.employeeName)||a.id.localeCompare(b.id));
 }
+
+/** Display-only rows for Toast workers without an app employee link.
+ * Never turn these placeholders into writable scheduling identities.
+ */
+export function calendarDisplayRows<P extends {id:string;name:string}>(
+ people:readonly P[], entries:readonly CalendarEntry[]
+):Array<{key:string;person:P|null;name:string}>{
+ const rows=people.map(person=>({key:person.id,person,name:person.name}));
+ const known=new Set(people.map(p=>p.id));
+ const extras=new Map<string,string>();
+ for(const entry of entries){
+  if(entry.employeeId&&known.has(entry.employeeId))continue;
+  const key="toast-unlinked:"+(entry.employeeId??entry.employeeName);
+  if(!extras.has(key))extras.set(key,entry.employeeName);
+ }
+ return [...rows,...[...extras].map(([key,name])=>({key,person:null,name}))];
+}
+export function calendarRowKey(entry:CalendarEntry,knownIds:ReadonlySet<string>):string{
+ return entry.employeeId&&knownIds.has(entry.employeeId)?
+  entry.employeeId:"toast-unlinked:"+(entry.employeeId??entry.employeeName);
+}
