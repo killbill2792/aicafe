@@ -1035,6 +1035,24 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
   return Math.abs(expected-toCents(v))<=1;
 }
 
+/** Shared owner-number rule: calculate must not accept invented model inputs. */
+export function ownerStatedAmounts(ownerText:string,locale:AgentLocale):Record<Kind,Set<number>>{
+  const allowed:Record<Kind,Set<number>>={money:new Set(),percent:new Set(),number:new Set()};
+  const ownerNumbers=candidates(ownerText,locale);
+  ownerNumbers.forEach(v=>{if(!v.durationUnit)allowed[v.kind].add(v.value);});
+  const ownerSpoken=spokenOwnerValues(ownerText,locale);
+  for(const spoken of ownerSpoken)if(!spoken.durationUnit)allowed[spoken.kind].add(spoken.value);
+  for(const v of ownerNumbers){
+    if(v.kind!=="number"||v.durationUnit)continue;
+    const before=ownerText.slice(Math.max(0,v.start-90),v.start);
+    const after=ownerText.slice(v.end,v.end+24);
+    if(/^\s*(?:drinks?|orders?|people|staff|items?|cups?|units?|hours?|days?|coffees?)\b/iu.test(after))continue;
+    if(/\b(?:price|cost|charge|rent|bill|fee|salary|wage|revenue|profit|latte|mocha|espresso|cappuccino|americano|tea|coffee|sandwich|croissant|muffin|brownie)\b[^.!?\n]{0,45}$/iu.test(before))
+      allowed.money.add(Math.round(v.value*100));
+  }
+  return allowed;
+}
+
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
   previousEvidence:readonly NumericEvidence[] = []): UnverifiedNumber[] {
@@ -1078,11 +1096,9 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   // to an old price superseded by another tool's fresh product observation.
   for(const item of itemPrices)allowed.money.add(item.priceCents);
   const menuPrices=itemPrices;
-  const ownerNumbers=candidates(ownerText,locale);
-  // Time units are scoped evidence, never generic quantity allowances.
-  ownerNumbers.forEach(v=>{if(!v.durationUnit)allowed[v.kind].add(v.value);});
-  const ownerSpoken=spokenOwnerValues(ownerText,locale);
-  for(const spoken of ownerSpoken)if(!spoken.durationUnit)allowed[spoken.kind].add(spoken.value);
+  const ownerNumbers=ownerStatedAmounts(ownerText,locale);
+  for(const kind of ["money","percent","number"] as const)
+    for(const amount of ownerNumbers[kind])allowed[kind].add(amount);
   // Only reconciled, typed numeric evidence authorizes an amount.
   // Re-adding raw current-turn estimates here would resurrect a prior result
   // that a later tool result explicitly invalidated in this same turn.
