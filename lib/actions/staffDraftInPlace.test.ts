@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-vi.mock("@/lib/calc/scheduling/weekdayDates",()=>({businessLocalDate:()=>"2026-10-25"}));
+vi.mock("date-fns-tz",()=>({formatInTimeZone:()=>"2026-10-25"}));
 const scope={businessId:"11111111-1111-4111-8111-111111111111",
  ownerUserId:"22222222-2222-4222-8222-222222222222",
  threadId:"33333333-3333-4333-8333-333333333333"};
