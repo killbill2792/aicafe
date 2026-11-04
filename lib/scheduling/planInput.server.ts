@@ -213,8 +213,16 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     const rows = Object.fromEntries(tables.map((table, i) => [table, results[i]])) as Record<typeof tables[number], Row[]>;
     // Last week's Toast schedule is a SOFT initial pattern. It cannot pin a
     // shift or override newly approved absence, skill, hours or coverage rules.
-    const previousFrom=civilDateAdd(week,-7),previousTo=civilDateAdd(week,-1);
     const timezone=str(business.data.timezone);
+    const cafeToday=formatInTimeZone(new Date(replanAsOf),timezone,"yyyy-MM-dd");
+    const dayNumber=new Date(cafeToday+"T12:00:00Z").getUTCDay();
+    const currentMonday=civilDateAdd(cafeToday,-((dayNumber+6)%7));
+    const lastCompletedMonday=civilDateAdd(currentMonday,-7);
+    // For next week's request, use the last COMPLETE Toast week rather
+    // than the partially observed current week. Historical previews use
+    // the week before their own horizon, never a future baseline.
+    const previousFrom=week>lastCompletedMonday?lastCompletedMonday:civilDateAdd(week,-7);
+    const previousTo=civilDateAdd(previousFrom,6);
     const historicalSeed:NonNullable<PlannerInput["historicalSeed"]>=[];
     const seeded=new Set<string>();
     const addSeed=(employeeId:string,date:string,startLocal:string,endLocal:string)=>{
