@@ -3697,7 +3697,8 @@
       "weekdayNote": "{weekday} (las alertas automáticas de ventas aún no están activas)",
       "cafeFallback": "tu cafetería",
       "unknownItem": "un artículo que no está en tu menú"
-    }
+    },
+    "extrasCosts": "Costos conocidos de ayer: {costs}. Te quedaste con {kept}."
   },
   "Goals": {
     "metric": {

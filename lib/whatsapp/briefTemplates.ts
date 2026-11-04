@@ -1,4 +1,6 @@
 import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import type {ButtonPayload} from "./transport";
 
 /** Approved (or proposed) Meta templates for the morning brief. The wording is
@@ -46,8 +48,9 @@ export function templateByName(name:string|undefined):BriefTemplate|null{
   return BRIEF_TEMPLATES.find(t=>t.name===name)??null;
 }
 /** The approved template text is also the website's owner-facing brief. */
-export function renderBriefTemplate(template:BriefTemplate,fields:readonly string[]):string{
+export function renderBriefTemplate(template:BriefTemplate,fields:readonly string[],
+  locale:"en"|"es"|"ar"="en"):string{
   // Single pass: "$&", "$$" and embedded "{{2}}" in café data stay literal.
-  return en.DailyBrief[template.body].replace(/\{\{([1-9])\}\}/g,
+  return ({en,es,ar} as const)[locale].DailyBrief[template.body].replace(/\{\{([1-9])\}\}/g,
     (match,index:string)=>fields[Number(index)-1]??match);
 }

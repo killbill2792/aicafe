@@ -3697,7 +3697,8 @@
       "weekdayNote": "{weekday} (automatic sales alerts are not on yet)",
       "cafeFallback": "your café",
       "unknownItem": "an item not on your menu"
-    }
+    },
+    "extrasCosts": "Known costs yesterday: {costs}. You kept {kept}."
   },
   "Goals": {
     "metric": {

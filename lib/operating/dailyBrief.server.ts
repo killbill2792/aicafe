@@ -4,11 +4,13 @@ import {getBusinessSnapshotFromDb} from "@/lib/data/snapshot.server";
 import {readPrimaryLocation} from "@/lib/data/cafeLocation.server";
 import {normalizeOpenHours} from "@/lib/business/openHours";
 import {SnapshotCafeStateService} from "./cafeState";
-import {briefMessageId,briefText,type BriefLocale} from "./dailyBrief";
+import {briefMessageId,briefExtras,type BriefLocale} from "./dailyBrief";
 import {briefSchedule,type BriefSchedule} from "./briefSchedule";
 import {recordBriefRun,CAFE_OWNER_KEY,type BriefRunOutcome} from "./briefRuns.server";
 import {readBriefEvidence,type BriefEvidenceResult} from "@/lib/whatsapp/morningBrief.server";
 import {eligibleBriefBinding,prepareBoundBrief,type Blocked,type EligibleBrief} from "@/lib/whatsapp/morningBriefDelivery.server";
+import {buildBriefContent,briefTemplateFields,renderMorningBrief} from "@/lib/whatsapp/morningBrief";
+import {briefTemplateFor} from "@/lib/whatsapp/briefTemplates";
 import type {BoundOwner} from "@/lib/whatsapp/identity.server";
 
 /** The morning brief (AGENTS.md §4c). Every café gets one per owner and café-local
@@ -32,7 +34,9 @@ export type CafeBriefResult=StepResult&{businessId:string;localDate:string|null;
 type Business={id:string;name?:string|null;currency:string|null;timezone:string|null;is_demo?:boolean|null};
 type Historical=Awaited<ReturnType<SnapshotCafeStateService["getHistoricalState"]>>;
 type CafeContext={db:SupabaseClient;b:Business&{timezone:string};schedule:BriefSchedule;now:Date;
-  kind:BriefRunKind;evidence:BriefEvidenceResult;state:Historical|null;needsOwner:number;
+  kind:BriefRunKind;evidence:BriefEvidenceResult;state:Historical|null;
+  /** null = the attention count could not be read. */
+  needsOwner:number|null;
   sendBefore:string;outbox?:BriefOutboxHook};
 
 const states=(db:SupabaseClient)=>new SnapshotCafeStateService(
@@ -125,7 +129,7 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
   const sendBefore=test?new Date(Math.max(Date.parse(schedule.sendBefore),
     now.getTime()+30*60_000)).toISOString():schedule.sendBefore;
   const ctx:CafeContext={db,b:{...b,timezone},schedule,now,kind:opts.kind,evidence,state,
-    needsOwner:tasks.error?0:tasks.count??0,sendBefore,outbox:opts.outbox};
+    needsOwner:tasks.error||typeof tasks.count!=="number"?null:tasks.count,sendBefore,outbox:opts.outbox};
   const results:OwnerBriefResult[]=[];
   for(const ownerId of [...new Set(owners)]){
     let result:OwnerBriefResult;
@@ -255,19 +259,24 @@ async function sendOne(ctx:CafeContext,ownerId:string):Promise<OwnerBriefResult>
       if(recovered.error)throw recovered.error;
     }
     // English owners saw the template text itself: offer only that exact text.
-    const sameText=!matched||locale!=="en"||matched.websiteText===websiteText;
+    const sameText=!matched||locale!=="en"||websiteText.startsWith(matched.websiteText);
     const r=await callOutbox(ctx.outbox!,{...hookInput(websiteText),eligible:sameText?matched:null});
     return done({step:"in_app",outcome:"sent",reason:"already_sent"},
       fromHook(r,blocked??(sameText?null:{reason:"saved_brief_text_differs"})));
   }
-  const legacyText=briefText({locale,currency:b.currency,needsOwner:ctx.needsOwner,
-    yesterday:net.known&&p?.available&&p.value.netSalesCents===net.cents?{netSalesCents:p.value.netSalesCents,
-      totalCostsCents:p.value.totalCostsCents,ownerProfitCents:p.value.ownerProfitCents,
-      complete:ctx.state?.businessCosts.completeness==="complete"}:null,
-    verifiedNetSalesCents:net.cents});
-  // The approved template text is the English website brief when it is sent.
-  const text=matched&&locale==="en"?matched.websiteText:legacyText;
   const complete=ctx.state?.businessCosts.completeness==="complete";
+  // Every owner gets the full brief (sales, items, best seller, event) in their
+  // language, whether or not WhatsApp is set up. English owners see exactly the
+  // template text WhatsApp sends; the extra line adds costs and what needs them.
+  const template=matched?.prepared.template??briefTemplateFor(evidence.content.event.kind==="today");
+  const briefBody=locale==="en"?matched?.websiteText??renderMorningBrief({template,
+    fields:briefTemplateFields(evidence.content,template)}):
+    renderMorningBrief({template,fields:briefTemplateFields(
+      buildBriefContent(evidence.evidence,now,locale),template)},locale);
+  const extras=briefExtras({locale,currency:b.currency,needsOwner:ctx.needsOwner,
+    costs:net.known&&p?.available&&p.value.netSalesCents===net.cents?{totalCostsCents:p.value.totalCostsCents,
+      ownerProfitCents:p.value.ownerProfitCents,complete}:null});
+  const text=extras?briefBody+"\n\n"+extras:briefBody;
   const inserted=await db.from("ai_messages").insert({
     id:messageId,business_id:b.id,thread_id:threadId,owner_user_id:ownerId,author_user_id:null,
     role:"supervisor",content_type:"blocks",text_content:null,structured_content:[{type:"text",text}],

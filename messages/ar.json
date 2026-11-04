@@ -3697,7 +3697,8 @@
       "weekdayNote": "{weekday} (تنبيهات المبيعات التلقائية غير مفعلة بعد)",
       "cafeFallback": "مقهاك",
       "unknownItem": "صنف غير موجود في قائمتك"
-    }
+    },
+    "extrasCosts": "التكاليف المعروفة للأمس: {costs}. احتفظت بـ {kept}."
   },
   "Goals": {
     "metric": {

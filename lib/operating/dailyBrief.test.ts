@@ -1,6 +1,6 @@
 import {describe,expect,it,vi,beforeEach} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {briefMessageId,briefText} from "./dailyBrief";
+import {briefMessageId,briefExtras} from "./dailyBrief";
 import {buildBriefContent,type MorningBriefEvidence} from "@/lib/whatsapp/morningBrief";
 vi.mock("server-only",()=>({}));
 const evidenceMock=vi.hoisted(()=>({read:vi.fn()}));
@@ -30,12 +30,14 @@ function useEvidence(e:MorningBriefEvidence,posComplete=true){
 }
 
 type Row=Record<string,unknown>;
-function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:string[];timezone?:string|null}={}){
+function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:string[];timezone?:string|null;
+  countFails?:boolean;locale?:string}={}){
   const writes:Row[]=[],runs:Row[]=[];
   const q=(table:string)=>{
     const self:Record<string,unknown>={};
-    let scopedOwner:string|null=null;
+    let scopedOwner:string|null=null,countQuery=false;
     for(const m of ["select","order","limit","in","neq","gte"])self[m]=()=>self;
+    self.select=(_columns:string,options?:{head?:boolean})=>{countQuery=Boolean(options?.head);return self;};
     self.eq=(column:string,value:unknown)=>{
       if((column==="user_id"||column==="owner_user_id")&&typeof value==="string")scopedOwner=value;
       return self;
@@ -50,8 +52,9 @@ function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:st
         structured_content:[{type:"text",text:"Saved brief."}]}:null):
       table==="memberships"?{user_id:scopedOwner??"u1"}:
       table==="ai_threads"?(o.thread===false?null:{id:"t1"}):
+      table==="supervisor_proposals"?(o.locale?{locale:o.locale}:null):
       table==="operating_tasks"&&o.already?{id:"task"}:null});
-    self.then=(r:(v:unknown)=>void)=>r({count:2,error:null});
+    self.then=(r:(v:unknown)=>void)=>r(o.countFails&&countQuery?{count:null,error:{message:"down"}}:{count:2,error:null});
     self.upsert=async(row:Row)=>{(table==="morning_brief_runs"?runs:writes).push({table,...row});return {error:null};};
     self.update=(row:Row)=>{writes.push({table,op:"update",...row});return self;};
     self.insert=async(row:Row)=>{writes.push({table,...row});return {error:null};};
@@ -68,14 +71,16 @@ describe("daily brief text",()=>{
     expect(briefMessageId("a","2026-10-29","u1")).not.toBe(briefMessageId("a","2026-10-29","u2"));
     expect(briefMessageId("a","2026-10-29")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
   });
-  it("gives yesterday's numbers in the café currency and what needs the owner",()=>{
-    expect(briefText({locale:"en",currency:"USD",needsOwner:3,
-      yesterday:{netSalesCents:240_000,totalCostsCents:160_000,ownerProfitCents:80_000,complete:true}}))
-      .toBe("Good morning. Yesterday: sales $2,400.00, known costs $1,600.00, you kept $800.00. 3 things need you. Ask me about any of them.");
-    expect(briefText({locale:"en",currency:"USD",needsOwner:0,yesterday:null,
-      verifiedNetSalesCents:139262})).toContain("net sales $1,392.62. Cost coverage is incomplete.");
-    expect(briefText({locale:"es",currency:"EUR",needsOwner:0,yesterday:null}))
-      .toBe("Buenos días. Las ventas de ayer todavía no han llegado. Nada te necesita ahora mismo.");
+  it("adds yesterday's costs in the café currency and what needs the owner, never a guessed count",()=>{
+    const costs={totalCostsCents:160_000,ownerProfitCents:80_000,complete:true};
+    expect(briefExtras({locale:"en",currency:"USD",needsOwner:3,costs}))
+      .toBe("Known costs yesterday: $1,600.00. You kept $800.00. 3 things need you. Ask me about any of them.");
+    expect(briefExtras({locale:"en",currency:"USD",needsOwner:0,costs:{...costs,complete:false}}))
+      .toBe("Known costs yesterday: $1,600.00. You kept $800.00. Some costs are still missing, so this is partial. Nothing needs you right now.");
+    expect(briefExtras({locale:"es",currency:"EUR",needsOwner:0,costs:null}))
+      .toBe("Nada te necesita ahora mismo.");
+    // An unreadable count says nothing, never "nothing needs you".
+    expect(briefExtras({locale:"en",currency:"USD",needsOwner:null,costs:null})).toBe("");
   });
 });
 
@@ -86,8 +91,14 @@ describe("sending the daily brief at each café's own time",()=>{
     expect(await sendDailyBriefs(db,at("05:00"))).toEqual({checked:1,sent:1,skipped:0,failed:0});
     expect(writes.map(r=>r.table)).toEqual(["ai_messages","operating_tasks","operating_tasks"]);
     expect(writes[0]).toMatchObject({id:briefMessageId("b1","2026-11-03","u1"),thread_id:"t1",owner_user_id:"u1",
-      role:"supervisor",structured_content:[{type:"text",
-        text:"Good morning. Yesterday: sales $2,400.00, known costs $1,600.00, you kept $800.00. 2 things need you. Ask me about any of them."}]});
+      role:"supervisor"});
+    // No WhatsApp set up: the in-app brief is still the full brief, plus costs and what needs the owner.
+    const text=(writes[0].structured_content as Array<{text:string}>)[0].text;
+    expect(text).toContain("Net sales: $2,400.00");
+    expect(text).toContain("Drinks sold: 9 items in total (drink split not ready yet)");
+    expect(text).toContain("Best seller: Latte, with 9 sold");
+    expect(text).toContain("Today: No major events near you this week.");
+    expect(text.endsWith("Known costs yesterday: $1,600.00. You kept $800.00. 2 things need you. Ask me about any of them.")).toBe(true);
     expect(writes[1]).toMatchObject({id:"daily-brief:2026-11-03:u1",kind:"daily_brief",
       payload:{businessDate:"2026-11-02",threadId:"t1",ownerUserId:"u1"}});
     expect(writes[2]).toMatchObject({op:"update",status:"expired"});
@@ -117,7 +128,7 @@ describe("sending the daily brief at each café's own time",()=>{
     const fallback=fakeDb();
     expect(await sendDailyBriefs(fallback.db,at("05:50"))).toMatchObject({sent:1});
     expect(fallback.writes[0]).toMatchObject({structured_content:[{type:"text",
-      text:expect.stringContaining("Yesterday's sales aren't in yet.")}]});
+      text:expect.stringContaining("Net sales: not in yet (your POS is still syncing)")}]});
     // Missed the cron until 06:10: still sent, marked late, before the 06:30 opening.
     const late=fakeDb();
     expect(await sendDailyBriefs(late.db,at("06:10"))).toMatchObject({sent:1});
@@ -144,6 +155,31 @@ describe("sending the daily brief at each café's own time",()=>{
     expect(nothing.writes).toHaveLength(0);
     expect(nothing.runs[0]).toMatchObject({step:"content",outcome:"skipped",reason:"nothing_to_say",
       details:{missing:["sales_not_in","items_not_in","events_unavailable"]}});
+  });
+  it("an unreadable attention count never becomes 'nothing needs you'",async()=>{
+    const {db,writes}=fakeDb({countFails:true});
+    expect(await sendDailyBriefs(db,at("05:00"))).toMatchObject({sent:1});
+    const text=(writes[0].structured_content as Array<{text:string}>)[0].text;
+    expect(text).not.toContain("Nothing needs you");
+    expect(text).not.toContain("things need you");
+    expect(text).toContain("Net sales: $2,400.00");
+  });
+  it("owners in Spanish get the full brief in Spanish; an event-only day keeps its event",async()=>{
+    const es=fakeDb({locale:"es"});
+    await sendDailyBriefs(es.db,at("05:00"));
+    const text=(es.writes[0].structured_content as Array<{text:string}>)[0].text;
+    expect(text).toContain("Ventas netas de ayer: 2400,00");
+    expect(text).toContain("No hay eventos importantes cerca esta semana.");
+    expect(text).toContain("Latte");
+    const night={id:"e1",name:"Night market",kind:"festival",startDate:"2026-11-03",endDate:"2026-11-03",
+      startTime:null,endTime:null,venue:null,venueAddress:null,areaLabel:null,sourceUrl:null,
+      status:"found" as const,foundAt:"2026-11-01T00:00:00Z",lastCheckedAt:"2026-11-01T00:00:00Z"};
+    useEvidence(evidence({netSalesCents:null,sold:{available:false,linked:[],unlinked:[]},
+      events:{available:true,items:[night],coverage:"complete"}}));
+    const only=fakeDb();
+    await sendDailyBriefs(only.db,at("05:50"));
+    expect((only.writes[0].structured_content as Array<{text:string}>)[0].text)
+      .toContain("Today: Night market (not confirmed yet)");
   });
   it("exactly one brief per café, owner and local date",async()=>{
     const {db,writes}=fakeDb({already:true});
