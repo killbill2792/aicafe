@@ -26,7 +26,7 @@ describe("canonical café events keep identities for monitoring",()=>{
     ];
     const db={from(table:string){
       const q={
-        select:()=>q,eq:()=>q,lte:()=>q,gte:()=>q,order:()=>q,
+        select:()=>q,eq:()=>q,in:()=>q,lte:()=>q,gte:()=>q,order:()=>q,
         range:async()=>({data:[],error:null}),
         limit:async()=>({data:table==="cafe_events"?rows:[],error:null}),
       };
