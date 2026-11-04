@@ -4,9 +4,17 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { storeDerivedOperatingTask } from "@/lib/data/operatingTasks";
 import { applyTaskResponse, type OperatingTask, type OperatingTaskResponse } from "@/lib/operating/tasks";
 
 const ownerDecisionSchema = z.object({ taskId: z.string().min(1).max(500), decision: z.enum(["keep_price", "later_7", "later_30", "later_change"]) });
+/** The price review the inbox shows right now for this id, from the same projection. */
+async function currentPriceReview(taskId: string): Promise<OperatingTask | null> {
+  const [{ getSnapshot }, { getMenuControlCenter }, { buildOperationsTeamViewModel }] = await Promise.all([
+    import("@/lib/data/getSnapshot"), import("@/lib/data/getMenuControlCenter"), import("@/lib/viewmodels/operationsTeam")]);
+  const [snapshot, menu] = await Promise.all([getSnapshot(), getMenuControlCenter()]);
+  return buildOperationsTeamViewModel(snapshot, menu).needsYou.find((task) => task.id === taskId && task.kind === "price_review") ?? null;
+}
 export type OwnerTaskDecisionResult = { ok: true } | { ok: false; error: string };
 
 export async function respondToPriceReview(input: unknown): Promise<OwnerTaskDecisionResult> {
@@ -16,9 +24,17 @@ export async function respondToPriceReview(input: unknown): Promise<OwnerTaskDec
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "not_signed_in" };
   const businessId = await getActiveBusinessId(user.id);
-  const { data: row, error: readError } = await supabase.from("operating_tasks")
+  const readRow = () => supabase.from("operating_tasks")
     .select("id, business_id, agent_id, kind, entity_type, entity_id, status, payload, confidence, evidence, created_at, resolved_at")
-    .eq("business_id", businessId).eq("id", parsed.data.taskId).single();
+    .eq("business_id", businessId).eq("id", parsed.data.taskId).maybeSingle();
+  let { data: row, error: readError } = await readRow();
+  if (!readError && !row) {
+    // Price reviews are computed on read; the owner's decision is what stores one.
+    const derived = await currentPriceReview(parsed.data.taskId);
+    if (!derived || derived.businessId !== businessId) return { ok: false, error: "task_not_available" };
+    try { await storeDerivedOperatingTask(supabase, businessId, derived); } catch { return { ok: false, error: "task_not_available" }; }
+    ({ data: row, error: readError } = await readRow());
+  }
   if (readError || !row || row.kind !== "price_review" || row.status !== "needs_owner") return { ok: false, error: "task_not_available" };
 
   const task: OperatingTask = { id: row.id, businessId: row.business_id, agentId: row.agent_id, kind: row.kind,

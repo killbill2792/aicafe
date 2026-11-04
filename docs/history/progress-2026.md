@@ -2928,3 +2928,6 @@ Third Codex review on cfd2b34 found interchangeable scalar quantities, omitted t
 - PR #147 merged: team_updates owner-scoped storage and service-role writer.
 - PR #146 merged: streaming agent with bounded calls and verified money extraction.
 - Existing P1 source inventory and business data boundary remain enforced.
+
+## Moved from PROGRESS.md Done
+- PR #230: goals in the Supervisor loop.

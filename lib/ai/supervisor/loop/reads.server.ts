@@ -73,3 +73,26 @@ export async function readOwnerPriceMonitorReports(db:SupabaseClient,scope:Owner
   }
   return rows;
 }
+
+export type OwnerSampleRow={proposal_id:string;business_date:string;observation:unknown;evidence_source:string};
+/** Daily monitor samples for proposals the caller already read through readOwnerProposals,
+ * oldest day first. RLS limits rows to the signed-in owner's own proposals. */
+export async function readOwnerMonitorSamples(db:SupabaseClient,scope:OwnerScope,
+  proposalIds:readonly string[]):Promise<OwnerSampleRow[]>{
+  const rows:OwnerSampleRow[]=[];
+  const pageSize=100;
+  for(let i=0;i<proposalIds.length;i+=pageSize){
+    const ids=proposalIds.slice(i,i+pageSize);
+    for(let offset=0;;offset+=1000){
+      const {data,error}=await db.from("supervisor_monitor_samples")
+        .select("proposal_id,business_date,observation,evidence_source")
+        .eq("business_id",scope.businessId).in("proposal_id",ids)
+        .order("business_date",{ascending:true}).order("proposal_id",{ascending:true})
+        .range(offset,offset+999);
+      if(error)throw error;
+      rows.push(...((data??[]) as OwnerSampleRow[]));
+      if((data??[]).length<1000)break;
+    }
+  }
+  return rows;
+}

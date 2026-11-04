@@ -3,7 +3,7 @@ import "server-only";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
-import {ProposalRequestConflictError,effectHash} from "./engine";
+import {ACTIVE_PROPOSAL_STATUSES,ProposalRequestConflictError,effectHash} from "./engine";
 import type {LoopCreate,LoopRepository,OwnerLoopScope,LoopProposal,LoopSample,LoopReport} from "./engine";
 
 const uuid=z.uuid();
@@ -107,6 +107,13 @@ export class SupabaseLoopRepository implements LoopRepository{
     if(result.effectHash!==p.effectHash||result.capabilityId!==p.capabilityId)
       throw new ProposalRequestConflictError();
     return result;
+  }
+  async activeProposals(scope:OwnerLoopScope):Promise<LoopProposal[]>{
+    const {data,error}=await createAdminSupabaseClient().from("supervisor_proposals").select("*")
+      .eq("business_id",scope.businessId).in("status",[...ACTIVE_PROPOSAL_STATUSES])
+      .order("created_at",{ascending:false}).limit(500);
+    if(error)return failed(error,"Active proposals unavailable");
+    return (data??[]).map(row=>decode(row as Row));
   }
   async load(scope:OwnerLoopScope,id:string):Promise<LoopProposal>{
     uuid.parse(id);
