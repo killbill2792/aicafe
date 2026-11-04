@@ -2,20 +2,33 @@ import {z} from "zod";
 import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {nextMonday} from "@/lib/calc/scheduling/weekdayDates";
-import {previewOliviaWeek} from "@/lib/actions/oliviaPlanning";
+import {previewOliviaWeek,previewOliviaOwnerSavings} from "@/lib/actions/oliviaPlanning";
 
 const monday=z.iso.date().refine(v=>new Date(v+"T12:00:00Z").getUTCDay()===1,"Must be a Monday");
-const schema=z.strictObject({week_start:monday.nullable()});
+const schema=z.strictObject({week_start:monday.nullable(),purpose:z.enum(["draft","owner_savings"])});
 
 /** Supervisor is the only conversation entry point; Olivia is the only optimizer.
  * The preview is inert. Existing propose_schedule handles the approval card.
  */
 export const draftScheduleTools={draft_week_schedule:{
  agentId:"olivia",schema,
- description:"Use Olivia's canonical rules-aware planner to preview next week's staff roster. Creates ONE owner approval card for a schedule request itself. Never call propose_schedule again after this tool. Never say a preview was saved or published.",
+ description:"Use Olivia's canonical scheduler. purpose=draft prepares the next week's roster and ONE existing approval card, so never call propose_schedule after it. purpose=owner_savings models where the unpaid owner could replace paid staff and returns the wage evidence and cost comparison WITHOUT creating a card. Hypothetical owner certification and opportunity costs are not assumed. Never say a preview was published.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-  const {week_start}=schema.parse(raw);
+  const {week_start,purpose}=schema.parse(raw);
   const start=week_start??nextMonday(ctx.asOf);
+  if(purpose==="owner_savings"){
+   const whatIf=await previewOliviaOwnerSavings({week:start});
+   if(!whatIf.ok)return {source:"olivia_owner_what_if",period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
+    missing:[whatIf.error],agentId:"olivia",draft:false,saved:false,approvalTool:"not_created"};
+   return {source:"olivia_owner_what_if",period:whatIf.period,agentId:"olivia",
+    draft:false,saved:false,approvalTool:"not_created",missing:whatIf.savingsCents===null?
+     ["exactSavingsUnavailable"]:[],ownerMinutes:whatIf.ownerMinutes,
+    baselineCashWagesCents:whatIf.baselineCashWagesCents,
+    withOwnerCashWagesCents:whatIf.withOwnerCashWagesCents,
+    savingsCents:whatIf.savingsCents,completeCoverage:whatIf.completeCoverage,
+    replacementRows:whatIf.replacementRows,assumptions:whatIf.assumptions,
+    warnings:whatIf.warnings,notices:whatIf.notices,locations:whatIf.locations};
+  }
   const result=await previewOliviaWeek({week:start});
   if(!result.ok)return {source:"olivia_schedule",period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
    agentId:"olivia",draft:true,saved:false,missing:[result.error,...(result.blockers??[]).map(b=>b.code)]};
