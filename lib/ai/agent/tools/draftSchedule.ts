@@ -39,7 +39,8 @@ export const draftScheduleTools={draft_week_schedule:{
    proposedShifts.every(s=>s.break_minutes<=240&&s.start!==s.end);
   let approval: {proposalId:string;revision:number;capabilityId:string}|null=null;
   let approvalError:string|null=null;
-  if(canPropose&&ctx.proposals?.proposeStaff){
+  if(canPropose&&ctx.scheduleProposalCreated)approval=ctx.scheduleProposalCreated;
+  else if(canPropose&&ctx.proposals?.proposeStaff){
    try {
     // The existing authorized proposal writer creates ONE inert owner card.
     // Only the owner's approval click may write dated draft shifts.
