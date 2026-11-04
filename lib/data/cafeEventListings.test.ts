@@ -11,7 +11,8 @@ const event=(id:string,name:string,date:string,verified=false):CafeEvent=>({
 describe("one canonical café-event list projection",()=>{
   it("keeps the verified normalized market and a nearby Oakland event; drops distant Los Angeles",()=>{
     const items=[
-      event("a","Bhangra & Beats Night Market","2026-11-13"),
+      {...event("a","Bhangra & Beats Night Market","2026-11-13"),
+        sourceUrl:"https://example.org/b"},
       {...event("b","Bhangra and Beats Night Market","2026-11-13",true),
         venueAddress:"100 Main St, San Francisco, CA"},
       {...event("c","Regional Music Night","2026-11-13"),
@@ -22,6 +23,43 @@ describe("one canonical café-event list projection",()=>{
     expect(visibleCafeEventListings(items,"2026-11-03","2026-11-16",location).map(e=>e.id))
       .toEqual(["b","d"]);
     expect(items.map(e=>e.id)).toEqual(["a","b","c","d"]);
+  });
+  it("keeps local events when a US or USA country suffix follows the state",()=>{
+    const place={city:"San Francisco",region:"CA"};
+    for(const address of [
+      "100 Main St, San Francisco, CA, US",
+      "100 Main St, San Francisco, CA, USA",
+      "100 Main St, San Francisco, CA, United States",
+    ])expect(cafeEventInArea({venueAddress:address,areaLabel:null},place)).toBe(true);
+    const full={city:"San Francisco",region:"California"};
+    expect(cafeEventInArea({venueAddress:
+      "100 Main St, San Francisco, California, USA",areaLabel:null},full)).toBe(true);
+    expect(cafeEventInArea({venueAddress:
+      "1 Broadway, Portland, OR, US",areaLabel:null},place)).toBe(false);
+  });
+  it("preserves same-name/date events with different canonical IDs or conflicting venues",()=>{
+    const events=[
+      {...event("a","Community Open Day","2026-11-13"),cityEventId:"city-central",
+        venue:"Central Hall",venueAddress:"1 Main St, San Francisco, CA"},
+      {...event("b","Community Open Day","2026-11-13"),cityEventId:"city-west",
+        venue:"West Hall",venueAddress:"2 Main St, San Francisco, CA"},
+      {...event("c","Community Open Day","2026-11-13"),sourceUrl:"https://other.org/abc",
+        venue:"West Hall",venueAddress:"2 Main St, San Francisco, CA"},
+      {...event("d","Community Open Day","2026-11-13"),sourceUrl:"https://other.org/def",
+        venue:"East Hall",venueAddress:"3 Main St, San Francisco, CA"},
+    ];
+    const visible=visibleCafeEventListings(events,"2026-11-03","2026-11-16",location);
+    expect(visible.map(e=>e.id)).toEqual(["a","b","d"]);
+    // The display projection never modifies or deletes the underlying facts.
+    expect(events.map(e=>e.id)).toEqual(["a","b","c","d"]);
+  });
+  it("retains ambiguous same-name/date entries from different sources with no shared venue",()=>{
+    const events=[
+      event("a","Night Market","2026-11-13"),
+      event("b","Night Market","2026-11-13"),
+    ];
+    expect(visibleCafeEventListings(events,"2026-11-03","2026-11-16",location)
+      .map(e=>e.id)).toEqual(["a","b"]);
   });
   it("uses a 50 km radius when both points exist, including neighbouring cities",()=>{
     const oakland={venueAddress:"10 Main St, Oakland, CA",areaLabel:null,
