@@ -113,7 +113,7 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
   const finish=new Date(Date.parse(dates[6]+"T00:00:00Z")+3*86400000).toISOString();
   const actual=await owner.supabase.from("timecards")
    .select("id,employee_id,clock_in,clock_out,source_provider")
-   .eq("business_id",owner.businessId).eq("source_provider","toast")
+   .eq("business_id",owner.businessId).eq("source_provider","Toast")
    .gte("clock_in",begin).lte("clock_in",finish).order("clock_in").limit(1001);
   if(actual.error||!actual.data||actual.data.length>1000)throw new Error("Toast clock-ins unavailable");
   for(const row of actual.data){
