@@ -10,7 +10,7 @@ type Copy={howIGotThis:string;howCalculated:string;explainMissing:string;explain
  explainMultiply:string;explainSum:string;explainDivide:string;explainRatio:string;explainProrate:string;explainSubtract:string};
 const connector:Record<ExplainLine["formula"],string>={
  multiply:"×",sum:"+",divide:"÷",ratio:"÷",prorate:"×",subtract:"−",breakEven:"÷",
- scenarioPrice:"×",scenarioCost:"×",scenarioShift:"×",scenarioWage:"×",scenarioVolume:"×",scenarioProrate:"÷",
+ scenarioNegate:"−",scenarioPrice:"×",scenarioCost:"×",scenarioShift:"×",scenarioWage:"×",scenarioVolume:"×",scenarioProrate:"÷",
 };
 const localeFormat:Record<Locale,string>={en:"en-US",es:"es-ES",ar:"ar"};
 function basisLabel(key:string,locale:Locale,provenance:ExplainLine["provenance"]):string{
@@ -96,6 +96,8 @@ export default function HowIGotThis({lines,locale,copy,currency}:{
        {" + "}{localizedLabel(line.inputs[4].name,locale)}: {shown(4)}
        {") ÷ "}{localizedLabel(line.inputs[2].name,locale)}: {shown(2)}
        {")) = "}{formatCardValue(line.result,locale,currency)}</bdi>:
+     line.formula==="scenarioNegate"&&line.inputs.length===1?
+       <bdi dir="ltr">−({shown(0)}) = {formatCardValue(line.result,locale,currency)}</bdi>:
      line.formula==="scenarioPrice"&&line.inputs.length===4?
        <bdi dir="ltr">({shown(0)} − {shown(1)}) × {shown(2)} × (1 − {shown(3)}) = {formatCardValue(line.result,locale,currency)}</bdi>:
      line.formula==="scenarioCost"&&line.inputs.length===3?
