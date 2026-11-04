@@ -22,6 +22,18 @@ export function providerBlockers(kind:Channel):string[] {
 export function providerAllowed(kind:Channel):boolean {
   return providerBlockers(kind).length===0;
 }
+/** "provider_rejected:<code>[/<subcode>] <title>" from Meta's error body, so the
+ * admin page shows why. Only Meta's own short title is kept: long digit runs
+ * (phone numbers, ids) are masked, odd characters dropped, and it is capped. */
+export async function metaRejection(response:Pick<Response,"json"|"status">):Promise<string>{
+  let error:{code?:unknown;error_subcode?:unknown;message?:unknown}|undefined;
+  try{error=((await response.json()) as {error?:typeof error}|null)?.error;}catch{error=undefined;}
+  const num=(v:unknown)=>typeof v==="number"&&Number.isInteger(v)&&v>=0&&v<1e7?String(v):null;
+  const code=num(error?.code)??"http"+response.status,sub=num(error?.error_subcode);
+  const title=typeof error?.message==="string"?error.message.replace(/^\(#\d+\)\s*/,"")
+    .replace(/\d{5,}/g,"#").replace(/[^A-Za-z0-9 .,:;'()/#_-]/g,"").replace(/\s+/g," ").trim().slice(0,120):"";
+  return "provider_rejected:"+code+(sub?"/"+sub:"")+(title?" "+title:"");
+}
 /** API acceptance is NOT delivered. Timeouts/5xx/receipt ambiguity MUST NOT replay. */
 export async function sendMeta(kind:Channel,to:string,outbound:Outbound,send:typeof fetch=fetch):
  Promise<SendResult> {
@@ -42,7 +54,7 @@ export async function sendMeta(kind:Channel,to:string,outbound:Outbound,send:typ
     if(response.status===429)return {state:"retry",reason:"rate_limited"};
     // 5xx and HTTP success without a definitive provider id are ambiguous.
     if(response.status>=500)return {state:"uncertain",reason:"provider_ambiguous"};
-    if(!response.ok)return {state:"failed",reason:"provider_rejected"};
+    if(!response.ok)return {state:"failed",reason:await metaRejection(response)};
     const receipt:unknown=await response.json();
     const id=(receipt as {messages?:{id?:unknown}[]}|null)?.messages?.[0]?.id;
     return typeof id==="string"&&/^wamid\.[A-Za-z0-9_.:-]{1,240}={0,2}$/.test(id)
