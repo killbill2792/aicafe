@@ -3,7 +3,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 import {ownerChoiceGuard,ownerNamedTarget,resolveEntity,choicePayload,normalizedName} from "../resolve";
 import {getTeam} from "@/lib/actions/schedule";
 import {mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
-import {nextMonday} from "@/lib/calc/scheduling/weekdayDates";
+import {nextMonday} from "@/lib/scheduling/staffScheduleLinks";
 import {scheduleDraftNotice} from "@/lib/calc/scheduling/ownerDeliveryLinks";
 const uuid=z.uuid(),date=z.iso.date(),clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const shift=z.strictObject({employee_id:uuid,date,start:clock,end:clock,
