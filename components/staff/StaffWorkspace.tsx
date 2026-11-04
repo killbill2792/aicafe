@@ -257,6 +257,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     <div className="text-center font-semibold">{dayLabel(data.dates[0])} – {dayLabel(data.dates[6])}<div className="text-sm text-muted">{status}</div></div>
     <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")+7*86400000).toISOString().slice(0,10)}`} className="p-3"><span className="inline-block rtl:rotate-180">›</span></Link>
    </div>
+   {(data.calendarWarnings??[]).length>0&&<p role="status" className="rounded-lg border border-line p-3 text-sm text-muted">{t("calendarPartial")}</p>}
    <div className="grid grid-cols-3 gap-2 lg:grid-cols-4">{[
     [t("paidHours"),localized(hours(data.total.paidMinutes))],
     [t("wages"),wageSummary(data.total)],
