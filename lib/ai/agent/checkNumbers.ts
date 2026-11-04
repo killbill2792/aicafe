@@ -24,7 +24,8 @@ const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalU
   "missingProductCostCount","drinksNeededPerDay","drinksPerHour","todayDrinks",
   "ordersCount","staffCount","shiftCount","employeesCount","attendanceCount",
   "timecardCount","onClockCount"]);
-const trustedCountKey=(key:string)=>COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
+const trustedCountKey=(key:string)=>key.includes("calculateResultCount")||
+  COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
   COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,""));
 
 /** Goal detail has generic "current / baseline / target / value" fields.
