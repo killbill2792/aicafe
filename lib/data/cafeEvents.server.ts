@@ -361,7 +361,7 @@ export const readCanonicalCafeEvents=readCafeEvents;
 export function visibleCafeEventListings(canonical:readonly CafeEvent[],from:string,to:string,
   city:string|null):CafeEvent[]{
   const events=canonical.filter(e=>e.startDate<=to&&e.endDate>=from)
-    .filter(e=>!(/\\b(muir woods|yosemite)\\b/i.test([e.name,e.venue,e.venueAddress,e.areaLabel].join(" "))&&
+    .filter(e=>!(/\b(muir woods|yosemite)\b/i.test([e.name,e.venue,e.venueAddress,e.areaLabel].join(" "))&&
       !!city&&![e.venueAddress,e.areaLabel].some(v=>v?.toLowerCase().includes(city.toLowerCase()))));
   const unique=new Map<string,CafeEvent>();
   for(const e of events){
