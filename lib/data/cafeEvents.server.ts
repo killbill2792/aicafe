@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {readPrimaryLocation,cafeLocationFrom,type CafeLocation} from "./cafeLocation.server";
+import {readPrimaryLocation,type CafeLocation} from "./cafeLocation.server";
 import {cityScopeKey,canonicalEventNameKey} from "@/lib/events/cityEventIdentity";
 import {readOwnerProposals,readOwnerReports,type OwnerScope} from "@/lib/ai/supervisor/loop/reads.server";
 
@@ -349,7 +349,7 @@ export async function readCafeEvents(db:SupabaseClient,businessId:string,
   for(let i=0;i<ids.length;i+=100)
     extended.push(...await readStoredCafeEvents(db,businessId,from,to,ids.slice(i,i+100)));
   const canonical=await overlayCityFacts(db,businessId,[...raw,...extended]);
-  const location=cafeLocationFrom(await readPrimaryLocation(db,businessId),[]);
+  const location=await readPrimaryLocation(db,businessId);
   return visibleCafeEventListings(canonical,from,to,location);
 }
 export const readCanonicalCafeEvents=readCafeEvents;
