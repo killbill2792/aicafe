@@ -14,7 +14,7 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
    gaps:[],shifts:[{employeeId:"11111111-1111-4111-8111-111111111111",
     locationId:"location",startAt:"2026-11-09T16:00:00.000Z",
     endAt:"2026-11-10T00:00:00.000Z",paidMinutes:450}]}}});
-  const result=await draftScheduleTools.draft_week_schedule.execute({week_start:null},ctx);
+  const result=await draftScheduleTools.draft_week_schedule.execute({week_start:null,purpose:"draft"},ctx);
   expect(mocks.preview).toHaveBeenCalledExactlyOnceWith({week:"2026-11-09"});
   expect(result).toMatchObject({draft:true,saved:false,proposalReady:true,
    approvalTool:"propose_schedule",proposedShifts:[{
@@ -33,7 +33,7 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   const proposeStaff=vi.fn().mockResolvedValue({proposalId:"22222222-2222-4222-8222-222222222222",
    revision:1,capabilityId:"olivia.staff_propose_schedule.v2"});
   const result=await draftScheduleTools.draft_week_schedule.execute(
-   {week_start:"2026-11-09"},{...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+   {week_start:"2026-11-09",purpose:"draft"},{...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
   expect(proposeStaff).toHaveBeenCalledTimes(1);
   expect(proposeStaff.mock.calls[0][0].input.shifts).toHaveLength(14);
   expect(result.proposedShifts).toHaveLength(14);
@@ -42,7 +42,7 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
  });
  it("honors foundation feature gates without retrying a parallel scheduler",async()=>{
   mocks.preview.mockResolvedValue({ok:false,error:"disabled"});
-  const result=await draftScheduleTools.draft_week_schedule.execute({week_start:"2026-11-09"},ctx);
+  const result=await draftScheduleTools.draft_week_schedule.execute({week_start:"2026-11-09",purpose:"draft"},ctx);
   expect(result).toMatchObject({saved:false,missing:["disabled"]});
   expect(mocks.preview).toHaveBeenCalledTimes(1);
  });
