@@ -349,13 +349,20 @@ export async function readCafeEvents(db:SupabaseClient,businessId:string,
   for(let i=0;i<ids.length;i+=100)
     extended.push(...await readStoredCafeEvents(db,businessId,from,to,ids.slice(i,i+100)));
   const canonical=await overlayCityFacts(db,businessId,[...raw,...extended]);
-  // The shared public event identity may differ by source URL while the
-  // owner-facing listing is the same event on the same date. Keep the most
-  // verified saved record without changing its UUID, plans or source history.
   const local=await readPrimaryLocation(db,businessId);
+  return visibleCafeEventListings(canonical,from,to,local?.city??null);
+}
+export const readCanonicalCafeEvents=readCafeEvents;
+
+
+
+/** Owner-facing projection of the ONE saved Events reader. It never deletes or
+ * changes event facts, UUIDs, approvals, reports, or city-source provenance. */
+export function visibleCafeEventListings(canonical:readonly CafeEvent[],from:string,to:string,
+  city:string|null):CafeEvent[]{
   const events=canonical.filter(e=>e.startDate<=to&&e.endDate>=from)
-    .filter(e=>!(/\b(muir woods|yosemite)\b/i.test([e.name,e.venue,e.venueAddress,e.areaLabel].join(" "))&&
-      ![e.venueAddress,e.areaLabel].some(v=>v?.toLowerCase().includes((local?.city??"").toLowerCase())&&!!local?.city)));
+    .filter(e=>!(/\\b(muir woods|yosemite)\\b/i.test([e.name,e.venue,e.venueAddress,e.areaLabel].join(" "))&&
+      !!city&&![e.venueAddress,e.areaLabel].some(v=>v?.toLowerCase().includes(city.toLowerCase()))));
   const unique=new Map<string,CafeEvent>();
   for(const e of events){
     const key=e.startDate+"|"+canonicalEventNameKey(e.name);
@@ -365,8 +372,6 @@ export async function readCafeEvents(db:SupabaseClient,businessId:string,
   }
   return [...unique.values()];
 }
-export const readCanonicalCafeEvents=readCafeEvents;
-
 
 /** Private neighborhood scope freshness, through the sole owner Events facade. */
 export async function readNeighborhoodResearchCoverage(db:SupabaseClient,businessId:string):
