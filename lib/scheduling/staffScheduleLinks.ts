@@ -1,3 +1,4 @@
+import {dateOffset} from "@/lib/calc/periods";
 /** Shared and validated schedule deep links across Alerts, Home and Operations. */
 export function validScheduleDate(value:unknown):value is string {
  if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
@@ -47,4 +48,9 @@ export function resolveDatedStaffShift<P extends {id:string},S extends {id:strin
   if(distance<=120||1440-distance<=120)shift=candidates[0];
  }
  return {date,person,shift};
+}
+
+/** The Monday after the supplied café-local date; shares our schedule-week resolver. */
+export function nextMonday(asOf:string):string{
+ return dateOffset(scheduleWeekForDate(asOf,null,asOf),7);
 }

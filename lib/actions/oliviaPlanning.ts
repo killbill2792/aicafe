@@ -4,6 +4,7 @@ import { z } from "zod";
 import { loadOliviaWeekFromSavedStaff, type OliviaBlocker, type OliviaNotice } from "@/lib/scheduling/planInput.server";
 import { createOliviaDraftFromTrustedSnapshot, oliviaSnapshotDigest } from "@/lib/scheduling/planDrafts.server";
 import { optimizeOliviaWeek } from "@/lib/calc/scheduling/plannerEngine";
+import {modelUnpaidOwnerWhatIf} from "@/lib/calc/scheduling/plannerOwnerSavings";
 import type { PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
 import { requireSchedulingOwner } from "@/lib/scheduling/foundation.server";
 import { editDraftSchema, saveOliviaEditedDraft } from "@/lib/scheduling/planEdits.server";
@@ -59,6 +60,24 @@ export async function previewOliviaWeek(raw: unknown): Promise<
   } catch {
     return { ok: false, error: "planner_unavailable" };
   }
+}
+
+/** Simulate unpaid owner labor using the same Olivia snapshot + optimizer.
+ * Never creates a proposal, saves a draft or assumes owner qualifications.
+ */
+export async function previewOliviaOwnerSavings(raw:unknown){
+ const parsed=args.safeParse(raw);
+ if(!parsed.success)return {ok:false as const,error:"invalid_input"};
+ const loaded=await loadOliviaWeekFromSavedStaff(parsed.data.week);
+ if(!loaded.ok)return {ok:false as const,error:loaded.error};
+ if(loaded.blockers.length)return {ok:false as const,error:"missing_inputs",
+  blockers:loaded.blockers};
+ try{
+  return {ok:true as const,source:"olivia_owner_what_if",
+   period:{from:parsed.data.week,to:new Date(Date.parse(parsed.data.week+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
+   locations:Object.fromEntries(loaded.input.locations.map(l=>[l.id,l.timezone])),
+   ...modelUnpaidOwnerWhatIf(loaded.input),notices:loaded.notices};
+ }catch{return {ok:false as const,error:"planner_unavailable"};}
 }
 
 /** Saves a revision of a real snapshot. Never trusts preview results or

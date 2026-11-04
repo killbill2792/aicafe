@@ -1,4 +1,7 @@
 import "server-only";
+import {formatInTimeZone} from "date-fns-tz";
+import {readToastPlannedShifts} from "@/lib/data/toastScheduledShifts.server";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -18,7 +21,7 @@ import {verifiedOliviaRuleProfile} from "./planPolicy.server";
 export type OliviaNotice = { code:
   | "wage_unknown" | "availability_missing" | "unconfirmed_absence"
   | "coverage_unconfirmed" | "no_active_staff" | "limits_missing"
-  | "legacy_schedules" | "policy_unverified" | "source_provisional";
+  | "legacy_schedules" | "policy_unverified" | "source_provisional" | "history_missing";
   employeeName?: string };
 
 export type OliviaBlocker = {code: "no_location" | "no_coverage" | "conflicting_limits"; employeeName?: string};
@@ -208,9 +211,64 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
        (pointerCheck.data?.published_revision??null)!==publishedRevision)
       throw new Error("Scheduling source or published pointer changed during read");
     const rows = Object.fromEntries(tables.map((table, i) => [table, results[i]])) as Record<typeof tables[number], Row[]>;
+    // Last week's Toast schedule is a SOFT initial pattern. It cannot pin a
+    // shift or override newly approved absence, skill, hours or coverage rules.
+    const timezone=str(business.data.timezone);
+    const cafeToday=formatInTimeZone(new Date(replanAsOf),timezone,"yyyy-MM-dd");
+    const dayNumber=new Date(cafeToday+"T12:00:00Z").getUTCDay();
+    const currentMonday=civilDateAdd(cafeToday,-((dayNumber+6)%7));
+    const lastCompletedMonday=civilDateAdd(currentMonday,-7);
+    // For next week's request, use the last COMPLETE Toast week rather
+    // than the partially observed current week. Historical previews use
+    // the week before their own horizon, never a future baseline.
+    const previousFrom=week>lastCompletedMonday?lastCompletedMonday:civilDateAdd(week,-7);
+    const previousTo=civilDateAdd(previousFrom,6);
+    const historicalSeed:NonNullable<PlannerInput["historicalSeed"]>=[];
+    let historicalCoverageMissing=false;
+    const seeded=new Set<string>();
+    const addSeed=(employeeId:string,date:string,startLocal:string,endLocal:string)=>{
+      if(!employeeId)return;
+      const weekday=new Date(date+"T12:00:00Z").getUTCDay();
+      const key=employeeId+":"+weekday;
+      if(seeded.has(key))return;
+      seeded.add(key);historicalSeed.push({employeeId,weekday,startLocal,endLocal});
+    };
+    // Planned Toast shifts take precedence over actual clock-ins for the same
+    // staff member/day. The attendance fallback never creates a new plan row.
+    try {
+    const planned=await readToastPlannedShifts(createAdminSupabaseClient(),
+      businessId,previousFrom,previousTo,timezone);
+    for(const shift of planned){
+      if(!shift.employeeId)continue;
+      const date=formatInTimeZone(new Date(shift.start),timezone,"yyyy-MM-dd");
+      if(date<previousFrom||date>previousTo)continue;
+      addSeed(shift.employeeId,date,
+        formatInTimeZone(new Date(shift.start),timezone,"HH:mm"),
+        formatInTimeZone(new Date(shift.end),timezone,"HH:mm"));
+    }
+    } catch { historicalCoverageMissing=true; }
+    try {
+    const first=new Date(Date.parse(previousFrom+"T00:00:00Z")-2*86400000).toISOString();
+    const last=new Date(Date.parse(previousTo+"T00:00:00Z")+3*86400000).toISOString();
+    const actual=await supabase.from("timecards")
+      .select("employee_id,clock_in,clock_out")
+      .eq("business_id",businessId).eq("source_provider","Toast")
+      .gte("clock_in",first).lte("clock_in",last).order("clock_in").limit(1001);
+    if(actual.error||!actual.data||actual.data.length>1000)
+      throw new Error("Incomplete historical Toast shift seed");
+    for(const shift of actual.data){
+      if(typeof shift.employee_id!=="string"||typeof shift.clock_in!=="string"||
+         typeof shift.clock_out!=="string")continue;
+      const date=formatInTimeZone(new Date(shift.clock_in),timezone,"yyyy-MM-dd");
+      if(date<previousFrom||date>previousTo)continue;
+      addSeed(shift.employee_id,date,
+        formatInTimeZone(new Date(shift.clock_in),timezone,"HH:mm"),
+        formatInTimeZone(new Date(shift.clock_out),timezone,"HH:mm"));
+    }
+    } catch { historicalCoverageMissing=true; }
     const sourceFingerprint = createHash("sha256").update(JSON.stringify({
       businessId,businessTimezone:business.data.timezone,rows,publishedRevision,
-      startedPublishedShifts,historicalShiftWageRates,
+      startedPublishedShifts,historicalShiftWageRates,historicalSeed,
     })).digest("hex");
     const end = civilDateAdd(week, 6);
     const extendedStart = civilDateAdd(week, -1);
@@ -222,6 +280,8 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       notices.push({code, ...(employeeName ? {employeeName} : {})});
     };
     const blockers: OliviaBlocker[] = [];
+    if(historicalCoverageMissing)warn("history_missing",
+      "Previous Toast shift history could not be fully read. The draft uses confirmed staff rules without an assumed prior roster.");
 
     const locations: PlannerLocation[] = rows.locations.map(r => ({
       id: str(r.id), timezone: nullable(r.timezone) || str(business.data.timezone),
@@ -398,7 +458,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
           (c.minOverlapMinutes??0)%slot===0;
       }))??5;
     return {
-      ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage,
+      ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage, historicalSeed,
         ...(ruleProfile ? {ruleProfile} : {}),
         pinned: [], startedPublishedShifts, historicalShiftWageRates, replanAsOf,
         slotMinutes, maxNodes: 12000, beamWidth: 24 },

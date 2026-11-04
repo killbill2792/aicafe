@@ -1,5 +1,4 @@
 import {z} from "zod";
-import {formatInTimeZone} from "date-fns-tz";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -8,6 +7,7 @@ import {getTeamRules} from "@/lib/actions/teamRules";
 import {staffReadScope,mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
 import {coverageGaps,uncheckedCoverageDays} from "@/lib/calc/scheduling/coverageGaps";
 import {missingWageInputs,aggregateCosts} from "@/lib/calc/scheduling/shiftCost";
+import {projectVisibleStaffWeek} from "@/lib/calc/scheduling/schedulePresentation";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard} from "../resolve";
 import {money} from "../explain";
@@ -31,35 +31,9 @@ async function localWeek(requested:string|null,ctx:AgentToolContext){
  return mondayOfLocalDate(today);
 }
 type WeekData=Extract<Awaited<ReturnType<typeof getWeekSchedule>>,{ok:true}>["data"];
-/** The Team screen and chat share getWeekSchedule. Toast plans never count as paid labor. */
-export function mergeScheduleShifts(data:Pick<WeekData,"shifts"|"posShifts"|"team"|"timezone">){
- // Retired employees are retained in the Team screen for dated historical shifts.
- // A current active-team filter must not erase their stored assignments in chat.
- const app=data.shifts.map(s=>({
-   id:s.id,date:s.date,employeeId:s.employeeId,employeeName:s.employeeName,
-   start:s.start,end:s.end,paidMinutes:s.paidMinutes,costCents:s.costCents,
-   estimated:s.estimated,source:"app" as const,
- }));
- const pos=(data.posShifts??[]).map(s=>({
-   id:s.id,date:formatInTimeZone(new Date(s.start),data.timezone,"yyyy-MM-dd"),
-   employeeId:s.employeeId??null,employeeName:s.employeeName,
-   start:formatInTimeZone(new Date(s.start),data.timezone,"HH:mm"),
-   end:formatInTimeZone(new Date(s.end),data.timezone,"HH:mm"),
-   paidMinutes:null,costCents:null,estimated:null,locationId:s.locationId,source:"toast" as const,
- }));
- // Only exact linked identities and matching start AND end can identify
- // an app/Toast duplicate. Separate Toast locations may reuse external IDs.
- const appKey=(s:(typeof app)[number])=>s.employeeId+"|"+s.date+"|"+s.start+"|"+s.end;
- const appKeys=new Set(app.map(appKey)),seenPos=new Set<string>();
- return [...app,...pos.filter(s=>{
-  if(s.employeeId&&appKeys.has(s.employeeId+"|"+s.date+"|"+s.start+"|"+s.end))
-   return false;
-  const k=s.locationId+"|"+s.id+"|"+s.start+"|"+s.end;
-  if(seenPos.has(k))return false;
-  seenPos.add(k);
-  return true;
- })].sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
-}
+/** Staff and chat use this exact same projection, never a separate union. */
+const visibleSchedule=(data:Pick<WeekData,"shifts"|"calendarEntries">)=>
+ projectVisibleStaffWeek(data);
 export function localizedToastScheduleReadError(reason:string,locale:AgentToolContext["locale"]){
  const copy={en,es,ar}[locale].DataNotes;
  const why=/permission|revoked|access denied|42501|\b(?:401|403)\b/i.test(reason)?
@@ -83,7 +57,7 @@ export const scheduleReadTools={
    const input=namedWeek.parse(raw),ws=await localWeek(input.week_start,ctx);
    const result=await getWeekSchedule({weekStart:ws});
    if(!result.ok)return fail("staff_week",null,result.error);
-   const all=mergeScheduleShifts(result.data);
+   const all=visibleSchedule(result.data).visible;
    let selected=result.data.team;
    if(input.name){
      const chosen=resolveChosenEntity(ctx.resolveState,selected,person=>person.id);
@@ -108,7 +82,8 @@ export const scheduleReadTools={
    }
    if(input.name&&selected.length===1&&!ownerNamedTarget(ctx.resolveState,selected[0].id,selected[0].name))
      return fail("employees+scheduled_shifts",null,"targetNotConfirmed");
-   const activeShifts=result.data.shifts;
+   const projection=visibleSchedule(result.data);
+   const activeShifts=projection.laborShifts;
    const unlinkedNameCollision=Boolean(input.name)&&all.some(shift=>
     shift.source==="toast"&&!shift.employeeId&&selected.some(person=>
      person.name.toLocaleLowerCase()===shift.employeeName.toLocaleLowerCase()));
@@ -150,8 +125,9 @@ export const scheduleReadTools={
    const result=await getWeekSchedule({weekStart:ws});
    if(!result.ok)return fail("scheduled_shifts",null,result.error);
    const data=result.data;
-   const activeShifts=data.shifts;
-   const combined=mergeScheduleShifts(data);
+   const projection=visibleSchedule(data);
+   const activeShifts=projection.laborShifts;
+   const combined=projection.visible;
    const scheduled=combined.length>0,hasCostedShifts=activeShifts.length>0,
     toastPlans=combined.some(s=>s.source==="toast"),totals=aggregateCosts(activeShifts);
    const toastCoverageUnknown=combined.some(s=>s.source==="toast")&&data.rules.coverage_enabled;
@@ -198,8 +174,9 @@ export const scheduleReadTools={
    const whole=await getWeekSchedule({weekStart:ws});
    if(!whole.ok)return fail("coverage_gaps",null,whole.error);
    const data=whole.data;
-   const activeShifts=data.shifts;
-   const combined=mergeScheduleShifts(data),scheduled=combined.length>0;
+   const projection=visibleSchedule(data);
+   const activeShifts=projection.laborShifts;
+   const combined=projection.visible,scheduled=combined.length>0;
    const toastCoverageUnknown=combined.some(s=>s.source==="toast")&&data.rules.coverage_enabled;
    const adjacent=data.adjacentShifts;
    const gaps=scheduled&&!toastCoverageUnknown?coverageGaps(data.dates,[...adjacent,...activeShifts],
