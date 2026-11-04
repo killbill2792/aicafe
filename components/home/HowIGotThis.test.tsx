@@ -113,6 +113,17 @@ describe("How I got this disclosure",()=>{
   expect(html).toContain("$7.86");
   expect(html).toContain("($7.85 − $7.75) × 82 × (1 − 4.15%)");
  });
+ it("renders monthly what-if conversion with division by seven, not multiplication",()=>{
+  const monthly:ExplainLine={label:"Monthly equivalent of weekly change",
+    inputs:[{name:"Weekly change",value:money(971)},
+      {name:"Days in month",value:count(31)},
+      {name:"Days in week",value:count(7)}],
+    formula:"scenarioProrate",result:money(Math.round(971*31/7)),
+    period:null,source:"scenario",provenance:"estimate"};
+  const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[monthly],locale:"en",
+    copy:en.SupervisorChat,currency:"USD"}));
+  expect(html).toContain("$9.71 × 31 ÷ 7 = $43.00");
+ });
  it("shows the exact core break-even equation, with each displayed input once",()=>{
   const breakEven=calculateBreakEvenSales({monthlyBillsCents:14000,monthlyStaffCents:6915,
     observedSalesCents:100000,observedIngredientCents:30000,observedProcessingFeesCents:3000});
