@@ -137,6 +137,21 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
       values.push({key:valueKey,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
     };
     walk(r,"",0,rootScope);
+    // The general calculator has no arbitrary number input: its results are
+    // produced from sourced values and are therefore trusted numeric evidence.
+    if(r.source==="calculate"&&r.refused===undefined&&
+       r.result&&typeof r.result==="object"){
+      const value=r.result as Record<string,unknown>;
+      const amount=typeof value.valueCents==="number"?{unit:"cents" as const,n:value.valueCents}:
+        typeof value.valueBps==="number"?{unit:"bps" as const,n:value.valueBps}:
+        typeof value.quantity==="number"?{unit:"count" as const,n:value.quantity}:null;
+      if(amount&&Number.isSafeInteger(amount.n)){
+        const key=periodKey+"calculateResult"+(amount.unit==="cents"?"Cents":
+          amount.unit==="bps"?"Bps":"Count");
+        values.push({key,value:amount.n,unit:amount.unit});
+        invalidatedKeys.push(key);
+      }
+    }
     // Explanations are deterministic tool outputs. Only admit a line number
     // when its exact typed result was declared in that same tool\'s estimates.
     if(r.source==="new_item_price"&&Array.isArray(r.explain)&&Array.isArray(r.numberEstimates)){
