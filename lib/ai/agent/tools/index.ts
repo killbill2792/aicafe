@@ -127,7 +127,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
-  get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar live provisional reading is attached when today is not imported.",
+  get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
   get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
 };
 /** OpenAI strict mode needs every property listed in `required` at every nesting level;
@@ -422,7 +422,9 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
     todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,
     lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
-    provisional:true,readAt:liveToday.readAt,missing:liveToday.missing,
+    provisional:true,readAt:liveToday.readAt,stale:liveToday.stale,
+    lastUpdated:liveToday.lastUpdated,freshnessLabel:liveToday.freshnessLabel,
+    missing:liveToday.missing,
     netSalesCents:liveToday.netSalesCents,
     days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
     todaySoFar:liveToday};
