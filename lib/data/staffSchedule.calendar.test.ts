@@ -25,8 +25,15 @@ describe("one Staff calendar reads saved Toast and Olivia evidence",()=>{
    if(table==="scheduled_shifts"||table==="staff_availability_rules")
     return chain({data:[],error:null});
    if(table==="locations")return chain({data:null,error:null});
-   if(table==="timecards")return chain({data:[{id:"actual",employee_id:"amy",
-    clock_in:"2026-11-09T16:00:00Z",clock_out:"2026-11-09T20:00:00Z"}],error:null});
+   if(table==="timecards"){
+    const q=chain({data:[{id:"actual",employee_id:"amy",
+    source_provider:"Toast",clock_in:"2026-11-09T16:00:00Z",clock_out:"2026-11-09T20:00:00Z"}],error:null});
+    q.eq=vi.fn((column:string,value:unknown)=>{
+     if(column==="source_provider")expect(value).toBe("Toast");
+     return q;
+    });
+    return q;
+   }
    if(table==="scheduling_plan_series")
     return chain({data:{id:"series",current_revision:1},error:null});
    if(table==="scheduling_plan_revisions")
