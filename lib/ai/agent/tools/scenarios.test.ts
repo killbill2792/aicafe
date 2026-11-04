@@ -52,6 +52,14 @@ describe("scoped read-only supervisor scenario tool",()=>{
   const result=await scenarioTools.simulate_scenario.execute({...raw,kind:"item_price",
     itemId:drink,deltaCents:10},context());
   expect(result.weeklyChangeCents).toBe(971);
+  const lines=result.explain as Array<{source:string;result:{kind:string;cents:number};inputs:Array<{name:string}>}>;
+  const weekly=lines.find(line=>line.label==="Weekly gain after processing fees") as typeof lines[number]&{label:string};
+  expect(weekly.source).toBe("scenario");
+  expect(weekly.result).toEqual({kind:"money",cents:971});
+  expect(weekly.inputs.map(input=>input.name)).toEqual([
+    "New price","Old price","Weekly units","Processing fee rate"]);
+  const monthly=lines.find(line=>line.label==="Monthly equivalent of weekly change") as typeof lines[number]&{label:string};
+  expect(monthly.inputs.map(input=>input.name)).toEqual(["Weekly change","Days in month","Days in week"]);
   expect(result).not.toHaveProperty("proposalId");
  });
  it("returns target-margin goal, not an invented changed break-even",async()=>{
