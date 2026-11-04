@@ -94,7 +94,7 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
    return [];
   }
   return [{
-   id:"toast-planned:"+s.id,employeeId:s.employeeId,employeeName:s.employeeName,
+   id:"toast-planned:"+s.locationId+":"+s.id,employeeId:s.employeeId,employeeName:s.employeeName,locationId:s.locationId,
    date:formatInTimeZone(first,owner.timezone,"yyyy-MM-dd"),
    endDate:formatInTimeZone(last,owner.timezone,"yyyy-MM-dd"),
    start:formatInTimeZone(first,owner.timezone,"HH:mm"),
