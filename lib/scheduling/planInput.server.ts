@@ -1,4 +1,7 @@
 import "server-only";
+import {formatInTimeZone} from "date-fns-tz";
+import {readToastPlannedShifts} from "@/lib/data/toastScheduledShifts.server";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -208,9 +211,51 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
        (pointerCheck.data?.published_revision??null)!==publishedRevision)
       throw new Error("Scheduling source or published pointer changed during read");
     const rows = Object.fromEntries(tables.map((table, i) => [table, results[i]])) as Record<typeof tables[number], Row[]>;
+    // Last week's Toast schedule is a SOFT initial pattern. It cannot pin a
+    // shift or override newly approved absence, skill, hours or coverage rules.
+    const previousFrom=civilDateAdd(week,-7),previousTo=civilDateAdd(week,-1);
+    const timezone=str(business.data.timezone);
+    const historicalSeed:NonNullable<PlannerInput["historicalSeed"]>=[];
+    const seeded=new Set<string>();
+    const addSeed=(employeeId:string,date:string,startLocal:string,endLocal:string)=>{
+      if(!employeeId)return;
+      const weekday=new Date(date+"T12:00:00Z").getUTCDay();
+      const key=employeeId+":"+weekday;
+      if(seeded.has(key))return;
+      seeded.add(key);historicalSeed.push({employeeId,weekday,startLocal,endLocal});
+    };
+    // Planned Toast shifts take precedence over actual clock-ins for the same
+    // staff member/day. The attendance fallback never creates a new plan row.
+    const planned=await readToastPlannedShifts(createAdminSupabaseClient(),
+      businessId,previousFrom,previousTo,timezone);
+    for(const shift of planned){
+      if(!shift.employeeId)continue;
+      const date=formatInTimeZone(new Date(shift.start),timezone,"yyyy-MM-dd");
+      if(date<previousFrom||date>previousTo)continue;
+      addSeed(shift.employeeId,date,
+        formatInTimeZone(new Date(shift.start),timezone,"HH:mm"),
+        formatInTimeZone(new Date(shift.end),timezone,"HH:mm"));
+    }
+    const first=new Date(Date.parse(previousFrom+"T00:00:00Z")-2*86400000).toISOString();
+    const last=new Date(Date.parse(previousTo+"T00:00:00Z")+3*86400000).toISOString();
+    const actual=await supabase.from("timecards")
+      .select("employee_id,clock_in,clock_out")
+      .eq("business_id",businessId).eq("source_provider","toast")
+      .gte("clock_in",first).lte("clock_in",last).order("clock_in").limit(1001);
+    if(actual.error||!actual.data||actual.data.length>1000)
+      throw new Error("Incomplete historical Toast shift seed");
+    for(const shift of actual.data){
+      if(typeof shift.employee_id!=="string"||typeof shift.clock_in!=="string"||
+         typeof shift.clock_out!=="string")continue;
+      const date=formatInTimeZone(new Date(shift.clock_in),timezone,"yyyy-MM-dd");
+      if(date<previousFrom||date>previousTo)continue;
+      addSeed(shift.employee_id,date,
+        formatInTimeZone(new Date(shift.clock_in),timezone,"HH:mm"),
+        formatInTimeZone(new Date(shift.clock_out),timezone,"HH:mm"));
+    }
     const sourceFingerprint = createHash("sha256").update(JSON.stringify({
       businessId,businessTimezone:business.data.timezone,rows,publishedRevision,
-      startedPublishedShifts,historicalShiftWageRates,
+      startedPublishedShifts,historicalShiftWageRates,historicalSeed,
     })).digest("hex");
     const end = civilDateAdd(week, 6);
     const extendedStart = civilDateAdd(week, -1);
@@ -398,7 +443,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
           (c.minOverlapMinutes??0)%slot===0;
       }))??5;
     return {
-      ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage,
+      ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage, historicalSeed,
         ...(ruleProfile ? {ruleProfile} : {}),
         pinned: [], startedPublishedShifts, historicalShiftWageRates, replanAsOf,
         slotMinutes, maxNodes: 12000, beamWidth: 24 },
