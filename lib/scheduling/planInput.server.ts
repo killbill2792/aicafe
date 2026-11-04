@@ -226,6 +226,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     };
     // Planned Toast shifts take precedence over actual clock-ins for the same
     // staff member/day. The attendance fallback never creates a new plan row.
+    try {
     const planned=await readToastPlannedShifts(createAdminSupabaseClient(),
       businessId,previousFrom,previousTo,timezone);
     for(const shift of planned){
@@ -236,6 +237,8 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
         formatInTimeZone(new Date(shift.start),timezone,"HH:mm"),
         formatInTimeZone(new Date(shift.end),timezone,"HH:mm"));
     }
+    } catch { /* Missing POS plan evidence is not permission to invent a shift. */ }
+    try {
     const first=new Date(Date.parse(previousFrom+"T00:00:00Z")-2*86400000).toISOString();
     const last=new Date(Date.parse(previousTo+"T00:00:00Z")+3*86400000).toISOString();
     const actual=await supabase.from("timecards")
@@ -253,6 +256,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
         formatInTimeZone(new Date(shift.clock_in),timezone,"HH:mm"),
         formatInTimeZone(new Date(shift.clock_out),timezone,"HH:mm"));
     }
+    } catch { /* Keep planning possible with partial historical coverage. */ }
     const sourceFingerprint = createHash("sha256").update(JSON.stringify({
       businessId,businessTimezone:business.data.timezone,rows,publishedRevision,
       startedPublishedShifts,historicalShiftWageRates,historicalSeed,
