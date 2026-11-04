@@ -91,6 +91,27 @@ describe("calculate uses what the owner says",()=>{
     expect((await pct(withOwner(ctx(turn),"Known costs yesterday?\nSaved.\nIngredient cost: 20% of price"))).result)
       .toEqual({unit:"cents",valueCents:20000});
   });
+  it.each([
+    ["I use 2 cartons per day, how many for 7 days?",7,2],
+    ["We work 6 hours each shift",6,6],
+    ["Uso 2 cajas por día durante 7 días",7,7],
+    ["أعمل 6 ساعات في كل وردية",6,6],
+  ] as const)("accepts an explicitly owner-stated duration: %s",async(text,duration,expected)=>{
+    const locale=text.startsWith("Uso")?"es":text.startsWith("أعمل")?"ar":"en";
+    const r=await calculateTools.calculate.execute({purpose:"Duration",
+      screen_number:"none",inputs:[said("duration",duration,"count")],
+      steps:[{id:"duration_result",label:"Duration",op:"sum",args:["duration"]}]},
+      withOwner(ctx(turn),text,[],locale));
+    expect(r.refused).toBeUndefined();
+    expect(r).toMatchObject({result:{unit:"count",quantity:expected},ownerProvided:["duration"]});
+  });
+  it("refuses an unstated duration even when another duration was provided",async()=>{
+    const r=await calculateTools.calculate.execute({purpose:"Duration",
+      screen_number:"none",inputs:[said("days",8,"count")],
+      steps:[{id:"duration_result",label:"Duration",op:"sum",args:["days"]}]},
+      withOwner(ctx(turn),"I use 2 cartons per day for 7 days"));
+    expect(r.refused).toBe("ownerDidNotSayThis");
+  });
   it("refuses a number the owner never said",async()=>{
     expect((await rentWhatIf(withOwner(ctx(rentTurn),"what if rent goes up?"))).refused).toBe("ownerDidNotSayThis");
     expect((await rentWhatIf(withOwner(ctx(rentTurn),"rent up $400"))).refused).toBe("ownerDidNotSayThis");
