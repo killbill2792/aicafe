@@ -3,7 +3,7 @@ const mocks=vi.hoisted(()=>({preview:vi.fn()}));
 vi.mock("@/lib/actions/oliviaPlanning",()=>({previewOliviaWeek:mocks.preview}));
 import {draftScheduleTools} from "./draftSchedule";
 import type {AgentToolContext} from "./index";
-const ctx={asOf:"2026-11-03",timezone:"America/Los_Angeles",locale:"en",
+const ctx:AgentToolContext={asOf:"2026-11-03",timezone:"America/Los_Angeles",locale:"en",
  tools:{} as AgentToolContext["tools"]};
 describe("Supervisor delegates to one Olivia scheduler",()=>{
  beforeEach(()=>mocks.preview.mockReset());
