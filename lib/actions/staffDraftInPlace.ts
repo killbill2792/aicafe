@@ -6,7 +6,7 @@ import {readSchedulingDraftInputs} from "@/lib/data/schedulingDraftInputs.server
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {scheduleProposalReplacesSavedShifts} from "@/lib/calc/scheduling/staffDraftReview";
-import {businessLocalDate} from "@/lib/calc/scheduling/weekdayDates";
+import {formatInTimeZone} from "date-fns-tz";
 import {previewOliviaWeek} from "@/lib/actions/oliviaPlanning";
 import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import {staffProposalInputs} from "@/lib/ai/agent/tools/staffProposals";
@@ -56,7 +56,7 @@ export async function draftStaffWeekInPlace(raw:unknown){
     const slice=await readSchedulingDraftInputs(client,scope.businessId);
     if(!slice.available||slice.quality.missingInputs.length)
       return {ok:false as const,error:"missing"};
-    const today=businessLocalDate(new Date(),slice.value.timezone);
+    const today=formatInTimeZone(new Date(),slice.value.timezone,"yyyy-MM-dd");
     if(new Date(parsed.data.week+"T12:00:00Z").getUTCDay()!==1 ||
        parsed.data.week<today)return {ok:false as const,error:"week"};
     if(await hasSavedWeekShifts(client,scope.businessId,parsed.data.week))
