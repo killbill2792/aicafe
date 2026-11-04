@@ -22,11 +22,13 @@ export async function GET(request:Request){
   const member=await db.from("memberships").select("role")
     .eq("business_id",sub.business_id).eq("user_id",sub.owner_user_id).maybeSingle();
   if(member.error||member.data?.role!=="owner")continue;
-  const {data:tasks,error:taskError}=await db.from("operating_tasks")
-    .select("id,kind,status").eq("business_id",sub.business_id).eq("status","needs_owner")
-    .order("created_at",{ascending:false}).limit(1);
-  if(taskError||!tasks?.length)continue;
-  const task=tasks[0];
+  // The same read-only inbox reader as Home and the Inbox: computed price reviews
+  // count, expired or repeated items never trigger an alert.
+  const inbox=await import("@/lib/attention/getAttentionItems.server")
+    .then(({readCafeNeedsYou})=>readCafeNeedsYou({client:db,businessId:sub.business_id})).catch(()=>null);
+  if(!inbox){failed++;continue;}
+  const task=inbox.newestTask;
+  if(!task)continue;
   const {data:business,error:timezoneError}=await db.from("businesses")
     .select("timezone").eq("id",sub.business_id).single();
   if(timezoneError||!business?.timezone){failed++;continue;}

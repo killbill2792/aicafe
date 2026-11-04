@@ -9,7 +9,8 @@ export type OperationsTeamViewModel = { members: TeamMemberState[]; needsYou: Op
 
 export function projectOperatingTasks(tasks: OperatingTask[]): OperationsTeamViewModel {
   const needsYou = tasks.filter((task) => task.status === "needs_owner" || task.status === "needs_response");
-  const handled = tasks.filter((task) => task.status === "handled");
+  // Expired items (past shifts, superseded briefs, past event plans) are history, shown with Handled.
+  const handled = tasks.filter((task) => task.status === "handled" || task.status === "expired");
   const watching = tasks.filter((task) => task.status === "watching");
   const attention = (agentId: AgentId) => needsYou.filter((task) => task.agentId === agentId).length;
   return { members: [
@@ -34,7 +35,8 @@ export function buildOperationsTeamViewModel(snapshot: BusinessSnapshot, menu: M
 }
 
 /** One row of the shared attention list (the same records Home counts). */
-export type NeedsYouItem = Pick<AttentionItem, "id" | "agentId" | "displayTitle" | "actionLabel" | "href" | "impactCents">;
+export type NeedsYouItem = Pick<AttentionItem, "id" | "agentId" | "displayTitle" | "actionLabel" | "href" | "impactCents">
+  & Partial<Pick<AttentionItem, "subjectDate" | "createdAt">>;
 
 /** Operations "Needs you" is the shared attention list Home counts, split by teammate; never a
  * second list. A row that is a stored task keeps its task so its own actions stay available. */

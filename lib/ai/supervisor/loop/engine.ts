@@ -7,6 +7,16 @@ import type {AgentId,OperatingTaskKind,OperatingTask} from "@/lib/operating/task
 export class ProposalRequestConflictError extends Error {
   constructor(){super("Conflicting proposal request key");this.name="ProposalRequestConflictError";}
 }
+/** A new proposal would watch the same item as one that is already approved or running.
+ * Two tests on one item mix their sales (the monitor reads item + date, not price). */
+export class ProposalOverlapError extends Error {
+  constructor(readonly running:{proposalId:string;threadId:string;capabilityId:string;
+    status:ProposalStatus;monitoringStartDate:string|null;endsOn:string|null}){
+    super("An active proposal already covers this item");this.name="ProposalOverlapError";
+  }
+}
+/** Approved or running: the owner said yes and the effect is not finished. Drafts do not block. */
+export const ACTIVE_PROPOSAL_STATUSES=["approved","executing","manual_pending","manual_confirmed","committed"] as const;
 import {cafeToday,shiftCafeDate} from "@/lib/metrics/core/clock";
 export type LoopLocale="en"|"es"|"ar";
 export type OwnerLoopScope={businessId:string;ownerUserId:string;threadId:string;locale:LoopLocale;
@@ -119,6 +129,8 @@ export function loopRegistry(...definitions:RegisteredLoopCapability[]){
 export type LoopCreate=Omit<LoopProposal,"id"|"status"|"revision"|"monitoringStartDate"|"createdAt">;
 export interface LoopRepository{
   cafeTimezone?:(scope:OwnerLoopScope)=>Promise<string>;
+  /** Every proposal of the café (any owner) in ACTIVE_PROPOSAL_STATUSES. */
+  activeProposals?:(scope:OwnerLoopScope)=>Promise<LoopProposal[]>;
   create(scope:OwnerLoopScope,requestKey:string,proposal:LoopCreate):Promise<LoopProposal>;
   load(scope:OwnerLoopScope,id:string):Promise<LoopProposal>;
   transition(scope:OwnerLoopScope,id:string,revision:number,
@@ -153,10 +165,35 @@ export async function proposeLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
   const validated=def.parseEffect(simulation.effect);
   const dependency=def.dependencyScope(validated);
   if(!dependency||typeof dependency!=="object")throw new Error("Missing dependency scope");
+  const overlap=await activeOverlap(scope,registry,repo,dependency);
+  if(overlap)throw new ProposalOverlapError(overlap);
   return repo.create(scope,requestKey,{businessId:scope.businessId,ownerUserId:scope.ownerUserId,
     threadId:scope.threadId,capabilityId:def.id,capabilityVersion:def.version,
     canonicalEffectPayload:validated,effectHash:effectHash(validated),
     baseline:simulation.baseline,monitorSpec:simulation.monitorSpec,locale:scope.locale});
+}
+/** The active proposal (if any) whose dependency scope names the same product. A monitored
+ * proposal counts while its window is open; a window that has ended no longer blocks. */
+async function activeOverlap(scope:OwnerLoopScope,registry:ReturnType<typeof loopRegistry>,
+  repo:LoopRepository,dependency:Record<string,unknown>,exceptId?:string):Promise<ProposalOverlapError["running"]|null>{
+  const productId=dependency.productId;
+  if(typeof productId!=="string"||!repo.activeProposals)return null;
+  const active=await repo.activeProposals(scope);
+  if(!active.length)return null;
+  const timezone=await repo.cafeTimezone?.(scope);
+  const today=timezone?cafeToday(timezone):null;
+  for(const p of active){
+    if(p.id===exceptId)continue;
+    let other:Record<string,unknown>;
+    try{other=registry.get(p.capabilityId).dependencyScope(p.canonicalEffectPayload);}catch{continue;}
+    if(other.kind!==dependency.kind||other.productId!==productId)continue;
+    const endsOn=p.monitoringStartDate?utcDateOffset(p.monitoringStartDate,p.monitorSpec.durationDays-1):null;
+    // Unknown café date: stay on the safe side and treat the window as open.
+    if((p.status==="manual_confirmed"||p.status==="committed")&&endsOn&&today&&endsOn<today)continue;
+    return {proposalId:p.id,threadId:p.threadId,capabilityId:p.capabilityId,status:p.status,
+      monitoringStartDate:p.monitoringStartDate,endsOn};
+  }
+  return null;
 }
 /** Owner text can request an INERT proposal, not approval or commit. A
  * capability owns its domain interpretation, and the shared planner rejects
@@ -174,10 +211,29 @@ export async function proposeFromOwnerConversation(scope:OwnerLoopScope,
   return proposeLoop(scope,registry,repo,candidates[0].capabilityId,
     candidates[0].input,requestKey);
 }
-export async function approveLoop(scope:OwnerLoopScope,repo:LoopRepository,id:string,revision:number){
+/** Approval is the moment a proposal becomes active, so the one-active-test-per-item rule is
+ * enforced here without a lock: approve (one atomic row transition), then re-read every active
+ * proposal. If any OTHER active proposal covers the same item, this approval backs out (approved →
+ * rejected, also atomic) and the owner is told what is running. Two simultaneous approvals both
+ * see each other and both back out, so two active tests on one item can never both survive. */
+export async function approveLoop(scope:OwnerLoopScope,repo:LoopRepository,id:string,revision:number,
+  registry?:ReturnType<typeof loopRegistry>){
   const p=await repo.load(scope,id);assertProposalScope(scope,p);
   if(p.revision!==revision||p.status!=="draft")throw new Error("Proposal approval conflict");
-  return repo.transition(scope,id,revision,"approve");
+  let dependency:Record<string,unknown>|null=null;
+  if(registry){
+    try{dependency=registry.get(p.capabilityId).dependencyScope(p.canonicalEffectPayload);}catch{dependency=null;}
+  }
+  if(dependency){
+    const before=await activeOverlap(scope,registry!,repo,dependency,p.id);
+    if(before)throw new ProposalOverlapError(before);
+  }
+  const approved=await repo.transition(scope,id,revision,"approve");
+  if(!dependency)return approved;
+  const after=await activeOverlap(scope,registry!,repo,dependency,p.id);
+  if(!after)return approved;
+  await repo.transition(scope,id,approved.revision,"reject");
+  throw new ProposalOverlapError(after);
 }
 export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof loopRegistry>,
   repo:LoopRepository,id:string,revision:number):Promise<{proposal:LoopProposal;result:LoopCommitResult}>{

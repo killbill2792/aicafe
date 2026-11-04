@@ -1,5 +1,7 @@
 import {describe,expect,it,vi,beforeEach} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
+// The brief's count comes from the shared inbox reader (tested in lib/attention).
+vi.mock("@/lib/attention/getAttentionItems.server",()=>({readCafeNeedsYou:async()=>({count:1,newestTask:null})}));
 vi.mock("server-only",()=>({}));
 const evidenceMock=vi.hoisted(()=>({read:vi.fn()}));
 const bindingMock=vi.hoisted(()=>({eligible:vi.fn()}));

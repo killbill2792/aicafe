@@ -1,6 +1,12 @@
 import "server-only";
 import { z } from "zod";
 import { getLocale, getTranslations } from "next-intl/server";
+import { createTranslator } from "next-intl";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import enMessages from "@/messages/en.json";
+import esMessages from "@/messages/es.json";
+import arMessages from "@/messages/ar.json";
+import { getBusinessSnapshotFromDb } from "@/lib/data/snapshot.server";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import type { BusinessSnapshot } from "@/lib/data/types";
@@ -21,7 +27,13 @@ import {isSupabaseConfigured} from "@/lib/supabase/client";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
 import { EXPENSE_CATEGORY_CODES, RUNNING_COST_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import type { AgentId, OperatingTask } from "@/lib/operating/tasks";
-type HomeTaskPreviewItem={id:string;agentId:AgentId;agentName:string;title:string;href:string};
+import { formatInboxDay, isEventReport, isStaleShiftAlert, settleInboxTasks, taskSubjectDate } from "@/lib/operating/inboxLifecycle";
+type HomeTaskPreviewItem={id:string;agentId:AgentId;agentName:string;title:string;href:string;subjectDate:string|null;createdAt:string};
+type DatedAttentionItem=HomeAttentionItem&{subjectDate?:string|null;createdAt?:string|null};
+const alertDay=(payload:Record<string,unknown>)=>{
+  const day=payload.date??payload.shiftDate??payload.businessDate;
+  return typeof day==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(day)?day:null;
+};
 
 const agentSchema=z.enum(["alex","leo","maya","olivia"]);
 export const attentionItemSchema=z.strictObject({
@@ -31,10 +43,25 @@ export const attentionItemSchema=z.strictObject({
   displayTitle:z.string().min(1).max(350),
   actionLabel:z.string().min(1).max(160),href:z.string().min(1).max(1000).regex(/^\/(?!\/)[^\\]*$/),
   impactCents:z.number().int().safe().nullable(),
+  /** The day the item is about (shift, brief, event), café-local; null when it has none. */
+  subjectDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  /** When the item was raised (ISO time); null for items computed on read. */
+  createdAt:z.string().nullable(),
 });
 export type AttentionItem=z.infer<typeof attentionItemSchema>;
+/** A server-verified café scope for callers without a browser session (morning brief and
+ * WhatsApp crons, the verified WhatsApp owner chat). Same reader, same rules; never a model input. */
+export type InboxScope={client:SupabaseClient;businessId:string};
 export type AttentionArgs={period?:Period;locale?:"en"|"es"|"ar";snapshot?:BusinessSnapshot;
-  menu?:Awaited<ReturnType<typeof getMenuControlCenter>>};
+  menu?:Awaited<ReturnType<typeof getMenuControlCenter>>;scope?:InboxScope};
+const CATALOGS={en:enMessages,es:esMessages,ar:arMessages};
+/** next-intl translators built from the message files, for requests that have no next-intl context. */
+function scopedTranslations(locale:"en"|"es"|"ar"){
+  const tr=<N extends "Home"|"Operations"|"Categories"|"SupervisorExperiment"|"Alerts"|"Reconnect"|"DailyBrief"|"Goals">(namespace:N)=>
+    createTranslator({locale,messages:CATALOGS[locale],namespace}) as unknown as Awaited<ReturnType<typeof getTranslations<N>>>;
+  return Promise.resolve([tr("Home"),tr("Operations"),tr("Categories"),tr("SupervisorExperiment"),tr("Alerts"),
+    tr("Reconnect"),tr("DailyBrief"),tr("Goals")] as const);
+}
 /** Home and chat must call this same owner-scoped source. A failed optional read is
  * reported as its own action, never silently replaced with no work. */
 function operatingTaskHref(task: OperatingTask): string {
@@ -65,29 +92,48 @@ function operatingTaskHref(task: OperatingTask): string {
 }
 
 
+/** Home's Needs-you list. The count on Home, in chat and on every Operations tab is this list. */
 export async function getAttentionItems(args:AttentionArgs={}):Promise<AttentionItem[]>{
+  return (await readInbox(args)).items;
+}
+export type Inbox={
+  /** Needs you: the one shared attention list. */
+  items:AttentionItem[];
+  /** Stored inbox tasks after the read-only lifecycle (no writes). */
+  tasks:{needsYou:OperatingTask[];watching:OperatingTask[];handled:OperatingTask[]};
+  /** Past-shift alerts that can no longer be fixed; shown under Handled as expired. */
+  expiredAlerts:AttentionItem[];
+};
+
+/** The one inbox reader. Strictly read-only: it never writes operating_tasks. */
+export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
   const period=args.period??"today";
-  const requestedLocale=args.locale??await getLocale();
+  const scope=args.scope;
+  const requestedLocale=args.locale??(scope?"en":await getLocale());
   const locale=requestedLocale==="es"||requestedLocale==="ar"?requestedLocale:"en";
-  const [snapshot,menu]=await Promise.all([args.snapshot??getSnapshot(period),args.menu??getMenuControlCenter()]);
+  const [snapshot,menu]=await Promise.all([
+    args.snapshot??(scope?getBusinessSnapshotFromDb(scope.client,scope.businessId,period):getSnapshot(period)),
+    args.menu??(scope?getMenuControlCenter({},scope):getMenuControlCenter())]);
+  if(scope&&snapshot.business.id!==scope.businessId)throw new Error("Inbox café scope mismatch");
   const vm=buildHomeViewModel(snapshot,period);
   // Weekly usage variance scans thousands of order lines. Pantry already reads
   // that report on demand; Home/chat must not await it to show attention items.
   // Independent secondary signals start together, with timings limited to names/ms.
   const [[t,tOperations,tCategories,tExperiment,tAlerts,tReconnect,tBrief,tGoals],
     posStatus,stored,alerts,unmatched]=await Promise.all([
-    timeReader("Home","getAttentionTranslations",()=>Promise.all([
+    timeReader("Home","getAttentionTranslations",()=>scope?scopedTranslations(locale):Promise.all([
       getTranslations("Home"),getTranslations("Operations"),getTranslations("Categories"),
       getTranslations("SupervisorExperiment"),getTranslations("Alerts"),getTranslations("Reconnect"),
       getTranslations("DailyBrief"),getTranslations("Goals"),
     ])),
-    timeReader("Home","getPosConnectionStatus",getPosConnectionStatus),
+    timeReader("Home","getPosConnectionStatus",scope?()=>getPosConnectionStatus(scope):getPosConnectionStatus),
     isSupabaseConfigured()
-      ?timeReader("Home","readPersistedOperatingTasks",()=>readPersistedOperatingTasks(snapshot.business.id))
+      ?timeReader("Home","readPersistedOperatingTasks",()=>scope
+        ?readPersistedOperatingTasks(scope.businessId,scope):readPersistedOperatingTasks(snapshot.business.id))
       :Promise.resolve([]),
     // Optional failures should remain visible as an unavailable alert/match item.
-    timeReader("Home","getOpenAlerts",getOpenAlerts).catch(()=>null),
-    timeReader("Home","getCatalogMatchReview",getCatalogMatchReview).catch(()=>null),
+    timeReader("Home","getOpenAlerts",scope?()=>getOpenAlerts(scope):getOpenAlerts).catch(()=>null),
+    timeReader("Home","getCatalogMatchReview",scope?()=>getCatalogMatchReview(undefined,scope):getCatalogMatchReview).catch(()=>null),
   ]);
   const squareReconnectReady=isSquareConfigured()&&Boolean(process.env.SQUARE_REDIRECT_URI);
   const derivedTeam=buildOperationsTeamViewModel(snapshot,menu);
@@ -95,9 +141,9 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
   // ephemeral derived actions remain visible until a dedicated task-refresh job
   // is wired (outside Prompt B's allowed files).
   const derived=[...derivedTeam.needsYou,...derivedTeam.handled,...derivedTeam.watching];
-  const storedIds=new Set(stored.map(task=>task.id));
-  const team=projectOperatingTasks([...stored,
-    ...derived.filter(task=>!storedIds.has(task.id))]);
+  const today=snapshot.todayDateStr;
+  // Same plan the old page-load sync wrote, applied in memory, plus collapse/expiry rules.
+  const team=projectOperatingTasks(settleInboxTasks(stored,derived,new Date(),today));
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
@@ -132,8 +178,10 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       title = tOperations("homePriceReviewLater", { item: itemName });
     } else if (task.kind === "event_change") {
       title = tOperations("eventChangeReview", {event:String(task.payload.eventName ?? "")});
+    } else if (task.kind === "event_plan" && isEventReport(task)) {
+      title = tOperations("eventReportTask", {date:formatInboxDay(taskSubjectDate(task) ?? "",locale)});
     } else if (task.kind === "event_plan") {
-      title = tOperations("eventPlanReview", {date:String(task.payload.businessDate ?? "")});
+      title = tOperations("eventPlanReview", {date:formatInboxDay(taskSubjectDate(task) ?? "",locale)});
     } else if (task.kind === "price_review") {
       const direction = priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents));
       title = tOperations(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName });
@@ -149,10 +197,11 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       title = tOperations("mayaWatching");
     }
 
-    return { id: task.id, agentId: task.agentId, agentName: agentNames[task.agentId], title, href: operatingTaskHref(task) };
+    return { id: task.id, agentId: task.agentId, agentName: agentNames[task.agentId], title, href: operatingTaskHref(task),
+      subjectDate: taskSubjectDate(task), createdAt: task.createdAt };
   };
 
-  const alertItems: HomeAttentionItem[] = (alerts ?? []).filter(alert => showAlertInHome(alert.kind)).map(alert => {
+  const alertItems: DatedAttentionItem[] = (alerts ?? []).filter(alert => showAlertInHome(alert.kind)).map(alert => {
     const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
     // The legacy manage-staff redirect opens Team, not Schedule. Link directly
     // to Schedule so the meal-break fix is reachable before Step 13 merges.
@@ -160,12 +209,14 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       ? homeShiftHref(String(alert.payload.employeeId ?? ""), String(alert.payload.date ?? ""))
       : description.actionHref;
     return { id: "alert:" + alert.id, title: description.title, actionLabel: description.actionLabel,
-      href: homeAttentionHref({ kind: "alert", href }), impactCents: alert.impactCents };
+      href: homeAttentionHref({ kind: "alert", href }), impactCents: alert.impactCents,
+      subjectDate: alertDay(alert.payload), createdAt: alert.createdAt };
   });
   // Alerts for a missing bill and unmatched catalog items describe the same work.
   const coveredBills = new Set((alerts ?? []).filter(a => a.kind === "missing_bill").map(a => String(a.payload.categoryCode ?? "")));
   const missingFeeDays = daysForPeriod(snapshot, period).filter(day => day.netSalesCents > 0 && day.cardFeesStatus === "missing").length;
-  const items: HomeAttentionItem[] = [
+  const staleAlertIds=new Set((alerts??[]).filter(alert=>isStaleShiftAlert(alert,today)).map(alert=>"alert:"+alert.id));
+  const items: DatedAttentionItem[] = [
     ...(alerts === null ? [{
       id:"alerts-unavailable",title:t("attentionAlertsUnavailable"),actionLabel:t("attentionCheckAlerts"),
       href:"/more/alerts",impactCents:null
@@ -213,7 +264,7 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
 
   const taskMap=new Map(team.needsYou.map(task=>[task.id,task]));
   const alertMap=new Map((alerts??[]).map(alert=>["alert:"+alert.id,alert]));
-  return z.array(attentionItemSchema).parse(items.map(item=>{
+  const parsed=z.array(attentionItemSchema).parse(items.map(item=>{
     const task=taskMap.get(item.id),alert=alertMap.get(item.id);
     const kind=task?.kind??alert?.kind??(item.id.startsWith("bill:")?"bill":item.id);
     const source=task?"operating_tasks":alert?"alerts":item.id==="unmatched"?"pos_catalog_matches":
@@ -235,6 +286,8 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
       else if(task.kind==="goal_checkin"){key="Goals.taskCheckinTitle";params={question:String(task.payload.question??"")};}
       else if(task.kind==="goal_report"){key=task.payload.midRun===true?"Goals.taskMidRunTitle":"Goals.taskTitle";
         params={title:String(task.payload.goalTitle??"")};}
+      else if(task.kind==="event_plan"){key=isEventReport(task)?"Operations.eventReportTask":"Operations.eventPlanReview";
+        params={date:formatInboxDay(taskSubjectDate(task)??"",locale)};}
       else if(task.status==="handled" && task.kind==="price_review"){
         key=task.payload.priceAppliedToPos===true?"Operations.homeVerifiedPriceApplied":
           task.payload.ownerChoice==="keep_price"?"Operations.homeHandledPrice":"Operations.homePriceReviewClosed";
@@ -288,6 +341,23 @@ export async function getAttentionItems(args:AttentionArgs={}):Promise<Attention
     else if(item.id==="getting-started-staff")key="Home.gettingStartedAddStaff";
     return {id:item.id,kind,source,agentId,title:{key,params},
       displayTitle:item.title,actionLabel:item.actionLabel,href:item.href,
-      impactCents:Number.isSafeInteger(item.impactCents)?item.impactCents:null};
+      impactCents:Number.isSafeInteger(item.impactCents)?item.impactCents:null,
+      subjectDate:item.subjectDate??null,createdAt:item.createdAt??null};
   }));
+  return {items:parsed.filter(item=>!staleAlertIds.has(item.id)),
+    expiredAlerts:parsed.filter(item=>staleAlertIds.has(item.id)),
+    tasks:{needsYou:team.needsYou,watching:team.watching,handled:team.handled}};
+}
+
+/** What the crons need from the inbox: the Needs-you count and the newest stored or
+ * computed task in it. Derived from readInbox only, so it always equals Home's count. */
+export function needsYouSummary(inbox:Inbox):{count:number;newestTask:OperatingTask|null}{
+  const ids=new Set(inbox.items.map(item=>item.id));
+  const tasks=inbox.tasks.needsYou.filter(task=>ids.has(task.id))
+    .sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  return {count:inbox.items.length,newestTask:tasks[0]??null};
+}
+/** The inbox for a server-verified café (morning brief, WhatsApp alerts). Read-only. */
+export async function readCafeNeedsYou(scope:InboxScope,locale:"en"|"es"|"ar"="en"){
+  return needsYouSummary(await readInbox({scope,locale}));
 }

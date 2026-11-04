@@ -39,7 +39,7 @@ import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { getAttentionItems } from "@/lib/attention/getAttentionItems.server";
 import type { Period } from "@/lib/viewmodels/period";
 import {readOperatingBoard} from "@/lib/operating/board.server";
-import {boardHref} from "@/lib/operating/board";
+import {experimentHref} from "@/lib/operating/board";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {readSavedTodayLive,currentTodayBusinessDay,readHomeTodayLiveFallback} from "@/lib/data/todayLive.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
@@ -168,7 +168,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         shareCaption,comparisonCaption,salesCaption,
         board:board?{
           running:board.running.map(r=>({key:r.proposalId,
-            href:boardHref(r),
+            href:experimentHref(r.proposalId),
             text:r.event?tEvents("boardEventRunning",{title:r.productName}):r.goal?(r.day!==null&&r.day>=1?tGoals("boardGoal",{title:r.productName,day:number(r.day),days:number(r.days??0)})
                 :tGoals("boardGoalStarts",{title:r.productName}))
               :r.stage==="waitingOnOwner"?t("boardWaiting",{item:r.productName,price:money(r.newPriceCents)})
@@ -176,7 +176,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 new:money(r.newPriceCents),day:number(r.day),days:number(r.days??0)})
               :t("boardMonitoringStarts",{item:r.productName,old:money(r.oldPriceCents),new:money(r.newPriceCents)})})),
           reports:board.recentReports.map(r=>({key:r.proposalId,
-            href:boardHref(r),
+            href:experimentHref(r.proposalId),
             text:r.event?tEvents("boardEventReport",{title:r.productName}):r.goal?(r.status==="insufficient_evidence"||r.goal.met===null?tGoals("boardGoalInsufficient",{title:r.productName})
                 :r.goal.met?tGoals("boardGoalMet",{title:r.productName}):tGoals("boardGoalMissed",{title:r.productName}))
               :r.status==="insufficient_evidence"?t("boardReportInsufficient",{item:r.productName})

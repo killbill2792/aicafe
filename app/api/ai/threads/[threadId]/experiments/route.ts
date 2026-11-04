@@ -12,6 +12,12 @@ import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
 import {simulateLoop,proposeLoop,approveLoop,commitLoop,
   confirmManualLoop,monitorLoop,utcDateOffset,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
+/** The loop refused a second active proposal on the same item (engine ProposalOverlapError). */
+function runningOverlap(error:unknown):{proposalId:string;status:string;endsOn:string|null}|null{
+  if(!(error instanceof Error)||error.name!=="ProposalOverlapError"||!("running" in error))return null;
+  const r=(error as Error&{running:{proposalId:string;status:string;endsOn:string|null}}).running;
+  return {proposalId:r.proposalId,status:r.status,endsOn:r.endsOn};
+}
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type Params={params:Promise<{threadId:string}>};
 const uuid=z.uuid();
@@ -47,7 +53,11 @@ export async function GET(request:Request,{params}:Params){
   const catalog=(await getMenuControlCenter()).filter(item=>item.active)
     .map(({id,name,priceCents})=>({id,name,priceCents}));
   return conversationJson({proposals,catalog});
- }catch(error){return conversationError(error);}
+ }catch(error){
+  const overlap=runningOverlap(error);
+  if(overlap)return conversationJson({error:"running_experiment_same_item",running:overlap},409);
+  return conversationError(error);
+ }
 }
 export async function POST(request:Request,{params}:Params){
  try{
@@ -67,7 +77,7 @@ export async function POST(request:Request,{params}:Params){
    case "propose":return conversationJson({proposal:await proposeLoop(scope,
        supervisorLoopRegistry,repo,priceExperimentCapabilityId,
        {productId:input.productId,increaseCents:input.increaseCents},input.requestKey)});
-   case "approve":return conversationJson({proposal:await approveLoop(scope,repo,input.proposalId,input.revision)});
+   case "approve":return conversationJson({proposal:await approveLoop(scope,repo,input.proposalId,input.revision,supervisorLoopRegistry)});
    case "reject":return conversationJson({proposal:await repo.transition(scope,
        input.proposalId,input.revision,"reject")});
    case "commit":return conversationJson(await commitLoop(scope,supervisorLoopRegistry,
@@ -104,5 +114,9 @@ export async function POST(request:Request,{params}:Params){
      return conversationJson({report});
    }
   }
- }catch(error){return conversationError(error);}
+ }catch(error){
+  const overlap=runningOverlap(error);
+  if(overlap)return conversationJson({error:"running_experiment_same_item",running:overlap},409);
+  return conversationError(error);
+ }
 }

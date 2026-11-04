@@ -3,6 +3,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 import {resolveEntity,ownerChoiceGuard,normalizedName,ownerNamedTarget,ownerConfirmedRecentProduct} from "../resolve";
 import {safeDifferenceCents} from "@/lib/calc/explainMath";
 import {money} from "../explain";
+import {runningOverlapResult} from "./priceExperiment";
 export const priceChangeProposalSchema=z.strictObject({
   product_id:z.uuid(),new_price_cents:z.number().int().safe().positive().max(100000),
 });
@@ -53,8 +54,15 @@ export const proposalTools={propose_price_change:{
     }
     if(!ctx.proposals)return {source:"price_change_proposal",period:null,agentId:"alex",
       draft:true,saved:false,missing:["proposalsUnavailable"]};
-    const result=await ctx.proposals.proposePriceChange({
-      productId:input.product_id,newPriceCents:input.new_price_cents});
+    let result:Awaited<ReturnType<typeof ctx.proposals.proposePriceChange>>;
+    try{
+      result=await ctx.proposals.proposePriceChange({
+        productId:input.product_id,newPriceCents:input.new_price_cents});
+    }catch(error){
+      const overlap=runningOverlapResult(error,"price_change_proposal");
+      if(overlap)return overlap;
+      throw error;
+    }
     const priceDeltaCents=safeDifferenceCents(result.newPriceCents,result.oldPriceCents);
     return {source:"price_change_proposal",period:null,agentId:"alex",
       draft:true,saved:false,missing:[],...result,priceDeltaCents,

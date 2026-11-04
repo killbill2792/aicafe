@@ -5,12 +5,17 @@ import { getActiveBusinessId } from "./getActiveBusinessId";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE } from "./queryError";
 
 export type CatalogMatchReview = { id: string; provider: string; posItemId: string; importedName: string; importedPriceCents: number | null; suggestedMenuItemId: string | null; suggestedName: string | null; status: string };
-export async function getCatalogMatchReview(filter?: { source?: string; uploadId?: string }): Promise<CatalogMatchReview[]> {
+/** `explicit` is a server-verified café scope (crons, verified WhatsApp owner); never a browser choice. */
+export async function getCatalogMatchReview(filter?: { source?: string; uploadId?: string },
+  explicit?: { client: Awaited<ReturnType<typeof createServerSupabaseClient>>; businessId: string }): Promise<CatalogMatchReview[]> {
   if (!isSupabaseConfigured()) return [];
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
-  const businessId = await getActiveBusinessId(user.id);
+  const supabase = explicit?.client ?? await createServerSupabaseClient();
+  let businessId = explicit?.businessId;
+  if (!businessId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+    businessId = await getActiveBusinessId(user.id);
+  }
   let allowedNames: Set<string> | null = null;
   if (filter?.source === "upload") {
     if (!filter.uploadId) return [];

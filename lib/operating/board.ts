@@ -66,11 +66,9 @@ function durationDays(spec:unknown){
 }
 export const monitorDayIndex=(from:string,to:string)=>Math.round((Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86_400_000)+1;
 
-/** `today` is the café-local date. Newest first; at most three of each. */
-export function buildOperatingBoard(proposals:readonly BoardProposalRow[],reports:readonly BoardReportRow[],
-  today:string):OperatingBoard{
-  const byId=new Map(proposals.map(p=>[p.id,p]));
-  const running=proposals.flatMap((p):BoardRunning[]=>{
+/** Every running line, uncapped: what the board and the Experiments page call "Running". */
+export function runningLines(proposals:readonly BoardProposalRow[],today:string):BoardRunning[]{
+  return proposals.flatMap((p):BoardRunning[]=>{
     // Event insights and their reports live only in the dedicated Events panel.
     if(p.capability_id===EVENT_CAPABILITY)return [];
     const effect=priceEffect(p.canonical_effect_payload,p.capability_id);
@@ -84,20 +82,34 @@ export function buildOperatingBoard(proposals:readonly BoardProposalRow[],report
     // A monitored change with no monitoring window (a plain price change) is not "running".
     if(day>days)return [];
     return [{proposalId:p.id,threadId:p.thread_id,capabilityId:p.capability_id,...effect,stage:"monitoring",day:Math.max(0,day),days}];
-  }).slice(0,MAX_ITEMS);
-  const cutoff=Date.parse(today+"T00:00:00Z")-RECENT_REPORT_DAYS*86_400_000;
-  const recentReports=reports.flatMap((r):BoardReport[]=>{
+  });
+}
+/** Every final report line, uncapped, newest first. */
+export function reportLines(proposals:readonly BoardProposalRow[],reports:readonly BoardReportRow[]):BoardReport[]{
+  const byId=new Map(proposals.map(p=>[p.id,p]));
+  return reports.flatMap((r):BoardReport[]=>{
     const p=byId.get(r.proposal_id);
     if(p?.capability_id===EVENT_CAPABILITY)return [];
     const effect=p?priceEffect(p.canonical_effect_payload,p.capability_id):null;
     if(!p||!effect||(r.status!=="complete"&&r.status!=="insufficient_evidence"))return [];
-    if(!(Date.parse(r.generated_at)>=cutoff))return [];
     const report=r.report&&typeof r.report==="object"?r.report as {recommendation?:unknown;evaluationStatus?:unknown}:{};
     const rec=report.recommendation;
     return [{proposalId:p.id,threadId:p.thread_id,capabilityId:p.capability_id,productName:effect.productName,status:r.status,
       recommendation:rec==="keep"||rec==="revert"||rec==="adjust"?rec:null,generatedAt:r.generated_at,
       ...("goal" in effect?{goal:{met:report.evaluationStatus==="met"?true:report.evaluationStatus==="missed"?false:null}}:{}),
       ...("event" in effect?{event:true as const}:{})}];
-  }).sort((a,b)=>b.generatedAt.localeCompare(a.generatedAt)).slice(0,MAX_ITEMS);
-  return {running,recentReports};
+  }).sort((a,b)=>b.generatedAt.localeCompare(a.generatedAt));
+}
+
+/** `today` is the café-local date. Newest first; at most three of each. */
+export function buildOperatingBoard(proposals:readonly BoardProposalRow[],reports:readonly BoardReportRow[],
+  today:string):OperatingBoard{
+  const cutoff=Date.parse(today+"T00:00:00Z")-RECENT_REPORT_DAYS*86_400_000;
+  return {running:runningLines(proposals,today).slice(0,MAX_ITEMS),
+    recentReports:reportLines(proposals,reports).filter(r=>Date.parse(r.generatedAt)>=cutoff).slice(0,MAX_ITEMS)};
+}
+
+/** Home's Running and report lines open the Experiments page; the chat thread is a secondary link. */
+export function experimentHref(proposalId:string):string{
+  return "/operations/experiments#experiment-"+encodeURIComponent(proposalId);
 }

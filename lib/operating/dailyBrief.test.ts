@@ -2,6 +2,11 @@ import {describe,expect,it,vi,beforeEach} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {briefMessageId,briefExtras} from "./dailyBrief";
 import {buildBriefContent,type MorningBriefEvidence} from "@/lib/whatsapp/morningBrief";
+// The brief's count comes from the shared inbox reader (tested in lib/attention); this file
+// keeps its previous fixture count of 2, and an unreadable inbox when countFails is set.
+const inboxCount=vi.hoisted(()=>({fails:false}));
+vi.mock("@/lib/attention/getAttentionItems.server",()=>({readCafeNeedsYou:async()=>{
+  if(inboxCount.fails)throw new Error("down");return {count:2,newestTask:null};}}));
 vi.mock("server-only",()=>({}));
 const evidenceMock=vi.hoisted(()=>({read:vi.fn()}));
 vi.mock("@/lib/whatsapp/morningBrief.server",()=>({readBriefEvidence:evidenceMock.read}));
@@ -33,6 +38,7 @@ type Row=Record<string,unknown>;
 function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:string[];timezone?:string|null;
   countFails?:boolean;locale?:string}={}){
   const writes:Row[]=[],runs:Row[]=[];
+  inboxCount.fails=Boolean(o.countFails);
   const q=(table:string)=>{
     const self:Record<string,unknown>={};
     let scopedOwner:string|null=null,countQuery=false;
