@@ -151,8 +151,9 @@ export const calculateTools={
       const estimate=inputs.some(i=>i.estimate||i.owner);
       const provenance:ExplainLine["provenance"]=inputs.some(i=>i.estimate)?"estimate":
         inputs.some(i=>i.owner)?"ownerProvided":"recorded";
-      const periods=[...new Set(inputs.map(i=>i.period?i.period.from+"/"+i.period.to:"none"))];
-      const period=periods.length===1&&periods[0]!=="none"?inputs[0].period:null;
+      const periodInputs=inputs.map(i=>i.period).filter((p):p is {from:string;to:string}=>p!==null);
+      const periods=[...new Set(periodInputs.map(p=>p.from+"/"+p.to))];
+      const period=periods.length===1&&periodInputs.length===inputs.length?periodInputs[0]:null;
       const shownOf=new Map<string,CalcShown>();
       for(const i of inputs){const r=runCalculation(new Map([[i.name,i.value]]),[{id:"v",op:"sum",args:[i.name]}]);
         if(r.ok)shownOf.set(i.name,r.result.shown);}
@@ -167,7 +168,12 @@ export const calculateTools={
           source:"calculate",provenance,
           basis:(expr.get(s.id)??"").slice(0,240)});
       }
-      return {source:"calculate",period,agentId:"leo",missing:[],
+      const resultShown=run.result.shown;
+      const numberEstimates=resultShown.unit==="cents"?[{value:resultShown.valueCents,unit:"cents" as const}]:
+        resultShown.unit==="percent"?[{value:resultShown.valueBps,unit:"bps" as const}]:
+        resultShown.unit==="count"&&Number.isInteger(resultShown.quantity)?
+          [{value:resultShown.quantity,unit:"count" as const}]:[];
+      return {source:"calculate",period,agentId:"leo",missing:[],numberEstimates,
         kind:estimate?"estimate":"calculation",purpose:p.purpose,formula:expr.get(run.result.id),
         inputs:inputs.map(i=>({name:i.name,label:i.label,from:i.from,ref:i.ref,unit:unitName[i.value.unit],...shownOf.get(i.name)})),
         steps:run.steps.map(s=>({id:s.id,label:labels.get(s.id),op:s.op,args:s.args,...s.shown})),
