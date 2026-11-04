@@ -1,5 +1,13 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
+import {ToolError} from "../toolErrors";
+
+/** One validation reason for every attempt to propose a nonpositive increase. */
+export function requirePositivePriceIncrease(increase:number|null):asserts increase is number{
+  if(increase===null||!Number.isSafeInteger(increase)||increase<=0)
+    throw new ToolError("validation","price_increase_must_be_positive: Enter a positive price increase; checking an existing monitor does not require a new proposal.");
+}
+
 export const priceExperimentSchema=z.strictObject({
  product_id:z.uuid(),new_price_cents:z.number().int().safe().positive().max(100000).nullable(),
  increase_cents:z.number().int().safe().positive().max(100000).nullable(),
