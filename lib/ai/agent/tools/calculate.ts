@@ -72,7 +72,7 @@ function card(s:CalcShown):CardValue|null{
 function ownerSaid(ctx:CalcContext,locale:AgentToolContext["locale"]){
   const all={money:new Set<number>(),percent:new Set<number>(),number:new Set<number>()};
   for(const text of [...(ctx.ownerMessages??[]),...(ctx.ownerText?[ctx.ownerText]:[])]){
-    const found=ownerStatedAmounts(text,locale);
+    const found=ownerStatedAmounts(text,locale,true);
     for(const k of ["money","percent","number"] as const)for(const v of found[k])all[k].add(v);
   }
   return all;
