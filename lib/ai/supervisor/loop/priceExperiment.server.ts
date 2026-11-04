@@ -64,7 +64,7 @@ export const priceExperimentCapability=registerLoopCapability({
       currentPriceCents:item.priceCents,increaseCents:input.increaseCents,
       ingredientCostCents:item.pricing?.productCostCents??null,
       units7Days:verifiedUnits,currency});
-    if(!result)throw new ToolError("validation","This experiment needs covered sales and a known recipe cost. Add those facts and try again.");
+    if(!result)throw new ToolError("validation","price_experiment_simulation_unavailable: The price trial estimate is unavailable with current sales or recipe coverage. Existing monitoring is unaffected; check its status instead.");
     const {beforeContributionCents,afterContributionCents,
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,...effect}=result;
     const preview=[

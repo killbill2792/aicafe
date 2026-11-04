@@ -394,7 +394,11 @@ export const eventReadinessCapability=registerLoopCapability({
      :null;
    const reportText=narrative?.text??(terminal?eventReportFallback(scope.locale,result):null);
    const provenance=narrative?.provenance??[];
-   const factsHash=eventReportFactsHash(result,status,effect.summary,effect.facts.map(f=>f.name));
+   // The writer must persist the exact hash the narrative was generated with.
+   // A factual fallback has no model currency claim; use the null-currency hash
+   // so a later authorized cron may retry when configured currency is available.
+   const factsHash=narrative?.hash??
+     eventReportFactsHash(result,status,effect.summary,effect.facts.map(f=>f.name),null);
    const finalDelivery=terminal&&reportText?{
      agentId:"alex" as const,taskKind:"event_plan" as const,
      entityType:"event_day",entityId:effect.startDate,

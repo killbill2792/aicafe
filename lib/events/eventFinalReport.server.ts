@@ -26,9 +26,10 @@ type EventResult={
   }|null;
 };
 export function eventReportFactsHash(result:EventResult,status:string,planSummary:string,
-  eventNames:readonly string[]):string{
-  // Invalidate previously cached cents-based narratives exactly once.
-  return effectHash({result,status,planSummary,eventNames,narrativeFormatVersion:2});
+  eventNames:readonly string[],currency:string|null):string{
+  // The narrative is formatted in the café's currency. A configuration change
+  // must invalidate cached text even when the underlying cents never change.
+  return effectHash({result,status,planSummary,eventNames,currency,narrativeFormatVersion:3});
 }
 /** The factual fallback is not advice; it is sent even when a paid model
  * cannot run. No unknown amount is treated as zero. */
@@ -73,11 +74,20 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
   eventNames:readonly string[],planSummary:string,result:EventResult,
   outcomeStatus:"complete"|"insufficient_evidence"):Promise<EventNarrative|null>{
   const db=createAdminSupabaseClient();
-  const hash=eventReportFactsHash(result,outcomeStatus,planSummary,eventNames);
-  const evidenceValues=eventReportNumericEvidence(result);
-  const old=await db.from("supervisor_reports").select("report")
-    .eq("business_id",scope.businessId).eq("proposal_id",proposalId).maybeSingle();
+  // Currency affects the model's words, so read it before comparing the saved
+  // narrative hash. A page read never performs this regeneration.
+  const [old,business]=await Promise.all([
+    db.from("supervisor_reports").select("report")
+      .eq("business_id",scope.businessId).eq("proposal_id",proposalId).maybeSingle(),
+    db.from("businesses").select("timezone,is_demo,currency")
+      .eq("id",scope.businessId).maybeSingle(),
+  ]);
   if(old.error)throw new Error("Event report lookup unavailable");
+  if(business.error||!business.data?.timezone||business.data.is_demo)
+    throw new Error("owner_required");
+  const currency=business.data.currency??null;
+  const hash=eventReportFactsHash(result,outcomeStatus,planSummary,eventNames,currency);
+  const evidenceValues=eventReportNumericEvidence(result);
   const previous=old.data?.report as {reportFactsHash?:unknown;reportText?:unknown;
     reportTextOrigin?:unknown;reportProvenance?:unknown}|null;
   if(previous?.reportFactsHash===hash&&typeof previous.reportText==="string"&&
@@ -95,18 +105,13 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
 
   // A cron has no browser session. Re-check both the current owner and AI
   // entitlement BEFORE the paid model call; no client can choose this scope.
-  const [member,business]=await Promise.all([
-    db.from("memberships").select("role").eq("business_id",scope.businessId)
-      .eq("user_id",scope.ownerUserId).maybeSingle(),
-    db.from("businesses").select("timezone,is_demo,currency").eq("id",scope.businessId).maybeSingle(),
-  ]);
-  if(member.error||member.data?.role!=="owner"||business.error||
-    !business.data?.timezone||business.data.is_demo)throw new Error("owner_required");
+  const member=await db.from("memberships").select("role").eq("business_id",scope.businessId)
+    .eq("user_id",scope.ownerUserId).maybeSingle();
+  if(member.error||member.data?.role!=="owner")throw new Error("owner_required");
   try{await assertCafeAiAccess(scope.businessId);}catch{return null;}
 
   // Only presentation-ready money goes to the model. The integer cents above
   // remain the sole evidence for Supervisor's existing number checker.
-  const currency=business.data.currency??null;
   const money=(value:number|null|undefined)=>
     formatEventMoney(value??null,currency,scope.locale);
   const evidence={
