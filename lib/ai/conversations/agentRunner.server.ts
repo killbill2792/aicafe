@@ -143,7 +143,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         return mapPriceMonitorRows(priceRows,reports,identity.asOf,identity.timezone);
       },
       // Toast credentials are service-role only; the café comes from the authenticated scope.
-      readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId),
+      readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId,
+         {maxAgeMs:Number.POSITIVE_INFINITY}),
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
@@ -263,10 +264,14 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           supervisorLoopRegistry,new SupabaseLoopRepository(),staffCapabilityId(name),input,requestKey);
         return {proposalId:proposal.id,revision:proposal.revision,capabilityId:proposal.capabilityId};
       }} };
+    const location=await context.cafeLocation?.().catch(()=>null);
+    const cafeProfile="Café profile (authenticated, not owner message): "+JSON.stringify({
+      name:identity.cafeName,city:location?.city??null,region:location?.region??null,
+      country:location?.countryCode??null,currency:identity.currency,timezone:identity.timezone});
     const recordedIds=process.env.WHATSAPP_SUPERVISOR_ENABLED==="true"
       ?await recordedWhatsAppImageIds(scope,id,owner.id):null;
     const ownerImages=await readOwnerImages(scope,id,recordedIds??p.attachmentIds??[],p.externalClient);
-    const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages, history, context,businessId:scope.businessId,requestId:owner.id,
+    const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages, history, context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
       previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
       onTool:(name,agentId)=>{
