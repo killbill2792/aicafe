@@ -97,7 +97,7 @@ export const scenarioTools={simulate_scenario:{
   const explain:ExplainLine[]=[];
   const add=(label:string,inputs:ExplainLine["inputs"],formula:ExplainLine["formula"],
     value:number|null,basis:string)=>{
-    if(value===null)return;
+    if(value===null||!Number.isSafeInteger(value))return;
     explain.push({label,inputs,formula,result:money(value),period:null,
       source:"scenario",provenance:"estimate",basis});
   };
