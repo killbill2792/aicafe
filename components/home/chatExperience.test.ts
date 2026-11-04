@@ -45,7 +45,7 @@ describe("chat experience helpers", () => {
   it("hides a stale progress line after a finished answer",()=>{
     const job={status:"running",ownerMessageId:"owner-1"} as AgentJob;
     const owner={role:"owner",id:"owner-1",grounding:null} as ConversationMessage;
-    const answer={role:"supervisor",grounding:{ownerMessageId:"owner-1"}} as ConversationMessage;
+    const answer={role:"supervisor",grounding:{ownerMessageId:"owner-1"}} as unknown as ConversationMessage;
     expect(shouldShowRunningJob(job,[owner])).toBe(true);
     expect(shouldShowRunningJob(job,[owner,answer])).toBe(false);
     expect(shouldShowRunningJob({...job,status:"done"},[owner])).toBe(false);
