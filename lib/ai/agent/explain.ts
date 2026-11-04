@@ -6,7 +6,7 @@ import type {NumericEvidence} from "./checkNumbers";
 export const explainLineSchema=z.strictObject({
  label:z.string().trim().min(1).max(120),
  inputs:z.array(z.strictObject({name:z.string().trim().min(1).max(50),value:cardValueSchema})).min(1).max(8),
- formula:z.enum(["multiply","sum","divide","ratio","prorate","subtract","breakEven"]),
+ formula:z.enum(["multiply","sum","divide","ratio","prorate","subtract","breakEven","scenarioNegate","scenarioPrice","scenarioCost","scenarioShift","scenarioWage","scenarioVolume","scenarioProrate"]),
  result:cardValueSchema,
  period:z.strictObject({from:z.iso.date(),to:z.iso.date()}).nullable(),
  periodLabelKey:z.string().max(50).optional(),
@@ -35,7 +35,7 @@ export function acceptedExplainLines(lines:readonly ExplainLine[],evidence:reado
   get_break_even:"break_even",get_cost_summary:"business_costs",
   get_labor:"labor_and_attendance",get_price_recommendation:"pricing_engine",
   suggest_new_item_price:"new_item_price",propose_price_change:"price_change_proposal",
-  get_shift_cost:"employees+shiftCost"};
+  get_shift_cost:"employees+shiftCost",scenario:"scenario",calculate:"calculate"};
  const relevant=(line:ExplainLine)=>evidence.filter(e=>e.tool===(sources[line.source]??line.source));
  const selected:ExplainLine[]=[];
  for(const line of lines){
@@ -51,10 +51,12 @@ export function acceptedExplainLines(lines:readonly ExplainLine[],evidence:reado
       line.source==="get_labor"&&v.key.includes(line.period.from)))))continue;
   const quantity=result.unit==="cents"?result.value/100:
     result.unit==="bps"?result.value/100:result.value;
+  const roundedWhole=result.unit==="cents"?Math.round(quantity):null;
   const tokens=new Set<string>([
    new Intl.NumberFormat(locale,{maximumFractionDigits:2}).format(quantity),
    new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(quantity),
    String(quantity),
+   ...(roundedWhole===null?[]:[new Intl.NumberFormat(locale,{maximumFractionDigits:0}).format(roundedWhole),String(roundedWhole)]),
   ]);
   const matched=[...tokens].some(token=>{
    if(!token)return false;
@@ -75,6 +77,8 @@ export function acceptedExplainLines(lines:readonly ExplainLine[],evidence:reado
    }
    return false;
   });
+  // A whole-dollar rendering is still the same verified cents amount, but only
+  // when the displayed token is itself verified (never a coincidental substring).
   if(!matched&&!(line.source==="suggest_new_item_price"&&pricingRecommendationCents!=null))continue;
   selected.push(line);
   if(selected.length===20)break;
