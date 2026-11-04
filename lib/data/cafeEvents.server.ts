@@ -382,7 +382,7 @@ export function cafeEventInArea(event:EventArea,location:LocationArea|null):bool
     return cafeEventDistanceKm(location,event)<=CAFE_EVENT_RADIUS_KM;
   const address=event.venueAddress?.split(",").map(part=>part.trim()).filter(Boolean)??[];
   if(address.length<3||!location.region)return true;
-  const clean=(value:string)=>value.normalize("NFKD").replace(/\\p{M}/gu,"").toLowerCase()
+  const clean=(value:string)=>value.normalize("NFKD").replace(/\p{M}/gu,"").toLowerCase()
     .replace(/[^a-z0-9]/gu,"");
   const cafeRegion=clean(location.region),eventRegion=clean(address.at(-1)??"");
   if(!cafeRegion||!eventRegion)return true;
