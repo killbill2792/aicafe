@@ -146,11 +146,19 @@ export const staffTools = {
         [{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[];
       // Core is the only labor percentage formula. Use matching recorded sales
       // days, and never turn missing wages or days into a complete percentage.
+      // Match Money's exact calendar-day and saved-payroll inputs to the one
+      // core labor calculation, including partial/unclosed dates.
+      const calendarDays=Array.from({length:Math.floor(days(p.from,p.to))+1},(_,i)=>({
+        date:dateOffset(p.from,i),
+      }));
+      const payrollExtras=ownerMonthlyPayrollExtrasCents===null?null:{
+        monthlyCents:ownerMonthlyPayrollExtrasCents,from:p.from,to:p.to,
+      };
       const laborBasis=labor.available&&sales.available?
-        laborForPeriod(sales.value.map(d=>({date:d.date})),labor.value.map(d=>({
+        laborForPeriod(calendarDays,labor.value.map(d=>({
           date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
           laborWageStatus:d.wageStatus==="missing"?"missing":d.wageStatus==="estimate"?"estimate":"actual",
-        }))):null;
+        })),null,payrollExtras):null;
       const salesCents=sales.available?netSalesCentsForPeriod(sales.value):null;
       const laborCostPercent=laborBasis&&salesCents!==null&&laborBasis.coveredDays>0?
         laborPercentForPeriod(laborBasis.knownLaborCents,salesCents):null;
@@ -164,8 +172,8 @@ export const staffTools = {
         laborCostPercentCoveredDays:laborBasis?.coveredDays??null,
         laborCostPercentSalesDays:sales.available?sales.value.length:null,
         laborCostPercentPartial:!sales.available||!laborBasis||
-          sales.value.length<days(p.from,p.to)+1||
-          laborBasis.coveredDays<sales.value.length,
+          sales.value.length<calendarDays.length||
+          laborBasis.coveredDays<calendarDays.length,
         ownerMonthlyPayrollExtrasCents,
         toastLaborScopeAvailable:toastScopes?.available?toastScopes.value.labor:null,
         pendingPosStaffReviews:reviews?.available?reviews.value:null,
