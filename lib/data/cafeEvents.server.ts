@@ -1,7 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {readPrimaryLocation} from "./cafeLocation.server";
-import {cityScopeKey} from "@/lib/events/cityEventIdentity";
+import {cityScopeKey,canonicalEventNameKey} from "@/lib/events/cityEventIdentity";
 import {readOwnerProposals,readOwnerReports,type OwnerScope} from "@/lib/ai/supervisor/loop/reads.server";
 
 export type CafeEvent={
@@ -349,7 +349,21 @@ export async function readCafeEvents(db:SupabaseClient,businessId:string,
   for(let i=0;i<ids.length;i+=100)
     extended.push(...await readStoredCafeEvents(db,businessId,from,to,ids.slice(i,i+100)));
   const canonical=await overlayCityFacts(db,businessId,[...raw,...extended]);
-  return canonical.filter(e=>e.startDate<=to&&e.endDate>=from);
+  // The shared public event identity may differ by source URL while the
+  // owner-facing listing is the same event on the same date. Keep the most
+  // verified saved record without changing its UUID, plans or source history.
+  const local=await readPrimaryLocation(db,businessId);
+  const events=canonical.filter(e=>e.startDate<=to&&e.endDate>=from)
+    .filter(e=>!(/\b(muir woods|yosemite)\b/i.test([e.name,e.venue,e.venueAddress,e.areaLabel].join(" "))&&
+      ![e.venueAddress,e.areaLabel].some(v=>v?.toLowerCase().includes((local?.city??"").toLowerCase())&&!!local?.city)));
+  const unique=new Map<string,CafeEvent>();
+  for(const e of events){
+    const key=e.startDate+"|"+canonicalEventNameKey(e.name);
+    const prior=unique.get(key);
+    if(!prior||Number(Boolean(e.lastVerifiedAt))>Number(Boolean(prior.lastVerifiedAt))||
+       (!prior.cityEventId&&!!e.cityEventId))unique.set(key,e);
+  }
+  return [...unique.values()];
 }
 export const readCanonicalCafeEvents=readCafeEvents;
 
