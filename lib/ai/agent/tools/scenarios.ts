@@ -127,10 +127,8 @@ export const scenarioTools={simulate_scenario:{
       {name:"Weekly units",value:count(delta.weeklyUnits)}],
       "scenarioCost",result.weeklyChangeCents,"projected");
   }else if(delta.kind==="bill"){
-    add("Monthly bill effect",[
-      {name:"Original change",value:money(0)},
-      {name:"Monthly bill change",value:money(delta.monthlyChangeCents)}],
-      "subtract",result.difference.monthlyProfitCents,"projected");
+    add("Monthly bill effect",[{name:"Monthly bill change",value:money(delta.monthlyChangeCents)}],
+      "scenarioNegate",result.difference.monthlyProfitCents,"projected");
   }else if(delta.kind==="shift"||delta.kind==="wage"){
     if(exactShownRate(delta.payrollTaxRate))add("Weekly staffing effect",delta.kind==="shift"?[
       {name:"Hours change",value:count(delta.hoursChange)},
