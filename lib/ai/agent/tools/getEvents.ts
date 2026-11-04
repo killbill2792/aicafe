@@ -34,7 +34,7 @@ export const savedEventsTools={
      missing:v.cityEventId&&!selectedCityEvent?["selectedCityEventNotFound"]:[],
      agentId:"alex",unit:"cents",events:[...result.events].sort((a,b)=>
        a.startDate.localeCompare(b.startDate)||Number(Boolean(b.lastVerifiedAt))-Number(Boolean(a.lastVerifiedAt)))
-       .slice(0,6),
+       .slice(0,8),
      ...(v.cityEventId?{selectedCityEvent,
        selectedCityEventId:v.cityEventId}:{}),
      // Same canonical saved read as Home; city catalog is paginated for screens.
@@ -55,7 +55,7 @@ export const savedEventsTools={
        omittedNeighborhood:Math.max(0,result.neighborhood.length-3),
      }:{}),
      plans:result.plans.slice(0,5).map(p=>({...p,report:compactReport(p.report)})),
-     omittedEvents:Math.max(0,result.events.length-6),omittedPlans:Math.max(0,result.plans.length-5),
+     omittedEvents:Math.max(0,result.events.length-8),omittedPlans:Math.max(0,result.plans.length-5),
      searched:false,empty:result.events.length===0&&result.plans.length===0&&
        (!result.cityCatalog?.available||result.cityCatalog.total===0)};
   },
