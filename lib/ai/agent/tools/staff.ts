@@ -10,6 +10,7 @@ import ar from "@/messages/ar.json";
 import { getWeekSchedule } from "@/lib/actions/schedule";
 import {laborForPeriod,laborPercentForPeriod} from "@/lib/metrics/core/labor";
 import {netSalesCentsForPeriod} from "@/lib/calc/profit";
+import {localizeQualityNotes} from "./qualityNotes";
 
 const failedSlice=(reason:string)=>({available:false as const,value:null,
  quality:{level:"low" as const,missingInputs:[reason],estimatedInputs:[] as string[],staleInputs:[] as string[]}});
@@ -123,6 +124,7 @@ export const staffTools = {
         ctx.tools.getSalesTrend?.(p).catch(()=>failedSlice("salesReadFailed"))??
           Promise.resolve(failedSlice("salesReaderUnavailable")),
       ]);
+      const salesWarnings=sales.quality.missingInputs;
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
         ...(labor.available?labor.value.filter(d=>d.wageStatus==="missing"||d.wagesCents===null||d.staffTaxCents===null)
          .map(d=>"laborWageUnknown:"+d.date):[])];
@@ -137,13 +139,20 @@ export const staffTools = {
         ownerPayroll.value.monthlyCents:null;
       const payrollReadFailed=ownerPayroll?.quality.missingInputs.includes("payrollExtrasReadFailed")===true;
       const readFailures=[...labor.quality.missingInputs,...attendance.quality.missingInputs,
+        ...salesWarnings,
         ...(ownerPayroll?.quality.missingInputs??[]),
         ...(toastScopes?.quality.missingInputs??[]),
         ...(reviews?.quality.missingInputs??[])];
       const failedReaders=["laborReadFailed","laborReaderUnavailable","staffAttendanceReadFailed","attendanceReaderUnavailable",
         "payrollExtrasReadFailed","toastScopeReadFailed","posStaffReviewsReadFailed"];
-      const dataNotes=readFailures.some(key=>failedReaders.includes(key))?
-        [{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[];
+      const salesNotes=localizeQualityNotes(salesWarnings,ctx.locale);
+      const dataNotes=[
+        ...(readFailures.some(key=>failedReaders.includes(key))?
+          [{en,es,ar}[ctx.locale].DataNotes.staffReadFailed]:[]),
+        ...salesNotes,
+        ...(salesWarnings.length&&!salesNotes.length?
+          [{en,es,ar}[ctx.locale].DataNotes.toastDayStatusUnavailable]:[]),
+      ];
       // Core is the only labor percentage formula. Use matching recorded sales
       // days, and never turn missing wages or days into a complete percentage.
       // Match Money's exact calendar-day and saved-payroll inputs to the one
@@ -171,7 +180,7 @@ export const staffTools = {
         laborCostPercentSalesCents:salesCents,
         laborCostPercentCoveredDays:laborBasis?.coveredDays??null,
         laborCostPercentSalesDays:sales.available?sales.value.length:null,
-        laborCostPercentPartial:!sales.available||!laborBasis||
+        laborCostPercentPartial:!sales.available||salesWarnings.length>0||!laborBasis||
           sales.value.length<calendarDays.length||
           laborBasis.coveredDays<calendarDays.length,
         ownerMonthlyPayrollExtrasCents,
@@ -181,7 +190,7 @@ export const staffTools = {
         posReviewMissing:reviews?.quality.missingInputs??["toastReviewsUnavailable"],
         ownerMonthlyPayrollStatus:payrollReadFailed?"unavailable":ownerMonthlyPayrollExtrasCents===null?"missing":"Estimate",
         ownerMonthlyPayrollSource:ownerMonthlyPayrollExtrasCents===null?null:"You told me",
-        missing:[...issues,...readFailures.filter(key=>failedReaders.includes(key)),
+        missing:[...issues,...salesWarnings,...readFailures.filter(key=>failedReaders.includes(key)),
           ...(toastScopes?.available&&toastScopes.value.labor===false?["toastLaborScopeMissing"]:[]),
           ...(ownerMonthlyPayrollExtrasCents===null&&!payrollReadFailed?
            ["ownerMonthlyPayrollExtrasNotSet"]:[])],explain,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs,
