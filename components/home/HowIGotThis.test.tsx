@@ -129,16 +129,16 @@ describe("How I got this disclosure",()=>{
     period:null,source:"get_break_even",provenance:"estimate"};
   const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[line],locale:"en",
     copy:en.SupervisorChat,currency:"USD"}));
-  const equation=html.match(/<bdi dir="ltr">([\\s\\S]*?)<\\/bdi>/)?.[1]?.replace(/<[^>]+>/g,"").replace(/\\s+/g," ");
+  const equation=html.match(/<bdi dir="ltr">([\s\S]*?)<\/bdi>/)?.[1]?.replace(/<[^>]+>/g,"").replace(/\s+/g," ");
   expect(equation).toContain("÷ (1 − ((");
   expect(equation).toContain(") ÷ ");
-  const amounts=[...((equation??"").matchAll(/\\$([\\d,]+\\.\\d{2})/g))].map(m=>Math.round(Number(m[1].replaceAll(",",""))*100));
+  const amounts=[...((equation??"").matchAll(/\$([\d,]+\.\d{2})/g))].map(m=>Math.round(Number(m[1].replaceAll(",",""))*100));
   expect(amounts).toEqual([14000,6915,30000,3000,100000,31216]);
   const [bills,labor,ingredients,fees,sales,shownResult]=amounts;
   // Evaluate only displayed numbers, using the core's exact rounding rule.
   const evaluated=Math.round((bills+labor)/(1-(ingredients+fees)/sales));
   expect(evaluated).toBe(shownResult);
   expect(shownResult).toBe(breakEven.breakEvenSalesCents);
- });;
+ });
 
 });
