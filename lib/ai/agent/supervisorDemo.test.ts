@@ -2,11 +2,14 @@ import {describe,it,expect,vi} from "vitest";
 import {runAgentTurn,type AgentProvider} from "./loop.server";
 import {executeAgentTool,type AgentToolContext} from "./tools";
 import {staffTools} from "./tools/staff";
+import {getFixtureSnapshot} from "@/lib/data/fixtureSnapshot";
+import {buildProfitAndCostsViewModel} from "@/lib/viewmodels/moneyViewModel";
+import {todayReadingFreshness} from "./tools/today";
 
 const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const unavailable={available:false as const,value:null,
   quality:{...quality,level:"low" as const,missingInputs:["noCoveredSalesRows"]}};
-const profile='Café profile (authenticated, not owner message): {"name":"Seiyun Yemeni Coffee","city":"San Jose","region":"California","country":"US","currency":"USD","timezone":"America/Los_Angeles"}';
+const profile='Café profile (authenticated, not owner message): {"name":"Seiyun Yemeni Coffee","city":"San Jose","region":"California","country":"US","currency":"USD","timezone":"America/Los_Angeles"}' + ". For events, use saved get_events/get_nearby_events for this city; never ask the owner for a city already in the profile.";
 const context=():AgentToolContext=>({
   asOf:"2026-11-03",timezone:"America/Los_Angeles",locale:"en",currency:"USD",
   tools:{getSalesTrend:vi.fn(async()=>unavailable)} as unknown as AgentToolContext["tools"],
@@ -29,6 +32,44 @@ describe("Supervisor owner demo: shared model and core metric paths",()=>{
     expect(input.some(i=>i.role==="developer"&&i.content===profile)).toBe(true);
     expect(input.at(-1)).toEqual({role:"user",content:"What events are near my café?"});
     expect(answer.text).toContain("Nearby saved events");
+  });
+
+  it("labels stale Today data with a local last-updated time",()=>{
+    const now=new Date("2026-11-03T22:20:00Z");
+    const old=todayReadingFreshness("2026-11-03T21:40:00Z","America/Los_Angeles","en",now);
+    const fresh=todayReadingFreshness("2026-11-03T22:16:00Z","America/Los_Angeles","en",now);
+    expect(old).toMatchObject({stale:true,lastUpdated:"13:40",freshnessLabel:"last updated 13:40"});
+    expect(fresh).toMatchObject({stale:false,freshnessLabel:null});
+  });
+  it("matches Money's staff ratio with the same calendar days and saved payroll extras",async()=>{
+    const base=getFixtureSnapshot();
+    const rows=[
+      {...base.monthActualDays[0],date:"2026-11-02",netSalesCents:430000,
+        wagesCents:110000,staffTaxCents:7300,laborWageStatus:"actual" as const},
+      {...base.monthActualDays[0],date:"2026-11-03",netSalesCents:435325,
+        wagesCents:120000,staffTaxCents:7995,laborWageStatus:"actual" as const},
+    ];
+    const snapshot={...base,todayDateStr:"2026-11-03",monthKey:"2026-11",daysInMonth:30,
+      monthActualDays:rows,monthRecordedDays:rows,last7Days:rows,last28Days:rows,
+      todayDay:rows[1],todayHasData:true,previousMonthDays:[],
+      ownerMonthlyPayrollExtrasCents:30000};
+    const money=buildProfitAndCostsViewModel(snapshot,"month");
+    const ctx=context();
+    ctx.tools.getSalesTrend=vi.fn(async()=>({available:true,quality,
+      value:rows.map(d=>({date:d.date,netSalesCents:d.netSalesCents}))} as never));
+    ctx.tools.getLaborMetrics=vi.fn(async()=>({available:true,quality,
+      value:rows.map(d=>({date:d.date,wagesCents:d.wagesCents,
+        staffTaxCents:d.staffTaxCents,loadedStaffCostCents:d.wagesCents!+d.staffTaxCents!,
+        wageStatus:"actual" as const}))} as never));
+    ctx.tools.getOwnerMonthlyPayrollExtras=vi.fn(async()=>({available:true,quality,
+      value:{monthlyCents:30000}} as never));
+    const chat=await staffTools.get_labor.execute({period:"month"},ctx);
+    expect(money.ownerPayrollExtrasCents).toBe(3000);
+    expect(chat.laborCostPercentKnownLaborCents).toBe(
+      rows.reduce((sum,d)=>sum+d.wagesCents!+d.staffTaxCents!,0)+money.ownerPayrollExtrasCents);
+    expect(chat.laborCostPercentSalesCents).toBe(money.salesCents);
+    expect(chat.laborCostPercent).toBe(money.staffRatio);
+    expect(chat.laborCostPercentPartial).toBe(true);
   });
   it("get_sales and its day list use the same provisional saved Today reading",async()=>{
     const ctx=context();
