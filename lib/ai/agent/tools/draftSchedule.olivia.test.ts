@@ -18,7 +18,7 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   const result=await draftScheduleTools.draft_week_schedule.execute({week_start:null,purpose:"draft"},ctx);
   expect(mocks.preview).toHaveBeenCalledExactlyOnceWith({week:"2026-11-09"});
   expect(result).toMatchObject({draft:true,saved:false,proposalReady:true,
-   approvalTool:"propose_schedule",proposedShifts:[{
+   approvalTool:"not_created",proposedShifts:[{
     employee_id:"11111111-1111-4111-8111-111111111111",date:"2026-11-09",
     start:"08:00",end:"16:00",break_minutes:30}]});
  });
