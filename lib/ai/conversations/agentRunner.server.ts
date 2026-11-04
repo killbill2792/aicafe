@@ -25,7 +25,10 @@ import {todaySoFarForBusiness} from "@/lib/data/todayLive.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
-import {readOwnerProposals} from "@/lib/ai/supervisor/loop/reads.server";
+import {readOwnerProposals,readOwnerPriceMonitorReports,readOwnerPriceMonitorProposals} from "@/lib/ai/supervisor/loop/reads.server";
+import {mapPriceMonitorRows} from "@/lib/ai/agent/tools/priceMonitor";
+import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment";
+import {BOARD_PROPOSAL_STATUSES,BOARD_REPORT_STATUSES} from "@/lib/operating/board";
 import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
@@ -131,6 +134,14 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
       readEconomics:async()=>readSupervisorEconomics(await getDb(),scope.businessId,identity.asOf),
+      readPriceMonitors:async()=>{
+        const db=await getDb();
+        const ownerScope={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
+        const priceRows=await readOwnerPriceMonitorProposals(db,ownerScope,
+          [priceExperimentCapabilityId,menuPriceChangeCapabilityId],BOARD_PROPOSAL_STATUSES);
+        const reports=await readOwnerPriceMonitorReports(db,ownerScope,priceRows.map(r=>r.id),BOARD_REPORT_STATUSES);
+        return mapPriceMonitorRows(priceRows,reports,identity.asOf,identity.timezone);
+      },
       // Toast credentials are service-role only; the café comes from the authenticated scope.
       readTodaySoFar:()=>todaySoFarForBusiness(createAdminSupabaseClient(),scope.businessId),
       // Location comes from the café profile or the owner's saved answer, never from the model.
@@ -207,7 +218,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         if(!item)throw new ToolError("not_found");
         if(item.priceCents===null)throw new ToolError("validation","An open-price item has no confirmed starting price.");
         const increase=increaseCents??(newPriceCents===null?null:newPriceCents-item.priceCents);
-        if(increase===null||increase<=0)throw new ToolError("validation","Enter a positive price increase.");
+        requirePositivePriceIncrease(increase);
         const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,productId,increase,days}));
         const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
           new SupabaseLoopRepository(),priceExperimentCapabilityId,{productId,increaseCents:increase},key);
