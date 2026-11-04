@@ -224,7 +224,9 @@ export function projectVisibleStaffWeek(input:{
   })
  ].sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start)||a.id.localeCompare(b.id));
  const total=aggregateCosts(laborShifts);
- return {laborShifts,drawnShifts,visible,toastDates,total,
+ const toastAffectedEmployeeIds=new Set(entries.filter(e=>e.source!=="ai_draft"&&e.employeeId!==null)
+  .map(e=>e.employeeId as string));
+ return {laborShifts,drawnShifts,visible,toastDates,toastAffectedEmployeeIds,total,
   /** An unknown Toast shift cannot be reported as zero minutes or wages. */
   hoursComplete:toastDates.size===0,
   costComplete:toastDates.size===0&&total.unknownCount===0};
