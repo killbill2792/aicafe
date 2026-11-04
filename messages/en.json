@@ -2934,6 +2934,7 @@
     "posReviewAcceptToast": "Use Toast correction on next sync",
     "posReviewKeepOwner": "Keep owner shift",
     "posReviewsTruncated": "More reviews available; resolve these and refresh.",
+    "calendarPartial": "Some calendar sources are unavailable; shown shifts may be incomplete.",
     "toastPlannedLabel": "Toast planned",
     "toastActualLabel": "Toast actual",
     "aiDraftLabel": "AI draft",
