@@ -16,15 +16,15 @@ describe("agent read only capabilities",()=>{
    expect(def?.strict).toBe(true);expect(def?.parameters.additionalProperties).toBe(false);
    expect(def?.parameters.required).toEqual(Object.keys(def?.parameters.properties??{}));
   }
-  await expect(executeAgentTool("draft_week_schedule",{week_start:null,write:true},ctx())).rejects.toThrow();
-  await expect(executeAgentTool("draft_week_schedule",{week_start:"2026-10-27"},ctx())).rejects.toThrow();
+  await expect(executeAgentTool("draft_week_schedule",{week_start:null,purpose:"draft",write:true},ctx())).rejects.toThrow();
+  await expect(executeAgentTool("draft_week_schedule",{week_start:"2026-10-27",purpose:"draft"},ctx())).rejects.toThrow();
   await expect(executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:0,category:"drink",packaging_cents:null,item_name:null},ctx())).rejects.toThrow();
  });
  it("uses Olivia's feature-gated draft path instead of falling back to the retired scheduler",async()=>{
   vi.stubEnv("SCHEDULING_FOUNDATION_ENABLED","false");
   vi.stubEnv("SCHEDULING_PR3_DRAFTS_ENABLED","false");
   try{
-   const r=await executeAgentTool("draft_week_schedule",{week_start:null},ctx());
+   const r=await executeAgentTool("draft_week_schedule",{week_start:null,purpose:"draft"},ctx());
    expect(r).toMatchObject({source:"olivia_schedule",agentId:"olivia",
     draft:true,saved:false,missing:["disabled"]});
    expect(r).not.toHaveProperty("days");
