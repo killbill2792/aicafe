@@ -4,6 +4,7 @@ on:
     paths:
       - "lib/ownerFacts/**"
       - "supabase/migrations/20261028000110_owner_facts.sql"
+      - "supabase/migrations/20261104000152_forget_owner_fact.sql"
       - ".github/workflows/owner-facts-db.yml"
   workflow_dispatch:
 permissions:

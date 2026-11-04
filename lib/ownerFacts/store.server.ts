@@ -46,3 +46,13 @@ export async function saveOwnerFactAnswers(businessId:string,answers:readonly Ow
  if(error||!Array.isArray(data)||data.length!==answers.length)throw new Error("owner_facts_write_failed");
  return data as {id:string;writeThroughApplied:boolean}[];
 }
+
+/** Closes the current saved fact (history kept, who forgot it recorded). Only the
+ * owner's own "Forget this" on a change card calls this. Returns false when nothing
+ * was saved under that key. */
+export async function forgetOwnerFact(businessId:string,factKey:string):Promise<boolean>{
+ const db=await createServerSupabaseClient();
+ const {data,error}=await db.rpc("forget_owner_fact",{p_business_id:businessId,p_fact_key:factKey});
+ if(error||typeof data!=="boolean")throw new Error("owner_facts_forget_failed");
+ return data;
+}

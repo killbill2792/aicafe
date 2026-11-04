@@ -3,13 +3,15 @@ import {authenticatedConversationContext,ConversationApiError} from "@/lib/ai/co
 import {conversationJson,conversationError,parseInput,readBoundedJson,requireSameOrigin} from "@/lib/ai/conversations/http.server";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import {validateOwnerAnswers} from "@/lib/ownerFacts/answers";
-import {saveOwnerFactAnswers} from "@/lib/ownerFacts/store.server";
+import {saveOwnerFactAnswers,forgetOwnerFact} from "@/lib/ownerFacts/store.server";
+import {splitOwnerAnswers} from "@/lib/ownerFacts/change";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const schema=z.strictObject({
  questionId:z.uuid(),locale:z.enum(["en","es","ar"]),
- answers:z.array(z.strictObject({fieldKey:z.string().min(1).max(90),value:z.string().max(1000)})).min(1).max(6)
+ answers:z.array(z.strictObject({fieldKey:z.string().min(1).max(90),value:z.string().max(1000),
+  forget:z.boolean().optional()})).min(1).max(6)
 });
 type Params={params:Promise<{threadId:string}>};
 export async function POST(request:Request,{params}:Params){
@@ -31,10 +33,19 @@ export async function POST(request:Request,{params}:Params){
   if(page.items.some(m=>m.role==="owner"&&match&&
     (m.createdAt>match.createdAt||(m.createdAt===match.createdAt&&m.id>match.id))))
     throw new ConversationApiError(409,"owner_question_superseded");
-  let answers:ReturnType<typeof validateOwnerAnswers>;
-  try{answers=validateOwnerAnswers(block.data.fields,input.answers,input.locale);}
-  catch{throw new ConversationApiError(422,"invalid_owner_answers");}
-  const saved=await saveOwnerFactAnswers(scope.businessId,answers);
-  return conversationJson({saved:true,writeThroughApplied:saved.every(row=>row.writeThroughApplied)});
+  // The card decides what is kept: "this question only" answers are never saved
+  // (the owner's answer still reaches the chat as their next message), and only a
+  // change card can forget a saved fact.
+  let split:ReturnType<typeof splitOwnerAnswers>;
+  let answers:ReturnType<typeof validateOwnerAnswers>=[];
+  try{
+   split=splitOwnerAnswers(block.data,input.answers);
+   if(split.keep.length)answers=validateOwnerAnswers(block.data.fields,split.keep,input.locale);
+  }catch{throw new ConversationApiError(422,"invalid_owner_answers");}
+  let forgotten=0;
+  for(const key of split.forget)if(await forgetOwnerFact(scope.businessId,key))forgotten++;
+  const saved=answers.length?await saveOwnerFactAnswers(scope.businessId,answers):[];
+  return conversationJson({saved:true,writeThroughApplied:saved.every(row=>row.writeThroughApplied),
+   remembered:saved.length,forgotten});
  }catch(error){return conversationError(error);}
 }

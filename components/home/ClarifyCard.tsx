@@ -4,6 +4,9 @@ import type {z} from "zod";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import {parseOwnerFactDecimal} from "@/lib/ownerFacts/numbers";
 import {saveUsageEntry} from "@/lib/actions/pantry";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 type Block=z.infer<typeof clarifyBlockSchema>;
 type Copy={clarifyOther:string;clarifySend:string;clarifyYouChose:string;clarifySkipped:string;clarifyOtherPlaceholder:string;clarifyFillError:string;clarifyCountSummary:string;clarifyPurchaseSummary:string;
  pricingLaborPrefix:string;pricingBillsPrefix:string;clarifySaveError:string};
@@ -16,13 +19,16 @@ export function pricingOtherResponse(typed:string,options:readonly {value:string
 export default function ClarifyCard({block,locale,copy,state,choice,disabled,onSend,onFacts}:{
  block:Block;locale:"en"|"es"|"ar";copy:Copy;state:"hidden"|"active"|"chosen"|"skipped";choice:string|null;
  disabled:boolean;onSend:(text:string)=>void;
- onFacts?:(questionId:string,answers:{fieldKey:string;value:string}[])=>Promise<void>;
+ onFacts?:(questionId:string,answers:{fieldKey:string;value:string;forget?:boolean}[])=>Promise<void>;
 }){
  const [other,setOther]=useState(false),[typed,setTyped]=useState("");
  const [amounts,setAmounts]=useState<Record<string,string>>({});
  const [selectedUnits,setSelectedUnits]=useState<Record<string,string>>({});
  const [busy,setBusy]=useState(false),[failure,setFailure]=useState<"invalid"|"save"|null>(null);
- const [factValues,setFactValues]=useState<Record<string,string>>({});
+ // A change card starts with the saved value, so the owner edits it rather than retyping.
+ const [factValues,setFactValues]=useState<Record<string,string>>(()=>block.kind==="facts"?
+  Object.fromEntries(block.fields.flatMap(f=>f.current?[[f.key,f.current.value]]:[])):{});
+ const [forgetting,setForgetting]=useState<Record<string,boolean>>({});
  const [factOtherText,setFactOtherText]=useState<Record<string,string>>({});
  if(state==="hidden")return null;
  if(state==="chosen")return <p dir={locale==="ar"?"rtl":"ltr"} className="text-[17px] text-ink-muted">{copy.clarifyYouChose.replace("{choice}",choice??"")}</p>;
@@ -32,13 +38,15 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
    return <p dir={locale==="ar"?"rtl":"ltr"} className="text-[17px] text-ink-muted">{block.question}</p>;
  if(state==="skipped")return <p className="text-[17px] text-ink-muted">{copy.clarifySkipped}</p>;
  if(block.kind==="facts"){
+   const factCopy=({en,es,ar}[locale]).OwnerQuestions;
    const save=async()=>{
      if(disabled||busy||!onFacts)return;
-     const supplied=block.fields.filter(f=>(factValues[f.key]??"").trim().length>0);
+     const forgets=block.fields.filter(f=>forgetting[f.key]&&f.current?.canForget);
+     const supplied=block.fields.filter(f=>!forgetting[f.key]&&(factValues[f.key]??"").trim().length>0);
      const answers=supplied.map(f=>({fieldKey:f.key,value:factValues[f.key]==="__other__"?
        "other"+((factOtherText[f.key]??"").trim()?":"+(factOtherText[f.key]??"").trim():""):
        factValues[f.key]??""}));
-     const valid=supplied.length>0&&supplied.every((f,i)=>{
+     const valid=supplied.length+forgets.length>0&&supplied.every((f,i)=>{
        const raw=answers[i].value;
        if(f.inputType==="number"||f.inputType==="money"||f.inputType==="percent"){
          const parsed=parseOwnerFactDecimal(raw,locale);
@@ -51,13 +59,14 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
      });
      if(!valid){setFailure("invalid");return;}
      setBusy(true);setFailure(null);
-     try{await onFacts(block.questionId,answers);}
+     try{await onFacts(block.questionId,[...answers,...forgets.map(f=>({fieldKey:f.key,value:"",forget:true}))]);}
      catch{setFailure("save");}finally{setBusy(false);}
    };
    return <section dir={locale==="ar"?"rtl":"ltr"} className="space-y-3 rounded-2xl border border-line bg-surface p-3">
      <h3 className="text-[17px] font-semibold">{block.question}</h3>
      {block.fields.map(field=><div key={field.key} className="text-[17px]">
-       {field.inputType==="choice"?<>
+       {forgetting[field.key]?<p className="font-semibold">{field.label}: {factCopy.willForget}</p>:
+       field.inputType==="choice"?<>
          <p className="font-semibold">{field.label}</p>
          <div className="mt-1 grid gap-2" role="group" aria-label={field.label}>
            {(field.choices??[]).map(o=><button key={o.value} type="button"
@@ -86,6 +95,15 @@ export default function ClarifyCard({block,locale,copy,state,choice,disabled,onS
            value={factValues[field.key]??""} disabled={disabled||busy} aria-label={field.label}
            onChange={e=>setFactValues(old=>({...old,[field.key]:e.target.value}))}/>}
        </label>}
+       {field.current&&<div className="mt-1 flex flex-wrap items-center gap-2 text-[15px] text-ink-muted">
+         <span>{factCopy.savedOn.replace("{date}",field.current.savedOn)}</span>
+         {field.current.canForget&&<button type="button" disabled={disabled||busy}
+           aria-pressed={forgetting[field.key]===true}
+           onClick={()=>setForgetting(old=>({...old,[field.key]:!old[field.key]}))}
+           className="min-h-12 rounded-xl border border-line px-3 text-[17px] text-ink aria-pressed:border-accent">
+           {forgetting[field.key]?factCopy.keepThis:factCopy.forgetThis}</button>}
+       </div>}
+       {field.remember==="this_question"&&<p className="mt-1 text-[15px] text-ink-muted">{factCopy.usedOnceHint}</p>}
      </div>)}
      <button type="button" disabled={disabled||busy||!onFacts} onClick={()=>void save()}
        className="min-h-12 rounded-xl bg-accent px-4 text-[17px] font-bold text-on-accent disabled:opacity-50">{copy.clarifySend}</button>

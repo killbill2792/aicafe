@@ -67,7 +67,7 @@ export type EvidenceReference = {
 export type SupervisorReplyBlock =
   | {type:"clarify";question:string;options:{label:string;value:string}[];allowOther:boolean;kind?:"choice"}
   | {type:"clarify";kind:"fill";question:string;fields:{key:string;label:string;inputType:"number";units:string[];defaultUnit:string}[]}
-  | {type:"clarify";kind:"facts";questionId:string;question:string;fields:{key:string;label:string;inputType:"number"|"money"|"percent"|"text"|"date"|"choice";units:string[];defaultUnit:string;choices?:{label:string;value:string}[]}[]}
+  | {type:"clarify";kind:"facts";questionId:string;question:string;changeSaved?:true;fields:{key:string;label:string;inputType:"number"|"money"|"percent"|"text"|"date"|"choice";units:string[];defaultUnit:string;choices?:{label:string;value:string}[];remember?:"this_question";current?:{value:string;savedOn:string;canForget:boolean}}[]}
   | {type:"how";lines:ExplainLine[]}
   | OwnerQuestion
   | { type: "proposal_card"; proposalId: string }
@@ -112,12 +112,17 @@ export const clarifyBlockSchema=z.union([
      defaultUnit:z.string().min(1).max(20)})).min(1).max(2)}),
  z.strictObject({type:z.literal("clarify"),kind:z.literal("facts"),questionId:z.uuid(),
    question:z.string().min(1).max(200),
+   // A change card: every field is a saved owner fact the owner may change or forget.
+   changeSaved:z.literal(true).optional(),
    fields:z.array(z.strictObject({
      key:z.string().min(1).max(90),label:z.string().min(1).max(100),
      inputType:z.enum(["number","money","percent","text","date","choice"]),
      units:z.array(z.string().min(1).max(20)).max(8),
      defaultUnit:z.string().max(20),
-     choices:z.array(z.strictObject({label:z.string().min(1).max(80),value:z.string().min(1).max(100)})).max(12).optional()
+     choices:z.array(z.strictObject({label:z.string().min(1).max(80),value:z.string().min(1).max(100)})).max(12).optional(),
+     // Absent = saved for future chats (every card before this field existed).
+     remember:z.literal("this_question").optional(),
+     current:z.strictObject({value:z.string().max(200),savedOn:z.iso.date(),canForget:z.boolean()}).optional()
    })).min(1).max(6)})
 ]);
 const howBlockSchema=z.strictObject({type:z.literal("how"),lines:z.array(explainLineSchema).min(1).max(20)});

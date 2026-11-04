@@ -3711,7 +3711,15 @@
     "milkTypeOat": "oat milk",
     "milkTypeAlmond": "almond milk",
     "milkTypeSoy": "soy milk",
-    "milkTypeCoconut": "coconut milk"
+    "milkTypeCoconut": "coconut milk",
+    "usedOnce": "Thanks. I used that for this question only and didn't save it.",
+    "forgotten": "Done. I've forgotten that.",
+    "savedOn": "Saved {date}",
+    "forgetThis": "Forget this",
+    "keepThis": "Keep it",
+    "willForget": "I'll forget this.",
+    "forgottenValue": "forget it",
+    "usedOnceHint": "Used for this question only. Not saved."
   },
   "DailyBrief": {
     "yesterday": "Good morning. Yesterday: sales {sales}, known costs {costs}, you kept {kept}.",
