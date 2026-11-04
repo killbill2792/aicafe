@@ -252,7 +252,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     const last=new Date(Date.parse(previousTo+"T00:00:00Z")+3*86400000).toISOString();
     const actual=await supabase.from("timecards")
       .select("employee_id,clock_in,clock_out")
-      .eq("business_id",businessId).eq("source_provider","toast")
+      .eq("business_id",businessId).eq("source_provider","Toast")
       .gte("clock_in",first).lte("clock_in",last).order("clock_in").limit(1001);
     if(actual.error||!actual.data||actual.data.length>1000)
       throw new Error("Incomplete historical Toast shift seed");
