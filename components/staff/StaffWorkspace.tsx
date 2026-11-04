@@ -44,6 +44,11 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
  const data=version.initial===initial?version.local:initial;
  const setData=(value:Data)=>setVersion({initial,local:value});
  const uncheckedDays=uncheckedCoverageDays(data.dates,data.openHours,data.rules.coverage_enabled);
+ // Toast evidence owns its whole café-local day. Keep legacy shift records
+ // intact for approvals/audits, but do not present them as live truth.
+ const toastDays=new Set((data.calendarEntries??[]).filter(e=>e.source!=="ai_draft").map(e=>e.date));
+ const calendarShifts=data.shifts.filter(s=>s.source!=="olivia"&&!toastDays.has(s.date));
+
  const linked=resolveDatedStaffShift(data.dates,data.team,data.shifts,focusDate,focusEmployee,focusRule?focusClock:undefined);
  const deepDate=linked?.date,deepPerson=linked?.person,deepShift=linked?.shift;
  const hasExistingDatedShift=Boolean(deepPerson&&data.shifts.some(s=>s.date===deepDate&&s.employeeId===deepPerson.id));
@@ -266,7 +271,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);
     }}>{t("addWages")}</button>}</div>}
    <nav aria-label={t("weekDays")} className="grid grid-cols-7 gap-1">{data.dates.map(d=>{
-    const totals=dayTotals(d,data.shifts);
+    const totals=dayTotals(d,calendarShifts);
     return <a key={d} href={"#day-"+d} className={`relative rounded-xl border border-line bg-surface px-1 py-2 text-center text-sm ${d===date?"bg-accent text-on-accent":""}`}>
      {data.gaps.some(g=>g.date===d)&&<span aria-label={t("gap")} className="absolute end-1 top-1 size-2 rounded-full bg-neg"/>}
      <span className="block text-xs font-bold">{weekday(d)}</span>
@@ -274,7 +279,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      <span className="block text-xs">{localized(totals.paidMinutes/60)}h</span></a>;
    })}</nav>
    <div className="space-y-3 lg:hidden">{data.dates.map(d=>{
-    const totals=dayTotals(d,data.shifts);
+    const totals=dayTotals(d,calendarShifts);
     const weekday=new Date(d+"T12:00:00Z").getUTCDay();
     const opening=data.openHours?.[OPEN_HOURS_DAY_KEYS[weekday]];
     return <section key={d} id={"day-"+d} className="rounded-[20px] border border-line bg-surface p-3">
@@ -285,11 +290,11 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
         href={`/${locale}/more/cafe-profile?focus=hours`}>{t("setCafeHours")}</Link>}
       <strong className="ms-auto text-sm">{localized(totals.paidMinutes/60)} h · {wageSummary(totals)}{totals.estimated?" "+t("estimated"):""}</strong>
      </div>
-     <div className="my-2 space-y-1">{data.calendarEntries.filter(e=>e.date===d).map(e=><div key={e.id}
+     <div className="my-2 space-y-1">{(data.calendarEntries??[]).filter(e=>e.date===d).map(e=><div key={e.id}
       className={`rounded-lg border px-3 py-2 text-sm ${e.source==="ai_draft"?"border-dashed border-accent bg-accent-soft":e.source==="toast_actual"?"border-pos bg-pos-soft":"border-line bg-surface2"}`}>
       <strong>{e.employeeName}</strong> · {e.start}–{e.end} · {e.source==="toast_actual"?t("toastActualLabel"):e.source==="toast_planned"?t("toastPlannedLabel"):t("aiDraftLabel")}
      </div>)}</div>
-     <DayTimeline date={d} shifts={data.shifts} gaps={data.gaps} openHours={data.openHours} people={data.team}
+     <DayTimeline date={d} shifts={calendarShifts} gaps={data.gaps} openHours={data.openHours} people={data.team}
       onShiftClick={data.readOnly?undefined:(id)=>openShift(d,id)}/>
      <div className="mt-3 flex flex-wrap gap-2">
       {data.gaps.filter(g=>g.date===d).map(g=><button disabled={data.readOnly} key={g.start}
@@ -299,7 +304,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
      </div>
     </section>;
    })}</div>
-   <WeekGrid dates={data.dates} people={data.displayTeam} shifts={data.shifts} calendarEntries={data.calendarEntries} gaps={data.gaps}
+   <WeekGrid dates={data.dates} people={data.displayTeam} shifts={calendarShifts} calendarEntries={data.calendarEntries??[]} gaps={data.gaps}
     openHours={data.openHours} currency={data.currency} readOnly={data.readOnly} coverageEnabled={data.rules.coverage_enabled}
     onEdit={(d,id)=>openShift(d,id)} onAdd={(d,id)=>openShift(d,undefined,id)}/>
    <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4">
