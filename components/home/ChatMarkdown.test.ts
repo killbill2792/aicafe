@@ -47,7 +47,7 @@ describe("chat message rendering", () => {
         { start: startA, end: startA + 3 }, { start: startB, end: startB + 3 },
       ], label: "Unverified",
     }));
-    expect(html.match(/aria-label="Unverified"/g)).toHaveLength(2);
+    expect(html.match(/— Unverified"/g)).toHaveLength(2);
     expect(html).toContain("<strong");
     expect(html).toContain("<em");
     expect(html.match(/<ol/g)).toHaveLength(1);
@@ -64,7 +64,7 @@ describe("chat message rendering", () => {
       expect(html).toContain(label);
       expect(html).toContain("Estimated monthly bills");
       expect(html).not.toContain("&lt;summary&gt;");
-      expect(html).toContain('aria-label="Estimate"');
+      expect(html).toContain('— Estimate"');
     }
     const inline="<details>\n<summary>How I got this</summary>\nVerified sales **$50**\n</details>";
     const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:inline}));
@@ -96,11 +96,11 @@ describe("chat message rendering", () => {
 
 describe("provenance footnotes",()=>{
  const labels={owner:"You told me",estimate:"Estimate",unchecked:"Not checked against your records"};
- it("shows an accessible blue superscript immediately after complete currency value",()=>{
+ it("underlines the full verified money value and preserves an accessible source explanation",()=>{
    const text="$11,000 in sales";
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,unverified:[
      {start:0,end:7,source:"owner"}]}));
-   expect(html).toContain('aria-label="You told me"');
+   expect(html).toContain('— You told me"');
    expect(html).toContain('aria-expanded="false"');
    expect(html).toContain("bg-chart-staff");
    expect(html).toContain("$11,000");
@@ -121,29 +121,39 @@ describe("provenance footnotes",()=>{
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"Oct 1-22, 8 days",labels}));
    expect(html).not.toContain("Number sources");
  });
- it("attaches a six-pixel superscript directly after the number with an above-dot tooltip",()=>{
+ it("draws no extra glyph and keeps the tooltip trigger on the complete number",()=>{
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text:"$11,000",labels,
      unverified:[{start:0,end:7,source:"owner"}]}));
-   expect(html).toMatch(/\$11,000<span class="relative inline-block h-\[6px\] w-\[6px\] align-super"/);
-   expect(html).toContain("h-[6px]");
-   expect(html).toContain("w-[6px]");
-   // Portal only appears for an active interaction; no clipped inline tooltip.
-   expect(html).not.toContain("bottom-[28px]");
-   expect(html).toContain("aria-expanded=\"false\"");
+   expect(html).toContain("decoration-dotted");
+   expect(html).toContain("decoration-chart-staff");
+   expect(html).toContain(">$11,000</button>");
+   expect(html).toContain('aria-label="$11,000 — You told me"');
+   expect(html).not.toContain('h-[6px] w-[6px] align-super');
+   // The legend keeps its independent key; no dot is injected into numeric text.
+   expect(html).toContain('before:h-12');
+   expect(html).toContain('aria-expanded="false"');
    expect(html).not.toContain("group-hover:block");
-   expect(html).not.toContain("group-focus-visible:block");
-   expect(html).toContain("h-12 w-12");
-   expect(html).toContain("left-1/2 top-1/2");
-   expect(html).toContain("aria-expanded=\"false\"");
-   expect(html).not.toContain("margin-inline-start");
+ });
+ it("underlines complete money tokens in hourly chart-like labels without stray markers",()=>{
+   const text="Hourly chart: $105.50 / $61.35; day $1,358.44.";
+   const numbers=["$105.50","$61.35","$1,358.44"];
+   const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
+     unverified:numbers.map((n,i)=>({start:text.indexOf(n),end:text.indexOf(n)+n.length,
+       source:i===1?"estimate" as const:"owner" as const}))}));
+   for(const n of numbers)expect(html).toContain(">"+n+"</button>");
+   expect(html.match(/decoration-dotted/g)).toHaveLength(3);
+   expect(html).toContain("decoration-warn");
+   expect(html).toContain("decoration-chart-staff");
+   expect(html).not.toContain("align-super");
+   expect(html).not.toContain("h-[6px] w-[6px]");
  });
  it("displays a checker-rejected historical duration as one complete warning",()=>{
    const text="Payroll is recorded for 90 days.";
    const start=text.indexOf("90");
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"90 days".length,source:"unchecked"}]}));
-   expect(html.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
-   expect(html).toContain('90 days<span class="relative inline-block h-[6px]');
+   expect(html.match(/— Not checked against your records"/g)).toHaveLength(1);
+   expect(html).toContain(">90 days</button>");
    expect(html).not.toContain('role="note"');
  });
  it("warns on rejected business clocks, never on supported or incidental clocks",()=>{
@@ -151,13 +161,13 @@ describe("provenance footnotes",()=>{
    const start=text.indexOf("8:00 AM");
    const rejected=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"8:00 AM".length,source:"unchecked"}]}));
-   expect(rejected.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
-   expect(rejected).toContain('8:00 AM<span class="relative inline-block h-[6px]');
+   expect(rejected.match(/— Not checked against your records"/g)).toHaveLength(1);
+   expect(rejected).toContain(">8:00 AM</button>");
    const supported=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"8:00 AM".length,source:"owner"}]}));
-   expect(supported).not.toContain('aria-label="You told me"');
+   expect(supported).not.toContain('— You told me"');
    expect(renderToStaticMarkup(createElement(ChatMarkdown,{text,labels})))
-     .not.toContain('aria-label="Not checked against your records"');
+     .not.toContain('— Not checked against your records"');
  });
  it("keeps attached RTL marks after Arabic units and labels the tooltip accessibly",()=>{
    const text="الرواتب مسجلة لمدة ٩٠ أيام.";
@@ -165,7 +175,7 @@ describe("provenance footnotes",()=>{
    const html=renderToStaticMarkup(createElement(ChatMarkdown,{text,labels,
      unverified:[{start,end:start+"٩٠ أيام".length,source:"unchecked"}]}));
    expect(html).toContain("٩٠ أيام");
-   expect(html.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
+   expect(html.match(/— Not checked against your records"/g)).toHaveLength(1);
  });
 });
 
@@ -328,6 +338,6 @@ describe("GFM response tables",()=>{
    const start=text.indexOf("$");
    const html=render(text,"ar",[{start,end:start+9}]);
    expect(html).toContain('dir="rtl"');
-   expect(html.match(/aria-label="Not checked against your records"/g)).toHaveLength(1);
+   expect(html.match(/— Not checked against your records"/g)).toHaveLength(1);
  });
 });
