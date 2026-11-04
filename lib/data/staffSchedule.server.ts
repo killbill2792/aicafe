@@ -87,13 +87,21 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
  const calendarWarnings:string[]=[];
  const supervisorOliviaDates=new Set(mapped.filter(s=>s.source==="olivia"&&s.status==="draft")
    .map(s=>s.date));
- const entries:CalendarEntry[]=posShifts.map(s=>({
-  id:"toast-planned:"+s.id,employeeId:s.employeeId,employeeName:s.employeeName,
-  date:formatInTimeZone(new Date(s.start),owner.timezone,"yyyy-MM-dd"),
-  endDate:formatInTimeZone(new Date(s.end),owner.timezone,"yyyy-MM-dd"),
-  start:formatInTimeZone(new Date(s.start),owner.timezone,"HH:mm"),
-  end:formatInTimeZone(new Date(s.end),owner.timezone,"HH:mm"),source:"toast_planned"
- }));
+ const entries:CalendarEntry[]=posShifts.flatMap(s=>{
+  const first=new Date(s.start),last=new Date(s.end);
+  if(!Number.isFinite(first.getTime())||!Number.isFinite(last.getTime())){
+   calendarWarnings.push("toastPlannedIncomplete");
+   return [];
+  }
+  return [{
+   id:"toast-planned:"+s.id,employeeId:s.employeeId,employeeName:s.employeeName,
+   date:formatInTimeZone(first,owner.timezone,"yyyy-MM-dd"),
+   endDate:formatInTimeZone(last,owner.timezone,"yyyy-MM-dd"),
+   start:formatInTimeZone(first,owner.timezone,"HH:mm"),
+   end:formatInTimeZone(last,owner.timezone,"HH:mm"),
+   source:"toast_planned" as const
+  }];
+ });
  for(const shift of mapped.filter(s=>s.source==="olivia"&&s.status==="draft"&&
     s.date>=dates[0]&&s.date<=dates[6])){
   entries.push({id:"ai-supervisor:"+shift.id,employeeId:shift.employeeId,
