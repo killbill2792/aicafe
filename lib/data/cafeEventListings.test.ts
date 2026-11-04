@@ -37,6 +37,21 @@ describe("one canonical café-event list projection",()=>{
     expect(cafeEventInArea({venueAddress:
       "1 Broadway, Portland, OR, US",areaLabel:null},place)).toBe(false);
   });
+  it("recognizes local state names and abbreviations followed by a ZIP code",()=>{
+    for(const [region,address] of [
+      ["CA","100 Main St, San Francisco, CA 94103, US"],
+      ["California","100 Main St, San Francisco, California 94103, USA"],
+      ["CA","100 Main St, San Francisco, CA 94103-1234, United States"],
+    ]){
+      expect(cafeEventInArea({venueAddress:address,areaLabel:null},
+        {city:"San Francisco",region})).toBe(true);
+    }
+    expect(cafeEventInArea({venueAddress:"1 Broadway, Portland, OR 97205, US",
+      areaLabel:null},{city:"San Francisco",region:"CA"})).toBe(false);
+    // Unparseable postal metadata cannot justify hiding a saved event.
+    expect(cafeEventInArea({venueAddress:"100 Main St, Oakland, CA x19, US",
+      areaLabel:null},{city:"San Francisco",region:"CA"})).toBe(true);
+  });
   it("preserves same-name/date events with different canonical IDs or conflicting venues",()=>{
     const events=[
       {...event("a","Community Open Day","2026-11-13"),cityEventId:"city-central",
