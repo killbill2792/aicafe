@@ -27,7 +27,7 @@ import {explainLineSchema} from "@/lib/ai/agent/explain";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress from "./ChatJobProgress";
 import { useAgentJobWatcher } from "./useAgentJobWatcher";
-import { answeredOwnerMessageIds, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
+import { answeredOwnerMessageIds, shouldShowRunningJob, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
 import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
 import SupervisorExperiment from "./SupervisorExperiment";
 import ChatStart, {type ChatStartData,type ChatStartCopy} from "./ChatStart";
@@ -304,8 +304,7 @@ export default function SupervisorChatComposer({
     setReloadVersion((v) => v + 1);
     if (job.status === "failed") { setFailureCode(job.errorCode ?? "agent_turn_failed"); setError(true); }
   });
-  const resumedRunning = !sending && watcher.job?.status === "running" &&
-    !answeredOwnerMessageIds(messages).has(watcher.job.ownerMessageId);
+  const resumedRunning = !sending && shouldShowRunningJob(watcher.job,messages);
 
   function cleanupRecording() {
     recordingGeneration.current++;
