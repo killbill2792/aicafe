@@ -90,7 +90,7 @@ export default function HowIGotThis({lines,locale,copy,currency}:{
            {j>0?" + ":""}{localizedLabel(item.name,locale)}: {formatCardValue(item.value,locale,currency)}
          </span>)}
        ) × {localizedLabel(line.inputs[2].name,locale)}: {formatCardValue(line.inputs[2].value,locale,currency)}
-       {" ÷ ("}{localizedLabel(line.inputs[2].name,locale)}: {formatCardValue(line.inputs[2].value,locale,currency)}
+       {" ÷ ("}
        {" − "}{localizedLabel(line.inputs[3].name,locale)}: {formatCardValue(line.inputs[3].value,locale,currency)}
        {" − "}{localizedLabel(line.inputs[4].name,locale)}: {formatCardValue(line.inputs[4].value,locale,currency)}
        {") = "}{formatCardValue(line.result,locale,currency)}</bdi>:
