@@ -390,7 +390,11 @@ export function cafeEventInArea(event:EventArea,location:LocationArea|null):bool
   const tail=clean(address.at(-1)??"");
   const regionPart=["us","usa","unitedstates","unitedstatesofamerica"].includes(tail)
     ?address.at(-2):address.at(-1);
-  const cafeRegion=clean(location.region),eventRegion=clean(regionPart??"");
+  // ZIP belongs to the address, never to the region. If an unknown numeric
+  // suffix remains, do not infer a different state and hide a local event.
+  const regionName=(regionPart??"").replace(/\s+\d{5}(?:-\d{4})?$/u,"").trim();
+  if(/\d/u.test(regionName))return true;
+  const cafeRegion=clean(location.region),eventRegion=clean(regionName);
   if(!cafeRegion||!eventRegion)return true;
   // Reject only a verified difference between comparable region formats:
   // 'CA' vs 'California' cannot be conclusively compared without geocoding.
