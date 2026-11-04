@@ -32,12 +32,15 @@ export const savedEventsTools={
      result.cityCatalog?.items.find(e=>e.id===v.cityEventId)??null:null;
    return {source:"cafe_events",period:{from:v.from,to:v.to},
      missing:v.cityEventId&&!selectedCityEvent?["selectedCityEventNotFound"]:[],
-     agentId:"alex",unit:"cents",events:result.events.slice(0,8),
+     agentId:"alex",unit:"cents",events:[...result.events].sort((a,b)=>
+       a.startDate.localeCompare(b.startDate)||Number(Boolean(b.lastVerifiedAt))-Number(Boolean(a.lastVerifiedAt)))
+       .slice(0,6),
      ...(v.cityEventId?{selectedCityEvent,
        selectedCityEventId:v.cityEventId}:{}),
      // Same canonical saved read as Home; city catalog is paginated for screens.
      ...(result.cityCatalog?.available?{
-       cityEvents:result.cityCatalog.items.slice(0,6),
+       cityEvents:[...result.cityCatalog.items].sort((a,b)=>
+         a.startDate.localeCompare(b.startDate)||Number(Boolean(b.lastVerifiedAt))-Number(Boolean(a.lastVerifiedAt))).slice(0,6),
        cityEventTotal:result.cityCatalog.total,
        cityEventPage:result.cityCatalog.page,
        omittedCityEvents:Math.max(0,result.cityCatalog.total-6),
@@ -52,7 +55,7 @@ export const savedEventsTools={
        omittedNeighborhood:Math.max(0,result.neighborhood.length-3),
      }:{}),
      plans:result.plans.slice(0,5).map(p=>({...p,report:compactReport(p.report)})),
-     omittedEvents:Math.max(0,result.events.length-8),omittedPlans:Math.max(0,result.plans.length-5),
+     omittedEvents:Math.max(0,result.events.length-6),omittedPlans:Math.max(0,result.plans.length-5),
      searched:false,empty:result.events.length===0&&result.plans.length===0&&
        (!result.cityCatalog?.available||result.cityCatalog.total===0)};
   },
