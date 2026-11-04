@@ -30,12 +30,14 @@ export async function readOwnerProposals(db:SupabaseClient,scope:OwnerScope,
 /** Final reports for the given proposals, newest first. Reports are only
  * returned for proposals the caller already read through readOwnerProposals. */
 export async function readOwnerReports(db:SupabaseClient,scope:OwnerScope,proposalIds:readonly string[],
-  filter:{statuses?:readonly string[];limit:number}):Promise<OwnerReportRow[]>{
+  filter:{statuses?:readonly string[];limit:number;offset?:number}):Promise<OwnerReportRow[]>{
   if(!proposalIds.length)return [];
   let q=db.from("supervisor_reports").select("proposal_id,status,report,generated_at")
     .eq("business_id",scope.businessId).in("proposal_id",[...proposalIds]);
   if(filter.statuses)q=q.in("status",[...filter.statuses]);
-  const {data,error}=await q.order("generated_at",{ascending:false}).limit(filter.limit);
+  const ordered=q.order("generated_at",{ascending:false}).order("proposal_id",{ascending:false});
+  const {data,error}=await (filter.offset===undefined?ordered.limit(filter.limit):
+    ordered.range(filter.offset,filter.offset+filter.limit-1));
   if(error)throw error;
   return (data??[]) as OwnerReportRow[];
 }
@@ -52,4 +54,22 @@ export async function readOwnerPriceMonitorProposals(db:SupabaseClient,scope:Own
     rows.push(...page);
     if(page.length<pageSize)return rows;
   }
+}
+
+/** The canonical owner report reader, paged by the owner-scoped price proposal IDs.
+ * Filter to final reports before each page; do not truncate older monitor results. */
+export async function readOwnerPriceMonitorReports(db:SupabaseClient,scope:OwnerScope,
+  proposalIds:readonly string[],statuses:readonly string[]):Promise<OwnerReportRow[]>{
+  const rows:OwnerReportRow[]=[];
+  const pageSize=100;
+  // Keep URL/SQL IN lists bounded without losing proposals after the first batch.
+  for(let i=0;i<proposalIds.length;i+=pageSize){
+    const ids=proposalIds.slice(i,i+pageSize);
+    for(let offset=0;;offset+=pageSize){
+      const page=await readOwnerReports(db,scope,ids,{statuses,limit:pageSize,offset});
+      rows.push(...page);
+      if(page.length<pageSize)break;
+    }
+  }
+  return rows;
 }
