@@ -24,3 +24,9 @@ it("rejects inactive or ambiguous catalog matches",async()=>{menu.mockResolvedVa
 it("rejects wrong business before menu lookup",async()=>{authState.businessId="different";await expect(priceExperimentCapability.simulate(scope,{productId,increaseCents:10})).rejects.toThrow("does not match");expect(menu).not.toHaveBeenCalled();});
 it("prices an experiment in a non-USD café's own currency",async()=>{authState.currency="MXN";expect((await priceExperimentCapability.simulate(scope,{productId,increaseCents:10})).effect).toMatchObject({newPriceCents:510,currency:"MXN"});});
 it("asks for the café currency instead of guessing one",async()=>{authState.currency=null;await expect(priceExperimentCapability.simulate(scope,{productId,increaseCents:10})).rejects.toMatchObject({code:"validation"});});
+
+it("identifies unavailable trial simulation without hiding the reason",async()=>{
+  menu.mockResolvedValueOnce([{...item,pricing:{productCostCents:null}}] as never);
+  await expect(priceExperimentCapability.simulate(scope,{productId,increaseCents:10}))
+    .rejects.toMatchObject({code:"validation",message:expect.stringContaining("price_experiment_simulation_unavailable")});
+});
