@@ -371,12 +371,12 @@ export function cafeEventInArea(event:Pick<CafeEvent,"venueAddress"|"areaLabel">
   }
   const address=event.venueAddress?.split(",").map(part=>part.trim()).filter(Boolean)??[];
   // Only an unambiguous city + region address is strong enough to exclude.
-  if(address.length<2||!location.region)return true;
+  if(address.length<3||!location.region)return true;
   const clean=(value:string)=>value.normalize("NFKD").replace(/\p{M}/gu,"").toLowerCase()
     .replace(/[^a-z0-9]/gu,"");
   const region=clean(location.region);
   const regionPart=clean(address.at(-1)??"");
-  if(!regionPart.startsWith(region)&&!region.startsWith(regionPart))return true;
+  if(!regionPart.startsWith(region)&&!region.startsWith(regionPart))return false;
   const venueCity=clean(address.at(-2)??"");
   return !venueCity||venueCity===clean(location.city);
 }
