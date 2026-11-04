@@ -50,6 +50,23 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   expect(result).toMatchObject({proposalId:"22222222-2222-4222-8222-222222222222",
    approvalTool:"existing_card_created"});
  });
+ it("also reuses one card if direct propose_schedule runs first",async()=>{
+  const id="11111111-1111-4111-8111-111111111111";
+  mocks.preview.mockResolvedValue({ok:true,locations:{location:"America/Los_Angeles"},
+   notices:[],plan:{status:"feasible",horizonEnd:"2026-11-15",warnings:[],
+    best:{completeCoverage:true,cost:{cashWagesCents:2000},gaps:[],
+     shifts:[{employeeId:id,locationId:"location",startAt:"2026-11-09T16:00:00Z",
+      endAt:"2026-11-09T18:00:00Z",paidMinutes:120}]}}});
+  const proposeStaff=vi.fn().mockResolvedValue({proposalId:"22222222-2222-4222-8222-222222222222",
+   revision:1,capabilityId:"olivia.staff_propose_schedule.v2"});
+  const turnCtx={...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}};
+  await staffProposalTools.propose_schedule.execute({week_start:"2026-11-09",
+   shifts:[{employee_id:id,date:"2026-11-09",start:"08:00",end:"10:00",break_minutes:0}]},turnCtx);
+  const r=await draftScheduleTools.draft_week_schedule.execute(
+   {week_start:"2026-11-09",purpose:"draft"},turnCtx);
+  expect(proposeStaff).toHaveBeenCalledTimes(1);
+  expect(r).toMatchObject({proposalId:"22222222-2222-4222-8222-222222222222"});
+ });
  it("answers zero-pay owner savings with no approval proposal",async()=>{
   mocks.ownerSavings.mockResolvedValue({ok:true,
    period:{from:"2026-11-09",to:"2026-11-15"},
