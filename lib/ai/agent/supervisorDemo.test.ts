@@ -59,5 +59,7 @@ describe("Supervisor owner demo: shared model and core metric paths",()=>{
     expect(result.laborCostPercentSalesCents).toBe(865325);
     expect(result.laborCostPercentCoveredDays).toBe(1);
     expect(result.laborCostPercentSalesDays).toBe(1);
+    expect(result.laborCostPercentPartial).toBe(true);
+    expect(result.laborCostPercentDisplay).toBe("28.3%");
   });
 });
