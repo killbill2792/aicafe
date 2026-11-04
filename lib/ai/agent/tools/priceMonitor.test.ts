@@ -32,8 +32,7 @@ describe("get_price_monitor_status",()=>{
       canonical_effect_payload:{productName:"Latte",oldPriceCents:785,newPriceCents:795},
       baseline:null,monitor_spec:{durationDays:7},monitoring_start_date:"2026-11-04",
       created_at:"2026-11-03T10:00:00Z"} satisfies OwnerProposalRow;
-    const report={proposal_id:"p1",status:"complete",report:{},generated_at:"2026-11-11T12:00:00Z"}
-      satisfies OwnerReportRow;
+    const report={proposal_id:"p1",status:"complete",report:{},generated_at:"2026-11-11T12:00:00Z"} satisfies OwnerReportRow;
     expect(mapPriceMonitorRows([row],[report],"2026-11-03","America/Los_Angeles")).toEqual([{
       proposalId:"p1",threadId:"t1",productName:"Latte",status:"manual_confirmed",
       startDate:"2026-11-04",durationDays:7,day:0,
