@@ -3,6 +3,7 @@ import {renderToStaticMarkup} from "react-dom/server";
 import {createElement} from "react";
 import HowIGotThis from "./HowIGotThis";
 import {money,count,type ExplainLine} from "@/lib/ai/agent/explain";
+import {calculateBreakEvenSales} from "@/lib/calc/breakEvenSales";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -101,7 +102,7 @@ describe("How I got this disclosure",()=>{
   const scenario:ExplainLine={label:"Weekly gain after processing fees",
     inputs:[{name:"New price",value:money(785)},{name:"Old price",value:money(775)},
       {name:"Weekly units",value:count(82)},{name:"Processing fee rate",value:{kind:"percent",bps:415}}],
-    formula:"multiply",result:money(786),period:null,source:"scenario",provenance:"estimate"};
+    formula:"scenarioPrice",result:money(786),period:null,source:"scenario",provenance:"estimate"};
   const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[scenario],locale:"en",
     copy:en.SupervisorChat,currency:"USD"}));
   expect(html).toContain("How I got this");
@@ -110,19 +111,34 @@ describe("How I got this disclosure",()=>{
   expect(html).toContain("82");
   expect(html).toContain("4.15%");
   expect(html).toContain("$7.86");
+  expect(html).toContain("($7.85 − $7.75) × 82 × (1 − 4.15%)");
  });
- it("renders the five-input break-even formula without duplicating net sales",()=>{
-  const breakEven:ExplainLine={label:"Daily break-even sales",inputs:[
-    {name:"billsForPeriod",value:money(20000)},
-    {name:"loadedLaborForPeriod",value:money(7000)},
+ it("shows the exact core break-even equation, with each displayed input once",()=>{
+  const breakEven=calculateBreakEvenSales({monthlyBillsCents:14000,monthlyStaffCents:6915,
+    observedSalesCents:100000,observedIngredientCents:30000,observedProcessingFeesCents:3000});
+  expect(breakEven.kind).toBe("ready");
+  if(breakEven.kind!=="ready")throw new Error("fixture unavailable");
+  expect(breakEven.breakEvenSalesCents).toBe(31216);
+  const line:ExplainLine={label:"Daily break-even sales",inputs:[
+    {name:"billsForPeriod",value:money(14000)},
+    {name:"loadedLaborForPeriod",value:money(6915)},
     {name:"observedNetSales",value:money(100000)},
     {name:"ingredientCostCalibration",value:money(30000)},
     {name:"feeCalibrationForScenario",value:money(3000)}],
-    formula:"breakEven",result:money(31216),period:null,source:"get_break_even",provenance:"estimate"};
-  const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[breakEven],locale:"en",
+    formula:"breakEven",result:money(breakEven.breakEvenSalesCents),
+    period:null,source:"get_break_even",provenance:"estimate"};
+  const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[line],locale:"en",
     copy:en.SupervisorChat,currency:"USD"}));
-  expect(html).toContain("$312.16");
-  expect((html.match(/\$1,000\.00/g)??[])).toHaveLength(1);
- });
+  const equation=html.match(/<bdi dir="ltr">([\\s\\S]*?)<\\/bdi>/)?.[1]?.replace(/<[^>]+>/g,"").replace(/\\s+/g," ");
+  expect(equation).toContain("÷ (1 − ((");
+  expect(equation).toContain(") ÷ ");
+  const amounts=[...((equation??"").matchAll(/\\$([\\d,]+\\.\\d{2})/g))].map(m=>Math.round(Number(m[1].replaceAll(",",""))*100));
+  expect(amounts).toEqual([14000,6915,30000,3000,100000,31216]);
+  const [bills,labor,ingredients,fees,sales,shownResult]=amounts;
+  // Evaluate only displayed numbers, using the core's exact rounding rule.
+  const evaluated=Math.round((bills+labor)/(1-(ingredients+fees)/sales));
+  expect(evaluated).toBe(shownResult);
+  expect(shownResult).toBe(breakEven.breakEvenSalesCents);
+ });;
 
 });
