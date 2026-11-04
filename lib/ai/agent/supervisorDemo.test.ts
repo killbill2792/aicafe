@@ -71,6 +71,34 @@ describe("Supervisor owner demo: shared model and core metric paths",()=>{
     expect(chat.laborCostPercent).toBe(money.staffRatio);
     expect(chat.laborCostPercentPartial).toBe(true);
   });
+
+  it("uses saved city events to answer without asking for location or searching the web",async()=>{
+    const webSearch=vi.fn();
+    const savedEvents=vi.fn(async()=>({
+      events:[{id:"event-1",name:"Downtown Market",startDate:"2026-11-08",endDate:"2026-11-08"}],
+      plans:[],cityCatalog:{available:false,items:[],total:0,page:0,pageSize:25,
+        hasMore:false,missing:"unresearched"},
+    }));
+    const ctx=context();
+    ctx.savedEvents=savedEvents as AgentToolContext["savedEvents"];
+    ctx.webSearch=webSearch;
+    const seen:Record<string,unknown>[]=[];
+    const provider:AgentProvider=async function* (params){
+      seen.push(params as Record<string,unknown>);
+      if(seen.length===1)yield {type:"response.output_item.done",item:{
+        type:"function_call",name:"get_events",arguments:JSON.stringify({
+          from:"2026-11-03",to:"2026-11-16",cityEventId:null}),call_id:"city-1"}};
+      else yield {type:"response.output_text.delta",
+        delta:"Near your café in San Jose: Downtown Market on November 8."};
+      yield completion;
+    };
+    const answer=await runAgentTurn({ownerText:"Events near my café?",context:ctx,cafeProfile:profile,provider});
+    expect(savedEvents).toHaveBeenCalledWith("2026-11-03","2026-11-16");
+    expect(webSearch).not.toHaveBeenCalled();
+    expect(answer.text).toContain("San Jose: Downtown Market");
+    expect(answer.text).not.toMatch(/what city|which neighborhood/i);
+    expect(JSON.stringify(seen[0].input)).toContain("never ask the owner for a city");
+  });
   it("get_sales and its day list use the same provisional saved Today reading",async()=>{
     const ctx=context();
     ctx.readTodaySoFar=vi.fn(async()=>({available:true,value:{
