@@ -3,7 +3,7 @@ import type {AgentToolContext,AgentToolResult} from "./index";
 import {ownerChoiceGuard,ownerNamedTarget,resolveEntity,choicePayload,normalizedName} from "../resolve";
 import {getTeam} from "@/lib/actions/schedule";
 import {mondayOfLocalDate} from "@/lib/scheduling/staffScope.server";
-import {nextMonday} from "@/lib/calc/scheduling/draftWeek";
+import {nextMonday} from "@/lib/scheduling/staffScheduleLinks";
 import {scheduleDraftNotice} from "@/lib/calc/scheduling/ownerDeliveryLinks";
 const uuid=z.uuid(),date=z.iso.date(),clock=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const shift=z.strictObject({employee_id:uuid,date,start:clock,end:clock,
@@ -46,6 +46,9 @@ export const staffProposalTools=Object.fromEntries(
   agentId:"olivia" as const,description:descriptions[name],schema:staffProposalInputs[name],
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const parsed=staffProposalInputs[name].parse(raw);
+   if(name==="propose_schedule"&&ctx.scheduleProposalCreated)
+    return {source:"staff_proposal",period:null,agentId:"olivia",draft:true,saved:false,
+     missing:[],...ctx.scheduleProposalCreated,duplicateSuppressed:true};
    const input=name==="propose_schedule"&&"week_start" in parsed&&parsed.week_start===null
     ?{...parsed,week_start:nextMonday(ctx.asOf)}:parsed;
    // The ordinary agent always supplies resolveState. Keep legacy tests that
@@ -101,6 +104,7 @@ export const staffProposalTools=Object.fromEntries(
    if(!ctx.proposals?.proposeStaff)return {source:"staff_proposal",period:null,agentId:"olivia",
      draft:true,saved:false,missing:["proposalsUnavailable"]};
    const p=await ctx.proposals.proposeStaff({name,input});
+   if(name==="propose_schedule")ctx.scheduleProposalCreated=p;
    return {source:"staff_proposal",period:null,agentId:"olivia",draft:true,saved:false,
      missing:[],...p,
      ...(name==="propose_send_schedule"?{handoffNotice:scheduleDraftNotice(ctx.locale)}:{})};

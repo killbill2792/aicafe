@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {resolveOwnerPeriod,periodChoicePayload} from "../resolve";
 import {money} from "../explain";
-import {mergeScheduleShifts,localizedToastScheduleReadError} from "./scheduleReads";
+import {localizedToastScheduleReadError} from "./scheduleReads";
+import {projectVisibleStaffWeek} from "@/lib/calc/scheduling/schedulePresentation";
 import {dateOffset} from "@/lib/calc/periods";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -68,7 +69,7 @@ export const staffTools = {
       const monday=dateOffset(from,-((new Date(from+"T12:00:00Z").getUTCDay()+6)%7));
       const notes:string[]=capped?[{en,es,ar}[ctx.locale].DataNotes.scheduleRangeTruncated]:[];
       const missingInputs:string[]=capped?["scheduleRangeTruncated"]:[];
-      const allShifts:ReturnType<typeof mergeScheduleShifts>=[];
+      const allShifts:ReturnType<typeof projectVisibleStaffWeek>["visible"]=[];
       let scheduleSet=false;
       for(let ws=monday;ws<=dateEnd;ws=dateOffset(ws,7)){
         let response:Awaited<ReturnType<typeof getWeekSchedule>>;
@@ -81,7 +82,7 @@ export const staffTools = {
           missingInputs.push("toastScheduleReadFailed:"+ws);
           notes.push(localizedToastScheduleReadError(response.data.posScheduleError,ctx.locale));
         }
-        const merged=mergeScheduleShifts(response.data);
+        const merged=projectVisibleStaffWeek(response.data).visible;
         scheduleSet ||= merged.length>0;
         allShifts.push(...merged.filter(s=>s.date>=from&&s.date<=dateEnd));
       }

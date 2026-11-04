@@ -1,4 +1,5 @@
 import {fromZonedTime} from "date-fns-tz";
+import {toastCalendarDates,type CalendarEntry} from "./calendarEntries";
 import type {OpenHours} from "@/lib/business/openHours";
 import {OPEN_HOURS_DAY_KEYS} from "@/lib/business/openHours";
 import {minuteOfDay,shiftCost,roleWageAverages,businessWageEstimate,aggregateCosts,type CostShift,type CostLine} from "./shiftCost";
@@ -188,4 +189,47 @@ export function previewShift(input:{employeeId:string;date:string;start:string;e
   previousMinutes:oldMinutes,projectedMinutes:oldMinutes+next.paidMinutes,
   overtime,restMinutes:rest,shortRest:overlapDetected||(rules.min_rest_enabled&&rest!==null&&rest<rules.min_rest_minutes),
   tooLong:length.tooLong,tooShort:length.tooShort,belowMinimum:hours.belowMinimum,aboveMaximum:hours.aboveMaximum};
+}
+
+/** One shared display + cost projection for the Staff grid and Supervisor.
+ * Toast owns a whole local day; it never supplies estimated paid wages.
+ * Olivia-approved scheduled_shifts remain costed only when Toast is absent.
+ */
+export function projectVisibleStaffWeek(input:{
+ shifts:readonly (DetailedShift&{source?:string})[];
+ calendarEntries:readonly CalendarEntry[];
+}){
+ const entries=input.calendarEntries??[];
+ const toastDates=toastCalendarDates(entries);
+ const laborShifts=input.shifts.filter(shift=>!toastDates.has(shift.date));
+ const drawnShifts=laborShifts.filter(shift=>shift.source!=="olivia");
+ const knownById=new Map(laborShifts.map(shift=>[shift.id,shift]));
+ const visible=[
+  ...drawnShifts.map(shift=>({
+   id:shift.id,date:shift.date,employeeId:shift.employeeId,
+   employeeName:shift.employeeName??"Team member",start:shift.start,end:shift.end,
+   paidMinutes:shift.paidMinutes,costCents:shift.costCents,
+   estimated:shift.estimated,source:"app" as const,
+  })),
+  ...entries.map(entry=>{
+   const saved=entry.id.startsWith("ai-supervisor:")?
+    knownById.get(entry.id.slice("ai-supervisor:".length)):undefined;
+   return {id:entry.id,date:entry.date,employeeId:entry.employeeId,
+    employeeName:entry.employeeName,start:entry.start,end:entry.end,
+    locationId:entry.locationId??null,
+    paidMinutes:saved?.paidMinutes??null,costCents:saved?.costCents??null,
+    estimated:saved?.estimated??null,
+    source:entry.source==="ai_draft"?"ai_draft" as const:"toast" as const,
+    evidence:entry.source};
+  })
+ ].sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start)||a.id.localeCompare(b.id));
+ const total=aggregateCosts(laborShifts);
+ const toastAffectedEmployeeIds=new Set([
+  ...entries.filter(e=>e.source!=="ai_draft"&&e.employeeId!==null).map(e=>e.employeeId as string),
+  ...input.shifts.filter(shift=>toastDates.has(shift.date)).map(shift=>shift.employeeId)
+ ]);
+ return {laborShifts,drawnShifts,visible,toastDates,toastAffectedEmployeeIds,total,
+  /** An unknown Toast shift cannot be reported as zero minutes or wages. */
+  hoursComplete:toastDates.size===0,
+  costComplete:toastDates.size===0&&total.unknownCount===0};
 }

@@ -23,6 +23,33 @@ function hour(hourText:string,part:string|undefined):number|null {
 const hh=(n:number)=>String(n).padStart(2,"0")+":00";
 export function parseAvailabilityText(text:string,asOf?:string):AvailabilityTextProposal|null {
  // Common owner instructions are parsed deterministically, without making a write.
+ // A weekday-only instruction is a restriction, not an invented partial-day shift.
+ // The approval preview explicitly shows the full-day window before it is saved.
+ const daysOnly=text.trim().match(/^(.+?)\s+can\s+only\s+work\s+(.+?)\.?$/iu);
+ if(daysOnly && !/\b(mornings|afternoons|evenings)\.?$/iu.test(daysOnly[2])){
+  const personName=daysOnly[1].trim();
+  const tokens=daysOnly[2].replace(/\.$/u,"").replace(/\s+and\s+/giu,",").split(/\s*[,\/]\s*/u).map(x=>x.trim().toLowerCase());
+  const weekdays=tokens.map(x=>days[x]);
+  if(!personName||personName.length>80||!weekdays.length||weekdays.some(x=>x===undefined)||new Set(weekdays).size!==weekdays.length)return null;
+  return {personName,offDays:Array.from({length:7},(_,i)=>i).filter(i=>!weekdays.includes(i)),
+   availability:weekdays.sort((a,b)=>a-b).map(day=>({day,start:"00:00",end:"23:59"})),
+   needsOwnerApproval:true,assumptions:["Full-day availability on selected weekdays; confirm hours on the approval card"]};
+ }
+ const wholeWeek=text.trim().match(/^(.+?)\s+(?:is\s+off|cannot\s+work|can't\s+work)\s+(this|next)\s+week\.?$/iu);
+ if(wholeWeek&&asOf&&/^\d{4}-\d{2}-\d{2}$/u.test(asOf)){
+  const personName=wholeWeek[1].trim();
+  const current=new Date(asOf+"T12:00:00Z");
+  if(!personName||personName.length>80||Number.isNaN(current.valueOf()))return null;
+  const weekday=(current.getUTCDay()+6)%7;
+  const offset=wholeWeek[2].toLowerCase()==="next"?7-weekday:0;
+  const count=wholeWeek[2].toLowerCase()==="next"?7:7-weekday;
+  const offDates=Array.from({length:count},(_,i)=>{
+   const date=new Date(current);date.setUTCDate(date.getUTCDate()+offset+i);
+   return date.toISOString().slice(0,10);
+  });
+  return {personName,offDays:[],offDates,availability:[],
+   needsOwnerApproval:true,assumptions:[]};
+ }
  const only=text.trim().match(/^(.+?)\s+can\s+only\s+work\s+(.+?)\s+(mornings|afternoons|evenings)\.?$/iu);
  if(only){
   const personName=only[1].trim();

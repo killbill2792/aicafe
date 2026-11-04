@@ -4,11 +4,14 @@ const fixtures = vi.hoisted(() => ({
   owner: vi.fn(),
   tables: {} as Record<string, Array<Record<string, unknown>>>,
   queries: [] as Array<{table:string; cursor:string | null; count:number}>,
+  filters: [] as Array<{table:string;column:string;value:unknown}>,
   rowCap: null as number | null,
   businessId: "10000000-0000-4000-8000-000000000001",
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("./foundation.server", () => ({ requireSchedulingOwner: fixtures.owner }));
+vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({})}));
+vi.mock("@/lib/data/toastScheduledShifts.server",()=>({readToastPlannedShifts:async()=>[]}));
 
 import { loadOliviaWeekFromSavedStaff } from "./planInput.server";
 import {expandPlannerInput} from "@/lib/calc/scheduling/plannerCore";
@@ -20,7 +23,8 @@ function rowQuery(table:string) {
   let max=300;
   const query = {
     select: () => query,
-    eq: () => query,
+    eq: (column:string,value:unknown) => {fixtures.filters.push({table,column,value});return query;},
+    gte: () => query,lte: () => query,
     order: () => query,
     limit: (n:number) => { max=n; return query; },
     gt: (_key:string, value:string) => { cursor=value; return query; },
@@ -69,6 +73,7 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
       }],
     };
     fixtures.queries=[];
+    fixtures.filters=[];
     fixtures.rowCap=null;
     fixtures.owner.mockReset();
     fixtures.owner.mockImplementation(async () => ({
@@ -77,6 +82,19 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     }));
     process.env.SCHEDULING_FOUNDATION_ENABLED="true";
     process.env.SCHEDULING_PR3_DRAFTS_ENABLED="true";
+  });
+
+  it("uses imported source_provider Toast clock-ins as the planner historical fallback",async()=>{
+    fixtures.tables.timecards=[{id:id(901),employee_id:id(1),
+      source_provider:"Toast",clock_in:"2026-10-05T16:00:00Z",
+      clock_out:"2026-10-05T20:00:00Z"}];
+    const result=await loadOliviaWeekFromSavedStaff(week);
+    expect(result.ok).toBe(true);
+    if(!result.ok)return;
+    expect(fixtures.filters).toContainEqual({table:"timecards",
+      column:"source_provider",value:"Toast"});
+    expect(result.input.historicalSeed).toContainEqual({
+      employeeId:id(1),weekday:1,startLocal:"09:00",endLocal:"13:00"});
   });
 
   it("accepts a valid Monday and projects saved employee/coverage facts without guessing owner identity",async()=>{
