@@ -168,7 +168,7 @@ describe("event morning-after narrative",()=>{
     vi.mocked(runAgentTurn).mockResolvedValueOnce({
       text:"Sales: Actual $1,358.44 vs usual $1,206.05; 7: $105.50/$61.35.",
       provenance:[],unverified:[],
-    } as Awaited<ReturnType<typeof runAgentTurn>>);
+    } as unknown as Awaited<ReturnType<typeof runAgentTurn>>);
     const refreshed=await eventFinalNarrative(scope,"44444444-4444-4444-8444-444444444444",
       names,summary,nov2,"complete");
     expect(runAgentTurn).toHaveBeenCalledTimes(1);
