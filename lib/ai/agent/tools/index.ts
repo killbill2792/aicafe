@@ -392,7 +392,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   const slice=await ctx.tools.getSalesTrend(period);
   const salesNotes=localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale);
   const liveToday=selection.todaySoFar?.available===true&&
-    period.from===ctx.asOf&&period.to===ctx.asOf&&!selection.todayImported?
+    period.from===ctx.asOf&&period.to===ctx.asOf&&
+    selection.todaySoFar.businessDate===period.from&&!selection.todayImported?
     selection.todaySoFar:null;
   if(!slice.available&&liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
     coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
