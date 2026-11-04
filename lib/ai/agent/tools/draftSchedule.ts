@@ -45,6 +45,7 @@ export const draftScheduleTools={draft_week_schedule:{
     // Only the owner's approval click may write dated draft shifts.
     approval=await ctx.proposals.proposeStaff({name:"propose_schedule",
      input:{week_start:start,shifts:proposedShifts}});
+    ctx.scheduleProposalCreated=approval;
    }catch{approvalError="approvalProposalUnavailable";}
   }
   return {source:"olivia_schedule",period:{from:start,to:result.plan.horizonEnd},
