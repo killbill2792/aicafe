@@ -284,13 +284,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(memory ? { memoryFacts: memory.facts, extraTools: [memory.tool] } : {}),
       ...(job && jobs ? {
         takeFollowUps: async(max: number):Promise<OwnerFollowUp[]> => {
-           // Once a second channel is enabled, NEVER take inbox messages here:
-           // the RPC atomically marks them absorbed, so filtering after taking
-           // already loses WhatsApp replies. The canonical job finisher will
-           // serialize each owner message as a distinct continuation instead.
-           // In web-only mode retain the original fast follow-up behavior.
-           if(external||process.env.WHATSAPP_SUPERVISOR_ENABLED==="true")return [];
-           return jobs.takeAgentJobInbox(job.id,max);
+           // A second question always receives its own serialized turn, on
+           // web as well as WhatsApp. Absorbing it into the first response
+           // interleaves independent owner questions and their answers.
+           void max;
+           return [];
          },
         onFollowUp: (count: number) => emit("followup", { count }),
       } : {}) });
