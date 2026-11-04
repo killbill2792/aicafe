@@ -48,6 +48,8 @@ export type AgentToolResult = {
   [field: string]: unknown;
 };
 export type AgentToolContext = {
+  /** Ephemeral per-turn schedule approval; prevents a second card if the model retries via propose_schedule. */
+  scheduleProposalCreated?:{proposalId:string;revision:number;capabilityId:string};
   tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
   timezone:string;
   /** Authenticated ISO 4217 currency; absent only in legacy test contexts. */
