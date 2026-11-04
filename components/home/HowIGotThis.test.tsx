@@ -122,7 +122,7 @@ describe("How I got this disclosure",()=>{
   const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[breakEven],locale:"en",
     copy:en.SupervisorChat,currency:"USD"}));
   expect(html).toContain("$312.16");
-  expect((html.match(/\$1,000\.00/g)??[]).toHaveLength(1);
+  expect((html.match(/\$1,000\.00/g)??[])).toHaveLength(1);
  });
 
 });
