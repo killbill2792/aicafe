@@ -7,7 +7,8 @@ export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=300;
 const reply=(status:number,data:unknown)=>NextResponse.json(data,{status,headers:{"Cache-Control":"no-store"}});
-/** Every 15 minutes: save each Toast café's "today so far" (read-only Toast reads). */
+/** Every 15 minutes: save each Toast café's "today so far" (read-only Toast reads),
+ * and keep today's finished orders from that same download (migration 149). */
 export async function GET(request:Request){
  if(!verifyBearer(request,process.env.CRON_SECRET))return reply(401,{error:"unauthorized"});
  if(process.env.TOAST_AUTO_IMPORT_ENABLED!=="true")return reply(503,{disabled:true});
@@ -21,7 +22,7 @@ export async function GET(request:Request){
  for(const businessId of businesses){
   if(Date.now()>=deadline)break;
   // Readings younger than 10 minutes are kept; older ones are refreshed.
-  const read=await todaySoFarForBusiness(db,businessId,{maxAgeMs:10*60_000}).catch(()=>null);
+  const read=await todaySoFarForBusiness(db,businessId,{maxAgeMs:10*60_000,keepOrders:true}).catch(()=>null);
   if(read?.available)saved++;else failed++;
   // Observation is read-only and follows the already enabled Events rollout;
   // there is no second approval/flag for examining saved Toast evidence.

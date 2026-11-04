@@ -16,7 +16,7 @@ export function todayLiveMissing(t:TodaySoFar):string[]{
 export const todayTools={
   get_today_so_far:{
     agentId:"alex",schema:empty,
-    description:"Provisional sales so far for the current business day, read live from Toast (open and paid checks). Not final: the closeout import replaces it. Use when the owner asks about today; say it is so far, and name any missing locations or a truncated read.",
+    description:"Provisional sales so far for the current business day, read live from Toast (open and paid checks). Not final: the closeout import replaces it. Use when the owner asks about today; say it is so far, and name any missing locations or a truncated read. For detail about today (which discounts, items, payments or servers), query cv_toast_records for today's business date: rows with status provisional are today's closed orders saved by the 15-minute job (open checks are added once closed).",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
       if(!ctx.readTodaySoFar)return {source:"today_live",period:null,agentId:"alex",missing:["todayLiveReaderUnavailable"]};

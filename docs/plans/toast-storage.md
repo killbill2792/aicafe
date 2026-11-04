@@ -87,3 +87,14 @@ screens and chat read the same tables and must not change.
    - it goes out per café, 30 minutes before opening (06:00 café time if hours are unknown), never blocked
      by a missing extra, and every skip is recorded (`/admin/briefs`);
    - still required: a linked owner number and WhatsApp settings on in Vercel.
+8. **Migration 149: today's orders kept as they arrive (owner, Nov 4).** The 15-minute job already downloaded
+   every order of the day but kept only a summary, so "how many student discounts today?" could not be answered
+   until 5 AM. Now it files each **closed** order from that same download (no extra Toast calls) into the same
+   archive through the same writer as the import (`toast_archive_order`, shared): one record per order, same →
+   nothing, change → update + one change line. Open checks are filed once they close (or by the import), so the
+   change log only holds real late changes (tips, refunds). Live records have no import run, so every screen,
+   the day check, card fees, typed order details and the test-café copy ignore them until the 5 AM import
+   takes them over (an unchanged order is not written again). Only the AI's `cv_toast_records` shows them,
+   with status `provisional`. The job never writes to an imported day or to a record an import has staged.
+   Storage: the records the import would write at 5 AM anyway, a few hours earlier. Check:
+   `scripts/toast-live-archive-sql-integration.sql`.
