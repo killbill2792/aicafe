@@ -115,6 +115,30 @@ describe("Supervisor owner demo: shared model and core metric paths",()=>{
     expect(result.stale).toBe(true);
     expect(result.freshnessLabel).toMatch(/^last updated \d{2}:\d{2}$/);
   });
+  it("never promotes a prior business-day live reading into today's sales",async()=>{
+    const ctx=context();
+    ctx.readTodaySoFar=vi.fn(async()=>({available:true,value:{
+      provisional:true,businessDate:"2026-11-02",readAt:"2026-11-03T08:00:00Z",
+      netSalesCents:500000,grossSalesCents:500000,discountsCents:0,
+      refundsCents:0,tipCents:0,orders:200,openChecks:0,
+      unparsedOrders:0,topItems:[],locationsRead:1,locationsFailed:0,truncated:false,
+    }} as never));
+    const noToday=await executeAgentTool("get_sales",{period:"today"},ctx);
+    expect(noToday.netSalesCents).toBeUndefined();
+    expect(noToday.todaySoFar).toMatchObject({
+      businessDate:"2026-11-02",netSalesCents:500000});
+    // Even a flagged, stored TODAY row must not be overwritten by yesterday's
+    // higher live number under a misleading today period.
+    ctx.tools.getSalesTrend=vi.fn(async()=>({available:true,quality:{
+      ...quality,missingInputs:["toastDayStatusUnavailable"],
+    },value:[{date:"2026-11-03",netSalesCents:7000}]} as never));
+    const today=await executeAgentTool("get_sales",{period:"today"},ctx);
+    expect(today.source).toBe("daily_rollups");
+    expect(today.netSalesCents).toBe(7000);
+    expect(today.days).toEqual([{date:"2026-11-03",netSalesCents:7000}]);
+    expect(today.todaySoFar).toMatchObject({businessDate:"2026-11-02"});
+  });
+
   it.each([
     ["failed Toast import","toastImportIncompleteDays:1:2026-11-02:0","Toast imports are not complete"],
     ["unknown Toast import status","toastDayStatusUnavailable","day-status check failed"],
