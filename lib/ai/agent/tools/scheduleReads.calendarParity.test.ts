@@ -8,6 +8,7 @@ import {getWeekSchedule} from "@/lib/actions/schedule";
 import {reconcileStaffCalendar} from "@/lib/calc/scheduling/calendarEntries";
 import {projectVisibleStaffWeek} from "@/lib/calc/scheduling/schedulePresentation";
 import {scheduleReadTools} from "./scheduleReads";
+import {staffTools} from "./staff";
 import type {AgentToolContext} from "./index";
 const week="2026-11-09";
 const approved={id:"approved-1",employeeId:"amy",employeeName:"Amy",date:week,
@@ -33,6 +34,9 @@ describe("Staff and Supervisor use exactly one Toast-first shift list",()=>{
   const fromChat=await scheduleReadTools.get_week_schedule.execute({week_start:week},
    {asOf:week,locale:"en",timezone:"America/Los_Angeles"} as AgentToolContext);
   expect(fromChat.shifts).toEqual(fromStaff.visible);
+  const rangeChat=await staffTools.get_schedule.execute({from:week,to:"2026-11-15"},
+   {asOf:week,locale:"en",timezone:"America/Los_Angeles"} as AgentToolContext);
+  expect(rangeChat.shifts).toEqual(fromStaff.visible);
   expect((fromChat.shifts as {id:string}[]).map(x=>x.id))
    .toEqual(["toast:planned","ai-revision:only"]);
   expect(fromChat.paidMinutes).toBeNull();
