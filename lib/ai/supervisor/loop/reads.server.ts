@@ -12,14 +12,17 @@ export type OwnerProposalRow={id:string;thread_id:string;capability_id:string;re
 export type OwnerReportRow={proposal_id:string;status:string;report:unknown;generated_at:string};
 
 export async function readOwnerProposals(db:SupabaseClient,scope:OwnerScope,
-  filter:{threadId?:string;id?:string;capabilityId?:string;statuses?:readonly string[];limit:number}):Promise<OwnerProposalRow[]>{
+  filter:{threadId?:string;id?:string;capabilityId?:string;capabilityIds?:readonly string[];statuses?:readonly string[];limit:number;offset?:number}):Promise<OwnerProposalRow[]>{
   let q=db.from("supervisor_proposals").select(PROPOSAL_COLUMNS)
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId);
   if(filter.threadId)q=q.eq("thread_id",filter.threadId);
   if(filter.capabilityId)q=q.eq("capability_id",filter.capabilityId);
+  if(filter.capabilityIds)q=q.in("capability_id",[...filter.capabilityIds]);
   if(filter.id)q=q.eq("id",filter.id);
   if(filter.statuses)q=q.in("status",[...filter.statuses]);
-  const {data,error}=await q.order("created_at",{ascending:false}).limit(filter.limit);
+  const ordered=q.order("created_at",{ascending:false}).order("id",{ascending:false});
+  const {data,error}=await (filter.offset===undefined?ordered.limit(filter.limit):
+    ordered.range(filter.offset,filter.offset+filter.limit-1));
   if(error)throw error;
   return (data??[]) as unknown as OwnerProposalRow[];
 }
@@ -35,4 +38,18 @@ export async function readOwnerReports(db:SupabaseClient,scope:OwnerScope,propos
   const {data,error}=await q.order("generated_at",{ascending:false}).limit(filter.limit);
   if(error)throw error;
   return (data??[]) as OwnerReportRow[];
+}
+
+/** Paginate the existing owner-scoped proposal reader, restricted to price capabilities
+ * and monitoring statuses BEFORE the page limit, so unrelated proposals cannot
+ * hide a running price change. No second query implementation. */
+export async function readOwnerPriceMonitorProposals(db:SupabaseClient,scope:OwnerScope,
+  capabilityIds:readonly string[],statuses:readonly string[]):Promise<OwnerProposalRow[]>{
+  const pageSize=100;
+  const rows:OwnerProposalRow[]=[];
+  for(let offset=0;;offset+=pageSize){
+    const page=await readOwnerProposals(db,scope,{capabilityIds,statuses,limit:pageSize,offset});
+    rows.push(...page);
+    if(page.length<pageSize)return rows;
+  }
 }
