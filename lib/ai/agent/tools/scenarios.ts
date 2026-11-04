@@ -95,6 +95,11 @@ export const scenarioTools={simulate_scenario:{
   const result=simulateEconomics(economics,delta);
   // Explain the exact canonical what-if result; never recompute the business metric.
   const explain:ExplainLine[]=[];
+  // The panel formats percentages in basis points. Do not imply an exact
+  // equation if its rate cannot be represented at the displayed precision.
+  const shownRate=(rate:number)=>Math.round(rate*10000);
+  const exactShownRate=(rate:number)=>Number.isFinite(rate)&&
+    Math.abs(rate-shownRate(rate)/10000)<1e-10;
   const add=(label:string,inputs:ExplainLine["inputs"],formula:ExplainLine["formula"],
     value:number|null,basis:string)=>{
     if(value===null||!Number.isSafeInteger(value))return;
@@ -103,7 +108,7 @@ export const scenarioTools={simulate_scenario:{
   };
   if(delta.kind==="price"){
     const fee=economics.feeRate;
-    if(fee!==null&&result.weeklyChangeCents!==null){
+    if(fee!==null&&exactShownRate(fee)&&result.weeklyChangeCents!==null){
       add("Weekly price difference",[
         {name:"New price",value:money(delta.newPriceCents)},
         {name:"Old price",value:money(delta.oldPriceCents)}],
@@ -113,19 +118,21 @@ export const scenarioTools={simulate_scenario:{
         {name:"Old price",value:money(delta.oldPriceCents)},
         {name:"Weekly units",value:count(delta.weeklyUnits)},
         {name:"Processing fee rate",value:percent(Math.round(fee*10000))}],
-        "multiply",result.weeklyChangeCents,"projected");
+        "scenarioPrice",result.weeklyChangeCents,"projected");
     }
   }else if(delta.kind==="item_cost"){
     add("Weekly item cost effect",[
       {name:"Old cost",value:money(delta.oldCostCents)},
       {name:"New cost",value:money(delta.newCostCents)},
       {name:"Weekly units",value:count(delta.weeklyUnits)}],
-      "multiply",result.weeklyChangeCents,"projected");
+      "scenarioCost",result.weeklyChangeCents,"projected");
   }else if(delta.kind==="bill"){
-    add("Monthly bill effect",[{name:"Monthly bill change",value:money(delta.monthlyChangeCents)}],
+    add("Monthly bill effect",[
+      {name:"Original change",value:money(0)},
+      {name:"Monthly bill change",value:money(delta.monthlyChangeCents)}],
       "subtract",result.difference.monthlyProfitCents,"projected");
   }else if(delta.kind==="shift"||delta.kind==="wage"){
-    add("Weekly staffing effect",delta.kind==="shift"?[
+    if(exactShownRate(delta.payrollTaxRate))add("Weekly staffing effect",delta.kind==="shift"?[
       {name:"Hours change",value:count(delta.hoursChange)},
       {name:"Shifts per week",value:count(delta.shiftsPerWeek)},
       {name:"Hourly wage",value:money(delta.wageCents)},
@@ -134,15 +141,17 @@ export const scenarioTools={simulate_scenario:{
       {name:"Old wage",value:money(delta.oldWageCents)},
       {name:"New wage",value:money(delta.newWageCents)},
       {name:"Payroll tax",value:percent(Math.round(delta.payrollTaxRate*10000))}],
-      "multiply",result.weeklyChangeCents,"projected");
+      delta.kind==="shift"?"scenarioShift":"scenarioWage",result.weeklyChangeCents,"projected");
   }else if(delta.kind==="drinks"){
-    if(economics.monthlyRevenue.valueCents!==null&&economics.ingredientRate!==null&&economics.feeRate!==null){
+    if(economics.monthlyRevenue.valueCents!==null&&economics.ingredientRate!==null&&economics.feeRate!==null&&
+      exactShownRate(economics.ingredientRate)&&exactShownRate(economics.feeRate)&&
+      exactShownRate(delta.changePercent/100)){
       add("Monthly sales-volume effect",[
         {name:"Monthly revenue",value:money(economics.monthlyRevenue.valueCents)},
         {name:"Volume change",value:percent(Math.round(delta.changePercent*100))},
         {name:"Ingredient rate",value:percent(Math.round(economics.ingredientRate*10000))},
         {name:"Processing fee rate",value:percent(Math.round(economics.feeRate*10000))}],
-        "multiply",result.difference.monthlyProfitCents,"projected");
+        "scenarioVolume",result.difference.monthlyProfitCents,"projected");
     }
   }
   if(result.difference.monthlyProfitCents!==null&&result.weeklyChangeCents!==null&&
@@ -151,7 +160,7 @@ export const scenarioTools={simulate_scenario:{
       {name:"Weekly change",value:money(result.weeklyChangeCents)},
       {name:"Days in month",value:count(economics.daysInMonth)},
       {name:"Days in week",value:count(7)}],
-      "prorate",result.difference.monthlyProfitCents,"projected");
+      "scenarioProrate",result.difference.monthlyProfitCents,"projected");
   }
   const observed=[result.before.monthlyProfitCents,
    result.before.monthlyTargetSalesCents,result.after.monthlyTargetSalesCents,result.before.monthlyBreakEvenCents,
