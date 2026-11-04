@@ -199,7 +199,8 @@ export function projectVisibleStaffWeek(input:{
  shifts:readonly (DetailedShift&{source?:string})[];
  calendarEntries:readonly CalendarEntry[];
 }){
- const toastDates=toastCalendarDates(input.calendarEntries);
+ const entries=input.calendarEntries??[];
+ const toastDates=toastCalendarDates(entries);
  const laborShifts=input.shifts.filter(shift=>!toastDates.has(shift.date));
  const drawnShifts=laborShifts.filter(shift=>shift.source!=="olivia");
  const knownById=new Map(laborShifts.map(shift=>[shift.id,shift]));
@@ -210,11 +211,12 @@ export function projectVisibleStaffWeek(input:{
    paidMinutes:shift.paidMinutes,costCents:shift.costCents,
    estimated:shift.estimated,source:"app" as const,
   })),
-  ...input.calendarEntries.map(entry=>{
+  ...entries.map(entry=>{
    const saved=entry.id.startsWith("ai-supervisor:")?
     knownById.get(entry.id.slice("ai-supervisor:".length)):undefined;
    return {id:entry.id,date:entry.date,employeeId:entry.employeeId,
     employeeName:entry.employeeName,start:entry.start,end:entry.end,
+    locationId:entry.locationId??null,
     paidMinutes:saved?.paidMinutes??null,costCents:saved?.costCents??null,
     estimated:saved?.estimated??null,
     source:entry.source==="ai_draft"?"ai_draft" as const:"toast" as const,
