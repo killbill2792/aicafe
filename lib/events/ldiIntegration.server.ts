@@ -30,7 +30,7 @@ type NeighborhoodRow={scope:string;address_hash:string;status:string;
   retry_eligible:boolean;checked_at:string;last_completed_at:string|null};
 export type LdiBudget={cityTasks:number;neighborhoodScopes:number;
   enrichmentsRemaining:number;attempted:Set<string>};
-export const newLdiBudget=():LdiBudget=>({cityTasks:14,neighborhoodScopes:4,
+export const newLdiBudget=():LdiBudget=>({cityTasks:6,neighborhoodScopes:4,
   enrichmentsRemaining:2,attempted:new Set()});
 const complete=(status:string)=>status==="found"||status==="none_found";
 const hash=(input:string)=>createHash("sha256").update(input).digest("hex");
@@ -544,15 +544,15 @@ export async function scanSharedResearch(db:Db,input:{
   await neighborhood(db,input.businessId,input.location,scope,input.budget,input.checkedAt);
   const sources=await sourcesForCity(db,cityKey);
   let all=await allCoverage(db,cityKey);
+  // A first 14-day bootstrap needs 7 categories × 2 slices in one run;
+  // ordinary daily updates retain the six-task global fair-share budget.
+  if(input.window.reason==="initial"&&input.budget.cityTasks===6)
+    input.budget.cityTasks=14;
   // Only root/source-slice rows determine completion. Saturation creates
   // child coverage records, but a child must never complete its parent.
-  // A legacy nearby-events cursor does not prove this city has ever been researched.
-  // Seed the complete two-week horizon when there are no city source windows in it.
-  const horizon=addDays(input.today,13);
-  const cityUnresearched=!all.some(c=>c.is_scan_root&&
-    c.window_from<=horizon&&c.window_to>=input.today);
-  const requestedWindow:EventScanWindow=cityUnresearched?
-    {from:input.today,to:horizon,reason:"initial"}:input.window;
+  // The scheduled caller determines initial city windows from the canonical
+  // coverage ledger; this integration retains its requested window unchanged.
+  const requestedWindow=input.window;
   const older=all.filter(c=>c.is_scan_root&&!complete(c.status)&&
     c.scan_to>=addDays(input.today,-14)&&c.scan_from<=requestedWindow.from)
     .sort((a,b)=>a.scan_from.localeCompare(b.scan_from)||
