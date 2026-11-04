@@ -39,6 +39,22 @@ describe("Staff grid day, worker and week labor parity",()=>{
   expect(costCompleteness({...projection.total,unknownCount:
    projection.total.unknownCount+Number(!projection.costComplete)})).toBe("unknown");
  });
+ it("never treats Toast-replaced overtime or employee weekly hours as zero",()=>{
+  const overtimeWeek={...olivia,paidMinutes:2880};
+  const replaced=projectVisibleStaffWeek({shifts:[overtimeWeek],
+   calendarEntries:reconcileStaffCalendar([
+    entry("toast-replaced","2026-11-09","10:00","18:00","toast_planned")])});
+  expect(replaced.laborShifts).toEqual([]);
+  expect(replaced.hoursComplete).toBe(false);
+  expect(replaced.toastAffectedEmployeeIds.has("amy")).toBe(true);
+  // Both the overtime summary and Team tab must show unavailable, not 0.
+  const overtimeShown=replaced.hoursComplete?"0 h":"—";
+  const teamHoursShown=replaced.toastAffectedEmployeeIds.has("amy")?"—":"0 h";
+  expect([overtimeShown,teamHoursShown]).toEqual(["—","—"]);
+  const other=projectVisibleStaffWeek({shifts:[olivia],calendarEntries:[]});
+  expect(other.hoursComplete).toBe(true);
+  expect(other.toastAffectedEmployeeIds.has("amy")).toBe(false);
+ });
  it("does not exclude Olivia revision drafts on days without Toast",()=>{
   const projection=projectVisibleStaffWeek({shifts:[],calendarEntries:[
    entry("revision-1","2026-11-10","08:00","12:00","ai_draft")]});
