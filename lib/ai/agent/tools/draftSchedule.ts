@@ -1,7 +1,7 @@
 import {z} from "zod";
 import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {nextMonday} from "@/lib/calc/scheduling/weekdayDates";
+import {nextMonday} from "@/lib/scheduling/staffScheduleLinks";
 import {previewOliviaWeek,previewOliviaOwnerSavings} from "@/lib/actions/oliviaPlanning";
 
 const monday=z.iso.date().refine(v=>new Date(v+"T12:00:00Z").getUTCDay()===1,"Must be a Monday");
