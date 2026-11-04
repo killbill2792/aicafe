@@ -210,12 +210,15 @@ describe("LDI E scheduled B+C→A→single Events reader",()=>{
   it("finishes separate initial research for two cafés without sharing a task counter",async()=>{
     // Two independent city ledgers; each café starts with the standard six
     // daily-task budget but requires all initial category and venue slices.
-    const first=mockStore(),second=mockStore();
+    const first=mockStore();
     const window=eventScanWindows("2026-11-03",null,"address")[0];
     const firstBudget=newLdiBudget(),secondBudget=newLdiBudget();
     expect(firstBudget.cityTasks).toBe(6);
     expect(secondBudget.cityTasks).toBe(6);
     const a=await first.scoped(cafeA,"2026-11-03",window,firstBudget);
+    // Each mockStore binds its writer fixtures; initialize the next only
+    // after finishing the first café, as the cron itself does.
+    const second=mockStore();
     const b=await second.scoped(cafeB,"2026-11-03",window,secondBudget);
     expect(a?.completed).toBe(true);
     expect(b?.completed).toBe(true);
