@@ -5,7 +5,7 @@ import ar from "@/messages/ar.json";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import type { AgentJob, AgentJobStep } from "@/lib/ai/agent/jobState";
 import { answeredOwnerMessageIds, chatExperienceCopy, failureLine, inFlightOwnerMessageIds,
-  progressLines, readSseFrames } from "./chatExperience";
+  progressLines, readSseFrames, shouldShowRunningJob } from "./chatExperience";
 
 const keys = (value: unknown, prefix = ""): string[] => value && typeof value === "object"
   ? Object.entries(value).flatMap(([k, v]) => keys(v, prefix + k + ".")) : [prefix];
@@ -41,6 +41,14 @@ describe("chat experience helpers", () => {
     expect([...inFlightOwnerMessageIds(job, ["x"])].sort()).toEqual(["c", "d", "e", "x"]);
     expect([...inFlightOwnerMessageIds({ ...job, status: "failed" } as AgentJob)]).toEqual([]);
     expect([...inFlightOwnerMessageIds(null)]).toEqual([]);
+  });
+  it("hides a stale progress line after a finished answer",()=>{
+    const job={status:"running",ownerMessageId:"owner-1"} as AgentJob;
+    const owner={role:"owner",id:"owner-1",grounding:null} as ConversationMessage;
+    const answer={role:"supervisor",grounding:{ownerMessageId:"owner-1"}} as ConversationMessage;
+    expect(shouldShowRunningJob(job,[owner])).toBe(true);
+    expect(shouldShowRunningJob(job,[owner,answer])).toBe(false);
+    expect(shouldShowRunningJob({...job,status:"done"},[owner])).toBe(false);
   });
   it("reads complete SSE frames, keeps the partial rest and skips junk", () => {
     const { frames, rest } = readSseFrames('event: ack\ndata: {"jobId":"j"}\n\nevent: bad\ndata: {oops\n\nevent: delta\r\ndata: {"text":"Hi"}\r\n\r\nevent: done\ndata: {"rep');
