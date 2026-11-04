@@ -1,10 +1,10 @@
-import {beforeEach,describe,expect,it,vi} from "vitest";
+import {beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const scope={businessId:"11111111-1111-4111-8111-111111111111",
  ownerUserId:"22222222-2222-4222-8222-222222222222",
  threadId:"33333333-3333-4333-8333-333333333333"};
 const employeeId="44444444-4444-4444-8444-444444444444";
-const state=vi.hoisted(()=>({mode:"ok" as "ok"|"conflict"|"offline",attempts:0}));
+const state=vi.hoisted(()=>({mode:"ok" as "ok"|"conflict"|"offline",attempts:0,preview:vi.fn()}));
 vi.mock("@/lib/ai/conversations/auth.server",()=>({
  authenticatedConversationContext:async()=>({scope,
    service:{getThread:async(id:string)=>({id})}})
@@ -28,11 +28,8 @@ vi.mock("@/lib/supabase/server",()=>({
   return {from:()=>query};
  }
 }));
-vi.mock("@/lib/calc/scheduling/draftWeek",()=>({
- businessLocalDate:()=>"2026-10-25",
- draftWeekWithStaffIds:()=>({missing:[],days:[{
-  date:"2026-10-26",shifts:[{employeeId,start:"09:00",end:"12:00",paidHours:3}]
- }],totals:{costIsPartial:false},estimated:[]})
+vi.mock("@/lib/actions/oliviaPlanning",()=>({
+ previewOliviaWeek:state.preview
 }));
 vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({supervisorLoopRegistry:{}}));
 vi.mock("@/lib/ai/supervisor/loop/staffProposals.server",()=>({
@@ -56,7 +53,18 @@ import {draftStaffWeekInPlace} from "./staffDraftInPlace";
 const input={week:"2026-10-26",threadId:"33333333-3333-4333-8333-333333333333",
  requestKey:"66666666-6666-4666-8666-666666666666",locale:"en"};
 
-beforeEach(()=>{state.mode="ok";state.attempts=0;});
+beforeEach(()=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date("2026-10-25T18:00:00Z"));
+ state.mode="ok";state.attempts=0;
+ state.preview.mockReset();
+ state.preview.mockResolvedValue({ok:true,locations:{cafe:"America/Los_Angeles"},
+  plan:{best:{completeCoverage:true,hardConstraintsSatisfied:true,
+   cost:{costState:"verified"},shifts:[{
+    employeeId,locationId:"cafe",startAt:"2026-10-26T16:00:00Z",
+    endAt:"2026-10-26T19:00:00Z",paidMinutes:180
+   }]}}});
+});
+afterEach(()=>vi.useRealTimers());
 describe("owner staff draft idempotent retry",()=>{
  it("returns the exact shift preview for a safely created inert proposal",async()=>{
   const result=await draftStaffWeekInPlace(input);
@@ -65,6 +73,7 @@ describe("owner staff draft idempotent retry",()=>{
    shifts:[{employee_id:employeeId,date:"2026-10-26",
     start:"09:00",end:"12:00",break_minutes:0}]});
   expect(state.attempts).toBe(1);
+  expect(state.preview).toHaveBeenCalledExactlyOnceWith({week:"2026-10-26"});
  });
  it("releases a conflicting idempotency key so the owner can start a fresh draft",async()=>{
   state.mode="conflict";

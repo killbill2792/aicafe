@@ -75,6 +75,8 @@ export type PlannerBurden = { rate: number; status: "verified" | "estimate" | "u
 export type PlannerInput = {
   horizonStart: string; locations: PlannerLocation[];
   employees: PlannerEmployee[]; coverage: PlannerCoverage[];
+  /** Last week\'s verified Toast pattern, a soft preference only; never a commitment. */
+  historicalSeed?: Array<{employeeId:string;weekday:number;startLocal:string;endLocal:string}>;
   pinned?: PlannerPinned[];
   /** Trusted, exact published assignments whose starts are already in the past.
    * Never caller-supplied. The solver must preserve every field byte-for-byte.
