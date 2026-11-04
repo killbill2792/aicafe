@@ -5,7 +5,7 @@ const store=vi.hoisted(()=>({menu:vi.fn(),labels:vi.fn(),save:vi.fn()}));
 vi.mock("@/lib/data/menuCatalog.server",()=>({readMenuCatalogRows:store.menu}));
 vi.mock("@/lib/data/menuCategoryLabels.server",()=>({
  readMenuCategoryLabels:store.labels,saveAiMenuCategoryLabels:store.save}));
-import {labelNewMenuCategories} from "./drinkLabels.server";
+import {labelNewMenuCategories,labelAllCafesMenuCategories} from "./drinkLabels.server";
 
 const db={} as SupabaseClient;
 const item=(name:string,category:string)=>({id:name,name,base_name:null,category});
@@ -41,5 +41,33 @@ describe("AI labels a café's own menu categories once",()=>{
   const classify=vi.fn(async()=>{throw new Error("timeout");});
   expect(await labelNewMenuCategories(db,"cafe-1",classify)).toBe(0);
   expect(store.save).not.toHaveBeenCalled();
+ });
+});
+
+describe("labeling is its own job, independent of the brief and WhatsApp",()=>{
+ const cafesDb=(ids:string[])=>({from:()=>{
+  const q:Record<string,unknown>={};
+  for(const m of ["select","order"])q[m]=()=>q;
+  q.range=async()=>({data:[...ids.map(id=>({id,is_demo:false})),{id:"demo",is_demo:true}],error:null});
+  return q;
+ }}) as unknown as SupabaseClient;
+ it("labels every real café with no WhatsApp setting, binding or owner message at all",async()=>{
+  for(const name of Object.keys(process.env).filter(k=>k.startsWith("WHATSAPP_")))delete process.env[name];
+  const classify=vi.fn(async(categories:readonly {category:string}[])=>
+   categories.map(c=>({category:c.category,isDrink:c.category!=="Food"})));
+  expect(await labelAllCafesMenuCategories(cafesDb(["seiyun","test-cafe"]),classify))
+   .toEqual({cafes:2,labeled:4,stoppedEarly:false});
+  expect(store.save).toHaveBeenCalledTimes(2);
+  expect(store.save.mock.calls.map(c=>c[1])).toEqual(["seiyun","test-cafe"]);
+ });
+ it("one café's AI failure is logged and never stops the next café",async()=>{
+  const info=vi.spyOn(console,"info").mockImplementation(()=>{});
+  const classify=vi.fn()
+   .mockRejectedValueOnce(new Error("openai_http_500"))
+   .mockResolvedValueOnce([{category:"Traditional",isDrink:true}]);
+  expect(await labelAllCafesMenuCategories(cafesDb(["a","b"]),classify))
+   .toEqual({cafes:2,labeled:1,stoppedEarly:false});
+  expect(info).toHaveBeenCalledWith("menu_category_labels",expect.objectContaining({outcome:"failed"}));
+  info.mockRestore();
  });
 });
