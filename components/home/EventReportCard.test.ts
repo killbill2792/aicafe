@@ -1,5 +1,7 @@
 import {describe,expect,it} from "vitest";
-import {safeEventReport} from "./EventReportCard";
+import {safeEventReport,EventReportCard} from "./EventReportCard";
+import {createElement} from "react";
+import {renderToStaticMarkup} from "react-dom/server";
 
 describe("Past event report cards",()=>{
   it("keeps certified zero sales distinct from missing values",()=>{
@@ -41,4 +43,40 @@ describe("Past event report cards",()=>{
       done:null,total:null,
       days:[{date:"2026-10-30",actualCents:null,typicalCents:null,hours:[]}]});
   });
+  it.each([["USD","$50.00","$5.00"],["EUR","€50.00","€5.00"],
+    [null,"50.00","5.00"]] as const)(
+    "renders daily and hourly major-unit values for %s in the same currency as narration",
+    (currency,dayMoney,hourMoney)=>{
+      const html=renderToStaticMarkup(createElement(EventReportCard,{
+        report:{reportText:"Verified sales.",days:[{date:"2026-11-02",
+          actualCents:5000,typicalCents:4000,
+          hours:[{hourLocal:7,actualCents:500,usualCents:400}]}],
+          observedDays:1,expectedDays:1,checklist:{done:1,total:1}},
+        status:"complete",currency,locale:"en",
+        t:(key:string)=>key,onChat:()=>{},
+      }));
+      expect(html).toContain(dayMoney);
+      expect(html).toContain(hourMoney);
+      expect(html).not.toContain("5000 ¢");
+      expect(html).not.toContain("500 ¢");
+      if(currency===null)expect(html).toContain("reportCurrencyMissing");
+      else expect(html).not.toContain("reportCurrencyMissing");
+    });
+  it("underlines a verified formatted report amount without inserting a marker",()=>{
+    const text="Sales: $1,358.44 vs $1,206.05.";
+    const first=text.indexOf("$1,358.44");
+    const html=renderToStaticMarkup(createElement(EventReportCard,{
+      report:{reportText:text,reportProvenance:[{
+        start:first,end:first+"$1,358.44".length,source:"owner"}],
+        days:[],observedDays:1,expectedDays:1,checklist:{done:1,total:1}},
+      status:"complete",currency:"USD",locale:"en",
+      t:(key:string)=>key,onChat:()=>{},
+    }));
+    expect(html).toContain("decoration-dotted");
+    expect(html).toContain("decoration-chart-staff");
+    expect(html).toContain(">$1,358.44</button>");
+    expect(html).not.toContain("$1,358.44°");
+    expect(html).not.toContain("h-[6px] w-[6px] align-super");
+  });
+
 });

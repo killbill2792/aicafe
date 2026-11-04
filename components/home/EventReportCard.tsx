@@ -2,6 +2,7 @@
 
 import type {ReactNode} from "react";
 import {ChatMarkdown} from "./ChatMarkdown";
+import {formatEventMoney} from "@/lib/events/eventReportMoney";
 
 export type EventReport={
   status?:unknown;reportText?:unknown;observedDays?:unknown;expectedDays?:unknown;
@@ -57,9 +58,7 @@ export function EventReportCard({report,status,currency,locale,t,onChat}:{
   const parsed=safeEventReport(report);
   if(!parsed)return null;
   const count=(n:number|null)=>n===null?t("reportUnknown"):new Intl.NumberFormat(locale).format(n);
-  const money=(n:number|null)=>n===null?t("reportUnknown"):currency?
-    new Intl.NumberFormat(locale,{style:"currency",currency}).format(n/100):
-    new Intl.NumberFormat(locale).format(n)+" ¢";
+  const money=(n:number|null)=>formatEventMoney(n,currency,locale)??t("reportUnknown");
   return <section className="space-y-3 rounded-2xl border border-line bg-surface2 p-3 text-[17px]"
     aria-label={t("reportTitle")}>
     <h4 className="font-bold">{t("reportTitle")} · {status==="complete"?

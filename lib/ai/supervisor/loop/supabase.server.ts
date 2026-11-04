@@ -3,7 +3,7 @@ import "server-only";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
-import {ProposalRequestConflictError} from "./engine";
+import {ProposalRequestConflictError,effectHash} from "./engine";
 import type {LoopCreate,LoopRepository,OwnerLoopScope,LoopProposal,LoopSample,LoopReport} from "./engine";
 
 const uuid=z.uuid();
@@ -58,6 +58,23 @@ async function postMidRunUpdate(db:ReturnType<typeof createAdminSupabaseClient>,
       identifier:"supervisor-midrun:"+p.id,asOf:cafeToday(business.timezone)}]},
   });
   if(inserted.error&&inserted.error.code!=="23505")failed(inserted.error,"Supervisor mid-run update unavailable");
+}
+/** Narrative presentation is not new business evidence. JSONB key order must
+ * not affect the comparison, and an actual change to any event fact still delivers. */
+export function sameEventReportFacts(previous:unknown,next:unknown):boolean{
+  if(!previous||!next||typeof previous!=="object"||typeof next!=="object"||
+    Array.isArray(previous)||Array.isArray(next))return false;
+  const old=previous as Record<string,unknown>;
+  if(typeof old.reportText!=="string"||!old.reportText.trim())return false;
+  const withoutPresentation=(raw:Record<string,unknown>)=>{
+    const {reportText:ignoredText,reportFactsHash:ignoredHash,
+      reportTextOrigin:ignoredOrigin,reportProvenance:ignoredProvenance,
+      reportNumericEvidence:ignoredNumeric,...facts}=raw;
+    void ignoredText;void ignoredHash;void ignoredOrigin;void ignoredProvenance;void ignoredNumeric;
+    return facts;
+  };
+  return effectHash(withoutPresentation(old))===
+    effectHash(withoutPresentation(next as Record<string,unknown>));
 }
 /** Service-role persistence. The API verifies the owner session BEFORE constructing
  * a scope; the database transition RPC locks revision/actor/effect hash atomically.
@@ -199,9 +216,18 @@ export class SupabaseLoopRepository implements LoopRepository{
   }
   async saveReport(scope:OwnerLoopScope,p:LoopProposal,report:LoopReport,opts?:{midRun?:boolean}):Promise<void>{
     const db=createAdminSupabaseClient();
+    const persisted={...report.result,source:report.source,
+      recommendation:report.recommendation};
+    let formattingOnly=false;
+    if(p.capabilityId==="alex.event_readiness.v1"&&report.status!=="in_progress"){
+      const previous=await db.from("supervisor_reports").select("report,status")
+        .eq("business_id",scope.businessId).eq("proposal_id",p.id).maybeSingle();
+      if(previous.error)failed(previous.error,"Previous event report unavailable");
+      formattingOnly=previous.data?.status===report.status&&
+        sameEventReportFacts(previous.data.report,persisted);
+    }
     const written=await db.from("supervisor_reports").upsert({
-      business_id:scope.businessId,proposal_id:p.id,report:{...report.result,source:report.source,
-        recommendation:report.recommendation},status:report.status,
+      business_id:scope.businessId,proposal_id:p.id,report:persisted,status:report.status,
       generated_at:new Date().toISOString(),
     },{onConflict:"business_id,proposal_id"});
     if(written.error)failed(written.error,"Report save failed");
@@ -215,6 +241,32 @@ export class SupabaseLoopRepository implements LoopRepository{
     const delivery=report.delivery;
     if(!delivery)return;
     const taskId="supervisor:"+p.capabilityId+":"+p.id;
+    let alreadyMessaged=false;
+    if(formattingOnly){
+      // A saved report is NOT proof of delivery: an earlier attempt may have
+      // failed after the report upsert but before its inbox/chat writes.
+      // Existing rows are the durable delivery receipts (including legacy
+      // reports); do not add a second ledger or mark delivery prematurely.
+      const [taskSent,messageSent]=await Promise.all([
+        db.from("operating_tasks").select("id").eq("business_id",scope.businessId)
+          .eq("id",taskId).maybeSingle(),
+        db.from("ai_messages").select("id").eq("business_id",scope.businessId)
+          .eq("owner_user_id",scope.ownerUserId).eq("thread_id",p.threadId)
+          .eq("role","supervisor")
+          .contains("grounding",{evidence:[{
+            source:"operating_tasks",identifier:"supervisor-report:"+p.id,
+          }]})
+          .limit(1).maybeSingle(),
+      ]);
+      if(taskSent.error||messageSent.error)
+        failed(taskSent.error??messageSent.error,"Supervisor report delivery lookup unavailable");
+      // Both writes must have succeeded before a format-only refresh may
+      // skip the existing canonical delivery path. A partial write retries.
+      if(taskSent.data&&messageSent.data)return;
+      // If only the inbox was lost, repair it without reposting an older
+      // delivered chat message under a new narrative-format digest.
+      alreadyMessaged=Boolean(messageSent.data);
+    }
     const task=await db.from("operating_tasks").upsert({
       business_id:scope.businessId,id:taskId,agent_id:delivery.agentId,
       kind:delivery.taskKind,entity_type:delivery.entityType,entity_id:delivery.entityId,
@@ -229,6 +281,7 @@ export class SupabaseLoopRepository implements LoopRepository{
       evidence:delivery.evidence,updated_at:new Date().toISOString(),
     }).eq("business_id",scope.businessId).eq("id",taskId);
     if(refreshed.error)failed(refreshed.error,"Operations report update failed");
+    if(alreadyMessaged)return;
     if(!delivery.threadText.trim()||delivery.threadText.length>1200)
       throw new Error("Invalid canonical Supervisor report text");
     // Unique proposal UUID makes repeated cron runs idempotent; a late

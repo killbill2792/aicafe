@@ -8,6 +8,8 @@ import { createPortal } from "react-dom";
 type Verification = { start:number;end:number;source?:"owner"|"estimate"|"unchecked";detail?:string };
 export type ProvenanceLabels={owner:string;estimate:string;unchecked:string;breakEvenSales?:string;salesGap?:string;dailyOverhead?:string};
 const tones={owner:"bg-chart-staff",estimate:"bg-warn",unchecked:"border border-ink bg-transparent"} as const;
+const underlineTones={owner:"decoration-chart-staff",estimate:"decoration-warn",
+  unchecked:"decoration-ink"} as const;
 type DotEvent="hover-start"|"hover-end"|"focus-start"|"focus-end"|"tooltip-focus-start"|"tooltip-focus-end"|"click"|"escape";
 type DotInteraction={hovered:boolean;focused:boolean;tooltipFocused?:boolean;pinned:boolean;dismissed:boolean};
 const dotInitial:DotInteraction={hovered:false,focused:false,tooltipFocused:false,pinned:false,dismissed:false};
@@ -56,8 +58,9 @@ export function ProvenanceTooltip({label,position,tooltipRef,onPointerEnter,onPo
     style={{left:position?.left??0,top:position?.top??0,width:position?.width??320,
       transform:"translateX(-50%)",visibility:position?"visible":"hidden"}}>{label}</span>;
 }
-/** Keep the 6px footnote attached to its number; portal tooltips outside clipped scroll areas. */
-function SourceDot({tone,label}:{tone:keyof typeof tones;label:string}){
+/** Underline the entire verified token, not a dot that can split a number.
+ * Keep the existing hover, touch and keyboard explanation in a portal. */
+function SourceUnderline({tone,label,children}:{tone:keyof typeof tones;label:string;children:ReactNode}){
   const [interaction,dispatch]=useReducer(sourceDotNext,dotInitial);
   const open=sourceDotIsOpen(interaction);
   const [position,setPosition]=useState<TooltipPosition|null>(null);
@@ -83,8 +86,8 @@ function SourceDot({tone,label}:{tone:keyof typeof tones;label:string}){
     window.addEventListener("scroll",update,true);
     return ()=>{window.removeEventListener("resize",update);window.removeEventListener("scroll",update,true);};
   },[open,label]);
-  return <span className="relative inline-block h-[6px] w-[6px] align-super">
-    <button ref={button} type="button" aria-label={label} aria-expanded={open}
+  return <>
+    <button ref={button} type="button" aria-label={String(children)+" — "+label} aria-expanded={open}
       onMouseEnter={()=>dispatch("hover-start")}
       onMouseLeave={e=>{
         // Hoverable popover: do not dismiss while entering its scroll surface.
@@ -117,8 +120,8 @@ function SourceDot({tone,label}:{tone:keyof typeof tones;label:string}){
         else if(command==="end")surface.scrollTop=surface.scrollHeight;
         else surface.scrollTop+=command;
       }}
-      className="absolute left-1/2 top-1/2 z-10 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
-      <span aria-hidden="true" className={`block h-[6px] w-[6px] shrink-0 rounded-full ${tones[tone]}`}/>
+      className={`relative inline cursor-help border-0 bg-transparent p-0 align-baseline text-inherit underline decoration-dotted decoration-2 underline-offset-[3px] before:absolute before:inset-x-0 before:top-1/2 before:h-12 before:-translate-y-1/2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${underlineTones[tone]}`}
+      style={{font:"inherit"}}>{children}
     </button>
     {open&&typeof document!=="undefined"&&createPortal(
       <ProvenanceTooltip label={label} position={position} tooltipRef={tooltip}
@@ -129,7 +132,7 @@ function SourceDot({tone,label}:{tone:keyof typeof tones;label:string}){
           if(e.key==="Escape"){button.current?.focus();dispatch("escape");}
         }}/>,
       document.body)}
-  </span>;
+  </>;
 }
 type SourceLine = { text: string; start: number };
 type ListMarker = { ordered: boolean; number: number; content: string; contentStart: number };
@@ -183,7 +186,7 @@ function annotatedText(
     const source=span.source??"unchecked";
     const detail=span.detail==="breakEvenSales"?labels.breakEvenSales:span.detail==="salesGap"?labels.salesGap:span.detail==="dailyOverhead"?labels.dailyOverhead:span.detail;
     const explanation=detail?labels[source]+": "+detail:labels[source];
-    out.push(<span key={from} className="whitespace-nowrap">{text.slice(token.start,token.end)}<SourceDot tone={source} label={explanation}/></span>);
+    out.push(<span key={from} className="whitespace-nowrap"><SourceUnderline tone={source} label={explanation}>{text.slice(token.start,token.end)}</SourceUnderline></span>);
     badged.add(from);cursor=to;
   }
   if(cursor<end)out.push(text.slice(cursor-absoluteStart).replace(/\\\|/g,"|"));
