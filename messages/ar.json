@@ -2934,6 +2934,7 @@
     "posReviewAcceptToast": "اعتماد تصحيح Toast في المزامنة التالية",
     "posReviewKeepOwner": "الإبقاء على مناوبة المالك",
     "posReviewsTruncated": "توجد مراجعات أخرى؛ عالج هذه ثم حدّث الصفحة.",
+    "calendarPartial": "بعض مصادر التقويم غير متاحة؛ وقد تكون المناوبات المعروضة غير مكتملة.",
     "toastPlannedLabel": "مخطط في Toast",
     "toastActualLabel": "فعلي في Toast",
     "aiDraftLabel": "مسودة الذكاء الاصطناعي",
