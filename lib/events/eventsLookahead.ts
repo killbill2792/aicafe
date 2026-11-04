@@ -29,6 +29,14 @@ export function eventScanWindows(today:string,state:EventScanState|null,
     missed.push({from:today,to:horizon,reason:"weekly"});
   return missed;
 }
+/** City research has its own coverage ledger. An older nearby-events cursor
+ * must never suppress the first complete public-city research window. */
+export function cityScanWindows(today:string,state:EventScanState|null,locationHash:string,
+  cityCoverage:"unsearched"|"partial"|"complete"|"unavailable"|null):EventScanWindow[]{
+  return cityCoverage==="unsearched"?
+    [{from:today,to:addDays(today,13),reason:"initial"}]:
+    eventScanWindows(today,state,locationHash);
+}
 /** Fair selection for one shared daily research budget. Stable UTC-day
  * rotation prevents a café in the first DB page (or city) from permanently
  * monopolizing all six city research attempts. All cafés are still processed

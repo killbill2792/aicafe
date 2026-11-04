@@ -1,5 +1,5 @@
 import type {AgentToolContext} from "./index";
-import {todayLiveMissing} from "./today";
+import {todayLiveMissing,todayReadingFreshness} from "./today";
 import {coveredWindow,dateOffset,type CalcPeriod,type CoverageFallback} from "@/lib/calc/periods";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -15,7 +15,8 @@ export type CoveredSalesWindow={
  todaySoFar?:TodaySoFarResult|null;
 };
 export type TodaySoFarResult={provisional:true;available:true;businessDate:string;readAt:string;
- netSalesCents:number;orders:number;openChecks:number;missing:string[]}|
+ netSalesCents:number;orders:number;openChecks:number;missing:string[];
+ stale:boolean;lastUpdated:string|null;freshnessLabel:string|null}|
  {provisional:true;available:false;missing:string[]};
 /** The live reading (ctx.readTodaySoFar, via lib/data/todayLive.server.ts) for a today
  * question whose closed-day sales aren't imported yet. Never throws. */
@@ -27,7 +28,8 @@ async function readTodayLive(ctx:AgentToolContext):Promise<TodaySoFarResult>{
  if(!read.available)return {provisional:true,available:false,missing:read.missing};
  const t=read.value;
  return {provisional:true,available:true,businessDate:t.businessDate,readAt:t.readAt,netSalesCents:t.netSalesCents,
-  orders:t.orders,openChecks:t.openChecks,missing:todayLiveMissing(t)};
+  orders:t.orders,openChecks:t.openChecks,missing:todayLiveMissing(t),
+  ...todayReadingFreshness(t.readAt,ctx.timezone,ctx.locale)};
 }
 /** Do not silently substitute historical dates for the period the owner asked for.
  * A separate, labeled last complete day can accompany a missing "today". */

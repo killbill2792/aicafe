@@ -7,10 +7,10 @@ import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import type {SavedFact} from "@/lib/ownerFacts/inject";
 import {readCafeLocation,readPrimaryLocation} from "@/lib/data/cafeLocation.server";
 import {readEventDemandEvidence} from "@/lib/data/eventDemandEvidence.server";
-import {readCanonicalCafeEvents,readSavedEventTimeline,type CafeEvent,type SavedEventTimeline} from "@/lib/data/cafeEvents.server";
+import {readCanonicalCafeEvents,readSavedEventTimeline,readCityResearchCoverage,type CafeEvent,type SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {cafeCountry,holidaysBetween,addDays,weekdayOf} from "./holidays";
-import {eventIdentity,eventScanWindows,savedEventKind,dailyCafeScanOrder,
+import {eventIdentity,cityScanWindows,savedEventKind,dailyCafeScanOrder,
   type EventScanState} from "./eventsLookahead";
 import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
@@ -103,7 +103,9 @@ export async function scanCafe(db:Db,b:Business,today:string,
   let count=0;
   // With no known location, only persist calendar holidays; do not record
   // a completed web search or prevent the initial search after address setup.
-  const windows=locationHash?eventScanWindows(today,state,locationHash):
+  const cityCoverage=location&&budget&&search===searchNearbyEvents&&location.city?
+    await readCityResearchCoverage(db,b.id,today,addDays(today,13)):null;
+  const windows=locationHash?cityScanWindows(today,state,locationHash,cityCoverage?.status??null):
     [{from:today,to:addDays(today,13),reason:"initial" as const}];
   for(const range of windows){
     const now=new Date().toISOString();
@@ -483,10 +485,9 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
 export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
   now=new Date()):Promise<LookaheadRun>{
   const result:LookaheadRun={checked:0,scanned:0,planned:0,skipped:0,failed:0};
-  // Shared across every authorized café in this SINGLE scheduled run.
-  const researchBudget=newLdiBudget();
-  // Fair UTC-day rotation over ALL business pages: one city must not
-  // monopolize the global research budget merely by sorting first.
+  // Every café gets its own bounded research budget. A shared counter starves
+  // later cafés and prevents their first 14-day city scan from completing.
+  // Stable date rotation still prevents a fixed ordering bias.
   const businesses:Business[]=[];
   for(let offset=0;;offset+=100){
     const page=await db.from("businesses").select("id,timezone,is_demo")
@@ -514,7 +515,7 @@ export async function runEventsLookahead(db:Db=createAdminSupabaseClient(),
             return {checked:0,reported:0,failed:1};
           });
         result.failed+=observation.failed;
-        result.scanned+=await scanCafe(db,b,today,searchNearbyEvents,researchBudget);
+        result.scanned+=await scanCafe(db,b,today,searchNearbyEvents,newLdiBudget());
         const to=addDays(today,13);
         let timeline=await readSavedEventTimeline(db,
           {businessId:b.id,ownerUserId:owner.data.user_id},today,to);

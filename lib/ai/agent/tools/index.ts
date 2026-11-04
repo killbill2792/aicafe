@@ -6,6 +6,7 @@ import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerCh
 
 import {money,count} from "../explain";
 import { staffTools } from "./staff";
+import {localizeQualityNotes} from "./qualityNotes";
 import { attentionTools } from "./attention";
 import {scheduleReadTools} from "./scheduleReads";
 import { hoursTools } from "./hours";
@@ -130,7 +131,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
-  get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar live provisional reading is attached when today is not imported.",
+  get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
   get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
 };
 /** OpenAI strict mode needs every property listed in `required` at every nesting level;
@@ -160,31 +161,6 @@ export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
-/** Present the shared Toast trust keys as ONE localized note per issue, while
- * retaining machine-readable missingInputs for existing quality consumers. */
-function localizeQualityNotes(keys:readonly string[],locale:AgentLocale):string[]{
- const copy={en,es,ar}[locale].DataNotes;
- const notes:string[]=[];
- for(const key of keys){
-  const match=/^toastDaysNeedLook:(\d+):([^:]+):(\d+)$/.exec(key);
-  if(match){
-   const extra=Number(match[3]);
-   notes.push(copy.toastDaysNeedLook.replace("{count}",match[1])
-    .replace("{dates}",match[2].replaceAll(", ",", ").replaceAll(",",", "))
-    .replace("{more}",extra?copy.toastMoreDays.replace("{count}",String(extra)):""));
-  }else if(key.startsWith("toastImportIncompleteDays:")){
-   const match=/^toastImportIncompleteDays:(\d+):([^:]+):(\d+)$/.exec(key);
-   if(match)notes.push(copy.toastImportIncompleteDays.replace("{count}",match[1])
-    .replace("{dates}",match[2].replaceAll(",",", "))
-    .replace("{more}",Number(match[3])?copy.toastMoreDays.replace("{count}",match[3]):""));
-  }else if(key==="toastDayStatusUnavailable")notes.push(copy.toastDayStatusUnavailable);
-  else if(key.startsWith("toastFailedNoCanonicalSales:"))
-   notes.push(copy.toastFailedNoCanonicalSales.replace("{dates}",key.slice("toastFailedNoCanonicalSales:".length).replaceAll(",",", ")));
-  else if(key.startsWith("toastDayStatusMissing:"))
-   notes.push(copy.toastDayStatusMissing.replace("{dates}",key.slice("toastDayStatusMissing:".length).replaceAll(",",", ")));
- }
- return [...new Set(notes)];
-}
 export const requestedPeriod=calcRequestedPeriod;
 
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
@@ -419,7 +395,29 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name!=="get_sales")throw new ToolError("not_supported");
   const slice=await ctx.tools.getSalesTrend(period);
   const salesNotes=localizeQualityNotes([...slice.quality.missingInputs,...(slice.quality.notes??[])],ctx.locale);
+  const liveToday=selection.todaySoFar?.available===true&&
+    period.from===ctx.asOf&&period.to===ctx.asOf&&
+    selection.todaySoFar.businessDate===period.from&&!selection.todayImported?
+    selection.todaySoFar:null;
+  if(!slice.available&&liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
+    coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
+    todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,
+    lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
+    provisional:true,readAt:liveToday.readAt,stale:liveToday.stale,
+    lastUpdated:liveToday.lastUpdated,freshnessLabel:liveToday.freshnessLabel,
+    missing:liveToday.missing,
+    netSalesCents:liveToday.netSalesCents,
+    days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
+    todaySoFar:liveToday};
   if(!slice.available)return {...absent("daily_rollups",period,slice.quality.missingInputs),dataNotes:salesNotes,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar};
+  if(liveToday)return {source:"today_live",period,agentId:"alex",unit:"cents",
+    coverageLabel:selection.label,coverageFallback:selection.coverageFallback,
+    todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,
+    lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,
+    provisional:true,readAt:liveToday.readAt,missing:liveToday.missing,
+    netSalesCents:liveToday.netSalesCents,
+    days:[{date:liveToday.businessDate,netSalesCents:liveToday.netSalesCents,provisional:true}],
+    todaySoFar:liveToday};
   return {source:"daily_rollups",period,coverageLabel:selection.label,coverageFallback:selection.coverageFallback,todayImported:selection.todayImported,lastFullDay:selection.lastFullDay,lastFullDayTotals:selection.lastFullDayTotals,dataNote:selection.dataNote,todaySoFar:selection.todaySoFar,agentId:"alex",unit:"cents",
     missing:slice.quality.missingInputs,dataNotes:salesNotes,netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
