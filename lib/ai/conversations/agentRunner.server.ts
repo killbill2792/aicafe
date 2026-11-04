@@ -25,10 +25,10 @@ import {todaySoFarForBusiness} from "@/lib/data/todayLive.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {listOwnerGoals,readGoalStatus,roundForUnit} from "@/lib/ai/supervisor/loop/goalReads.server";
 import {recordGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
-import {readOwnerProposals,readOwnerReports,readOwnerPriceMonitorProposals} from "@/lib/ai/supervisor/loop/reads.server";
+import {readOwnerProposals,readOwnerPriceMonitorReports,readOwnerPriceMonitorProposals} from "@/lib/ai/supervisor/loop/reads.server";
 import {mapPriceMonitorRows} from "@/lib/ai/agent/tools/priceMonitor";
 import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment";
-import {BOARD_PROPOSAL_STATUSES} from "@/lib/operating/board";
+import {BOARD_PROPOSAL_STATUSES,BOARD_REPORT_STATUSES} from "@/lib/operating/board";
 import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
@@ -139,7 +139,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         const ownerScope={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
         const priceRows=await readOwnerPriceMonitorProposals(db,ownerScope,
           [priceExperimentCapabilityId,menuPriceChangeCapabilityId],BOARD_PROPOSAL_STATUSES);
-        const reports=await readOwnerReports(db,ownerScope,priceRows.map(r=>r.id),{limit:100});
+        const reports=await readOwnerPriceMonitorReports(db,ownerScope,priceRows.map(r=>r.id),BOARD_REPORT_STATUSES);
         return mapPriceMonitorRows(priceRows,reports,identity.asOf,identity.timezone);
       },
       // Toast credentials are service-role only; the café comes from the authenticated scope.
