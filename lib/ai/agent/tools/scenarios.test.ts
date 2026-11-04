@@ -4,6 +4,7 @@ import {figure,type Economics} from "@/lib/calc/supervisorEconomics";
 import type {AgentToolContext} from "./index";
 import type {ExplainLine} from "../explain";
 import {explainLineSchema} from "../explain";
+import {localizedLabel} from "@/components/home/HowIGotThis";
 
 const base:Economics={
  monthlyBills:figure(746700,"actual","Bills"),
@@ -120,6 +121,13 @@ describe("scoped read-only supervisor scenario tool",()=>{
       expect(line.result.kind).toBe("money");
       if(line.result.kind!=="money")throw new Error("non-money result");
       expect(evaluate(line)).toBe(line.result.cents);
+      // Every owner-facing string emitted by the actual scenario tool must have
+      // a locale-specific counterpart; never fall back to its English literal.
+      for(const name of [line.label,...line.inputs.map(input=>input.name)])
+        for(const locale of ["es","ar"] as const){
+          expect(localizedLabel(name,locale)).not.toBe(name);
+          expect(localizedLabel(name,locale).trim().length).toBeGreaterThan(0);
+        }
       seen.add(line.formula);
     }
   }
