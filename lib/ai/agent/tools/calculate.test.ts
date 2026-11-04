@@ -92,7 +92,7 @@ describe("calculate uses what the owner says",()=>{
       .toEqual({unit:"cents",valueCents:20000});
   });
   it.each([
-    ["I use 2 cartons per day, how many for 7 days?",7,2],
+    ["I use 2 cartons per day, how many for 7 days?",7,7],
     ["We work 6 hours each shift",6,6],
     ["Uso 2 cajas por día durante 7 días",7,7],
     ["أعمل 6 ساعات في كل وردية",6,6],
