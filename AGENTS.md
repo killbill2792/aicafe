@@ -120,6 +120,8 @@ A brief that never sends is worse than a brief with one line missing.
   week's research completed). Skip only when there is truly nothing to say.
 - **No silent skips.** Every skip or block is recorded with its step and reason in `morning_brief_runs`
   (`/admin/briefs`). A `return null` on the brief path without a recorded reason is a P1.
+  A Meta 4xx is saved as `provider_rejected:<code>[/<subcode>] <Meta's title>` (digit runs masked, no
+  message content), so the outbox row says why Meta refused.
 - **Meta template wording is fixed.** Template names, blank order and buttons live only in
   `lib/whatsapp/briefTemplates.ts`. Blanks are never empty and never contain line breaks, tabs or 4+
   spaces. Never claim a watcher that does not exist.
