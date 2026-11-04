@@ -1,6 +1,6 @@
 import {optimizeOliviaWeek} from "./plannerEngine";
 import {workerWageRate} from "./plannerCore";
-import type {PlannerEmployee,PlannerInput,PlannerShift} from "./plannerTypes";
+import type {PlannerEmployee,PlannerInput} from "./plannerTypes";
 
 export const HYPOTHETICAL_OWNER_ID="hypothetical-owner-zero-pay";
 /** Read-only assumption: an owner who says they are unpaid can work
@@ -8,7 +8,8 @@ export const HYPOTHETICAL_OWNER_ID="hypothetical-owner-zero-pay";
  * required certifications are NEVER attributed to the owner.
  */
 export function modelUnpaidOwnerWhatIf(input:PlannerInput){
- const baseline=optimizeOliviaWeek(input);
+ const neutral={...input,historicalSeed:[]};
+ const baseline=optimizeOliviaWeek(neutral);
  const hypothetical:PlannerEmployee={
   id:HYPOTHETICAL_OWNER_ID,displayName:"Owner (hypothetical)",
   active:true,isOwner:true,ownerOpportunityCentsPerHour:null,
@@ -22,7 +23,7 @@ export function modelUnpaidOwnerWhatIf(input:PlannerInput){
   wage:{wage_period:"hour",wage_amount_cents:0,default_hourly_wage_cents:0},
   provenance:"known_eligible_zero",eligibleZeroVerified:true
  };
- const modeled=optimizeOliviaWeek({...input,employees:[...input.employees,hypothetical]});
+ const modeled=optimizeOliviaWeek({...neutral,employees:[...neutral.employees,hypothetical]});
  const base=baseline.scenarios.find(s=>s.objective==="cash")??baseline.best;
  const candidate=modeled.scenarios.find(s=>s.objective==="cash")??modeled.best;
  const valid=Boolean(base?.completeCoverage&&base.hardConstraintsSatisfied&&
