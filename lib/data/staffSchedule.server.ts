@@ -84,12 +84,20 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
  });
  // Preserve POS evidence as evidence, not paid schedule estimates. The calendar
  // uses the SAME authorized owner scope as the existing staff reader.
+ const supervisorOliviaDates=new Set(mapped.filter(s=>s.source==="olivia"&&s.status==="draft")
+   .map(s=>s.date));
  const entries:CalendarEntry[]=posShifts.map(s=>({
   id:"toast-planned:"+s.id,employeeId:s.employeeId,employeeName:s.employeeName,
   date:formatInTimeZone(new Date(s.start),owner.timezone,"yyyy-MM-dd"),
   start:formatInTimeZone(new Date(s.start),owner.timezone,"HH:mm"),
   end:formatInTimeZone(new Date(s.end),owner.timezone,"HH:mm"),source:"toast_planned"
  }));
+ for(const shift of mapped.filter(s=>s.source==="olivia"&&s.status==="draft"&&
+    s.date>=dates[0]&&s.date<=dates[6])){
+  entries.push({id:"ai-supervisor:"+shift.id,employeeId:shift.employeeId,
+   employeeName:shift.employeeName,date:shift.date,start:shift.start,end:shift.end,
+   source:"ai_draft"});
+ }
  try {
   const begin=new Date(Date.parse(dates[0]+"T00:00:00Z")-2*86400000).toISOString();
   const finish=new Date(Date.parse(dates[6]+"T00:00:00Z")+3*86400000).toISOString();
@@ -126,7 +134,7 @@ export async function getWeekSchedule(raw:unknown, explicit?:{client:SupabaseCli
      const plan=revision.data.scenario as {shifts?:Array<{employeeId:string;startAt:string;endAt:string}>}|null;
      for(const [i,shift] of (plan?.shifts??[]).entries()){
       const date=formatInTimeZone(new Date(shift.startAt),owner.timezone,"yyyy-MM-dd");
-      if(date<dates[0]||date>dates[6])continue;
+      if(date<dates[0]||date>dates[6]||supervisorOliviaDates.has(date))continue;
       entries.push({id:"ai-draft:"+revision.data.id+":"+i,employeeId:shift.employeeId,
        employeeName:allEmployees.find(e=>e.id===shift.employeeId)?.name??"Team member",
        date,start:formatInTimeZone(new Date(shift.startAt),owner.timezone,"HH:mm"),
