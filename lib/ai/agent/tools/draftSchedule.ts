@@ -1,5 +1,5 @@
 import {z} from "zod";
-import {formatInTimeZone} from "date-fns-tz";
+import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {nextMonday} from "@/lib/calc/scheduling/draftWeek";
 import {previewOliviaWeek} from "@/lib/actions/oliviaPlanning";
@@ -21,16 +21,7 @@ export const draftScheduleTools={draft_week_schedule:{
    agentId:"olivia",draft:true,saved:false,missing:[result.error,...(result.blockers??[]).map(b=>b.code)]};
   const best=result.plan.best;
   if(!best)return {source:"olivia_schedule",period:null,agentId:"olivia",draft:true,saved:false,missing:["noPlannerScenario"]};
-  const proposedShifts=best.shifts.map(shift=>{
-   const zone=result.locations[shift.locationId];
-   const localDate=formatInTimeZone(new Date(shift.startAt),zone,"yyyy-MM-dd");
-   const startLocal=formatInTimeZone(new Date(shift.startAt),zone,"HH:mm");
-   const endLocal=formatInTimeZone(new Date(shift.endAt),zone,"HH:mm");
-   const duration=Math.round((Date.parse(shift.endAt)-Date.parse(shift.startAt))/60000);
-   const breakMinutes=Math.max(0,duration-shift.paidMinutes);
-   return {employee_id:shift.employeeId,date:localDate,start:startLocal,end:endLocal,
-    break_minutes:breakMinutes};
-  });
+  const proposedShifts=oliviaProposalShifts(best.shifts,result.locations);
   const canPropose=proposedShifts.length>0&&proposedShifts.length<=60&&
    proposedShifts.every(s=>s.break_minutes<=240&&s.start!==s.end);
   let approval: {proposalId:string;revision:number;capabilityId:string}|null=null;
