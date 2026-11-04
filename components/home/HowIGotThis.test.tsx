@@ -97,4 +97,32 @@ describe("How I got this disclosure",()=>{
     expect(typeof (messages.SupervisorChat as Record<string,unknown>)[key]).toBe("string");
   }
  });
+ it("renders a what-if with price, weekly volume, fee and disclosed weekly result",()=>{
+  const scenario:ExplainLine={label:"Weekly gain after processing fees",
+    inputs:[{name:"New price",value:money(785)},{name:"Old price",value:money(775)},
+      {name:"Weekly units",value:count(82)},{name:"Processing fee rate",value:{kind:"percent",bps:415}}],
+    formula:"multiply",result:money(786),period:null,source:"scenario",provenance:"estimate"};
+  const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[scenario],locale:"en",
+    copy:en.SupervisorChat,currency:"USD"}));
+  expect(html).toContain("How I got this");
+  expect(html).toContain("$7.85");
+  expect(html).toContain("$7.75");
+  expect(html).toContain("82");
+  expect(html).toContain("4.15%");
+  expect(html).toContain("$7.86");
+ });
+ it("renders the five-input break-even formula without duplicating net sales",()=>{
+  const breakEven:ExplainLine={label:"Daily break-even sales",inputs:[
+    {name:"billsForPeriod",value:money(20000)},
+    {name:"loadedLaborForPeriod",value:money(7000)},
+    {name:"observedNetSales",value:money(100000)},
+    {name:"ingredientCostCalibration",value:money(30000)},
+    {name:"feeCalibrationForScenario",value:money(3000)}],
+    formula:"breakEven",result:money(31216),period:null,source:"get_break_even",provenance:"estimate"};
+  const html=renderToStaticMarkup(createElement(HowIGotThis,{lines:[breakEven],locale:"en",
+    copy:en.SupervisorChat,currency:"USD"}));
+  expect(html).toContain("$312.16");
+  expect((html.match(/\$1,000\.00/g)??[]).toHaveLength(1);
+ });
+
 });
