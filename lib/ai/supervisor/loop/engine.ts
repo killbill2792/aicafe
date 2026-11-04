@@ -175,7 +175,7 @@ export async function proposeLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
 /** The active proposal (if any) whose dependency scope names the same product. A monitored
  * proposal counts while its window is open; a window that has ended no longer blocks. */
 async function activeOverlap(scope:OwnerLoopScope,registry:ReturnType<typeof loopRegistry>,
-  repo:LoopRepository,dependency:Record<string,unknown>):Promise<ProposalOverlapError["running"]|null>{
+  repo:LoopRepository,dependency:Record<string,unknown>,exceptId?:string):Promise<ProposalOverlapError["running"]|null>{
   const productId=dependency.productId;
   if(typeof productId!=="string"||!repo.activeProposals)return null;
   const active=await repo.activeProposals(scope);
@@ -183,6 +183,7 @@ async function activeOverlap(scope:OwnerLoopScope,registry:ReturnType<typeof loo
   const timezone=await repo.cafeTimezone?.(scope);
   const today=timezone?cafeToday(timezone):null;
   for(const p of active){
+    if(p.id===exceptId)continue;
     let other:Record<string,unknown>;
     try{other=registry.get(p.capabilityId).dependencyScope(p.canonicalEffectPayload);}catch{continue;}
     if(other.kind!==dependency.kind||other.productId!==productId)continue;
@@ -210,10 +211,29 @@ export async function proposeFromOwnerConversation(scope:OwnerLoopScope,
   return proposeLoop(scope,registry,repo,candidates[0].capabilityId,
     candidates[0].input,requestKey);
 }
-export async function approveLoop(scope:OwnerLoopScope,repo:LoopRepository,id:string,revision:number){
+/** Approval is the moment a proposal becomes active, so the one-active-test-per-item rule is
+ * enforced here without a lock: approve (one atomic row transition), then re-read every active
+ * proposal. If any OTHER active proposal covers the same item, this approval backs out (approved →
+ * rejected, also atomic) and the owner is told what is running. Two simultaneous approvals both
+ * see each other and both back out, so two active tests on one item can never both survive. */
+export async function approveLoop(scope:OwnerLoopScope,repo:LoopRepository,id:string,revision:number,
+  registry?:ReturnType<typeof loopRegistry>){
   const p=await repo.load(scope,id);assertProposalScope(scope,p);
   if(p.revision!==revision||p.status!=="draft")throw new Error("Proposal approval conflict");
-  return repo.transition(scope,id,revision,"approve");
+  let dependency:Record<string,unknown>|null=null;
+  if(registry){
+    try{dependency=registry.get(p.capabilityId).dependencyScope(p.canonicalEffectPayload);}catch{dependency=null;}
+  }
+  if(dependency){
+    const before=await activeOverlap(scope,registry!,repo,dependency,p.id);
+    if(before)throw new ProposalOverlapError(before);
+  }
+  const approved=await repo.transition(scope,id,revision,"approve");
+  if(!dependency)return approved;
+  const after=await activeOverlap(scope,registry!,repo,dependency,p.id);
+  if(!after)return approved;
+  await repo.transition(scope,id,approved.revision,"reject");
+  throw new ProposalOverlapError(after);
 }
 export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof loopRegistry>,
   repo:LoopRepository,id:string,revision:number):Promise<{proposal:LoopProposal;result:LoopCommitResult}>{

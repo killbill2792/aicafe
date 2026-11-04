@@ -1,6 +1,12 @@
 import "server-only";
 import { z } from "zod";
 import { getLocale, getTranslations } from "next-intl/server";
+import { createTranslator } from "next-intl";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import enMessages from "@/messages/en.json";
+import esMessages from "@/messages/es.json";
+import arMessages from "@/messages/ar.json";
+import { getBusinessSnapshotFromDb } from "@/lib/data/snapshot.server";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import type { BusinessSnapshot } from "@/lib/data/types";
@@ -43,8 +49,19 @@ export const attentionItemSchema=z.strictObject({
   createdAt:z.string().nullable(),
 });
 export type AttentionItem=z.infer<typeof attentionItemSchema>;
+/** A server-verified café scope for callers without a browser session (morning brief and
+ * WhatsApp crons, the verified WhatsApp owner chat). Same reader, same rules; never a model input. */
+export type InboxScope={client:SupabaseClient;businessId:string};
 export type AttentionArgs={period?:Period;locale?:"en"|"es"|"ar";snapshot?:BusinessSnapshot;
-  menu?:Awaited<ReturnType<typeof getMenuControlCenter>>};
+  menu?:Awaited<ReturnType<typeof getMenuControlCenter>>;scope?:InboxScope};
+const CATALOGS={en:enMessages,es:esMessages,ar:arMessages};
+/** next-intl translators built from the message files, for requests that have no next-intl context. */
+function scopedTranslations(locale:"en"|"es"|"ar"){
+  const tr=<N extends "Home"|"Operations"|"Categories"|"SupervisorExperiment"|"Alerts"|"Reconnect"|"DailyBrief"|"Goals">(namespace:N)=>
+    createTranslator({locale,messages:CATALOGS[locale],namespace}) as unknown as Awaited<ReturnType<typeof getTranslations<N>>>;
+  return Promise.resolve([tr("Home"),tr("Operations"),tr("Categories"),tr("SupervisorExperiment"),tr("Alerts"),
+    tr("Reconnect"),tr("DailyBrief"),tr("Goals")] as const);
+}
 /** Home and chat must call this same owner-scoped source. A failed optional read is
  * reported as its own action, never silently replaced with no work. */
 function operatingTaskHref(task: OperatingTask): string {
@@ -91,27 +108,32 @@ export type Inbox={
 /** The one inbox reader. Strictly read-only: it never writes operating_tasks. */
 export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
   const period=args.period??"today";
-  const requestedLocale=args.locale??await getLocale();
+  const scope=args.scope;
+  const requestedLocale=args.locale??(scope?"en":await getLocale());
   const locale=requestedLocale==="es"||requestedLocale==="ar"?requestedLocale:"en";
-  const [snapshot,menu]=await Promise.all([args.snapshot??getSnapshot(period),args.menu??getMenuControlCenter()]);
+  const [snapshot,menu]=await Promise.all([
+    args.snapshot??(scope?getBusinessSnapshotFromDb(scope.client,scope.businessId,period):getSnapshot(period)),
+    args.menu??(scope?getMenuControlCenter({},scope):getMenuControlCenter())]);
+  if(scope&&snapshot.business.id!==scope.businessId)throw new Error("Inbox café scope mismatch");
   const vm=buildHomeViewModel(snapshot,period);
   // Weekly usage variance scans thousands of order lines. Pantry already reads
   // that report on demand; Home/chat must not await it to show attention items.
   // Independent secondary signals start together, with timings limited to names/ms.
   const [[t,tOperations,tCategories,tExperiment,tAlerts,tReconnect,tBrief,tGoals],
     posStatus,stored,alerts,unmatched]=await Promise.all([
-    timeReader("Home","getAttentionTranslations",()=>Promise.all([
+    timeReader("Home","getAttentionTranslations",()=>scope?scopedTranslations(locale):Promise.all([
       getTranslations("Home"),getTranslations("Operations"),getTranslations("Categories"),
       getTranslations("SupervisorExperiment"),getTranslations("Alerts"),getTranslations("Reconnect"),
       getTranslations("DailyBrief"),getTranslations("Goals"),
     ])),
-    timeReader("Home","getPosConnectionStatus",getPosConnectionStatus),
+    timeReader("Home","getPosConnectionStatus",scope?()=>getPosConnectionStatus(scope):getPosConnectionStatus),
     isSupabaseConfigured()
-      ?timeReader("Home","readPersistedOperatingTasks",()=>readPersistedOperatingTasks(snapshot.business.id))
+      ?timeReader("Home","readPersistedOperatingTasks",()=>scope
+        ?readPersistedOperatingTasks(scope.businessId,scope):readPersistedOperatingTasks(snapshot.business.id))
       :Promise.resolve([]),
     // Optional failures should remain visible as an unavailable alert/match item.
-    timeReader("Home","getOpenAlerts",getOpenAlerts).catch(()=>null),
-    timeReader("Home","getCatalogMatchReview",getCatalogMatchReview).catch(()=>null),
+    timeReader("Home","getOpenAlerts",scope?()=>getOpenAlerts(scope):getOpenAlerts).catch(()=>null),
+    timeReader("Home","getCatalogMatchReview",scope?()=>getCatalogMatchReview(undefined,scope):getCatalogMatchReview).catch(()=>null),
   ]);
   const squareReconnectReady=isSquareConfigured()&&Boolean(process.env.SQUARE_REDIRECT_URI);
   const derivedTeam=buildOperationsTeamViewModel(snapshot,menu);
@@ -325,4 +347,17 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
   return {items:parsed.filter(item=>!staleAlertIds.has(item.id)),
     expiredAlerts:parsed.filter(item=>staleAlertIds.has(item.id)),
     tasks:{needsYou:team.needsYou,watching:team.watching,handled:team.handled}};
+}
+
+/** What the crons need from the inbox: the Needs-you count and the newest stored or
+ * computed task in it. Derived from readInbox only, so it always equals Home's count. */
+export function needsYouSummary(inbox:Inbox):{count:number;newestTask:OperatingTask|null}{
+  const ids=new Set(inbox.items.map(item=>item.id));
+  const tasks=inbox.tasks.needsYou.filter(task=>ids.has(task.id))
+    .sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  return {count:inbox.items.length,newestTask:tasks[0]??null};
+}
+/** The inbox for a server-verified café (morning brief, WhatsApp alerts). Read-only. */
+export async function readCafeNeedsYou(scope:InboxScope,locale:"en"|"es"|"ar"="en"){
+  return needsYouSummary(await readInbox({scope,locale}));
 }

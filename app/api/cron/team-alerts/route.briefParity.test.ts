@@ -7,6 +7,9 @@ vi.mock("@/lib/ai/notifications/whatsapp.server",()=>({
   notificationEnabled:spies.enabled,safeTaskKind:spies.kind,deliverOwnerTemplate:spies.deliver,
 }));
 vi.mock("@/lib/metrics/core/clock",()=>({cafeToday:()=> "2026-10-31"}));
+// The alert picks its task from the shared inbox reader (tested in lib/attention).
+vi.mock("@/lib/attention/getAttentionItems.server",()=>({readCafeNeedsYou:async()=>({count:1,
+  newestTask:{id:"task-1",kind:"money_update",status:"needs_owner"}})}));
 import {GET} from "./route";
 function setup(hasBrief:boolean){
   const mutations:string[]=[];

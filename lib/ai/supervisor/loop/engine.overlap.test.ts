@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
 import {z} from "zod";
-import {loopRegistry,proposeLoop,registerLoopCapability,ProposalOverlapError,type LoopCreate,type LoopProposal,
+import {approveLoop,loopRegistry,proposeLoop,registerLoopCapability,ProposalOverlapError,type LoopCreate,type LoopProposal,
   type LoopRepository,type OwnerLoopScope} from "./engine";
 import {runningOverlapResult} from "@/lib/ai/agent/tools/priceExperiment";
 
@@ -69,5 +69,70 @@ describe("one active test per item",()=>{
       draft:false,saved:false,missing:["runningExperimentSameItem"],
       runningExperiment:{proposalId:"test-1",status:"manual_confirmed",endsOn:daysFrom(2)}});
     expect(runningOverlapResult(new Error("other"),"x")).toBeNull();
+  });
+});
+
+/** Shared in-memory ledger with the database's row rules: approve only from draft, reject from
+ * draft/approved, each a single atomic row step. Every call yields, so concurrent calls interleave. */
+class RaceRepo implements LoopRepository{
+  rows=new Map<string,LoopProposal>();
+  private tick=()=>new Promise<void>(resolve=>setTimeout(resolve,0));
+  async cafeTimezone(){return "UTC";}
+  async activeProposals(){await this.tick();
+    return [...this.rows.values()].filter(p=>["approved","executing","manual_pending","manual_confirmed","committed"].includes(p.status));}
+  async create(s:OwnerLoopScope,key:string,p:LoopCreate){await this.tick();
+    const row:LoopProposal={...p,id:key,status:"draft",revision:1,monitoringStartDate:null,createdAt:new Date().toISOString()};
+    this.rows.set(key,row);return row;}
+  async load(_s:OwnerLoopScope,id:string){await this.tick();return {...this.rows.get(id)!};}
+  async transition(_s:OwnerLoopScope,id:string,revision:number,action:string){await this.tick();
+    const p=this.rows.get(id)!;
+    if(p.revision!==revision)throw new Error("proposal_revision_conflict");
+    const next=action==="approve"&&p.status==="draft"?"approved":action==="reject"&&["draft","approved"].includes(p.status)?"rejected":null;
+    if(!next)throw new Error("invalid transition");
+    const row={...p,status:next as LoopProposal["status"],revision:p.revision+1};this.rows.set(id,row);return row;}
+  async addSample(){}async clearSample(){}async samples(){return [];}async saveReport(){}
+}
+const ownScope=(thread:string):OwnerLoopScope=>({...scope,threadId:thread});
+const active=(r:RaceRepo)=>[...r.rows.values()].filter(p=>p.status==="approved").map(p=>p.id);
+
+describe("concurrent proposals on the same item",()=>{
+  it("two proposals created at the same moment are both inert drafts; approval decides",async()=>{
+    const r=new RaceRepo();
+    const [a,b]=await Promise.all([
+      proposeLoop(ownScope("t-a"),registry,r,"alex.drink_price_experiment.v1",{productId:"latte",newPriceCents:785},"a"),
+      proposeLoop(ownScope("t-b"),registry,r,"alex.drink_price_experiment.v1",{productId:"latte",newPriceCents:795},"b")]);
+    expect([a.status,b.status]).toEqual(["draft","draft"]);
+    expect(active(r)).toEqual([]);
+  });
+
+  it("two approvals at the same moment can never both stay active",async()=>{
+    const r=new RaceRepo();
+    await proposeLoop(ownScope("t-a"),registry,r,"alex.drink_price_experiment.v1",{productId:"latte",newPriceCents:785},"a");
+    await proposeLoop(ownScope("t-b"),registry,r,"alex.drink_price_experiment.v1",{productId:"latte",newPriceCents:795},"b");
+    const results=await Promise.allSettled([approveLoop(ownScope("t-a"),r,"a",1,registry),approveLoop(ownScope("t-b"),r,"b",1,registry)]);
+    expect(active(r).length).toBeLessThanOrEqual(1);
+    for(const result of results)if(result.status==="rejected")expect(result.reason).toBeInstanceOf(ProposalOverlapError);
+    // Every refused approval was backed out, not left half-approved.
+    expect(results.filter(x=>x.status==="fulfilled").length).toBe(active(r).length);
+  });
+
+  it("one after the other: the second is refused before it is approved",async()=>{
+    const r=new RaceRepo();
+    await proposeLoop(ownScope("t-a"),registry,r,"alex.drink_price_experiment.v1",{productId:"latte",newPriceCents:785},"a");
+    await proposeLoop(ownScope("t-b"),registry,r,"alex.drink_price_experiment.v1",{productId:"latte",newPriceCents:795},"b");
+    await approveLoop(ownScope("t-a"),r,"a",1,registry);
+    const error=await approveLoop(ownScope("t-b"),r,"b",1,registry).catch(e=>e);
+    expect(error).toBeInstanceOf(ProposalOverlapError);
+    expect((error as ProposalOverlapError).running.proposalId).toBe("a");
+    expect(r.rows.get("b")?.status).toBe("draft");
+    expect(active(r)).toEqual(["a"]);
+  });
+
+  it("a different item is approved normally",async()=>{
+    const r=new RaceRepo();
+    await proposeLoop(ownScope("t-a"),registry,r,"alex.drink_price_experiment.v1",{productId:"latte",newPriceCents:785},"a");
+    await proposeLoop(ownScope("t-b"),registry,r,"alex.drink_price_experiment.v1",{productId:"mocha",newPriceCents:650},"b");
+    await Promise.all([approveLoop(ownScope("t-a"),r,"a",1,registry),approveLoop(ownScope("t-b"),r,"b",1,registry)]);
+    expect(active(r).sort()).toEqual(["a","b"]);
   });
 });

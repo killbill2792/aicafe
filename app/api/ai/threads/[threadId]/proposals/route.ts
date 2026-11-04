@@ -17,6 +17,12 @@ import {purchaseCapabilityId,purchaseCapability} from "@/lib/ai/supervisor/loop/
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
+/** The loop refused a second active proposal on the same item (engine ProposalOverlapError). */
+function runningOverlap(error:unknown):{proposalId:string;status:string;endsOn:string|null}|null{
+  if(!(error instanceof Error)||error.name!=="ProposalOverlapError"||!("running" in error))return null;
+  const r=(error as Error&{running:{proposalId:string;status:string;endsOn:string|null}}).running;
+  return {proposalId:r.proposalId,status:r.status,endsOn:r.endsOn};
+}
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type Params={params:Promise<{threadId:string}>};
 const uuid=z.uuid(),revision=z.number().int().positive();
@@ -208,7 +214,7 @@ export async function POST(request:Request,{params}:Params){
             new Date(Date.now()+86400000).toISOString().slice(0,10));
           return conversationJson({proposal:await view(scope,repo,committed)});
         }
-        const approved=p.status==="draft"?await approveLoop(scope,repo,p.id,p.revision):p;
+        const approved=p.status==="draft"?await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry):p;
         const result=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision);
         return conversationJson({proposal:await view(scope,repo,result.proposal)});
       }catch{
@@ -233,7 +239,7 @@ export async function POST(request:Request,{params}:Params){
       // Only a persisted approval record enables the atomic SQL executor.
       // The SQL function independently locks source and compares the token.
       try{
-        const approved=p.status==="draft"?await approveLoop(scope,repo,p.id,p.revision):p;
+        const approved=p.status==="draft"?await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry):p;
         const result=await repo.commitStaff(scope,p.id,approved.revision);
         return conversationJson({state:result.state,proposal:await view(scope,repo,result.proposal)},
           result.state==="stale"?409:200);
@@ -259,7 +265,7 @@ export async function POST(request:Request,{params}:Params){
       try{
         if(input.action==="cancel")
           return conversationJson({proposal:await view(scope,repo,await repo.transition(scope,p.id,p.revision,"reject"))});
-        const approved=await approveLoop(scope,repo,p.id,p.revision);
+        const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
         const committed=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision);
         return conversationJson({proposal:await view(scope,repo,committed.proposal)});
       }catch{
@@ -279,11 +285,14 @@ export async function POST(request:Request,{params}:Params){
       if(current!==effect.oldPriceCents)
         return conversationJson({state:"stale",proposal:{...card(p,"stale"),currentPriceCents:current}},409);
       try{
-        const approved=await approveLoop(scope,repo,p.id,p.revision);
+        const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
         const committed=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision);
         return conversationJson({proposal:await view(scope,repo,committed.proposal)});
-      }catch{
+      }catch(error){
         const latest=await repo.load(scope,p.id);
+        const overlap=runningOverlap(error);
+        if(overlap)return conversationJson({state:"conflict",error:"running_experiment_same_item",running:overlap,
+          proposal:await view(scope,repo,latest)},409);
         if(latest.status==="manual_pending")
           return conversationJson({proposal:await view(scope,repo,latest)});
         return conversationJson({state:"conflict",proposal:await view(scope,repo,latest)},409);
@@ -324,10 +333,13 @@ export async function POST(request:Request,{params}:Params){
         replaced:card(replacement.replaced,"edited")});
     }
     try{
-      const approved=await approveLoop(scope,repo,p.id,p.revision);
+      const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
       const committed=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision);
       return conversationJson({proposal:card(committed.proposal)});
     }catch(error){
+      const overlap=runningOverlap(error);
+      if(overlap)return conversationJson({state:"conflict",error:"running_experiment_same_item",running:overlap,
+        proposal:card(await repo.load(scope,p.id))},409);
       if(error instanceof StaleProposalError){
         // Only StaleProposalError proves that no menu price/history write
         // happened. Persist that terminal result after the atomic claim;

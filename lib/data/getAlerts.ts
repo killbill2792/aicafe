@@ -19,12 +19,16 @@ export type AlertRow = {
 };
 
 /** Read-only alert listing. The 15-minute refresh-derived cron owns generation. */
-export async function getOpenAlerts(): Promise<AlertRow[]> {
+/** `explicit` is a server-verified café scope (crons, verified WhatsApp owner); never a browser choice. */
+export async function getOpenAlerts(explicit?: { client: Awaited<ReturnType<typeof createServerSupabaseClient>>; businessId: string }): Promise<AlertRow[]> {
   if (!isSupabaseConfigured()) return [];
-  const supabase = await createServerSupabaseClient();
-  const user=await getOptionalAuthenticatedUser();
-  if (!user) return [];
-  const businessId = await getActiveBusinessId(user.id);
+  const supabase = explicit?.client ?? await createServerSupabaseClient();
+  let businessId = explicit?.businessId;
+  if (!businessId) {
+    const user=await getOptionalAuthenticatedUser();
+    if (!user) return [];
+    businessId = await getActiveBusinessId(user.id);
+  }
 
 
   const { data, error } = await supabase

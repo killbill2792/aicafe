@@ -77,7 +77,7 @@ export async function POST(request:Request,{params}:Params){
    case "propose":return conversationJson({proposal:await proposeLoop(scope,
        supervisorLoopRegistry,repo,priceExperimentCapabilityId,
        {productId:input.productId,increaseCents:input.increaseCents},input.requestKey)});
-   case "approve":return conversationJson({proposal:await approveLoop(scope,repo,input.proposalId,input.revision)});
+   case "approve":return conversationJson({proposal:await approveLoop(scope,repo,input.proposalId,input.revision,supervisorLoopRegistry)});
    case "reject":return conversationJson({proposal:await repo.transition(scope,
        input.proposalId,input.revision,"reject")});
    case "commit":return conversationJson(await commitLoop(scope,supervisorLoopRegistry,
