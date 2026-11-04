@@ -270,7 +270,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
     [t("wages"),wageSummary(weeklyTotals)],
     [t("gaps"),!data.rules.coverage_enabled?t("coverageDisabled"):uncheckedDays.length?
    t("coverageNotChecked"):localized(data.gaps.length)],
-    [t("overtime"),localized(totalOvertimeMinutes(data.team,costedShifts,data.rules.weekly_ot_after_minutes,data.rules.weekly_ot_enabled)/60)+" h"]
+    [t("overtime"),projected.hoursComplete?localized(totalOvertimeMinutes(data.team,costedShifts,data.rules.weekly_ot_after_minutes,data.rules.weekly_ot_enabled)/60)+" h":"—"]
    ].map(([label,value])=><div key={label} className={`rounded-2xl border border-line bg-surface p-3 ${label===t("overtime")?"hidden lg:block":""} ${label===t("gaps")&&data.gaps.length?"border-neg bg-neg-soft":""}`}><strong className="block text-xl">{value}</strong><span className="text-sm text-muted">{label}</span></div>)}</div>
    {weeklyTotals.estimated&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-warn-soft p-3 text-warn-text">
     <p>{t("estimateNote",{count:weeklyTotals.estimateCount,unknown:weeklyTotals.unknownCount})}</p>
@@ -356,7 +356,7 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en",initi
       <span className="grid size-12 place-items-center rounded-full bg-accent-soft font-bold">{p.name[0]}</span>
       <div className="min-w-0 flex-1"><b>{p.name}</b><span className="ms-2 text-sm text-muted">{p.role?roleLabel(p.role):t("team")}</span>
         <div className="text-[17px] text-muted">{p.wageCents==null?(p.wagePeriod!=="hour"?t("salaryManagedBadge"):<button type="button" disabled={data.readOnly} onClick={()=>{openPerson(p);setTimeout(()=>document.getElementById("staff-hourly-wage")?.focus(),0);}} className="min-h-12 text-start underline text-accent-text">{t("noWageAction")}</button>):t("wagePerHour",{amount:fmt(p.wageCents,data.currency,locale)})}</div><div className="text-[17px] text-muted">{teamSummary(p)}</div></div>
-      <div className="text-end">{t("teamHoursShort",{hours:new Intl.NumberFormat(locale,{maximumFractionDigits:1}).format(hours(personTotals(p.id,costedShifts).paidMinutes))})}</div>
+      <div className="text-end">{projected.toastAffectedEmployeeIds.has(p.id)?"—":t("teamHoursShort",{hours:new Intl.NumberFormat(locale,{maximumFractionDigits:1}).format(hours(personTotals(p.id,costedShifts).paidMinutes))})}</div>
       <button disabled={data.readOnly} onClick={()=>openPerson(p)} className="min-h-12 px-2">{t("edit")}</button>
      </div>)}
      <div className="border-t border-line pt-3 font-bold">{t("total")} {wageSummary(weeklyTotals)} {weeklyTotals.estimated?" · "+t("estimate"):""}</div>
