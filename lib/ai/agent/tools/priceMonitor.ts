@@ -17,20 +17,46 @@ export function monitorCafeDate(asOf:string,timezone:string):string{
 export function mapPriceMonitorRows(rows:readonly OwnerProposalRow[],reports:readonly OwnerReportRow[],
     asOf:string,timezone:string){
   const today=monitorCafeDate(asOf,timezone);
-  const reportById=new Map(reports.map(r=>[r.proposal_id,r]));
+  // The canonical reader returns reports newest-first. Keep the latest report
+  // per proposal, including when a proposal has more than one report row.
+  const reportById=new Map<string,OwnerReportRow>();
+  for(const report of [...reports].sort((a,b)=>b.generated_at.localeCompare(a.generated_at))){
+    if(!reportById.has(report.proposal_id))reportById.set(report.proposal_id,report);
+  }
   return rows.map(r=>{
     const effect=r.canonical_effect_payload as Record<string,unknown>|null;
     const spec=r.monitor_spec as Record<string,unknown>|null;
     const days=spec?.durationDays;
     const durationDays=typeof days==="number"&&Number.isSafeInteger(days)&&days>0?days:null;
     const startDate=r.monitoring_start_date;
-    const day=startDate?Math.max(0,monitorDayIndex(startDate,today)):null;
+    const elapsed=startDate?monitorDayIndex(startDate,today):null;
+    const ended=elapsed!==null&&durationDays!==null&&elapsed>durationDays;
+    // Derived display lifecycle only: never mutate an approval or the loop's
+    // persisted status. A missing final report is not evidence of a result.
+    const stage=ended?"finished":
+      r.status==="manual_pending"?"waiting_on_owner":
+      elapsed===null?"not_started":elapsed<=0?"scheduled":"monitoring";
+    const day=ended||elapsed===null?null:Math.max(0,elapsed);
+    const finalReport=reportById.get(r.id);
+    const result=finalReport?.report&&typeof finalReport.report==="object"
+      ?finalReport.report as Record<string,unknown>:null;
+    const finalResult=finalReport?{
+      status:finalReport.status,
+      recommendation:result?.recommendation==="keep"||result?.recommendation==="revert"||
+        result?.recommendation==="adjust"?result.recommendation:null,
+      coveredDays:typeof result?.coveredDays==="number"?result.coveredDays:null,
+      observedRevenueCents:typeof result?.observedRevenueCents==="number"?result.observedRevenueCents:null,
+      realizedRevenueDifferenceCents:typeof result?.realizedRevenueDifferenceCents==="number"?
+        result.realizedRevenueDifferenceCents:null,
+      source:typeof result?.source==="string"?result.source:null,
+    }:null;
     return {proposalId:r.id,threadId:r.thread_id,
       productName:typeof effect?.productName==="string"?effect.productName:"Unknown item",
-      status:r.status,startDate,durationDays,day,
+      status:r.status,stage,startDate,durationDays,day,
+      finalReportMissing:ended&&!finalReport,finalResult,
       oldPriceCents:typeof effect?.oldPriceCents==="number"?effect.oldPriceCents:null,
       newPriceCents:typeof effect?.newPriceCents==="number"?effect.newPriceCents:null,
-      reportStatus:reportById.get(r.id)?.status??null};
+      reportStatus:finalReport?.status??null};
   });
 }
 
