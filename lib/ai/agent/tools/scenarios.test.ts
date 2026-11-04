@@ -52,8 +52,8 @@ describe("scoped read-only supervisor scenario tool",()=>{
   const result=await scenarioTools.simulate_scenario.execute({...raw,kind:"item_price",
     itemId:drink,deltaCents:10},context());
   expect(result.weeklyChangeCents).toBe(971);
-  const lines=result.explain as Array<{source:string;result:{kind:string;cents:number};inputs:Array<{name:string}>}>;
-  const weekly=lines.find(line=>line.label==="Weekly gain after processing fees") as typeof lines[number]&{label:string};
+  const lines=result.explain as Array<{label:string;source:string;result:{kind:string;cents:number};inputs:Array<{name:string}>}>;
+  const weekly=lines.find(line=>line.label==="Weekly gain after processing fees") as typeof lines[number];
   expect(weekly.source).toBe("scenario");
   expect(weekly.result).toEqual({kind:"money",cents:971});
   expect(weekly.inputs.map(input=>input.name)).toEqual([
