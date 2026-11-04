@@ -1,4 +1,4 @@
-import {describe,it,expect} from "vitest";
+import {describe,it,expect,vi} from "vitest";
 import {executeAgentTool,agentToolDefinitions,type AgentToolContext} from "./index";
 const quality={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const yes=<T>(value:T)=>({available:true as const,value,quality});
@@ -20,10 +20,15 @@ describe("agent read only capabilities",()=>{
   await expect(executeAgentTool("draft_week_schedule",{week_start:"2026-10-27"},ctx())).rejects.toThrow();
   await expect(executeAgentTool("suggest_new_item_price",{ingredient_cost_cents:0,category:"drink",packaging_cents:null,item_name:null},ctx())).rejects.toThrow();
  });
- it("returns a draft and explicit missing business hours",async()=>{
-  const r=await executeAgentTool("draft_week_schedule",{week_start:null},ctx());
-  expect(r).toMatchObject({source:"schedule_draft",agentId:"olivia",draft:true,saved:false,weekStart:"2026-10-26"});
-  expect(r.missing).toContain("businessHoursNotSet");
+ it("uses Olivia's feature-gated draft path instead of falling back to the retired scheduler",async()=>{
+  vi.stubEnv("SCHEDULING_FOUNDATION_ENABLED","false");
+  vi.stubEnv("SCHEDULING_PR3_DRAFTS_ENABLED","false");
+  try{
+   const r=await executeAgentTool("draft_week_schedule",{week_start:null},ctx());
+   expect(r).toMatchObject({source:"olivia_schedule",agentId:"olivia",
+    draft:true,saved:false,missing:["disabled"]});
+   expect(r).not.toHaveProperty("days");
+  }finally{vi.unstubAllEnvs();}
  });
  it("keeps pricing available if the optional location reader throws",async()=>{
   const context=ctx();
