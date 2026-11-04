@@ -103,7 +103,7 @@ export async function reviseStaffWeekDraft(raw:unknown){
     const slice=await readSchedulingDraftInputs(client,scope.businessId);
     if(!slice.available||slice.quality.missingInputs.length)
       return {ok:false as const,error:"missing"};
-    const today=businessLocalDate(new Date(),slice.value.timezone);
+    const today=formatInTimeZone(new Date(),slice.value.timezone,"yyyy-MM-dd");
     if(new Date(parsed.data.week+"T12:00:00Z").getUTCDay()!==1||
        parsed.data.week<today)return {ok:false as const,error:"week"};
     if(parsed.data.shifts.length===0)return {ok:false as const,error:"invalid"};
