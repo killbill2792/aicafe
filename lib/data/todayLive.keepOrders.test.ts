@@ -5,8 +5,11 @@ vi.mock("@/lib/pos/toast/todaySoFar.server",()=>({readToastTodaySoFar:live.read}
 vi.mock("@/lib/pos/toast/liveArchive.server",()=>({archiveLiveToastOrders:live.archive}));
 import {todaySoFarForBusiness} from "./todayLive.server";
 
-function fakeDb(){
- const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:null,error:null}),upsert:async()=>({error:null})};
+const reading=(readAt:string)=>({provisional:true,businessDate:"2026-11-03",readAt,netSalesCents:100,grossSalesCents:100,
+ discountsCents:0,refundsCents:0,tipCents:0,orders:1,openChecks:0,unparsedOrders:0,topItems:[],locationsRead:1,locationsFailed:0,truncated:false});
+function fakeDb(saved?:{readAt:string}){
+ const q={select:()=>q,eq:()=>q,upsert:async()=>({error:null}),
+  maybeSingle:async()=>({data:saved?{reading:reading(saved.readAt),read_at:saved.readAt}:null,error:null})};
  const m={select:()=>m,eq:()=>m,not:()=>m,limit:()=>m,
   maybeSingle:async()=>({data:{toast_time_zone:"America/Los_Angeles",closeout_hour:4},error:null})};
  return {from:(t:string)=>t==="toast_location_mappings"?m:q} as never;
@@ -27,6 +30,17 @@ describe("only the 15-minute job keeps today's orders",()=>{
   const db=fakeDb();
   await todaySoFarForBusiness(db,"cafe",{now,keepOrders:true});
   expect(live.archive).toHaveBeenCalledWith(db,"cafe","rest-1","2026-11-03",pages);
+ });
+ it("the job downloads and files orders even when Home or the chat saved a reading a minute ago",async()=>{
+  const db=fakeDb({readAt:new Date(now.getTime()-60_000).toISOString()});
+  await todaySoFarForBusiness(db,"cafe",{now,keepOrders:true});
+  expect(live.read).toHaveBeenCalledTimes(1);
+  expect(live.archive).toHaveBeenCalledWith(db,"cafe","rest-1","2026-11-03",pages);
+ });
+ it("Home and the chat reuse that recent reading and save no orders",async()=>{
+  const read=await todaySoFarForBusiness(fakeDb({readAt:new Date(now.getTime()-60_000).toISOString()}),"cafe",{now});
+  expect(read).toMatchObject({available:true,value:{businessDate:"2026-11-03"}});
+  expect(live.read).not.toHaveBeenCalled();
  });
  it("Home and the chat read without saving orders",async()=>{
   await todaySoFarForBusiness(fakeDb(),"cafe",{now});

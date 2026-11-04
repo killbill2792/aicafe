@@ -48,15 +48,18 @@ export async function currentTodayBusinessDay(db:SupabaseClient,businessId:strin
 }
 /** A fresh saved reading for the CURRENT business day, else a new live read from
  * Toast (saved for everyone). A reading from before closeout is never reused.
- * keepOrders (the 15-minute job only): also file today's finished orders from
- * that same download into the one-record-per-order archive, provisional until
- * the 5 AM import. Home and the chat leave it off so they stay fast. */
+ * keepOrders (the 15-minute job only): always download fresh, whatever Home or the
+ * chat read recently, and file today's finished orders from that same download
+ * into the one-record-per-order archive, provisional until the 5 AM import. A saved
+ * summary has no orders in it, so reusing one would leave today's orders unsaved.
+ * Home and the chat leave it off so they stay fast. */
 export async function todaySoFarForBusiness(admin:SupabaseClient,businessId:string,
  opts:{now?:Date;maxAgeMs?:number;keepOrders?:boolean}={}):Promise<TodaySoFarRead>{
  const now=opts.now??new Date();
  const [saved,businessDay]=await Promise.all([readSavedTodayLive(admin,businessId,now).catch(()=>null),
   currentTodayBusinessDay(admin,businessId,now).catch(()=>null)]);
- if(saved&&businessDay&&saved.value.businessDate===businessDay&&saved.ageMs<(opts.maxAgeMs??TODAY_LIVE_FRESH_MS))
+ if(!opts.keepOrders&&saved&&businessDay&&saved.value.businessDate===businessDay&&
+  saved.ageMs<(opts.maxAgeMs??TODAY_LIVE_FRESH_MS))
   return {available:true,value:saved.value};
  const read=await readToastTodaySoFar(admin,businessId,now,undefined,opts.keepOrders
   ?async(restaurantGuid,businessDate,pages)=>{

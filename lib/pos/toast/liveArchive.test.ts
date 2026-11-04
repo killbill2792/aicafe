@@ -84,16 +84,19 @@ describe("the live reading hands its own download to the order keeper",()=>{
   return {from:()=>q} as unknown as SupabaseClient;
  }
 
- it("passes the downloaded pages once, and not again from the cache",async()=>{
+ it("the order keeper always gets a fresh download, even right after a cached read",async()=>{
   clearTodaySoFarCache();
   const rows=[order(1)];
   const request=vi.fn(async()=>rows);
   const keep=vi.fn(async()=>{});
-  await readToastTodaySoFar(db(),business,now,request,keep);
+  // An owner read fills the cache; a second plain read uses it.
+  await readToastTodaySoFar(db(),business,now,request);
+  await readToastTodaySoFar(db(),business,new Date(now.getTime()+30_000),request);
   expect(request).toHaveBeenCalledTimes(1);
-  expect(keep).toHaveBeenCalledWith(r1,"2026-11-03",[rows]);
+  // The 15-minute job a minute later still downloads and keeps the orders.
   await readToastTodaySoFar(db(),business,new Date(now.getTime()+60_000),request,keep);
-  expect(keep).toHaveBeenCalledTimes(1);
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(keep).toHaveBeenCalledWith(r1,"2026-11-03",[rows]);
  });
 
  it("gives the same reading when keeping the orders fails",async()=>{

@@ -17,8 +17,9 @@ type Mapping={restaurant_guid:string;toast_time_zone:string|null;closeout_hour:n
 type Request=(path:string,restaurantGuid:string)=>Promise<unknown[]>;
 
 export type TodaySoFarRead={available:true;value:TodaySoFar}|{available:false;missing:string[]};
-/** Receives each location's downloaded pages (only on a fresh read, never from
- * the cache), so the 15-minute job can keep today's orders without a second download. */
+/** Receives each location's downloaded pages, so the 15-minute job can keep
+ * today's orders without a second download. A reader with this hook always
+ * downloads fresh: a cached summary has no orders to keep. */
 export type LocationPages=(restaurantGuid:string,businessDate:string,pages:unknown[][])=>Promise<void>;
 
 export async function readToastTodaySoFar(db:SupabaseClient,businessId:string,now=new Date(),
@@ -33,7 +34,7 @@ export async function readToastTodaySoFar(db:SupabaseClient,businessId:string,no
   const businessDate=currentToastBusinessDay(now,mappings[0].toast_time_zone!,mappings[0].closeout_hour!);
   const key=businessId+"|"+businessDate;
   const hit=cache.get(key);
-  if(hit&&now.getTime()-hit.at<CACHE_MS)return {available:true,value:hit.value};
+  if(hit&&!onLocationPages&&now.getTime()-hit.at<CACHE_MS)return {available:true,value:hit.value};
   const deadlineAt=Date.now()+READ_BUDGET_MS;
   const client=request?null:createToastClient(db,businessId);
   const get:Request=request??((path,guid)=>client!.request(path,guid,z.array(z.unknown()),{deadlineAt}));

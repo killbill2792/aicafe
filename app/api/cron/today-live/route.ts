@@ -21,8 +21,8 @@ export async function GET(request:Request){
  let saved=0,failed=0,watched=0,watchFailed=0;
  for(const businessId of businesses){
   if(Date.now()>=deadline)break;
-  // Readings younger than 10 minutes are kept; older ones are refreshed.
-  const read=await todaySoFarForBusiness(db,businessId,{maxAgeMs:10*60_000,keepOrders:true}).catch(()=>null);
+  // Always a fresh download: a recent saved summary has no orders to keep.
+  const read=await todaySoFarForBusiness(db,businessId,{keepOrders:true}).catch(()=>null);
   if(read?.available)saved++;else failed++;
   // Observation is read-only and follows the already enabled Events rollout;
   // there is no second approval/flag for examining saved Toast evidence.
