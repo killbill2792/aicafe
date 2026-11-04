@@ -46,6 +46,9 @@ export const staffProposalTools=Object.fromEntries(
   agentId:"olivia" as const,description:descriptions[name],schema:staffProposalInputs[name],
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const parsed=staffProposalInputs[name].parse(raw);
+   if(name==="propose_schedule"&&ctx.scheduleProposalCreated)
+    return {source:"staff_proposal",period:null,agentId:"olivia",draft:true,saved:false,
+     missing:[],...ctx.scheduleProposalCreated,duplicateSuppressed:true};
    const input=name==="propose_schedule"&&"week_start" in parsed&&parsed.week_start===null
     ?{...parsed,week_start:nextMonday(ctx.asOf)}:parsed;
    // The ordinary agent always supplies resolveState. Keep legacy tests that
