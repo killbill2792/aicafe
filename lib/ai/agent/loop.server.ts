@@ -75,6 +75,8 @@ export async function runAgentTurn(args: {
   /** owner-approved café facts, already capped and formatted. Sent as
    * the first input item (stable per café, so it also caches) — never in instructions. */
   memoryFacts?: string | null;
+  /** Authenticated café profile, supplied by the shared web/WhatsApp turn. */
+  cafeProfile?: string | null;
   /** Versioned café-specific facts are separate from approved conversation memory. */
   ownerFacts?: readonly SavedFact[];
   /** True when the authenticated fact read failed; never confuse with zero saved facts. */
@@ -102,6 +104,7 @@ export async function runAgentTurn(args: {
   const weekday=new Intl.DateTimeFormat("en-US",{weekday:"long",timeZone:"UTC"}).format(localDay);
   const input: unknown[] = [
     ...(args.memoryFacts ? [{ role: "developer", content: args.memoryFacts }] : []),
+    ...(args.cafeProfile ? [{ role: "developer", content: args.cafeProfile }] : []),
     ...(args.ownerFacts?.length ? [{role:"developer",content:formatSavedOwnerFacts(args.ownerFacts)}] : []),
     {role:"developer",content:"Café local date: "+args.context.asOf+" ("+weekday+"), timezone "+
       args.context.timezone+"; weeks start Monday"},
