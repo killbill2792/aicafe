@@ -241,6 +241,7 @@ export class SupabaseLoopRepository implements LoopRepository{
     const delivery=report.delivery;
     if(!delivery)return;
     const taskId="supervisor:"+p.capabilityId+":"+p.id;
+    let alreadyMessaged=false;
     if(formattingOnly){
       // A saved report is NOT proof of delivery: an earlier attempt may have
       // failed after the report upsert but before its inbox/chat writes.
@@ -262,6 +263,9 @@ export class SupabaseLoopRepository implements LoopRepository{
       // Both writes must have succeeded before a format-only refresh may
       // skip the existing canonical delivery path. A partial write retries.
       if(taskSent.data&&messageSent.data)return;
+      // If only the inbox was lost, repair it without reposting an older
+      // delivered chat message under a new narrative-format digest.
+      alreadyMessaged=Boolean(messageSent.data);
     }
     const task=await db.from("operating_tasks").upsert({
       business_id:scope.businessId,id:taskId,agent_id:delivery.agentId,
@@ -277,6 +281,7 @@ export class SupabaseLoopRepository implements LoopRepository{
       evidence:delivery.evidence,updated_at:new Date().toISOString(),
     }).eq("business_id",scope.businessId).eq("id",taskId);
     if(refreshed.error)failed(refreshed.error,"Operations report update failed");
+    if(alreadyMessaged)return;
     if(!delivery.threadText.trim()||delivery.threadText.length>1200)
       throw new Error("Invalid canonical Supervisor report text");
     // Unique proposal UUID makes repeated cron runs idempotent; a late
