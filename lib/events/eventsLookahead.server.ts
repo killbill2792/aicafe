@@ -17,6 +17,7 @@ import {searchNearbyEvents} from "./nearbyEventsSearch.server";
 import {scanSharedResearch,newLdiBudget,type LdiBudget} from "./ldiIntegration.server";
 import {verifyUpcomingEventChanges} from "./eventVerification.server";
 import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {effectHash,proposeLoop,monitorLoop,utcDateOffset,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,selectEventObservations,observedEventProposalIds}
@@ -335,6 +336,10 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   if(!selectedFactsHash)throw new Error("event_selected_facts_missing");
   const messageId=planMessageId(b.id,ownerId,day.date,
     selectedFactsHash,String(proposal.proposalId));
+  await notifyOwner(db,{
+    businessId:b.id,ownerUserId:ownerId,threadId,taskId:"event-plan:"+day.date,
+    kind:"event_plan",localDate:today,important:true,
+  },async()=>{
   const message=await db.from("ai_messages").insert({
     id:messageId,business_id:b.id,thread_id:threadId,owner_user_id:ownerId,
     author_user_id:null,role:"supervisor",content_type:"blocks",text_content:null,
@@ -346,12 +351,13 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   const task=await db.from("operating_tasks").upsert({
     id:"event-plan:"+day.date,business_id:b.id,agent_id:"alex",kind:"event_plan",
     entity_type:"event_day",entity_id:day.date,status:"needs_owner",confidence:"low",
-    payload:{businessDate:day.date,plannedOn:today,threadId,
+    payload:{businessDate:day.date,plannedOn:today,threadId,ownerNoticeDate:today,
       proposalId:proposal.proposalId,messageId,needsApproval:true,selectedEventIds},
     evidence:[{source:"cafe_events",facts:{businessDate:day.date,
       selectedEventIds}}],
   },{onConflict:"business_id,id"});
   requireOk(task.error);
+  });
   await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","");
   return true;
 }
@@ -402,6 +408,10 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
     // Revisions repair existing inbox rows even after today's new-day cap.
     // Only newly delivered days consume that cap.
     if(!previous&&created>=capacity)continue;
+    await notifyOwner(db,{
+      businessId,ownerUserId:ownerId,threadId:p.threadId,taskId,
+      kind:"event_plan",localDate:today,important:true,
+    },async()=>{
     const message=await db.from("ai_messages").insert({
       id:messageId,business_id:businessId,owner_user_id:ownerId,thread_id:p.threadId,
       author_user_id:null,role:"supervisor",content_type:"blocks",text_content:null,
@@ -414,13 +424,14 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
     const task=await db.from("operating_tasks").upsert({
       id:taskId,business_id:businessId,agent_id:"alex",kind:"event_plan",
       entity_type:"event_day",entity_id:p.startDate,status:"needs_owner",confidence:"low",
-      payload:{businessDate:p.startDate,
+      payload:{businessDate:p.startDate,ownerNoticeDate:today,
         plannedOn:typeof previous?.plannedOn==="string"?previous.plannedOn:today,
         threadId:p.threadId,proposalId:p.proposalId,messageId,needsApproval:true,
         selectedEventIds:p.eventIds??[]},
       evidence:[{source:"cafe_events",facts:{businessDate:p.startDate}}],
     },{onConflict:"business_id,id"});
     requireOk(task.error);
+    });
     if(!previous)created++;
     known.set(taskId,{proposalId:p.proposalId,threadId:p.threadId,messageId});
     repaired++;

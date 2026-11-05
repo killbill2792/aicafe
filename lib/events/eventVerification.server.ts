@@ -5,6 +5,7 @@ import {responseOutputText} from "./nearbyEvents";
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {agentReplyPayload} from "@/lib/ai/agent/persist.server";
 import {stableMessageId} from "@/lib/ai/supervisor/loop/supabase.server";
+import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {credibleEventEvidence,importantVerificationQueue,verifiedEventChange,
   type EventEvidence,type EventVerdict,type VerifiedChange} from "./eventVerification";
@@ -127,6 +128,10 @@ async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:str
     .eq("id",taskId).maybeSingle();
   if(exists.error)throw exists.error;
   if(!exists.data){
+    await notifyOwner(db,{
+      businessId,ownerUserId:ownerId,threadId:plan.threadId,taskId,
+      kind:"event_change",localDate:today,important:true,
+    },async()=>{
     const localeRow=await db.from("supervisor_proposals").select("locale")
       .eq("business_id",businessId).eq("owner_user_id",ownerId)
       .order("created_at",{ascending:false}).limit(1).maybeSingle();
@@ -166,12 +171,13 @@ async function deliverChange(db:Db,businessId:string,ownerId:string,timezone:str
       entity_type:"cafe_event",entity_id:event.id,status:"needs_owner",confidence:"high",
       payload:{businessDate:event.startDate,eventName:event.name,
         status:change.status,changeType:change.verdict,verifiedAt:change.verifiedAt,
-        sourceUrl:change.sourceUrl,threadId:plan.threadId,messageId,
+        sourceUrl:change.sourceUrl,threadId:plan.threadId,messageId,ownerNoticeDate:today,
         summary:turn.text,needsApproval:false},
       evidence:[{source:change.sourceUrl,facts:{verifiedAt:change.verifiedAt,
         previousStatus:change.previousStatus,status:change.status}}],
     },{onConflict:"business_id,id",ignoreDuplicates:true});
     if(task.error)throw task.error;
+    });
   }
   // An interrupted delivery is retried next cron. Never resurrect handled tasks.
   const cleared=await db.from("cafe_events").update({

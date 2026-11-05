@@ -4,6 +4,7 @@ import {z} from "zod";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {CHECKIN_ANSWERS,type CheckinAnswer,type GoalEffect} from "@/lib/calc/goals/goalSpec";
 import {goalCheckinText,type GoalLocale} from "@/lib/calc/goals/goalText";
+import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 
 /** Check-ins live in the shared inbox (operating_tasks): one item per goal and
  * day, "needs_owner" until answered, then "handled" with the answer. The same
@@ -18,12 +19,17 @@ function messageId(key:string){
 export type GoalScope={businessId:string;ownerUserId:string;threadId:string;locale:GoalLocale};
 
 export async function postGoalCheckin(db:Db,scope:GoalScope,proposalId:string,effect:GoalEffect,date:string):Promise<boolean>{
-  if(!effect.checkin)return false;
+  const checkin=effect.checkin;
+  if(!checkin)return false;
   const id=checkinTaskId(proposalId,date);
+  const notice=await notifyOwner(db,{
+    businessId:scope.businessId,ownerUserId:scope.ownerUserId,threadId:scope.threadId,
+    taskId:id,kind:"goal_checkin",localDate:date,important:true,
+  },async()=>{
   const task=await db.from("operating_tasks").upsert({business_id:scope.businessId,id,agent_id:"leo",kind:"goal_checkin",
     status:"needs_owner",confidence:"high",entity_type:"goal",entity_id:proposalId,
-    payload:{goalTitle:effect.title,question:effect.checkin.question,audience:effect.checkin.audience,
-      businessDate:date,proposalId,threadId:scope.threadId,answer:null,note:null},
+    payload:{goalTitle:effect.title,question:checkin.question,audience:checkin.audience,
+      businessDate:date,ownerNoticeDate:date,proposalId,threadId:scope.threadId,answer:null,note:null},
     evidence:[]},{onConflict:"business_id,id",ignoreDuplicates:true});
   if(task.error)throw new Error("Goal check-in inbox unavailable");
   // Only the newest question stays open; older unanswered ones close quietly
@@ -39,6 +45,8 @@ export async function postGoalCheckin(db:Db,scope:GoalScope,proposalId:string,ef
     grounding:{status:"partial",intent:"operating_tasks",evidence:[{source:"operating_tasks",identifier:id,asOf:date}]}});
   if(inserted.error&&inserted.error.code!=="23505")throw new Error("Goal check-in message unavailable");
   return !inserted.error;
+  });
+  return notice.result??false;
 }
 
 const row=z.object({id:z.string(),status:z.string(),payload:z.record(z.string(),z.unknown())});
