@@ -22,10 +22,14 @@ The configured PostgreSQL target is 17.0, following the current Supabase default
 When a particular statement must deliberately break one rule, keep the exception **directly before that statement**:
 
 ```sql
+set lock_timeout = '1s';
+set statement_timeout = '5s';
 -- Reason: approved cleanup after replacement and dependent readers were deployed.
 -- squawk-ignore ban-drop-column
 alter table public.example drop column retired_column;
 ```
+
+Other Squawk safety checks, including lock and statement timeouts, remain active and must still pass. Choose timeout values appropriate to the operation and deployment.
 
 Name specific rule(s) only, with a one-line `-- Reason: ...` immediately above the Squawk directive. Explain the concrete safety review in the PR. The guard rejects bare `squawk-ignore`, file-wide `squawk-ignore-file`, and transaction-mode overrides. Do not use an ignore to bypass RLS isolation checks or suppress an unreviewed destructive migration.
 

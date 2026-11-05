@@ -28,7 +28,7 @@ const binary = resolve('node_modules', '.bin', process.platform === 'win32' ? 's
 for (const [label, sql, shouldPass] of [
   ['good', 'select 1;\n', true],
   ['bad', 'alter table public.example drop column old_column;\n', false],
-  ['ignored', '-- Reason: reviewed one-time cleanup after the replacement is deployed.\n-- squawk-ignore ban-drop-column\nalter table public.example drop column old_column;\n', true],
+  ['ignored', "set lock_timeout = '1s';\nset statement_timeout = '5s';\n-- Reason: reviewed one-time cleanup after the replacement is deployed.\n-- squawk-ignore ban-drop-column\nalter table public.example drop column old_column;\n", true],
 ]) {
   const check = spawnSync(binary, [
     '--config', '.squawk.toml', '--reporter', 'gcc', '--stdin-filepath', `${label}.sql`,
