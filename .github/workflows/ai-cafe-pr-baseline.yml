@@ -184,8 +184,11 @@ jobs:
         if: steps.eval_ready.outputs.ready == 'true'
         env:
           PROMPTFOO_DISABLE_TELEMETRY: '1'
+          PROMPTFOO_DISABLE_UPDATE: '1'
           PROMPTFOO_DISABLE_UPDATE_CHECK: '1'
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPERVISOR_OPENAI_MODEL: ${{ vars.SUPERVISOR_OPENAI_MODEL }}
+          NODE_OPTIONS: --conditions=react-server
         run: npm run eval:supervisor
 
   guards:
