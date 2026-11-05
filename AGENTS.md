@@ -35,9 +35,13 @@ Where an older line in this file conflicts with these rules, these rules win.
    behavior on realistic data, and the PR states how each acceptance test proves it.
 6. **English only for now.** Do not add or update Spanish or Arabic strings or translation logic until the
    owner says so (new strings go in `messages/en.json` only). Do not break the existing ones.
-7. **Parallel PRs.** Several PRs run at once. Before asking to merge, every PR rebases on the latest main,
-   re-checks its migration numbers against merged main, re-runs CI, and lists the other open PRs that
-   touch the same files.
+7. **Parallel and dependent PRs open now.** Open planned PRs immediately, even when they depend on
+   another open PR. Never tell a chat "blocked until X merges" or "start only after X merges" as a
+   reason not to open its PR. Independent PRs branch from the latest `main`. If PR B depends on open
+   PR A, open B with **base = A's branch (not `main`)**; keep B's code ready and its CI green on that
+   base. **B merges only after A is on `main`.** Then rebase B onto (or retarget B to) the latest
+   `main`, re-run CI and Codex review, re-check migration numbers, and list any other open PRs that
+   touch the same files. Merge only under the auto-merge rule.
 8. **Merge readiness.** A PR is mergeable only when CI is green, the Codex review is clean (or every comment
    is fixed and re-reviewed), it is rebased on current main, and the PR body says what changed, what was
    deleted and what was not touched.
@@ -61,10 +65,12 @@ Where an older line in this file conflicts with these rules, these rules win.
 16. **Parallel PR waves.** We ship in days with several PR chats at once. Before a wave starts, the plan
     lists each PR, the files and tables it owns, and the shared pieces it uses or adds (connectors,
     settings, views, tools). Shared pieces are built once in a small foundation PR that merges first;
-    the others reuse it, never their own copy. If two PRs need the same file, one waits or the overlap
-    moves into the foundation PR. Before merging, each PR rebases on the latest main, switches to any
-    shared pieces that merged meanwhile, takes the next free migration number, and re-runs CI and Codex.
-    It merges only when that is green.
+    dependent PRs open now against that foundation branch, reuse its work, and keep their own CI green.
+    If two PRs need the same file, assign the overlap to one owner or the foundation PR; do not hold
+    the other PR unopened. Open it against the owning PR's branch instead. Independent PRs use latest
+    `main`. After each prerequisite merges, update the dependent PR onto latest `main`, switch to
+    merged shared pieces, take the next free migration number, and re-run CI and Codex. Only merge when
+    its prerequisites are on `main` and all checks are green under the auto-merge rule.
 17. **End-to-end testing.** "Done" means every acceptance scenario was tested end to end on the real app
     and real café data (chat answer, screen, stored rows, scheduled job), not only unit tests or a few
     happy paths. The PR lists each scenario with pass or fail. Partial passes are not done. Keep CI fast:
