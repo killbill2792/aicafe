@@ -2,6 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
 import {readToastTodaySoFar,type TodaySoFarRead} from "@/lib/pos/toast/todaySoFar.server";
+import {archiveLiveToastOrders} from "@/lib/pos/toast/liveArchive.server";
 import {currentToastBusinessDay,type TodaySoFar} from "@/lib/pos/toast/todaySoFar";
 import {cafeToday} from "@/lib/metrics/core/clock";
 
@@ -46,15 +47,24 @@ export async function currentTodayBusinessDay(db:SupabaseClient,businessId:strin
  return !cafe.error&&cafe.data?.timezone?cafeToday(String(cafe.data.timezone),now):null;
 }
 /** A fresh saved reading for the CURRENT business day, else a new live read from
- * Toast (saved for everyone). A reading from before closeout is never reused. */
+ * Toast (saved for everyone). A reading from before closeout is never reused.
+ * keepOrders (the 15-minute job only): always download fresh, whatever Home or the
+ * chat read recently, and file today's finished orders from that same download
+ * into the one-record-per-order archive, provisional until the 5 AM import. A saved
+ * summary has no orders in it, so reusing one would leave today's orders unsaved.
+ * Home and the chat leave it off so they stay fast. */
 export async function todaySoFarForBusiness(admin:SupabaseClient,businessId:string,
- opts:{now?:Date;maxAgeMs?:number}={}):Promise<TodaySoFarRead>{
+ opts:{now?:Date;maxAgeMs?:number;keepOrders?:boolean}={}):Promise<TodaySoFarRead>{
  const now=opts.now??new Date();
  const [saved,businessDay]=await Promise.all([readSavedTodayLive(admin,businessId,now).catch(()=>null),
   currentTodayBusinessDay(admin,businessId,now).catch(()=>null)]);
- if(saved&&businessDay&&saved.value.businessDate===businessDay&&saved.ageMs<(opts.maxAgeMs??TODAY_LIVE_FRESH_MS))
+ if(!opts.keepOrders&&saved&&businessDay&&saved.value.businessDate===businessDay&&
+  saved.ageMs<(opts.maxAgeMs??TODAY_LIVE_FRESH_MS))
   return {available:true,value:saved.value};
- const read=await readToastTodaySoFar(admin,businessId,now);
+ const read=await readToastTodaySoFar(admin,businessId,now,undefined,opts.keepOrders
+  ?async(restaurantGuid,businessDate,pages)=>{
+   await archiveLiveToastOrders(admin,businessId,restaurantGuid,businessDate,pages);
+  }:undefined);
  // Only a complete reading replaces the saved one.
  if(read.available&&!read.value.locationsFailed&&!read.value.truncated)
   await saveTodayLive(admin,businessId,read.value).catch(()=>{});

@@ -87,3 +87,22 @@ screens and chat read the same tables and must not change.
    - it goes out per café, 30 minutes before opening (06:00 café time if hours are unknown), never blocked
      by a missing extra, and every skip is recorded (`/admin/briefs`);
    - still required: a linked owner number and WhatsApp settings on in Vercel.
+8. **Migration 151: today's orders kept as they arrive (owner, Nov 4).** The 15-minute job already downloaded
+   every order of the day but kept only a summary, so "how many student discounts today?" could not be answered
+   until 5 AM. Now it files each **closed** order from that same download (no extra Toast calls) into the same
+   archive through the same writer as the import (`toast_archive_order`, shared): one record per order, same →
+   nothing, change → update + one change line. Open checks are filed once they close (or by the import), so the
+   change log only holds real late changes (tips, refunds). Live records have no import run, so every screen,
+   the day check, card fees, typed order details and the test-café copy ignore them until the 5 AM import
+   takes them over (an unchanged order is not written again). Only the AI's `cv_toast_records` shows them,
+   with status `provisional`. The job never writes to an imported day or to a record an import has staged.
+   Storage: the records the import would write at 5 AM anyway, a few hours earlier. Check:
+   `scripts/toast-live-archive-sql-integration.sql`.
+9. **Migration 152: discounts removed at the register are not counted (owner, Nov 4).** Toast keeps a discount
+   that staff applied and removed, with `processingState: "VOID"`; Toast's reports leave it out. We counted it
+   (Nov 2: 6 student discounts instead of Toast's 5, $6.69 instead of $5.81). Seiyun history: 4 such discounts
+   ($12.39) on Aug 30, Sep 14, Oct 19, Nov 2. Net sales were never affected. One rule everywhere: the day parser
+   (`isRemovedToastDiscount`, also used by today's live total), typed order details (rebuilt for affected orders),
+   and the AI's Toast records (kept, `counts_in_sales = false`). **After it ships:** re-import those 4 days
+   (one-day backfills) so their order and day discount totals are corrected. Check:
+   `scripts/toast-removed-discounts-sql-integration.sql`, `lib/pos/toast/removedDiscounts.test.ts`.
