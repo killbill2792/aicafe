@@ -1,0 +1,40 @@
+# Local Supabase stack for development and tests (`supabase start`, `supabase db reset`).
+# Kept small on purpose: anything not set here uses the Supabase CLI default, so the
+# CI workflows (which pin different CLI versions) all read the same file.
+# Ports are fixed so scripts and tests can rely on them: API 54321, DB 54322,
+# shadow DB 54320, Studio 54323. The local mail viewer keeps the CLI default 54324
+# (its section was renamed between CLI versions, so it is not set here).
+project_id = "aicafe"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.seed]
+# Two test cafés with their owner logins. Generated, never hand-edited:
+# node scripts/seed/generateSeedSql.mjs
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["http://localhost:3000", "http://127.0.0.1:3000"]
+enable_signup = true
+
+[auth.email]
+# Email + password login, no confirmation email needed locally.
+enable_signup = true
+enable_confirmations = false
