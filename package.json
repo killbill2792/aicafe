@@ -44,6 +44,7 @@
     "tailwindcss": "^3.4.19",
     "typescript": "^5",
     "vitest": "^5.0.2",
-    "promptfoo": "0.125.1"
+    "promptfoo": "0.125.1",
+    "squawk-cli": "2.70.0"
   }
 }
