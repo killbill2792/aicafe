@@ -1,0 +1,24 @@
+{
+  "paths": {
+    "components/more/cafeProfileOptions.ts": {
+      "rules": ["currency-code", "currency-literal"],
+      "reason": "Currency choices and country-to-currency suggestions, not a café currency default"
+    },
+    "lib/admin/format.ts": {
+      "rules": ["currency-code", "currency-literal", "money-symbol"],
+      "reason": "OpenAI provider usage costs are billed in USD, not in the café currency"
+    },
+    "app/admin/costs/page.tsx": {
+      "rules": ["currency-code", "currency-literal", "money-symbol"],
+      "reason": "Admin-only OpenAI provider billing and token cost display"
+    },
+    "lib/events/holidays.ts": {
+      "rules": ["iana-timezone"],
+      "reason": "Reference timezone-to-country holiday mapping, not a café timezone default"
+    },
+    "lib/pos/rollup.ts": {
+      "rules": ["utc-timezone"],
+      "reason": "UTC timestamp storage and boundaries, not business-local dates"
+    }
+  }
+}
