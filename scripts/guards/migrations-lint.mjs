@@ -22,6 +22,26 @@ if (changed.error || changed.status !== 0) {
 
 const migrations = changed.stdout.split('\0')
   .filter((path) => /^supabase\/migrations\/[^/]+\.sql$/.test(path));
+// Exercise both outcomes without adding SQL fixtures or touching a database.
+// This also catches a missing/incompatible native binary on non-migration PRs.
+const binary = resolve('node_modules', '.bin', process.platform === 'win32' ? 'squawk.cmd' : 'squawk');
+for (const [label, sql, shouldPass] of [
+  ['good', 'select 1;\n', true],
+  ['bad', 'alter table public.example drop column old_column;\n', false],
+]) {
+  const check = spawnSync(binary, [
+    '--config', '.squawk.toml', '--reporter', 'gcc', '--stdin-filepath', `${label}.sql`,
+  ], { input: sql, encoding: 'utf8' });
+  const output = `${check.stdout ?? ''}\\n${check.stderr ?? ''}`;
+  if (check.error || (shouldPass ? check.status !== 0
+    : check.status === 0 || !output.includes('ban-drop-column'))) {
+    console.error(`scripts/guards/migrations-lint.mjs:1: Squawk ${label} sample failed its expected result`);
+    console.error(check.error?.message ?? output);
+    process.exit(1);
+  }
+  console.log(`migrations-lint: ${label} sample ${shouldPass ? 'accepted' : 'rejected (ban-drop-column)'}`);
+}
+
 if (migrations.length === 0) {
   console.log('migrations-lint: no newly added or changed SQL migrations');
   process.exit(0);
@@ -51,7 +71,6 @@ for (const path of migrations) {
 }
 if (invalid) process.exit(1);
 
-const binary = resolve('node_modules', '.bin', process.platform === 'win32' ? 'squawk.cmd' : 'squawk');
 const result = spawnSync(binary, ['--config', '.squawk.toml', '--reporter', 'gcc', ...migrations], {
   stdio: 'inherit',
 });
