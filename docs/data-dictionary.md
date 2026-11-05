@@ -312,7 +312,9 @@ Every Toast record and field, one row each: orders, checks, items, modifiers, pa
 | order_ref | Toast order GUID this record belongs to (order-level types only). | identifier | toast | Which order? |
 | check_ref | Toast check GUID this record belongs to. | identifier | toast | Which check? |
 | counts_in_sales | Same rule as imported sales: false for voided or deleted orders, checks and items, test-mode and excess-food orders, gift card and house-account items, declined, cancelled, errored or voided payments, and discounts removed at the register (data.processingState VOID); null for non-order records. Filter true for sales and for counting discounts. | boolean | app | Did this count? |
-| data | Every field Toast sent for this record (guest names, contacts, card details and notes removed). Read one field by name: data.server.guid, data.price, data.diningOption.guid. Get the field names with describe_data and record_type. Toast money fields are dollars, not cents. | JSON | toast | Sales by server? Average order time? Which table? |
+| data | Every field Toast sent for this record (guest names, contacts, card details and notes removed). Read one field by name: data.server.guid, data.price, data.diningOption.guid. Get the field names with describe_data and record_type. Toast JSON money fields are dollars; the verified price_cents and discount_amount_cents fields are exact cent projections, not screen net sales. | JSON | toast | Sales by server? Average order time? Which table? |
+| price_cents | Toast item data.price projected to integer cents; null when absent or nonnumeric. Not net sales. | cents | toast | What prices were recorded? |
+| discount_amount_cents | Toast item/check applied discount data.discountAmount projected to integer cents; filter counts_in_sales=true to exclude VOID uses. | cents | toast | What discount amounts were recorded? |
 
 ## Capture-only Toast evidence and limitations
 

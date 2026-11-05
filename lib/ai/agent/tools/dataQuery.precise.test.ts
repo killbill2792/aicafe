@@ -1,5 +1,8 @@
 import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
+vi.mock("@/lib/data/toastDayTrust.server",()=>({
+ readToastDayTrust:vi.fn(async()=>({blocked:new Set(),quality:[],notes:[]}))
+}));
 import {dataQueryTools} from "./dataQuery";
 const businessId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const question={
