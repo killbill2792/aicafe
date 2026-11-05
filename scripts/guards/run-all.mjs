@@ -22,7 +22,7 @@ const env = {
   PR_LABELS: process.env.PR_LABELS ?? '',
 };
 let failures = 0;
-const locatedError = /^(?:[^\\s:]+\\/)*[^:\\s]+:\\d+(?::\\d+)?:\\s*.+$/;
+const locatedError = /^(?:[^\s:]+\/)*[^:\s]+:\d+(?::\d+)?:\s*.+$/;
 
 for (const filename of guards) {
   const run = spawnSync(process.execPath, [join(directory, filename)], {
@@ -36,8 +36,8 @@ for (const filename of guards) {
   }
 
   failures++;
-  const lines = `${run.stdout ?? ''}\\n${run.stderr ?? ''}`
-    .split(/\\r?\\n/)
+  const lines = `${run.stdout ?? ''}\n${run.stderr ?? ''}`
+    .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
   const located = lines.filter((line) => locatedError.test(line));
