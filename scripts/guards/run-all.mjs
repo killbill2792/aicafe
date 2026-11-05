@@ -31,7 +31,7 @@ for (const filename of guards) {
     encoding: 'utf8',
   });
   if (!run.error && run.status === 0) {
-    console.log(`${filename}: passed`);
+    console.log(filename === 'migrations-lint.mjs' ? `${filename}: passed\n${run.stdout.trim()}` : `${filename}: passed`);
     continue;
   }
 
