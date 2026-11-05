@@ -1,0 +1,907 @@
+{
+  "schema_version": 1,
+  "title": "AI CAFE Universal Supervisor Agent Delivery Queue",
+  "status": "DRAFT_FOR_OWNER_REVIEW",
+  "effective_date": "2026-11-05",
+  "repo": "killbill2792/aicafe",
+  "source_of_truth": [
+    "AGENTS.md",
+    "docs/rules/*",
+    "docs/plans/universal-supervisor-delivery-queue-2026-11.md"
+  ],
+  "do_not_dispatch_until_architecture_approved": true,
+  "limits": {
+    "chatgpt_active_prs": 4,
+    "claude_active_prs": 2,
+    "exclusive_file_ownership": true,
+    "one_chat_per_pr": true,
+    "merge_only_if_current_main_ci_green_and_codex_clean": true,
+    "production_deploy_requires_explicit_owner_approval": true
+  },
+  "merged_prerequisites": [
+    {
+      "id": "1",
+      "pr": 375
+    },
+    {
+      "id": "2",
+      "pr": 379
+    },
+    {
+      "id": "3",
+      "pr": 377
+    },
+    {
+      "id": "4",
+      "pr": 376
+    },
+    {
+      "id": "5",
+      "pr": 378
+    },
+    {
+      "id": "E1",
+      "pr": 369
+    },
+    {
+      "id": "B2",
+      "pr": 374
+    }
+  ],
+  "milestone_finish": "17e",
+  "states": [
+    "proposal_architecture_review",
+    "architecture_approved",
+    "ready",
+    "assigned",
+    "coding",
+    "draft_open",
+    "ci_review_fixing",
+    "ready_to_merge",
+    "merged",
+    "integrated",
+    "released",
+    "blocked_needs_owner"
+  ],
+  "tasks": [
+    {
+      "id": "E2",
+      "title": "E2 required seeded browser CI, protected preview proof",
+      "milestone": "E2",
+      "depends_on": [],
+      "domain_lane": "platform",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "db",
+        "e2e",
+        "preview",
+        "security"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "6",
+      "title": "Durable worker and cross-turn execution",
+      "milestone": "6",
+      "depends_on": [
+        "5"
+      ],
+      "domain_lane": "platform",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "previous roadmap; exact Grok brief not supplied",
+      "tests_required": [
+        "unit",
+        "db",
+        "failure"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "7",
+      "title": "Self-directed routines/prioritization",
+      "milestone": "7",
+      "depends_on": [
+        "6"
+      ],
+      "domain_lane": "platform",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "previous roadmap; exact Grok brief not supplied",
+      "tests_required": [
+        "unit",
+        "db",
+        "failure"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "8a",
+      "title": "Experiment cutover parity",
+      "milestone": "8",
+      "depends_on": [
+        "7"
+      ],
+      "domain_lane": "domain",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "previous roadmap; exact Grok brief not supplied",
+      "tests_required": [
+        "unit",
+        "db",
+        "acceptance"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "8b",
+      "title": "Events cutover parity",
+      "milestone": "8",
+      "depends_on": [
+        "7"
+      ],
+      "domain_lane": "domain",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "previous roadmap; exact Grok brief not supplied",
+      "tests_required": [
+        "unit",
+        "db",
+        "acceptance"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "8c",
+      "title": "Morning brief cutover parity",
+      "milestone": "8",
+      "depends_on": [
+        "7"
+      ],
+      "domain_lane": "domain",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "previous roadmap; exact Grok brief not supplied",
+      "tests_required": [
+        "unit",
+        "db",
+        "acceptance"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "9",
+      "title": "Rolling operational memory",
+      "milestone": "9",
+      "depends_on": [
+        "5"
+      ],
+      "domain_lane": "platform",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "previous roadmap; exact Grok brief not supplied",
+      "tests_required": [
+        "unit",
+        "db",
+        "security"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "10",
+      "title": "Individual approval and standing mandate gateway",
+      "milestone": "10",
+      "depends_on": [
+        "5"
+      ],
+      "domain_lane": "security",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "previous roadmap; exact Grok brief not supplied",
+      "tests_required": [
+        "unit",
+        "db",
+        "security",
+        "e2e"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "11",
+      "title": "Gmail and reusable connector security boundary",
+      "milestone": "11",
+      "depends_on": [
+        "10"
+      ],
+      "domain_lane": "integration",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "previous roadmap; exact Grok brief not supplied",
+      "tests_required": [
+        "unit",
+        "security",
+        "e2e"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "12",
+      "title": "General file/spreadsheet/browser/computer use",
+      "milestone": "12",
+      "depends_on": [
+        "6",
+        "10"
+      ],
+      "domain_lane": "integration",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "previous roadmap; exact Grok brief not supplied",
+      "tests_required": [
+        "unit",
+        "security",
+        "e2e"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "13a",
+      "title": "Canonical staff schedule/labor reads and planning",
+      "milestone": "13",
+      "depends_on": [
+        "6",
+        "7"
+      ],
+      "domain_lane": "staff",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "db",
+        "parity"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "13b",
+      "title": "Mandate-controlled schedule publication and worker messaging",
+      "milestone": "13",
+      "depends_on": [
+        "13a",
+        "10",
+        "11"
+      ],
+      "domain_lane": "staff",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "db",
+        "e2e",
+        "receipt"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "13c",
+      "title": "Shift response/coverage lifecycle",
+      "milestone": "13",
+      "depends_on": [
+        "13b"
+      ],
+      "domain_lane": "staff",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "db",
+        "e2e"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "13d",
+      "title": "Recruitment/leave/onboarding supported actions and human decision gates",
+      "milestone": "13",
+      "depends_on": [
+        "13a",
+        "10",
+        "11"
+      ],
+      "domain_lane": "staff",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "security",
+        "e2e"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "14a",
+      "title": "Inventory/recipe/consumption evidence",
+      "milestone": "14",
+      "depends_on": [
+        "6",
+        "9"
+      ],
+      "domain_lane": "supply",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "db",
+        "parity"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "14b",
+      "title": "Supplier/quote/PO domain lifecycle",
+      "milestone": "14",
+      "depends_on": [
+        "14a",
+        "10"
+      ],
+      "domain_lane": "supply",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "db",
+        "security"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "14c",
+      "title": "Authorized vendor communication and ordering",
+      "milestone": "14",
+      "depends_on": [
+        "14b",
+        "11",
+        "12"
+      ],
+      "domain_lane": "supply",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "e2e",
+        "receipt"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "14d",
+      "title": "Receiving/invoice matching and exception handling",
+      "milestone": "14",
+      "depends_on": [
+        "14c"
+      ],
+      "domain_lane": "supply",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "db",
+        "e2e"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "14e",
+      "title": "Cashflow/payables administration and payment boundary",
+      "milestone": "14",
+      "depends_on": [
+        "14d",
+        "10"
+      ],
+      "domain_lane": "finance",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "db",
+        "security"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "15a",
+      "title": "Operating priority and anomaly escalation",
+      "milestone": "15",
+      "depends_on": [
+        "7",
+        "9"
+      ],
+      "domain_lane": "operations",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "db",
+        "failure"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "15b",
+      "title": "Equipment/maintenance coordination with evidence",
+      "milestone": "15",
+      "depends_on": [
+        "15a",
+        "10",
+        "11"
+      ],
+      "domain_lane": "operations",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "e2e",
+        "receipt"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "15c",
+      "title": "Fleet resilience/queue fairness/recovery operational proof",
+      "milestone": "15",
+      "depends_on": [
+        "6",
+        "7",
+        "10"
+      ],
+      "domain_lane": "platform",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "db",
+        "failure"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "15d",
+      "title": "Untrusted external content/identity/revocation hardening",
+      "milestone": "15",
+      "depends_on": [
+        "10",
+        "11",
+        "12"
+      ],
+      "domain_lane": "security",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "unit",
+        "security",
+        "e2e"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "16a",
+      "title": "Owner mandate grant/revoke and OTP step-up experience",
+      "milestone": "16",
+      "depends_on": [
+        "10"
+      ],
+      "domain_lane": "ux",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "e2e",
+        "security",
+        "preview"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "16b",
+      "title": "Owner-visible durable work, results, exceptions",
+      "milestone": "16",
+      "depends_on": [
+        "6",
+        "9"
+      ],
+      "domain_lane": "ux",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "e2e",
+        "preview"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "16c",
+      "title": "Owner connector and computer access controls",
+      "milestone": "16",
+      "depends_on": [
+        "11",
+        "12"
+      ],
+      "domain_lane": "ux",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "e2e",
+        "security",
+        "preview"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "16d",
+      "title": "Accessible responsive owner acceptance",
+      "milestone": "16",
+      "depends_on": [
+        "16a",
+        "16b",
+        "16c"
+      ],
+      "domain_lane": "ux",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "e2e",
+        "visual",
+        "preview"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "17a",
+      "title": "Required CI E2E gate and evidence audit",
+      "milestone": "17",
+      "depends_on": [
+        "E2",
+        "16d"
+      ],
+      "domain_lane": "qa",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "e2e",
+        "ci",
+        "security"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "17b",
+      "title": "Cross-domain deterministic business scenario suite",
+      "milestone": "17",
+      "depends_on": [
+        "8a",
+        "8b",
+        "8c",
+        "13c",
+        "13d",
+        "14e",
+        "15b",
+        "16d"
+      ],
+      "domain_lane": "qa",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "db",
+        "e2e",
+        "receipt",
+        "parity"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "17c",
+      "title": "Unattended multi-day outage/autonomy simulation",
+      "milestone": "17",
+      "depends_on": [
+        "17b",
+        "15c",
+        "15d"
+      ],
+      "domain_lane": "qa",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "failure",
+        "db",
+        "e2e"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "17d",
+      "title": "Isolated preview readiness and smoke acceptance",
+      "milestone": "17",
+      "depends_on": [
+        "17c"
+      ],
+      "domain_lane": "qa",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "preview",
+        "e2e",
+        "security"
+      ],
+      "preview_required": true,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    },
+    {
+      "id": "17e",
+      "title": "Owner-authorized live pilot and final release evidence",
+      "milestone": "17",
+      "depends_on": [
+        "17d"
+      ],
+      "domain_lane": "release",
+      "status": "proposal_architecture_review",
+      "requires_owner_approved_design": true,
+      "implementation_permission": false,
+      "provenance": "new proposed milestone sub-PR",
+      "tests_required": [
+        "pilot",
+        "release"
+      ],
+      "preview_required": false,
+      "owner_of_files": null,
+      "github_pr": null,
+      "merged_sha": null,
+      "verified_ci_run": null,
+      "acceptance_evidence": [],
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+    }
+  ],
+  "notes": [
+    "Statuses are conservative; verify GitHub state before dispatch.",
+    "For 6-12, recover and reconcile Grok's actual brief before assigning.",
+    "A dependency can be implemented as a stacked PR against its open predecessor branch per AGENTS.md, but merges only after prerequisites are on main.",
+    "The end goal is continuous single-agent café operation with initial action approval and optional owner OTP-authorized standing permissions.",
+    "Unknown physical/legal/provider constraints require explicit supported-limit acceptance, never invented success."
+  ]
+}
