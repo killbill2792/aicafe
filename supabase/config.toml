@@ -35,6 +35,5 @@ additional_redirect_urls = ["http://localhost:3000", "http://127.0.0.1:3000"]
 enable_signup = true
 
 [auth.email]
-# Email + password login, no confirmation email needed locally.
-enable_signup = true
+# Email + password login is on by default in every CLI version; no confirmation email locally.
 enable_confirmations = false
