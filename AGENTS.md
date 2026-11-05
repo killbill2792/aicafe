@@ -53,9 +53,22 @@ Where an older line in this file conflicts with these rules, these rules win.
     only on fixtures.
 14. **Read before you build, update after.** Every task starts by reading AGENTS.md and PROGRESS.md.
     PROGRESS.md is updated when the PR merges.
-15. **Architecture walkthrough.** Every PR that adds or changes data, jobs or tools has a short plain-words
-    "How data flows" section: the source, what is saved and where, who reads it, and what Supervisor
-    says from it.
+15. **Plan before the PR, with the owner.** Before any PR that adds or changes data, jobs, crons, tools or
+    connectors starts coding, present the owner a short plain-words plan: where the data comes from
+    (field by field), what is saved, where and under what key, who reads it, what Supervisor says or
+    does from it, and the gaps. The owner reviews it and may propose a simpler way. Coding starts only
+    after the owner agrees. The PR body then repeats the agreed plan.
+16. **Parallel PR waves.** We ship in days with several PR chats at once. Before a wave starts, the plan
+    lists each PR, the files and tables it owns, and the shared pieces it uses or adds (connectors,
+    settings, views, tools). Shared pieces are built once in a small foundation PR that merges first;
+    the others reuse it, never their own copy. If two PRs need the same file, one waits or the overlap
+    moves into the foundation PR. Before merging, each PR rebases on the latest main, switches to any
+    shared pieces that merged meanwhile, takes the next free migration number, and re-runs CI and Codex.
+    It merges only when that is green.
+17. **End-to-end testing.** "Done" means every acceptance scenario was tested end to end on the real app
+    and real café data (chat answer, screen, stored rows, scheduled job), not only unit tests or a few
+    happy paths. The PR lists each scenario with pass or fail. Partial passes are not done. Keep CI fast:
+    if a check gets slow or flaky, fix it or split it rather than waiting.
 
 ## 1. What we are building
 An **AI operator for independent café owners**: one AI assistant (the Supervisor chat) that runs the café
