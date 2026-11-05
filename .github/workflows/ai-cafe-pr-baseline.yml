@@ -89,11 +89,30 @@ jobs:
       - name: Production build
         run: npm run build -- --webpack
 
+  guards:
+    if: github.event_name != 'push'
+    name: Repo guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run every repository guard
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: node scripts/guards/run-all.mjs
+
   baseline:
     # Preserve this required check name for existing branch protection.
     name: AI CAFE PR baseline
     if: ${{ always() && github.event_name != 'push' }}
-    needs: [quality, regressions, production-build]
+    needs: [quality, regressions, production-build, guards]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -102,10 +121,13 @@ jobs:
           QUALITY_RESULT: ${{ needs.quality.result }}
           TEST_RESULT: ${{ needs.regressions.result }}
           BUILD_RESULT: ${{ needs.production-build.result }}
+          GUARDS_RESULT: ${{ needs.guards.result }}
         run: |
           echo "Quality: $QUALITY_RESULT"
           echo "Full test suite (all shards): $TEST_RESULT"
           echo "Production build: $BUILD_RESULT"
+          echo "Repository guards: $GUARDS_RESULT"
           test "$QUALITY_RESULT" = success
           test "$TEST_RESULT" = success
           test "$BUILD_RESULT" = success
+          test "$GUARDS_RESULT" = success
