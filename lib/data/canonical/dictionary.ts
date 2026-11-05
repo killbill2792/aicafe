@@ -1149,10 +1149,22 @@ export const canonicalDictionary = {
         "example": "Did this count?"
       },
       "data": {
-        "meaning": "Cleaned Toast fields: read named paths such as data.name, data.server.guid, data.price. Use describe_data with one record_type to discover paths. Numeric JSON fields support comparisons, sum, min, max and averages; is_null/is_not_null find absent fields without treating them as zero. Group by business_date and any named field for unplanned per-day/per-item questions. Group by data.name for discount names; status VOID is excluded with counts_in_sales, not by summing amounts. Toast money fields may be in dollars; discount cents parity is handled separately.",
+        "meaning": "Cleaned Toast fields: read named paths such as data.name, data.server.guid, data.price. Use describe_data with one record_type to discover paths. Numeric JSON fields support comparisons, sum, min, max and averages; is_null/is_not_null find absent fields without treating them as zero. Group by business_date and any named field for unplanned per-day/per-item questions. Group by data.name for discount names; status VOID is excluded with counts_in_sales, not by summing amounts. Toast JSON money fields are dollar-valued. For the fixture-proven amounts, use price_cents for item prices and discount_amount_cents for item/check discounts; both are integer cents. Neither is the screen net-sales definition. Unproven JSON dollar fields remain unprojected.",
         "unit": "JSON",
         "source": "toast",
         "example": "Sales by server? Average order time? Which table?"
+      },
+      "price_cents": {
+        "meaning": "Toast item data.price projected to integer cents; null when absent or nonnumeric. Not net sales.",
+        "unit": "cents",
+        "source": "toast",
+        "example": "What prices were recorded?"
+      },
+      "discount_amount_cents": {
+        "meaning": "Toast item/check applied discount data.discountAmount projected to integer cents; filter counts_in_sales=true to exclude VOID uses.",
+        "unit": "cents",
+        "source": "toast",
+        "example": "What discount amounts were recorded?"
       }
     }
   }

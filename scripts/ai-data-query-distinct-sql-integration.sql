@@ -225,5 +225,73 @@ BEGIN
   null,null,d,d,null,100);
  perform pg_temp.assert_true(octet_length((response->'rows')::text)<=6000,
   'database output byte cap');
+
+ -- PR2: the Toast fixture's two business dates prove exact decimal cents.
+ with priced as (
+  select business_date,sum(round((data->>'price')::numeric*100)::bigint) cents
+  from public.toast_records_for(b,prior,d)
+  where record_type='item' and counts_in_sales=true
+   and jsonb_typeof(data->'price')='number'
+  group by business_date
+ ) select jsonb_object_agg(business_date::text,cents) into baseline from priced;
+ response:=public.ai_query_view(b,'cv_toast_records',null,
+  '[{"column":"record_type","op":"=","value":"item"},
+    {"column":"counts_in_sales","op":"=","value":true}]'::jsonb,
+  array['business_date'],'[{"fn":"sum","column":"price_cents"}]'::jsonb,prior,d,null,100);
+ select jsonb_object_agg(row->>'business_date',(row->>'sum_price_cents')::bigint)
+ into by_name from jsonb_array_elements(response->'rows') row;
+ perform pg_temp.assert_true(by_name=baseline
+  and (select count(*) from jsonb_object_keys(by_name))=2
+  and response->'sourceMix'->>'toast' is not null,
+  'Toast item price cents equal direct JSON DECIMAL cents on both dates');
+
+ with discounts as (
+  select business_date,sum(round((data->>'discountAmount')::numeric*100)::bigint) cents
+  from public.toast_records_for(b,prior,d)
+  where record_type in ('item_discount','check_discount') and counts_in_sales=true
+   and jsonb_typeof(data->'discountAmount')='number' group by business_date
+ ) select jsonb_object_agg(business_date::text,cents) into baseline from discounts;
+ response:=public.ai_query_view(b,'cv_toast_records',null,
+  '[{"column":"record_type","op":"in","value":["item_discount","check_discount"]},
+    {"column":"counts_in_sales","op":"=","value":true}]'::jsonb,
+  array['business_date'],'[{"fn":"sum","column":"discount_amount_cents"}]'::jsonb,prior,d,null,100);
+ select jsonb_object_agg(row->>'business_date',(row->>'sum_discount_amount_cents')::bigint)
+ into by_name from jsonb_array_elements(response->'rows') row;
+ perform pg_temp.assert_true(by_name=baseline
+  and (select count(*) from jsonb_object_keys(by_name))=2
+  and response->>'hasIncomplete'='true' and response->>'currentDayIncomplete'='true',
+  'discount cents exclude removed VOID uses and keep provisional day label');
+ perform pg_temp.assert_true(
+  (select bool_and(price_cents is null) from public.cv_toast_records
+   where business_id=b and business_date=d and record_type='item_discount'),
+  'a missing price stays null, not zero');
+ -- The synthetic screen rollup here uses fixture-derived exact integer cents.
+ -- This tests read parity, NOT production Toast net-sales/import accounting.
+ insert into public.daily_rollups(
+  business_id,business_date,net_sales_cents,orders_count,drinks_count,
+  ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status)
+ select b,prior,
+  coalesce(sum(price_cents),0)::bigint - coalesce(sum(discount_amount_cents),0)::bigint,
+  count(distinct order_ref) filter(where record_type='order')::integer,
+  0,0,0,0,0,0,'actual'
+ from public.cv_toast_records
+ where business_id=b and business_date=prior and counts_in_sales=true;
+ response:=public.ai_query_view(b,'cv_sales_days',null,null,array['business_date'],
+  '[{"fn":"sum","column":"net_sales_cents"},{"fn":"sum","column":"orders_count"}]'::jsonb,
+  prior,prior,null,100);
+ perform pg_temp.assert_true(
+  (response->'rows'->0->>'sum_net_sales_cents')::bigint =
+   (select sum(net_sales_cents) from public.daily_rollups where business_id=b and business_date=prior)
+  and (response->'rows'->0->>'sum_net_sales_cents')::bigint =
+   (select sum(net_sales_cents) from public.cv_sales_days where business_id=b and business_date=prior)
+  and (response->'rows'->0->>'sum_orders_count')::integer =
+   (select sum(orders_count) from public.daily_rollups where business_id=b and business_date=prior)
+  and response->'sourceMix'='{"app":1}'::jsonb,
+  'chat/screen/database day sales cents and order counts match with app source label');
+ response:=public.ai_query_view(b,'cv_sales_days',null,null,array['business_date'],
+  '[{"fn":"sum","column":"net_sales_cents"}]'::jsonb,prior,d,null,100);
+ perform pg_temp.assert_true(response->>'currentDayIncomplete'='true',
+  'including today is still incomplete even with only historical rollup rows');
+
 END $discounts$;
 ROLLBACK;

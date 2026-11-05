@@ -1,6 +1,10 @@
 import {it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
+vi.mock("@/lib/data/toastDayTrust.server",()=>({
+ readToastDayTrust:vi.fn(async()=>({blocked:new Set(),quality:[],notes:[]}))
+}));
 import {dataQueryTools,fitRows} from "./dataQuery";
+import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 const b="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 function input(view="cv_sales_days"){return {view,columns:["business_date","net_sales_cents"],
  filters:null,group_by:["business_date"],metrics:[{fn:"sum",column:"net_sales_cents"}],
@@ -118,4 +122,66 @@ it("keeps results compact by dropping whole rows and saying so",()=>{
  expect(fit.cut).toBe(true);
  expect(JSON.stringify(fit.rows).length).toBeLessThanOrEqual(6000);
  expect(fitRows(rows.slice(0,3))).toEqual({rows:rows.slice(0,3),cut:false});
+});
+
+it("propagates the existing screen coverage gaps and source names",async()=>{
+ vi.mocked(readToastDayTrust).mockResolvedValueOnce({
+  blocked:new Set(),quality:["toastImportIncompleteDays:1:2026-10-03:0"],
+  notes:["toastDaysNeedLook:1:2026-10-03:0"]
+ });
+ const f=testDb([{business_date:"2026-10-03",sum_net_sales_cents:1234}]);
+ const value=await dataQueryTools.query_data.execute(input(),{db:f.db,businessId:b});
+ expect(value.sourceMix).toEqual({app:1});
+ expect(value.missing).toContain("toastImportIncompleteDays:1:2026-10-03:0");
+ expect(value).toHaveProperty("notes",expect.arrayContaining(["toastDaysNeedLook:1:2026-10-03:0"]));
+ expect(readToastDayTrust).toHaveBeenCalledWith(f.db,b,"2026-10-01","2026-10-10");
+});
+it("keeps current-day incompleteness on ungrouped sales rows",async()=>{
+ const rpc=vi.fn(async()=>({data:{
+  rows:[{business_date:"2026-10-03",net_sales_cents:1250}],
+  sourceCount:1,sourceMix:{app:1},hasIncomplete:false,currentDayIncomplete:true,truncated:false
+ },error:null}));
+ const value=await dataQueryTools.query_data.execute({
+  ...input(),group_by:null,metrics:null
+ },{db:{rpc} as never,businessId:b});
+ expect(value.missing).toContain("currentDayIncomplete");
+ expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({p_view:"cv_sales_days"}));
+});
+
+it("sends Toast integer-cent projections to the same authenticated aggregate RPC",async()=>{
+ const f=testDb([{business_date:"2026-10-03",sum_discount_amount_cents:128}]);
+ const args={view:"cv_toast_records",columns:null,
+  filters:[{column:"record_type",op:"in",value:["check_discount","item_discount"]},
+   {column:"counts_in_sales",op:"=",value:true}],
+  group_by:["business_date"],metrics:[{fn:"sum",column:"discount_amount_cents"}],
+  date_from:"2026-10-03",date_to:"2026-10-03",order_by:null,limit:20};
+ const value=await dataQueryTools.query_data.execute(args,{db:f.db,businessId:b});
+ expect(value.rows).toEqual([{business_date:"2026-10-03",sum_discount_amount_cents:128}]);
+ expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+  p_business_id:b,p_view:"cv_toast_records",
+  p_metrics:[{fn:"sum",column:"discount_amount_cents"}]
+ }));
+});
+
+it("keeps the complete allowed screen fields for an unaggregated query without columns",async()=>{
+ const f=testDb([{business_date:"2026-10-03",net_sales_cents:1250,orders_count:3}]);
+ const result=await dataQueryTools.query_data.execute({
+  ...input(),columns:null,group_by:null,metrics:null
+ },{db:f.db,businessId:b});
+ expect(result.rows).toEqual([{business_date:"2026-10-03",net_sales_cents:1250,orders_count:3}]);
+ expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+  p_business_id:b,p_view:"cv_sales_days",
+  p_columns:expect.arrayContaining(["business_date","net_sales_cents","orders_count","data"])
+ }));
+});
+it("the Toast plain-read projection includes the newly validated cent columns",async()=>{
+ const f=testDb([{record_type:"item",price_cents:787,discount_amount_cents:null}]);
+ await dataQueryTools.query_data.execute({
+  view:"cv_toast_records",columns:null,group_by:null,metrics:null,filters:null,
+  date_from:"2026-10-03",date_to:"2026-10-03",order_by:null,limit:20
+ },{db:f.db,businessId:b});
+ expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+  p_view:"cv_toast_records",
+  p_columns:expect.arrayContaining(["record_type","data","price_cents","discount_amount_cents"])
+ }));
 });

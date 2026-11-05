@@ -1,7 +1,7 @@
 import "server-only";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {readCanonicalView} from "@/lib/data/canonical/reads.server";
+import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 import {canonicalDictionary,canonicalViewNames,
  isCanonicalColumn,isDataField,type CanonicalView} from "@/lib/data/canonical/dictionary";
 
@@ -11,6 +11,10 @@ const DEFAULT_ROWS=50,MAX_ROWS=100;
  * sync. Results are marked so the answer is partial and says the data is a snapshot,
  * until the scheduled capture feeds these views. */
 const SNAPSHOT_VIEWS:ReadonlySet<CanonicalView>=new Set(["cv_cash","cv_inventory","cv_kitchen","cv_dining_options"]);
+const TOAST_COVERAGE_VIEWS:ReadonlySet<CanonicalView>=new Set([
+ "cv_sales_days","cv_sales_hours","cv_item_sales","cv_payments",
+ "cv_discounts","cv_voids_refunds","cv_card_fees","cv_orders","cv_toast_records"
+]);
 const snapshotNote=(view:CanonicalView)=>SNAPSHOT_VIEWS.has(view)?["snapshotOnly"]:[];
 const atom=z.union([z.string().max(256),z.number().finite(),z.boolean()]);
 // Match ai_query_path: eight nested segments can legitimately exceed 100 total chars.
@@ -95,7 +99,7 @@ export const dataQueryTools={
  },
  query_data:{
   agentId:"alex" as const,schema:dataQuerySchema,
-  description:"Read only allowlisted, café-scoped canonical views. Use is_null / is_not_null with value:null to find missing data, without guessing it equals zero. For discount uses use cv_toast_records filtered by record_type in [item_discount,check_discount], counts_in_sales=true (excludes VOID/removed), and data.name; count source_ref for uses, count_distinct order_ref for orders, count_distinct check_ref for checks. These are different counts. Use metrics/group_by (including named data paths) for database aggregation, not raw rows. Date bounds are café business dates; currentDayIncomplete means so far, not a final total. Do not infer discount cents. Result capped in the database; truncated means not all rows returned. Snapshot-only sources are not live.",
+  description:"Read only allowlisted, café-scoped canonical views. Use is_null / is_not_null with value:null to find missing data, without guessing it equals zero. For discount uses use cv_toast_records filtered by record_type in [item_discount,check_discount], counts_in_sales=true (excludes VOID/removed), and data.name; count source_ref for uses, count_distinct order_ref for orders, count_distinct check_ref for checks. These are different counts. Use metrics/group_by (including named data paths) for database aggregation, not raw rows. Date bounds are café business dates; currentDayIncomplete means so far, not a final total. For Toast item prices and applied discounts use price_cents and discount_amount_cents, not dollar-valued JSON sums. Screen net sales use cv_sales_days.net_sales_cents from daily_rollups. Result capped in the database; truncated means not all rows returned. Snapshot-only sources are not live.",
   execute:async(raw:unknown,ctx:DataQueryContext)=>{
    const parsed=dataQuerySchema.safeParse(raw);
    if(!parsed.success)return empty("invalid_query");
@@ -111,39 +115,18 @@ export const dataQueryTools={
     (["is_null","is_not_null"].includes(f.op)?f.value!==null:
      f.value===null||(!["between","in"].includes(f.op)&&Array.isArray(f.value)))))
     return empty("invalid_filter");
-   // Simple rows use the same bounded canonical reader available to owner screens.
-   // Grouped sums/averages continue through the server-side invoker SQL RPC;
-   // never sum a truncated or partial row slice in JavaScript.
-   // Toast records and named data fields always go through the database
-   // function, which reads single fields instead of whole JSON records.
-   if(!(p.filters?.length)&&!(p.group_by?.length)&&!(p.metrics?.length)&&!p.order_by&&
-    p.view!=="cv_toast_records"&&!all.some(isDataField)){
-    try{
-     const result=await readCanonicalView(ctx.db,ctx.businessId,p.view,
-      {dateFrom:p.date_from,dateTo:p.date_to},p.limit??DEFAULT_ROWS);
-     if(result.error)return empty(result.error);
-     const fit=fitRows(result.rows.map(row=>p.columns?.length?
-      Object.fromEntries(p.columns.map(column=>[column,row[column]??null])):row));
-     const rows=fit.rows,truncated=result.truncated||fit.cut;
-     const mix:Record<string,number>={};
-     for(const row of result.rows){
-      const source=typeof row.source==="string"?row.source:"unknown";
-      mix[source]=(mix[source]??0)+1;
-     }
-     const hasIncomplete=result.rows.some(row=>["open","estimated","needs_match","provisional"].includes(String(row.status)));
-     return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
-      missing:[...(rows.length===0?["empty"]:[]),...snapshotNote(p.view),
-       ...(hasIncomplete?["incompleteEvidence"]:[]),
-       ...(truncated?["result_truncated"]:[])],
-      empty:rows.length===0,error:undefined as string|undefined,
-      rows,rowCount:rows.length,truncated,sourceMix:mix};
-    }catch{return empty("source_read_failed");}
-   }
+   // Preserve the previous plain-read SELECT * contract, but only over the
+   // canonical dictionary's physical columns (never raw tables). PostgreSQL
+   // still bounds the rows and bytes and supplies the same coverage labels.
+   const plainRead=!(p.group_by?.length||p.metrics?.length);
+   const columns=plainRead&&!(p.columns?.length)
+    ?Object.keys(canonicalDictionary[p.view].columns)
+    :p.columns;
    // The database independently validates the view and columns. It executes as
    // the authenticated caller, not service_role or a definer.
    try{
     const {data,error}=await ctx.db.rpc("ai_query_view",{
-     p_business_id:ctx.businessId,p_view:p.view,p_columns:p.columns,
+     p_business_id:ctx.businessId,p_view:p.view,p_columns:columns,
      p_filters:p.filters??[],p_group_by:p.group_by??[],
      p_metrics:p.metrics??[],p_date_from:p.date_from,p_date_to:p.date_to,
      p_order_by:p.order_by,p_limit:p.limit??DEFAULT_ROWS
@@ -155,11 +138,16 @@ export const dataQueryTools={
     const fit=fitRows(Array.isArray(result?.rows)?result.rows:[]);
     const rows=fit.rows,truncated=result?.truncated===true||fit.cut;
     const isEmpty=result?.sourceCount===0||(rows.length===0&&!truncated);
+    const coverage=TOAST_COVERAGE_VIEWS.has(p.view)
+     ?await readToastDayTrust(ctx.db,ctx.businessId,p.date_from,p.date_to)
+     :{quality:[] as string[],notes:[] as string[]};
     return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
      missing:[...(isEmpty?["empty"]:[]),...snapshotNote(p.view),
       ...(result?.hasIncomplete?["incompleteEvidence"]:[]),
       ...(result?.currentDayIncomplete?["currentDayIncomplete"]:[]),
+      ...coverage.quality,
       ...(truncated?["result_truncated"]:[])],
+     notes:coverage.notes,
      empty:isEmpty,error:undefined as string|undefined,rows,rowCount:rows.length,
      truncated,sourceMix:result?.sourceMix??{}};
    }catch{return empty("source_read_failed");}

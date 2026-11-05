@@ -34,7 +34,8 @@ describe("canonical data available to authenticated chat, not only standalone to
    group_by:["business_date"],metrics:[{fn:"count",column:"guest_count"}],date_from:"2026-10-20",date_to:"2026-10-20",
    order_by:null,limit:25};
   const result=await executeAgentTool("query_data",input,context);
-  expect(rpc).toHaveBeenCalledTimes(1);
+  // Extra RPCs read Toast day coverage, but only one query executes the model's aggregation.
+  expect(rpc.mock.calls.filter(([name])=>name==="ai_query_view")).toHaveLength(1);
   expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
    p_business_id:businessId,p_view:"cv_orders",p_date_from:"2026-10-20",p_limit:25
   }));
