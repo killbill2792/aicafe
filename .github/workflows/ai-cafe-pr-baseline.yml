@@ -62,6 +62,8 @@ jobs:
               - 'prompts/**'
               - '**/*[Ss]upervisor*'
               - '**/*[Pp]rompt*'
+              # Planning documents are documentation, not Supervisor prompts.
+              - '!docs/**'
             docs-only:
               - 'docs/**'
               - '**/*.md'
