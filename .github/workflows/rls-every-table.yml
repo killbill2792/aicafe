@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'supabase/migrations/**'
+      - 'lib/ai/supervisor/runs/**'
       - 'scripts/rls-all-public-tables.sql'
       - 'scripts/ldi-e-db-contract.sql'
       - 'scripts/morning-brief-send-window-sql-integration.sql'
@@ -54,6 +55,18 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -v ON_ERROR_STOP=1 -f scripts/whatsapp-owner-provenance-sql-integration.sql
+      # Reuse migrated disposable PostgreSQL, never a remote/prod database.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Supervisor durable-run PostgreSQL proof (must execute, not skip)
+        env:
+          SUPERVISOR_RUN_DB_SANDBOX_ONLY: '1'
+          SUPERVISOR_RUN_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: npm test -- lib/ai/supervisor/runs/runs.db.test.ts --reporter=verbose
       - name: Stop disposable Supabase
         if: always()
         run: supabase stop --no-backup
