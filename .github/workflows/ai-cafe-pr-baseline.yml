@@ -155,7 +155,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check P1 evaluator installation
-        id: eval-ready
+        id: eval_ready
         shell: bash
         run: |
           has_config=false
@@ -171,15 +171,15 @@ jobs:
           fi
           echo "ready=$has_config" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
-        if: steps.eval-ready.outputs.ready == 'true'
+        if: steps.eval_ready.outputs.ready == 'true'
         with:
           node-version: 22
           cache: npm
       - name: Install locked dependencies
-        if: steps.eval-ready.outputs.ready == 'true'
+        if: steps.eval_ready.outputs.ready == 'true'
         run: npm ci
       - name: Run real Supervisor promptfoo evaluation
-        if: steps.eval-ready.outputs.ready == 'true'
+        if: steps.eval_ready.outputs.ready == 'true'
         env:
           PROMPTFOO_DISABLE_TELEMETRY: '1'
           PROMPTFOO_DISABLE_UPDATE_CHECK: '1'
