@@ -5,7 +5,7 @@ description: "Use when a user asks to debug or fix failing GitHub PR checks that
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
 > - The required check is "AI CAFE PR baseline". Reproduce the failure locally first and show the same check passing before you push.
-> - Never skip, disable or loosen a test to get green (AGENTS.md section 9). Push only to the PR's own branch. Never merge, never force-push someone else's branch.
+> - Never skip, disable or loosen a test to get green (`docs/rules/tests.md`). Push only to the PR's own branch. Never merge, never force-push someone else's branch.
 > - In cloud sessions without `gh`, read checks and logs with the GitHub MCP tools instead of the script. The script only reads (gh auth status / pr checks / run view / api GET).
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 

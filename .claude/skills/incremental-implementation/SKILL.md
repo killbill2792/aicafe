@@ -4,7 +4,7 @@ description: Delivers changes incrementally in thin, verifiable slices. Use when
 ---
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
-> - The skills it points to (`git-workflow-and-versioning`, `test-driven-development`, `../../references/definition-of-done.md`) are not vendored. Definition of done = AGENTS.md section 10 plus rule 17.
+> - The skills it points to (`git-workflow-and-versioning`, `test-driven-development`, `../../references/definition-of-done.md`) are not vendored. Definition of done = `docs/rules/workflow-and-review.md` plus rule 17.
 > - Feature flags read from settings or env like the existing ones (for example `EVENTS_LOOKAHEAD_ENABLED`); never hardcode a café or value (AGENTS.md rule 5). Migrations are forward-only files in `supabase/migrations/`; describe how to undo instead of writing down-migrations unless the task asks.
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 

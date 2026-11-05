@@ -10,7 +10,7 @@ metadata:
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
 > - Our Vitest is **5.0.2** (`package.json` `^5.0.2`); this skill was written for 5.1.0-beta.1. Not available to us: `--since-last-run`, `--last-failed`, the `cache` result store, `experimental.recordDependencies` / `vcsProvider`, `fakeTimers.fakeNodeBuiltins`, `coverage.ignoreNode`, `ui.theme` (see SOURCE.md). Check `node_modules/vitest` before using any option.
 > - Available and useful: `--shard=N/3` (CI runs three shards), `--changed`, `--merge-reports`, `maxWorkers`, `test.concurrent`, test tags.
-> - Do not change `vitest.config.ts`, CI sharding or existing tests unless the task names it (AGENTS.md section 9). Never add retries to hide a flaky test: fix the cause.
+> - Do not change `vitest.config.ts`, CI sharding or existing tests unless the task names it (`docs/rules/tests.md`). Never add retries to hide a flaky test: fix the cause.
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 
 Vitest is a next-generation testing framework powered by Vite. It provides a Jest-compatible API with native ESM, TypeScript, and JSX support out of the box. Vitest shares the same config, transformers, resolvers, and plugins with your Vite app.

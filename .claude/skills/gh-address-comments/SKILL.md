@@ -6,7 +6,7 @@ metadata:
 ---
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
-> - In AI Cafe the Codex review is the reviewer. Fix every P1 in one round (AGENTS.md section 11). Skip the "ask which comments to fix" step when the owner has already said "fix Codex comments".
+> - In AI Cafe the Codex review is the reviewer. Fix every P1 in one round (`docs/rules/workflow-and-review.md`). Skip the "ask which comments to fix" step when the owner has already said "fix Codex comments".
 > - In cloud sessions without `gh`, read comments with the GitHub MCP tools. The script only reads (one GraphQL query). Never resolve, approve or merge on your own.
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 

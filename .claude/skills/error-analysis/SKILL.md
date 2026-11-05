@@ -9,7 +9,7 @@ description: >
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
 > - Use it to design evals for the Supervisor AI: read real traces (`ai_threads` / `ai_messages`), name failure modes in plain words, then write checks.
-> - Read traces only through the normal read-only paths, on test cafés or with the owner's OK for real ones. Never paste owner personal data, bank lines or receipts into a prompt, file or PR (AGENTS.md section 8.5). Quote trace ids, not contents.
+> - Read traces only through the normal read-only paths, on test cafés or with the owner's OK for real ones. Never paste owner personal data, bank lines or receipts into a prompt, file or PR (`docs/rules/safety-and-privacy.md`). Quote trace ids, not contents.
 > - Prefer a code check (exact number match against `lib/metrics/core`, `checkNumbers`, tool-call shape) before any LLM judge.
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 

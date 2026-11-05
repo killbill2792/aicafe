@@ -4,7 +4,7 @@ description: Use when receiving code review feedback, before implementing sugges
 ---
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
-> - AGENTS.md section 11 decides what is a P1. Fix every P1 in one round; leave P2s unless the owner asks.
+> - `docs/rules/workflow-and-review.md` decides what is a P1. Fix every P1 in one round; leave P2s unless the owner asks.
 > - "Your human partner" means the AI Cafe owner. Their product decisions are final (AGENTS.md rule 2).
 > - In cloud sessions without `gh`, reply through the GitHub MCP tools. Never approve or merge.
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.

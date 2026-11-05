@@ -9,7 +9,7 @@ metadata:
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
 > - The rules are a fixed copy in [guidelines.md](guidelines.md). Do NOT fetch them from the internet; read that file instead.
-> - `docs/02-design-system.md` and AGENTS.md section 8 (WCAG AA, 48px targets, 17px body text) win over any rule here.
+> - `docs/02-design-system.md` and `docs/rules/safety-and-privacy.md` (WCAG AA, 48px targets, 17px body text) win over any rule here.
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 
 # Web Interface Guidelines

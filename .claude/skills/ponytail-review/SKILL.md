@@ -9,7 +9,7 @@ description: >
 ---
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
-> - For AI Cafe PR reviews, AGENTS.md section 11 decides severity: "Must fix" maps to P1, everything else goes in the P2 list.
+> - For AI Cafe PR reviews, `docs/rules/workflow-and-review.md` decides severity: "Must fix" maps to P1, everything else goes in the P2 list.
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 
 Review a change like the senior developer who will be paged when it breaks.

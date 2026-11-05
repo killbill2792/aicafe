@@ -5,7 +5,7 @@ description: "Review the changes since a fixed point (commit, branch, tag, or me
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
 > - Renamed from upstream `code-review` so it does not clash with Claude Code's built-in `/code-review`.
-> - Standards axis: AGENTS.md (sections 3, 6, 7, 8, 9, 11) is the documented standard and wins over the smell baseline. Spec axis: the agreed plan in the PR body or `docs/plans/`.
+> - Standards axis: AGENTS.md and the `docs/rules/*.md` files it links are the documented standard and wins over the smell baseline. Spec axis: the agreed plan in the PR body or `docs/plans/`.
 > - If sub-agents are not available, run the two reviews one after the other and keep them separate. Report only; never approve or merge.
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 

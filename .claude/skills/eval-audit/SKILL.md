@@ -11,7 +11,7 @@ description: >
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
 > - Report only. Turn findings into small, separate PRs the owner approves.
-> - Golden owner questions (AGENTS.md section 9) are part of the eval system: audit them too.
+> - Golden owner questions (`docs/rules/tests.md`) are part of the eval system: audit them too.
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 
 # Eval Audit

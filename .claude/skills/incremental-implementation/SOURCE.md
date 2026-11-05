@@ -15,7 +15,7 @@ calls, credential reads, and anything that pushes, merges, posts or auto-install
 
 ## Local changes from upstream
 - Added the AI Cafe local rules block. Added the repo LICENSE.
-- Only this skill and its sibling were copied. `ci-cd-and-automation` was deliberately NOT copied (it recommends auto-merge, which AGENTS.md section 10 forbids). Cross-references to other skills in that repo are not vendored.
+- Only this skill and its sibling were copied. `ci-cd-and-automation` was deliberately NOT copied (it recommends auto-merge, which `docs/rules/workflow-and-review.md` forbids). Cross-references to other skills in that repo are not vendored.
 - Trailing whitespace was stripped from copied text files (the PR baseline runs `git diff --check`).
 
 ## Updating

@@ -9,8 +9,8 @@ description: >
 ---
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
-> - LLM judges are **offline eval tools only** (tests and eval scripts). Never put a judge or reviewer LLM in the Supervisor turn loop and never rewrite model text from a judge (AGENTS.md sections 6, 11 and 12).
-> - Numbers are never judged by an LLM: they are checked by code against tool results (AGENTS.md section 7.3). Use judges only for things code cannot check (tone, plain words, did it answer first).
+> - LLM judges are **offline eval tools only** (tests and eval scripts). Never put a judge or reviewer LLM in the Supervisor turn loop and never rewrite model text from a judge (`docs/rules/ai-architecture.md` and `docs/rules/workflow-and-review.md`).
+> - Numbers are never judged by an LLM: they are checked by code against tool results (`docs/rules/numbers-and-money.md`). Use judges only for things code cannot check (tone, plain words, did it answer first).
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 
 # Write LLM-as-Judge Prompt

@@ -9,7 +9,7 @@ description: >
 ---
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
-> - Report only. Turn findings into small, separate PRs that the owner approves; do not fix them in an unrelated PR (AGENTS.md section 10).
+> - Report only. Turn findings into small, separate PRs that the owner approves; do not fix them in an unrelated PR (`docs/rules/workflow-and-review.md`).
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 
 Audit the whole repo like the senior developer who just inherited it and

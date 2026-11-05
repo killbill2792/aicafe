@@ -7,7 +7,7 @@ metadata:
 ---
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
-> - Local Supabase CLI and migration files in `supabase/migrations/` only. Never run SQL, `apply_migration`, `db push`, branch or project commands against the live project, and never use the Supabase MCP tools on production. Production migrations need the owner's explicit approval (AGENTS.md section 10).
+> - Local Supabase CLI and migration files in `supabase/migrations/` only. Never run SQL, `apply_migration`, `db push`, branch or project commands against the live project, and never use the Supabase MCP tools on production. Production migrations need the owner's explicit approval (`docs/rules/workflow-and-review.md`).
 > - Take the next free migration number from merged main before writing a migration (AGENTS.md rule 7).
 > - Do not create or edit `.mcp.json`, and do not log in or store Supabase tokens.
 > - Fetching Supabase docs pages to read them is fine. The upstream "submit skill feedback as a GitHub issue" step was removed: never open issues on other repos.

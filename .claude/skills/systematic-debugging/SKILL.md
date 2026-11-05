@@ -5,7 +5,7 @@ description: Use when encountering any bug, test failure, or unexpected behavior
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
 > - The TypeScript example is stored as `condition-based-waiting-example.md` so our type-check does not compile it.
-> - The `superpowers:test-driven-development` sub-skill is not vendored; follow AGENTS.md section 9 for tests. Never loosen an existing test to make it pass.
+> - The `superpowers:test-driven-development` sub-skill is not vendored; follow `docs/rules/tests.md` for tests. Never loosen an existing test to make it pass.
 > - `find-polluter.sh` runs `npm test <file>` once per test file, locally only.
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 

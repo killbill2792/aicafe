@@ -11,8 +11,8 @@ metadata:
 ---
 
 > **AI Cafe local rules (added by AI Cafe; they override the upstream text below).**
-> - Local Supabase CLI and migration files only, never the live project. RLS on every table and `security_invoker=true` views are binding (AGENTS.md section 8).
-> - Money stays integer cents (AGENTS.md section 7).
+> - Local Supabase CLI and migration files only, never the live project. RLS on every table and `security_invoker=true` views are binding (`docs/rules/safety-and-privacy.md`).
+> - Money stays integer cents (`docs/rules/numbers-and-money.md`).
 > - Source, pinned commit and local changes: [SOURCE.md](SOURCE.md). Index: `docs/rules/skills.md`. AGENTS.md wins over this skill.
 
 # Supabase Postgres Best Practices
