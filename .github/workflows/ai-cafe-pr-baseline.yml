@@ -234,6 +234,11 @@ jobs:
           test "$GUARDS_RESULT" = success
           if [ "$EVENT_NAME" = pull_request ]; then
             test "$CHANGES_RESULT" = success
+            # An empty classification on a nonempty PR is never an approval.
+            if [ "$CODE_CHANGED" != true ] && [ "$DOCS_ONLY" != true ] && [ "$SUPERVISOR_CHANGED" != true ] && [ "$E2E_CHANGED" != true ]; then
+              echo "Unclassified PR change" >&2
+              exit 1
+            fi
           else
             test "$CHANGES_RESULT" = skipped
           fi
