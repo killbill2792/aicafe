@@ -20,6 +20,7 @@ const isOpen = (task: OperatingTask) => task.status === "needs_owner" || task.st
 /** The day an item is about: the shift, the brief's business day, the event day. */
 export function taskSubjectDate(task: OperatingTask): string | null {
   const p = task.payload;
+  if (task.kind === "commitment" && isDate(task.dueLocalDate)) return task.dueLocalDate;
   if (isDate(p.shiftDate)) return p.shiftDate;
   if (isDate(p.businessDate)) return p.businessDate;
   if (task.entityType === "event_day" && isDate(task.entityId)) return task.entityId;
@@ -37,6 +38,8 @@ export function isInformational(task: OperatingTask): boolean {
 /** One stable key per real-world item. Two writers or two runs for the same thing collapse here. */
 export function inboxKey(task: OperatingTask): string {
   const day = taskSubjectDate(task);
+  if (task.kind === "commitment" && task.ownerUserId && task.dedupeKey)
+    return "commitment:" + task.ownerUserId + ":" + task.dedupeKey;
   if (task.kind === "daily_brief" && day) return "daily_brief:" + day;
   if (task.kind === "event_plan" && task.entityId) {
     if (task.payload.midRun === true) return "event_note:" + task.entityId + ":" + (day ?? "");
@@ -79,6 +82,8 @@ export function settleInboxTasks(stored: readonly OperatingTask[], derived: read
   const newestBrief = tasks.filter((task) => task.kind === "daily_brief").sort(newestFirst)[0];
   const settled = tasks.map((task): OperatingTask => {
     if (!isOpen(task)) return task;
+    // A promised follow-up is durable; ordinary read-time expiry cannot close it.
+    if (task.kind === "commitment") return task;
     const day = taskSubjectDate(task);
     const age = day ? daysBetween(day, today) : null;
     if (task.kind === "daily_brief" && task !== newestBrief) return expire(task, "superseded", at);

@@ -62,6 +62,25 @@ describe("one inbox reader for Home, chat and Operations", () => {
     expect(items.some((item) => item.displayTitle.includes("mayaWatching"))).toBe(false);
   });
 
+  it("shows a due owner commitment by its saved title and opens its actual chat thread",async()=>{
+    const task:OperatingTask={...plan("2026-11-04"),id:"commitment:stable",
+      agentId:"leo",kind:"commitment",status:"needs_owner",dueLocalDate:"2026-11-04",
+      ownerUserId:"the-owner",origin:"owner_chat",payload:{
+        title:"Check supplier delivery",threadId:"verified-owner-thread",
+      }};
+    mocks.stored.mockResolvedValue([task]);
+    const args={snapshot:snapshot as never,menu:[] as never,locale:"en" as const};
+    const [home,inbox]=await Promise.all([getAttentionItems(args),readInbox(args)]);
+    const reminder=home.find(item=>item.id==="commitment:stable");
+    expect(reminder).toMatchObject({kind:"commitment",agentId:"leo",
+      displayTitle:"Check supplier delivery",href:"/?thread=verified-owner-thread",
+      actionLabel:"Operations.openEventThread",
+      title:{key:"operating_tasks.title",params:{title:"Check supplier delivery"}}});
+    expect(inbox.tasks.needsYou.map(t=>t.id)).toEqual(["commitment:stable"]);
+    expect(needsYouFromAttention(home,inbox.tasks.needsYou).rows).toHaveLength(home.length);
+    expect(home.some(item=>item.displayTitle.includes("mayaWatching"))).toBe(false);
+  });
+
   it("moves a past shift's meal break out of Needs you into the expired list, with its date", async () => {
     const inbox = await readInbox({ snapshot: snapshot as never, menu: [] as never, locale: "en" });
     expect(inbox.expiredAlerts.map((item) => [item.id, item.subjectDate])).toEqual([["alert:old", "2026-10-28"]]);
