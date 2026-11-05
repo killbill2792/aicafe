@@ -101,8 +101,10 @@ export function agentReplyPayload(turn: AgentTurn) {
     ...(clarify&&typeof clarify.question==="string"&&clarify.kind==="facts"&&
       typeof clarify.questionId==="string"&&Array.isArray(clarify.fields)?
      [{type:"clarify" as const,kind:"facts" as const,questionId:clarify.questionId,question:clarify.question,
+       ...(clarify.changeSaved===true?{changeSaved:true as const}:{}),
        fields:clarify.fields as {key:string;label:string;inputType:"number"|"money"|"percent"|"text"|"date"|"choice";
-         units:string[];defaultUnit:string;choices?:{label:string;value:string}[]}[]}]:
+         units:string[];defaultUnit:string;choices?:{label:string;value:string}[];
+         remember?:"this_question";current?:{value:string;savedOn:string;canForget:boolean}}[]}]:
      clarify&&typeof clarify.question==="string"&&clarify.kind==="fill"&&Array.isArray(clarify.fields)?
      [{type:"clarify" as const,kind:"fill" as const,question:clarify.question,
        fields:clarify.fields as {key:string;label:string;inputType:"number";units:string[];defaultUnit:string}[]}]:

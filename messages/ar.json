@@ -3711,7 +3711,15 @@
     "milkTypeOat": "حليب الشوفان",
     "milkTypeAlmond": "حليب اللوز",
     "milkTypeSoy": "حليب الصويا",
-    "milkTypeCoconut": "حليب جوز الهند"
+    "milkTypeCoconut": "حليب جوز الهند",
+    "usedOnce": "شكرًا. استخدمت ذلك لهذا السؤال فقط ولم أحفظه.",
+    "forgotten": "تم. لقد نسيت ذلك.",
+    "savedOn": "محفوظ في {date}",
+    "forgetThis": "انسَ هذا",
+    "keepThis": "احتفظ به",
+    "willForget": "سأنسى هذا.",
+    "forgottenValue": "انسه",
+    "usedOnceHint": "لهذا السؤال فقط. لا يُحفظ."
   },
   "DailyBrief": {
     "yesterday": "صباح الخير. أمس: المبيعات {sales}، التكاليف المعروفة {costs}، وبقي لك {kept}.",

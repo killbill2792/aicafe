@@ -2,6 +2,8 @@ import {z} from "zod";
 import {randomUUID} from "node:crypto";
 import {catalogForMissing} from "@/lib/ownerFacts/catalog";
 import {ownerFactLabel} from "@/lib/ownerFacts/questions";
+import {savedFactCurrent} from "@/lib/ownerFacts/change";
+import type {SavedFact} from "@/lib/ownerFacts/inject";
 import type {AgentToolContext,AgentToolResult} from "./index";
 export const askOwnerSchema=z.strictObject({
  question:z.string().trim().min(1).max(200),
@@ -9,12 +11,16 @@ export const askOwnerSchema=z.strictObject({
  options:z.array(z.strictObject({label:z.string().trim().min(1).max(60),
    value:z.string().trim().min(1).max(100)})).max(12),
  allowOther:z.boolean(),
+ /** true only when the owner asked to change or forget saved facts: every field must be a saved key. */
+ changeSaved:z.boolean().nullable().optional(),
  fields:z.array(z.strictObject({
    key:z.string().min(1).max(90),label:z.string().trim().min(1).max(100),
    inputType:z.enum(["number","money","percent","text","date","choice"]),
    units:z.array(z.string().min(1).max(20)).max(8),
    defaultUnit:z.string().max(20),
    choices:z.array(z.strictObject({label:z.string().trim().min(1).max(80),value:z.string().min(1).max(100)})).max(12).nullable().optional(),
+   /** lasting = saved for future chats; this_question = used for this answer only, never saved. */
+   remember:z.enum(["lasting","this_question"]).nullable().optional(),
  })).max(6).optional(),
 }).superRefine((input,ctx)=>{
  // Choice-mode contracts remain strict while fill-mode accepts no choices.
@@ -25,13 +31,14 @@ type AskOwnerField=NonNullable<z.infer<typeof askOwnerSchema>["fields"]>[number]
 /** Strict mode makes the model send `choices` on every field (often null). The clarify
  * card contract accepts only a list or no key, and fill fields take no choices at all. */
 function withoutEmptyChoices(field:AskOwnerField,kind:string|undefined):AskOwnerField{
- const {choices,...rest}=field;
- return kind!=="fill"&&choices?{...rest,choices}:rest;
+ const {choices,remember,...rest}=field;
+ return {...rest,...(kind!=="fill"&&choices?{choices}:{}),
+  ...(kind==="facts"&&remember==="this_question"?{remember}:{})};
 }
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 export const askOwnerTools={ask_owner:{
  agentId:"alex",schema:askOwnerSchema,
- description:"Ask once each turn when any needed fact is missing, unknown, empty or failed. For arbitrary questions use kind=facts with 1–6 number, money, percent, text, date or choice fields; options=[] and allowOther=false. Use a generic text field when the key is unknown. For known ambiguity use verified kind=choice with 2–4 of the candidates (pick the likeliest, or ask a narrower question). Legacy pantry counts use verified kind=fill only. Never ask for a figure already returned or saved.",
+ description:"Ask once each turn when a fact only the owner knows is missing, unknown, empty or failed; never for a figure the POS records. For arbitrary questions use kind=facts with 1–6 number, money, percent, text, date or choice fields; options=[] and allowOther=false. Use a generic text field when the key is unknown. For known ambiguity use verified kind=choice with 2–4 of the candidates (pick the likeliest, or ask a narrower question). Legacy pantry counts use verified kind=fill only. Never ask for a figure already returned or saved. Each facts field sets remember: lasting for stable café facts, this_question for anything about one day or period or a one-off answer. changeSaved=true only when the owner asks to change or forget saved facts, with their exact saved keys; otherwise false.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const parsed=askOwnerSchema.parse(raw);
   const input={...parsed,fields:parsed.fields?.map(field=>withoutEmptyChoices(field,parsed.kind))};
@@ -42,20 +49,27 @@ export const askOwnerTools={ask_owner:{
       new Set(input.fields.map(f=>f.key)).size!==input.fields.length||
       input.fields.some(f=>f.inputType==="choice"&&(!f.choices||f.choices.length<2)))
       return {source:"ask_owner",period:null,missing:["invalidFields"],error:"invalidFactFields"};
+    const saved=(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
     const fields=input.fields.map(field=>{
       const entry=catalogForMissing(field.key);
+      const current=input.changeSaved===true?savedFactCurrent(saved,entry.factKey,field.inputType):null;
+      // A change card only shows facts that are saved now; it never asks new ones.
+      if(input.changeSaved===true&&!current)return null;
       if(entry.labelKey!=="generic"&&entry.type!==field.inputType)return null;
       // Reject unscoped model cards before marking the turn as asked.
       // This allows the agent to recover with an item-specific question.
       if(entry.factKey==="unit_cost_cents")return null;
-      return {...field,key:entry.factKey,
-        label:entry.labelKey!=="generic"?ownerFactLabel(entry.factKey,entry.labelKey,ctx.locale):field.label};
+      const {remember,...rest}=field;
+      return {...rest,key:entry.factKey,
+        label:entry.labelKey!=="generic"?ownerFactLabel(entry.factKey,entry.labelKey,ctx.locale):field.label,
+        ...(current?{current}:remember==="this_question"?{remember}:{})};
     });
     if(fields.some(field=>field===null)||new Set(fields.map(field=>field?.key)).size!==fields.length)
       return {source:"ask_owner",period:null,missing:["invalidFields"],error:"invalidFactFields"};
     state.asked=true;
     return {source:"ask_owner",period:null,missing:[],kind:"facts",
-      questionId:randomUUID(),question:input.question,fields:fields.filter(f=>f!==null)};
+      questionId:randomUUID(),question:input.question,fields:fields.filter(f=>f!==null),
+      ...(input.changeSaved===true?{changeSaved:true}:{})};
   }
   if(input.kind==="fill"){
     // The saved fill card holds at most two fields (clarifyBlockSchema).
