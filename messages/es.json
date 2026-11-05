@@ -3711,7 +3711,15 @@
     "milkTypeOat": "leche de avena",
     "milkTypeAlmond": "leche de almendra",
     "milkTypeSoy": "leche de soja",
-    "milkTypeCoconut": "leche de coco"
+    "milkTypeCoconut": "leche de coco",
+    "usedOnce": "Gracias. Lo usé solo para esta pregunta y no lo guardé.",
+    "forgotten": "Listo. Lo he olvidado.",
+    "savedOn": "Guardado el {date}",
+    "forgetThis": "Olvidar esto",
+    "keepThis": "Conservarlo",
+    "willForget": "Olvidaré esto.",
+    "forgottenValue": "olvidarlo",
+    "usedOnceHint": "Solo para esta pregunta. No se guarda."
   },
   "DailyBrief": {
     "yesterday": "Buenos días. Ayer: ventas {sales}, costos conocidos {costs}, te quedaste con {kept}.",

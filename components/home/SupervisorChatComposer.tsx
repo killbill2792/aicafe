@@ -22,7 +22,7 @@ import {buildAgentSendBody} from "./agentSendBody";
 import MemoryCard from "./MemoryCard";
 import ClarifyCard from "./ClarifyCard";
 import HowIGotThis from "./HowIGotThis";
-import {resumeOwnerQuestion} from "@/lib/ownerFacts/resume";
+import {resumeOwnerQuestion,ownerAnswerAcknowledgement} from "@/lib/ownerFacts/resume";
 import {explainLineSchema} from "@/lib/ai/agent/explain";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress from "./ChatJobProgress";
@@ -141,7 +141,7 @@ function SupervisorMessage({ message, copy, locale, cafeCurrency, onOwnerRespons
   disabled:boolean;
   linkedThreadId?:string; linkedProposalId?:string;
   onClarify:(text:string)=>void;
-  onFacts:(questionId:string,answers:{fieldKey:string;value:string}[])=>Promise<void>;
+  onFacts:(questionId:string,answers:{fieldKey:string;value:string;forget?:boolean}[])=>Promise<void>;
   clarifyState:"hidden"|"active"|"chosen"|"skipped";clarifyChoice:string|null;
   onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
 }) {
@@ -987,10 +987,10 @@ export default function SupervisorChatComposer({
               body:JSON.stringify({questionId,answers,locale})
             });
             if(!response.ok)throw new Error("owner_answer_save_failed");
-            const result=await response.json() as {saved:boolean;writeThroughApplied:boolean};
+            const result=await response.json() as {saved:boolean;writeThroughApplied:boolean;remembered?:number;forgotten?:number};
             if(!result.saved)throw new Error("owner_answer_save_failed");
             const savedCopy=({en,es,ar}[locale]).OwnerQuestions;
-            const responseText=result.writeThroughApplied?savedCopy.saved:savedCopy.savedBut;
+            const responseText=ownerAnswerAcknowledgement(result,savedCopy);
             setChosenClarify(old=>({...old,[message.id]:responseText}));
             const pending=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
             const original=pending.success?pending.data.originalText:
@@ -1001,7 +1001,7 @@ export default function SupervisorChatComposer({
             const fields=card?.success&&card.data.kind==="facts"?card.data.fields:[];
             const facts=answers.map(answer=>({
               label:fields.find(field=>field.key===answer.fieldKey)?.label??answer.fieldKey,
-              value:answer.value
+              value:answer.forget?savedCopy.forgottenValue:answer.value
             }));
             await sendText(resumeOwnerQuestion(original,responseText,facts));
           }}
