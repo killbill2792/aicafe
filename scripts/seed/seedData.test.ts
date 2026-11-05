@@ -91,6 +91,18 @@ describe("generateDemoData", () => {
           expect(dayOrders.reduce((s, o) => s + o.processing_fee_cents, 0)).toBe(day.card_fees_cents);
         }
       });
+
+      it("marks every generated day as covered sales with complete voids", () => {
+        const menuPrice = new Map(data.menuItems.map((m) => [m.id, m.price_cents]));
+        for (const day of data.dailyRollups) {
+          // readCoveredSalesDates (lib/data/dailyFacts.server.ts) only uses days with actual sales.
+          expect(day.sales_data_status).toBe("actual");
+          expect(day.voids_status).toBe("complete");
+          const orderIds = new Set(data.orders.filter((o) => o.business_date === day.business_date).map((o) => o.id));
+          const voided = data.orderLines.filter((l) => l.voided && orderIds.has(l.order_id));
+          expect(voided.reduce((s, l) => s + (menuPrice.get(l.menu_item_id) ?? 0), 0)).toBe(day.voids_cents);
+        }
+      });
     });
   }
 

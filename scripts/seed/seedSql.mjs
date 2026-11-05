@@ -17,7 +17,7 @@ export const SEED_TABLES = [
   ["timecards", "timecards", ["id", "business_id", "employee_id", "pos_timecard_id", "clock_in", "clock_out", "hourly_wage_cents", "breaks"]],
   ["processing_fee_daily_candidates", "processingFeeDailyCandidates", ["business_id", "business_date", "source_type", "provider", "amount_cents", "status", "source_reference", "metadata", "eligible"]],
   ["processing_fee_daily_facts", "processingFeeDailyFacts", ["business_id", "business_date", "amount_cents", "status", "source_type", "provider", "source_reference", "metadata"]],
-  ["daily_rollups", "dailyRollups", ["business_id", "business_date", "net_sales_cents", "orders_count", "drinks_count", "ingredients_cents", "staff_wages_cents", "staff_tax_cents", "card_fees_cents", "card_fees_status", "voids_cents"]],
+  ["daily_rollups", "dailyRollups", ["business_id", "business_date", "net_sales_cents", "orders_count", "drinks_count", "ingredients_cents", "staff_wages_cents", "staff_tax_cents", "card_fees_cents", "card_fees_status", "voids_cents", "sales_data_status", "voids_status"]],
   ["expenses", "expenses", ["id", "business_id", "spent_on", "amount_cents", "vendor", "category_code", "source", "status", "recurring_cost_id", "confidence", "reason", "attachment_path", "dedupe_key"]],
   ["expense_lines", "expenseLines", ["id", "expense_id", "description", "quantity", "unit", "amount_cents", "ingredient_id"]],
 ];

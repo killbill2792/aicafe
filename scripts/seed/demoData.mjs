@@ -344,6 +344,9 @@ export function generateDemoData({ businessId, endDateStr, days = 90, cafe = DEM
       card_fees_cents: dayCardFees,
       card_fees_status: "actual",
       voids_cents: Math.round(dayVoidsCents),
+      // Every order and void of the day is generated, so the day's sales and voids are complete.
+      sales_data_status: "actual",
+      voids_status: "complete",
     });
     processingFeeDailyFacts.push({
       business_id: businessId,
