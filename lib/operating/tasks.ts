@@ -7,7 +7,7 @@ export function parseAgentId(value: string | undefined): AgentId | null {
   return AGENT_IDS.find((agent) => agent === value) ?? null;
 }
 export type OperatingTaskStatus = "watching" | "needs_response" | "needs_owner" | "handled" | "expired";
-export type OperatingTaskKind = "price_experiment_report" | "price_review" | "staff_coverage" | "supply_check" | "money_update" | "data_quality" | "daily_brief" | "goal_report" | "goal_checkin" | "event_plan" | "event_change";
+export type OperatingTaskKind = "price_experiment_report" | "price_review" | "staff_coverage" | "supply_check" | "money_update" | "data_quality" | "daily_brief" | "goal_report" | "goal_checkin" | "event_plan" | "event_change" | "commitment";
 export type TaskEvidence = { source: string; facts: Record<string, string | number | boolean | null> };
 export type OperatingTask = {
   id: string;
@@ -22,6 +22,14 @@ export type OperatingTask = {
   evidence: TaskEvidence[];
   createdAt: string;
   resolvedAt?: string;
+  /** Optional for legacy task kinds; required by the commitment database constraint. */
+  origin?: "owner_chat" | "supervisor_followup";
+  ownerUserId?: string;
+  dueLocalDate?: string;
+  dueLocalTime?: string;
+  dueTimezone?: string;
+  dueAt?: string;
+  dedupeKey?: string;
 };
 export type TaskResponseCode = "yes" | "no" | "plenty" | "getting_low" | "almost_out" | "use_price" | "keep_price" | "later_7" | "later_30" | "later_change";
 export type OperatingTaskResponse = {

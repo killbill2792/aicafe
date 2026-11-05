@@ -65,7 +65,7 @@ function scopedTranslations(locale:"en"|"es"|"ar"){
 /** Home and chat must call this same owner-scoped source. A failed optional read is
  * reported as its own action, never silently replaced with no work. */
 function operatingTaskHref(task: OperatingTask): string {
-  if((task.kind==="event_plan"||task.kind==="event_change") && typeof task.payload.threadId==="string")
+  if((task.kind==="commitment"||task.kind==="event_plan"||task.kind==="event_change") && typeof task.payload.threadId==="string")
     return "/?thread="+encodeURIComponent(task.payload.threadId);
   if(task.kind==="price_experiment_report"){
     const thread=task.payload.threadId,proposal=task.payload.proposalId;
@@ -149,7 +149,9 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
     let title: string;
 
-    if(task.kind==="price_experiment_report"){
+    if(task.kind==="commitment"){
+      title=String(task.payload.title??"");
+    }else if(task.kind==="price_experiment_report"){
       title=tExperiment("reportTask",{item:itemName});
     }else if(task.kind==="daily_brief"){
       title=tBrief("taskTitle");
@@ -257,7 +259,8 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
     ...alertItems,
     ...team.needsYou.filter(task=>!(task.kind==="data_quality" && coveredBills.has(String(task.payload.categoryCode))) &&
       !(task.kind==="data_quality" && vm.missingCategories.some(line=>line.categoryCode===task.payload.categoryCode)))
-      .map(task=>({...taskPreview(task),actionLabel:task.kind==="event_change"?tOperations("eventChangeReviewAction"):t("attentionFix"),impactCents:
+      .map(task=>({...taskPreview(task),actionLabel:task.kind==="commitment"?tOperations("openEventThread"):
+         task.kind==="event_change"?tOperations("eventChangeReviewAction"):t("attentionFix"),impactCents:
         typeof task.payload.impactCents==="number" ? task.payload.impactCents :
         typeof task.payload.estimatedAmountCents==="number" ? task.payload.estimatedAmountCents : null})),
   ];
@@ -280,7 +283,10 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
     let params:Record<string,string|number>={};
     if(task){
       const itemName=String(task.payload.itemName??"").replace(" · "," ");
-      if(task.kind==="price_experiment_report"){key=task.payload.midRun===true?"SupervisorExperiment.midRunTask":
+      if(task.kind==="commitment"){
+        // Owner-authored task text is the provenance, not a stock translation.
+        key="operating_tasks.title";params={title:String(task.payload.title??"")};
+      }else if(task.kind==="price_experiment_report"){key=task.payload.midRun===true?"SupervisorExperiment.midRunTask":
         "SupervisorExperiment.reportTask";params={item:itemName};}
       else if(task.kind==="daily_brief"){key="DailyBrief.taskTitle";}
       else if(task.kind==="goal_checkin"){key="Goals.taskCheckinTitle";params={question:String(task.payload.question??"")};}

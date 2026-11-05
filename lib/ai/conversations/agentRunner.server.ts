@@ -32,6 +32,7 @@ import {BOARD_PROPOSAL_STATUSES,BOARD_REPORT_STATUSES} from "@/lib/operating/boa
 import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
+import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import { persistAgentReply, recordAgentTurnUsage, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
 import { styleReport } from "@/lib/ai/agent/style";
 import type { AgentToolContext } from "@/lib/ai/agent/tools";
@@ -155,6 +156,14 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         getDb().then(client=>scopedWeekSchedule({weekStart},{client,businessId:scope.businessId,ownerUserId:scope.ownerUserId})):
         getWeekSchedule({weekStart}),
       ownerFacts:ownerFactRead.facts,
+      // Use the same verified café/owner/thread in browser and WhatsApp turns.
+      // An external Meta turn has no browser cookies and needs no reauth.
+      commitments:{
+        create:async input=>createOwnerCommitment({...input,threadId:id},
+          {scope,threadId:id,client:await getDb()}),
+        list:async()=>listOwnerCommitments({scope,threadId:id,client:await getDb()}),
+        close:async taskId=>closeOwnerCommitment(taskId,{scope,threadId:id,client:await getDb()}),
+      },
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       eventPlans:{propose:async(input)=>{

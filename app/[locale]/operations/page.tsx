@@ -126,7 +126,7 @@ function taskHref(task: OperatingTask): string {
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
-  if ((task.kind === "daily_brief" || task.kind === "goal_report" || task.kind === "goal_checkin" || task.kind === "event_plan" || task.kind === "event_change") && typeof task.payload.threadId === "string")
+  if ((task.kind === "commitment" || task.kind === "daily_brief" || task.kind === "goal_report" || task.kind === "goal_checkin" || task.kind === "event_plan" || task.kind === "event_change") && typeof task.payload.threadId === "string")
     return "/?thread=" + encodeURIComponent(task.payload.threadId);
   if (task.kind === "supply_check") return "/more/uploads/ingredients";
   return "/operations";
@@ -190,6 +190,7 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
       case "staff_coverage": return { title: t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }), detail: t("staffTaskReason"), action: t("openStaff") };
       case "supply_check": return { title: t("mayaWatching"), detail: t("supplySignal"), action: t("openIngredientCosts") };
       case "money_update": return { title: t("homeMoneyUpdate"), detail: "", action: t("openBills") };
+      case "commitment": return { title: String(task.payload.title ?? ""), detail: "", action: t("openEventThread") };
       case "event_change": return { title: t("eventChangeReview", { event: String(task.payload.eventName ?? "") }), detail: t("eventChangeDetail"), action: t("eventChangeReviewAction") };
       case "event_plan":
         if (midRun) return { title: t("eventNoteTitle", { day }), detail: String(task.payload.note ?? ""), action: t("openEventThread") };

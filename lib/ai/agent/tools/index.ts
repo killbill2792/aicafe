@@ -32,6 +32,7 @@ import {eventsTools} from "./events";
 import {savedEventsTools} from "./getEvents";
 import {eventPlanTools,type EventPlanPort} from "./eventPlan";
 import {webSearchTools} from "./webSearch";
+import {commitmentTools} from "./commitments";
 import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.server";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import {ToolError} from "../toolErrors";
@@ -65,6 +66,12 @@ export type AgentToolContext = {
   resolveState?:import("../resolve").ResolveState;
   asOf: string; locale: AgentLocale;
   threadId?:string;ownerMessageId?:string;
+  /** Bound by a verified owner turn, not model arguments or browser cookies. */
+  commitments?:{
+    create(input:{title:string;dueDate:string;dueTime:string|null;origin:"owner_chat"|"supervisor_followup"}):Promise<import("@/lib/operating/commitments.server").CommitmentView>;
+    list():Promise<import("@/lib/operating/commitments.server").CommitmentView[]>;
+    close(id:string):Promise<boolean>;
+  };
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
   /** Authenticated canonical screen read, bound to session membership rather than model args. */
@@ -103,7 +110,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -127,10 +134,11 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   suggest_new_item_price:["category"],
   // A public web search phrase is not a café catalog identifier.
   web_search:["query"],
-  propose_event_plan:["summary","actions","expectedBusyHours"]
+  propose_event_plan:["summary","actions","expectedBusyHours"],
+  manage_commitment:["title","due_date","due_time","origin","commitment_id"]
 };
 
-export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
+export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
@@ -201,6 +209,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="record_checkin")return goalTools.record_checkin.execute(raw,ctx);
   if(Object.hasOwn(staffProposalTools,name))return staffProposalTools[name as keyof typeof staffProposalTools].execute(raw,ctx);
   if(name==="get_attention_items")return attentionTools.get_attention_items.execute(raw,ctx);
+  if(name==="manage_commitment")return commitmentTools.manage_commitment.execute(raw,ctx);
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
   if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
   if(name==="get_labor")return staffTools.get_labor.execute(raw,ctx);

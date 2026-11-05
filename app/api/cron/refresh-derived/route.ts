@@ -2,6 +2,7 @@ import {NextResponse} from "next/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {verifyBearer} from "@/lib/security/bearer";
 import {refreshDerivedForBusiness} from "@/lib/alerts/refreshDerived.server";
+import {deliverPendingCommitments} from "@/lib/operating/commitments.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=300;
@@ -15,6 +16,11 @@ export async function GET(request:Request){
   const db=createAdminSupabaseClient();
   let checked=0,refreshed=0,failed=0;
   const now=new Date();
+  // Separate task capability, same authorized cron. Failures remain visible and
+  // the database keeps unfinished commitments pending for the next invocation.
+  let commitments:{scopes:number;delivered:number;failed:number};
+  try{commitments=await deliverPendingCommitments(db,now);}
+  catch{commitments={scopes:0,delivered:0,failed:1};}
   const pageSize=100;
   for(let offset=0;;offset+=pageSize){
     const {data,error}=await db.from("businesses").select("id,timezone,is_demo")
@@ -37,5 +43,5 @@ export async function GET(request:Request){
     }
     if(rows.length<pageSize)break;
   }
-  return respond(failed?207:200,{checked,refreshed,failed});
+  return respond(failed||commitments.failed?207:200,{checked,refreshed,failed,commitments});
 }
