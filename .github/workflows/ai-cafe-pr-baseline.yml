@@ -225,12 +225,17 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: 2.121.0
-      - name: Install locked dependencies
-        run: npm ci --ignore-scripts
-      - name: Start local Supabase once (database only, never production)
+      # Both are slow and independent, so they run side by side.
+      - name: Install locked dependencies and start local Supabase once (database only, never production)
         run: |
+          npm ci --ignore-scripts >"$RUNNER_TEMP/npm-ci.log" 2>&1 &
+          npm_ci=$!
           if [ ! -f supabase/config.toml ]; then supabase init --force; fi
           supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          npm_ci_status=0
+          wait "$npm_ci" || npm_ci_status=$?
+          cat "$RUNNER_TEMP/npm-ci.log"
+          exit "$npm_ci_status"
       - name: Run every SQL and database test
         run: bash scripts/db/run-all.sh
       - name: Stop local Supabase
