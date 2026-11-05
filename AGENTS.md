@@ -41,6 +41,21 @@ Where an older line in this file conflicts with these rules, these rules win.
 8. **Merge readiness.** A PR is mergeable only when CI is green, the Codex review is clean (or every comment
    is fixed and re-reviewed), it is rebased on current main, and the PR body says what changed, what was
    deleted and what was not touched.
+9. **No silent data loss.** Every save records success or failure. Failures retry automatically with
+   backoff and stay visible in the health check until they are recovered. The owner is never asked to
+   fix data.
+10. **Screen and chat match.** Supervisor's numbers come from the same shared calculations as the app
+    screens (`lib/metrics/core`), never a formula the model invents.
+11. **Proactive by default.** Every feature says how Supervisor brings it to the owner without being asked.
+12. **The database aggregates.** Supervisor reads small summaries built in the database, not raw rows, to
+    keep tokens low.
+13. **Proof, not claims.** The PR body matches the diff, and "done" means verified on real café data, not
+    only on fixtures.
+14. **Read before you build, update after.** Every task starts by reading AGENTS.md and PROGRESS.md.
+    PROGRESS.md is updated when the PR merges.
+15. **Architecture walkthrough.** Every PR that adds or changes data, jobs or tools has a short plain-words
+    "How data flows" section: the source, what is saved and where, who reads it, and what Supervisor
+    says from it.
 
 ## 1. What we are building
 An **AI operator for independent café owners**: one AI assistant (the Supervisor chat) that runs the café
