@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| Repository | https://github.com/hamelsmu/evals-skills |
-| Commit (pinned) | `22418da2bfb159f28a1b0dcf64e969e14ae56c99` |
-| Commit date | 2026-08-15 |
+| Repository | https://github.com/ai-evals-course/evals-skills |
+| Commit (pinned) | `80d5f7b0127c7572ed9e9339937adbfd7240ffeb` |
+| Commit date | 2026-09-24 |
 | Upstream path | `skills/validate-evaluator` |
-| License | MIT |
+| License | Apache-2.0 (LICENSE included) |
 | Vendored on | 2026-11-05, AI Cafe PR S1 (skills foundation) |
 
 ## Safety read
@@ -14,9 +14,9 @@ Every SKILL.md, reference and script in this folder was read before copying. Che
 calls, credential reads, and anything that pushes, merges, posts or auto-installs.
 
 ## Local changes from upstream
-- **The repository is archived/deprecated**: its README says the skills moved to ai-evals-course/evals-skills. We pinned the archived commit the owner chose; do not expect upstream fixes here.
-- Added the AI Cafe local rules block. Added the repo LICENSE.
-- Only these five skills were copied (not build-review-interface or evaluate-rag).
+- Replaces the earlier copy from the archived hamelsmu/evals-skills (`22418da`), which was deleted in this PR. This repo is its maintained successor.
+- Only these six skills were copied (not evals-start, build-review-interface or evaluate-rag). Left out `agents/openai.yaml` (Codex display metadata).
+- Added the AI Cafe local rules block. Added the repo LICENSE (Apache-2.0; the repo has no NOTICE file).
 - Trailing whitespace was stripped from copied text files (the PR baseline runs `git diff --check`).
 
 ## Updating

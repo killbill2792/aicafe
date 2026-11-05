@@ -14,7 +14,7 @@ Every SKILL.md, reference and script in this folder was read before copying. Che
 calls, credential reads, and anything that pushes, merges, posts or auto-installs.
 
 ## Local changes from upstream
-- No upstream files vendored. `SKILL.md` here is written by AI Cafe: local, code-only use of the CLI.
+- No upstream skill text vendored (upstream LICENSE, LICENSE-MIT and NOTICE are included for attribution). `SKILL.md` here is written by AI Cafe: local, code-only use of the CLI.
 - Upstream `graphify/skill.md` (800 lines) was not copied: its pipeline clones repos, fetches URLs, pushes to Neo4j/FalkorDB, installs git hooks and sends docs to a model using API keys from the environment (`ANTHROPIC_API_KEY`, `MOONSHOT_API_KEY`, ...).
 - Trailing whitespace was stripped from copied text files (the PR baseline runs `git diff --check`).
 
