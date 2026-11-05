@@ -13,19 +13,21 @@ const DEFAULT_ROWS=50,MAX_ROWS=100;
 const SNAPSHOT_VIEWS:ReadonlySet<CanonicalView>=new Set(["cv_cash","cv_inventory","cv_kitchen","cv_dining_options"]);
 const snapshotNote=(view:CanonicalView)=>SNAPSHOT_VIEWS.has(view)?["snapshotOnly"]:[];
 const atom=z.union([z.string().max(256),z.number().finite(),z.boolean()]);
-const filter=z.strictObject({column:z.string().max(100),
- op:z.enum(["=","!=","<","<=",">",">=","in","between","ilike"]),
- value:z.union([atom,z.array(atom).max(100)])});
-const metric=z.strictObject({fn:z.enum(["sum","count","avg","min","max"]),
- column:z.string().max(100)});
+// Match ai_query_path: eight nested segments can legitimately exceed 100 total chars.
+const queryField=z.string().max(1024);
+const filter=z.strictObject({column:queryField,
+ op:z.enum(["=","!=","<","<=",">",">=","in","between","ilike","is_null","is_not_null"]),
+ value:z.union([atom,z.array(atom).max(100),z.null()])});
+const metric=z.strictObject({fn:z.enum(["sum","count","count_distinct","avg","min","max"]),
+ column:queryField});
 export const dataQuerySchema=z.strictObject({
  view:z.enum(canonicalViewNames),
- columns:z.array(z.string().max(100)).max(20).nullable(),
+ columns:z.array(queryField).max(20).nullable(),
  filters:z.array(filter).max(15).nullable(),
- group_by:z.array(z.string().max(100)).max(4).nullable(),
+ group_by:z.array(queryField).max(4).nullable(),
  metrics:z.array(metric).max(10).nullable(),
  date_from:z.iso.date(),date_to:z.iso.date(),
- order_by:z.strictObject({column:z.string().max(100),
+ order_by:z.strictObject({column:queryField,
    direction:z.enum(["asc","desc"])}).nullable(),
  // A tool result must stay compact (AGENTS.md: about 1.5k tokens). Ask for totals
  // with group_by/metrics instead of paging through raw rows.
@@ -48,37 +50,52 @@ export function fitRows(rows:unknown[]):{rows:unknown[];cut:boolean}{
  }
  return {rows:kept,cut:false};
 }
-const describeSchema=z.strictObject({record_type:z.string().min(1).max(80).nullable()});
+const describeSchema=z.strictObject({
+ record_type:z.string().min(1).max(80).nullable(),
+ view:z.enum(canonicalViewNames).nullable(),
+ field_prefix:z.string().max(100).nullable()
+});
 export const dataQueryTools={
  describe_data:{
   agentId:"alex" as const,
   schema:describeSchema,
-  description:"List permitted canonical café views and plain-language column meanings; no SQL. With record_type (e.g. \"item\", \"order\", \"labor/v1/timeEntries\"), instead list the field names inside cv_toast_records data for that type, with an example value each.",
+  description:"Discover available canonical views (view:null, record_type:null) then request ONE view's columns using view. For Toast JSON fields, use view:null and record_type (e.g. item or check_discount) to sample available data paths; use field_prefix to inspect a narrower part of large records. A discount use is a counted item_discount or check_discount row, not an order or check. No SQL.",
   execute:async(raw:unknown,ctx?:DataQueryContext)=>{
-   const parsed=describeSchema.safeParse({record_type:null,...(raw&&typeof raw==="object"?raw:{})});
+   const parsed=describeSchema.safeParse({record_type:null,view:null,field_prefix:null,...(raw&&typeof raw==="object"?raw:{})});
    if(!parsed.success)return {source:"canonical_dictionary",period:null,missing:["invalid_query"],views:[]};
-   const recordType=parsed.data.record_type;
+   const {record_type:recordType,view,field_prefix:prefix}=parsed.data;
+   if((recordType!==null&&view!==null)||(prefix!==null&&recordType===null))
+    return {source:"canonical_dictionary",period:null,missing:["invalid_query"],views:[]};
    if(recordType!==null){
     if(!ctx?.db||!z.uuid().safeParse(ctx.businessId).success)
      return {source:"toast_fields",period:null,missing:["invalid_scope"],record_type:recordType,fields:[]};
     try{
      const {data,error}=await ctx.db.rpc("ai_toast_fields",{p_business_id:ctx.businessId,p_record_type:recordType});
      if(error)return {source:"toast_fields",period:null,missing:["source_read_failed"],record_type:recordType,fields:[]};
-     const fields=Array.isArray(data)?data:[];
-     return {source:"toast_fields",period:null,missing:fields.length?[]:["empty"],record_type:recordType,
-      view:"cv_toast_records",fields};
+     const allFields=Array.isArray(data)?data:[];
+     const matching=prefix===null?allFields:allFields.filter((item:unknown)=>
+      item!==null&&typeof item==="object"&&"field" in item&&
+      typeof item.field==="string"&&item.field.startsWith(prefix));
+     const fit=fitRows(matching);
+     return {source:"toast_fields",period:null,
+      missing:[...(matching.length?[]:["empty"]),...(fit.cut?["result_truncated"]:[])],
+      record_type:recordType,view:"cv_toast_records",field_prefix:prefix,
+      fields:fit.rows,truncated:fit.cut};
     }catch{return {source:"toast_fields",period:null,missing:["source_read_failed"],record_type:recordType,fields:[]};}
    }
+   const views=view?[view]:canonicalViewNames;
    return {source:"canonical_dictionary",period:null,missing:[],
-    views:canonicalViewNames.map(view=>({name:view,meaning:canonicalDictionary[view].meaning,
-     columns:Object.entries(canonicalDictionary[view].columns).map(([name,metadata])=>({
-      name,meaning:metadata.meaning,unit:metadata.unit,source:metadata.source
-     }))}))};
+    views:views.map(name=>({
+     name,meaning:canonicalDictionary[name].meaning,
+     ...(view?{columns:Object.entries(canonicalDictionary[name].columns).map(([field,metadata])=>({
+      name:field,meaning:metadata.meaning,unit:metadata.unit,source:metadata.source
+     }))}:{})
+    }))};
   }
  },
  query_data:{
   agentId:"alex" as const,schema:dataQuerySchema,
-  description:"Read and aggregate ONLY allowlisted canonical views through a café-scoped, RLS-invoker RPC. Supply dates and null for omitted filters/grouping. Returns at most 100 rows (50 by default): prefer group_by and metrics for totals. missing includes snapshotOnly for cash, stock, kitchen and dining options: say these are the latest captured snapshot, not live data.",
+  description:"Read only allowlisted, café-scoped canonical views. Use is_null / is_not_null with value:null to find missing data, without guessing it equals zero. For discount uses use cv_toast_records filtered by record_type in [item_discount,check_discount], counts_in_sales=true (excludes VOID/removed), and data.name; count source_ref for uses, count_distinct order_ref for orders, count_distinct check_ref for checks. These are different counts. Use metrics/group_by (including named data paths) for database aggregation, not raw rows. Date bounds are café business dates; currentDayIncomplete means so far, not a final total. Do not infer discount cents. Result capped in the database; truncated means not all rows returned. Snapshot-only sources are not live.",
   execute:async(raw:unknown,ctx:DataQueryContext)=>{
    const parsed=dataQuerySchema.safeParse(raw);
    if(!parsed.success)return empty("invalid_query");
@@ -91,7 +108,8 @@ export const dataQueryTools={
    if(!validColumns(p.view,all))return empty("column_not_allowed");
    if((p.filters??[]).some(f=>(f.op==="between"&&(!Array.isArray(f.value)||f.value.length!==2))||
     (f.op==="in"&&(!Array.isArray(f.value)||f.value.length===0))||
-    (!["between","in"].includes(f.op)&&Array.isArray(f.value))))
+    (["is_null","is_not_null"].includes(f.op)?f.value!==null:
+     f.value===null||(!["between","in"].includes(f.op)&&Array.isArray(f.value)))))
     return empty("invalid_filter");
    // Simple rows use the same bounded canonical reader available to owner screens.
    // Grouped sums/averages continue through the server-side invoker SQL RPC;
@@ -112,7 +130,7 @@ export const dataQueryTools={
       const source=typeof row.source==="string"?row.source:"unknown";
       mix[source]=(mix[source]??0)+1;
      }
-     const hasIncomplete=result.rows.some(row=>["open","estimated","needs_match"].includes(String(row.status)));
+     const hasIncomplete=result.rows.some(row=>["open","estimated","needs_match","provisional"].includes(String(row.status)));
      return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
       missing:[...(rows.length===0?["empty"]:[]),...snapshotNote(p.view),
        ...(hasIncomplete?["incompleteEvidence"]:[]),
@@ -132,14 +150,17 @@ export const dataQueryTools={
     });
     if(error)return empty("source_read_failed");
     const result=data as {rows?:unknown[];rowCount?:number;truncated?:boolean;
-      sourceMix?:Record<string,number>;sourceCount?:number;hasIncomplete?:boolean}|null;
+      sourceMix?:Record<string,number>;sourceCount?:number;hasIncomplete?:boolean;
+      currentDayIncomplete?:boolean}|null;
     const fit=fitRows(Array.isArray(result?.rows)?result.rows:[]);
     const rows=fit.rows,truncated=result?.truncated===true||fit.cut;
+    const isEmpty=result?.sourceCount===0||(rows.length===0&&!truncated);
     return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
-     missing:[...(rows.length===0||result?.sourceCount===0?["empty"]:[]),...snapshotNote(p.view),
+     missing:[...(isEmpty?["empty"]:[]),...snapshotNote(p.view),
       ...(result?.hasIncomplete?["incompleteEvidence"]:[]),
+      ...(result?.currentDayIncomplete?["currentDayIncomplete"]:[]),
       ...(truncated?["result_truncated"]:[])],
-     empty:rows.length===0||result?.sourceCount===0,error:undefined as string|undefined,rows,rowCount:rows.length,
+     empty:isEmpty,error:undefined as string|undefined,rows,rowCount:rows.length,
      truncated,sourceMix:result?.sourceMix??{}};
    }catch{return empty("source_read_failed");}
   }

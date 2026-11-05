@@ -291,16 +291,16 @@ export const canonicalDictionary = {
     }
   },
   "cv_discounts": {
-    "meaning": "Recorded order discounts",
+    "meaning": "Imported, finalized order discount arrays for screens. One row represents an order, NOT one discount use; do not count these rows to answer how many discounts were applied today. For precise per-use counts, read cv_toast_records item_discount and check_discount, filtering counts_in_sales=true.",
     "columns": {
       "check_discounts": {
-        "meaning": "Named check-level discounts for this order.",
+        "meaning": "Check-level discounts grouped inside one imported order. A discount use is each non-VOID entry, not this array or the number of checks. Excludes removed discounts.",
         "unit": "JSON cents",
         "source": "toast",
         "example": "Which discount names were used?"
       },
       "item_discounts": {
-        "meaning": "Named item-level discounts for this order.",
+        "meaning": "Item-level discounts grouped inside one imported order. Multiple uses may belong to one order. Excludes removed discounts.",
         "unit": "JSON cents",
         "source": "toast",
         "example": "Which items received discounts?"
@@ -1086,7 +1086,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_toast_records": {
-    "meaning": "Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day; for today, before the closeout import, the closed orders saved so far with status provisional), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover. Never use it to rebuild a screen number (net sales, profit, labor cost, card fees, break-even, item cost): use their tools.",
+    "meaning": "Count discount uses with record_type in (item_discount, check_discount) and counts_in_sales=true, grouped by data.name; count source_ref for uses, count_distinct order_ref for different orders, count_distinct check_ref for different checks. An order may have several checks and discount uses. Removed processingState VOID is retained but excluded. Today's closed orders are provisional and totals are incomplete until closeout. Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day; for today, before the closeout import, the closed orders saved so far with status provisional), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover. Never use it to rebuild a screen number (net sales, profit, labor cost, card fees, break-even, item cost): use their tools.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -1107,7 +1107,7 @@ export const canonicalDictionary = {
         "example": "Which record supports it?"
       },
       "status": {
-        "meaning": "actual: a closed day's latest import. provisional: today's closed orders, saved every 15 minutes until the closeout import confirms them; say it is so far.",
+        "meaning": "actual: imported evidence; provisional: current-day closed orders saved before closeout. A date range including the café's active business day is incomplete even if every returned row says actual; call it so far, not final.",
         "unit": "label",
         "source": "app",
         "example": "Is this final?"
@@ -1131,25 +1131,25 @@ export const canonicalDictionary = {
         "example": "Which record?"
       },
       "order_ref": {
-        "meaning": "Toast order GUID this record belongs to (order-level types only).",
+        "meaning": "Toast order GUID for the order, check, item, discount and payment rows. Use count_distinct order_ref (not count of discount uses) for different orders; nulls are ignored.",
         "unit": "identifier",
         "source": "toast",
         "example": "Which order?"
       },
       "check_ref": {
-        "meaning": "Toast check GUID this record belongs to.",
+        "meaning": "Toast check GUID for the check and its child records. Multiple checks may belong to one order; count_distinct check_ref is not the same as distinct orders.",
         "unit": "identifier",
         "source": "toast",
         "example": "Which check?"
       },
       "counts_in_sales": {
-        "meaning": "Same rule as imported sales: false for voided or deleted orders, checks and items, test-mode and excess-food orders, gift card and house-account items, declined, cancelled, errored or voided payments, and discounts removed at the register (data.processingState VOID); null for non-order records. Filter true for sales and for counting discounts.",
+        "meaning": "Filter true for counting applied discounts: false for processingState VOID (removed), voided/deleted orders, checks or items, test-mode/excess-food orders, and excluded payments. Null for non-order records. Removed discounts are visible as evidence but never counted as uses.",
         "unit": "boolean",
         "source": "app",
         "example": "Did this count?"
       },
       "data": {
-        "meaning": "Every field Toast sent for this record (guest names, contacts, card details and notes removed). Read one field by name: data.server.guid, data.price, data.diningOption.guid. Get the field names with describe_data and record_type. Toast money fields are dollars, not cents.",
+        "meaning": "Cleaned Toast fields: read named paths such as data.name, data.server.guid, data.price. Use describe_data with one record_type to discover paths. Numeric JSON fields support comparisons, sum, min, max and averages; is_null/is_not_null find absent fields without treating them as zero. Group by business_date and any named field for unplanned per-day/per-item questions. Group by data.name for discount names; status VOID is excluded with counts_in_sales, not by summing amounts. Toast money fields may be in dollars; discount cents parity is handled separately.",
         "unit": "JSON",
         "source": "toast",
         "example": "Sales by server? Average order time? Which table?"
