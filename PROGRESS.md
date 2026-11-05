@@ -1,3 +1,16 @@
+## What AI Cafe is (mirrors AGENTS.md; AGENTS.md wins)
+1. AI Cafe is an AI operator for independent café owners.
+2. At its core is Supervisor: one universal agent for the café, in one chat.
+3. Supervisor answers anything from all stored café data: POS sales and orders, staff and schedules,
+   costs and bills, stock, events, experiments, and the owner's own inputs.
+4. Its numbers come from that data and the one `calculate` tool, labelled actual, estimate or incomplete.
+5. It acts proactively: it watches the café and tells the owner about problems and chances, with a next step.
+6. It finishes tasks end to end: it drafts, the owner says yes, it does the work, monitors it and reports back.
+7. Nothing with an effect happens without the owner's yes.
+8. The chat and every screen show the same numbers from the same code.
+9. Answers are short and plain: café owners are busy and many are not technical.
+10. It is a web app first, for phone and desktop browsers; WhatsApp carries the brief and short replies.
+
 Direction: an AI operator that runs the café through the Supervisor chat (see AGENTS.md sections 1–5).
 Each item below is a scoped PR. Other work keeps its published dependencies; the
 three Events Fix A/B/C workstreams below may be built in parallel after the planning PR merges.

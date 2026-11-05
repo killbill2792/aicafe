@@ -4,6 +4,44 @@ Read this file fully before any task. If any other doc, PROGRESS entry, PR descr
 conflicts with it, THIS FILE WINS. Docs marked "historical" or "background" in `docs/README.md` are not
 instructions. If a rule here blocks the task you were given, stop and ask the owner. Never work around it.
 
+## What AI Cafe is (read this first)
+1. AI Cafe is an AI operator for independent café owners.
+2. At its core is Supervisor: one universal agent for the café, in one chat.
+3. Supervisor answers anything from all stored café data: POS sales and orders, staff and schedules,
+   costs and bills, stock, events, experiments, and the owner's own inputs.
+4. Its numbers come from that data and the one `calculate` tool, labelled actual, estimate or incomplete.
+5. It acts proactively: it watches the café and tells the owner about problems and chances, with a next step.
+6. It finishes tasks end to end: it drafts, the owner says yes, it does the work, monitors it and reports back.
+7. Nothing with an effect happens without the owner's yes.
+8. The chat and every screen show the same numbers from the same code.
+9. Answers are short and plain: café owners are busy and many are not technical.
+10. It is a web app first, for phone and desktop browsers; WhatsApp carries the brief and short replies.
+
+## Standing rules from the owner (every agent: Claude, ChatGPT, Codex, Grok and any future agent)
+Where an older line in this file conflicts with these rules, these rules win.
+1. **Product first.** Read "What AI Cafe is" above before any task, and build toward it.
+2. **The owner is the builder.** The owner's product decisions are final. You may push back once, with
+   evidence and a better option. Then build what the owner chose. No refusing and no re-arguing.
+3. **Architecture first for all infrastructure** (data, APIs, jobs, crons, approvals, tools, connectors).
+   Before coding, write down: what the source really sends, field by field; one record per object and
+   its key; what happens when it changes; which table it goes to; what is not kept and why; gaps; and
+   how the source may differ between cafés. Get the owner's approval, then build.
+4. **One path per capability.** Before adding code, find the existing path that already does the job and
+   extend it. Never add a second path to get the same data or do the same job. If a new path replaces
+   an old one, the PR says so, and the old one is deleted in the same PR or in a named follow-up
+   deletion PR.
+5. **No hardcoding.** No hardcoded currency (such as USD), café names, IDs, time zones, dates, prices, or
+   values that only make a test or scenario pass. Read them from settings or data. Tests check real
+   behavior on realistic data, and the PR states how each acceptance test proves it.
+6. **English only for now.** Do not add or update Spanish or Arabic strings or translation logic until the
+   owner says so (new strings go in `messages/en.json` only). Do not break the existing ones.
+7. **Parallel PRs.** Several PRs run at once. Before asking to merge, every PR rebases on the latest main,
+   re-checks its migration numbers against merged main, re-runs CI, and lists the other open PRs that
+   touch the same files.
+8. **Merge readiness.** A PR is mergeable only when CI is green, the Codex review is clean (or every comment
+   is fixed and re-reviewed), it is rebased on current main, and the PR body says what changed, what was
+   deleted and what was not touched.
+
 ## 1. What we are building
 An **AI operator for independent café owners**: one AI assistant (the Supervisor chat) that runs the café
 for the owner and reports back. It answers, plans, drafts, monitors and follows up, the way a good
