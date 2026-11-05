@@ -1,8 +1,8 @@
 name: AI CAFE Pull Request Baseline
 
-# Every PR gets the complete fail-closed baseline. A push to main runs ONLY
-# the production build to seed its branch-visible Next.js cache for new PRs.
-# Keep the original required PR check name, including all regression shards.
+# Every PR gets the fail-closed required check. Only code changes run the
+# expensive checks; a push to main still warms the production build cache.
+# Preserve the required check name, including its full-suite enforcement.
 on:
   push:
     branches:
@@ -31,7 +31,7 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       e2e: ${{ steps.filter.outputs.e2e }}
       supervisor: ${{ steps.filter.outputs.supervisor }}
-      docs_only: ${{ steps.filter.outputs['docs-only'] == 'true' && steps.filter.outputs['non-docs'] == 'false' }}
+      docs_only: ${{ steps.filter.outputs['docs-only'] == 'true' && steps.filter.outputs['non-docs'] == 'false' && steps.filter.outputs.e2e == 'false' && steps.filter.outputs.supervisor == 'false' }}
     steps:
       - name: Classify changed paths
         id: filter
@@ -43,7 +43,7 @@ jobs:
             code:
               - '**'
               - '!docs/**'
-              - '!*.md'
+              - '!**/*.md'
               - '!.github/ISSUE_TEMPLATE/**'
             e2e:
               - 'e2e/**'
@@ -64,12 +64,12 @@ jobs:
               - '**/*[Pp]rompt*'
             docs-only:
               - 'docs/**'
-              - '*.md'
+              - '**/*.md'
               - '.github/ISSUE_TEMPLATE/**'
             non-docs:
               - '**'
               - '!docs/**'
-              - '!*.md'
+              - '!**/*.md'
               - '!.github/ISSUE_TEMPLATE/**'
 
   quality:
