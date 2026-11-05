@@ -6,6 +6,7 @@ import {normalizeOpenHours} from "@/lib/business/openHours";
 import {SnapshotCafeStateService} from "./cafeState";
 import {briefMessageId,briefExtras,type BriefLocale} from "./dailyBrief";
 import {briefSchedule,type BriefSchedule} from "./briefSchedule";
+import {notifyOwner} from "./notifyOwner.server";
 import {recordBriefRun,CAFE_OWNER_KEY,type BriefRunOutcome} from "./briefRuns.server";
 import {readBriefEvidence,type BriefEvidenceResult} from "@/lib/whatsapp/morningBrief.server";
 import {eligibleBriefBinding,prepareBoundBrief,type Blocked,type EligibleBrief} from "@/lib/whatsapp/morningBriefDelivery.server";
@@ -280,6 +281,11 @@ async function sendOne(ctx:CafeContext,ownerId:string):Promise<OwnerBriefResult>
     costs:net.known&&p?.available&&p.value.netSalesCents===net.cents?{totalCostsCents:p.value.totalCostsCents,
       ownerProfitCents:p.value.ownerProfitCents,complete}:null});
   const text=extras?briefBody+"\n\n"+extras:briefBody;
+  const notice=await notifyOwner(db,{
+    businessId:b.id,ownerUserId:ownerId,threadId,
+    taskId:"daily-brief:"+schedule.today+":"+ownerId,
+    kind:"daily_brief",localDate:schedule.today,important:true,required:true,
+  },async()=>{
   const inserted=await db.from("ai_messages").insert({
     id:messageId,business_id:b.id,thread_id:threadId,owner_user_id:ownerId,author_user_id:null,
     role:"supervisor",content_type:"blocks",text_content:null,structured_content:[{type:"text",text}],
@@ -308,4 +314,7 @@ async function sendOne(ctx:CafeContext,ownerId:string):Promise<OwnerBriefResult>
   const r=ctx.outbox?await callOutbox(ctx.outbox,hookInput(text)):null;
   return done({step:"in_app",outcome:"sent",reason:"posted",
     details:{late:schedule.phase==="late",posComplete:evidence.posComplete}},fromHook(r,blocked));
+  });
+  if(!notice.result)throw new Error("Required morning brief notice was not published");
+  return notice.result;
 }

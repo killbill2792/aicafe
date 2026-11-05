@@ -2,6 +2,7 @@ import {createHash} from "node:crypto";
 import "server-only";
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {z} from "zod";
 import {ACTIVE_PROPOSAL_STATUSES,ProposalRequestConflictError,effectHash} from "./engine";
 import type {LoopCreate,LoopRepository,OwnerLoopScope,LoopProposal,LoopSample,LoopReport} from "./engine";
@@ -35,6 +36,12 @@ async function postMidRunUpdate(db:ReturnType<typeof createAdminSupabaseClient>,
   // Also an inbox item, so the owner finds it in Operations. It is "watching"
   // (nothing to decide yet) and has its own id, so the final report still
   // creates its own needs-owner item.
+  await notifyOwner(db,{
+    businessId:scope.businessId,ownerUserId:scope.ownerUserId,threadId:scope.threadId,
+    taskId:"supervisor:"+p.capabilityId+":"+p.id+":midrun"+
+      (report.midRunKey?":"+report.midRunKey:""),
+    kind:report.delivery?.taskKind??"supervisor_update",important:true,
+  },async()=>{
   const delivery=report.delivery;
   if(delivery){
     const task=await db.from("operating_tasks").upsert({
@@ -48,6 +55,7 @@ async function postMidRunUpdate(db:ReturnType<typeof createAdminSupabaseClient>,
   }
   const {data:business,error}=await db.from("businesses").select("timezone").eq("id",scope.businessId).single();
   if(error||!business?.timezone)throw new Error("Café timezone unavailable");
+  const localDate=cafeToday(business.timezone);
   const inserted=await db.from("ai_messages").insert({
     id:stableMessageId("supervisor-midrun:"+p.id+(report.midRunKey?":"+report.midRunKey:"")),business_id:scope.businessId,thread_id:scope.threadId,
     owner_user_id:scope.ownerUserId,author_user_id:null,role:"supervisor",content_type:"blocks",
@@ -55,9 +63,10 @@ async function postMidRunUpdate(db:ReturnType<typeof createAdminSupabaseClient>,
     grounding:{status:"estimated",
       intent:p.capabilityId==="alex.event_readiness.v1"?"cafe_overview":"menu_pricing",
       evidence:[{source:p.capabilityId==="alex.event_readiness.v1"?"cafe_events":"operating_tasks",
-      identifier:"supervisor-midrun:"+p.id,asOf:cafeToday(business.timezone)}]},
+      identifier:"supervisor-midrun:"+p.id,asOf:localDate}]},
   });
   if(inserted.error&&inserted.error.code!=="23505")failed(inserted.error,"Supervisor mid-run update unavailable");
+  });
 }
 /** Narrative presentation is not new business evidence. JSONB key order must
  * not affect the comparison, and an actual change to any event fact still delivers. */
@@ -274,6 +283,10 @@ export class SupabaseLoopRepository implements LoopRepository{
       // delivered chat message under a new narrative-format digest.
       alreadyMessaged=Boolean(messageSent.data);
     }
+    await notifyOwner(db,{
+      businessId:scope.businessId,ownerUserId:scope.ownerUserId,threadId:scope.threadId,
+      taskId,kind:delivery.taskKind,important:true,
+    },async()=>{
     const task=await db.from("operating_tasks").upsert({
       business_id:scope.businessId,id:taskId,agent_id:delivery.agentId,
       kind:delivery.taskKind,entity_type:delivery.entityType,entity_id:delivery.entityId,
@@ -296,8 +309,9 @@ export class SupabaseLoopRepository implements LoopRepository{
     const {data:business,error:timezoneError}=await db.from("businesses")
       .select("timezone").eq("id",scope.businessId).single();
     if(timezoneError||!business?.timezone)throw new Error("Café timezone unavailable");
+    const localDate=cafeToday(business.timezone);
     const ref={source:"operating_tasks",identifier:"supervisor-report:"+p.id,
-      asOf:cafeToday(business.timezone)};
+      asOf:localDate};
     // Append a new, stable revision ONLY when the evidence-backed report
     // content changes after a corrected source sync. Same payload => same UUID
     // => duplicate insert safely ignored. Previously delivered messages stay
@@ -323,5 +337,6 @@ export class SupabaseLoopRepository implements LoopRepository{
     });
     if(inserted.error&&inserted.error.code!=="23505")
       failed(inserted.error,"Supervisor thread report unavailable");
+    });
   }
 }
