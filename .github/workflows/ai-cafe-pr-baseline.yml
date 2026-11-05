@@ -208,12 +208,40 @@ jobs:
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: node scripts/guards/run-all.mjs
 
+  db:
+    # Every SQL and database test, on throwaway local databases only. The steps
+    # and their order live in scripts/db/run-all.sh.
+    needs: changes
+    if: ${{ always() && github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || (needs.changes.result == 'success' && needs.changes.outputs.code == 'true')) }}
+    name: Database tests (local Supabase and PostgreSQL 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Start local Supabase once (database only, never production)
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+          supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - name: Run every SQL and database test
+        run: bash scripts/db/run-all.sh
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup
 
   baseline:
     # Preserve the branch-protection check, even for docs-only pull requests.
     name: AI CAFE PR baseline
     if: ${{ always() && github.event_name != 'push' }}
-    needs: [changes, quality, regressions, production-build, supervisor-evals, guards]
+    needs: [changes, quality, regressions, production-build, supervisor-evals, guards, db]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -230,10 +258,11 @@ jobs:
           BUILD_RESULT: ${{ needs.production-build.result }}
           EVAL_RESULT: ${{ needs.supervisor-evals.result }}
           GUARDS_RESULT: ${{ needs.guards.result }}
+          DB_RESULT: ${{ needs.db.result }}
         shell: bash
         run: |
           echo "Changes: $CHANGES_RESULT; code=$CODE_CHANGED; e2e=$E2E_CHANGED; supervisor=$SUPERVISOR_CHANGED; docs-only=$DOCS_ONLY"
-          echo "Quality: $QUALITY_RESULT; Vitest: $TEST_RESULT; build: $BUILD_RESULT; Supervisor: $EVAL_RESULT; guards: $GUARDS_RESULT"
+          echo "Quality: $QUALITY_RESULT; Vitest: $TEST_RESULT; build: $BUILD_RESULT; database: $DB_RESULT; Supervisor: $EVAL_RESULT; guards: $GUARDS_RESULT"
           test "$GUARDS_RESULT" = success
           if [ "$EVENT_NAME" = pull_request ]; then
             test "$CHANGES_RESULT" = success
@@ -254,10 +283,12 @@ jobs:
             test "$QUALITY_RESULT" = success
             test "$TEST_RESULT" = success
             test "$BUILD_RESULT" = success
+            test "$DB_RESULT" = success
           else
             test "$QUALITY_RESULT" = skipped
             test "$TEST_RESULT" = skipped
             test "$BUILD_RESULT" = skipped
+            test "$DB_RESULT" = skipped
           fi
           if [ "$SUPERVISOR_CHANGED" = true ] || [ "$EVENT_NAME" = workflow_dispatch ]; then
             test "$EVAL_RESULT" = success
