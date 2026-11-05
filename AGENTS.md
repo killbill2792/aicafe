@@ -76,6 +76,8 @@ Where an older line in this file conflicts with these rules, these rules win.
     happy paths. The PR lists each scenario with pass or fail. Partial passes are not done. Keep CI fast:
     if a check gets slow or flaky, fix it or split it rather than waiting.
 18. **Use an existing skill first.** Before building anything, check for an official Anthropic/OpenAI skill or a repository skill that already does the job; reuse it instead of rebuilding it.
+    The list, with pinned sources and the AI Cafe rules for each, is `docs/rules/skills.md`; Claude Code
+    loads them from `.claude/skills/`, other agents open a skill's `SKILL.md` by path.
 
 ## Code Review Rules
 Codex must review the whole PR first, then review only newly changed lines on later rounds. Check:
@@ -98,6 +100,7 @@ The linked files below are part of these instructions, not optional background. 
 - [8. Safety and privacy](docs/rules/safety-and-privacy.md)
 - [9. Regression tests](docs/rules/tests.md)
 - [10–12. Work, review and retired paths](docs/rules/workflow-and-review.md)
+- [Skills: what to use before building](docs/rules/skills.md)
 
 ## Stack (do not swap without asking)
 Next.js 16 App Router + TypeScript strict + Tailwind · Supabase (Postgres, Auth, Storage, RLS on every table)
