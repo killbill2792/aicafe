@@ -1,1 +1,1 @@
-See AGENTS.md - it is the only source of agent instructions.
+@AGENTS.md

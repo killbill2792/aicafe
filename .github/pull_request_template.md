@@ -1,43 +1,45 @@
-## Owner outcome and scope
-- Tracking issue: #
-- Implementation owner (GitHub username):
-- Reviewer (different person):
-- Base `main` SHA / merged prerequisites:
-- Domain or subsystem and files owned:
-- Other active PRs touching shared contracts:
-- **What the café owner can actually accomplish after this PR:**
-- **What still cannot be done, is default-off, or needs later phases:**
+## Owner outcome, plan and scope
+- Plan link (owner-approved architecture/implementation plan, or explain N/A):
+- Base `main` SHA and merged prerequisites:
+- Implementation owner:
+- **Owned files (exact paths/globs):**
+- Other open PRs touching these files or contracts:
+- **What the café owner can accomplish after this PR:**
+- **What is still unavailable, default-off or planned for later:**
+- **What changed / what was deleted / what was not touched:**
 
-## Implementation evidence
-- [ ] Implements actual production-capable domain code or clearly states when it is a docs-only PR
-- [ ] Follows the single streaming agent architecture in AGENTS.md; no investigation/reviewer/router code added or resurrected
-- [ ] No new central hardcoded owner-question routing, unauthorized LLM SQL, or fabricated business calculations
-- [ ] Source provenance, actual vs assumed vs planned, unknown vs verified zero and money in integer cents remain correct
-- [ ] Tenant/user/role scope, sensitive employee/payroll information and permissions validated
-- [ ] Missing inputs, invalid data, concurrency and replay/idempotency tested when applicable
-- [ ] Changed-file ownership and dependency conflicts checked against current main and open PRs
-- [ ] No unapproved production migrations, Vercel/Supabase changes, POS writes or feature flag activation
+## How it works (plain words)
+Explain what runs when, what owns each responsibility, and what can affect in-flight work.
+- Data flow: source and fields → one stored record/key → canonical reader/metric → tool/agent → chat/screen.
+- Actions: what is only drafted, how the owner approves, what commits, and how it is monitored.
+- Unknown, partial or failed inputs, retries, idempotency and rollback (or N/A for docs-only changes).
+- Existing official Anthropic/OpenAI or repo skills checked and reused (or why not applicable).
+- One-path-per-capability check: which existing paths were extended and which duplicates were retired.
 
-## Proof and checks (report actual results; don't check skipped tests)
-- Owner-facing example request/input → verified result/outcome:
+## Implementation and safety
+- [ ] Changes stay within the declared owned files; parallel PR overlap checked
+- [ ] No hardcoded currency, time zone, café ID/name, dates, prices or scenario-only test values
+- [ ] No unapproved migrations, production deploys, POS writes or outbound sends
+- [ ] New migration naming/number checked against latest main; RLS and backward compatibility checked (or N/A)
+- [ ] No duplicate readers, metric formulas, agent loops, inboxes or experiment paths
+- [ ] Existing tests preserved unless a named behavior change requires edits; list each changed test and why
+
+## Verification (record results; do not mark skipped steps as passed)
+- Owner scenario → expected result → actual result:
 - [ ] `npx tsc --noEmit`
+- [ ] `npm run lint`
 - [ ] `npm test`
-- [ ] ESLint for changed code
 - [ ] `npm run build`
 - [ ] `git diff --check`
-- [ ] Domain-specific integration / disposable database / RLS tests (or explain why not applicable)
-- [ ] GitHub **AI CAFE PR baseline** check green on **final HEAD**
-- [ ] Relevant specialized CI workflows green on final HEAD
-- [ ] UI screenshot/preview and EN/ES/AR/mobile review if UI changed (or N/A)
-- Test commands/results; actual skipped and blocked checks:
+- [ ] Domain/SQL/RLS/integration tests as applicable (or explain N/A)
+- [ ] **AI CAFE PR baseline** green on final HEAD
+- [ ] Relevant other workflows green on final HEAD
+- Test commands/results, blockers and skipped checks:
 
-## Safety and release gates
-- New SQL migration paths / deployment or rollout needed:
-- Source or schema version changes requiring dependent PR updates:
-- Known unsupported inputs, assumptions, limitations and rollback:
-- [ ] Implementing agent self-reviewed and fixed genuine findings on this same PR
-- [ ] A **separate human** reviewed the final diff and approved after latest changes
-- [ ] Owner explicitly authorized merge (not presumed from checks)
-- [ ] Owner separately authorized any production migration, deployment or flag change
-
-**No AI auto-merge or production activation.** See [team workflow](../docs/team-collaboration.md) and [onboarding checklist #82](https://github.com/killbill2792/aicafe/issues/82).
+## Review and merge readiness
+- [ ] PR diff and size reviewed; one concern and scoped changes (explain large mechanical moves)
+- [ ] Latest main incorporated before merge; migration numbers and parallel dependencies rechecked
+- [ ] Codex reviewed the final changes; blocking comments fixed and re-reviewed
+- [ ] Final-head CI green
+- Auto-merge when CI is green and the Codex review is clean; PRs must be up to date with main before merging.
+- Production migrations, deploys and feature activations still require separate owner approval.
