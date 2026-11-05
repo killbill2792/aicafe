@@ -17,9 +17,13 @@ type Mapping={restaurant_guid:string;toast_time_zone:string|null;closeout_hour:n
 type Request=(path:string,restaurantGuid:string)=>Promise<unknown[]>;
 
 export type TodaySoFarRead={available:true;value:TodaySoFar}|{available:false;missing:string[]};
+/** Receives each location's downloaded pages, so the 15-minute job can keep
+ * today's orders without a second download. A reader with this hook always
+ * downloads fresh: a cached summary has no orders to keep. */
+export type LocationPages=(restaurantGuid:string,businessDate:string,pages:unknown[][])=>Promise<void>;
 
 export async function readToastTodaySoFar(db:SupabaseClient,businessId:string,now=new Date(),
-  request?:Request):Promise<TodaySoFarRead>{
+  request?:Request,onLocationPages?:LocationPages):Promise<TodaySoFarRead>{
   const {data,error}=await db.from("toast_location_mappings")
     .select("restaurant_guid,toast_time_zone,closeout_hour")
     .eq("business_id",businessId).not("verified_at","is",null);
@@ -30,7 +34,7 @@ export async function readToastTodaySoFar(db:SupabaseClient,businessId:string,no
   const businessDate=currentToastBusinessDay(now,mappings[0].toast_time_zone!,mappings[0].closeout_hour!);
   const key=businessId+"|"+businessDate;
   const hit=cache.get(key);
-  if(hit&&now.getTime()-hit.at<CACHE_MS)return {available:true,value:hit.value};
+  if(hit&&!onLocationPages&&now.getTime()-hit.at<CACHE_MS)return {available:true,value:hit.value};
   const deadlineAt=Date.now()+READ_BUDGET_MS;
   const client=request?null:createToastClient(db,businessId);
   const get:Request=request??((path,guid)=>client!.request(path,guid,z.array(z.unknown()),{deadlineAt}));
@@ -39,14 +43,21 @@ export async function readToastTodaySoFar(db:SupabaseClient,businessId:string,no
   for(const m of mappings){
     try{
       const own:ToastDayPage[]=[];
+      const raw:unknown[][]=[];
       for(let page=1;;page++){
         if(page>MAX_PAGES||Date.now()>=deadlineAt){truncated=true;break;}
         const rows=await get("/orders/v2/ordersBulk?businessDate="+businessDate.replaceAll("-","")+
           "&pageSize=100&page="+page,m.restaurant_guid);
         own.push(parseToastDayPage(rows,m.restaurant_guid,businessDate,m.toast_time_zone!,m.closeout_hour!));
+        raw.push(rows);
         if(rows.length<100)break;
       }
       pages.push(...own);read++;
+      // Keeping the orders is extra: it never changes or blocks the reading.
+      if(onLocationPages&&raw.length)
+        await onLocationPages(m.restaurant_guid,businessDate,raw).catch(()=>{
+          console.warn("toast_live_pages_unsaved");
+        });
     }catch{failed++;}
   }
   if(!read)return {available:false,missing:["todayLiveReadFailed"]};

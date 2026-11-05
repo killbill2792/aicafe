@@ -1086,7 +1086,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_toast_records": {
-    "meaning": "Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover. Never use it to rebuild a screen number (net sales, profit, labor cost, card fees, break-even, item cost): use their tools.",
+    "meaning": "Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day; for today, before the closeout import, the closed orders saved so far with status provisional), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover. Never use it to rebuild a screen number (net sales, profit, labor cost, card fees, break-even, item cost): use their tools.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -1107,7 +1107,7 @@ export const canonicalDictionary = {
         "example": "Which record supports it?"
       },
       "status": {
-        "meaning": "Always actual: the latest saved Toast data.",
+        "meaning": "actual: a closed day's latest import. provisional: today's closed orders, saved every 15 minutes until the closeout import confirms them; say it is so far.",
         "unit": "label",
         "source": "app",
         "example": "Is this final?"
@@ -1143,7 +1143,7 @@ export const canonicalDictionary = {
         "example": "Which check?"
       },
       "counts_in_sales": {
-        "meaning": "Same rule as imported sales: false for voided or deleted orders, checks and items, test-mode and excess-food orders, gift card and house-account items, and declined, cancelled, errored or voided payments; null for non-order records. Filter true for sales.",
+        "meaning": "Same rule as imported sales: false for voided or deleted orders, checks and items, test-mode and excess-food orders, gift card and house-account items, declined, cancelled, errored or voided payments, and discounts removed at the register (data.processingState VOID); null for non-order records. Filter true for sales and for counting discounts.",
         "unit": "boolean",
         "source": "app",
         "example": "Did this count?"
