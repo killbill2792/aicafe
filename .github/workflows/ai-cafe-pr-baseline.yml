@@ -1,8 +1,8 @@
 name: AI CAFE Pull Request Baseline
 
-# Every PR gets the complete fail-closed baseline. A push to main runs ONLY
-# the production build to seed its branch-visible Next.js cache for new PRs.
-# Keep the original required PR check name, including all regression shards.
+# Every PR gets the fail-closed required check. Only code changes run the
+# expensive checks; a push to main still warms the production build cache.
+# Preserve the required check name, including its full-suite enforcement.
 on:
   push:
     branches:
@@ -14,14 +14,69 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+
+  changes:
+    name: Detect changed paths
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+      supervisor: ${{ steps.filter.outputs.supervisor }}
+      docs_only: ${{ steps.filter.outputs['docs-only'] == 'true' && steps.filter.outputs['non-docs'] == 'false' && steps.filter.outputs.e2e == 'false' && steps.filter.outputs.supervisor == 'false' }}
+    steps:
+      - name: Classify changed paths
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          # Fail closed: unfamiliar non-doc paths must run the full baseline.
+          predicate-quantifier: some-with-excludes
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!.github/ISSUE_TEMPLATE/**'
+            e2e:
+              - 'e2e/**'
+              - 'tests/e2e/**'
+              - '**/*.e2e.*'
+              - '**/*.spec.*'
+              - 'playwright.config.*'
+              - 'scripts/*visual*'
+              - 'scripts/*screenshots*'
+              - '.github/workflows/*visual*.yml'
+              - '.github/workflows/*screenshots*.yml'
+            supervisor:
+              - 'lib/ai/**'
+              - 'app/api/ai/**'
+              - 'evals/**'
+              - 'prompts/**'
+              - '**/*[Ss]upervisor*'
+              - '**/*[Pp]rompt*'
+              # Planning documents are documentation, not Supervisor prompts.
+              - '!docs/**'
+            docs-only:
+              - 'docs/**'
+              - '**/*.md'
+              - '.github/ISSUE_TEMPLATE/**'
+            non-docs:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!.github/ISSUE_TEMPLATE/**'
+
   quality:
-    if: github.event_name != 'push'
+    needs: changes
+    if: ${{ always() && github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || (needs.changes.result == 'success' && needs.changes.outputs.code == 'true')) }}
     name: TypeScript, full ESLint and patch hygiene
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -43,7 +98,8 @@ jobs:
         run: git diff --check origin/main...HEAD
 
   regressions:
-    if: github.event_name != 'push'
+    needs: changes
+    if: ${{ always() && github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || (needs.changes.result == 'success' && needs.changes.outputs.code == 'true')) }}
     name: Full Vitest regressions (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -65,6 +121,8 @@ jobs:
         run: npm test -- --shard=${{ matrix.shard }}/3
 
   production-build:
+    needs: changes
+    if: ${{ always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (needs.changes.result == 'success' && needs.changes.outputs.code == 'true')) }}
     name: Next.js Webpack production build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -89,6 +147,50 @@ jobs:
       - name: Production build
         run: npm run build -- --webpack
 
+
+  supervisor-evals:
+    needs: changes
+    if: ${{ always() && github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || (needs.changes.result == 'success' && needs.changes.outputs.supervisor == 'true')) }}
+    name: Supervisor promptfoo eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check P1 evaluator installation
+        id: eval_ready
+        shell: bash
+        run: |
+          has_config=false
+          has_script=false
+          if [ -f evals/supervisor/promptfooconfig.yaml ]; then has_config=true; fi
+          if node -e "const p=require('./package.json'); process.exit(p.scripts?.['eval:supervisor'] ? 0 : 1)"; then has_script=true; fi
+          if [ "$has_config" != "$has_script" ]; then
+            echo "Incomplete P1 Supervisor eval installation" >&2
+            exit 1
+          fi
+          if [ "$has_config" = false ]; then
+            echo "P1 has not landed; no promptfoo harness yet."
+          fi
+          echo "ready=$has_config" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        if: steps.eval_ready.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        if: steps.eval_ready.outputs.ready == 'true'
+        run: npm ci
+      - name: Run real Supervisor promptfoo evaluation
+        if: steps.eval_ready.outputs.ready == 'true'
+        env:
+          PROMPTFOO_DISABLE_TELEMETRY: '1'
+          PROMPTFOO_DISABLE_UPDATE: '1'
+          PROMPTFOO_DISABLE_UPDATE_CHECK: '1'
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPERVISOR_OPENAI_MODEL: ${{ vars.SUPERVISOR_OPENAI_MODEL }}
+          NODE_OPTIONS: --conditions=react-server
+        run: npm run eval:supervisor
+
   guards:
     if: github.event_name != 'push'
     name: Repo guards
@@ -108,26 +210,59 @@ jobs:
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: node scripts/guards/run-all.mjs
 
+
   baseline:
-    # Preserve this required check name for existing branch protection.
+    # Preserve the branch-protection check, even for docs-only pull requests.
     name: AI CAFE PR baseline
     if: ${{ always() && github.event_name != 'push' }}
-    needs: [quality, regressions, production-build, guards]
+    needs: [changes, quality, regressions, production-build, supervisor-evals, guards]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every baseline verification to pass
+      - name: Require success or an explicitly expected skip
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          E2E_CHANGED: ${{ needs.changes.outputs.e2e }}
+          SUPERVISOR_CHANGED: ${{ needs.changes.outputs.supervisor }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
           QUALITY_RESULT: ${{ needs.quality.result }}
           TEST_RESULT: ${{ needs.regressions.result }}
           BUILD_RESULT: ${{ needs.production-build.result }}
+          EVAL_RESULT: ${{ needs.supervisor-evals.result }}
           GUARDS_RESULT: ${{ needs.guards.result }}
+        shell: bash
         run: |
-          echo "Quality: $QUALITY_RESULT"
-          echo "Full test suite (all shards): $TEST_RESULT"
-          echo "Production build: $BUILD_RESULT"
-          echo "Repository guards: $GUARDS_RESULT"
-          test "$QUALITY_RESULT" = success
-          test "$TEST_RESULT" = success
-          test "$BUILD_RESULT" = success
+          echo "Changes: $CHANGES_RESULT; code=$CODE_CHANGED; e2e=$E2E_CHANGED; supervisor=$SUPERVISOR_CHANGED; docs-only=$DOCS_ONLY"
+          echo "Quality: $QUALITY_RESULT; Vitest: $TEST_RESULT; build: $BUILD_RESULT; Supervisor: $EVAL_RESULT; guards: $GUARDS_RESULT"
           test "$GUARDS_RESULT" = success
+          if [ "$EVENT_NAME" = pull_request ]; then
+            test "$CHANGES_RESULT" = success
+            # An empty classification on a nonempty PR is never an approval.
+            if [ "$CODE_CHANGED" != true ] && [ "$DOCS_ONLY" != true ] && [ "$SUPERVISOR_CHANGED" != true ] && [ "$E2E_CHANGED" != true ]; then
+              echo "Unclassified PR change" >&2
+              exit 1
+            fi
+          else
+            test "$CHANGES_RESULT" = skipped
+          fi
+          if [ "$DOCS_ONLY" = true ]; then
+            test "$CODE_CHANGED" = false
+            test "$SUPERVISOR_CHANGED" = false
+            test "$E2E_CHANGED" = false
+          fi
+          if [ "$CODE_CHANGED" = true ] || [ "$EVENT_NAME" = workflow_dispatch ]; then
+            test "$QUALITY_RESULT" = success
+            test "$TEST_RESULT" = success
+            test "$BUILD_RESULT" = success
+          else
+            test "$QUALITY_RESULT" = skipped
+            test "$TEST_RESULT" = skipped
+            test "$BUILD_RESULT" = skipped
+          fi
+          if [ "$SUPERVISOR_CHANGED" = true ] || [ "$EVENT_NAME" = workflow_dispatch ]; then
+            test "$EVAL_RESULT" = success
+          else
+            test "$EVAL_RESULT" = skipped
+          fi
