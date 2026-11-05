@@ -55,15 +55,9 @@ jobs:
               - 'scripts/*screenshots*'
               - '.github/workflows/*visual*.yml'
               - '.github/workflows/*screenshots*.yml'
+            # Only Supervisor implementation changes trigger the free eval.
             supervisor:
               - 'lib/ai/**'
-              - 'app/api/ai/**'
-              - 'evals/**'
-              - 'prompts/**'
-              - '**/*[Ss]upervisor*'
-              - '**/*[Pp]rompt*'
-              # Planning documents are documentation, not Supervisor prompts.
-              - '!docs/**'
             docs-only:
               - 'docs/**'
               - '**/*.md'
@@ -149,11 +143,14 @@ jobs:
 
 
   supervisor-evals:
+    # No paid provider, secrets, or retired GitHub Models permission.
+    permissions:
+      contents: read
     needs: changes
     if: ${{ always() && github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || (needs.changes.result == 'success' && needs.changes.outputs.supervisor == 'true')) }}
     name: Supervisor promptfoo eval
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - name: Check P1 evaluator installation
@@ -180,14 +177,12 @@ jobs:
       - name: Install locked dependencies
         if: steps.eval_ready.outputs.ready == 'true'
         run: npm ci
-      - name: Run real Supervisor promptfoo evaluation
+      - name: Run zero-cost recorded Supervisor evals
         if: steps.eval_ready.outputs.ready == 'true'
         env:
           PROMPTFOO_DISABLE_TELEMETRY: '1'
           PROMPTFOO_DISABLE_UPDATE: '1'
           PROMPTFOO_DISABLE_UPDATE_CHECK: '1'
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SUPERVISOR_OPENAI_MODEL: ${{ vars.SUPERVISOR_OPENAI_MODEL }}
           NODE_OPTIONS: --conditions=react-server
         run: npm run eval:supervisor
 
