@@ -10,7 +10,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:reset": "node scripts/db-reset.mjs"
+    "db:reset": "node scripts/db-reset.mjs",
+    "eval:supervisor": "node evals/supervisor/verify-truth.mjs && node evals/supervisor/run.mjs && node evals/supervisor/wording-grader.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^11.0.0",
@@ -42,6 +43,7 @@
     "postcss": "^8.5.28",
     "tailwindcss": "^3.4.19",
     "typescript": "^5",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.2",
+    "promptfoo": "0.125.1"
   }
 }

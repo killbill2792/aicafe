@@ -1,0 +1,90 @@
+{
+  "provenance": "Synthetic cafe-shaped source rows; SQL truth independently recomputed by verify-truth.mjs. No real identifiers or personal data.",
+  "profile": {
+    "asOf": "2026-10-22",
+    "timezone": "America/Toronto",
+    "currency": "CAD"
+  },
+  "days": [
+    {
+      "date": "2026-10-19",
+      "netSalesCents": 125000,
+      "ordersCount": 174,
+      "wagesCents": 25000,
+      "staffTaxCents": 2500,
+      "loadedStaffCostCents": 27500,
+      "wageStatus": "actual"
+    },
+    {
+      "date": "2026-10-20",
+      "netSalesCents": 160000,
+      "ordersCount": 205,
+      "wagesCents": 29000,
+      "staffTaxCents": 3000,
+      "loadedStaffCostCents": 32000,
+      "wageStatus": "actual"
+    },
+    {
+      "date": "2026-10-21",
+      "netSalesCents": 50000,
+      "ordersCount": 83,
+      "wagesCents": null,
+      "staffTaxCents": null,
+      "loadedStaffCostCents": null,
+      "wageStatus": "missing"
+    }
+  ],
+  "menu": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "House Latte",
+      "category": "Drinks",
+      "active": true,
+      "priceCents": 550,
+      "recipeCostCents": 180,
+      "unitsOct19": 42
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "name": "Spiced Tea",
+      "category": "Drinks",
+      "active": true,
+      "priceCents": 475,
+      "recipeCostCents": 130,
+      "unitsOct19": 35
+    },
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "name": "Cocoa",
+      "category": "Drinks",
+      "active": true,
+      "priceCents": 625,
+      "recipeCostCents": 190,
+      "unitsOct19": 22
+    },
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "name": "Morning Bun",
+      "category": "Food",
+      "active": true,
+      "priceCents": 390,
+      "recipeCostCents": 90,
+      "unitsOct19": 15
+    }
+  ],
+  "sqlTruth": {
+    "day19LaborRate": 0.22,
+    "day19LaborCents": 27500,
+    "day20LaborRate": 0.2,
+    "twoDayLaborRate": 0.20877192982456141,
+    "day21LaborRate": null,
+    "lattePriceCents": 550,
+    "teaPriceCents": 475,
+    "cocoaCostCents": 190,
+    "latteUnits": 42,
+    "lowestPriceName": "Morning Bun",
+    "highestPriceName": "Cocoa",
+    "highestUnitMarginName": "Cocoa",
+    "highestUnitMarginCents": 435
+  }
+}

@@ -1,0 +1,114 @@
+# Runs lib/ai/agent/loop.server.ts through the file provider. No prompt copy.
+description: Supervisor deterministic real-loop replays on synthetic café evidence
+prompts:
+  - "{{question}}"
+providers:
+  - file://provider.ts
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://assertions.cjs:shape
+tests:
+  - description: Labor rate on one imported day matches SQL and the Money path
+    vars:
+      caseId: labor-day-19
+      question: "For October 19, 2026, what percent of sales went to staff labor?"
+      check: {truth: day19LaborRate, source: labor_and_attendance, field: laborCostPercent, unit: percent, tolerance: 0.0001}
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:metric
+  - description: Loaded labor includes recorded wages and payroll tax
+    vars:
+      caseId: labor-loaded-19
+      question: "What was the known staff labor cost on October 19, 2026?"
+      check: {truth: day19LaborCents, source: labor_and_attendance, field: laborDays.0.loadedStaffCostCents, unit: cents, tolerance: 1}
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:metric
+  - description: Labor percent from a different date
+    vars:
+      caseId: labor-day-20
+      question: "What was the labor percentage on October 20, 2026?"
+      check: {truth: day20LaborRate, source: labor_and_attendance, field: laborCostPercent, unit: percent, tolerance: 0.0001}
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:metric
+  - description: Two days are aggregated through the one canonical labor calculation
+    vars:
+      caseId: labor-two-days
+      question: "For October 19 through October 20, 2026, what percentage of sales did labor cost?"
+      check: {truth: twoDayLaborRate, source: labor_and_attendance, field: laborCostPercent, unit: percent, tolerance: 0.0001}
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:metric
+  - description: Missing wages must not become a zero labor percentage
+    vars:
+      caseId: labor-missing
+      question: "What was the labor percentage on October 21, 2026? Be clear if wages aren't recorded."
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:missing
+  - description: Named item's recorded current price
+    vars:
+      caseId: latte-price
+      question: "What is the menu price of House Latte?"
+      check: {truth: lattePriceCents, source: menu_items, field: items.0.priceCents, unit: cents, tolerance: 1}
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:metric
+  - description: Another named item stays distinct
+    vars:
+      caseId: tea-price
+      question: "What is the current menu price for Spiced Tea?"
+      check: {truth: teaPriceCents, source: menu_items, field: items.0.priceCents, unit: cents, tolerance: 1}
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:metric
+  - description: Recipe cost comes from the product economics tool
+    vars:
+      caseId: cocoa-cost
+      question: "How much does Cocoa cost us in its known recipe cost per item?"
+      check: {truth: cocoaCostCents, source: product_costs, field: item.recipeCostCents, unit: cents, tolerance: 1}
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:metric
+  - description: Cheapest item identity from the menu facts
+    vars:
+      caseId: lowest-price
+      question: "Which item on the active menu has the lowest current price?"
+      check: {truth: lowestPriceName, source: menu_items}
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:name
+  - description: Highest current menu price uses the menu evidence
+    vars:
+      caseId: highest-price
+      question: "Which active menu item has the highest current price?"
+      check: {truth: highestPriceName, source: menu_items}
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:name
+  - description: A sold quantity is not a menu price or an invented count
+    vars:
+      caseId: latte-units
+      question: "How many units of House Latte were sold on October 19, 2026?"
+      check: {truth: latteUnits, source: item_sales, field: items.0.units, unit: count, tolerance: 0}
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:metric
+  - description: Best known unit margin checks every product economics row
+    vars:
+      caseId: best-margin
+      question: >-
+        Compare House Latte, Spiced Tea, Cocoa and Morning Bun by known dollar
+        margin per unit. Which one is highest? Compare current price against recorded recipe cost.
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:margin
+  - description: Untracked inventory must not be presented as known stock
+    vars:
+      caseId: inventory-untracked
+      question: "How many units of ingredients are currently in stock?"
+    assert:
+      - type: javascript
+        value: file://assertions.cjs:inventory
