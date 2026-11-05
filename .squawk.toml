@@ -1,0 +1,45 @@
+# AI Cafe's Supabase migrations run in a transaction. CREATE/DROP INDEX
+# CONCURRENTLY cannot run there; keep transaction safety checks enabled.
+pg_version = "17.0"
+assume_in_transaction = true
+
+# These are allowed in Supabase transactional migrations; the concurrent variants are not.
+# Policy CREATE/ALTER is reviewed by Codex and the pinned Supabase skills instead.
+excluded_rules = [
+  "require-concurrent-index-creation",
+  "require-concurrent-index-deletion",
+  "ban-create-policy",
+  "ban-alter-policy-condition",
+  "ban-alter-policy-roles",
+]
+
+# Explicitly protect destructive schema and RLS changes, as well as risky column changes.
+included_rules = [
+  "ban-drop-column",
+  "ban-drop-constraint",
+  "ban-drop-database",
+  "ban-drop-default",
+  "ban-drop-domain",
+  "ban-drop-extension",
+  "ban-drop-function",
+  "ban-drop-generated-expression",
+  "ban-drop-index",
+  "ban-drop-not-null",
+  "ban-drop-policy",
+  "ban-drop-schema",
+  "ban-drop-sequence",
+  "ban-drop-table",
+  "ban-drop-trigger",
+  "ban-drop-type",
+  "ban-drop-view",
+  "renaming-column",
+  "renaming-object",
+  "renaming-table",
+  "adding-not-nullable-field",
+  "changing-column-type",
+  "constraint-missing-not-valid",
+  "adding-foreign-key-constraint",
+  "prefer-timestamptz",
+  "prefer-bigint-over-int",
+  "ban-alter-row-level-security",
+]

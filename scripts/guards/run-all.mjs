@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const directory = dirname(fileURLToPath(import.meta.url));
+// New migration lint joins this existing guard list automatically.
 const guards = (await readdir(directory, { withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name.endsWith('.mjs') && entry.name !== 'run-all.mjs')
   .map((entry) => entry.name)
