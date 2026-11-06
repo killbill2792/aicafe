@@ -1241,7 +1241,8 @@
       "milestone": "17",
       "title": "Owner-authorized live pilot and final release evidence",
       "depends_on": [
-        "17d"
+        "17d",
+        "17a"
       ],
       "goal": "Owner-authorized live pilot and certified release",
       "scope_hint": "owner-authorized pilot/release checklist and evidence",
