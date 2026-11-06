@@ -1,24 +1,28 @@
 {
-  "schema_version": 2,
-  "title": "AI CAFE Universal Supervisor Agent Delivery Queue",
-  "status": "DRAFT_FOR_OWNER_REVIEW",
-  "effective_date": "2026-11-05",
-  "repo": "killbill2792/aicafe",
-  "source_of_truth": [
-    "AGENTS.md",
-    "docs/rules/*",
-    "docs/plans/universal-supervisor-delivery-queue-2026-11.md"
-  ],
-  "do_not_dispatch_until_architecture_approved": true,
-  "limits": {
-    "chatgpt_active_prs": 4,
-    "claude_active_prs": 2,
-    "exclusive_file_ownership": true,
-    "one_chat_per_pr": true,
-    "merge_only_if_current_main_ci_green_and_codex_clean": true,
-    "production_deploy_requires_explicit_owner_approval": true
+  "schema_version": 3,
+  "title": "AI CAFE Universal Supervisor PR6–PR17",
+  "status": "owner_review",
+  "authority": "AGENTS.md",
+  "runbook": "docs/plans/universal-supervisor-agent-operations.md",
+  "briefs": "docs/plans/universal-supervisor-task-briefs.md",
+  "milestone_goal": "17e",
+  "capacity": {
+    "chatgpt": 4,
+    "claude": 2
   },
-  "merged_prerequisites": [
+  "states": [
+    "proposed",
+    "architecture_approved",
+    "assigned",
+    "draft_open",
+    "review_fixing",
+    "merged",
+    "integrated_proven",
+    "released_proven",
+    "blocked_needs_owner",
+    "blocked_verification"
+  ],
+  "merged_code_only": [
     {
       "id": "1",
       "pr": 375
@@ -48,1313 +52,1073 @@
       "pr": 374
     }
   ],
-  "milestone_finish": "17e",
-  "states": [
-    "proposal_architecture_review",
-    "architecture_approved",
-    "ready",
-    "assigned",
-    "coding",
-    "draft_open",
-    "ci_review_fixing",
-    "ready_to_merge",
-    "merged",
-    "integrated",
-    "released",
-    "blocked_needs_owner"
+  "initial_parallel_candidates": [
+    "E2",
+    "6",
+    "9",
+    "10"
   ],
+  "dispatch_rules": {
+    "open_dependent_pr_immediately": "start from prerequisite branch; draft PR base = prerequisite branch",
+    "merge_dependent_pr_only_after": "upstream merged plus integrated evidence, then rebase/retarget main and rerun CI/Codex",
+    "one_owner_per_file": true,
+    "skip_unnecessary_playwright": true,
+    "proof_not_claims": true,
+    "production_owner_gate": true,
+    "approval_before_code": true
+  },
   "tasks": [
     {
       "id": "E2",
-      "title": "E2 required seeded browser CI, protected preview proof",
       "milestone": "E2",
+      "title": "E2 required seeded browser CI, protected preview proof",
       "depends_on": [],
-      "domain_lane": "platform",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
+      "goal": "Required Playwright CI job + isolated seeded preview; verify browser scenarios really run",
+      "scope_hint": "CI/browser test harness, disposable seeded auth and PR check integration",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-E2",
+      "skills": [
+        "supabase",
+        "supabase-postgres-best-practices",
+        "vitest",
+        "pr"
+      ],
+      "acceptance": [
+        "A changed browser flow runs a real targeted Playwright scenario, with recorded job link",
+        "Backend-only changes are not delayed by irrelevant screenshots",
+        "No production accounts/side effects in preview fixtures"
+      ],
+      "test_kinds": [
         "db",
         "e2e",
         "preview",
         "security"
       ],
-      "preview_required": true,
-      "owner_of_files": null,
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Required Playwright CI job + isolated seeded preview; verify browser scenarios really run",
-      "required_skills": [
-        "supabase",
-        "supabase-postgres-best-practices",
-        "vitest",
-        "pr"
-      ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [
-        "6",
-        "9",
-        "10"
-      ],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "6",
-      "title": "Durable worker and cross-turn execution",
       "milestone": "6",
+      "title": "Durable worker and cross-turn execution",
       "depends_on": [
         "5"
       ],
-      "domain_lane": "platform",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "previous roadmap; exact Grok brief not supplied",
-      "tests_required": [
-        "unit",
-        "db",
-        "failure"
-      ],
-      "preview_required": false,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Leased worker resumes one AI loop safely under budgets and authorization",
-      "required_skills": [
+      "goal": "Leased worker resumes one AI loop safely under budgets and authorization",
+      "scope_hint": "lib/ai/supervisor/runs/*; new worker route; usage adapter",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-6",
+      "skills": [
         "supabase",
         "supabase-postgres-best-practices",
         "vitest",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [
-        "E2",
-        "9",
-        "10"
+      "acceptance": [
+        "Two workers cannot claim the same step",
+        "Restart resumes after verified earlier steps without repeating effects",
+        "Timeout/budget/cancel retains a truthful persisted status"
       ],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "test_kinds": [
+        "unit",
+        "db",
+        "failure"
+      ],
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "7",
-      "title": "Self-directed routines/prioritization",
       "milestone": "7",
+      "title": "Self-directed routines/prioritization",
       "depends_on": [
         "6"
       ],
-      "domain_lane": "platform",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "previous roadmap; exact Grok brief not supplied",
-      "tests_required": [
-        "unit",
-        "db",
-        "failure"
-      ],
-      "preview_required": false,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Self-managed schedules and proactive priority decisions with due-once triggers",
-      "required_skills": [
+      "goal": "Self-managed schedules and proactive priority decisions with due-once triggers",
+      "scope_hint": "lib/ai/supervisor/routines/*; existing commitment/attention adapters",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-7",
+      "skills": [
         "supabase",
         "supabase-postgres-best-practices",
         "vitest",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "One routine occurrence makes one run across retries/DST",
+        "Owner may pause and revoke without stopping unrelated routine work",
+        "New evidence can trigger independent prioritization and owner notice"
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "failure"
+      ],
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "8a",
-      "title": "Experiment cutover parity",
       "milestone": "8",
+      "title": "Experiment cutover parity",
       "depends_on": [
         "7"
       ],
-      "domain_lane": "domain",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "previous roadmap; exact Grok brief not supplied",
-      "tests_required": [
-        "unit",
-        "db",
-        "acceptance"
-      ],
-      "preview_required": false,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Experiments cutover with parity and single writer",
-      "required_skills": [
+      "goal": "Experiments cutover with parity and single writer",
+      "scope_hint": "existing lib/ai/supervisor/loop/* experiment cron",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-8a",
+      "skills": [
         "vitest",
         "supabase",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Existing experiment observations and reports match before/after cutover",
+        "No duplicate runs or notices",
+        "Old cron disabled only after verified parity and rollback"
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "acceptance"
+      ],
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "8b",
-      "title": "Events cutover parity",
       "milestone": "8",
+      "title": "Events cutover parity",
       "depends_on": [
         "7"
       ],
-      "domain_lane": "domain",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "previous roadmap; exact Grok brief not supplied",
-      "tests_required": [
-        "unit",
-        "db",
-        "acceptance"
-      ],
-      "preview_required": false,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Events cutover with parity and single writer",
-      "required_skills": [
+      "goal": "Events cutover with parity and single writer",
+      "scope_hint": "existing lib/events/* lookahead cron",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-8b",
+      "skills": [
         "vitest",
         "supabase",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Events research/observation/report parity across current local day boundaries",
+        "Only one authoritative event monitor and notice writer",
+        "A missing/research-failed event is not called absent"
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "acceptance"
+      ],
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "8c",
-      "title": "Morning brief cutover parity",
       "milestone": "8",
+      "title": "Morning brief cutover parity",
       "depends_on": [
         "7"
       ],
-      "domain_lane": "domain",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "previous roadmap; exact Grok brief not supplied",
-      "tests_required": [
-        "unit",
-        "db",
-        "acceptance"
-      ],
-      "preview_required": false,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Brief cutover with timezone/delivery parity and single writer",
-      "required_skills": [
+      "goal": "Brief cutover with timezone/delivery parity and single writer",
+      "scope_hint": "lib/operating/briefSchedule.ts and existing morningBrief delivery path",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-8c",
+      "skills": [
         "vitest",
         "supabase",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "One brief per verified owner/café-local day and preopening deadline",
+        "Provider failure remains visible/retriable",
+        "No duplicate sends or silent skips"
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "acceptance"
+      ],
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "9",
-      "title": "Rolling operational memory",
       "milestone": "9",
+      "title": "Rolling operational memory",
       "depends_on": [
         "5"
       ],
-      "domain_lane": "platform",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "previous roadmap; exact Grok brief not supplied",
-      "tests_required": [
+      "goal": "Rolling thread memory with provenance and no cached financial facts",
+      "scope_hint": "lib/ai/agent/history.ts, memory.server.ts and ai_threads summary",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-9",
+      "skills": [
+        "supabase",
+        "supabase-postgres-best-practices",
+        "vitest",
+        "pr"
+      ],
+      "acceptance": [
+        "Remember decisions/preferences across a reopened thread",
+        "No cached business money in summary, reread authoritative data",
+        "Forget/change and tenant isolation verified"
+      ],
+      "test_kinds": [
         "unit",
         "db",
         "security"
       ],
-      "preview_required": false,
-      "owner_of_files": null,
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Rolling thread memory with provenance and no cached financial facts",
-      "required_skills": [
-        "supabase",
-        "supabase-postgres-best-practices",
-        "vitest",
-        "pr"
-      ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [
-        "E2",
-        "6",
-        "10"
-      ],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "10",
-      "title": "Individual approval and standing mandate gateway",
       "milestone": "10",
+      "title": "Individual approval and standing mandate gateway",
       "depends_on": [
         "5"
       ],
-      "domain_lane": "security",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "previous roadmap; exact Grok brief not supplied",
-      "tests_required": [
-        "unit",
-        "db",
-        "security",
-        "e2e"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "One effect gateway supporting individual approval and OTP-backed standing authorization",
-      "required_skills": [
+      "goal": "One effect gateway supporting individual approval and OTP-backed standing authorization",
+      "scope_hint": "existing supervisor proposals/approvals; auth-backed mandate authorization and receipts",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-10",
+      "skills": [
         "supabase",
         "testing-api-security-with-owasp-top-10",
         "exploiting-idor-vulnerabilities",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [
-        "E2",
-        "6",
-        "9"
+      "acceptance": [
+        "Individual approval and matching standing authorization both pass same effect gateway",
+        "Phone step-up binds exact owner/café/action/limit/revision; replay/expiry/revocation fail",
+        "Effect receipt uncertain state cannot be double committed"
       ],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "test_kinds": [
+        "unit",
+        "db",
+        "security",
+        "e2e"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "11",
-      "title": "Gmail and reusable connector security boundary",
       "milestone": "11",
+      "title": "Gmail and reusable connector security boundary",
       "depends_on": [
         "10"
       ],
-      "domain_lane": "integration",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "previous roadmap; exact Grok brief not supplied",
-      "tests_required": [
-        "unit",
-        "security",
-        "e2e"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Secure connector registry and Gmail end-to-end",
-      "required_skills": [
+      "goal": "Secure connector registry and Gmail end-to-end",
+      "scope_hint": "new integration adapter plus existing tools/approval gateway",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-11",
+      "skills": [
         "testing-api-security-with-owasp-top-10",
         "playwright-cli",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Authorize/connect/disconnect Gmail and respect scopes",
+        "Draft/read/send only through permitted action with provider receipt",
+        "Timed-out send reconciles before retry; token not model-visible"
+      ],
+      "test_kinds": [
+        "unit",
+        "security",
+        "e2e"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "12",
-      "title": "General file/spreadsheet/browser/computer use",
       "milestone": "12",
+      "title": "General file/spreadsheet/browser/computer use",
       "depends_on": [
         "6",
         "10"
       ],
-      "domain_lane": "integration",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "previous roadmap; exact Grok brief not supplied",
-      "tests_required": [
-        "unit",
-        "security",
-        "e2e"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Files/spreadsheets/PDF/browser use with controlled external effects",
-      "required_skills": [
+      "goal": "Files/spreadsheets/PDF/browser use with controlled external effects",
+      "scope_hint": "existing attachment/file paths and new isolated browser adapter",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-12",
+      "skills": [
         "testing-api-security-with-owasp-top-10",
         "playwright-cli",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Read a permitted CSV/XLSX/PDF with column provenance and bounded data",
+        "Browser can inspect a permitted site but webpage instructions cannot change authority",
+        "Write attempt requires gateway permission and verified receipt"
+      ],
+      "test_kinds": [
+        "unit",
+        "security",
+        "e2e"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "13a",
-      "title": "Canonical staff schedule/labor reads and planning",
       "milestone": "13",
+      "title": "Canonical staff schedule/labor reads and planning",
       "depends_on": [
         "6",
         "7"
       ],
-      "domain_lane": "staff",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "unit",
-        "db",
-        "parity"
-      ],
-      "preview_required": false,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Canonical scheduling reads and labor parity",
-      "required_skills": [
+      "goal": "Canonical scheduling reads and labor parity",
+      "scope_hint": "lib/scheduling/*; lib/ai/agent/tools/draftSchedule.ts; canonical Staff readers",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-13a",
+      "skills": [
         "vitest",
         "supabase",
         "e2e-testing-patterns",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Staff availability and projected demand produce valid schedule with canonical labor cost",
+        "No available staff/partial timecards truthfully handled",
+        "Exact parity to Staff view"
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "parity"
+      ],
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "13b",
-      "title": "Mandate-controlled schedule publication and worker messaging",
       "milestone": "13",
+      "title": "Mandate-controlled schedule publication and worker messaging",
       "depends_on": [
         "13a",
         "10",
         "11"
       ],
-      "domain_lane": "staff",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
+      "goal": "Mandate-controlled schedule publishing and messaging receipts",
+      "scope_hint": "lib/actions/staffDraftInPlace.ts; existing approval + outbound transports",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-13b",
+      "skills": [
+        "vitest",
+        "supabase",
+        "e2e-testing-patterns",
+        "pr"
+      ],
+      "acceptance": [
+        "Owner approval or valid mandate publishes one correct schedule",
+        "Authorized staff messages have verified delivery attempts",
+        "Mandate revoke before send prevents effect"
+      ],
+      "test_kinds": [
         "unit",
         "db",
         "e2e",
         "receipt"
       ],
-      "preview_required": true,
-      "owner_of_files": null,
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Mandate-controlled schedule publishing and messaging receipts",
-      "required_skills": [
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
+    },
+    {
+      "id": "13c",
+      "milestone": "13",
+      "title": "Shift response/coverage lifecycle",
+      "depends_on": [
+        "13b"
+      ],
+      "goal": "Staff response, absences and shift coverage lifecycle",
+      "scope_hint": "existing Staff scheduling acceptance/response readers and records",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-13c",
+      "skills": [
         "vitest",
         "supabase",
         "e2e-testing-patterns",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
-    },
-    {
-      "id": "13c",
-      "title": "Shift response/coverage lifecycle",
-      "milestone": "13",
-      "depends_on": [
-        "13b"
+      "acceptance": [
+        "Staff accepts/declines and coverage state updates once",
+        "No silent status success on a sent-only message",
+        "Missing staff coverage escalates without duplicate notices"
       ],
-      "domain_lane": "staff",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
+      "test_kinds": [
         "unit",
         "db",
         "e2e"
       ],
-      "preview_required": true,
-      "owner_of_files": null,
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Staff response, absences and shift coverage lifecycle",
-      "required_skills": [
-        "vitest",
-        "supabase",
-        "e2e-testing-patterns",
-        "pr"
-      ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "13d",
-      "title": "Recruitment/leave/onboarding supported actions and human decision gates",
       "milestone": "13",
+      "title": "Recruitment/leave/onboarding supported actions and human decision gates",
       "depends_on": [
         "13a",
         "10",
         "11"
       ],
-      "domain_lane": "staff",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "unit",
-        "security",
-        "e2e"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Recruitment, leave, onboarding and human decision gates",
-      "required_skills": [
+      "goal": "Recruitment, leave, onboarding and human decision gates",
+      "scope_hint": "Staff records plus authorized external posting/interview integrations",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-13d",
+      "skills": [
         "vitest",
         "supabase",
         "e2e-testing-patterns",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Vacancy/interview/onboarding pipeline uses actual evidence, not presumed consent",
+        "No prohibited autonomous hiring/firing",
+        "Candidate data isolation and retention respected"
+      ],
+      "test_kinds": [
+        "unit",
+        "security",
+        "e2e"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "14a",
-      "title": "Inventory/recipe/consumption evidence",
       "milestone": "14",
+      "title": "Inventory/recipe/consumption evidence",
       "depends_on": [
         "6",
         "9"
       ],
-      "domain_lane": "supply",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
+      "goal": "Stock/recipe/consumption sources and uncertainty",
+      "scope_hint": "existing inventory/menu/recipe evidence readers; no duplicate ledger",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-14a",
+      "skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "acceptance": [
+        "Stock/recipe and consumption evidence retain source + freshness",
+        "Unknown quantity never becomes zero",
+        "No duplicate count from repeated source records"
+      ],
+      "test_kinds": [
         "unit",
         "db",
         "parity"
       ],
-      "preview_required": false,
-      "owner_of_files": null,
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Stock/recipe/consumption sources and uncertainty",
-      "required_skills": [
-        "vitest",
-        "supabase",
-        "pr"
-      ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "14b",
-      "title": "Supplier/quote/PO domain lifecycle",
       "milestone": "14",
+      "title": "Supplier/quote/PO domain lifecycle",
       "depends_on": [
         "14a",
         "10"
       ],
-      "domain_lane": "supply",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "unit",
-        "db",
-        "security"
-      ],
-      "preview_required": false,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Vendor quotes and purchase order lifecycle",
-      "required_skills": [
+      "goal": "Vendor quotes and purchase order lifecycle",
+      "scope_hint": "existing purchasing/bills records; vendor quote and PO domain contract",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-14b",
+      "skills": [
         "vitest",
         "supabase",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Vendor quotes with units/currency/date are comparable or labeled incomplete",
+        "One PO state per key, history and duplicate protection",
+        "Owner approval boundary present"
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "security"
+      ],
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "14c",
-      "title": "Authorized vendor communication and ordering",
       "milestone": "14",
+      "title": "Authorized vendor communication and ordering",
       "depends_on": [
         "14b",
         "11",
         "12"
       ],
-      "domain_lane": "supply",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
+      "goal": "Vendor communications/order execution and receipts",
+      "scope_hint": "approved connector/browser action adapters and vendor receipt ledger",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-14c",
+      "skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "acceptance": [
+        "Only authorized vendor action executes",
+        "Provider timeout enters uncertain state; no duplicate order",
+        "Approval expires/revokes without further sends"
+      ],
+      "test_kinds": [
         "unit",
         "e2e",
         "receipt"
       ],
-      "preview_required": true,
-      "owner_of_files": null,
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Vendor communications/order execution and receipts",
-      "required_skills": [
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
+    },
+    {
+      "id": "14d",
+      "milestone": "14",
+      "title": "Receiving/invoice matching and exception handling",
+      "depends_on": [
+        "14c"
+      ],
+      "goal": "Deliveries and invoice reconciliation",
+      "scope_hint": "purchase receiving, invoice and expense readers; canonical money engine",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-14d",
+      "skills": [
         "vitest",
         "supabase",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
-    },
-    {
-      "id": "14d",
-      "title": "Receiving/invoice matching and exception handling",
-      "milestone": "14",
-      "depends_on": [
-        "14c"
+      "acceptance": [
+        "Partial receipt and mismatched invoice remain open exceptions",
+        "Duplicate invoice rejected",
+        "Expense/money parity with canonical metrics"
       ],
-      "domain_lane": "supply",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
+      "test_kinds": [
         "unit",
         "db",
         "e2e"
       ],
-      "preview_required": true,
-      "owner_of_files": null,
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Deliveries and invoice reconciliation",
-      "required_skills": [
-        "vitest",
-        "supabase",
-        "pr"
-      ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "14e",
-      "title": "Cashflow/payables administration and payment boundary",
       "milestone": "14",
+      "title": "Cashflow/payables administration and payment boundary",
       "depends_on": [
         "14d",
         "10"
       ],
-      "domain_lane": "finance",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
+      "goal": "Cash flow, bills and payable preparation with payment boundary",
+      "scope_hint": "existing financial readers and preparation workflow; no unapproved fund movement",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-14e",
+      "skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "acceptance": [
+        "Bills and cash needs accurately sourced, known vs projected labeled",
+        "Payments stay preparation-only absent explicit authorized lawful integration",
+        "No unverified settlement reported paid"
+      ],
+      "test_kinds": [
         "unit",
         "db",
         "security"
       ],
-      "preview_required": false,
-      "owner_of_files": null,
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Cash flow, bills and payable preparation with payment boundary",
-      "required_skills": [
-        "vitest",
-        "supabase",
-        "pr"
-      ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "15a",
-      "title": "Operating priority and anomaly escalation",
       "milestone": "15",
+      "title": "Operating priority and anomaly escalation",
       "depends_on": [
         "7",
         "9"
       ],
-      "domain_lane": "operations",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "unit",
-        "db",
-        "failure"
-      ],
-      "preview_required": false,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Prioritization and alert escalation using one inbox",
-      "required_skills": [
+      "goal": "Prioritization and alert escalation using one inbox",
+      "scope_hint": "lib/attention/* and operating_tasks/notifyOwner",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-15a",
+      "skills": [
         "vitest",
         "supabase",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Supervisor initiates priority work from events and operational evidence",
+        "One attention/inbox lifecycle and suppressed duplicates",
+        "High urgency and missing evidence escalated truthfully"
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "failure"
+      ],
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "15b",
-      "title": "Equipment/maintenance coordination with evidence",
       "milestone": "15",
+      "title": "Equipment/maintenance coordination with evidence",
       "depends_on": [
         "15a",
         "10",
         "11"
       ],
-      "domain_lane": "operations",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "unit",
-        "e2e",
-        "receipt"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Maintenance and equipment coordination",
-      "required_skills": [
+      "goal": "Maintenance and equipment coordination",
+      "scope_hint": "operating_tasks plus equipment/maintenance evidence adapters",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-15b",
+      "skills": [
         "vitest",
         "supabase",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Maintenance incident assigned to authorized staff/vendor and tracked",
+        "Request sent is not repair completed",
+        "Late or unverified resolution remains visible"
+      ],
+      "test_kinds": [
+        "unit",
+        "e2e",
+        "receipt"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "15c",
-      "title": "Fleet resilience/queue fairness/recovery operational proof",
       "milestone": "15",
+      "title": "Fleet resilience/queue fairness/recovery operational proof",
       "depends_on": [
         "6",
         "7",
         "10"
       ],
-      "domain_lane": "platform",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "unit",
-        "db",
-        "failure"
-      ],
-      "preview_required": false,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "System outages, concurrency, queue fairness and catch-up",
-      "required_skills": [
+      "goal": "System outages, concurrency, queue fairness and catch-up",
+      "scope_hint": "existing worker/routines resiliency and health reads",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-15c",
+      "skills": [
         "supabase",
         "supabase-postgres-best-practices",
         "vitest",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Concurrent cafés progress under fairness/budget caps",
+        "Stalled lease and missed routine recover once",
+        "Owner offline doesn't freeze permitted work"
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "failure"
+      ],
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "15d",
-      "title": "Untrusted external content/identity/revocation hardening",
       "milestone": "15",
+      "title": "Untrusted external content/identity/revocation hardening",
       "depends_on": [
         "10",
         "11",
         "12"
       ],
-      "domain_lane": "security",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "unit",
-        "security",
-        "e2e"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Prompt-injection and provider/cafe access revocation",
-      "required_skills": [
+      "goal": "Prompt-injection and provider/cafe access revocation",
+      "scope_hint": "connector and browser authorization/trust handling",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-15d",
+      "skills": [
         "supabase",
         "testing-api-security-with-owasp-top-10",
         "exploiting-idor-vulnerabilities",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Untrusted email/website prompts cannot authorize actions",
+        "Revoked connector/café access stops new effects",
+        "No cross-tenant leakage/secret logs"
+      ],
+      "test_kinds": [
+        "unit",
+        "security",
+        "e2e"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "16a",
-      "title": "Owner mandate grant/revoke and OTP step-up experience",
       "milestone": "16",
+      "title": "Owner mandate grant/revoke and OTP step-up experience",
       "depends_on": [
         "10"
       ],
-      "domain_lane": "ux",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "e2e",
-        "security",
-        "preview"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Owner approval and OTP mandate grant/revoke UI",
-      "required_skills": [
+      "goal": "Owner approval and OTP mandate grant/revoke UI",
+      "scope_hint": "existing Supervisor chat approval controls + Supabase owner auth",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-16a",
+      "skills": [
         "playwright-cli",
         "e2e-testing-patterns",
         "web-design-guidelines",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Owner deliberately grants/revokes scoped mandate with step-up",
+        "Individual approval still works; chat phrase alone cannot grant",
+        "Mobile errors/expired code visible"
+      ],
+      "test_kinds": [
+        "e2e",
+        "security",
+        "preview"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "16b",
-      "title": "Owner-visible durable work, results, exceptions",
       "milestone": "16",
+      "title": "Owner-visible durable work, results, exceptions",
       "depends_on": [
         "6",
         "9"
       ],
-      "domain_lane": "ux",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "e2e",
-        "preview"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Chat progress, retries and receipts",
-      "required_skills": [
+      "goal": "Chat progress, retries and receipts",
+      "scope_hint": "Supervisor chat/Operations status cards and runs reader",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-16b",
+      "skills": [
         "playwright-cli",
         "e2e-testing-patterns",
         "web-design-guidelines",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Owner sees queued/running/approval/failed/completed run with true receipts",
+        "Refresh/reconnect shows persisted state",
+        "No duplicated approval card on resume"
+      ],
+      "test_kinds": [
+        "e2e",
+        "preview"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "16c",
-      "title": "Owner connector and computer access controls",
       "milestone": "16",
+      "title": "Owner connector and computer access controls",
       "depends_on": [
         "11",
         "12"
       ],
-      "domain_lane": "ux",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "e2e",
-        "security",
-        "preview"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Account, connector and browser permission controls",
-      "required_skills": [
+      "goal": "Account, connector and browser permission controls",
+      "scope_hint": "owner-facing authorized connectors/files/browser controls",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-16c",
+      "skills": [
         "playwright-cli",
         "e2e-testing-patterns",
         "web-design-guidelines",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Owner can link/revoke and understand scope of external access",
+        "Revocation reflected before new work",
+        "Safe file/browser error and retry displayed"
+      ],
+      "test_kinds": [
+        "e2e",
+        "security",
+        "preview"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "16d",
-      "title": "Accessible responsive owner acceptance",
       "milestone": "16",
+      "title": "Accessible responsive owner acceptance",
       "depends_on": [
         "16a",
         "16b",
         "16c"
       ],
-      "domain_lane": "ux",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "e2e",
-        "visual",
-        "preview"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Responsive accessible final owner UX",
-      "required_skills": [
+      "goal": "Responsive accessible final owner UX",
+      "scope_hint": "existing responsive chat and operations screens; no new dashboard",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-16d",
+      "skills": [
         "playwright-cli",
         "e2e-testing-patterns",
         "web-design-guidelines",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "390px mobile and desktop owner journeys work with keyboard/tap targets",
+        "No second required dashboard",
+        "Conditional screenshots/traces only for changed UI flows"
+      ],
+      "test_kinds": [
+        "e2e",
+        "visual",
+        "preview"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "17a",
-      "title": "Required CI E2E gate and evidence audit",
       "milestone": "17",
+      "title": "Required CI E2E gate and evidence audit",
       "depends_on": [
         "E2",
         "16d"
       ],
-      "domain_lane": "qa",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "e2e",
-        "ci",
-        "security"
-      ],
-      "preview_required": true,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Required E2E gate evidence and branch protection",
-      "required_skills": [
+      "goal": "Required E2E gate evidence and branch protection",
+      "scope_hint": "existing PR baseline/E2 targeted check wiring",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-17a",
+      "skills": [
         "playwright-cli",
         "e2e-testing-patterns",
         "gh-fix-ci",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Required CI acceptance recognizes actual test execution vs skip",
+        "Branch protection accurately reflects available checks",
+        "No irrelevant browser gate for backend-only PR"
+      ],
+      "test_kinds": [
+        "e2e",
+        "ci",
+        "security"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "17b",
-      "title": "Cross-domain deterministic business scenario suite",
       "milestone": "17",
+      "title": "Cross-domain deterministic business scenario suite",
       "depends_on": [
         "8a",
         "8b",
@@ -1365,207 +1129,147 @@
         "15b",
         "16d"
       ],
-      "domain_lane": "qa",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
+      "goal": "Cross-domain deterministic acceptance suite",
+      "scope_hint": "cross-domain fixtures + existing golden eval suites",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-17b",
+      "skills": [
+        "playwright-cli",
+        "e2e-testing-patterns",
+        "gh-fix-ci",
+        "pr"
+      ],
+      "acceptance": [
+        "Unfamiliar café questions combine canonical data with exact numbers",
+        "Staff/supply/finance/events/brief owner journeys verify real state transitions",
+        "Permissions and missing data negatives covered"
+      ],
+      "test_kinds": [
         "db",
         "e2e",
         "receipt",
         "parity"
       ],
-      "preview_required": true,
-      "owner_of_files": null,
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Cross-domain deterministic acceptance suite",
-      "required_skills": [
-        "playwright-cli",
-        "e2e-testing-patterns",
-        "gh-fix-ci",
-        "pr"
-      ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "17c",
-      "title": "Unattended multi-day outage/autonomy simulation",
       "milestone": "17",
+      "title": "Unattended multi-day outage/autonomy simulation",
       "depends_on": [
         "17b",
         "15c",
         "15d"
       ],
-      "domain_lane": "qa",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
+      "goal": "Multi-day autonomous failure simulation",
+      "scope_hint": "disposable multi-day operations simulation",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-17c",
+      "skills": [
+        "playwright-cli",
+        "e2e-testing-patterns",
+        "gh-fix-ci",
+        "pr"
+      ],
+      "acceptance": [
+        "Multi-day unattended run recovers worker/provider failures",
+        "Standing mandate and individual approval both exercised",
+        "No duplicate side effects across retries"
+      ],
+      "test_kinds": [
         "failure",
         "db",
         "e2e"
       ],
-      "preview_required": true,
-      "owner_of_files": null,
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Multi-day autonomous failure simulation",
-      "required_skills": [
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
+    },
+    {
+      "id": "17d",
+      "milestone": "17",
+      "title": "Isolated preview readiness and smoke acceptance",
+      "depends_on": [
+        "17c"
+      ],
+      "goal": "Safe preview smoke and artifacts",
+      "scope_hint": "isolated preview/deployment smoke harness",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-17d",
+      "skills": [
         "playwright-cli",
         "e2e-testing-patterns",
         "gh-fix-ci",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
-    },
-    {
-      "id": "17d",
-      "title": "Isolated preview readiness and smoke acceptance",
-      "milestone": "17",
-      "depends_on": [
-        "17c"
+      "acceptance": [
+        "Seeded isolated preview runs owner-facing scenario",
+        "Preview never touches production systems",
+        "Required evidence URLs/artifacts exist for UI changes"
       ],
-      "domain_lane": "qa",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
+      "test_kinds": [
         "preview",
         "e2e",
         "security"
       ],
-      "preview_required": true,
-      "owner_of_files": null,
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
       "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Safe preview smoke and artifacts",
-      "required_skills": [
-        "playwright-cli",
-        "e2e-testing-patterns",
-        "gh-fix-ci",
-        "pr"
-      ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     },
     {
       "id": "17e",
-      "title": "Owner-authorized live pilot and final release evidence",
       "milestone": "17",
+      "title": "Owner-authorized live pilot and final release evidence",
       "depends_on": [
         "17d"
       ],
-      "domain_lane": "release",
-      "status": "proposal_architecture_review",
-      "requires_owner_approved_design": true,
-      "implementation_permission": false,
-      "provenance": "new proposed milestone sub-PR",
-      "tests_required": [
-        "pilot",
-        "release"
-      ],
-      "preview_required": false,
-      "owner_of_files": null,
-      "github_pr": null,
-      "merged_sha": null,
-      "verified_ci_run": null,
-      "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
-      "acceptance_goal": "Owner-authorized live pilot and certified release",
-      "required_skills": [
+      "goal": "Owner-authorized live pilot and certified release",
+      "scope_hint": "owner-authorized pilot/release checklist and evidence",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-17e",
+      "skills": [
         "playwright-cli",
         "gh-fix-ci",
         "pr"
       ],
-      "owned_paths": [],
-      "excluded_paths": [],
-      "architecture_approval_ref": null,
-      "predecessor_proof": [],
-      "merge_proof": null,
-      "integration_proof": null,
-      "preview_proof": null,
-      "proof_status": "unverified",
-      "dispatchable": false,
-      "candidate_parallel_with": [],
-      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
-      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
-      "prompt_key": "coding_agent"
+      "acceptance": [
+        "Owner-authorized pilot verifies live sources and actions",
+        "Rollback, audit and incident procedures exercised",
+        "Actual release readiness distinguished from merged code"
+      ],
+      "test_kinds": [
+        "pilot",
+        "release"
+      ],
+      "ui_or_browser_test": "not_default",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
     }
-  ],
-  "notes": [
-    "Statuses are conservative; verify GitHub state before dispatch.",
-    "For 6-12, recover and reconcile Grok's actual brief before assigning.",
-    "A dependency can be implemented as a stacked PR against its open predecessor branch per AGENTS.md, but merges only after prerequisites are on main.",
-    "The end goal is continuous single-agent café operation with initial action approval and optional owner OTP-authorized standing permissions.",
-    "Unknown physical/legal/provider constraints require explicit supported-limit acceptance, never invented success."
-  ],
-  "operational_runbook": "docs/plans/universal-supervisor-agent-operations.md",
-  "dispatcher_prompt": "Section 3 of operational_runbook",
-  "coding_agent_prompt": "Section 4 of operational_runbook",
-  "first_candidate_wave": [
-    "E2",
-    "6",
-    "9",
-    "10"
-  ],
-  "dispatcher_must_verify_previous_merges": true,
-  "proof_manifest_required": true,
-  "current_baseline_has_required_playwright_job": false,
-  "task_ownership_unresolved": true,
-  "dispatch_policy": {
-    "policy": "No assignment until architecture approval, exact owned files and proven predecessor work; up to 4 ChatGPT + 2 Claude.",
-    "max_active_chatgpt": 4,
-    "max_active_claude": 2,
-    "allow_parallel_stacked_drafts": true,
-    "require_integrated_proof_before_dependent_merge": true,
-    "review_ci_final_head": true
-  }
+  ]
 }
