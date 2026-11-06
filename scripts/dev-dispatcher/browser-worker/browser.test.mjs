@@ -4,121 +4,121 @@ import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { conversationUrl, validateAction, prepareLocalState, reserve, getReceipt, markReceipt } from "./state.mjs";
-import { probe, submit, localSubmissionAllowed } from "./browser.mjs";
-import { configureFirefox, launchFirefox, checkFirefox } from "./firefox.mjs";
+import { prepareHandoff, finishHandoff, checkMacCommands } from "./handoff.mjs";
 
 const chat = "https://chatgpt.com/c/abc-123";
 const claude = "https://claude.ai/chat/abc-123";
 const action = { id: "dispatch_001", provider: "chatgpt", conversation_url: chat,
   prompt: "Approved short instruction", approved: true };
-
-function mockDriver(url = chat, { busy = false, editor = true, editorCount = 1, redirectDuringProbe = false } = {}) {
-  const calls = [];
-  let current = url;
-  const driver = {
-    calls,
-    getCurrentUrl: async () => { calls.push("url"); return current; },
-    findElements: async selector => {
-      calls.push(["find", selector]);
-      const kind = selector.includes("stop-button") ? "busy" :
-        selector.includes("composer-text-input") ? "editor" : "none";
-      const n = kind === "busy" && busy ? 1 : kind === "editor" && editor ? editorCount : 0;
-      if (redirectDuringProbe && kind === "editor") current = "https://chatgpt.com/c/another";
-      return Array.from({ length: n }, () => ({ isDisplayed: async () => true }));
-    },
-  };
-  return driver;
+async function temporaryState(t) {
+  const base = await mkdtemp(path.join(os.tmpdir(), "aicafe-handoff-test-"));
+  t.after(async () => rm(base, { recursive: true, force: true }));
+  return (await prepareLocalState(base)).receipts;
 }
 
-test("only exact provider conversation URLs and approved IDs are valid", () => {
+test("validates exact approved ChatGPT/Claude URLs, action ID and prompt", () => {
   assert.equal(conversationUrl("chatgpt", chat), chat);
   assert.equal(conversationUrl("claude", claude), claude);
-  for (const url of ["http://chatgpt.com/c/abc", "https://chatgpt.com.evil.org/c/abc",
-    "https://chatgpt.com/login", "https://chatgpt.com/c/abc?x=y", "https://chatgpt.com@evil.org/c/abc"]) {
-    assert.throws(() => conversationUrl("chatgpt", url), /Conversation URL/);
+  for (const bad of ["http://chatgpt.com/c/abc", "https://chatgpt.com.evil.org/c/abc",
+    "https://chatgpt.com/login", "https://chatgpt.com/c/abc?x=y",
+    "https://chatgpt.com@evil.org/c/abc", "https://claude.ai/chat/abc#secret"]) {
+    assert.throws(() => conversationUrl("chatgpt", bad), /Conversation URL/);
   }
   assert.throws(() => validateAction({ ...action, approved: false }), /not approved/);
   assert.throws(() => validateAction({ ...action, id: "../other" }), /Invalid action ID/);
+  assert.throws(() => validateAction({ ...action, prompt: "" }), /Prompt/);
+  assert.throws(() => validateAction({ ...action, provider: "other" }), /Unsupported/);
 });
 
-test("Firefox worker never sends, even with previous Playwright permission switches", async () => {
-  assert.equal(localSubmissionAllowed({ AICAFE_BROWSER_ENABLE_SUBMIT: "yes",
-    AICAFE_BROWSER_SITE_PERMISSION_CONFIRMED: "yes" }), false);
-  await assert.rejects(submit(), /disabled/);
+test("handoff only opens the exact browser URL and copies approved prompt; never sends", async t => {
+  const receipts = await temporaryState(t), calls = [];
+  const bridge = {
+    openConversation: async url => calls.push(["open", url]),
+    copyPrompt: async text => calls.push(["clipboard", text]),
+  };
+  const result = await prepareHandoff(receipts, action, bridge);
+  assert.deepEqual(result, { id: action.id, provider: action.provider, conversation_url: chat, status: "prepared" });
+  assert.deepEqual(calls, [["open", chat], ["clipboard", action.prompt]]);
+  const stored = await readFile(path.join(receipts, action.id + ".json"), "utf8");
+  assert.equal(stored.includes(action.prompt), false);
+  assert.equal(stored.includes("assistant_reply"), false);
+  assert.equal(JSON.parse(stored).prompt_sha256.length, 64);
+  await assert.rejects(prepareHandoff(receipts, action, bridge), e => e.code === "EEXIST");
+  assert.equal(calls.length, 2, "a duplicate must not open browser or touch clipboard");
 });
 
-test("probe reads URL/controls only and rejects wrong pages, busy chat or missing editor", async () => {
-  const good = mockDriver();
-  assert.deepEqual(await probe(good, "chatgpt", chat), { ready: true });
-  assert.equal(good.calls.every(c => c === "url" || Array.isArray(c) && c[0] === "find"), true);
-  const wrong = mockDriver("https://chatgpt.com/login");
-  assert.equal((await probe(wrong, "chatgpt", chat)).reason, "wrong_conversation_or_login_required");
-  assert.deepEqual(wrong.calls, ["url"]);
-  const busy = mockDriver(chat, { busy: true });
-  assert.equal((await probe(busy, "chatgpt", chat)).reason, "assistant_busy");
-  const missing = mockDriver(chat, { editor: false });
-  assert.equal((await probe(missing, "chatgpt", chat)).reason, "composer_missing_or_login_required");
+test("validation prevents any browser or clipboard effect", async t => {
+  const receipts = await temporaryState(t), calls = [];
+  const bridge = { openConversation: async () => calls.push("open"), copyPrompt: async () => calls.push("copy") };
+  await assert.rejects(prepareHandoff(receipts, { ...action, approved: false }, bridge), /not approved/);
+  await assert.rejects(prepareHandoff(receipts, { ...action, conversation_url: "https://evil.example/c/id" }, bridge), /Conversation URL/);
+  assert.deepEqual(calls, []);
 });
 
-test("probe fails closed on ambiguous editors and conversation navigation", async () => {
-  await assert.rejects(probe(mockDriver(chat, { editorCount: 2 }), "chatgpt", chat), /Ambiguous/);
-  const changed = mockDriver(chat, { redirectDuringProbe: true });
-  assert.equal((await probe(changed, "chatgpt", chat)).reason, "conversation_changed");
+test("failed browser open records an uncertain action and never copies", async t => {
+  const receipts = await temporaryState(t), calls = [];
+  const bridge = {
+    openConversation: async () => { calls.push("open"); throw new Error("OS error"); },
+    copyPrompt: async () => calls.push("copy"),
+  };
+  await assert.rejects(prepareHandoff(receipts, action, bridge), /Handoff interrupted/);
+  assert.equal((await getReceipt(receipts, action.id)).status, "uncertain");
+  await assert.rejects(prepareHandoff(receipts, action, bridge), e => e.code === "EEXIST");
+  assert.deepEqual(calls, ["open"]);
 });
 
-test("Selenium uses a permanent dedicated -profile, not a copied template", async () => {
-  const options = { args: [], prefs: [] };
-  class Options {
-    addArguments(...args) { options.args.push(...args); return this; }
-    setPreference(...args) { options.prefs.push(args); return this; }
-  }
-  const fake = { get: async () => {}, getCurrentUrl: async () => "about:blank" };
-  const build = { browser: null, options: null };
-  class Builder {
-    forBrowser(name) { build.browser = name; return this; }
-    setFirefoxOptions(value) { build.options = value; return this; }
-    async build() { return fake; }
-  }
-  const profile = path.join(os.tmpdir(), "aicafe-private-profile");
-  const result = await launchFirefox(profile, {
-    selenium: { Builder, By: { css: x => x } },
-    firefox: { Options },
-  });
-  assert.equal(build.browser, "firefox");
-  assert.deepEqual(options.args, ["-profile", profile]);
-  assert.equal(result.driver, fake);
-  assert.equal(result.css("div"), "div");
-  assert.throws(() => configureFirefox({ Options }, "relative/path"), /absolute/);
+test("clipboard failure records uncertain and does not silently retry", async t => {
+  const receipts = await temporaryState(t), calls = [];
+  const bridge = {
+    openConversation: async () => calls.push("open"),
+    copyPrompt: async () => { calls.push("copy"); throw new Error("Clipboard unavailable"); },
+  };
+  await assert.rejects(prepareHandoff(receipts, action, bridge), /Handoff interrupted/);
+  assert.equal((await getReceipt(receipts, action.id)).status, "uncertain");
+  assert.deepEqual(calls, ["open", "copy"]);
 });
 
-test("browser check only loads about:blank and rejects an unexpected destination", async () => {
-  const calls = [];
-  const fake = { get: async x => calls.push(x), getCurrentUrl: async () => "about:blank" };
-  assert.equal(await checkFirefox(fake), true);
-  assert.deepEqual(calls, ["about:blank"]);
-  await assert.rejects(checkFirefox({ ...fake, getCurrentUrl: async () => "https://example.org" }), /did not open/);
+test("only explicit owner SENT acknowledges manual click; no automatic delivered claim", async t => {
+  const receipts = await temporaryState(t);
+  await prepareHandoff(receipts, action, { openConversation: async () => {}, copyPrompt: async () => {} });
+  await assert.rejects(finishHandoff(receipts, action.id, "send"), /explicitly/);
+  await assert.rejects(finishHandoff(receipts, action.id, "YES"), /explicitly/);
+  assert.equal((await getReceipt(receipts, action.id)).status, "prepared");
+  const completed = await finishHandoff(receipts, action.id, "SENT");
+  assert.equal(completed.status, "owner_confirmed_sent");
+  assert.match(completed.note, /not independently verified/);
+  await assert.rejects(finishHandoff(receipts, action.id, "SENT"), /already finalized/);
 });
 
-test("local receipts are exclusive, private and cannot be retried under the same ID", async t => {
-  const base = await mkdtemp(path.join(os.tmpdir(), "aicafe-browser-test-"));
-  t.after(async () => rm(base, { recursive: true, force: true }));
-  const dirs = await prepareLocalState(base);
-  const receipt = await reserve(dirs.receipts, validateAction(action));
-  await assert.rejects(reserve(dirs.receipts, validateAction(action)), e => e.code === "EEXIST");
-  assert.equal((await getReceipt(dirs.receipts, action.id)).status, "reserved");
-  const updated = await markReceipt(dirs.receipts, receipt, "uncertain", "click may have happened");
-  assert.equal(updated.status, "uncertain");
-  const disk = await readFile(path.join(dirs.receipts, action.id + ".json"), "utf8");
+test("explicit cancellation and uncertain owner resolution", async t => {
+  const receipts = await temporaryState(t);
+  await reserve(receipts, validateAction(action));
+  const cancelled = await finishHandoff(receipts, action.id, "CANCEL");
+  assert.equal(cancelled.status, "owner_cancelled");
+  await assert.rejects(finishHandoff(receipts, action.id, "SENT"), /already finalized/);
+  await assert.rejects(finishHandoff(receipts, "not_found", "SENT"), /No handoff receipt/);
+});
+
+test("existing receipt-safety checks remain strict", async t => {
+  const receipts = await temporaryState(t);
+  const rec = await reserve(receipts, validateAction(action));
+  await assert.rejects(reserve(receipts, validateAction(action)), e => e.code === "EEXIST");
+  assert.equal((await getReceipt(receipts, action.id)).status, "reserved");
+  await assert.rejects(markReceipt(receipts, rec, "confirmed", "not permitted"), /Invalid receipt/);
+  const disk = await readFile(path.join(receipts, action.id + ".json"), "utf8");
   assert.equal(disk.includes(action.prompt), false);
   assert.equal(disk.includes("assistant_reply"), false);
   assert.equal(JSON.parse(disk).prompt_sha256.length, 64);
-  await assert.rejects(markReceipt(dirs.receipts, receipt, "confirmed", "not allowed"), /Invalid receipt/);
 });
 
-test("symlink local profile root is refused", async t => {
-  const base = await mkdtemp(path.join(os.tmpdir(), "aicafe-browser-symlink-"));
+test("symlink local state root is refused", async t => {
+  const base = await mkdtemp(path.join(os.tmpdir(), "aicafe-handoff-symlink-"));
   await rm(base, { recursive: true, force: true });
   await symlink(os.tmpdir(), base);
   t.after(async () => rm(base, { force: true }));
   await assert.rejects(prepareLocalState(base), /Unsafe browser state directory/);
+});
+
+test("non-Mac platform fails closed without opening a provider", async () => {
+  await assert.rejects(checkMacCommands("linux"), /macOS only/);
 });
