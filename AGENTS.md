@@ -110,6 +110,9 @@ Next.js 16 App Router + TypeScript strict + Tailwind · Supabase (Postgres, Auth
 
 ## Where things are
 See [docs/README.md](docs/README.md) for current docs and historical designs.
+For the **owner-approved** Universal Supervisor coding queue, task briefs and GitHub-plugin skill prompts,
+start at [docs/plans/universal-supervisor-delivery-queue-2026-11.md](docs/plans/universal-supervisor-delivery-queue-2026-11.md).
+A draft queue never grants permission to implement unapproved infrastructure or deploy.
 
 ## Commands
 `npm run dev` · `npm run build` · `npm test` · `npm run lint` · `npx tsc --noEmit` · `npm run db:reset`
