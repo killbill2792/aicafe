@@ -112,7 +112,8 @@ export async function invokeOpenClaw(action, { dir, executable = 'openclaw', spa
     const h = await fs.open(messageFile, 'wx', 0o600);
     try { await h.writeFile(instruction); } finally { await h.close(); }
     // Do NOT forward queue/GitHub credentials to the OpenClaw agent process.
-    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^DISPATCH_|^GITHUB_/.test(k)));
+    const permitted = new Set(['HOME', 'PATH', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'DBUS_SESSION_BUS_ADDRESS', 'OPENCLAW_STATE_DIR', 'OPENCLAW_CONFIG_PATH', 'OPENCLAW_GATEWAY_URL', 'OPENCLAW_GATEWAY_TOKEN']);
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => permitted.has(k)));
     const session = `queue-${action.delivery.project.id}-${action.task_id}`.replace(/[^\w-]/g, '-');
     const code = await new Promise(resolve => {
       const child = spawnImpl(executable, ['agent', '--session-key', session, '--message-file', messageFile],
