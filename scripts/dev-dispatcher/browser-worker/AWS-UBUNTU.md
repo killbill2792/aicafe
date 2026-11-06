@@ -9,7 +9,7 @@ This is an alternative **X11 adapter** for the existing development browser work
 Use the already installed and signed-in Chrome. Keep **exactly one Chrome window** open (multiple tabs are fine). Install OS tools:
 
 ```bash
-sudo apt-get update && sudo apt-get install -y xdotool xclip
+sudo apt-get update && sudo apt-get install -y nodejs git xdotool xclip
 cd ~/aicafe/scripts/dev-dispatcher/browser-worker
 node aws-desktop.mjs doctor
 ```
