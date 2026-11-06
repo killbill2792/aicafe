@@ -128,7 +128,7 @@ test("concurrent head update cancels unsent old-head action and preserves receip
   const ledger = { ...emptyLedger(), tasks: { a: { ...pr(), status: "draft_open" } },
     actions: { old: { task_id: "a", head_sha: "abc", status: "planned" },
       sent: { task_id: "a", head_sha: "abc", status: "uncertain" } } };
-  const updated = reconcileGithub(ledger, [{ ...pr(), head_sha: "def", branch: "feat/a" }]);
+  const updated = reconcileGithub(ledger, [{ ...pr(), head_sha: "def", ci_state: "pending", codex_state: "pending", codex_reviewed_sha: null, branch: "feat/a" }]);
   assert.equal(updated.tasks.a.head_sha, "def");
   assert.equal(updated.tasks.a.ci_state, "pending");
   assert.equal(updated.actions.old.status, "cancelled_stale_head");
