@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
 import { GitHubFacts } from "./github.mjs";
 
@@ -122,4 +122,23 @@ test("GitHub PR reads distinguish pending CI/review from success", async () => {
   assert.equal(entries.length, 1);
   assert.equal(entries[0].ci_state, "success");
   assert.equal(entries[0].codex_state, "pending");
+});
+
+test("concurrent head update cancels unsent old-head action and preserves receipts", () => {
+  const ledger = { ...emptyLedger(), tasks: { a: { ...pr(), status: "draft_open" } },
+    actions: { old: { task_id: "a", head_sha: "abc", status: "planned" },
+      sent: { task_id: "a", head_sha: "abc", status: "uncertain" } } };
+  const updated = reconcileGithub(ledger, [{ ...pr(), head_sha: "def", branch: "feat/a" }]);
+  assert.equal(updated.tasks.a.head_sha, "def");
+  assert.equal(updated.tasks.a.ci_state, "pending");
+  assert.equal(updated.actions.old.status, "cancelled_stale_head");
+  assert.equal(updated.actions.sent.status, "uncertain");
+});
+test("disappearing PR is not automatically merged; verified merge remains distinct from integration", () => {
+  const ledger = { ...emptyLedger(), tasks: { a: { ...pr(), status: "draft_open" } } };
+  assert.equal(reconcileGithub(ledger, []).tasks.a.github_state, "not_open_unverified");
+  const merged = reconcileGithub(ledger, [], { 101: true }).tasks.a;
+  assert.equal(merged.status, "merged");
+  assert.notEqual(merged.status, "integrated_proven");
+  assert.equal(reconcileGithub(ledger, [], { 101: false }).tasks.a.status, "draft_open");
 });
