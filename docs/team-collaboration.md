@@ -1,4 +1,7 @@
-# AI CAFE — two-person development and review workflow
+# AI CAFE — two-person development and review workflow (historical, October 15, 2026)
+
+> **HISTORICAL / NOT CURRENT WORKFLOW.** This document describes an earlier two-human approval process that conflicts with today's `AGENTS.md` standing parallel PR and auto-merge rules. **Never use its merge prohibitions or outdated P2/P3 dependency claims as current instructions.** For current coding agents follow `AGENTS.md`, [the current PR execution skills](../.claude/skills/aicafe-pr-lifecycle/SKILL.md) and [the universal queue](plans/universal-supervisor-delivery-queue-2026-11.md). Retained to preserve earlier collaboration decisions.
+
 
 **Read with [AGENTS.md](../AGENTS.md), [PROGRESS.md](../PROGRESS.md), and the [product roadmap #74](https://github.com/killbill2792/aicafe/issues/74).** This describes *how* the team works; it does not override the current single-agent architecture in AGENTS.md, authorize actions, or change any production system. For interactive onboarding and checkboxes, use [setup issue #82](https://github.com/killbill2792/aicafe/issues/82).
 
