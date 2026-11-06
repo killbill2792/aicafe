@@ -5,6 +5,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { validateAction, prepareLocalState, reserve, markReceipt } from './state.mjs';
 
@@ -33,10 +34,14 @@ export function parseMouse(output) {
   return { x, y };
 }
 
-export function systemRun(executable, args, input) {
-  return execFileSync(executable, args, {
+export function systemRun(executable, args, input, exec = execFileSync) {
+  // xclip clipboard writes fork a long-lived owner; inherited stdout/stderr pipes
+  // make execFileSync wait indefinitely even after the initial process exits.
+  const clipboardWrite = executable === 'xclip' && !args.includes('-o');
+  return exec(executable, args, {
     input, encoding: 'utf8', timeout: 12000,
-    stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 1_000_000,
+    stdio: clipboardWrite ? ['pipe', 'ignore', 'ignore'] : ['pipe', 'pipe', 'pipe'],
+    maxBuffer: 1_000_000,
   }).trim();
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -49,6 +54,10 @@ function chromeWindow(run) {
 }
 function geometry(run, id) {
   return parseGeometry(run('xdotool', ['getwindowgeometry','--shell',id]));
+}
+function assertChromeFocused(run, id) {
+  if (run('xdotool', ['getactivewindow']).trim() !== id)
+    throw new Error('Chrome is no longer the active window; no message sent');
 }
 function position(calibration, rect) {
   if (calibration?.version !== 1 || calibration.width !== rect.width || calibration.height !== rect.height)
@@ -87,21 +96,31 @@ export async function sendOnce(inputAction, { run = systemRun, pause: wait = pau
   // Reserve before any browser effect: crashes never automatically replay the same action.
   const receipt = await reserve(state.receipts, action);
   let reachedComposer = false;
+  let sessionLock;
+  const lockFile = path.join(path.dirname(state.receipts), 'aws-desktop-session.lock');
   try {
+    // One shared display/clipboard. A crash leaves the lock to force manual review.
+    sessionLock = await fs.open(lockFile, 'wx', 0o600);
     const file = path.join(path.dirname(state.receipts), 'aws-chrome-editor.json');
     const calibration = JSON.parse(await fs.readFile(file, 'utf8'));
     const id = chromeWindow(run);
     const initialRect = geometry(run, id);
     position(calibration, initialRect);
     run('xdotool', ['windowactivate','--sync',id]);
+    assertChromeFocused(run, id);
     run('xclip', ['-selection','clipboard'], action.conversation_url);
     run('xdotool', ['key','--clearmodifiers','ctrl+l']);
     run('xdotool', ['key','--clearmodifiers','ctrl+v']);
     run('xdotool', ['key','--clearmodifiers','Return']);
     await wait(3000);
+    assertChromeFocused(run, id);
+    // Unique sentinel prevents a stale clipboard URL from passing verification.
+    const sentinel = 'aicafe-clipboard-verification-' + randomUUID();
+    run('xclip', ['-selection','clipboard'], sentinel);
     run('xdotool', ['key','--clearmodifiers','ctrl+l']);
     run('xdotool', ['key','--clearmodifiers','ctrl+c']);
     await wait(200);
+    assertChromeFocused(run, id);
     const actual = run('xclip', ['-selection','clipboard','-o']).replace(/\/$/, '');
     // Address-bar check only: no inspection of chat output or history.
     if (actual !== action.conversation_url) {
@@ -110,9 +129,11 @@ export async function sendOnce(inputAction, { run = systemRun, pause: wait = pau
     }
     const rect = geometry(run, id);
     const pointer = position(calibration, rect);
+    assertChromeFocused(run, id);
     run('xdotool', ['key','--clearmodifiers','Escape']);
     run('xdotool', ['mousemove','--sync',String(pointer.x),String(pointer.y)]);
     run('xdotool', ['click','1']);
+    assertChromeFocused(run, id);
     reachedComposer = true;
     run('xclip', ['-selection','clipboard'], action.prompt);
     run('xdotool', ['key','--clearmodifiers','ctrl+v']);
@@ -125,6 +146,11 @@ export async function sendOnce(inputAction, { run = systemRun, pause: wait = pau
     await markReceipt(state.receipts, receipt, reachedComposer ? 'uncertain' : 'not_submitted',
       reachedComposer ? 'Browser interaction may have occurred; never retry automatically' : 'Preflight failed before editor interaction');
     throw err;
+  } finally {
+    if (sessionLock) {
+      await sessionLock.close();
+      await fs.unlink(lockFile);
+    }
   }
 }
 
