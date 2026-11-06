@@ -1,10 +1,10 @@
-# AI CAFE — dedicated laptop development browser worker (Firefox/Selenium)
+# AI CAFE — manual development-message handoff on Mac
 
-This worker is **not AI CAFE's app-testing Playwright**. It uses its own `selenium-webdriver` package and the owner's locally installed Firefox through geckodriver, with a **separate persistent Firefox profile**. App E2E tooling and its localhost-only safety rules remain unchanged.
+**This is a deliberately assisted workflow, not unattended ChatGPT/Claude automation.** The owner already has ChatGPT signed into **regular Firefox** on macOS 12. Google blocked login inside a Selenium-controlled session. We do not bypass that protection, extract cookies, attach automation to the personal browser, or require password changes.
 
-## MacBook Air on macOS 12 (Monterey)
+**The AI CAFE app's test Playwright is entirely separate and unchanged.** This development worker uses only standard macOS `open` and `pbcopy`; no Playwright, Selenium, geckodriver or provider API credentials.
 
-Prerequisites: Node.js 22, npm, local Git repo, installed Firefox (tested manually by owner: Firefox 159.0.1 opens). Selenium Manager resolves the Firefox driver on first launch; this requires internet access. On the owner's Mac, use:
+## Install after PR merges (MacBook Air, Monterey)
 
 ```bash
 cd ~/Documents/aicafe
@@ -16,32 +16,55 @@ npm run doctor
 npm run check
 ```
 
-**Do not run `npx playwright install` for this worker.** Bundled Playwright browsers reject macOS 12. `npm run doctor` verifies only private local directories, not launch readiness. `npm run check` starts a new, isolated Firefox instance using `~/.aicafe-dev-browser/profile`, visits only `about:blank`, closes it and reports PASS or the actual Selenium/geckodriver error. No provider is contacted and no message is sent.
+`check` only verifies the macOS native commands. It does **not** open Firefox, log in, access chats, or send a message. On this Mac, start normal Firefox yourself first and verify that the exact ChatGPT/Claude conversation is logged in.
 
-**If the browser check passes**, manually sign into each provider through that same isolated worker profile:
+## Prepare one approved message
 
-```bash
-node cli.mjs login chatgpt
-node cli.mjs login claude
+Create a private local action JSON file **outside the Git repo**, e.g. `~/.aicafe-dev-browser/actions/example.json`. Keep its file permission at `0600`. Replace the URL and prompt with the one you approve:
+
+```json
+{
+  "id": "manual_pr_followup_001",
+  "provider": "chatgpt",
+  "conversation_url": "https://chatgpt.com/c/REPLACE_WITH_YOUR_REAL_CONVERSATION_ID",
+  "prompt": "Please continue this approved PR work. Follow AGENTS.md and report verified CI and Codex status.",
+  "approved": true
+}
 ```
 
-A Firefox window will open at that provider's public site. Sign in manually. Press Enter in Terminal *after* authentication; the worker closes its Firefox window normally, preserving the private profile. The regular Firefox profile is **not attached or modified**. Authentication persistence still needs owner confirmation; a fresh login might be required.
+Use `"provider": "claude"` and a matching `https://claude.ai/chat/<id>` link for a Claude chat. The `id` must be **new for every handoff**, not recycled. Never store a private action JSON in GitHub or share it in chat.
 
-After sign-in, check one actual chat URL without reading any messages:
+From the worker folder:
 
 ```bash
-node cli.mjs probe https://chatgpt.com/c/YOUR-CONVERSATION-ID
-node cli.mjs probe https://claude.ai/chat/YOUR-CONVERSATION-ID
+node cli.mjs handoff ~/.aicafe-dev-browser/actions/example.json
 ```
 
-The `probe` command only checks exact provider URL, idle editor and stop/busy control. It does not read assistant replies or cookies. Current website selectors can change without notice.
+The CLI (1) validates the action and exact official conversation URL, (2) reserves its unique ID in a private minimal local receipt, (3) asks macOS to open that page in the **regular Firefox** profile with `open -a Firefox`, and (4) copies the prompt with `pbcopy`. It **does not paste, press Enter, click Send, read the chat, or see the login**.
 
-## Safety and data
+**You** must check the correct conversation is visible, press **Command-V**, review the pasted text and **click Send**. Then record what you did:
 
-- Browser profile and minimal receipts live at `~/.aicafe-dev-browser/`, not in the Git repository. Keep your Mac login private, encrypted and never sync/export these folders to GitHub or chat.
-- The existing receipt format is keyed by unique local action ID; it has status, provider URL, prompt SHA-256 and timestamp, not the raw prompt or chat reply.
-- **Sending is disabled in this Firefox repair, even if the old Playwright environment switches are set.** No `send` command, autostart, chat-response reader, GitHub-to-browser dispatch or automatic merge is active. Provider-permitted, reliable live submission requires a separate review and owner-run pilot.
-- A saved Firefox profile may be logged out by providers. An OS password prompt, challenge or browser update must be handled manually. Never export browser secrets.
-- App testing remains on its own Playwright path and seeded local test data only; it must never use this dedicated login profile.
-- If the Selenium browser fails on the real Mac, report the first error output. CI runs mock-only contract tests and cannot prove the macOS 12 driver/platform integration. Do not claim live authentication from a green PR.
-- The laptop must be awake and internet-connected during any future unattended local worker operation. It is not a GitHub Codespace or cloud server.
+```bash
+node cli.mjs confirm manual_pr_followup_001
+```
+
+Type `SENT` at the prompt **only after you actually clicked Send**. The receipt becomes `owner_confirmed_sent`, which is your attestation, **not independent proof of provider delivery**.
+
+If you chose not to send the message:
+
+```bash
+node cli.mjs cancel manual_pr_followup_001
+```
+
+Type `CANCEL`. To inspect your local record at any time: `node cli.mjs status manual_pr_followup_001`.
+
+After pasting, replace the clipboard contents to avoid leaving the prompt available to other local apps, for example `printf '' | pbcopy`.
+
+## Storage, safety, and limits
+
+- Existing `~/.aicafe-dev-browser/receipts/<id>.json`: only action ID, provider, exact URL, prompt SHA-256, status, timestamp and note. **No raw prompt, answer, password, cookies, browser history or screenshot** in receipts. `prepared` means the browser-open request and clipboard copy succeeded—not that anything was sent.
+- Reservations are created **before** OS actions and fail exclusively if an ID is used again. A partially failed handoff becomes `uncertain`; do not auto-retry. Inspect before deciding on a new action. Existing `reserve` and receipt privacy checks remain.
+- Existing `~/.aicafe-dev-browser/profile` from the former Selenium worker is **unused**, left untouched. This code does not access, export, migrate or delete it. No fresh profile is created.
+- `login`, `probe`, and `send` CLI commands are deliberately retired. No clipboard, browser or network effects happen in CI; isolated tests mock both native OS effects.
+- The GitHub dispatcher (PR #385) still monitors work in dry run; there is **no automatic GitHub-to-browser transport or automatic prompt delivery**. Do not represent this as a working unattended 4-ChatGPT/2-Claude system. Any future authenticated automation needs a supported/provider-permitted path and a separate owner-approved, tested design.
+- Never put secrets or café-owner data into handoff prompts. The macOS clipboard may be readable by other local software while it holds your text.
