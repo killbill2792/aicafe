@@ -18,6 +18,18 @@ If this is the first clone on AWS, `git clone https://github.com/killbill2792/ai
 
 Open the intended ChatGPT conversation and clear the composer manually. Keep the browser window at the size you will use for the pilot. Run `node aws-desktop.mjs calibrate` from Terminal, then within five seconds point at the **inside of the ChatGPT message editor** without clicking another window. Calibration stores local private X11 coordinates; if the window changes size, it fails closed and must be repeated.
 
+### Easiest live pilot (no action file)
+
+With a signed-in existing ChatGPT conversation open in the single Chrome window, run from the AWS **graphical** Terminal:
+
+```bash
+AICAFE_BROWSER_LIVE_SEND=1 node aws-desktop.mjs pilot-current
+```
+
+This reads **only Chrome's active address-bar URL**, validates an existing `https://chatgpt.com/c/...` conversation, creates a unique local action ID, and attempts a harmless one-time message asking for `RECEIVED`. **Observe the browser** to confirm the intended chat received it. No screenshots, chat outputs, passwords or session cookies are collected. If the window dimensions changed, recalibrate instead of overriding the check. A receipt of `submitted_unverified` is not proof that the browser accepted a message.
+
+### Advanced explicit-action pilot
+
 Create an approved one-time action file outside the repository (e.g. under `~/.aicafe-dev-browser/`) with mode 0600. It needs: `id` (unique per attempt), `provider: "chatgpt"`, `conversation_url` (exact `/c/…` URL), `prompt` (short, non-sensitive), `approved: true`. Never paste real conversation IDs or account credentials into GitHub commits or chat messages.
 
 Run a single owner-observed pilot in the graphical Terminal:
@@ -35,4 +47,5 @@ The adapter activates Chrome, navigates to the exact URL, compares the **address
 - Do not open extra inbound security-group ports or expose Chrome debugging connections.
 - Do not copy Chrome profiles, cookies, passwords or remote desktop PINs into git or ChatGPT.
 - Disable immediately by leaving `AICAFE_BROWSER_LIVE_SEND` unset. Remove only `~/.aicafe-dev-browser/aws-chrome-editor.json` to reset calibration. Existing browser tabs/logins are unaffected.
+- The process holds an exclusive `~/.aicafe-dev-browser/aws-desktop-session.lock` during a send. After a crash, check that no desktop worker is running and inspect the pending receipt **before** manually deleting the stale lock. Never auto-delete it.
 - Watch the EC2 credit balance; stopping EC2 stops the desktop and its worker. Stopping the EC2 instance does not delete its EBS-backed disk.
