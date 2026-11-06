@@ -5,6 +5,10 @@ the café through the Supervisor chat). Start with [AGENTS.md](../AGENTS.md) and
 If any document conflicts with AGENTS.md, AGENTS.md wins.
 
 ## Current docs
+- [Universal Supervisor delivery queue (owner-review draft)](plans/universal-supervisor-delivery-queue-2026-11.md) — concise PR6–PR17 roadmap; **not** an implementation authorization until owner approved.
+- [Universal Supervisor task briefs](plans/universal-supervisor-task-briefs.md) — per-task dependencies, acceptance, skills and proposed scope.
+- [Universal Supervisor coding operations](plans/universal-supervisor-agent-operations.md) — copy-paste GitHub-plugin dispatcher/coding prompts, stacked PR/Codex/CI lifecycle.
+- [Universal Supervisor machine queue](plans/universal-supervisor-queue.json) — structured DAG; not a persistent assignment engine.
 - [01 product](01-product.md) — what the operator does, limits for now, and what not to build.
 - [02 design system](02-design-system.md) — design, accessibility and localization (binding for UI).
 - [03 screens](03-screens.md) — existing screen specifications. New capabilities go to the chat first.
@@ -13,7 +17,7 @@ If any document conflicts with AGENTS.md, AGENTS.md wins.
 - [06 integrations](06-integrations.md) — integrations and data connection guidance.
 - [08 pricing engine plan](08-pricing-engine-plan.md) — pricing-engine design and decisions.
 - [scheduling architecture](scheduling-architecture.md) — scheduling boundaries and contracts.
-- [team collaboration](team-collaboration.md) — human implementer and review workflow.
+- [AI CAFE skills index](rules/skills.md) — current reusable skills, including ChatGPT + connected GitHub loading.
 - [plan: nearby events](plans/nearby-events.md) — nearby events, holidays and readiness: rules and PR order.
 - [plan: local demand intelligence](plans/local-demand-intelligence.md) — single-path city events, automatic neighborhood discovery, café impact, historical learning and merge-gated PR sequence.
 - [admin dashboard merge checklist](admin-dashboard-merge-checklist.md) — admin dashboard review checklist.
@@ -31,6 +35,7 @@ If any document conflicts with AGENTS.md, AGENTS.md wins.
   [toast webhook dependent](toast-webhook-dependent.md).
 
 ## Background (may be outdated; not instructions)
+- [team collaboration (Oct 15)](team-collaboration.md) — older human-only workflow; AGENTS.md current parallel/auto-merge rules win.
 These describe earlier designs, phases or single PRs. Read them for context only. Never implement from them
 when they conflict with AGENTS.md (for example personas as separate agents, P1/P2/P3 pipelines, or bans on
 chat-first features).
@@ -47,6 +52,8 @@ chat-first features).
 - [p1 authoritative revisions](p1-authoritative-revisions.md).
 
 ## Historical (do not implement)
+- [Progress before November 5 cleanup](history/progress-snapshot-2026-11-05.md) — all old checkboxes and detailed work preserved; not today's task status.
+- [Earlier universal Supervisor proposal](history/universal-supervisor-initial-proposal-2026-11-05.md) — original detailed draft superseded by the compact queue and task briefs.
 - [supervisor-conversational-investigation.md](history/supervisor-conversational-investigation.md) — retired design.
 - [supervisor-phase4-grounded-chat.md](history/supervisor-phase4-grounded-chat.md) — retired design.
 - [supervisor-experience-responses.md](history/supervisor-experience-responses.md) — retired design.
