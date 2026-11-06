@@ -32,9 +32,9 @@ export function validateQueue(queue) {
   return tasks;
 }
 export const approved = (task) => task.architecture_approval?.approved === true && (task.state === "architecture_approved" || task.state === "ready");
-export function integrated(taskId, tasks, records) {
-  const task = tasks.get(taskId);
-  if (!task) return false; // historic merges must have explicit durable proof records
+export function integrated(taskId, _tasks, records) {
+  // validateQueue already verified each dependency refers to a planned or historic ID.
+  // Historic merged PRs still need an explicit durable integration proof.
   const rec = records[taskId];
   return rec?.status === "integrated_proven" || rec?.status === "released_proven";
 }
