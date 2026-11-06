@@ -70,9 +70,14 @@ async function main() {
   }
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
+  let persisted = null;
   if (commit && ledger) {
-    // A CAS retry reloads the state; it MUST also reload GitHub facts before writing.
-    await ledger.transaction(async existing => reconcile(existing, await observe(existing)).state);
+    // Reconcile against fresh facts on every CAS attempt; do not write an
+    // identical state every five minutes (avoids 288 empty commits per day).
+    persisted = await ledger.transaction(async existing => {
+      const next = reconcile(existing, await observe(existing)).state;
+      return JSON.stringify(next) === JSON.stringify(existing) ? null : next;
+    });
   }
   const gateCounts = { ready: 0, blocked: 0 };
   for (const rec of Object.values(proposed.state.tasks)) {
@@ -85,7 +90,7 @@ async function main() {
     `- Approved new assignments: **${proposed.assigned.length}**`,
     `- Eligible follow-ups (NOT sent): **${proposed.nudges.length}**`,
     `- Tracked merge gates: ready **${gateCounts.ready}**, blocked **${gateCounts.blocked}**`,
-    `- Private durable state: **${commit ? "saved (no external actions)" : ledger ? "read-only" : "not configured"}**`,
+    `- Private durable state: **${commit ? persisted?.committed ? "saved" : "unchanged" : ledger ? "read-only" : "not configured"} (no external actions)**`,
     "- Browser submissions and merge actions: **DISABLED**.",
   ].join("\n");
   console.log(summary);
