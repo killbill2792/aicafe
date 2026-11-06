@@ -8,7 +8,6 @@ export const providers = Object.freeze({
   claude: { origin: "https://claude.ai", conversation: /^\/chat\/[a-zA-Z0-9-]+\/?$/ },
 });
 export const homeDir = () => path.join(os.homedir(), ".aicafe-dev-browser");
-export const profileDir = () => path.join(homeDir(), "profile");
 export const receiptDir = () => path.join(homeDir(), "receipts");
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 
@@ -46,9 +45,8 @@ async function safeDirectory(dir) {
 }
 export async function prepareLocalState(base = homeDir()) {
   await safeDirectory(base);
-  await safeDirectory(path.join(base, "profile"));
   await safeDirectory(path.join(base, "receipts"));
-  return { profile: path.join(base, "profile"), receipts: path.join(base, "receipts") };
+  return { receipts: path.join(base, "receipts") };
 }
 export function receiptPath(receipts, id) {
   if (!ID.test(id)) throw new Error("Invalid action ID");
@@ -66,7 +64,7 @@ export async function reserve(receipts, action) {
   return receipt;
 }
 export async function markReceipt(receipts, receipt, status, note) {
-  if (!["submitted_unverified", "uncertain", "needs_login", "blocked_permission", "not_submitted"].includes(status)) throw new Error("Invalid receipt status");
+  if (!["submitted_unverified", "uncertain", "needs_login", "blocked_permission", "not_submitted", "prepared", "owner_confirmed_sent", "owner_cancelled"].includes(status)) throw new Error("Invalid receipt status");
   const file = receiptPath(receipts, receipt.id);
   const updated = { ...receipt, status, at: new Date().toISOString(), note };
   // Atomic replacement on same filesystem. Never stores prompt/cookies/reply.
