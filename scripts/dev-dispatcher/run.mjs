@@ -5,10 +5,12 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate } from "./core.mjs";
+import { createDelivery } from "./delivery.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
   validateQueue(queue);
+  const taskById = new Map(queue.tasks.map(task => [task.id, task]));
   const repo = process.env.GITHUB_REPOSITORY;
   const githubToken = process.env.GITHUB_TOKEN;
   if (!repo || !githubToken) throw new Error("GITHUB_REPOSITORY/GITHUB_TOKEN required");
@@ -39,17 +41,27 @@ async function main() {
     for (const assignment of assigned) {
       const key = `assign:${assignment.task_id}`;
       if (copy.actions[key]) continue;
-      copy.actions[key] = { ...assignment, status: "planned", created_at: now };
-      copy.tasks[assignment.task_id] = { task_id: assignment.task_id, status: "assigned",
+      const record = { task_id: assignment.task_id, status: "assigned",
         agent: assignment.agent, base_branch: assignment.base_branch, approved: true,
         prompt_id: `task:${assignment.task_id}`, prompt_version: "v1" };
+      const delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
+        action: "assign", actionId: key });
+      copy.actions[key] = { ...assignment, task_id: assignment.task_id,
+        type: "assign", status: "planned", created_at: now, delivery };
+      copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
       const proposal = decideNudge(rec, Date.now());
       if (proposal.kind !== "propose") continue;
       if (!copy.actions[proposal.key]) {
+        const task = taskById.get(id);
+        // Only approved, exactly owned tasks from the trusted queue can reach Dave.
+        if (!task || task.architecture_approval?.approved !== true ||
+            !task.exclusive_files?.length) continue;
+        const delivery = createDelivery({ task, record: rec,
+          action: proposal.action, actionId: proposal.key });
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
-          status: "planned", head_sha: rec.head_sha || null, created_at: now };
+          status: "planned", head_sha: rec.head_sha || null, created_at: now, delivery };
         nudges.push({ task_id: id, action: proposal.action });
       }
     }
