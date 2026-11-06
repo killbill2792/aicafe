@@ -1,0 +1,67 @@
+# Separate development dispatcher: NEVER check out or execute untrusted PR-head code with secrets.
+# Default is read-only/dry-run; browser sends and merges do not exist in PR A.
+name: AI CAFE Development Dispatcher
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      persist_private_ledger:
+        type: boolean
+        description: 'Write coordination state only (no messages, no merges)'
+        required: false
+        default: false
+  pull_request:
+    paths:
+      - 'scripts/dev-dispatcher/**'
+      - '.github/workflows/ai-cafe-dev-dispatcher.yml'
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+
+concurrency:
+  group: aicafe-development-dispatcher
+  cancel-in-progress: false
+
+jobs:
+  unit:
+    name: Deterministic dispatcher tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/dev-dispatcher/core.test.mjs
+
+  reconcile:
+    name: GitHub state reconciliation (no effects)
+    # Never read secrets or execute PR branches. Scheduled/explicit runs check out protected main.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Observe PRs and write dry-run summary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+          PERSIST: ${{ github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger }}
+        run: |
+          if [ "$PERSIST" = "true" ]; then
+            node scripts/dev-dispatcher/run.mjs --commit
+          else
+            node scripts/dev-dispatcher/run.mjs
+          fi
