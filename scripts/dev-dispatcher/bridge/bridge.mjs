@@ -104,7 +104,7 @@ export async function reserveTaskHold(dir, action) {
   const record = { action_sha256: sha(action.key), task_id: action.task_id,
     project: action.delivery.project.id, status: 'reserved', at: new Date().toISOString() };
   const h = await fs.open(file, 'wx', 0o600);
-  try { await h.writeFile(JSON.stringify(record) + '\\n'); await h.sync(); }
+  try { await h.writeFile(JSON.stringify(record) + '\n'); await h.sync(); }
   finally { await h.close(); }
   return { file, record };
 }
