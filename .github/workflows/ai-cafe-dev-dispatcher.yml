@@ -15,16 +15,9 @@ on:
     paths:
       - 'scripts/dev-dispatcher/**'
       - '.github/workflows/ai-cafe-dev-dispatcher.yml'
-  # Event-driven reconciliation uses only trusted default-branch code.
-  pull_request_target:
-    types: [opened, reopened, synchronize, closed, edited, ready_for_review]
-  pull_request_review:
-    types: [submitted, dismissed]
-  pull_request_review_comment:
-    types: [created, edited]
-  workflow_run:
-    workflows: ['AI CAFE Pull Request Baseline']
-    types: [completed]
+  # Credential-bearing reconciliation runs only from main on schedule/manual dispatch.
+  # PR/review events are picked up by the five-minute reconciliation; a trusted
+  # default-branch event bridge can be added separately after security review.
 
 permissions:
   contents: read
@@ -50,7 +43,7 @@ jobs:
   reconcile:
     name: GitHub state reconciliation (no effects)
     # Never read secrets or execute PR branches. Scheduled/explicit runs check out protected main.
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: unit
