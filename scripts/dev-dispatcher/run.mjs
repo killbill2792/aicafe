@@ -4,7 +4,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
-import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, mergeGate } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate } from "./core.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
@@ -20,35 +20,37 @@ async function main() {
   const gh = new GitHubFacts({ repo, token: githubToken });
   const snapshot = await gh.snapshot();
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
+  const closedByPr = {};
+  const openNumbers = new Set(snapshot.map(x => x.pr_number));
+  // Check actual merge metadata; disappearing from the open list is not proof of a merge.
+  for (const rec of Object.values(current.tasks)) {
+    if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number)) continue;
+    const closed = await gh.request(`/pulls/${rec.pr_number}`);
+    closedByPr[rec.pr_number] = Boolean(closed.merged_at);
+  }
   function reconcile(state) {
-    const copy = structuredClone(state);
-    const open = new Set(snapshot.map(x => x.pr_number));
-    for (const [id, rec] of Object.entries(copy.tasks)) {
-      if (Number.isInteger(rec.pr_number) && !open.has(rec.pr_number)) {
-        // Absence from open PRs is NOT proof of merge. Hold until verified by a later merge query.
-        copy.tasks[id] = { ...rec, github_state: "not_open_unverified" };
-      }
-    }
-    for (const pr of snapshot) {
-      for (const [id, rec] of Object.entries(copy.tasks)) {
-        if (rec.pr_number !== pr.pr_number) continue;
-        const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_github_activity);
-        copy.tasks[id] = { ...updated, ...pr, task_id: id,
-          github_state: "open", submission_state: updated.submission_state };
-      }
-    }
+    const copy = reconcileGithub(state, snapshot, closedByPr);
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
+    const now = new Date().toISOString();
+    for (const assignment of assigned) {
+      const key = `assign:${assignment.task_id}`;
+      if (copy.actions[key]) continue;
+      copy.actions[key] = { ...assignment, status: "planned", created_at: now };
+      copy.tasks[assignment.task_id] = { task_id: assignment.task_id, status: "assigned",
+        agent: assignment.agent, base_branch: assignment.base_branch, approved: true,
+        prompt_id: `task:${assignment.task_id}`, prompt_version: "v1" };
+    }
     for (const [id, rec] of Object.entries(copy.tasks)) {
       const proposal = decideNudge(rec, Date.now());
       if (proposal.kind !== "propose") continue;
       if (!copy.actions[proposal.key]) {
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
-          status: "planned", head_sha: rec.head_sha || null, created_at: new Date().toISOString() };
+          status: "planned", head_sha: rec.head_sha || null, created_at: now };
         nudges.push({ task_id: id, action: proposal.action });
       }
     }
-    // Task assignments are suggestions only. No task approved => no dispatch.
+    // Proposals persist for later authorized delivery, never sent by this script.
     return { state: copy, assigned, nudges };
   }
   const proposed = reconcile(current);
