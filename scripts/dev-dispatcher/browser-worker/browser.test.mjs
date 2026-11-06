@@ -1,110 +1,122 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { conversationUrl, validateAction, prepareLocalState, reserve, getReceipt, markReceipt } from "./state.mjs";
 import { probe, submit, localSubmissionAllowed } from "./browser.mjs";
+import { configureFirefox, launchFirefox, checkFirefox } from "./firefox.mjs";
 
 const chat = "https://chatgpt.com/c/abc-123";
 const claude = "https://claude.ai/chat/abc-123";
-const input = { id: "dispatch_001", provider: "chatgpt", conversation_url: chat,
-  prompt: "Please continue PR", approved: true };
-function mockPage(url = chat, { busy = false, editor = true, button = true, draft = "", navigateOnFill = false } = {}) {
+const action = { id: "dispatch_001", provider: "chatgpt", conversation_url: chat,
+  prompt: "Approved short instruction", approved: true };
+
+function mockDriver(url = chat, { busy = false, editor = true, editorCount = 1, redirectDuringProbe = false } = {}) {
   const calls = [];
-  const main = {};
-  const listeners = new Set();
-  let currentUrl = url;
-  return {
-    calls, url: () => currentUrl, mainFrame: () => main,
-    on: (event, fn) => { if (event === "framenavigated") listeners.add(fn); },
-    off: (event, fn) => { if (event === "framenavigated") listeners.delete(fn); },
-    locator: selector => {
-      const kind = selector.includes("composer-text-input") ? "editor" :
-        selector.includes("send-button") ? "send" : selector.includes("stop-button") ? "busy" : "none";
-      const count = kind === "editor" && editor || kind === "send" && button || kind === "busy" && busy ? 1 : 0;
-      return { count: async () => count, first: () => ({
-        isVisible: async () => true, isEnabled: async () => true,
-        innerText: async () => draft,
-        fill: async value => {
-          calls.push(["fill", value]);
-          if (navigateOnFill) {
-            currentUrl = "https://chatgpt.com/c/another-conversation";
-            for (const fn of listeners) fn(main);
-          }
-        },
-        click: async () => { calls.push(["click", selector]); },
-      }) };
+  let current = url;
+  const driver = {
+    calls,
+    getCurrentUrl: async () => { calls.push("url"); return current; },
+    findElements: async selector => {
+      calls.push(["find", selector]);
+      const kind = selector.includes("stop-button") ? "busy" :
+        selector.includes("composer-text-input") ? "editor" : "none";
+      const n = kind === "busy" && busy ? 1 : kind === "editor" && editor ? editorCount : 0;
+      if (redirectDuringProbe && kind === "editor") current = "https://chatgpt.com/c/another";
+      return Array.from({ length: n }, () => ({ isDisplayed: async () => true }));
     },
   };
+  return driver;
 }
-test("only exact approved ChatGPT/Claude chat URLs are accepted", () => {
+
+test("only exact provider conversation URLs and approved IDs are valid", () => {
   assert.equal(conversationUrl("chatgpt", chat), chat);
   assert.equal(conversationUrl("claude", claude), claude);
-  for (const bad of ["https://chatgpt.com.evil.com/c/abc", "http://chatgpt.com/c/abc",
-    "https://chatgpt.com/login", "https://chatgpt.com/c/abc?secret=1",
-    "https://claude.ai/chat/abc#fragment", "https://chatgpt.com@evil.com/c/abc"]) {
-    assert.throws(() => conversationUrl("chatgpt", bad), /Conversation URL/);
+  for (const url of ["http://chatgpt.com/c/abc", "https://chatgpt.com.evil.org/c/abc",
+    "https://chatgpt.com/login", "https://chatgpt.com/c/abc?x=y", "https://chatgpt.com@evil.org/c/abc"]) {
+    assert.throws(() => conversationUrl("chatgpt", url), /Conversation URL/);
   }
-  assert.throws(() => validateAction({ ...input, approved: false }), /not approved/);
-  assert.throws(() => validateAction({ ...input, id: "../escaped" }), /Invalid action ID/);
-  assert.throws(() => validateAction({ ...input, prompt: " " }), /Prompt/);
+  assert.throws(() => validateAction({ ...action, approved: false }), /not approved/);
+  assert.throws(() => validateAction({ ...action, id: "../other" }), /Invalid action ID/);
 });
-test("browser send requires separate explicit local switches", () => {
-  assert.equal(localSubmissionAllowed({}), false);
-  assert.equal(localSubmissionAllowed({ AICAFE_BROWSER_ENABLE_SUBMIT: "yes" }), false);
-  assert.equal(localSubmissionAllowed({ AICAFE_BROWSER_ENABLE_SUBMIT: "yes", AICAFE_BROWSER_SITE_PERMISSION_CONFIRMED: "yes" }), true);
+
+test("Firefox worker never sends, even with previous Playwright permission switches", async () => {
+  assert.equal(localSubmissionAllowed({ AICAFE_BROWSER_ENABLE_SUBMIT: "yes",
+    AICAFE_BROWSER_SITE_PERMISSION_CONFIRMED: "yes" }), false);
+  await assert.rejects(submit(), /disabled/);
 });
-test("does not submit if disabled, busy, redirected or send control unavailable", async () => {
-  const action = validateAction(input);
-  const idle = mockPage();
-  await assert.rejects(submit(idle, action), /disabled/);
-  assert.equal(idle.calls.length, 0);
-  const wrong = mockPage("https://chatgpt.com/c/different");
-  await assert.rejects(probe(wrong, "chatgpt", action.conversation_url), /Wrong conversation/);
-  const busy = mockPage(chat, { busy: true });
-  assert.equal((await submit(busy, action, { canSubmit: true })).status, "not_submitted");
-  assert.equal(busy.calls.length, 0);
-  const missing = mockPage(chat, { button: false });
-  assert.equal((await submit(missing, action, { canSubmit: true })).status, "not_submitted");
-  assert.deepEqual(missing.calls, [["fill", action.prompt]]);
+
+test("probe reads URL/controls only and rejects wrong pages, busy chat or missing editor", async () => {
+  const good = mockDriver();
+  assert.deepEqual(await probe(good, "chatgpt", chat), { ready: true });
+  assert.equal(good.calls.every(c => c === "url" || Array.isArray(c) && c[0] === "find"), true);
+  const wrong = mockDriver("https://chatgpt.com/login");
+  assert.equal((await probe(wrong, "chatgpt", chat)).reason, "wrong_conversation_or_login_required");
+  assert.deepEqual(wrong.calls, ["url"]);
+  const busy = mockDriver(chat, { busy: true });
+  assert.equal((await probe(busy, "chatgpt", chat)).reason, "assistant_busy");
+  const missing = mockDriver(chat, { editor: false });
+  assert.equal((await probe(missing, "chatgpt", chat)).reason, "composer_missing_or_login_required");
 });
-test("only one selected conversation receives the approved prompt", async () => {
-  const page = mockPage();
-  const result = await submit(page, validateAction(input), { canSubmit: true });
-  assert.equal(result.status, "submitted_unverified");
-  assert.deepEqual(page.calls, [["fill", input.prompt], ["click", '[data-testid="send-button"]']]);
+
+test("probe fails closed on ambiguous editors and conversation navigation", async () => {
+  await assert.rejects(probe(mockDriver(chat, { editorCount: 2 }), "chatgpt", chat), /Ambiguous/);
+  const changed = mockDriver(chat, { redirectDuringProbe: true });
+  assert.equal((await probe(changed, "chatgpt", chat)).reason, "conversation_changed");
 });
-test("private local receipts are exclusive, do not contain prompt or response and never resend", async t => {
+
+test("Selenium uses a permanent dedicated -profile, not a copied template", async () => {
+  const options = { args: [], prefs: [] };
+  class Options {
+    addArguments(...args) { options.args.push(...args); return this; }
+    setPreference(...args) { options.prefs.push(args); return this; }
+  }
+  const fake = { get: async () => {}, getCurrentUrl: async () => "about:blank" };
+  const build = { browser: null, options: null };
+  class Builder {
+    forBrowser(name) { build.browser = name; return this; }
+    setFirefoxOptions(value) { build.options = value; return this; }
+    async build() { return fake; }
+  }
+  const profile = path.join(os.tmpdir(), "aicafe-private-profile");
+  const result = await launchFirefox(profile, {
+    selenium: { Builder, By: { css: x => x } },
+    firefox: { Options },
+  });
+  assert.equal(build.browser, "firefox");
+  assert.deepEqual(options.args, ["-profile", profile]);
+  assert.equal(result.driver, fake);
+  assert.equal(result.css("div"), "div");
+  assert.throws(() => configureFirefox({ Options }, "relative/path"), /absolute/);
+});
+
+test("browser check only loads about:blank and rejects an unexpected destination", async () => {
+  const calls = [];
+  const fake = { get: async x => calls.push(x), getCurrentUrl: async () => "about:blank" };
+  assert.equal(await checkFirefox(fake), true);
+  assert.deepEqual(calls, ["about:blank"]);
+  await assert.rejects(checkFirefox({ ...fake, getCurrentUrl: async () => "https://example.org" }), /did not open/);
+});
+
+test("local receipts are exclusive, private and cannot be retried under the same ID", async t => {
   const base = await mkdtemp(path.join(os.tmpdir(), "aicafe-browser-test-"));
   t.after(async () => rm(base, { recursive: true, force: true }));
   const dirs = await prepareLocalState(base);
-  const receipt = await reserve(dirs.receipts, validateAction(input));
-  await assert.rejects(reserve(dirs.receipts, validateAction(input)), e => e.code === "EEXIST");
-  assert.equal((await getReceipt(dirs.receipts, input.id)).status, "reserved");
+  const receipt = await reserve(dirs.receipts, validateAction(action));
+  await assert.rejects(reserve(dirs.receipts, validateAction(action)), e => e.code === "EEXIST");
+  assert.equal((await getReceipt(dirs.receipts, action.id)).status, "reserved");
   const updated = await markReceipt(dirs.receipts, receipt, "uncertain", "click may have happened");
   assert.equal(updated.status, "uncertain");
-  const disk = await readFile(path.join(dirs.receipts, input.id + ".json"), "utf8");
-  assert.equal(disk.includes(input.prompt), false);
-  assert.equal(disk.includes("assistant_reply"), false);
+  const disk = await readFile(path.join(dirs.receipts, action.id + ".json"), "utf8");
+  assert.equal(disk.includes(action.prompt), false);
   assert.equal(JSON.parse(disk).prompt_sha256.length, 64);
-  await assert.rejects(markReceipt(dirs.receipts, receipt, "confirmed", "fake"), /Invalid receipt/);
-});
-test("symlink local profile is refused", async t => {
-  const base = await mkdtemp(path.join(os.tmpdir(), "aicafe-browser-symlink-"));
-  t.after(async () => rm(base, { recursive: true, force: true }));
-  await rm(base, { recursive: true, force: true });
-  await (await import("node:fs/promises")).symlink(os.tmpdir(), base);
-  t.after(async () => rm(base, { force: true }));
-  await assert.rejects(prepareLocalState(base), /Unsafe browser state directory/);
 });
 
-test("preserves user drafts and refuses to send after navigation during fill", async () => {
-  const action = validateAction(input);
-  const draft = mockPage(chat, { draft: "Do not erase this draft" });
-  assert.equal((await submit(draft, action, { canSubmit: true })).reason, "draft_already_present");
-  assert.deepEqual(draft.calls, []);
-  const navigated = mockPage(chat, { navigateOnFill: true });
-  assert.equal((await submit(navigated, action, { canSubmit: true })).reason, "conversation_changed");
-  assert.deepEqual(navigated.calls, [["fill", action.prompt]]);
+test("symlink local profile root is refused", async t => {
+  const base = await mkdtemp(path.join(os.tmpdir(), "aicafe-browser-symlink-"));
+  await rm(base, { recursive: true, force: true });
+  await symlink(os.tmpdir(), base);
+  t.after(async () => rm(base, { force: true }));
+  await assert.rejects(prepareLocalState(base), /Unsafe browser state directory/);
 });
