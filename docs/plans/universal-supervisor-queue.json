@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "title": "AI CAFE Universal Supervisor Agent Delivery Queue",
   "status": "DRAFT_FOR_OWNER_REVIEW",
   "effective_date": "2026-11-05",
@@ -86,7 +86,31 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Required Playwright CI job + isolated seeded preview; verify browser scenarios really run",
+      "required_skills": [
+        "supabase",
+        "supabase-postgres-best-practices",
+        "vitest",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [
+        "6",
+        "9",
+        "10"
+      ],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "6",
@@ -111,7 +135,31 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Leased worker resumes one AI loop safely under budgets and authorization",
+      "required_skills": [
+        "supabase",
+        "supabase-postgres-best-practices",
+        "vitest",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [
+        "E2",
+        "9",
+        "10"
+      ],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "7",
@@ -136,7 +184,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Self-managed schedules and proactive priority decisions with due-once triggers",
+      "required_skills": [
+        "supabase",
+        "supabase-postgres-best-practices",
+        "vitest",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "8a",
@@ -161,7 +229,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Experiments cutover with parity and single writer",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "8b",
@@ -186,7 +273,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Events cutover with parity and single writer",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "8c",
@@ -211,7 +317,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Brief cutover with timezone/delivery parity and single writer",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "9",
@@ -236,7 +361,31 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Rolling thread memory with provenance and no cached financial facts",
+      "required_skills": [
+        "supabase",
+        "supabase-postgres-best-practices",
+        "vitest",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [
+        "E2",
+        "6",
+        "10"
+      ],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "10",
@@ -262,7 +411,31 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "One effect gateway supporting individual approval and OTP-backed standing authorization",
+      "required_skills": [
+        "supabase",
+        "testing-api-security-with-owasp-top-10",
+        "exploiting-idor-vulnerabilities",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [
+        "E2",
+        "6",
+        "9"
+      ],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "11",
@@ -287,7 +460,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Secure connector registry and Gmail end-to-end",
+      "required_skills": [
+        "testing-api-security-with-owasp-top-10",
+        "playwright-cli",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "12",
@@ -313,7 +505,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Files/spreadsheets/PDF/browser use with controlled external effects",
+      "required_skills": [
+        "testing-api-security-with-owasp-top-10",
+        "playwright-cli",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "13a",
@@ -339,7 +550,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Canonical scheduling reads and labor parity",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "e2e-testing-patterns",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "13b",
@@ -367,7 +598,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Mandate-controlled schedule publishing and messaging receipts",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "e2e-testing-patterns",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "13c",
@@ -392,7 +643,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Staff response, absences and shift coverage lifecycle",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "e2e-testing-patterns",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "13d",
@@ -419,7 +690,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Recruitment, leave, onboarding and human decision gates",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "e2e-testing-patterns",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "14a",
@@ -445,7 +736,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Stock/recipe/consumption sources and uncertainty",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "14b",
@@ -471,7 +781,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Vendor quotes and purchase order lifecycle",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "14c",
@@ -498,7 +827,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Vendor communications/order execution and receipts",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "14d",
@@ -523,7 +871,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Deliveries and invoice reconciliation",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "14e",
@@ -549,7 +916,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Cash flow, bills and payable preparation with payment boundary",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "15a",
@@ -575,7 +961,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Prioritization and alert escalation using one inbox",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "15b",
@@ -602,7 +1007,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Maintenance and equipment coordination",
+      "required_skills": [
+        "vitest",
+        "supabase",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "15c",
@@ -629,7 +1053,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "System outages, concurrency, queue fairness and catch-up",
+      "required_skills": [
+        "supabase",
+        "supabase-postgres-best-practices",
+        "vitest",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "15d",
@@ -656,7 +1100,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Prompt-injection and provider/cafe access revocation",
+      "required_skills": [
+        "supabase",
+        "testing-api-security-with-owasp-top-10",
+        "exploiting-idor-vulnerabilities",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "16a",
@@ -681,7 +1145,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Owner approval and OTP mandate grant/revoke UI",
+      "required_skills": [
+        "playwright-cli",
+        "e2e-testing-patterns",
+        "web-design-guidelines",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "16b",
@@ -706,7 +1190,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Chat progress, retries and receipts",
+      "required_skills": [
+        "playwright-cli",
+        "e2e-testing-patterns",
+        "web-design-guidelines",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "16c",
@@ -732,7 +1236,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Account, connector and browser permission controls",
+      "required_skills": [
+        "playwright-cli",
+        "e2e-testing-patterns",
+        "web-design-guidelines",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "16d",
@@ -759,7 +1283,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Responsive accessible final owner UX",
+      "required_skills": [
+        "playwright-cli",
+        "e2e-testing-patterns",
+        "web-design-guidelines",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "17a",
@@ -785,7 +1329,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Required E2E gate evidence and branch protection",
+      "required_skills": [
+        "playwright-cli",
+        "e2e-testing-patterns",
+        "gh-fix-ci",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "17b",
@@ -818,7 +1382,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Cross-domain deterministic acceptance suite",
+      "required_skills": [
+        "playwright-cli",
+        "e2e-testing-patterns",
+        "gh-fix-ci",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "17c",
@@ -845,7 +1429,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Multi-day autonomous failure simulation",
+      "required_skills": [
+        "playwright-cli",
+        "e2e-testing-patterns",
+        "gh-fix-ci",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "17d",
@@ -870,7 +1474,27 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Safe preview smoke and artifacts",
+      "required_skills": [
+        "playwright-cli",
+        "e2e-testing-patterns",
+        "gh-fix-ci",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     },
     {
       "id": "17e",
@@ -894,7 +1518,26 @@
       "merged_sha": null,
       "verified_ci_run": null,
       "acceptance_evidence": [],
-      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding"
+      "blocked_reason": "Owner-approved architecture and exact file ownership required before coding",
+      "acceptance_goal": "Owner-authorized live pilot and certified release",
+      "required_skills": [
+        "playwright-cli",
+        "gh-fix-ci",
+        "pr"
+      ],
+      "owned_paths": [],
+      "excluded_paths": [],
+      "architecture_approval_ref": null,
+      "predecessor_proof": [],
+      "merge_proof": null,
+      "integration_proof": null,
+      "preview_proof": null,
+      "proof_status": "unverified",
+      "dispatchable": false,
+      "candidate_parallel_with": [],
+      "start_rule": "Can code as stacked draft if prerequisites open and architecture approved, but must not merge until prerequisites are merged and integrated proven.",
+      "done_rule": "Approved scope + final head CI + actual mandatory executed E2E/DB/proof + clean review + preview if required + independent predecessor integration audit; merged alone insufficient.",
+      "prompt_key": "coding_agent"
     }
   ],
   "notes": [
@@ -903,5 +1546,26 @@
     "A dependency can be implemented as a stacked PR against its open predecessor branch per AGENTS.md, but merges only after prerequisites are on main.",
     "The end goal is continuous single-agent café operation with initial action approval and optional owner OTP-authorized standing permissions.",
     "Unknown physical/legal/provider constraints require explicit supported-limit acceptance, never invented success."
-  ]
+  ],
+  "operational_runbook": "docs/plans/universal-supervisor-agent-operations.md",
+  "dispatcher_prompt": "Section 3 of operational_runbook",
+  "coding_agent_prompt": "Section 4 of operational_runbook",
+  "first_candidate_wave": [
+    "E2",
+    "6",
+    "9",
+    "10"
+  ],
+  "dispatcher_must_verify_previous_merges": true,
+  "proof_manifest_required": true,
+  "current_baseline_has_required_playwright_job": false,
+  "task_ownership_unresolved": true,
+  "dispatch_policy": {
+    "policy": "No assignment until architecture approval, exact owned files and proven predecessor work; up to 4 ChatGPT + 2 Claude.",
+    "max_active_chatgpt": 4,
+    "max_active_claude": 2,
+    "allow_parallel_stacked_drafts": true,
+    "require_integrated_proof_before_dependent_merge": true,
+    "review_ci_final_head": true
+  }
 }
