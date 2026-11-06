@@ -50,15 +50,15 @@ test('single send becomes unverified; never resend same action; credentials are 
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'dave-test-'));
   try {
     let sent=0;
-    const spawnImpl=(cmd,args,opts)=>{sent++;assert.equal(opts.env.DISPATCH_LEDGER_READ_TOKEN,undefined);
+    const spawnImpl=(cmd,args,opts)=>{sent++;assert.equal(opts.env.DISPATCH_LEDGER_READ_TOKEN,undefined);assert.equal(opts.env.GH_TOKEN,undefined);
       assert.deepEqual(args.slice(0,3),['agent','--session-key','queue-aicafe-6']);
       const p=new EventEmitter();p.kill=()=>{};queueMicrotask(()=>p.emit('close',0));return p;};
-    process.env.DISPATCH_LEDGER_READ_TOKEN='secret';
+    process.env.DISPATCH_LEDGER_READ_TOKEN='secret';process.env.GH_TOKEN='repo-credential';
     const r=await runOnce({repo:'owner/private',token:'test',receiptDir:dir,fetchImpl:mockFetch,
       sendEnabled:true,invoke:(a,opts)=>invokeOpenClaw(a,{...opts,spawnImpl})});
     assert.equal(r.status,'agent_turn_completed_delivery_unverified');
     const r2=await runOnce({repo:'owner/private',token:'test',receiptDir:dir,fetchImpl:mockFetch,
       sendEnabled:true,invoke:()=>{throw Error('must not resend')}});
     assert.equal(r2.status,'idle');assert.equal(sent,1);
-  } finally {delete process.env.DISPATCH_LEDGER_READ_TOKEN;await fs.rm(dir,{recursive:true,force:true});}
+  } finally {delete process.env.DISPATCH_LEDGER_READ_TOKEN;delete process.env.GH_TOKEN;await fs.rm(dir,{recursive:true,force:true});}
 });
