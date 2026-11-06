@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test scripts/dev-dispatcher/browser-worker/browser.test.mjs
+      - run: node --test scripts/dev-dispatcher/browser-worker/browser.test.mjs scripts/dev-dispatcher/browser-worker/aws-desktop.test.mjs
       - name: Install isolated Selenium driver bindings (no browser)
         run: npm install --prefix scripts/dev-dispatcher/browser-worker --ignore-scripts --no-audit --no-fund
       - name: Verify Selenium and Firefox module imports
