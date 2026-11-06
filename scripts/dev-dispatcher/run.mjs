@@ -6,6 +6,7 @@ import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate } from "./core.mjs";
 import { approvalSignature, createDelivery } from "./delivery.mjs";
+import { revalidateQueuedActions } from "./authorization.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
@@ -35,27 +36,7 @@ async function main() {
   }
   function reconcile(state, observed) {
     const copy = reconcileGithub(state, observed.snapshot, observed.closedByPr);
-    // The queued action is not an approval grant. Revoke old, planned envelopes
-    // whenever the trusted task queue changes scope, approval or membership.
-    for (const [id, rec] of Object.entries(copy.tasks)) {
-      const task = taskById.get(id);
-      const currentSignature = task && task.architecture_approval?.approved === true &&
-        ["architecture_approved", "ready"].includes(task.state) &&
-        Array.isArray(task.exclusive_files) && task.exclusive_files.length > 0
-        ? approvalSignature(task) : null;
-      const revoked = !currentSignature || rec.approval_hash !== currentSignature;
-      const prClosed = Number.isInteger(rec.pr_number) && rec.github_state !== "open";
-      if (revoked) {
-        rec.approved = false;
-        rec.status = "blocked_needs_owner";
-      }
-      for (const action of Object.values(copy.actions)) {
-        if (action.task_id !== id || action.status !== "planned") continue;
-        if (revoked || (prClosed && action.type !== "assign")) {
-          action.status = revoked ? "cancelled_approval_changed" : "cancelled_pr_closed";
-        }
-      }
-    }
+    revalidateQueuedActions(copy, taskById);
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
     const now = new Date().toISOString();
