@@ -1,59 +1,47 @@
-# AI CAFE — dedicated laptop browser worker (PR C)
+# AI CAFE — dedicated laptop development browser worker (Firefox/Selenium)
 
-This is **not** the product/browser testing Playwright. It uses its own exact Playwright dependency, headed Chromium, private on-device browser profile and receipt directory. It never opens the AI CAFE app or changes the test Playwright skill. **Not an always-on server**: for unattended operation your laptop must stay awake and connected. GitHub Actions remains the external coordinator.
+This worker is **not AI CAFE's app-testing Playwright**. It uses its own `selenium-webdriver` package and the owner's locally installed Firefox through geckodriver, with a **separate persistent Firefox profile**. App E2E tooling and its localhost-only safety rules remain unchanged.
 
-## Install on your laptop (macOS / Windows / Linux)
+## MacBook Air on macOS 12 (Monterey)
 
-Prerequisites: Node.js 22+, Git, terminal and a working graphical desktop. Clone/update `killbill2792/aicafe`, then from the repository root:
+Prerequisites: Node.js 22, npm, local Git repo, installed Firefox (tested manually by owner: Firefox 159.0.1 opens). Selenium Manager resolves the Firefox driver on first launch; this requires internet access. On the owner's Mac, use:
 
-```sh
+```bash
+cd ~/Documents/aicafe
+git switch local/browser-worker-setup
+git pull --ff-only origin main
 cd scripts/dev-dispatcher/browser-worker
 npm install
-npx playwright install chromium
 npm run doctor
+npm run check
 ```
 
-On Linux, Chromium may require OS dependencies; follow the exact `npx playwright install` diagnostic instead of modifying product test tooling. The worker's package pins Playwright `1.64.1`; it does **not** use the repo's E2E Playwright installation.
+**Do not run `npx playwright install` for this worker.** Bundled Playwright browsers reject macOS 12. `npm run doctor` verifies only private local directories, not launch readiness. `npm run check` starts a new, isolated Firefox instance using `~/.aicafe-dev-browser/profile`, visits only `about:blank`, closes it and reports PASS or the actual Selenium/geckodriver error. No provider is contacted and no message is sent.
 
-For manual sign-in into this **dedicated** browser profile:
+**If the browser check passes**, manually sign into each provider through that same isolated worker profile:
 
-```sh
+```bash
 node cli.mjs login chatgpt
 node cli.mjs login claude
 ```
 
-Sign into each service yourself in the displayed browser. Press Enter in the terminal to close cleanly. The profile is kept under `~/.aicafe-dev-browser/profile` (outside the Git checkout, not in GitHub), and minimal action receipts under `~/.aicafe-dev-browser/receipts`. Use disk encryption, a private OS user account and keep these directories out of cloud-synced folders. Never export profile, cookies, passwords or Google auth to GitHub or chat.
+A Firefox window will open at that provider's public site. Sign in manually. Press Enter in Terminal *after* authentication; the worker closes its Firefox window normally, preserving the private profile. The regular Firefox profile is **not attached or modified**. Authentication persistence still needs owner confirmation; a fresh login might be required.
 
-Check one of your existing conversation URLs without reading message contents:
+After sign-in, check one actual chat URL without reading any messages:
 
-```sh
+```bash
 node cli.mjs probe https://chatgpt.com/c/YOUR-CONVERSATION-ID
 node cli.mjs probe https://claude.ai/chat/YOUR-CONVERSATION-ID
 ```
 
-The probe checks only the exact conversation address, idle composer and visible send area; it does not read assistant replies. The login and composer controls can change as providers change their UI. Real-provider success **has not been demonstrated**; adjust selectors only after an owner-run local test and service permission review.
+The `probe` command only checks exact provider URL, idle editor and stop/busy control. It does not read assistant replies or cookies. Current website selectors can change without notice.
 
-## Submitting a test prompt (intentionally disabled by default)
+## Safety and data
 
-The `send` command exists for a future explicitly permitted local test, not for unattended use today. The action file is **private and local**, not a tracked repository file:
-
-```json
-{
-  "id": "manual_test_001",
-  "provider": "chatgpt",
-  "conversation_url": "https://chatgpt.com/c/YOUR-CONVERSATION-ID",
-  "prompt": "Approved short instruction",
-  "approved": true
-}
-```
-
-**Do not enable sends until the provider's applicable automation permissions have been checked and you have agreed to send in that specific conversation.** Even when the input is approved, `send` additionally requires both local environment switches `AICAFE_BROWSER_ENABLE_SUBMIT=yes` and `AICAFE_BROWSER_SITE_PERMISSION_CONFIRMED=yes`. The worker never gets these switches from GitHub Actions.
-
-To operate after permission review, set both environment variables locally using your OS-specific shell, then run `node cli.mjs send /path/to/private-action.json`. The action ID is uniquely reserved before interacting with the editor. A send click yields only `submitted_unverified`; a failure yields `uncertain`; in either case, it will **not** retry automatically. Check the target chat before deciding whether to send a new action. **No AI reply is read.**
-
-## Boundaries / remaining work
-
-- PR C is a **local browser capability**. It does not poll the dispatcher private ledger, create ChatGPT/Claude chats, discover conversation URLs, decide task priority, read AI answers, send automatic GitHub alerts or merge PRs. PR D owns authenticated coordination and action/receipt transport.
-- No user action is needed to review/merge the mocked worker tests. Actual login and service interaction require the owner's laptop and cannot be honestly claimed proven in GitHub CI.
-- If the browser returns the wrong page, shows multiple possible editors, is busy, requires login, or has no send button, it fails closed. Browser-profile data and any private action file remain on the laptop; only action IDs/hashes/status may later be transported to GitHub.
-- The existing `.claude/skills/playwright-cli/SKILL.md` remains **unchanged** and applies to AI CAFE app tests only. This worker is separately scoped and must not attach to the owner's regular browser. Never use this login profile for test cafés or product E2E.
+- Browser profile and minimal receipts live at `~/.aicafe-dev-browser/`, not in the Git repository. Keep your Mac login private, encrypted and never sync/export these folders to GitHub or chat.
+- The existing receipt format is keyed by unique local action ID; it has status, provider URL, prompt SHA-256 and timestamp, not the raw prompt or chat reply.
+- **Sending is disabled in this Firefox repair, even if the old Playwright environment switches are set.** No `send` command, autostart, chat-response reader, GitHub-to-browser dispatch or automatic merge is active. Provider-permitted, reliable live submission requires a separate review and owner-run pilot.
+- A saved Firefox profile may be logged out by providers. An OS password prompt, challenge or browser update must be handled manually. Never export browser secrets.
+- App testing remains on its own Playwright path and seeded local test data only; it must never use this dedicated login profile.
+- If the Selenium browser fails on the real Mac, report the first error output. CI runs mock-only contract tests and cannot prove the macOS 12 driver/platform integration. Do not claim live authentication from a green PR.
+- The laptop must be awake and internet-connected during any future unattended local worker operation. It is not a GitHub Codespace or cloud server.
