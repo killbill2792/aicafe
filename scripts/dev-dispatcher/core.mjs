@@ -31,7 +31,7 @@ export function validateQueue(queue) {
   for (const task of queue.tasks) visit(task.id);
   return tasks;
 }
-export const approved = (task) => task.state === "architecture_approved" || task.state === "ready" || task.architecture_approval?.approved === true;
+export const approved = (task) => task.architecture_approval?.approved === true && (task.state === "architecture_approved" || task.state === "ready");
 export function integrated(taskId, tasks, records) {
   const task = tasks.get(taskId);
   if (!task) return false; // historic merges must have explicit durable proof records
@@ -46,10 +46,17 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
       if (r.agent in remaining) remaining[r.agent] = Math.max(0, remaining[r.agent] - 1);
     }
   }
+  const claimed = new Set();
+  for (const [id, record] of Object.entries(records)) {
+    if (["assigned", "draft_open", "review_fixing"].includes(record.status)) {
+      for (const path of tasks.get(id)?.exclusive_files || []) claimed.add(path);
+    }
+  }
   const actions = [];
   for (const task of queue.tasks) {
     if (!approved(task) || records[task.id]?.conversation_ref || (records[task.id]?.status && records[task.id].status !== "proposed")) continue;
-    if (task.exclusive_files?.length === 0 || !task.architecture_approval) continue; // no invented ownership/approval
+    if (!Array.isArray(task.exclusive_files) || !task.exclusive_files.length ||
+      task.exclusive_files.some(path => typeof path !== "string" || !path || path.includes("*") || path.includes("..") || claimed.has(path))) continue;
     const openDeps = [];
     let blocked = false;
     for (const dep of task.depends_on) {
@@ -62,6 +69,7 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
     const agent = Object.keys(remaining).find(k => remaining[k] > 0);
     if (!agent) break;
     remaining[agent]--;
+    for (const path of task.exclusive_files) claimed.add(path);
     actions.push({ type: "assign", task_id: task.id, agent, base_branch: openDeps[0]?.branch || "main",
       prerequisite_pr: openDeps[0]?.pr_number ?? null });
   }
