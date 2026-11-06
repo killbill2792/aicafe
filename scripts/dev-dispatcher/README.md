@@ -32,3 +32,7 @@ GitHub (open PRs, actual head SHAs, baseline check-runs, reviews and unresolved 
 A Codex review of an older SHA never clears a new head. CI or review pending means hold. Pre-PR reminders require a separately confirmed not-busy browser state. New commits cancel **planned** old-head prompts but preserve `uncertain` send receipts. Closed PRs are checked for `merged_at`; merge alone is not `integrated_proven`. No duplicate action is executed blindly, and no NVIDIA call is needed to determine merge eligibility.
 
 **Remaining implementation:** PR B optional NVIDIA, PR C authorized local browser worker with session-restoration test and action receipts, PR D integration/merge/recovery. This PR's tests prove the isolated deterministic foundation; they do not prove unattended prompt delivery.
+
+## Dave/OpenClaw private handoff (separate review-gated PR)
+
+See [bridge/README.md](bridge/README.md) for the minimal, project-neutral queue reader that works on the existing AWS Ubuntu instance and uses the authenticated OpenClaw Chrome extension. The trusted-main dispatcher can generate self-contained approved browser instructions in the **private ledger only**. Scheduled ledger writes are OFF by default and are enabled explicitly by Actions variable `DISPATCH_LEDGER_AUTO_PERSIST=true` **after** the private repository is verified. Dave receives only a read token on the private ledger, never an AI CAFE source repository token. Live sends and automatic merges remain OFF; browser delivery, conversation-URL registration and acknowledgement require separate real-VM proof.
