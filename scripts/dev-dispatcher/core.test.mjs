@@ -142,3 +142,14 @@ test("disappearing PR is not automatically merged; verified merge remains distin
   assert.notEqual(merged.status, "integrated_proven");
   assert.equal(reconcileGithub(ledger, [], { 101: false }).tasks.a.status, "draft_open");
 });
+
+test("owner approval and exact nonoverlapping files are mandatory for dispatch", () => {
+  const a = task("a"), b = task("b"), c = task("c");
+  b.exclusive_files = [...a.exclusive_files];
+  c.architecture_approval = { approved: false };
+  assert.deepEqual(dispatchFrontier(queue([a, b, c]), {}).map(x => x.task_id), ["a"]);
+  assert.deepEqual(dispatchFrontier(queue([b]), { a: { status: "draft_open", agent: "chatgpt" } }).map(x => x.task_id), ["b"]);
+  assert.deepEqual(dispatchFrontier(queue([a]), { a: { status: "draft_open", agent: "chatgpt" } }), []);
+  a.exclusive_files = ["scripts/**"];
+  assert.deepEqual(dispatchFrontier(queue([a]), {}), []);
+});
