@@ -124,7 +124,7 @@ export function reconcileGithub(state, openPrs, closedByPr = {}) {
     if (!open.has(rec.pr_number)) {
       const merged = closedByPr[rec.pr_number] === true;
       copy.tasks[id] = { ...rec, github_state: merged ? "merged" : "not_open_unverified",
-        status: merged && rec.status !== "integrated_proven" ? "merged" : rec.status };
+        status: merged && !["integrated_proven", "released_proven"].includes(rec.status) ? "merged" : rec.status };
     }
   }
   for (const pr of openPrs) {
