@@ -1,13 +1,14 @@
 {
   "name": "@aicafe/dev-browser-worker",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "test": "node --test *.test.mjs",
-    "doctor": "node cli.mjs doctor"
+    "doctor": "node cli.mjs doctor",
+    "check": "node cli.mjs check"
   },
   "dependencies": {
-    "playwright": "1.64.1"
+    "selenium-webdriver": "4.49.0"
   }
 }
