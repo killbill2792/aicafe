@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { requireLiveApproval, parseGeometry, parseMouse, systemRun, sendOnce } from './aws-desktop.mjs';
+import { requireLiveApproval, parseGeometry, parseMouse, systemRun, sendOnce, pilotCurrent } from './aws-desktop.mjs';
 
 const action = { id:'aws_demo_1', provider:'chatgpt', conversation_url:'https://chatgpt.com/c/test-1',
   prompt:'Approved small test message', approved:true };
@@ -111,4 +111,18 @@ test('a concurrent send cannot interleave Chrome and clipboard operations',async
   assert.equal((await first).status,'submitted_unverified');
   await assert.rejects(readFile(path.join(dir,'aws-desktop-session.lock')),
     e=>e.code==='ENOENT');
+});
+
+test('pilot-current uses only exact active chat URL and sends a harmless one-time message',async t=>{
+  const dir=await fixture(t),mock=fakeDesktop();
+  const result=await pilotCurrent({baseDir:dir,env,run:mock.run,pause:async()=>{}});
+  assert.equal(result.status,'submitted_unverified');
+  assert.match(result.id,/^pilot_[0-9a-f]{32}$/);
+  const receipt=JSON.parse(await readFile(path.join(dir,'receipts',result.id+'.json'),'utf8'));
+  assert.equal(receipt.conversation_url,action.conversation_url);
+  assert.equal(receipt.status,'submitted_unverified');
+});
+test('pilot-current rejects current page outside an existing ChatGPT conversation',async t=>{
+  const dir=await fixture(t),mock=fakeDesktop('https://chatgpt.com/');
+  await assert.rejects(pilotCurrent({baseDir:dir,env,run:mock.run,pause:async()=>{}}),/Conversation URL/);
 });
