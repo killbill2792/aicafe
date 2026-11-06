@@ -256,7 +256,7 @@
 
 ## Task 17e: Owner-authorized live pilot and final release evidence
 
-- **Depends:** 17d (open prerequisite → stacked draft; merge after proven integration).
+- **Depends:** 17d, 17a (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Owner-authorized live pilot and certified release.
 - **Scope to verify/assign:** owner-authorized pilot/release checklist and evidence. Exclusive editable paths must be decided against current main and open PRs before coding.
 - **Must prove:** Owner-authorized pilot verifies live sources and actions; Rollback, audit and incident procedures exercised; Actual release readiness distinguished from merged code.
