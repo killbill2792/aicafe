@@ -18,18 +18,21 @@ async function main() {
   if (commit && (!ledgerRepo || !ledgerToken)) throw new Error("Cannot persist without private ledger repo and token");
   const ledger = ledgerRepo && ledgerToken ? new GitHubLedger({ repo: ledgerRepo, token: ledgerToken }) : null;
   const gh = new GitHubFacts({ repo, token: githubToken });
-  const snapshot = await gh.snapshot();
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
-  const closedByPr = {};
-  const openNumbers = new Set(snapshot.map(x => x.pr_number));
-  // Check actual merge metadata; disappearing from the open list is not proof of a merge.
-  for (const rec of Object.values(current.tasks)) {
-    if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number)) continue;
-    const closed = await gh.request(`/pulls/${rec.pr_number}`);
-    closedByPr[rec.pr_number] = Boolean(closed.merged_at);
+  async function observe(state) {
+    const snapshot = await gh.snapshot();
+    const closedByPr = {};
+    const openNumbers = new Set(snapshot.map(x => x.pr_number));
+    // Check actual merge metadata; disappearing from the open list is not proof of merge.
+    for (const rec of Object.values(state.tasks)) {
+      if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number)) continue;
+      const closed = await gh.request(`/pulls/${rec.pr_number}`);
+      closedByPr[rec.pr_number] = Boolean(closed.merged_at);
+    }
+    return { snapshot, closedByPr };
   }
-  function reconcile(state) {
-    const copy = reconcileGithub(state, snapshot, closedByPr);
+  function reconcile(state, observed) {
+    const copy = reconcileGithub(state, observed.snapshot, observed.closedByPr);
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
     const now = new Date().toISOString();
@@ -53,9 +56,11 @@ async function main() {
     // Proposals persist for later authorized delivery, never sent by this script.
     return { state: copy, assigned, nudges };
   }
-  const proposed = reconcile(current);
+  const observed = await observe(current);
+  const proposed = reconcile(current, observed);
   if (commit && ledger) {
-    await ledger.transaction(existing => reconcile(existing).state);
+    // A CAS retry reloads the state; it MUST also reload GitHub facts before writing.
+    await ledger.transaction(async existing => reconcile(existing, await observe(existing)).state);
   }
   const gateCounts = { ready: 0, blocked: 0 };
   for (const rec of Object.values(proposed.state.tasks)) {
@@ -64,7 +69,7 @@ async function main() {
   }
   const summary = [
     "## AI CAFE development dispatcher — dry-run coordination",
-    `- GitHub open PRs observed: **${snapshot.length}**`,
+    `- GitHub open PRs observed: **${observed.snapshot.length}**`,
     `- Approved new assignments: **${proposed.assigned.length}**`,
     `- Eligible follow-ups (NOT sent): **${proposed.nudges.length}**`,
     `- Tracked merge gates: ready **${gateCounts.ready}**, blocked **${gateCounts.blocked}**`,
