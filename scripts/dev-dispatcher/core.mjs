@@ -107,3 +107,32 @@ export function mergeGate(record, predecessors = []) {
   if (predecessors.some(p => p.status !== "integrated_proven" && p.status !== "released_proven")) reasons.push("predecessor_not_proven");
   return { eligible: reasons.length === 0, reasons };
 }
+
+export function reconcileGithub(state, openPrs, closedByPr = {}) {
+  const copy = structuredClone(state);
+  const open = new Set(openPrs.map(p => p.pr_number));
+  for (const [id, rec] of Object.entries(copy.tasks)) {
+    if (!Number.isInteger(rec.pr_number)) continue;
+    if (!open.has(rec.pr_number)) {
+      const merged = closedByPr[rec.pr_number] === true;
+      copy.tasks[id] = { ...rec, github_state: merged ? "merged" : "not_open_unverified",
+        status: merged && rec.status !== "integrated_proven" ? "merged" : rec.status };
+    }
+  }
+  for (const pr of openPrs) {
+    for (const [id, rec] of Object.entries(copy.tasks)) {
+      if (rec.pr_number !== pr.pr_number) continue;
+      if (rec.head_sha !== pr.head_sha) {
+        for (const action of Object.values(copy.actions)) {
+          if (action.task_id === id && action.status === "planned" && action.head_sha !== pr.head_sha) {
+            action.status = "cancelled_stale_head";
+          }
+        }
+      }
+      const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_github_activity);
+      copy.tasks[id] = { ...updated, ...pr, task_id: id, github_state: "open",
+        submission_state: updated.submission_state };
+    }
+  }
+  return copy;
+}
