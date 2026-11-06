@@ -153,3 +153,34 @@ test("owner approval and exact nonoverlapping files are mandatory for dispatch",
   a.exclusive_files = ["scripts/**"];
   assert.deepEqual(dispatchFrontier(queue([a]), {}), []);
 });
+
+test("historical code merge must have integration proof before downstream starts", () => {
+  const tasks = { tasks: [task("6", ["5"])], merged_code_only: [{ id: "5", pr: 378 }] };
+  assert.equal(dispatchFrontier(tasks, { "5": { status: "merged" } }).length, 0);
+  assert.deepEqual(dispatchFrontier(tasks, { "5": { status: "integrated_proven" } }).map(x => x.task_id), ["6"]);
+});
+test("failed private ledger PUT (including 404) cannot report successful persistence", async () => {
+  const fake = async (url, options = {}) => {
+    if (url.endsWith("/owner/private")) return { ok: true, json: async () => ({ private: true }) };
+    if (options.method === "PUT") return { ok: false, status: 404 };
+    return { ok: false, status: 404 };
+  };
+  const ledger = new GitHubLedger({ repo: "owner/private", token: "dummy", fetchFn: fake });
+  await assert.rejects(ledger.transaction(s => ({ ...s, tasks: { a: { status: "assigned" } } })), /Ledger HTTP 404/);
+});
+test("CAS retries call reconciliation against newly loaded state each time", async () => {
+  let puts = 0, calls = 0;
+  const fake = async (url, options = {}) => {
+    if (url.endsWith("/owner/private")) return { ok: true, json: async () => ({ private: true }) };
+    if (options.method === "PUT") {
+      puts++;
+      if (puts === 1) return { ok: false, status: 409 };
+      return { ok: true, json: async () => ({ content: { sha: "sha" } }) };
+    }
+    return { ok: true, json: async () => ({ sha: "sha", content: Buffer.from(JSON.stringify(emptyLedger())).toString("base64") }) };
+  };
+  const ledger = new GitHubLedger({ repo: "owner/private", token: "dummy", fetchFn: fake });
+  await ledger.transaction(async state => { calls++; state.tasks.a = { status: "proposed", snapshot_version: calls }; return state; });
+  assert.equal(puts, 2);
+  assert.equal(calls, 2);
+});
