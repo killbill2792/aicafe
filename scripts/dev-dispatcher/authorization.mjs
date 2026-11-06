@@ -13,7 +13,10 @@ export function revalidateQueuedActions(state, taskById) {
     const prClosed = Number.isInteger(rec.pr_number) && rec.github_state !== 'open';
     if (revoked) {
       rec.approved = false;
-      rec.status = 'blocked_needs_owner';
+      // Historical merged-code prerequisites have no current task definition.
+      // Revoking browser delivery is NOT revoking proven integration/release.
+      if (!['merged', 'integrated_proven', 'released_proven'].includes(rec.status))
+        rec.status = 'blocked_needs_owner';
     }
     for (const action of Object.values(state.actions)) {
       if (action.task_id !== id || action.status !== 'planned') continue;
