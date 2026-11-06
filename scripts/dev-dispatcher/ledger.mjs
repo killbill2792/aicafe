@@ -26,7 +26,7 @@ export class GitHubLedger {
         "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
     });
     if (!response.ok) {
-      if (response.status === 404) return { absent: true };
+      if (response.status === 404 && (!options.method || options.method === "GET")) return { absent: true };
       if ([409, 412, 422].includes(response.status)) throw Object.assign(new Error("Ledger write collision"), { code: "CONFLICT" });
       throw new Error(`Ledger HTTP ${response.status}`);
     }
