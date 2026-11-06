@@ -1,9 +1,11 @@
 ## Owner outcome, plan and scope
 - Plan link (owner-approved architecture/implementation plan, or explain N/A):
-- Base `main` SHA and merged prerequisites:
+- Task ID + approved task brief (or N/A for unplanned fix):
+- Base `main` SHA, stacked prerequisite branch (if open), and **actual merged SHA** of prerequisites:
+- Previous dependency's integrated proof (test name, result and CI job URL; merged checkbox is not proof):
 - Implementation owner:
 - **Owned files (exact paths/globs):**
-- Other open PRs touching these files or contracts:
+- Other open PRs touching these files or contracts (check again before merge):
 - **What the café owner can accomplish after this PR:**
 - **What is still unavailable, default-off or planned for later:**
 - **What changed / what was deleted / what was not touched:**
@@ -34,12 +36,14 @@ Explain what runs when, what owns each responsibility, and what can affect in-fl
 - [ ] Domain/SQL/RLS/integration tests as applicable (or explain N/A)
 - [ ] **AI CAFE PR baseline** green on final HEAD
 - [ ] Relevant other workflows green on final HEAD
+- **Required acceptance scenarios**: for each record test name + expected vs actual + command/CI job URL + final-head SHA; required test skips are failures:
+- **Targeted browser/preview** (only for changed UI/browser flow): screenshot/trace/preview URL or N/A reason:
 - Test commands/results, blockers and skipped checks:
 
 ## Review and merge readiness
 - [ ] PR diff and size reviewed; one concern and scoped changes (explain large mechanical moves)
-- [ ] Latest main incorporated before merge; migration numbers and parallel dependencies rechecked
-- [ ] Codex reviewed the final changes; blocking comments fixed and re-reviewed
+- [ ] Latest main incorporated before merge; migration numbers and parallel dependencies rechecked; if prerequisite merged mid-PR, rebase/retarget stacked PR and verify actual integration
+- [ ] Codex reviewed the final changes; blocking comments fixed, addressed inline threads marked **resolved**, fresh review completed
 - [ ] Final-head CI green
 - Auto-merge when CI is green and the Codex review is clean; PRs must be up to date with main before merging.
 - Production migrations, deploys and feature activations still require separate owner approval.
