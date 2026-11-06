@@ -42,19 +42,32 @@ export async function probe(page, provider, expectedUrl) {
 }
 export async function submit(page, action, { canSubmit = false } = {}) {
   if (!canSubmit) throw new Error("Live submission is disabled");
-  const status = await probe(page, action.provider, action.conversation_url);
+  const expected = conversationUrl(action.provider, action.conversation_url);
+  const status = await probe(page, action.provider, expected);
   if (!status.ready) return { status: "not_submitted", reason: status.reason };
-  await status.editor.fill(action.prompt);
-  const button = await uniqueVisible(page, sendButtons[action.provider]);
-  if (!button || !await button.isEnabled()) {
-    // Text is still only a draft. Do not press Enter or guess another control.
-    await status.editor.fill("");
-    return { status: "not_submitted", reason: "send_control_unavailable" };
-  }
-  // The click may have reached the service even if Playwright throws.
-  // Caller records submitted_unverified or uncertain; never retries automatically.
-  await button.click();
-  return { status: "submitted_unverified" };
+  // Never destroy an owner-written draft. No assistant response is accessed.
+  if ((await status.editor.innerText()).trim()) return { status: "not_submitted", reason: "draft_already_present" };
+  let navigated = false;
+  const onNavigation = frame => {
+    if (frame === page.mainFrame()) navigated = true;
+  };
+  page.on("framenavigated", onNavigation);
+  try {
+    if (navigated || conversationUrl(action.provider, page.url()) !== expected)
+      return { status: "not_submitted", reason: "conversation_changed" };
+    await status.editor.fill(action.prompt);
+    if (navigated || conversationUrl(action.provider, page.url()) !== expected)
+      return { status: "not_submitted", reason: "conversation_changed" };
+    const button = await uniqueVisible(page, sendButtons[action.provider]);
+    if (!button || !await button.isEnabled())
+      return { status: "not_submitted", reason: "send_control_unavailable" };
+    if (navigated || conversationUrl(action.provider, page.url()) !== expected)
+      return { status: "not_submitted", reason: "conversation_changed" };
+    // Recheck exact conversation immediately before the click; no wait/retry follows.
+    // A navigation during click leads to an uncertain receipt, not an automatic resend.
+    await button.click();
+    return { status: "submitted_unverified" };
+  } finally { page.off("framenavigated", onNavigation); }
 }
 export function localSubmissionAllowed(env = process.env) {
   // Independent switches prevent a copied production action from accidentally sending.
