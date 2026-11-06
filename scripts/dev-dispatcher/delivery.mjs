@@ -1,8 +1,19 @@
+import { createHash } from 'node:crypto';
 // Approved plan metadata -> bounded, provider-neutral browser handoff.
 // Generated ONLY on trusted main by the existing deterministic dispatcher.
 const PROVIDERS = new Set(['chatgpt', 'claude']);
 const ACTIONS = new Set(['assign', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder']);
 const REPO = 'https://github.com/killbill2792/aicafe';
+
+// Stable authorization identity. A changed task brief, scope, approval or dependency
+// requires a new owner-reviewed assignment, never reuse an old browser envelope.
+export function approvalSignature(task) {
+  if (!task) return null;
+  const fields = [task.id, task.state, task.architecture_approval, task.exclusive_files,
+    task.depends_on, task.title, task.goal, task.brief, task.acceptance];
+  return createHash('sha256').update(JSON.stringify(fields)).digest('hex');
+}
+
 
 export function createDelivery({ task, record, action, actionId }) {
   if (!task || task.architecture_approval?.approved !== true ||
@@ -11,6 +22,9 @@ export function createDelivery({ task, record, action, actionId }) {
       record?.approved !== true || !ACTIONS.has(action) || !PROVIDERS.has(record.agent))
     throw new Error('Task is not authorized for browser delivery');
   if (typeof actionId !== 'string' || !actionId || actionId.length > 400) throw new Error('Invalid action ID');
+  const authorization = approvalSignature(task);
+  if (record.approval_hash && record.approval_hash !== authorization)
+    throw new Error('Task approval or scope changed');
   const isNew = action === 'assign';
   const url = record.conversation_ref || null;
   if (!isNew && !url) throw new Error('Follow-up requires a saved conversation URL');
@@ -33,7 +47,7 @@ export function createDelivery({ task, record, action, actionId }) {
   const prompt = details.join('\n');
   if (prompt.length > 12000) throw new Error('Browser prompt too long');
   return {
-    version: 1, action_id: actionId, project,
+    version: 1, action_id: actionId, project, approval_hash: authorization,
     provider: record.agent,
     intent: isNew ? 'start_new_chat' : 'continue_existing_chat',
     conversation_url: url,
