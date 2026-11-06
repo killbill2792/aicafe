@@ -38,7 +38,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test scripts/dev-dispatcher/core.test.mjs scripts/dev-dispatcher/delivery.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs
+      - run: node --test scripts/dev-dispatcher/core.test.mjs scripts/dev-dispatcher/delivery.test.mjs scripts/dev-dispatcher/authorization.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs
 
   reconcile:
     name: GitHub state reconciliation (no effects)
