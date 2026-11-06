@@ -10,18 +10,29 @@ const chat = "https://chatgpt.com/c/abc-123";
 const claude = "https://claude.ai/chat/abc-123";
 const input = { id: "dispatch_001", provider: "chatgpt", conversation_url: chat,
   prompt: "Please continue PR", approved: true };
-function mockPage(url = chat, { busy = false, editor = true, button = true } = {}) {
+function mockPage(url = chat, { busy = false, editor = true, button = true, draft = "", navigateOnFill = false } = {}) {
   const calls = [];
-  const chosen = {};
+  const main = {};
+  const listeners = new Set();
+  let currentUrl = url;
   return {
-    calls, url: () => url,
+    calls, url: () => currentUrl, mainFrame: () => main,
+    on: (event, fn) => { if (event === "framenavigated") listeners.add(fn); },
+    off: (event, fn) => { if (event === "framenavigated") listeners.delete(fn); },
     locator: selector => {
       const kind = selector.includes("composer-text-input") ? "editor" :
         selector.includes("send-button") ? "send" : selector.includes("stop-button") ? "busy" : "none";
       const count = kind === "editor" && editor || kind === "send" && button || kind === "busy" && busy ? 1 : 0;
       return { count: async () => count, first: () => ({
         isVisible: async () => true, isEnabled: async () => true,
-        fill: async value => { calls.push(["fill", value]); },
+        innerText: async () => draft,
+        fill: async value => {
+          calls.push(["fill", value]);
+          if (navigateOnFill) {
+            currentUrl = "https://chatgpt.com/c/another-conversation";
+            for (const fn of listeners) fn(main);
+          }
+        },
         click: async () => { calls.push(["click", selector]); },
       }) };
     },
@@ -56,7 +67,7 @@ test("does not submit if disabled, busy, redirected or send control unavailable"
   assert.equal(busy.calls.length, 0);
   const missing = mockPage(chat, { button: false });
   assert.equal((await submit(missing, action, { canSubmit: true })).status, "not_submitted");
-  assert.deepEqual(missing.calls, [["fill", action.prompt], ["fill", ""]]);
+  assert.deepEqual(missing.calls, [["fill", action.prompt]]);
 });
 test("only one selected conversation receives the approved prompt", async () => {
   const page = mockPage();
@@ -86,4 +97,14 @@ test("symlink local profile is refused", async t => {
   await (await import("node:fs/promises")).symlink(os.tmpdir(), base);
   t.after(async () => rm(base, { force: true }));
   await assert.rejects(prepareLocalState(base), /Unsafe browser state directory/);
+});
+
+test("preserves user drafts and refuses to send after navigation during fill", async () => {
+  const action = validateAction(input);
+  const draft = mockPage(chat, { draft: "Do not erase this draft" });
+  assert.equal((await submit(draft, action, { canSubmit: true })).reason, "draft_already_present");
+  assert.deepEqual(draft.calls, []);
+  const navigated = mockPage(chat, { navigateOnFill: true });
+  assert.equal((await submit(navigated, action, { canSubmit: true })).reason, "conversation_changed");
+  assert.deepEqual(navigated.calls, [["fill", action.prompt]]);
 });
