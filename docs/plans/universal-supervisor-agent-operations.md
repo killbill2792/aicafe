@@ -29,6 +29,8 @@ Do not invent owner approvals, secrets or live deployment authority.
 
 ```text
 Use connected GitHub plugin. Implement approved AI CAFE task TASK_ID.
+Build toward one proactive universal cafe operator; reuse canonical Toast POS
+readers, shared calculations, one AI loop and existing approval/inbox paths.
 Read AGENTS.md + PROGRESS.md from current main, the task in
 docs/plans/universal-supervisor-task-briefs.md, current queue and
 relevant docs/rules/* and .claude/skills/*/SKILL.md.
@@ -38,8 +40,9 @@ Open draft PR immediately: independent = latest main; dependent on an
 open PR = branch FROM prerequisite and PR base = prerequisite branch.
 Edit only assigned files. Stay in THIS SAME CHAT for all CI errors,
 Codex findings, thread resolutions, fresh reviews and main updates.
-Poll/check while execution remains active; do not declare review clean
-while pending. If upstream merges, rebase/retarget, verify integration,
+Check Codex during this active execution; do not create a background
+monitor, cron or polling service. If execution ends, the dispatcher resumes
+this SAME PR and chat where it stopped. Never call a pending review clean. If upstream merges, rebase/retarget, verify integration,
 rerun relevant tests and obtain new Codex review. Merge only under AGENTS.md.
 Show exact test command, run URL, head SHA, outcomes, merged SHA or blocker.
 Use targeted Playwright only for relevant UI/browser changes. No production effects.
@@ -49,7 +52,7 @@ Use targeted Playwright only for relevant UI/browser changes. No production effe
 
 1. **Read latest GitHub state**, not a stale `PROGRESS.md` checkbox. Task IDs are not GitHub PR numbers; the JSON queue is a proposed immutable DAG, **not** a race-safe live assignment database. Durable file locks, assignment status and webhook dedup must be implemented in the actual dispatcher before six agents run concurrently.
 2. Split **can_open** from **can_merge**: all architecture-approved dependent tasks may open draft PRs against an existing prerequisite branch immediately, with exclusive file ownership. They may merge only after predecessors are on main, verified and checks/reviews rerun on latest head. Independent tasks do not wait.
-3. When PR A merges during PR B's work, B's owner must discover the merge, incorporate main, check the exact exported contract and usages, retarget its PR to main, rerun applicable checks and request a fresh Codex review. A GitHub webhook/poll can wake the dispatcher if a ChatGPT turn ended. Don't claim that a chat can wait indefinitely in the background.
+3. When PR A merges during PR B's work, B's owner must discover the merge, incorporate main, check the exact exported contract and usages, retarget its PR to main, rerun applicable checks and request a fresh Codex review. If a ChatGPT turn ended, the owner tells the dispatcher to continue the same PR in the same chat, using GitHub state. Do not create a separate monitoring service and do not claim that a chat can execute indefinitely in the background.
 4. For each PR, run base quality checks + **applicable** DB/agent/action tests. Add Playwright and preview/screenshots **only for UI/browser behavior that needs it**; tests proving a merged backend capability in an actual consumer are essential, but not all screens on every commit.
 5. Codex review lifecycle: inspect reviews and unresolved threads after each head; fix all P1s and any required findings in-scope, mark truly addressed threads **resolved**, request a fresh Codex review and verify it finished. Resolve merge conflicts then rerun final-head CI and review. Never assert a clean verdict from an unreturned review.
 6. **Proof before merge and after:** final-head actual passed checks; required acceptance test executed (not skipped); integration wiring against real predecessor export; PR body links tests, jobs and preview if relevant. If an older merged PR is unproven, create a small repair task tied to that PR's missing capability, don't copy dead/duplicate code downstream.
