@@ -12,13 +12,19 @@ comes in its own PR, re-read in full.
 - **Claude Code** loads `.claude/skills/` automatically and picks a skill from its description.
 - **Codex, Grok and other coding agents** do not load this folder by themselves. Open the skill's
   `SKILL.md` by path when the task matches a row below.
-- **ChatGPT chats** cannot read the repo. Follow the plain-words rules in "Smallest code that works"
-  below, and paste a SKILL.md into the chat when you need one.
+- **ChatGPT coding chats with the connected GitHub plugin** can fetch repository files, including
+  `.claude/skills/<name>/SKILL.md`, through that plugin. Read the file explicitly, then apply it;
+  mentioning a skill name alone does not load its contents. Use the plugin for PRs, CI, Codex
+  reviews, thread resolution and branch updates where supported; do not assume a long-running
+  cloud shell exists. Without GitHub access, state the limitation instead of pretending to read files.
 
 ## The list
 
 | Skill | When to use | Which AI uses it | Source | License |
 |---|---|---|---|---|
+| `aicafe-pr-lifecycle` | Every AI CAFE PR, especially ChatGPT + GitHub plugin: open stacked drafts now, stay in same chat through CI/Codex, resolve threads, re-review, rebase, merge | ChatGPT through GitHub plugin; Claude Code; Codex by path | [AI CAFE original](../../.claude/skills/aicafe-pr-lifecycle/SOURCE.md) | Project-local |
+| `aicafe-dependency-check` | Before assigning, opening, rebasing or merging parallel PRs; verify prior merge and integrated exports, file/migration ownership, stacked branch bases | ChatGPT through GitHub plugin; Claude Code; Codex by path | [AI CAFE original](../../.claude/skills/aicafe-dependency-check/SOURCE.md) | Project-local |
+| `aicafe-proof-gate` | Before marking a PR or merged dependency complete: verify executed CI tests, targeted end-to-end outcomes, Codex and proof; no unrun/skipped success | ChatGPT through GitHub plugin; Claude Code; Codex by path | [AI CAFE original](../../.claude/skills/aicafe-proof-gate/SOURCE.md) | Project-local |
 | `supabase` | Any Supabase work: auth, RLS, views, storage, CLI, migrations. **Local CLI and migration files only, never the live project.** | Claude Code; Codex by path | [supabase/agent-skills](https://github.com/supabase/agent-skills) `c9be0e9` | MIT |
 | `supabase-postgres-best-practices` | Writing or changing tables, columns, indexes, RLS policies, functions, migrations; slow queries | Claude Code; Codex by path | [supabase/agent-skills](https://github.com/supabase/agent-skills) `c9be0e9` | MIT |
 | `testing-api-security-with-owasp-top-10` | Security review of our API routes (`app/api/**`) against the OWASP API Top 10, alongside the RLS skills. Live tests on localhost with seeded test cafés only. | Claude Code; Codex by path | [mukul975/Anthropic-Cybersecurity-Skills](https://github.com/mukul975/Anthropic-Cybersecurity-Skills) `54a7988` (community, not official Anthropic) | Apache-2.0 |
