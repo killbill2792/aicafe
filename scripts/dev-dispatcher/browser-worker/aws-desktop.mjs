@@ -7,7 +7,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { validateAction, prepareLocalState, reserve, markReceipt } from './state.mjs';
+import { validateAction, conversationUrl, prepareLocalState, reserve, markReceipt } from './state.mjs';
 
 export function requireLiveApproval(action, env = process.env) {
   const approved = validateAction(action);
@@ -154,6 +154,29 @@ export async function sendOnce(inputAction, { run = systemRun, pause: wait = pau
   }
 }
 
+// One-time owner-observed pilot; reads only the address bar of the existing tab.
+// No action file or copied conversation ID is required.
+export async function pilotCurrent({ run = systemRun, pause: wait = pause,
+  baseDir, env = process.env } = {}) {
+  if (env.AICAFE_BROWSER_LIVE_SEND !== '1' || !env.DISPLAY)
+    throw new Error('Pilot requires AICAFE_BROWSER_LIVE_SEND=1 in the AWS graphical Terminal');
+  const id = chromeWindow(run);
+  run('xdotool', ['windowactivate','--sync',id]);
+  assertChromeFocused(run, id);
+  const sentinel = 'aicafe-current-tab-' + randomUUID();
+  run('xclip', ['-selection','clipboard'], sentinel);
+  run('xdotool', ['key','--clearmodifiers','ctrl+l']);
+  run('xdotool', ['key','--clearmodifiers','ctrl+c']);
+  await wait(200);
+  assertChromeFocused(run, id);
+  const actual = run('xclip', ['-selection','clipboard','-o']).replace(/\/$/, '');
+  const target = conversationUrl('chatgpt', actual);
+  return sendOnce({ id: 'pilot_' + randomUUID().replaceAll('-', ''),
+    provider: 'chatgpt', conversation_url: target,
+    prompt: 'AI CAFE cloud desktop pilot. Please reply with only: RECEIVED. Do not change code or use tools.',
+    approved: true }, { run, pause: wait, baseDir, env });
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const [command, file] = argv;
   if (command === 'doctor') {
@@ -164,6 +187,9 @@ export async function main(argv = process.argv.slice(2)) {
     console.log('No message sent; no chat output read.');
   } else if (command === 'calibrate') {
     await calibrate();
+  } else if (command === 'pilot-current') {
+    const result = await pilotCurrent();
+    console.log('Pilot action ' + result.id + ': ' + result.status + '. Verify the actual chat manually.');
   } else if (command === 'send') {
     if (!file || !path.isAbsolute(file)) throw new Error('Use an absolute path to a private action JSON file');
     const stat = await fs.lstat(file);
@@ -172,7 +198,7 @@ export async function main(argv = process.argv.slice(2)) {
     const result = await sendOnce(JSON.parse(await fs.readFile(file,'utf8')));
     console.log('Action ' + result.id + ': ' + result.status + '. Do NOT assume the site accepted it.');
   } else {
-    throw new Error('Usage: node aws-desktop.mjs doctor | calibrate | send /absolute/private/action.json');
+    throw new Error('Usage: node aws-desktop.mjs doctor | calibrate | pilot-current | send /absolute/private/action.json');
   }
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
