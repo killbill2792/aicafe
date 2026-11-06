@@ -38,11 +38,13 @@ export function systemRun(executable, args, input, exec = execFileSync) {
   // xclip clipboard writes fork a long-lived owner; inherited stdout/stderr pipes
   // make execFileSync wait indefinitely even after the initial process exits.
   const clipboardWrite = executable === 'xclip' && !args.includes('-o');
-  return exec(executable, args, {
+  const output = exec(executable, args, {
     input, encoding: 'utf8', timeout: 12000,
     stdio: clipboardWrite ? ['pipe', 'ignore', 'ignore'] : ['pipe', 'pipe', 'pipe'],
     maxBuffer: 1_000_000,
-  }).trim();
+  });
+  // execFileSync returns null with stdout ignored. Clipboard writes have no output.
+  return clipboardWrite ? '' : output.trim();
 }
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
