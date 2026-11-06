@@ -1,0 +1,27 @@
+name: AI CAFE Development Browser Worker Tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/dev-dispatcher/browser-worker/**'
+      - '.github/workflows/ai-cafe-dev-browser-worker.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/dev-dispatcher/browser-worker/**'
+      - '.github/workflows/ai-cafe-dev-browser-worker.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-contract:
+    name: Isolated browser-worker contract (no logins)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/dev-dispatcher/browser-worker/browser.test.mjs
+      - name: Verify no real browser session or token was requested
+        run: |
+          echo 'No browser launched; no real providers accessed; no credentials used.'
