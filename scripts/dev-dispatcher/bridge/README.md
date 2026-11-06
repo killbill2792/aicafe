@@ -9,6 +9,8 @@ This is **not** a second GitHub dispatcher, an app capability, a browser-click s
 - Private ledger: JSON file in separate private GitHub repo; GitHub Contents API, **read-only** token restricted to that repo. No new database or inbound network port.
 - Handoff: `version`, `action_id`, `task_id`, `project.id/name`, `provider`, `intent`, approved `prompt`, optional exact `conversation_url`.
 - Local receipt: `~/.local/state/dave-handoff/receipts/<sha256(action key)>.json` (0600), containing no prompts, chat replies, cookies, sessions or tokens.
+- A **separate persistent per-task hold** is created before browser delivery. It remains for in-flight, uncertain and unverified outcomes, and blocks **every newer action key for that task**. There is no automatic hold removal or duplicate retry after a crash. An owner must verify what the browser did and reconcile the saved conversation URL and task state before explicitly releasing the task for another send.
+- Trusted-main reconciliation cancels queued actions if owner approval, task brief, file ownership or scope changes, or the associated PR is no longer verified open. The reader checks exact approval fingerprints, URL and open-PR state again before calling OpenClaw. Queued private data is not treated as a perpetual approval.
 - `--dry-run` by default. Both `--send` and `DAVE_HANDOFF_SEND_ENABLED=1` are required for a live agent turn. Success is `agent_turn_completed_delivery_unverified`, **not** proof the provider accepted the message. Uncertain sends are never automatically replayed.
 - No automatic merge, source reads/writes, PR comments or direct code editing.
 
