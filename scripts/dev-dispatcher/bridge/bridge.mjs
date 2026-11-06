@@ -21,8 +21,14 @@ export function validateHandoff(action, task) {
       (action.head_sha && action.head_sha !== task.head_sha) ||
       task.agent !== d.provider || typeof d.project?.name !== 'string' ||
       d.project.name.length > 100 || typeof d.prompt !== 'string' ||
-      !d.prompt.trim() || d.prompt.length > 12000) return false;
-  if (d.intent === 'start_new_chat') return d.conversation_url == null;
+      !d.prompt.trim() || d.prompt.length > 12000 ||
+      !/^[a-f0-9]{64}$/.test(d.approval_hash || '') ||
+      d.approval_hash !== task.approval_hash) return false;
+  const prFollowup = ['repair_ci', 'repair_review', 'continue_pr'].includes(action.type);
+  if (prFollowup && (!Number.isInteger(task.pr_number) || task.github_state !== 'open' ||
+      !task.head_sha || action.head_sha !== task.head_sha)) return false;
+  if (action.type === 'pre_pr_reminder' && Number.isInteger(task.pr_number)) return false;
+  if (d.intent === 'start_new_chat') return d.conversation_url == null && !task.conversation_ref;
   return validTarget(d.provider, d.conversation_url) && task.conversation_ref === d.conversation_url;
 }
 
@@ -86,6 +92,23 @@ async function safeDir(dir) {
   if (!st.isDirectory() || st.isSymbolicLink() || (st.mode & 0o077)) throw new Error('Unsafe receipt directory');
 }
 
+// Persistent per-task hold survives worker restarts. A reserved, failed, uncertain,
+// or unverified turn blocks *all later action keys* for this task until a human
+// reconciles the conversation/ledger. Never auto-clear an uncertain hold.
+export function taskHoldFile(dir, action) {
+  return path.join(dir, sha('task:' + action.delivery.project.id + ':' + action.task_id) + '.hold.json');
+}
+export async function reserveTaskHold(dir, action) {
+  await safeDir(dir);
+  const file = taskHoldFile(dir, action);
+  const record = { action_sha256: sha(action.key), task_id: action.task_id,
+    project: action.delivery.project.id, status: 'reserved', at: new Date().toISOString() };
+  const h = await fs.open(file, 'wx', 0o600);
+  try { await h.writeFile(JSON.stringify(record) + '\\n'); await h.sync(); }
+  finally { await h.close(); }
+  return { file, record };
+}
+
 export async function reserveReceipt(dir, action) {
   await safeDir(dir);
   const file = path.join(dir, sha(action.key) + '.json');
@@ -146,12 +169,26 @@ export async function runOnce({ repo = process.env.DISPATCH_LEDGER_REPO,
   await safeDir(receiptDir);
   let action;
   for (const candidate of eligible) {
+    // Ignore a new GitHub event/action key if a previous browser turn for the
+    // same task is reserved, uncertain, or not provider-verified.
+    try { await fs.access(taskHoldFile(receiptDir, candidate)); continue; }
+    catch (e) { if (e.code !== 'ENOENT') throw e; }
     try { await fs.access(path.join(receiptDir, sha(candidate.key) + '.json')); }
     catch (e) { if (e.code === 'ENOENT') { action = candidate; break; } throw e; }
   }
   if (!action) return { status: 'idle', pending: eligible.length, already_attempted: eligible.length };
   if (!sendEnabled) return { status: 'dry_run', pending: eligible.length, project: action.delivery.project.id,
     task_id: action.task_id, intent: action.delivery.intent };
-  const status = await invoke(action, { dir: receiptDir });
+  let hold;
+  try { hold = await reserveTaskHold(receiptDir, action); }
+  catch (error) {
+    if (error.code === 'EEXIST') return { status: 'held', task_id: action.task_id, pending: eligible.length };
+    throw error;
+  }
+  let status = 'uncertain';
+  try { status = await invoke(action, { dir: receiptDir }); }
+  catch { status = 'uncertain'; }
+  // Persist the hold even on success: CLI exit 0 cannot prove a browser send.
+  await updateReceipt(hold.file, hold.record, status);
   return { status, task_id: action.task_id, pending: eligible.length };
 }
