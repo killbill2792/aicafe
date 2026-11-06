@@ -82,8 +82,9 @@ test('after editor interaction a failure is uncertain, not silently retried',asy
 
 test('clipboard writes detach inherited pipes; reads retain captured stdout',()=>{
   const seen=[];
-  const exec=(exe,args,opts)=>{seen.push(opts.stdio); return 'ok';};
-  assert.equal(systemRun('xclip',['-selection','clipboard'],'safe',exec),'ok');
+  const exec=(exe,args,opts)=>{seen.push(opts.stdio); return opts.stdio[1]==='ignore' ? null : 'ok';};
+  // Real Node returns null for an ignored stdout stream, not an empty string.
+  assert.equal(systemRun('xclip',['-selection','clipboard'],'safe',exec),'');
   assert.equal(systemRun('xclip',['-selection','clipboard','-o'],undefined,exec),'ok');
   assert.deepEqual(seen,[['pipe','ignore','ignore'],['pipe','pipe','pipe']]);
 });
