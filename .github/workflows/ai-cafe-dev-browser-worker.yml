@@ -1,4 +1,4 @@
-name: AI CAFE Development Browser Worker Tests
+name: AI CAFE Development Browser Handoff Tests
 on:
   pull_request:
     paths:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 jobs:
   isolated-contract:
-    name: Isolated browser-worker contract (no logins)
+    name: Native assisted-handoff contract (no provider access)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -22,12 +22,18 @@ jobs:
         with:
           node-version: '22'
       - run: node --test scripts/dev-dispatcher/browser-worker/browser.test.mjs
-      - name: Install isolated Selenium driver bindings (no browser)
-        run: npm install --prefix scripts/dev-dispatcher/browser-worker --ignore-scripts --no-audit --no-fund
-      - name: Verify Selenium and Firefox module imports
+      - name: Validate standalone handoff syntax without launching a browser
         run: |
-          cd scripts/dev-dispatcher/browser-worker
-          node --input-type=module -e 'const s = await import("selenium-webdriver"); const f = await import("selenium-webdriver/firefox.js"); if (!(s.default ?? s).Builder || !(f.default ?? f).Options) process.exit(1); console.log("Selenium Firefox bindings imported successfully");'
+          node --check scripts/dev-dispatcher/browser-worker/cli.mjs
+          node --check scripts/dev-dispatcher/browser-worker/handoff.mjs
+          node --check scripts/dev-dispatcher/browser-worker/state.mjs
+      - name: Confirm retired automated login cannot start
+        run: |
+          if node scripts/dev-dispatcher/browser-worker/cli.mjs login chatgpt 2> /tmp/browser-worker-retired.log; then
+            echo 'Unexpected automated login success' >&2
+            exit 1
+          fi
+          grep -F 'Automated login/probe/send is retired' /tmp/browser-worker-retired.log
       - name: Verify no real browser session or token was requested
         run: |
-          echo 'No browser launched; no real providers accessed; no credentials used.'
+          echo 'No browser launched; no clipboard access; no providers contacted; no credentials used.'
