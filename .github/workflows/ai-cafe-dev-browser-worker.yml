@@ -22,6 +22,12 @@ jobs:
         with:
           node-version: '22'
       - run: node --test scripts/dev-dispatcher/browser-worker/browser.test.mjs
+      - name: Install isolated Selenium driver bindings (no browser)
+        run: npm install --prefix scripts/dev-dispatcher/browser-worker --ignore-scripts --no-audit --no-fund
+      - name: Verify Selenium and Firefox module imports
+        run: |
+          cd scripts/dev-dispatcher/browser-worker
+          node --input-type=module -e 'const s = await import("selenium-webdriver"); const f = await import("selenium-webdriver/firefox.js"); if (!(s.default ?? s).Builder || !(f.default ?? f).Options) process.exit(1); console.log("Selenium Firefox bindings imported successfully");'
       - name: Verify no real browser session or token was requested
         run: |
           echo 'No browser launched; no real providers accessed; no credentials used.'

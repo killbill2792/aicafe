@@ -1,85 +1,71 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { providers, conversationUrl, validateAction, prepareLocalState, reserve, markReceipt, getReceipt } from "./state.mjs";
-import { probe, submit, localSubmissionAllowed } from "./browser.mjs";
+import { providers, conversationUrl, prepareLocalState } from "./state.mjs";
+import { launchFirefox, checkFirefox } from "./firefox.mjs";
+import { probe, localSubmissionAllowed } from "./browser.mjs";
 
-async function launch(profile) {
-  // Only the separately installed worker's Playwright is imported, never app test tooling.
-  let playwright;
-  try { playwright = await import("playwright"); }
-  catch { throw new Error("Install local worker dependencies first (see browser-worker/README.md)"); }
-  return playwright.chromium.launchPersistentContext(profile, {
-    headless: false, viewport: { width: 1280, height: 850 },
-    acceptDownloads: false, serviceWorkers: "block",
-  });
-}
-async function openConversation(context, provider, url) {
-  const page = await context.newPage();
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-  // Never continue after cross-origin redirect. No reading message contents.
-  conversationUrl(provider, page.url());
-  return page;
-}
 async function main(args = process.argv.slice(2)) {
   const [command, arg] = args;
+  if (!["doctor", "check", "login", "probe", "send"].includes(command))
+    throw new Error("Usage: node cli.mjs doctor | check | login <chatgpt|claude> | probe <conversation-url>");
+  if (command === "send") throw new Error("Live sends are disabled in the Firefox worker; do not supply an action file");
+
+  const local = await prepareLocalState();
   if (command === "doctor") {
-    const state = await prepareLocalState();
-    console.log("Local worker ready: separate profile and receipts exist outside the repository.");
-    console.log("Browser profile path:", state.profile);
+    console.log("Dedicated Firefox worker state is ready (this does not prove the browser launches).");
+    console.log("Private browser profile:", local.profile);
     console.log("Live submissions enabled:", localSubmissionAllowed());
+    console.log("Next step: node cli.mjs check");
     return;
   }
-  if (!["login", "probe", "send"].includes(command)) throw new Error("Usage: node cli.mjs doctor | login <chatgpt|claude> | probe <conversation-url> | send <private-action.json>");
-  const state = await prepareLocalState();
-  let action, provider, target;
+  let provider, target;
   if (command === "login") {
     provider = arg;
-    if (!providers[provider]) throw new Error("Unknown provider");
+    if (!providers[provider]) throw new Error("Choose chatgpt or claude");
     target = providers[provider].origin;
   } else if (command === "probe") {
-    const url = new URL(arg);
-    provider = Object.keys(providers).find(p => providers[p].origin === url.origin);
+    if (!arg) throw new Error("Provide an existing ChatGPT or Claude conversation URL");
+    let origin;
+    try { origin = new URL(arg).origin; } catch { throw new Error("Invalid conversation URL"); }
+    provider = Object.keys(providers).find(p => providers[p].origin === origin);
     target = conversationUrl(provider, arg);
-  } else {
-    if (!arg) throw new Error("Missing local action file");
-    action = validateAction(JSON.parse(await readFile(arg, "utf8")));
-    provider = action.provider;
-    target = action.conversation_url;
-    if (!localSubmissionAllowed()) throw new Error("Submission disabled; site permission and explicit local approval required");
-    const existing = await getReceipt(state.receipts, action.id);
-    if (existing) throw new Error(`Action ${action.id} already has receipt ${existing.status}; never retry blindly`);
   }
-  const context = await launch(state.profile);
+
+  let driver;
   try {
+    ({ driver } = await launchFirefox(local.profile));
+    if (command === "check") {
+      await checkFirefox(driver);
+      console.log("PASS: Selenium launched your installed Firefox using its separate local profile.");
+      console.log("No ChatGPT or Claude pages were opened; no logins or prompts sent.");
+      return;
+    }
+    await driver.get(target);
     if (command === "login") {
-      const page = await context.newPage();
-      await page.goto(target, { waitUntil: "domcontentloaded" });
-      console.log("Sign in manually in the isolated browser. Never paste passwords into chat or GitHub.");
+      console.log("Sign in MANUALLY in the Firefox window that Selenium opened.");
+      console.log("This is a separate profile from your normal Firefox window.");
       const input = createInterface({ input: stdin, output: stdout });
-      try { await input.question("Press Enter here after you finish logging in and close any popups: "); }
+      try { await input.question("When finished, press Enter here to close this worker window: "); }
       finally { input.close(); }
-      console.log("Browser profile remains only on this computer.");
+      console.log("Your profile stays on this Mac; logins may still expire.");
       return;
     }
-    const page = await openConversation(context, provider, target);
-    if (command === "probe") {
-      const state = await probe(page, provider, target);
-      console.log(state.ready ? "READY: exact conversation and idle composer" : `NOT READY: ${state.reason}`);
-      if (!state.ready) process.exitCode = 2;
-      return;
+    // SPA editor may take a few moments after navigation; do not inspect chat replies.
+    const { css } = await import("selenium-webdriver").then(s => ({ css: (s.default ?? s).By.css }));
+    let status = await probe(driver, provider, target, { css });
+    if (!status.ready && status.reason === "composer_missing_or_login_required") {
+      try {
+        await driver.wait(async () => {
+          status = await probe(driver, provider, target, { css });
+          return status.ready || status.reason !== "composer_missing_or_login_required";
+        }, 10000);
+      } catch { /* return the last fail-closed status */ }
     }
-    // Reserve before interacting; if process dies, never repeat without manual inspection.
-    const receipt = await reserve(state.receipts, action);
-    try {
-      const result = await submit(page, action, { canSubmit: true });
-      await markReceipt(state.receipts, receipt, result.status, result.reason || "Click attempted; actual delivery not established");
-      console.log(`Action ${action.id}: ${result.status}. See local receipt; no assistant responses read.`);
-    } catch {
-      await markReceipt(state.receipts, receipt, "uncertain", "Browser interaction failed; inspect conversation before deciding to retry");
-      throw new Error("Send uncertain; do not repeat automatically. Check the conversation manually.");
-    }
-  } finally { await context.close(); }
+    console.log(status.ready ? "READY: expected conversation with idle editor" : `NOT READY: ${status.reason}`);
+    if (!status.ready) process.exitCode = 2;
+  } finally {
+    if (driver) await driver.quit();
+  }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });
