@@ -110,7 +110,9 @@ test("local receipts are exclusive, private and cannot be retried under the same
   assert.equal(updated.status, "uncertain");
   const disk = await readFile(path.join(dirs.receipts, action.id + ".json"), "utf8");
   assert.equal(disk.includes(action.prompt), false);
+  assert.equal(disk.includes("assistant_reply"), false);
   assert.equal(JSON.parse(disk).prompt_sha256.length, 64);
+  await assert.rejects(markReceipt(dirs.receipts, receipt, "confirmed", "not allowed"), /Invalid receipt/);
 });
 
 test("symlink local profile root is refused", async t => {
