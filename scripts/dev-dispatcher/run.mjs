@@ -5,7 +5,7 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate } from "./core.mjs";
-import { createDelivery } from "./delivery.mjs";
+import { approvalSignature, createDelivery } from "./delivery.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
@@ -35,6 +35,27 @@ async function main() {
   }
   function reconcile(state, observed) {
     const copy = reconcileGithub(state, observed.snapshot, observed.closedByPr);
+    // The queued action is not an approval grant. Revoke old, planned envelopes
+    // whenever the trusted task queue changes scope, approval or membership.
+    for (const [id, rec] of Object.entries(copy.tasks)) {
+      const task = taskById.get(id);
+      const currentSignature = task && task.architecture_approval?.approved === true &&
+        ["architecture_approved", "ready"].includes(task.state) &&
+        Array.isArray(task.exclusive_files) && task.exclusive_files.length > 0
+        ? approvalSignature(task) : null;
+      const revoked = !currentSignature || rec.approval_hash !== currentSignature;
+      const prClosed = Number.isInteger(rec.pr_number) && rec.github_state !== "open";
+      if (revoked) {
+        rec.approved = false;
+        rec.status = "blocked_needs_owner";
+      }
+      for (const action of Object.values(copy.actions)) {
+        if (action.task_id !== id || action.status !== "planned") continue;
+        if (revoked || (prClosed && action.type !== "assign")) {
+          action.status = revoked ? "cancelled_approval_changed" : "cancelled_pr_closed";
+        }
+      }
+    }
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
     const now = new Date().toISOString();
@@ -43,6 +64,7 @@ async function main() {
       if (copy.actions[key]) continue;
       const record = { task_id: assignment.task_id, status: "assigned",
         agent: assignment.agent, base_branch: assignment.base_branch, approved: true,
+        approval_hash: approvalSignature(taskById.get(assignment.task_id)),
         prompt_id: `task:${assignment.task_id}`, prompt_version: "v1" };
       const delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
         action: "assign", actionId: key });
@@ -57,7 +79,8 @@ async function main() {
         const task = taskById.get(id);
         // Only approved, exactly owned tasks from the trusted queue can reach Dave.
         if (!task || task.architecture_approval?.approved !== true ||
-            !task.exclusive_files?.length) continue;
+            !task.exclusive_files?.length || rec.approval_hash !== approvalSignature(task) ||
+            (Number.isInteger(rec.pr_number) && rec.github_state !== "open")) continue;
         const delivery = createDelivery({ task, record: rec,
           action: proposal.action, actionId: proposal.key });
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
