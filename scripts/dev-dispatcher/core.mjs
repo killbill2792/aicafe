@@ -48,7 +48,7 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
   }
   const actions = [];
   for (const task of queue.tasks) {
-    if (!approved(task) || records[task.id]?.conversation_ref || records[task.id]?.status === "assigned") continue;
+    if (!approved(task) || records[task.id]?.conversation_ref || (records[task.id]?.status && records[task.id].status !== "proposed")) continue;
     if (task.exclusive_files?.length === 0 || !task.architecture_approval) continue; // no invented ownership/approval
     const openDeps = [];
     let blocked = false;
