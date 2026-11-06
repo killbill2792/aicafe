@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { requireLiveApproval, parseGeometry, parseMouse, sendOnce } from './aws-desktop.mjs';
+import { requireLiveApproval, parseGeometry, parseMouse, systemRun, sendOnce } from './aws-desktop.mjs';
 
 const action = { id:'aws_demo_1', provider:'chatgpt', conversation_url:'https://chatgpt.com/c/test-1',
   prompt:'Approved small test message', approved:true };
@@ -17,13 +17,17 @@ async function fixture(t) {
     JSON.stringify({version:1,width:1200,height:800,xOffset:600,yOffset:730}));
   return dir;
 }
-function fakeDesktop(address = action.conversation_url) {
+function fakeDesktop(address = action.conversation_url, { copyWorks = true, focus = '123' } = {}) {
   const calls=[];
+  let clipboard='';
   const run=(bin,args,input)=>{
     calls.push({bin,args,input:input ? '<redacted>' : undefined});
     if(bin==='xdotool' && args[0]==='search') return '123';
     if(bin==='xdotool' && args[0]==='getwindowgeometry') return geometry;
-    if(bin==='xclip' && args.includes('-o')) return address;
+    if(bin==='xdotool' && args[0]==='getactivewindow') return focus;
+    if(bin==='xdotool' && args[0]==='key' && args.includes('ctrl+c') && copyWorks) clipboard=address;
+    if(bin==='xclip' && args.includes('-o')) return clipboard;
+    if(bin==='xclip') clipboard=input;
     return '';
   };
   return {run,calls};
@@ -74,4 +78,37 @@ test('after editor interaction a failure is uncertain, not silently retried',asy
   };
   await assert.rejects(sendOnce(action,{baseDir:dir,env,run,pause:async()=>{}}),/X11 connection failed/);
   assert.equal(JSON.parse(await readFile(path.join(dir,'receipts',action.id+'.json'),'utf8')).status,'uncertain');
+});
+
+test('clipboard writes detach inherited pipes; reads retain captured stdout',()=>{
+  const seen=[];
+  const exec=(exe,args,opts)=>{seen.push(opts.stdio); return 'ok';};
+  assert.equal(systemRun('xclip',['-selection','clipboard'],'safe',exec),'ok');
+  assert.equal(systemRun('xclip',['-selection','clipboard','-o'],undefined,exec),'ok');
+  assert.deepEqual(seen,[['pipe','ignore','ignore'],['pipe','pipe','pipe']]);
+});
+test('stale clipboard cannot impersonate a copied address; Chrome focus is mandatory',async t=>{
+  const dir=await fixture(t),bad=fakeDesktop(action.conversation_url,{copyWorks:false});
+  const result=await sendOnce(action,{baseDir:dir,env,run:bad.run,pause:async()=>{}});
+  assert.equal(result.status,'needs_login');
+  assert.equal(bad.calls.some(c=>c.bin==='xdotool' && c.args[0]==='click'),false);
+  const other=await fixture(t),blurred=fakeDesktop(action.conversation_url,{focus:'999'});
+  await assert.rejects(sendOnce(action,{baseDir:other,env,run:blurred.run,pause:async()=>{}}),/no longer the active/);
+  assert.equal(blurred.calls.some(c=>c.bin==='xdotool' && c.args[0]==='click'),false);
+});
+test('a concurrent send cannot interleave Chrome and clipboard operations',async t=>{
+  const dir=await fixture(t),mock=fakeDesktop();
+  let entered,release;
+  const paused=new Promise(r=>{release=r;});
+  const waiting=new Promise(r=>{entered=r;});
+  const first=sendOnce(action,{baseDir:dir,env,run:mock.run,pause:async ms=>{
+    if(ms===3000){entered();await paused;}
+  }});
+  await waiting;
+  await assert.rejects(sendOnce({...action,id:'aws_demo_2'},
+    {baseDir:dir,env,run:mock.run,pause:async()=>{}}),e=>e.code==='EEXIST');
+  release();
+  assert.equal((await first).status,'submitted_unverified');
+  await assert.rejects(readFile(path.join(dir,'aws-desktop-session.lock')),
+    e=>e.code==='ENOENT');
 });
