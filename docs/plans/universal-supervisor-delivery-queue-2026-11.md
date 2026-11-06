@@ -174,3 +174,66 @@ The **orchestrator** is not a second business Supervisor. It is an external engi
 - [ ] Publish task dependency DAG and exclusive file owners; then coding agents may proceed on approved work independently.
 
 **Explicit non-guarantee:** No system can guarantee 100% success on unknown sites, outages or physical tasks. The contractual completion goal is broad end-to-end capability with reliable proofs, bounded escalation and stated unsupported cases—not invented success. 
+
+## 8. Agent-ready task table (machine queue is authoritative)
+
+**Use alongside [agent operations](universal-supervisor-agent-operations.md)**. This table answers *what can start, what depends on what, and what must be proven*. `PR13`–`PR17` are milestones; suffixed IDs are small code PRs. Every row remains a **proposal** until architecture and exact file ownership are approved. A merge alone does not fulfill a dependency: verify real executed tests and integrated behavior as the runbook explains. `PR1`–`PR5` are merged foundations, but still require capability-level regression audit if upstream code changed.
+
+| Task | Deliverable | Dependencies that must be fixed/proven | Mandatory test categories | Preview |
+|---|---|---|---|---|
+| `E2` | Required Playwright CI job + isolated seeded preview; verify browser scenarios really run | None | db, e2e, preview, security | Yes |
+| `6` | Leased worker resumes one AI loop safely under budgets and authorization | `5` | unit, db, failure | As applicable |
+| `7` | Self-managed schedules and proactive priority decisions with due-once triggers | `6` | unit, db, failure | As applicable |
+| `8a` | Experiments cutover with parity and single writer | `7` | unit, db, acceptance | As applicable |
+| `8b` | Events cutover with parity and single writer | `7` | unit, db, acceptance | As applicable |
+| `8c` | Brief cutover with timezone/delivery parity and single writer | `7` | unit, db, acceptance | As applicable |
+| `9` | Rolling thread memory with provenance and no cached financial facts | `5` | unit, db, security | As applicable |
+| `10` | One effect gateway supporting individual approval and OTP-backed standing authorization | `5` | unit, db, security, e2e | Yes |
+| `11` | Secure connector registry and Gmail end-to-end | `10` | unit, security, e2e | Yes |
+| `12` | Files/spreadsheets/PDF/browser use with controlled external effects | `6`, `10` | unit, security, e2e | Yes |
+| `13a` | Canonical scheduling reads and labor parity | `6`, `7` | unit, db, parity | As applicable |
+| `13b` | Mandate-controlled schedule publishing and messaging receipts | `13a`, `10`, `11` | unit, db, e2e, receipt | Yes |
+| `13c` | Staff response, absences and shift coverage lifecycle | `13b` | unit, db, e2e | Yes |
+| `13d` | Recruitment, leave, onboarding and human decision gates | `13a`, `10`, `11` | unit, security, e2e | Yes |
+| `14a` | Stock/recipe/consumption sources and uncertainty | `6`, `9` | unit, db, parity | As applicable |
+| `14b` | Vendor quotes and purchase order lifecycle | `14a`, `10` | unit, db, security | As applicable |
+| `14c` | Vendor communications/order execution and receipts | `14b`, `11`, `12` | unit, e2e, receipt | Yes |
+| `14d` | Deliveries and invoice reconciliation | `14c` | unit, db, e2e | Yes |
+| `14e` | Cash flow, bills and payable preparation with payment boundary | `14d`, `10` | unit, db, security | As applicable |
+| `15a` | Prioritization and alert escalation using one inbox | `7`, `9` | unit, db, failure | As applicable |
+| `15b` | Maintenance and equipment coordination | `15a`, `10`, `11` | unit, e2e, receipt | Yes |
+| `15c` | System outages, concurrency, queue fairness and catch-up | `6`, `7`, `10` | unit, db, failure | As applicable |
+| `15d` | Prompt-injection and provider/cafe access revocation | `10`, `11`, `12` | unit, security, e2e | Yes |
+| `16a` | Owner approval and OTP mandate grant/revoke UI | `10` | e2e, security, preview | Yes |
+| `16b` | Chat progress, retries and receipts | `6`, `9` | e2e, preview | Yes |
+| `16c` | Account, connector and browser permission controls | `11`, `12` | e2e, security, preview | Yes |
+| `16d` | Responsive accessible final owner UX | `16a`, `16b`, `16c` | e2e, visual, preview | Yes |
+| `17a` | Required E2E gate evidence and branch protection | `E2`, `16d` | e2e, ci, security | Yes |
+| `17b` | Cross-domain deterministic acceptance suite | `8a`, `8b`, `8c`, `13c`, `13d`, `14e`, `15b`, `16d` | db, e2e, receipt, parity | Yes |
+| `17c` | Multi-day autonomous failure simulation | `17b`, `15c`, `15d` | failure, db, e2e | Yes |
+| `17d` | Safe preview smoke and artifacts | `17c` | preview, e2e, security | Yes |
+| `17e` | Owner-authorized live pilot and certified release | `17d` | pilot, release | As applicable |
+
+### Candidate parallel wave (not yet dispatched)
+
+| Slot | Proposed work | Branch/base | What must be checked before coding |
+|---|---|---|---|
+| ChatGPT 1 | E2 required Playwright CI and protected preview | latest `main` | Existing E1/B2 #369/#374 actual integrated acceptance, E2 design, CI file lock |
+| ChatGPT 2 | PR6 durable worker | latest `main` | PR5 #378 actual integrated acceptance, authorization interface design and worker file lock |
+| ChatGPT 3 | PR9 rolling memory | latest `main` | Owner-facts #362 + chat history state, no overlap with PR6/10, memory data design |
+| ChatGPT 4 | PR10 effect gateway/mandates | latest `main` | Existing approval/OTP contract, owner-approved standing mandate design, no overlap with PR6/9 |
+| Claude 1 | PR7 stacked draft, **if** its architecture/ownership is approved | PR6 live branch; PR base = PR6 branch | PR6 API stable; **do not merge** until PR6 merged and proven; no shared file edits |
+| Claude 2 | PR16a stacked draft, **if** approved | PR10 live branch; PR base = PR10 branch | PR10 exact OTP/mandate interface, no shared file edits, browser test plan |
+
+The table is a **conditional scheduling illustration**, not a claim that these six tasks are already approved, have no file collisions, or have working preview accounts. If PR7/16a cannot safely stack, the dispatcher must select other independent work or leave a slot free. Do not open an implementation PR solely to fill capacity.
+
+### Mandatory pre-dispatch questions
+
+1. Is there an **owner-approved architecture contract** for this exact task and all new stored records/effects? If not, the dispatcher produces the short design sheet and waits for approval; it never substitutes model confidence for permission.
+2. Did each predecessor **actually deliver** its promised owner journey? Inspect the diff, final head jobs, test cases and integration, not its merged label or checkbox. If incomplete, add a repair task and block only dependent work.
+3. Are the task's **exact file paths, shared interface and migration number** reserved, with no other active owner? If no, resolve ownership or stack on the owning branch before dispatch.
+4. Does every listed **mandatory acceptance test run** on the exact head, including local migrated DB and Playwright/preview when applicable, rather than skip? If not, do not merge.
+5. Was the final head independently Codex-reviewed and the actual merge SHA confirmed? If not, remain in same PR/chat and fix.
+6. Is the milestone's post-merge integrated proof green on current `main`? If not, do not unlock dependent merges. If production release is needed, obtain separate owner authorization and verify live evidence before marking it released.
+
+**Minimal prompt to copy-paste** is in [the agent runbook](universal-supervisor-agent-operations.md#4-copy-paste-coding-agent-prompt-short-substitute-task_id); replace only `TASK_ID`. The dispatcher prompt in section 3 selects the task and reserves paths. Every coding chat must read the repository's `AGENTS.md`, `PROGRESS.md` and applicable `.claude/skills/*/SKILL.md`, not rely on a skimming summary.
