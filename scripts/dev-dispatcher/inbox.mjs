@@ -30,7 +30,8 @@ export function applyReceipts(state, inbox, actorMap) {
   for (const {receipt, actor} of inbox) {
     const courier = actorMap[actor];
     if (!courier) continue;
-    if (next.actions?.[receipt.action_id]?.status === 'submitted') continue;
+    // Historical receipts stay in the inbox; never replay or revive cancelled actions.
+    if (next.actions?.[receipt.action_id]?.status !== 'planned') continue;
     next = acceptDeliveryReceipt(next, receipt, { authenticatedCourier: courier });
   }
   return next;
