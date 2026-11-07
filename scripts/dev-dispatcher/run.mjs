@@ -44,7 +44,7 @@ async function main() {
       const key = `assign:${assignment.task_id}`;
       if (copy.actions[key]) continue;
       const record = { task_id: assignment.task_id, status: "assigned",
-        agent: assignment.agent, base_branch: assignment.base_branch, approved: true,
+        agent: assignment.agent, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
         approval_hash: approvalSignature(taskById.get(assignment.task_id)),
         prompt_id: `task:${assignment.task_id}`, prompt_version: "v1" };
       const delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
