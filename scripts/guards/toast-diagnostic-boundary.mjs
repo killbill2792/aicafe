@@ -103,13 +103,33 @@ function workflowErrors(head) {
   return errors;
 }
 
+/** New diagnostic-only executables and migrations must say diagnostic/diag in the name.
+ * This is a naming guard, NOT permission for a diagnostic source to feed business queries.
+ * Historical ambiguous filenames are preserved until separately retired. */
+export function diagnosticNamingErrors(base, head) {
+  const changed = git('diff', '--name-only', '--diff-filter=A', '-z', `${base}...${head}`, '--',
+    'app/', 'lib/', 'scripts/', '.github/workflows/', 'supabase/migrations/')
+    .split('\0').filter(Boolean);
+  const problems = [];
+  for (const path of changed) {
+    if (!/\.(?:[cm]?[jt]sx?|mjs|cjs|sql|ya?ml)$/.test(path)) continue;
+    const body = git('show', `${head}:${path}`);
+    if (!/\bDIAGNOSTIC_ONLY\b/.test(body)) continue;
+    const filename = path.split('/').pop() ?? '';
+    if (!/(?:diag|diagnostic)/i.test(filename)) {
+      problems.push(`${path}:1: DIAGNOSTIC_ONLY source must be named with diag/diagnostic; cannot look like operational code`);
+    }
+  }
+  return problems;
+}
+
 export function run() {
   try {
     const head = process.env.HEAD_SHA || 'HEAD';
     const base = baseRef(head);
     const diff = git('diff', '--no-ext-diff', '--no-color',
       '--unified=0', '--no-renames', `${base}...${head}`);
-    const errors = [...addedDiagnosticReferences(diff), ...workflowErrors(head)];
+    const errors = [...addedDiagnosticReferences(diff), ...workflowErrors(head), ...diagnosticNamingErrors(base, head)];
     if (errors.length) {
       for (const message of errors) console.error(message);
       return 1;
