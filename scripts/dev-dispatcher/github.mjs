@@ -1,3 +1,4 @@
+import { inflateRawSync } from 'node:zlib';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
 export function parseAcceptanceEvidence(body) {
   if (typeof body !== "string" || body.length > 100000) return null;
@@ -7,6 +8,34 @@ export function parseAcceptanceEvidence(body) {
     return value && typeof value === "object" && Array.isArray(value.acceptance) ? value : null;
   } catch { return null; }
 }
+// GitHub artifact downloads are small ZIP archives. Only one fixed JSON filename is accepted.
+export function decodeAcceptanceArchive(input) {
+  const zip = Buffer.from(input);
+  if (zip.length > 262144 || zip.length < 30) throw new Error('Invalid acceptance archive size');
+  let end = -1;
+  for (let i = zip.length - 22; i >= Math.max(0, zip.length - 65557); i--) {
+    if (zip.readUInt32LE(i) === 0x06054b50) { end = i; break; }
+  }
+  if (end < 0 || zip.readUInt16LE(end + 10) !== 1) throw new Error('Expected one proof artifact');
+  const dir = zip.readUInt32LE(end + 16);
+  if (dir + 46 > zip.length || zip.readUInt32LE(dir) !== 0x02014b50) throw new Error('Bad ZIP directory');
+  const method = zip.readUInt16LE(dir + 10);
+  const compressed = zip.readUInt32LE(dir + 20);
+  const original = zip.readUInt32LE(dir + 24);
+  const nameLength = zip.readUInt16LE(dir + 28);
+  const name = zip.subarray(dir + 46, dir + 46 + nameLength).toString('utf8');
+  const at = zip.readUInt32LE(dir + 42);
+  if (name !== 'acceptance-proof.json' || original > 32768 || compressed > 65536 ||
+      at + 30 > zip.length || zip.readUInt32LE(at) !== 0x04034b50 ||
+      ![0, 8].includes(method)) throw new Error('Unexpected proof archive entry');
+  const position = at + 30 + zip.readUInt16LE(at + 26) + zip.readUInt16LE(at + 28);
+  if (position + compressed > zip.length) throw new Error('Truncated acceptance proof');
+  const source = zip.subarray(position, position + compressed);
+  const decoded = method === 8 ? inflateRawSync(source, { maxOutputLength: 32768 }) : source;
+  if (decoded.length !== original) throw new Error('Acceptance proof size mismatch');
+  return JSON.parse(decoded.toString('utf8'));
+}
+
 export class GitHubFacts {
   constructor({ repo, token, fetchFn = fetch }) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) throw new Error("GitHub repo/token required");
@@ -19,6 +48,21 @@ export class GitHubFacts {
     });
     if (!response.ok) throw new Error(`GitHub read failed: ${response.status}`);
     return response.json();
+  }
+  async acceptanceProof(runId) {
+    if (!Number.isSafeInteger(runId) || runId < 1) throw new Error('Invalid acceptance run');
+    const list = await this.request('/actions/runs/' + runId + '/artifacts?per_page=100');
+    if (list.total_count > 100 || !Array.isArray(list.artifacts)) throw new Error('Unverified proof pagination');
+    const matches = list.artifacts.filter(a => a.name === 'aicafe-acceptance-proof' && !a.expired);
+    if (matches.length !== 1) return null;
+    const response = await this.fetchFn('https://api.github.com/repos/' + this.repo +
+      '/actions/artifacts/' + matches[0].id + '/zip', {headers:{
+        Authorization:'Bearer ' + this.token,
+        Accept:'application/vnd.github+json',
+        'X-GitHub-Api-Version':'2022-11-28'
+      }});
+    if (!response.ok) throw new Error('Proof artifact download failed: ' + response.status);
+    return decodeAcceptanceArchive(Buffer.from(await response.arrayBuffer()));
   }
   async openPulls() {
     const results = [];
