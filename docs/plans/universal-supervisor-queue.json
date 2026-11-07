@@ -101,7 +101,7 @@
         "non-order toast_records_for / cv_cash / cv_inventory / cv_kitchen / cv_dining_options read diagnostic snapshots: POS0e current-reader cutover, POS0f final lineage",
         "canonical dictionary still says daily capture: POS0e dictionary source and generated docs",
         "seen_run_id is referenced by active toast_archive_order and toast_records_for: do not remove on old storage-plan wording",
-        "SQL toast_import_day rolls back a valid day on row failure: later owner-assigned order SQL recovery PR, NOT YET APPROVED",
+        "SQL toast_import_day may roll back a valid day on row failure; liveArchive.server.ts suppresses archive-page RPC errors and skips remaining pages: later owner-assigned order SQL/live-archive recovery PR, NOT YET APPROVED",
         "menu copying fetches full menu twice and retirement requires snapshot proof: POS0d, POS0f acceptance",
         "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof"
       ],
