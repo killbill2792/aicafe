@@ -84,6 +84,29 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
   return { status: 'merged_unproven', merge_sha: result.sha };
 }
 
+// Only a GitHub-confirmed runner startup failure is retried; no guessing from a red CI badge.
+// Reserve the single retry durably *before* requesting the external effect (fail-closed on crashes).
+export async function retryStartupFailure({github, ledger, taskId, record, enabled = false}) {
+  if (!enabled) return {status:'disabled'};
+  if (!record?.approved || record.github_state !== 'open' ||
+      record.ci_state !== 'failure' || record.ci_failure_kind !== 'startup_failure' ||
+      !record.head_sha || !Number.isInteger(record.pr_number))
+    return {status:'not_verified_infrastructure_failure'};
+  const run = await github.transientBaselineRun(record.head_sha);
+  if (!run) return {status:'not_verified_infrastructure_failure'};
+  const reserved = await ledger.transaction(state => {
+    const current = state.tasks?.[taskId];
+    if (!current || current.head_sha !== record.head_sha ||
+        current.transient_ci_retry?.run_id === run.id) return null;
+    current.transient_ci_retry = {run_id:run.id,head_sha:record.head_sha,
+      reserved_at:new Date().toISOString(),status:'reserved'};
+    return state;
+  });
+  if (!reserved.committed) return {status:'already_reserved'};
+  await github.rerunFailedJobs(run.id);
+  return {status:'retry_requested',run_id:run.id};
+}
+
 // Only an independently verified integration run on the merged main SHA can release dependents.
 // No "merged" or author checklist is equivalent to integration proof.
 export function integrationStatus({ merged_sha, main_sha, proof, expectedAcceptance = [] }) {
