@@ -145,7 +145,7 @@ test('architecture gate cancels unsent downstream work but preserves active PR a
   state.tasks.POS0a.status='integrated_proven';
   assert.equal(assignmentActionKey(state,'POS0b',gateQueue),'assign:POS0b:after-POS0a');
   const started={...state,tasks:{...state.tasks,POS0a:{status:'draft_open'},
-    POS0b:{...state.tasks.POS0b,status:'review_fixing',pr_number:400,conversation_ref:'https://chatgpt.com/c/existing'}},
+    POS0b:{...state.tasks.POS0b,status:'review_fixing',github_state:'open',pr_number:400,conversation_ref:'https://chatgpt.com/c/existing'}},
     actions:{'repair:POS0b':{task_id:'POS0b',type:'repair_ci',status:'planned'}}};
   revalidateQueuedActions(started,new Map([['POS0b',b]]),gateQueue);
   assert.equal(started.tasks.POS0b.status,'review_fixing');
