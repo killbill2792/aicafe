@@ -15,7 +15,7 @@ const delivery = { version: 1, action_id:'assign:6', project:{id:'aicafe',name:'
   approval_hash:sig, provider:'chatgpt', intent:'start_new_chat',
   conversation_url:null, task_id:'6', base_branch:'main', prompt:'Approved task.',
   prompt_hash:createHash('sha256').update('Approved task.').digest('hex') };
-const action = {key:'assign:6',task_id:'6',type:'assign',status:'planned',created_at:'2026-01-01',delivery};
+const action = {key:'assign:6',task_id:'6',type:'assign',status:'planned',delivery_owner:'dave',created_at:'2026-01-01',delivery};
 const record = {approved:true, agent:'chatgpt', approval_hash:sig};
 const state = {version:1, tasks:{'6':record},
   actions:{'assign:6':(({key,...rest}) => rest)(action)}};
@@ -130,4 +130,15 @@ test('actual CLI entry point accepts --dry-run and rejects bad arguments correct
   assert.equal(bad.status,2);assert.match(bad.stderr,/Usage:/);
   const locked=spawnSync(process.execPath,[cli,'--send'],{env,encoding:'utf8'});
   assert.equal(locked.status,2);assert.match(locked.stderr,/Live handoff OFF/);
+});
+
+test('Dave never sends Muse-owned actions even when live sending enabled',async()=>{
+ const dir=await tempDir();
+ try {
+  const museAction={...action,delivery_owner:'muse'};
+  const next={...state,actions:{'assign:6':(({key,...rest})=>rest)(museAction)}};
+  const result=await runOnce({repo:'owner/private',token:'test',receiptDir:dir,
+    fetchImpl:makeFetch(next),sendEnabled:true,invoke:()=>{throw Error('must not invoke')}});
+  assert.equal(result.status,'held_for_muse');
+ } finally {await fs.rm(dir,{recursive:true,force:true});}
 });
