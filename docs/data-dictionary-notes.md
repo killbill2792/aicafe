@@ -1,4 +1,7 @@
-## Capture-only Toast evidence and limitations
+# LEGACY DIAGNOSTIC SOURCE WARNING — NOT AN OPERATING CONTRACT
+
+**Use [binding POS source authority](rules/pos-data.md) instead.** This note describes a historical implementation defect, **not** permission to connect Supervisor or operational views to `toast_raw_samples`. The current code can still read diagnostic snapshots through `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` and non-order `toast_records_for`. POS0e must cut over those active SQL definitions to real current objects, then POS0f verifies and retires stale diagnostic artifacts. Never call these captured values live; `toast_raw_samples` has no authority for current café decisions.
+
 
 `cv_cash`, Toast rows of `cv_inventory`, `cv_kitchen` and `cv_dining_options` are derived from **redacted diagnostic snapshots** in `toast_raw_samples`; they are not continuously imported operational data. A missing capture, failed response or zero returned rows does not establish an operational zero. Repeated captures can record the same underlying event multiple times, so they must not be summed as daily totals without deduplication.
 
