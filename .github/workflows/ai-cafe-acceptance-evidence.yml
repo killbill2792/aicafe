@@ -1,0 +1,43 @@
+# CI runner is checked out from trusted main, PR code is tested separately without write tokens.
+name: AI CAFE Acceptance Evidence
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    name: AI CAFE acceptance evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout trusted runner
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: coordinator
+          persist-credentials: false
+      - name: Checkout PR head to test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: candidate/package-lock.json
+      - name: Install test dependencies
+        working-directory: candidate
+        run: npm ci
+      - name: Run approved acceptance scenarios
+        working-directory: candidate
+        run: node ../coordinator/scripts/dev-dispatcher/acceptance-runner.mjs
+      - name: Upload acceptance execution proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-acceptance-proof
+          path: ${{ runner.temp }}/acceptance-proof.json
+          if-no-files-found: ignore
+          retention-days: 14
