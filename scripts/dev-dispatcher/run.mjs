@@ -45,7 +45,7 @@ async function main() {
     const linked = linkPullRequests(state, observed.snapshot);
     const copy = queueOwnerAlerts(
       reconcileGithub(linked.state, observed.snapshot, observed.closedByPr),
-      {unmappedPrs:linked.unmapped});
+      {unmappedPrs:linked.unmapped,queue});
     revalidateQueuedActions(copy, taskById, queue);
 
     const assigned = dispatchFrontier(queue, copy.tasks);
@@ -147,7 +147,10 @@ async function main() {
       const latest = await observe(existing);
       const next = reconcile(applyReceipts(existing, inbox, actorMap), latest).state;
       await promoteIntegration(next);
-      return JSON.stringify(next) === JSON.stringify(existing) ? null : next;
+      // Integration may become proven during this same pass: queue the owner
+      // review with the actual saved chat URL without a second delayed cycle.
+      const withNotices = queueOwnerAlerts(next,{queue});
+      return JSON.stringify(withNotices) === JSON.stringify(existing) ? null : withNotices;
     });
   }
   // Only independently classified runner startup errors may be retried, once.
