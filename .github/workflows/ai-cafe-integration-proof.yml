@@ -2,6 +2,12 @@ name: AI CAFE Integration Proof
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      merged_sha:
+        description: 'Exact verified squash-merge commit to validate on main'
+        type: string
+        required: true
 permissions:
   contents: read
   pull-requests: read
@@ -16,7 +22,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.merged_sha || github.sha }}
+          fetch-depth: 0
+      - name: Verify target merged SHA belongs to main
+        env:
+          TARGET_MAIN_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.merged_sha || github.sha }}
+        run: |
+          [[ "$TARGET_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch origin main
+          git merge-base --is-ancestor "$TARGET_MAIN_SHA" origin/main
+          test "$(git rev-parse HEAD)" = "$TARGET_MAIN_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -35,6 +50,7 @@ jobs:
       - name: Capability integration scenarios
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TARGET_MAIN_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.merged_sha || github.sha }}
         run: node scripts/dev-dispatcher/integration-runner.mjs
       - name: Upload exact merged-main scenario proof
         uses: actions/upload-artifact@v4
