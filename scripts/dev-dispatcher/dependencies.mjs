@@ -20,10 +20,14 @@ export function linkPullRequests(state, prs) {
 }
 
 export function dependencyBase(task, records) {
-  const pending=(task.depends_on||[]).map(id=>records[id]).filter(rec=>rec?.status!=='integrated_proven'&&rec?.status!=='released_proven');
+  const pending=(task.depends_on||[])
+    .filter(id=>!['integrated_proven','released_proven'].includes(records[id]?.status))
+    .map(id=>({id,...records[id]}));
   if(pending.length===0)return {base:'main'};
-  if(pending.length===1 && pending[0]?.branch && pending[0]?.github_state==='open')
-    return {base:pending[0].branch};
+  const selected=pending.length===1 ? pending[0] :
+    pending.find(rec=>rec.id===task.stack_base_task);
+  if(selected?.branch && selected.github_state==='open')
+    return {base:selected.branch};
   return {blocked:true,reason:'unproven_or_ambiguous_dependencies'};
 }
 
