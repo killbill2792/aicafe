@@ -4,7 +4,8 @@ export function linkPullRequests(state, prs) {
   const used=new Set();
   for(const [id,rec] of Object.entries(next.tasks)) {
     const matching=prs.filter(pr=>pr.pr_number===rec.pr_number ||
-      (!rec.pr_number && rec.branch && pr.branch===rec.branch));
+      (!rec.pr_number && ((rec.branch && pr.branch===rec.branch) ||
+        (pr.task_marker===id && (!rec.branch || rec.branch===pr.branch)))));
     if(matching.length!==1) continue;
     const pr=matching[0];
     if(used.has(pr.pr_number)) throw new Error('Ambiguous PR mapping');
