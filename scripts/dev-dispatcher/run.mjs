@@ -8,7 +8,7 @@ import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGat
 import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { revalidateQueuedActions } from "./authorization.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
-import { mergeApprovedPr } from "./effects.mjs";
+import { mergeApprovedPr, integrationStatus } from "./effects.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
@@ -34,12 +34,21 @@ async function main() {
       const closed = await gh.request(`/pulls/${rec.pr_number}`);
       closedByPr[rec.pr_number] = Boolean(closed.merged_at);
     }
-    return { snapshot, closedByPr };
+    const mainRef = await gh.request("/git/ref/heads/main");
+    return { snapshot, closedByPr, mainSha: mainRef.object?.sha || null };
   }
   function reconcile(state, observed) {
     const linked = linkPullRequests(state, observed.snapshot);
     const copy = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
     revalidateQueuedActions(copy, taskById);
+    // Integration proof must reference the actual merged SHA and current main SHA.
+    // It is never inferred from the fact that a PR disappeared or merged.
+    for (const [id, rec] of Object.entries(copy.tasks)) {
+      if (rec.status !== "merged" || !rec.merge_sha || !rec.integration_proof) continue;
+      if (integrationStatus({ merged_sha: rec.merge_sha,
+        main_sha: observed.mainSha, proof: rec.integration_proof }) === "integrated_proven")
+        rec.status = "integrated_proven";
+    }
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
     const now = new Date().toISOString();
