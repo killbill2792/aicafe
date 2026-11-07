@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
-import { GitHubFacts } from "./github.mjs";
+import { GitHubFacts, parseAcceptanceEvidence } from "./github.mjs";
 
 const task = (id, depends_on = [], state = "architecture_approved") => ({
   id, depends_on, state, acceptance: ["real proof"], brief: "docs/plans/brief.md",
@@ -202,4 +202,11 @@ test("Codex findings wait ten minutes after review, not after PR comments", () =
 test("merge gate rejects draft PR even with passing checks and evidence", () => {
   const ready = { ...pr(), threads_resolved: true, base_current: true, acceptance_proven: true };
   assert.equal(mergeGate({ ...ready, draft: true }).eligible, false);
+});
+
+test("PR acceptance metadata parses only bounded JSON",()=>{
+ const body='Done\n<!-- aicafe-acceptance-evidence {"head_sha":"abc","acceptance":[{"id":"1"}]} -->';
+ assert.equal(parseAcceptanceEvidence(body).head_sha,'abc');
+ assert.equal(parseAcceptanceEvidence('<!-- aicafe-acceptance-evidence broken -->'),null);
+ assert.equal(parseAcceptanceEvidence('not proof'),null);
 });
