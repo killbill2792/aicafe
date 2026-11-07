@@ -15,8 +15,12 @@ has durable `integrated_proven` evidence.** This is enforced through dependency 
 edges, not merely this paragraph. Preserve ongoing already-open PR fixes/reviews.
 
 **Parallel opening rule:** five ChatGPT coding chats are the permitted active capacity.
-After the field/key/ownership plans are owner-approved, POS0b/c/d may all open
-stacked draft PRs against POS0a's open branch (not wait for its merge). POS0e
+After POS0a's source-to-storage-to-reader architecture has been reviewed by
+the owner, merged to main AND verified as integrated_proven, POS0b/c/d may
+begin in parallel from main when each has its own approved exact scope and
+nonoverlapping file ownership. This architecture-foundation gate is distinct
+from ordinary PR code dependencies: do not let an early approval or POS0a draft
+start implementation against an unfinalized source contract. POS0e
 has multiple functional predecessors and an explicit stack base POS0d; it may
 open a draft against POS0d's open branch after all three predecessor drafts
 exist. Other dependencies must still integrate before POS0e merges. POS0f can
@@ -24,6 +28,12 @@ stack against POS0e's open branch. This is parallel **work**, with ordered
 **merges** and final-head acceptance after retargeting; do not serialize PR
 opening on completed upstream merges. Only POS0a is authorized **now**;
 no automatic field-level code approvals are implied.
+
+All assigned coding chats must verify earlier merged PRs against live GitHub:
+actual merge SHA, current main code and consumers, executed tests/integration proof,
+and remaining gaps. The generated task prompt enforces this inspection and the
+dependency/merge gates enforce it again for completion. An old merged badge alone
+is not prior-work acceptance.
 
 Only POS0a's **documentation-only architecture audit** is approved to start without
 another decision. Every later data/job/SQL/tool PR needs the owner's per-field
