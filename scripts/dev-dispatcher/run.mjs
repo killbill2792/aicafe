@@ -9,7 +9,7 @@ import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions } from "./authorization.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
-import { mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration } from "./effects.mjs";
+import { mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration, retryStartupFailure } from "./effects.mjs";
 import { collectReceipts, applyReceipts } from "./inbox.mjs";
 
 async function main() {
@@ -146,6 +146,13 @@ async function main() {
       await promoteIntegration(next);
       return JSON.stringify(next) === JSON.stringify(existing) ? null : next;
     });
+  }
+  // Only independently classified runner startup errors may be retried, once.
+  if (commit && ledger && process.env.DISPATCH_TRANSIENT_CI_RETRY === "true") {
+    for (const [id, rec] of Object.entries(proposed.state.tasks)) {
+      const result = await retryStartupFailure({github:gh,ledger,taskId:id,record:rec,enabled:true});
+      if (result.status === "retry_requested") console.log(`Retried verified CI startup failure for task ${id} (run ${result.run_id})`);
+    }
   }
   // Optional branch maintenance never rebases, force-pushes or resolves conflicts.
   if (commit && process.env.DISPATCH_BRANCH_MAINTENANCE === "true") {
