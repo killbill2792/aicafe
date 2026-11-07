@@ -58,6 +58,7 @@ chat-first features).
 - [p1 authoritative revisions](p1-authoritative-revisions.md).
 
 ## Historical (do not implement)
+- [Toast storage Nov 3 plan](plans/toast-storage.md) — **historical architectural intent**. Its “retire `seen_run_id`” text was **not** the final deployed contract: current `toast_archive_order` and `toast_records_for` still use it. Consult [#398 discrepancy register](plans/toast-standard-api-coverage-matrix.md#start-here--durable-agent-handoff-and-conflicts-index-2026-11-07); never remove existing history/reader fields without D3 consumer/rollback proof.
 - [Progress before November 5 cleanup](history/progress-snapshot-2026-11-05.md) — all old checkboxes and detailed work preserved; not today's task status.
 - [Earlier universal Supervisor proposal](history/universal-supervisor-initial-proposal-2026-11-05.md) — original detailed draft superseded by the compact queue and task briefs.
 - [supervisor-conversational-investigation.md](history/supervisor-conversational-investigation.md) — retired design.
