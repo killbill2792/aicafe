@@ -12,6 +12,7 @@ test('merge cannot proceed without exact acceptance evidence',()=>{
  assert.equal(canMerge(rec,[],evidence).eligible,true);
  assert.equal(canMerge(rec,[],{...evidence,head_sha:'old'}).eligible,false);
  assert.equal(canMerge({...rec,draft:true},[],evidence).eligible,false);
+ assert.deepEqual(canMerge({...rec,base_branch:'feat/predecessor'},[],evidence).reasons,['non_main_destination']);
  assert.equal(canMerge(rec,[{status:'merged'}],evidence).eligible,false);
 });
 test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>{
@@ -30,7 +31,15 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
  assert.equal((await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:false})).status,'disabled');
  const done=await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true});
  assert.equal(done.status,'merged_unproven');assert.equal(done.merge_sha,'merged');
- assert.deepEqual(calls.at(-1),['/pulls/100/merge','PUT']);
+ assert.equal(done.integration_dispatch,'requested');
+ assert.deepEqual(calls.at(-2),['/pulls/100/merge','PUT']);
+ assert.deepEqual(calls.at(-1),['/actions/workflows/ai-cafe-integration-proof.yml/dispatches','POST']);
+ const wrongBase={...github,request:async(path,options)=>path.startsWith('/pulls/') && !path.endsWith('/merge') ? {...pr,base:{sha:'base',ref:'feat/old'}} : github.request(path,options)};
+ assert.deepEqual((await mergeApprovedPr({github:wrongBase,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true})).reasons,['live_pr_changed']);
+ const dispatchFail={...github,request:async(path,options)=>{if(path.includes('/dispatches'))throw Error('403');return github.request(path,options);}};
+ const outcome=await mergeApprovedPr({github:dispatchFail,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true});
+ assert.equal(outcome.status,'merged_unproven');
+ assert.equal(outcome.integration_dispatch,'failed_needs_retry');
  const invalid={...github,acceptanceProof:async()=>({task_id:'6',run_id:11,head_sha:'head',base_sha:'base',acceptance_digest:'f'.repeat(64),acceptance:evidence.acceptance})};
  assert.deepEqual((await mergeApprovedPr({github:invalid,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true})).reasons,['acceptance_artifact_mismatch']);
 });
