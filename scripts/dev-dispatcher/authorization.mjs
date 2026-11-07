@@ -40,3 +40,20 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
   }
   return state;
 }
+
+// Preserve cancelled action history. A new deterministic action key may be issued
+// only after the priority gate is independently integrated, never for uncertain
+// or submitted sends. A pre-existing key is never overwritten or replayed.
+export function assignmentActionKey(state, taskId, queue) {
+  const original = 'assign:' + taskId;
+  const action = state.actions?.[original];
+  if (!action) return original;
+  const gate = queue?.dispatch_rules?.priority_gate_task;
+  if (!gate || action.status !== 'cancelled_priority_gate' ||
+      !['integrated_proven','released_proven'].includes(state.tasks?.[gate]?.status) ||
+      action.receipt || action.claimed_at || action.submitted_at ||
+      action.delivery_claim || state.tasks?.[taskId]?.conversation_ref ||
+      Number.isInteger(state.tasks?.[taskId]?.pr_number)) return null;
+  const key = original + ':after-' + gate;
+  return state.actions[key] ? null : key;
+}
