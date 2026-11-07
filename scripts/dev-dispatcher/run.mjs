@@ -7,6 +7,8 @@ import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate } from "./core.mjs";
 import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { revalidateQueuedActions } from "./authorization.mjs";
+import { linkPullRequests } from "./dependencies.mjs";
+import { mergeApprovedPr } from "./effects.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
@@ -35,7 +37,8 @@ async function main() {
     return { snapshot, closedByPr };
   }
   function reconcile(state, observed) {
-    const copy = reconcileGithub(state, observed.snapshot, observed.closedByPr);
+    const linked = linkPullRequests(state, observed.snapshot);
+    const copy = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
     revalidateQueuedActions(copy, taskById);
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
@@ -85,6 +88,28 @@ async function main() {
       const next = reconcile(existing, await observe(existing)).state;
       return JSON.stringify(next) === JSON.stringify(existing) ? null : next;
     });
+  }
+  // Auto-merge is separately opt-in and requires independently verified acceptance evidence.
+  // This is deliberately not enabled by merely persisting the queue.
+  const autoMerge = process.env.DISPATCH_AUTO_MERGE === "true" && commit;
+  if (autoMerge && ledger) {
+    for (const [id, rec] of Object.entries(proposed.state.tasks)) {
+      if (!rec.pr_number || rec.github_state !== "open" || rec.draft) continue;
+      const task = taskById.get(id);
+      if (!task || !rec.approved || !rec.acceptance_evidence) continue;
+      const predecessorRecords = (task.depends_on || []).map(dep => proposed.state.tasks[dep] || {status:"unknown"});
+      const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
+        evidence: rec.acceptance_evidence, enabled: true });
+      if (outcome.status === "merged_unproven") {
+        await ledger.transaction(state => {
+          const currentRec = state.tasks[id];
+          if (!currentRec || currentRec.head_sha !== rec.head_sha) return null;
+          currentRec.status = "merged"; currentRec.merge_sha = outcome.merge_sha;
+          currentRec.github_state = "merged";
+          return state;
+        });
+      }
+    }
   }
   const gateCounts = { ready: 0, blocked: 0 };
   for (const rec of Object.values(proposed.state.tasks)) {
