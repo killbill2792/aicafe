@@ -242,3 +242,19 @@ test('base SHA changes invalidate merge review until a later relevant review',()
    [{...next,codex_review_at:later}]).tasks.a;
  assert.equal(refreshed.review_base_current,true);
 });
+
+test('dismissed Codex review cannot be treated as clean on current head',async()=>{
+ const basePr={number:52,head:{sha:'abc',ref:'feat/approved'},base:{ref:'main',sha:'base'},updated_at:old,draft:false,body:''};
+ const review={user:{login:'codex[bot]'},commit_id:'abc',state:'DISMISSED',submitted_at:old};
+ const fake=async url=>{
+  if(url.includes('/pulls?'))return {ok:true,json:async()=>[basePr]};
+  if(url.includes('check-runs'))return {ok:true,json:async()=>({total_count:1,check_runs:[{name:'AI CAFE PR baseline',status:'completed',conclusion:'success'}]})};
+  if(url.includes('/reviews?'))return {ok:true,json:async()=>[review]};
+  if(url.includes('/compare/'))return {ok:true,json:async()=>({behind_by:0})};
+  if(url.includes('/commits/abc'))return {ok:true,json:async()=>({commit:{committer:{date:old}}})};
+  if(url.includes('/graphql'))return {ok:true,json:async()=>({data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false},nodes:[]}}}}})};
+  throw Error(url);
+ };
+ const [result]=await new GitHubFacts({repo:'owner/aicafe',token:'example',fetchFn:fake}).snapshot();
+ assert.equal(result.codex_state,'pending');
+});
