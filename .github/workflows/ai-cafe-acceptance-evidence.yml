@@ -2,12 +2,15 @@
 name: AI CAFE Acceptance Evidence
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited, ready_for_review]
+    # Label changes can publish/revoke an owner decision after the PR head
+    # was already checked. These runs wake the existing trusted dispatcher;
+    # acceptance execution itself remains reserved for evidence changes.
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
 permissions:
   contents: read
 jobs:
   acceptance:
-    if: contains(github.event.pull_request.body, 'aicafe-acceptance-evidence')
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && contains(github.event.pull_request.body, 'aicafe-acceptance-evidence')
     name: AI CAFE acceptance evidence
     runs-on: ubuntu-latest
     timeout-minutes: 30
