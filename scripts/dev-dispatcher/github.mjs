@@ -143,7 +143,8 @@ export class GitHubFacts {
     const codex = codexReviews.find(r => r.commit_id === sha);
     const codexState = unresolved === null ? "unknown" :
       unresolved > 0 && codexReviews.length ? "findings" :
-      !codex ? "pending" : codex.state === "CHANGES_REQUESTED" ? "findings" : "clean";
+      !codex ? "pending" : codex.state === "CHANGES_REQUESTED" ? "findings" :
+      ["APPROVED", "COMMENTED"].includes(codex.state) ? "clean" : "pending";
     return { pr_number: pr.number, head_sha: sha, base_branch: pr.base.ref,
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
