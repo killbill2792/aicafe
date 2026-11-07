@@ -26,7 +26,7 @@ export async function publishSignal({ ledgerRepo, ledgerToken, publicRepo, publi
   const updated = await fetchFn(`https://api.github.com/repos/${publicRepo}/contents/signal.json`, {
     method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ branch, sha: file.sha, message: 'Update approved delivery wake-up signal',
-      content: Buffer.from(JSON.stringify(signal, null, 2) + '\\n').toString('base64') })
+      content: Buffer.from(JSON.stringify(signal, null, 2) + '\n').toString('base64') })
   });
   if (!updated.ok) throw new Error(`Public signal write failed: ${updated.status}`);
   return true;
