@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canMerge, mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration } from './effects.mjs';
+import { canMerge, mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration, retryStartupFailure } from './effects.mjs';
 import { linkPullRequests, dependencyBase, retargetDecision } from './dependencies.mjs';
 import { acceptanceDigest } from './acceptance-runner.mjs';
 const rec={task_id:'6',approved:true,pr_number:100,head_sha:'head',base_sha:'base',
@@ -76,4 +76,21 @@ test('retarget requires integrated predecessor and matching live base',async()=>
  assert.equal((await retargetAfterIntegration({github:gh,dependent,predecessor,enabled:true})).status,'blocked');
  assert.equal((await retargetAfterIntegration({github:gh,dependent,predecessor:{...predecessor,status:'integrated_proven'},enabled:true})).status,'retargeted');
  assert.equal(writes,1);
+});
+
+test('verified infrastructure CI retry is at-most-once and fails closed',async()=>{
+ const eligible={...rec,github_state:'open',ci_state:'failure',ci_failure_kind:'startup_failure'};
+ let state={tasks:{'6':{...eligible}}},calls=0;
+ const ledger={transaction:async(fn)=>{
+   const updated=fn(structuredClone(state));
+   if(!updated)return {committed:false};
+   state=updated;return {committed:true};
+ }};
+ const github={transientBaselineRun:async()=>({id:123}),rerunFailedJobs:async()=>{calls++;}};
+ assert.equal((await retryStartupFailure({github,ledger,taskId:'6',record:eligible,enabled:true})).status,'retry_requested');
+ assert.equal((await retryStartupFailure({github,ledger,taskId:'6',record:eligible,enabled:true})).status,'already_reserved');
+ assert.equal(calls,1);
+ assert.equal(state.tasks['6'].transient_ci_retry.run_id,123);
+ assert.equal((await retryStartupFailure({github,ledger,taskId:'6',record:{...eligible,ci_failure_kind:null},enabled:true})).status,'not_verified_infrastructure_failure');
+ assert.equal((await retryStartupFailure({github,ledger,taskId:'6',record:eligible,enabled:false})).status,'disabled');
 });
