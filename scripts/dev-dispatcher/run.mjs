@@ -41,14 +41,7 @@ async function main() {
     const linked = linkPullRequests(state, observed.snapshot);
     const copy = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
     revalidateQueuedActions(copy, taskById);
-    // Integration proof must reference the actual merged SHA and current main SHA.
-    // It is never inferred from the fact that a PR disappeared or merged.
-    for (const [id, rec] of Object.entries(copy.tasks)) {
-      if (rec.status !== "merged" || !rec.merge_sha || !rec.integration_proof) continue;
-      if (integrationStatus({ merged_sha: rec.merge_sha,
-        main_sha: observed.mainSha, proof: rec.integration_proof }) === "integrated_proven")
-        rec.status = "integrated_proven";
-    }
+
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
     const now = new Date().toISOString();
@@ -89,12 +82,25 @@ async function main() {
   }
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
+  async function promoteIntegration(state, mainSha) {
+    for (const rec of Object.values(state.tasks)) {
+      if (rec.status !== "merged" || !rec.integration_proof) continue;
+      const proof = rec.integration_proof;
+      if (integrationStatus({ merged_sha: rec.merge_sha, main_sha: mainSha, proof }) !== "integrated_proven") continue;
+      const run = await gh.request(`/actions/runs/${proof.workflow_run_id}`);
+      if (run.head_sha === mainSha && run.status === "completed" &&
+          run.conclusion === "success" && run.event === "push" &&
+          run.name === "AI CAFE Integration Proof") rec.status = "integrated_proven";
+    }
+  }
   let persisted = null;
   if (commit && ledger) {
     // Reconcile against fresh facts on every CAS attempt; do not write an
     // identical state every five minutes (avoids 288 empty commits per day).
     persisted = await ledger.transaction(async existing => {
-      const next = reconcile(existing, await observe(existing)).state;
+      const latest = await observe(existing);
+      const next = reconcile(existing, latest).state;
+      await promoteIntegration(next, latest.mainSha);
       return JSON.stringify(next) === JSON.stringify(existing) ? null : next;
     });
   }
