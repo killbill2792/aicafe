@@ -234,7 +234,7 @@ test('base SHA changes invalidate merge review until a later relevant review',()
  const state={...emptyLedger(),tasks:{a:before}};
  const next={...before,base_sha:'new-base',base_current:true,
    last_github_activity:old,codex_review_at:'2026-11-05T11:00:00Z'};
- const changed=reconcileGithub(state,[next]).tasks.a;
+ const changed=reconcileGithub(state,[next],{},old).tasks.a;
  assert.equal(changed.review_base_current,false);
  assert.equal(mergeGate({...changed,acceptance_proven:true,threads_resolved:true}).eligible,false);
  assert.equal(decideNudge({...changed,last_commit_at:'2026-11-05T11:00:00Z'},Date.parse(later)).action,'continue_pr');
