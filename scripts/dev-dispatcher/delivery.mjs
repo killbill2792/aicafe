@@ -35,6 +35,9 @@ export function createDelivery({ task, record, action, actionId }) {
   if (!/^docs\/plans\/[a-zA-Z0-9_./-]+\.md$/.test(taskBrief || '') || taskBrief.includes('..'))
     throw new Error('Invalid task brief');
   const details = [
+    `Task acceptance requirements (each must have executable evidence): ${JSON.stringify(task.acceptance || [])}`,
+    `Dependency task IDs: ${JSON.stringify(task.depends_on || [])}. Prerequisite branch/PR must be integrated before completion.`,
+    `Your working branch: ${record.branch || ('feat/aicafe-task-' + task.id)}. Base branch: ${record.base_branch || 'main'}.`,
     `Base branch: ${record.base_branch || 'main'}. ${record.prerequisite_pr ? `Predecessor PR: ${record.prerequisite_pr}.` : ''}`,
     'MANDATORY SKILLS: Read .claude/skills/aicafe-proof-gate/SKILL.md, .claude/skills/aicafe-dependency-check/SKILL.md and docs/rules/skills.md in full before coding. Apply relevant listed skills; include a per-acceptance test/evidence matrix in the PR. Do not claim complete based on a checklist or green CI alone.',
     'Finish implementation and its acceptance evidence BEFORE opening the PR. Open it READY FOR REVIEW (not draft); allow the existing PR-opening Codex review to run ONCE, not on every commit. Ask Codex to check all task acceptance scenarios, missing wiring and integration, not only style. After review, stay in the same working session if possible; do not run a polling loop. Address substantive findings and prove completion before merge.',
@@ -47,7 +50,7 @@ export function createDelivery({ task, record, action, actionId }) {
     'Do not claim that a merge proves integration or production release.',
   ];
   if (record.pr_number) details.push(`Associated PR: ${REPO}/pull/${record.pr_number}`);
-  if (!isNew) details.push(`Required next action: ${action}. Re-check the current PR head, checks and review comments before making changes.`);
+  if (!isNew) details.push(`Required next action: ${action}. Last GitHub-observed commit: ${record.head_sha || 'none'}. Continue from THAT exact commit on branch ${record.branch || 'unknown'}; do not restart, overwrite, or duplicate completed work. PR: ${record.pr_number ? REPO + '/pull/' + record.pr_number : 'not opened'}. CI: ${record.ci_state || 'unknown'}. Codex: ${record.codex_state || 'unknown'}. Inspect current PR head, checks, review comments and remaining acceptance evidence. Fix only the unfinished items; push to the SAME branch and PR.`);
   const prompt = details.join('\n');
   if (prompt.length > 12000) throw new Error('Browser prompt too long');
   return {
