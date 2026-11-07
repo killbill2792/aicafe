@@ -99,7 +99,11 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
     for (const dep of task.depends_on) {
       const previous = records[dep];
       if (integrated(dep, tasks, records)) continue;
-      if (previous?.status === "draft_open" && previous?.branch)
+      // A verified open upstream PR can be draft OR ready-for-review.
+      // Require a real PR number: an assigned branch name alone is not an open PR.
+      if (["draft_open", "review_fixing"].includes(previous?.status) &&
+          previous?.github_state === "open" && previous?.branch &&
+          Number.isInteger(previous?.pr_number))
         openDeps.push({ ...previous, dependency_id: dep });
       else { blocked = true; break; }
     }
