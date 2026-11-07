@@ -14,6 +14,17 @@ semantics; **POS0f** proves the entire API → stored object → `describe_data`
 has durable `integrated_proven` evidence.** This is enforced through dependency DAG
 edges, not merely this paragraph. Preserve ongoing already-open PR fixes/reviews.
 
+**Parallel opening rule:** five ChatGPT coding chats are the permitted active capacity.
+After the field/key/ownership plans are owner-approved, POS0b/c/d may all open
+stacked draft PRs against POS0a's open branch (not wait for its merge). POS0e
+has multiple functional predecessors and an explicit stack base POS0d; it may
+open a draft against POS0d's open branch after all three predecessor drafts
+exist. Other dependencies must still integrate before POS0e merges. POS0f can
+stack against POS0e's open branch. This is parallel **work**, with ordered
+**merges** and final-head acceptance after retargeting; do not serialize PR
+opening on completed upstream merges. Only POS0a is authorized **now**;
+no automatic field-level code approvals are implied.
+
 Only POS0a's **documentation-only architecture audit** is approved to start without
 another decision. Every later data/job/SQL/tool PR needs the owner's per-field
 source/key/destination/privacy/reader plan sign-off and exclusive file ownership under
@@ -37,7 +48,7 @@ Load aicafe-dependency-check and aicafe-proof-gate from .claude/skills/.
 Confirm actual merged commits, executed required tests and on-main integration
 before satisfying dependencies. PRIORITIZE POS0a then POS0b/c/d, POS0e, POS0f;
 do not create new E2/PR6/PR9/PR10 assignments before POS0f integrated proof. Check open PR changed files and file-owner locks.
-Assign up to 4 ChatGPT and 2 Claude approved tasks, independent or
+Assign up to 5 ChatGPT and 2 Claude approved tasks, independent or
 stacked NOW on open prerequisite branches (PR base = that branch).
 Never confuse opened with mergeable. Advance after real merges and proof;
 send a concise task brief + branch/base/owned files/skills to each agent.
