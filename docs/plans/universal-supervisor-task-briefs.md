@@ -8,7 +8,7 @@
 
 **Status:** these are proposed requirements until owner-approved architecture and exclusive editable paths are recorded. Do not assume the Grok-local PR6–PR12 briefs were retrieved. A merged prerequisite is not automatically proven. **Browser screenshots only when a changed UI/browser owner journey needs them.** No production deploy or action without separate owner authorization.
 
-**Short coding prompt:** `Use connected GitHub plugin. Read AGENTS.md + PROGRESS.md and load aicafe-pr-lifecycle, aicafe-dependency-check, aicafe-proof-gate and TASK_ID skills. Implement the approved brief for TASK_ID from docs/plans/universal-supervisor-task-briefs.md. Open a draft PR immediately (stack on open dependency branch); own it through CI/Codex/resolve/review/rebase/merge. Verify prerequisite behavior and required acceptance with actual executed evidence. Only touch assigned paths; no production changes.`
+**Single delivery prompt (no separate copy/paste template):** Actual authorized assignments are constructed by `scripts/dev-dispatcher/run.mjs` using `scripts/dev-dispatcher/delivery.mjs#createDelivery`, the approved machine queue and this task's exact anchor. Read the current `AGENTS.md` → binding POS rules → #398 decision record → this brief+queue → actual code → executable acceptance. The old short coding-prompt example was superseded; do not paste or concatenate it with the generated prompt, reassign an existing chat because of documentation edits, or turn D4A/D4B architectural approval into runtime authorization.
 
 ## Priority zero — finish ALL permitted Toast Standard API data before E2 / PR6–PR17
 
