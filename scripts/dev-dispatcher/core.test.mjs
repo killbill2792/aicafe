@@ -157,7 +157,21 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
     new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
   validateQueue(actual);
   assert.equal(actual.capacity.chatgpt, 5);
-  assert.equal(actual.tasks.find(t=>t.id==="POS0e").stack_base_task,"POS0d");
+  // Owner-corrected sequence: repair the single reader first so new source families
+  // cannot publish data that the existing Supervisor still cannot access.
+  const reader = actual.tasks.find(t=>t.id==="POS0e");
+  assert.deepEqual(reader.depends_on, ["POS0a"]);
+  assert.equal(reader.stack_base_task, undefined);
+  for (const id of ["POS0b","POS0c","POS0d"]) {
+    const source = actual.tasks.find(t=>t.id===id);
+    assert.ok(source.depends_on.includes("POS0e"), id);
+    assert.equal(source.stack_base_task, "POS0e");
+  }
+  const release = actual.tasks.find(t=>t.id==="POS0f");
+  assert.deepEqual(release.depends_on, ["POS0e","POS0b","POS0c","POS0d"]);
+  assert.equal(release.stack_base_task, "POS0d");
+  assert.equal(actual.dispatch_rules.pos_source_authority.mandatory_first_read, "docs/rules/pos-data.md");
+  assert.equal(actual.dispatch_rules.pos_source_authority.legacy_diagnostic_only.includes("toast_raw_samples"), true);
   assert.equal(actual.dispatch_rules.architecture_foundation_proof_task,"POS0a");
   assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
   assert.deepEqual(actual.dispatch_rules.architecture_foundation_dependent_task_ids,
