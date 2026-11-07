@@ -88,7 +88,7 @@
           "scope": "New coverage matrix document only; zero production calls/writes beyond safe read-only evidence."
         }
       },
-      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-POS0a",
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0a",
       "skills": [
         "aicafe-pr-lifecycle",
         "aicafe-dependency-check",
@@ -128,7 +128,7 @@
       "scope_hint": "Existing lib/pos/toast/adapter.ts, laborSync.ts, operationalCopy.ts, optionalSync.ts; current toast_labor_entries, employee/job directory, scheduled shifts, timecards, archive writer and change log. Assign exact files and any migration exclusively after matrix approval.",
       "exclusive_files": [],
       "architecture_approval": null,
-      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-POS0b",
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0b",
       "skills": [
         "aicafe-pr-lifecycle",
         "aicafe-dependency-check",
@@ -171,7 +171,7 @@
       "scope_hint": "Existing Toast Standard client, capture registry, archive writer; cashmgmt, stock, kitchen/prep, availability/ordering schedule. Source keys/cadences/RLS from POS0a; exclusive file owners and migrations assigned before coding.",
       "exclusive_files": [],
       "architecture_approval": null,
-      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-POS0c",
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0c",
       "skills": [
         "aicafe-pr-lifecycle",
         "aicafe-dependency-check",
@@ -214,7 +214,7 @@
       "scope_hint": "Reuse existing menu/config/restaurant collectors and canonical table/readers; diff by exact endpoint and source key. Exclude ERA separate credentials and Menus v3 non-Standard instead of silently calling them missing.",
       "exclusive_files": [],
       "architecture_approval": null,
-      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-POS0d",
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0d",
       "skills": [
         "aicafe-pr-lifecycle",
         "aicafe-dependency-check",
@@ -259,7 +259,7 @@
       "scope_hint": "Existing ai_query_view, toast_records_for/cv_toast_records, canonical dictionary, lib/ai/agent/tools/dataQuery.ts, shared source readers and metrics; check all callers before changing. Exact SQL and shared-file owner require field-level approval.",
       "exclusive_files": [],
       "architecture_approval": null,
-      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-POS0e",
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0e",
       "skills": [
         "aicafe-pr-lifecycle",
         "aicafe-dependency-check",
@@ -302,7 +302,7 @@
       "scope_hint": "Existing Toast adapter/SQL tests, canonical dictionary tests, Supervisor evals and CI disposable migrated Supabase; shared test ownership assigned after code PRs to avoid conflicts. Real café validation read-only and owner-authorized.",
       "exclusive_files": [],
       "architecture_approval": null,
-      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-POS0f",
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0f",
       "skills": [
         "aicafe-pr-lifecycle",
         "aicafe-dependency-check",
