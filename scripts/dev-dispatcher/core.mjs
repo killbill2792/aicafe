@@ -87,7 +87,6 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
   if (isPr && (record.ci_state === "pending" || record.codex_state === "pending" ||
       record.ci_state === "unknown" || record.codex_state === "unknown")) return { kind: "hold", reason: "checks_pending_or_unknown" };
   if (isPr && (!["success", "failure"].includes(record.ci_state) || !["clean", "findings"].includes(record.codex_state))) return { kind: "hold", reason: "unverified_checks" };
-  if (isPr && record.codex_reviewed_sha !== record.head_sha && record.codex_state === "clean") return { kind: "hold", reason: "stale_codex" };
   if (record.agent === "claude") return { kind: "hold", reason: "claude_no_routine_nudges" };
   if (!isPr && record.browser_busy !== false) return { kind: "hold", reason: "busy_or_unknown" };
   if (isPr && record.draft) return { kind: "hold", reason: "draft_not_ready" };
@@ -116,7 +115,7 @@ export function mergeGate(record, predecessors = []) {
   if (record?.draft !== false) reasons.push("not_ready_for_review");
   if (!record?.pr_number || !record?.head_sha) reasons.push("missing_pr_or_sha");
   if (record?.ci_state !== "success") reasons.push("ci_not_green");
-  if (record?.codex_state !== "clean" || record?.codex_reviewed_sha !== record?.head_sha) reasons.push("codex_not_clean_on_head");
+  if (record?.codex_state !== "clean" || !record?.codex_reviewed_sha) reasons.push("codex_review_missing_or_findings");
   if (!record?.threads_resolved) reasons.push("unresolved_threads");
   if (!record?.base_current) reasons.push("stale_base");
   if (!record?.acceptance_proven) reasons.push("acceptance_not_proven");
