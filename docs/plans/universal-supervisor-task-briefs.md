@@ -186,13 +186,13 @@ then post-merge consumer proof before `POS0f = integrated_proven`.
 a green job that skipped SQL/agent assertions, or a claim \"AI can read all data\" without field-level
 evidence. All older PRs and the current order-storage design remain intact.
 
-## Task E2: E2 required seeded browser CI, protected preview proof
+## Task E2: E2 required seeded browser CI (GitHub Actions only; no Vercel preview)
 
-- **Depends:** none (open prerequisite → stacked draft; merge after proven integration).
-- **Result:** Required Playwright CI job + isolated seeded preview; verify browser scenarios really run.
-- **Scope to verify/assign:** CI/browser test harness, disposable seeded auth and PR check integration. Exclusive editable paths must be decided against current main and open PRs before coding.
-- **Must prove:** A changed browser flow runs a real targeted Playwright scenario, with recorded job link; Backend-only changes are not delayed by irrelevant screenshots; No production accounts/side effects in preview fixtures.
-- **Tests:** db, e2e, preview, security; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `supabase`, `supabase-postgres-best-practices`, `vitest`, `pr`.
+- **Depends:** POS0f integrated proof, with E1 #369 and B2 #374 existing foundations. Not approved to dispatch until these gates are verified.
+- **Result:** Required targeted Playwright in GitHub Actions against a locally started Next.js app and disposable seeded Supabase database; record actual executed browser scenarios.
+- **Scope to verify/assign:** Existing CI/browser harness, disposable seeded auth and PR check integration; no preview deployment, no Vercel builds, no production connection. Assign exact exclusive files on current main before implementation.
+- **Must prove:** A changed UI/browser flow runs its applicable real Playwright scenario with CI job/artifact link; backend-only changes are not delayed by irrelevant screenshots; no production accounts or side effects; skipped required browser proof is NOT a pass.
+- **Tests:** db, e2e, security and relevant browser artifact proof in GitHub Actions only. **Skills:** `supabase`, `supabase-postgres-best-practices`, `vitest`, `pr`, `playwright-cli`.
 
 ## Task 6: Durable worker and cross-turn execution
 
