@@ -130,6 +130,27 @@ describe('Toast diagnostics may not feed operational data', () => {
     expect(manual.run().status).toBe(0);
   });
 
+  it('enforces explicit naming for new diagnostic-only sources without banning historical files', () => {
+    const bad = fixture();
+    bad.put('lib/pos/toast/hiddenCapture.ts',
+      '// DIAGNOSTIC_ONLY: investigation; no operating data.\nexport const testCapture = true;\n');
+    const invalid = bad.run();
+    expect(invalid.status).toBe(1);
+    expect(invalid.stderr).toContain('lib/pos/toast/hiddenCapture.ts:1: DIAGNOSTIC_ONLY source must be named');
+
+    const good = fixture();
+    good.put('lib/pos/toast/toastDiagnosticCapture.ts',
+      '// DIAGNOSTIC_ONLY: investigation; no operating data.\nexport const capture = true;\n');
+    expect(good.run().status).toBe(0);
+
+    const existing = fixture({
+      'lib/pos/toast/rawSample.server.ts': '// DIAGNOSTIC_ONLY: existing old name.\n',
+    });
+    existing.put('lib/pos/toast/rawSample.server.ts',
+      '// DIAGNOSTIC_ONLY: existing old name.\nexport const noNewCapture = true;\n');
+    expect(existing.run().status).toBe(0);
+  });
+
   it('fails closed if the supplied Git base cannot be checked', () => {
     const r = fixture();
     r.put('app/page.tsx', 'export const version = 1;\n');
