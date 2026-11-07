@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { canMerge, mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration } from './effects.mjs';
 import { linkPullRequests, dependencyBase, retargetDecision } from './dependencies.mjs';
+import { acceptanceDigest } from './acceptance-runner.mjs';
 const rec={task_id:'6',approved:true,pr_number:100,head_sha:'head',base_sha:'base',
  base_branch:'main',draft:false,ci_state:'success',codex_state:'clean',
  codex_reviewed_sha:'head',threads_resolved:true,base_current:true};
-const evidence={head_sha:'head',base_sha:'base',ci_run_id:10,
+const evidence={head_sha:'head',base_sha:'base',ci_run_id:10,acceptance_run_id:11,
  acceptance:[{id:'1',command:'node --test',job_url:'https://github.com/test',test_file:'scripts/dev-dispatcher/effects.test.mjs',result:'passed'}]};
 test('merge cannot proceed without exact acceptance evidence',()=>{
  assert.equal(canMerge(rec,[],evidence).eligible,true);
@@ -19,14 +20,19 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
  const github={request:async(path,options)=>{
    calls.push([path,options?.method]);
    if(path.endsWith('/merge'))return {merged:true,sha:'merged'};
-   if(path.startsWith('/actions/runs/')) return path.includes('/jobs') ? {total_count:1,jobs:[{name:'AI CAFE PR baseline',conclusion:'success',html_url:'https://github.com/test'}]} : {id:10,head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
+   if(path==='/actions/runs/11/jobs?per_page=100') return {total_count:1,jobs:[{name:'AI CAFE acceptance evidence',status:'completed',conclusion:'success',html_url:'https://github.com/test',steps:[{name:'Run approved acceptance scenarios',status:'completed',conclusion:'success'}]}]};
+   if(path==='/actions/runs/11')return {name:'AI CAFE Acceptance Evidence',head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
+   if(path.startsWith('/actions/runs/')) return path.includes('/jobs') ? {total_count:1,jobs:[{name:'AI CAFE PR baseline',conclusion:'success'}]} : {id:10,head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
    if(path.startsWith('/contents/')) return {type:'file'};
    return pr;
- },one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',threads_resolved:true})};
+ },one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',threads_resolved:true}),
+ acceptanceProof:async()=>({task_id:'6',run_id:11,head_sha:'head',base_sha:'base',acceptance_digest:acceptanceDigest(evidence.acceptance),acceptance:[{...evidence.acceptance[0]}]})};
  assert.equal((await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:false})).status,'disabled');
  const done=await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true});
  assert.equal(done.status,'merged_unproven');assert.equal(done.merge_sha,'merged');
  assert.deepEqual(calls.at(-1),['/pulls/100/merge','PUT']);
+ const invalid={...github,acceptanceProof:async()=>({task_id:'6',run_id:11,head_sha:'head',base_sha:'base',acceptance_digest:'f'.repeat(64),acceptance:evidence.acceptance})};
+ assert.deepEqual((await mergeApprovedPr({github:invalid,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true})).reasons,['acceptance_artifact_mismatch']);
 });
 test('integration requires actual main SHA and passing scenario run',()=>{
  const args={merged_sha:'merged',main_sha:'main',
