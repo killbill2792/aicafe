@@ -48,8 +48,8 @@ and stale record are distinct statuses.
 
 ## Task POS0a
 
-**Title:** Current Toast Standard API contract and source-to-AI coverage matrix  
-**Dependency:** none. **State:** architecture-approved **read-only inventory only**.  
+**Title:** Current Toast Standard API contract and source-to-AI coverage matrix
+**Dependency:** none. **State:** architecture-approved **read-only inventory only**.
 **Exclusive file:** `docs/plans/toast-standard-api-coverage-matrix.md`. No runtime code, migrations
 or live provider writes. Reuse the repository's official operation inventory, current online Toast API
 specifications, `docs/plans/toast-storage.md`, `docs/rules/pos-data.md` and existing database evidence.
@@ -73,8 +73,8 @@ linked in PR. No DB writes, no production migration. No extra file ownership wit
 
 ## Task POS0b
 
-**Title:** Staff, jobs, shifts and time entries — all permitted fields, one current object  
-**Dependency:** POS0a field contract. **State:** proposed until specific field/key approval.  
+**Title:** Staff, jobs, shifts and time entries — all permitted fields, one current object
+**Dependency:** POS0a field contract. **State:** proposed until specific field/key approval.
 **Likely existing code:** `lib/pos/toast/adapter.ts`, `laborSync.ts`, `operationalCopy.ts`,
 `optionalSync.ts`; existing labor/staff canonical readers and archive snapshot writer. Reserve exact
 exclusive files against active PRs before coding.
@@ -96,7 +96,7 @@ read, screen/agent parity, stale/permission failure; existing order regressions 
 
 ## Task POS0c
 
-**Title:** Cash, stock, kitchen and dynamic availability — current operational objects  
+**Title:** Cash, stock, kitchen and dynamic availability — current operational objects
 **Dependency:** POS0a field contract. **State:** proposed until specific field/key approval.
 
 **How:** Extend **existing** Toast client/job/current-object writer, not `toast_raw_samples` as a
@@ -116,7 +116,7 @@ mock Standard API, changed/repeated/timeouts/429/403/204, multi-café isolation,
 
 ## Task POS0d
 
-**Title:** Remaining Standard setup/configuration/menu/device/partner endpoints  
+**Title:** Remaining Standard setup/configuration/menu/device/partner endpoints
 **Dependency:** POS0a field contract. **State:** proposed until specific field/key approval.
 
 **How:** Reuse the existing menu, restaurant, job/setup and archive logic. Retain permitted fields
@@ -133,7 +133,7 @@ changes. Every unavailable field documents permission/provider reason and verifi
 
 ## Task POS0e
 
-**Title:** Universal discover/query of all retained fields through ONE shared foundation  
+**Title:** Universal discover/query of all retained fields through ONE shared foundation
 **Dependency:** POS0b + POS0c + POS0d. **State:** proposed until shared-reader design approved.
 
 **How:** Extend the existing `toast_records_for` / canonical view, `ai_query_view`,
@@ -156,7 +156,7 @@ field allowlists, invalid paths/SQL rejected, real agent loop with seeded data, 
 
 ## Task POS0f
 
-**Title:** Enforce complete Standard API → storage → shared reader → Supervisor acceptance  
+**Title:** Enforce complete Standard API → storage → shared reader → Supervisor acceptance
 **Dependency:** POS0e. **State:** proposed. This is the **priority gate** for E2/PR6/PR9/PR10
 and thus every downstream PR6–PR17 task.
 
