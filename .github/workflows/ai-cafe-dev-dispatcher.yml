@@ -46,6 +46,10 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+      checks: read
     needs: unit
     steps:
       - uses: actions/checkout@v4
@@ -68,3 +72,12 @@ jobs:
           else
             node scripts/dev-dispatcher/run.mjs
           fi
+      - name: Publish opaque wake-up signal (only after private ledger persistence)
+        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || (github.event_name == 'schedule' && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+          DISPATCH_SIGNAL_SECRET: ${{ secrets.DISPATCH_SIGNAL_SECRET }}
+        run: node scripts/dev-dispatcher/signal.mjs
