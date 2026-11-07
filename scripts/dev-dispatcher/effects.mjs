@@ -6,7 +6,7 @@ export function verifyEvidence(record, evidence) {
   if (!evidence || evidence.head_sha !== record.head_sha ||
       evidence.base_sha !== record.base_sha || evidence.ci_run_id == null ||
       !Array.isArray(evidence.acceptance) || !evidence.acceptance.length ||
-      evidence.acceptance.some(item => !item.id || !item.command || !item.job_url || item.result !== 'passed'))
+      evidence.acceptance.some(item => !item.id || !item.command || !item.job_url || !item.test_file || item.result !== 'passed'))
     return false;
   return true;
 }
@@ -15,9 +15,26 @@ export function canMerge(record, predecessors, evidence) {
   return mergeGate({ ...record, acceptance_proven: verifyEvidence(record, evidence) }, predecessors);
 }
 
-export async function mergeApprovedPr({ github, record, predecessors = [], evidence, enabled = false }) {
+export async function mergeApprovedPr({ github, record, predecessors = [], evidence, expectedAcceptance = [], enabled = false }) {
   if (!enabled) return { status: 'disabled' };
   if (!canMerge(record, predecessors, evidence).eligible) return { status: 'blocked', reasons: canMerge(record, predecessors, evidence).reasons };
+  if (!expectedAcceptance.length || evidence.acceptance.length !== expectedAcceptance.length ||
+      !expectedAcceptance.every((_, i) => evidence.acceptance[i]?.id === String(i + 1)))
+    return { status: 'blocked', reasons: ['acceptance_scenarios_not_accounted_for'] };
+  const run = await github.request(`/actions/runs/${evidence.ci_run_id}`);
+  if (run.head_sha !== record.head_sha || run.status !== 'completed' ||
+      run.conclusion !== 'success' || run.event !== 'pull_request')
+    return { status: 'blocked', reasons: ['unverified_ci_evidence'] };
+  const jobs = await github.request(`/actions/runs/${run.id}/jobs?per_page=100`);
+  if (jobs.total_count > 100 || !jobs.jobs?.some(j => j.conclusion === 'success' &&
+      j.name === 'AI CAFE PR baseline'))
+    return { status: 'blocked', reasons: ['required_baseline_not_verified'] };
+  for (const item of evidence.acceptance) {
+    if (!/^(?:tests|e2e|lib|app|scripts)\\/[a-zA-Z0-9_./-]+\\.(?:test|spec|e2e)\\.[cm]?[jt]sx?$/.test(item.test_file) ||
+        item.test_file.includes('..')) return { status: 'blocked', reasons: ['unsafe_test_path'] };
+    const file = await github.request(`/contents/${item.test_file}?ref=${record.head_sha}`);
+    if (file.type !== 'file') return { status: 'blocked', reasons: ['test_file_missing'] };
+  }
   const pr = await github.request(`/pulls/${record.pr_number}`);
   if (pr.merged || pr.state !== 'open' || pr.draft || pr.head.sha !== record.head_sha ||
       pr.base.sha !== record.base_sha || pr.base.ref !== record.base_branch)
