@@ -1,5 +1,9 @@
 # Universal Supervisor — coding-agent task briefs (proposal)
 
+**MANDATORY POS0 PRE-CODING SOURCE-AUTHORITY GATE:** Before opening/editing POS0b–POS0f, read **[docs/rules/pos-data.md](../rules/pos-data.md)** in full (the binding single authority for current versus diagnostic data, names, retirement and proof), then AGENTS.md, current main code and the [POS0a actual-source audit](toast-standard-api-coverage-matrix.md). In the **first** PR body, reproduce the table/classification for `toast_raw_records` (**OPERATIONAL_CURRENT**), `toast_raw_changes` (**CHANGE_LOG**), `toast_raw_samples` (**LEGACY_DIAGNOSTIC_ONLY**), `toast_raw_samples_latest` (**LEGACY_DIAGNOSTIC_ONLY**), typed/staged operational facts and the existing `toast_records_for` / `describe_data` / `query_data` consumers. List the **exact source→field→object key→writer→reader→Supervisor/screen** chain and the old diagnostic consumers to retire. Include literal `source_authority_checked: yes`, with links to the files inspected and current-head source proof. **This string is a review declaration, not a substitute for proof.** If a coder cannot verify the classification, they must not invent another store, reader or fixture. No POS0 source-family PR may claim done if its newly stored data is not answerable via the real existing Supervisor tools and a non-diagnostic test.
+
+**Sequence correction:** The **existing POS0e task moves ahead of POS0b/c/d as the shared reader and global retained-field foundation**. POS0e first cuts off operational consumers of `toast_raw_samples`, repairs the existing global safe-field policy and provides schema-backed discovery/current-object reads. Then POS0b–d extend that reader with their distinct source families (parallel disjoint files); POS0f is the final all-family proof and explicitly retires obsolete diagnostic capture/mirror/rows **only after** all active consumers are gone. The queue JSON dependencies must match this order. This is a **reordering of the existing six tasks**, not a second agent or data system; POS0e alone owns globally shared reader/redactor files and b/c/d must not edit those in parallel. No production data deletion solely on plan approval.
+
 **Read once:** `AGENTS.md`, `PROGRESS.md`, [agent operations](universal-supervisor-agent-operations.md), [queue](universal-supervisor-queue.json), and the three AI CAFE skills in `.claude/skills/`. Each coding chat opens the task's relevant listed existing skills and verifies its own current code/PR scope. The **one common lifecycle** (stacked draft immediately, one PR/chat, current-head CI, Codex review and resolved threads, rebase when dependency merges, integration proof, merge) is in `aicafe-pr-lifecycle`; do not duplicate it in each task.
 
 **Status:** these are proposed requirements until owner-approved architecture and exclusive editable paths are recorded. Do not assume the Grok-local PR6–PR12 briefs were retrieved. A merged prerequisite is not automatically proven. **Browser screenshots only when a changed UI/browser owner journey needs them.** No production deploy or action without separate owner authorization.
@@ -25,10 +29,7 @@ screen metrics, `describe_data`, `query_data`, `calculate`, privacy redaction an
 remain. Extend in place. Do **not** create a duplicate raw ingest, second source of truth, new
 per-question view, arbitrary model-written SQL or blanket 30-minute endpoint polling.
 
-**Meaning of all data:** Every *permitted business field the configured Standard API can actually
-return* is stored and AI-discoverable (or has a current, evidenced provider/scope/privacy exception).
-It does not mean consumer PII, card credentials, secrets, permission bypass, paid Analytics ERA, Menus
-V3 if excluded from Standard, or invented facts. Endpoint counts and schemas must come from the
+**Meaning of all data:** Every field the granted Standard API actually returns—including **customer and employee names, contact information, stable IDs, permitted personal/customer/loyalty fields, notes and complete business/operational metadata**—must survive in the *existing* current-object writer and be available through the existing authorized AI tools. Exclude card PAN/CVV/track and reusable payment authentication credentials/security secrets, not entire customer or staff objects. Preserve café/role isolation. Null/omitted/permission denied must never block unrelated data; schema-defined fields remain discoverable even when no recent record has a value. This does **not** authorize paid Analytics ERA, separate Menus V3 entitlement, permission bypass, fake values or direct unapproved production changes. Endpoint counts and schemas must come from the
 **current official Toast specs**, not hardcoded historical 76/86/88 totals. Compare each café's
 actual scope and response; a 200 with zero rows, 204, 403, missing GUID, partial page, failed capture
 and stale record are distinct statuses.
@@ -37,11 +38,12 @@ and stale record are distinct statuses.
 
 | Concern | Required observable proof |
 |---|---|
+| Diagnostic exclusion | `toast_raw_samples` and diagnostic/test café mirror values **never** influence Supervisor/canonical views/screen metrics, even on 403/204/no current source; old active lineage retired and tested in disposable DB; old test assertions corrected, not hidden |
 | Full field retention | Current Toast-shaped response field-by-field → allowed stored business field, with documented privacy filtering; nested arrays, GUID references, booleans, null, zero, money and timestamps preserved accurately |
 | One object / real changes | Business + restaurant + stable provider object key; identical replay and reordered arrays do not duplicate; genuine field modification updates existing object and records precise before/after/when |
 | Storage safety | Reuse current writer, tables and `toast_raw_changes`; no duplicate full snapshots, no loss of already verified orders or historical accounting records; RLS/owner scope, non-PII business IDs |
 | Freshness/coverage | Operations (attendance, changing stock/cash, relevant kitchen) refresh as often as bounded Standard API access safely permits; setup daily/on modification; backoff, pagination, modified cursor, missed-run repair, day closeout and overnight correctness; no invalid zero or fresh claim |
-| One data path | Same authorized current facts under screens and chat; specialized screen tools may project/calculate, **not independently source conflicting data**; arbitrary unfamiliar questions use `describe_data`/`query_data` with allowed relationships, provenance and safe DB aggregates |
+| One data path | Same authorized **current** facts under screens and chat, with existing `describe_data`/`query_data` over **all permitted fields**, no row sample as the discovery universe; query result limits constrain context only, not DB retrieval |
 | Money | Screen money and labor use `lib/metrics/core/`; other arithmetic through sourced `calculate`; actual/estimate/provisional/missing/stale distinguishable with café-local date and currency |
 | Testing | Strengthen/replace inadequate assertions/fixtures, do not silently delete valid tests or relax to mocks; executable migrated disposable Supabase SQL/RLS, one-current-object/change/retry, endpoint × field, screen parity and real Supervisor-query deterministic acceptance; tests actually run in CI |
 | Proof/release | Every PR body has test command + expected and actual + **executed CI job URL + head SHA**; Codex clean, base current, migrations identified and applied only with owner consent; final read-only real-café audit separately; incomplete/unavailable is NOT success |
@@ -74,7 +76,7 @@ linked in PR. No DB writes, no production migration. No extra file ownership wit
 ## Task POS0b
 
 **Title:** Staff, jobs, shifts and time entries — all permitted fields, one current object
-**Dependency:** POS0a field contract. **State:** proposed until specific field/key approval.
+**Dependency:** POS0a field contract **and POS0e shared current-reader/retention foundation**. **State:** proposed until specific field/key approval.
 **Likely existing code:** `lib/pos/toast/adapter.ts`, `laborSync.ts`, `operationalCopy.ts`,
 `optionalSync.ts`; existing labor/staff canonical readers and archive snapshot writer. Reserve exact
 exclusive files against active PRs before coding.
@@ -134,17 +136,19 @@ changes. Every unavailable field documents permission/provider reason and verifi
 ## Task POS0e
 
 **Title:** Universal discover/query of all retained fields through ONE shared foundation
-**Dependency:** POS0b + POS0c + POS0d. **State:** proposed until shared-reader design approved.
+**Dependency:** POS0a field contract. **State:** **FIRST proposed shared foundation** before POS0b–d; exact source/field/key approval and single-file ownership required.
 
-**How:** Extend the existing `toast_records_for` / canonical view, `ai_query_view`,
+**How:** **FIRST retire all active diagnostic-backed operational readers**: update existing `toast_records_for`, `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` and any remaining canonical source from **current stored object data only**, with a new additive migration and a final-schema negative dependency test. Keep diagnostic captures for independent audit until safe cleanup; NEVER fall back to them for business answers. Existing tests in `scripts/toast-db-integration.sql` / `scripts/ai-toast-records-sql-integration.sql` that presently assert diagnostic-backed facts must instead assert their exclusion and current-source positive evidence. Correct binding `docs/rules/pos-data.md` and data-dictionary notes after changing final SQL, without modifying historical migrations. In the **same exclusive shared foundation ownership**, repair `lib/pos/toast/redact.ts` and its tests to retain every permitted customer/employee/contact/notes/stable ID field while excluding PAN/CVV/track and reusable payment/authentication secrets. Then extend the existing `toast_records_for` / canonical view, `ai_query_view`,
 `describe_data`, `query_data` and dictionary to use **current** allowed records (including non-order
-objects), with business-ID and field-level authorization; avoid any arbitrary model-authored SQL.
+objects), with business-ID and field-level authorization. This first generic reader must support future POS0b/c/d object kinds without another per-family reader; avoid any arbitrary model-authored SQL.
 Reuse known employee/time-entry, order/check/item/payment and other stable IDs for controlled
 relationship traversal/aggregation; do not add a canonical view per owner question. Keep bounded
 DB-computed results, pagination/coverage summaries and actor/provenance. Trace `get_staff`,
 `get_sales`, `get_profit`, `get_schedule` and screen callers: specialized results may be concise,
 but their underlying facts and canonical computations must be shared. Keep actual screen-number
 definitions and `calculate` separate and unchanged unless a proven defect needs a minimal fix.
+
+**Early foundation acceptance before POS0b–d:** Seed synthetic authoritative staff/time-entry/cash/stock/kitchen and diagnostic-only conflicting values in migrated disposable Supabase. Assert that the *same existing* `describe_data` and `query_data` can query current objects and **cannot** return sample-only values; `ai_toast_fields` no longer limits its field universe to 30 recent rows/200 paths; no change to imported order totals or screen calculations. Confirm named fields (including personal data permitted by Toast) survive the existing safe writer and cross-café requests remain denied. This foundation establishes generic capability, not claims that the future endpoint sync jobs are already implemented. Do not merge while diagnostic SQL lineage remains active.
 
 **Must prove:** The exact same current staff/time-entry and order/payment evidence is available
 to universal queries and applicable screens; previously absent labor details can now be retrieved.
@@ -157,8 +161,10 @@ field allowlists, invalid paths/SQL rejected, real agent loop with seeded data, 
 ## Task POS0f
 
 **Title:** Enforce complete Standard API → storage → shared reader → Supervisor acceptance
-**Dependency:** POS0e. **State:** proposed. This is the **priority gate** for E2/PR6/PR9/PR10
+**Dependency:** POS0e foundation + POS0b, POS0c and POS0d. **State:** proposed. This is the **priority gate** for E2/PR6/PR9/PR10
 and thus every downstream PR6–PR17 task.
+
+**Mandatory diagnostic retirement:** After the final active SQL/view and all operational code consumers prove zero diagnostic dependency, separately check the test-café mirror (`scripts/sync-cafe-data.mjs`), workflow, leases, fixtures, table grants and actual database table size. Retire the old daily raw capture and its mirroring if no longer justified; **delete obsolete diagnostics by a new migration only when authorized and proven safe**, with dry-run counts, zero dependent objects and rollback/retention decision. Do not leave compatibility aliases for Supervisor. The previous SQL diagnostic test must remain or be replaced by an isolated diagnostics-only test until physical removal is completed. Update current docs to describe the final state, not intended future state.
 
 **How:** Build/strengthen **executable** coverage tests driven by the up-to-date operation/field
 contract. An endpoint × field status matrix is generated by tests, not an old fixed total or a manual
