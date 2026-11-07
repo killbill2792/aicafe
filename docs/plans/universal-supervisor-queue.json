@@ -93,7 +93,7 @@
       "ordered_first_read": [
         "AGENTS.md (PROGRESS.md read only)",
         "docs/rules/pos-data.md (binding source/consumer decisions)",
-        "docs/plans/toast-standard-api-coverage-matrix.md#start-here--durable-agent-handoff-and-conflicts-index-2026-11-07 (approved D1-D3; observed vs target)",
+        "docs/plans/toast-standard-api-coverage-matrix.md#start-here--durable-agent-handoff-and-conflicts-index-2026-11-07 (approved D1-D4A/D4B; observed vs target)",
         "docs/plans/universal-supervisor-task-briefs.md#task-<POS0_ID> and this machine queue (no runtime authorization)",
         "existing code plus deployed pg_get_functiondef/pg_get_viewdef and consumers",
         "docs/rules/tests.md and actually executed acceptance/rollback evidence"
@@ -104,7 +104,8 @@
         "seen_run_id is referenced by active toast_archive_order and toast_records_for: do not remove on old storage-plan wording",
         "SQL toast_import_day may roll back a valid day on row failure; liveArchive.server.ts suppresses archive-page RPC errors and skips remaining pages: later owner-assigned order SQL/live-archive recovery PR, NOT YET APPROVED",
         "menu copying fetches full menu twice and retirement requires snapshot proof: POS0d, POS0f acceptance",
-        "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof"
+        "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof",
+        "D4A menu daily full download and duplicate Menus V2 GETs; D4B SQL-day atomic rollback and live archive missed-page recovery; preserve merged #189/#203/#264/#297 nonstarvation"
       ],
       "owner_hold": "D1-D3 architecture principles approved; PR398/PR400 final architecture review still pending; POS0b-f implementation owner gate remains approved=false",
       "approved_record_store": "toast_raw_records",
@@ -119,6 +120,55 @@
       "retirement": "POS0e active SQL cutover before POS0b/c/d; POS0f only after zero old consumers may retire diagnostic capture/mirror/rows; production deletion is a distinct owner-controlled action",
       "enforcement": "scripts/guards/toast-diagnostic-boundary.mjs (additions) + POS0e/0f final migrated database lineage and negative contamination tests (all active definitions)",
       "status": "plan+additions guard; final source retirement not yet implemented"
+    },
+    "pos_d4_contract": {
+      "owner_comments": [
+        "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714042938",
+        "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714102679",
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714105378"
+      ],
+      "architecture_approach": "D4A_APPROVED_B_change_driven_existing_sync_not_each_endpoint_every_tick",
+      "order_failure_outcome": "D4B_APPROVED_isolate_bad_SQL_records_without_losing_good_orders_or_weakening_day_financial_atomicity",
+      "implementation_approved": false,
+      "existing_infrastructure": [
+        "10-minute coordinated Toast location lease/scheduler",
+        "separate 15-minute live-order read to same archive",
+        "toast_raw_records current object and toast_raw_changes genuine deltas",
+        "staged cursor, daily closeout, bounded modified and payment-gap repair",
+        "generation-bound post-commit toast_rollup_refresh_jobs"
+      ],
+      "must_preserve_merged_prs": [
+        189,
+        203,
+        264,
+        297
+      ],
+      "future_order_recovery": {
+        "proposed_owner_task_id": "POS0-order-recovery",
+        "queue_task_created": false,
+        "dispatchable": false,
+        "separate_owner_sql_and_file_approval_required": true,
+        "proposed_existing_file_candidates": [
+          "lib/pos/toast/dayImport.ts",
+          "lib/pos/toast/scheduler.ts",
+          "lib/pos/toast/missingDays.ts",
+          "lib/pos/toast/liveArchive.server.ts",
+          "lib/pos/toast/rollupRetries.ts"
+        ],
+        "owned_files_reserved": [],
+        "schema_migration": "new additive migration only after owner-authorized next-free number",
+        "sql_mechanism": "unapproved; preserve financial/day certification and no new queue",
+        "disposable_sql_acceptance": "99 valid orders plus one database-only cast/constraint/trigger failure; durable idempotent valid orders; bounded failed-object replay; no false complete day, later-day/payment-gap starvation or lost generation-bound cost refresh",
+        "regression": "#189 nonce, cursor, 429/Retry-After; #203 first backfill/shared five-day cap and 100+ cafe fairness; #264 timeout and fee-gap nonstarvation; #297 five-date and 1h-to-24h no-duplicate recovery; live archive page failure; screen/Supervisor same status"
+      },
+      "independent_cost_queue_diagnostic": {
+        "observed_date": "2026-11-07",
+        "due_jobs": 77,
+        "zero_attempts": 77,
+        "rollups_present": 77,
+        "owner": "separate read-only root-cause investigation",
+        "do_not_conflate_with_import_failure": true
+      }
     }
   },
   "tasks": [
@@ -128,9 +178,11 @@
       "title": "P0 Standard API source-to-AI coverage contract and gap matrix",
       "depends_on": [],
       "goal": "Inventory every currently documented Standard API read operation and every permitted response field against actual scopes, fetch cadence, stored current object, privacy filter, change history, canonical reader and Supervisor; owner approves the field-level design before data-code PRs.",
-      "scope_hint": "Read-only official-spec + current repo + disposable/authorized read-only database inventory; new docs/plans/toast-standard-api-coverage-matrix.md. Own no existing runtime or migration file.",
+      "scope_hint": "Read-only official-spec + current repo + disposable/authorized read-only database inventory; new docs/plans/toast-standard-api-coverage-matrix.md. Own no existing runtime or migration file. Owner comment on PR #398 6713567512 separately authorizes these two audit-only files; full pinned official schema and deterministic test still need execution, not runtime changes.",
       "exclusive_files": [
-        "docs/plans/toast-standard-api-coverage-matrix.md"
+        "docs/plans/toast-standard-api-coverage-matrix.md",
+        "scripts/toast-standard-api-coverage.test.mjs",
+        "docs/plans/toast-openapi-spec-snapshot.json"
       ],
       "architecture_approval": {
         "approved": true,
@@ -153,10 +205,10 @@
         "pr"
       ],
       "acceptance": [
-        "Every official current Standard API GET operation and response field is recorded with official spec version/link, café-specific scope/permission and observed result (success/empty/403/missing-id/not configured/not tested), with Analytics/menus-v3 and no-GET families excluded or classified accurately.",
-        "Each allowed field has explicit canonical object identity, storage owner/key, existing ingest job, cadence, privacy treatment, current-reader/view, Supervisor query field, screen consumer, freshness and known gap; no invented endpoint counts or silent assumed coverage.",
+        "Every official current Standard API GET operation and response field is recorded with official spec version/link, café-specific scope/permission and observed result (success/empty/403/missing-id/not configured/not tested), with Analytics/menus-v3 and no-GET families excluded or classified accurately. A1 official schema fixture is pinned to official public Toast download URLs, versions and SHA; test fails on missing operation/schema fields rather than treating current registry as complete.",
+        "Each allowed field has explicit canonical object identity, storage owner/key, existing ingest job, cadence, privacy treatment, current-reader/view, Supervisor query field, screen consumer, freshness and known gap; no invented endpoint counts or silent assumed coverage. A2 full field paths inherit source-to-writer-to-reader/consumer trace; unknown coverage and sampled payloads stay distinct.",
         "Compare actual code paths, current production object evidence and stale diagnostics separately; distinguish old October capture from current order/staff sync; owner reviews exact proposed source → stored object → shared reader plan before coding.",
-        "A reproducible matrix audit command and proof link are recorded, and the original working order path is marked preserve/no rewrite."
+        "A reproducible matrix audit command and proof link are recorded, and the original working order path is marked preserve/no rewrite. A4 execute scripts/toast-standard-api-coverage.test.mjs from the exact PR head and record CI evidence; do not claim acceptance from Markdown alone."
       ],
       "test_kinds": [
         "docs",
