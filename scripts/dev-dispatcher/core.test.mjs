@@ -13,7 +13,7 @@ const clock = Date.parse("2026-11-05T16:00:00Z");
 const old = new Date(clock - 700000).toISOString();
 const pr = (more = {}) => ({ task_id: "a", approved: true, conversation_ref: "private",
   pr_number: 101, head_sha: "abc", prompt_version: "v1",
-  last_github_activity: old, ci_state: "success", codex_state: "clean",
+  last_github_activity: old, last_commit_at: old, draft: false, ci_state: "success", codex_state: "clean",
   codex_reviewed_sha: "abc", attempts: 0, ...more });
 
 test("queue validates 32-task style DAG, rejects missing prerequisites and cycles", () => {
@@ -45,7 +45,7 @@ test("pending CI/Codex, stale review or quiet interval blocks nudges", () => {
   assert.equal(decideNudge(pr({ ci_state: "pending" }), clock).kind, "hold");
   assert.equal(decideNudge(pr({ codex_state: "pending" }), clock).kind, "hold");
   assert.equal(decideNudge(pr({ codex_reviewed_sha: "old" }), clock).reason, "stale_codex");
-  assert.equal(decideNudge(pr({ last_github_activity: new Date(clock - 400000).toISOString() }), clock).reason, "not_quiet");
+  assert.equal(decideNudge(pr({ last_commit_at: new Date(clock - 400000).toISOString() }), clock).reason, "not_quiet");
   assert.equal(decideNudge(pr(), clock).action, "continue_pr");
   assert.equal(decideNudge(pr({ ci_state: "failure" }), clock).action, "repair_ci");
   assert.equal(decideNudge(pr({ codex_state: "findings" }), clock).action, "repair_review");
@@ -114,6 +114,7 @@ test("GitHub PR reads distinguish pending CI/review from success", async () => {
     if (url.includes("/pulls?")) return { ok: true, json: async () => [{ number: 2, head: { sha: "abc", ref: "feat/b" }, base: { ref: "main" }, updated_at: old, draft: true }] };
     if (url.includes("check-runs")) return { ok: true, json: async () => ({ total_count: 1, check_runs: [{ name: "AI CAFE PR baseline", status: "completed", conclusion: "success" }] }) };
     if (url.includes("/reviews?")) return { ok: true, json: async () => [] };
+    if (url.includes("/commits/abc")) return { ok: true, json: async () => ({ commit: { committer: { date: old } } }) };
     if (url.includes("/graphql")) return { ok: true, json: async () => ({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] } } } } }) };
     throw new Error(url);
   };
