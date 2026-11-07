@@ -54,10 +54,14 @@ export class GitHubFacts {
     const baseline = checks.check_runs.find(c => c.name === "AI CAFE PR baseline");
     const ci = !baseline || baseline.status !== "completed" ? "pending" :
       baseline.conclusion === "success" ? "success" : "failure";
-    const codex = reviews.filter(r => /codex/i.test(r.user?.login || "") && r.commit_id === sha)
-      .sort((a, b) => Date.parse(b.submitted_at) - Date.parse(a.submitted_at))[0];
-    const codexState = !codex ? "pending" : unresolved === null ? "unknown" :
-      unresolved > 0 || codex.state === "CHANGES_REQUESTED" ? "findings" : "clean";
+    const codexReviews = reviews.filter(r => /codex/i.test(r.user?.login || ""))
+      .sort((a, b) => Date.parse(b.submitted_at) - Date.parse(a.submitted_at));
+    // Preserve unresolved findings from an earlier revision for repair routing.
+    // Clean merge permission still requires a final-head review under AGENTS.md.
+    const codex = codexReviews.find(r => r.commit_id === sha);
+    const codexState = unresolved === null ? "unknown" :
+      unresolved > 0 && codexReviews.length ? "findings" :
+      !codex ? "pending" : codex.state === "CHANGES_REQUESTED" ? "findings" : "clean";
     return { pr_number: pr.number, head_sha: sha, base_branch: pr.base.ref,
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),

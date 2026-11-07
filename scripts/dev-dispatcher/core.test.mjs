@@ -13,7 +13,7 @@ const clock = Date.parse("2026-11-05T16:00:00Z");
 const old = new Date(clock - 700000).toISOString();
 const pr = (more = {}) => ({ task_id: "a", approved: true, conversation_ref: "private",
   pr_number: 101, head_sha: "abc", prompt_version: "v1",
-  last_github_activity: old, last_commit_at: old, draft: false, ci_state: "success", codex_state: "clean",
+  last_github_activity: old, last_commit_at: old, draft: false, ci_state: "success", codex_state: "clean", acceptance_evidence:{acceptance:[{id:'1'}]},
   codex_reviewed_sha: "abc", attempts: 0, ...more });
 
 test("queue validates 32-task style DAG, rejects missing prerequisites and cycles", () => {
@@ -49,6 +49,8 @@ test("pending CI/Codex, stale review or quiet interval blocks nudges", () => {
   assert.equal(decideNudge(pr(), clock).reason, "no_actionable_findings");
   assert.equal(decideNudge(pr({ ci_state: "failure" }), clock).action, "repair_ci");
   assert.equal(decideNudge(pr({ codex_state: "findings" }), clock).action, "repair_review");
+  assert.equal(decideNudge(pr({ acceptance_evidence:null }), clock).action, "continue_pr");
+  assert.equal(decideNudge(pr({ threads_resolved:false }), clock).action, "continue_pr");
 });
 test("pre-PR conversation cannot be nudged without known browser readiness", () => {
   const base = pr({ pr_number: null, last_submission_at: old, browser_busy: undefined });
@@ -141,6 +143,9 @@ test("disappearing PR is not automatically merged; verified merge remains distin
   assert.equal(reconcileGithub(ledger, []).tasks.a.github_state, "not_open_unverified");
   const merged = reconcileGithub(ledger, [], { 101: true }).tasks.a;
   assert.equal(merged.status, "merged");
+  const manual = reconcileGithub(ledger, [], {101:{merged:true,merge_sha:'squashed-main-sha'}}).tasks.a;
+  assert.equal(manual.merge_sha,'squashed-main-sha');
+  assert.equal(manual.status,'merged');
   assert.notEqual(merged.status, "integrated_proven");
   assert.equal(reconcileGithub(ledger, [], { 101: false }).tasks.a.status, "draft_open");
 });

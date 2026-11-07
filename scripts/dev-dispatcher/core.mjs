@@ -94,11 +94,13 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
   const last = Date.parse(isPr ? (record.codex_state === "findings" && record.codex_review_at && Date.parse(record.codex_review_at) > Date.parse(record.last_commit_at || 0) ? record.codex_review_at : record.last_commit_at) : record.last_submission_at);
   if (!Number.isFinite(last) || nowMs - last < (isPr ? quietMs : prePrMs)) return { kind: "hold", reason: "not_quiet" };
   if (record.next_check_at && nowMs < Date.parse(record.next_check_at)) return { kind: "hold", reason: "cooldown" };
-  // Clean reviewed PRs should not be nudged simply because ten minutes elapsed.
-  // Only actionable failed CI or review findings merit a browser delivery.
-  if (isPr && record.ci_state === "success" && record.codex_state === "clean")
+  // No generic reminder for an already reviewed PR with captured acceptance proof.
+  // Otherwise, a stalled ready PR may still need evidence, thread or base repairs.
+  if (isPr && record.ci_state === "success" && record.codex_state === "clean" &&
+      record.acceptance_evidence && record.threads_resolved !== false && record.base_current !== false)
     return { kind: "hold", reason: "no_actionable_findings" };
-  const action = isPr ? (record.ci_state === "failure" ? "repair_ci" : "repair_review") : "pre_pr_reminder";
+  const action = isPr ? (record.ci_state === "failure" ? "repair_ci" :
+    record.codex_state === "findings" ? "repair_review" : "continue_pr") : "pre_pr_reminder";
   const key = actionKey(record, action);
   if (record.last_action_key === key || record.submission_state === "pending" || record.attempts >= (record.max_attempts ?? 3)) return { kind: "hold", reason: "already_sent_or_capped" };
   return { kind: "propose", action, key };
@@ -130,8 +132,10 @@ export function reconcileGithub(state, openPrs, closedByPr = {}) {
   for (const [id, rec] of Object.entries(copy.tasks)) {
     if (!Number.isInteger(rec.pr_number)) continue;
     if (!open.has(rec.pr_number)) {
-      const merged = closedByPr[rec.pr_number] === true;
+      const closed = closedByPr[rec.pr_number];
+      const merged = closed === true || closed?.merged === true;
       copy.tasks[id] = { ...rec, github_state: merged ? "merged" : "not_open_unverified",
+        merge_sha: merged ? (closed?.merge_sha || rec.merge_sha || null) : rec.merge_sha,
         status: merged && !["integrated_proven", "released_proven"].includes(rec.status) ? "merged" : rec.status };
     }
   }

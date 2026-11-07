@@ -33,7 +33,8 @@ async function main() {
     for (const rec of Object.values(state.tasks)) {
       if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number)) continue;
       const closed = await gh.request(`/pulls/${rec.pr_number}`);
-      closedByPr[rec.pr_number] = Boolean(closed.merged_at);
+      closedByPr[rec.pr_number] = { merged: Boolean(closed.merged_at),
+        merge_sha: closed.merged_at ? closed.merge_commit_sha || null : null };
     }
     const mainRef = await gh.request("/git/ref/heads/main");
     return { snapshot, closedByPr, mainSha: mainRef.object?.sha || null };
