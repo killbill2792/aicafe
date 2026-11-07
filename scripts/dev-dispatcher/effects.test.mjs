@@ -64,6 +64,12 @@ test('PR matching never guesses and dependent bases require evidence',()=>{
  assert.deepEqual(result.unmapped,[12]);
  assert.equal(dependencyBase({depends_on:['6']},{'6':{branch:'feat/a',github_state:'open'}}).base,'feat/a');
  assert.equal(dependencyBase({depends_on:['6']},{'6':{status:'merged'}}).blocked,true);
+ const branches={'6':{status:'draft_open',branch:'feat/a',github_state:'open'},
+  '7':{status:'draft_open',branch:'feat/b',github_state:'open'}};
+ assert.equal(dependencyBase({depends_on:['6','7'],stack_base_task:'7'},branches).base,'feat/b');
+ assert.equal(dependencyBase({depends_on:['6','7']},branches).blocked,true);
+ assert.equal(dependencyBase({depends_on:['6','7'],stack_base_task:'7'},
+  {...branches,'7':{status:'merged',branch:'feat/b'}}).blocked,true);
  assert.equal(retargetDecision({dependent:{pr_number:13},predecessor:{branch:'feat/a'},predecessorMerged:true,currentBase:'feat/a'}).allowed,true);
 });
 
