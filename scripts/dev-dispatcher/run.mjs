@@ -139,7 +139,7 @@ async function main() {
       if (!task || !rec.approved || !rec.acceptance_evidence) continue;
       const predecessorRecords = (task.depends_on || []).map(dep => proposed.state.tasks[dep] || {status:"unknown"});
       const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
-        evidence: rec.acceptance_evidence, enabled: true });
+        evidence: rec.acceptance_evidence, expectedAcceptance: task.acceptance, enabled: true });
       if (outcome.status === "merged_unproven") {
         await ledger.transaction(state => {
           const currentRec = state.tasks[id];
