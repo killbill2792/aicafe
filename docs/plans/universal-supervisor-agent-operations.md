@@ -23,7 +23,15 @@ nonoverlapping file ownership. Record this owner acceptance in
 the exact `POS0a.merge_sha` from its verified integration record and the
 authenticated owner GitHub review comment URL for that merged source contract.
 It remains `approved=false` until the owner actually reviews the final matrix;
-do not reuse the earlier read-only audit approval. This gate is distinct
+do not reuse the earlier read-only audit approval. When POS0a is integrated
+and that implementation signoff is missing, the existing private owner-alert
+queue prepares one Muse notification with the verified existing ChatGPT
+conversation link: "Your approval is needed. ChatGPT chat: <URL>".
+Muse uses its existing opaque signal, 3-minute quiet/10-minute batching,
+and authenticated receipt path; never guess the link, expose it in the
+public signal, send duplicate notices, or treat a sent message as approval.
+If the task's conversation receipt is missing, the GitHub summary reports
+that the approval notice is waiting for that verified link. This gate is distinct
 from ordinary PR code dependencies: do not let an early approval or POS0a draft
 start implementation against an unfinalized source contract. POS0e
 has multiple functional predecessors and an explicit stack base POS0d; it may
