@@ -89,17 +89,35 @@ async function main() {
   const inbox = ledger ? await collectReceipts({ ledger, allowedActors: Object.keys(actorMap) }) : [];
   const observed = await observe(current);
   const proposed = reconcile(applyReceipts(current, inbox, actorMap), observed);
-  async function promoteIntegration(state, mainSha) {
+  async function promoteIntegration(state) {
+    const required = ["TypeScript", "ESLint", "Full regression tests",
+      "Dispatcher regression tests", "Production build"];
     for (const rec of Object.values(state.tasks)) {
-      if (rec.status !== "merged" || !rec.integration_proof) continue;
-      const proof = rec.integration_proof;
-      if (integrationStatus({ merged_sha: rec.merge_sha, main_sha: mainSha, proof }) !== "integrated_proven") continue;
-      const run = await gh.request(`/actions/runs/${proof.workflow_run_id}`);
-      if (run.head_sha === mainSha && run.status === "completed" &&
-          run.conclusion === "success" && run.event === "push" &&
-          run.name === "AI CAFE Integration Proof") rec.status = "integrated_proven";
+      if (rec.status !== "merged" || !rec.merge_sha) continue;
+      // A merged commit is verified on main by the push-triggered integration
+      // workflow. No author-supplied proof is trusted for this transition.
+      const runs = await gh.request(`/actions/runs?head_sha=${encodeURIComponent(rec.merge_sha)}&event=push&per_page=100`);
+      if (runs.total_count > 100) continue;
+      const run = runs.workflow_runs?.find(run => run.name === "AI CAFE Integration Proof" &&
+        run.head_sha === rec.merge_sha && run.head_branch === "main" &&
+        run.event === "push" && run.status === "completed" && run.conclusion === "success");
+      if (!run) continue;
+      const jobs = await gh.request(`/actions/runs/${run.id}/jobs?per_page=100`);
+      if (jobs.total_count > 100) continue;
+      const job = jobs.jobs?.find(j => j.name === "Required merged-main integration checks" &&
+        j.status === "completed" && j.conclusion === "success");
+      if (!job || !required.every(name => job.steps?.some(step => step.name === name &&
+        step.status === "completed" && step.conclusion === "success"))) continue;
+      const proof = { main_sha: rec.merge_sha, merged_sha: rec.merge_sha,
+        workflow_run_id: run.id, conclusion: "success",
+        required_scenarios: required.map(name => ({ id: name, result: "passed" })) };
+      if (integrationStatus({ merged_sha: rec.merge_sha, main_sha: rec.merge_sha, proof }) === "integrated_proven") {
+        rec.integration_proof = proof;
+        rec.status = "integrated_proven";
+      }
     }
   }
+
   let persisted = null;
   if (commit && ledger) {
     // Reconcile against fresh facts on every CAS attempt; do not write an
@@ -107,7 +125,7 @@ async function main() {
     persisted = await ledger.transaction(async existing => {
       const latest = await observe(existing);
       const next = reconcile(applyReceipts(existing, inbox, actorMap), latest).state;
-      await promoteIntegration(next, latest.mainSha);
+      await promoteIntegration(next);
       return JSON.stringify(next) === JSON.stringify(existing) ? null : next;
     });
   }
