@@ -1,10 +1,10 @@
 import {afterEach, describe, expect, it} from 'vitest';
 import {execFileSync, spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {addedDiagnosticReferences, isOperationalSource} from './toast-diagnostic-boundary.mjs';
+import {addedDiagnosticReferences, diagnosticWorkflowTriggerErrors, isOperationalSource} from './toast-diagnostic-boundary.mjs';
 
 const guard = fileURLToPath(new URL('./toast-diagnostic-boundary.mjs', import.meta.url));
 const workdirs: string[] = [];
@@ -128,6 +128,50 @@ describe('Toast diagnostics may not feed operational data', () => {
     manual.put('.github/workflows/toast-diagnostic-capture-manual.yml',
       'name: DIAGNOSTIC_ONLY\non:\n  workflow_dispatch:\n');
     expect(manual.run().status).toBe(0);
+  });
+
+
+  it('rejects malformed literal-backslash-n trigger and nonmanual YAML trigger on actual guard path', () => {
+    const malformed = fixture();
+    malformed.put('.github/workflows/toast-diagnostic-capture-manual.yml',
+      String.raw`on:\n  workflow_dispatch:` + '\n');
+    const invalid = malformed.run();
+    expect(invalid.status).toBe(1);
+    expect(invalid.stderr).toContain('valid YAML on: mapping');
+
+    const push = fixture();
+    push.put('.github/workflows/toast-diagnostic-capture-manual.yml',
+      'on:\n  workflow_dispatch:\n  push:\n');
+    expect(push.run().stderr).toContain('as its ONLY trigger');
+  });
+
+  it('checks the REAL proposed diagnostic workflow file has a manual-only valid trigger', () => {
+    const path = fileURLToPath(new URL('../../.github/workflows/toast-diagnostic-capture-manual.yml', import.meta.url));
+    const source = readFileSync(path, 'utf8');
+    expect(diagnosticWorkflowTriggerErrors(source,path)).toEqual([]);
+    expect(source).toMatch(/^on:\n  workflow_dispatch:\s*$/m);
+    expect(source).not.toMatch(/^\s*schedule\s*:/m);
+    expect(source).not.toContain(String.raw`on:\n  workflow_dispatch:`);
+  });
+
+  it('checks documented authority routing and preserves historical context', () => {
+    const root = fileURLToPath(new URL('../../', import.meta.url));
+    const read = (p: string) => readFileSync(join(root,p),'utf8');
+    const docs = read('docs/README.md');
+    const agents = read('AGENTS.md');
+    const rules = read('docs/rules/pos-data.md');
+    const notes = read('docs/data-dictionary-notes.md');
+    const queue = JSON.parse(read('docs/plans/universal-supervisor-queue.json'));
+    expect(docs).toMatch(/Toast integration — historical phase runbooks/);
+    expect(docs).not.toMatch(/### Toast integration \(current\)/);
+    expect(docs).toContain('toast-polling.md');
+    expect(docs).toContain('binding source/consumer rules');
+    expect(agents).toContain('Mandatory actual first-read sequence');
+    expect(rules).toContain('First-read and conflict priority');
+    expect(notes).toContain('Generated-dictionary contradiction requiring later code ownership');
+    expect(queue.dispatch_rules.architecture_foundation_implementation_approval.approved).toBe(false);
+    expect(queue.dispatch_rules.pos_source_authority.ordered_first_read).toHaveLength(6);
+    expect(queue.dispatch_rules.pos_source_authority.known_deployed_defects.join(' ')).toContain('SQL toast_import_day');
   });
 
   it('enforces explicit naming for new diagnostic-only sources without banning historical files', () => {
