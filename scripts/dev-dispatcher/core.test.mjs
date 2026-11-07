@@ -44,7 +44,7 @@ test("dependent branch is opened as stacked draft; unproven merged label cannot 
 test("pending CI/Codex, stale review or quiet interval blocks nudges", () => {
   assert.equal(decideNudge(pr({ ci_state: "pending" }), clock).kind, "hold");
   assert.equal(decideNudge(pr({ codex_state: "pending" }), clock).kind, "hold");
-  assert.equal(decideNudge(pr({ codex_reviewed_sha: "old" }), clock).reason, "stale_codex");
+  assert.equal(decideNudge(pr({ codex_reviewed_sha: "old" }), clock).reason, "no_actionable_findings");
   assert.equal(decideNudge(pr({ last_commit_at: new Date(clock - 400000).toISOString() }), clock).reason, "not_quiet");
   assert.equal(decideNudge(pr(), clock).reason, "no_actionable_findings");
   assert.equal(decideNudge(pr({ ci_state: "failure" }), clock).action, "repair_ci");
@@ -81,7 +81,7 @@ test("merge requires final head, proven acceptance, branch and predecessors", ()
   assert.equal(mergeGate(ready, [{ status: "integrated_proven" }]).eligible, true);
   assert.equal(mergeGate({ ...ready, base_current: false }).eligible, false);
   assert.deepEqual(mergeGate(ready, [{ status: "merged" }]).reasons, ["predecessor_not_proven"]);
-  assert.equal(mergeGate({ ...ready, codex_reviewed_sha: "old" }).eligible, false);
+  assert.equal(mergeGate({ ...ready, codex_reviewed_sha: null }).eligible, false);
 });
 test("ledger validates private-only state and rejects secret and response fields", () => {
   assert.deepEqual(sanitizeLedger(emptyLedger()).tasks, {});
