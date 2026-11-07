@@ -98,7 +98,8 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
   // No generic reminder for an already reviewed PR with captured acceptance proof.
   // Otherwise, a stalled ready PR may still need evidence, thread or base repairs.
   if (isPr && record.ci_state === "success" && record.codex_state === "clean" &&
-      record.acceptance_evidence && record.threads_resolved !== false && record.base_current !== false)
+      record.acceptance_evidence && record.threads_resolved !== false &&
+      record.base_current !== false && record.review_base_current !== false)
     return { kind: "hold", reason: "no_actionable_findings" };
   const action = isPr ? (record.ci_state === "failure" ? "repair_ci" :
     record.codex_state === "findings" ? "repair_review" : "continue_pr") : "pre_pr_reminder";
@@ -122,6 +123,7 @@ export function mergeGate(record, predecessors = []) {
   if (record?.codex_state !== "clean" || !record?.codex_reviewed_sha) reasons.push("codex_review_missing_or_findings");
   if (!record?.threads_resolved) reasons.push("unresolved_threads");
   if (!record?.base_current) reasons.push("stale_base");
+  if (record?.review_base_current === false) reasons.push("base_changed_review_required");
   if (!record?.acceptance_proven) reasons.push("acceptance_not_proven");
   if (predecessors.some(p => p.status !== "integrated_proven" && p.status !== "released_proven")) reasons.push("predecessor_not_proven");
   return { eligible: reasons.length === 0, reasons };
@@ -152,7 +154,12 @@ export function reconcileGithub(state, openPrs, closedByPr = {}) {
         }
       }
       const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_commit_at || pr.last_github_activity);
+      const baseChanged = Boolean(rec.base_sha && pr.base_sha && rec.base_sha !== pr.base_sha);
+      const baseChangedAt = baseChanged ? (pr.last_github_activity || new Date().toISOString()) : rec.base_changed_at;
+      const reviewBaseCurrent = !baseChangedAt || Boolean(pr.codex_review_at &&
+        Date.parse(pr.codex_review_at) > Date.parse(baseChangedAt));
       copy.tasks[id] = { ...updated, ...pr, task_id: id,
+        base_changed_at: baseChangedAt || null, review_base_current: reviewBaseCurrent,
         status: (pr.github_owner_question || updated.owner_question) ? "blocked_needs_owner" :
           pr.draft ? "draft_open" : "review_fixing", github_state: "open",
         submission_state: updated.submission_state };
