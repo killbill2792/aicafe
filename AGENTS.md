@@ -95,6 +95,10 @@ Where an older line in this file conflicts with these rules, these rules win.
     When browser proof is needed, run the app in GitHub Actions with disposable test data and
     targeted Playwright; save execution proof there, without a Vercel deployment.
 
+## POS0 architecture review merge hold — explicit owner release only
+
+**Owner decision (November 7):** PR #398 (Toast source-to-Supervisor architecture contract) and PR #400 (diagnostic-source rules/guards) **remain DRAFT / DO NOT MERGE** until the owner explicitly approves the final architecture specification and its enforcement. This is a specific exception to the ordinary CI-green/Codex-clean auto-merge rule: **never mark either PR ready, invoke merge or enable auto-merge because tests pass**. Apply the same owner confirmation gate to POS0b–POS0f implementations; the earlier high-level architecture decisions are **not** authorization to code new runtime paths or apply production migrations. The queue's existing `architecture_foundation_implementation_approval` remains `approved=false` until evidence and the authenticated owner review comment are supplied. Keep #399's already-merged owner-question/approval machinery unchanged.
+
 ## Mandatory source-authority preflight (all POS/Toast/AI data contributors)
 
 **One binding operational entry point:** [docs/rules/pos-data.md](docs/rules/pos-data.md) is the authoritative, current file/table classification and data-lineage contract for Toast/POS. Read it **before** implementation, SQL view edits, field discovery, tests, mirror jobs or PR review. Do not infer authority from a name such as `raw`, `sample`, `canonical` or from a historical migration/test that happens to pass. The current [POS0a field audit](docs/plans/toast-standard-api-coverage-matrix.md) documents actual gaps; [POS0b–POS0f briefs](docs/plans/universal-supervisor-task-briefs.md) own remediation. When an old doc, fixture or comment suggests diagnostic Toast data is suitable for Supervisor, **it is wrong**; report it and follow the binding operational contract.
