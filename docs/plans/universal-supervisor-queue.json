@@ -53,10 +53,7 @@
     }
   ],
   "initial_parallel_candidates": [
-    "E2",
-    "6",
-    "9",
-    "10"
+    "POS0a"
   ],
   "dispatch_rules": {
     "open_dependent_pr_immediately": "start from prerequisite branch; draft PR base = prerequisite branch",
@@ -65,14 +62,296 @@
     "skip_unnecessary_playwright": true,
     "proof_not_claims": true,
     "production_owner_gate": true,
-    "approval_before_code": true
+    "approval_before_code": true,
+    "priority_gate_task": "POS0f",
+    "priority_gate_note": "The existing dispatcher explicitly checks this proof-only gate: no task outside the allow-list is newly assigned until POS0f has integrated_proven/released_proven status, even if POS0f has a draft branch. Ordinary stacked drafts still work within POS0.",
+    "priority_gate_allow_task_ids": [
+      "POS0a",
+      "POS0b",
+      "POS0c",
+      "POS0d",
+      "POS0e",
+      "POS0f"
+    ]
   },
   "tasks": [
+    {
+      "id": "POS0a",
+      "milestone": "POS0",
+      "title": "P0 Standard API source-to-AI coverage contract and gap matrix",
+      "depends_on": [],
+      "goal": "Inventory every currently documented Standard API read operation and every permitted response field against actual scopes, fetch cadence, stored current object, privacy filter, change history, canonical reader and Supervisor; owner approves the field-level design before data-code PRs.",
+      "scope_hint": "Read-only official-spec + current repo + disposable/authorized read-only database inventory; new docs/plans/toast-standard-api-coverage-matrix.md. Own no existing runtime or migration file.",
+      "exclusive_files": [
+        "docs/plans/toast-standard-api-coverage-matrix.md"
+      ],
+      "architecture_approval": {
+        "approved": true,
+        "owner_direction": "Owner approved prioritizing a READ-ONLY field-by-field Standard API audit and written implementation contract before other Supervisor work; no production changes or coding approval for later POS0 tasks.",
+        "contract": {
+          "source": "Current official Toast Standard API OpenAPI definitions and real café scope/response evidence (no hardcoded endpoint count).",
+          "persisted": "Documentation and exact source-field/record-key/current-storage mapping only; no data writes.",
+          "consumer": "The following POS0 tasks and owner architecture sign-off.",
+          "failures": "Classify missing permission, no resource ID, empty response, not collected, field redaction, stale/unknown separately.",
+          "scope": "New coverage matrix document only; zero production calls/writes beyond safe read-only evidence."
+        }
+      },
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0a",
+      "skills": [
+        "aicafe-pr-lifecycle",
+        "aicafe-dependency-check",
+        "aicafe-proof-gate",
+        "supabase",
+        "vitest",
+        "pr"
+      ],
+      "acceptance": [
+        "Every official current Standard API GET operation and response field is recorded with official spec version/link, café-specific scope/permission and observed result (success/empty/403/missing-id/not configured/not tested), with Analytics/menus-v3 and no-GET families excluded or classified accurately.",
+        "Each allowed field has explicit canonical object identity, storage owner/key, existing ingest job, cadence, privacy treatment, current-reader/view, Supervisor query field, screen consumer, freshness and known gap; no invented endpoint counts or silent assumed coverage.",
+        "Compare actual code paths, current production object evidence and stale diagnostics separately; distinguish old October capture from current order/staff sync; owner reviews exact proposed source → stored object → shared reader plan before coding.",
+        "A reproducible matrix audit command and proof link are recorded, and the original working order path is marked preserve/no rewrite."
+      ],
+      "test_kinds": [
+        "docs",
+        "read_only_audit",
+        "security"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "architecture_approved",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
+    },
+    {
+      "id": "POS0b",
+      "milestone": "POS0",
+      "title": "P0 staff and labor permitted-field completeness and freshness",
+      "depends_on": [
+        "POS0a"
+      ],
+      "goal": "Extend existing Toast labor/staff import and current-object snapshot writer to retain every permitted employee/job/time-entry/shift field and genuine revisions, with correct actor identity and live/final dates.",
+      "scope_hint": "Existing lib/pos/toast/adapter.ts, laborSync.ts, operationalCopy.ts, optionalSync.ts; current toast_labor_entries, employee/job directory, scheduled shifts, timecards, archive writer and change log. Assign exact files and any migration exclusively after matrix approval.",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0b",
+      "skills": [
+        "aicafe-pr-lifecycle",
+        "aicafe-dependency-check",
+        "aicafe-proof-gate",
+        "supabase",
+        "vitest",
+        "pr"
+      ],
+      "acceptance": [
+        "For each permitted Toast employee/job/shift/time-entry JSON path, full source → one current object → canonical facts → query_data round-trip matches source; no job/tip/break/reference or null/zero loss.",
+        "One object per business+restaurant+Toast object GUID; repeated unchanged data makes no new snapshot/history; modified wage, break, tip or clock edit updates exactly once and produces before/after change evidence.",
+        "Attendance and planned shifts refresh on appropriate bounded operational cadence with modified cursor/backfill, timezone and overnight coverage; failures and stale/permission gaps remain visible, never zero or owner questions.",
+        "Existing Staff, scheduling, payroll and Money screen projections and certified labor cents remain unchanged or parity-proven; existing order import tests remain green."
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "integration",
+        "security",
+        "parity",
+        "failure"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
+    },
+    {
+      "id": "POS0c",
+      "milestone": "POS0",
+      "title": "P0 operational Standard API endpoint integration",
+      "depends_on": [
+        "POS0a"
+      ],
+      "goal": "Connect eligible cash, stock, kitchen and operational availability endpoints to the EXISTING current-object/upsert-change-log writer, not a parallel raw-dump service.",
+      "scope_hint": "Existing Toast Standard client, capture registry, archive writer; cashmgmt, stock, kitchen/prep, availability/ordering schedule. Source keys/cadences/RLS from POS0a; exclusive file owners and migrations assigned before coding.",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0c",
+      "skills": [
+        "aicafe-pr-lifecycle",
+        "aicafe-dependency-check",
+        "aicafe-proof-gate",
+        "supabase",
+        "vitest",
+        "pr"
+      ],
+      "acceptance": [
+        "Each eligible operational GET and field is durably current, source-identified, change-logged, discoverable by the shared reader and truthfully marked unavailable on missing scope, empty 204 or API failure.",
+        "Operational deltas are refreshed at bounded POS-safe intervals; no unapproved blanket 30-minute polling, duplicated objects, or assumption of stock zero / kitchen-ready from absent evidence.",
+        "Idempotent changed/unchanged/reordered responses and recoverable 429/5xx/timeout/partial/café-isolation are verified on disposable migrated DB; no new competing POS writer or financial totals.",
+        "Existing sales, cash, stock, kitchen and orders consumers remain compatible; screen and Supervisor source parity is proved wherever those screens exist."
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "integration",
+        "security",
+        "failure",
+        "parity"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
+    },
+    {
+      "id": "POS0d",
+      "milestone": "POS0",
+      "title": "P0 remaining eligible setup, menu and restaurant endpoint integration",
+      "depends_on": [
+        "POS0a"
+      ],
+      "goal": "Complete durable retained-field coverage for all remaining accessible Standard API configuration, menus v2, payments/lookup, restaurant, device, packaging, partner and related endpoints using the one current-object writer.",
+      "scope_hint": "Reuse existing menu/config/restaurant collectors and canonical table/readers; diff by exact endpoint and source key. Exclude ERA separate credentials and Menus v3 non-Standard instead of silently calling them missing.",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0d",
+      "skills": [
+        "aicafe-pr-lifecycle",
+        "aicafe-dependency-check",
+        "aicafe-proof-gate",
+        "supabase",
+        "vitest",
+        "pr"
+      ],
+      "acceptance": [
+        "Every eligible endpoint not owned by POS0b/POS0c has field-by-field source/storage/query proof; config and ID lookup no-resource cases tracked as reasons, with daily/modified refresh where applicable.",
+        "Menu, price, taxes, service charges, discounts, item modifiers, payment types, employees and restaurant keys preserve existing canonical screen numbers and provider definitions.",
+        "No loss of historical order/change evidence or sensitive-data policy; immutable business identity, tenant authorization, dedup, changes, retry and permission/no-content classification verified.",
+        "Any endpoint truly unavailable under Standard credentials is recorded with exact recent response or provider prerequisite, never fabricated success; tests do not assume the old October audit is current."
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "integration",
+        "security",
+        "parity",
+        "failure"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
+    },
+    {
+      "id": "POS0e",
+      "milestone": "POS0",
+      "title": "P0 one reusable data-access foundation for screens and Supervisor",
+      "depends_on": [
+        "POS0b",
+        "POS0c",
+        "POS0d"
+      ],
+      "goal": "Extend existing describe_data/query_data + approved canonical readers and relationships so Supervisor can discover/query all stored permitted Toast fields without per-question views, invented SQL or a second data path.",
+      "scope_hint": "Existing ai_query_view, toast_records_for/cv_toast_records, canonical dictionary, lib/ai/agent/tools/dataQuery.ts, shared source readers and metrics; check all callers before changing. Exact SQL and shared-file owner require field-level approval.",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0e",
+      "skills": [
+        "aicafe-pr-lifecycle",
+        "aicafe-dependency-check",
+        "aicafe-proof-gate",
+        "supabase",
+        "vitest",
+        "pr"
+      ],
+      "acceptance": [
+        "Every permitted current object field is discoverable with provenance and queryable through existing scoped tools, including normalized staff ↔ time-entry names, date/employee/order/payment relationships, while keeping row/byte/call bounds and RLS.",
+        "One source of business truth: specialized get_staff/get_sales/get_profit and all screens are projections over the same authorized canonical fact readers; correct but distinct semantics (currently working vs worked during date) do not dead-end.",
+        "Money/screen numbers use lib/metrics/core (not model-generated SQL or calculate); other sourced arithmetic uses the existing calculate tool; today provisional versus finalized and stale/missing source states are explicit.",
+        "Tests reject cross-café IDs, arbitrary SQL, disallowed sensitive fields, fabricated zero/complete answers, unverified joins and wrong café-local day; old query tests are strengthened rather than deleted to hide gaps."
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "agent",
+        "security",
+        "parity",
+        "failure"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
+    },
+    {
+      "id": "POS0f",
+      "milestone": "POS0",
+      "title": "P0 complete Standard API → storage → Supervisor acceptance and regression gate",
+      "depends_on": [
+        "POS0e"
+      ],
+      "goal": "Make full permitted Standard API source-to-storage-to-universal-reader-to-screen/agent coverage an executable, non-skipped release gate; close every missing/incorrect test and document exact exceptions.",
+      "scope_hint": "Existing Toast adapter/SQL tests, canonical dictionary tests, Supervisor evals and CI disposable migrated Supabase; shared test ownership assigned after code PRs to avoid conflicts. Real café validation read-only and owner-authorized.",
+      "exclusive_files": [],
+      "architecture_approval": null,
+      "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0f",
+      "skills": [
+        "aicafe-pr-lifecycle",
+        "aicafe-dependency-check",
+        "aicafe-proof-gate",
+        "supabase",
+        "vitest",
+        "pr"
+      ],
+      "acceptance": [
+        "CI enumerates all eligible current Standard API endpoints/fields (not hardcoded 76/86) and checks redaction, full retained fields, one-row-per-object, changes-only history, receipts/failures, modified/same/reordered retry cases.",
+        "CI asserts complete chain Toast-shaped input → existing writer → stored canonical object → describe_data → query_data → Supervisor turn and matching relevant screen for staff, orders, payments, sales, cash, stock, kitchen, configuration and unknown cross-domain questions.",
+        "Replace or strengthen every incomplete/misleading test and fixture; preserve valid regressions; required SQL/RLS/AI parity job executes in CI against disposable migrated Supabase and is never silently skipped for no key/flag.",
+        "Production read-only evidence compares current response/field coverage and applicable real-café screen and chat results with explicit dates, counts and reconciliation; no production migrations or new OAuth scopes without separate owner authorization.",
+        "For each unavailable endpoint record exact reason and last verified date, for each owner-permitted data field show a passed retrieval assertion; changed code paths have final-head CI links, Codex clean, no skipped required proof."
+      ],
+      "test_kinds": [
+        "unit",
+        "db",
+        "integration",
+        "agent",
+        "security",
+        "parity",
+        "e2e",
+        "failure"
+      ],
+      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "state": "proposed",
+      "can_start_stacked": true,
+      "github_pr": null,
+      "merge_commit": null,
+      "ci_proof": null,
+      "integrated_proof": null,
+      "owner": null
+    },
     {
       "id": "E2",
       "milestone": "E2",
       "title": "E2 required seeded browser CI, protected preview proof",
-      "depends_on": [],
+      "depends_on": [
+        "POS0f"
+      ],
       "goal": "Required Playwright CI job + isolated seeded preview; verify browser scenarios really run",
       "scope_hint": "CI/browser test harness, disposable seeded auth and PR check integration",
       "exclusive_files": [],
@@ -109,7 +388,8 @@
       "milestone": "6",
       "title": "Durable worker and cross-turn execution",
       "depends_on": [
-        "5"
+        "5",
+        "POS0f"
       ],
       "goal": "Leased worker resumes one AI loop safely under budgets and authorization",
       "scope_hint": "lib/ai/supervisor/runs/*; new worker route; usage adapter",
@@ -308,7 +588,8 @@
       "milestone": "9",
       "title": "Rolling operational memory",
       "depends_on": [
-        "5"
+        "5",
+        "POS0f"
       ],
       "goal": "Rolling thread memory with provenance and no cached financial facts",
       "scope_hint": "lib/ai/agent/history.ts, memory.server.ts and ai_threads summary",
@@ -345,7 +626,8 @@
       "milestone": "10",
       "title": "Individual approval and standing mandate gateway",
       "depends_on": [
-        "5"
+        "5",
+        "POS0f"
       ],
       "goal": "One effect gateway supporting individual approval and OTP-backed standing authorization",
       "scope_hint": "existing supervisor proposals/approvals; auth-backed mandate authorization and receipts",
@@ -1289,5 +1571,15 @@
       "integrated_proof": null,
       "owner": null
     }
-  ]
+  ],
+  "priority_0": {
+    "name": "Toast Standard API complete retained data + one shared read path",
+    "status": "owner_prioritized_audit_first",
+    "first_task": "POS0a",
+    "proof_gate": "POS0f",
+    "instruction": "Before new PR6–PR17/E2/PR9/PR10 dispatch, finish POS0a–POS0f (all required acceptance proven). Existing PRs may finish CI/Codex; do not abandon, merge unverified or silently claim this gate is complete.",
+    "preservation": "Do not delete existing working orders, screens, canonical metric calculations, tools, schema, current-object history or old privacy guards. Extend the existing writers/readers. No separate full raw dump, per-question views or duplicate path.",
+    "source_contract": "Official up-to-date Toast Standard API operation and field inventory; separate Analytics/ERA and non-Standard Menus v3; no assumption that 76 or 86 is a permanent number.",
+    "release_boundary": "A merged code PR does not prove live; production migrations/scopes/café effects require separate owner permission."
+  }
 }
