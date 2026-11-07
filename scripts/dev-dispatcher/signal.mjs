@@ -6,7 +6,7 @@ import { pendingActions } from './bridge/bridge.mjs';
 
 export function signalFor(state, secret) {
   if (!secret || secret.length < 32) throw new Error('Signal signing secret must be >= 32 characters');
-  const ids = pendingActions(state).filter(a => a.delivery_owner !== 'dave').map(a => a.key + ':' + a.delivery.prompt_hash).sort();
+  const ids = pendingActions(state).filter(a => a.delivery_owner === 'muse').map(a => a.key + ':' + a.delivery.prompt_hash).sort();
   return { version: 1, pending_count: ids.length,
     fingerprint: createHmac('sha256', secret).update(JSON.stringify(ids)).digest('hex') };
 }

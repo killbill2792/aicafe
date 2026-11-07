@@ -16,11 +16,12 @@ test('only allowed GitHub commit actors enter inbox',async()=>{
 });
 test('receipt ingestion is idempotent and verifies courier role',()=>{
  const state={tasks:{'6':{approved:true,approval_hash:'a'.repeat(64)}},actions:{'assign:6':{
-  task_id:'6',status:'planned',delivery:{...receipt,version:1,task_id:'6',
+  task_id:'6',status:'planned',delivery_owner:'muse',delivery:{...receipt,version:1,task_id:'6',
   project:{id:'aicafe'},intent:'start_new_chat',conversation_url:null,
   prompt:'approved',approval_hash:'a'.repeat(64)}}}};
  const inbox=[{receipt,actor:'muse-app[bot]'}];
  const first=applyReceipts(state,inbox,{'muse-app[bot]':'muse'});
  assert.equal(first.actions['assign:6'].status,'submitted');
+ assert.throws(()=>applyReceipts(state,[{receipt,actor:'dave-app[bot]'}],{'dave-app[bot]':'dave'}),/does not own/);
  assert.equal(applyReceipts(first,inbox,{'muse-app[bot]':'muse'}).actions['assign:6'].status,'submitted');
 });

@@ -12,6 +12,9 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
   const task = next.tasks?.[action?.task_id];
   if (!action || !task || action.status !== 'planned' || task.approved !== true)
     throw new Error('Action is not currently approved and planned');
+  // Courier receipts may only be acknowledged by the action's assigned owner.
+  if (action.delivery_owner !== authenticatedCourier)
+    throw new Error('Receipt courier does not own approved action');
   const d = action.delivery;
   if (!d || d.action_id !== receipt.action_id || d.task_id !== action.task_id ||
       d.approval_hash !== task.approval_hash || hash(d.prompt) !== d.prompt_hash ||

@@ -12,7 +12,7 @@ const ACTION_INTENTS = { assign: 'start_new_chat', repair_ci: 'continue_existing
 
 export function validateHandoff(action, task) {
   const d = action?.delivery;
-  if (action?.status !== 'planned' || task?.approved !== true || !d || d.version !== 1 ||
+  if (action?.status !== 'planned' || !['muse', 'dave'].includes(action.delivery_owner) || task?.approved !== true || !d || d.version !== 1 ||
       !safeName(d.task_id) || !safeName(d.project?.id) || !safeName(d.provider) ||
       !['chatgpt', 'claude'].includes(d.provider) ||
       !['start_new_chat', 'continue_existing_chat'].includes(d.intent) ||
