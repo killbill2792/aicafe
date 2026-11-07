@@ -89,6 +89,7 @@ async function main() {
   const inbox = ledger ? await collectReceipts({ ledger, allowedActors: Object.keys(actorMap) }) : [];
   const observed = await observe(current);
   const proposed = reconcile(applyReceipts(current, inbox, actorMap), observed);
+  const unmappedPrs = linkPullRequests(current, observed.snapshot).unmapped;
   async function promoteIntegration(state) {
     const required = ["TypeScript", "ESLint", "Full regression tests",
       "Dispatcher regression tests", "Production build"];
@@ -175,6 +176,7 @@ async function main() {
   const summary = [
     "## AI CAFE development dispatcher — dry-run coordination",
     `- GitHub open PRs observed: **${observed.snapshot.length}**`,
+    `- Unmapped PRs requiring owner/coder identification (never guessed): **${unmappedPrs.join(", ") || "none"}**`,
     `- Approved new assignments: **${proposed.assigned.length}**`,
     `- Eligible follow-ups (NOT sent): **${proposed.nudges.length}**`,
     `- Tracked merge gates: ready **${gateCounts.ready}**, blocked **${gateCounts.blocked}**`,
