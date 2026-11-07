@@ -29,6 +29,15 @@ export function validateQueue(queue) {
     visited.add(id);
   }
   for (const task of queue.tasks) visit(task.id);
+  // Priority-zero work is a PROOF gate, not a normal stacked-PR dependency.
+  // Validate the allowlist so a typo cannot silently unlock unrelated tasks.
+  const gate = queue.dispatch_rules?.priority_gate_task;
+  if (gate !== undefined) {
+    const allowed = queue.dispatch_rules?.priority_gate_allow_task_ids;
+    if (typeof gate !== "string" || !tasks.has(gate) ||
+      !Array.isArray(allowed) || !allowed.includes(gate) ||
+      allowed.some(id => !tasks.has(id))) throw new Error("Invalid priority proof gate");
+  }
   return tasks;
 }
 export const approved = (task) => task.architecture_approval?.approved === true && (task.state === "architecture_approved" || task.state === "ready");
@@ -53,7 +62,11 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
     }
   }
   const actions = [];
+  const gate = queue.dispatch_rules?.priority_gate_task;
+  const gateProven = !gate || integrated(gate, tasks, records);
+  const gateAllowed = new Set(queue.dispatch_rules?.priority_gate_allow_task_ids || []);
   for (const task of queue.tasks) {
+    if (!gateProven && !gateAllowed.has(task.id)) continue;
     if (!approved(task) || records[task.id]?.conversation_ref || (records[task.id]?.status && records[task.id].status !== "proposed")) continue;
     if (!Array.isArray(task.exclusive_files) || !task.exclusive_files.length ||
       task.exclusive_files.some(path => typeof path !== "string" || !path || path.includes("*") || path.includes("..") || claimed.has(path))) continue;
