@@ -24,24 +24,32 @@ export function queueOwnerAlerts(state,{unmappedPrs=[],queue=null,now=new Date()
   if(!next.owner_alerts[key])next.owner_alerts[key]=entry;
  };
  for(const [id,rec] of Object.entries(next.tasks||{})){
-  if(rec.owner_question || rec.github_owner_question) {
-   const detail='PR #'+(rec.pr_number||'not opened')+': '+(rec.owner_question||rec.github_owner_question);
+  // One open PR may have only one active owner question. A revised or removed
+  // question supersedes an UNSENT notice; an acknowledged notice remains audit
+  // history but never authorizes an owner decision or downstream implementation.
+  const question=rec.owner_question || rec.github_owner_question;
+  const previous=Object.values(next.owner_alerts).filter(n=>
+    n.kind==='owner_decision' && n.task_id===id &&
+    n.pr_number===(rec.pr_number||null));
+  if(question) {
+   const detail='PR #'+(rec.pr_number||'not opened')+': '+question;
    const chat=rec.agent==='chatgpt' && validConversationUrl('chatgpt',rec.conversation_ref)
      ? ' Your approval is needed. ChatGPT chat: '+rec.conversation_ref : '';
    const desired=detail+chat;
-   // Chat link enrichment must not generate a second request for the same
-   // decision. Replace an unsent old notice; never resend an acknowledged one.
-   const matching=Object.values(next.owner_alerts).filter(n=>
-     n.kind==='owner_decision' && n.task_id===id &&
-     n.pr_number===(rec.pr_number||null) &&
+   // A submitted notification of this SAME question is sufficient even if
+   // the chat URL was enriched afterward. An edited question is a new decision.
+   const acknowledged=previous.some(n=>n.status==='submitted' &&
      (n.question===detail ||
-       n.question.startsWith(detail+' Your approval is needed. ChatGPT chat: ')));
-   if(!matching.some(n=>n.status==='submitted')) {
-     for(const prior of matching)
-       if(prior.status==='planned' && prior.question!==desired)
-         prior.status='cancelled_no_longer_needed';
-     add('owner_decision',id,rec.pr_number,desired);
-   }
+      n.question.startsWith(detail+' Your approval is needed. ChatGPT chat: ')));
+   for(const prior of previous)
+     if(prior.status==='planned' && prior.question!==desired)
+       prior.status='cancelled_no_longer_needed';
+   if(!acknowledged) add('owner_decision',id,rec.pr_number,desired);
+  } else {
+   // The coder removed the explicit question or label: do not deliver it
+   // after it has been withdrawn, even if no new PR commit occurred.
+   for(const prior of previous)
+     if(prior.status==='planned') prior.status='cancelled_no_longer_needed';
   }
   if(rec.agent==='claude'&&rec.blocker?.confirmed===true &&
      ['usage_limit','confirmed_blocker'].includes(rec.blocker.kind))
