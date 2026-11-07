@@ -28,7 +28,20 @@ export function queueOwnerAlerts(state,{unmappedPrs=[],queue=null,now=new Date()
    const detail='PR #'+(rec.pr_number||'not opened')+': '+(rec.owner_question||rec.github_owner_question);
    const chat=rec.agent==='chatgpt' && validConversationUrl('chatgpt',rec.conversation_ref)
      ? ' Your approval is needed. ChatGPT chat: '+rec.conversation_ref : '';
-   add('owner_decision',id,rec.pr_number,detail+chat);
+   const desired=detail+chat;
+   // Chat link enrichment must not generate a second request for the same
+   // decision. Replace an unsent old notice; never resend an acknowledged one.
+   const matching=Object.values(next.owner_alerts).filter(n=>
+     n.kind==='owner_decision' && n.task_id===id &&
+     n.pr_number===(rec.pr_number||null) &&
+     (n.question===detail ||
+       n.question.startsWith(detail+' Your approval is needed. ChatGPT chat: ')));
+   if(!matching.some(n=>n.status==='submitted')) {
+     for(const prior of matching)
+       if(prior.status==='planned' && prior.question!==desired)
+         prior.status='cancelled_no_longer_needed';
+     add('owner_decision',id,rec.pr_number,desired);
+   }
   }
   if(rec.agent==='claude'&&rec.blocker?.confirmed===true &&
      ['usage_limit','confirmed_blocker'].includes(rec.blocker.kind))
