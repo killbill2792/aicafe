@@ -129,7 +129,7 @@ export function mergeGate(record, predecessors = []) {
   return { eligible: reasons.length === 0, reasons };
 }
 
-export function reconcileGithub(state, openPrs, closedByPr = {}) {
+export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date().toISOString()) {
   const copy = structuredClone(state);
   const open = new Set(openPrs.map(p => p.pr_number));
   for (const [id, rec] of Object.entries(copy.tasks)) {
@@ -155,7 +155,7 @@ export function reconcileGithub(state, openPrs, closedByPr = {}) {
       }
       const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_commit_at || pr.last_github_activity);
       const baseChanged = Boolean(rec.base_sha && pr.base_sha && rec.base_sha !== pr.base_sha);
-      const baseChangedAt = baseChanged ? (pr.last_github_activity || new Date().toISOString()) : rec.base_changed_at;
+      const baseChangedAt = baseChanged ? now : rec.base_changed_at;
       const reviewBaseCurrent = !baseChangedAt || Boolean(pr.codex_review_at &&
         Date.parse(pr.codex_review_at) > Date.parse(baseChangedAt));
       copy.tasks[id] = { ...updated, ...pr, task_id: id,
