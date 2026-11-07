@@ -52,8 +52,8 @@ test("pending CI/Codex, stale review or quiet interval blocks nudges", () => {
 });
 test("pre-PR conversation cannot be nudged without known browser readiness", () => {
   const base = pr({ pr_number: null, last_submission_at: old, browser_busy: undefined });
-  assert.equal(decideNudge(base, clock).reason, "busy_or_unknown");
-  assert.equal(decideNudge({ ...base, browser_busy: true }, clock).kind, "hold");
+  assert.equal(decideNudge(base, clock).reason, "not_quiet");
+  assert.equal(decideNudge({ ...base, browser_busy: true }, clock).reason, "browser_confirmed_busy");
   assert.equal(decideNudge({ ...base, browser_busy: false }, clock).reason, "not_quiet");
   const ready = { ...base, browser_busy: false, last_submission_at: new Date(clock - 1900000).toISOString() };
   assert.equal(decideNudge(ready, clock).action, "pre_pr_reminder");
