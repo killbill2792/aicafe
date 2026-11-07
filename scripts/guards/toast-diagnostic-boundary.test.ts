@@ -167,6 +167,18 @@ describe('Toast diagnostics may not feed operational data', () => {
     expect(docs).toContain('toast-polling.md');
     expect(docs).toContain('binding source/consumer rules');
     expect(agents).toContain('Mandatory actual first-read sequence');
+    const operations = read('docs/plans/universal-supervisor-agent-operations.md');
+    const briefs = read('docs/plans/universal-supervisor-task-briefs.md');
+    const actualDispatcher = read('scripts/dev-dispatcher/run.mjs');
+    const actualDelivery = read('scripts/dev-dispatcher/delivery.mjs');
+    expect(operations).toContain('## One current dispatch/handoff path');
+    expect(operations).not.toMatch(/^## Copy-paste (?:dispatcher|ChatGPT coding-agent) prompt$/m);
+    expect(briefs).toContain('Single delivery prompt (no separate copy/paste template)');
+    expect(briefs).not.toContain('**Short coding prompt:**');
+    expect(actualDispatcher).toMatch(/createDelivery\(/);
+    expect(actualDelivery).toContain('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING');
+    expect(actualDelivery).toContain('D4A Approach B');
+
     expect(rules).toContain('First-read and conflict priority');
     expect(notes).toContain('Generated-dictionary contradiction requiring later code ownership');
     expect(queue.dispatch_rules.architecture_foundation_implementation_approval.approved).toBe(false);
