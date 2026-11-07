@@ -42,13 +42,13 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
   const tasks = validateQueue(queue);
   const remaining = { ...capacity };
   for (const r of Object.values(records)) {
-    if (r.status === "assigned" || r.status === "draft_open" || r.status === "review_fixing") {
+    if (r.status === "assigned" || r.status === "draft_open" || r.status === "review_fixing" || r.status === "blocked_needs_owner") {
       if (r.agent in remaining) remaining[r.agent] = Math.max(0, remaining[r.agent] - 1);
     }
   }
   const claimed = new Set();
   for (const [id, record] of Object.entries(records)) {
-    if (["assigned", "draft_open", "review_fixing"].includes(record.status)) {
+    if (["assigned", "draft_open", "review_fixing", "blocked_needs_owner"].includes(record.status)) {
       for (const path of tasks.get(id)?.exclusive_files || []) claimed.add(path);
     }
   }
@@ -83,6 +83,7 @@ export function actionKey(record, action) {
 export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 } = {}) {
   if (!record || !record.approved || !record.conversation_ref) return { kind: "hold", reason: "unapproved_or_missing_chat" };
   if (record.submission_state === "uncertain" || record.submission_state === "needs_login") return { kind: "hold", reason: record.submission_state };
+  if (record.owner_question || record.github_owner_question) return {kind:"hold",reason:"owner_decision_required"};
   const isPr = Number.isInteger(record.pr_number);
   if (isPr && (record.ci_state === "pending" || record.codex_state === "pending" ||
       record.ci_state === "unknown" || record.codex_state === "unknown")) return { kind: "hold", reason: "checks_pending_or_unknown" };
@@ -134,7 +135,8 @@ export function reconcileGithub(state, openPrs, closedByPr = {}) {
     if (!open.has(rec.pr_number)) {
       const closed = closedByPr[rec.pr_number];
       const merged = closed === true || closed?.merged === true;
-      copy.tasks[id] = { ...rec, github_state: merged ? "merged" : "not_open_unverified",
+      copy.tasks[id] = { ...rec, github_owner_question: merged ? null : rec.github_owner_question,
+        github_state: merged ? "merged" : "not_open_unverified",
         merge_sha: merged ? (closed?.merge_sha || rec.merge_sha || null) : rec.merge_sha,
         status: merged && !["integrated_proven", "released_proven"].includes(rec.status) ? "merged" : rec.status };
     }
@@ -150,7 +152,9 @@ export function reconcileGithub(state, openPrs, closedByPr = {}) {
         }
       }
       const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_commit_at || pr.last_github_activity);
-      copy.tasks[id] = { ...updated, ...pr, task_id: id, status: pr.draft ? "draft_open" : "review_fixing", github_state: "open",
+      copy.tasks[id] = { ...updated, ...pr, task_id: id,
+        status: (pr.github_owner_question || updated.owner_question) ? "blocked_needs_owner" :
+          pr.draft ? "draft_open" : "review_fixing", github_state: "open",
         submission_state: updated.submission_state };
     }
   }
