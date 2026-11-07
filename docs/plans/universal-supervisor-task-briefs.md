@@ -6,6 +6,186 @@
 
 **Short coding prompt:** `Use connected GitHub plugin. Read AGENTS.md + PROGRESS.md and load aicafe-pr-lifecycle, aicafe-dependency-check, aicafe-proof-gate and TASK_ID skills. Implement the approved brief for TASK_ID from docs/plans/universal-supervisor-task-briefs.md. Open a draft PR immediately (stack on open dependency branch); own it through CI/Codex/resolve/review/rebase/merge. Verify prerequisite behavior and required acceptance with actual executed evidence. Only touch assigned paths; no production changes.`
 
+## Priority zero — finish ALL permitted Toast Standard API data before E2 / PR6–PR17
+
+**Owner decision, November 6, 2026:** These six small implementation tasks now lead the **existing**
+Universal Supervisor queue. They are a **source-of-truth/data-access prerequisite**, not a second
+Supervisor, new POS connector, or order-system rewrite. Do not dispatch new E2/PR6/PR9/PR10 work until
+POS0f is **integrated_proven**. Existing open PRs should finish their normal CI/Codex repair cycles
+rather than be abandoned. Only **POS0a, a read-only inventory/architecture document**, is approved to
+start without additional field-level sign-off; POS0b–POS0f are proposed implementation scopes until the
+owner approves the exact source → stored object → reader contract required by AGENTS.md §15.
+
+**Non-negotiable architecture:** Toast Standard API → existing Toast client/ingestion → one current
+authorized record **per actual Toast object ID** (order, payment, time entry, menu entity, kitchen item
+etc.) + field-change log on genuine edits → organized app facts and **one shared scoped reading
+foundation** → existing screens and **one Supervisor**. The existing `toast_raw_records`,
+`toast_raw_changes`, organized tables, order writer, daily imports, current order update path, existing
+screen metrics, `describe_data`, `query_data`, `calculate`, privacy redaction and specialized screen tools
+remain. Extend in place. Do **not** create a duplicate raw ingest, second source of truth, new
+per-question view, arbitrary model-written SQL or blanket 30-minute endpoint polling.
+
+**Meaning of all data:** Every *permitted business field the configured Standard API can actually
+return* is stored and AI-discoverable (or has a current, evidenced provider/scope/privacy exception).
+It does not mean consumer PII, card credentials, secrets, permission bypass, paid Analytics ERA, Menus
+V3 if excluded from Standard, or invented facts. Endpoint counts and schemas must come from the
+**current official Toast specs**, not hardcoded historical 76/86/88 totals. Compare each café's
+actual scope and response; a 200 with zero rows, 204, 403, missing GUID, partial page, failed capture
+and stale record are distinct statuses.
+
+### Shared acceptance contract across POS0b–POS0f
+
+| Concern | Required observable proof |
+|---|---|
+| Full field retention | Current Toast-shaped response field-by-field → allowed stored business field, with documented privacy filtering; nested arrays, GUID references, booleans, null, zero, money and timestamps preserved accurately |
+| One object / real changes | Business + restaurant + stable provider object key; identical replay and reordered arrays do not duplicate; genuine field modification updates existing object and records precise before/after/when |
+| Storage safety | Reuse current writer, tables and `toast_raw_changes`; no duplicate full snapshots, no loss of already verified orders or historical accounting records; RLS/owner scope, non-PII business IDs |
+| Freshness/coverage | Operations (attendance, changing stock/cash, relevant kitchen) refresh as often as bounded Standard API access safely permits; setup daily/on modification; backoff, pagination, modified cursor, missed-run repair, day closeout and overnight correctness; no invalid zero or fresh claim |
+| One data path | Same authorized current facts under screens and chat; specialized screen tools may project/calculate, **not independently source conflicting data**; arbitrary unfamiliar questions use `describe_data`/`query_data` with allowed relationships, provenance and safe DB aggregates |
+| Money | Screen money and labor use `lib/metrics/core/`; other arithmetic through sourced `calculate`; actual/estimate/provisional/missing/stale distinguishable with café-local date and currency |
+| Testing | Strengthen/replace inadequate assertions/fixtures, do not silently delete valid tests or relax to mocks; executable migrated disposable Supabase SQL/RLS, one-current-object/change/retry, endpoint × field, screen parity and real Supervisor-query deterministic acceptance; tests actually run in CI |
+| Proof/release | Every PR body has test command + expected and actual + **executed CI job URL + head SHA**; Codex clean, base current, migrations identified and applied only with owner consent; final read-only real-café audit separately; incomplete/unavailable is NOT success |
+
+## Task POS0a
+
+**Title:** Current Toast Standard API contract and source-to-AI coverage matrix  
+**Dependency:** none. **State:** architecture-approved **read-only inventory only**.  
+**Exclusive file:** `docs/plans/toast-standard-api-coverage-matrix.md`. No runtime code, migrations
+or live provider writes. Reuse the repository's official operation inventory, current online Toast API
+specifications, `docs/plans/toast-storage.md`, `docs/rules/pos-data.md` and existing database evidence.
+
+**How:** Enumerate every current Standard GET/list/detail operation and its child objects/fields
+straight from official OpenAPI; group by operations vs endpoint aliases (detail-by-GUID counts
+separately). Compare registry in `lib/pos/toast/rawSample.server.ts`, actual normal sync callsites,
+existing archive/organized writer keys, change log, query views and dictionary with each authorized
+café's actual permission and observed evidence. For every field document: data type/path, provider
+object ID/key, business date/modification cursor, sensitive/redacted status and justification,
+destination current object and organized projection, update cadence, source of UI and Supervisor,
+last proven capture/date, exception and planned owning PR. Distinguish current November imports from
+October 28 diagnostic samples. Do not call an unproven field accessible or claim every API is granted.
+
+**Must prove:** A complete inspectable matrix and source/spec links; reproducible read-only verification,
+factual source-to-destination gaps, differentiated unauthorized/no-content/no-ID/never-called/stale,
+and an owner-reviewable field-by-field architecture sheet for POS0b–POS0e. If official docs and tested
+permissions conflict, record both. The matrix is a deliverable, **not** a declaration of full coverage.
+**Tests:** deterministic inventory/schema comparison and read-only evidence with commands/output
+linked in PR. No DB writes, no production migration. No extra file ownership without review.
+
+## Task POS0b
+
+**Title:** Staff, jobs, shifts and time entries — all permitted fields, one current object  
+**Dependency:** POS0a field contract. **State:** proposed until specific field/key approval.  
+**Likely existing code:** `lib/pos/toast/adapter.ts`, `laborSync.ts`, `operationalCopy.ts`,
+`optionalSync.ts`; existing labor/staff canonical readers and archive snapshot writer. Reserve exact
+exclusive files against active PRs before coding.
+
+**How:** Fix the existing adapter's reduced response mapping without breaking payroll. Retain allowed
+employee/job/shift/time-entry details, including provider job and shift references, break events, tip
+fields, edit timestamps and actual provider flags **where supplied and permitted**. Store in existing
+current-object record keyed by Toast identity, organize app-needed values into existing canonical tables
+and refresh modified entries on bounded operational cadence. Join employee identity through existing
+relationship keys; use the same café-local day logic and legitimate overtime/zero-pay definitions as
+Staff and Money. **Do not** count a scheduled shift as worked or make a missing clock-in a verified zero.
+
+**Must prove:** Field-by-field source/retention/retrieval parity; full history of genuine changed
+timestamps/wages/tips/breaks with no duplicate snapshots; replay/reorder/partial/recovery; real
+named-person answers for \"who worked on date?\" versus \"who is on shift now?\"; overnight and local
+midnight; correct payroll/schedule parity and stale-source warnings. A late sync must never make AI
+ask the owner to supply a POS-recorded attendance fact. **Tests:** adapter, SQL/RLS, CI integrated
+read, screen/agent parity, stale/permission failure; existing order regressions stay green.
+
+## Task POS0c
+
+**Title:** Cash, stock, kitchen and dynamic availability — current operational objects  
+**Dependency:** POS0a field contract. **State:** proposed until specific field/key approval.
+
+**How:** Extend **existing** Toast client/job/current-object writer, not `toast_raw_samples` as a
+second ongoing source. Cover accessible `cashmgmt/v1/entries`, `cashmgmt/v1/deposits`,
+`stock/v1/inventory`, `kitchen/v1/export/itemFulfillments`, kitchen stations,
+restaurant availability and ordering schedule, plus operational endpoints from the current matrix.
+Use provider-native stable keys and genuine modification dates when documented; otherwise use a
+documented stable identity/version rule, never import-run ID. Keep operational snapshot/status distinct
+from event totals and retain source freshness. Current Toast's missing KDS capability, HTTP 204 or a
+partial stock list must **not** be treated as verified no work/no inventory.
+
+**Must prove:** Each permitted field in each successful response is retrievable by Supervisor from the
+current object; no duplicate cash effects, phantom stock zero or inferred kitchen timings; same-data
+replay, changed object and full recoverable backoff; bounded polling, per-location auth and explicit
+unavailable reasons; current screen/card evidence agrees with canonical facts. **Tests:** SQL/RLS,
+mock Standard API, changed/repeated/timeouts/429/403/204, multi-café isolation, agent parity.
+
+## Task POS0d
+
+**Title:** Remaining Standard setup/configuration/menu/device/partner endpoints  
+**Dependency:** POS0a field contract. **State:** proposed until specific field/key approval.
+
+**How:** Reuse the existing menu, restaurant, job/setup and archive logic. Retain permitted fields
+from menus V2, configuration collections and detail-by-ID lookups, payment/configuration fields,
+restaurant/partner info, packaging, device info and other eligible Standard GETs from the matrix.
+Sync stable setup daily or on a supported modification signal; preserve menu price history, identities
+and discounts. An ID-scoped call without any eligible GUID is `missing_resource_guid`, not `zero`.
+ERA needs separate Analytics authorization and Menus V3 is not counted as a Standard failure.
+
+**Must prove:** Every eligible endpoint/field mapped once, discoverable and current; precision of
+menu/prices/discounts, existing item/fee/financial screen parity, privacy, idempotence and version
+changes. Every unavailable field documents permission/provider reason and verification date.
+**Tests:** endpoint inventory, adapter, disposable DB, auth scope, changed setup, parity, regression.
+
+## Task POS0e
+
+**Title:** Universal discover/query of all retained fields through ONE shared foundation  
+**Dependency:** POS0b + POS0c + POS0d. **State:** proposed until shared-reader design approved.
+
+**How:** Extend the existing `toast_records_for` / canonical view, `ai_query_view`,
+`describe_data`, `query_data` and dictionary to use **current** allowed records (including non-order
+objects), with business-ID and field-level authorization; avoid any arbitrary model-authored SQL.
+Reuse known employee/time-entry, order/check/item/payment and other stable IDs for controlled
+relationship traversal/aggregation; do not add a canonical view per owner question. Keep bounded
+DB-computed results, pagination/coverage summaries and actor/provenance. Trace `get_staff`,
+`get_sales`, `get_profit`, `get_schedule` and screen callers: specialized results may be concise,
+but their underlying facts and canonical computations must be shared. Keep actual screen-number
+definitions and `calculate` separate and unchanged unless a proven defect needs a minimal fix.
+
+**Must prove:** The exact same current staff/time-entry and order/payment evidence is available
+to universal queries and applicable screens; previously absent labor details can now be retrieved.
+Questions \"who worked today?\", \"who is on shift now?\", historical tips/job/revisions, stock,
+cash, kitchen, config and unfamiliar cross-domain questions use the **existing** query tool(s).
+An unsatisfied question returns source coverage/missing evidence, not a fabricated answer or an owner
+request for POS data. **Tests:** one SQL query reader/consumer contract, no cross-tenant access,
+field allowlists, invalid paths/SQL rejected, real agent loop with seeded data, dates/money parity.
+
+## Task POS0f
+
+**Title:** Enforce complete Standard API → storage → shared reader → Supervisor acceptance  
+**Dependency:** POS0e. **State:** proposed. This is the **priority gate** for E2/PR6/PR9/PR10
+and thus every downstream PR6–PR17 task.
+
+**How:** Build/strengthen **executable** coverage tests driven by the up-to-date operation/field
+contract. An endpoint × field status matrix is generated by tests, not an old fixed total or a manual
+\`[x]\` list. Check for every eligible field: Toast-shaped response → safety filter → existing writer
+→ one current object and change history → discoverability → permitted `query_data` retrieval →
+at least one full Supervisor-turn question, with deterministic SQL/fixture truth. Compare relevant
+screen metric projections directly with Supervisor. Replace misleading fixtures/assertions that hid
+gaps (e.g. inserting labor only into an older capture rather than normal labor sync) and update any
+tests changed by the correct architecture. Never delete valid historical regressions or weaken
+precision/privacy checks to manufacture a green build.
+
+**Required executed proofs (not optional/skip):** fresh spec/registry diff; field-by-field
+round-trip for all available Standard response families; identical replay and genuine edit/change
+log; privacy and per-café RLS; pagination and bounded tokens; current versus stale/unknown/failed
+captured truth; dynamic-date and timezone; old and new sources don't double-count; full order
+regression; staff/timecard + name join; sales/payments/cents and screen parity; stock/cash/kitchen;
+one unfamiliar cross-domain agent query. Run real SQL against a **disposable migrated Supabase** in
+CI and link the executed job (no skipped acceptance, no paid AI requirement for numeric/fact checks).
+Real-café data verification is read-only and owner-authorized; write/deploy/permission changes are
+separate approval gates. Record for every endpoint: stored? allowed? complete field set? current?
+Supervisor reads? screen parity? reason/date of exception? Final-head CI and Codex must be clean,
+then post-merge consumer proof before `POS0f = integrated_proven`.
+
+**Never mark POS0f done with** just merged commits, an old October capture, mock-only unit tests,
+a green job that skipped SQL/agent assertions, or a claim \"AI can read all data\" without field-level
+evidence. All older PRs and the current order-storage design remain intact.
+
 ## Task E2: E2 required seeded browser CI, protected preview proof
 
 - **Depends:** none (open prerequisite → stacked draft; merge after proven integration).
