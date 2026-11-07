@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -12,7 +13,8 @@ import { validateHandoff, pendingActions, agentInstruction, fetchLedger,
 const sig = 'a'.repeat(64);
 const delivery = { version: 1, action_id:'assign:6', project:{id:'aicafe',name:'AI CAFE'},
   approval_hash:sig, provider:'chatgpt', intent:'start_new_chat',
-  conversation_url:null, task_id:'6', prompt:'Approved task.' };
+  conversation_url:null, task_id:'6', base_branch:'main', prompt:'Approved task.',
+  prompt_hash:createHash('sha256').update('Approved task.').digest('hex') };
 const action = {key:'assign:6',task_id:'6',type:'assign',status:'planned',created_at:'2026-01-01',delivery};
 const record = {approved:true, agent:'chatgpt', approval_hash:sig};
 const state = {version:1, tasks:{'6':record},
