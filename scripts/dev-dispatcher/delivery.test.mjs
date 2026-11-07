@@ -101,3 +101,22 @@ test('approved task-specific queue skills and exact brief anchor are delivered u
  assert.doesNotMatch(d.prompt,/#task-POS0a/);
  assert.match(d.prompt,/document any unavailable entry rather than inventing skill instructions/);
 });
+
+test('POS0 data contributors receive the mandatory source classification and proof before coding', () => {
+  const posTask={...task,id:'POS0e',title:'Current-reader foundation',goal:'retire diagnostic readers',
+    brief:'docs/plans/universal-supervisor-task-briefs.md#task-pos0e',
+    acceptance:['current object and no diagnostic contamination']};
+  for (const agent of ['chatgpt','claude']) {
+    const d=createDelivery({task:posTask,record:{...record,agent},action:'assign',actionId:'pos0-source-'+agent});
+    for (const required of ['POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING',
+      'docs/rules/pos-data.md','toast_raw_records','toast_raw_changes',
+      'toast_raw_samples','LEGACY_DIAGNOSTIC_ONLY','source_authority_checked: yes',
+      'describe_data','query_data','diagnostic-only values never influence live results']) {
+      assert.ok(d.prompt.includes(required),required);
+    }
+    assert.ok(d.prompt.indexOf('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING') <
+      d.prompt.indexOf('OPEN THE DRAFT PR PROMPTLY'));
+  }
+  const nonPos=createDelivery({task,record,action:'assign',actionId:'independent-6-source'});
+  assert.doesNotMatch(nonPos.prompt,/POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING/);
+});
