@@ -13,7 +13,7 @@ const queue = (tasks) => ({ tasks, merged_code_only: [] });
 const clock = Date.parse("2026-11-05T16:00:00Z");
 const old = new Date(clock - 700000).toISOString();
 const pr = (more = {}) => ({ task_id: "a", approved: true, conversation_ref: "private",
-  pr_number: 101, head_sha: "abc", prompt_version: "v1",
+  pr_number: 101, head_sha: "abc", base_branch:"main", prompt_version: "v1",
   last_github_activity: old, last_commit_at: old, draft: false, ci_state: "success", codex_state: "clean", acceptance_evidence:{acceptance:[{id:'1'}]},
   codex_reviewed_sha: "abc", attempts: 0, ...more });
 
@@ -129,6 +129,7 @@ test("merge requires final head, proven acceptance, branch and predecessors", ()
   const ready = { ...pr(), threads_resolved: true, base_current: true, acceptance_proven: true };
   assert.equal(mergeGate(ready, [{ status: "integrated_proven" }]).eligible, true);
   assert.equal(mergeGate({ ...ready, base_current: false }).eligible, false);
+  assert.deepEqual(mergeGate({ ...ready, base_branch: "feat/predecessor" }).reasons, ["non_main_destination"]);
   assert.deepEqual(mergeGate(ready, [{ status: "merged" }]).reasons, ["predecessor_not_proven"]);
   assert.equal(mergeGate({ ...ready, codex_reviewed_sha: null }).eligible, false);
 });
