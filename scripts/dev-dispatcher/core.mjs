@@ -135,6 +135,7 @@ export function mergeGate(record, predecessors = []) {
   if (record?.ci_state !== "success") reasons.push("ci_not_green");
   if (record?.codex_state !== "clean" || !record?.codex_reviewed_sha) reasons.push("codex_review_missing_or_findings");
   if (!record?.threads_resolved) reasons.push("unresolved_threads");
+  if (record?.base_branch !== "main") reasons.push("non_main_destination");
   if (!record?.base_current) reasons.push("stale_base");
   if (record?.review_base_current === false) reasons.push("base_changed_review_required");
   if (!record?.acceptance_proven) reasons.push("acceptance_not_proven");
