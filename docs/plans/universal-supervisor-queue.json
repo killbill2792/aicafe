@@ -63,6 +63,15 @@
     "proof_not_claims": true,
     "production_owner_gate": true,
     "approval_before_code": true,
+    "architecture_foundation_proof_task": "POS0a",
+    "architecture_foundation_dependent_task_ids": [
+      "POS0b",
+      "POS0c",
+      "POS0d",
+      "POS0e",
+      "POS0f"
+    ],
+    "architecture_foundation_note": "Only the read-only POS0a architecture audit may start now. After owner review and POS0a merged-main integrated proof, the approved nonoverlapping POS0b/c/d implementation tasks can open concurrent drafts. POS0e/f can stack on open upstream implementation PRs once separately approved. This gate prevents implementation before its source-field storage/reader contract is established.",
     "priority_gate_task": "POS0f",
     "priority_gate_note": "The existing dispatcher explicitly checks this proof-only gate: no task outside the allow-list is newly assigned until POS0f has integrated_proven/released_proven status, even if POS0f has a draft branch. Ordinary stacked drafts still work within POS0.",
     "priority_gate_allow_task_ids": [
