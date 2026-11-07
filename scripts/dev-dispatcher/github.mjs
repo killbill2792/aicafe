@@ -1,4 +1,12 @@
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
+export function parseAcceptanceEvidence(body) {
+  if (typeof body !== "string" || body.length > 100000) return null;
+  const match = body.match(/<!-- aicafe-acceptance-evidence\s*([\s\S]*?)\s*-->/);
+  if (!match || match[1].length > 20000) return null;
+  try { const value = JSON.parse(match[1]);
+    return value && typeof value === "object" && Array.isArray(value.acceptance) ? value : null;
+  } catch { return null; }
+}
 export class GitHubFacts {
   constructor({ repo, token, fetchFn = fetch }) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) throw new Error("GitHub repo/token required");
@@ -52,6 +60,7 @@ export class GitHubFacts {
       unresolved > 0 || codex.state === "CHANGES_REQUESTED" ? "findings" : "clean";
     return { pr_number: pr.number, head_sha: sha, base_branch: pr.base.ref,
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
+      acceptance_evidence: parseAcceptanceEvidence(pr.body),
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
       codex_review_at: codex?.submitted_at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
