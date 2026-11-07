@@ -67,6 +67,7 @@ export function agentInstruction(action) {
     'Do not use shell, filesystem, GitHub, code-editing tools, external APIs, or elevated permissions.',
     'Do not read, summarize, collect, or quote assistant responses or conversation transcripts.',
     'Reuse the existing persistent browser tab for this conversation when available; verify the provider, project and exact conversation URL before sending. Never assume a tab number remains valid after restart.',
+    'For idle reminders only, inspect the bottom of the existing conversation to determine whether the coding assistant is still generating; do not read or summarize its messages. If active or uncertain, do not submit.',
     'Check that the destination is correct and the composer is idle; submit the following instruction ONCE only.',
     '--- BEGIN APPROVED INSTRUCTION ---',
     d.prompt,
