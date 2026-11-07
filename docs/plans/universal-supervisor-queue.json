@@ -127,7 +127,9 @@
         "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714102679",
         "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714105378",
         "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714387485",
-        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714390122"
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714390122",
+        "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714662444",
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714662690"
       ],
       "architecture_approach": "D4A_APPROVED_B_change_driven_existing_sync_not_each_endpoint_every_tick",
       "order_failure_outcome": "D4B_APPROVED_isolate_bad_SQL_records_without_losing_good_orders_or_weakening_day_financial_atomicity",
@@ -168,7 +170,8 @@
           "confirm exclusive file ownership and migration number against every open POS0b/c/d/e PR; existing scheduler.ts is shared and cannot have competing editors",
           "run 99-valid-plus-1-database-failing and queue nonstarvation acceptance on migrated disposable DB with rollback",
           "POS0f independently verifies final source-to-registered Supervisor/screen parity after source and recovery work",
-          "owner must separately approve B1 SQL isolation and urgent bounded recovery scheduling policy; they are approved outcomes only"
+          "owner must separately approve B1 SQL isolation and urgent bounded recovery scheduling policy; they are approved outcomes only",
+          "owner-approved D4B logical café+restaurant+Toast GUID processing-state contract; physical schema placement and no-GUID/failed-row fallback still require separately accepted detail"
         ],
         "file_scope_status": "candidate existing paths only: no conflict-free exclusive ownership proved or reserved; actual owner signoff required",
         "sql_scope_status": "no SQL isolation mechanism or exact additive migration path selected; owner approval pending"
@@ -224,6 +227,45 @@
         "current_observation": "toast_ack_rollup_refresh RPC error checked but return data false not checked; may count a false ACK as processed",
         "required": "distinguish false vs superseded generation, retain durable attempts/retry/ACK, do not replay committed sales",
         "owner": "separately authorized cost-refresh ownership; not merged into POS0-order-recovery without explicit approval"
+      },
+      "order_guid_processing_metadata_approved": {
+        "status": "OWNER_APPROVED_LOGICAL_ASSOCIATION_ONLY_NO_PHYSICAL_SCHEMA_AUTHORIZATION",
+        "source_identity": [
+          "authorized business_id",
+          "restaurant_guid",
+          "Toast order GUID"
+        ],
+        "never_key_by": [
+          "sync run",
+          "download page",
+          "field or modifier name"
+        ],
+        "existing_source": "toast_raw_records current object; original Toast JSON unchanged; toast_raw_changes only genuine provider changes",
+        "logical_stages": [
+          "received",
+          "raw_saved",
+          "parsed_validated",
+          "canonical_promoted",
+          "metric_reconciled"
+        ],
+        "clear_issues_only_after": [
+          "durable save proof",
+          "relevant validation proof",
+          "applicable canonical/metric reconciliation proof"
+        ],
+        "no_status_column_or_table_claimed": true,
+        "normal_same_day_retry": "existing 15-minute full business-day ordersBulk (eligible finished orders only), provider-GUID/content idempotence, subject to pagination and time budget",
+        "unwritten_or_missing_guid_fallback": "no saved-row status possible; use existing staged page, toast_unparsed_orders and day status/checkpoint/reconciliation evidence as eligible",
+        "after_rollover": "existing closeout/day importer and bounded missing or modified-date repull; no second queue/cron",
+        "open_order_rule": "open/unclosed order not marked final",
+        "owner_decision": "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714662444",
+        "unapproved_design": [
+          "physical persistence/table placement",
+          "SQL row-isolation method",
+          "recovery scheduling priority",
+          "no-row evidence extensions"
+        ],
+        "disposable_migrated_acceptance": "invalid/missing field or GUID, DB row/page failure, truncated Toast page, repeated 15-minute pull, rollover, provider correction, 98/99 good records independently available, no false day-total certification, eventual bounded repair, full Supervisor/screen metric provenance"
       }
     },
     "pos0a_owner_approved_audit_scope_extension": {
