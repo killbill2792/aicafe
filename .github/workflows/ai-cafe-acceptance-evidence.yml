@@ -33,7 +33,12 @@ jobs:
         run: npm ci
       - name: Run approved acceptance scenarios
         working-directory: candidate
-        run: node ../coordinator/scripts/dev-dispatcher/acceptance-runner.mjs
+        run: |
+          if [ -f ../coordinator/scripts/dev-dispatcher/acceptance-runner.mjs ]; then
+            node ../coordinator/scripts/dev-dispatcher/acceptance-runner.mjs
+          else
+            echo 'Trusted acceptance runner not yet merged to main; no proof generated'
+          fi
       - name: Upload acceptance execution proof
         uses: actions/upload-artifact@v4
         with:
