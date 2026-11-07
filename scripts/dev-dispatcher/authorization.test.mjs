@@ -1,0 +1,79 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { approvalSignature } from './delivery.mjs';
+import { dispatchFrontier, reconcileGithub } from './core.mjs';
+import { revalidateQueuedActions } from './authorization.mjs';
+
+const task = { id:'6', state:'ready', title:'Worker',goal:'Recover',brief:'docs/plans/tasks.md#task-6',
+  architecture_approval:{approved:true},depends_on:['5'],exclusive_files:['lib/ai/runs/a.ts'],
+  acceptance:['one valid restart'] };
+const signed = approvalSignature(task);
+const makeState = (rec = {}, action = {}) => ({
+  version:1, tasks:{'6':{approved:true,status:'review_fixing',agent:'chatgpt',
+    approval_hash:signed,pr_number:390,github_state:'open', ...rec}},
+  actions:{'fix:6':{task_id:'6',type:'repair_ci',status:'planned', ...action}}
+});
+const tasks = () => new Map([['6',task]]);
+test('valid approved scope and open PR preserve one planned repair', () => {
+  const s=makeState();
+  revalidateQueuedActions(s,tasks());
+  assert.equal(s.actions['fix:6'].status,'planned');
+  assert.equal(s.tasks['6'].approved,true);
+});
+test('owner withdraws approval -> old pending instruction cancelled', () => {
+  const s=makeState();
+  revalidateQueuedActions(s,new Map([['6',{...task,architecture_approval:null,state:'proposed'}]]));
+  assert.equal(s.actions['fix:6'].status,'cancelled_approval_changed');
+  assert.equal(s.tasks['6'].approved,false);
+  assert.equal(s.tasks['6'].status,'blocked_needs_owner');
+});
+test('task removed from approved plan -> old instruction cancelled',()=>{
+  const s=makeState();revalidateQueuedActions(s,new Map());
+  assert.equal(s.actions['fix:6'].status,'cancelled_approval_changed');
+});
+test('file ownership or accepted task brief changes -> requires reapproval',()=>{
+  for(const changed of [{...task,exclusive_files:['lib/ai/runs/b.ts']},
+    {...task,goal:'Changed requirements'}, {...task,acceptance:['different proof']}]) {
+    const s=makeState();revalidateQueuedActions(s,new Map([['6',changed]]));
+    assert.equal(s.actions['fix:6'].status,'cancelled_approval_changed');
+  }
+});
+test('merged or closed PR -> repair cannot be sent',()=>{
+  for(const github_state of ['merged','not_open_unverified',undefined]) {
+    const s=makeState({github_state});
+    revalidateQueuedActions(s,tasks());
+    assert.equal(s.actions['fix:6'].status,'cancelled_pr_closed');
+  }
+});
+test('completed actions are never retroactively changed',()=>{
+  const s=makeState({github_state:'merged'},{status:'already_executed'});
+  revalidateQueuedActions(s,tasks());
+  assert.equal(s.actions['fix:6'].status,'already_executed');
+});
+
+test('historical integrated predecessor proof survives revocation and unblocks dependent work',()=>{
+  const dependent = {...task,depends_on:['5']};
+  const current = {version:1, tasks:{'5':{status:'integrated_proven',pr_number:378,approved:false}},
+    actions:{'old:5':{task_id:'5',type:'repair_ci',status:'planned'}}};
+  const queue = {merged_code_only:[{id:'5',pr:378}],tasks:[dependent]};
+  assert.equal(dispatchFrontier(queue,current.tasks).length,1);
+  revalidateQueuedActions(current,new Map([['6',dependent]]));
+  assert.equal(current.tasks['5'].status,'integrated_proven');
+  assert.equal(current.actions['old:5'].status,'cancelled_approval_changed');
+  assert.equal(dispatchFrontier(queue,current.tasks).length,1);
+});
+test('released-proven record is never downgraded to merged or blocked',()=>{
+  const previous = {version:1,tasks:{'5':{status:'released_proven',pr_number:378}},
+    actions:{'old:5':{task_id:'5',type:'repair_ci',status:'planned'}}};
+  const changed = reconcileGithub(previous,[],{378:true});
+  revalidateQueuedActions(changed,new Map());
+  assert.equal(changed.tasks['5'].status,'released_proven');
+  assert.equal(changed.actions['old:5'].status,'cancelled_approval_changed');
+});
+test('revoking new sends does not erase already proven integration on same task',()=>{
+  const s=makeState({status:'integrated_proven'});
+  revalidateQueuedActions(s,new Map());
+  assert.equal(s.tasks['6'].approved,false);
+  assert.equal(s.tasks['6'].status,'integrated_proven');
+  assert.equal(s.actions['fix:6'].status,'cancelled_approval_changed');
+});

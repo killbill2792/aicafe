@@ -38,7 +38,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test scripts/dev-dispatcher/core.test.mjs
+      - run: node --test scripts/dev-dispatcher/core.test.mjs scripts/dev-dispatcher/delivery.test.mjs scripts/dev-dispatcher/authorization.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs
 
   reconcile:
     name: GitHub state reconciliation (no effects)
@@ -55,13 +55,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Observe PRs and write dry-run summary
+      - name: Reconcile on trusted main (persist only when explicitly enabled)
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
           DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
-          PERSIST: ${{ github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger }}
+          PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || (github.event_name == 'schedule' && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
         run: |
           if [ "$PERSIST" = "true" ]; then
             node scripts/dev-dispatcher/run.mjs --commit

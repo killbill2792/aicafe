@@ -5,10 +5,13 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate } from "./core.mjs";
+import { approvalSignature, createDelivery } from "./delivery.mjs";
+import { revalidateQueuedActions } from "./authorization.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
   validateQueue(queue);
+  const taskById = new Map(queue.tasks.map(task => [task.id, task]));
   const repo = process.env.GITHUB_REPOSITORY;
   const githubToken = process.env.GITHUB_TOKEN;
   if (!repo || !githubToken) throw new Error("GITHUB_REPOSITORY/GITHUB_TOKEN required");
@@ -33,23 +36,36 @@ async function main() {
   }
   function reconcile(state, observed) {
     const copy = reconcileGithub(state, observed.snapshot, observed.closedByPr);
+    revalidateQueuedActions(copy, taskById);
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
     const now = new Date().toISOString();
     for (const assignment of assigned) {
       const key = `assign:${assignment.task_id}`;
       if (copy.actions[key]) continue;
-      copy.actions[key] = { ...assignment, status: "planned", created_at: now };
-      copy.tasks[assignment.task_id] = { task_id: assignment.task_id, status: "assigned",
+      const record = { task_id: assignment.task_id, status: "assigned",
         agent: assignment.agent, base_branch: assignment.base_branch, approved: true,
+        approval_hash: approvalSignature(taskById.get(assignment.task_id)),
         prompt_id: `task:${assignment.task_id}`, prompt_version: "v1" };
+      const delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
+        action: "assign", actionId: key });
+      copy.actions[key] = { ...assignment, task_id: assignment.task_id,
+        type: "assign", status: "planned", created_at: now, delivery };
+      copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
       const proposal = decideNudge(rec, Date.now());
       if (proposal.kind !== "propose") continue;
       if (!copy.actions[proposal.key]) {
+        const task = taskById.get(id);
+        // Only approved, exactly owned tasks from the trusted queue can reach Dave.
+        if (!task || task.architecture_approval?.approved !== true ||
+            !task.exclusive_files?.length || rec.approval_hash !== approvalSignature(task) ||
+            (Number.isInteger(rec.pr_number) && rec.github_state !== "open")) continue;
+        const delivery = createDelivery({ task, record: rec,
+          action: proposal.action, actionId: proposal.key });
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
-          status: "planned", head_sha: rec.head_sha || null, created_at: now };
+          status: "planned", head_sha: rec.head_sha || null, created_at: now, delivery };
         nudges.push({ task_id: id, action: proposal.action });
       }
     }
@@ -58,9 +74,14 @@ async function main() {
   }
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
+  let persisted = null;
   if (commit && ledger) {
-    // A CAS retry reloads the state; it MUST also reload GitHub facts before writing.
-    await ledger.transaction(async existing => reconcile(existing, await observe(existing)).state);
+    // Reconcile against fresh facts on every CAS attempt; do not write an
+    // identical state every five minutes (avoids 288 empty commits per day).
+    persisted = await ledger.transaction(async existing => {
+      const next = reconcile(existing, await observe(existing)).state;
+      return JSON.stringify(next) === JSON.stringify(existing) ? null : next;
+    });
   }
   const gateCounts = { ready: 0, blocked: 0 };
   for (const rec of Object.values(proposed.state.tasks)) {
@@ -73,7 +94,7 @@ async function main() {
     `- Approved new assignments: **${proposed.assigned.length}**`,
     `- Eligible follow-ups (NOT sent): **${proposed.nudges.length}**`,
     `- Tracked merge gates: ready **${gateCounts.ready}**, blocked **${gateCounts.blocked}**`,
-    `- Private durable state: **${commit ? "saved (no external actions)" : ledger ? "read-only" : "not configured"}**`,
+    `- Private durable state: **${commit ? persisted?.committed ? "saved" : "unchanged" : ledger ? "read-only" : "not configured"} (no external actions)**`,
     "- Browser submissions and merge actions: **DISABLED**.",
   ].join("\n");
   console.log(summary);
