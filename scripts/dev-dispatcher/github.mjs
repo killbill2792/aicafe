@@ -1,5 +1,10 @@
 import { inflateRawSync } from 'node:zlib';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
+export function parseTaskMarker(body) {
+  if (typeof body !== 'string' || body.length > 100000) return null;
+  const marks = [...body.matchAll(/<!-- aicafe-task-id\s+([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\s*-->/g)];
+  return marks.length === 1 ? marks[0][1] : null;
+}
 export function parseAcceptanceEvidence(body) {
   if (typeof body !== "string" || body.length > 100000) return null;
   const match = body.match(/<!-- aicafe-acceptance-evidence\s*([\s\S]*?)\s*-->/);
@@ -136,6 +141,7 @@ export class GitHubFacts {
     return { pr_number: pr.number, head_sha: sha, base_branch: pr.base.ref,
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
+      task_marker: parseTaskMarker(pr.body),
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
       codex_review_at: codex?.submitted_at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
