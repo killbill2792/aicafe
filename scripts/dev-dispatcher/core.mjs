@@ -66,7 +66,8 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
       else { blocked = true; break; }
     }
     if (blocked || openDeps.length > 1) continue; // multi-branch stacks require explicit integration decision
-    const agent = Object.keys(remaining).find(k => remaining[k] > 0);
+    // Claude is reserved for completely independent tasks; no stacked or historic prerequisites.
+    const agent = Object.keys(remaining).find(k => remaining[k] > 0 && (k !== "claude" || task.depends_on.length === 0));
     if (!agent) break;
     remaining[agent]--;
     for (const path of task.exclusive_files) claimed.add(path);
@@ -76,10 +77,10 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
   return actions;
 }
 export function actionKey(record, action) {
-  const parts = [record.task_id, action, record.head_sha || "pre-pr", record.prompt_version || "v1", record.last_github_activity || "start"];
+  const parts = [record.task_id, action, record.head_sha || "pre-pr", record.prompt_version || "v1", record.last_commit_at || record.last_github_activity || "start"];
   return parts.map(s => encodeURIComponent(String(s))).join(":");
 }
-export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 1800000 } = {}) {
+export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 } = {}) {
   if (!record || !record.approved || !record.conversation_ref) return { kind: "hold", reason: "unapproved_or_missing_chat" };
   if (record.submission_state === "uncertain" || record.submission_state === "needs_login") return { kind: "hold", reason: record.submission_state };
   const isPr = Number.isInteger(record.pr_number);
@@ -87,8 +88,10 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 1800000
       record.ci_state === "unknown" || record.codex_state === "unknown")) return { kind: "hold", reason: "checks_pending_or_unknown" };
   if (isPr && (!["success", "failure"].includes(record.ci_state) || !["clean", "findings"].includes(record.codex_state))) return { kind: "hold", reason: "unverified_checks" };
   if (isPr && record.codex_reviewed_sha !== record.head_sha && record.codex_state === "clean") return { kind: "hold", reason: "stale_codex" };
-  if (!isPr && record.browser_busy !== false) return { kind: "hold", reason: "busy_or_unknown" };
-  const last = Date.parse(isPr ? record.last_github_activity : record.last_submission_at);
+  if (record.agent === "claude") return { kind: "hold", reason: "claude_no_routine_nudges" };
+  if (record.browser_busy !== false) return { kind: "hold", reason: "busy_or_unknown" };
+  if (isPr && record.draft) return { kind: "hold", reason: "draft_not_ready" };
+  const last = Date.parse(isPr ? (record.codex_state === "findings" && record.codex_review_at && Date.parse(record.codex_review_at) > Date.parse(record.last_commit_at || 0) ? record.codex_review_at : record.last_commit_at) : record.last_submission_at);
   if (!Number.isFinite(last) || nowMs - last < (isPr ? quietMs : prePrMs)) return { kind: "hold", reason: "not_quiet" };
   if (record.next_check_at && nowMs < Date.parse(record.next_check_at)) return { kind: "hold", reason: "cooldown" };
   const action = isPr ? (record.ci_state === "failure" ? "repair_ci" : record.codex_state === "findings" ? "repair_review" : "continue_pr") : "pre_pr_reminder";
@@ -99,13 +102,14 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 1800000
 export function invalidateOnHeadChange(record, newSha, at) {
   if (record.head_sha === newSha) return record;
   return { ...record, head_sha: newSha, last_github_activity: at,
-    ci_state: "pending", codex_state: "pending", codex_reviewed_sha: null,
+    ci_state: "pending", codex_state: "pending", codex_reviewed_sha: null, last_commit_at: at,
     next_check_at: null, last_action_key: null,
     submission_state: record.submission_state === "uncertain" ? "uncertain" : "idle" };
 }
 export function mergeGate(record, predecessors = []) {
   const reasons = [];
   if (!record?.approved) reasons.push("not_approved");
+  if (record?.draft !== false) reasons.push("not_ready_for_review");
   if (!record?.pr_number || !record?.head_sha) reasons.push("missing_pr_or_sha");
   if (record?.ci_state !== "success") reasons.push("ci_not_green");
   if (record?.codex_state !== "clean" || record?.codex_reviewed_sha !== record?.head_sha) reasons.push("codex_not_clean_on_head");
