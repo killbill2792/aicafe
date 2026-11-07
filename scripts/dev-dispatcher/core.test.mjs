@@ -309,7 +309,8 @@ test('owner question blocks nudges and retains exclusive-file ownership',()=>{
  assert.equal(decideNudge(blocked,clock).reason,'owner_decision_required');
  const a=task('a'),b=task('b');
  b.exclusive_files=[...a.exclusive_files];
- const assigned=dispatchFrontier(queue([a,b]),{a:{status:'blocked_needs_owner',agent:'chatgpt'}});
+ // An already-started coding chat with an owner question still retains its file lock.
+ const assigned=dispatchFrontier(queue([a,b]),{a:{status:'blocked_needs_owner',agent:'chatgpt',conversation_ref:'https://chatgpt.com/c/existing'}});
  assert.equal(assigned.some(item=>item.task_id==='b'),false);
  const state={...emptyLedger(),tasks:{a:blocked}};
  const prInfo={...blocked,pr_number:101,head_sha:'abc',github_owner_question:'Decision requested',draft:false};
