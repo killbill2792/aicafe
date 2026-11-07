@@ -21,7 +21,7 @@ export async function publishSignal({ ledgerRepo, ledgerToken, publicRepo, publi
   const existing = await fetchFn(url, { headers });
   if (!existing.ok) throw new Error(`Public signal read failed: ${existing.status}`);
   const file = await existing.json();
-  const previous = JSON.parse(Buffer.from(file.content.replace(/\\s/g, ''), 'base64').toString('utf8'));
+  const previous = JSON.parse(Buffer.from(file.content.replace(/\s/g, ''), 'base64').toString('utf8'));
   if (previous.fingerprint === signal.fingerprint && previous.pending_count === signal.pending_count) return false;
   const updated = await fetchFn(`https://api.github.com/repos/${publicRepo}/contents/signal.json`, {
     method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
