@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { collectReceipts, applyReceipts } from './inbox.mjs';
+import { queueOwnerAlerts } from './alerts.mjs';
 const hash = s=>createHash('sha256').update(s).digest('hex');
 const receipt={action_id:'assign:6',prompt_hash:hash('approved'),conversation_url:'https://chatgpt.com/c/abc-123',project_id:'aicafe',provider:'chatgpt'};
 const path='dispatcher/receipts/'+hash(receipt.action_id+':'+receipt.prompt_hash)+'.json';
@@ -24,4 +25,13 @@ test('receipt ingestion is idempotent and verifies courier role',()=>{
  assert.equal(first.actions['assign:6'].status,'submitted');
  assert.throws(()=>applyReceipts(state,[{receipt,actor:'dave-app[bot]'}],{'dave-app[bot]':'dave'}),/does not own/);
  assert.equal(applyReceipts(first,inbox,{'muse-app[bot]':'muse'}).actions['assign:6'].status,'submitted');
+});
+
+test('owner notice inbox uses the same allowlist but only Muse may acknowledge',()=>{
+ const first=queueOwnerAlerts({version:1,tasks:{},actions:{}},{unmappedPrs:[91]});
+ const [notice_id,notice]=Object.entries(first.owner_alerts)[0];
+ const message={kind:'owner_notice',notice_id,notice_hash:notice.notice_hash,status:'submitted'};
+ const muse=applyReceipts(first,[{receipt:message,actor:'muse-app[bot]'}],{'muse-app[bot]':'muse'});
+ assert.equal(muse.owner_alerts[notice_id].status,'submitted');
+ assert.throws(()=>applyReceipts(first,[{receipt:message,actor:'dave-app[bot]'}],{'dave-app[bot]':'dave'}),/Only authenticated Muse/);
 });
