@@ -215,3 +215,15 @@ test("PR acceptance metadata parses only bounded JSON",()=>{
  assert.equal(parseAcceptanceEvidence('<!-- aicafe-acceptance-evidence broken -->'),null);
  assert.equal(parseAcceptanceEvidence('not proof'),null);
 });
+
+test('owner question blocks nudges and retains exclusive-file ownership',()=>{
+ const blocked={...pr(),owner_question:'Which files are authorized?',status:'blocked_needs_owner',agent:'chatgpt'};
+ assert.equal(decideNudge(blocked,clock).reason,'owner_decision_required');
+ const a=task('a'),b=task('b');
+ b.exclusive_files=[...a.exclusive_files];
+ const assigned=dispatchFrontier(queue([a,b]),{a:{status:'blocked_needs_owner',agent:'chatgpt'}});
+ assert.equal(assigned.some(item=>item.task_id==='b'),false);
+ const state={...emptyLedger(),tasks:{a:blocked}};
+ const prInfo={...blocked,pr_number:101,head_sha:'abc',github_owner_question:'Decision requested',draft:false};
+ assert.equal(reconcileGithub(state,[prInfo]).tasks.a.status,'blocked_needs_owner');
+});
