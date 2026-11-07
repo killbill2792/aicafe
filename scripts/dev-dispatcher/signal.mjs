@@ -3,10 +3,15 @@
 import { createHmac } from 'node:crypto';
 import { GitHubLedger } from './ledger.mjs';
 import { pendingActions } from './bridge/bridge.mjs';
+import { noticeHash } from './alerts.mjs';
 
 export function signalFor(state, secret) {
   if (!secret || secret.length < 32) throw new Error('Signal signing secret must be >= 32 characters');
-  const ids = pendingActions(state).filter(a => a.delivery_owner === 'muse').map(a => a.key + ':' + a.delivery.prompt_hash).sort();
+  const deliveries = pendingActions(state).filter(a => a.delivery_owner === 'muse').map(a => a.key + ':' + a.delivery.prompt_hash);
+  const notices = Object.entries(state.owner_alerts || {}).filter(([,a]) =>
+    a.status === 'planned' && a.delivery_owner === 'muse' && a.notice_hash === noticeHash(a))
+    .map(([key,a]) => 'owner:' + key + ':' + a.notice_hash);
+  const ids = [...deliveries, ...notices].sort();
   return { version: 1, pending_count: ids.length,
     fingerprint: createHmac('sha256', secret).update(JSON.stringify(ids)).digest('hex') };
 }
