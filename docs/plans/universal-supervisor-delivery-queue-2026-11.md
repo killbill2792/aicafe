@@ -15,6 +15,8 @@ and PR10 (hence the rest of the queue). The actual deterministic dispatcher chec
 this is not merely a change of prose priority. Finish existing open PR CI/Codex/reviews normally,
 but do not create new lower-priority dispatch assignments while POS0f is unproven.
 
+**D4 owner-approved architecture clarification (NOT implementation):** D4A selects change-driven family-specific refresh and automatic reconciliation in the existing 10-minute coordinator plus separate 15-minute live orders; never blanket GET every tick or webhook-only. D4B requires SQL-level bad-order isolation and no starvation of valid orders, daily jobs, payment-gap recovery or generation-bound cost work; preserve prior #189/#203/#264/#297 regressions. Proposed `POS0-order-recovery` has no dispatch/file/SQL approval, and the 77 due cost-refresh jobs with zero attempts are a separate diagnostic. **One briefing path:** [binding POS rules](../rules/pos-data.md) → [#398 D4 card](toast-standard-api-coverage-matrix.md#d4ad4b-approved-architecture-outcome--no-runtime-approval-nov-7) → [task brief](universal-supervisor-task-briefs.md) + [queue](universal-supervisor-queue.json). Do not add another prompt.
+
 **Why first:** The current one-record-per-order writer, revision log, sales imports and canonical
 screen numbers are working and must remain. The gap is complete **field retention and current-object
 ingestion** for other accessible Toast Standard API endpoints, plus the path from those current
