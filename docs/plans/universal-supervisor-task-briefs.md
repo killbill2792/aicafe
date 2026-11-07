@@ -42,7 +42,7 @@ and stale record are distinct statuses.
 | Full field retention | Current Toast-shaped response field-by-field → allowed stored business field, with documented privacy filtering; nested arrays, GUID references, booleans, null, zero, money and timestamps preserved accurately |
 | One object / real changes | Business + restaurant + stable provider object key; identical replay and reordered arrays do not duplicate; genuine field modification updates existing object and records precise before/after/when |
 | Storage safety | Reuse current writer, tables and `toast_raw_changes`; no duplicate full snapshots, no loss of already verified orders or historical accounting records; RLS/owner scope, non-PII business IDs |
-| Freshness/coverage | Operations (attendance, changing stock/cash, relevant kitchen) refresh as often as bounded Standard API access safely permits; setup daily/on modification; backoff, pagination, modified cursor, missed-run repair, day closeout and overnight correctness; no invalid zero or fresh claim |
+| Freshness/coverage | Operations (attendance, changing stock/cash, relevant kitchen) check each permitted family in the existing 10-minute coordinating cycle, with bounded provider-specific refresh and modification cursors; static setup checks on version/metadata and full detail on change; backoff, pagination, modified cursor, missed-run repair, day closeout and overnight correctness; no invalid zero or fresh claim |
 | One data path | Same authorized **current** facts under screens and chat, with existing `describe_data`/`query_data` over **all permitted fields**, no row sample as the discovery universe; query result limits constrain context only, not DB retrieval |
 | Money | Screen money and labor use `lib/metrics/core/`; other arithmetic through sourced `calculate`; actual/estimate/provisional/missing/stale distinguishable with café-local date and currency |
 | Testing | Strengthen/replace inadequate assertions/fixtures, do not silently delete valid tests or relax to mocks; executable migrated disposable Supabase SQL/RLS, one-current-object/change/retry, endpoint × field, screen parity and real Supervisor-query deterministic acceptance; tests actually run in CI |
@@ -99,7 +99,7 @@ read, screen/agent parity, stale/permission failure; existing order regressions 
 ## Task POS0c
 
 **Title:** Cash, stock, kitchen and dynamic availability — current operational objects
-**Dependency:** POS0a field contract. **State:** proposed until specific field/key approval.
+**Dependency:** POS0a field contract **and POS0e operational reader/retention foundation**. **State:** proposed until specific field/key approval.
 
 **How:** Extend **existing** Toast client/job/current-object writer, not `toast_raw_samples` as a
 second ongoing source. Cover accessible `cashmgmt/v1/entries`, `cashmgmt/v1/deposits`,
@@ -119,12 +119,12 @@ mock Standard API, changed/repeated/timeouts/429/403/204, multi-café isolation,
 ## Task POS0d
 
 **Title:** Remaining Standard setup/configuration/menu/device/partner endpoints
-**Dependency:** POS0a field contract. **State:** proposed until specific field/key approval.
+**Dependency:** POS0a field contract **and POS0e operational reader/retention foundation**. **State:** proposed until specific field/key approval.
 
 **How:** Reuse the existing menu, restaurant, job/setup and archive logic. Retain permitted fields
 from menus V2, configuration collections and detail-by-ID lookups, payment/configuration fields,
 restaurant/partner info, packaging, device info and other eligible Standard GETs from the matrix.
-Sync stable setup daily or on a supported modification signal; preserve menu price history, identities
+Use the existing 10-minute sync to check supported metadata/version/modified signals; fetch full setup objects only when changed, within Toast API limits; preserve menu price history, identities
 and discounts. An ID-scoped call without any eligible GUID is `missing_resource_guid`, not `zero`.
 ERA needs separate Analytics authorization and Menus V3 is not counted as a Standard failure.
 
