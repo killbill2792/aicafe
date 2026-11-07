@@ -88,7 +88,8 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
       record.ci_state === "unknown" || record.codex_state === "unknown")) return { kind: "hold", reason: "checks_pending_or_unknown" };
   if (isPr && (!["success", "failure"].includes(record.ci_state) || !["clean", "findings"].includes(record.codex_state))) return { kind: "hold", reason: "unverified_checks" };
   if (record.agent === "claude") return { kind: "hold", reason: "claude_no_routine_nudges" };
-  if (!isPr && record.browser_busy !== false) return { kind: "hold", reason: "busy_or_unknown" };
+  // GitHub cannot see the browser. Muse checks actual composer activity before any reminder.
+  if (!isPr && record.browser_busy === true) return { kind: "hold", reason: "browser_confirmed_busy" };
   if (isPr && record.draft) return { kind: "hold", reason: "draft_not_ready" };
   const last = Date.parse(isPr ? (record.codex_state === "findings" && record.codex_review_at && Date.parse(record.codex_review_at) > Date.parse(record.last_commit_at || 0) ? record.codex_review_at : record.last_commit_at) : record.last_submission_at);
   if (!Number.isFinite(last) || nowMs - last < (isPr ? quietMs : prePrMs)) return { kind: "hold", reason: "not_quiet" };
