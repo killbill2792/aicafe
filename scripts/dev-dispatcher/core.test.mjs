@@ -185,3 +185,20 @@ test("CAS retries call reconciliation against newly loaded state each time", asy
   assert.equal(puts, 2);
   assert.equal(calls, 2);
 });
+
+test("Claude receives only independent tasks and never routine nudges", () => {
+  const all = queue([task("a"), task("b"), task("c"), task("d"), task("e", ["a"]), task("f")]);
+  const assigned = dispatchFrontier(all, { a: { status: "integrated_proven" } }, { chatgpt: 0, claude: 2 });
+  assert.equal(assigned.every(a => a.agent === "claude" && a.task_id !== "e"), true);
+  assert.equal(decideNudge(pr({ agent: "claude" }), clock).reason, "claude_no_routine_nudges");
+});
+test("Codex findings wait ten minutes after review, not after PR comments", () => {
+  const reviewed = new Date(clock - 400000).toISOString();
+  const rec = pr({ codex_state: "findings", codex_review_at: reviewed, last_commit_at: old });
+  assert.equal(decideNudge(rec, clock).reason, "not_quiet");
+  assert.equal(decideNudge({ ...rec, codex_review_at: old }, clock).action, "repair_review");
+});
+test("merge gate rejects draft PR even with passing checks and evidence", () => {
+  const ready = { ...pr(), threads_resolved: true, base_current: true, acceptance_proven: true };
+  assert.equal(mergeGate({ ...ready, draft: true }).eligible, false);
+});
