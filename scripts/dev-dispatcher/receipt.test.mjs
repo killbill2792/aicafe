@@ -34,3 +34,32 @@ test('follow-up receipt must match existing conversation',()=>{
  assert.throws(()=>acceptDeliveryReceipt(follow,{...receipt,action_id:'fix:6'},{authenticatedCourier:'muse'}));
  assert.equal(acceptDeliveryReceipt(follow,{...receipt,action_id:'fix:6',conversation_url:existing},{authenticatedCourier:'muse'}).actions['fix:6'].status,'submitted');
 });
+
+test('existing Muse nested project envelope is accepted and records the same chat once',()=>{
+ const nested={...receipt,project:{id:'aicafe',name:'AI CAFE'}};
+ delete nested.project_id;
+ const next=acceptDeliveryReceipt(state,nested,{authenticatedCourier:'muse'});
+ assert.equal(next.actions['assign:6'].status,'submitted');
+ assert.equal(next.tasks['6'].conversation_ref,receipt.conversation_url);
+ assert.throws(()=>acceptDeliveryReceipt(next,nested,{authenticatedCourier:'muse'}),/not currently/);
+});
+test('receipt project identity is fail-closed if missing, conflicting or malformed',()=>{
+ for(const changes of [
+  {project_id:'other',project:{id:'aicafe'}},
+  {project_id:'aicafe',project:{id:'other'}},
+  {project_id:'aicafe',project:{id:null}},
+  {project_id:'aicafe',project:'aicafe'},
+  {project_id:'aicafe',project:null},
+  {project_id:3},
+  {project:{name:'AI CAFE'}},
+  {project:null},
+  {project:'aicafe'},
+ ]) assert.throws(()=>acceptDeliveryReceipt(state,{...receipt,...changes},{authenticatedCourier:'muse'}),/Receipt project\/provider mismatch/);
+ const missing={...receipt};delete missing.project_id;
+ assert.throws(()=>acceptDeliveryReceipt(state,missing,{authenticatedCourier:'muse'}),/Receipt project\/provider mismatch/);
+ const both={...receipt,project:{id:'aicafe',name:'AI CAFE'}};
+ assert.equal(acceptDeliveryReceipt(state,both,{authenticatedCourier:'muse'}).actions['assign:6'].status,'submitted');
+ assert.throws(()=>acceptDeliveryReceipt(state,{...both,prompt_hash:'f'.repeat(64)},{authenticatedCourier:'muse'}),/Receipt does not match/);
+ assert.throws(()=>acceptDeliveryReceipt(state,{...both,conversation_url:'https://evil.example/c/fake'},{authenticatedCourier:'muse'}),/Receipt does not match/);
+ assert.throws(()=>acceptDeliveryReceipt(state,both,{authenticatedCourier:'dave'}),/does not own/);
+});
