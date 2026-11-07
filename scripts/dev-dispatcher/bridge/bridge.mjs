@@ -183,6 +183,9 @@ export async function runOnce({ repo = process.env.DISPATCH_LEDGER_REPO,
   if (!action) return { status: 'idle', pending: eligible.length, already_attempted: eligible.length };
   if (!sendEnabled) return { status: 'dry_run', pending: eligible.length, project: action.delivery.project.id,
     task_id: action.task_id, intent: action.delivery.intent };
+  // Muse owns new actions by default. Dave may send only after GitHub explicitly
+  // reassigns ownership to Dave following a verified Muse non-delivery.
+  if (action.delivery_owner !== 'dave') return { status:'held_for_muse', task_id:action.task_id };
   let hold;
   try { hold = await reserveTaskHold(receiptDir, action); }
   catch (error) {
