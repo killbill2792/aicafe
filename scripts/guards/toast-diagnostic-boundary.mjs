@@ -13,7 +13,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const DIAGNOSTIC_REFERENCE =
-  /\b(?:toast_raw_samples(?:_latest)?|toast_raw_sample_leases|toast_claim_raw_sample|toast_acquire_raw_sample_lease|captureToastRawSample)\b/;
+  /\b(?:toast_raw_samples(?:_latest)?|toast_raw_sample_leases|toast_claim_raw_sample|toast_acquire_raw_sample_lease|captureToastRawSample|rawSample(?:\.server)?)\b/;
 const DIAGNOSTIC_IMPLEMENTATIONS = new Set([
   'lib/pos/toast/rawSample.server.ts',
   'lib/pos/toast/rawSample.test.ts',
@@ -25,6 +25,8 @@ const DIAGNOSTIC_IMPLEMENTATIONS = new Set([
 
 export function isOperationalSource(path) {
   if (DIAGNOSTIC_IMPLEMENTATIONS.has(path)) return false;
+  // Coding-agent instructions mention these names as warnings; they are not data readers.
+  if (path.startsWith('scripts/dev-dispatcher/')) return false;
   if (/^supabase\/migrations\/[^/]+\.sql$/.test(path)) return true;
   if (/^(?:app|lib|components)\//.test(path) && /\.[cm]?[jt]sx?$/.test(path)) {
     if (/(?:^|\/)(?:__tests__|fixtures|__fixtures__)\//.test(path) ||
