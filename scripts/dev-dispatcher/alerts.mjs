@@ -18,8 +18,8 @@ export function queueOwnerAlerts(state,{unmappedPrs=[],now=new Date().toISOStrin
   if(!next.owner_alerts[key])next.owner_alerts[key]=entry;
  };
  for(const [id,rec] of Object.entries(next.tasks||{})){
-  if(rec.owner_question)
-   add('owner_decision',id,rec.pr_number,'PR #'+(rec.pr_number||'not opened')+': '+rec.owner_question);
+  if(rec.owner_question || rec.github_owner_question)
+   add('owner_decision',id,rec.pr_number,'PR #'+(rec.pr_number||'not opened')+': '+(rec.owner_question||rec.github_owner_question));
   if(rec.agent==='claude'&&rec.blocker?.confirmed===true &&
      ['usage_limit','confirmed_blocker'].includes(rec.blocker.kind))
    add('claude_blocker',id,rec.pr_number,
