@@ -22,8 +22,9 @@ nonoverlapping file ownership. This architecture-foundation gate is distinct
 from ordinary PR code dependencies: do not let an early approval or POS0a draft
 start implementation against an unfinalized source contract. POS0e
 has multiple functional predecessors and an explicit stack base POS0d; it may
-open a draft against POS0d's open branch after all three predecessor drafts
-exist. Other dependencies must still integrate before POS0e merges. POS0f can
+open a draft against POS0d's verified open PR branch once all three predecessor
+PRs exist (draft or ready-for-review). Their independent branches need not
+merge first. Other dependencies must integrate before POS0e merges. POS0f can
 stack against POS0e's open branch. This is parallel **work**, with ordered
 **merges** and final-head acceptance after retargeting; do not serialize PR
 opening on completed upstream merges. Only POS0a is authorized **now**;
