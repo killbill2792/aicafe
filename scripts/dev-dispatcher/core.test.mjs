@@ -95,14 +95,29 @@ test("Toast architecture foundation requires owner-reviewed merged-main proof be
       task("POS0c",["POS0a"]), task("POS0d",["POS0a"])]),
     dispatch_rules: {
       architecture_foundation_proof_task:"POS0a",
-      architecture_foundation_dependent_task_ids:["POS0b","POS0c","POS0d"] },
+      architecture_foundation_dependent_task_ids:["POS0b","POS0c","POS0d"],
+      architecture_foundation_implementation_approval:{
+        approved:false,merged_sha:null,owner_review_url:null} },
     capacity:{chatgpt:5,claude:0} };
   const draft = { POS0a:{status:"draft_open",branch:"feat/a",pr_number:395,agent:"chatgpt"} };
   assert.equal(dispatchFrontier(all,draft).length,0);
   assert.equal(dispatchFrontier(all,{POS0a:{status:"merged",pr_number:395}}).length,0);
-  assert.deepEqual(dispatchFrontier(all,{POS0a:{status:"integrated_proven"}})
+  const mergedSha="a".repeat(40);
+  const integrated={POS0a:{status:"integrated_proven",merge_sha:mergedSha}};
+  // The audit's initial read-only approval cannot approve its resulting design.
+  assert.deepEqual(dispatchFrontier(all,integrated),[]);
+  const approved={...all,dispatch_rules:{...all.dispatch_rules,
+    architecture_foundation_implementation_approval:{
+      approved:true,merged_sha:mergedSha,
+      owner_review_url:"https://github.com/killbill2792/aicafe/pull/395#issuecomment-123"}}};
+  assert.deepEqual(dispatchFrontier(approved,integrated)
     .map(x=>[x.task_id,x.base_branch]),[
       ["POS0b","main"],["POS0c","main"],["POS0d","main"]]);
+  // A review of any other source revision is not an approval of this merged architecture.
+  assert.deepEqual(dispatchFrontier(approved,{POS0a:{status:"integrated_proven",merge_sha:"b".repeat(40)}}),[]);
+  assert.throws(()=>validateQueue({...approved,dispatch_rules:{...approved.dispatch_rules,
+    architecture_foundation_implementation_approval:{approved:true,merged_sha:mergedSha,owner_review_url:null}}}),
+    /Invalid architecture foundation proof gate/);
   assert.throws(()=>validateQueue({ ...all,
     dispatch_rules:{...all.dispatch_rules,architecture_foundation_proof_task:"missing"} }),
     /Invalid architecture foundation proof gate/);
@@ -144,6 +159,7 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   assert.equal(actual.capacity.chatgpt, 5);
   assert.equal(actual.tasks.find(t=>t.id==="POS0e").stack_base_task,"POS0d");
   assert.equal(actual.dispatch_rules.architecture_foundation_proof_task,"POS0a");
+  assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
   assert.deepEqual(actual.dispatch_rules.architecture_foundation_dependent_task_ids,
     ["POS0b","POS0c","POS0d","POS0e","POS0f"]);
   assert.equal(actual.dispatch_rules.priority_gate_task, "POS0f");
