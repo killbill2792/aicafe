@@ -15,15 +15,39 @@ has durable `integrated_proven` evidence.** This is enforced through dependency 
 edges, not merely this paragraph. Preserve ongoing already-open PR fixes/reviews.
 
 **Parallel opening rule:** five ChatGPT coding chats are the permitted active capacity.
-After the field/key/ownership plans are owner-approved, POS0b/c/d may all open
-stacked draft PRs against POS0a's open branch (not wait for its merge). POS0e
+After POS0a's source-to-storage-to-reader architecture is merged to main,
+verified as integrated_proven AND separately accepted by the owner, POS0b/c/d
+may begin in parallel from main when each has its own approved exact scope and
+nonoverlapping file ownership. Record this owner acceptance in
+`dispatch_rules.architecture_foundation_implementation_approval`: `approved=true`,
+the exact `POS0a.merge_sha` from its verified integration record and the
+authenticated owner GitHub review comment URL for that merged source contract.
+It remains `approved=false` until the owner actually reviews the final matrix;
+do not reuse the earlier read-only audit approval. When POS0a is integrated
+and that implementation signoff is missing, the existing private owner-alert
+queue prepares one Muse notification with the verified existing ChatGPT
+conversation link: "Your approval is needed. ChatGPT chat: <URL>".
+Muse uses its existing opaque signal, 3-minute quiet/10-minute batching,
+and authenticated receipt path; never guess the link, expose it in the
+public signal, send duplicate notices, or treat a sent message as approval.
+If the task's conversation receipt is missing, the GitHub summary reports
+that the approval notice is waiting for that verified link. This gate is distinct
+from ordinary PR code dependencies: do not let an early approval or POS0a draft
+start implementation against an unfinalized source contract. POS0e
 has multiple functional predecessors and an explicit stack base POS0d; it may
-open a draft against POS0d's open branch after all three predecessor drafts
-exist. Other dependencies must still integrate before POS0e merges. POS0f can
+open a draft against POS0d's verified open PR branch once all three predecessor
+PRs exist (draft or ready-for-review). Their independent branches need not
+merge first. Other dependencies must integrate before POS0e merges. POS0f can
 stack against POS0e's open branch. This is parallel **work**, with ordered
 **merges** and final-head acceptance after retargeting; do not serialize PR
 opening on completed upstream merges. Only POS0a is authorized **now**;
 no automatic field-level code approvals are implied.
+
+All assigned coding chats must verify earlier merged PRs against live GitHub:
+actual merge SHA, current main code and consumers, executed tests/integration proof,
+and remaining gaps. The generated task prompt enforces this inspection and the
+dependency/merge gates enforce it again for completion. An old merged badge alone
+is not prior-work acceptance.
 
 Only POS0a's **documentation-only architecture audit** is approved to start without
 another decision. Every later data/job/SQL/tool PR needs the owner's per-field

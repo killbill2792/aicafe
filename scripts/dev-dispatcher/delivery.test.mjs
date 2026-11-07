@@ -12,6 +12,15 @@ test('creates approved new-project chat handoff without code', () => {
   assert.match(d.prompt, /Durable worker/);
   assert.match(d.prompt, /AGENTS\.md/);
 });
+test('every approved task prompt requires live merged-PR and integration evidence', () => {
+  const d=createDelivery({task,record,action:'assign',actionId:'assign:6-proof'});
+  assert.match(d.prompt,/PRIOR MERGED WORK/);
+  assert.match(d.prompt,/actual merge commit SHAs/);
+  assert.match(d.prompt,/executed CI\/acceptance\/integration run IDs and artifacts/);
+  assert.match(d.prompt,/production release/);
+  assert.match(d.prompt,/other dependencies/);
+  assert.match(d.prompt,/existing paths/);
+});
 test('refuses a task without owner approval and ownership', () => {
   assert.throws(() => createDelivery({ task: {...task, architecture_approval: null}, record, action: 'assign', actionId:'a' }));
   assert.throws(() => createDelivery({ task: {...task, exclusive_files: []}, record, action: 'assign', actionId:'a' }));

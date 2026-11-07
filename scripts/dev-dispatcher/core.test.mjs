@@ -48,9 +48,14 @@ test("unstarted owner-blocked PR6 does not occupy an active ChatGPT slot", () =>
 });
 test("dependent branch is opened as stacked draft; unproven merged label cannot release", () => {
   const all = queue([task("a"), task("b", ["a"])]);
-  const records = { a: { status: "draft_open", branch: "feat/a", pr_number: 100, agent: "chatgpt" } };
+  const records = { a: { status: "draft_open", github_state: "open", branch: "feat/a", pr_number: 100, agent: "chatgpt" } };
   const assigned = dispatchFrontier(all, records);
   assert.deepEqual(assigned, [{ type: "assign", task_id: "b", agent: "chatgpt", base_branch: "feat/a", prerequisite_pr: 100 }]);
+  records.a.status = "review_fixing";
+  assert.equal(dispatchFrontier(all, records).some(a => a.task_id === "b"), true);
+  records.a.github_state = "not_open_unverified";
+  assert.equal(dispatchFrontier(all, records).some(a => a.task_id === "b"), false);
+  records.a.github_state = "open";
   records.a.status = "merged";
   assert.equal(dispatchFrontier(all, records).some(a => a.task_id === "b"), false);
   records.a.status = "integrated_proven";
@@ -63,12 +68,17 @@ test("fan-in dependencies open a stacked draft on an explicit parent, but do not
   const all=queue([a,b,c,d,e]);
   const records={
     a:{status:"integrated_proven"},
-    b:{status:"draft_open",branch:"feat/b",pr_number:101,agent:"chatgpt"},
-    c:{status:"draft_open",branch:"feat/c",pr_number:102,agent:"chatgpt"},
-    d:{status:"draft_open",branch:"feat/d",pr_number:103,agent:"chatgpt"},
+    b:{status:"review_fixing",github_state:"open",branch:"feat/b",pr_number:101,agent:"chatgpt"},
+    c:{status:"draft_open",github_state:"open",branch:"feat/c",pr_number:102,agent:"chatgpt"},
+    d:{status:"review_fixing",github_state:"open",branch:"feat/d",pr_number:103,agent:"chatgpt"},
   };
   assert.deepEqual(dispatchFrontier(all,records).map(x=>[x.task_id,x.base_branch,x.prerequisite_pr]),
     [["e","feat/d",103]]);
+  // A real open ready PR is a valid stack parent; an assigned branch without a PR is not.
+  const missingPr={...records,d:{...records.d,pr_number:null}};
+  assert.deepEqual(dispatchFrontier(all,missingPr),[]);
+  const closed={...records,d:{...records.d,github_state:"merged"}};
+  assert.deepEqual(dispatchFrontier(all,closed),[]);
   const noBase={...all,tasks:all.tasks.map(t=>t.id==="e"?{...t,stack_base_task:null}:t)};
   assert.deepEqual(dispatchFrontier(noBase,records),[]);
   const bad={...all,tasks:all.tasks.map(t=>t.id==="e"?{...t,stack_base_task:"a"}:t)};
@@ -79,6 +89,41 @@ test("fan-in dependencies open a stacked draft on an explicit parent, but do not
     base_current:true,review_base_current:true,threads_resolved:true,acceptance_proven:true},
     [records.b,records.c,records.d]);
   assert.equal(blocked.eligible,false);
+});
+test("Toast architecture foundation requires owner-reviewed merged-main proof before downstream assignment", () => {
+  const all = { ...queue([task("POS0a"), task("POS0b",["POS0a"]),
+      task("POS0c",["POS0a"]), task("POS0d",["POS0a"])]),
+    dispatch_rules: {
+      architecture_foundation_proof_task:"POS0a",
+      architecture_foundation_dependent_task_ids:["POS0b","POS0c","POS0d"],
+      architecture_foundation_implementation_approval:{
+        approved:false,merged_sha:null,owner_review_url:null} },
+    capacity:{chatgpt:5,claude:0} };
+  const draft = { POS0a:{status:"draft_open",branch:"feat/a",pr_number:395,agent:"chatgpt"} };
+  assert.equal(dispatchFrontier(all,draft).length,0);
+  assert.equal(dispatchFrontier(all,{POS0a:{status:"merged",pr_number:395}}).length,0);
+  const mergedSha="a".repeat(40);
+  const integrated={POS0a:{status:"integrated_proven",merge_sha:mergedSha}};
+  // The audit's initial read-only approval cannot approve its resulting design.
+  assert.deepEqual(dispatchFrontier(all,integrated),[]);
+  const approved={...all,dispatch_rules:{...all.dispatch_rules,
+    architecture_foundation_implementation_approval:{
+      approved:true,merged_sha:mergedSha,
+      owner_review_url:"https://github.com/killbill2792/aicafe/pull/395#issuecomment-123"}}};
+  assert.deepEqual(dispatchFrontier(approved,integrated)
+    .map(x=>[x.task_id,x.base_branch]),[
+      ["POS0b","main"],["POS0c","main"],["POS0d","main"]]);
+  // A review of any other source revision is not an approval of this merged architecture.
+  assert.deepEqual(dispatchFrontier(approved,{POS0a:{status:"integrated_proven",merge_sha:"b".repeat(40)}}),[]);
+  assert.throws(()=>validateQueue({...approved,dispatch_rules:{...approved.dispatch_rules,
+    architecture_foundation_implementation_approval:{approved:true,merged_sha:mergedSha,owner_review_url:null}}}),
+    /Invalid architecture foundation proof gate/);
+  assert.throws(()=>validateQueue({ ...all,
+    dispatch_rules:{...all.dispatch_rules,architecture_foundation_proof_task:"missing"} }),
+    /Invalid architecture foundation proof gate/);
+  assert.throws(()=>validateQueue({ ...all,
+    dispatch_rules:{...all.dispatch_rules,architecture_foundation_dependent_task_ids:["unknown"]} }),
+    /Invalid architecture foundation proof gate/);
 });
 test("priority proof gate blocks unrelated dispatch even when gate PR is draft or merged", () => {
   const all = {
@@ -91,7 +136,7 @@ test("priority proof gate blocks unrelated dispatch even when gate PR is draft o
   assert.deepEqual(dispatchFrontier(all, draft).map(x => x.task_id), ["audit"]);
   assert.equal(dispatchFrontier(all, { proof: { status: "merged" } }).some(x => x.task_id === "unrelated"), false);
   assert.equal(dispatchFrontier(all, { proof: { status: "assigned" } }).some(x => x.task_id === "worker"), false);
-  const stacked = { ...draft, audit: { status: "draft_open", branch: "feat/audit", pr_number: 123, agent: "chatgpt" } };
+  const stacked = { ...draft, audit: { status: "draft_open", github_state: "open", branch: "feat/audit", pr_number: 123, agent: "chatgpt" } };
   assert.deepEqual(dispatchFrontier(all, stacked), [{
     type: "assign", task_id: "collect", agent: "chatgpt", base_branch: "feat/audit", prerequisite_pr: 123,
   }]);
@@ -113,6 +158,10 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   validateQueue(actual);
   assert.equal(actual.capacity.chatgpt, 5);
   assert.equal(actual.tasks.find(t=>t.id==="POS0e").stack_base_task,"POS0d");
+  assert.equal(actual.dispatch_rules.architecture_foundation_proof_task,"POS0a");
+  assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
+  assert.deepEqual(actual.dispatch_rules.architecture_foundation_dependent_task_ids,
+    ["POS0b","POS0c","POS0d","POS0e","POS0f"]);
   assert.equal(actual.dispatch_rules.priority_gate_task, "POS0f");
   assert.equal(actual.initial_parallel_candidates[0], "POS0a");
   for (const id of ["E2", "6", "9", "10"]) {

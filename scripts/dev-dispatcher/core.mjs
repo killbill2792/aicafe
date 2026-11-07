@@ -34,6 +34,18 @@ export function validateQueue(queue) {
   for (const task of queue.tasks) visit(task.id);
   // Priority-zero work is a PROOF gate, not a normal stacked-PR dependency.
   // Validate the allowlist so a typo cannot silently unlock unrelated tasks.
+  const foundation = queue.dispatch_rules?.architecture_foundation_proof_task;
+  if (foundation !== undefined) {
+    const downstream = queue.dispatch_rules?.architecture_foundation_dependent_task_ids;
+    const signoff = queue.dispatch_rules?.architecture_foundation_implementation_approval;
+    if (typeof foundation !== "string" || !tasks.has(foundation) ||
+      !Array.isArray(downstream) || !downstream.length ||
+      downstream.some(id => !tasks.has(id) || id === foundation) ||
+      !signoff || typeof signoff.approved !== "boolean" ||
+      (signoff.approved && (!/^[a-f0-9]{40}$/.test(signoff.merged_sha || "") ||
+        !/^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+#issuecomment-\d+$/.test(signoff.owner_review_url || ""))))
+      throw new Error("Invalid architecture foundation proof gate");
+  }
   const gate = queue.dispatch_rules?.priority_gate_task;
   if (gate !== undefined) {
     const allowed = queue.dispatch_rules?.priority_gate_allow_task_ids;
@@ -49,6 +61,18 @@ export function integrated(taskId, _tasks, records) {
   // Historic merged PRs still need an explicit durable integration proof.
   const rec = records[taskId];
   return rec?.status === "integrated_proven" || rec?.status === "released_proven";
+}
+// Read-only discovery approval is NOT approval of the resulting implementation plan.
+// The owner must explicitly accept the exact on-main architecture merge SHA.
+export function architectureFoundationReady(queue, records = {}) {
+  const id = queue?.dispatch_rules?.architecture_foundation_proof_task;
+  if (!id) return true;
+  const proof = records[id];
+  const signoff = queue.dispatch_rules.architecture_foundation_implementation_approval;
+  return ["integrated_proven", "released_proven"].includes(proof?.status) &&
+    signoff?.approved === true && signoff.merged_sha === proof?.merge_sha &&
+    /^[a-f0-9]{40}$/.test(signoff.merged_sha || "") &&
+    /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+#issuecomment-\d+$/.test(signoff.owner_review_url || "");
 }
 export function dispatchFrontier(queue, records = {}, capacity = null) {
   const tasks = validateQueue(queue);
@@ -75,8 +99,13 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
   const gate = queue.dispatch_rules?.priority_gate_task;
   const gateProven = !gate || integrated(gate, tasks, records);
   const gateAllowed = new Set(queue.dispatch_rules?.priority_gate_allow_task_ids || []);
+  // For initial Toast implementation, architecture approval is only meaningful
+  // after the owner-reviewed source/field contract is proven on merged main.
+  const foundationProven = architectureFoundationReady(queue, records);
+  const foundationDependents = new Set(queue.dispatch_rules?.architecture_foundation_dependent_task_ids || []);
   for (const task of queue.tasks) {
     if (!gateProven && !gateAllowed.has(task.id)) continue;
+    if (!foundationProven && foundationDependents.has(task.id)) continue;
     if (!approved(task) || records[task.id]?.conversation_ref || (records[task.id]?.status && records[task.id].status !== "proposed")) continue;
     if (!Array.isArray(task.exclusive_files) || !task.exclusive_files.length ||
       task.exclusive_files.some(path => typeof path !== "string" || !path || path.includes("*") || path.includes("..") || claimed.has(path))) continue;
@@ -85,7 +114,11 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
     for (const dep of task.depends_on) {
       const previous = records[dep];
       if (integrated(dep, tasks, records)) continue;
-      if (previous?.status === "draft_open" && previous?.branch)
+      // A verified open upstream PR can be draft OR ready-for-review.
+      // Require a real PR number: an assigned branch name alone is not an open PR.
+      if (["draft_open", "review_fixing"].includes(previous?.status) &&
+          previous?.github_state === "open" && previous?.branch &&
+          Number.isInteger(previous?.pr_number))
         openDeps.push({ ...previous, dependency_id: dep });
       else { blocked = true; break; }
     }

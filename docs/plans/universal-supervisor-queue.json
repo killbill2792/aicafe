@@ -63,6 +63,20 @@
     "proof_not_claims": true,
     "production_owner_gate": true,
     "approval_before_code": true,
+    "architecture_foundation_proof_task": "POS0a",
+    "architecture_foundation_dependent_task_ids": [
+      "POS0b",
+      "POS0c",
+      "POS0d",
+      "POS0e",
+      "POS0f"
+    ],
+    "architecture_foundation_note": "POS0a may audit read-only, but implementation cannot start until its exact merged SHA has integration proof AND the owner has separately reviewed/approved that merged architecture with an explicit linked GitHub comment. POS0b/c/d then start concurrently on main after each has its own field-level approval and nonoverlapping owned files. POS0e/f may stack on verified open upstream PRs, with all dependencies still required for merging.",
+    "architecture_foundation_implementation_approval": {
+      "approved": false,
+      "merged_sha": null,
+      "owner_review_url": null
+    },
     "priority_gate_task": "POS0f",
     "priority_gate_note": "The existing dispatcher explicitly checks this proof-only gate: no task outside the allow-list is newly assigned until POS0f has integrated_proven/released_proven status, even if POS0f has a draft branch. Ordinary stacked drafts still work within POS0.",
     "priority_gate_allow_task_ids": [
