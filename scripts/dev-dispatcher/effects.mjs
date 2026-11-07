@@ -65,7 +65,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
   }
   const pr = await github.request(`/pulls/${record.pr_number}`);
   if (pr.merged || pr.state !== 'open' || pr.draft || pr.head.sha !== record.head_sha ||
-      pr.base.sha !== record.base_sha || pr.base.ref !== record.base_branch)
+      pr.base.sha !== record.base_sha || pr.base.ref !== 'main' || record.base_branch !== 'main')
     return { status: 'blocked', reasons: ['live_pr_changed'] };
   const live = await github.one(pr);
   if (live.ci_state !== 'success' || live.codex_state !== 'clean' ||
@@ -74,7 +74,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
   // Re-fetch base SHA immediately before merge to reject intervening main changes.
   const latest = await github.request(`/pulls/${record.pr_number}`);
   if (latest.head.sha !== record.head_sha || latest.base.sha !== record.base_sha ||
-      latest.mergeable !== true) return { status: 'blocked', reasons: ['merge_conflict_or_stale_base'] };
+      latest.base.ref !== 'main' || latest.mergeable !== true) return { status: 'blocked', reasons: ['merge_conflict_or_stale_base'] };
   const result = await github.request(`/pulls/${record.pr_number}/merge`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ merge_method: 'squash', sha: record.head_sha,
