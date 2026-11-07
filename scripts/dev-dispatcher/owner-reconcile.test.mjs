@@ -84,6 +84,13 @@ test('editing and withdrawing a question cancels only unsent owner notices',()=>
  const withdrawn=reconcile(changed,[newDraft(null)]);
  assert.equal(Object.values(withdrawn.owner_alerts).filter(n=>n.status==='planned').length,0);
  assert.equal(signalFor(withdrawn,'s'.repeat(32)).pending_count,0);
- const restored=reconcile(withdrawn,[newDraft('Approve a new audit decision?')]);
+ // Restoring the exact SAME question must revive its cancelled unsent identity,
+ // not permanently suppress the notification or issue a duplicate notice.
+ const identical=reconcile(withdrawn,[newDraft('Approve revised audit scope?')]);
+ assert.equal(Object.values(identical.owner_alerts).filter(n=>n.status==='planned').length,1);
+ assert.equal(signalFor(identical,'s'.repeat(32)).pending_count,1);
+ const withdrawnAgain=reconcile(identical,[newDraft(null)]);
+ assert.equal(signalFor(withdrawnAgain,'s'.repeat(32)).pending_count,0);
+ const restored=reconcile(withdrawnAgain,[newDraft('Approve a new audit decision?')]);
  assert.equal(Object.values(restored.owner_alerts).filter(n=>n.status==='planned').length,1);
 });
