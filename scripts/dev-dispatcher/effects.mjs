@@ -81,7 +81,16 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
       commit_title: `AI CAFE approved task ${record.task_id} (#${record.pr_number})` })
   });
   if (result.merged !== true || !result.sha) throw new Error('GitHub did not confirm merge');
-  return { status: 'merged_unproven', merge_sha: result.sha };
+  // GITHUB_TOKEN pushes do not trigger push workflows. workflow_dispatch does.
+  // Keep merge distinct from integration proof, even when dispatch fails.
+  let integration_dispatch = 'requested';
+  try {
+    await github.request('/actions/workflows/ai-cafe-integration-proof.yml/dispatches', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ref:'main',inputs:{merged_sha:result.sha}}),
+    });
+  } catch { integration_dispatch = 'failed_needs_retry'; }
+  return { status: 'merged_unproven', merge_sha: result.sha, integration_dispatch };
 }
 
 // Only a GitHub-confirmed runner startup failure is retried; no guessing from a red CI badge.
