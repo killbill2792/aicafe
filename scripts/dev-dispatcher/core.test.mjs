@@ -46,7 +46,7 @@ test("pending CI/Codex, stale review or quiet interval blocks nudges", () => {
   assert.equal(decideNudge(pr({ codex_state: "pending" }), clock).kind, "hold");
   assert.equal(decideNudge(pr({ codex_reviewed_sha: "old" }), clock).reason, "stale_codex");
   assert.equal(decideNudge(pr({ last_commit_at: new Date(clock - 400000).toISOString() }), clock).reason, "not_quiet");
-  assert.equal(decideNudge(pr(), clock).action, "continue_pr");
+  assert.equal(decideNudge(pr(), clock).reason, "no_actionable_findings");
   assert.equal(decideNudge(pr({ ci_state: "failure" }), clock).action, "repair_ci");
   assert.equal(decideNudge(pr({ codex_state: "findings" }), clock).action, "repair_review");
 });
@@ -59,7 +59,7 @@ test("pre-PR conversation cannot be nudged without known browser readiness", () 
   assert.equal(decideNudge(ready, clock).action, "pre_pr_reminder");
 });
 test("same state cannot be sent twice and uncertain submissions fail closed", () => {
-  const record = pr();
+  const record = pr({ci_state: "failure"});
   const choice = decideNudge(record, clock);
   assert.equal(choice.kind, "propose");
   assert.equal(decideNudge({ ...record, last_action_key: choice.key }, clock).kind, "hold");
