@@ -89,6 +89,23 @@
     ],
     "pos_source_authority": {
       "mandatory_first_read": "docs/rules/pos-data.md",
+      "ordered_first_read": [
+        "AGENTS.md (PROGRESS.md read only)",
+        "docs/rules/pos-data.md (binding source/consumer decisions)",
+        "docs/plans/toast-standard-api-coverage-matrix.md#start-here--durable-agent-handoff-and-conflicts-index-2026-11-07 (approved D1-D3; observed vs target)",
+        "docs/plans/universal-supervisor-task-briefs.md#task-<POS0_ID> and this machine queue (no runtime authorization)",
+        "existing code plus deployed pg_get_functiondef/pg_get_viewdef and consumers",
+        "docs/rules/tests.md and actually executed acceptance/rollback evidence"
+      ],
+      "known_deployed_defects": [
+        "non-order toast_records_for / cv_cash / cv_inventory / cv_kitchen / cv_dining_options read diagnostic snapshots: POS0e current-reader cutover, POS0f final lineage",
+        "canonical dictionary still says daily capture: POS0e dictionary source and generated docs",
+        "seen_run_id is referenced by active toast_archive_order and toast_records_for: do not remove on old storage-plan wording",
+        "SQL toast_import_day rolls back a valid day on row failure: later owner-assigned order SQL recovery PR, NOT YET APPROVED",
+        "menu copying fetches full menu twice and retirement requires snapshot proof: POS0d, POS0f acceptance",
+        "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof"
+      ],
+      "owner_hold": "D1-D3 architecture principles approved; PR398/PR400 final architecture review still pending; POS0b-f implementation owner gate remains approved=false",
       "approved_record_store": "toast_raw_records",
       "approved_change_log": "toast_raw_changes",
       "legacy_diagnostic_only": [
