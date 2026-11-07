@@ -180,11 +180,18 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   assert.equal(d4.future_order_recovery.dispatchable,false);
   assert.deepEqual(d4.future_order_recovery.owned_files_reserved,[]);
   assert.ok(!actual.tasks.some(t=>t.id==="POS0-order-recovery"));
+  // Do not invalidate the active POS0a chat's signed approval hash just to
+  // document the separately approved two audit-only files.
   assert.deepEqual(actual.tasks.find(t=>t.id==="POS0a").exclusive_files,[
-    "docs/plans/toast-standard-api-coverage-matrix.md",
+    "docs/plans/toast-standard-api-coverage-matrix.md"
+  ]);
+  const extension=actual.dispatch_rules.pos0a_owner_approved_audit_scope_extension;
+  assert.equal(extension.existing_saved_assignment_signature_must_not_be_invalidated,true);
+  assert.deepEqual(extension.additional_paths,[
     "scripts/toast-standard-api-coverage.test.mjs",
     "docs/plans/toast-openapi-spec-snapshot.json"
   ]);
+  assert.equal(extension.runtime_or_merge_approval,false);
   assert.equal(d4.independent_cost_queue_diagnostic.due_jobs,77);
   assert.equal(actual.dispatch_rules.architecture_foundation_proof_task,"POS0a");
   assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
