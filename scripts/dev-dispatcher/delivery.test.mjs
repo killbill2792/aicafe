@@ -90,3 +90,14 @@ test('same-chat follow-up owns pre-PR/draft/CI repair without replacing task or 
   assert.doesNotMatch(d.prompt,/Muse|courier receipts/i);
  }
 });
+
+test('approved task-specific queue skills and exact brief anchor are delivered unchanged',()=>{
+ const custom={...task,id:'POS0a',brief:'docs/plans/universal-supervisor-task-briefs.md#task-pos0a',
+  skills:['aicafe-pr-lifecycle','supabase','vitest','pr','supabase']};
+ const d=createDelivery({task:custom,record,action:'assign',actionId:'assign:POS0a-skills'});
+ assert.match(d.prompt,/TASK-SPECIFIC SKILLS from the approved queue/);
+ assert.match(d.prompt,/\["aicafe-pr-lifecycle","supabase","vitest","pr"\]/);
+ assert.match(d.prompt,/docs\/plans\/universal-supervisor-task-briefs\.md#task-pos0a/);
+ assert.doesNotMatch(d.prompt,/#task-POS0a/);
+ assert.match(d.prompt,/document any unavailable entry rather than inventing skill instructions/);
+});
