@@ -1,4 +1,5 @@
 import { approvalSignature } from './delivery.mjs';
+import { architectureFoundationReady } from './core.mjs';
 
 // One authoritative check before the private document is written.
 // Records in a private queue are NOT evergreen owner approvals.
@@ -6,9 +7,8 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
   const gate = queue?.dispatch_rules?.priority_gate_task;
   const allow = new Set(queue?.dispatch_rules?.priority_gate_allow_task_ids || []);
   const gateProven = !gate || ['integrated_proven', 'released_proven'].includes(state.tasks?.[gate]?.status);
-  const foundation = queue?.dispatch_rules?.architecture_foundation_proof_task;
   const foundationDependents = new Set(queue?.dispatch_rules?.architecture_foundation_dependent_task_ids || []);
-  const foundationProven = !foundation || ['integrated_proven', 'released_proven'].includes(state.tasks?.[foundation]?.status);
+  const foundationProven = architectureFoundationReady(queue, state.tasks);
   for (const [id, rec] of Object.entries(state.tasks)) {
     const task = taskById.get(id);
     const currentSignature = task && task.architecture_approval?.approved === true &&
@@ -54,11 +54,13 @@ export function assignmentActionKey(state, taskId, queue) {
   const original = 'assign:' + taskId;
   const action = state.actions?.[original];
   if (!action) return original;
-  const gate = action.status === 'cancelled_architecture_gate'
+  const architectureCancelled = action.status === 'cancelled_architecture_gate';
+  const gate = architectureCancelled
     ? queue?.dispatch_rules?.architecture_foundation_proof_task
     : action.status === 'cancelled_priority_gate'
       ? queue?.dispatch_rules?.priority_gate_task : null;
   if (!gate || !['integrated_proven','released_proven'].includes(state.tasks?.[gate]?.status) ||
+      (architectureCancelled && !architectureFoundationReady(queue, state.tasks)) ||
       action.receipt || action.claimed_at || action.submitted_at ||
       action.delivery_claim || state.tasks?.[taskId]?.conversation_ref ||
       Number.isInteger(state.tasks?.[taskId]?.pr_number)) return null;
