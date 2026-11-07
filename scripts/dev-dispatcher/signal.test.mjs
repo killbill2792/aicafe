@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { signalFor } from './signal.mjs';
+import { noticeHash } from './alerts.mjs';
 import { createHash } from 'node:crypto';
 const prompt = 'approved task';
 const hash = createHash('sha256').update(prompt).digest('hex');
@@ -27,4 +28,17 @@ test('malformed handoffs are excluded from public pending count',()=>{
  assert.equal(signalFor(wrong,'secret'.repeat(8)).pending_count,0);
  const missing=structuredClone(state);delete missing.actions['assign:6'].delivery_owner;
  assert.equal(signalFor(missing,'secret'.repeat(8)).pending_count,0);
+});
+
+test('owner notices wake Muse without exposing the question or PR ID',()=>{
+ const secret='secret'.repeat(8);
+ const withOwner=structuredClone(state);
+ const entry={kind:'unmapped_pr',task_id:null,pr_number:987,question:'Which task is PR 987?',status:'planned',delivery_owner:'muse'};
+ entry.notice_hash=noticeHash(entry);
+ withOwner.owner_alerts={'notice:one':entry};
+ const signaled=signalFor(withOwner,secret);
+ assert.equal(signaled.pending_count,2);
+ assert.doesNotMatch(JSON.stringify(signaled),/987|Which task|notice:one/);
+ const stale=structuredClone(withOwner);stale.owner_alerts['notice:one'].status='submitted';
+ assert.equal(signalFor(stale,secret).pending_count,1);
 });
