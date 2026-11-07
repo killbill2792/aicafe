@@ -1,0 +1,33 @@
+name: AI CAFE Integration Proof
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: aicafe-main-integration
+  cancel-in-progress: false
+jobs:
+  integrated-main:
+    name: Required merged-main integration checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: ESLint
+        run: npm run lint
+      - name: Full regression tests
+        run: npm test
+      - name: Dispatcher regression tests
+        run: node --test scripts/dev-dispatcher/*.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs
+      - name: Production build
+        run: npm run build -- --webpack
