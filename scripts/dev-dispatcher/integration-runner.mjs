@@ -35,7 +35,7 @@ export async function executeMainIntegration({sha,repo,token,runId=process.env.G
  return {...result,reason:result.skipped?'no_scenario_proof':'main_acceptance_executed'};
 }
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
- executeMainIntegration({sha:process.env.GITHUB_SHA,repo:process.env.GITHUB_REPOSITORY,
+ executeMainIntegration({sha:process.env.TARGET_MAIN_SHA || process.env.GITHUB_SHA,repo:process.env.GITHUB_REPOSITORY,
   token:process.env.GITHUB_TOKEN})
   .then(r=>console.log(r.skipped?'No capability proof: '+r.reason:
     'Reran '+r.proof.acceptance.length+' merged-task scenarios on main'))
