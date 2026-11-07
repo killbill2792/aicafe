@@ -4,7 +4,8 @@ name: Toast DIAGNOSTIC capture (manual only)
 # Does NOT populate operational current records and MUST NOT feed Supervisor,
 # production canonical views or screen metrics. No scheduled data accumulation.
 # Existing shared Toast 10-minute operational cron is separate.
-on:\n  workflow_dispatch:
+on:
+  workflow_dispatch:
 
 permissions:
   contents: read
