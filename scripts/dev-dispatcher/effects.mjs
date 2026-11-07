@@ -1,10 +1,12 @@
 // Trusted-main GitHub effects. Never execute PR code with the private queue token.
 // Every irreversible action rechecks live GitHub facts; uncertainty blocks merging.
 import { mergeGate } from './core.mjs';
+import { acceptanceDigest } from './acceptance-runner.mjs';
 
 export function verifyEvidence(record, evidence) {
   if (!evidence || evidence.head_sha !== record.head_sha ||
-      evidence.base_sha !== record.base_sha || evidence.ci_run_id == null ||
+      evidence.base_sha !== record.base_sha || !Number.isSafeInteger(evidence.ci_run_id) ||
+      !Number.isSafeInteger(evidence.acceptance_run_id) ||
       !Array.isArray(evidence.acceptance) || !evidence.acceptance.length ||
       evidence.acceptance.some(item => !item.id || !item.command || !item.job_url || !item.test_file || item.result !== 'passed'))
     return false;
@@ -29,8 +31,32 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
   if (jobs.total_count > 100 || !jobs.jobs?.some(j => j.conclusion === 'success' &&
       j.name === 'AI CAFE PR baseline'))
     return { status: 'blocked', reasons: ['required_baseline_not_verified'] };
+  // The separate acceptance workflow runs the actual scenario files on the exact
+  // immutable PR head. An author-supplied URL, path or "passed" assertion is never proof.
+  const acceptedRun = await github.request('/actions/runs/' + evidence.acceptance_run_id);
+  if (acceptedRun.name !== 'AI CAFE Acceptance Evidence' ||
+      acceptedRun.head_sha !== record.head_sha || acceptedRun.event !== 'pull_request' ||
+      acceptedRun.status !== 'completed' || acceptedRun.conclusion !== 'success')
+    return { status: 'blocked', reasons: ['unverified_acceptance_run'] };
+  const acceptedJobs = await github.request('/actions/runs/' + evidence.acceptance_run_id + '/jobs?per_page=100');
+  if (acceptedJobs.total_count > 100) return {status:'blocked',reasons:['unverified_acceptance_pagination']};
+  const accepted = acceptedJobs.jobs?.filter(j => j.name === 'AI CAFE acceptance evidence' &&
+    j.status === 'completed' && j.conclusion === 'success' &&
+    j.steps?.some(step => step.name === 'Run approved acceptance scenarios' &&
+      step.status === 'completed' && step.conclusion === 'success')) || [];
+  if (accepted.length !== 1) return {status:'blocked',reasons:['acceptance_job_did_not_execute']};
+  const proof = await github.acceptanceProof(evidence.acceptance_run_id);
+  if (!proof || proof.task_id !== record.task_id ||
+      proof.run_id !== evidence.acceptance_run_id ||
+      proof.head_sha !== record.head_sha || proof.base_sha !== record.base_sha ||
+      proof.acceptance_digest !== acceptanceDigest(evidence.acceptance) ||
+      !Array.isArray(proof.acceptance) || proof.acceptance.length !== expectedAcceptance.length ||
+      !proof.acceptance.every((item,i) => item.id === String(i+1) &&
+        item.command === evidence.acceptance[i].command &&
+        item.test_file === evidence.acceptance[i].test_file && item.result === 'passed'))
+    return { status:'blocked',reasons:['acceptance_artifact_mismatch'] };
   for (const item of evidence.acceptance) {
-    if (!jobs.jobs.some(j => j.conclusion === "success" && j.html_url === item.job_url))
+    if (item.job_url !== accepted[0].html_url)
       return { status: "blocked", reasons: ["unverified_acceptance_job_url"] };
     if (!/^(?:tests|e2e|lib|app|scripts)\/[a-zA-Z0-9_./-]+\.(?:test|spec|e2e)\.[cm]?[jt]sx?$/.test(item.test_file) ||
         item.test_file.includes('..')) return { status: 'blocked', reasons: ['unsafe_test_path'] };
