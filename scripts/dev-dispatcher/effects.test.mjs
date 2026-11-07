@@ -6,7 +6,7 @@ const rec={task_id:'6',approved:true,pr_number:100,head_sha:'head',base_sha:'bas
  base_branch:'main',draft:false,ci_state:'success',codex_state:'clean',
  codex_reviewed_sha:'head',threads_resolved:true,base_current:true};
 const evidence={head_sha:'head',base_sha:'base',ci_run_id:10,
- acceptance:[{id:'a',command:'node --test',job_url:'https://github.com/test',result:'passed'}]};
+ acceptance:[{id:'1',command:'node --test',job_url:'https://github.com/test',test_file:'scripts/dev-dispatcher/effects.test.mjs',result:'passed'}]};
 test('merge cannot proceed without exact acceptance evidence',()=>{
  assert.equal(canMerge(rec,[],evidence).eligible,true);
  assert.equal(canMerge(rec,[],{...evidence,head_sha:'old'}).eligible,false);
@@ -19,10 +19,12 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
  const github={request:async(path,options)=>{
    calls.push([path,options?.method]);
    if(path.endsWith('/merge'))return {merged:true,sha:'merged'};
+   if(path.startsWith('/actions/runs/')) return path.includes('/jobs') ? {total_count:1,jobs:[{name:'AI CAFE PR baseline',conclusion:'success'}]} : {id:10,head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
+   if(path.startsWith('/contents/')) return {type:'file'};
    return pr;
  },one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',threads_resolved:true})};
- assert.equal((await mergeApprovedPr({github,record:rec,evidence,enabled:false})).status,'disabled');
- const done=await mergeApprovedPr({github,record:rec,evidence,enabled:true});
+ assert.equal((await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:false})).status,'disabled');
+ const done=await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true});
  assert.equal(done.status,'merged_unproven');assert.equal(done.merge_sha,'merged');
  assert.deepEqual(calls.at(-1),['/pulls/100/merge','PUT']);
 });
