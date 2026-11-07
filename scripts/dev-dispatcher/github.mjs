@@ -9,7 +9,7 @@ export function parseAcceptanceEvidence(body) {
   } catch { return null; }
 }
 // GitHub artifact downloads are small ZIP archives. Only one fixed JSON filename is accepted.
-export function decodeAcceptanceArchive(input) {
+export function decodeAcceptanceArchive(input, expectedFilename = 'acceptance-proof.json') {
   const zip = Buffer.from(input);
   if (zip.length > 262144 || zip.length < 30) throw new Error('Invalid acceptance archive size');
   let end = -1;
@@ -25,7 +25,7 @@ export function decodeAcceptanceArchive(input) {
   const nameLength = zip.readUInt16LE(dir + 28);
   const name = zip.subarray(dir + 46, dir + 46 + nameLength).toString('utf8');
   const at = zip.readUInt32LE(dir + 42);
-  if (name !== 'acceptance-proof.json' || original > 32768 || compressed > 65536 ||
+  if (name !== expectedFilename || original > 32768 || compressed > 65536 ||
       at + 30 > zip.length || zip.readUInt32LE(at) !== 0x04034b50 ||
       ![0, 8].includes(method)) throw new Error('Unexpected proof archive entry');
   const position = at + 30 + zip.readUInt16LE(at + 26) + zip.readUInt16LE(at + 28);
@@ -49,11 +49,11 @@ export class GitHubFacts {
     if (!response.ok) throw new Error(`GitHub read failed: ${response.status}`);
     return response.json();
   }
-  async acceptanceProof(runId) {
-    if (!Number.isSafeInteger(runId) || runId < 1) throw new Error('Invalid acceptance run');
+  async proofArtifact(runId, artifactName, filename) {
+    if (!Number.isSafeInteger(runId) || runId < 1) throw new Error('Invalid proof run');
     const list = await this.request('/actions/runs/' + runId + '/artifacts?per_page=100');
     if (list.total_count > 100 || !Array.isArray(list.artifacts)) throw new Error('Unverified proof pagination');
-    const matches = list.artifacts.filter(a => a.name === 'aicafe-acceptance-proof' && !a.expired);
+    const matches = list.artifacts.filter(a => a.name === artifactName && !a.expired);
     if (matches.length !== 1) return null;
     const response = await this.fetchFn('https://api.github.com/repos/' + this.repo +
       '/actions/artifacts/' + matches[0].id + '/zip', {headers:{
@@ -62,7 +62,13 @@ export class GitHubFacts {
         'X-GitHub-Api-Version':'2022-11-28'
       }});
     if (!response.ok) throw new Error('Proof artifact download failed: ' + response.status);
-    return decodeAcceptanceArchive(Buffer.from(await response.arrayBuffer()));
+    return decodeAcceptanceArchive(Buffer.from(await response.arrayBuffer()), filename);
+  }
+  async acceptanceProof(runId) {
+    return this.proofArtifact(runId, 'aicafe-acceptance-proof', 'acceptance-proof.json');
+  }
+  async integrationProof(runId) {
+    return this.proofArtifact(runId, 'aicafe-main-integration-proof', 'integration-proof.json');
   }
   async openPulls() {
     const results = [];
