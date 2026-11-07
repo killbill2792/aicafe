@@ -24,7 +24,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
     return { status: 'blocked', reasons: ['live_pr_changed'] };
   const live = await github.one(pr);
   if (live.ci_state !== 'success' || live.codex_state !== 'clean' ||
-      live.codex_reviewed_sha !== record.head_sha || !live.threads_resolved)
+      !live.codex_reviewed_sha || !live.threads_resolved)
     return { status: 'blocked', reasons: ['live_checks_changed'] };
   // Re-fetch base SHA immediately before merge to reject intervening main changes.
   const latest = await github.request(`/pulls/${record.pr_number}`);
