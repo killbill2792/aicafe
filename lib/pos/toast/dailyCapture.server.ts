@@ -1,4 +1,4 @@
-import "server-only";
+/** DIAGNOSTIC_ONLY: on-demand coverage auditing; no scheduled production data sync.\n * This invokes rawSample.server.ts, not the one-current-object writer.\n * Never connect its results to Supervisor/canonical business views.\n */\nimport "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {captureToastRawSample} from "./rawSample.server";
 import {addCalendarDays} from "./scheduleDates";
