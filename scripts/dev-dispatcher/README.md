@@ -36,3 +36,13 @@ A Codex review of an older SHA never clears a new head. CI or review pending mea
 ## Dave/OpenClaw private handoff (separate review-gated PR)
 
 See [bridge/README.md](bridge/README.md) for the minimal, project-neutral queue reader that works on the existing AWS Ubuntu instance and uses the authenticated OpenClaw Chrome extension. The trusted-main dispatcher can generate self-contained approved browser instructions in the **private ledger only**. Scheduled ledger writes are OFF by default and are enabled explicitly by Actions variable `DISPATCH_LEDGER_AUTO_PERSIST=true` **after** the private repository is verified. Dave receives only a read token on the private ledger, never an AI CAFE source repository token. Live sends and automatic merges remain OFF; browser delivery, conversation-URL registration and acknowledgement require separate real-VM proof.
+
+## Shared Muse/Dave coordinator rollout (feature branch)
+
+Both couriers consume the SAME private `dispatcher/state.json` actions; Muse is primary and Dave remains dry-run/manual fallback. `delivery` includes `base_branch`, full skills-aware `prompt`, existing authorization `approval_hash`, and separate SHA-256 `prompt_hash`. Existing Dave's bridge validates these fields and never reads conversation transcripts. A courier must verify the target tab and avoid sending if the coding chat is still generating.
+
+`signal.mjs` publishes only `{version,pending_count,fingerprint}` to `signal.json` on the existing `muse-signal` branch. The fingerprint is HMAC-SHA256 over approved pending action IDs and prompt hashes. It changes only when the eligible pending set changes, not when CI status or ledger timestamps change. Scheduled five-minute runs naturally batch nearby changes; GitHub schedule timing is not guaranteed. A 3-minute quiet/10-minute maximum Muse-side batching policy still needs to be implemented and tested by the browser courier.
+
+**Required before publishing:** configure the Actions secret `DISPATCH_SIGNAL_SECRET` with at least 32 random characters. The workflow will fail closed if this secret is missing, and never write the signal on a PR-triggered run. Publishing is not active until this PR merges and the secret is configured.
+
+**Not yet implemented or activated:** trusted automatic courier receipt ingestion/claim locking, automatic PR-to-task discovery, safe branch retarget/update, Codex request automation, acceptance-evidence ingestion, auto squash-merge, and on-main integration verification. The existing `mergeGate` is a deterministic eligibility calculation, not a merge action. Do not call this unattended end-to-end orchestration. No live Dave sends are enabled, and no production changes are authorized.
