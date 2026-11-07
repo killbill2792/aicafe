@@ -150,7 +150,7 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
    for(const part of required){const at=block.indexOf(part);assert.ok(at>previous,id+' missing/unordered: '+part);previous=at;}
    for(const fact of ['D1-D3 principles approved','implementation_approval.approved=false',
      'non-order toast_records_for','cv_cash/cv_inventory/cv_kitchen/cv_dining_options',
-     'seen_run_id','SQL day import','menu full fetch twice','POS0e','POS0b','POS0c','POS0d','POS0f',
+     'seen_run_id','SQL day import','liveArchive.server.ts','menu full fetch twice','POS0e','POS0b','POS0c','POS0d','POS0f',
      'NO separately owner-approved implementation PR','source_authority_checked: yes',
      'diagnostic snapshots','roll back','rollback']){
      if(fact==='roll back')continue;
