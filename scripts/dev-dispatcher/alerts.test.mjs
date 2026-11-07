@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {queueOwnerAlerts,acceptOwnerNoticeReceipt} from './alerts.mjs';
+import {signalFor} from './signal.mjs';
 const state={version:1,tasks:{'6':{agent:'chatgpt',pr_number:123,owner_question:'Approve widening file ownership?'},
  '7':{agent:'claude',pr_number:124,blocker:{kind:'usage_limit',confirmed:true,detail:'Session limit reached'}}},actions:{}};
 test('owner notices are deduplicated and carry exact question and PR',()=>{
@@ -25,4 +26,66 @@ test('only Muse receipt with exact notice hash may acknowledge owner message',()
 test('unconfirmed Claude problems never generate alerts',()=>{
  const state={version:1,tasks:{'9':{agent:'claude',blocker:{kind:'usage_limit',confirmed:false}}},actions:{}};
  assert.equal(Object.keys(queueOwnerAlerts(state).owner_alerts).length,0);
+});
+
+test('Muse receives one version-bound POS0a approval notice with exact existing ChatGPT chat link',()=>{
+ const sha='a'.repeat(40),chat='https://chatgpt.com/g/aicafe-project/c/abc-def';
+ const cfg={dispatch_rules:{
+  architecture_foundation_proof_task:'POS0a',
+  architecture_foundation_implementation_approval:{approved:false,merged_sha:null,owner_review_url:null},
+ }};
+ const initial={version:1,tasks:{POS0a:{agent:'chatgpt',pr_number:400,status:'integrated_proven',
+  merge_sha:sha,conversation_ref:chat}},actions:{}};
+ const first=queueOwnerAlerts(initial,{queue:cfg,now:'2026-11-07T00:00:00Z'});
+ const [id,notice]=Object.entries(first.owner_alerts)[0];
+ assert.equal(notice.kind,'architecture_approval');
+ assert.equal(notice.delivery_owner,'muse');
+ assert.equal(notice.question,'Your approval is needed. ChatGPT chat: '+chat);
+ assert.equal(notice.source_sha,sha);
+ assert.equal(signalFor(first,'s'.repeat(32)).pending_count,1);
+ const again=queueOwnerAlerts(first,{queue:cfg,now:'2026-11-07T00:01:00Z'});
+ assert.deepEqual(again.owner_alerts,first.owner_alerts);
+ assert.equal(Object.keys(again.owner_alerts).length,1);
+ const receipt={kind:'owner_notice',notice_id:id,notice_hash:notice.notice_hash,status:'submitted'};
+ assert.throws(()=>acceptOwnerNoticeReceipt(first,receipt,{authenticatedCourier:'dave'}),/Only authenticated/);
+ const submitted=acceptOwnerNoticeReceipt(first,receipt,{authenticatedCourier:'muse'});
+ assert.equal(submitted.owner_alerts[id].status,'submitted');
+ assert.equal(signalFor(submitted,'s'.repeat(32)).pending_count,0);
+ // Audit approval and integration alone never approve its implementation contract.
+ assert.equal(cfg.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
+});
+test('architecture review notification waits for actual chat receipt and cancels after owner approval',()=>{
+ const sha='b'.repeat(40),chat='https://chatgpt.com/c/a1-b2';
+ const cfg={dispatch_rules:{architecture_foundation_proof_task:'POS0a',
+  architecture_foundation_implementation_approval:{approved:false,merged_sha:null,owner_review_url:null}}};
+ const initial={version:1,tasks:{POS0a:{agent:'chatgpt',pr_number:401,
+  status:'integrated_proven',merge_sha:sha}},actions:{}};
+ assert.equal(Object.keys(queueOwnerAlerts(initial,{queue:cfg}).owner_alerts).length,0);
+ const withChat=queueOwnerAlerts({...initial,tasks:{POS0a:{...initial.tasks.POS0a,
+  conversation_ref:chat}}},{queue:cfg});
+ assert.equal(Object.keys(withChat.owner_alerts).length,1);
+ const invalid={...initial,tasks:{POS0a:{...initial.tasks.POS0a,conversation_ref:'https://evil.example/c/1'}}};
+ assert.equal(Object.keys(queueOwnerAlerts(invalid,{queue:cfg}).owner_alerts).length,0);
+ const mergedUnproven={...initial,tasks:{POS0a:{...initial.tasks.POS0a,
+  status:'merged',conversation_ref:chat}}};
+ assert.equal(Object.keys(queueOwnerAlerts(mergedUnproven,{queue:cfg}).owner_alerts).length,0);
+ const approved={...cfg,dispatch_rules:{...cfg.dispatch_rules,
+  architecture_foundation_implementation_approval:{approved:true,merged_sha:sha,
+   owner_review_url:'https://github.com/killbill2792/aicafe/pull/401#issuecomment-123'}}};
+ const after=queueOwnerAlerts(withChat,{queue:approved});
+ assert.equal(Object.values(after.owner_alerts)[0].status,'cancelled_no_longer_needed');
+ assert.equal(signalFor(after,'s'.repeat(32)).pending_count,0);
+ const revised=queueOwnerAlerts({...withChat,tasks:{POS0a:{...withChat.tasks.POS0a,
+  merge_sha:'c'.repeat(40)}}},{queue:cfg});
+ assert.equal(Object.values(revised.owner_alerts).filter(x=>x.status==='planned').length,1);
+ assert.equal(Object.values(revised.owner_alerts).filter(x=>x.status==='cancelled_no_longer_needed').length,1);
+});
+test('existing task owner decision includes recorded ChatGPT link without inventing one',()=>{
+ const chat='https://chatgpt.com/c/a1-b2';
+ const pending={version:1,tasks:{'21':{agent:'chatgpt',pr_number:411,
+  owner_question:'Approve exact file scope?',conversation_ref:chat}},actions:{}};
+ const withLink=queueOwnerAlerts(pending);
+ assert.match(Object.values(withLink.owner_alerts)[0].question,/Your approval is needed\. ChatGPT chat: https:\/\/chatgpt\.com\/c\/a1-b2/);
+ const withoutLink=queueOwnerAlerts({...pending,tasks:{'21':{...pending.tasks['21'],conversation_ref:null}}});
+ assert.doesNotMatch(Object.values(withoutLink.owner_alerts)[0].question,/https:\/\/chatgpt/);
 });
