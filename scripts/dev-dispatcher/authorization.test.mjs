@@ -77,3 +77,22 @@ test('revoking new sends does not erase already proven integration on same task'
   assert.equal(s.tasks['6'].status,'integrated_proven');
   assert.equal(s.actions['fix:6'].status,'cancelled_approval_changed');
 });
+
+const priority = {dispatch_rules:{priority_gate_task:'POS0f',priority_gate_allow_task_ids:['POS0a','POS0b','POS0c','POS0d','POS0e','POS0f']}};
+test('pre-POS0f old undelivered assignment is cancelled, not sent to Muse',()=>{
+  const state=makeState({status:'assigned',pr_number:null,conversation_ref:null},{type:'assign'});
+  revalidateQueuedActions(state,tasks(),priority);
+  assert.equal(state.actions['fix:6'].status,'cancelled_priority_gate');
+  assert.equal(state.tasks['6'].status,'proposed');
+  assert.equal(state.tasks['6'].priority_deferred,true);
+});
+test('priority gate keeps already-open PR repair, and releases only after durable proof',()=>{
+  const ongoing=makeState();
+  revalidateQueuedActions(ongoing,tasks(),priority);
+  assert.equal(ongoing.actions['fix:6'].status,'planned');
+  const proven=makeState({status:'assigned',pr_number:null,conversation_ref:null},{type:'assign'});
+  proven.tasks.POS0f={status:'integrated_proven'};
+  revalidateQueuedActions(proven,tasks(),priority);
+  assert.equal(proven.actions['fix:6'].status,'planned');
+  assert.equal(proven.tasks['6'].status,'assigned');
+});
