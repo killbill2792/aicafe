@@ -170,7 +170,8 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   const release = actual.tasks.find(t=>t.id==="POS0f");
   assert.deepEqual(release.depends_on, ["POS0e","POS0b","POS0c","POS0d"]);
   assert.equal(release.stack_base_task, "POS0d");
-  assert.equal(actual.dispatch_rules.pos_source_authority.mandatory_first_read, "docs/rules/pos-data.md");
+  assert.equal(actual.dispatch_rules.pos_source_authority.mandatory_first_read, "AGENTS.md");
+  assert.equal(actual.dispatch_rules.pos_source_authority.mandatory_pos_rule_second_read, "docs/rules/pos-data.md");
   assert.equal(actual.dispatch_rules.pos_source_authority.legacy_diagnostic_only.includes("toast_raw_samples"), true);
   assert.equal(actual.dispatch_rules.architecture_foundation_proof_task,"POS0a");
   assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
