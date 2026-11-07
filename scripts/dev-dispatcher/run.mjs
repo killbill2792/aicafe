@@ -8,7 +8,7 @@ import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGat
 import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { revalidateQueuedActions } from "./authorization.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
-import { mergeApprovedPr, integrationStatus } from "./effects.mjs";
+import { mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration } from "./effects.mjs";
 import { collectReceipts, applyReceipts } from "./inbox.mjs";
 
 async function main() {
@@ -128,6 +128,22 @@ async function main() {
       await promoteIntegration(next);
       return JSON.stringify(next) === JSON.stringify(existing) ? null : next;
     });
+  }
+  // Optional branch maintenance never rebases, force-pushes or resolves conflicts.
+  if (commit && process.env.DISPATCH_BRANCH_MAINTENANCE === "true") {
+    for (const [id, rec] of Object.entries(proposed.state.tasks)) {
+      if (rec.github_state !== "open" || !rec.pr_number) continue;
+      const task = taskById.get(id);
+      if (!task || !rec.approved) continue;
+      const upstream = (task.depends_on || []).map(dep => proposed.state.tasks[dep])
+        .filter(p => p?.branch === rec.base_branch && ["integrated_proven","released_proven"].includes(p.status));
+      if (upstream.length === 1) {
+        await retargetAfterIntegration({github:gh,dependent:rec,predecessor:upstream[0],enabled:true});
+        continue; // recheck the changed base on next trusted reconciliation
+      }
+      if (rec.base_current === false && rec.base_branch === "main")
+        await safeUpdateBranch({github:gh,record:rec,enabled:true});
+    }
   }
   // Auto-merge is separately opt-in and requires independently verified acceptance evidence.
   // This is deliberately not enabled by merely persisting the queue.
