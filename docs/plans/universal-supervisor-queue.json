@@ -113,8 +113,25 @@
       ],
       "goal": "Leased worker resumes one AI loop safely under budgets and authorization",
       "scope_hint": "lib/ai/supervisor/runs/*; new worker route; usage adapter",
-      "exclusive_files": [],
-      "architecture_approval": null,
+      "exclusive_files": [
+        "lib/ai/supervisor/runs/worker.server.ts",
+        "lib/ai/supervisor/runs/worker.test.ts",
+        "lib/ai/supervisor/runs/usage.server.ts",
+        "app/api/cron/supervisor-run-worker/route.ts",
+        "app/api/cron/supervisor-run-worker/route.test.ts",
+        "lib/ai/agent/loop.server.ts"
+      ],
+      "architecture_approval": {
+        "approved": true,
+        "owner_direction": "Proceed with next real PR without a separate E2/testing-only gate; fix failures as they appear",
+        "contract": {
+          "source": "Existing authenticated Supervisor run scope (businessId, ownerUserId, threadId), idempotent requestKey, ordered StepSpecs and canonical existing AI loop. No model-provided business identities.",
+          "persisted": "Reuse existing supervisor_runs and supervisor_run_steps through PR5 repository and fenced lease RPCs, keyed by scoped requestKey and runId:stepKey. Keep only checkpoint keys/status/result references; do not store prompts, replies, secrets or POS rows.",
+          "consumer": "One bounded worker resumes existing loop through the PR5 runner, checkpoints progress, respects usage/time budgets, and reports an existing verified final report reference. New cron route must be gated and off by default until authorized.",
+          "failures": "Two workers cannot complete same fenced step. Uncertain non-idempotent effects require verified receipt, not blind replay. Pause/cancel, tenant authorization and per-run budgets are required.",
+          "scope": "Only the exact exclusive_files above. Any new SQL migrations, other routes, production deployment, permissions or scope changes need separate review."
+        }
+      },
       "brief": "docs/plans/universal-supervisor-task-briefs.md#task-6",
       "skills": [
         "supabase",
@@ -133,7 +150,7 @@
         "failure"
       ],
       "ui_or_browser_test": "not_default",
-      "state": "proposed",
+      "state": "architecture_approved",
       "can_start_stacked": true,
       "github_pr": null,
       "merge_commit": null,
