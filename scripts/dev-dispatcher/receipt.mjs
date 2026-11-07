@@ -1,0 +1,34 @@
+// Pure receipt verification. The trusted GitHub-side writer must authenticate courier
+// receipts before calling this function; this module never accepts anonymous writes.
+import { createHash } from 'node:crypto';
+import { validConversationUrl } from './delivery.mjs';
+const hash = value => createHash('sha256').update(value).digest('hex');
+
+export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } = {}) {
+  if (!['muse', 'dave'].includes(authenticatedCourier)) throw new Error('Trusted courier identity required');
+  if (!receipt || typeof receipt.action_id !== 'string') throw new Error('Missing action ID');
+  const next = structuredClone(state);
+  const action = next.actions?.[receipt.action_id];
+  const task = next.tasks?.[action?.task_id];
+  if (!action || !task || action.status !== 'planned' || task.approved !== true)
+    throw new Error('Action is not currently approved and planned');
+  const d = action.delivery;
+  if (!d || d.action_id !== receipt.action_id || d.task_id !== action.task_id ||
+      d.approval_hash !== task.approval_hash || hash(d.prompt) !== d.prompt_hash ||
+      receipt.prompt_hash !== d.prompt_hash || !validConversationUrl(d.provider, receipt.conversation_url))
+    throw new Error('Receipt does not match approved delivery');
+  if (d.intent === 'continue_existing_chat' && receipt.conversation_url !== d.conversation_url)
+    throw new Error('Follow-up destination changed');
+  if (d.intent === 'start_new_chat' && task.conversation_ref)
+    throw new Error('Task already has a conversation');
+  if (receipt.project_id !== d.project.id || receipt.provider !== d.provider)
+    throw new Error('Receipt project/provider mismatch');
+  action.status = 'submitted';
+  action.submitted_at = receipt.submitted_at || new Date().toISOString();
+  action.receipt = { courier: authenticatedCourier, prompt_hash: d.prompt_hash,
+    conversation_url: receipt.conversation_url };
+  task.conversation_ref = receipt.conversation_url;
+  task.last_submission_at = action.submitted_at;
+  task.submission_state = 'submitted';
+  return next;
+}
