@@ -125,7 +125,9 @@
       "owner_comments": [
         "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714042938",
         "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714102679",
-        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714105378"
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714105378",
+        "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714387485",
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714390122"
       ],
       "architecture_approach": "D4A_APPROVED_B_change_driven_existing_sync_not_each_endpoint_every_tick",
       "order_failure_outcome": "D4B_APPROVED_isolate_bad_SQL_records_without_losing_good_orders_or_weakening_day_financial_atomicity",
@@ -157,15 +159,16 @@
         ],
         "owned_files_reserved": [],
         "schema_migration": "new additive migration only after owner-authorized next-free number",
-        "sql_mechanism": "unapproved; preserve financial/day certification and no new queue",
-        "disposable_sql_acceptance": "99 valid orders plus one database-only cast/constraint/trigger failure; durable idempotent valid orders; bounded failed-object replay; no false complete day, later-day/payment-gap starvation or lost generation-bound cost refresh",
+        "sql_mechanism": "B1 row-savepoint/transaction design NOT owner approved; preserve financial/day certification and independently queryable committed orders; no new queue",
+        "disposable_sql_acceptance": "99 valid orders plus one database-only cast/constraint/trigger failure; durable idempotent valid orders; bounded failed-object replay; no false complete day, later-day/payment-gap starvation or lost generation-bound cost refresh; 99 immediately queryable while day aggregate incomplete; good last-certified as-of remains available, negative refunds not lower bound, full DB outage/permission/429 separately handled",
         "regression": "#189 nonce, cursor, 429/Retry-After; #203 first backfill/shared five-day cap and 100+ cafe fairness; #264 timeout and fee-gap nonstarvation; #297 five-date and 1h-to-24h no-duplicate recovery; live archive page failure; screen/Supervisor same status",
         "proposed_prerequisites": [
           "POS0a complete approved architecture/field contract with exact D4B SQL transaction and partial-day certification reviewed by authenticated owner",
           "inspect the latest main code and independently verify merged #189/#203/#264/#297 lease/backfill/payment-gap/cost refresh protections",
           "confirm exclusive file ownership and migration number against every open POS0b/c/d/e PR; existing scheduler.ts is shared and cannot have competing editors",
           "run 99-valid-plus-1-database-failing and queue nonstarvation acceptance on migrated disposable DB with rollback",
-          "POS0f independently verifies final source-to-registered Supervisor/screen parity after source and recovery work"
+          "POS0f independently verifies final source-to-registered Supervisor/screen parity after source and recovery work",
+          "owner must separately approve B1 SQL isolation and urgent bounded recovery scheduling policy; they are approved outcomes only"
         ],
         "file_scope_status": "candidate existing paths only: no conflict-free exclusive ownership proved or reserved; actual owner signoff required",
         "sql_scope_status": "no SQL isolation mechanism or exact additive migration path selected; owner approval pending"
@@ -177,6 +180,50 @@
         "rollups_present": 77,
         "owner": "separate read-only root-cause investigation",
         "do_not_conflate_with_import_failure": true
+      },
+      "granular_availability_approved": {
+        "status": "owner_approved_outcome_NOT_implementation",
+        "record_contract": "one failed database/order operation never hides independent validated durably committed orders; same source/as-of on screens and registered Supervisor",
+        "metric_contract": "only affected metrics partial/unverified; final day aggregation requires complete proof; valid record available independent of completed day",
+        "negative_adjustment_rule": "sum of known orders is not necessarily final/minimum/estimate because refunds and adjustments can reverse signs; do not fabricate",
+        "last_good_rule": "previous certified snapshot may be used with its ORIGINAL as-of status, never presented as newly current",
+        "current_code_to_preserve": [
+          "lib/data/toastDayTrust.server.ts: stored rows remain usable on day status failure",
+          "lib/calc/toastOwnerDay.ts: aggregates require complete eligible day"
+        ],
+        "schema_and_registered_agent_acceptance": "99 valid + 1 DB bad order; 99 immediately queryable with provenance; negative refunds truthful; separate affected vs unaffected metrics and no false full-day certification"
+      },
+      "urgent_recovery_approved": {
+        "status": "owner_approved_priority_outcome_NOT_scheduling_policy",
+        "source_identity_and_existing_state": [
+          "toast_unparsed_orders",
+          "toast_sync_runs",
+          "existing staged page checkpoint and lease",
+          "missingDays.ts bounded repulls",
+          "toast_raw_records",
+          "toast_raw_changes"
+        ],
+        "failure_taxonomy": [
+          "transient provider/429/auth/permission",
+          "per-record parse or data error",
+          "SQL cast/constraint/trigger row error",
+          "whole database outage",
+          "invalid or expired run",
+          "permanent unfixable upstream data"
+        ],
+        "priority_safety": "bounded durable observable retry; source-targeted recovery if official API supports, otherwise day reconciliation; preserve current/live and daily jobs, #203 backfill priority, #264 payment gap, #297 capped retries, 100+ cafe fairness and derivative cost queue; no forever-hot loops",
+        "open_design_decisions": [
+          "D4B B1 SQL row-savepoint/transaction isolation choice",
+          "exact urgent recovery scheduling priority policy and fairness proof"
+        ],
+        "permanent_defect": "may remain honestly unresolved and owner visible; no unrelated work frozen; intervention only genuinely unresolvable external/permission issues"
+      },
+      "separate_cost_queue_ack_defect": {
+        "status": "verified_main_source_read_only_unfixed",
+        "file": "lib/pos/toast/rollupRetries.ts",
+        "current_observation": "toast_ack_rollup_refresh RPC error checked but return data false not checked; may count a false ACK as processed",
+        "required": "distinguish false vs superseded generation, retain durable attempts/retry/ACK, do not replay committed sales",
+        "owner": "separately authorized cost-refresh ownership; not merged into POS0-order-recovery without explicit approval"
       }
     },
     "pos0a_owner_approved_audit_scope_extension": {
