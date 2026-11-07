@@ -125,6 +125,10 @@ test('POS0 data contributors receive the mandatory source classification and pro
 test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contract in order', () => {
  const queue=JSON.parse(readFileSync(new URL('../../docs/plans/universal-supervisor-queue.json',import.meta.url),'utf8'));
  assert.equal(queue.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
+ assert.equal(queue.dispatch_rules.pos_d4_contract.implementation_approved,false);
+ assert.equal(queue.dispatch_rules.pos_d4_contract.future_order_recovery.dispatchable,false);
+ assert.ok(!queue.tasks.some(t=>t.id==='POS0-order-recovery'));
+ assert.deepEqual(queue.dispatch_rules.pos_d4_contract.must_preserve_merged_prs,[189,203,264,297]);
  for(const id of ['POS0b','POS0c','POS0d','POS0e']){
   const real=queue.tasks.find(t=>t.id===id);
   assert.ok(real,id);
@@ -148,10 +152,12 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
    ];
    let previous=-1;
    for(const part of required){const at=block.indexOf(part);assert.ok(at>previous,id+' missing/unordered: '+part);previous=at;}
-   for(const fact of ['D1-D3 principles approved','implementation_approval.approved=false',
+   for(const fact of ['D1-D4A/D4B PRINCIPLES approved only','implementation_approval.approved=false',
      'non-order toast_records_for','cv_cash/cv_inventory/cv_kitchen/cv_dining_options',
      'seen_run_id','SQL day import','liveArchive.server.ts','menu full fetch twice','POS0e','POS0b','POS0c','POS0d','POS0f',
      'NO separately owner-approved implementation PR','PR #398 is draft','source_authority_checked: yes',
+      'D4A Approach B','D4B lossless SQL','POS0-order-recovery','#189','#203','#264','#297',
+      '10-minute coordinator','15-minute live-order','99 good plus one DB-failing order',
      'diagnostic snapshots','roll back','rollback']){
      if(fact==='roll back')continue;
      assert.ok(block.includes(fact),id+' missing '+fact);
