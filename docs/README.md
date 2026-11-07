@@ -36,7 +36,7 @@ If any document conflicts with AGENTS.md, AGENTS.md wins.
   [toast adapter dependent](toast-adapter-dependent.md), [toast pilot dependent](toast-pilot-dependent.md),
   [toast webhook dependent](toast-webhook-dependent.md).
 
-## Background (may be outdated; not instructions)
+**Investigation capture:** [.github/workflows/toast-diagnostic-capture-manual.yml](../.github/workflows/toast-diagnostic-capture-manual.yml) is manually invoked diagnostics only; automatic `toast-raw-capture-daily.yml` and its CLI entrypoint were retired. `toast_raw_samples` rows remain a legacy diagnostic data-cleanup task until the POS0e/0f reader cutover and dependency proof.\n\n## Background (may be outdated; not instructions)
 - [team collaboration (Oct 15)](team-collaboration.md) — older human-only workflow; AGENTS.md current parallel/auto-merge rules win.
 These describe earlier designs, phases or single PRs. Read them for context only. Never implement from them
 when they conflict with AGENTS.md (for example personas as separate agents, P1/P2/P3 pipelines, or bans on
