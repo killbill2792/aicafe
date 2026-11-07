@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
 import { GitHubFacts } from "./github.mjs";
@@ -41,6 +42,52 @@ test("dependent branch is opened as stacked draft; unproven merged label cannot 
   records.a.status = "integrated_proven";
   assert.equal(dispatchFrontier(all, records).some(a => a.task_id === "b"), true);
 });
+test("priority proof gate blocks unrelated dispatch even when gate PR is draft or merged", () => {
+  const all = {
+    ...queue([task("audit"), task("collect", ["audit"]), task("proof", ["collect"]),
+      task("worker", ["proof"]), task("unrelated")]),
+    dispatch_rules: { priority_gate_task: "proof",
+      priority_gate_allow_task_ids: ["audit", "collect", "proof"] },
+  };
+  const draft = { proof: { status: "draft_open", branch: "feat/proof", agent: "chatgpt" } };
+  assert.deepEqual(dispatchFrontier(all, draft).map(x => x.task_id), ["audit"]);
+  assert.equal(dispatchFrontier(all, { proof: { status: "merged" } }).some(x => x.task_id === "unrelated"), false);
+  assert.equal(dispatchFrontier(all, { proof: { status: "assigned" } }).some(x => x.task_id === "worker"), false);
+  const stacked = { ...draft, audit: { status: "draft_open", branch: "feat/audit", pr_number: 123, agent: "chatgpt" } };
+  assert.deepEqual(dispatchFrontier(all, stacked), [{
+    type: "assign", task_id: "collect", agent: "chatgpt", base_branch: "feat/audit", prerequisite_pr: 123,
+  }]);
+  assert.deepEqual(dispatchFrontier(all, { proof: { status: "integrated_proven" } })
+    .map(x => x.task_id), ["audit", "worker", "unrelated"]);
+  assert.deepEqual(dispatchFrontier(all, { proof: { status: "released_proven" } })
+    .map(x => x.task_id), ["audit", "worker", "unrelated"]);
+  assert.throws(() => validateQueue({ ...all,
+    dispatch_rules: { priority_gate_task: "typo", priority_gate_allow_task_ids: ["audit"] } }),
+  /Invalid priority proof gate/);
+  assert.throws(() => validateQueue({ ...all,
+    dispatch_rules: { priority_gate_task: "proof", priority_gate_allow_task_ids: ["audit", "unknown"] } }),
+  /Invalid priority proof gate/);
+});
+
+test("the actual Supervisor queue holds PR6 and other roots until POS0f proven", () => {
+  const actual = JSON.parse(readFileSync(
+    new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
+  validateQueue(actual);
+  assert.equal(actual.dispatch_rules.priority_gate_task, "POS0f");
+  assert.equal(actual.initial_parallel_candidates[0], "POS0a");
+  for (const id of ["E2", "6", "9", "10"]) {
+    assert.ok(actual.tasks.find(t => t.id === id)?.depends_on.includes("POS0f"), id);
+  }
+  const original = actual.tasks.find(t => t.id === "6");
+  const pretendApproved = { ...actual, tasks: actual.tasks.map(t => t.id === "6" ?
+    { ...original, exclusive_files: ["scripts/fake-worker.mjs"] } : t) };
+  const records = { "5": { status: "integrated_proven" },
+    POS0f: { status: "draft_open", branch: "feat/pos0f", pr_number: 999, agent: "chatgpt" } };
+  assert.equal(dispatchFrontier(pretendApproved, records).some(x => x.task_id === "6"), false);
+  records.POS0f = { status: "integrated_proven" };
+  assert.equal(dispatchFrontier(pretendApproved, records).some(x => x.task_id === "6"), true);
+});
+
 test("pending CI/Codex, stale review or quiet interval blocks nudges", () => {
   assert.equal(decideNudge(pr({ ci_state: "pending" }), clock).kind, "hold");
   assert.equal(decideNudge(pr({ codex_state: "pending" }), clock).kind, "hold");

@@ -2,6 +2,24 @@
 
 **Required reading for every agent:** latest main `AGENTS.md`, `PROGRESS.md`, relevant `docs/rules/*`, [task queue](universal-supervisor-queue.json) and one [task brief](universal-supervisor-task-briefs.md#task-6). Use the **connected GitHub plugin** to fetch actual files, PRs, commits, CI/check logs, Codex reviews, comments and thread resolution; explicitly read applicable `.claude/skills/*/SKILL.md` from GitHub. Do not assume a cloud shell, uninterrupted waiting, skill auto-loading or live production access.
 
+## Current dispatch order — POS0 before PR6
+
+Owner decision (Nov 6): the existing queue's first task is **POS0a**, a READ-ONLY inventory
+of each current Toast Standard API endpoint/field, configured scope, existing ingestion,
+one-current-object key, freshness, authorized reader, screen/AI consumer and verified gaps.
+POS0b/0c/0d/0e then fill existing writers and readers without touching working order
+semantics; **POS0f** proves the entire API → stored object → `describe_data` →
+`query_data` → Supervisor + relevant screen flow, using actual executed CI tests.
+**Do not automatically assign new E2, PR6, PR9, PR10 or downstream tasks until POS0f
+has durable `integrated_proven` evidence.** This is enforced through dependency DAG
+edges, not merely this paragraph. Preserve ongoing already-open PR fixes/reviews.
+
+Only POS0a's **documentation-only architecture audit** is approved to start without
+another decision. Every later data/job/SQL/tool PR needs the owner's per-field
+source/key/destination/privacy/reader plan sign-off and exclusive file ownership under
+AGENTS.md. No paid ERA scope assumptions, new owner credentials, direct production
+writes or demo-only acceptance shortcuts. Review [priority-zero task briefs](universal-supervisor-task-briefs.md#priority-zero--finish-all-permitted-toast-standard-api-data-before-e2--pr6pr17).
+
 ## Use existing skills, not a giant prompt
 
 - `aicafe-pr-lifecycle`: a coding chat owns one PR from creation through review, CI fixes, rebase and merge.
@@ -17,7 +35,8 @@ docs/rules/skills.md and the approved queue at
 docs/plans/universal-supervisor-queue.json on latest main.
 Load aicafe-dependency-check and aicafe-proof-gate from .claude/skills/.
 Confirm actual merged commits, executed required tests and on-main integration
-before satisfying dependencies. Check open PR changed files and file-owner locks.
+before satisfying dependencies. PRIORITIZE POS0a then POS0b/c/d, POS0e, POS0f;
+do not create new E2/PR6/PR9/PR10 assignments before POS0f integrated proof. Check open PR changed files and file-owner locks.
 Assign up to 4 ChatGPT and 2 Claude approved tasks, independent or
 stacked NOW on open prerequisite branches (PR base = that branch).
 Never confuse opened with mergeable. Advance after real merges and proof;
