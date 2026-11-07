@@ -57,7 +57,8 @@ export class GitHubFacts {
       ...options, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
         "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
     });
-    if (!response.ok) throw new Error(`GitHub read failed: ${response.status}`);
+    if (!response.ok) throw new Error(`GitHub request failed: ${response.status}`);
+    if (response.status === 204) return { ok:true };
     return response.json();
   }
   async proofArtifact(runId, artifactName, filename) {
