@@ -21,7 +21,14 @@ export function queueOwnerAlerts(state,{unmappedPrs=[],queue=null,now=new Date()
   if(kind==='architecture_approval')entry.source_sha=source_sha;
   entry.notice_hash=noticeHash(entry);
   const key='notice:'+entry.notice_hash;
-  if(!next.owner_alerts[key])next.owner_alerts[key]=entry;
+  const prior=next.owner_alerts[key];
+  if(!prior) next.owner_alerts[key]=entry;
+  else if(prior.status==='cancelled_no_longer_needed' && !prior.receipt) {
+    // A withdrawn question may later be restored verbatim. Requeue the SAME
+    // verified identity, never a duplicate; submitted notices are immutable.
+    prior.status='planned';
+    prior.requeued_at=now;
+  }
  };
  for(const [id,rec] of Object.entries(next.tasks||{})){
   // One open PR may have only one active owner question. A revised or removed
