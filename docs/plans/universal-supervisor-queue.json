@@ -71,7 +71,7 @@
       "POS0e",
       "POS0f"
     ],
-    "architecture_foundation_note": "POS0a may audit read-only, but implementation cannot start until its exact merged SHA has integration proof AND the owner has separately reviewed/approved that merged architecture with an explicit linked GitHub comment. POS0b/c/d then start concurrently on main after each has its own field-level approval and nonoverlapping owned files. POS0e/f may stack on verified open upstream PRs, with all dependencies still required for merging.",
+    "architecture_foundation_note": "POS0a audits field contracts; owner high-level architecture approved in chat, but exhaustive per-field proof, exact file ownership and a linked current-main signoff remain required by the existing gate. POS0e is FIRST: existing global retained-field policy + current operational reader cutover/discovery replacing diagnostic sources; POS0b/c/d depend on POS0e and work on disjoint source adapters; POS0f depends on all. No diagnostic/test data may feed Supervisor; no task reaches integrated_proven without real source→stored→discover→query→agent tests and final-schema negative tests.",
     "architecture_foundation_implementation_approval": {
       "approved": false,
       "merged_sha": null,
@@ -86,7 +86,22 @@
       "POS0d",
       "POS0e",
       "POS0f"
-    ]
+    ],
+    "pos_source_authority": {
+      "mandatory_first_read": "docs/rules/pos-data.md",
+      "approved_record_store": "toast_raw_records",
+      "approved_change_log": "toast_raw_changes",
+      "legacy_diagnostic_only": [
+        "toast_raw_samples",
+        "toast_raw_samples_latest"
+      ],
+      "operational_reader": "toast_records_for / cv_toast_records / ai_query_view / describe_data / query_data",
+      "preflight_pr_line": "source_authority_checked: yes",
+      "non_negotiable": "No test/diagnostic/mirror data in operational screens or Supervisor; no newly stored field without real existing-reader/agent proof",
+      "retirement": "POS0e active SQL cutover before POS0b/c/d; POS0f only after zero old consumers may retire diagnostic capture/mirror/rows; production deletion is a distinct owner-controlled action",
+      "enforcement": "scripts/guards/toast-diagnostic-boundary.mjs (additions) + POS0e/0f final migrated database lineage and negative contamination tests (all active definitions)",
+      "status": "plan+additions guard; final source retirement not yet implemented"
+    }
   },
   "tasks": [
     {
@@ -144,9 +159,10 @@
       "milestone": "POS0",
       "title": "P0 staff and labor permitted-field completeness and freshness",
       "depends_on": [
-        "POS0a"
+        "POS0a",
+        "POS0e"
       ],
-      "goal": "Extend existing Toast labor/staff import and current-object snapshot writer to retain every permitted employee/job/time-entry/shift field and genuine revisions, with correct actor identity and live/final dates.",
+      "goal": "Extend existing Toast labor/staff import and current-object snapshot writer to retain every permitted employee/job/time-entry/shift field and genuine revisions, with correct actor identity and live/final dates. Must operate on POS0e current-only reader (never on toast_raw_samples), and prove each newly collected field is answerable through Supervisor.",
       "scope_hint": "Existing lib/pos/toast/adapter.ts, laborSync.ts, operationalCopy.ts, optionalSync.ts; current toast_labor_entries, employee/job directory, scheduled shifts, timecards, archive writer and change log. Assign exact files and any migration exclusively after matrix approval.",
       "exclusive_files": [],
       "architecture_approval": null,
@@ -160,10 +176,12 @@
         "pr"
       ],
       "acceptance": [
+        "Before any edits PR body contains source_authority_checked: yes, actual current/diagnostic/test source classification, true provider object key, old consumer/retirement list and exact changed-file ownership, with link to docs/rules/pos-data.md.",
         "For each permitted Toast employee/job/shift/time-entry JSON path, full source → one current object → canonical facts → query_data round-trip matches source; no job/tip/break/reference or null/zero loss.",
         "One object per business+restaurant+Toast object GUID; repeated unchanged data makes no new snapshot/history; modified wage, break, tip or clock edit updates exactly once and produces before/after change evidence.",
         "Attendance and planned shifts refresh on appropriate bounded operational cadence with modified cursor/backfill, timezone and overnight coverage; failures and stale/permission gaps remain visible, never zero or owner questions.",
-        "Existing Staff, scheduling, payroll and Money screen projections and certified labor cents remain unchanged or parity-proven; existing order import tests remain green."
+        "Existing Staff, scheduling, payroll and Money screen projections and certified labor cents remain unchanged or parity-proven; existing order import tests remain green.",
+        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots."
       ],
       "test_kinds": [
         "unit",
@@ -180,16 +198,18 @@
       "merge_commit": null,
       "ci_proof": null,
       "integrated_proof": null,
-      "owner": null
+      "owner": null,
+      "stack_base_task": "POS0e"
     },
     {
       "id": "POS0c",
       "milestone": "POS0",
       "title": "P0 operational Standard API endpoint integration",
       "depends_on": [
-        "POS0a"
+        "POS0a",
+        "POS0e"
       ],
-      "goal": "Connect eligible cash, stock, kitchen and operational availability endpoints to the EXISTING current-object/upsert-change-log writer, not a parallel raw-dump service.",
+      "goal": "Connect eligible cash, stock, kitchen and operational availability endpoints to the EXISTING current-object/upsert-change-log writer, not a parallel raw-dump service. Must operate on POS0e current-only reader (never on toast_raw_samples), and prove each newly collected field is answerable through Supervisor.",
       "scope_hint": "Existing Toast Standard client, capture registry, archive writer; cashmgmt, stock, kitchen/prep, availability/ordering schedule. Source keys/cadences/RLS from POS0a; exclusive file owners and migrations assigned before coding.",
       "exclusive_files": [],
       "architecture_approval": null,
@@ -203,10 +223,12 @@
         "pr"
       ],
       "acceptance": [
+        "Before any edits PR body contains source_authority_checked: yes, actual current/diagnostic/test source classification, true provider object key, old consumer/retirement list and exact changed-file ownership, with link to docs/rules/pos-data.md.",
         "Each eligible operational GET and field is durably current, source-identified, change-logged, discoverable by the shared reader and truthfully marked unavailable on missing scope, empty 204 or API failure.",
         "Operational deltas are refreshed at bounded POS-safe intervals; no unapproved blanket 30-minute polling, duplicated objects, or assumption of stock zero / kitchen-ready from absent evidence.",
         "Idempotent changed/unchanged/reordered responses and recoverable 429/5xx/timeout/partial/café-isolation are verified on disposable migrated DB; no new competing POS writer or financial totals.",
-        "Existing sales, cash, stock, kitchen and orders consumers remain compatible; screen and Supervisor source parity is proved wherever those screens exist."
+        "Existing sales, cash, stock, kitchen and orders consumers remain compatible; screen and Supervisor source parity is proved wherever those screens exist.",
+        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots."
       ],
       "test_kinds": [
         "unit",
@@ -223,16 +245,18 @@
       "merge_commit": null,
       "ci_proof": null,
       "integrated_proof": null,
-      "owner": null
+      "owner": null,
+      "stack_base_task": "POS0e"
     },
     {
       "id": "POS0d",
       "milestone": "POS0",
       "title": "P0 remaining eligible setup, menu and restaurant endpoint integration",
       "depends_on": [
-        "POS0a"
+        "POS0a",
+        "POS0e"
       ],
-      "goal": "Complete durable retained-field coverage for all remaining accessible Standard API configuration, menus v2, payments/lookup, restaurant, device, packaging, partner and related endpoints using the one current-object writer.",
+      "goal": "Complete durable retained-field coverage for all remaining accessible Standard API configuration, menus v2, payments/lookup, restaurant, device, packaging, partner and related endpoints using the one current-object writer. Must operate on POS0e current-only reader (never on toast_raw_samples), and prove each newly collected field is answerable through Supervisor.",
       "scope_hint": "Reuse existing menu/config/restaurant collectors and canonical table/readers; diff by exact endpoint and source key. Exclude ERA separate credentials and Menus v3 non-Standard instead of silently calling them missing.",
       "exclusive_files": [],
       "architecture_approval": null,
@@ -246,10 +270,12 @@
         "pr"
       ],
       "acceptance": [
+        "Before any edits PR body contains source_authority_checked: yes, actual current/diagnostic/test source classification, true provider object key, old consumer/retirement list and exact changed-file ownership, with link to docs/rules/pos-data.md.",
         "Every eligible endpoint not owned by POS0b/POS0c has field-by-field source/storage/query proof; config and ID lookup no-resource cases tracked as reasons, with daily/modified refresh where applicable.",
         "Menu, price, taxes, service charges, discounts, item modifiers, payment types, employees and restaurant keys preserve existing canonical screen numbers and provider definitions.",
         "No loss of historical order/change evidence or sensitive-data policy; immutable business identity, tenant authorization, dedup, changes, retry and permission/no-content classification verified.",
-        "Any endpoint truly unavailable under Standard credentials is recorded with exact recent response or provider prerequisite, never fabricated success; tests do not assume the old October audit is current."
+        "Any endpoint truly unavailable under Standard credentials is recorded with exact recent response or provider prerequisite, never fabricated success; tests do not assume the old October audit is current.",
+        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots."
       ],
       "test_kinds": [
         "unit",
@@ -266,20 +292,18 @@
       "merge_commit": null,
       "ci_proof": null,
       "integrated_proof": null,
-      "owner": null
+      "owner": null,
+      "stack_base_task": "POS0e"
     },
     {
       "id": "POS0e",
       "milestone": "POS0",
-      "title": "P0 one reusable data-access foundation for screens and Supervisor",
+      "title": "P0 shared current-source reader and all-field retention FIRST foundation",
       "depends_on": [
-        "POS0b",
-        "POS0c",
-        "POS0d"
+        "POS0a"
       ],
-      "stack_base_task": "POS0d",
-      "goal": "Extend existing describe_data/query_data + approved canonical readers and relationships so Supervisor can discover/query all stored permitted Toast fields without per-question views, invented SQL or a second data path.",
-      "scope_hint": "Existing ai_query_view, toast_records_for/cv_toast_records, canonical dictionary, lib/ai/agent/tools/dataQuery.ts, shared source readers and metrics; check all callers before changing. Exact SQL and shared-file owner require field-level approval.",
+      "goal": "FIRST cut operational Supervisor/canonical views off toast_raw_samples and historical diagnostic capture, reuse current toast_raw_records/change log with full permitted field retention (customer/staff PII excluding card credentials), complete schema-backed describe_data and bounded full-data query_data; generic source-family reader before POS0b–d.",
+      "scope_hint": "One exclusive owner for current toast_records_for / cv_* active SQL replacement migration; lib/ai/agent/tools/dataQuery.ts, lib/data/canonical/dictionary.ts, existing lib/pos/toast/redact.ts, and relevant SQL/agent tests. Freeze shared file ownership; no additional AI query path, store or historical migration edits. Existing tests asserting diagnostic-backed operational values must be corrected and negative source-isolation tests executed.",
       "exclusive_files": [],
       "architecture_approval": null,
       "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0e",
@@ -292,10 +316,11 @@
         "pr"
       ],
       "acceptance": [
-        "Every permitted current object field is discoverable with provenance and queryable through existing scoped tools, including normalized staff ↔ time-entry names, date/employee/order/payment relationships, while keeping row/byte/call bounds and RLS.",
-        "One source of business truth: specialized get_staff/get_sales/get_profit and all screens are projections over the same authorized canonical fact readers; correct but distinct semantics (currently working vs worked during date) do not dead-end.",
-        "Money/screen numbers use lib/metrics/core (not model-generated SQL or calculate); other sourced arithmetic uses the existing calculate tool; today provisional versus finalized and stale/missing source states are explicit.",
-        "Tests reject cross-café IDs, arbitrary SQL, disallowed sensitive fields, fabricated zero/complete answers, unverified joins and wrong café-local day; old query tests are strengthened rather than deleted to hide gaps."
+        "Preflight in PR body: source_authority_checked: yes, concrete current/diagnostic/fixture file classification, exact dataflow, provider permissions, source key and retirement list verified against docs/rules/pos-data.md; all changed paths are exclusive.",
+        "Final migrated disposable Supabase defines toast_records_for / all current cv_* operational views with ZERO direct/indirect dependencies on toast_raw_samples or toast_raw_samples_latest; obsolete diagnostic fixtures cannot affect Supervisor/screens; no stale fallback after provider failure.",
+        "Existing redactor retains customer and employee names, allowed contact/loyalty/stable IDs and other permitted fields, excluding PAN/CVV/track and reusable payment/security secrets; partial null/missing cannot block unrelated data; tenant/role scope enforced.",
+        "describe_data lists every permitted field using versioned Standard schema plus actual retained sources even if unseen in newest 30/35-day/200-path samples; query_data can filter/aggregate over all relevant current records without dumping full raw rows into model context; bounded response and safe stable-ID lookup.",
+        "Real registered one-agent Supervisor-turn proof with seeded current source facts (staff, cash, stock, orders) and conflicting diagnostic-only values; named customer/employee answer, safe numbers, screen parity and negative cross-cafe test; final-head SQL/agent CI and Codex clean."
       ],
       "test_kinds": [
         "unit",
@@ -319,7 +344,10 @@
       "milestone": "POS0",
       "title": "P0 complete Standard API → storage → Supervisor acceptance and regression gate",
       "depends_on": [
-        "POS0e"
+        "POS0e",
+        "POS0b",
+        "POS0c",
+        "POS0d"
       ],
       "goal": "Make full permitted Standard API source-to-storage-to-universal-reader-to-screen/agent coverage an executable, non-skipped release gate; close every missing/incorrect test and document exact exceptions.",
       "scope_hint": "Existing Toast adapter/SQL tests, canonical dictionary tests, Supervisor evals and CI disposable migrated Supabase; shared test ownership assigned after code PRs to avoid conflicts. Real café validation read-only and owner-authorized.",
@@ -335,11 +363,14 @@
         "pr"
       ],
       "acceptance": [
+        "Before coding PR body includes source_authority_checked: yes and the exact current/diagnostic/test consumer classification, retirement schedule and linked POS0e integrated proof.",
         "CI enumerates all eligible current Standard API endpoints/fields (not hardcoded 76/86) and checks redaction, full retained fields, one-row-per-object, changes-only history, receipts/failures, modified/same/reordered retry cases.",
         "CI asserts complete chain Toast-shaped input → existing writer → stored canonical object → describe_data → query_data → Supervisor turn and matching relevant screen for staff, orders, payments, sales, cash, stock, kitchen, configuration and unknown cross-domain questions.",
         "Replace or strengthen every incomplete/misleading test and fixture; preserve valid regressions; required SQL/RLS/AI parity job executes in CI against disposable migrated Supabase and is never silently skipped for no key/flag.",
         "Production read-only evidence compares current response/field coverage and applicable real-café screen and chat results with explicit dates, counts and reconciliation; no production migrations or new OAuth scopes without separate owner authorization.",
-        "For each unavailable endpoint record exact reason and last verified date, for each owner-permitted data field show a passed retrieval assertion; changed code paths have final-head CI links, Codex clean, no skipped required proof."
+        "For each unavailable endpoint record exact reason and last verified date, for each owner-permitted data field show a passed retrieval assertion; changed code paths have final-head CI links, Codex clean, no skipped required proof.",
+        "After all migrations, final SQL function and view lineage has zero active direct/indirect diagnostic source dependencies; seeded sample-only values have zero impact on Supervisor/screens; existing diagnostic-positive test assertions rewritten as negative isolation proofs.",
+        "Only after zero readers/capture consumers remain and a verified retention, migration and rollback plan exists, retire and purge stale diagnostic rows/capture/test-cafe mirroring in a separately controlled release; record production migration owner approval, disk space before/after and actual real-cafe post-release read proof."
       ],
       "test_kinds": [
         "unit",
@@ -358,7 +389,8 @@
       "merge_commit": null,
       "ci_proof": null,
       "integrated_proof": null,
-      "owner": null
+      "owner": null,
+      "stack_base_task": "POS0d"
     },
     {
       "id": "E2",
