@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { progressUpdatePolicy } from '../dev-dispatcher/core.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const guards = (await readdir(directory, { withFileTypes: true }))
@@ -22,6 +23,29 @@ const env = {
   PR_LABELS: process.env.PR_LABELS ?? '',
 };
 let failures = 0;
+
+// This existing guard runs with exact base/head commits in PR CI.
+// No parallel coding PR may change the shared PROGRESS checklist; a dedicated
+// coordinator-only PR updates it after merge, on top of latest main.
+const shaPattern=/^[a-f0-9]{40}$/;
+if (shaPattern.test(env.BASE_SHA) && shaPattern.test(env.HEAD_SHA) &&
+    env.BASE_SHA !== env.HEAD_SHA) {
+  const diff=spawnSync('git',['diff','--name-only','-z',`${env.BASE_SHA}...${env.HEAD_SHA}`],
+    {cwd:process.cwd(),encoding:'utf8'});
+  if (diff.error || diff.status!==0) {
+    console.error('PROGRESS.md:1: Cannot verify changed paths for single-writer progress rule');
+    failures++;
+  } else {
+    const changed=diff.stdout.split('\0').filter(Boolean);
+    const policy=progressUpdatePolicy(changed);
+    if (!policy.allowed) {
+      console.error('PROGRESS.md:1: Shared PROGRESS.md may only change in a dedicated single-writer progress-only PR after merge');
+      failures++;
+    } else {
+      console.log('Shared progress single-writer guard: passed');
+    }
+  }
+}
 const locatedError = /^(?:[^\s:]+\/)*[^:\s]+:\d+(?::\d+)?:\s*.+$/;
 
 for (const filename of guards) {
