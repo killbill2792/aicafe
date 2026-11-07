@@ -5,6 +5,12 @@ export function parseTaskMarker(body) {
   const marks = [...body.matchAll(/<!-- aicafe-task-id\s+([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\s*-->/g)];
   return marks.length === 1 ? marks[0][1] : null;
 }
+export function parseOwnerQuestion(body) {
+  if (typeof body !== 'string' || body.length > 100000) return null;
+  const matches = [...body.matchAll(/<!-- aicafe-owner-question\s+([\s\S]*?)\s*-->/g)];
+  if (matches.length !== 1 || matches[0][1].length > 1200) return null;
+  return matches[0][1].trim() || null;
+}
 export function parseAcceptanceEvidence(body) {
   if (typeof body !== "string" || body.length > 100000) return null;
   const match = body.match(/<!-- aicafe-acceptance-evidence\s*([\s\S]*?)\s*-->/);
@@ -142,6 +148,8 @@ export class GitHubFacts {
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
+      github_owner_question: (pr.labels || []).some(label => label.name === 'needs-owner-decision')
+        ? parseOwnerQuestion(pr.body) : null,
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
       codex_review_at: codex?.submitted_at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
