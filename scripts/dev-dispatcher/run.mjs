@@ -7,7 +7,7 @@ import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate } from "./core.mjs";
 import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { acceptanceDigest } from "./acceptance-runner.mjs";
-import { revalidateQueuedActions } from "./authorization.mjs";
+import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration, retryStartupFailure } from "./effects.mjs";
 import { collectReceipts, applyReceipts } from "./inbox.mjs";
@@ -52,8 +52,8 @@ async function main() {
     const nudges = [];
     const now = new Date().toISOString();
     for (const assignment of assigned) {
-      const key = `assign:${assignment.task_id}`;
-      if (copy.actions[key]) continue;
+      const key = assignmentActionKey(copy, assignment.task_id, queue);
+      if (!key) continue;
       const record = { task_id: assignment.task_id, status: "assigned",
         agent: assignment.agent, branch: `feat/aicafe-task-${assignment.task_id}`, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
         approval_hash: approvalSignature(taskById.get(assignment.task_id)),
