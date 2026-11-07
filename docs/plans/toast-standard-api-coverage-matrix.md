@@ -10,7 +10,7 @@
 
 **Source-to-reader card (current vs target):** Toast API → existing coordinator/client → keyed `toast_raw_records` and true `toast_raw_changes` → existing app projections → `toast_records_for` / `cv_*` → `describe_data` / `query_data` → same Supervisor/screens. **Known defect:** non-order `toast_records_for`, `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` still use diagnostic samples. Test Café is a distinct tenant mirror. **D3:** retain writers/readers/app-owned history until full consumer, correctness, performance, isolation and rollback tests.
 
-### D4A/D4B owner outcomes — APPROVED principles, SQL design NOT approved (Nov 7)
+### D4A/D4B approved architecture outcome — no runtime approval (Nov 7)
 
 Sources: [D4A](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714042938), [D4B](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714102679), [granular approval](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714387485). **D4A Approach B:** reuse existing 10-minute coordinator, separate 15-minute live-orders reader, `toast_raw_records` and real `toast_raw_changes`. No full API fetch each tick or webhook-only. Per family use supported modified/version or validated bounded snapshot, independent check/success, scope, cursor, completeness, failure/backoff and automatic reconciliation. Owners: POS0b labor, POS0c cash/stock/kitchen, POS0d one version-validated menu snapshot (no no-sales/partial retirement), POS0e canonical reader, POS0f proof.
 
