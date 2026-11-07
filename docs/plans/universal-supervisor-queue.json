@@ -169,6 +169,18 @@
         "owner": "separate read-only root-cause investigation",
         "do_not_conflate_with_import_failure": true
       }
+    },
+    "pos0a_owner_approved_audit_scope_extension": {
+      "status": "owner_approved_audit_files_only_not_new_dispatch_authorization",
+      "owner_comment_url": "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6713567512",
+      "additional_paths": [
+        "scripts/toast-standard-api-coverage.test.mjs",
+        "docs/plans/toast-openapi-spec-snapshot.json"
+      ],
+      "original_signed_task_exclusive_files_unchanged": true,
+      "existing_saved_assignment_signature_must_not_be_invalidated": true,
+      "runtime_or_merge_approval": false,
+      "execution_state": "official pinned schema and deterministic read-only audit not yet committed/executed"
     }
   },
   "tasks": [
@@ -178,11 +190,9 @@
       "title": "P0 Standard API source-to-AI coverage contract and gap matrix",
       "depends_on": [],
       "goal": "Inventory every currently documented Standard API read operation and every permitted response field against actual scopes, fetch cadence, stored current object, privacy filter, change history, canonical reader and Supervisor; owner approves the field-level design before data-code PRs.",
-      "scope_hint": "Read-only official-spec + current repo + disposable/authorized read-only database inventory; new docs/plans/toast-standard-api-coverage-matrix.md. Own no existing runtime or migration file. Owner comment on PR #398 6713567512 separately authorizes these two audit-only files; full pinned official schema and deterministic test still need execution, not runtime changes.",
+      "scope_hint": "Read-only official-spec + current repo + disposable/authorized read-only database inventory; new docs/plans/toast-standard-api-coverage-matrix.md. Own no existing runtime or migration file.",
       "exclusive_files": [
-        "docs/plans/toast-standard-api-coverage-matrix.md",
-        "scripts/toast-standard-api-coverage.test.mjs",
-        "docs/plans/toast-openapi-spec-snapshot.json"
+        "docs/plans/toast-standard-api-coverage-matrix.md"
       ],
       "architecture_approval": {
         "approved": true,
@@ -205,10 +215,10 @@
         "pr"
       ],
       "acceptance": [
-        "Every official current Standard API GET operation and response field is recorded with official spec version/link, café-specific scope/permission and observed result (success/empty/403/missing-id/not configured/not tested), with Analytics/menus-v3 and no-GET families excluded or classified accurately. A1 official schema fixture is pinned to official public Toast download URLs, versions and SHA; test fails on missing operation/schema fields rather than treating current registry as complete.",
-        "Each allowed field has explicit canonical object identity, storage owner/key, existing ingest job, cadence, privacy treatment, current-reader/view, Supervisor query field, screen consumer, freshness and known gap; no invented endpoint counts or silent assumed coverage. A2 full field paths inherit source-to-writer-to-reader/consumer trace; unknown coverage and sampled payloads stay distinct.",
+        "Every official current Standard API GET operation and response field is recorded with official spec version/link, café-specific scope/permission and observed result (success/empty/403/missing-id/not configured/not tested), with Analytics/menus-v3 and no-GET families excluded or classified accurately.",
+        "Each allowed field has explicit canonical object identity, storage owner/key, existing ingest job, cadence, privacy treatment, current-reader/view, Supervisor query field, screen consumer, freshness and known gap; no invented endpoint counts or silent assumed coverage.",
         "Compare actual code paths, current production object evidence and stale diagnostics separately; distinguish old October capture from current order/staff sync; owner reviews exact proposed source → stored object → shared reader plan before coding.",
-        "A reproducible matrix audit command and proof link are recorded, and the original working order path is marked preserve/no rewrite. A4 execute scripts/toast-standard-api-coverage.test.mjs from the exact PR head and record CI evidence; do not claim acceptance from Markdown alone."
+        "A reproducible matrix audit command and proof link are recorded, and the original working order path is marked preserve/no rewrite."
       ],
       "test_kinds": [
         "docs",
