@@ -1,4 +1,4 @@
-import "server-only";
+/** DIAGNOSTIC_ONLY: historical Toast API investigation/field-shape capture.\n * NEVER an operational current-record writer or a Supervisor/screen data source.\n * See docs/rules/pos-data.md before changing consumers.\n */\nimport "server-only";
 import {createHmac,randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
