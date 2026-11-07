@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
-import { GitHubFacts } from "./github.mjs";
+import { GitHubFacts, parseAcceptanceEvidence } from "./github.mjs";
 
 const task = (id, depends_on = [], state = "architecture_approved") => ({
   id, depends_on, state, acceptance: ["real proof"], brief: "docs/plans/brief.md",
@@ -13,8 +13,8 @@ const queue = (tasks) => ({ tasks, merged_code_only: [] });
 const clock = Date.parse("2026-11-05T16:00:00Z");
 const old = new Date(clock - 700000).toISOString();
 const pr = (more = {}) => ({ task_id: "a", approved: true, conversation_ref: "private",
-  pr_number: 101, head_sha: "abc", prompt_version: "v1",
-  last_github_activity: old, ci_state: "success", codex_state: "clean",
+  pr_number: 101, head_sha: "abc", base_branch:"main", prompt_version: "v1",
+  last_github_activity: old, last_commit_at: old, draft: false, ci_state: "success", codex_state: "clean", acceptance_evidence:{acceptance:[{id:'1'}]},
   codex_reviewed_sha: "abc", attempts: 0, ...more });
 
 test("queue validates 32-task style DAG, rejects missing prerequisites and cycles", () => {
@@ -91,22 +91,24 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
 test("pending CI/Codex, stale review or quiet interval blocks nudges", () => {
   assert.equal(decideNudge(pr({ ci_state: "pending" }), clock).kind, "hold");
   assert.equal(decideNudge(pr({ codex_state: "pending" }), clock).kind, "hold");
-  assert.equal(decideNudge(pr({ codex_reviewed_sha: "old" }), clock).reason, "stale_codex");
-  assert.equal(decideNudge(pr({ last_github_activity: new Date(clock - 400000).toISOString() }), clock).reason, "not_quiet");
-  assert.equal(decideNudge(pr(), clock).action, "continue_pr");
+  assert.equal(decideNudge(pr({ codex_reviewed_sha: "old" }), clock).reason, "no_actionable_findings");
+  assert.equal(decideNudge(pr({ last_commit_at: new Date(clock - 400000).toISOString() }), clock).reason, "not_quiet");
+  assert.equal(decideNudge(pr(), clock).reason, "no_actionable_findings");
   assert.equal(decideNudge(pr({ ci_state: "failure" }), clock).action, "repair_ci");
   assert.equal(decideNudge(pr({ codex_state: "findings" }), clock).action, "repair_review");
+  assert.equal(decideNudge(pr({ acceptance_evidence:null }), clock).action, "continue_pr");
+  assert.equal(decideNudge(pr({ threads_resolved:false }), clock).action, "continue_pr");
 });
 test("pre-PR conversation cannot be nudged without known browser readiness", () => {
   const base = pr({ pr_number: null, last_submission_at: old, browser_busy: undefined });
-  assert.equal(decideNudge(base, clock).reason, "busy_or_unknown");
-  assert.equal(decideNudge({ ...base, browser_busy: true }, clock).kind, "hold");
+  assert.equal(decideNudge(base, clock).reason, "not_quiet");
+  assert.equal(decideNudge({ ...base, browser_busy: true }, clock).reason, "browser_confirmed_busy");
   assert.equal(decideNudge({ ...base, browser_busy: false }, clock).reason, "not_quiet");
   const ready = { ...base, browser_busy: false, last_submission_at: new Date(clock - 1900000).toISOString() };
   assert.equal(decideNudge(ready, clock).action, "pre_pr_reminder");
 });
 test("same state cannot be sent twice and uncertain submissions fail closed", () => {
-  const record = pr();
+  const record = pr({ci_state: "failure"});
   const choice = decideNudge(record, clock);
   assert.equal(choice.kind, "propose");
   assert.equal(decideNudge({ ...record, last_action_key: choice.key }, clock).kind, "hold");
@@ -127,8 +129,9 @@ test("merge requires final head, proven acceptance, branch and predecessors", ()
   const ready = { ...pr(), threads_resolved: true, base_current: true, acceptance_proven: true };
   assert.equal(mergeGate(ready, [{ status: "integrated_proven" }]).eligible, true);
   assert.equal(mergeGate({ ...ready, base_current: false }).eligible, false);
+  assert.deepEqual(mergeGate({ ...ready, base_branch: "feat/predecessor" }).reasons, ["non_main_destination"]);
   assert.deepEqual(mergeGate(ready, [{ status: "merged" }]).reasons, ["predecessor_not_proven"]);
-  assert.equal(mergeGate({ ...ready, codex_reviewed_sha: "old" }).eligible, false);
+  assert.equal(mergeGate({ ...ready, codex_reviewed_sha: null }).eligible, false);
 });
 test("ledger validates private-only state and rejects secret and response fields", () => {
   assert.deepEqual(sanitizeLedger(emptyLedger()).tasks, {});
@@ -158,9 +161,11 @@ test("ledger checks private visibility and retries optimistic CAS collisions", a
 });
 test("GitHub PR reads distinguish pending CI/review from success", async () => {
   const fetchFn = async (url, options) => {
-    if (url.includes("/pulls?")) return { ok: true, json: async () => [{ number: 2, head: { sha: "abc", ref: "feat/b" }, base: { ref: "main" }, updated_at: old, draft: true }] };
+    if (url.includes("/pulls?")) return { ok: true, json: async () => [{ number: 2, head: { sha: "abc", ref: "feat/b" }, base: { ref: "main", sha: "base" }, updated_at: old, draft: true }] };
     if (url.includes("check-runs")) return { ok: true, json: async () => ({ total_count: 1, check_runs: [{ name: "AI CAFE PR baseline", status: "completed", conclusion: "success" }] }) };
     if (url.includes("/reviews?")) return { ok: true, json: async () => [] };
+    if (url.includes("/compare/")) return { ok: true, json: async () => ({ behind_by: 0 }) };
+    if (url.includes("/commits/abc")) return { ok: true, json: async () => ({ commit: { committer: { date: old } } }) };
     if (url.includes("/graphql")) return { ok: true, json: async () => ({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] } } } } }) };
     throw new Error(url);
   };
@@ -186,6 +191,9 @@ test("disappearing PR is not automatically merged; verified merge remains distin
   assert.equal(reconcileGithub(ledger, []).tasks.a.github_state, "not_open_unverified");
   const merged = reconcileGithub(ledger, [], { 101: true }).tasks.a;
   assert.equal(merged.status, "merged");
+  const manual = reconcileGithub(ledger, [], {101:{merged:true,merge_sha:'squashed-main-sha'}}).tasks.a;
+  assert.equal(manual.merge_sha,'squashed-main-sha');
+  assert.equal(manual.status,'merged');
   assert.notEqual(merged.status, "integrated_proven");
   assert.equal(reconcileGithub(ledger, [], { 101: false }).tasks.a.status, "draft_open");
 });
@@ -230,4 +238,71 @@ test("CAS retries call reconciliation against newly loaded state each time", asy
   await ledger.transaction(async state => { calls++; state.tasks.a = { status: "proposed", snapshot_version: calls }; return state; });
   assert.equal(puts, 2);
   assert.equal(calls, 2);
+});
+
+test("Claude receives only independent tasks and never routine nudges", () => {
+  const all = queue([task("a"), task("b"), task("c"), task("d"), task("e", ["a"]), task("f")]);
+  const assigned = dispatchFrontier(all, { a: { status: "integrated_proven" } }, { chatgpt: 0, claude: 2 });
+  assert.equal(assigned.every(a => a.agent === "claude" && a.task_id !== "e"), true);
+  assert.equal(decideNudge(pr({ agent: "claude" }), clock).reason, "claude_no_routine_nudges");
+});
+test("Codex findings wait ten minutes after review, not after PR comments", () => {
+  const reviewed = new Date(clock - 400000).toISOString();
+  const rec = pr({ codex_state: "findings", codex_review_at: reviewed, last_commit_at: old });
+  assert.equal(decideNudge(rec, clock).reason, "not_quiet");
+  assert.equal(decideNudge({ ...rec, codex_review_at: old }, clock).action, "repair_review");
+});
+test("merge gate rejects draft PR even with passing checks and evidence", () => {
+  const ready = { ...pr(), threads_resolved: true, base_current: true, acceptance_proven: true };
+  assert.equal(mergeGate({ ...ready, draft: true }).eligible, false);
+});
+
+test("PR acceptance metadata parses only bounded JSON",()=>{
+ const body='Done\n<!-- aicafe-acceptance-evidence {"head_sha":"abc","acceptance":[{"id":"1"}]} -->';
+ assert.equal(parseAcceptanceEvidence(body).head_sha,'abc');
+ assert.equal(parseAcceptanceEvidence('<!-- aicafe-acceptance-evidence broken -->'),null);
+ assert.equal(parseAcceptanceEvidence('not proof'),null);
+});
+
+test('owner question blocks nudges and retains exclusive-file ownership',()=>{
+ const blocked={...pr(),owner_question:'Which files are authorized?',status:'blocked_needs_owner',agent:'chatgpt'};
+ assert.equal(decideNudge(blocked,clock).reason,'owner_decision_required');
+ const a=task('a'),b=task('b');
+ b.exclusive_files=[...a.exclusive_files];
+ const assigned=dispatchFrontier(queue([a,b]),{a:{status:'blocked_needs_owner',agent:'chatgpt'}});
+ assert.equal(assigned.some(item=>item.task_id==='b'),false);
+ const state={...emptyLedger(),tasks:{a:blocked}};
+ const prInfo={...blocked,pr_number:101,head_sha:'abc',github_owner_question:'Decision requested',draft:false};
+ assert.equal(reconcileGithub(state,[prInfo]).tasks.a.status,'blocked_needs_owner');
+});
+
+test('base SHA changes invalidate merge review until a later relevant review',()=>{
+ const old='2026-11-05T12:00:00Z',later='2026-11-05T13:00:00Z';
+ const before={...pr(),base_sha:'old-base',status:'review_fixing'};
+ const state={...emptyLedger(),tasks:{a:before}};
+ const next={...before,base_sha:'new-base',base_current:true,
+   last_github_activity:old,codex_review_at:'2026-11-05T11:00:00Z'};
+ const changed=reconcileGithub(state,[next],{},old).tasks.a;
+ assert.equal(changed.review_base_current,false);
+ assert.equal(mergeGate({...changed,acceptance_proven:true,threads_resolved:true}).eligible,false);
+ assert.equal(decideNudge({...changed,last_commit_at:'2026-11-05T11:00:00Z'},Date.parse(later)).action,'continue_pr');
+ const refreshed=reconcileGithub({...emptyLedger(),tasks:{a:changed}},
+   [{...next,codex_review_at:later}]).tasks.a;
+ assert.equal(refreshed.review_base_current,true);
+});
+
+test('dismissed Codex review cannot be treated as clean on current head',async()=>{
+ const basePr={number:52,head:{sha:'abc',ref:'feat/approved'},base:{ref:'main',sha:'base'},updated_at:old,draft:false,body:''};
+ const review={user:{login:'codex[bot]'},commit_id:'abc',state:'DISMISSED',submitted_at:old};
+ const fake=async url=>{
+  if(url.includes('/pulls?'))return {ok:true,json:async()=>[basePr]};
+  if(url.includes('check-runs'))return {ok:true,json:async()=>({total_count:1,check_runs:[{name:'AI CAFE PR baseline',status:'completed',conclusion:'success'}]})};
+  if(url.includes('/reviews?'))return {ok:true,json:async()=>[review]};
+  if(url.includes('/compare/'))return {ok:true,json:async()=>({behind_by:0})};
+  if(url.includes('/commits/abc'))return {ok:true,json:async()=>({commit:{committer:{date:old}}})};
+  if(url.includes('/graphql'))return {ok:true,json:async()=>({data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false},nodes:[]}}}}})};
+  throw Error(url);
+ };
+ const [result]=await new GitHubFacts({repo:'owner/aicafe',token:'example',fetchFn:fake}).snapshot();
+ assert.equal(result.codex_state,'pending');
 });

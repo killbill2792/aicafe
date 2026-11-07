@@ -1,38 +1,46 @@
-# AI CAFE development dispatcher — PR A (safe foundation)
+# AI CAFE shared Muse/Dave development coordinator (PR #392)
 
-This is a **development** coordinator, not the café Supervisor. It reuses the approved Universal Supervisor queue from `docs/plans/universal-supervisor-queue.json`; `AGENTS.md` and applicable repository skills remain binding. Nothing in PR A submits chat prompts, uses NVIDIA, edits branches, merges PRs, contacts café owners or handles browser authentication.
+This is the **development coordinator**, not café Supervisor. The approved 19-rule acceptance checklist is in PR #392. AGENTS.md, PROGRESS.md, the approved task queue and repository skills are binding. Code and simulated tests are not proof of live browser delivery.
 
-## How it works
+## One shared data path
 
-GitHub (open PRs, actual head SHAs, baseline check-runs, reviews and unresolved threads)
-→ deterministic queue and inactivity rules
-→ optional private ledger `dispatcher/state.json`
-→ GitHub Actions run summary. All produced actions remain **planned**, not sent.
+Approved task → trusted GitHub dispatcher reads PR/CI/Codex state → private `dispatcher/state.json` with approval, exclusive files, exact prompt and courier owner → opaque public `signal.json` → Muse primary or explicitly assigned Dave fallback → authenticated private receipt → coding ChatGPT/Claude → GitHub verification → squash merge → actual merged-main scenario evidence → `integrated_proven` and dependent release.
 
-`scripts/dev-dispatcher/core.mjs` makes pure decisions. `github.mjs` reads public GitHub facts (no PR branch checkout). `ledger.mjs` uses the GitHub Contents API blob SHA for compare-and-swap, with bounded retry and a private-repo check. `run.mjs` reconciles and prints a short status. The dedicated workflow's concurrency key serializes active runs; scheduled executions every five minutes are advisory and may be delayed, so replay is idempotent. No browsing or response reading.
+The GitHub scheduler is shared. Dave retains his existing five-minute OpenClaw/Chrome queue reader; it is not another task scheduler. GitHub never reads coding conversations or browser transcripts.
 
-## Current execution mode
+## Execution and opt-ins
 
-- On PR changes: run the fast deterministic Node tests with **no secret**.
-- On trusted `main` schedule: read GitHub state and print **dry-run** status; default does **not** persist ledger or deliver actions.
-- Only a manual `workflow_dispatch` with `persist_private_ledger=true` may sync state **after** a separate private ledger repo and access token are configured. This still does not deliver prompts or merge.
-- If the ledger is absent, the scheduled coordinator is *observability-only*. Durable orchestration is not enabled and must **not** be called unattended.
-- Task records must have an approved architecture and exclusive file ownership. Current PR6–PR17 tasks are proposed with empty ownership, so no automatic assignments are authorized.
+- `.github/workflows/ai-cafe-dev-dispatcher.yml` runs read-only reconciliation every five minutes by default. Schedules may be late; ledger CAS writes are idempotent.
+- `DISPATCH_LEDGER_REPO` is a private GitHub repository; `DISPATCH_LEDGER_TOKEN` is its narrowly scoped secret. `DISPATCH_COURIER_ACTORS` maps authenticated GitHub accounts to `muse` or `dave`.
+- `DISPATCH_SIGNAL_SECRET` (at least 32 characters) protects the public HMAC fingerprint. Public `signal.json` has only version, pending count and fingerprint, never prompts, URLs, task IDs or owner questions.
+- `DISPATCH_LEDGER_AUTO_PERSIST`, `DISPATCH_TRANSIENT_CI_RETRY`, `DISPATCH_BRANCH_MAINTENANCE` and `DISPATCH_AUTO_MERGE` are separate opt-ins, **OFF until verified**.
+- The one-time CI retry applies only to GitHub-confirmed `startup_failure`. A retry is reserved durably before its GitHub API call. Compile/test failures go to the coder; uncertain retry effects are not blindly replayed.
+- No branch deletion, production deploy, owner permissions change or café business effect is authorized.
 
-## Owner setup required later (not for reviewing this PR)
+## Courier, signal and receipt
 
-1. Create a **private** GitHub repository, for example `aicafe-dispatch-state`, with a `main` branch. It needs no server or credit card.
-2. Create a narrowly scoped, revocable GitHub credential with **Contents: read/write** on that *private ledger repository only*. Store it as the **Actions secret** `DISPATCH_LEDGER_TOKEN` in `aicafe`; never paste credentials into Issues, PRs, ChatGPT messages or code.
-3. Set Actions variable `DISPATCH_LEDGER_REPO` to the private repository's `owner/name`. Run the workflow manually with persist enabled to prove the private ledger write, then inspect it in the private repository. Do not configure until the owner is ready for this test.
-4. The future browser worker (PR C) stays on the **owner's laptop**, with its browser profile on the laptop only. The laptop must remain on, online and not asleep. No browser sessions/cookies are uploaded to GitHub. Its exact permissions and safe action transport will be proven separately.
-5. Any live ChatGPT/Claude conversation submission must use a permitted mechanism. If service permission or Google session recovery is unknown, keep browser dispatch disabled and record `needs_login` or `blocked_permission`.
+One approved `planned` action includes provider, project, branch/base, exact prompt, approval hash, prompt SHA-256, destination conversation URL and `delivery_owner`. GitHub and Dave validate ownership; Dave live send requires explicit reassignment. Couriers must verify the actual browser provider/project/URL and idle composer, and must not guess tab IDs or read model replies.
 
-## Failure boundaries
+A coding receipt is a private file `dispatcher/receipts/<sha256(action_id + ':' + prompt_hash)>.json`. GitHub validates the authenticated GitHub actor against the assigned courier, exact prompt and approval hashes, provider, project, URL and current status. Uncertain submissions remain held, never replayed.
 
-A Codex review of an older SHA never clears a new head. CI or review pending means hold. Pre-PR reminders require a separately confirmed not-busy browser state. New commits cancel **planned** old-head prompts but preserve `uncertain` send receipts. Closed PRs are checked for `merged_at`; merge alone is not `integrated_proven`. No duplicate action is executed blindly, and no NVIDIA call is needed to determine merge eligibility.
+Owner decisions, confirmed Claude usage limits and unmapped PRs are queued and deduplicated in the **same** private ledger under `owner_alerts`. They contribute only an opaque HMAC signal. Muse is responsible for actual owner delivery; the GitHub side does not claim delivery without an authenticated receipt. Owner notice receipts use `sha256('owner:' + notice_id + ':' + notice_hash)` filenames, with `kind=owner_notice`, `notice_id`, `notice_hash` and `status=submitted`. Only an authenticated Muse account can acknowledge these. The `needs-owner-decision` PR label plus one `<!-- aicafe-owner-question ... -->` supplies the exact owner question. One `<!-- aicafe-task-id ID -->` marker allows safe manual-PR linking; unknowns are never guessed.
 
-**Remaining implementation:** PR B optional NVIDIA, PR C authorized local browser worker with session-restoration test and action receipts, PR D integration/merge/recovery. This PR's tests prove the isolated deterministic foundation; they do not prove unattended prompt delivery.
+**Muse-owned, not implemented/proven here:** live project-aware browser send, idle inspection, once-only browser acceptance/receipt test, and the 3-minute quiet / 10-minute maximum batching window. Dave is dry-run until its fallback browser test passes.
 
-## Dave/OpenClaw private handoff (separate review-gated PR)
+## Development rules
 
-See [bridge/README.md](bridge/README.md) for the minimal, project-neutral queue reader that works on the existing AWS Ubuntu instance and uses the authenticated OpenClaw Chrome extension. The trusted-main dispatcher can generate self-contained approved browser instructions in the **private ledger only**. Scheduled ledger writes are OFF by default and are enabled explicitly by Actions variable `DISPATCH_LEDGER_AUTO_PERSIST=true` **after** the private repository is verified. Dave receives only a read token on the private ledger, never an AI CAFE source repository token. Live sends and automatic merges remain OFF; browser delivery, conversation-URL registration and acknowledgement require separate real-VM proof.
+Approved dependencies, exact exclusive files and up to four ChatGPT/two Claude slots are coordinated centrally. Claude only gets independent tasks and no routine reminders. ChatGPT pre-PR inspection starts after 15 minutes. Head commits reset the ten-minute inactivity clock; pending CI/Codex halts nudges. Review findings, failed code CI, stale bases and missing acceptance work lead to focused instructions for the **existing** coder conversation after Muse confirms the browser is idle.
+
+Existing GitHub configuration is expected to trigger initial Codex review; the dispatcher does not request paid review on every commit. Final relevant head review and resolved threads are still required by AGENTS.md. Review automation has to be verified live before unattended release.
+
+## Exact CI acceptance and main integration proof
+
+A PR carries one `<!-- aicafe-acceptance-evidence {JSON} -->` comment with `task_id`, head/base SHA and ordered rows (`id`, `command`, `test_file`, `result=passed`). Only exact `node --test PATH` or `npx vitest run PATH` are allowed. The separate `AI CAFE Acceptance Evidence` workflow uses the runner from protected main and tests the exact PR head, with no shell evaluation of submitted commands or persisted checkout credentials. It uploads `aicafe-acceptance-proof`. After CI completes, coder records `ci_run_id`, `acceptance_run_id` and the acceptance job URL(s). The merge gate validates both successful runs, job execution, artifact digest, live SHAs, approved criteria, CI, Codex and threads. Test-file existence or an author claim alone cannot pass.
+
+The `AI CAFE Integration Proof` workflow runs typecheck, lint, full regressions, dispatcher tests, build and the merged task's exact scenario tests on the merged `main` SHA, uploading `aicafe-main-integration-proof`. A tracked merged PR (including a manual merge with GitHub-confirmed merge SHA) becomes `integrated_proven` only if the dispatcher verifies that artifact and every required scenario. Dependents are held otherwise.
+
+Branch maintenance can attempt nonconflicting updates and safely retarget integrated predecessors, but cannot force-push, resolve semantic conflicts or replace a coder's rebase. A new base/head requires fresh applicable CI and final review. Squash auto-merge remains separately disabled until the acceptance and integration proof paths have been demonstrated.
+
+## Release boundary
+
+Before live activation: latest-head CI, Codex findings addressed, current base, real acceptance job artifact, successful merged-main scenario checks, configured private tokens/actors, Muse delivery and receipt test, and Dave fallback test. Missing evidence means **not proven**. No production deployment is implied.

@@ -28,3 +28,14 @@ test('URL policy rejects alternate host, port, query, fragments and paths', () =
     assert.equal(validConversationUrl('chatgpt', url), false, url);
   assert.equal(validConversationUrl('claude','https://claude.ai/chat/abc-123'),true);
 });
+
+test('dependent assignment opens draft immediately on prerequisite branch, independent is ready',()=>{
+ const stacked=createDelivery({task,record:{...record,base_branch:'feat/upstream',prerequisite_pr:393},action:'assign',actionId:'stacked:6'});
+ assert.equal(stacked.base_branch,'feat/upstream');
+ assert.match(stacked.prompt,/OPEN A DRAFT PR IMMEDIATELY/);
+ assert.match(stacked.prompt,/not main/);
+ assert.doesNotMatch(stacked.prompt,/Finish implementation and its acceptance evidence BEFORE opening the PR/);
+ const independent=createDelivery({task,record:{...record,base_branch:'main'},action:'assign',actionId:'independent:6'});
+ assert.match(independent.prompt,/INDEPENDENT TASK/);
+ assert.match(independent.prompt,/READY FOR REVIEW/);
+});

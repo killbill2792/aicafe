@@ -12,7 +12,7 @@ const ACTION_INTENTS = { assign: 'start_new_chat', repair_ci: 'continue_existing
 
 export function validateHandoff(action, task) {
   const d = action?.delivery;
-  if (action?.status !== 'planned' || task?.approved !== true || !d || d.version !== 1 ||
+  if (action?.status !== 'planned' || !['muse', 'dave'].includes(action.delivery_owner) || task?.approved !== true || !d || d.version !== 1 ||
       !safeName(d.task_id) || !safeName(d.project?.id) || !safeName(d.provider) ||
       !['chatgpt', 'claude'].includes(d.provider) ||
       !['start_new_chat', 'continue_existing_chat'].includes(d.intent) ||
@@ -22,6 +22,8 @@ export function validateHandoff(action, task) {
       task.agent !== d.provider || typeof d.project?.name !== 'string' ||
       d.project.name.length > 100 || typeof d.prompt !== 'string' ||
       !d.prompt.trim() || d.prompt.length > 12000 ||
+      (!d.prompt_hash || d.prompt_hash !== sha(d.prompt)) ||
+      typeof d.base_branch !== 'string' || !/^[a-zA-Z0-9_./-]+$/.test(d.base_branch) ||
       !/^[a-f0-9]{64}$/.test(d.approval_hash || '') ||
       d.approval_hash !== task.approval_hash) return false;
   const prFollowup = ['repair_ci', 'repair_review', 'continue_pr'].includes(action.type);
@@ -64,11 +66,13 @@ export function agentInstruction(action) {
     'If login, destination, project, composer, or permission is ambiguous, STOP without sending. Never guess.',
     'Do not use shell, filesystem, GitHub, code-editing tools, external APIs, or elevated permissions.',
     'Do not read, summarize, collect, or quote assistant responses or conversation transcripts.',
+    'Reuse the existing persistent browser tab for this conversation when available; verify the provider, project and exact conversation URL before sending. Never assume a tab number remains valid after restart.',
+    'For idle reminders only, inspect the bottom of the existing conversation to determine whether the coding assistant is still generating; do not read or summarize its messages. If active or uncertain, do not submit.',
     'Check that the destination is correct and the composer is idle; submit the following instruction ONCE only.',
     '--- BEGIN APPROVED INSTRUCTION ---',
     d.prompt,
     '--- END APPROVED INSTRUCTION ---',
-    'After any attempt, report only: sent_unverified / blocked / uncertain and the resulting conversation URL if visible in the address bar. Never claim provider-confirmed delivery.',
+    `After any attempt, report only: sent_unverified / blocked / uncertain, conversation URL, and prompt_hash ${d.prompt_hash}. Never claim provider-confirmed delivery.`,
   ].join('\n');
 }
 
@@ -169,6 +173,7 @@ export async function runOnce({ repo = process.env.DISPATCH_LEDGER_REPO,
   await safeDir(receiptDir);
   let action;
   for (const candidate of eligible) {
+    if (sendEnabled && candidate.delivery_owner !== "dave") continue;
     // Ignore a new GitHub event/action key if a previous browser turn for the
     // same task is reserved, uncertain, or not provider-verified.
     try { await fs.access(taskHoldFile(receiptDir, candidate)); continue; }
@@ -179,6 +184,9 @@ export async function runOnce({ repo = process.env.DISPATCH_LEDGER_REPO,
   if (!action) return { status: 'idle', pending: eligible.length, already_attempted: eligible.length };
   if (!sendEnabled) return { status: 'dry_run', pending: eligible.length, project: action.delivery.project.id,
     task_id: action.task_id, intent: action.delivery.intent };
+  // Muse owns new actions by default. Dave may send only after GitHub explicitly
+  // reassigns ownership to Dave following a verified Muse non-delivery.
+  if (action.delivery_owner !== 'dave') return { status:'held_for_muse', task_id:action.task_id };
   let hold;
   try { hold = await reserveTaskHold(receiptDir, action); }
   catch (error) {

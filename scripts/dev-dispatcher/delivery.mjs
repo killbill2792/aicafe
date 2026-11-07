@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+export const promptHash = prompt => createHash('sha256').update(prompt).digest('hex');
 // Approved plan metadata -> bounded, provider-neutral browser handoff.
 // Generated ONLY on trusted main by the existing deterministic dispatcher.
 const PROVIDERS = new Set(['chatgpt', 'claude']);
@@ -33,7 +34,19 @@ export function createDelivery({ task, record, action, actionId }) {
   const taskBrief = task.brief?.split('#')[0];
   if (!/^docs\/plans\/[a-zA-Z0-9_./-]+\.md$/.test(taskBrief || '') || taskBrief.includes('..'))
     throw new Error('Invalid task brief');
+  const stacked = Boolean(record.prerequisite_pr && record.base_branch && record.base_branch !== 'main');
   const details = [
+    `Task acceptance requirements (each must have executable evidence): ${JSON.stringify(task.acceptance || [])}`,
+    `Dependency task IDs: ${JSON.stringify(task.depends_on || [])}. Prerequisite branch/PR must be integrated before completion.`,
+    `Your working branch: ${record.branch || ('feat/aicafe-task-' + task.id)}. Base branch: ${record.base_branch || 'main'}.`,
+    `Base branch: ${record.base_branch || 'main'}. ${record.prerequisite_pr ? `Predecessor PR: ${record.prerequisite_pr}.` : ''}`,
+    'MANDATORY SKILLS: Read .claude/skills/aicafe-proof-gate/SKILL.md, .claude/skills/aicafe-dependency-check/SKILL.md and docs/rules/skills.md in full before coding. Apply relevant listed skills; include a per-acceptance test/evidence matrix in the PR. Do not claim complete based on a checklist or green CI alone.',
+    'Before PR: implement every acceptance criterion and its executable test. Put exactly one <!-- aicafe-acceptance-evidence {JSON} --> comment in the PR body, with task_id, head_sha, base_sha and acceptance rows in approved order (id, test_file, command, result=passed). Only use node --test <test_file> or npx vitest run <test_file> as exact executable commands. The separate AI CAFE Acceptance Evidence workflow runs these tests from the exact PR head using its runner from trusted main, with no shell evaluation of your inputs. After CI succeeds, update the same comment with ci_run_id (the baseline run), acceptance_run_id (the execution-proof workflow run) and its actual acceptance job_url for every row. Evidence from a previous head/base or a skipped job is not proof. GitHub verifies the run and the matching execution artifact before merge.',
+    `Include exactly one <!-- aicafe-task-id ${task.id} --> marker in the PR description so manually opened PRs can be linked without guessing.`,
+    stacked
+      ? `DEPENDENT TASK: OPEN A DRAFT PR IMMEDIATELY, even before implementation is finished. Base it on the existing prerequisite branch ${record.base_branch} (PR #${record.prerequisite_pr}), not main. Work and keep CI green on that stacked branch. After prerequisite integration is proven on main, retarget/rebase this PR to current main, rerun acceptance, CI and relevant Codex review, then mark ready and merge under AGENTS.md. Do not wait to open the draft.`
+      : 'INDEPENDENT TASK: Implement and verify the work before opening a READY FOR REVIEW (non-draft) PR against current main. Keep the established PR-opening Codex review behavior; do not request a paid review on every commit.',
+    'Ask Codex to check all acceptance scenarios, missing wiring and integration, not only style. Address substantive findings, keep working in this PR and conversation, and prove completion before merge.',
     `Task ${task.id}: ${task.title}`,
     `Goal: ${task.goal}`,
     `Approved file ownership: ${task.exclusive_files.join(', ')}`,
@@ -43,16 +56,17 @@ export function createDelivery({ task, record, action, actionId }) {
     'Do not claim that a merge proves integration or production release.',
   ];
   if (record.pr_number) details.push(`Associated PR: ${REPO}/pull/${record.pr_number}`);
-  if (!isNew) details.push(`Required next action: ${action}. Re-check the current PR head, checks and review comments before making changes.`);
+  if (!isNew) details.push(`Required next action: ${action}. Last GitHub-observed commit: ${record.head_sha || 'none'}. Continue from THAT exact commit on branch ${record.branch || 'unknown'}; do not restart, overwrite, or duplicate completed work. PR: ${record.pr_number ? REPO + '/pull/' + record.pr_number : 'not opened'}. CI: ${record.ci_state || 'unknown'}. Codex: ${record.codex_state || 'unknown'}. Base current: ${record.base_current !== false}. Base changed review required: ${record.review_base_current === false}. If branch update conflicts, resolve in the existing coding PR; re-run relevant CI and a final relevant Codex review after the base/head changes. Inspect current PR head, checks, review comments and remaining acceptance evidence. Fix only the unfinished items; push to the SAME branch and PR.`);
   const prompt = details.join('\n');
   if (prompt.length > 12000) throw new Error('Browser prompt too long');
   return {
     version: 1, action_id: actionId, project, approval_hash: authorization,
     provider: record.agent,
     intent: isNew ? 'start_new_chat' : 'continue_existing_chat',
+    base_branch: record.base_branch || 'main',
     conversation_url: url,
     task_id: task.id,
-    prompt,
+    prompt, prompt_hash: promptHash(prompt),
   };
 }
 

@@ -51,13 +51,13 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
   const tasks = validateQueue(queue);
   const remaining = { ...capacity };
   for (const r of Object.values(records)) {
-    if (r.status === "assigned" || r.status === "draft_open" || r.status === "review_fixing") {
+    if (r.status === "assigned" || r.status === "draft_open" || r.status === "review_fixing" || r.status === "blocked_needs_owner") {
       if (r.agent in remaining) remaining[r.agent] = Math.max(0, remaining[r.agent] - 1);
     }
   }
   const claimed = new Set();
   for (const [id, record] of Object.entries(records)) {
-    if (["assigned", "draft_open", "review_fixing"].includes(record.status)) {
+    if (["assigned", "draft_open", "review_fixing", "blocked_needs_owner"].includes(record.status)) {
       for (const path of tasks.get(id)?.exclusive_files || []) claimed.add(path);
     }
   }
@@ -66,7 +66,6 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
   const gateProven = !gate || integrated(gate, tasks, records);
   const gateAllowed = new Set(queue.dispatch_rules?.priority_gate_allow_task_ids || []);
   for (const task of queue.tasks) {
-    // An open/draft gate PR never unlocks lower-priority work. Only durable proof does.
     if (!gateProven && !gateAllowed.has(task.id)) continue;
     if (!approved(task) || records[task.id]?.conversation_ref || (records[task.id]?.status && records[task.id].status !== "proposed")) continue;
     if (!Array.isArray(task.exclusive_files) || !task.exclusive_files.length ||
@@ -80,7 +79,8 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
       else { blocked = true; break; }
     }
     if (blocked || openDeps.length > 1) continue; // multi-branch stacks require explicit integration decision
-    const agent = Object.keys(remaining).find(k => remaining[k] > 0);
+    // Claude is reserved for completely independent tasks; no stacked or historic prerequisites.
+    const agent = Object.keys(remaining).find(k => remaining[k] > 0 && (k !== "claude" || task.depends_on.length === 0));
     if (!agent) break;
     remaining[agent]--;
     for (const path of task.exclusive_files) claimed.add(path);
@@ -90,22 +90,32 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
   return actions;
 }
 export function actionKey(record, action) {
-  const parts = [record.task_id, action, record.head_sha || "pre-pr", record.prompt_version || "v1", record.last_github_activity || "start"];
+  const parts = [record.task_id, action, record.head_sha || "pre-pr", record.prompt_version || "v1", record.last_commit_at || record.last_github_activity || "start"];
   return parts.map(s => encodeURIComponent(String(s))).join(":");
 }
-export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 1800000 } = {}) {
+export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 } = {}) {
   if (!record || !record.approved || !record.conversation_ref) return { kind: "hold", reason: "unapproved_or_missing_chat" };
   if (record.submission_state === "uncertain" || record.submission_state === "needs_login") return { kind: "hold", reason: record.submission_state };
+  if (record.owner_question || record.github_owner_question) return {kind:"hold",reason:"owner_decision_required"};
   const isPr = Number.isInteger(record.pr_number);
   if (isPr && (record.ci_state === "pending" || record.codex_state === "pending" ||
       record.ci_state === "unknown" || record.codex_state === "unknown")) return { kind: "hold", reason: "checks_pending_or_unknown" };
   if (isPr && (!["success", "failure"].includes(record.ci_state) || !["clean", "findings"].includes(record.codex_state))) return { kind: "hold", reason: "unverified_checks" };
-  if (isPr && record.codex_reviewed_sha !== record.head_sha && record.codex_state === "clean") return { kind: "hold", reason: "stale_codex" };
-  if (!isPr && record.browser_busy !== false) return { kind: "hold", reason: "busy_or_unknown" };
-  const last = Date.parse(isPr ? record.last_github_activity : record.last_submission_at);
+  if (record.agent === "claude") return { kind: "hold", reason: "claude_no_routine_nudges" };
+  // GitHub cannot see the browser. Muse checks actual composer activity before any reminder.
+  if (!isPr && record.browser_busy === true) return { kind: "hold", reason: "browser_confirmed_busy" };
+  if (isPr && record.draft) return { kind: "hold", reason: "draft_not_ready" };
+  const last = Date.parse(isPr ? (record.codex_state === "findings" && record.codex_review_at && Date.parse(record.codex_review_at) > Date.parse(record.last_commit_at || 0) ? record.codex_review_at : record.last_commit_at) : record.last_submission_at);
   if (!Number.isFinite(last) || nowMs - last < (isPr ? quietMs : prePrMs)) return { kind: "hold", reason: "not_quiet" };
   if (record.next_check_at && nowMs < Date.parse(record.next_check_at)) return { kind: "hold", reason: "cooldown" };
-  const action = isPr ? (record.ci_state === "failure" ? "repair_ci" : record.codex_state === "findings" ? "repair_review" : "continue_pr") : "pre_pr_reminder";
+  // No generic reminder for an already reviewed PR with captured acceptance proof.
+  // Otherwise, a stalled ready PR may still need evidence, thread or base repairs.
+  if (isPr && record.ci_state === "success" && record.codex_state === "clean" &&
+      record.acceptance_evidence && record.threads_resolved !== false &&
+      record.base_current !== false && record.review_base_current !== false)
+    return { kind: "hold", reason: "no_actionable_findings" };
+  const action = isPr ? (record.ci_state === "failure" ? "repair_ci" :
+    record.codex_state === "findings" ? "repair_review" : "continue_pr") : "pre_pr_reminder";
   const key = actionKey(record, action);
   if (record.last_action_key === key || record.submission_state === "pending" || record.attempts >= (record.max_attempts ?? 3)) return { kind: "hold", reason: "already_sent_or_capped" };
   return { kind: "propose", action, key };
@@ -113,31 +123,37 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 1800000
 export function invalidateOnHeadChange(record, newSha, at) {
   if (record.head_sha === newSha) return record;
   return { ...record, head_sha: newSha, last_github_activity: at,
-    ci_state: "pending", codex_state: "pending", codex_reviewed_sha: null,
+    ci_state: "pending", codex_state: "pending", codex_reviewed_sha: null, last_commit_at: at,
     next_check_at: null, last_action_key: null,
     submission_state: record.submission_state === "uncertain" ? "uncertain" : "idle" };
 }
 export function mergeGate(record, predecessors = []) {
   const reasons = [];
   if (!record?.approved) reasons.push("not_approved");
+  if (record?.draft !== false) reasons.push("not_ready_for_review");
   if (!record?.pr_number || !record?.head_sha) reasons.push("missing_pr_or_sha");
   if (record?.ci_state !== "success") reasons.push("ci_not_green");
-  if (record?.codex_state !== "clean" || record?.codex_reviewed_sha !== record?.head_sha) reasons.push("codex_not_clean_on_head");
+  if (record?.codex_state !== "clean" || !record?.codex_reviewed_sha) reasons.push("codex_review_missing_or_findings");
   if (!record?.threads_resolved) reasons.push("unresolved_threads");
+  if (record?.base_branch !== "main") reasons.push("non_main_destination");
   if (!record?.base_current) reasons.push("stale_base");
+  if (record?.review_base_current === false) reasons.push("base_changed_review_required");
   if (!record?.acceptance_proven) reasons.push("acceptance_not_proven");
   if (predecessors.some(p => p.status !== "integrated_proven" && p.status !== "released_proven")) reasons.push("predecessor_not_proven");
   return { eligible: reasons.length === 0, reasons };
 }
 
-export function reconcileGithub(state, openPrs, closedByPr = {}) {
+export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date().toISOString()) {
   const copy = structuredClone(state);
   const open = new Set(openPrs.map(p => p.pr_number));
   for (const [id, rec] of Object.entries(copy.tasks)) {
     if (!Number.isInteger(rec.pr_number)) continue;
     if (!open.has(rec.pr_number)) {
-      const merged = closedByPr[rec.pr_number] === true;
-      copy.tasks[id] = { ...rec, github_state: merged ? "merged" : "not_open_unverified",
+      const closed = closedByPr[rec.pr_number];
+      const merged = closed === true || closed?.merged === true;
+      copy.tasks[id] = { ...rec, github_owner_question: merged ? null : rec.github_owner_question,
+        github_state: merged ? "merged" : "not_open_unverified",
+        merge_sha: merged ? (closed?.merge_sha || rec.merge_sha || null) : rec.merge_sha,
         status: merged && !["integrated_proven", "released_proven"].includes(rec.status) ? "merged" : rec.status };
     }
   }
@@ -151,8 +167,15 @@ export function reconcileGithub(state, openPrs, closedByPr = {}) {
           }
         }
       }
-      const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_github_activity);
-      copy.tasks[id] = { ...updated, ...pr, task_id: id, github_state: "open",
+      const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_commit_at || pr.last_github_activity);
+      const baseChanged = Boolean(rec.base_sha && pr.base_sha && rec.base_sha !== pr.base_sha);
+      const baseChangedAt = baseChanged ? now : rec.base_changed_at;
+      const reviewBaseCurrent = !baseChangedAt || Boolean(pr.codex_review_at &&
+        Date.parse(pr.codex_review_at) > Date.parse(baseChangedAt));
+      copy.tasks[id] = { ...updated, ...pr, task_id: id,
+        base_changed_at: baseChangedAt || null, review_base_current: reviewBaseCurrent,
+        status: (pr.github_owner_question || updated.owner_question) ? "blocked_needs_owner" :
+          pr.draft ? "draft_open" : "review_fixing", github_state: "open",
         submission_state: updated.submission_state };
     }
   }
