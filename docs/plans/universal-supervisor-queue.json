@@ -159,7 +159,16 @@
         "schema_migration": "new additive migration only after owner-authorized next-free number",
         "sql_mechanism": "unapproved; preserve financial/day certification and no new queue",
         "disposable_sql_acceptance": "99 valid orders plus one database-only cast/constraint/trigger failure; durable idempotent valid orders; bounded failed-object replay; no false complete day, later-day/payment-gap starvation or lost generation-bound cost refresh",
-        "regression": "#189 nonce, cursor, 429/Retry-After; #203 first backfill/shared five-day cap and 100+ cafe fairness; #264 timeout and fee-gap nonstarvation; #297 five-date and 1h-to-24h no-duplicate recovery; live archive page failure; screen/Supervisor same status"
+        "regression": "#189 nonce, cursor, 429/Retry-After; #203 first backfill/shared five-day cap and 100+ cafe fairness; #264 timeout and fee-gap nonstarvation; #297 five-date and 1h-to-24h no-duplicate recovery; live archive page failure; screen/Supervisor same status",
+        "proposed_prerequisites": [
+          "POS0a complete approved architecture/field contract with exact D4B SQL transaction and partial-day certification reviewed by authenticated owner",
+          "inspect the latest main code and independently verify merged #189/#203/#264/#297 lease/backfill/payment-gap/cost refresh protections",
+          "confirm exclusive file ownership and migration number against every open POS0b/c/d/e PR; existing scheduler.ts is shared and cannot have competing editors",
+          "run 99-valid-plus-1-database-failing and queue nonstarvation acceptance on migrated disposable DB with rollback",
+          "POS0f independently verifies final source-to-registered Supervisor/screen parity after source and recovery work"
+        ],
+        "file_scope_status": "candidate existing paths only: no conflict-free exclusive ownership proved or reserved; actual owner signoff required",
+        "sql_scope_status": "no SQL isolation mechanism or exact additive migration path selected; owner approval pending"
       },
       "independent_cost_queue_diagnostic": {
         "observed_date": "2026-11-07",
