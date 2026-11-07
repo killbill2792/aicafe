@@ -179,7 +179,7 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   assert.deepEqual(d4.must_preserve_merged_prs,[189,203,264,297]);
   assert.equal(d4.future_order_recovery.dispatchable,false);
   assert.deepEqual(d4.future_order_recovery.owned_files_reserved,[]);
-  assert.equal(d4.future_order_recovery.proposed_prerequisites.length,5);
+  assert.equal(d4.future_order_recovery.proposed_prerequisites.length,6);
   assert.match(d4.future_order_recovery.proposed_prerequisites[2],/competing editors/);
   assert.match(d4.future_order_recovery.file_scope_status,/no conflict-free exclusive ownership/);
   assert.match(d4.future_order_recovery.sql_scope_status,/owner approval pending/);
