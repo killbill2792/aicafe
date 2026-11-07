@@ -64,7 +64,15 @@
     "production_owner_gate": true,
     "approval_before_code": true,
     "priority_gate_task": "POS0f",
-    "priority_gate_note": "Existing dispatcher uses dependency DAG, not this advisory field. Root task prerequisites below enforce no new non-POS0 assignments until POS0f is integrated_proven."
+    "priority_gate_note": "The existing dispatcher explicitly checks this proof-only gate: no task outside the allow-list is newly assigned until POS0f has integrated_proven/released_proven status, even if POS0f has a draft branch. Ordinary stacked drafts still work within POS0.",
+    "priority_gate_allow_task_ids": [
+      "POS0a",
+      "POS0b",
+      "POS0c",
+      "POS0d",
+      "POS0e",
+      "POS0f"
+    ]
   },
   "tasks": [
     {
