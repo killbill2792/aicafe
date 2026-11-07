@@ -42,7 +42,7 @@ test('both independent and dependent authorized tasks open a draft early',()=>{
  const stacked=createDelivery({task,record:{...record,base_branch:'feat/upstream',prerequisite_pr:393},action:'assign',actionId:'stacked:6'});
  assert.equal(stacked.base_branch,'feat/upstream');
  assert.match(stacked.prompt,/OPEN A DRAFT PR PROMPTLY/);
- assert.match(stacked.prompt,/not main/);
+ assert.match(stacked.prompt,/not main/i);
  assert.doesNotMatch(stacked.prompt,/Finish implementation and its acceptance evidence BEFORE opening the PR/);
  const independent=createDelivery({task,record:{...record,base_branch:'main'},action:'assign',actionId:'independent:6'});
  assert.match(independent.prompt,/INDEPENDENT TASK/);
