@@ -34,11 +34,15 @@ export function createDelivery({ task, record, action, actionId }) {
   const taskBrief = task.brief?.split('#')[0];
   if (!/^docs\/plans\/[a-zA-Z0-9_./-]+\.md$/.test(taskBrief || '') || taskBrief.includes('..'))
     throw new Error('Invalid task brief');
+  const selectedSkills = Array.isArray(task.skills)
+    ? [...new Set(task.skills.filter(skill => typeof skill === 'string' && /^[a-z][a-z0-9-]*$/.test(skill)))]
+    : [];
   const stacked = Boolean(record.prerequisite_pr && record.base_branch && record.base_branch !== 'main');
   const details = [
     'You own ONE approved AI CAFE task and ONE PR from its early draft through final review, merge and proven integration. Use the connected GitHub plugin and current GitHub evidence, not assumptions or old chat summaries.',
     'BEFORE EDITING: Read current main AGENTS.md (highest authority), PROGRESS.md (read-only status), docs/rules/skills.md, docs/plans/universal-supervisor-queue.json, docs/plans/universal-supervisor-agent-operations.md, docs/plans/universal-supervisor-delivery-queue-2026-11.md, the exact task brief, and binding docs/rules/* relevant to this task. Respect the POS0a architecture-approval and POS0f priority gates; a priority or open branch alone is not approval to write.',
     'MANDATORY SKILLS: Explicitly fetch and read .claude/skills/aicafe-pr-lifecycle/SKILL.md, .claude/skills/aicafe-dependency-check/SKILL.md and .claude/skills/aicafe-proof-gate/SKILL.md. Read other applicable SKILL.md files selected through docs/rules/skills.md. ChatGPT must load skills by path; Claude may auto-discover them but must still verify applicability.',
+    `TASK-SPECIFIC SKILLS from the approved queue: ${JSON.stringify(selectedSkills)}. Check each skill against docs/rules/skills.md, explicitly read its .claude/skills/<skill>/SKILL.md if installed and applicable, and document any unavailable entry rather than inventing skill instructions.`,
     'SHARED PROGRESS OWNERSHIP: NEVER edit PROGRESS.md in this task PR, including to tick off or repeat a previously merged dependency. Only the single coordination owner updates PROGRESS.md separately on latest main AFTER actual merge/proof. Record your own proof, merge SHA and remaining gaps in this PR body/task record. Check live GitHub to determine predecessor status; never rewrite a shared checklist from a parallel branch.',
     `Task acceptance requirements (each must have executable evidence): ${JSON.stringify(task.acceptance || [])}`,
     `Dependency task IDs: ${JSON.stringify(task.depends_on || [])}. Prerequisite branch/PR must be integrated before completion.`,
@@ -59,7 +63,7 @@ export function createDelivery({ task, record, action, actionId }) {
     `Task ${task.id}: ${task.title}`,
     `Goal: ${task.goal}`,
     `Approved file ownership: ${task.exclusive_files.join(', ')}`,
-    `Task brief: ${REPO}/blob/main/${taskBrief}#task-${task.id}`,
+    `Task brief: ${REPO}/blob/main/${task.brief}`,
     `Read ${REPO}/blob/main/AGENTS.md and PROGRESS.md before coding.`,
     'Work in the SAME PR and conversation for follow-ups. Mark draft ready and merge only after latest-head executed acceptance, CI, Codex clean/threads resolved, dependencies integrated, up-to-date base and approved ownership are verified. Record exact merge SHA and later integration proof separately.',
     'Do not claim that a merge proves integration or production release.',
