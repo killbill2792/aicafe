@@ -1,0 +1,63 @@
+name: Toast DIAGNOSTIC capture (manual only)
+
+# DIAGNOSTIC_ONLY: explicit owner-invoked API coverage investigation.
+# Does NOT populate operational current records and MUST NOT feed Supervisor,
+# production canonical views or screen metrics. No scheduled data accumulation.
+# Existing shared Toast 10-minute operational cron is separate.
+on:\n  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: toast-raw-capture-daily
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: github.event_name == 'workflow_dispatch'
+    environment: toast-prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 58
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # tsx is not a locked project dependency; install a pinned runner explicitly.
+      - run: npm install --no-save --package-lock=false --ignore-scripts tsx@4.20.6
+      - run: test -x node_modules/.bin/tsx
+      - name: Capture (counts only; raw output suppressed)
+        shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TOAST_CUSTOMER_HASH_KEY: ${{ secrets.TOAST_CUSTOMER_HASH_KEY }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+          TOAST_ALLOWED_API_HOSTS: ${{ secrets.TOAST_ALLOWED_API_HOSTS }}
+        run: |
+          set +x
+          output="$(mktemp)"
+          trap 'rm -f "$output"' EXIT
+          set +e
+          NODE_OPTIONS=--conditions=react-server ./node_modules/.bin/tsx scripts/toast-diagnostic-capture-manual.ts >"$output" 2>&1
+          code=$?
+          node - "$output" "$code" <<'NODE'
+          const fs = require('node:fs');
+          const text = fs.readFileSync(process.argv[2], 'utf8');
+          const exitCode = Number(process.argv[3]);
+          // Never print raw stdout/stderr: exceptions may contain credentials or payloads.
+          let s;
+          try { s = JSON.parse(text.trim().split('\n').pop()); } catch {}
+          const keys = ['planned','completed','partial','skipped','failed','deferred'];
+          if (s && typeof s === 'object' && keys.every(k => Number.isSafeInteger(s[k]))) {
+            for (const k of keys) console.log('Toast capture ' + k + ': ' + s[k]);
+            const reasons = Array.isArray(s.reasons) ? s.reasons.filter(r => /^[a-z_]{1,40}$/.test(r)) : [];
+            if (reasons.length) console.log('Reasons: ' + reasons.join(', '));
+          } else {
+            console.log('Toast capture: failed (details suppressed)');
+          }
+          if (exitCode !== 0 || !s || s.failed) process.exit(1);
+          NODE
