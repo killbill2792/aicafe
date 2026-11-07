@@ -363,12 +363,12 @@
     {
       "id": "E2",
       "milestone": "E2",
-      "title": "E2 required seeded browser CI, protected preview proof",
+      "title": "E2 required seeded browser CI (GitHub Actions only, no Vercel previews)",
       "depends_on": [
         "POS0f"
       ],
-      "goal": "Required Playwright CI job + isolated seeded preview; verify browser scenarios really run",
-      "scope_hint": "CI/browser test harness, disposable seeded auth and PR check integration",
+      "goal": "Required targeted Playwright in GitHub CI against locally started Next.js and disposable seeded Supabase; never build/deploy a Vercel preview",
+      "scope_hint": "Existing GitHub Actions CI/browser test harness, disposable seeded auth and PR check integration; no Vercel previews",
       "exclusive_files": [],
       "architecture_approval": null,
       "brief": "docs/plans/universal-supervisor-task-briefs.md#task-E2",
@@ -379,17 +379,16 @@
         "pr"
       ],
       "acceptance": [
-        "A changed browser flow runs a real targeted Playwright scenario, with recorded job link",
-        "Backend-only changes are not delayed by irrelevant screenshots",
-        "No production accounts/side effects in preview fixtures"
+        "A changed UI/browser flow runs its real targeted Playwright scenario in GitHub Actions with recorded executed job/artifact link",
+        "Backend-only changes are not delayed by irrelevant browser or screenshots; missing/skipped required proof is not passed",
+        "No production accounts or effects, Vercel preview builds or preview deployments"
       ],
       "test_kinds": [
         "db",
         "e2e",
-        "preview",
         "security"
       ],
-      "ui_or_browser_test": "targeted_if_user_flow_changed",
+      "ui_or_browser_test": "targeted_github_ci_when_user_flow_changed",
       "state": "proposed",
       "can_start_stacked": true,
       "github_pr": null,

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub, progressUpdatePolicy } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
 import { GitHubFacts, parseAcceptanceEvidence } from "./github.mjs";
 
@@ -187,6 +187,31 @@ test("pending CI/Codex, stale review or quiet interval blocks nudges", () => {
   assert.equal(decideNudge(pr({ codex_state: "findings" }), clock).action, "repair_review");
   assert.equal(decideNudge(pr({ acceptance_evidence:null }), clock).action, "continue_pr");
   assert.equal(decideNudge(pr({ threads_resolved:false }), clock).action, "continue_pr");
+});
+test("draft PR gets same-chat continuation after ten quiet minutes even if Codex is not ready", () => {
+  const pending = pr({draft:true,ci_state:"pending",codex_state:"pending",
+    acceptance_evidence:null});
+  assert.equal(decideNudge(pending,clock).action,"continue_pr");
+  assert.equal(decideNudge({...pending,codex_state:"unknown"},clock).action,"continue_pr");
+  assert.equal(decideNudge({...pending,ci_state:"unknown"},clock).action,"continue_pr");
+  assert.equal(decideNudge({...pending,last_commit_at:new Date(clock-590000).toISOString()},clock).reason,"not_quiet");
+  assert.equal(decideNudge({...pending,owner_question:"Approve exact source mapping?"},clock).reason,"owner_decision_required");
+  assert.equal(decideNudge({...pending,submission_state:"uncertain"},clock).reason,"uncertain");
+  assert.equal(decideNudge({...pending,conversation_ref:null},clock).reason,"unapproved_or_missing_chat");
+  const earlyClean=pr({draft:true,ci_state:"success",codex_state:"clean",
+    acceptance_evidence:{acceptance:[{id:"1"}]}});
+  assert.equal(decideNudge(earlyClean,clock).action,"continue_pr");
+  const picked=decideNudge(pending,clock);
+  assert.equal(decideNudge({...pending,last_action_key:picked.key},clock).reason,"already_sent_or_capped");
+  assert.equal(decideNudge({...pending,agent:"claude"},clock).reason,"claude_no_routine_nudges");
+});
+test("only a dedicated coordinator PR can change the shared progress checklist",()=>{
+ assert.equal(progressUpdatePolicy(["lib/a.ts","docs/b.md"]).allowed,true);
+ assert.equal(progressUpdatePolicy(["PROGRESS.md"]).allowed,true);
+ assert.deepEqual(progressUpdatePolicy(["PROGRESS.md","lib/a.ts"]),{
+  allowed:false,reason:"progress_requires_dedicated_coordination_change"});
+ assert.equal(progressUpdatePolicy(["docs/other.md","PROGRESS.md"]).allowed,false);
+ assert.equal(progressUpdatePolicy(null).allowed,false);
 });
 test("pre-PR conversation cannot be nudged without known browser readiness", () => {
   const base = pr({ pr_number: null, last_submission_at: old, browser_busy: undefined });
