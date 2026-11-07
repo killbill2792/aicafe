@@ -11,10 +11,11 @@ on:
   # rather than waiting for a best-effort scheduled event. Not a new dispatcher.
   push:
     branches: [main]
-  # Read the PR state after the existing baseline finishes. The trusted runner
-  # checks out main only; no PR-head code or artifacts are executed with secrets.
+  # Existing baseline checks cover new commits, and Acceptance Evidence covers
+  # PR-body edits / owner-decision label changes even after code CI finished.
+  # The trusted runner checks out main only; no PR-head code or artifacts run with secrets.
   workflow_run:
-    workflows: ['AI CAFE Pull Request Baseline']
+    workflows: ['AI CAFE Pull Request Baseline', 'AI CAFE Acceptance Evidence']
     types: [completed]
   # Owner questions can be published after the last PR commit. A trusted
   # collaborator comment on a PR wakes the same reconciler, without a cron.
