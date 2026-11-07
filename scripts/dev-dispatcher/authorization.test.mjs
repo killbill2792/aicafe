@@ -123,3 +123,31 @@ test('no replay after a claimed or uncertain action, or without priority gate pr
  state.actions['assign:6'].status='submitted';
  assert.equal(assignmentActionKey(state,'6',priority),null);
 });
+
+test('architecture gate cancels unsent downstream work but preserves active PR and reopens after proof',()=>{
+  const b={...task,id:'POS0b',depends_on:['POS0a'],exclusive_files:['lib/pos/toast/b.ts']};
+  const signature=approvalSignature(b);
+  const gateQueue={dispatch_rules:{
+    architecture_foundation_proof_task:'POS0a',
+    architecture_foundation_dependent_task_ids:['POS0b'],
+  }};
+  const state={version:1,tasks:{
+    POS0a:{status:'draft_open',pr_number:398},
+    POS0b:{task_id:'POS0b',status:'assigned',approved:true,agent:'chatgpt',
+      approval_hash:signature}},
+    actions:{'assign:POS0b':{task_id:'POS0b',type:'assign',status:'planned'}}};
+  revalidateQueuedActions(state,new Map([['POS0b',b]]),gateQueue);
+  assert.equal(state.tasks.POS0b.status,'proposed');
+  assert.equal(state.actions['assign:POS0b'].status,'cancelled_architecture_gate');
+  assert.equal(assignmentActionKey(state,'POS0b',gateQueue),null);
+  state.tasks.POS0a.status='merged';
+  assert.equal(assignmentActionKey(state,'POS0b',gateQueue),null);
+  state.tasks.POS0a.status='integrated_proven';
+  assert.equal(assignmentActionKey(state,'POS0b',gateQueue),'assign:POS0b:after-POS0a');
+  const started={...state,tasks:{...state.tasks,POS0a:{status:'draft_open'},
+    POS0b:{...state.tasks.POS0b,status:'review_fixing',pr_number:400,conversation_ref:'https://chatgpt.com/c/existing'}},
+    actions:{'repair:POS0b':{task_id:'POS0b',type:'repair_ci',status:'planned'}}};
+  revalidateQueuedActions(started,new Map([['POS0b',b]]),gateQueue);
+  assert.equal(started.tasks.POS0b.status,'review_fixing');
+  assert.equal(started.actions['repair:POS0b'].status,'planned');
+});
