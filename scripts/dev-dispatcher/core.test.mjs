@@ -48,9 +48,14 @@ test("unstarted owner-blocked PR6 does not occupy an active ChatGPT slot", () =>
 });
 test("dependent branch is opened as stacked draft; unproven merged label cannot release", () => {
   const all = queue([task("a"), task("b", ["a"])]);
-  const records = { a: { status: "draft_open", branch: "feat/a", pr_number: 100, agent: "chatgpt" } };
+  const records = { a: { status: "draft_open", github_state: "open", branch: "feat/a", pr_number: 100, agent: "chatgpt" } };
   const assigned = dispatchFrontier(all, records);
   assert.deepEqual(assigned, [{ type: "assign", task_id: "b", agent: "chatgpt", base_branch: "feat/a", prerequisite_pr: 100 }]);
+  records.a.status = "review_fixing";
+  assert.equal(dispatchFrontier(all, records).some(a => a.task_id === "b"), true);
+  records.a.github_state = "not_open_unverified";
+  assert.equal(dispatchFrontier(all, records).some(a => a.task_id === "b"), false);
+  records.a.github_state = "open";
   records.a.status = "merged";
   assert.equal(dispatchFrontier(all, records).some(a => a.task_id === "b"), false);
   records.a.status = "integrated_proven";
@@ -63,12 +68,17 @@ test("fan-in dependencies open a stacked draft on an explicit parent, but do not
   const all=queue([a,b,c,d,e]);
   const records={
     a:{status:"integrated_proven"},
-    b:{status:"draft_open",branch:"feat/b",pr_number:101,agent:"chatgpt"},
-    c:{status:"draft_open",branch:"feat/c",pr_number:102,agent:"chatgpt"},
-    d:{status:"draft_open",branch:"feat/d",pr_number:103,agent:"chatgpt"},
+    b:{status:"review_fixing",github_state:"open",branch:"feat/b",pr_number:101,agent:"chatgpt"},
+    c:{status:"draft_open",github_state:"open",branch:"feat/c",pr_number:102,agent:"chatgpt"},
+    d:{status:"review_fixing",github_state:"open",branch:"feat/d",pr_number:103,agent:"chatgpt"},
   };
   assert.deepEqual(dispatchFrontier(all,records).map(x=>[x.task_id,x.base_branch,x.prerequisite_pr]),
     [["e","feat/d",103]]);
+  // A real open ready PR is a valid stack parent; an assigned branch without a PR is not.
+  const missingPr={...records,d:{...records.d,pr_number:null}};
+  assert.deepEqual(dispatchFrontier(all,missingPr),[]);
+  const closed={...records,d:{...records.d,github_state:"merged"}};
+  assert.deepEqual(dispatchFrontier(all,closed),[]);
   const noBase={...all,tasks:all.tasks.map(t=>t.id==="e"?{...t,stack_base_task:null}:t)};
   assert.deepEqual(dispatchFrontier(noBase,records),[]);
   const bad={...all,tasks:all.tasks.map(t=>t.id==="e"?{...t,stack_base_task:"a"}:t)};
@@ -111,7 +121,7 @@ test("priority proof gate blocks unrelated dispatch even when gate PR is draft o
   assert.deepEqual(dispatchFrontier(all, draft).map(x => x.task_id), ["audit"]);
   assert.equal(dispatchFrontier(all, { proof: { status: "merged" } }).some(x => x.task_id === "unrelated"), false);
   assert.equal(dispatchFrontier(all, { proof: { status: "assigned" } }).some(x => x.task_id === "worker"), false);
-  const stacked = { ...draft, audit: { status: "draft_open", branch: "feat/audit", pr_number: 123, agent: "chatgpt" } };
+  const stacked = { ...draft, audit: { status: "draft_open", github_state: "open", branch: "feat/audit", pr_number: 123, agent: "chatgpt" } };
   assert.deepEqual(dispatchFrontier(all, stacked), [{
     type: "assign", task_id: "collect", agent: "chatgpt", base_branch: "feat/audit", prerequisite_pr: 123,
   }]);
