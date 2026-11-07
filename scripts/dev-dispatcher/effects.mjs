@@ -30,6 +30,8 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
       j.name === 'AI CAFE PR baseline'))
     return { status: 'blocked', reasons: ['required_baseline_not_verified'] };
   for (const item of evidence.acceptance) {
+    if (!jobs.jobs.some(j => j.conclusion === "success" && j.html_url === item.job_url))
+      return { status: "blocked", reasons: ["unverified_acceptance_job_url"] };
     if (!/^(?:tests|e2e|lib|app|scripts)\/[a-zA-Z0-9_./-]+\.(?:test|spec|e2e)\.[cm]?[jt]sx?$/.test(item.test_file) ||
         item.test_file.includes('..')) return { status: 'blocked', reasons: ['unsafe_test_path'] };
     const file = await github.request(`/contents/${item.test_file}?ref=${record.head_sha}`);
