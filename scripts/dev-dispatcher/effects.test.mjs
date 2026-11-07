@@ -19,7 +19,7 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
  const github={request:async(path,options)=>{
    calls.push([path,options?.method]);
    if(path.endsWith('/merge'))return {merged:true,sha:'merged'};
-   if(path.startsWith('/actions/runs/')) return path.includes('/jobs') ? {total_count:1,jobs:[{name:'AI CAFE PR baseline',conclusion:'success'}]} : {id:10,head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
+   if(path.startsWith('/actions/runs/')) return path.includes('/jobs') ? {total_count:1,jobs:[{name:'AI CAFE PR baseline',conclusion:'success',html_url:'https://github.com/test'}]} : {id:10,head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
    if(path.startsWith('/contents/')) return {type:'file'};
    return pr;
  },one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',threads_resolved:true})};
