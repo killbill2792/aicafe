@@ -35,3 +35,31 @@ test('owner notice inbox uses the same allowlist but only Muse may acknowledge',
  assert.equal(muse.owner_alerts[notice_id].status,'submitted');
  assert.throws(()=>applyReceipts(first,[{receipt:message,actor:'dave-app[bot]'}],{'dave-app[bot]':'dave'}),/Only authenticated Muse/);
 });
+
+test('corrected nested project receipt is collected and acknowledged without a PR',async()=>{
+ const nested={action_id:receipt.action_id,prompt_hash:receipt.prompt_hash,
+  provider:'chatgpt',project:{id:'aicafe',name:'AI CAFE'},
+  conversation_url:receipt.conversation_url,submitted_at:'2026-11-07T05:57:00Z'};
+ const filename=hash(nested.action_id+':'+nested.prompt_hash)+'.json';
+ const target='dispatcher/receipts/'+filename;
+ const ledger={request:async p=>{
+  if(p==='/contents/dispatcher/receipts?ref=main')return [{name:filename,path:target,type:'file'}];
+  if(p.startsWith('/commits?'))return [{author:{login:'approved-owner'}}];
+  if(p===`/contents/${target}?ref=main`)
+   return {content:Buffer.from(JSON.stringify(nested)).toString('base64')};
+  throw new Error('Unexpected ledger request: '+p);
+ }};
+ const inbox=await collectReceipts({ledger,allowedActors:['approved-owner']});
+ assert.equal(inbox.length,1);
+ const state={tasks:{'6':{approved:true,approval_hash:'a'.repeat(64),status:'assigned'}},
+  actions:{'assign:6':{task_id:'6',status:'planned',delivery_owner:'muse',
+   delivery:{...receipt,task_id:'6',action_id:'assign:6',prompt:'approved',
+    prompt_hash:hash('approved'),approval_hash:'a'.repeat(64),
+    project:{id:'aicafe'},intent:'start_new_chat',conversation_url:null}}}};
+ const saved=applyReceipts(state,inbox,{'approved-owner':'muse'});
+ assert.equal(saved.actions['assign:6'].status,'submitted');
+ assert.equal(saved.tasks['6'].conversation_ref,receipt.conversation_url);
+ assert.equal(saved.tasks['6'].last_submission_at,nested.submitted_at);
+ assert.equal(applyReceipts(saved,inbox,{'approved-owner':'muse'}).actions['assign:6'].status,'submitted');
+ assert.equal(state.actions['assign:6'].status,'planned');
+});
