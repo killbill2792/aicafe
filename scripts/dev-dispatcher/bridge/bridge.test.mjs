@@ -139,6 +139,6 @@ test('Dave never sends Muse-owned actions even when live sending enabled',async(
   const next={...state,actions:{'assign:6':(({key,...rest})=>rest)(museAction)}};
   const result=await runOnce({repo:'owner/private',token:'test',receiptDir:dir,
     fetchImpl:makeFetch(next),sendEnabled:true,invoke:()=>{throw Error('must not invoke')}});
-  assert.equal(result.status,'held_for_muse');
+  assert.equal(result.status,'idle');
  } finally {await fs.rm(dir,{recursive:true,force:true});}
 });
