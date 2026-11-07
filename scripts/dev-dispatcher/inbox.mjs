@@ -2,6 +2,7 @@
 // GitHub verifies authenticated GitHub commit actor, exact action/hash/URL and CAS state.
 import { createHash } from 'node:crypto';
 import { acceptDeliveryReceipt } from './receipt.mjs';
+import { acceptOwnerNoticeReceipt } from './alerts.mjs';
 const sha = s => createHash('sha256').update(s).digest('hex');
 
 export async function collectReceipts({ ledger, allowedActors }) {
@@ -19,7 +20,10 @@ export async function collectReceipts({ ledger, allowedActors }) {
     const blob = await ledger.request(`/contents/${entry.path}?ref=main`);
     if (!blob.content) continue;
     const receipt = JSON.parse(Buffer.from(blob.content.replace(/\s/g, ''), 'base64').toString('utf8'));
-    if (sha(receipt.action_id + ':' + receipt.prompt_hash) + '.json' !== entry.name) continue;
+    const identity = receipt.kind === 'owner_notice'
+      ? 'owner:' + receipt.notice_id + ':' + receipt.notice_hash
+      : receipt.action_id + ':' + receipt.prompt_hash;
+    if (sha(identity) + '.json' !== entry.name) continue;
     receipts.push({ receipt, actor });
   }
   return receipts;
@@ -31,6 +35,11 @@ export function applyReceipts(state, inbox, actorMap) {
     const courier = actorMap[actor];
     if (!courier) continue;
     // Historical receipts stay in the inbox; never replay or revive cancelled actions.
+    if (receipt.kind === 'owner_notice') {
+      if (next.owner_alerts?.[receipt.notice_id]?.status !== 'planned') continue;
+      next = acceptOwnerNoticeReceipt(next, receipt, { authenticatedCourier: courier });
+      continue;
+    }
     if (next.actions?.[receipt.action_id]?.status !== 'planned') continue;
     next = acceptDeliveryReceipt(next, receipt, { authenticatedCourier: courier });
   }
