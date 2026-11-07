@@ -4,6 +4,7 @@ on:
     branches: [main]
 permissions:
   contents: read
+  pull-requests: read
 concurrency:
   group: aicafe-main-integration
   cancel-in-progress: false
@@ -31,3 +32,14 @@ jobs:
         run: node --test scripts/dev-dispatcher/*.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs
       - name: Production build
         run: npm run build -- --webpack
+      - name: Capability integration scenarios
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/dev-dispatcher/integration-runner.mjs
+      - name: Upload exact merged-main scenario proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-main-integration-proof
+          path: ${{ runner.temp }}/integration-proof.json
+          if-no-files-found: ignore
+          retention-days: 14
