@@ -11,6 +11,15 @@ on:
   # rather than waiting for a best-effort scheduled event. Not a new dispatcher.
   push:
     branches: [main]
+  # Read the PR state after the existing baseline finishes. The trusted runner
+  # checks out main only; no PR-head code or artifacts are executed with secrets.
+  workflow_run:
+    workflows: ['AI CAFE Pull Request Baseline']
+    types: [completed]
+  # Owner questions can be published after the last PR commit. A trusted
+  # collaborator comment on a PR wakes the same reconciler, without a cron.
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       persist_private_ledger:
@@ -22,8 +31,10 @@ on:
     paths:
       - 'scripts/dev-dispatcher/**'
       - '.github/workflows/ai-cafe-dev-dispatcher.yml'
-  # Credential-bearing reconciliation runs only on protected main:
-  # schedule, main push, or explicit manual dispatch. PR events run only unit tests.
+  # All credential-bearing events use code checked out from protected main.
+  # Raw pull_request events are still unprivileged tests only. For privileged
+  # workflow_run/issue_comment events, unit.if rejects forks and untrusted
+  # commenters before the reconciliation job may access the private ledger.
 
 permissions:
   contents: read
@@ -37,6 +48,17 @@ concurrency:
 jobs:
   unit:
     name: Deterministic dispatcher tests
+    # workflow_run is permitted only for baseline checks on same-repo PRs.
+    # issue_comment is permitted only for trusted contributors on PRs.
+    # Other events use their existing guards and trusted checkout context.
+    if: >-
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.head_repository.full_name == github.repository)) &&
+      (github.event_name != 'issue_comment' ||
+       (github.event.issue.pull_request &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+                 github.event.comment.author_association)))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -50,7 +72,12 @@ jobs:
     name: GitHub state reconciliation (no effects)
     # Never read secrets or execute PR code. All effects remain opt-in and
     # all invocations use the same trusted-main coordinator and CAS ledger.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_run' ||
+      github.event_name == 'issue_comment'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -77,7 +104,7 @@ jobs:
           DISPATCH_AUTO_MERGE: ${{ vars.DISPATCH_AUTO_MERGE }}
           DISPATCH_BRANCH_MAINTENANCE: ${{ vars.DISPATCH_BRANCH_MAINTENANCE }}
           DISPATCH_TRANSIENT_CI_RETRY: ${{ vars.DISPATCH_TRANSIENT_CI_RETRY }}
-          PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
+          PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
         run: |
           if [ "$PERSIST" = "true" ]; then
             node scripts/dev-dispatcher/run.mjs --commit
@@ -85,7 +112,7 @@ jobs:
             node scripts/dev-dispatcher/run.mjs
           fi
       - name: Publish opaque wake-up signal (only after private ledger persistence)
-        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
+        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
