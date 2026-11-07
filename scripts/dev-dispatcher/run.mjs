@@ -4,7 +4,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
-import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady } from "./core.mjs";
 import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
@@ -45,7 +45,7 @@ async function main() {
     const linked = linkPullRequests(state, observed.snapshot);
     const copy = queueOwnerAlerts(
       reconcileGithub(linked.state, observed.snapshot, observed.closedByPr),
-      {unmappedPrs:linked.unmapped});
+      {unmappedPrs:linked.unmapped,queue});
     revalidateQueuedActions(copy, taskById, queue);
 
     const assigned = dispatchFrontier(queue, copy.tasks);
@@ -147,7 +147,10 @@ async function main() {
       const latest = await observe(existing);
       const next = reconcile(applyReceipts(existing, inbox, actorMap), latest).state;
       await promoteIntegration(next);
-      return JSON.stringify(next) === JSON.stringify(existing) ? null : next;
+      // Integration may become proven during this same pass: queue the owner
+      // review with the actual saved chat URL without a second delayed cycle.
+      const withNotices = queueOwnerAlerts(next,{queue});
+      return JSON.stringify(withNotices) === JSON.stringify(existing) ? null : withNotices;
     });
   }
   // Only independently classified runner startup errors may be retried, once.
@@ -200,13 +203,21 @@ async function main() {
     const gate = mergeGate(rec);
     gateCounts[gate.eligible ? "ready" : "blocked"]++;
   }
+  const effectiveState = persisted?.state || proposed.state;
+  const foundationId = queue.dispatch_rules?.architecture_foundation_proof_task;
+  const foundationRecord = effectiveState.tasks?.[foundationId];
+  const foundationReviewPending = !!foundationId &&
+    ["integrated_proven","released_proven"].includes(foundationRecord?.status) &&
+    !architectureFoundationReady(queue,effectiveState.tasks);
+  const hasChatReceipt = !!foundationRecord?.conversation_ref;
   const summary = [
     "## AI CAFE development dispatcher — coordination status",
     `- GitHub open PRs observed: **${observed.snapshot.length}**`,
     `- Unmapped PRs requiring owner/coder identification (never guessed): **${unmappedPrs.join(", ") || "none"}**`,
     `- Approved new assignments: **${proposed.assigned.length}**`,
     `- Eligible follow-ups (NOT sent): **${proposed.nudges.length}**`,
-    `- Planned Muse owner notices (NOT sent): **${Object.values(proposed.state.owner_alerts || {}).filter(n=>n.status==="planned").length}**`,
+    `- Planned Muse owner notices (NOT sent): **${Object.values(effectiveState.owner_alerts || {}).filter(n=>n.status==="planned").length}**`,
+    `- Architecture owner review pending: **${foundationReviewPending ? (hasChatReceipt ? "Muse notice queued or already submitted" : "waiting for verified ChatGPT conversation receipt") : "no"}**`,
     `- Tracked merge gates: ready **${gateCounts.ready}**, blocked **${gateCounts.blocked}**`,
     `- Private durable state: **${commit ? persisted?.committed ? "saved" : "unchanged" : ledger ? "read-only" : "not configured"} (no external actions)**`,
     "- Browser submissions: **not performed by GitHub**; courier execution is separate.",

@@ -35,9 +35,10 @@ Where an older line in this file conflicts with these rules, these rules win.
    behavior on realistic data, and the PR states how each acceptance test proves it.
 6. **English only for now.** Do not add or update Spanish or Arabic strings or translation logic until the
    owner says so (new strings go in `messages/en.json` only). Do not break the existing ones.
-7. **Parallel and dependent PRs open now.** Open planned PRs immediately, even when they depend on
-   another open PR. Never tell a chat "blocked until X merges" or "start only after X merges" as a
-   reason not to open its PR. Independent PRs branch from the latest `main`. If PR B depends on open
+7. **Parallel and dependent PRs open now.** Once a task and its source/file scope are approved,
+   open an EARLY DRAFT PR promptly, independent or dependent, even while implementation is incomplete.
+   Never tell a chat "blocked until X merges" or "start only after X merges" as a reason to avoid
+   authorized work. Independent PRs branch from the latest `main`. If PR B depends on open
    PR A, open B with **base = A's branch (not `main`)**; keep B's code ready and its CI green on that
    base. **B merges only after A is on `main`.** Then rebase B onto (or retarget B to) the latest
    `main`, re-run CI and Codex review, re-check migration numbers, and list any other open PRs that
@@ -56,7 +57,11 @@ Where an older line in this file conflicts with these rules, these rules win.
 13. **Proof, not claims.** The PR body matches the diff, and "done" means verified on real café data, not
     only on fixtures.
 14. **Read before you build, update after.** Every task starts by reading AGENTS.md and PROGRESS.md.
-    PROGRESS.md is updated when the PR merges.
+    **One coordination owner** updates PROGRESS.md after a PR actually merges and integration proof
+    is checked, in a dedicated progress-only change against latest main. Coding/stacked PRs must
+    NEVER edit or re-check shared PROGRESS.md checkboxes, even after their predecessor merges;
+    instead record actual merge SHA, test/CI job and missing proof in their own PR body/task record.
+    The repo guard blocks simultaneous feature+PROGRESS changes; live GitHub state always wins.
 15. **Plan before the PR, with the owner.** Before any PR that adds or changes data, jobs, crons, tools or
     connectors starts coding, present the owner a short plain-words plan: where the data comes from
     (field by field), what is saved, where and under what key, who reads it, what Supervisor says or
@@ -78,6 +83,17 @@ Where an older line in this file conflicts with these rules, these rules win.
 18. **Use an existing skill first.** Before building anything, check for an official Anthropic/OpenAI skill or a repository skill that already does the job; reuse it instead of rebuilding it.
     The list, with pinned sources and the AI Cafe rules for each, is `docs/rules/skills.md`; Claude Code
     loads them from `.claude/skills/`, other agents open a skill's `SKILL.md` by path.
+19. **One coding chat and PR lifecycle.** Each authorized ChatGPT or Claude task opens its own draft
+    promptly, continues working in that same PR/chat through executable CI, actual Codex review,
+    required fixes, resolved threads and fresh final-head review, then completes the proven merge.
+    Do not claim a Codex review of an empty early draft proves the final implementation. Do not
+    start a background polling loop or invent uninterrupted cloud execution; after a chat ends,
+    the existing dispatcher resumes it at the saved GitHub head. Explicit owner questions must
+    be published on the same PR, including drafts, not left waiting in an invisible chat.
+20. **No Vercel preview deployments/builds.** Vercel previews are disabled by owner decision for
+    cost. Never enable automatic or manual Vercel preview builds for PRs, E2, or UI acceptance.
+    When browser proof is needed, run the app in GitHub Actions with disposable test data and
+    targeted Playwright; save execution proof there, without a Vercel deployment.
 
 ## Code Review Rules
 Codex must review the whole PR first, then review only newly changed lines on later rounds. Check:

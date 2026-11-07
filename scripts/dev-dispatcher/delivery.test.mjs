@@ -12,6 +12,15 @@ test('creates approved new-project chat handoff without code', () => {
   assert.match(d.prompt, /Durable worker/);
   assert.match(d.prompt, /AGENTS\.md/);
 });
+test('every approved task prompt requires live merged-PR and integration evidence', () => {
+  const d=createDelivery({task,record,action:'assign',actionId:'assign:6-proof'});
+  assert.match(d.prompt,/PRIOR MERGED WORK/);
+  assert.match(d.prompt,/actual merge commit SHAs/);
+  assert.match(d.prompt,/executed CI\/acceptance\/integration run IDs and artifacts/);
+  assert.match(d.prompt,/production release/);
+  assert.match(d.prompt,/other dependencies/);
+  assert.match(d.prompt,/existing paths/);
+});
 test('refuses a task without owner approval and ownership', () => {
   assert.throws(() => createDelivery({ task: {...task, architecture_approval: null}, record, action: 'assign', actionId:'a' }));
   assert.throws(() => createDelivery({ task: {...task, exclusive_files: []}, record, action: 'assign', actionId:'a' }));
@@ -29,13 +38,66 @@ test('URL policy rejects alternate host, port, query, fragments and paths', () =
   assert.equal(validConversationUrl('claude','https://claude.ai/chat/abc-123'),true);
 });
 
-test('dependent assignment opens draft immediately on prerequisite branch, independent is ready',()=>{
+test('both independent and dependent authorized tasks open a draft early',()=>{
  const stacked=createDelivery({task,record:{...record,base_branch:'feat/upstream',prerequisite_pr:393},action:'assign',actionId:'stacked:6'});
  assert.equal(stacked.base_branch,'feat/upstream');
- assert.match(stacked.prompt,/OPEN A DRAFT PR IMMEDIATELY/);
- assert.match(stacked.prompt,/not main/);
+ assert.match(stacked.prompt,/OPEN A DRAFT PR PROMPTLY/);
+ assert.match(stacked.prompt,/not main/i);
  assert.doesNotMatch(stacked.prompt,/Finish implementation and its acceptance evidence BEFORE opening the PR/);
  const independent=createDelivery({task,record:{...record,base_branch:'main'},action:'assign',actionId:'independent:6'});
  assert.match(independent.prompt,/INDEPENDENT TASK/);
- assert.match(independent.prompt,/READY FOR REVIEW/);
+ assert.match(independent.prompt,/OPEN A DRAFT PR PROMPTLY/);
+ assert.doesNotMatch(independent.prompt,/before opening a READY FOR REVIEW/);
+ assert.match(stacked.prompt,/Do not wait for that dependency to merge/);
+ assert.match(stacked.prompt,/Other dependencies remain merge blockers/);
+});
+
+test('every coding agent receives exact current authority, three skill files, shared-progress lock and Codex lifecycle', () => {
+ for (const who of ['chatgpt','claude']) {
+  const d=createDelivery({task,record:{...record,agent:who},action:'assign',actionId:'assign:6-'+who});
+  const prompt=d.prompt;
+  for(const required of [
+   'AGENTS.md','PROGRESS.md','docs/rules/skills.md',
+   'docs/plans/universal-supervisor-queue.json',
+   'docs/plans/universal-supervisor-agent-operations.md',
+   'docs/plans/universal-supervisor-delivery-queue-2026-11.md',
+   'aicafe-pr-lifecycle/SKILL.md','aicafe-dependency-check/SKILL.md',
+   'aicafe-proof-gate/SKILL.md','PRIOR MERGED WORK','actual merge commit SHAs',
+   'same','PROGRESS.md','DO NOT create a background monitoring loop',
+   'needs-owner-decision','aicafe-owner-question',
+   'Vercel preview deployments/builds'
+  ]) assert.ok(prompt.toLowerCase().includes(required.toLowerCase()), required);
+  assert.match(prompt,/final applicable head is reviewed clean/);
+  assert.match(prompt,/resolved threads/);
+  assert.match(prompt,/request a fresh Codex review/);
+  assert.match(prompt,/NEVER edit PROGRESS.md/);
+  assert.doesNotMatch(prompt,/Muse|browser tabs|courier receipts/i);
+  assert.ok(prompt.length<12000);
+ }
+});
+test('same-chat follow-up owns pre-PR/draft/CI repair without replacing task or sending delivery machinery',()=>{
+ const url='https://chatgpt.com/c/abc-123';
+ for(const action of ['pre_pr_reminder','continue_pr','repair_ci','repair_review']){
+  const rec={...record,conversation_ref:url,pr_number:action==='pre_pr_reminder'?null:401,
+    branch:'feat/approved',draft:true,head_sha:'abc123',ci_state:'pending',codex_state:'pending'};
+  const d=createDelivery({task,record:rec,action,actionId:action+':6'});
+  assert.equal(d.conversation_url,url);
+  assert.equal(d.intent,'continue_existing_chat');
+  assert.match(d.prompt,/Continue from where you left off in THIS SAME chat/);
+  assert.match(d.prompt,/If PR is missing, open its draft now/);
+  assert.match(d.prompt,/final-head Codex review/);
+  assert.match(d.prompt,/DO NOT create a background monitoring loop/);
+  assert.doesNotMatch(d.prompt,/Muse|courier receipts/i);
+ }
+});
+
+test('approved task-specific queue skills and exact brief anchor are delivered unchanged',()=>{
+ const custom={...task,id:'POS0a',brief:'docs/plans/universal-supervisor-task-briefs.md#task-pos0a',
+  skills:['aicafe-pr-lifecycle','supabase','vitest','pr','supabase']};
+ const d=createDelivery({task:custom,record,action:'assign',actionId:'assign:POS0a-skills'});
+ assert.match(d.prompt,/TASK-SPECIFIC SKILLS from the approved queue/);
+ assert.match(d.prompt,/\["aicafe-pr-lifecycle","supabase","vitest","pr"\]/);
+ assert.match(d.prompt,/docs\/plans\/universal-supervisor-task-briefs\.md#task-pos0a/);
+ assert.doesNotMatch(d.prompt,/#task-POS0a/);
+ assert.match(d.prompt,/document any unavailable entry rather than inventing skill instructions/);
 });

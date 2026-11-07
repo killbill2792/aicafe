@@ -34,6 +34,18 @@ export function validateQueue(queue) {
   for (const task of queue.tasks) visit(task.id);
   // Priority-zero work is a PROOF gate, not a normal stacked-PR dependency.
   // Validate the allowlist so a typo cannot silently unlock unrelated tasks.
+  const foundation = queue.dispatch_rules?.architecture_foundation_proof_task;
+  if (foundation !== undefined) {
+    const downstream = queue.dispatch_rules?.architecture_foundation_dependent_task_ids;
+    const signoff = queue.dispatch_rules?.architecture_foundation_implementation_approval;
+    if (typeof foundation !== "string" || !tasks.has(foundation) ||
+      !Array.isArray(downstream) || !downstream.length ||
+      downstream.some(id => !tasks.has(id) || id === foundation) ||
+      !signoff || typeof signoff.approved !== "boolean" ||
+      (signoff.approved && (!/^[a-f0-9]{40}$/.test(signoff.merged_sha || "") ||
+        !/^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+#issuecomment-\d+$/.test(signoff.owner_review_url || ""))))
+      throw new Error("Invalid architecture foundation proof gate");
+  }
   const gate = queue.dispatch_rules?.priority_gate_task;
   if (gate !== undefined) {
     const allowed = queue.dispatch_rules?.priority_gate_allow_task_ids;
@@ -49,6 +61,18 @@ export function integrated(taskId, _tasks, records) {
   // Historic merged PRs still need an explicit durable integration proof.
   const rec = records[taskId];
   return rec?.status === "integrated_proven" || rec?.status === "released_proven";
+}
+// Read-only discovery approval is NOT approval of the resulting implementation plan.
+// The owner must explicitly accept the exact on-main architecture merge SHA.
+export function architectureFoundationReady(queue, records = {}) {
+  const id = queue?.dispatch_rules?.architecture_foundation_proof_task;
+  if (!id) return true;
+  const proof = records[id];
+  const signoff = queue.dispatch_rules.architecture_foundation_implementation_approval;
+  return ["integrated_proven", "released_proven"].includes(proof?.status) &&
+    signoff?.approved === true && signoff.merged_sha === proof?.merge_sha &&
+    /^[a-f0-9]{40}$/.test(signoff.merged_sha || "") &&
+    /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+#issuecomment-\d+$/.test(signoff.owner_review_url || "");
 }
 export function dispatchFrontier(queue, records = {}, capacity = null) {
   const tasks = validateQueue(queue);
@@ -75,8 +99,13 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
   const gate = queue.dispatch_rules?.priority_gate_task;
   const gateProven = !gate || integrated(gate, tasks, records);
   const gateAllowed = new Set(queue.dispatch_rules?.priority_gate_allow_task_ids || []);
+  // For initial Toast implementation, architecture approval is only meaningful
+  // after the owner-reviewed source/field contract is proven on merged main.
+  const foundationProven = architectureFoundationReady(queue, records);
+  const foundationDependents = new Set(queue.dispatch_rules?.architecture_foundation_dependent_task_ids || []);
   for (const task of queue.tasks) {
     if (!gateProven && !gateAllowed.has(task.id)) continue;
+    if (!foundationProven && foundationDependents.has(task.id)) continue;
     if (!approved(task) || records[task.id]?.conversation_ref || (records[task.id]?.status && records[task.id].status !== "proposed")) continue;
     if (!Array.isArray(task.exclusive_files) || !task.exclusive_files.length ||
       task.exclusive_files.some(path => typeof path !== "string" || !path || path.includes("*") || path.includes("..") || claimed.has(path))) continue;
@@ -85,7 +114,11 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
     for (const dep of task.depends_on) {
       const previous = records[dep];
       if (integrated(dep, tasks, records)) continue;
-      if (previous?.status === "draft_open" && previous?.branch)
+      // A verified open upstream PR can be draft OR ready-for-review.
+      // Require a real PR number: an assigned branch name alone is not an open PR.
+      if (["draft_open", "review_fixing"].includes(previous?.status) &&
+          previous?.github_state === "open" && previous?.branch &&
+          Number.isInteger(previous?.pr_number))
         openDeps.push({ ...previous, dependency_id: dep });
       else { blocked = true; break; }
     }
@@ -111,24 +144,44 @@ export function actionKey(record, action) {
   const parts = [record.task_id, action, record.head_sha || "pre-pr", record.prompt_version || "v1", record.last_commit_at || record.last_github_activity || "start"];
   return parts.map(s => encodeURIComponent(String(s))).join(":");
 }
+// Shared progress is written only by the coordinator, after merge, in its own
+// conflict-checked PR. Concurrent implementation PRs may read but never edit it.
+export function progressUpdatePolicy(changedPaths) {
+  if (!Array.isArray(changedPaths) || changedPaths.some(p=>typeof p!=="string"))
+    return { allowed:false, reason:"invalid_changed_paths" };
+  if (changedPaths.includes("PROGRESS.md") && changedPaths.length !== 1)
+    return { allowed:false, reason:"progress_requires_dedicated_coordination_change" };
+  return { allowed:true };
+}
+
 export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 } = {}) {
   if (!record || !record.approved || !record.conversation_ref) return { kind: "hold", reason: "unapproved_or_missing_chat" };
   if (record.submission_state === "uncertain" || record.submission_state === "needs_login") return { kind: "hold", reason: record.submission_state };
   if (record.owner_question || record.github_owner_question) return {kind:"hold",reason:"owner_decision_required"};
   const isPr = Number.isInteger(record.pr_number);
-  if (isPr && (record.ci_state === "pending" || record.codex_state === "pending" ||
-      record.ci_state === "unknown" || record.codex_state === "unknown")) return { kind: "hold", reason: "checks_pending_or_unknown" };
-  if (isPr && (!["success", "failure"].includes(record.ci_state) || !["clean", "findings"].includes(record.codex_state))) return { kind: "hold", reason: "unverified_checks" };
+  // Ready PRs need real check conclusions for targeted repair/merge routing.
+  // Draft PRs may legitimately have NO Codex review yet; pending/unknown is not
+  // proof that an agent is active. Do not leave those drafts silent forever.
+  // At the normal 10-minute quiet window, ask the SAME chat to inspect CI,
+  // obtain Codex and continue; the courier only checks the composer is idle.
+  if (isPr && !record.draft &&
+      (["pending","unknown"].includes(record.ci_state) ||
+       ["pending","unknown"].includes(record.codex_state)))
+    return { kind: "hold", reason: "checks_pending_or_unknown" };
+  if (isPr && !record.draft &&
+      (!["success", "failure"].includes(record.ci_state) ||
+       !["clean", "findings"].includes(record.codex_state)))
+    return { kind: "hold", reason: "unverified_checks" };
   if (record.agent === "claude") return { kind: "hold", reason: "claude_no_routine_nudges" };
-  // GitHub cannot see the browser. Muse checks actual composer activity before any reminder.
+  // GitHub cannot see the browser. The courier checks the idle composer before any reminder.
   if (!isPr && record.browser_busy === true) return { kind: "hold", reason: "browser_confirmed_busy" };
-  if (isPr && record.draft) return { kind: "hold", reason: "draft_not_ready" };
   const last = Date.parse(isPr ? (record.codex_state === "findings" && record.codex_review_at && Date.parse(record.codex_review_at) > Date.parse(record.last_commit_at || 0) ? record.codex_review_at : record.last_commit_at) : record.last_submission_at);
   if (!Number.isFinite(last) || nowMs - last < (isPr ? quietMs : prePrMs)) return { kind: "hold", reason: "not_quiet" };
   if (record.next_check_at && nowMs < Date.parse(record.next_check_at)) return { kind: "hold", reason: "cooldown" };
-  // No generic reminder for an already reviewed PR with captured acceptance proof.
-  // Otherwise, a stalled ready PR may still need evidence, thread or base repairs.
-  if (isPr && record.ci_state === "success" && record.codex_state === "clean" &&
+  // No generic reminder for an already reviewed ready PR with captured proof.
+  // A draft must still be completed and marked ready; early Codex clean is not
+  // the final-head merge gate.
+  if (isPr && !record.draft && record.ci_state === "success" && record.codex_state === "clean" &&
       record.acceptance_evidence && record.threads_resolved !== false &&
       record.base_current !== false && record.review_base_current !== false)
     return { kind: "hold", reason: "no_actionable_findings" };

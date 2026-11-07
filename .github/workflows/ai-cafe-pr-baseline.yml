@@ -7,9 +7,9 @@ on:
   push:
     branches:
       - main
+  # Validate authorized stacked draft PRs against their real upstream base,
+  # not only PRs that already target main. No Vercel preview deployments.
   pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -88,8 +88,11 @@ jobs:
         run: npx tsc --noEmit
       - name: Full repository ESLint
         run: npm run lint
-      - name: Verify Git patch whitespace
-        run: git diff --check origin/main...HEAD
+      - name: Verify Git patch whitespace against the actual PR base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA"
 
   regressions:
     needs: changes
