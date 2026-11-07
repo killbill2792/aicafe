@@ -85,6 +85,34 @@ function baseRef(head) {
   throw new Error('Missing PR base: set BASE_SHA or fetch main');
 }
 
+/** Validate actual YAML trigger shape, not just absence of the word "schedule".
+ * A literal \\n in `on:` used to pass the old grep-only guard. Only manual dispatch
+ * is allowed for diagnostic captures; malformed/missing/mixed triggers fail closed. */
+export function diagnosticWorkflowTriggerErrors(body, path) {
+  const errors = [];
+  const onLines = [...body.matchAll(/^on:[ \t]*(?:#.*)?$/gm)];
+  const lines = body.split(/\r?\n/);
+  const start = lines.findIndex(line => /^on:[ \t]*(?:#.*)?$/.test(line));
+  const events = [];
+  if (start >= 0) {
+    for (let i = start + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.trim() === '' || /^\s*#/.test(line)) continue;
+      if (!/^\s/.test(line)) break;
+      const event = /^  ([a-zA-Z_][a-zA-Z0-9_-]*):(?:\s|$)/.exec(line);
+      if (event) events.push(event[1]);
+      else if (/^\s{1,2}\S/.test(line)) events.push('malformed');
+    }
+  }
+  if (onLines.length !== 1 || events.length !== 1 || events[0] !== 'workflow_dispatch') {
+    errors.push(`${path}:1: Toast diagnostic workflow must have a valid YAML on: mapping with workflow_dispatch as its ONLY trigger`);
+  }
+  if (/^\s*schedule\s*:/m.test(body)) {
+    errors.push(`${path}:1: Toast API diagnostics must be manual-only; never schedule test captures as business ingestion`);
+  }
+  return errors;
+}
+
 /** A removed automatic investigation cron must not quietly return under a new PR. */
 function workflowErrors(head) {
   const paths = git('ls-tree', '-r', '--name-only', head, '--', '.github/workflows/')
@@ -96,9 +124,7 @@ function workflowErrors(head) {
   }
   for (const path of paths.filter(p => /toast[-_](?:diagnostic|raw[-_]capture)/i.test(p))) {
     const body = git('show', `${head}:${path}`);
-    if (/^\s*schedule\s*:/m.test(body)) {
-      errors.push(`${path}:1: Toast API diagnostics must be manual-only; never schedule test captures as business ingestion`);
-    }
+    errors.push(...diagnosticWorkflowTriggerErrors(body, path));
   }
   return errors;
 }
