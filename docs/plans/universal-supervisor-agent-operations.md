@@ -4,44 +4,15 @@
 
 ## Current dispatch order — POS0 before PR6
 
-Owner decision (Nov 6): the existing queue's first task is **POS0a**, a READ-ONLY inventory
-of each current Toast Standard API endpoint/field, configured scope, existing ingestion,
-one-current-object key, freshness, authorized reader, screen/AI consumer and verified gaps.
-POS0b/0c/0d/0e then fill existing writers and readers without touching working order
-semantics; **POS0f** proves the entire API → stored object → `describe_data` →
-`query_data` → Supervisor + relevant screen flow, using actual executed CI tests.
-**Do not automatically assign new E2, PR6, PR9, PR10 or downstream tasks until POS0f
-has durable `integrated_proven` evidence.** This is enforced through dependency DAG
-edges, not merely this paragraph. Preserve ongoing already-open PR fixes/reviews.
+**Current mandatory first-read contract for all POS0 coding tasks:** [docs/rules/pos-data.md](../rules/pos-data.md). It is the single authoritative classification of OPERATIONAL_CURRENT (`toast_raw_records`), OPERATIONAL_CHANGE_LOG (`toast_raw_changes`), LEGACY_DIAGNOSTIC_ONLY (`toast_raw_samples`), TEST_FIXTURE_ONLY, existing source writers/readers, naming, no fallback, safe retirement, and real source-to-Supervisor proof. Code/migrations/fixtures with contradictory comments **do not override it**. The generated ChatGPT/Claude coding handoff explicitly requires `source_authority_checked: yes` in every POS0 PR and actual consumer inspection.
 
-**Parallel opening rule:** five ChatGPT coding chats are the permitted active capacity.
-After POS0a's source-to-storage-to-reader architecture is merged to main,
-verified as integrated_proven AND separately accepted by the owner, POS0b/c/d
-may begin in parallel from main when each has its own approved exact scope and
-nonoverlapping file ownership. Record this owner acceptance in
-`dispatch_rules.architecture_foundation_implementation_approval`: `approved=true`,
-the exact `POS0a.merge_sha` from its verified integration record and the
-authenticated owner GitHub review comment URL for that merged source contract.
-It remains `approved=false` until the owner actually reviews the final matrix;
-do not reuse the earlier read-only audit approval. When POS0a is integrated
-and that implementation signoff is missing, the existing private owner-alert
-queue prepares one Muse notification with the verified existing ChatGPT
-conversation link: "Your approval is needed. ChatGPT chat: <URL>".
-Muse uses its existing opaque signal, 3-minute quiet/10-minute batching,
-and authenticated receipt path; never guess the link, expose it in the
-public signal, send duplicate notices, or treat a sent message as approval.
-If the task's conversation receipt is missing, the GitHub summary reports
-that the approval notice is waiting for that verified link. This gate is distinct
-from ordinary PR code dependencies: do not let an early approval or POS0a draft
-start implementation against an unfinalized source contract. POS0e
-has multiple functional predecessors and an explicit stack base POS0d; it may
-open a draft against POS0d's verified open PR branch once all three predecessor
-PRs exist (draft or ready-for-review). Their independent branches need not
-merge first. Other dependencies must integrate before POS0e merges. POS0f can
-stack against POS0e's open branch. This is parallel **work**, with ordered
-**merges** and final-head acceptance after retargeting; do not serialize PR
-opening on completed upstream merges. Only POS0a is authorized **now**;
-no automatic field-level code approvals are implied.
+**Corrected source-first DAG:** POS0a is the read-only operation/field/key/scope audit, then **POS0e FIRST** owns the shared existing Toast reader/field discovery/retention-policy cutover. POS0e retires current Supervisor/canonical dependencies on diagnostic samples before the new source-family PRs. POS0b staff/labor, POS0c cash/stock/kitchen and POS0d menu/config may then run on **disjoint** adapters and current-object writers, all using POS0e's shared tools. POS0f finally proves all field→stored→reader→Supervisor→screen paths and finishes the tracked diagnostic/fixture retirement only after dependency and retention checks. Do not build duplicate customer tables, new AI readers, sample fallbacks, or new agents. Every permitted field is available to authorized café AI on demand; only card PAN/CVV/track and reusable card/security credentials are filtered. Missing optional fields do not block other records/answers.
+
+**Priority and authorization stay distinct.** POS0f is the proof gate before any new E2/PR6/PR9/PR10 assignment. POS0a's earlier read-only approval does not imply approval for field-level implementation, an exact file list or production database deletion. After POS0a's actual merged SHA is `integrated_proven`, the owner must review its final field/key/source/reader contract and supply an authenticated GitHub comment URL. Record exact SHA, `approved=true`, and review comment under `dispatch_rules.architecture_foundation_implementation_approval`. Until that, the existing gate stays `approved=false`; **do not start POS0e code or POS0b–d** merely because this is the planned sequence.
+
+**Stacking:** POS0e opens on the verified POS0a prerequisite branch if open (with approved exact scope). POS0b/c/d each depend on POS0e and POS0a; stack on POS0e's branch while open, each with exclusive nonoverlapping files and no independent edit to the global reader/redactor. POS0f depends on POS0e plus b/c/d; select its declared stack base `POS0d` when multiple predecessors remain open and keep all other predecessor proofs as merge gates. Once prerequisites merge, update the dependent branch onto latest main and re-run final-head CI/Codex. The owner-alert flow for unresolved architecture decisions and the established same-chat PR lifecycle remain unchanged.
+
+**Diagnostic storage cleanup:** Former scheduled raw endpoint capture is retired in source-authority PR #400; the manual diagnostic workflow is **not** operational. Old database rows/relations are not deleted while the currently deployed SQL still depends on them. POS0e must cut over all live consumer definitions; POS0f must verify no SQL/JS/mirror/test dependency and record an owner-controlled destructive migration/retention plan before actual purge. No compatibility view that silently re-exposes samples.
 
 All assigned coding chats must verify earlier merged PRs against live GitHub:
 actual merge SHA, current main code and consumers, executed tests/integration proof,
@@ -77,7 +48,7 @@ docs/rules/skills.md and the approved queue at
 docs/plans/universal-supervisor-queue.json on latest main.
 Load aicafe-dependency-check and aicafe-proof-gate from .claude/skills/.
 Confirm actual merged commits, executed required tests and on-main integration
-before satisfying dependencies. PRIORITIZE POS0a then POS0b/c/d, POS0e, POS0f;
+before satisfying dependencies. Read docs/rules/pos-data.md; require source_authority_checked: yes and exact diagnostic/current consumer audit in every POS0 PR. PRIORITIZE POS0a then POS0e foundation, then POS0b/c/d, finally POS0f;
 do not create new E2/PR6/PR9/PR10 assignments before POS0f integrated proof. Check open PR changed files and file-owner locks.
 Assign up to 5 ChatGPT and 2 Claude approved tasks, independent or
 stacked NOW on open prerequisite branches (PR base = that branch).
@@ -92,7 +63,7 @@ Do not invent owner approvals, secrets or live deployment authority.
 Use connected GitHub plugin. Implement approved AI CAFE task TASK_ID.
 Build toward one proactive universal cafe operator; reuse canonical Toast POS
 readers, shared calculations, one AI loop and existing approval/inbox paths.
-Read AGENTS.md + PROGRESS.md from current main, the task in
+Read AGENTS.md + PROGRESS.md + docs/rules/pos-data.md from current main, the task in
 docs/plans/universal-supervisor-task-briefs.md, current queue and
 relevant docs/rules/* and .claude/skills/*/SKILL.md.
 Load aicafe-pr-lifecycle, aicafe-dependency-check, aicafe-proof-gate.
