@@ -35,10 +35,11 @@ export class GitHubFacts {
   }
   async one(pr) {
     const sha = pr.head.sha;
-    const [checks, reviews, unresolved] = await Promise.all([
+    const [checks, reviews, unresolved, commit] = await Promise.all([
       this.request(`/commits/${sha}/check-runs?per_page=100`),
       this.request(`/pulls/${pr.number}/reviews?per_page=100`),
       this.unresolved(pr.number),
+      this.request(`/commits/${sha}`),
     ]);
     if (checks.total_count > 100 || reviews.length >= 100) throw new Error("PR review/check pagination not verified");
     const baseline = checks.check_runs.find(c => c.name === "AI CAFE PR baseline");
@@ -49,6 +50,8 @@ export class GitHubFacts {
     const codexState = !codex ? "pending" : unresolved === null ? "unknown" :
       unresolved > 0 || codex.state === "CHANGES_REQUESTED" ? "findings" : "clean";
     return { pr_number: pr.number, head_sha: sha, base_branch: pr.base.ref,
+      last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
+      codex_review_at: codex?.submitted_at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
       ci_state: ci, codex_state: codexState, codex_reviewed_sha: codex?.commit_id || null,
       threads_resolved: unresolved === 0, merged: false };
