@@ -29,7 +29,7 @@ Owner decisions, confirmed Claude usage limits and unmapped PRs are queued and d
 
 ## Development rules
 
-Approved dependencies, exact exclusive files and up to four ChatGPT/two Claude slots are coordinated centrally. Claude only gets independent tasks and no routine reminders. ChatGPT pre-PR inspection starts after 15 minutes. Head commits reset the ten-minute inactivity clock; pending CI/Codex halts nudges. Review findings, failed code CI, stale bases and missing acceptance work lead to focused instructions for the **existing** coder conversation after Muse confirms the browser is idle.
+Approved dependencies, exact exclusive files and up to five ChatGPT/two Claude slots are coordinated centrally. Claude only gets independent tasks and no routine reminders. ChatGPT pre-PR inspection starts after 15 minutes. Head commits reset the ten-minute inactivity clock; pending CI/Codex halts nudges. Review findings, failed code CI, stale bases and missing acceptance work lead to focused instructions for the **existing** coder conversation after Muse confirms the browser is idle.
 
 Existing GitHub configuration is expected to trigger initial Codex review; the dispatcher does not request paid review on every commit. Final relevant head review and resolved threads are still required by AGENTS.md. Review automation has to be verified live before unattended release.
 
@@ -44,3 +44,7 @@ Branch maintenance can attempt nonconflicting updates and safely retarget integr
 ## Release boundary
 
 Before live activation: latest-head CI, Codex findings addressed, current base, real acceptance job artifact, successful merged-main scenario checks, configured private tokens/actors, Muse delivery and receipt test, and Dave fallback test. Missing evidence means **not proven**. No production deployment is implied.
+
+## Parallel ChatGPT stacks and merge order
+
+The queue defines up to five active ChatGPT coding chats (plus two independent Claude tasks); a deferred task without a conversation or PR does not consume a slot. Approved dependent drafts open against an **open prerequisite PR branch**, not after the predecessor merges. A task with several open prerequisites must have one explicit `stack_base_task` in the approved DAG; that branch is the draft PR base, but all other prerequisites remain binding before merge. This is an opening base choice, not permission to pretend missing code is integrated. Never assume an upstream assigned task has an actual GitHub branch/PR. Every task still requires owner-approved source/key/scope and exact nonoverlapping files; POS0b–POS0f are not preapproved by the capacity change.

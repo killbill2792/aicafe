@@ -23,14 +23,28 @@ test("queue validates 32-task style DAG, rejects missing prerequisites and cycle
   assert.throws(() => validateQueue(queue([task("a", ["b"]), task("b", ["a"])])), /cycle/i);
   assert.throws(() => validateQueue(queue([task("a"), task("a")])), /Duplicate/);
 });
-test("twelve events dispatch at most four ChatGPT and two Claude slots", () => {
-  const all = queue(Array.from({ length: 12 }, (_, i) => task(`task${i}`)));
+test("twelve events dispatch at most five ChatGPT and two Claude slots", () => {
+  const all = { ...queue(Array.from({ length: 12 }, (_, i) => task(`task${i}`))),
+    capacity: { chatgpt: 5, claude: 2 } };
   const assigned = dispatchFrontier(all, {});
-  assert.equal(assigned.length, 6);
-  assert.deepEqual(assigned.map(x => x.agent), ["chatgpt", "chatgpt", "chatgpt", "chatgpt", "claude", "claude"]);
+  assert.equal(assigned.length, 7);
+  assert.deepEqual(assigned.map(x => x.agent),
+    ["chatgpt", "chatgpt", "chatgpt", "chatgpt", "chatgpt", "claude", "claude"]);
   assert.equal(assigned.every(x => x.base_branch === "main"), true);
   const records = Object.fromEntries(assigned.map(x => [x.task_id, { status: "assigned", agent: x.agent }]));
   assert.equal(dispatchFrontier(all, records).length, 0);
+  assert.deepEqual(dispatchFrontier({ ...all, capacity: { chatgpt: 2, claude: 0 } }, {})
+    .map(a => a.agent), ["chatgpt", "chatgpt"]);
+  assert.throws(() => dispatchFrontier({ ...all, capacity: { chatgpt: 6, claude: 2 } }, {}),
+    /Invalid dispatcher capacity/);
+});
+test("unstarted owner-blocked PR6 does not occupy an active ChatGPT slot", () => {
+  const all = { ...queue(Array.from({length:5}, (_,i)=>task(`a${i}`))),
+    capacity:{chatgpt:5,claude:0} };
+  const records = { "6": {status:"blocked_needs_owner",agent:"chatgpt",approved:false,priority_deferred:true} };
+  assert.equal(dispatchFrontier(all, records).length,5);
+  records["6"].conversation_ref = "https://chatgpt.com/c/existing";
+  assert.equal(dispatchFrontier(all, records).length,4);
 });
 test("dependent branch is opened as stacked draft; unproven merged label cannot release", () => {
   const all = queue([task("a"), task("b", ["a"])]);
@@ -41,6 +55,30 @@ test("dependent branch is opened as stacked draft; unproven merged label cannot 
   assert.equal(dispatchFrontier(all, records).some(a => a.task_id === "b"), false);
   records.a.status = "integrated_proven";
   assert.equal(dispatchFrontier(all, records).some(a => a.task_id === "b"), true);
+});
+test("fan-in dependencies open a stacked draft on an explicit parent, but do not release merges", () => {
+  const a=task("a"), b=task("b",["a"]), c=task("c",["a"]), d=task("d",["a"]);
+  const e=task("e",["b","c","d"]);
+  e.stack_base_task="d";
+  const all=queue([a,b,c,d,e]);
+  const records={
+    a:{status:"integrated_proven"},
+    b:{status:"draft_open",branch:"feat/b",pr_number:101,agent:"chatgpt"},
+    c:{status:"draft_open",branch:"feat/c",pr_number:102,agent:"chatgpt"},
+    d:{status:"draft_open",branch:"feat/d",pr_number:103,agent:"chatgpt"},
+  };
+  assert.deepEqual(dispatchFrontier(all,records).map(x=>[x.task_id,x.base_branch,x.prerequisite_pr]),
+    [["e","feat/d",103]]);
+  const noBase={...all,tasks:all.tasks.map(t=>t.id==="e"?{...t,stack_base_task:null}:t)};
+  assert.deepEqual(dispatchFrontier(noBase,records),[]);
+  const bad={...all,tasks:all.tasks.map(t=>t.id==="e"?{...t,stack_base_task:"a"}:t)};
+  assert.throws(()=>validateQueue(bad),/Invalid stack base/);
+  // Existing merge gate never treats draft predecessors as proven.
+  const blocked=mergeGate({task_id:"e",pr_number:104,approved:true,draft:false,ci_state:"success",
+    codex_state:"clean",head_sha:"head",codex_reviewed_sha:"head",base_branch:"main",
+    base_current:true,review_base_current:true,threads_resolved:true,acceptance_proven:true},
+    [records.b,records.c,records.d]);
+  assert.equal(blocked.eligible,false);
 });
 test("priority proof gate blocks unrelated dispatch even when gate PR is draft or merged", () => {
   const all = {
@@ -73,6 +111,8 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   const actual = JSON.parse(readFileSync(
     new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
   validateQueue(actual);
+  assert.equal(actual.capacity.chatgpt, 5);
+  assert.equal(actual.tasks.find(t=>t.id==="POS0e").stack_base_task,"POS0d");
   assert.equal(actual.dispatch_rules.priority_gate_task, "POS0f");
   assert.equal(actual.initial_parallel_candidates[0], "POS0a");
   for (const id of ["E2", "6", "9", "10"]) {
@@ -269,7 +309,8 @@ test('owner question blocks nudges and retains exclusive-file ownership',()=>{
  assert.equal(decideNudge(blocked,clock).reason,'owner_decision_required');
  const a=task('a'),b=task('b');
  b.exclusive_files=[...a.exclusive_files];
- const assigned=dispatchFrontier(queue([a,b]),{a:{status:'blocked_needs_owner',agent:'chatgpt'}});
+ // An already-started coding chat with an owner question still retains its file lock.
+ const assigned=dispatchFrontier(queue([a,b]),{a:{status:'blocked_needs_owner',agent:'chatgpt',conversation_ref:'https://chatgpt.com/c/existing'}});
  assert.equal(assigned.some(item=>item.task_id==='b'),false);
  const state={...emptyLedger(),tasks:{a:blocked}};
  const prInfo={...blocked,pr_number:101,head_sha:'abc',github_owner_question:'Decision requested',draft:false};

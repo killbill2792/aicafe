@@ -7,7 +7,7 @@
   "briefs": "docs/plans/universal-supervisor-task-briefs.md",
   "milestone_goal": "17e",
   "capacity": {
-    "chatgpt": 4,
+    "chatgpt": 5,
     "claude": 2
   },
   "states": [
@@ -263,6 +263,7 @@
         "POS0c",
         "POS0d"
       ],
+      "stack_base_task": "POS0d",
       "goal": "Extend existing describe_data/query_data + approved canonical readers and relationships so Supervisor can discover/query all stored permitted Toast fields without per-question views, invented SQL or a second data path.",
       "scope_hint": "Existing ai_query_view, toast_records_for/cv_toast_records, canonical dictionary, lib/ai/agent/tools/dataQuery.ts, shared source readers and metrics; check all callers before changing. Exact SQL and shared-file owner require field-level approval.",
       "exclusive_files": [],

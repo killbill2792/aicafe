@@ -12,6 +12,9 @@ export function validateQueue(queue) {
     taskKey(task.id);
     if (all.has(task.id) || tasks.has(task.id)) throw new Error(`Duplicate task ${task.id}`);
     if (!Array.isArray(task.depends_on) || !Array.isArray(task.acceptance) || !task.acceptance.length || !task.brief) throw new Error(`Incomplete task ${task.id}`);
+    if (task.stack_base_task != null &&
+      (typeof task.stack_base_task !== "string" || !task.depends_on.includes(task.stack_base_task)))
+      throw new Error(`Invalid stack base for ${task.id}`);
     tasks.set(task.id, task);
   }
   const visiting = new Set(), visited = new Set();
@@ -47,17 +50,24 @@ export function integrated(taskId, _tasks, records) {
   const rec = records[taskId];
   return rec?.status === "integrated_proven" || rec?.status === "released_proven";
 }
-export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, claude: 2 }) {
+export function dispatchFrontier(queue, records = {}, capacity = null) {
   const tasks = validateQueue(queue);
-  const remaining = { ...capacity };
+  // The owner-approved capacity comes from the queue, not a stale hardcoded default.
+  // No more than five ChatGPT chats or two Claude chats may be active.
+  const requested = capacity ?? queue.capacity ?? { chatgpt: 5, claude: 2 };
+  if (!Number.isInteger(requested.chatgpt) || requested.chatgpt < 0 || requested.chatgpt > 5 ||
+    !Number.isInteger(requested.claude) || requested.claude < 0 || requested.claude > 2)
+    throw new Error("Invalid dispatcher capacity");
+  const remaining = { chatgpt: requested.chatgpt, claude: requested.claude };
+  const occupiesSlot = r => ["assigned", "draft_open", "review_fixing"].includes(r.status) ||
+    (r.status === "blocked_needs_owner" && (Boolean(r.conversation_ref) || Number.isInteger(r.pr_number)));
   for (const r of Object.values(records)) {
-    if (r.status === "assigned" || r.status === "draft_open" || r.status === "review_fixing" || r.status === "blocked_needs_owner") {
-      if (r.agent in remaining) remaining[r.agent] = Math.max(0, remaining[r.agent] - 1);
-    }
+    if (occupiesSlot(r) && r.agent in remaining)
+      remaining[r.agent] = Math.max(0, remaining[r.agent] - 1);
   }
   const claimed = new Set();
   for (const [id, record] of Object.entries(records)) {
-    if (["assigned", "draft_open", "review_fixing", "blocked_needs_owner"].includes(record.status)) {
+    if (occupiesSlot(record)) {
       for (const path of tasks.get(id)?.exclusive_files || []) claimed.add(path);
     }
   }
@@ -75,17 +85,25 @@ export function dispatchFrontier(queue, records = {}, capacity = { chatgpt: 4, c
     for (const dep of task.depends_on) {
       const previous = records[dep];
       if (integrated(dep, tasks, records)) continue;
-      if (previous?.status === "draft_open" && previous?.branch) openDeps.push(previous);
+      if (previous?.status === "draft_open" && previous?.branch)
+        openDeps.push({ ...previous, dependency_id: dep });
       else { blocked = true; break; }
     }
-    if (blocked || openDeps.length > 1) continue; // multi-branch stacks require explicit integration decision
+    if (blocked) continue;
+    // One GitHub PR can have only one base branch. For a fan-in DAG, the approved
+    // queue explicitly selects an open predecessor to stack on. Every other
+    // unproven dependency stays a required merge/integration blocker.
+    const base = openDeps.length > 1
+      ? openDeps.find(x => x.dependency_id === task.stack_base_task && Number.isInteger(x.pr_number))
+      : openDeps[0];
+    if (openDeps.length > 1 && !base) continue;
     // Claude is reserved for completely independent tasks; no stacked or historic prerequisites.
     const agent = Object.keys(remaining).find(k => remaining[k] > 0 && (k !== "claude" || task.depends_on.length === 0));
     if (!agent) break;
     remaining[agent]--;
     for (const path of task.exclusive_files) claimed.add(path);
-    actions.push({ type: "assign", task_id: task.id, agent, base_branch: openDeps[0]?.branch || "main",
-      prerequisite_pr: openDeps[0]?.pr_number ?? null });
+    actions.push({ type: "assign", task_id: task.id, agent, base_branch: base?.branch || "main",
+      prerequisite_pr: base?.pr_number ?? null });
   }
   return actions;
 }
