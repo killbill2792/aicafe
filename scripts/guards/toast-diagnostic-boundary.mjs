@@ -83,13 +83,31 @@ function baseRef(head) {
   throw new Error('Missing PR base: set BASE_SHA or fetch main');
 }
 
+/** A removed automatic investigation cron must not quietly return under a new PR. */
+function workflowErrors(head) {
+  const paths = git('ls-tree', '-r', '--name-only', head, '--', '.github/workflows/')
+    .split('\n').filter(Boolean);
+  const errors = [];
+  const retired = '.github/workflows/toast-raw-capture-daily.yml';
+  if (paths.includes(retired)) {
+    errors.push(`${retired}:1: retired scheduled diagnostic workflow must not be reintroduced; manual-only naming is required`);
+  }
+  for (const path of paths.filter(p => /toast[-_](?:diagnostic|raw[-_]capture)/i.test(p))) {
+    const body = git('show', `${head}:${path}`);
+    if (/^\s*schedule\s*:/m.test(body)) {
+      errors.push(`${path}:1: Toast API diagnostics must be manual-only; never schedule test captures as business ingestion`);
+    }
+  }
+  return errors;
+}
+
 export function run() {
   try {
     const head = process.env.HEAD_SHA || 'HEAD';
     const base = baseRef(head);
     const diff = git('diff', '--no-ext-diff', '--no-color',
       '--unified=0', '--no-renames', `${base}...${head}`);
-    const errors = addedDiagnosticReferences(diff);
+    const errors = [...addedDiagnosticReferences(diff), ...workflowErrors(head)];
     if (errors.length) {
       for (const message of errors) console.error(message);
       return 1;
