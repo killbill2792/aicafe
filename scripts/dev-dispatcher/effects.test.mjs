@@ -47,6 +47,10 @@ test('PR matching never guesses and dependent bases require evidence',()=>{
  const prs=[{pr_number:11,branch:'feat/a',base_branch:'main',draft:false},
  {pr_number:12,branch:'unknown',base_branch:'main',draft:false}];
  const result=linkPullRequests(state,prs);
+ const withMarker=linkPullRequests({tasks:{'6':{}}},[{pr_number:33,branch:'manual',task_marker:'6',base_branch:'main',draft:false}]);
+ assert.equal(withMarker.state.tasks['6'].pr_number,33);
+ const conflict=linkPullRequests({tasks:{'6':{branch:'expected'}}},[{pr_number:34,branch:'unrelated',task_marker:'6',base_branch:'main',draft:false}]);
+ assert.deepEqual(conflict.unmapped,[34]);
  assert.equal(result.state.tasks['6'].pr_number,11);
  assert.deepEqual(result.unmapped,[12]);
  assert.equal(dependencyBase({depends_on:['6']},{'6':{branch:'feat/a',github_state:'open'}}).base,'feat/a');
