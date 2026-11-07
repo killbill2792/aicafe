@@ -1,6 +1,6 @@
 # Universal Supervisor — coding-agent task briefs (proposal)
 
-**MANDATORY POS0 PRE-CODING SOURCE-AUTHORITY GATE (fresh-agent first-read order):** `AGENTS.md` (+ `PROGRESS.md` read-only) → **[binding POS rules](../rules/pos-data.md)** → **[#398 Start here / approved D1–D3 / discrepancy register](toast-standard-api-coverage-matrix.md#start-here--durable-agent-handoff-and-conflicts-index-2026-11-07)** → **this exact task brief AND [machine queue](universal-supervisor-queue.json)** (implementation-approval gate currently false; while #398 is draft, fetch its actual GitHub PR head rather than treating an absent on-main matrix as optional) → actual repository code and deployed SQL → **[executable acceptance](../rules/tests.md)**. In the **first** PR body, reproduce the table/classification for `toast_raw_records` (**OPERATIONAL_CURRENT**), `toast_raw_changes` (**CHANGE_LOG**), `toast_raw_samples` (**LEGACY_DIAGNOSTIC_ONLY**), `toast_raw_samples_latest` (**LEGACY_DIAGNOSTIC_ONLY**), typed/staged operational facts and the existing `toast_records_for` / `describe_data` / `query_data` consumers. List the **exact source→field→object key→writer→reader→Supervisor/screen** chain and the old diagnostic consumers to retire. Include literal `source_authority_checked: yes`, with links to the files inspected and current-head source proof. **This string is a review declaration, not a substitute for proof.** If a coder cannot verify the classification, they must not invent another store, reader or fixture. No POS0 source-family PR may claim done if its newly stored data is not answerable via the real existing Supervisor tools and a non-diagnostic test.
+**MANDATORY POS0 PRE-CODING SOURCE-AUTHORITY GATE (fresh-agent first-read order):** `AGENTS.md` (+ `PROGRESS.md` read-only) → **[binding POS rules](../rules/pos-data.md)** → **[#398 Start here / approved D1–D4A/D4B / discrepancy register](toast-standard-api-coverage-matrix.md#start-here--durable-agent-handoff-and-conflicts-index-2026-11-07)** → **this exact task brief AND [machine queue](universal-supervisor-queue.json)** (implementation-approval gate currently false; while #398 is draft, fetch its actual GitHub PR head rather than treating an absent on-main matrix as optional) → actual repository code and deployed SQL → **[executable acceptance](../rules/tests.md)**. In the **first** PR body, reproduce the table/classification for `toast_raw_records` (**OPERATIONAL_CURRENT**), `toast_raw_changes` (**CHANGE_LOG**), `toast_raw_samples` (**LEGACY_DIAGNOSTIC_ONLY**), `toast_raw_samples_latest` (**LEGACY_DIAGNOSTIC_ONLY**), typed/staged operational facts and the existing `toast_records_for` / `describe_data` / `query_data` consumers. List the **exact source→field→object key→writer→reader→Supervisor/screen** chain and the old diagnostic consumers to retire. Include literal `source_authority_checked: yes`, with links to the files inspected and current-head source proof. **This string is a review declaration, not a substitute for proof.** If a coder cannot verify the classification, they must not invent another store, reader or fixture. No POS0 source-family PR may claim done if its newly stored data is not answerable via the real existing Supervisor tools and a non-diagnostic test.
 
 **Sequence correction:** The **existing POS0e task moves ahead of POS0b/c/d as the shared reader and global retained-field foundation**. POS0e first cuts off operational consumers of `toast_raw_samples`, repairs the existing global safe-field policy and provides schema-backed discovery/current-object reads. Then POS0b–d extend that reader with their distinct source families (parallel disjoint files); POS0f is the final all-family proof and explicitly retires obsolete diagnostic capture/mirror/rows **only after** all active consumers are gone. The queue JSON dependencies must match this order. This is a **reordering of the existing six tasks**, not a second agent or data system; POS0e alone owns globally shared reader/redactor files and b/c/d must not edit those in parallel. No production data deletion solely on plan approval.
 
@@ -52,8 +52,7 @@ and stale record are distinct statuses.
 
 **Title:** Current Toast Standard API contract and source-to-AI coverage matrix
 **Dependency:** none. **State:** architecture-approved **read-only inventory only**.
-**Exclusive file:** `docs/plans/toast-standard-api-coverage-matrix.md`. No runtime code, migrations
-or live provider writes. Reuse the repository's official operation inventory, current online Toast API
+**Owner-approved audit-only files:** `docs/plans/toast-standard-api-coverage-matrix.md`, `scripts/toast-standard-api-coverage.test.mjs` (deterministic read-only A1/A2/A4), and `docs/plans/toast-openapi-spec-snapshot.json` (pinned official OpenAPI downloads, URLs/versions/SHA). These are the **only** added file permissions from [PR #398 owner scope comment](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6713567512). No runtime code, migrations, live provider writes or merge. Pinning a sample/one API does **not** prove the full eligible Standard GET and response-field universe; the actual official-schema snapshot and executable audit remain **UNPROVEN until committed and run**. Reuse the repository's official operation inventory, current online Toast API
 specifications, `docs/plans/toast-storage.md`, `docs/rules/pos-data.md` and existing database evidence.
 
 **How:** Enumerate every current Standard GET/list/detail operation and its child objects/fields
@@ -75,7 +74,19 @@ linked in PR. No DB writes, no production migration. No extra file ownership wit
 
 **Known defect / owner handoff (not fixed or authorized by these drafts):** `toast_records_for` non-orders plus `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` still depend on diagnostic-only captures; `lib/data/canonical/dictionary.ts` and its generated docs still claim daily non-order capture; `seen_run_id` remains used by live `toast_archive_order` and `toast_records_for` despite old retirement language. **POS0e** owns one additive current-source reader cutover, current dictionary metadata + generated Markdown and a transitive migrated-schema negative test. **POS0f** independently verifies after all migrations and registered screen/Supervisor answers. Do not rewrite historical migrations or erase `seen_run_id` without owner-approved consumer/rollback plan. `dayParser.ts` already isolates individual parse failures; current SQL `toast_import_day` still permits full-day rollback on SQL error, `liveArchive.server.ts` logs and returns early on archived-page failure without a durable retry, and `toast_record_day_error` can mark a backfill run complete with failed days: **dedicated order-import SQL/recovery PR ownership is NOT yet owner-assigned**, so each agent must report that missing scope rather than silently implementing it. **POS0d** owns later validated conditional menu snapshot / size GUID / safe deactivation; no-sales never removes catalog data. All unchanged correct screens, labor app corrections, performance projections, status/freshness and Test Café isolation are D3 protected until equivalent tests run. The current documentary approval of D1–D3 is not code authorization.
 
+### D4A/D4B owner decision implementation boundary — one future order recovery owner, NOT authorized
+
+The [#398 D4 card](toast-standard-api-coverage-matrix.md#d4ad4b-approved-architecture-outcome--no-runtime-approval-nov-7) is the decision evidence; the binding operational contract is **`docs/rules/pos-data.md`**, not another prompt. **D4A Approach B** means the existing 10-minute coordinator and distinct 15-minute live orders remain. Family-level changed-since/version and bounded validated snapshots, independent freshness/completeness/retry and automatic reconciliation must be built into the existing writer/reader; never full-download on every tick or depend only on webhooks.
+
+**D4B outcome approved only:** 99 good + 1 SQL-cast/constraint/trigger-failing order must not lose valid orders or allow false full-day/financial verification. Existing `parseToastDayPage` per-order protection, `dayImport.ts` staged cursor and day transaction, `toast_record_day_error`, `liveArchive.server.ts` skipped-page risk, `missingDays.ts` repair and `rollupRetries.ts` generation-bound derivative queue must be traced end to end, **without inventing a second importer/queue/worker**. Preserve merged **#189** (nonce, cursor, Retry-After, generation cost refresh), **#203** (first backfill, shared five days/tick, daily fairness), **#264** (redaction/SQL timeout and fee-gap nonstarvation), **#297** (five-date 1h→24h deduplicated payment-gap recovery). Read-only queue baseline: 77 due cost-refresh jobs with zero attempts and existing rollups, separate diagnostic **not** evidence of failed imports.
+
+**Explicit future proposed owner:** `POS0-order-recovery` (not a GitHub PR, not in dispatchable `queue.tasks`, no owner authorization). **Candidate exactly scoped existing paths to approve or narrow later:** `lib/pos/toast/dayImport.ts`, `lib/pos/toast/dayImport.test.ts`, `lib/pos/toast/scheduler.ts`, `lib/pos/toast/scheduler.test.ts`, `lib/pos/toast/missingDays.ts`, `lib/pos/toast/missingDays.test.ts`, `lib/pos/toast/liveArchive.server.ts`, `lib/pos/toast/liveArchive.test.ts`, `lib/pos/toast/rollupRetries.ts`, plus a new owner-approved next-free migration and disposable SQL integration file. Each path is a **proposal only**, checked against currently open #398/#400 (no runtime conflict) but not reserved against later concurrent work. Owner must choose exact SQL row-isolation/partial-day rule, reserve files and migration number, name PR/base/prerequisites and authorize coding. POS0f owns final proof, POS0e owns shared reader/status, not SQL importer rewrite.
+
+**Executable release gate for that separately approved PR and POS0f:** migrated disposable Postgres injects one database-only failure amid 99 valid orders, and archive RPC failure before subsequent valid pages. Prove 99 idempotent durable outcomes; redacted bad identity and bounded replay; no complete/financially verified day with remaining exceptions; next days, cafés and payment-gap repairs proceed; prior certified days, costs, tips and receipts unchanged. Replay #189/#203/#264/#297 lease, 429, 100+-café rotating fairness, 5-day pacing, 5-date cap, 1h→24h, post-commit generation ACK and p50/p95/API/storage/rollback. Link actual CI and safe test data. **Not executed, not approved for runtime work.**
+
 ## Task POS0b
+
+**D4A-specific acceptance:** Test `modifiedStartDate`/`modifiedEndDate` time-entry revisions, missed windows, provider vs Test Café identities, unknown-wage status across Staff/Payroll/Supervisor, independent `last_success_at` and bounded recovery. Never treat the daily coordinator tick as a completed labor refresh.
 
 **Title:** Staff, jobs, shifts and time entries — all permitted fields, one current object
 **Dependency:** POS0a field contract **and POS0e shared current-reader/retention foundation**. **State:** proposed until specific field/key approval.
@@ -100,6 +111,8 @@ read, screen/agent parity, stale/permission failure; existing order regressions 
 
 ## Task POS0c
 
+**D4A-specific acceptance:** For each actually permitted cash/stock/kitchen/availability operation, record source-native key, documented change signal or bounded validated fetch fallback, independent last-good/failure/204/403 status and no diagnostic-reader fallback. Prove no phantom stock zero, no duplicate cash, screen/Supervisor parity.
+
 **Title:** Cash, stock, kitchen and dynamic availability — current operational objects
 **Dependency:** POS0a field contract **and POS0e operational reader/retention foundation**. **State:** proposed until specific field/key approval.
 
@@ -120,6 +133,8 @@ mock Standard API, changed/repeated/timeouts/429/403/204, multi-café isolation,
 
 ## Task POS0d
 
+**D4A-specific acceptance:** Reuse publication/version metadata and a single validated full menu snapshot only after confirmed change or bounded repair; prove no duplicate unchanged-version GETs, no local-day-triggered full download, no absent/unsold-item deletion, and preserve historical recipes, sizes and mapped cents.
+
 **Title:** Remaining Standard setup/configuration/menu/device/partner endpoints
 **Dependency:** POS0a field contract **and POS0e operational reader/retention foundation**. **State:** proposed until specific field/key approval.
 
@@ -136,6 +151,8 @@ changes. Every unavailable field documents permission/provider reason and verifi
 **Tests:** endpoint inventory, adapter, disposable DB, auth scope, changed setup, parity, regression.
 
 ## Task POS0e
+
+**D4A/D4B shared-reader acceptance:** Actual provider `received/stored/provisional/reconciled/financially_verified/incomplete/stale` definitions and per-family freshness are shared with screen calculations, not fabricated from 10-minute ticks, incomplete days, or 77 separate cost-refresh retries.
 
 **Title:** Universal discover/query of all retained fields through ONE shared foundation
 **Dependency:** POS0a field contract. **State:** **FIRST proposed shared foundation** before POS0b–d; exact source/field/key approval and single-file ownership required.
@@ -161,6 +178,8 @@ request for POS data. **Tests:** one SQL query reader/consumer contract, no cros
 field allowlists, invalid paths/SQL rejected, real agent loop with seeded data, dates/money parity.
 
 ## Task POS0f
+
+**D4A/D4B final non-regression acceptance:** After all migrated SQL, rerun changed/unchanged/version/partial/failure family sync and 99+1 bad-SQL order tests, plus #189/#203/#264/#297 fairness, pacing, payment-gap and derivative cost-queue ownership. Real registered Supervisor and screens must show identical truthful coverage; no old diagnostic lineage.
 
 **Title:** Enforce complete Standard API → storage → shared reader → Supervisor acceptance
 **Dependency:** POS0e foundation + POS0b, POS0c and POS0d. **State:** proposed. This is the **priority gate** for E2/PR6/PR9/PR10
