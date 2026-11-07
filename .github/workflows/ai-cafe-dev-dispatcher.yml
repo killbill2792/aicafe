@@ -50,6 +50,7 @@ jobs:
       contents: write
       pull-requests: write
       checks: read
+      actions: read
     needs: unit
     steps:
       - uses: actions/checkout@v4
