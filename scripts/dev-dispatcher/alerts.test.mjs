@@ -89,3 +89,35 @@ test('existing task owner decision includes recorded ChatGPT link without invent
  const withoutLink=queueOwnerAlerts({...pending,tasks:{'21':{...pending.tasks['21'],conversation_ref:null}}});
  assert.doesNotMatch(Object.values(withoutLink.owner_alerts)[0].question,/https:\/\/chatgpt/);
 });
+
+test('owner question gains a chat link without a duplicate pending or submitted notice',()=>{
+ const starting={version:1,tasks:{'31':{agent:'chatgpt',pr_number:444,
+   owner_question:'Approve implementation scope?'}},actions:{}};
+ const first=queueOwnerAlerts(starting);
+ assert.equal(Object.values(first.owner_alerts).filter(x=>x.status==='planned').length,1);
+ const withLink={...first,tasks:{'31':{...first.tasks['31'],
+   conversation_ref:'https://chatgpt.com/c/aa-bb'}}};
+ const enriched=queueOwnerAlerts(withLink);
+ assert.equal(Object.values(enriched.owner_alerts).filter(x=>x.status==='planned').length,1);
+ assert.equal(Object.values(enriched.owner_alerts).filter(x=>x.status==='cancelled_no_longer_needed').length,1);
+ assert.equal(signalFor(enriched,'s'.repeat(32)).pending_count,1);
+ const active=Object.entries(enriched.owner_alerts).find(([,n])=>n.status==='planned');
+ assert.match(active[1].question,/ChatGPT chat: https:\/\/chatgpt\.com\/c\/aa-bb/);
+ const done=acceptOwnerNoticeReceipt(enriched,{
+   kind:'owner_notice',notice_id:active[0],notice_hash:active[1].notice_hash,status:'submitted'
+ },{authenticatedCourier:'muse'});
+ const reread=queueOwnerAlerts(done);
+ assert.equal(Object.values(reread.owner_alerts).filter(x=>x.status==='planned').length,0);
+ assert.equal(signalFor(reread,'s'.repeat(32)).pending_count,0);
+ const originallySubmitted=acceptOwnerNoticeReceipt(first,{
+   kind:'owner_notice',
+   notice_id:Object.keys(first.owner_alerts)[0],
+   notice_hash:Object.values(first.owner_alerts)[0].notice_hash,
+   status:'submitted'
+ },{authenticatedCourier:'muse'});
+ const afterChat=queueOwnerAlerts({...originallySubmitted,
+   tasks:{'31':{...originallySubmitted.tasks['31'],
+     conversation_ref:'https://chatgpt.com/c/aa-bb'}}});
+ assert.equal(Object.keys(afterChat.owner_alerts).length,1);
+ assert.equal(Object.values(afterChat.owner_alerts)[0].status,'submitted');
+});
