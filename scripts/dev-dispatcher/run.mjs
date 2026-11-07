@@ -201,7 +201,7 @@ async function main() {
     gateCounts[gate.eligible ? "ready" : "blocked"]++;
   }
   const summary = [
-    "## AI CAFE development dispatcher — dry-run coordination",
+    "## AI CAFE development dispatcher — coordination status",
     `- GitHub open PRs observed: **${observed.snapshot.length}**`,
     `- Unmapped PRs requiring owner/coder identification (never guessed): **${unmappedPrs.join(", ") || "none"}**`,
     `- Approved new assignments: **${proposed.assigned.length}**`,
@@ -209,7 +209,10 @@ async function main() {
     `- Planned Muse owner notices (NOT sent): **${Object.values(proposed.state.owner_alerts || {}).filter(n=>n.status==="planned").length}**`,
     `- Tracked merge gates: ready **${gateCounts.ready}**, blocked **${gateCounts.blocked}**`,
     `- Private durable state: **${commit ? persisted?.committed ? "saved" : "unchanged" : ledger ? "read-only" : "not configured"} (no external actions)**`,
-    "- Browser submissions and merge actions: **DISABLED**.",
+    "- Browser submissions: **not performed by GitHub**; courier execution is separate.",
+    `- Auto-merge opt-in: **${autoMerge ? "enabled (strict gates enforced)" : "disabled"}**.`,
+    `- Branch maintenance opt-in: **${commit && process.env.DISPATCH_BRANCH_MAINTENANCE === "true" ? "enabled" : "disabled"}**.`,
+    `- Transient CI retry opt-in: **${commit && process.env.DISPATCH_TRANSIENT_CI_RETRY === "true" ? "enabled" : "disabled"}**.`,
   ].join("\n");
   console.log(summary);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
