@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+export const promptHash = prompt => createHash('sha256').update(prompt).digest('hex');
 // Approved plan metadata -> bounded, provider-neutral browser handoff.
 // Generated ONLY on trusted main by the existing deterministic dispatcher.
 const PROVIDERS = new Set(['chatgpt', 'claude']);
@@ -34,6 +35,9 @@ export function createDelivery({ task, record, action, actionId }) {
   if (!/^docs\/plans\/[a-zA-Z0-9_./-]+\.md$/.test(taskBrief || '') || taskBrief.includes('..'))
     throw new Error('Invalid task brief');
   const details = [
+    `Base branch: ${record.base_branch || 'main'}. ${record.prerequisite_pr ? `Predecessor PR: ${record.prerequisite_pr}.` : ''}`,
+    'MANDATORY SKILLS: Read .claude/skills/aicafe-proof-gate/SKILL.md, .claude/skills/aicafe-dependency-check/SKILL.md and docs/rules/skills.md in full before coding. Apply relevant listed skills; include a per-acceptance test/evidence matrix in the PR. Do not claim complete based on a checklist or green CI alone.',
+    'Finish implementation and its acceptance evidence BEFORE opening the PR. Open it READY FOR REVIEW (not draft); allow the existing PR-opening Codex review to run ONCE, not on every commit. Ask Codex to check all task acceptance scenarios, missing wiring and integration, not only style. After review, stay in the same working session if possible; do not run a polling loop. Address substantive findings and prove completion before merge.',
     `Task ${task.id}: ${task.title}`,
     `Goal: ${task.goal}`,
     `Approved file ownership: ${task.exclusive_files.join(', ')}`,
@@ -50,9 +54,10 @@ export function createDelivery({ task, record, action, actionId }) {
     version: 1, action_id: actionId, project, approval_hash: authorization,
     provider: record.agent,
     intent: isNew ? 'start_new_chat' : 'continue_existing_chat',
+    base_branch: record.base_branch || 'main',
     conversation_url: url,
     task_id: task.id,
-    prompt,
+    prompt, prompt_hash: promptHash(prompt),
   };
 }
 
