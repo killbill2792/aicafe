@@ -227,3 +227,18 @@ test('owner question blocks nudges and retains exclusive-file ownership',()=>{
  const prInfo={...blocked,pr_number:101,head_sha:'abc',github_owner_question:'Decision requested',draft:false};
  assert.equal(reconcileGithub(state,[prInfo]).tasks.a.status,'blocked_needs_owner');
 });
+
+test('base SHA changes invalidate merge review until a later relevant review',()=>{
+ const old='2026-11-05T12:00:00Z',later='2026-11-05T13:00:00Z';
+ const before={...pr(),base_sha:'old-base',status:'review_fixing'};
+ const state={...emptyLedger(),tasks:{a:before}};
+ const next={...before,base_sha:'new-base',base_current:true,
+   last_github_activity:old,codex_review_at:'2026-11-05T11:00:00Z'};
+ const changed=reconcileGithub(state,[next]).tasks.a;
+ assert.equal(changed.review_base_current,false);
+ assert.equal(mergeGate({...changed,acceptance_proven:true,threads_resolved:true}).eligible,false);
+ assert.equal(decideNudge({...changed,last_commit_at:'2026-11-05T11:00:00Z'},Date.parse(later)).action,'continue_pr');
+ const refreshed=reconcileGithub({...emptyLedger(),tasks:{a:changed}},
+   [{...next,codex_review_at:later}]).tasks.a;
+ assert.equal(refreshed.review_base_current,true);
+});
