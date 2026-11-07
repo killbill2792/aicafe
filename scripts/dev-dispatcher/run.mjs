@@ -56,7 +56,7 @@ async function main() {
       const delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
         action: "assign", actionId: key });
       copy.actions[key] = { ...assignment, task_id: assignment.task_id,
-        type: "assign", status: "planned", created_at: now, delivery };
+        type: "assign", status: "planned", delivery_owner: "muse", created_at: now, delivery };
       copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
@@ -74,7 +74,7 @@ async function main() {
           action: proposal.action, actionId: proposal.key });
         rec.last_action_key = proposal.key;
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
-          status: "planned", head_sha: rec.head_sha || null, created_at: now, delivery };
+          status: "planned", delivery_owner: "muse", head_sha: rec.head_sha || null, created_at: now, delivery };
         nudges.push({ task_id: id, action: proposal.action });
       }
     }
