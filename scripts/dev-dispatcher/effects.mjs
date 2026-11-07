@@ -86,11 +86,13 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
 
 // Only an independently verified integration run on the merged main SHA can release dependents.
 // No "merged" or author checklist is equivalent to integration proof.
-export function integrationStatus({ merged_sha, main_sha, proof }) {
+export function integrationStatus({ merged_sha, main_sha, proof, expectedAcceptance = [] }) {
   if (!merged_sha || !main_sha || !proof || proof.main_sha !== main_sha ||
       proof.merged_sha !== merged_sha || proof.conclusion !== 'success' ||
       !proof.workflow_run_id || !Array.isArray(proof.required_scenarios) ||
-      !proof.required_scenarios.length || proof.required_scenarios.some(s => s.result !== 'passed'))
+      !proof.required_scenarios.length || proof.required_scenarios.some(s => s.result !== 'passed') ||
+      (expectedAcceptance.length > 0 && (proof.required_scenarios.length !== expectedAcceptance.length ||
+        !proof.required_scenarios.every((s,i) => s.id === String(i+1) && !!s.test_file && !!s.command))))
     return 'merged_unproven';
   return 'integrated_proven';
 }
