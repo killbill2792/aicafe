@@ -1,6 +1,6 @@
 # AI CAFE — coding-agent operations (short, owner-review draft)
 
-**Required reading for every agent:** latest main `AGENTS.md`, `PROGRESS.md`, relevant `docs/rules/*`, [task queue](universal-supervisor-queue.json) and one [task brief](universal-supervisor-task-briefs.md#task-6). Use the **connected GitHub plugin** to fetch actual files, PRs, commits, CI/check logs, Codex reviews, comments and thread resolution; explicitly read applicable `.claude/skills/*/SKILL.md` from GitHub. Do not assume a cloud shell, uninterrupted waiting, skill auto-loading or live production access.
+**Required reading for every agent:** latest main `AGENTS.md`, `PROGRESS.md`, relevant `docs/rules/*`, [task queue](universal-supervisor-queue.json), [Universal Supervisor delivery plan](universal-supervisor-delivery-queue-2026-11.md), this operations guide, and the exact [task brief](universal-supervisor-task-briefs.md). Use the **connected GitHub plugin** to fetch actual files, PRs, commits, CI/check logs, Codex reviews, comments and thread resolution; explicitly read applicable `.claude/skills/*/SKILL.md` from GitHub. Do not assume a cloud shell, uninterrupted waiting, skill auto-loading or live production access.
 
 ## Current dispatch order — POS0 before PR6
 
@@ -55,6 +55,13 @@ source/key/destination/privacy/reader plan sign-off and exclusive file ownership
 AGENTS.md. No paid ERA scope assumptions, new owner credentials, direct production
 writes or demo-only acceptance shortcuts. Review [priority-zero task briefs](universal-supervisor-task-briefs.md#priority-zero--finish-all-permitted-toast-standard-api-data-before-e2--pr6pr17).
 
+For owner decisions, the coding agent publishes the exact question on its
+existing PR (including an early draft) using `needs-owner-decision` and
+`<!-- aicafe-owner-question ... -->`. No coding-agent prompt needs to know
+how the existing courier delivers that question. If the current active
+execution ends before CI/Codex returns, it resumes in the SAME chat and PR;
+a pending Codex verdict never counts as clean.
+
 ## Use existing skills, not a giant prompt
 
 - `aicafe-pr-lifecycle`: a coding chat owns one PR from creation through review, CI fixes, rebase and merge.
@@ -90,8 +97,10 @@ docs/plans/universal-supervisor-task-briefs.md, current queue and
 relevant docs/rules/* and .claude/skills/*/SKILL.md.
 Load aicafe-pr-lifecycle, aicafe-dependency-check, aicafe-proof-gate.
 Verify predecessor real code and executed acceptance, not its merged label.
-Open draft PR immediately: independent = latest main; dependent on an
-open PR = branch FROM prerequisite and PR base = prerequisite branch.
+Open a DRAFT PR PROMPTLY once authorized: independent = latest main;
+dependent on an open PR = branch FROM prerequisite and PR base = that branch.
+An unmerged upstream is a merge blocker, not permission to stop coding;
+develop and test against its committed branch. Do not invent missing interfaces.
 Edit only assigned files. Stay in THIS SAME CHAT for all CI errors,
 Codex findings, thread resolutions, fresh reviews and main updates.
 Check Codex during this active execution; do not create a background
@@ -99,7 +108,10 @@ monitor, cron or polling service. If execution ends, the dispatcher resumes
 this SAME PR and chat where it stopped. Never call a pending review clean. If upstream merges, rebase/retarget, verify integration,
 rerun relevant tests and obtain new Codex review. Merge only under AGENTS.md.
 Show exact test command, run URL, head SHA, outcomes, merged SHA or blocker.
-Use targeted Playwright only for relevant UI/browser changes. No production effects.
+Use targeted Playwright in GitHub CI only for relevant UI/browser changes;
+NEVER deploy/build a Vercel preview (owner disabled previews for cost).
+Never edit PROGRESS.md inside a coding PR; one coordinator updates it alone
+on current main after merge/proof. No production effects.
 ```
 
 ## Dispatcher rules
@@ -110,7 +122,7 @@ Use targeted Playwright only for relevant UI/browser changes. No production effe
 4. For each PR, run base quality checks + **applicable** DB/agent/action tests. Add Playwright and preview/screenshots **only for UI/browser behavior that needs it**; tests proving a merged backend capability in an actual consumer are essential, but not all screens on every commit.
 5. Codex review lifecycle: inspect reviews and unresolved threads after each head; fix all P1s and any required findings in-scope, mark truly addressed threads **resolved**, request a fresh Codex review and verify it finished. Resolve merge conflicts then rerun final-head CI and review. Never assert a clean verdict from an unreturned review.
 6. **Proof before merge and after:** final-head actual passed checks; required acceptance test executed (not skipped); integration wiring against real predecessor export; PR body links tests, jobs and preview if relevant. If an older merged PR is unproven, create a small repair task tied to that PR's missing capability, don't copy dead/duplicate code downstream.
-7. **Progress:** each owner records actual merged SHA/proof in task ledger; **one coordination writer** updates short `PROGRESS.md` on latest main. Historical snapshot remains in `docs/history/` and isn't treated as active queue. No four concurrent full-file PROGRESS overwrites.
+7. **Progress:** each coding owner records merge SHA/proof in its own PR body/task record but NEVER edits `PROGRESS.md` from a parallel branch. **One coordination writer** makes a separate progress-only update after proven merges on latest main. The existing Repo guard fails PRs mixing `PROGRESS.md` with other files. Historical snapshot remains read-only; no repeated checkbox edits by B/C/D after A merges.
 8. **Stop only** for actual owner decision, unapproved architecture, missing secret/provider, forbidden production action, evidence gap or file ownership conflict; keep PR open and send actionable blocker. Unrelated tasks continue. Don't ask the owner to approve ordinary CI fixes already within an approved task.
 
 ## PR body completion evidence (short)
