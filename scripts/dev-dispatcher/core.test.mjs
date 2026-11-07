@@ -111,9 +111,10 @@ test("ledger checks private visibility and retries optimistic CAS collisions", a
 });
 test("GitHub PR reads distinguish pending CI/review from success", async () => {
   const fetchFn = async (url, options) => {
-    if (url.includes("/pulls?")) return { ok: true, json: async () => [{ number: 2, head: { sha: "abc", ref: "feat/b" }, base: { ref: "main" }, updated_at: old, draft: true }] };
+    if (url.includes("/pulls?")) return { ok: true, json: async () => [{ number: 2, head: { sha: "abc", ref: "feat/b" }, base: { ref: "main", sha: "base" }, updated_at: old, draft: true }] };
     if (url.includes("check-runs")) return { ok: true, json: async () => ({ total_count: 1, check_runs: [{ name: "AI CAFE PR baseline", status: "completed", conclusion: "success" }] }) };
     if (url.includes("/reviews?")) return { ok: true, json: async () => [] };
+    if (url.includes("/compare/")) return { ok: true, json: async () => ({ behind_by: 0 }) };
     if (url.includes("/commits/abc")) return { ok: true, json: async () => ({ commit: { committer: { date: old } } }) };
     if (url.includes("/graphql")) return { ok: true, json: async () => ({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] } } } } }) };
     throw new Error(url);
