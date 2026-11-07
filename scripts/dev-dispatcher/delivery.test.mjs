@@ -161,4 +161,3 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
   }
  }
 });
-
