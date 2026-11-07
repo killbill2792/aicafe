@@ -22,6 +22,8 @@ export function validateHandoff(action, task) {
       task.agent !== d.provider || typeof d.project?.name !== 'string' ||
       d.project.name.length > 100 || typeof d.prompt !== 'string' ||
       !d.prompt.trim() || d.prompt.length > 12000 ||
+      (!d.prompt_hash || d.prompt_hash !== sha(d.prompt)) ||
+      typeof d.base_branch !== 'string' || !/^[a-zA-Z0-9_./-]+$/.test(d.base_branch) ||
       !/^[a-f0-9]{64}$/.test(d.approval_hash || '') ||
       d.approval_hash !== task.approval_hash) return false;
   const prFollowup = ['repair_ci', 'repair_review', 'continue_pr'].includes(action.type);
@@ -64,11 +66,12 @@ export function agentInstruction(action) {
     'If login, destination, project, composer, or permission is ambiguous, STOP without sending. Never guess.',
     'Do not use shell, filesystem, GitHub, code-editing tools, external APIs, or elevated permissions.',
     'Do not read, summarize, collect, or quote assistant responses or conversation transcripts.',
+    'Reuse the existing persistent browser tab for this conversation when available; verify the provider, project and exact conversation URL before sending. Never assume a tab number remains valid after restart.',
     'Check that the destination is correct and the composer is idle; submit the following instruction ONCE only.',
     '--- BEGIN APPROVED INSTRUCTION ---',
     d.prompt,
     '--- END APPROVED INSTRUCTION ---',
-    'After any attempt, report only: sent_unverified / blocked / uncertain and the resulting conversation URL if visible in the address bar. Never claim provider-confirmed delivery.',
+    `After any attempt, report only: sent_unverified / blocked / uncertain, conversation URL, and prompt_hash ${d.prompt_hash}. Never claim provider-confirmed delivery.`,
   ].join('\n');
 }
 
