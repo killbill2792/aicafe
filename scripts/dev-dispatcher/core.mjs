@@ -94,7 +94,11 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
   const last = Date.parse(isPr ? (record.codex_state === "findings" && record.codex_review_at && Date.parse(record.codex_review_at) > Date.parse(record.last_commit_at || 0) ? record.codex_review_at : record.last_commit_at) : record.last_submission_at);
   if (!Number.isFinite(last) || nowMs - last < (isPr ? quietMs : prePrMs)) return { kind: "hold", reason: "not_quiet" };
   if (record.next_check_at && nowMs < Date.parse(record.next_check_at)) return { kind: "hold", reason: "cooldown" };
-  const action = isPr ? (record.ci_state === "failure" ? "repair_ci" : record.codex_state === "findings" ? "repair_review" : "continue_pr") : "pre_pr_reminder";
+  // Clean reviewed PRs should not be nudged simply because ten minutes elapsed.
+  // Only actionable failed CI or review findings merit a browser delivery.
+  if (isPr && record.ci_state === "success" && record.codex_state === "clean")
+    return { kind: "hold", reason: "no_actionable_findings" };
+  const action = isPr ? (record.ci_state === "failure" ? "repair_ci" : "repair_review") : "pre_pr_reminder";
   const key = actionKey(record, action);
   if (record.last_action_key === key || record.submission_state === "pending" || record.attempts >= (record.max_attempts ?? 3)) return { kind: "hold", reason: "already_sent_or_capped" };
   return { kind: "propose", action, key };
