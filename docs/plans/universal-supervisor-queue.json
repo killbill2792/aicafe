@@ -88,7 +88,8 @@
       "POS0f"
     ],
     "pos_source_authority": {
-      "mandatory_first_read": "docs/rules/pos-data.md",
+      "mandatory_first_read": "AGENTS.md",
+      "mandatory_pos_rule_second_read": "docs/rules/pos-data.md",
       "ordered_first_read": [
         "AGENTS.md (PROGRESS.md read only)",
         "docs/rules/pos-data.md (binding source/consumer decisions)",
