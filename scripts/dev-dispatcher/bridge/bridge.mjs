@@ -173,6 +173,7 @@ export async function runOnce({ repo = process.env.DISPATCH_LEDGER_REPO,
   await safeDir(receiptDir);
   let action;
   for (const candidate of eligible) {
+    if (sendEnabled && candidate.delivery_owner !== "dave") continue;
     // Ignore a new GitHub event/action key if a previous browser turn for the
     // same task is reserved, uncertain, or not provider-verified.
     try { await fs.access(taskHoldFile(receiptDir, candidate)); continue; }
