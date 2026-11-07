@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import { createDelivery, validConversationUrl } from './delivery.mjs';
 const task = { id: '6', title: 'Durable worker', goal: 'resume safely',
   brief: 'docs/plans/universal-supervisor-task-briefs.md#task-6',
@@ -120,3 +121,44 @@ test('POS0 data contributors receive the mandatory source classification and pro
   const nonPos=createDelivery({task,record,action:'assign',actionId:'independent-6-source'});
   assert.doesNotMatch(nonPos.prompt,/POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING/);
 });
+
+test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contract in order', () => {
+ const queue=JSON.parse(readFileSync(new URL('../../docs/plans/universal-supervisor-queue.json',import.meta.url),'utf8'));
+ assert.equal(queue.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
+ for(const id of ['POS0b','POS0c','POS0d','POS0e']){
+  const real=queue.tasks.find(t=>t.id===id);
+  assert.ok(real,id);
+  assert.notEqual(real.architecture_approval?.approved,true,id+' must remain unauthorized');
+  assert.throws(()=>createDelivery({task:real,record,action:'assign',actionId:'unapproved:'+id}));
+  const mockApproved={...task,id,title:real.title,goal:real.goal,brief:real.brief,skills:real.skills,
+    acceptance:real.acceptance,exclusive_files:real.exclusive_files.length?real.exclusive_files:['docs/rules/tests.md']};
+  for(const agent of ['chatgpt','claude']){
+   // Simulate eventual explicitly approved task WITHOUT modifying machine authorization.
+   const d=createDelivery({task:mockApproved,record:{...record,agent},action:'assign',actionId:'handoff:'+id+':'+agent});
+   assert.equal(d.intent,'start_new_chat');
+   assert.ok(d.prompt.length<12000,id+': '+d.prompt.length);
+   const block=d.prompt.slice(d.prompt.indexOf('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING'));
+   const required=[
+    '(1) current main AGENTS.md',
+    '(2) binding docs/rules/pos-data.md',
+    '(3) docs/plans/toast-standard-api-coverage-matrix.md',
+    '(4) THIS exact docs/plans/universal-supervisor-task-briefs.md task anchor AND docs/plans/universal-supervisor-queue.json',
+    '(5) inspect real existing code',
+    '(6) docs/rules/tests.md executable acceptance'
+   ];
+   let previous=-1;
+   for(const part of required){const at=block.indexOf(part);assert.ok(at>previous,id+' missing/unordered: '+part);previous=at;}
+   for(const fact of ['D1-D3 principles approved','implementation_approval.approved=false',
+     'non-order toast_records_for','cv_cash/cv_inventory/cv_kitchen/cv_dining_options',
+     'seen_run_id','SQL day import','menu full fetch twice','POS0e','POS0b','POS0c','POS0d','POS0f',
+     'NO separately owner-approved implementation PR','source_authority_checked: yes',
+     'diagnostic snapshots','roll back','rollback']){
+     if(fact==='roll back')continue;
+     assert.ok(block.includes(fact),id+' missing '+fact);
+   }
+   assert.match(d.prompt,/No new system|Do not create competing system/);
+   assert.ok(d.prompt.indexOf('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING')<d.prompt.indexOf('OPEN THE DRAFT PR PROMPTLY'));
+  }
+ }
+});
+
