@@ -23,6 +23,8 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
     throw new Error('Task already has a conversation');
   if (receipt.project_id !== d.project.id || receipt.provider !== d.provider)
     throw new Error('Receipt project/provider mismatch');
+  if (receipt.status && receipt.status !== 'submitted')
+    throw new Error('Non-submission cannot be marked delivered');
   action.status = 'submitted';
   action.submitted_at = receipt.submitted_at || new Date().toISOString();
   action.receipt = { courier: authenticatedCourier, prompt_hash: d.prompt_hash,
