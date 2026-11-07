@@ -11,6 +11,7 @@ import { revalidateQueuedActions } from "./authorization.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration, retryStartupFailure } from "./effects.mjs";
 import { collectReceipts, applyReceipts } from "./inbox.mjs";
+import { queueOwnerAlerts } from "./alerts.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
@@ -42,7 +43,9 @@ async function main() {
   }
   function reconcile(state, observed) {
     const linked = linkPullRequests(state, observed.snapshot);
-    const copy = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
+    const copy = queueOwnerAlerts(
+      reconcileGithub(linked.state, observed.snapshot, observed.closedByPr),
+      {unmappedPrs:linked.unmapped});
     revalidateQueuedActions(copy, taskById);
 
     const assigned = dispatchFrontier(queue, copy.tasks);
@@ -203,6 +206,7 @@ async function main() {
     `- Unmapped PRs requiring owner/coder identification (never guessed): **${unmappedPrs.join(", ") || "none"}**`,
     `- Approved new assignments: **${proposed.assigned.length}**`,
     `- Eligible follow-ups (NOT sent): **${proposed.nudges.length}**`,
+    `- Planned Muse owner notices (NOT sent): **${Object.values(proposed.state.owner_alerts || {}).filter(n=>n.status==="planned").length}**`,
     `- Tracked merge gates: ready **${gateCounts.ready}**, blocked **${gateCounts.blocked}**`,
     `- Private durable state: **${commit ? persisted?.committed ? "saved" : "unchanged" : ledger ? "read-only" : "not configured"} (no external actions)**`,
     "- Browser submissions and merge actions: **DISABLED**.",
