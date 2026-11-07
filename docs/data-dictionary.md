@@ -318,6 +318,10 @@ Every Toast record and field, one row each: orders, checks, items, modifiers, pa
 
 # LEGACY DIAGNOSTIC SOURCE WARNING — NOT AN OPERATING CONTRACT
 
+**Generated-dictionary contradiction requiring later code ownership (2026-11-07):** The `cv_toast_records` summary **above this footer** is generated from `lib/data/canonical/dictionary.ts` and still says non-order labor/cash/kitchen/menu/setup data comes “from the daily capture.” That is a **historical description of a known current-reader defect**, not the approved source: `toast_raw_samples` is diagnostic-only. The generator `scripts/gen-data-dictionary.mjs` combines the runtime dictionary and this notes footer; editing only the generated summary would be overwritten and would not correct runtime metadata. **POS0e (separate owner-approved implementation)** must fix `dictionary.ts`, regenerate this Markdown, replace SQL active readers and test final migrated direct/transitive dependencies. **POS0f** independently verifies final source-to-Supervisor/screen parity. Until then, follow `docs/rules/pos-data.md` and the #398 handoff; do not re-enable daily diagnostic capture, use old captured values as current, or assume this document proves runtime migration. Preserve historical migration files unchanged.
+
+
+
 **Use [binding POS source authority](rules/pos-data.md) instead.** This note describes a historical implementation defect, **not** permission to connect Supervisor or operational views to `toast_raw_samples`. The current code can still read diagnostic snapshots through `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` and non-order `toast_records_for`. POS0e must cut over those active SQL definitions to real current objects, then POS0f verifies and retires stale diagnostic artifacts. Never call these captured values live; `toast_raw_samples` has no authority for current café decisions.
 
 
