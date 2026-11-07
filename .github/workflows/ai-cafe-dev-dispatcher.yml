@@ -67,6 +67,7 @@ jobs:
           DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
           DISPATCH_COURIER_ACTORS: ${{ vars.DISPATCH_COURIER_ACTORS }}
           DISPATCH_AUTO_MERGE: ${{ vars.DISPATCH_AUTO_MERGE }}
+          DISPATCH_BRANCH_MAINTENANCE: ${{ vars.DISPATCH_BRANCH_MAINTENANCE }}
           PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || (github.event_name == 'schedule' && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
         run: |
           if [ "$PERSIST" = "true" ]; then
