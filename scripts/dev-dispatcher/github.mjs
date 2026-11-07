@@ -70,6 +70,27 @@ export class GitHubFacts {
   async integrationProof(runId) {
     return this.proofArtifact(runId, 'aicafe-main-integration-proof', 'integration-proof.json');
   }
+  async transientBaselineRun(headSha) {
+    if (!/^[a-f0-9]{40}$/.test(headSha || '')) throw new Error('Invalid CI head SHA');
+    const result = await this.request('/actions/runs?head_sha=' + headSha +
+      '&event=pull_request&per_page=100');
+    if (result.total_count > 100) throw new Error('CI run pagination not verified');
+    return (result.workflow_runs || []).filter(run =>
+      run.name === 'AI CAFE Pull Request Baseline' &&
+      run.head_sha === headSha && run.event === 'pull_request' &&
+      run.status === 'completed' && run.conclusion === 'startup_failure')
+      .sort((a,b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] || null;
+  }
+  async rerunFailedJobs(runId) {
+    if (!Number.isSafeInteger(runId) || runId < 1) throw new Error('Invalid retry run');
+    const response = await this.fetchFn('https://api.github.com/repos/' + this.repo +
+      '/actions/runs/' + runId + '/rerun-failed-jobs', {method:'POST',headers:{
+        Authorization:'Bearer ' + this.token,Accept:'application/vnd.github+json',
+        'X-GitHub-Api-Version':'2022-11-28'
+      }});
+    if (!response.ok) throw new Error('Transient CI retry rejected: ' + response.status);
+    return true;
+  }
   async openPulls() {
     const results = [];
     for (let page = 1; page <= 10; page++) {
@@ -118,7 +139,8 @@ export class GitHubFacts {
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
       codex_review_at: codex?.submitted_at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
-      ci_state: ci, codex_state: codexState, codex_reviewed_sha: codex?.commit_id || null,
+      ci_state: ci, ci_failure_kind: baseline?.conclusion === 'startup_failure' ? 'startup_failure' : null,
+      codex_state: codexState, codex_reviewed_sha: codex?.commit_id || null,
       threads_resolved: unresolved === 0, merged: false };
   }
   async snapshot() {
