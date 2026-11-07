@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { approvalSignature } from './delivery.mjs';
 import { dispatchFrontier, reconcileGithub } from './core.mjs';
-import { revalidateQueuedActions } from './authorization.mjs';
+import { revalidateQueuedActions, assignmentActionKey } from './authorization.mjs';
 
 const task = { id:'6', state:'ready', title:'Worker',goal:'Recover',brief:'docs/plans/tasks.md#task-6',
   architecture_approval:{approved:true},depends_on:['5'],exclusive_files:['lib/ai/runs/a.ts'],
@@ -95,4 +95,31 @@ test('priority gate keeps already-open PR repair, and releases only after durabl
   revalidateQueuedActions(proven,tasks(),priority);
   assert.equal(proven.actions['fix:6'].status,'planned');
   assert.equal(proven.tasks['6'].status,'assigned');
+});
+
+test('priority cancellation later requeues on a new deterministic key exactly once',()=>{
+ const state=makeState({status:'assigned',pr_number:null,conversation_ref:null},{type:'assign'});
+ state.actions['assign:6'] = {...state.actions['fix:6'],task_id:'6',type:'assign'};
+ delete state.actions['fix:6'];
+ revalidateQueuedActions(state,tasks(),priority);
+ assert.equal(state.actions['assign:6'].status,'cancelled_priority_gate');
+ assert.equal(assignmentActionKey(state,'6',priority),null);
+ state.tasks.POS0f={status:'integrated_proven'};
+ const key=assignmentActionKey(state,'6',priority);
+ assert.equal(key,'assign:6:after-POS0f');
+ state.actions[key]={status:'planned',task_id:'6',type:'assign'};
+ assert.equal(assignmentActionKey(state,'6',priority),null);
+ assert.equal(state.actions['assign:6'].status,'cancelled_priority_gate');
+});
+test('no replay after a claimed or uncertain action, or without priority gate proof',()=>{
+ const state=makeState({status:'assigned',pr_number:null,conversation_ref:null},{type:'assign'});
+ state.actions['assign:6']={task_id:'6',status:'cancelled_priority_gate',delivery_claim:{owner:'muse'}};
+ assert.equal(assignmentActionKey(state,'6',priority),null);
+ state.tasks.POS0f={status:'integrated_proven'};
+ assert.equal(assignmentActionKey(state,'6',priority),null);
+ delete state.actions['assign:6'].delivery_claim;
+ state.actions['assign:6'].status='uncertain';
+ assert.equal(assignmentActionKey(state,'6',priority),null);
+ state.actions['assign:6'].status='submitted';
+ assert.equal(assignmentActionKey(state,'6',priority),null);
 });
