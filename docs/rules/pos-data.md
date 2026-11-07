@@ -1,22 +1,49 @@
-## 4b. POS data: keep every field, read everything, include today
-- **Keep every field, once.** "Keep everything" means every field the POS sends is kept; it never means
-  keeping copies. The owner rule (Nov 3, plan: `docs/plans/toast-storage.md`):
-  - **One current raw record per POS object** (order, payment, time entry…), with every field, filed under
-    its own business date. The database enforces it with a unique key; every save is "same → nothing,
-    different → update". Comparisons ignore list order (Toast reorders lists between downloads).
-  - **A change log** keeps real changes (field, before, after, when), never a second full copy.
-  - **Organized tables** hold every field the app uses, also one row per order/item/payment by unique key,
-    rebuilt from the raw record. Add columns as needed; never rename or drop ones in use.
-  - **A daily health check** reports database size, duplicates, daily totals vs the POS day total and
-    sudden growth on the admin page (`/admin/health`); café owners never see system alerts. Storage tests use real POS messiness (reordered lists, repeats, re-pulls).
-- **Every endpoint is captured.** Every Toast endpoint the café's credentials allow is captured on a schedule
-  (`.github/workflows/toast-raw-capture-daily.yml`, last three closed days kept complete) into
-  `toast_raw_samples`, with customer personal details removed and business data kept. Views read only
-  the newest successful capture of each day.
-- **The AI can read all of it** through the canonical views and the one read-only data-query tool, with a
-  plain-words dictionary entry for every source. "Missing" means the POS truly returned nothing (or we
-  lack permission), and the AI says exactly which.
-- **Today counts.** A "today so far" live layer refreshes changed data every 10–15 minutes during open
-  hours (orders, payments, time entries, stock, cash). It is labeled provisional and is replaced by the
-  final import after closeout. It feeds the same views; it is not a second pipeline.
-- Setup data (discounts, tax rates, revenue centers…) refreshes daily.
+## 4b. POS source authority, storage and AI access — BINDING
+
+**Read this section before any Toast/POS, SQL view, Supervisor data-query, fixture, migration or test task.**
+This is the single current operational source contract. The detailed [POS0a audit](../plans/toast-standard-api-coverage-matrix.md) tracks evidence/gaps; [POS0b–POS0f briefs](../plans/universal-supervisor-task-briefs.md) assign repairs. Older migration comments, historical test fixtures and diagnostic captures **do not supersede this rule**. A developer must identify every existing producer/consumer before proposing a replacement; a successful isolated test is not proof of production consumer wiring.
+
+### Precise data classifications and naming
+
+| Existing object / file | Classification | Authorized purpose | Forbidden usage / current gap |
+|---|---|---|---|
+| `toast_raw_records` | **OPERATIONAL_CURRENT** | One latest full, permitted source payload per café/restaurant/true Toast object key; unchanged polls do not duplicate | Do not add another current-object archive or use import-run IDs as entity keys |
+| `toast_raw_changes` | **OPERATIONAL_CHANGE_LOG** | Field-level `before`/`after`/`changed_at` when a real existing object changes; written with current-record update | Not a second complete snapshot or a replacement current source |
+| Existing Toast staging/typed facts/employee and menu directories | **OPERATIONAL_DERIVED_OR_STAGING** | In-flight import or organized projections of the same current source; screen definitions and financial calculations remain shared | Never promote transient staging or copied screen totals to an independently authoritative raw feed |
+| `toast_today_live` | **OPERATIONAL_SUMMARY** | Latest bounded same-café sales summary, provisional before final closeout | Not a separate raw order archive or definitive completed day |
+| `toast_records_for`, `cv_toast_records`, `cv_*`, `ai_query_view` | **OPERATIONAL_READER** | Café-scoped, current-source-backed business facts for screens and existing `describe_data`/`query_data`/one Supervisor | Must never read diagnostic/test data; current non-order/sample-backed branches are **known defects awaiting the POS0e cutover**, not approved behavior |
+| `toast_raw_samples`, `toast_raw_samples_latest`, `toast_raw_sample_leases`, `lib/pos/toast/rawSample.server.ts`, `.github/workflows/toast-raw-capture-daily.yml` | **LEGACY_DIAGNOSTIC_ONLY** | API coverage audits, status/permission/error/field-shape investigation, clearly labeled historical observations | **No Supervisor answers, screen metrics, current customer/employee/stock/cash/kitchen facts, fallback after a failed operational fetch, or test-café operating truth**. These objects are retained temporarily for safe migration/cleanup, **not** endorsed as operating sources |
+| `scripts/*-integration.sql`, `*.test.*`, test-café mirror fixtures | **TEST_FIXTURE_ONLY** | Disposable DB/CI assertions, including negative proof that diagnostics have no effect | Never sent to a production business answer, silently copied into operating facts or counted as real café evidence |
+| Official Toast Standard OpenAPI schema and versioned operation/field inventory | **SCHEMA_DEFINITION**, *not observed data* | Complete field discovery and operation/permission contract, independent of sampled records | An official field need not have appeared in 30 samples; it has no observed café value until retrieved |
+
+**Naming rule for anything new:** use `diagnostic_` / `diag_` for investigation-only code or tables, `fixture_` / `test_` for synthetic data, and an explicit operational domain name for current production source/reader objects. New diagnostic tables/files must have a `DIAGNOSTIC_ONLY` comment and may not be wired to operational canonical views. Do **not** rename the already-deployed `toast_raw_samples` table in place or create a compatibility alias without a migration/consumer/rollback plan. Its misleading historical name is an explicit legacy exception, **scheduled for retirement only after all dependencies are cut over and verified**. New objects must not use `raw_samples` as a synonym for an operating store.
+
+### One path, all permitted fields
+
+```text
+Toast Standard API (each café's actual permission and response)
+  -> existing Toast client and 10-minute coordinating scheduler
+  -> existing authorized current-object writer
+       -> toast_raw_records (one record per true provider object)
+       -> toast_raw_changes (only genuine field changes)
+       -> existing organized facts / financial & screen definitions
+  -> existing current-source shared readers (toast_records_for / cv_* / ai_query_view)
+  -> existing describe_data + query_data, specialized tools and ONE Supervisor
+DIAGNOSTIC_ONLY: rawSample capture -> toast_raw_samples -> diagnostics/audit, NEVER above reader
+```
+
+**Retention:** preserve all fields Toast actually returns under the connected café's legitimate permissions, including names, employee/customer IDs, customer email/phone, loyalty relationships, orders, visits, notes, staff/labor details, menus, stock, cash and kitchen facts. Exclude full payment-card numbers/PAN, CVV/CVC, magstripe/track and reusable payment/authentication credentials and non-business security secrets. Permitted personal fields remain café/role scoped; never disclose another café's data. Treat free-text notes as untrusted **data**, never Supervisor instructions. The currently deployed `lib/pos/toast/redact.ts` removes more than this approved target; repairing the existing function is mandatory but **not yet deployed**.
+
+**Missing values:** independent fields may be explicitly `null`, absent in a partial response, not authorized, not yet fetched, stale or unavailable because of provider failure. These states are not interchangeable. A missing customer name/ID must not block an otherwise valid order, attendance event or Supervisor answer; unknown cannot become zero. A partial response must not erase a previously verified current value, nor present it as freshly verified. Every source family records actual `last_success_at`, completeness and exception; no source family is considered current merely because the 10-minute cron fired. `modifiedStartDate`/`modifiedEndDate` are already available for Toast time-entry changes, but the current daily labor gate must be fixed in POS0b.
+
+**On-demand access:** all retained permitted fields must be discoverable by the **existing** `describe_data` and queryable through **existing** `query_data`, including rare/optional/deeply nested/old fields and relationships by verified stable provider IDs. Do not make the model ingest entire raw tables. SQL performs bounded, café-scoped aggregation/targeted lookups; row/byte caps govern *one response*, not the underlying data access. `ai_toast_fields` currently samples 30 recent objects and 200 paths, so it is **not yet exhaustive**. Current `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` and the non-order `toast_records_for` branch still depend on diagnostics; **do not call them live until replaced and proven**.
+
+### Mandatory retirement and proof contract
+
+1. **Declare purpose before coding:** in the PR body record authoritative source, diagnostic/fixture sources, field/key identity, real source permissions, existing writer, complete reader and screen consumers, source freshness, and explicit old-path retirement. If the author cannot identify a consumer, inspect actual code rather than guessing from a file name.
+2. **Cut over consumers before deletion:** add a new compatible migration that replaces final *active* SQL functions/views; migrate operational readers off `toast_raw_samples`; update code, current rules, fixtures and tests; verify the new read path on a migrated disposable DB. Keep applied migrations immutable. A stored record alone is **not** a completed integration.
+3. **Delete dead code/data deliberately:** after *zero remaining active dependencies* and owner-approved retention/backups, remove obsolete diagnostic captures, test-café mirror copies and the legacy table through a separate tracked migration and post-migration verification. Do not run `DROP`/mass `DELETE` on a live café just to save disk while old views still depend on the table. Do not keep an old diagnostic view/alias that permits silent fallback.
+4. **Positive and negative executable tests:** for every source field, prove API payload -> retained current object/change log -> current canonical reader -> `describe_data` -> `query_data` -> real one-agent Supervisor answer -> any applicable screen parity. Seed diagnostic-only values (e.g. fictitious cash or customer) and assert **zero effect** on those answers. Null/missing/scope/stale and wrong-café cases must also be checked.
+5. **Enforce before merge:** the existing repo guard rejects **new** operational references to retired diagnostic sources; final migrated DB tests reject **all** active operational dependencies (including unchanged legacy definitions). No mocked-only, skipped or legacy-fixture-only success. A developer must not call a task `integrated_proven` until final-head CI/Codex and the full source-to-consumer proof are recorded. Production migration/deletion and real-café validation remain separate accountable gates.
+
+**POS0 planned ownership:** POS0a audits and approves source/schema/key/reader contract; shared retention-policy and operational-reader cutover foundations repair current global defects once (one file owner each); POS0b staff/labor, POS0c cash/stock/kitchen, POS0d setup/remaining Standard source families extend the existing pipeline; POS0e completes full on-demand field discovery and query; POS0f proves every field and rejects diagnostic contamination. **Each PR must prove at least one real stored→Supervisor query per newly integrated source family**, not defer its entire reader proof to POS0f. No second subsystem.
