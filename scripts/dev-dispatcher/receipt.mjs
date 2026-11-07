@@ -24,7 +24,18 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
     throw new Error('Follow-up destination changed');
   if (d.intent === 'start_new_chat' && task.conversation_ref)
     throw new Error('Task already has a conversation');
-  if (receipt.project_id !== d.project.id || receipt.provider !== d.provider)
+  // Existing courier records used {project:{id:'aicafe',name:'AI CAFE'}};
+  // the initial validator only understood the flat project_id field. Either
+  // shape identifies the *same approved destination*, never a second project.
+  // Reject ambiguous/conflicting identities rather than silently choosing one.
+  const flatPresent = Object.hasOwn(receipt, 'project_id');
+  const nestedPresent = Object.hasOwn(receipt, 'project');
+  if ((!flatPresent && !nestedPresent) ||
+      (flatPresent && (typeof receipt.project_id !== 'string' ||
+        receipt.project_id !== d.project.id)) ||
+      (nestedPresent && (!receipt.project || typeof receipt.project !== 'object' ||
+        Array.isArray(receipt.project) || receipt.project.id !== d.project.id)) ||
+      receipt.provider !== d.provider)
     throw new Error('Receipt project/provider mismatch');
   if (receipt.status && receipt.status !== 'submitted')
     throw new Error('Non-submission cannot be marked delivered');
