@@ -109,6 +109,27 @@ describe('Toast diagnostics may not feed operational data', () => {
     ]);
   });
 
+  it('retires old auto-scheduled diagnostics and preserves a manual-only workflow', () => {
+    const old = fixture();
+    old.put('.github/workflows/toast-raw-capture-daily.yml',
+      'on:\n  schedule:\n    - cron: "0 * * * *"\n');
+    const bad = old.run();
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toContain('retired scheduled diagnostic workflow');
+
+    const scheduled = fixture();
+    scheduled.put('.github/workflows/toast-diagnostic-capture-manual.yml',
+      'on:\n  schedule:\n    - cron: "0 * * * *"\n  workflow_dispatch:\n');
+    const wrong = scheduled.run();
+    expect(wrong.status).toBe(1);
+    expect(wrong.stderr).toContain('must be manual-only');
+
+    const manual = fixture();
+    manual.put('.github/workflows/toast-diagnostic-capture-manual.yml',
+      'name: DIAGNOSTIC_ONLY\non:\n  workflow_dispatch:\n');
+    expect(manual.run().status).toBe(0);
+  });
+
   it('fails closed if the supplied Git base cannot be checked', () => {
     const r = fixture();
     r.put('app/page.tsx', 'export const version = 1;\n');
