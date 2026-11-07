@@ -71,3 +71,19 @@ test('a draft with no published owner question cannot invent an approval notific
   assert.equal(draft.actions['POS0a:pre_pr_reminder:pre-pr:v1:start'].status,'cancelled_stale_head');
   assert.equal(signalFor(draft,'s'.repeat(32)).pending_count,0);
 });
+
+test('editing and withdrawing a question cancels only unsent owner notices',()=>{
+ const starting=reconcile(pending(),[newDraft('Approve first audit scope?')]);
+ const first=Object.values(starting.owner_alerts).find(n=>n.status==='planned');
+ assert.ok(first);
+ const changed=reconcile(starting,[newDraft('Approve revised audit scope?')]);
+ assert.equal(Object.values(changed.owner_alerts).filter(n=>n.status==='planned').length,1);
+ assert.equal(Object.values(changed.owner_alerts).filter(n=>n.status==='cancelled_no_longer_needed').length,1);
+ assert.match(Object.values(changed.owner_alerts).find(n=>n.status==='planned').question,/revised audit scope/);
+ assert.equal(signalFor(changed,'s'.repeat(32)).pending_count,1);
+ const withdrawn=reconcile(changed,[newDraft(null)]);
+ assert.equal(Object.values(withdrawn.owner_alerts).filter(n=>n.status==='planned').length,0);
+ assert.equal(signalFor(withdrawn,'s'.repeat(32)).pending_count,0);
+ const restored=reconcile(withdrawn,[newDraft('Approve a new audit decision?')]);
+ assert.equal(Object.values(restored.owner_alerts).filter(n=>n.status==='planned').length,1);
+});
