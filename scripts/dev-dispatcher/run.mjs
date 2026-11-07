@@ -9,6 +9,7 @@ import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { revalidateQueuedActions } from "./authorization.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus } from "./effects.mjs";
+import { collectReceipts, applyReceipts } from "./inbox.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
@@ -80,8 +81,14 @@ async function main() {
     // Proposals persist for later authorized delivery, never sent by this script.
     return { state: copy, assigned, nudges };
   }
+  const actorMap = Object.fromEntries((process.env.DISPATCH_COURIER_ACTORS || "").split(",").filter(Boolean).map(part => {
+    const [actor, courier] = part.split("=");
+    if (!actor || !["muse", "dave"].includes(courier)) throw new Error("Invalid courier actor mapping");
+    return [actor, courier];
+  }));
+  const inbox = ledger ? await collectReceipts({ ledger, allowedActors: Object.keys(actorMap) }) : [];
   const observed = await observe(current);
-  const proposed = reconcile(current, observed);
+  const proposed = reconcile(applyReceipts(current, inbox, actorMap), observed);
   async function promoteIntegration(state, mainSha) {
     for (const rec of Object.values(state.tasks)) {
       if (rec.status !== "merged" || !rec.integration_proof) continue;
@@ -99,7 +106,7 @@ async function main() {
     // identical state every five minutes (avoids 288 empty commits per day).
     persisted = await ledger.transaction(async existing => {
       const latest = await observe(existing);
-      const next = reconcile(existing, latest).state;
+      const next = reconcile(applyReceipts(existing, inbox, actorMap), latest).state;
       await promoteIntegration(next, latest.mainSha);
       return JSON.stringify(next) === JSON.stringify(existing) ? null : next;
     });
