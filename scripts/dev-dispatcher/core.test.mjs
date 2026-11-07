@@ -173,6 +173,19 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   assert.equal(actual.dispatch_rules.pos_source_authority.mandatory_first_read, "AGENTS.md");
   assert.equal(actual.dispatch_rules.pos_source_authority.mandatory_pos_rule_second_read, "docs/rules/pos-data.md");
   assert.equal(actual.dispatch_rules.pos_source_authority.legacy_diagnostic_only.includes("toast_raw_samples"), true);
+  const d4=actual.dispatch_rules.pos_d4_contract;
+  assert.match(d4.architecture_approach,/D4A_APPROVED_B_change_driven/);
+  assert.equal(d4.implementation_approved,false);
+  assert.deepEqual(d4.must_preserve_merged_prs,[189,203,264,297]);
+  assert.equal(d4.future_order_recovery.dispatchable,false);
+  assert.deepEqual(d4.future_order_recovery.owned_files_reserved,[]);
+  assert.ok(!actual.tasks.some(t=>t.id==="POS0-order-recovery"));
+  assert.deepEqual(actual.tasks.find(t=>t.id==="POS0a").exclusive_files,[
+    "docs/plans/toast-standard-api-coverage-matrix.md",
+    "scripts/toast-standard-api-coverage.test.mjs",
+    "docs/plans/toast-openapi-spec-snapshot.json"
+  ]);
+  assert.equal(d4.independent_cost_queue_diagnostic.due_jobs,77);
   assert.equal(actual.dispatch_rules.architecture_foundation_proof_task,"POS0a");
   assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
   assert.deepEqual(actual.dispatch_rules.architecture_foundation_dependent_task_ids,
