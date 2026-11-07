@@ -49,3 +49,32 @@ export function integrationStatus({ merged_sha, main_sha, proof }) {
     return 'merged_unproven';
   return 'integrated_proven';
 }
+
+export async function safeUpdateBranch({ github, record, enabled = false }) {
+  if (!enabled) return { status:'disabled' };
+  if (!record?.pr_number || !record?.head_sha || record.github_state !== 'open')
+    return { status:'blocked', reason:'unverified_pr' };
+  const pr=await github.request(`/pulls/${record.pr_number}`);
+  if (pr.state!=='open' || pr.head.sha!==record.head_sha ||
+      pr.base.ref!==record.base_branch || pr.merged) return {status:'blocked',reason:'live_pr_changed'};
+  if (pr.mergeable===false) return {status:'blocked',reason:'conflict_needs_coder'};
+  await github.request(`/pulls/${record.pr_number}/update-branch`, {
+    method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({expected_head_sha:record.head_sha})
+  });
+  return {status:'updating',reason:'recheck_new_head_and_all_checks'};
+}
+
+export async function retargetAfterIntegration({github,dependent,predecessor,enabled=false}) {
+  if(!enabled)return {status:'disabled'};
+  if(!dependent?.pr_number || !predecessor?.branch ||
+      !['integrated_proven','released_proven'].includes(predecessor.status))
+    return {status:'blocked',reason:'predecessor_not_integrated'};
+  const pr=await github.request(`/pulls/${dependent.pr_number}`);
+  if(pr.state!=='open' || pr.base.ref!==predecessor.branch ||
+     pr.head.sha!==dependent.head_sha) return {status:'blocked',reason:'unexpected_pr'};
+  await github.request(`/pulls/${dependent.pr_number}`,{
+    method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({base:'main'})
+  });
+  return {status:'retargeted',reason:'all_ci_codex_and_evidence_must_be_rechecked'};
+}
