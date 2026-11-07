@@ -59,7 +59,7 @@ The previous Grok queue's complete PR6–PR12 briefs were referenced at Grok-loc
 
 | Milestone | Owner-visible outcome | Dependencies / delivery proof |
 |---|---|---|
-| **E2** | Targeted Playwright/preview proof when a PR changes the UI/browser; no unnecessary screenshot gate for backend-only PRs | E1 #369, B2 #374; real execution check, not a skipped path-filter |
+| **E2** | Required targeted Playwright in GitHub Actions against a locally started app + disposable seeded DB. **No Vercel preview deployments/builds** and no screenshot gate for backend-only PRs | E1 #369, B2 #374, plus POS0f integration proof; real CI execution, not a skipped job |
 | **PR6** | Durable scoped worker: runs long work with checkpoints, per-run/café cost budgets, retries and lease safety | PR5 storage proof; restarts/duplicate worker tests |
 | **PR7** | Supervisor decides and schedules its own monitoring and follow-up work, including exception handling | PR6; trigger/dedup/DST/inbox parity |
 | **PR8a–c** | Existing experiments, Events and morning briefs reuse the common routine contract without second writers or lost deadlines | PR7 + each domain's actual operational acceptance |
@@ -79,14 +79,14 @@ These are **delivery milestones**; suffixed IDs in the queue (e.g. `14a`, `16b`)
 
 **Open now, merge later:** independent approved tasks start on latest main. If task B depends on open A, create B's branch from A's branch and open **a draft PR targeting A's branch immediately**, with stable file ownership; B is not blocked from coding merely because A is unmerged. As soon as A merges, B incorporates latest main, checks actual shared exports/schema/registration, reruns relevant tests and gets new Codex review. Only one PR owns any shared file/migration; no duplicate readers or dead adapters.
 
-**Current first wave:** POS0a only (approved read-only inventory). POS0b–POS0e require owner-approved field contracts; POS0f requires the integrated slice proofs. After POS0f is integrated-proven, the earlier E2/PR6/PR9/PR10 wave may proceed against the latest main on nonoverlapping scopes. Previously opened lower-priority PRs are not abandoned. Up to **four ChatGPT and two Claude** active tasks; no forced slot-filling if scopes conflict. The queue determines the actual frontier from latest GitHub facts; these are examples, not automatic authorizations.
+**Current first wave:** POS0a only (approved read-only inventory). POS0b–POS0e require owner-approved field contracts; POS0f requires the integrated slice proofs. After POS0f is integrated-proven, the earlier E2/PR6/PR9/PR10 wave may proceed against the latest main on nonoverlapping scopes. Previously opened lower-priority PRs are not abandoned. Up to **five ChatGPT and two Claude** active tasks; no forced slot-filling if scopes conflict. The queue determines the actual frontier from latest GitHub facts; these are examples, not automatic authorizations.
 
 ## Test policy: meaningful, fast and real
 
 - Every code PR: current-head TypeScript, lint, full Vitest, build, GitHub baseline/Codex as required by AGENTS.md. A missing/skipped required check is not a pass.
 - Data/schema: disposable migrated Supabase SQL/RLS and exact currency/count/coverage parity.
 - Actions/routines: failures, idempotency, revoked permission, receipt and recovery tests; actual tool registration or cron consumer proved before calling capability integrated.
-- UI/browser changes: **targeted** Playwright/preview and screenshots/traces when meaningful. No automatic screenshots for backend-only work. Avoid slow redundant checks; focused integration acceptance belongs at the first actual consumer and again at PR17.
+- UI/browser changes: **targeted Playwright in GitHub Actions against a disposable seeded local app**; retain meaningful screenshots/traces as GitHub artifacts, never Vercel previews/builds. No automatic screenshots for backend-only PRs. Focused integration proof belongs at the first actual consumer and again at PR17.
 - Never claim production-live from fixture CI; production migrations, external communications and pilot require explicit owner approval.
 
 ## Proof states (do not conflate)
@@ -98,6 +98,6 @@ These are **delivery milestones**; suffixed IDs in the queue (e.g. `14a`, `16b`)
 1. Owner-approved infrastructure sheet, source/API fields, saved record identity/retention and mandate boundaries (PR10 contract considered **before** PR6 worker assumes an authorization interface).
 2. Reconcile actual Grok PR6–PR12 briefs; no fabricated task ownership.
 3. Assign exact editable files from current main + open PRs, including shared-module owner; resolve proof failures in already merged foundations.
-4. Verify available CI/Codex protections and optional E2 preview setup. No assumptions about real production readiness.
+4. Verify CI/Codex protections and future E2 GitHub-only local browser tests (no Vercel preview setup). No assumptions about real production readiness.
 
 After approval, dispatchers and coding agents follow the [short runbook](universal-supervisor-agent-operations.md) and the [skills index](../rules/skills.md); do not keep inventing a second plan.
