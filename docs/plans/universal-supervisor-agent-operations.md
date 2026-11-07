@@ -15,10 +15,15 @@ has durable `integrated_proven` evidence.** This is enforced through dependency 
 edges, not merely this paragraph. Preserve ongoing already-open PR fixes/reviews.
 
 **Parallel opening rule:** five ChatGPT coding chats are the permitted active capacity.
-After POS0a's source-to-storage-to-reader architecture has been reviewed by
-the owner, merged to main AND verified as integrated_proven, POS0b/c/d may
-begin in parallel from main when each has its own approved exact scope and
-nonoverlapping file ownership. This architecture-foundation gate is distinct
+After POS0a's source-to-storage-to-reader architecture is merged to main,
+verified as integrated_proven AND separately accepted by the owner, POS0b/c/d
+may begin in parallel from main when each has its own approved exact scope and
+nonoverlapping file ownership. Record this owner acceptance in
+`dispatch_rules.architecture_foundation_implementation_approval`: `approved=true`,
+the exact `POS0a.merge_sha` from its verified integration record and the
+authenticated owner GitHub review comment URL for that merged source contract.
+It remains `approved=false` until the owner actually reviews the final matrix;
+do not reuse the earlier read-only audit approval. This gate is distinct
 from ordinary PR code dependencies: do not let an early approval or POS0a draft
 start implementation against an unfinalized source contract. POS0e
 has multiple functional predecessors and an explicit stack base POS0d; it may
