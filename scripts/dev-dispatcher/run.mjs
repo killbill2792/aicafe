@@ -54,6 +54,8 @@ async function main() {
       copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
+      // Never queue a second browser action while a prior delivery is pending or unverified.
+      if (Object.values(copy.actions).some(a => a.task_id === id && ["planned", "claimed", "uncertain"].includes(a.status))) continue;
       const proposal = decideNudge(rec, Date.now());
       if (proposal.kind !== "propose") continue;
       if (!copy.actions[proposal.key]) {
@@ -64,6 +66,7 @@ async function main() {
             (Number.isInteger(rec.pr_number) && rec.github_state !== "open")) continue;
         const delivery = createDelivery({ task, record: rec,
           action: proposal.action, actionId: proposal.key });
+        rec.last_action_key = proposal.key;
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
           status: "planned", head_sha: rec.head_sha || null, created_at: now, delivery };
         nudges.push({ task_id: id, action: proposal.action });
