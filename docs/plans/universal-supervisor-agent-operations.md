@@ -44,50 +44,13 @@ a pending Codex verdict never counts as clean.
 - `aicafe-proof-gate`: actual run/test/CI evidence and post-merge consumer verification; merged does not imply finished.
 - Load `gh-fix-ci`, `gh-address-comments`, `receiving-code-review`, `pr`, `verification-before-completion`, `supabase`, `vitest`, `playwright-cli` etc. **only when relevant**. Full list: `docs/rules/skills.md`.
 
-## Copy-paste dispatcher prompt
+## One current dispatch/handoff path — no standalone copy-paste prompts
 
-```text
-Use connected GitHub plugin. Read AGENTS.md, PROGRESS.md,
-docs/rules/skills.md and the approved queue at
-docs/plans/universal-supervisor-queue.json on latest main.
-Load aicafe-dependency-check and aicafe-proof-gate from .claude/skills/.
-Confirm actual merged commits, executed required tests and on-main integration
-before satisfying dependencies. Read docs/rules/pos-data.md; require source_authority_checked: yes and exact diagnostic/current consumer audit in every POS0 PR. PRIORITIZE POS0a then POS0e foundation, then POS0b/c/d, finally POS0f;
-do not create new E2/PR6/PR9/PR10 assignments before POS0f integrated proof. Check open PR changed files and file-owner locks.
-Assign up to 5 ChatGPT and 2 Claude approved tasks, independent or
-stacked NOW on open prerequisite branches (PR base = that branch).
-Never confuse opened with mergeable. Advance after real merges and proof;
-send a concise task brief + branch/base/owned files/skills to each agent.
-Do not invent owner approvals, secrets or live deployment authority.
-```
+**The only executable coding-agent prompt** comes from the existing deterministic `scripts/dev-dispatcher/run.mjs` → `scripts/dev-dispatcher/delivery.mjs#createDelivery`, supplied with an **approved** task from `docs/plans/universal-supervisor-queue.json` and its exact `docs/plans/universal-supervisor-task-briefs.md` anchor. It includes the D1–D4A/D4B contract by first-read links, real predecessor SHA, exclusive files, acceptance and owner hold. The bridge resumes the same saved chat/PR; never manually replace or concatenate prompts. The former dispatcher and coding-agent copy-paste examples were **superseded and removed from this CURRENT operations page** (their history remains in Git) because those duplicated instructions and could omit owner decisions.
 
-## Copy-paste ChatGPT coding-agent prompt
+**Agent setup/preflight, not a prompt:** current main `AGENTS.md` and `PROGRESS.md` (read-only) → binding `docs/rules/pos-data.md` → latest #398 "Start here" architecture decision record (including approved D4A/B and unresolved D4B SQL mechanism) → assigned brief **AND** queue with `architecture_foundation_implementation_approval.approved=false` until separate owner signoff → inspect current code and deployed SQL → actually execute `docs/rules/tests.md` acceptance. When #398 remains draft, a reviewer reads the actual PR head, but cannot use an absent on-main file to bypass the owner gate.
 
-```text
-Use connected GitHub plugin. Implement approved AI CAFE task TASK_ID.
-Build toward one proactive universal cafe operator; reuse canonical Toast POS
-readers, shared calculations, one AI loop and existing approval/inbox paths.
-Read AGENTS.md + PROGRESS.md + docs/rules/pos-data.md from current main, the task in
-docs/plans/universal-supervisor-task-briefs.md, current queue and
-relevant docs/rules/* and .claude/skills/*/SKILL.md.
-Load aicafe-pr-lifecycle, aicafe-dependency-check, aicafe-proof-gate.
-Verify predecessor real code and executed acceptance, not its merged label.
-Open a DRAFT PR PROMPTLY once authorized: independent = latest main;
-dependent on an open PR = branch FROM prerequisite and PR base = that branch.
-An unmerged upstream is a merge blocker, not permission to stop coding;
-develop and test against its committed branch. Do not invent missing interfaces.
-Edit only assigned files. Stay in THIS SAME CHAT for all CI errors,
-Codex findings, thread resolutions, fresh reviews and main updates.
-Check Codex during this active execution; do not create a background
-monitor, cron or polling service. If execution ends, the dispatcher resumes
-this SAME PR and chat where it stopped. Never call a pending review clean. If upstream merges, rebase/retarget, verify integration,
-rerun relevant tests and obtain new Codex review. Merge only under AGENTS.md.
-Show exact test command, run URL, head SHA, outcomes, merged SHA or blocker.
-Use targeted Playwright in GitHub CI only for relevant UI/browser changes;
-NEVER deploy/build a Vercel preview (owner disabled previews for cost).
-Never edit PROGRESS.md inside a coding PR; one coordinator updates it alone
-on current main after merge/proof. No production effects.
-```
+**Dispatch safety:** Do not send a task whose exact file scope or owner approval is missing, change the saved task approval signature during an existing assignment, create a separate `POS0-order-recovery` task, or activate implementation because D4A/B principles were approved. Only a separate authenticated owner decision after approved SQL design and file/PR ownership can authorize that future work. Any manual emergency workaround must first resolve the source/approval discrepancy; no independently authored alternate coding prompt.
 
 ## Dispatcher rules
 
