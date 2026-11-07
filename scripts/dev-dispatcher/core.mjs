@@ -145,8 +145,8 @@ export function reconcileGithub(state, openPrs, closedByPr = {}) {
           }
         }
       }
-      const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_github_activity);
-      copy.tasks[id] = { ...updated, ...pr, task_id: id, github_state: "open",
+      const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_commit_at || pr.last_github_activity);
+      copy.tasks[id] = { ...updated, ...pr, task_id: id, status: pr.draft ? "draft_open" : "review_fixing", github_state: "open",
         submission_state: updated.submission_state };
     }
   }
