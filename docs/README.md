@@ -4,6 +4,8 @@
 the café through the Supervisor chat). Start with [AGENTS.md](../AGENTS.md) and [PROGRESS.md — Now](../PROGRESS.md).
 If any document conflicts with AGENTS.md, AGENTS.md wins.
 
+**Before ANY POS/Toast/AI-data work, read [binding POS source authority and file classification](rules/pos-data.md) first.** It identifies the real operating record and change log, the legacy diagnostic-only `toast_raw_samples` (which must never drive Supervisor or screens), the correct data-reader chain, naming rules, retirement steps and mandatory executable proof. [POS0a coverage audit](plans/toast-standard-api-coverage-matrix.md) records current gaps; [POS0b–POS0f PR briefs](plans/universal-supervisor-task-briefs.md) own fixes. **Do not start from historical SQL migrations, passing diagnostic fixture tests, or descriptive file names to decide which data is authoritative.**
+
 ## Current docs
 - [Universal Supervisor delivery queue (owner-review draft)](plans/universal-supervisor-delivery-queue-2026-11.md) — concise PR6–PR17 roadmap; **not** an implementation authorization until owner approved.
 - [Universal Supervisor task briefs](plans/universal-supervisor-task-briefs.md) — per-task dependencies, acceptance, skills and proposed scope.
