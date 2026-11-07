@@ -46,7 +46,7 @@ async function main() {
     const copy = queueOwnerAlerts(
       reconcileGithub(linked.state, observed.snapshot, observed.closedByPr),
       {unmappedPrs:linked.unmapped});
-    revalidateQueuedActions(copy, taskById);
+    revalidateQueuedActions(copy, taskById, queue);
 
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
