@@ -144,6 +144,11 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
  assert.match(queue.dispatch_rules.pos_d4_contract.toast_first_catalog_and_experiment_approved.historical_rule,/historical Option B evidence-first APPROVED/);
  assert.ok(queue.tasks.find(t=>t.id==='8a').acceptance.some(s=>s.includes('First pending reminder')));
  assert.match(queue.dispatch_rules.pos_d4_contract.toast_first_catalog_and_experiment_approved.measurement_clock_rule,/N consecutive rolling windows of 24 elapsed hours/);
+ assert.match(queue.dispatch_rules.pos_d4_contract.toast_first_catalog_and_experiment_approved.unrequested_price_change_observation,/NO owner experiment/);
+ assert.match(queue.dispatch_rules.pos_d4_contract.toast_first_catalog_and_experiment_approved.unrequested_price_change_observation,/DAILY insight on EACH day 1-7/);
+ assert.ok(queue.tasks.find(t=>t.id==='POS0d').acceptance.some(s=>s.includes('7-day OBSERVATIONAL watch')));
+ assert.ok(queue.tasks.find(t=>t.id==='POS0f').acceptance.some(s=>s.includes('unrequested published Toast price change')));
+ assert.ok(queue.tasks.find(t=>t.id==='8a').acceptance.some(s=>s.includes('Distinct APPROVED OUTCOME')));
  for(const id of ['POS0a','POS0b','POS0c','POS0d','POS0e','POS0f']){
   const real=queue.tasks.find(t=>t.id===id);
   assert.ok(real,id);
@@ -202,6 +207,7 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
       'MENU/EXPERIMENT SPEC HANDOFF','specs/0001-d4c-toast-menu-authority-and-owner-review.md',
       'specs/0002-pos-change-verified-experiment-activation.md','Toast-first connected catalog',
       'NO local Add Item/draft or legacy Owner review tab','Option A','563 historic sales valid, COGS unknown','historical Option B APPROVED; SQL/design remains OPEN','ONE complete authenticated current Toast','never leak into live catalog','manual_done','~+2h','MAX TWO','rolling 24h','final cafe-close extension',
+      'Proactive source-verified Toast price DELTA','ONE Supervisor notice','7-day OBSERVATIONAL watch','NO experiment','DAILY day1–7 updates + final','no causal claims','no second watcher',
      'diagnostic snapshots','roll back','rollback']){
      if(fact==='roll back')continue;
      assert.ok(block.includes(fact),id+' missing '+fact);
