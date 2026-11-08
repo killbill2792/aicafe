@@ -2,7 +2,7 @@
 
 **Status:** In Review — approved source confirmation, pending reminders, rolling-24-hour approved experiments and **independent 7-day proactive price-change observation** (#6728419191), with daily owner reports; source/reader, watch storage/delivery and implementation ownership still unapproved.
 **Date:** 2026-11-07
-**Relation:** [D4C Toast menu authority and owner review](0001-d4c-toast-menu-authority-and-owner-review.md) §8.1; draft [#398](https://github.com/killbill2792/aicafe/pull/398) and [#400](https://github.com/killbill2792/aicafe/pull/400).
+**Relation:** [D4C ONE Toast-current Menu and preserved historical evidence](0001-d4c-toast-menu-authority-and-owner-review.md) §8.1; draft [#398](https://github.com/killbill2792/aicafe/pull/398) and [#400](https://github.com/killbill2792/aicafe/pull/400).
 **Scope:** price experiments/price-change monitoring at Toast-connected cafés; same source-confirmation rule applies to staff experiments, but exact staff authoritative source and workflow are separately unapproved.
 
 ## 1. Problem and proven baseline
