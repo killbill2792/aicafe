@@ -16,6 +16,7 @@ import {readFileSync} from "node:fs";
 import {resolve,dirname} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createHash} from "node:crypto";
+import {createRequire} from "node:module";
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"..");
 const read=path=>readFileSync(resolve(root,path),"utf8");
@@ -107,28 +108,132 @@ if(process.env.POS0A_REQUIRE_FULL_COVERAGE==="1"){
 
 
 /**
- * A read-only, NON-GATING public-documentation probe. Unlike the four
- * deterministic assertions above, it depends on network availability.
- * Even if the download succeeds, this does NOT satisfy official recursive
- * response-field coverage or any café permission/current-reader proof.
+ * TEMPORARY read-only public documentation extraction for the owner-approved
+ * pinned official schema snapshot. No café credentials or POS API calls.
+ * Output is a normalized GET and nested-response field list and original
+ * download SHA; all delivery is diagnostic, not full A1/A2/A4 certification.
+ * Once collected, replace this with a deterministic pinned-snapshot guard.
  */
-test("official-source reachability probe (not A1/A2/A4 certification)",async t=>{
- const f=manifest.official_families.find(x=>x.family==="orders");
- const url=f?.official_download_url_verified;
- if(!url)return t.skip("No documented official schema URL");
- try{
-  const response=await fetch(url,{signal:AbortSignal.timeout(12000)});
-  if(!response.ok)return t.skip("Official public YAML HTTP "+response.status);
-  const bytes=new Uint8Array(await response.arrayBuffer());
-  if(bytes.length<1000)return t.skip("Source response too small to certify as specification");
-  const digest=createHash("sha256").update(bytes).digest("hex");
-  assert.match(digest,/^[a-f0-9]{64}$/);
-  t.diagnostic("POS0A_PUBLIC_SPEC_RETRIEVAL "+JSON.stringify({
-   url,sha256:digest,bytes:bytes.length,
-   content_type:response.headers.get("content-type"),
-   first_line:new TextDecoder().decode(bytes.slice(0,160)).split("\n")[0]
-  }));
- }catch(err){
-  t.skip("Public source retrieval unavailable: "+(err instanceof Error?err.message:String(err)));
+test("official-source schema capture (diagnostic, not an acceptance gate)",async t=>{
+ const require=createRequire(import.meta.url);
+ let yaml;
+ try {yaml=require("js-yaml");}
+ catch {return t.skip("Pinned local dependency js-yaml unavailable");}
+ const errors=[];
+ const downloaded=[];
+ const fetchWithTimeout=async(url,timeout=15000)=>{
+  const res=await fetch(url,{signal:AbortSignal.timeout(timeout)});
+  if(!res.ok)throw Error("HTTP "+res.status+" "+url);
+  return res;
+ };
+ const trace=(doc,schema,rootLabel,paths,missing)=>{
+  const found=new Map();
+  const emit=(p,kind,format="",required=false)=> {
+   if(!p)return;
+   const key=[p,kind,format,required?1:0].join("|");
+   found.set(key,[p,kind,format,required?1:0]);
+  };
+  const resolveRef=(ref)=>{
+   if(typeof ref!=="string"||!ref.startsWith("#/")){missing.add(String(ref));return null;}
+   let v=doc;
+   for(const token of ref.slice(2).split("/")){
+    const part=token.replace(/~1/g,"/").replace(/~0/g,"~");
+    v=v?.[part];
+   }
+   if(!v)missing.add(ref);
+   return v??null;
+  };
+  const walk=(node,p,required=false,depth=0,stack=new Set())=>{
+   if(!node||typeof node!=="object"||depth>60){if(depth>60)missing.add("DEPTH "+p);return;}
+   if(node.$ref){
+    if(stack.has(node.$ref)){emit(p,"recursive_ref",node.$ref,required);return;}
+    const ref=node.$ref, target=resolveRef(ref);
+    if(target)walk(target,p,required,depth+1,new Set([...stack,ref]));
+    return;
+   }
+   for(const branch of ["allOf","oneOf","anyOf"])if(Array.isArray(node[branch])){
+    for(const child of node[branch])walk(child,p,required,depth+1,stack);
+   }
+   const kind=node.type||(node.properties||node.additionalProperties?"object":"unspecified");
+   if(p)emit(p,kind,node.format||"",required);
+   if(kind==="array"||node.items){
+    const a=node.items;
+    if(a)walk(a,p+"[]",required,depth+1,stack);
+   }
+   if(node.properties&&typeof node.properties==="object"){
+    const req=new Set(node.required||[]);
+    for(const [name,child] of Object.entries(node.properties)){
+     walk(child,p?p+"."+name:name,req.has(name),depth+1,stack);
+    }
+   }
+   if(node.additionalProperties&&typeof node.additionalProperties==="object"){
+    walk(node.additionalProperties,p?p+".{*}":"{*}",false,depth+1,stack);
+   }
+  };
+  walk(schema,rootLabel,false,0,new Set());
+  return [...found.values()].sort((a,b)=>a[0].localeCompare(b[0])||a[1].localeCompare(b[1]));
+ };
+ const collect=async family=>{
+  try{
+   const overview=await (await fetchWithTimeout(family.official_overview)).text();
+   const anchors=[...overview.matchAll(/href=["']([^"']*\/toast-api-specifications\/[^"']+\.ya?ml)["']/g)];
+   let schemaUrl=family.official_download_url_verified||anchors[0]?.[1];
+   if(!schemaUrl)throw Error("No official YAML download href");
+   const url=new URL(schemaUrl,family.official_overview);
+   if(url.protocol!=="https:"||url.hostname!=="doc.toasttab.com")
+    throw Error("Unexpected YAML host "+url.hostname);
+   const response=await fetchWithTimeout(url.href,20000);
+   const bytes=new Uint8Array(await response.arrayBuffer());
+   if(bytes.length<1000)throw Error("Short YAML response");
+   const digest=createHash("sha256").update(bytes).digest("hex");
+   const text=new TextDecoder().decode(bytes);
+   const parsed=yaml.load(text,{json:true});
+   if(!parsed?.paths||!parsed.info?.version)throw Error("Invalid parsed official spec");
+   const base=parsed.basePath||"";
+   const unresolved=new Set(),operations=[];
+   for(const [path,methods] of Object.entries(parsed.paths)){
+    if(!methods||!methods.get)continue;
+    const def=methods.get;
+    const responses=[];
+    for(const [status,res] of Object.entries(def.responses||{})){
+     if(!/^2\d\d$/.test(status)||!res)continue;
+     let result=res;
+     if(result.$ref&&result.$ref.startsWith("#/")){
+      result=result.$ref.slice(2).split("/").reduce((a,k)=>a?.[k],parsed)||{};
+     }
+     const schema=result.schema||(result.content?.["application/json"]?.schema);
+     if(schema)responses.push({status,fields:trace(parsed,schema,"",[],unresolved)});
+     else responses.push({status,fields:[]});
+    }
+    operations.push({path:base+path,method:"GET",operation_id:def.operationId||null,
+     security:def.security??parsed.security??null,responses});
+   }
+   operations.sort((a,b)=>a.path.localeCompare(b.path));
+   return {family:family.family,overview:family.official_overview,
+    download_url:url.href,sha256:digest,raw_bytes:bytes.length,
+    version:String(parsed.info.version),spec_type:parsed.swagger?"swagger "+parsed.swagger:parsed.openapi?"openapi "+parsed.openapi:"unknown",
+    operations,unresolved_refs:[...unresolved].sort()};
+  }catch(err){
+   errors.push({family:family.family,error:err instanceof Error?err.message:String(err)});
+   return null;
+  }
+ };
+ const families=manifest.official_families;
+ for(let at=0;at<families.length;at+=4){
+  const batch=await Promise.all(families.slice(at,at+4).map(collect));
+  downloaded.push(...batch.filter(Boolean));
  }
+ const snapshot={provenance:"official Toast download URLs; parsed in CI without provider credentials",
+  timestamp_utc:new Date().toISOString(),families:downloaded,fetch_errors:errors,
+  complete_downloads:downloaded.length===families.length};
+ const serial=JSON.stringify(snapshot);
+ const chunkSize=5500, count=Math.ceil(serial.length/chunkSize);
+ t.diagnostic("POS0A_SCHEMA_CAPTURE_SUMMARY "+JSON.stringify({
+  downloaded:downloaded.map(x=>({family:x.family,version:x.version,sha256:x.sha256,raw_bytes:x.raw_bytes,
+   operations:x.operations.length,field_rows:x.operations.reduce((s,o)=>s+o.responses.reduce((a,r)=>a+r.fields.length,0),0),
+   unresolved_refs:x.unresolved_refs.length})),
+  errors,serial_characters:serial.length,chunks:count
+ }));
+ for(let i=0;i<count;i++)t.diagnostic("POS0A_SCHEMA_CAPTURE_CHUNK "+i+"/"+count+" "+serial.slice(i*chunkSize,(i+1)*chunkSize));
+ if(!downloaded.length)t.skip("No public official YAML could be retrieved; do not certify completeness");
 });
