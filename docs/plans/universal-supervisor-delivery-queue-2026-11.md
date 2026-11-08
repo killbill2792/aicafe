@@ -5,7 +5,8 @@
 **Authority:** [AGENTS.md](../../AGENTS.md) and its linked rules; this plan never overrides them. A proposed mandate is not permission to contact employees, write to POS, move funds or deploy. Existing restrictions stay until separately owner-approved rule changes. Every external source and stored record needs the plain-language architecture sheet in AGENTS.md before coding. The owner can approve a complete shared contract once, then coding agents implement within that scope without repeating the same discussion.
 
 **For any Toast/POS task, first read [binding POS source authority](../rules/pos-data.md) in addition to the three dispatch files below. Diagnostic capture/test data must not feed the live Supervisor, no matter what historical fixtures say.**
-\n**Read only three files for dispatch:** [machine task queue](universal-supervisor-queue.json) (IDs, dependency DAG, proof status), [task briefs](universal-supervisor-task-briefs.md) (unique task acceptance) and [agent operations](universal-supervisor-agent-operations.md) (short copy-paste prompt). Reusable process belongs in `.claude/skills/aicafe-*/SKILL.md`; do not paste all rules into each coding turn.
+
+**One generated dispatch handoff, not three independent instructions:** the existing GitHub dispatcher reads the [machine queue](universal-supervisor-queue.json) (DAG, ownership, proof and approval gate) and [assigned task brief](universal-supervisor-task-briefs.md) (acceptance); its `delivery.mjs` creates the sole bounded ChatGPT/Claude assignment or continuation prompt. [Agent operations](universal-supervisor-agent-operations.md) is lifecycle context, **not** a copy-paste prompt or second approval path. AGENTS.md, read-only PROGRESS.md, binding POS rules, applicable skills and #398's current concise owner-decision summary are mandatory sources; the large matrix is selective field evidence, not a mandatory prompt dump.
 
 ## PRIORITY ZERO — complete Toast Standard API data and one AI read path (owner decision, Nov 6)
 
@@ -37,13 +38,13 @@ a current importer. Do not rebuild orders or keep parallel raw snapshots.
 screen metrics in `lib/metrics/core`, specialized tool projections, `calculate`,
 `describe_data` and `query_data`. No duplicate ingestion/read path, no new tool/view per
 question, no arbitrary AI SQL, no data loss and no indiscriminate 30-minute requests.
-The existing 10-minute coordinator checks all permitted families, with per-endpoint quotas/backoff and current freshness; static configuration uses revision/metadata checks and fetches full data on change.
+**Target, NOT verified current behavior:** the existing 10-minute coordinator should make bounded per-family change checks and report actual freshness, but optional labor/config paths are still daily gated. Future approved POS0b–d work must reuse that coordinator, respect quotas/backoff and prefer revision/metadata checks before a validated full snapshot; no current 10-minute freshness guarantee.
 Names, customer IDs, phone/email, staff details, notes and other fields Toast returns under real permissions must be retained for café-authorized AI, except card PAN/CVV/track and payment/authentication credentials. A missing optional field cannot block an unrelated order or answer. `toast_raw_samples` and `toast_raw_samples_latest` are LEGACY_DIAGNOSTIC_ONLY and must never feed operational `cv_*`, Supervisor or screen figures. A restricted endpoint is a documented, date-stamped `permission`/`not_supported`/`empty` reason,
 not an invented zero. Standard API is distinct from optional paid Toast Analytics/ERA and
 Menus V3 limitations.
 
 **Owner approval boundary:** The user approved **priority** and the high-level architecture.
-POS0a is approved for **read-only contract/audit work**. Before POS0e or POS0b–d begin coding,
+POS0a is approved for **read-only contract/audit work**. **November 8 owner switch remains OFF:** dispatcher issue/queue tracking does not authorize delivery of POS0b–f coding prompts; the owner will personally activate the existing coding dispatcher after #398/#399/#400 architecture closeout. Comment reconciliation remains manual in these draft PR bodies, not a new blocking automation task. Before POS0e or POS0b–d begin coding,
 AGENTS.md §15 still requires a source-field-by-field mapping, stable object keys, destinations,
 redaction, permissions, readers and exact file ownership that the owner has reviewed.
 Production migrations/deploys and new credentials need separate approval.
