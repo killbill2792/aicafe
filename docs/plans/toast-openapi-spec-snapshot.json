@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
-  "purpose": "POS0a approved read-only official OpenAPI source-acquisition and repo-candidate manifest; NOT a completed OpenAPI snapshot",
+  "purpose": "Pinned normalized official Toast Standard GET/2xx response-field schema with original official-source SHA-256 and repository candidate crosswalk; NOT proof of café scopes, retention, shared readers or Supervisor answerability",
   "classification": "PINNED_OFFICIAL_GET_SCHEMA__CURRENT_CAFE_AND_READER_UNVERIFIED",
   "as_of_utc": "2026-11-08",
   "source_notes": [
     "Official original Swagger 2.0 YAML files fetched read-only from Toast-owned doc.toasttab.com in trusted GitHub Actions; each raw response SHA-256, spec version, GET operation and nested 2xx response-property path was extracted to this normalized inspectable JSON. Original YAML bytes are not committed; source URLs and SHA pin reproducibility.",
     "Schema presence and get-operation enumeration do NOT prove per-café authorized scopes, returned optional fields, current-object persistence, differential history, live SQL lineage, Supervisor queryability or screen parity.",
     "October 28 redacted diagnostic observations remain in the existing normalized matrix: never treat them as live source records or as the official schema.",
-    "Current registry may have route-prefix discrepancies; preserve the exact original official and code paths until source host/basePath and runtime routing are independently verified.",
+    "Exact stock and packaging Swagger-path versus gateway request-prefix discrepancies were classified against Toast's own operation-page curl examples, without any café API call. See official_registry_comparison.route_prefix_classification; source GET shape is pinned, runtime availability is not proven.",
     "Current approval remains POS0a audit-only; no runtime, credentials, dispatch, new authority or database writes."
   ],
   "official_scopes_reference": "https://doc.toasttab.com/doc/devguide/devApiAccessScopes.html",
@@ -938,7 +938,7 @@
     "classification": "OCTOBER_28_ONLY_NOT_OFFICIAL"
   },
   "acceptance_gates": {
-    "A1_official_get_operation_inventory": "OFFICIAL_12_FAMILY_GET_SCHEMA_PINNED__2_PATH_PREFIX_MISMATCHES_TO_CLASSIFY",
+    "A1_official_get_operation_inventory": "OFFICIAL_12_FAMILY_GET_SCHEMA_PINNED__TWO_GATEWAY_PREFIXES_CLASSIFIED__CAFE_GRANTS_AND_OPERATIONAL_STATUS_OPEN",
     "A2_nested_type_scope_field_coverage": "OFFICIAL_2320_RESPONSE_FIELD_ROWS_INDEXED__CAFE_SCOPE_AND_STORAGE_READER_EVIDENCE_OPEN",
     "A4_source_storage_shared_reader_supervisor": "OPEN_CURRENT_CAFE_READER_AND_REGISTERED_AGENT_PROOF_UNEXECUTED"
   },
@@ -16443,6 +16443,24 @@
         "/v1/published/packagingConfig"
       ]
     },
-    "interpretation": "Stock and packaging Swagger basePath omit API family prefix in two paths. Do not assume missing endpoint or equivalence until host/basePath routing is verified. Menus V3 intentionally excluded from Standard."
+    "interpretation": "Two exact Swagger GET paths omit the /stock or /packaging gateway family prefix, whereas the official Toast operation-page executable curl examples explicitly include /stock/v1/inventory and /packaging/v1/published/packagingConfig. The two candidates are classified as documented route-prefix presentation differences, not missing Standard GET operations. Preserve both original Swagger paths and real external request paths; no café grant, HTTP success or current writer-reader parity is inferred. Menus V3 is excluded from Standard.",
+    "route_prefix_classification": [
+      {
+        "family": "stock",
+        "swagger_path": "/v1/inventory",
+        "gateway_path": "/stock/v1/inventory",
+        "official_operation_page": "https://doc.toasttab.com/openapi/stock/operation/getInventory/",
+        "evidence": "Official operation-page curl request targets https://toast-api-server/stock/v1/inventory",
+        "status": "CLASSIFIED_OFFICIAL_REQUEST_EXAMPLE_NO_CAFE_FETCH"
+      },
+      {
+        "family": "packaging",
+        "swagger_path": "/v1/published/packagingConfig",
+        "gateway_path": "/packaging/v1/published/packagingConfig",
+        "official_operation_page": "https://doc.toasttab.com/openapi/packaging/operation/getPackagingConfig/",
+        "evidence": "Official operation-page curl request targets https://toast-api-server/packaging/v1/published/packagingConfig",
+        "status": "CLASSIFIED_OFFICIAL_REQUEST_EXAMPLE_NO_CAFE_FETCH"
+      }
+    ]
   }
 }
