@@ -133,7 +133,7 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
  assert.match(queue.dispatch_rules.pos_d4_contract.toast_first_catalog_and_experiment_approved.pending_reminders,/two per owner\/experiment/);
  assert.ok(queue.tasks.find(t=>t.id==='POS0d').acceptance.some(s=>s.includes('Toast-first Menu')));
  assert.ok(queue.tasks.find(t=>t.id==='8a').acceptance.some(s=>s.includes('First pending reminder')));
- for(const id of ['POS0b','POS0c','POS0d','POS0e']){
+ for(const id of ['POS0a','POS0b','POS0c','POS0d','POS0e','POS0f']){
   const real=queue.tasks.find(t=>t.id===id);
   assert.ok(real,id);
   assert.notEqual(real.architecture_approval?.approved,true,id+' must remain unauthorized');
@@ -146,7 +146,16 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
    assert.equal(d.intent,'start_new_chat');
    assert.match(d.prompt,/TASK ACCEPTANCE \(signed\): Read EVERY task\.acceptance entry/);
    assert.equal(d.prompt.includes(JSON.stringify(real.acceptance)),false,'full signed acceptance must not be duplicated in browser prompt');
-   assert.ok(d.prompt.length<12000,id+': '+d.prompt.length);
+   assert.ok(d.prompt.length<12000,id+' '+agent+' assignment: '+d.prompt.length);
+   // A saved conversation and changed base add more text than first assignment.
+   const follow={...record,agent,
+     conversation_ref:agent==='claude'?'https://claude.ai/chat/test-pos0-aicafe':'https://chatgpt.com/c/test-pos0-aicafe',
+     pr_number:400,branch:'feat/aicafe-task-POS0a',base_branch:'feat/prerequisite-foundation',
+     prerequisite_pr:398,head_sha:'0123456789abcdef0123456789abcdef01234567',
+     ci_state:'in_progress',codex_state:'review_fixing',base_current:false,review_base_current:false};
+   const resumed=createDelivery({task:mockApproved,record:follow,action:'continue_pr',actionId:'handoff-follow:'+id+':'+agent});
+   assert.equal(resumed.intent,'continue_existing_chat');
+   assert.ok(resumed.prompt.length<12000,id+' '+agent+' continuation: '+resumed.prompt.length);
    const block=d.prompt.slice(d.prompt.indexOf('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING'));
    const required=[
     '(1) current main AGENTS.md',
