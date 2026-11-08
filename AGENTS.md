@@ -46,6 +46,19 @@ Where an older line in this file conflicts with these rules, these rules win.
 8. **Merge readiness.** A PR is mergeable only when CI is green, the Codex review is clean (or every comment
    is fixed and re-reviewed), it is rebased on current main, and the PR body says what changed, what was
    deleted and what was not touched.
+8a. **Never lose a PR or owner comment.** In the **same existing PR description**, maintain one
+   **Comment disposition** checklist keyed by original GitHub issue-comment ID or
+   inline review-thread ID. Include new owner decisions, requested repairs, Codex
+   findings and follow-ups even if posted after the last commit. Each item records
+   responsible file/task, state (`acknowledged`, `working`, `blocked—owner decision`,
+   `fixed—awaiting proof`, `verified`, or `superseded`) and an exact commit +
+   executed test/CI reference, or an explicit blocker/superseding comment. Re-read
+   the full PR conversation and review threads before editing, after substantive
+   changes and before reporting done; account for every actionable ID exactly once.
+   A reply, resolved thread, clean Codex review or checkbox alone is **not** proof.
+   Resolve inline threads only after actual fixes are verified. Never silently
+   infer approval. This uses the existing GitHub/dispatcher workflow and is **not**
+   a new task queue, agent, approval system or documentation authority.
 9. **No silent data loss.** Every save records success or failure. Failures retry automatically with
    backoff and stay visible in the health check until they are recovered. The owner is never asked to
    fix data.
