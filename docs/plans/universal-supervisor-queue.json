@@ -93,7 +93,7 @@
       "ordered_first_read": [
         "AGENTS.md (PROGRESS.md read only)",
         "docs/rules/pos-data.md (binding source/consumer decisions)",
-        "docs/plans/toast-standard-api-coverage-matrix.md#start-here--durable-agent-handoff-and-conflicts-index-2026-11-07 (approved D1-D4A/D4B; observed vs target)",
+        "PR #398 current owner-decision summary FIRST, then targeted docs/plans/toast-standard-api-coverage-matrix.md evidence sections only; compact retrievable #398 entrypoint is still a POS0a deliverable",
         "docs/plans/universal-supervisor-task-briefs.md#task-<POS0_ID> and this machine queue (no runtime authorization)",
         "existing code plus deployed pg_get_functiondef/pg_get_viewdef and consumers",
         "docs/rules/tests.md and actually executed acceptance/rollback evidence"
@@ -107,7 +107,7 @@
         "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof",
         "D4A menu daily full download and duplicate Menus V2 GETs; D4B SQL-day atomic rollback and live archive missed-page recovery; preserve merged #189/#203/#264/#297 nonstarvation"
       ],
-      "owner_hold": "D1-D3 architecture principles approved; PR398/PR400 final architecture review still pending; POS0b-f implementation owner gate remains approved=false",
+      "owner_hold": "D1-D4 architecture principles only; PR398/PR400 final review pending; #399 trusted owner-question routing merged; existing coding dispatcher issue tracking is NOT coding delivery. Owner alone enables POS0b-f delivery after POS0a closeout. Gate approved=false; manual #398/#400 comment ledger sufficient, automatic comment merge gate deferred",
       "approved_record_store": "toast_raw_records",
       "approved_change_log": "toast_raw_changes",
       "legacy_diagnostic_only": [
