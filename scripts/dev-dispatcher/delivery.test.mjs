@@ -158,6 +158,9 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
      'NO separately owner-approved implementation PR','PR #398 is draft','source_authority_checked: yes',
       'D4A Approach B','D4B lossless SQL','POS0-order-recovery','#189','#203','#264','#297',
       '10-minute coordinator','15-minute live-order','99 good plus one DB-failing order',
+      'processing stages received/raw_saved/parsed_validated/canonical_promoted/metric_reconciled',
+      'scoped cafe+restaurant+Toast order GUID','NO existing status column','full current-day ordersBulk',
+      'no-GUID or failed row/page write','Clear issues ONLY after durable save',
      'diagnostic snapshots','roll back','rollback']){
      if(fact==='roll back')continue;
      assert.ok(block.includes(fact),id+' missing '+fact);
