@@ -133,6 +133,7 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
  assert.match(queue.dispatch_rules.pos_d4_contract.toast_first_catalog_and_experiment_approved.pending_reminders,/two per owner\/experiment/);
  assert.ok(queue.tasks.find(t=>t.id==='POS0d').acceptance.some(s=>s.includes('Toast-first Menu')));
  assert.ok(queue.tasks.find(t=>t.id==='8a').acceptance.some(s=>s.includes('First pending reminder')));
+ assert.match(queue.dispatch_rules.pos_d4_contract.toast_first_catalog_and_experiment_approved.measurement_clock_rule,/N consecutive rolling windows of 24 elapsed hours/);
  for(const id of ['POS0a','POS0b','POS0c','POS0d','POS0e','POS0f']){
   const real=queue.tasks.find(t=>t.id===id);
   assert.ok(real,id);
@@ -184,7 +185,7 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
       'D4C menu lifecycle','provider INACTIVE','same GUID republish','Empty/partial/wrong-version/unauthorized/missing-reference/zero-sales',
       'MENU/EXPERIMENT SPEC HANDOFF','specs/0001-d4c-toast-menu-authority-and-owner-review.md',
       'specs/0002-pos-change-verified-experiment-activation.md','Toast-first connected catalog',
-      'UNPUBLISHED Owner review','Option A','manual_done','~+2h','MAX TWO','partial-day counting',
+      'UNPUBLISHED Owner review','Option A','manual_done','~+2h','MAX TWO','rolling 24h','final cafe-close extension',
      'diagnostic snapshots','roll back','rollback']){
      if(fact==='roll back')continue;
      assert.ok(block.includes(fact),id+' missing '+fact);
