@@ -189,7 +189,8 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   assert.match(identity.unwritten_or_missing_guid_fallback,/no saved-row status possible/);
   assert.ok(!actual.tasks.some(t=>t.id==="POS0-order-recovery"));
   assert.deepEqual(d4.future_order_recovery.owned_files_reserved,[]);
-  assert.equal(d4.future_order_recovery.proposed_prerequisites.length,6);
+  assert.equal(d4.future_order_recovery.proposed_prerequisites.length,7);
+  assert.match(d4.future_order_recovery.proposed_prerequisites[6],/logical caf.*order|café\+restaurant\+Toast GUID/i);
   assert.match(d4.future_order_recovery.proposed_prerequisites[2],/competing editors/);
   assert.match(d4.future_order_recovery.file_scope_status,/no conflict-free exclusive ownership/);
   assert.match(d4.future_order_recovery.sql_scope_status,/owner approval pending/);
