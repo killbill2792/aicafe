@@ -207,6 +207,17 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
     "docs/plans/toast-openapi-spec-snapshot.json"
   ]);
   assert.equal(extension.runtime_or_merge_approval,false);
+  const d4c=d4.menu_publication_lifecycle_approved;
+  assert.equal(d4c.status,"OWNER_APPROVED_BEHAVIOR_NOT_RUNTIME_IMPLEMENTATION");
+  assert.equal(d4c.implementation_approved,false);
+  assert.equal(d4c.future_owner,"POS0d");
+  assert.equal(d4c.unchanged_version_full_menu_gets,0);
+  assert.equal(d4c.auto_hard_delete,false);
+  assert.match(d4c.verified_unpublish,/inactive/);
+  assert.match(d4c.republish_same_guid,/reactivate/);
+  assert.ok(d4c.unverified_snapshots_never_deactivate.includes("missing reference"));
+  assert.equal(actual.tasks.find(t=>t.id==="POS0d").architecture_approval,null);
+  assert.ok(actual.tasks.find(t=>t.id==="POS0d").acceptance.some(a=>a.includes("same GUID")));
   assert.equal(d4.independent_cost_queue_diagnostic.due_jobs,77);
   assert.equal(actual.dispatch_rules.architecture_foundation_proof_task,"POS0a");
   assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
