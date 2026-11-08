@@ -70,6 +70,11 @@ test('every coding agent receives exact current authority, three skill files, sh
   ]) assert.ok(prompt.toLowerCase().includes(required.toLowerCase()), required);
   assert.match(prompt,/final applicable head is reviewed clean/);
   assert.match(prompt,/resolved threads/);
+  assert.match(prompt,/COMMENT ACCOUNTABILITY/);
+  for (const phrase of ['ALL owner/agent PR conversation comments','Comment disposition checklist',
+    'GitHub comment/thread IDs','fixed-awaiting-proof','commit+executed CI/test','before reporting done',
+    'No parallel queue']) assert.ok(prompt.includes(phrase),phrase);
+
   assert.match(prompt,/request a fresh Codex review/);
   assert.match(prompt,/NEVER edit PROGRESS.md/);
   assert.doesNotMatch(prompt,/Muse|browser tabs|courier receipts/i);
