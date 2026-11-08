@@ -129,6 +129,10 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
  assert.equal(queue.dispatch_rules.pos_d4_contract.future_order_recovery.dispatchable,false);
  assert.ok(!queue.tasks.some(t=>t.id==='POS0-order-recovery'));
  assert.deepEqual(queue.dispatch_rules.pos_d4_contract.must_preserve_merged_prs,[189,203,264,297]);
+ assert.equal(queue.dispatch_rules.pos_d4_contract.toast_first_catalog_and_experiment_approved.future_implementation_approved,false);
+ assert.match(queue.dispatch_rules.pos_d4_contract.toast_first_catalog_and_experiment_approved.pending_reminders,/two per owner\/experiment/);
+ assert.ok(queue.tasks.find(t=>t.id==='POS0d').acceptance.some(s=>s.includes('Toast-first Menu')));
+ assert.ok(queue.tasks.find(t=>t.id==='8a').acceptance.some(s=>s.includes('First pending reminder')));
  for(const id of ['POS0b','POS0c','POS0d','POS0e']){
   const real=queue.tasks.find(t=>t.id===id);
   assert.ok(real,id);
@@ -164,6 +168,9 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
       'scoped cafe+restaurant+Toast order GUID','NO existing status column','full current-day ordersBulk',
       'no-GUID or failed row/page write','Clear issues ONLY after durable save',
       'D4C menu lifecycle','provider INACTIVE','same GUID republish','Empty/partial/wrong-version/unauthorized/missing-reference/zero-sales',
+      'MENU/EXPERIMENT SPEC HANDOFF','specs/0001-d4c-toast-menu-authority-and-owner-review.md',
+      'specs/0002-pos-change-verified-experiment-activation.md','Toast-first connected catalog',
+      'UNPUBLISHED Owner review','Option A','manual_done','~+2h','MAX TWO','partial-day counting',
      'diagnostic snapshots','roll back','rollback']){
      if(fact==='roll back')continue;
      assert.ok(block.includes(fact),id+' missing '+fact);
