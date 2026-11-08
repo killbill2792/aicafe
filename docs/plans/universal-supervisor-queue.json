@@ -335,10 +335,10 @@
           "specs/0001-d4c-toast-menu-authority-and-owner-review.md",
           "specs/0002-pos-change-verified-experiment-activation.md"
         ],
-        "connected_menu": "Toast-first published-only All/search/categories/Needs attention and Supervisor; one scoped provider base product with distinct real size/option identities; owner recipes/costs are separate",
-        "manual_owner_draft": "manual/CSV and owner-created items preserved as unpublished Owner review with publish-in-Toast instruction; disconnected cafes retain manual flow",
+        "connected_menu": "ONE live authenticated complete restaurant/version-consistent Toast published catalog for connected-cafe All/search/groups/categories/pricing/Needs attention/Customer Menu and Supervisor: real base+size/option GUIDs, current names/prices/publication status; verified per-size recipe cost or explicit missing, NEVER price-inferred; owner enrichment separate",
+        "manual_owner_draft": "old locally active manual/CSV and owner-created items PRESERVED as unpublished Owner review/history with publish-in-Toast instruction; NEVER leak into connected live menu or become second catalog; disconnected cafes retain manual/CSV flow",
         "automatic_option_a": "automatic unambiguous provider-GUID/verified-alias matching, or independently approved deterministic reversible tenant-scoped identity/size evidence; ambiguity stays Owner review, never name-only or charged-price-only",
-        "historical_rule": "563 unlinked historical Toast lines remain valid revenue; no invented variant or certified unsupported ingredient cost/profit",
+        "historical_rule": "563 Aug-Sep historical order lines are valid saved sales but unresolved old product/size GUID/version and recipe links; NEVER reimport/guess name-price mapping, alter original sales or invent COGS; historical reconciliation Option B vs unresolved Option C remains owner-OPEN",
         "source_price_rule": "local price edit/proposed target/manual_done not verified Toast publication; only authenticated version-consistent exact cafe/restaurant/item/size published price activates existing experiment with source as-of",
         "pending_reminders": "first at about approval+2h; at most two per owner/experiment/cafe-local day including next morning; dedup and stop at verification/cancellation/supersession; respect provider freshness and owner channels",
         "open_owner_choices": [
