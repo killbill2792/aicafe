@@ -129,7 +129,9 @@
         "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714387485",
         "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714390122",
         "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714662444",
-        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714662690"
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714662690",
+        "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714937954",
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714938291"
       ],
       "architecture_approach": "D4A_APPROVED_B_change_driven_existing_sync_not_each_endpoint_every_tick",
       "order_failure_outcome": "D4B_APPROVED_isolate_bad_SQL_records_without_losing_good_orders_or_weakening_day_financial_atomicity",
@@ -266,6 +268,60 @@
           "no-row evidence extensions"
         ],
         "disposable_migrated_acceptance": "invalid/missing field or GUID, DB row/page failure, truncated Toast page, repeated 15-minute pull, rollover, provider correction, 98/99 good records independently available, no false day-total certification, eventual bounded repair, full Supervisor/screen metric provenance"
+      },
+      "menu_publication_lifecycle_approved": {
+        "status": "OWNER_APPROVED_BEHAVIOR_NOT_RUNTIME_IMPLEMENTATION",
+        "owner_decisions": [
+          "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714937954",
+          "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714938291"
+        ],
+        "implementation_approved": false,
+        "future_owner": "POS0d",
+        "inherited_fetch_contract": "D4A Approach B: 10-minute coordinator may check metadata/publication version; full Menus V2 fetch only on actual change, missing-data repair or bounded completeness reconciliation",
+        "unchanged_version_full_menu_gets": 0,
+        "validated_snapshot": "authenticated and restaurant-scoped, complete published menu with version consistency and intact item/modifier/group references; one verified full snapshot shared by staging and canonical projections is proposed, not yet approved physical implementation",
+        "verified_unpublish": "only confirmed absent Toast item, modifier or relationship becomes inactive in provider-publication state; owner review required",
+        "auto_hard_delete": false,
+        "republish_same_guid": "reactivate same provider GUID without duplicate identities or owner-edit overwrite",
+        "never_destroy": [
+          "historical sales/orders and line/modifier/size identities",
+          "Toast GUIDs, names, previous prices and version history",
+          "owner-managed recipes, ingredients, aliases and corrections"
+        ],
+        "unverified_snapshots_never_deactivate": [
+          "empty",
+          "partial",
+          "malformed",
+          "unauthorized or missing permission",
+          "wrong restaurant",
+          "stale or failed",
+          "publication version mismatch or delay",
+          "missing reference",
+          "unknown completeness"
+        ],
+        "evidence_not_removal": [
+          "zero sales",
+          "no historical order line",
+          "ambiguous historical size/modifier/name/price",
+          "temporary out-of-stock, schedule or visibility"
+        ],
+        "permanent_removal": "requires explicit owner confirmation plus dependency/history audit; must never erase historical evidence",
+        "existing_paths_to_inspect": [
+          "lib/pos/toast/optionalSync.ts",
+          "lib/pos/toast/adapter.ts",
+          "lib/pos/toast/operationalCopy.ts",
+          "lib/pos/toast/operationalStaging.ts",
+          "lib/pos/syncCatalog.ts"
+        ],
+        "requires_disposable_db_and_supervisor_screen_proof": true,
+        "unapproved": [
+          "precise physical publication-state schema",
+          "single-snapshot code refactor",
+          "exact file/SQL ownership",
+          "migrations",
+          "production writes",
+          "PR merge"
+        ]
       }
     },
     "pos0a_owner_approved_audit_scope_extension": {
@@ -453,7 +509,10 @@
         "Menu, price, taxes, service charges, discounts, item modifiers, payment types, employees and restaurant keys preserve existing canonical screen numbers and provider definitions.",
         "No loss of historical order/change evidence or sensitive-data policy; immutable business identity, tenant authorization, dedup, changes, retry and permission/no-content classification verified.",
         "Any endpoint truly unavailable under Standard credentials is recorded with exact recent response or provider prerequisite, never fabricated success; tests do not assume the old October audit is current.",
-        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots."
+        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots.",
+        "Owner D4C: metadata/version unchanged causes ZERO full Menus V2 fetches; real change/missing repair uses authenticated restaurant-scoped complete version-consistent snapshot, preferably ONE snapshot for staging and catalog with no duplicated full fetch or race.",
+        "Only a verified complete published menu can mark disappeared provider item, modifier or group/option relationship INACTIVE, never hard-delete automatically; same GUID republished reactivates without duplicate and owner-managed recipes/ingredients/overrides, historical prices and order/size/option references remain intact.",
+        "Empty, partial, malformed, 204/403, stale, delayed publication, wrong restaurant/version, missing referenced options, zero sales or unknown historical size MUST NOT deactivate last-good menu. Require migrated disposable DB, real registered Supervisor/screen same-cafe source-as-of parity, negative isolation and rollback/API cost proof; permanent removal needs separate owner approval and history/dependency checks."
       ],
       "test_kinds": [
         "unit",
@@ -548,7 +607,8 @@
         "Production read-only evidence compares current response/field coverage and applicable real-café screen and chat results with explicit dates, counts and reconciliation; no production migrations or new OAuth scopes without separate owner authorization.",
         "For each unavailable endpoint record exact reason and last verified date, for each owner-permitted data field show a passed retrieval assertion; changed code paths have final-head CI links, Codex clean, no skipped required proof.",
         "After all migrations, final SQL function and view lineage has zero active direct/indirect diagnostic source dependencies; seeded sample-only values have zero impact on Supervisor/screens; existing diagnostic-positive test assertions rewritten as negative isolation proofs.",
-        "Only after zero readers/capture consumers remain and a verified retention, migration and rollback plan exists, retire and purge stale diagnostic rows/capture/test-cafe mirroring in a separately controlled release; record production migration owner approval, disk space before/after and actual real-cafe post-release read proof."
+        "Only after zero readers/capture consumers remain and a verified retention, migration and rollback plan exists, retire and purge stale diagnostic rows/capture/test-cafe mirroring in a separately controlled release; record production migration owner approval, disk space before/after and actual real-cafe post-release read proof.",
+        "D4C independent final proof: real unpublished and republished same-GUID menu transitions preserve owner recipes, historic orders/options/prices and stable identities; invalid/partial/wrong-version menu cannot retire anything; registered Supervisor/screen agree with retained current published-source state across cafés on migrated disposable DB."
       ],
       "test_kinds": [
         "unit",
