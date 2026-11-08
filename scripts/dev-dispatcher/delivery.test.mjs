@@ -122,7 +122,7 @@ test('POS0 data contributors receive the mandatory source classification and pro
   assert.doesNotMatch(nonPos.prompt,/POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING/);
 });
 
-test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contract in order', () => {
+test('POS0a-f agent receives exact approved/defective/unapproved contract in order', () => {
  const queue=JSON.parse(readFileSync(new URL('../../docs/plans/universal-supervisor-queue.json',import.meta.url),'utf8'));
  assert.equal(queue.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
  assert.equal(queue.dispatch_rules.pos_d4_contract.implementation_approved,false);
@@ -136,8 +136,13 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
  for(const id of ['POS0a','POS0b','POS0c','POS0d','POS0e','POS0f']){
   const real=queue.tasks.find(t=>t.id===id);
   assert.ok(real,id);
-  assert.notEqual(real.architecture_approval?.approved,true,id+' must remain unauthorized');
-  assert.throws(()=>createDelivery({task:real,record,action:'assign',actionId:'unapproved:'+id}));
+  if(id==='POS0a'){
+   assert.equal(real.architecture_approval?.approved,true,'POS0a documentation audit already authorized');
+   assert.doesNotThrow(()=>createDelivery({task:real,record,action:'assign',actionId:'approved:'+id}));
+  }else{
+   assert.notEqual(real.architecture_approval?.approved,true,id+' must remain unauthorized');
+   assert.throws(()=>createDelivery({task:real,record,action:'assign',actionId:'unapproved:'+id}));
+  }
   const mockApproved={...task,id,title:real.title,goal:real.goal,brief:real.brief,skills:real.skills,
     acceptance:real.acceptance,exclusive_files:real.exclusive_files.length?real.exclusive_files:['docs/rules/tests.md']};
   for(const agent of ['chatgpt','claude']){
