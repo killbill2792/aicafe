@@ -140,6 +140,8 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
    // Simulate eventual explicitly approved task WITHOUT modifying machine authorization.
    const d=createDelivery({task:mockApproved,record:{...record,agent},action:'assign',actionId:'handoff:'+id+':'+agent});
    assert.equal(d.intent,'start_new_chat');
+   assert.match(d.prompt,/TASK ACCEPTANCE \(signed\): Read EVERY task\.acceptance entry/);
+   assert.equal(d.prompt.includes(JSON.stringify(real.acceptance)),false,'full signed acceptance must not be duplicated in browser prompt');
    assert.ok(d.prompt.length<12000,id+': '+d.prompt.length);
    const block=d.prompt.slice(d.prompt.indexOf('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING'));
    const required=[
