@@ -151,6 +151,7 @@
       ],
       "future_order_recovery": {
         "proposed_owner_task_id": "POS0-order-recovery",
+        "architecture_approach": "OWNER APPROVED Approach 1 repair existing Toast day-import/live archive/staged pages/GUID recovery; REJECT Approach 2 separate per-order ingest/queue (owner #398 comment 6727889494); precise SQL isolation, archive-page N retry, timing and files NOT approved",
         "queue_task_created": false,
         "dispatchable": false,
         "separate_owner_sql_and_file_approval_required": true,
