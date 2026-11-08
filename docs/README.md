@@ -40,7 +40,11 @@ These PR1/pilot documents describe past disabled staging, polling, promotion and
   [toast adapter dependent](toast-adapter-dependent.md), [toast pilot dependent](toast-pilot-dependent.md),
   [toast webhook dependent](toast-webhook-dependent.md).
 
-**Current source caveat:** [generated data dictionary](data-dictionary.md) still repeats an old “daily capture” source claim from `lib/data/canonical/dictionary.ts`. The [notes footer](data-dictionary-notes.md) flags the defect; only POS0e can correct the dictionary source and active migrated SQL under separate owner approval. `seen_run_id` also remains active despite an old retirement plan. Neither is safe to delete by documentation.\n\n**Investigation capture:** [.github/workflows/toast-diagnostic-capture-manual.yml](../.github/workflows/toast-diagnostic-capture-manual.yml) is manually invoked diagnostics only; automatic `toast-raw-capture-daily.yml` and its CLI entrypoint were retired. `toast_raw_samples` rows remain a legacy diagnostic data-cleanup task until the POS0e/0f reader cutover and dependency proof.\n\n## Background (may be outdated; not instructions)
+**Current source caveat:** [generated data dictionary](data-dictionary.md) still repeats an old “daily capture” source claim from `lib/data/canonical/dictionary.ts`. The [notes footer](data-dictionary-notes.md) flags the defect; only POS0e can correct the dictionary source and active migrated SQL under separate owner approval. `seen_run_id` also remains active despite an old retirement plan. Neither is safe to delete by documentation.
+
+**Investigation capture:** [.github/workflows/toast-diagnostic-capture-manual.yml](../.github/workflows/toast-diagnostic-capture-manual.yml) is manually invoked diagnostics only; automatic `toast-raw-capture-daily.yml` and its CLI entrypoint were retired. `toast_raw_samples` rows remain a legacy diagnostic data-cleanup task until the POS0e/0f reader cutover and dependency proof.
+
+## Background (may be outdated; not instructions)
 - [team collaboration (Oct 15)](team-collaboration.md) — older human-only workflow; AGENTS.md current parallel/auto-merge rules win.
 These describe earlier designs, phases or single PRs. Read them for context only. Never implement from them
 when they conflict with AGENTS.md (for example personas as separate agents, P1/P2/P3 pipelines, or bans on
