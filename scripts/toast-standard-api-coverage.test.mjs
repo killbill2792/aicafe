@@ -199,4 +199,16 @@ test("Registry route-prefix differences remain visible rather than auto-resolved
  assert.deepEqual(extra,recorded.exact_path_mismatches.in_official_not_registry);
  assert.deepEqual(missing,["/stock/v1/inventory","/packaging/v1/published/packagingConfig"]);
  assert.deepEqual(extra,["/v1/inventory","/v1/published/packagingConfig"]);
+ const classifications=recorded.route_prefix_classification;
+ assert.equal(classifications.length,2,"Both Swagger/gateway route distinctions classified from official docs");
+ for(const entry of classifications){
+  assert.ok(extra.includes(entry.swagger_path),"Each raw Swagger path remains accounted for");
+  assert.ok(missing.includes(entry.gateway_path),"Each registry gateway path remains accounted for");
+  assert.match(entry.official_operation_page,/^https:\/\/doc\.toasttab\.com\/openapi\/(stock|packaging)\/operation\//);
+  assert.equal(entry.status,"CLASSIFIED_OFFICIAL_REQUEST_EXAMPLE_NO_CAFE_FETCH");
+  assert.ok(entry.evidence.includes(entry.gateway_path));
+ }
+ assert.ok(manifest.acceptance_gates.A1_official_get_operation_inventory.includes("CLASSIFIED"));
+ assert.ok(manifest.acceptance_gates.A1_official_get_operation_inventory.includes("OPEN"),
+  "Official source route evidence does not establish café grant or live response");
 });
