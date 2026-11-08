@@ -193,7 +193,7 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
      'non-order toast_records_for','cv_cash/cv_inventory/cv_kitchen/cv_dining_options',
      'seen_run_id','SQL day import','liveArchive.server.ts','menu full fetch twice','POS0e','POS0b','POS0c','POS0d','POS0f',
      'NO separately owner-approved implementation PR','#398/#400 draft, #399 trusted owner-question transport merged/preserve','source_authority_checked: yes',
-      'D4A Approach B','D4B lossless SQL','POS0-order-recovery','#189','#203','#264','#297',
+      'D4A Approach B','D4B lossless SQL','Approach 1 REPAIR existing day-import/liveArchive','POS0-order-recovery','#189','#203','#264','#297',
       '10-minute coordinator','15-minute live-order','99 good plus one DB-failing order',
       'processing stages received/raw_saved/parsed_validated/canonical_promoted/metric_reconciled',
       'scoped cafe+restaurant+Toast order GUID','NO existing status column','full current-day ordersBulk',
