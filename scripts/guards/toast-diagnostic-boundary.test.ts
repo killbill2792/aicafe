@@ -186,7 +186,8 @@ describe('Toast diagnostics may not feed operational data', () => {
     expect(queue.dispatch_rules.pos_source_authority.known_deployed_defects.join(' ')).toContain('SQL toast_import_day');
     expect(agents).toContain('D4A/D4B owner decisions');
     expect(rules).toContain('Owner-approved D4A and D4B');
-    expect(docs).toContain('D1–D4A/D4B');
+    expect(docs).toContain('#398 current owner-decision summary');
+    expect(docs).toContain('only when needed');
     expect(queue.dispatch_rules.pos_d4_contract.implementation_approved).toBe(false);
     expect(queue.dispatch_rules.pos_d4_contract.future_order_recovery.dispatchable).toBe(false);
     expect(queue.dispatch_rules.pos_d4_contract.must_preserve_merged_prs).toEqual([189,203,264,297]);
