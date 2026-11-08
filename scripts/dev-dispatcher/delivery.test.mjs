@@ -152,7 +152,7 @@ test('fresh POS0b/c/d/e agent receives exact approved/defective/unapproved contr
    ];
    let previous=-1;
    for(const part of required){const at=block.indexOf(part);assert.ok(at>previous,id+' missing/unordered: '+part);previous=at;}
-   for(const fact of ['D1-D4A/D4B PRINCIPLES approved only','implementation_approval.approved=false',
+   for(const fact of ['D1-D4A/D4B PRINCIPLES approved only','architecture_foundation_implementation_approval.approved','false means STOP',
      'non-order toast_records_for','cv_cash/cv_inventory/cv_kitchen/cv_dining_options',
      'seen_run_id','SQL day import','liveArchive.server.ts','menu full fetch twice','POS0e','POS0b','POS0c','POS0d','POS0f',
      'NO separately owner-approved implementation PR','PR #398 is draft','source_authority_checked: yes',
