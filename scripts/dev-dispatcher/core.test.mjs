@@ -178,6 +178,16 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   assert.equal(d4.implementation_approved,false);
   assert.deepEqual(d4.must_preserve_merged_prs,[189,203,264,297]);
   assert.equal(d4.future_order_recovery.dispatchable,false);
+  const identity=d4.order_guid_processing_metadata_approved;
+  assert.match(identity.status,/OWNER_APPROVED_LOGICAL_ASSOCIATION/);
+  assert.deepEqual(identity.source_identity,["authorized business_id","restaurant_guid","Toast order GUID"]);
+  assert.deepEqual(identity.logical_stages,[
+    "received","raw_saved","parsed_validated","canonical_promoted","metric_reconciled"
+  ]);
+  assert.equal(identity.no_status_column_or_table_claimed,true);
+  assert.match(identity.normal_same_day_retry,/15-minute full business-day ordersBulk/);
+  assert.match(identity.unwritten_or_missing_guid_fallback,/no saved-row status possible/);
+  assert.ok(!actual.tasks.some(t=>t.id==="POS0-order-recovery"));
   assert.deepEqual(d4.future_order_recovery.owned_files_reserved,[]);
   assert.equal(d4.future_order_recovery.proposed_prerequisites.length,6);
   assert.match(d4.future_order_recovery.proposed_prerequisites[2],/competing editors/);
