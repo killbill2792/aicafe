@@ -169,12 +169,15 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
    assert.ok(resumed.prompt.length<12000,id+' '+agent+' continuation: '+resumed.prompt.length);
    assert.match(d.prompt,/COMMENT ACCOUNTABILITY/);
    assert.match(resumed.prompt,/COMMENT ACCOUNTABILITY/);
+   assert.match(d.prompt,/owner coding delivery OFF \(tracking != activation\)/);
+   assert.match(resumed.prompt,/POS0b-f coding delivery only after owner's explicit switch/);
+   assert.match(d.prompt,/targeted docs\/plans\/toast-standard-api-coverage-matrix\.md evidence only/);
    assert.match(resumed.prompt,/Comment disposition checklist/);
    const block=d.prompt.slice(d.prompt.indexOf('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING'));
    const required=[
     '(1) current main AGENTS.md',
     '(2) binding docs/rules/pos-data.md',
-    '(3) docs/plans/toast-standard-api-coverage-matrix.md',
+    '(3) #398 current PR-body decision summary FIRST',
     '(4) THIS exact docs/plans/universal-supervisor-task-briefs.md task anchor AND docs/plans/universal-supervisor-queue.json',
     '(5) inspect real existing code',
     '(6) docs/rules/tests.md executable acceptance'
@@ -184,7 +187,7 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
    for(const fact of ['D1-D4A/D4B/D4C PRINCIPLES approved only','architecture_foundation_implementation_approval.approved','false means STOP',
      'non-order toast_records_for','cv_cash/cv_inventory/cv_kitchen/cv_dining_options',
      'seen_run_id','SQL day import','liveArchive.server.ts','menu full fetch twice','POS0e','POS0b','POS0c','POS0d','POS0f',
-     'NO separately owner-approved implementation PR','PR #398 is draft','source_authority_checked: yes',
+     'NO separately owner-approved implementation PR','#398/#400 draft, #399 trusted owner-question transport merged/preserve','source_authority_checked: yes',
       'D4A Approach B','D4B lossless SQL','POS0-order-recovery','#189','#203','#264','#297',
       '10-minute coordinator','15-minute live-order','99 good plus one DB-failing order',
       'processing stages received/raw_saved/parsed_validated/canonical_promoted/metric_reconciled',
