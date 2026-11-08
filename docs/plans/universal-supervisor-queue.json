@@ -134,7 +134,7 @@
         "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714938291"
       ],
       "architecture_approach": "D4A_APPROVED_B_change_driven_existing_sync_not_each_endpoint_every_tick",
-      "order_failure_outcome": "D4B_APPROVED_isolate_bad_SQL_records_without_losing_good_orders_or_weakening_day_financial_atomicity",
+      "order_failure_outcome": "D4B_APPROVED_Approach1_REPAIR_existing_day_import_and_live_archive_only_no_second_importer_preserve_good_orders_and_day_financial_atomicity",
       "implementation_approved": false,
       "existing_infrastructure": [
         "10-minute coordinated Toast location lease/scheduler",
