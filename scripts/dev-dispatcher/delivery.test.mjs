@@ -130,6 +130,8 @@ test('POS0 data contributors receive the mandatory source classification and pro
 test('POS0a-f agent receives exact approved/defective/unapproved contract in order', () => {
  const queue=JSON.parse(readFileSync(new URL('../../docs/plans/universal-supervisor-queue.json',import.meta.url),'utf8'));
  assert.equal(queue.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
+ assert.match(queue.dispatch_rules.pos_source_authority.ordered_first_read[2],/PR #398 current owner-decision summary FIRST/);
+ assert.match(queue.dispatch_rules.pos_source_authority.owner_hold,/Owner alone enables POS0b-f delivery/);
  assert.equal(queue.dispatch_rules.pos_d4_contract.implementation_approved,false);
  assert.equal(queue.dispatch_rules.pos_d4_contract.future_order_recovery.dispatchable,false);
  assert.ok(!queue.tasks.some(t=>t.id==='POS0-order-recovery'));
