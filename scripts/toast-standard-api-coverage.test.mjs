@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * POS0a READ-ONLY contract audit. No provider calls, database writes or runtime imports.
+ * POS0a READ-ONLY contract audit. No provider calls or database writes; the registry export is evaluated in an isolated sandbox.
  *
  * Default: verifies the pinned official GET/response schema and historical
  * diagnostic observations. PASS DOES NOT establish current café/AI coverage.
@@ -15,15 +15,49 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {resolve,dirname} from "node:path";
 import {fileURLToPath} from "node:url";
+import {createRequire} from "node:module";
+import {runInNewContext} from "node:vm";
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"..");
 const read=path=>readFileSync(resolve(root,path),"utf8");
 const manifest=JSON.parse(read("docs/plans/toast-openapi-spec-snapshot.json"));
 const matrix=read("docs/plans/toast-standard-api-coverage-matrix.md");
-const registrySource=read("lib/pos/toast/rawSample.server.ts");
-const registryLiteral=registrySource.match(/export const TOAST_READ_ENDPOINTS:readonly Entry\[\]=(\[[^\r\n]+\]);/);
-assert.ok(registryLiteral,"Existing Toast endpoint registry is readable; no second registry");
-const liveRegistry=JSON.parse(registryLiteral[1]);
+
+/**
+ * Execute the real exported registry under an isolated, read-only TypeScript
+ * module boundary. Compile the module normally, not via matching its source
+ * spelling; deny operational imports so this audit never opens a Toast client,
+ * admin database connection, or scheduled capture. This is behavior-level
+ * inspection of the exported value, not a source-code grep.
+ */
+function loadToastReadRegistry(){
+ const require=createRequire(import.meta.url);
+ const ts=require("typescript");
+ const source=read("lib/pos/toast/rawSample.server.ts");
+ const result=ts.transpileModule(source,{compilerOptions:{
+  module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,
+  esModuleInterop:true,isolatedModules:true
+ }});
+ const blocked=label=>()=>{throw Error("POS0a test must not execute operational import: "+label);};
+ const stub=label=>new Proxy(Object.create(null),{
+  get(_target,key){return key==="__esModule"?true:blocked(label+"."+String(key));}
+ });
+ const safeRequire=id=>{
+  if(id==="server-only")return Object.freeze({});
+  if(id==="zod"||id==="node:crypto"||id==="date-fns-tz")return require(id);
+  if(["@/lib/supabase/admin","./client","./analyticsClient","./redact"].includes(id))
+   return stub(id);
+  throw Error("Unexpected import from Toast registry module: "+id);
+ };
+ const module={exports:{}};
+ runInNewContext(result.outputText,{module,exports:module.exports,require:safeRequire,
+  process:Object.freeze({env:Object.freeze({})})},{timeout:3000,filename:"rawSample.server.audit.cjs"});
+ const actual=module.exports.TOAST_READ_ENDPOINTS;
+ assert.ok(Array.isArray(actual),"Real exported TOAST_READ_ENDPOINTS array exists");
+ // VM realms have distinct Array prototypes; compare serialized public facts.
+ return JSON.parse(JSON.stringify(actual));
+}
+const liveRegistry=loadToastReadRegistry();
 const candidateKey=x=>[x.endpoint,x.path,x.doc,x.scope,Boolean(x.page),x.source??""].join("\u0000");
 
 function observedLedger(){
