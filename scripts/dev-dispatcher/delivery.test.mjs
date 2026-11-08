@@ -167,6 +167,9 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
    const resumed=createDelivery({task:mockApproved,record:follow,action:'continue_pr',actionId:'handoff-follow:'+id+':'+agent});
    assert.equal(resumed.intent,'continue_existing_chat');
    assert.ok(resumed.prompt.length<12000,id+' '+agent+' continuation: '+resumed.prompt.length);
+   assert.match(d.prompt,/COMMENT ACCOUNTABILITY/);
+   assert.match(resumed.prompt,/COMMENT ACCOUNTABILITY/);
+   assert.match(resumed.prompt,/Comment disposition checklist/);
    const block=d.prompt.slice(d.prompt.indexOf('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING'));
    const required=[
     '(1) current main AGENTS.md',
