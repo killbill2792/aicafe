@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {resolve,dirname} from "node:path";
 import {fileURLToPath} from "node:url";
+import {createHash} from "node:crypto";
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"..");
 const read=path=>readFileSync(resolve(root,path),"utf8");
@@ -103,3 +104,31 @@ if(process.env.POS0A_REQUIRE_FULL_COVERAGE==="1"){
   }
  });
 }
+
+
+/**
+ * A read-only, NON-GATING public-documentation probe. Unlike the four
+ * deterministic assertions above, it depends on network availability.
+ * Even if the download succeeds, this does NOT satisfy official recursive
+ * response-field coverage or any café permission/current-reader proof.
+ */
+test("official-source reachability probe (not A1/A2/A4 certification)",async t=>{
+ const f=manifest.official_families.find(x=>x.family==="orders");
+ const url=f?.official_download_url_verified;
+ if(!url)return t.skip("No documented official schema URL");
+ try{
+  const response=await fetch(url,{signal:AbortSignal.timeout(12000)});
+  if(!response.ok)return t.skip("Official public YAML HTTP "+response.status);
+  const bytes=new Uint8Array(await response.arrayBuffer());
+  if(bytes.length<1000)return t.skip("Source response too small to certify as specification");
+  const digest=createHash("sha256").update(bytes).digest("hex");
+  assert.match(digest,/^[a-f0-9]{64}$/);
+  t.diagnostic("POS0A_PUBLIC_SPEC_RETRIEVAL "+JSON.stringify({
+   url,sha256:digest,bytes:bytes.length,
+   content_type:response.headers.get("content-type"),
+   first_line:new TextDecoder().decode(bytes.slice(0,160)).split("\n")[0]
+  }));
+ }catch(err){
+  t.skip("Public source retrieval unavailable: "+(err instanceof Error?err.message:String(err)));
+ }
+});
