@@ -93,7 +93,7 @@
       "ordered_first_read": [
         "AGENTS.md (PROGRESS.md read only)",
         "docs/rules/pos-data.md (binding source/consumer decisions)",
-        "PR #398 current owner-decision summary FIRST, then targeted docs/plans/toast-standard-api-coverage-matrix.md evidence sections only; compact retrievable #398 entrypoint is still a POS0a deliverable",
+        "PR #398 concise POS0a handoff FIRST at docs/plans/toast-standard-api-coverage-matrix.md#pos0a-handoff--read-this-card-before-large-evidence-tables-2026-11-08 (retrievable draft head 11ccc52); then targeted field evidence only, official A1/A2/A4 still OPEN",
         "docs/plans/universal-supervisor-task-briefs.md#task-<POS0_ID> and this machine queue (no runtime authorization)",
         "existing code plus deployed pg_get_functiondef/pg_get_viewdef and consumers",
         "docs/rules/tests.md and actually executed acceptance/rollback evidence"
