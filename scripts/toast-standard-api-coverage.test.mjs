@@ -87,7 +87,7 @@ test("No official GET/field/AI completeness claim is inferred from registry or d
 });
 if(process.env.POS0A_REQUIRE_FULL_COVERAGE==="1"){
  test("A1/A2/A4 STRICT GATE: pinned official OpenAPI + nested fields + real retained/reader proof",()=>{
-  
+
   assert.equal(manifest.coverage_complete,true,
    "Do not claim full Standard GET/response field scope or reader proof from October diagnostics");
   for(const fam of manifest.official_families){
