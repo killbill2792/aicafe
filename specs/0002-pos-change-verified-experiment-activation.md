@@ -1,13 +1,13 @@
 # POS-confirmed experiments — plans are not operating changes
 
-**Status:** In Review — owner-approved source confirmation, reminder cadence and rolling-24-hour measurement/closing-time extension; exact source timestamp/transaction reader, schema and implementation ownership still unapproved.
+**Status:** In Review — approved source confirmation, pending reminders, rolling-24-hour approved experiments and **independent 7-day proactive price-change observation** (#6728419191), with daily owner reports; source/reader, watch storage/delivery and implementation ownership still unapproved.
 **Date:** 2026-11-07
 **Relation:** [D4C Toast menu authority and owner review](0001-d4c-toast-menu-authority-and-owner-review.md) §8.1; draft [#398](https://github.com/killbill2792/aicafe/pull/398) and [#400](https://github.com/killbill2792/aicafe/pull/400).
 **Scope:** price experiments/price-change monitoring at Toast-connected cafés; same source-confirmation rule applies to staff experiments, but exact staff authoritative source and workflow are separately unapproved.
 
 ## 1. Problem and proven baseline
 
-Owner requests a price experiment in Supervisor, e.g. change a particular Toast product **size** from its current published price to a trial target for an agreed number of days. AI CAFE is not a Toast menu editor: an owner may approve a plan, make a local edit or click Done without publishing that change in Toast. This is **pending action**, not evidence that the actual selling price changed. The owner wants a helpful reminder and a monitor that begins only after the price change is actually observed in Toast, without flagging the intentionally different target as corrupt data or losing historical sales.
+Owner requests a price experiment in Supervisor, e.g. change a particular Toast product **size** from its current published price to a trial target for an agreed number of days. AI CAFE is not a Toast menu editor: an owner may approve a plan, make a local edit or click Done without publishing that change in Toast. This is **pending action**, not evidence that the actual selling price changed. The owner wants a helpful reminder and a monitor that begins only after the price change is actually observed in Toast, without flagging the intentionally different target as corrupt data or losing historical sales. **Even without any approved experiment, a verified published Toast price change independently starts a seven-day observational Supervisor watch (§3.3).**
 
 Read-only source/code audit:
 - `lib/ai/supervisor/loop/priceExperiment.server.ts` commits a price experiment as `requires_manual_action`, correctly not writing to Toast.
@@ -26,9 +26,10 @@ Read-only source/code audit:
 4. **Start clock after source confirmation:** only when an authoritative, version-consistent Toast publication evidences the agreed effective price for that exact item/size. Never accept the owner's Done click, a local table update or an order discounted to a coincidentally matching amount as proof.
 5. During waiting, describe target-versus-Toast difference as **pending owner action**, not an unexplained data mismatch, broken records or a completed experiment. Keep the actual price and all sales accurate.
 6. Once verified, monitor the agreed number of covered days using real source-backed sales and the shared metric quality checks. If the correct price cannot be verified or coverage is incomplete, say so; no fabricated completed experiment.
-7. The same concept applies to future staff/roster experiments: planning in AI CAFE is not evidence that the actual authoritative scheduling system has been changed. Do not assert staff work shifts were published on plan approval.
+7. Independent **owner-approved observational behavior**: automatically notice any reliable published Toast item+size price change, deliver initial notice, **daily updates for all seven days**, and a cumulative report without an experiment or owner action; do not infer causality (§3.3).
+8. The same concept applies to future staff/roster experiments: planning in AI CAFE is not evidence that the actual authoritative scheduling system has been changed. Do not assert staff work shifts were published on plan approval.
 
-**Non-goals:** Editing Toast prices/staff through an unsupported writeback; independently creating a new polling service, scheduler, order archive or AI agent; rewriting past sales, charges, wages or historical price versions; claiming that a price experiment conclusively caused any observed increase; making Toast the authority for inventory recipes/ingredient costs, which remain verified owner enrichment.
+**Non-goals:** Requiring an owner-initiated experiment or approval to merely observe a verified external price change, converting the seven-day watch into an approved/causal test, adding a second reader/cron/agent or automatically restarting an interrupted approved experiment; editing Toast prices/staff through an unsupported writeback; independently creating a new polling service, scheduler, order archive or AI agent; rewriting past sales, charges, wages or historical price versions; claiming that a price experiment conclusively caused any observed increase; making Toast the authority for inventory recipes/ingredient costs, which remain verified owner enrichment.
 
 **Anti-goals:** A target price overwriting the real selling price, monitoring starting on a Done click, undercounting trial days, false provider mismatch alarms, duplicate experiments on the same item/period, or a cross-café price lookup.
 
@@ -85,6 +86,59 @@ If the price later differs intentionally because of another approved plan, show 
 
 **Delivery/implementation contract:** Source-confirmed start timestamp, N configurable rolling 24-hour windows, final café-close rule and any extra period are part of **owner-approved requirements**. Exact timestamp field hierarchy, opening-hours source, effective-versus-observed-time policy, calculations, persistence and ownership are **pending spec acceptance**. No actual changes are in this document.
 
+## 3.3 Owner-approved proactive seven-day price-change observation — NO experiment prerequisite (2026-11-08)
+
+**Source and authority:** [Owner #6728419191](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6728419191) APPROVES an autonomous **observational** watch when the **existing** Toast Menus V2/version-gated source shows a genuinely changed **published** price for one exact café/restaurant, product GUID, size/option GUID and price context. There is **no requirement** for an owner-requested experiment, plan, reminder or approval to **observe and explain** the external change. As always, modifying café/Toast data or launching a new owner-approved experiment still requires owner authorization. This does not authorize implementation in PR #398.
+
+**Evidence to trigger:** Compare two authenticated, complete, restaurant/version-consistent *published* Toast snapshots via existing metadata/change-driven sync and price history. Retain previous and new published values, exact item/size/context, version, source provenance and freshness; distinguish the genuinely supported source-effective timestamp from the first **observed verification** time and do not claim an earlier effective time without proof. Handle options, dayparts, multiple menu contexts, discounts, multi-price/open-price semantics and location scoping. Owner Done, a local target/menu edit, unchanged or failed/403/429/empty/partial response, stale October diagnostic, different café/size or an order charged a coincidentally equal price **cannot** trigger an observed price change. If ambiguous or unentitled, report unknown, never assume zero or new authority.
+
+**No-experiment example:** Toast publishes a validated change to Latte, 12 oz, from a previously verified price to a new price. Without being asked, the **ONE Supervisor** tells the owner, in plain words, which published item/size price changed and when it was *first verified*, with evidence; then says it will watch for **seven days**. It initiates an **observational** monitor using existing Supervisor/Operating Board/commitment mechanisms, **not an experiment, second agent, new importer, price ledger, cron or polling loop**. It must not ask permission just to observe or imply the owner changed the price.
+
+**Mandatory proactive delivery:** Send the first source-grounded notice once, then **one meaningful daily update for each of the seven observation days**, then a **cumulative seven-day analysis**, even if no experiment or owner prompt exists. Closed/no-sales days, lagging orders, unknown costs or insufficient coverage still receive an honest daily update (e.g. “not enough verified evidence today”), not silence or fictitious zeros. Reuse existing authenticated owner-eligible inbox/Operating Board/notification gateway, channel preferences and delivery/acknowledgement rules. One ten-minute sync tick is not a reason to notify. Batch several product/size changes into a **bounded owner daily digest** rather than ten separate messages; dedupe by café/owner/verified source change/item+size/context/day and track queued versus delivered without inventing sends. The watch's daily reports differ from the **pending experiment reminder maximum of two per café-local day (§3.1)**, and do not silently adopt the approved experimental N×24-hour clock (§3.2). Exact observation-day alignment, local cutoff and delivery guarantees still require implementation design.
+
+**Actual metrics, not a causal experiment:** Each day show source-backed sales units, net/gross sales, discounts, refunds and actual changed-price exposure; compare feasible matched hours/weekday or pre-change periods and label correlation, confounders, partial coverage and source freshness. Ingredient usage, recipe cost and margin may be shown **only if independently verified**; otherwise explicitly mark cost or margin **UNKNOWN/PARTIAL**, not a number inferred from selling price. Preserve original sale prices, historical orders/price versions, real paid/closed timestamps, lateness, refunds, non-trading days, timezone/DST and uncertified daily money. No completed seven-day claim before the period is actually covered.
+
+**When price changes again:**
+- **No owner-approved experiment:** preserve earlier exposure as a dated segment, observe the new verified price segment without duplicate overlapping watches or lost comparisons, combine daily communications and never invent a causal approved test.
+- **Already approved experiment:** a verified revert or different price during the agreed trial **splits actual exposure**; preserve real source segments, mark any affected plan **PARTIAL**, notify the owner, then offer **stop/report partial**, **treat the new price as a separately understood phase**, or **approve a new experiment**. Do not silently auto-complete, restart, extend or approve another trial. Source verification of the original target still gates initial experiment activation.
+
+~~~mermaid
+flowchart TD
+  A[Existing version-gated published Toast menu reader] --> B{Verified exact item size price-context change?}
+  B -->|No or unavailable| Z[Preserve last good price and freshness uncertainty]
+  B -->|Yes| C[Record old and new published version and observation time]
+  C --> D[One Supervisor sends owner change notice]
+  D --> E{Previously approved exact-price experiment?}
+  E -->|No| F[Start seven-day observational watch without approval]
+  E -->|Yes| G[Preserve approved test lifecycle and actual exposure]
+  F --> H[Daily bounded evidence digest on each of seven days]
+  H --> I[Final cumulative observation with limitations]
+  G --> J{Verified price changes again?}
+  J -->|Yes| K[Split exposure and ask owner stop phase or new experiment]
+  J -->|No| L[Continue verified approved-window facts]
+  K --> H
+~~~
+
+**Approved outcomes versus implementation decisions (not coding approval):**
+
+| Topic | OWNER APPROVED | STILL IN REVIEW — downstream exact design |
+|---|---|---|
+| Trigger/authority | Actual published Toast item+size/context price change starts observation without experiment or owner approval | Timestamp precedence, option/daypart context, source freshness, stable change keys and per-café scopes |
+| Delivery | Initial notice + each of 7 daily updates + cumulative final, bounded cross-product digest | Existing watch/commitment representation, day boundaries, retry/dedupe, eligible owner channels, RLS |
+| Truth | Real exposure, discounts/refunds, like-for-like comparison where possible, explicit unknown cost/missing totals; observation ≠ causation | Time-window SQL, protected current reader, cost/recipe evidence, shared metrics, complete migrated DB proof |
+| Revert/new price | Keep prior and new segments; planned test asks owner for stop/partial, phase, or separately approved new test | Transition/rollback, overlap/digest algorithm, durable source event and acceptance tests |
+| Ownership | Reuse existing D4A sync, current Toast version history, one Supervisor/Operating Board | POS0e reader → POS0d published catalog/price signal → POS0f registered one-Supervisor/Menu/migrated DB end-to-end; exact files require separate approval |
+
+**Required later acceptance scenarios — NOT executed in this documentation PR:**
+1. **No prior plan:** two verified published price versions → one initial owner notice, 7 daily evidence-backed reports, and final cumulative report; **no experiment** created and no owner interaction needed.
+2. **No valid change:** wrong café, changed size/daypart, unverified source version, stale diagnostic, unpublished local edit, 403/429, empty/partial menu → no watch or claimed published change.
+3. **Interrupted approved N-day experiment:** exact target validates; a different verified price/revert on day 3 segments evidence, prompts owner decision, reports partial, and never silently approves a new trial.
+4. **Further unsolicited change:** preserve historical segment, start new evidenced segment where valid, bounded combined digest, no duplicate overlapping watcher or per-tick spam.
+5. **Quality/tenant/delivery:** no trading, unknown COGS, refund, poison order, late correction, daylight saving, two cafés and ten products → honest missing/partial reports with authenticated owner isolation and idempotent actual delivery receipts.
+6. **Integration:** source-shaped real publication changes on fully migrated disposable DB → canonical price provenance → existing shared describe_data/query_data → registered **one Supervisor** turn + Menu/current screen parity and existing owner delivery; no new polling/agent or live production mutation.
+
+**Architecture boundary:** The seven-day daily-monitor outcome is **approved**, but its watch record, source timestamp hierarchy, daily alignment, deduplication, channel implementation, join/range-performance, restaurant-RLS and executable integration remain **not designed/implemented**. #398 records the behavior and source-contract questions; #400 exclusively owns the binding instruction/queue handoff. Any runtime changes and POS0e/d/f coding require a later explicit owner go-ahead.
+
 ## 4. Safety / STRIDE and failure handling
 
 | Risk | Guard |
@@ -95,7 +149,10 @@ If the price later differs intentionally because of another approved plan, show 
 | Information disclosure | Café/restaurant GUID and owner auth/RLS on proposal, matching, published-source and monitor |
 | Denial/data corruption | Partial/lagging/unpublished menus, 403, rate limits or missed metadata checks preserve pending state; bounded reuse of current fetch |
 | Elevation of privilege | A local 'Done' or price editor cannot bypass provider truth or trigger an unverified monitor |
-| Analytics integrity | Only actual covered period and observed price/source evidence count; preserve original sales, discounts, voids and historical rollups |
+| Analytics integrity | Only actual covered periods and observed source evidence count; preserve sales, discounts, voids and price history; observation ≠ causal experiment; unknown margin stays unknown |
+| Notification or tenant leakage | Source-change/date dedupe, bounded owner-eligible daily digest, real delivery acknowledgement, café/owner RLS and no per-sync spam |
+| Context/price confusion | Compare the same café, restaurant, item/size/option, published version, daypart and price context; partial/unknown source never triggers |
+| Mid-experiment verified reversion | Preserve actual exposure segments and ask owner stop/partial, phase or new approval; never silently complete or auto-restart |
 
 ## 5. Alternatives
 
@@ -105,20 +162,22 @@ If the price later differs intentionally because of another approved plan, show 
 
 **C. Owner must manually attest price changed, without any Toast check:** faster but still allows false starts. Not sufficient for Toast-connected cafés with accessible published-menu price; owner signal can guide a check, not substitute for it.
 
+**Rejected for proactive observation:** owner must request a trial before price monitoring, every changed price auto-creates an experiment, owner Done counts as source confirmation, and a second polling/agent/notification ledger. **Selected:** verified existing publication source + ONE Supervisor, passive seven-day evidence watch, bounded delivery (§3.3); implementation details remain open.
+
 ## 6. Implementation/verification handoff (pending approval)
 
 - Explicitly scope the changes to existing `priceExperiment.server.ts`, `menuPriceChange.server.ts`, `engine.ts`, `/api/ai/threads/[threadId]/experiments/route.ts`, `menu_items` source price update path, `lib/operating/experiments.ts`, components and shared menu version/price evidence; do **not** modify any until the owner approves an implementation plan and exact exclusive PR ownership.
 - Preserve the existing approval + `manual_pending` workflow; owner clicking Done is a nudge to check Toast, **not** a `manual_confirmed` start signal until provider evidence is verified.
-- Automated/periodic reminder cadence, expiry and overlap handling remain to be designed with existing Supervisor/Operating Board and no new scheduler.
-- Test with source-shaped Toast published old/target/intermediate price, unchanged metadata, async publication lag, 403/429, menu missing price/open price, size-specific and daypart pricing, wrong café, owner click Done before Toast publish, scheduled future publish, later revert, incomplete day, price change during trial, draft conflict and multiple overlapping experiments.
+- Distinguish the **pending experiment reminder cadence (§3.1)** from **post-change observational seven-day daily reporting (§3.3)**. Design expiry, delivery and overlap within existing Supervisor/Operating Board, without any new scheduler or second price recorder.
+- Test with source-shaped Toast published old/target/intermediate price, unchanged metadata, async publication lag, 403/429, menu missing price/open price, size-specific and daypart pricing, wrong café, owner Done before publication, scheduled future publish, revert, incomplete day and overlapping approved experiments. **Also** test §3.3 no-experiment notice, all seven daily deliveries and cumulative observation; second changed price with segment continuity and approved-test owner decision, ten product updates in one digest, no trade, cost unknown, DST, stale/partial data and no duplicate/cross-tenant notification.
 - End-to-end proof: canonical current Menu shows Toast actual price; Supervisor clearly shows planned price and waiting state; local edits do not imply source application; only verified Toast change transitions experiment; reports count agreed measured days and label incomplete coverage accurately. Run against disposable migrated DB and registered Supervisor, plus no extra full menu fetch; preserve historical orders and owner recipes. PR bodies record what the tests proved, not just mock passes.
 
 ## 7. Approved decisions, open questions and status
 
-**Owner-approved (2026-11-07; reminder cadence explicitly approved 2026-11-08):** No Toast writeback; Toast remains the operational source; local/menu changes and price-experiment approval do not mean Toast changed; Supervisor remembers a planned experiment and proactively reminds the owner at approximately +2 hours, later if necessary, and on the following café mornings with **no more than two proactive reminders per café-local day** until verified or canceled. Distinguish expected pending target versus genuine data mismatch, and **activate** the experiment only on validated published Toast price change, recording exact observed timing. **The rolling exact-24-hour test windows and final café closing-time extension are also owner approved**. Extend the source-confirmation distinction to staffing plans. **No runtime or migration approval yet.**
+**Owner-approved (2026-11-07; reminder cadence explicitly approved 2026-11-08):** No Toast writeback; Toast remains the operational source; local/menu changes and price-experiment approval do not mean Toast changed; Supervisor remembers a planned experiment and proactively reminds the owner at approximately +2 hours, later if necessary, and on the following café mornings with **no more than two proactive reminders per café-local day** until verified or canceled. Distinguish expected pending target versus genuine data mismatch, and **activate** the experiment only on validated published Toast price change, recording exact observed timing. **The rolling exact-24-hour test windows and final café closing-time extension are also owner approved.** **Separate approved observation (#6728419191):** any verified published Toast price change launches an initial notice, seven daily proactive Supervisor updates and a cumulative observation report with no owner-initiated experiment or prior approval; later changes split actual exposure and interrupted approved tests ask the owner what to do. Extend the source-confirmation distinction to staffing plans. **No runtime or migration approval yet.**
 
-**OWNER DECISION CLOSED — reminder cadence (2026-11-08):** Approved: first reminder approximately two hours after experiment approval while awaiting Toast; later same-day follow-up if still pending; next café-morning reminder if still waiting; maximum two proactive reminders per café-local day, continuing until verified source change or cancellation. Delivery channels must obey existing eligibility and user preferences; exact operational delivery integration is an implementation design detail, not a new permission to schedule sends. **OWNER DECISION CLOSED (2026-11-08):** Rolling exact 24-hour periods start upon verified Toast price evidence; include the actual trailing trading interval until final-day closing time if closing is later than the N×24-hour boundary; report the extension separately. No next-morning delay and no owner Done-based start. **NEXT DESIGN DECISION:** agree on one canonical owner-agent document/source-of-truth hierarchy and a bounded 'start here' handoff so the #398/#399/#400 work prevents outdated documentation and overlong dispatcher prompts from confusing or blocking coding agents.
+**OWNER DECISION CLOSED — reminder cadence (2026-11-08):** Approved: first reminder approximately two hours after experiment approval while awaiting Toast; later same-day follow-up if still pending; next café-morning reminder if still waiting; maximum two proactive reminders per café-local day, continuing until verified source change or cancellation. Delivery channels must obey existing eligibility and user preferences; exact operational delivery integration is an implementation design detail, not a new permission to schedule sends. **OWNER DECISION CLOSED (2026-11-08):** Rolling exact 24-hour periods start upon verified Toast price evidence; include the actual trailing trading interval until final-day closing time if closing is later than the N×24-hour boundary; report the extension separately. No next-morning delay and no owner Done-based start. **Existing document authority:** AGENTS.md and binding rules, #398 architecture/specs and #400's exclusive active brief/queue routing. Do not create a competing documentation hierarchy or dispatcher.
 
-Other design questions: how to evidence effective price under size/contextual and open-price rules; how to handle a later midtrial price revert, incomplete sales days, manual Done without Toast data and repeated reminders; what staff scheduling source is truly authoritative for each connected café; exact approval-safe owner-facing edit controls; file/SQL ownership among POS0d/POS0f and the existing Supervisor/experiment feature owners.
+Other **implementation-design questions** (not outstanding owner behavior decisions): exact source effective price under size/contextual/open-price rules, seven-day watch representation and daily digest/segmentation, how to handle incomplete sales days, Done without Toast and repeated reminders; what staff scheduling source is truly authoritative for each connected café; exact approval-safe owner-facing edit controls; file/SQL ownership among POS0d/POS0f and the existing Supervisor/experiment feature owners.
 
 **Checklist:** problem and current code inspected; goals/non-goals; flow; threat model; alternatives; acceptance/rollout; remaining questions documented. **Independent builder check and final design acceptance pending.** Related template and reviewer files have not been provided. Status stays **In Review**. No implementation, DB changes, scheduler activation or PR merge is permitted by this document.
