@@ -158,15 +158,14 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   }
   const familyQuestions=[
    {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
-    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$3",label:"Cents",ref:null},
+    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,biz.today]},
    {question:"For current Toast stock item GUID "+stockGuid+
      ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
-    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$3 and menu_item_ref=$4",label:"Quantity",ref:stockGuid},
+    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
    {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
-    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",ref:null}
+    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
   ];
-  for(const {question,truth,label,ref} of familyQuestions){
-   const args=ref?[...params,ref]:params;
+  for(const {question,truth,label,args} of familyQuestions){
    const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
    expect(expected,question).not.toBeNull();
    expect(expected,question).not.toBeUndefined();
