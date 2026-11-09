@@ -207,7 +207,7 @@ async function main() {
   const foundationId = queue.dispatch_rules?.architecture_foundation_proof_task;
   const foundationRecord = effectiveState.tasks?.[foundationId];
   const foundationReviewPending = !!foundationId &&
-    ["integrated_proven","released_proven"].includes(foundationRecord?.status) &&
+    ["merged","integrated_proven","released_proven"].includes(foundationRecord?.status) &&
     !architectureFoundationReady(queue,effectiveState.tasks);
   const hasChatReceipt = !!foundationRecord?.conversation_ref;
   const summary = [
