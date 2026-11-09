@@ -61,6 +61,28 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
    enabled:true,action:'ready'})).reasons,['live_owner_question_pending']);
  assert.equal((await mergeApprovedPr({github:readyGitHub,record:{...rec,draft:true},
    evidence,expectedAcceptance:['scenario'],enabled:false,action:'ready'})).status,'disabled');
+ let readyReads=0;
+ const lastMinuteReady={...readyGitHub,request:async(path,options)=>{
+   if(path==='/pulls/100') {
+     readyReads++;
+     return readyReads===1?draftPr:{...draftPr,labels:[{name:'needs-owner-decision'}]};
+   }
+   return readyGitHub.request(path,options);
+ }};
+ assert.deepEqual((await mergeApprovedPr({github:lastMinuteReady,
+   record:{...rec,draft:true},evidence,expectedAcceptance:['scenario'],
+   enabled:true,action:'ready'})).reasons,['live_owner_question_pending']);
+ let mergeReads=0;
+ const lastMinuteMerge={...github,request:async(path,options)=>{
+   if(path==='/pulls/100') {
+     mergeReads++;
+     return mergeReads===1?pr:{...pr,body:'<!-- aicafe-owner-question Await approval -->'};
+   }
+   return github.request(path,options);
+ }};
+ assert.deepEqual((await mergeApprovedPr({github:lastMinuteMerge,
+   record:rec,evidence,expectedAcceptance:['scenario'],enabled:true}))
+   .reasons,['live_owner_question_pending']);
  const wrongBase={...github,request:async(path,options)=>path.startsWith('/pulls/') && !path.endsWith('/merge') ? {...pr,base:{sha:'base',ref:'feat/old'}} : github.request(path,options)};
  assert.deepEqual((await mergeApprovedPr({github:wrongBase,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true})).reasons,['live_pr_changed']);
  const dispatchFail={...github,request:async(path,options)=>{if(path.includes('/dispatches'))throw Error('403');return github.request(path,options);}};
