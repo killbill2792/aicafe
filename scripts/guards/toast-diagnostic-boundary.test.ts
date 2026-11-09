@@ -186,7 +186,9 @@ describe('Toast diagnostics may not feed operational data', () => {
       .toBe('90e06ca57809ef0c29084d459d82a1be266b503a');
     const pos0e = queue.tasks.find((t: {id: string}) => t.id === 'POS0e');
     expect(pos0e.architecture_approval).toBeNull();
-    expect(pos0e.exclusive_files).toEqual([]);
+    expect(pos0e.exclusive_files).toContain('supabase/migrations/20261109000156_pos0e_shared_current_reader.sql');
+    expect(pos0e.exclusive_files).toContain('lib/pos/toast/redact.ts');
+    expect(pos0e.state).toBe('proposed');
     expect(queue.dispatch_rules.pos_source_authority.ordered_first_read).toHaveLength(6);
     expect(queue.dispatch_rules.pos_source_authority.known_deployed_defects.join(' ')).toContain('SQL toast_import_day');
     expect(agents).toContain('D4A/D4B owner decisions');
