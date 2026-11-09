@@ -200,7 +200,9 @@ returns jsonb language sql stable security invoker set search_path=public as $fi
     select key,value from jsonb_each(case when jsonb_typeof(w.v)='object'
      then w.v else '{}'::jsonb end)
     union all
-    select '0',w.v->0 where jsonb_typeof(w.v)='array' and jsonb_array_length(w.v)>0
+    select '0',element.value from jsonb_array_elements(
+     case when jsonb_typeof(w.v)='array' then w.v else '[]'::jsonb end
+    ) element(value)
    ) e
   where w.depth<16),
  leaves as (
