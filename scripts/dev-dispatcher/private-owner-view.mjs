@@ -48,7 +48,7 @@ export function renderPrivateQueue(state, {repo='killbill2792/dave-task-queue'} 
     `| ${escapeCell(n.task_id)} | ${githubPr(n.pr_number)} | ${escapeCell(n.kind)} | ${escapeCell(n.status)} | ${time(n.created_at)} | ${escapeCell(n.question)} |`);
   const historyRows=histories.map(a=>{
     const task=state.tasks[a.task_id]||{};
-    return `| ${escapeCell(a.task_id)} | ${githubPr(task.pr_number)} | ${escapeCell(a.type)} | ${escapeCell(a.status)} | ${time(a.submitted_at||a.created_at)} | ${lastReceipt(a)} |`;
+    return `| ${escapeCell(a.task_id)} | ${githubPr(task.pr_number)} | ${escapeCell(a.type)} | ${escapeCell(a.status)} | ${escapeCell(signedStatus(a,task))} | ${time(a.submitted_at||a.created_at)} | ${lastReceipt(a)} |`;
   });
   return [
     '# AI CAFE — private Muse delivery queue',
@@ -71,9 +71,9 @@ export function renderPrivateQueue(state, {repo='killbill2792/dave-task-queue'} 
     ...(noticeRows.length ? noticeRows : ['| — | — | — | No outstanding notices | — | — |']),
     '',
     '## Recent delivery history (audit, not current authorization)',
-    '| Task | PR | Action | Recorded status | When | Receipt |',
-    '|---|---|---|---|---|---|',
-    ...(historyRows.length ? historyRows : ['| — | — | — | No history | — | — |']),
+    '| Task | PR | Action | Recorded status | Eligibility | When | Receipt |',
+    '|---|---|---|---|---|---|---|',
+    ...(historyRows.length ? historyRows : ['| — | — | — | No history | History only | — | — |']),
     '',
     '## Where to verify full details',
     '- [Original private ledger and immutable action IDs](https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/state.json)',
