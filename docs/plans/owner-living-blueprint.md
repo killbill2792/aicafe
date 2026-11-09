@@ -65,13 +65,13 @@ These are **links to the actual decisions**, not new approval grants. Where an o
 
 Use this when preparing an owner decision **in an existing GitHub issue or the task's PR**; it does not create a second approval system:
 
-> **Problem:** What is wrong or missing, in plain words?  
-> **Current design:** What is the actual working path today?  
-> **Decision / alternatives rejected:** What was chosen, why, and what remains unapproved?  
-> **Source and boundaries:** What data enters, key/identity, storage, readers, effects and café isolation?  
-> **Task split:** Which PR owns which exact files; which PR is the shared foundation?  
-> **Verification:** Which real scenario proves success, where is the executed test/CI/merge/integration link?  
-> **Owner authorization:** Link to authenticated GitHub approval and its exact scope.  
+> **Problem:** What is wrong or missing, in plain words?
+> **Current design:** What is the actual working path today?
+> **Decision / alternatives rejected:** What was chosen, why, and what remains unapproved?
+> **Source and boundaries:** What data enters, key/identity, storage, readers, effects and café isolation?
+> **Task split:** Which PR owns which exact files; which PR is the shared foundation?
+> **Verification:** Which real scenario proves success, where is the executed test/CI/merge/integration link?
+> **Owner authorization:** Link to authenticated GitHub approval and its exact scope.
 > **Change history:** What prior decision does this supersede, and what must be retained?
 
 ## 5. What does a status actually mean?
