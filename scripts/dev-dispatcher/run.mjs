@@ -215,6 +215,25 @@ async function main() {
     gateCounts[gate.eligible ? "ready" : "blocked"]++;
   }
   const effectiveState = persisted?.state || proposed.state;
+  // The existing GitHub Actions summary is the owner-readable control surface.
+  // Never expose private courier prompts or conversation URLs in public logs.
+  const active = Object.entries(effectiveState.tasks).filter(([,rec])=>
+    Number.isInteger(rec.pr_number) && rec.github_state === "open");
+  const rows = active.sort(([,a],[,b])=>a.pr_number-b.pr_number).map(([id,rec])=>{
+    const task = taskById.get(id);
+    const dependencies = task ? predecessorsForMerge(task,queue,effectiveState.tasks) : [];
+    const reasons = mergeGate(rec,dependencies).reasons;
+    const outstanding = Object.values(effectiveState.actions).filter(action=>
+      action.task_id === id && action.status === "planned")
+      .sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+    const next = rec.owner_question || rec.github_owner_question ? "Owner decision + permitted coder fixes" :
+      rec.ci_state === "failure" ? "Coder: repair CI" :
+      rec.codex_state === "findings" ? "Coder: address review" :
+      reasons.length ? "Coder/dispatcher: finish proof" : "GitHub: ready/merge gate";
+    const action = outstanding[0];
+    const pending = action ? action.type + " planned (Muse not verified)" : "none";
+    return `| ${id} | [#${rec.pr_number}](https://github.com/${repo}/pull/${rec.pr_number}) | ${rec.draft ? "Draft" : "Open"} | ${rec.ci_state || "unknown"} | ${rec.codex_state || "unknown"} | ${next} | ${pending} | ${reasons.join(", ") || "eligible"} |`;
+  });
   const foundationId = queue.dispatch_rules?.architecture_foundation_proof_task;
   const foundationRecord = effectiveState.tasks?.[foundationId];
   const foundationReviewPending = !!foundationId &&
@@ -223,6 +242,14 @@ async function main() {
   const hasChatReceipt = !!foundationRecord?.conversation_ref;
   const summary = [
     "## AI CAFE development dispatcher — coordination status",
+    `- Last persisted state: **${effectiveState.updated_at || "not yet saved"}** (an unchanged ledger alone is not a scheduler heartbeat)`,
+    "- 10-minute code inactivity / 15-minute post-delivery checks are best-effort; GitHub scheduled runs may be delayed or dropped.",
+    "",
+    "### Current PRs and next responsible party",
+    "| Task | PR | Stage | CI | Codex | Next actor | Muse action | Merge blockers |",
+    "|---|---|---|---|---|---|---|---|",
+    ...(rows.length ? rows : ["| — | — | — | — | — | No active tracked PR | — | — |"]),
+    "",
     `- GitHub open PRs observed: **${observed.snapshot.length}**`,
     `- Unmapped PRs requiring owner/coder identification (never guessed): **${unmappedPrs.join(", ") || "none"}**`,
     `- Approved new assignments: **${proposed.assigned.length}**`,
