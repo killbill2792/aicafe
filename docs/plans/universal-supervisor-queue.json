@@ -373,7 +373,7 @@
       "milestone": "POS0",
       "title": "P0 Standard API source-to-AI coverage contract and gap matrix",
       "depends_on": [],
-      "goal": "Deliver an exhaustive READ-ONLY official Standard GET/nested-field/source→existing-or-MISSING writer/storage/reader/consumer architecture and implementation-gap contract: observed source grants/values verified only as far as safely available, unknown/untested explicitly marked, exact planned owners/acceptance attached. Obtain owner architecture review before separately authorizing implementation; do NOT require future POS0e/f code or live Supervisor proof in POS0a.",
+      "goal": "READ-ONLY official GET/nested-field design and gap matrix: observed café grants where available; unknown grants, missing writers/readers, current-vs-target consumers and future owners explicitly labeled. Owner reviews architecture before separately authorizing POS0e/b/c/d/f code; actual SQL/registered Supervisor proof belongs to those later PRs.",
       "scope_hint": "Read-only official-spec + current repo + disposable/authorized read-only database inventory; new docs/plans/toast-standard-api-coverage-matrix.md. Own no existing runtime or migration file.",
       "exclusive_files": [
         "docs/plans/toast-standard-api-coverage-matrix.md"
