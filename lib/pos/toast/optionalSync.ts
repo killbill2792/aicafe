@@ -133,9 +133,6 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     // The canonical importer always replays all staged entries after staff linking.
     await copyToastAttendance(db,scope,{since:start,until:end});
     if(Date.now()<deadlineAt)
-     await copyToastAttendance(db,scope,
-      {since:new Date(now.getTime()-7*86400000),until:now},"modified");
-    if(Date.now()<deadlineAt)
      await syncToastLaborReadOnly(db,scope,
       {since:new Date(now.getTime()-86400000),until:new Date(now.getTime()+6*86400000)},"schedules");
     const {error:reviewsError}=await db.rpc("toast_resolve_linked_timecard_reviews",{
