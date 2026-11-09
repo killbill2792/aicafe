@@ -117,7 +117,9 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
           AGENT_LIVE_EVAL: '1'
           SUPERVISOR_OPENAI_MODEL: gpt-4.1-mini
-          POS0E_E2_SMOKE: '1'
+          # A full signed acceptance run must NEVER inherit the five-turn
+          # smoke skip: that would manufacture a false passing E2 receipt.
+          POS0E_E2_SMOKE: '0'
           AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
         run: |
           set -euo pipefail
