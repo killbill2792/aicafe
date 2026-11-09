@@ -11,7 +11,11 @@ import {runAgentTurn,openAIProvider} from "../loop.server";
 import type {AgentProvider} from "../loop.server";
 import type {AgentToolContext} from "./index";
 const dbUrl=process.env.AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL;
-const enabled=process.env.AGENT_LIVE_EVAL==="1"&&Boolean(dbUrl&&process.env.OPENAI_API_KEY);
+// A free, provider-independent dry run validates ALL fixture writes and
+// tenant/diagnostic isolation before any paid call. This is NOT agent proof.
+const sqlOnly=process.env.POS0E_E2_SQL_ONLY==="1";
+const enabled=Boolean(dbUrl)&&(sqlOnly||
+ (process.env.AGENT_LIVE_EVAL==="1"&&Boolean(process.env.OPENAI_API_KEY)));
 const run=enabled?it:it.skip;
 
 // The budget applies to the real model *transport*, across ALL turns in this
@@ -108,6 +112,15 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   const leak=(await client.query<{n:number}>("select count(*)::integer n from public.toast_records_for($1,$2,$3)\n where data->>'guid' in ('other-cafe-cash','poison-cash','poison-stock','poison-time')",
    [biz.id,prior,biz.today])).rows[0].n;
   expect(leak).toBe(0);
+  // Test the source/fixture contract at zero model cost. Paid acceptance must
+  // still execute the registered Supervisor, and never sets SQL_ONLY.
+  if(sqlOnly){
+   const expected=await client.query<{n:number}>(
+    "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
+    [biz.id,prior,biz.today]);
+   expect(expected.rows[0].n).toBeGreaterThanOrEqual(3);
+   return;
+  }
 
   // SupabaseClient.rpc-compatible adapter backed by the SAME transaction in which
   // the fixture and direct truth live. Query SQL is still solely the allowlisted RPC.
