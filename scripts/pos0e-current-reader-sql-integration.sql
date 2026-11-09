@@ -1,13 +1,10 @@
--- POS0e actual migrated-schema reader proof. Execute ONLY in disposable PostgreSQL
--- after every current migration. Synthetic cafés/records and intentional poison
--- diagnostics are rolled back; never run this against production.
+-- POS0e current-reader contract. Synthetic records ROLLBACK; disposable PostgreSQL only.
 \set ON_ERROR_STOP on
 BEGIN;
 CREATE FUNCTION pg_temp.pos0e_assert(ok boolean,description text) RETURNS void
 LANGUAGE plpgsql AS $$ BEGIN
  IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'POS0e FAIL: %',description; END IF;
 END $$;
-
 DO $pos0e$
 DECLARE
  a uuid:='f1f1f1f1-1111-4111-8111-111111111111';
@@ -18,8 +15,6 @@ DECLARE
 BEGIN
  INSERT INTO public.businesses(id,name,is_demo) VALUES
  (a,'POS0e synthetic A',false),(b,'POS0e synthetic B',false);
- -- Direct and transitive migrated SQL lineage: active reader/view definitions
- -- must not mention diagnostics, not only the new source file text.
  PERFORM pg_temp.pos0e_assert(
   pg_get_functiondef('public.toast_records_for(uuid,date,date)'::regprocedure)
    NOT ILIKE '%toast_raw_sam%' AND
@@ -35,8 +30,6 @@ BEGIN
  PERFORM pg_temp.pos0e_assert(
   NOT has_table_privilege('authenticated','public.toast_raw_records','SELECT'),
   'client role cannot directly read retained raw objects');
- -- Good current-source events, including incomplete/null business facts, and
- -- a second café with a distinct cash amount.
  INSERT INTO public.toast_raw_records(
   business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key)
  VALUES
@@ -58,10 +51,6 @@ BEGIN
  (b,rest_b,'cashmgmt/v1/entries',d,
   '{"guid":"cash-current-B","amount":83.00,"type":"CASH_IN"}',
   repeat('e',64),'pos0e:cash-b');
-
- -- Contradictory, failed and newer diagnostic captures are seeded and
- -- checked in the existing scripts/toast-db-integration.sql fixture, to keep
- -- this executable dedicated to final-schema lineage and field completeness.
  PERFORM pg_temp.pos0e_assert(
   (SELECT count(*)=1 AND sum(amount_cents)=1250 FROM public.cv_cash WHERE business_id=a),
   'cash must equal retained operational A object, not the poisoned sample');
@@ -99,8 +88,6 @@ BEGIN
   public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
    '[{"field":"data.extra.nested.0.lateOptional","type":"string"}]'::jsonb,
   'describe_data must inspect later array elements and nested optional fields');
- -- Large historical capture cannot silently disappear at an arbitrary 30-row
- -- or 200-path limit. This fixture is still small and rolls back.
  FOR n IN 1..36 LOOP
   INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
    payload,payload_sha256,capture_key)
