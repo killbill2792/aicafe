@@ -89,7 +89,7 @@ const operationalSchedule=z.object({acceptScheduledOrders:z.boolean().optional()
 type OperationalStatus={next_at?:string;last_success_at?:string;last_checked_at?:string;
  status?:string;error?:string|null;count?:number;failures?:number;retry_at?:string|null};
 type OperationalPlan={key:string;endpoint:string;family:string;minutes:number;
- businessDate?:string;schema:z.ZodType;single?:boolean;paginated?:boolean};
+ businessDate?:string;queryDate?:boolean;schema:z.ZodType;single?:boolean;paginated?:boolean};
 const DAY_MS=86400000;
 function internalOperationalId(business:string,restaurant:string,endpoint:string,providerKey:string){
  const h=createHash("md5").update([business,restaurant,endpoint,providerKey].join("|")).digest("hex");
@@ -113,23 +113,23 @@ function operationalPlan(now:Date,timeZone:string,closeoutHour:number):Operation
  const yesterday=addCalendarDays(today,-1);
  return [
   {key:"cash_entries_today",endpoint:"cashmgmt/v1/entries",family:"cash",minutes:60,
-   businessDate:today,schema:operationalCash},
+   businessDate:today,queryDate:true,schema:operationalCash},
   {key:"cash_deposits_today",endpoint:"cashmgmt/v1/deposits",family:"cash",minutes:60,
    businessDate:today,schema:operationalCash},
   {key:"cash_entries_previous",endpoint:"cashmgmt/v1/entries",family:"cash",minutes:360,
-   businessDate:yesterday,schema:operationalCash},
+   businessDate:yesterday,queryDate:true,schema:operationalCash},
   {key:"cash_deposits_previous",endpoint:"cashmgmt/v1/deposits",family:"cash",minutes:360,
    businessDate:yesterday,schema:operationalCash},
   {key:"stock_inventory",endpoint:"stock/v1/inventory",family:"stock",minutes:20,
-   schema:operationalStock},
+   businessDate:today,schema:operationalStock},
   {key:"kitchen_fulfillments",endpoint:"kitchen/v1/export/itemFulfillments",family:"kitchen",minutes:15,
-   businessDate:today,schema:operationalKitchen},
+   businessDate:today,queryDate:true,schema:operationalKitchen},
   {key:"kitchen_stations",endpoint:"kitchen/v1/published/prepStations",family:"kitchen",minutes:1440,
-   schema:operationalStation,paginated:true},
+   businessDate:today,schema:operationalStation,paginated:true},
   {key:"online_availability",endpoint:"restaurant-availability/v1/availability",family:"availability",
-   minutes:10,schema:operationalAvailability,single:true},
+   minutes:10,businessDate:today,schema:operationalAvailability,single:true},
   {key:"ordering_schedule",endpoint:"ordermgmt-config/v1/published/orderingSchedule",
-   family:"ordering",minutes:360,schema:operationalSchedule,single:true},
+   family:"ordering",minutes:360,businessDate:today,schema:operationalSchedule,single:true},
  ];
 }
 /** Source-native identity is retained even when the raw row needs an internal
@@ -171,7 +171,7 @@ export async function syncToastOperationalSources(db:SupabaseClient,
    const data:Record<string,unknown>[]=[];
    for(let page=0;page<(op.paginated?25:1);page++){
     if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
-    const query=op.businessDate?"?businessDate="+op.businessDate.replaceAll("-",""):
+    const query=op.queryDate&&op.businessDate?"?businessDate="+op.businessDate.replaceAll("-",""):
      cursor?"?pageToken="+encodeURIComponent(cursor):"";
     nextToken=null;
     const response=await client.request(op.endpoint.startsWith("/")?op.endpoint+query:
@@ -206,7 +206,8 @@ export async function syncToastOperationalSources(db:SupabaseClient,
        op.single?"restaurant_singleton":"provider_composite",
       operational_object_uuid:GUID.safeParse(row.guid).success?undefined:
        internalOperationalId(p.businessId,p.restaurantGuid,op.endpoint,key),
-      ...(op.businessDate?{business_date:op.businessDate}:{}),
+      ...(op.businessDate?{business_date:op.businessDate,
+       source_business_date_kind:op.queryDate?"provider_business_date":"observed_cafe_day"}:{}),
       fetched_at:checked,lastSuccessAt:checked};
     });
     const {data:written,error:writeError}=await db.rpc("toast_stage_operational_batch",{
