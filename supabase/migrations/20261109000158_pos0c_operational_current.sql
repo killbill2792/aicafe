@@ -7,7 +7,7 @@ alter table public.toast_optional_sync_state
  add column if not exists operational_sources jsonb not null default '{}'::jsonb;
 alter table public.toast_optional_sync_state
  add constraint toast_operational_sources_object
- check (jsonb_typeof(operational_sources)='object');
+ check (jsonb_typeof(operational_sources)='object') not valid;
 
 -- Extend the existing stage writer's object key, preserving every prior origin.
 create or replace function public.toast_stage_object_key(p_origin text,p_row jsonb)
