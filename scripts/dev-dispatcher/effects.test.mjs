@@ -34,6 +34,33 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
  assert.equal(done.integration_dispatch,'requested');
  assert.deepEqual(calls.at(-2),['/pulls/100/merge','PUT']);
  assert.deepEqual(calls.at(-1),['/actions/workflows/ai-cafe-integration-proof.yml/dispatches','POST']);
+ const draftPr={...pr,draft:true,node_id:'PR_100',labels:[],body:''};
+ const readyCalls=[];
+ const readyGitHub={...github,request:async(path,options)=>{
+   readyCalls.push([path,options?.method]);
+   if(path==='https://api.github.com/graphql')
+     return {data:{markPullRequestReadyForReview:{pullRequest:{id:'PR_100',isDraft:false}}}};
+   if(path==='/pulls/100')return draftPr;
+   return github.request(path,options);
+ }};
+ const prepared=await mergeApprovedPr({github:readyGitHub,
+   record:{...rec,draft:true},evidence,expectedAcceptance:['scenario'],
+   enabled:true,action:'ready'});
+ assert.equal(prepared.status,'ready_for_review');
+ assert.ok(readyCalls.some(([path,method])=>path==='https://api.github.com/graphql' && method==='POST'));
+ assert.equal(readyCalls.some(([path])=>path==='/pulls/100/merge'),false);
+ const disputed=await mergeApprovedPr({github:readyGitHub,
+   record:{...rec,draft:true,github_owner_question:'Approve scope expansion?'},
+   evidence,expectedAcceptance:['scenario'],enabled:true,action:'ready'});
+ assert.deepEqual(disputed.reasons,['owner_decision_pending']);
+ const staleLabel={...readyGitHub,request:async(path,options)=>
+   path==='/pulls/100'?{...draftPr,labels:[{name:'needs-owner-decision'}]}:
+   readyGitHub.request(path,options)};
+ assert.deepEqual((await mergeApprovedPr({github:staleLabel,
+   record:{...rec,draft:true},evidence,expectedAcceptance:['scenario'],
+   enabled:true,action:'ready'})).reasons,['live_owner_question_pending']);
+ assert.equal((await mergeApprovedPr({github:readyGitHub,record:{...rec,draft:true},
+   evidence,expectedAcceptance:['scenario'],enabled:false,action:'ready'})).status,'disabled');
  const wrongBase={...github,request:async(path,options)=>path.startsWith('/pulls/') && !path.endsWith('/merge') ? {...pr,base:{sha:'base',ref:'feat/old'}} : github.request(path,options)};
  assert.deepEqual((await mergeApprovedPr({github:wrongBase,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true})).reasons,['live_pr_changed']);
  const dispatchFail={...github,request:async(path,options)=>{if(path.includes('/dispatches'))throw Error('403');return github.request(path,options);}};
