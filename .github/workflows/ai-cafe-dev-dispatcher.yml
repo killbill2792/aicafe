@@ -102,7 +102,9 @@ jobs:
           DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
           DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
           DISPATCH_COURIER_ACTORS: ${{ vars.DISPATCH_COURIER_ACTORS }}
-          DISPATCH_AUTO_MERGE: ${{ vars.DISPATCH_AUTO_MERGE }}
+          # Owner opt-in Nov 9: only exact-head CI/Codex/actual-acceptance-proven PRs;
+          # an explicit repository variable 'false' overrides this default.
+          DISPATCH_AUTO_MERGE: ${{ vars.DISPATCH_AUTO_MERGE || 'true' }}
           DISPATCH_BRANCH_MAINTENANCE: ${{ vars.DISPATCH_BRANCH_MAINTENANCE }}
           DISPATCH_TRANSIENT_CI_RETRY: ${{ vars.DISPATCH_TRANSIENT_CI_RETRY }}
           PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}

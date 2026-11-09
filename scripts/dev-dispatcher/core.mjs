@@ -279,6 +279,9 @@ export function invalidateOnHeadChange(record, newSha, at) {
 export function mergeGate(record, predecessors = []) {
   const reasons = [];
   if (!record?.approved) reasons.push("not_approved");
+  // A coding-scope approval never authorizes unresolved owner questions.
+  if (record?.owner_question || record?.github_owner_question)
+    reasons.push("owner_decision_pending");
   if (record?.draft !== false) reasons.push("not_ready_for_review");
   if (!record?.pr_number || !record?.head_sha) reasons.push("missing_pr_or_sha");
   if (record?.ci_state !== "success") reasons.push("ci_not_green");
