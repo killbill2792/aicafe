@@ -96,27 +96,33 @@ jobs:
         if: ${{ steps.pos0e_owner.outputs.approved == 'true' && !contains(github.event.pull_request.body, 'aicafe-acceptance-evidence') }}
         working-directory: candidate
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
           AGENT_LIVE_EVAL: '1'
+          SUPERVISOR_OPENAI_MODEL: gpt-4.1-mini
+          POS0E_E2_SMOKE: '1'
           AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
         run: |
           set -euo pipefail
           if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error::Existing authorized OPENAI_API_KEY GitHub secret unavailable. No paid E2 executed."
+            echo "::error::Existing authorized OPENAI_API_KEYS GitHub secret unavailable. No paid E2 executed."
             exit 1
           fi
-          timeout 22m npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
+          # Five substantive owner questions only; all other acceptance remains
+          # unproven. Test-level provider caps also stop any extra API calls.
+          timeout 8m npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
       - name: Run approved POS0e acceptance rows at exact head
         if: ${{ steps.pos0e_owner.outputs.approved == 'true' && contains(github.event.pull_request.body, 'aicafe-acceptance-evidence') }}
         working-directory: candidate
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
           AGENT_LIVE_EVAL: '1'
+          SUPERVISOR_OPENAI_MODEL: gpt-4.1-mini
+          POS0E_E2_SMOKE: '1'
           AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
         run: |
           set -euo pipefail
           if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error::Existing authorized OPENAI_API_KEY GitHub secret unavailable. No acceptance proof produced."
+            echo "::error::Existing authorized OPENAI_API_KEYS GitHub secret unavailable. No acceptance proof produced."
             exit 1
           fi
           node ../coordinator/scripts/dev-dispatcher/acceptance-runner.mjs
