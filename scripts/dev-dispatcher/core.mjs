@@ -205,6 +205,18 @@ export function progressUpdatePolicy(changedPaths) {
   return { allowed:true };
 }
 
+// Existing GitHub tick: if Muse found a chat busy, a still-planned action
+// needs another wake-up without changing its action ID, hash or permission.
+export function wakePendingActions(state, nowMs, intervalMs = 900000) {
+  for (const action of Object.values(state.actions || {})) {
+    if (action.status !== 'planned' || action.delivery_owner !== 'muse') continue;
+    const since = Date.parse(action.last_wake_at || action.created_at || '');
+    if (!Number.isFinite(since) || nowMs - since < intervalMs) continue;
+    action.last_wake_at = new Date(nowMs).toISOString();
+    action.wake_round = (action.wake_round || 0) + 1;
+  }
+  return state;
+}
 export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 } = {}) {
   if (!record || !record.approved || !record.conversation_ref) return { kind: "hold", reason: "unapproved_or_missing_chat" };
   if (record.submission_state === "uncertain" || record.submission_state === "needs_login") return { kind: "hold", reason: record.submission_state };

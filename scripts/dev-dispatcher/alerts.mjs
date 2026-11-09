@@ -39,7 +39,10 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
     n.kind==='owner_decision' && n.task_id===id &&
     n.pr_number===(rec.pr_number||null));
   if(question) {
-   const detail='PR #'+(rec.pr_number||'not opened')+': '+question;
+   const source=rec.github_owner_question_url;
+   const detail='PR #'+(rec.pr_number||'not opened')+': '+question+
+     (typeof source==='string' && /^https:\/\/github\.com\/[^\s]+$/.test(source)
+       ? ' Source: '+source : '');
    const chat=rec.agent==='chatgpt' && validConversationUrl('chatgpt',rec.conversation_ref)
      ? ' Your approval is needed. ChatGPT chat: '+rec.conversation_ref : '';
    const desired=detail+chat;

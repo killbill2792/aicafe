@@ -47,7 +47,12 @@ export function applyReceipts(state, inbox, actorMap) {
     // must not poison the entire inbox and prevent unrelated valid chat recovery.
     // Never mark those invalid receipts as delivered or trusted.
     const late = action?.status === 'cancelled_stale_head' && action.type === 'assign';
-    if (action?.status !== 'planned' && !late) continue;
+    // A stale continuation may have reached the browser before a newer PR head.
+    // Record its verified historical receipt without reviving its authorization.
+    const superseded = action?.status === 'cancelled_stale_head' &&
+      action.type !== 'assign' && action.delivery?.intent === 'continue_existing_chat' &&
+      !action.superseded_receipt;
+    if (action?.status !== 'planned' && !late && !superseded) continue;
     if (late) {
       const task = next.tasks?.[action.task_id];
       // No historical receipt may stop unrelated tasks after its own PR closed,

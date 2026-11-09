@@ -124,8 +124,27 @@ export class GitHubFacts {
     if (threads.pageInfo.hasNextPage) return null; // do not silently ignore further threads
     return threads.nodes.filter(t => !t.isResolved).length;
   }
+  async ownerDecision(pr) {
+    if (!(pr.labels || []).some(label => label.name === 'needs-owner-decision'))
+      return { question: null, url: null };
+    const inBody = parseOwnerQuestion(pr.body);
+    if (inBody) return { question: inBody, url: pr.html_url || null };
+    // Owners can request a decision in the PR conversation, not only in its body.
+    // Only trusted repository contributors may supply an actionable question.
+    const comments = await this.request(`/issues/${pr.number}/comments?per_page=100`);
+    if (!Array.isArray(comments) || comments.length >= 100)
+      throw new Error('Owner-question comments require verified pagination');
+    const trusted = comments.filter(c =>
+      ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(c.author_association));
+    const match = trusted.reverse().find(c => parseOwnerQuestion(c.body));
+    if (match) return { question: parseOwnerQuestion(match.body), url: match.html_url || null };
+    // Missing structured question must not silently turn a labeled PR mergeable.
+    return { question: 'Owner decision requested on PR; check its discussion for the exact scope.',
+      url: pr.html_url || null };
+  }
   async one(pr) {
     const sha = pr.head.sha;
+    const ownerDecision = await this.ownerDecision(pr);
     const [checks, reviews, unresolved, commit, comparison] = await Promise.all([
       this.request(`/commits/${sha}/check-runs?per_page=100`),
       this.request(`/pulls/${pr.number}/reviews?per_page=100`),
@@ -150,8 +169,8 @@ export class GitHubFacts {
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
-      github_owner_question: (pr.labels || []).some(label => label.name === 'needs-owner-decision')
-        ? parseOwnerQuestion(pr.body) : null,
+      github_owner_question: ownerDecision.question,
+      github_owner_question_url: ownerDecision.url,
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
       codex_review_at: codex?.submitted_at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
