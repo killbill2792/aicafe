@@ -48,10 +48,22 @@ export function applyReceipts(state, inbox, actorMap) {
     // Never mark those invalid receipts as delivered or trusted.
     const late = action?.status === 'cancelled_stale_head' && action.type === 'assign';
     if (action?.status !== 'planned' && !late) continue;
-    if (late && !validConversationUrl(action.delivery?.provider, receipt.conversation_url)) {
+    if (late) {
       const task = next.tasks?.[action.task_id];
-      if (task && !task.conversation_ref) task.chat_recovery_blocker = 'invalid_original_conversation_url';
-      continue;
+      // No historical receipt may stop unrelated tasks after its own PR closed,
+      // approval changed, chat was already registered, or ownership diverged.
+      if (!task || !task.approved || task.github_state !== 'open' ||
+          !Number.isInteger(task.pr_number) || task.conversation_ref ||
+          receipt.action_id !== 'assign:' + task.task_id ||
+          action.task_id !== task.task_id ||
+          task.branch !== 'feat/aicafe-task-' + task.task_id)
+        continue;
+      if (receipt.approval_hash !== task.approval_hash ||
+          receipt.approval_hash !== action.delivery?.approval_hash ||
+          !validConversationUrl(action.delivery?.provider, receipt.conversation_url)) {
+        task.chat_recovery_blocker = 'invalid_or_unsigned_original_receipt';
+        continue;
+      }
     }
     next = acceptDeliveryReceipt(next, receipt, { authenticatedCourier: courier });
   }
