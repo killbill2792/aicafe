@@ -60,7 +60,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
  const scopes=(credentials?.scopes_available??{}) as Record<string,boolean>;
  const local=localClock(now,p.toast_time_zone);
  const {data:state,error:se}=await db.from("toast_optional_sync_state")
-  .select("menu_last_updated,menu_checked_local_day,roster_local_day,labor_local_day,jobs_local_day,void_reasons_local_day,menu_copied_at,roster_copied_at,attendance_copied_at")
+  .select("menu_last_updated,menu_checked_local_day,roster_local_day,labor_local_day,jobs_local_day,void_reasons_local_day,menu_copied_at,roster_copied_at,attendance_copied_at,operational_sources")
   .eq("business_id",p.business_id).eq("restaurant_guid",p.restaurant_guid).maybeSingle();
  if(se)throw new ToastApiError("unavailable");
  const key={business_id:p.business_id,restaurant_guid:p.restaurant_guid};
@@ -144,6 +144,54 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     await update({labor_local_day:local.today,attendance_copied_at:new Date().toISOString()});
     labor="synced";
    }catch(e){recordFailure(e);}
+  }
+ }
+ // The daily historical window is a bootstrap, NOT a freshness checkpoint.
+ // Independently scan Toast's modified-time entries on the existing coordinator.
+ // Only a complete fetch AND successful canonical import advance the cursor.
+ const sourceStates=(state?.operational_sources&&typeof state.operational_sources==="object"&&
+  !Array.isArray(state.operational_sources))
+   ?{...state.operational_sources as Record<string,Record<string,unknown>>}:{};
+ const lastModified=sourceStates.labor_modified??{};
+ const saveModified=async(patch:Record<string,unknown>)=>{
+  sourceStates.labor_modified={...sourceStates.labor_modified,...patch};
+  await update({operational_sources:sourceStates});
+ };
+ if(scopes.labor===false){
+  if(lastModified.status!=="missing_permissions")
+   await saveModified({status:"missing_permissions",last_checked_at:now.toISOString(),
+    error:"missing_permissions",next_at:null});
+ }else if(staffReady&&Date.now()<deadlineAt&&
+  (typeof lastModified.next_at!=="string"||
+   Date.parse(lastModified.next_at)<=now.getTime())){
+  const checked=now.toISOString();
+  const priorThrough=typeof lastModified.complete_through==="string"
+   ?Date.parse(lastModified.complete_through):NaN;
+  // The first scan covers seven days. Subsequent windows resume from the
+  // DURABLY committed watermark, overlapping ten minutes to avoid boundary loss.
+  const start=Number.isFinite(priorThrough)
+   ?Math.min(now.getTime()-60000,priorThrough-600000)
+   :now.getTime()-7*86400000;
+  const end=Math.min(now.getTime(),start+29*86400000);
+  try{
+   if(end<=start)throw new ToastApiError("invalid_response");
+   const imported=await copyToastAttendance(db,scope,{
+    since:new Date(start),until:new Date(end)},"modified");
+   const caughtUp=end>=now.getTime();
+   await saveModified({last_checked_at:checked,last_success_at:checked,
+    complete_through:new Date(end).toISOString(),status:caughtUp?"complete":"catching_up",
+    error:null,failures:0,changed:imported.changed,
+    next_at:new Date(now.getTime()+(caughtUp?600000:60000)).toISOString()});
+  }catch(e){
+   const failures=Math.min(6,Number(lastModified.failures??0)+1);
+   const reason=e instanceof ToastApiError?e.category:"unavailable";
+   const retryMs=reason==="missing_permissions"||e instanceof ToastApiError&&e.status===204
+    ?86400000:Math.min(3600000,60000*2**failures);
+   const retryAt=e instanceof ToastApiError&&e.retryAt?Date.parse(e.retryAt):NaN;
+   const nextAt=Math.max(now.getTime()+retryMs,Number.isFinite(retryAt)?retryAt:0);
+   await saveModified({last_checked_at:checked,status:reason,error:reason,
+    failures,next_at:new Date(nextAt).toISOString()});
+   recordFailure(e);
   }
  }
  if(scopes.labor!==false&&staffReady&&Date.now()<deadlineAt){
