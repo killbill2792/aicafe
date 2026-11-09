@@ -2,7 +2,7 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
 const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstCatalog:vi.fn(),
- refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn()}));
+ refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn(),operational:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
@@ -10,6 +10,7 @@ vi.mock("./optionalSync",()=>({syncToastOptionalSources:m.optional,ensureToastFi
 vi.mock("./restaurantInfo",()=>({refreshToastRestaurantInfo:m.refresh}));
 vi.mock("./missingDays",()=>({queueToastMissingDays:m.paymentGaps}));
 vi.mock("./rollupRetries",()=>({retryToastRollupRefreshes:m.costs}));
+vi.mock("./operationalCopy",()=>({syncToastOperationalSources:m.operational}));
 vi.mock("./client",()=>{
  class ToastApiError extends Error{
   constructor(public category:string){super(category);}
