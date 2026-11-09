@@ -93,7 +93,7 @@ export function officialToastFields(recordType:string){
  const prefix=splitPrefix??"data.";
  const excluded=OMIT_SPLIT_CHILDREN[recordType]??[];
  return schema.fields.flatMap(([field,types])=>{
-  if(!field.startsWith(prefix))return [];
+  if(!field.startsWith(prefix)||!isDataField(field))return [];
   const suffix=field.slice(prefix.length);
   if(!suffix||excluded.some(child=>suffix===child||suffix.startsWith(child+".")))return [];
   // "order" intentionally excludes its split check children. For other split
@@ -124,7 +124,7 @@ export const dataQueryTools={
      if(error)return {source:"toast_fields",period:null,missing:["source_read_failed"],record_type:recordType,fields:[]};
      const observed=Array.isArray(data)?data.filter((item:unknown)=>
       item!==null&&typeof item==="object"&&"field" in item&&
-      typeof item.field==="string") as Array<{field:string;[key:string]:unknown}>:[];
+      typeof item.field==="string"&&isDataField(item.field)) as Array<{field:string;[key:string]:unknown}>:[];
      const seen=new Set(observed.map(item=>item.field));
      const schemaFields=officialToastFields(recordType).filter(item=>!seen.has(item.field));
      // Keep observed records' existing schema/shape; only never-seen fields
@@ -164,6 +164,10 @@ export const dataQueryTools={
     return empty("invalid_date_range");
    const all=[...(p.columns??[]),...(p.group_by??[]),
     ...(p.filters??[]).map(f=>f.column),...(p.metrics??[]).map(m=>m.column)];
+   // Whole retained JSON may include an old, previously missed credential.
+   // Query selected named paths or DB-side aggregates instead of dumping it.
+   if(p.view==="cv_toast_records"&&all.includes("data"))
+    return empty("column_not_allowed");
    if(!validColumns(p.view,all))return empty("column_not_allowed");
    if((p.filters??[]).some(f=>(f.op==="between"&&(!Array.isArray(f.value)||f.value.length!==2))||
     (f.op==="in"&&(!Array.isArray(f.value)||f.value.length===0))||
@@ -176,6 +180,7 @@ export const dataQueryTools={
    const plainRead=!(p.group_by?.length||p.metrics?.length);
    const columns=plainRead&&!(p.columns?.length)
     ?Object.keys(canonicalDictionary[p.view].columns)
+     .filter(column=>p.view!=="cv_toast_records"||column!=="data")
     :p.columns;
    // The database independently validates the view and columns. It executes as
    // the authenticated caller, not service_role or a definer.
