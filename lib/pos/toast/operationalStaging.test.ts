@@ -145,6 +145,17 @@ describe("POS0c operational source capture uses the shared staged current writer
   expect(f.log.filter(x=>x.args.p_endpoint==="stock/v1/inventory")).toHaveLength(0);
   expect(f.log.filter(x=>x.args.p_endpoint==="kitchen/v1/export/itemFulfillments")).toHaveLength(0);
  });
+ it("refuses invalid zero-quantity stock rather than showing a provider-observed zero",async()=>{
+  const f=operationalDb({cash:false,kitchen:false,availability:false,ordering:false});
+  calls.request.mockImplementation(async(path:string)=>{
+   if(path==="/stock/v1/inventory")return [
+    {guid:guid1,status:"QUANTITY",quantity:0}];
+   return [];
+  });
+  await syncToastOperationalSources(f.db,opScope,observed,Date.now()+300000);
+  expect(f.state().stock_inventory.status).toBe("invalid_response");
+  expect(f.log.filter(x=>x.args.p_endpoint==="stock/v1/inventory")).toHaveLength(0);
+ });
  it("does not confuse a 429 retry clock with evidence of successful fetch",async()=>{
   const f=operationalDb({cash:false,kitchen:false,stock:false,ordering:false});
   calls.request.mockImplementation(async(path:string)=>{
