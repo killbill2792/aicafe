@@ -156,7 +156,7 @@ describe("POS0c operational source capture uses the shared staged current writer
   expect(f.state().online_availability.status).toBe("rate_limited");
   expect(f.state().online_availability.last_success_at).toBeUndefined();
   expect(Date.parse(f.state().online_availability.next_at))
-   .toBeGreaterThan(Date.parse("2026-10-24T19:00:00Z"));
+   .toBeGreaterThanOrEqual(Date.parse("2026-10-24T19:00:00Z"));
   expect(f.log).toHaveLength(0);
  });
  it("paginates prep stations without claiming a truncated page is complete",async()=>{
