@@ -10,15 +10,35 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
   const next = structuredClone(state);
   const action = next.actions?.[receipt.action_id];
   const task = next.tasks?.[action?.task_id];
-  if (!action || !task || action.status !== 'planned' || task.approved !== true)
+  // A draft PR can appear before Muse's original, authenticated browser
+  // receipt is reconciled. Head reconciliation cancels the pending assignment
+  // as stale, but the receipt is still valuable as a *chat destination*.
+  // Recover ONLY that original same-task assignment, never a cancelled
+  // continuation, revoked scope, or a second conversation.
+  const supersededContinuation = action?.status === 'cancelled_stale_head' &&
+    action?.type !== 'assign' && !action?.superseded_receipt &&
+    action?.delivery?.intent === 'continue_existing_chat';
+  const lateAssignment = action?.status === 'cancelled_stale_head' &&
+    action?.type === 'assign' && receipt.action_id === 'assign:' + task?.task_id &&
+    action?.task_id === task?.task_id &&
+    task?.github_state === 'open' && Number.isInteger(task?.pr_number) &&
+    task?.branch === 'feat/aicafe-task-' + task.task_id &&
+    !task?.conversation_ref;
+  if (!action || !task ||
+      (action.status !== 'planned' && !lateAssignment && !supersededContinuation) ||
+      (!supersededContinuation && task.approved !== true))
     throw new Error('Action is not currently approved and planned');
   // Courier receipts may only be acknowledged by the action's assigned owner.
   if (action.delivery_owner !== authenticatedCourier)
     throw new Error('Receipt courier does not own approved action');
   const d = action.delivery;
   if (!d || d.action_id !== receipt.action_id || d.task_id !== action.task_id ||
-      d.approval_hash !== task.approval_hash || hash(d.prompt) !== d.prompt_hash ||
-      receipt.prompt_hash !== d.prompt_hash || !validConversationUrl(d.provider, receipt.conversation_url))
+      (!supersededContinuation && d.approval_hash !== task.approval_hash) ||
+      hash(d.prompt) !== d.prompt_hash ||
+      receipt.prompt_hash !== d.prompt_hash ||
+      (receipt.approval_hash != null && receipt.approval_hash !== d.approval_hash) ||
+      (lateAssignment && receipt.approval_hash !== d.approval_hash) ||
+      !validConversationUrl(d.provider, receipt.conversation_url))
     throw new Error('Receipt does not match approved delivery');
   if (d.intent === 'continue_existing_chat' && receipt.conversation_url !== d.conversation_url)
     throw new Error('Follow-up destination changed');
@@ -39,7 +59,16 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
     throw new Error('Receipt project/provider mismatch');
   if (receipt.status && receipt.status !== 'submitted')
     throw new Error('Non-submission cannot be marked delivered');
+  if (supersededContinuation) {
+    // Audit only: this delivery cannot advance task state, eligibility, or
+    // the post-submission inactivity clock on a newer PR head.
+    action.superseded_receipt = { courier: authenticatedCourier,
+      prompt_hash: d.prompt_hash, submitted_at: receipt.submitted_at || new Date().toISOString(),
+      conversation_url: receipt.conversation_url };
+    return next;
+  }
   action.status = 'submitted';
+  if (lateAssignment) action.recovered_original_chat_after_pr = true;
   action.submitted_at = receipt.submitted_at || new Date().toISOString();
   action.receipt = { courier: authenticatedCourier, prompt_hash: d.prompt_hash,
     conversation_url: receipt.conversation_url };

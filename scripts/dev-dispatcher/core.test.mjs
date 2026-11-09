@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub, progressUpdatePolicy, predecessorsForMerge } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
-import { GitHubFacts, parseAcceptanceEvidence } from "./github.mjs";
+import { GitHubFacts, parseAcceptanceEvidence, parseCodexReviewState } from "./github.mjs";
+import { linkPullRequests } from "./dependencies.mjs";
 
 const task = (id, depends_on = [], state = "architecture_approved") => ({
   id, depends_on, state, acceptance: ["real proof"], brief: "docs/plans/brief.md",
@@ -14,7 +15,7 @@ const clock = Date.parse("2026-11-05T16:00:00Z");
 const old = new Date(clock - 700000).toISOString();
 const pr = (more = {}) => ({ task_id: "a", approved: true, conversation_ref: "private",
   pr_number: 101, head_sha: "abc", base_branch:"main", prompt_version: "v1",
-  last_github_activity: old, last_commit_at: old, draft: false, ci_state: "success", codex_state: "clean", acceptance_evidence:{acceptance:[{id:'1'}]},
+  last_github_activity: old, last_commit_at: old, draft: false, ci_state: "success", codex_state: "clean", acceptance_proven:true, acceptance_evidence:{acceptance:[{id:'1'}]},
   codex_reviewed_sha: "abc", attempts: 0, ...more });
 
 test("queue validates 32-task style DAG, rejects missing prerequisites and cycles", () => {
@@ -332,6 +333,40 @@ test("draft PR gets same-chat continuation after ten quiet minutes even if Codex
   assert.equal(decideNudge({...pending,last_action_key:picked.key},clock).reason,"already_sent_or_capped");
   assert.equal(decideNudge({...pending,agent:"claude"},clock).reason,"claude_no_routine_nudges");
 });
+test("missing verified acceptance remains actionable even with a clean ready PR", () => {
+  assert.equal(decideNudge(pr({acceptance_proven:false}),clock).action,"continue_pr");
+});
+test("same-chat follow-up waits 15 minutes after verified Muse send then rechecks unchanged PR", () => {
+  const code = new Date(clock-3600000).toISOString();
+  const sent = new Date(clock-1200000).toISOString();
+  const draft = pr({draft:true,ci_state:"failure",acceptance_evidence:null,
+    acceptance_proven:false,last_commit_at:code,last_github_activity:code,
+    last_submission_at:sent,submission_state:"submitted"});
+  const previous = actionKey(draft,"repair_ci");
+  const idle = {...draft,last_action_key:previous};
+  const first = decideNudge(idle,clock);
+  assert.equal(first.action,"repair_ci");
+  assert.notEqual(first.key,previous);
+  assert.match(first.key,/retry:/);
+  assert.equal(decideNudge(idle,clock).key,first.key);
+  const delivered = {...idle,last_action_key:first.key,
+    last_submission_at:new Date(clock-100000).toISOString()};
+  assert.equal(decideNudge(delivered,clock).reason,"post_delivery_quiet");
+  const later = clock+900001;
+  const follow = decideNudge(delivered,later);
+  assert.equal(follow.action,"repair_ci");
+  assert.notEqual(follow.key,first.key);
+  assert.equal(follow.key.split(":").length,7);
+  const changed = invalidateOnHeadChange(delivered,"new-head",new Date(later).toISOString());
+  assert.notEqual(actionKey(changed,"repair_ci"),first.key);
+});
+test("ready PR with stale pending Codex is resumed, not held forever", () => {
+  const stale = pr({ci_state:"success",codex_state:"pending",
+    last_commit_at:new Date(clock-1800000).toISOString()});
+  assert.equal(decideNudge(stale,clock).action,"continue_pr");
+  const recent = {...stale,last_commit_at:new Date(clock-500000).toISOString()};
+  assert.equal(decideNudge(recent,clock).reason,"checks_pending_or_unknown");
+});
 test("only a dedicated coordinator PR can change the shared progress checklist",()=>{
  assert.equal(progressUpdatePolicy(["lib/a.ts","docs/b.md"]).allowed,true);
  assert.equal(progressUpdatePolicy(["PROGRESS.md"]).allowed,true);
@@ -357,6 +392,27 @@ test("same state cannot be sent twice and uncertain submissions fail closed", ()
   assert.equal(decideNudge({ ...record, submission_state: "needs_login" }, clock).kind, "hold");
   assert.notEqual(actionKey(record, "continue_pr"), actionKey({ ...record, head_sha: "new" }, "continue_pr"));
 });
+test("submitted activity-qualified continuation keeps its key until a newer PR change", () => {
+  const record = pr({ draft: true, ci_state: "failure", acceptance_evidence: null,
+    last_commit_at: new Date(clock - 2000000).toISOString(),
+    last_github_activity: new Date(clock - 900000).toISOString(),
+    last_submission_at: new Date(clock - 2200000).toISOString() });
+  const first = decideNudge(record, clock);
+  assert.equal(first.kind, "propose");
+  assert.equal(first.key.split(":").length, 6);
+  const delivered = { ...record, last_action_key: first.key,
+    last_submission_at: new Date(clock - 800000).toISOString(),
+    submission_state: "submitted" };
+  assert.equal(actionKey(delivered, "repair_ci"), first.key);
+  assert.equal(decideNudge(delivered, clock).reason, "post_delivery_quiet");
+  const eligibleAt = clock + 100001; // 15 minutes have now elapsed after Muse's receipt
+  assert.equal(decideNudge(delivered, eligibleAt).action, "repair_ci");
+  const newer = { ...delivered, last_github_activity:
+    new Date(clock - 100000).toISOString() };
+  assert.notEqual(actionKey(newer, "repair_ci"), first.key);
+  assert.equal(decideNudge(newer, eligibleAt).kind, "propose");
+});
+
 test("new commit invalidates stale checks and requires a fresh Codex review", () => {
   const changed = invalidateOnHeadChange(pr({ next_check_at: old, last_action_key: "old" }), "new", new Date(clock).toISOString());
   assert.equal(changed.head_sha, "new");
@@ -370,6 +426,8 @@ test("merge requires final head, proven acceptance, branch and predecessors", ()
   const ready = { ...pr(), threads_resolved: true, base_current: true, acceptance_proven: true };
   assert.equal(mergeGate(ready, [{ status: "integrated_proven" }]).eligible, true);
   assert.equal(mergeGate({ ...ready, base_current: false }).eligible, false);
+  assert.deepEqual(mergeGate({...ready,github_owner_question:'Unapproved shared-file scope?' }).reasons,['owner_decision_pending']);
+  assert.deepEqual(mergeGate({...ready,owner_question:'Approval pending'}).reasons,['owner_decision_pending']);
   assert.deepEqual(mergeGate({ ...ready, base_branch: "feat/predecessor" }).reasons, ["non_main_destination"]);
   assert.deepEqual(mergeGate(ready, [{ status: "merged" }]).reasons, ["predecessor_not_proven"]);
   assert.equal(mergeGate({ ...ready, codex_reviewed_sha: null }).eligible, false);
@@ -405,6 +463,7 @@ test("GitHub PR reads distinguish pending CI/review from success", async () => {
     if (url.includes("/pulls?")) return { ok: true, json: async () => [{ number: 2, head: { sha: "abc", ref: "feat/b" }, base: { ref: "main", sha: "base" }, updated_at: old, draft: true }] };
     if (url.includes("check-runs")) return { ok: true, json: async () => ({ total_count: 1, check_runs: [{ name: "AI CAFE PR baseline", status: "completed", conclusion: "success" }] }) };
     if (url.includes("/reviews?")) return { ok: true, json: async () => [] };
+    if (url.includes("/issues/2/comments?")) return { ok: true, json: async () => [] };
     if (url.includes("/compare/")) return { ok: true, json: async () => ({ behind_by: 0 }) };
     if (url.includes("/commits/abc")) return { ok: true, json: async () => ({ commit: { committer: { date: old } } }) };
     if (url.includes("/graphql")) return { ok: true, json: async () => ({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] } } } } }) };
@@ -543,10 +602,146 @@ test('dismissed Codex review cannot be treated as clean on current head',async()
   if(url.includes('check-runs'))return {ok:true,json:async()=>({total_count:1,check_runs:[{name:'AI CAFE PR baseline',status:'completed',conclusion:'success'}]})};
   if(url.includes('/reviews?'))return {ok:true,json:async()=>[review]};
   if(url.includes('/compare/'))return {ok:true,json:async()=>({behind_by:0})};
+  if(url.includes('/issues/52/comments?'))return {ok:true,json:async()=>[]};
   if(url.includes('/commits/abc'))return {ok:true,json:async()=>({commit:{committer:{date:old}}})};
   if(url.includes('/graphql'))return {ok:true,json:async()=>({data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false},nodes:[]}}}}})};
   throw Error(url);
  };
  const [result]=await new GitHubFacts({repo:'owner/aicafe',token:'example',fetchFn:fake}).snapshot();
  assert.equal(result.codex_state,'pending');
+});
+
+test('owner question in trusted PR comment is published even when PR body has no marker',async()=>{
+ const pr={number:404,body:'No question in description',html_url:'https://github.com/o/r/pull/404',
+   labels:[{name:'needs-owner-decision'}]};
+ const seen=[];
+ const facts=new GitHubFacts({repo:'o/r',token:'fake',fetchFn:async url=>{
+   seen.push(url);
+   return {ok:true,json:async()=>[
+     {author_association:'NONE',body:'<!-- aicafe-owner-question Fake approval? -->'},
+     {author_association:'OWNER',body:'<!-- aicafe-owner-question May two tests be edited? -->',
+       html_url:'https://github.com/o/r/pull/404#issuecomment-17'}]};
+ }});
+ const result=await facts.ownerDecision(pr);
+ assert.equal(result.question,'May two tests be edited?');
+ assert.equal(result.url,'https://github.com/o/r/pull/404#issuecomment-17');
+ assert.equal(seen.length,1);
+ const noticeState={tasks:{POS0e:{agent:'chatgpt',pr_number:404,
+   github_owner_question:result.question,github_owner_question_url:result.url}},actions:{}};
+ const {queueOwnerAlerts}=await import('./alerts.mjs');
+ const notice=Object.values(queueOwnerAlerts(noticeState).owner_alerts)[0];
+ assert.match(notice.question,/May two tests be edited\?/);
+ assert.match(notice.question,/issuecomment-17/);
+});
+
+test('unstructured owner-decision label is blocking; ordinary PRs add no comments API call',async()=>{
+ const pr={number:405,body:'No marker',html_url:'https://github.com/o/r/pull/405',
+   labels:[{name:'needs-owner-decision'}]};
+ const facts=new GitHubFacts({repo:'o/r',token:'fake',fetchFn:async()=>({
+   ok:true,json:async()=>[]})});
+ assert.match((await facts.ownerDecision(pr)).question,/Owner decision requested/);
+ assert.deepEqual(await facts.ownerDecision({...pr,labels:[]}),{question:null,url:null});
+});
+
+test('Codex connector summary is accepted only for exact current head and strict shape',()=>{
+ const head='b'.repeat(40);
+ const summary='<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 '+
+  JSON.stringify({code_review:{commit_sha:head,status:'completed',
+    has_any_findings:false,has_unresolved_findings:false}})+' -->';
+ assert.deepEqual(parseCodexReviewState(summary,head),{state:'clean',sha:head});
+ assert.equal(parseCodexReviewState(summary,'c'.repeat(40)),null);
+ assert.equal(parseCodexReviewState('Codex Review: Didn\'t find any major issues '+head.slice(0,10),head),null);
+ const flagged=summary.replace('has_any_findings":false','has_any_findings":true');
+ assert.equal(parseCodexReviewState(flagged,head).state,'findings');
+ const running=summary.replace('"status":"completed"','"status":"running"')
+   .replace('"has_any_findings":false','"has_any_findings":null')
+   .replace('"has_unresolved_findings":false','"has_unresolved_findings":null');
+ assert.equal(parseCodexReviewState(running,head).state,'pending');
+});
+
+test('GitHub current-head Codex summary changes clean vs pending but unresolved threads still block',async()=>{
+ const sha='c'.repeat(40),now='2026-11-09T21:10:00Z';
+ const body='<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 '+
+   JSON.stringify({code_review:{commit_sha:sha,status:'completed',
+     has_any_findings:false,has_unresolved_findings:false}})+' -->';
+ const pr={number:407,head:{sha,ref:'feat/menu'},base:{sha:'d'.repeat(40),ref:'main'},
+   labels:[],body:'',draft:true,updated_at:now};
+ const makeFacts=(unresolved=false,user='chatgpt-codex-connector[bot]')=>
+  new GitHubFacts({repo:'o/r',token:'dummy',fetchFn:async(url)=>{
+  let data;
+  if(url.includes('/check-runs?'))data={total_count:0,check_runs:[]};
+  else if(url.includes('/reviews?'))data=[];
+  else if(url.includes('/comments?'))data=[{user:{login:user},body,updated_at:now}];
+  else if(url.includes('/commits/'+sha))data={commit:{committer:{date:now}}};
+  else if(url.includes('/compare/'))data={behind_by:0,files:[{filename:'src/menu.ts'}]};
+  else if(url.endsWith('/graphql'))data={data:{repository:{pullRequest:{reviewThreads:{
+    pageInfo:{hasNextPage:false},nodes:unresolved?[{isResolved:false}]:[]}}}}};
+  else throw Error(url);
+  return {ok:true,json:async()=>data};
+ }});
+ const clean=await makeFacts().one(pr);
+ assert.equal(clean.codex_state,'clean');
+ assert.equal(clean.codex_reviewed_sha,sha);
+ assert.equal(clean.codex_review_at,now);
+ assert.equal((await makeFacts(true).one(pr)).codex_state,'findings');
+ assert.equal((await makeFacts(false,'untrusted-user').one(pr)).codex_state,'pending');
+});
+test('Dispatcher-only PR is not a mystery task while mixed PR remains unmapped',()=>{
+ const state={tasks:{POS0e:{pr_number:404,branch:'feat/e'}}};
+ const tasks=[{pr_number:404,branch:'feat/e',draft:true,base_branch:'main'},
+   {pr_number:413,branch:'fix/dev',infrastructure_pr:true},
+   {pr_number:414,branch:'feat/mixed',infrastructure_pr:false}];
+ assert.deepEqual(linkPullRequests(state,tasks).unmapped,[414]);
+});
+
+test('a newly running Codex summary never reuses an earlier same-head clean review',async()=>{
+ const sha='f'.repeat(40),now='2026-11-09T21:40:00Z';
+ const body='<!-- codex-pull-request-review-summary -->\\n<!-- codex-review-state:v1 '+
+  JSON.stringify({code_review:{commit_sha:sha,status:'running',
+   has_any_findings:null,has_unresolved_findings:null}})+' -->';
+ const pr={number:81,head:{sha,ref:'feat/test'},base:{sha:'d'.repeat(40),ref:'main'},
+   labels:[],body:'',draft:true,updated_at:now};
+ const facts=new GitHubFacts({repo:'o/r',token:'dummy',fetchFn:async url=>{
+  let data;
+  if(url.includes('/check-runs?'))data={total_count:0,check_runs:[]};
+  else if(url.includes('/reviews?'))data=[{user:{login:'codex[bot]'},commit_id:sha,
+    state:'COMMENTED',submitted_at:'2026-11-09T21:10:00Z'}];
+  else if(url.includes('/comments?'))data=[{user:{login:'chatgpt-codex-connector[bot]'},body,updated_at:now}];
+  else if(url.includes('/commits/'+sha))data={commit:{committer:{date:now}}};
+  else if(url.includes('/compare/'))data={behind_by:0,files:[{filename:'src/code.ts'}]};
+  else if(url.endsWith('/graphql'))data={data:{repository:{pullRequest:{reviewThreads:{
+    pageInfo:{hasNextPage:false},nodes:[]}}}}};
+  else throw Error(url);
+  return {ok:true,json:async()=>data};
+ }});
+ const result=await facts.one(pr);
+ assert.equal(result.codex_state,'pending');
+ assert.equal(result.codex_reviewed_sha,null);
+});
+
+test('newer current-head Codex rejection outranks older clean bot summary, even without inline findings',async()=>{
+ const sha='e'.repeat(40),now='2026-11-09T22:00:00Z';
+ const summary='<!-- codex-pull-request-review-summary -->\\n<!-- codex-review-state:v1 '+
+  JSON.stringify({code_review:{commit_sha:sha,status:'completed',
+   has_any_findings:false,has_unresolved_findings:false}})+' -->';
+ const pr={number:82,head:{sha,ref:'feat/code'},base:{sha:'d'.repeat(40),ref:'main'},
+   labels:[],body:'',draft:true,updated_at:now};
+ const facts=new GitHubFacts({repo:'o/r',token:'dummy',fetchFn:async url=>{
+  let data;
+  if(url.includes('/check-runs?'))data={total_count:0,check_runs:[]};
+  else if(url.includes('/reviews?'))data=[{user:{login:'codex[bot]'},commit_id:sha,
+    state:'CHANGES_REQUESTED',submitted_at:now,body:'Block on P1 risk'}];
+  else if(url.includes('/comments?'))data=[{user:{login:'chatgpt-codex-connector[bot]'},
+    body:summary,updated_at:'2026-11-09T21:00:00Z'}];
+  else if(url.includes('/commits/'+sha))data={commit:{committer:{date:now}}};
+  else if(url.includes('/compare/'))data={behind_by:0,files:[{filename:'src/code.ts'}]};
+  else if(url.endsWith('/graphql'))data={data:{repository:{pullRequest:{reviewThreads:{
+    pageInfo:{hasNextPage:false},nodes:[]}}}}};
+  else throw Error(url);
+  return {ok:true,json:async()=>data};
+ }});
+ const result=await facts.one(pr);
+ assert.equal(result.codex_state,'findings');
+ assert.equal(result.codex_reviewed_sha,sha);
+ assert.equal(result.codex_review_at,now);
 });

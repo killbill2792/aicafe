@@ -173,8 +173,27 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
   return actions;
 }
 export function actionKey(record, action) {
-  const parts = [record.task_id, action, record.head_sha || "pre-pr", record.prompt_version || "v1", record.last_commit_at || record.last_github_activity || "start"];
-  return parts.map(s => encodeURIComponent(String(s))).join(":");
+  // Keep the deployed five-part key for unchanged work. Migrating every
+  // existing key would re-send previously submitted continuations.
+  const committed = record.last_commit_at || record.last_github_activity || "start";
+  const parts = [record.task_id, action, record.head_sha || "pre-pr",
+    record.prompt_version || "v1", committed];
+  const legacyKey = parts.map(s => encodeURIComponent(String(s))).join(":");
+  const activity = Date.parse(record.last_github_activity || "");
+  const after = Date.parse(record.last_submission_at || "");
+  const code = Date.parse(committed);
+  // A newly observed PR comment/decision after BOTH code and last courier send
+  // gets one activity-qualified continuation. Never change that key back to
+  // the legacy key when the courier receipt advances last_submission_at:
+  // that would queue the same prompt again without any GitHub change.
+  if (Number.isFinite(activity) &&
+      (!Number.isFinite(code) || activity > code) &&
+      (!Number.isFinite(after) || activity > after))
+    return legacyKey + ":" + encodeURIComponent(record.last_github_activity);
+  const prior = record.last_action_key;
+  if (typeof prior === "string" && prior.startsWith(legacyKey + ":"))
+    return prior;
+  return legacyKey;
 }
 // Shared progress is written only by the coordinator, after merge, in its own
 // conflict-checked PR. Concurrent implementation PRs may read but never edit it.
@@ -186,41 +205,80 @@ export function progressUpdatePolicy(changedPaths) {
   return { allowed:true };
 }
 
+// Existing GitHub tick: if Muse found a chat busy, a still-planned action
+// needs another wake-up without changing its action ID, hash or permission.
+export function wakePendingActions(state, nowMs, intervalMs = 900000) {
+  for (const action of Object.values(state.actions || {})) {
+    if (action.status !== 'planned' || action.delivery_owner !== 'muse') continue;
+    const since = Date.parse(action.last_wake_at || action.created_at || '');
+    if (!Number.isFinite(since) || nowMs - since < intervalMs) continue;
+    action.last_wake_at = new Date(nowMs).toISOString();
+    action.wake_round = (action.wake_round || 0) + 1;
+  }
+  return state;
+}
 export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 } = {}) {
   if (!record || !record.approved || !record.conversation_ref) return { kind: "hold", reason: "unapproved_or_missing_chat" };
   if (record.submission_state === "uncertain" || record.submission_state === "needs_login") return { kind: "hold", reason: record.submission_state };
-  if (record.owner_question || record.github_owner_question) return {kind:"hold",reason:"owner_decision_required"};
+  // An unanswered question blocks ONLY its unapproved portion, not already
+  // signed CI repairs, review fixes or the owner's response in this SAME chat.
+  // The coder must reconcile any actual owner answer in the PR, and must not
+  // widen file ownership or treat a courier notification as approval.
+  if ((record.owner_question || record.github_owner_question) &&
+      (!Number.isInteger(record.pr_number) || record.github_state !== "open"))
+    return {kind:"hold",reason:"owner_decision_required"};
   const isPr = Number.isInteger(record.pr_number);
   // Ready PRs need real check conclusions for targeted repair/merge routing.
   // Draft PRs may legitimately have NO Codex review yet; pending/unknown is not
   // proof that an agent is active. Do not leave those drafts silent forever.
   // At the normal 10-minute quiet window, ask the SAME chat to inspect CI,
   // obtain Codex and continue; the courier only checks the composer is idle.
-  if (isPr && !record.draft &&
-      (["pending","unknown"].includes(record.ci_state) ||
-       ["pending","unknown"].includes(record.codex_state)))
+  // Pending/unknown CI or Codex results are not permission to merge, but an
+  // indefinitely pending review is still actionable work. After fifteen minutes
+  // without a code change, resume the same coder to inspect/request the checks.
+  const waitingForChecks = isPr && !record.draft &&
+    (!["success", "failure"].includes(record.ci_state) ||
+     !["clean", "findings"].includes(record.codex_state));
+  const lastCodeMs = Date.parse(record.last_commit_at || record.last_github_activity || "");
+  if (waitingForChecks && (!Number.isFinite(lastCodeMs) || nowMs - lastCodeMs < 900000))
     return { kind: "hold", reason: "checks_pending_or_unknown" };
-  if (isPr && !record.draft &&
-      (!["success", "failure"].includes(record.ci_state) ||
-       !["clean", "findings"].includes(record.codex_state)))
-    return { kind: "hold", reason: "unverified_checks" };
   if (record.agent === "claude") return { kind: "hold", reason: "claude_no_routine_nudges" };
   // GitHub cannot see the browser. The courier checks the idle composer before any reminder.
   if (!isPr && record.browser_busy === true) return { kind: "hold", reason: "browser_confirmed_busy" };
   const last = Date.parse(isPr ? (record.codex_state === "findings" && record.codex_review_at && Date.parse(record.codex_review_at) > Date.parse(record.last_commit_at || 0) ? record.codex_review_at : record.last_commit_at) : record.last_submission_at);
   if (!Number.isFinite(last) || nowMs - last < (isPr ? quietMs : prePrMs)) return { kind: "hold", reason: "not_quiet" };
+  // A verified Muse submission starts its own quiet period. Without this,
+  // a PR that has not committed after the first reminder never resumes again.
+  const sentMs = Date.parse(record.last_submission_at || "");
+  if (isPr && record.submission_state === "submitted" &&
+      Number.isFinite(sentMs) && nowMs - sentMs < 900000)
+    return { kind: "hold", reason: "post_delivery_quiet" };
   if (record.next_check_at && nowMs < Date.parse(record.next_check_at)) return { kind: "hold", reason: "cooldown" };
   // No generic reminder for an already reviewed ready PR with captured proof.
   // A draft must still be completed and marked ready; early Codex clean is not
   // the final-head merge gate.
   if (isPr && !record.draft && record.ci_state === "success" && record.codex_state === "clean" &&
-      record.acceptance_evidence && record.threads_resolved !== false &&
+      record.acceptance_evidence && record.acceptance_proven === true &&
+      record.threads_resolved !== false &&
       record.base_current !== false && record.review_base_current !== false)
     return { kind: "hold", reason: "no_actionable_findings" };
   const action = isPr ? (record.ci_state === "failure" ? "repair_ci" :
     record.codex_state === "findings" ? "repair_review" : "continue_pr") : "pre_pr_reminder";
-  const key = actionKey(record, action);
-  if (record.last_action_key === key || record.submission_state === "pending" || record.attempts >= (record.max_attempts ?? 3)) return { kind: "hold", reason: "already_sent_or_capped" };
+  let key = actionKey(record, action);
+  if (isPr && record.submission_state === "submitted" &&
+      record.last_action_key === key && Number.isFinite(sentMs)) {
+    // The previous prompt was genuinely delivered and the quiet period passed,
+    // yet no newer GitHub action changed its key. Create exactly ONE new
+    // task/head/receipt-scoped retry; do not grow an unbounded nested action ID.
+    const root = [record.task_id, action, record.head_sha || "pre-pr",
+      record.prompt_version || "v1",
+      record.last_commit_at || record.last_github_activity || "start"]
+      .map(v => encodeURIComponent(String(v))).join(":");
+    key = root + ":retry:" + encodeURIComponent(record.last_submission_at);
+  }
+  if (record.last_action_key === key || record.submission_state === "pending" ||
+      record.attempts >= (record.max_attempts ?? 3))
+    return { kind: "hold", reason: "already_sent_or_capped" };
   return { kind: "propose", action, key };
 }
 export function invalidateOnHeadChange(record, newSha, at) {
@@ -233,6 +291,9 @@ export function invalidateOnHeadChange(record, newSha, at) {
 export function mergeGate(record, predecessors = []) {
   const reasons = [];
   if (!record?.approved) reasons.push("not_approved");
+  // A coding-scope approval never authorizes unresolved owner questions.
+  if (record?.owner_question || record?.github_owner_question)
+    reasons.push("owner_decision_pending");
   if (record?.draft !== false) reasons.push("not_ready_for_review");
   if (!record?.pr_number || !record?.head_sha) reasons.push("missing_pr_or_sha");
   if (record?.ci_state !== "success") reasons.push("ci_not_green");
