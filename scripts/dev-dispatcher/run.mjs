@@ -4,7 +4,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
-import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions } from "./core.mjs";
 import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
@@ -50,6 +50,7 @@ async function main() {
       applyReceipts(live, inbox, actorMap),
       {unmappedPrs:linked.unmapped,queue});
     revalidateQueuedActions(copy, taskById, queue);
+    wakePendingActions(copy, Date.now());
 
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
