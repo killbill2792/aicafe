@@ -44,7 +44,7 @@ const scalarQuestions=[
  {question:"How many units are there today across all item selections, regardless of their number of lines?",
   truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type='item'`}
 ] as const;
-run("Supervisor answers 13 varied owner questions with exact direct SQL counts and breakdowns",async()=>{
+run("Supervisor proves current-source orders, staff, cash, stock, names and screen parity",async()=>{
  allowedHost(dbUrl!);
  const client=new pg.Client({connectionString:dbUrl!});
  await client.connect();
@@ -135,6 +135,46 @@ run("Supervisor answers 13 varied owner questions with exact direct SQL counts a
     expect(line,question+" wrong "+row.k+": "+turn.text).toMatch(
      new RegExp("[:=]\\s*"+row.n+"\\b"));
    }
+  }
+
+  // These real turns close the signed POS0e gap not covered by the earlier
+  // discount-only test. Expected facts come from the SAME disposable database
+  // transaction, not the model, snapshots or copied fixture guesses.
+  const namedQuestions=[
+   {question:"For current Toast order GUID "+firstOrderGuid+
+     ", what is this customer's first name? Answer exactly Name: X.",
+    truth:"select data->'customer'->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='order' and record_ref=$4",ref:firstOrderGuid},
+   {question:"For current Toast employee GUID "+staffGuid+
+     ", what is this employee's first name? Answer exactly Name: X.",
+    truth:"select data->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
+  ];
+  for(const {question,truth,ref} of namedQuestions){
+   const expected=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0]?.answer;
+   expect(expected,question).toBeTruthy();
+   const turn=await runAgentTurn({context,ownerText:question+
+    " Use retained current source facts, not diagnostic snapshots or another café."});
+   expect(turn.tools,question).toContain("query_data");
+   expect(turn.text,question).toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
+  }
+  const familyQuestions=[
+   {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
+    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$3",label:"Cents",ref:null},
+   {question:"For current Toast stock item GUID "+stockGuid+
+     ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
+    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$3 and menu_item_ref=$4",label:"Quantity",ref:stockGuid},
+   {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
+    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",ref:null}
+  ];
+  for(const {question,truth,label,ref} of familyQuestions){
+   const args=ref?[...params,ref]:params;
+   const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
+   expect(expected,question).not.toBeNull();
+   expect(expected,question).not.toBeUndefined();
+   const turn=await runAgentTurn({context,ownerText:question});
+   expect(turn.tools,question).toContain("query_data");
+   const match=turn.text.match(new RegExp("\\b"+label+"\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)","i"));
+   expect(match,question+" => "+turn.text).not.toBeNull();
+   expect(Number(match![1]),question+" => "+turn.text).toBeCloseTo(Number(expected),2);
   }
  }finally{
   await client.query("ROLLBACK").catch(()=>{});
