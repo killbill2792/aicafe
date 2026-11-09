@@ -32,7 +32,7 @@ BEGIN
  VALUES(b,l,r,now(),'UTC',4,'2026-11-01'),
   (b2,l2,r2,now(),'UTC',4,'2026-11-01');
  cash:=jsonb_build_object('business_id',b,'restaurant_guid',r,'endpoint','cashmgmt/v1/entries',
-  'provider_key',e,'guid',e,'amount',12.50,'date','2026-11-08T15:00:00Z',
+  'provider_key',e,'source_key_kind','provider_guid','guid',e,'amount',12.50,'date','2026-11-08T15:00:00Z',
   'business_date','2026-11-08','type','CASH_IN','fetched_at','2026-11-08T16:00:00Z',
   'lastSuccessAt','2026-11-08T16:00:00Z');
  PERFORM pg_temp.assert_true(public.toast_stage_operational_batch(b,r,'cashmgmt/v1/entries',
@@ -60,7 +60,7 @@ BEGIN
   'same cash amount through the existing POS0e canonical screen/tool view');
 
  inv:=jsonb_build_object('business_id',b,'restaurant_guid',r,'endpoint','stock/v1/inventory',
-  'provider_key',stock,'guid',stock,'status','QUANTITY','quantity',3.5,
+  'provider_key',stock,'source_key_kind','provider_guid','guid',stock,'status','QUANTITY','quantity',3.5,
   'business_date','2026-11-08','source_business_date_kind','observed_cafe_day',
   'lastSuccessAt','2026-11-08T16:00:00Z');
  PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',
