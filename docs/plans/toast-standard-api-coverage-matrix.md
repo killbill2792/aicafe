@@ -1,0 +1,2511 @@
+# POS0a — Toast Standard API source → stored object → shared AI reader matrix
+
+**Gate:** DRAFT / OWNER HOLD for final read-only architecture/audit review. The pinned current official 12-family/74-GET/2,320-field source *definition inventory* is documented, and the conservative A1–A4 field-to-existing-code/proposed-reader crosswalk is checked below. **Actual café grants/responses, per-field retention, current-query availability, screen/registered-one-Supervisor parity and rollout remain NOT VERIFIED** and belong to separately approved implementation/proof. No production write, migrations, new jobs, source readers or live Toast calls were made in POS0a.
+
+**Source baseline:** `main` 4ff13e5279e8b59bea2b71d74cd250193806443e inspected on 2026-11-07 UTC; registry `lib/pos/toast/rawSample.server.ts`; SQL read-only aggregate from connected production database on November 7 UTC. Never treat the October 28 diagnostic archive as a current feed. No café names, IDs, tokens or raw personal fields included here.
+
+## POS0a handoff — read this card before large evidence tables (2026-11-08)
+
+**Authority/order:** `AGENTS.md` + binding POS rules → approved D1–D4 architecture in **this same matrix** → existing brief/queue + approved ownership → actual code/final SQL → executed proof. `PROGRESS.md` is read-only status, and October `toast_raw_samples` is **diagnostic-only**, not a current operational source. No new documentation authority or data/agent/dispatcher path.
+
+**Approved:** one café-scoped `toast_raw_records` current object per true Toast key, `toast_raw_changes` genuine deltas, 10-minute existing coordinator with change-driven/bounded per-family fetch, preserve authorized guest/staff identity, one existing `toast_records_for` → `describe_data`/`query_data` → Supervisor/screens, D3 preserve-consumers-until-proven, D4A/B/C/Menu and rolling-24h experiment requirements. **Approved principles are NOT runtime implementation authorization.**
+
+**November 8 approved D4C distinction ([owner #6727792294](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6727792294)):** for a verified Toast-connected café there is **ONE current, Toast-published Menu** (products, official names/categories, actual product/size/option GUIDs, price, published active/inactive only from a complete authenticated restaurant/version-consistent snapshot). **SUPERSEDED by later [owner #6727941284](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6727941284): NO connected-café Owner review tab, local Add Item draft or obligation to migrate prior manual/test recipes.** Previously locally active manual/testing products stay in storage **only for D3 historical dependency/rollback**, not current All/search/price attention/Supervisor; show current products only from complete Toast publication, and direct new product creation/size/price changes to Toast Web→publish→version-checked sync. Owner optionally edits recipe/ingredient/cost **on already Toast-linked product+size**; missing COGS stays unknown. Disconnected/CSV cafés preserve manual flow. Do not delete old data until scoped dependency proof. Only reliably proven reversible café+Toast-product+size associations may reuse owner enrichment; missing cost is missing, not inferred from selling price. The 563 historical unlinked sale lines are not missing sales or current Menu evidence; **historical evidence-first Option B is NOW APPROVED** by [owner #6727833986](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6727833986), with **C as the mandatory safe fallback for each unprovable old GUID/size link**: preserve original 563 lines and money; group ambiguous historical variants for owner review; no guess from title, charged price or today's 12/24 oz, no lost recipes/COGS claims. Exact match confidence, source-GUID mapping, reversible SQL, exclusive file owners and disposable DB proof remain IN REVIEW; current product identity grouping is automatic by Toast GUID (earlier Option A); automatic migration of old manually entered testing recipes and any Owner-review queue is **not required** after latest owner correction. POS0e reader → POS0d menu → POS0f integration proof, all coding OFF. Full context: [existing D4C spec](../../specs/0001-d4c-toast-menu-authority-and-owner-review.md#november-8-owner-clarification--one-toast-current-published-menu-history-is-not-a-second-menu).
+
+**Approved independent proactive price-change observation ([owner #6728419191](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6728419191), existing [spec 0002 §3.3](../../specs/0002-pos-change-verified-experiment-activation.md#33-owner-approved-proactive-seven-day-price-change-observation--no-experiment-prerequisite-2026-11-08)):** A real, authenticated, same-café/restaurant, complete Toast-published item+size/context price transition must trigger **one Supervisor** initial owner notice, **seven proactive daily observational updates**, then cumulative seven-day evidence-qualified insight, **even with no experiment/owner request/approval**. Reuse existing version-gated menu sync, true price history, source→shared reader and Operating Board/owner delivery; no per-tick spam, second scheduler, price ledger or new agent. Include real units, sales, discounts/refunds and independently known cost only; nontrading/stale/partial days still receive an honest digest, not invented totals or causality. A second verified price splits actual observed exposure; an existing owner-approved experiment interrupted by revert/another price **preserves segments and requests owner choice** (stop/partial, new phase, separately approved test), never silently auto-restarts. **Behavior APPROVED, no runtime authorization**; precise watch representation, owner delivery, time alignment/attribution, SQL/RLS, exact files and registered one-Supervisor integration proof remain later POS0e/d/f. The pre-activation two-per-local-day reminder rule and approved experiment N×24-hour clock are separate, not replaced.
+
+**Broken now:** diagnostic non-order SQL/readers; last-30/35-day/200-path discovery; no full current non-order retention/proof; stale daily optional-sync gate; redactor removes permitted PII; order SQL whole-day error isolation and conditional menu publication safety remain unproven. **No POS0b–f coding dispatch**, owner must personally activate after final POS0a architecture review. #398 owns source field/key evidence + this read-only audit; #400 exclusively owns active instruction/queue cleanup; #399 is merged owner-question transport.
+
+**Current POS0a evidence boundary (owner audit #6729821593):** the formerly missing official-schema source evidence is now captured: **12 Toast-owned Swagger YAML families, 74 GET operations and 2,320 flattened nested 2xx response-field rows** with original SHA-256 and version per family in `docs/plans/toast-openapi-spec-snapshot.json`, source [trusted read-only capture #42529761170](https://github.com/killbill2792/aicafe/actions/runs/42529761170). All documented references resolved in that extraction. **Two Swagger versus gateway route-prefix differences are now CLASSIFIED from Toast's official operation-page curl URLs**, while retaining their raw source/registry forms (see approved JSON snapshot crosswalk); per-café granted scope, returned values, redaction/retention, current writer and shared-reader field status, screen and registered-Supervisor proof (A2/A4) are STILL OPEN. The PR's trust-runner marker previously carried a stale head SHA and empty tests. Keep #398 DRAFT/OWNER HOLD; a green docs baseline or historical Codex receipt is not full acceptance.
+
+**Precisely delegated proof after POS0a (NO authorization to code):** #398 now owns the **official definition and diagnostic-versus-current discrepancy audit**, not hypothetical code fixes. Later **POS0e** owns the one existing café-scoped Toast current-source SQL/read path and describe_data/query_data parity; **POS0b** owns labor/wage/shift writer and mirror lineage; **POS0c** owns permitted dynamic stock/cash/kitchen freshness and null semantics; **POS0d** owns authenticated single published Menu/price/variant authority and approved seven-day observational signal/report design; **POS0f** independently verifies each allowed official source field → retained current object → shared reader → actual registered ONE Supervisor answer and screen on migrated disposable DB, plus privacy, performance, rollback and diagnostic-negative tests. This is **ownership of pending separately approved implementation/proof**, not a claim that it ran. No new reader, task system, manual menu, scheduler, dispatch or SQL permission is granted.
+
+**Find detail:** [A1–A4 final architecture contract](#pos0a-a1a4-architecture-acceptance-reconciliation-2026-11-08) · [Official family links/scopes](#official-family-version-and-grant-reference) · [Per-family ownership and readers](#field-inheritance-contract-each-field-row-below-inherits-these-exact-source-destination-and-consumer-mappings) · [Historical path ledger](#individual-historically-observed-json-paths--normalized-lossless-evidence-ledger) · [Known defect lineage](#a-root-cause-reconstructed-from-actual-repository-files) · [Required proof](#acceptance-and-execution-evidence-ledger). This short handoff is an index into the same document, not a replacement or second set of instructions.
+
+## POS0a A1–A4 architecture acceptance reconciliation (2026-11-08)
+
+**Owner closeout source:** [independent audit #6729821593](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6729821593); binding read-only acceptance is `docs/plans/universal-supervisor-queue.json` (owned by #400) `tasks[id=POS0a].acceptance`. **Answer to the owner:** this PR can be reviewed/approved as the *complete read-only official-source audit plus actionable field-level implementation contract*, **not** as implemented Toast→Supervisor availability. The source rows below are official definitions, while every unobserved café field/permission has an explicit `not_tested` default. Future migrated-DB, SQL cutover, real registered Supervisor and screen proof cannot logically precede approval to build those later PRs. Approval of architecture does not automatically approve their code, physical schema, dispatch or this PR's merge.
+
+### A1–A4 closeout verdict (two non-interchangeable kinds of evidence)
+
+| Gate | POS0a read-only architectural evidence and what is complete for owner review | Still NOT verified or deployed; later unique owner |
+|---|---|---|
+| **A1 — official operation/entitlement inventory** | **Documented:** official Toast-owned 12 YAML source families, versions and raw SHA-256, 74 GET definitions including detail requests, source registry comparison, 2 gateway prefix crosswalks; exclude Menus V3, Analytics/ERA, no-GET; partner entitlement is separately classified, not asserted Standard. Original linked source capture #42529761170. The 74 are *this pinned version*, not a hardcoded universal Toast endpoint count. | Per-restaurant and café credential scopes, real 403/missing ID/empty/204/nullable/not-configured/provider response **`not_tested` unless separately evidenced**; never treat historical October 2xx as current. Actual authorized scope/response checks: **POS0b labor; POS0c cash/stock/kitchen/availability; POS0d Menu/config/remaining**. Reader/registered answer proof **POS0e/POS0f**. |
+| **A2 — each official field and source contract** | **Documented:** all **2,320** flattened official response field rows (exact family, GET path, 2xx status, JSON field path/type/format/null flag) inherit an existing-source/identity/writer/cadence/reader/consumer/gap/owner **H1–H13** family contract, with **38 verified-to-exist field-prefix exception selectors** for customer identity, labor references/payroll, stock, delivery addresses and curbside pickup. `official_field_resolution` in the **existing JSON snapshot** is the machine-readable join/exception/status rule; the new audit assertion enumerates every row and rejects unassigned families, duplicate keys and exceptions not tied to real official fields. | Individual café permissions/field observed null vs omitted/retained/redacted and full consumer/query access **not verified**: default `grant=response=not_tested`, `retained=discoverable=queryable=not_verified`. Family **POS0b/c/d** owns actual response+writer and redaction correctness with shared **POS0e** policy/reader; **POS0f** verifies each eligible field on migrated disposable DB and one Supervisor. |
+| **A3 — existing object/writer/storage and diagnostic lineage** | **Documented from read-only code and Nov 7 database aggregates:** `toast_raw_records` order/employee/job/time_entry/menu_item/price_version families and `toast_raw_changes` genuine changes; exact known ingestion job and cadence vs "no proven current object"; current order reader vs non-order diagnostic sample dependence, limited `cv_*`, 30/35-day/200-field discovery; 768 October diagnostic samples distinct from current operational objects. Explicit business+restaurant+provider GUID identity where established and **unverified composite key** where not. Existing orders **preserve/no rewrite**. | Source-specific full current-field retention, child-key truth, permission, freshness, durable record and privacy verification not executed. **POS0e** repairs shared redaction/current storage/reader; **POS0b/c/d** repair assigned source families. Later order repair belongs **separately scoped existing-importer owner**, not a second importer. |
+| **A4 — reader/one Supervisor/screen contract and audit** | **Documented architecture:** one existing `toast_records_for` → `describe_data`/`query_data` → ONE registered Supervisor and shared screen calculations, **current deficiency stated per family**. `node --test scripts/toast-standard-api-coverage.test.mjs` is deterministic, read-only, checks official source indices, every field inheritance/exception and known caveats, and does not access Toast or production SQL. The strict `POS0A_REQUIRE_FULL_COVERAGE=1` **must continue failing** before real integration proof. | SQL `cv_*` diagnostic cutover + permitted dynamic field discovery/aggregate query: **POS0e** only. Actual privacy-preserving current values across source/writer/reader → registered SINGLE Supervisor turn + screen, negative/nullable/unauthorized/stale/tenant, rollback/performance: **POS0f** (after source **POS0b/c/d**). Do not call structural CI "integrated". |
+
+### Official source row → inherited contract → exception → truthful field status
+
+**Canonical field row key:** `(official_snapshot.families[].family, operations[].path, responses[].status, responses[].fields[][0..3])`, including **exact field path, type, format and source nullable flag**. The pinned extractor retains **2,320 rows but only 2,307 distinct family+operation+status+path keys**: 13 paths have distinct type/nullability variants in the Swagger schema; they must NOT be discarded or treated as two observed café values. The same 4-element official row contains its type, format and source nullable flag: **nullable in Swagger is a schema fact, not a café-observed null**. The family record holds official URL/version/raw YAML SHA; `official_field_resolution.family_contracts[]` maps exactly the 12 official families to H1–H7/H9–H13 in the **existing** historical contract legend below (H8 is partner entitlement only and has no Standard official schema rows). Read H-code's identity/storage/reader alongside the machine contract's observed cadence/consumer/downstream owner. Join on family; **never inherit October observations as live**.
+
+**Precedence, without 2,320 copy-pasted guesses:** (1) start from the official `family + GET + 2xx + exact field path + type + format + source-null marker` row, including collection `[]` vs detail shape and source schema variants; (2) inherit the family's `source_scope`, business+restaurant provider identity with explicitly unverified nested keys, current writer/storage, existing cadence, current operational reader or **NO CURRENT OPERATIONAL READER**, Supervisor query/screen consumer or **NOT VERIFIED**, and POS0 owner; (3) classify privacy from `risk_precedence` (credential exclusion; identity/contact/payroll restricted; free text scrutinized; all other fields still require review), never silently mark the field safe; (4) select the **longest exact `field_prefix` matching the full operation path**, for that path or its dot/array descendants; this supplies additional scope, known current redaction and specific gap, not an inferred live value; (5) preserve the source-row status fields **`grant=not_tested`, `response=not_tested`, `retained/discoverable/queryable/registered_supervisor_and_screen/freshness=not_verified`** unless a future real café-scoped assertion with as-of, role, source response and current SQL/agent evidence overrides them. **A documented current family writer or consumer does not make an individual field currently readable.**
+
+**Operation result vocabulary for future verified evidence:** `observed_success`, `observed_null`, `field_omitted`, `empty_success`, `403_forbidden`, `missing_resource_id`, `not_configured`, `204_no_content`, `stale`, `failed`, and `not_tested`. Record café/restaurant, token scope, source-as-of/last_success, whether a required resource ID exists and the evidence run reference in a separately approved test; **do not retrofit October historical data to imply today's status**. A field *described* by schema but not in one response remains eligible for safe field discovery, with its missing reason, not zero.
+
+**Protected Orders fields: official permissions must not be conflated.** Both `GET /orders/v2/ordersBulk` (paths prefixed `[].`) and `GET /orders/v2/orders/{guid}` (detail paths) contain `deliveryInfo` and `curbsidePickupInfo`. **Toast explicitly documents that `deliveryInfo` itself is `null` without `delivery_info.address:read`**; consequently **every** descendant (including delivery state, dates and employee references) inherits the *parent scope-availability gate*, not just address leaves. This does **not** prove a returned null was caused by missing permission: a legitimate no-delivery order can also have null data. Nine narrower address/location descendants per operation (`address1`, `address2`, `administrativeArea`, `city`, `country`, `latitude`, `longitude`, `state`, `zipCode`) have additional PII/redaction treatment, not a different entitlement. `curbsidePickupInfo` and all children require `guest.pi:read`; `Check.customer` requires the same guest scope. Exact source: [Toast Orders GET scopes](https://doc.toasttab.com/doc/devguide/apiOrdersGetScopes.html) and [single-order response notes](https://doc.toasttab.com/doc/devguide/apiOrdersGetDetailedInfoAboutOneOrder.html). All actual café grants, returned values, individual retained fields and registered one-Supervisor/screen access remain **`not_tested`/`not_verified`**. Current redactor may omit restricted details and notes, so parent scope is necessary but not sufficient to promise a reader. The audit asserts the parent-delivery scope for a non-address descendant and the narrower address/curbside overrides without a fabricated 403 or privacy leak. **POS0e** owns shared permitted field redaction/query/RLS; **POS0f** owns final tenant/role-safe actual field proof.
+
+**Privacy contract applies to EACH field including unknown nested paths:** exclude PAN/CVV/CVC/track and reusable payment/authentication secrets; never dump arbitrary notes into agent instructions. Authorized guest/staff names, stable customer GUIDs, contacts, wage/role facts and purchase history are **target retainable** under the extra Toast scope where needed, café/restaurant boundaries, proper role authorization, minimum necessary query projection and RLS; **current `redact.ts` drops many names/contacts and HMACs/omits sensitive IDs**, so claiming those exact fields presently stored would be false. For any ambiguous path, the default is **review required, retained not_verified**, not an implicit allow rule. Personal data should not enter this spec or audit artifacts.
+
+| Official exact example (2xx=200, full field path) | Scope/field identity and current writer/storage | Privacy; actual café grant/response/field status | Current operational reader / Supervisor and screen | Missing proof + unique owners |
+|---|---|---|---|---|
+| **Orders:** `/orders/v2/ordersBulk` → `[].checks[].customer.email` and `[].checks[].customer.guid`; detail `/orders/v2/orders/{guid}` → `checks[].customer.*` | **H1**; `orders:read` plus **`guest.pi:read`** for permitted customer fields; café+restaurant+order GUID; nested check GUID relates check/customer, NOT a new customer store. Existing 15-minute eligible live/day archive writes `toast_raw_records(order)`, with selective `cv_orders`/payment projections; no proof these original customer fields survive. | **`not_tested` café grant and value**. `email` currently **DROP** by `redact.ts`; sensitive `guid` HMAC if key configured else **OMIT**. Future retain only when granted and authorized, not identity-by-name. Null/omitted guest leaves unrelated order valid. | Current order branch of `toast_records_for` reads current `toast_raw_records`; `cv_orders` exists. **No current original email/GUID field or customer-purchase Supervisor/screen parity proven**; query_data missing field must not be called a customer with no purchases. | **POS0e** permitted PII/reader + strict role/RLS; **POS0f** real source-shaped customer-to-purchases/registered Supervisor/screen proof. Preserve actual order writer; no second customer pipeline. |
+| **Labor:** `/labor/v1/timeEntries` → `[].jobReference.guid`; detail `/labor/v1/timeEntries/{timeEntryId}` → `jobReference.guid`. Employee `/labor/v1/employees` → `[].jobReferences[].guid` and `[].wageOverrides[].jobReference.guid` | **H4**; `labor:read` for time entries, **`labor.employees:read`** for employee relation/wage GET. Business+restaurant+timeEntry GUID; nested jobReference GUID relates a real job entity (not array index/name), no new staff store. Existing `optionalSync`→`syncToastLaborReadOnly` and current `toast_raw_records(time_entry,employee,job)` plus `toast_labor_entries`, directories, `cv_labor_entries`; fields individually **not retained-proven**. | Café grant/value **`not_tested`**. Staff identity/wage/role are restricted; current redactor strips contact/name and cannot be assumed to retain every nested reference. Do not infer jobs from job title or guess wage from null. | Curated `cv_staff`/`cv_labor_entries`/`cv_shifts` exist, but generic non-order `toast_records_for` is sourced from **October `toast_raw_samples`**. Exact `jobReference.guid`→`describe_data`→`query_data`→one Supervisor / Staff/payroll parity **NOT VERIFIED**. | **POS0b** labor source+writer/role join; **POS0e** existing canonical reader/PII policy; **POS0f** definitive registered Supervisor, screen and tenant/role proof. |
+| **Stock:** official Swagger **`GET /v1/inventory`** → `[].guid`, `[].multiLocationId`, `[].quantity`, `[].status`, `[].versionId`; official operation-page **gateway request `/stock/v1/inventory`** | **H6**, `stock:read` entitlement **not tested**; source item+location/version composite **must be validated**, not automatically key by array position. **NO current operational stock `toast_raw_records` writer proven**; October rawSample is diagnostics only. | Café grant/response **`not_tested`**, field retention **`not_verified`**. Quantity is business data, but 403/204/empty/nullable/missing ID or stale snapshot NEVER equals zero. Review field/security before use. | **NO CURRENT OPERATIONAL READER**. `cv_inventory` reads historical diagnostic `toast_raw_samples` and `query_data` marks it `snapshotOnly`; live inventory/Supplies and ONE Supervisor stock claim **NOT VERIFIED**. | **POS0c** source/write key and refresh; **POS0e** current reader/café-scoped field discovery; **POS0f** real source→DB→Supervisor/screen proof and absence-of-diagnostic authority. |
+
+**Coverage accounting:** official pinned counts are **12 families / 74 GETs / 2,320 nested response-field rows**; the single `official_field_resolution` object has **12 family mappings and 38 exact operation+field-prefix exceptions** (original 16 customer/labor/stock, 2 parent-delivery scope rules and 20 narrower per-operation delivery-address/curbside rules). Collection and detail are separate operations; the selector matches every official field, including array/container/schema-defined rows without a stable child GUID. There is **no assertion of 2,320 actual café returns**. The new deterministic audit exercises every source-row/H-code/privacy/status combination **without collapsing 13 distinct schema variants**, checks every exception binds to a real official path and validates the three examples. The old **1,629 October redacted diagnostic endpoint/field pairs** remain a separately sourced historical ledger with 13 H contracts. To reproduce: `node --test scripts/toast-standard-api-coverage.test.mjs`. The **separate strict runtime gate** `POS0A_REQUIRE_FULL_COVERAGE=1 node --test scripts/toast-standard-api-coverage.test.mjs` must still fail until POS0f's real retained/current-reader/one Supervisor proof authorizes it; **a passing read-only audit does not pass this gate**.
+
+**No circular prerequisite, no new owner architecture decision:** Owner-approved Menu-only Toast publication/no connected local Add Item or Owner review, 563 historical B-with-C fallback, D4B repair existing importer 99+1, source-confirmed experiments and unrequested seven consecutive daily price observations/final seven-day analysis already appear in **existing specs 0001/0002 and above handoff**. These are desired behaviors, NOT executed integrations. **POS0a** stops after truthful field/source/current-code audit and review-ready proposed implementation contract. **POS0e** owns the one shared current reader + data-query/discovery/privacy foundation; **POS0b** labor; **POS0c** stock/cash/kitchen/availability; **POS0d** published Menu, config, remaining Standard families + approved price-change watch; **POS0f** final registered one-Supervisor/screen/SQL parity, privacy/performance/rollback/retirement. Owner separately scopes/authorizes physical SQL, exclusive collisions and any subsequent implementation; PRs #398 and #400 remain DRAFT / OWNER HOLD. **No data-code/SQL/dispatcher/production/merge approval is inferred.**
+
+---
+
+## Start here — durable agent handoff and conflicts index (2026-11-07)
+
+**One first-read path (NOT new authority):** `AGENTS.md` → binding `docs/rules/pos-data.md` → this D1–D4A/B/C evidence card → task brief AND machine queue → actual code/deployed SQL → executed `docs/rules/tests.md` proof. Historic runbooks never override these; PRs #398/#400 remain draft, no runtime/merge approval.
+
+**Source-to-reader card (current vs target):** Toast API → existing coordinator/client → keyed `toast_raw_records` and true `toast_raw_changes` → existing app projections → `toast_records_for` / `cv_*` → `describe_data` / `query_data` → same Supervisor/screens. **Known defect:** non-order `toast_records_for`, `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` still use diagnostic samples. Test Café is a distinct tenant mirror. **D3:** retain writers/readers/app-owned history until full consumer, correctness, performance, isolation and rollback tests.
+
+### D4A/D4B approved architecture outcome — no runtime approval (Nov 7)
+
+Sources: [D4A](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714042938), [D4B](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714102679), [granular approval](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714387485). **D4A Approach B:** reuse existing 10-minute coordinator, separate 15-minute live-orders reader, `toast_raw_records` and real `toast_raw_changes`. No full API fetch each tick or webhook-only. Per family use supported modified/version or validated bounded snapshot, independent check/success, scope, cursor, completeness, failure/backoff and automatic reconciliation. Owners: POS0b labor, POS0c cash/stock/kitchen, POS0d one version-validated menu snapshot (no no-sales/partial retirement), POS0e canonical reader, POS0f proof.
+
+**D4B granular availability:** a poison order/DB error NEVER hides already validated, durably committed orders. `toastDayTrust.server.ts` leaves stored rows usable, while `toastOwnerDay.ts` withholds uncertified **day aggregates**. Screens/Supervisor answer verified individual facts with provenance/as-of and only **affected metrics partial**, not whole café unknown. Last certified snapshots retain their original as-of, not falsely current. **Known-order sum is NOT a final total, minimum or estimate** (refunds/adjustments can reverse signs); no invented money.
+
+**D4B Approach 1 now APPROVED as architecture direction ([owner #6727889494](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6727889494)); Approach 2 REJECTED.** Repair the existing Toast day-import/live-archive and retry/reconciliation writers. A 99-good + 1 poison-SQL/parse order must leave all 99 independently verified rows durably queryable and the failure explicitly recoverable, including later good pages; never build a parallel order importer, archive, scheduler, queue or truth path. Use café+restaurant+Toast order GUID where present; missing ID/page write uses real run/page/day error evidence, not a fake GUID/status or source JSON mutation. Make affected daily money partial, not a final total/lower bound/estimate; replays/refunds and prior certifications remain source-accurate. Preserve #189/#203/#264/#297 and current order/screen/one-Supervisor compatibility. **NOT APPROVED:** any specific SQL savepoint/per-row atomicity algorithm, new schema/migration, exact path ownership, urgent priority/fairness changes or production release. Later separately scoped order-recovery PR and fully migrated disposable-DB 99+1/page-N/429/rollover/tenant/parity/rollback proof are required. This is a documented risk/design approval, NOT proof of actual existing data loss or runtime repair.
+
+**Priority recovery to FINISH:** reuse `toast_unparsed_orders`, existing staged pages, `toast_sync_runs` nonce/cursor, capped `missingDays.ts`, current raw archive and change log. Distinguish provider/auth/429, parse, SQL row, full DB outage, expired run and permanent source errors; bounded durable retry, targeted retrieval where authorized, day reconciliation where necessary. Permanent defects stay visible; no hot loops or starvation. `toast_import_day` whole-day rollback is **risk, not observed loss**; `toast_record_day_error` can advance failed dates; `liveArchive.server.ts` may skip later pages on RPC failure. **B1 SQL savepoint/transaction design and urgent scheduling priority UNAPPROVED.**
+
+**Preserve #189** nonce lease/cursor/429/generation cost, **#203** first backfill/shared 5-day cap/fairness, **#264** timeout-safe redaction and payment-gap progress, **#297** five-date 1h→24h bounded repair/dedup. Separate derivative queue: 77 `toast_rollup_refresh_jobs` due, attempts=0, matching rollups; 1,005 completed/1 failed sync runs, none pending. `rollupRetries.ts` currently ignores `toast_ack_rollup_refresh` false; false vs superseded-generation ACK needs separately owned proof, **never sales reimport**.
+
+**Approved D4B order GUID status ([owner](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714662444)):** Associate validation/retry state with **café + restaurant + Toast order GUID** (never run/page/field). Keep source JSON untouched in `toast_raw_records`; do not inject flags or fake `toast_raw_changes`. Stages: received, raw saved, parsed/validated, canonical, reconciled. **No status column or physical schema is approved/claimed.** Existing 15-minute `/orders/v2/ordersBulk?businessDate=...` fetches full current-day order objects, not only modifiers. Reprocess eligible *finished* bad orders on the next refresh idempotently; open orders are not final. Never clear an error merely on fetched/read success. For missing GUID or failed whole-row/page write there is **no row status**: use existing staged-page, `toast_unparsed_orders` and day status; after rollover existing closeout/repull. Test missing identity/field, DB row/page failure, truncated API page, 15-minute repeat, rollover, corrected order, 98/99 good rows visible and metric-level uncertainty, durable recovery or explicit permanent defect.
+
+**Proposed non-dispatchable `POS0-order-recovery`** candidate `dayImport.ts`, `scheduler.ts`, `missingDays.ts`, `liveArchive.server.ts`, `rollupRetries.ts` + tests. Exact files/SQL and priority policy await owner approval. Migrated disposable DB: **99 good+1 SQL-bad**; 99 immediately durable/queryable, failed record bounded replay, unaffected facts usable, negative adjustment/partial totals honest, no premature completed day, later cafés/dates/fees proceed; 429/outage/100+ café fairness/generation/rollback. No test executed.
+
+**D4C menu lifecycle — approved outcome, not an importer/catalog refactor:** The [owner's D4C comment](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714937954) requires a complete authenticated, restaurant/version-consistent published-menu snapshot before any Toast-only unpublication; provider status becomes **inactive**, never hard-deleted. The identical Toast GUID may be republished and reactivated; historic orders, option/size keys, price history and owner recipes survive. Empty, partial, delayed, wrong-version/restaurant, unauthorized or reference-incomplete snapshots must leave last-good state unchanged. Zero sales/ambiguous historical sizes are not unpublication evidence. Metadata/change-only checks under existing D4A; no full fetch every ten minutes. POS0d implementation needs a separate accepted file/SQL design and migrated-db + registered Supervisor/screen proof. [#400 binding handoff](https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714938291) remains draft. No code/migration/merge permission.
+
+**#398 audit-only files** [approved](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6713567512) and now committed: `scripts/toast-standard-api-coverage.test.mjs` (`49c555a`) and `docs/plans/toast-openapi-spec-snapshot.json` (`9695995`). The latter now includes a **pinned normalized official GET/recursive-response schema** with 12 official source URLs, versions and SHA-256 digests (commit `84a12cb`); raw YAML bytes are not committed. This is official definition evidence, **not proof of any café's grants or retained/queryable data**. [Trusted read-only structural acceptance run #42527951896](https://github.com/killbill2792/aicafe/actions/runs/42527951896) executed 4/4 Node assertions at head `49c555a`. **A1 official GET route-definition crosswalk is now classified; per-café grants/response states and A2/A4 current-source/registered-Supervisor integration proof still OPEN.**
+
+**Discrepancy register (all named instructions were inspected; classification does not itself fix runtime):**
+
+| Current/superseded statement with exact file | Evidence classification / conflict | Superseding approved decision and owner | Resolution proof / status |
+|---|---|---|---|
+| `docs/README.md`: heading **“Toast integration (current)”** groups `docs/toast-runbook.md`, `toast-polling.md`, `toast-order-queue.md`, `toast-labor-staging.md`, `toast-promotion-guard.md`, `toast-first-cafe-readonly-pilot.md`, `toast-database-tests.md`, `toast-consolidation-first-restaurant-smoke-checklist.md` | **Obsolete/limited historical pilot instructions**: separate disabled poller, early staging/promote flags, migration 40–59 and pre-automation procedures. `toast-net-sales.md` retains useful historical amount semantics but is not an independent current rule. | D1/D2/D3 + current `AGENTS.md`; **#400** reclassifies index; later POS0f must compare useful legacy tests | Agent must find **one** binding POS rule and named per-family owner without enabling old flags. README/dispatcher tests prove routing; no historical migration rewritten. |
+| `docs/06-integrations.md`: “Toast ... v1 = CSV upload”, “Not in v1”; `docs/04-data-model.md` describes initial schema | **Historical product/model-era descriptions**, not the live API implementation; don't create separate CSV-only or new customer system based on them | D2 + binding POS rules; **#400** marks old sections as non-authoritative in index, no global rewrite | Actual modern Toast client/staging/reader inspection must precede implementation; **not yet an automated stale-section ban** |
+| `docs/data-dictionary.md` `cv_toast_records`: **“plus labor, cash, kitchen, menus and setup lists from the daily capture”**; `lib/data/canonical/dictionary.ts` `cv_toast_records.meaning` repeats the same claim | **Documented old implementation and active runtime metadata defect**; daily diagnostic capture is not an authorized source. The Markdown is **generated** from dictionary.ts plus `docs/data-dictionary-notes.md`; editing generated text alone is not durable | D2/D3 + #400 notes/README source-warning; **POS0e** separately owns dictionary metadata + generator sync **and live SQL reader repair**, POS0f checks final lineage | Until POS0e updates `dictionary.ts`, regenerated Markdown retains the obsolete sentence; never interpret it as permission. Require regenerated docs parity, migrated disposable SQL direct/**indirect** no-sample lineage, positive current-object/negative sample tests and real chat/screen agreement. **OPEN** |
+| `docs/plans/toast-storage.md`: **“Retire run-moving and `seen_run_id`”** in migration-140 intention | **Superseded design intention**, NOT current runtime. Live read-only: **9,821** `toast_raw_records` rows have `seen_run_id`; current `toast_archive_order` and `toast_records_for` SQL still mention it. Total raw = **21,464** at inspection. Do not infer deletion safety from an old “Done” label | D2 single current object and D3 preserve consumers; **#398** evidence / **POS0e** read-path contract / **POS0f** migration+replay proof | Explain run-scoped membership/visibility with exact composite key, live pre-closeout and imported-day behavior; replay unchanged/modified orders and check no double sales. **No column removal authorized** |
+| `docs/data-dictionary-notes.md`: old cash/inventory/kitchen/option sample lineage and `lib/ai/agent/tools/dataQuery.ts` **SNAPSHOT_VIEWS** | **Verified current known defect**, not a second current feed, despite old migration/tests expecting those answers. Historical SQL migrations 114–130 remain immutable | D2/D3, #400 binding docs; **POS0e** additive active read-view cutover, POS0f full schema audit | Verify `pg_get_viewdef`/`pg_get_functiondef` after migrations **and transitive dependencies**; actual current source changes answer, diagnostic-only poison never does, authorized tenant/screen+Supervisor match. **OPEN** |
+| `lib/pos/toast/liveArchive.server.ts` `archiveLiveToastOrders`, `liveArchive.ts`, `todaySoFar.server.ts` | **Verified current behavior, incomplete recovery:** live today reader passes already fetched pages to archival callback; archival SQL errors are logged by code and **return partial saved count without throwing**, skipping remaining pages, and the live-read caller catches save errors without failing the sales reading. Existing tests explicitly assert silent reading success on an archive failure. The comment saying “5 AM import still saves every order” is only a **conditional recovery expectation** (requires later complete day import), not durable proof of a failed live page's retry. | D3 preserve source/actual/provisional distinctions; **future owner-approved order archival/recovery PR (number/exclusive paths unassigned)** with POS0f end-to-end proof; **POS0e** common freshness labels | Inject archive RPC failure on page N with subsequent valid pages, lost successful-read notification, missed closeout, repeated identical/modified delivery and late paid tip; prove durable failed-page state/retry and eventual no-loss/no-double-count, current vs final source/health visibility. **OPEN** |
+| `lib/pos/toast/dayParser.ts` per-order catch versus `dayImport.ts` → deployed `toast_import_day` one day-wide SQL transaction | **Correct existing per-order parser**, but **unverified database-failure isolation**; a SQL exception can roll back valid same-day orders. `toast_record_day_error` can advance backfill despite failed day | D3 order durability; **later separately owner-approved SQL/order-recovery PR (exact owner/file list NOT YET ASSIGNED)**, POS0f full acceptance | Inject bad SQL cast/constraint/trigger among valid day orders in disposable DB, prove survivors, durable no-starvation repair, cursor/partial-day honesty, idempotence, rewind/rollback. **OPEN / NO implementation approval** |
+| `lib/pos/toast/optionalSync.ts`, `operationalCopy.ts`, `operationalStaging.ts`, `adapter.ts` and `lib/pos/syncCatalog.ts` | **Existing behavior**: metadata check with daily-triggered full fetch; two `/menus/v2/menus` calls; absent item/option archive and relationship delete without separate proven snapshot completeness. 563 unmapped Seiyun lines / 7 base GUIDs / 2 sizes each are **legacy mapping evidence, not new-menu proof** | D3 menu preservation/conditional refresh; **POS0d** owns later code, **POS0e** common freshness, **POS0f** tests | Single validated published snapshot vs two fetches, catalog/size identity, no-sales/not-visible/failed/partial/empty/wrong-café negative tests, no recipe/name overwrite, stable historical links; full HTTP and SQL counts. **OPEN** |
+| `docs/plans/universal-supervisor-agent-operations.md`, `universal-supervisor-task-briefs.md`, `universal-supervisor-queue.json`, `scripts/dev-dispatcher/delivery.mjs` | **Proposed task routing + actual generated agent handoff**; earlier briefs listed rules before AGENTS and generic proof, so a fresh agent could miss D3 and defect ownership. Queue approval for implementation remains **false** | D1–D3, AGENTS authority; **#400** owns precise first-read/prompt/test/queue corrections | Generate real prompts for **POS0b/c/d/e** in ChatGPT and Claude tests: ordered path, approval hold, preserved/defective paths, later owner and executable final lineage; queue/briefs consistent. **Must actually run CI** |
+| `.github/workflows/toast-diagnostic-capture-manual.yml`: literal **`on:\\n  workflow_dispatch:`** | **Malformed current workflow trigger**, not safely manual-dispatchable as written | D2 diagnostic-only, #400 workflow and guard/test | Parse/validate real YAML trigger for **only** `workflow_dispatch`, prohibit schedule/push; verify current-head CI. **OPEN until execution** |
+
+**Unapproved:** final field-level spec, SQL B1/priority design, `POS0-order-recovery` exclusive scope, full acceptance and PR merge. Preserve correct importing, history, app-owned corrections, Test Café mirrors and screens. POS0e reader precedes b/c/d; POS0f verifies registered Supervisor/screen parity. Reopen D1/D2 assumptions on new evidence.
+
+## FINAL-REVIEW OWNER DECISIONS — binding summary, NOT implementation approval (November 7, 2026)
+
+**Owner approval status:** **Decisions D1, D2, and D3 are APPROVED as architecture principles.** D3's **preserve-until-proven replacement safety rule** is also **APPROVED**. This approves **no specific table/view/reader consolidation, deletion, migration or runtime change**. The **complete final field-level specification and PR #398 remain DRAFT / awaiting final architecture review and separate owner confirmation.** The owner has **paused auto-merge and merge of PRs #398 and #400 and all subsequent POS0 architecture implementations** until their final review. Do not undraft, merge, enable auto-merge, dispatch POS0b–f implementation, run production migrations or delete production diagnostics based only on this section. #399 is already merged and its owner-question/approval workflow is unchanged.
+
+### Five non-negotiable lasting-fix rules
+
+1. **Complete official Standard schema inventory.** Every documented GET operation and nested field is in the authoritative versioned checklist, whether or not encountered in recent responses. Per-field evidence tracks schema version/permission/source capture/current persistence/query parity. A scheduled version/hash comparison identifies new/removed/changed official fields and creates a failing coverage-gate task; never silently guess availability or call an old sample complete.
+2. **One authoritative current object.** All *permitted* fields returned by Toast for a café belong to **existing `toast_raw_records`** under the real provider key; `toast_raw_changes` stores only real field deltas, and typed screen projections are derivatives, not independent raw truth. Missing optional data never discards an otherwise valid object. Preserve customer/staff identity, contact, order/visit, loyalty, notes and other legitimately returned fields; exclude PAN/CVV/track/reusable payment or authentication credentials and non-business secrets. Tenant and role permissions still apply.
+3. **One Supervisor query path.** The only authorized general read is existing `toast_records_for` / `cv_toast_records` / domain `cv_*` + `ai_query_view` + `describe_data` / `query_data` in one agent. No new AI field whitelist, parallel reader, broad SQL execution tool, new customer table or second operational import. **`toast_raw_samples`, `toast_raw_samples_latest`, diagnostic mirrors, fixtures, and investigative captures must NEVER supply current operational AI answers or screen metrics.**
+4. **Database-scoped on-demand answers, bounded context.** PostgreSQL may filter, aggregate, group, join verified IDs and page through *all relevant authorized retained rows*; a per-tool response budget/row limit is **not** a database scan limit. The AI receives concise, provenance-aware results, not thousands of JSON records. A truncation marker requires continuation/aggregation or an explicit incomplete answer.
+5. **Real automated integration for every field family.** For each newly covered family, executed tests must follow `official field → real source-shaped provider response → existing one-current-object write + true delta → shared current-source reader → describe_data discovery → query_data retrieval/DB aggregation → **registered, actual one-Supervisor-turn answer** → screen parity where applicable`. Include rare/missing/deep/old fields, wrong café, authorization denial and **negative sample contamination**. No skipped/mocked/green-ingest-only proof qualifies as integrated.
+
+### Decision 1–3 status report — five evidence dimensions (owner-approved principles; not an implementation sign-off)
+
+**Status vocabulary:** `Approved` means the **owner accepted the principle**, not the implementation; `Documented` means recorded in this draft (with gaps labeled); `Implemented` means live runtime behavior, not merely a design; `Independently Verified` means real end-to-end, screen-and-Supervisor acceptance under the same definitions (a targeted read-only SQL observation is **not** enough); `Missing` enumerates gates not yet passed. `Partial` and `No` are deliberate; a merged PR or green documentation CI cannot turn them into `Yes`.
+
+| Decision | Approved | Documented | Implemented | Independently Verified | Missing |
+|---|---|---|---|---|---|
+| **D1 — complete versioned official Toast Standard GET/nested-field inventory and drift gate** | **Yes: principle** | **Official 12-family raw-YAML URL/version/SHA and 74 GET / 2,320 nested-field evidence pinned**; 2 Swagger/request prefixes classified against official curl URLs | **No runtime coverage change** | **Official-source extraction executed; café grants/field retention/AI and automated future drift still NOT verified** | Maintain the verified stock/packaging Swagger-versus-request route crosswalk, prove each allowed field's permission→writer→shared-reader mapping and later automated drift/CI; **POS0a evidence plus POS0f integration proof**, subject to owner authorization |
+| **D2 — one authoritative Toast current object and shared Supervisor/screen reader, with diagnostic/test separation** | **Yes: principle** | **Yes for target; partial for field-level/writer-to-reader map** | **Partial**: existing order/raw/current-object + delta history and canonical views exist; several current non-order readers still depend on diagnostics, and sync/redaction/field coverage gaps remain | **No full screen/registered-Supervisor parity test** | Prove each permitted field through source → current object → common `describe_data`/`query_data` → real answer/screen; fix diagnostic lineage with no regression, scope/freshness/privacy/performance; **POS0e + POS0b/c/d + POS0f** after separate runtime approval |
+| **D3 — one authoritative fact, consistent definitions, and preserve every existing table/view/reader/behavior until safe equivalent is proven** | **Yes: principle AND mandatory safety rule** | **Yes for binding safety contract, targeted live labor/payment/order evidence, and table register; exhaustive row-level writer/consumer lineage still partial** | **Not established**: no consolidation is authorized or implemented by #398; current duplicated derived data and missing-wage discrepancy remain | **No system-wide independent verification**; read-only SQL confirms a narrow 402/804 labor/mirror finding and some payment/order overlap only | Close *every* writer and consumer, field classifications, identical screen/AI answers and tenancy, representative performance/cost, rollback and reconciliation tests; **POS0b/e/c/d/f** according to family; owner approves each later change |
+
+**Mandatory recheck across D1–D3 when new facts emerge:** a newly discovered source field/permission, tenant-mirrored test row, writer, trigger, status conflict, diagnostic reader, missing historical fact, performance cost or rollback risk **reopens the affected earlier assumptions**. Update the D1 schema/field/key classification and D2 authority/read-path map *before* assessing D3 consolidation; write the changed assumption, old vs new evidence, affected consumers/PR owners, and any new blocking tests in this document/PR. An earlier approved *principle* remains approved, but an unproven detail is explicitly marked unresolved rather than silently treated as implemented. The 402 test-café mirror reclassifies D1's observed Toast records by provenance, not additional distinct provider GETs; D2 must prevent that mirror becoming another live source. The six missing-wage status errors mean D2 screen/AI definition parity is not yet achieved. The payment and typed-order overlaps do not revoke D2's permission to retain justified indexed projections.
+
+### Decision 3 — APPROVED preservation and single-authority safety rule (binding for every later PR)
+
+**Owner decision — APPROVED:** **Every Toast fact must have one authoritative source. Screens and Supervisor must use consistent definitions. No existing table, view, reader, writer, trigger, or operational behavior may be removed, replaced, bypassed, or made unreachable until every consumer has been identified and an equivalent replacement has been executed and tested for correctness, full data completeness, performance and cost, café/role isolation, and rollback.** This includes indirect SQL dependencies, cron/worker calls, payroll and fee calculations, owner edits and imports, monitoring, and Test Café replication. If anything is untraced, unbenchmarked, or only fixture-tested, **retain the existing behavior**; do not force consolidation. A change to a shared reader must reach both the screen and Supervisor through the same canonical definition, and status `unknown` must not silently become zero or `actual`.
+
+**What APPROVED does not mean:** approval of the **rule only**, not of any proposed physical merge/drop of `toast_labor_entries`, `toast_open_labor_summaries`, `timecards`, `toast_payment_facts`, `toast_payment_summaries`, `toast_order_typed_facts`, `orders`, `order_lines`, diagnostic storage, or other tables. Existing code and live behavior remain in place until a separately owner-approved, backward-compatible implementation and proof/rollback plan. Stored projections may remain if measured performance/cost or necessary history warrants them; they cannot silently operate as independent current truth. No independent real-café **and** test-café refresh path may compete for authority.
+
+### Order safety and conditional-menu investigation — additional POS0a acceptance design (2026-11-07; NOT implementation approval)
+
+**Owner requirements (mandatory constraints), not an approved implementation:** no unknown item, modifier, malformed order, API failure, retry or failed menu refresh may lose **other valid Toast orders** or block future ingestion indefinitely; no sale may be counted twice. **Zero sales over any period is never an instruction to remove an item.** Preserve genuine provider GUIDs, nested modifier facts and financial amounts; unknown amounts remain unknown. One provider current object, the existing order importer, existing 10-minute coordinator, existing shared screen/Supervisor readers and app-owned menu/recipe decisions remain; do not add a second ingestion path, store, cron, customer database or AI reader. Every removal/replacement remains subject to APPROVED D3 complete-consumer/parity/performance/isolation/rollback proof.
+
+**Current code and live evidence, verified separately from proposals:**
+
+| Path | Observed behavior / gap | Future test or change owner |
+|---|---|---|
+| `lib/pos/toast/dayParser.ts` `parseToastDayPage`, `parseToastBusinessOrder`, `normalizeToastModifiers` | **Already isolates per-order parse exceptions**, retaining `order_guid` when valid, `error_path`, `source_page/index` and redacted row SHA. Preserves parsed provider GUID/item/modifier facts on valid orders, but `normalizeToastModifiers` skips invalid nested modifier entries; whether evidence stays recoverable needs explicit test. An invalid direct `selection.modifiers` element can quarantine the affected order. Malformed top-level page response remains a page-level failure. This protection MUST NOT be removed. | Later **owner-scoped order reliability** implementation; POS0f execution |
+| `lib/pos/toast/dayImport.ts` `importToastBusinessDay`; SQL `toast_stage_day_page`, `toast_import_day`, `toast_checkpoint_day`, `toast_record_day_error` | Page payloads are staged durably and a full day is parsed before **one atomic `toast_import_day` RPC**. Valid lines may have `menu_item_id=NULL`; `afterToastImport` and `pos_relink_toast_lines` run **after the committed order import**, and failed post-import linking is reported separately. **Unproven gap:** the SQL RPC has one order loop/transaction without per-record database-error isolation; an unexpected cast, constraint or trigger failure may roll back the entire day's otherwise valid orders. Checkpoint has bounded per-interval backoff (1/5/15/60 minutes for non-timeout errors) but no demonstrated terminal per-record recovery. `toast_record_day_error` may advance a skipped invalid backfill day, potentially ending the run with `state=completed` and `invalid_days>0`, while that date remains failed. Do not confuse cursor/run completion with complete business-date coverage. | **Separate owner-approved order-import reliability scope/PR (number and SQL ownership TBD)**; POS0f resilience proof |
+| `lib/pos/toast/scheduler.ts` `runToastSyncTick`/`runDue`/`scanModifiedDates` and recovery jobs | Existing ~10-minute tick, 240-second budget, leased per-café phases, staged pagination, modified-date scan, missing-day/payment-gap checks, daily/backfill resume and durable cost queue. An optional/catalog failure is isolated from order phases. **Not proven:** one repeatedly bad record/day cannot starve every later valid date, or every family reports last complete success instead of last attempted check. | POS0e shared freshness/reader; later order owner, POS0f cross-family proof |
+| `lib/pos/toast/optionalSync.ts` `ensureToastFirstCatalog`/`syncToastOptionalSources`; `operationalCopy.ts` `copyToastPublishedMenu`; `operationalStaging.ts` `stageToastCatalog`; `adapter.ts` `fetchMenuMetadata`/`fetchCatalogFacts`/`fetchCatalogItems` | Current code checks **`/menus/v2/metadata`** but `menu_checked_local_day !== today` also triggers a complete catalog copy even if `lastUpdated` is unchanged. The copy performs **two** `/menus/v2/menus` API requests (staged facts, then canonical items). Both validate `restaurantGuid` but there is no shared version-pinned snapshot across those requests. First-catalog preflight is isolated by coordinator; its failure must remain nonfatal for orders. | **POS0d** menu change-check/validated single-snapshot design, POS0e freshness provenance |
+| `lib/pos/syncCatalog.ts` `syncCanonicalCatalog`; SQL `pos_relink_toast_lines` | Default `archiveMissing !== false` can deactivate provider-owned menu rows absent from a received snapshot; missing provider modifiers are deactivated, old modifier-group relationships deleted. Existing restaurant-prefix and owner-name preservation checks are useful but **do not independently certify full snapshot completeness**. `pos_relink_toast_lines` tries exact base item, size-variant keyed by selected modifier GUID, or a **single** size variant, and keeps an ambiguous multi-variant line unlinked; it must not guess size/financial price. | **POS0d** catalog safe-apply/identity rules; POS0f destructive-negative and historical sales tests |
+
+**Live read-only Seiyun Yemeni Coffee measurement (not evidence of a new menu publication):** **14,361** order lines inspected; **563** lack `menu_item_id` and involve **7** Toast base-item GUIDs, each with **2** stored `:size:<option_guid>` variants and **no direct base-item row**. The seven unmatched groups contain **256, 136, 75, 34, 28, 23 and 11** lines (sum 563). **Zero** affected lines have a modifier GUID that identifies either saved size variant. **539** lines have other modifiers; **24** have none. Business dates **2026-08-22 to 2026-09-28**; **0** rows in live `toast_unparsed_orders` at inspection. These facts are consistent with the existing SQL's deliberate non-guessing rule, but **do not prove why the historical provider size identity was absent** or whether a newer catalog would help. Trace raw permitted selection/size option IDs, legacy parser and catalog version, published vs archived identity, modifiers and owner aliases before changing data. **Do not modify these records or infer a recent menu change from missing mappings.**
+
+**Recommended design for a separately approved implementation (alternatives and trade-offs):** maintain the existing coordinator; on a valid saved order, inspect *actual* item/size/modifier GUID compatibility with the known validated catalog. Exact match → **no menu fetch**; missing variant/legacy mismatch → unresolved link/review, not arbitrary automatic re-download. New/changed GUID or stale known version → use Toast's **menus webhook if permitted**, with **`/menus/v2/metadata`** as a lightweight fallback change check; full `/menus/v2/menus` only on proven publication change or explicitly bounded recovery. Toast documentation recommends a webhook/metadata signal before full-menu calls ([V2 metadata](https://doc.toasttab.com/openapi/menus/operation/metadataGet/), [change detection](https://doc.toasttab.com/doc/devguide/apiDeterminingIfYourMenuJsonIsOutdated_V2.html)). Compare *the exact restaurant + publication timestamp/version* against existing known-good state; deduplicate repeated mismatches per GUID/version and prevent infinite unchanged retries. **Prefer one validated immutable response snapshot used for both staging and canonical item/modifier updates** over two full-menu calls, subject to schema/transaction/consistency tests. On empty, truncated, wrong-restaurant, unproven scope, version-race, publish-delay or failed response, preserve last-good menu and record stale/review status. Avoid deactivating an item merely because it is unsold, unavailable today, scheduled outside its visibility window or absent from an unverified snapshot. Alternative (keep two fetches) is lower-risk code churn but doubles menu requests and permits between-request version drift; alternative (periodic full fetch regardless of change) is simpler but wasteful and can trigger unjustified destructive deltas. **No option is approved to implement in #398.** Toast notes that published menu JSON may lag a publication event and excludes archived entities ([published-data behavior](https://doc.toasttab.com/doc/devguide/apiMenusApiReturnsPublishedDataOnly.html)); absence alone needs strict scope/completeness proof, not a sales-frequency heuristic.
+
+**Failure/recovery contract:** authenticate and scope each café; record every page fetch and durable cursor, isolate malformed orders with sanitized recoverable evidence and retry/review class, commit valid order identities/details independently of catalog mapping, then asynchronously link and reconcile. A database row error must not permanently prevent other valid orders/dates, but no partial/failed day may be certified complete. Retry transient/rate-limit failures with bounded attempts/backoff and durable parked/quarantined records plus later explicit replay; preserve previous complete day and checkpoints on timeout. Upsert by original `(business_id, restaurant_guid, Toast order GUID)` and line identity, with canonical totals protected from retry double-counting. Today's `toast_import_day` upserts the order key but **deletes and reinserts its `order_lines`** on replay; verify any downstream canonical line-ID references and idempotent financial totals, not only the order count. Per-family `last_checked_at`, `last_success_at`, completeness, page cursor, retry and stale reason are separate from the scheduler heartbeat; labor uses source incremental changes, menu/config uses change signals, other permitted families use capability/rate/priority-aware bounded checks. In **both screens and Supervisor**, distinguish `received`, `stored`, `mapped`, `provisional`, `reconciled/financially_verified`, `incomplete` and `stale`. This is a **proposed contract**; verify actual schema/role/API support before coding.
+
+**Recheck triggered for earlier approved decisions:** **D1** needs Toast Menus V2 publication/size-option identities reconciled with actual order-selection modifier GUIDs; never treat two distinct identity schemes as equivalent without proof. **D2** is not achieved by stored orders alone: unresolved mapping, nested modifier evidence, replay-stable line links, independent freshness and incomplete-day provenance are not yet proven common screen/agent definitions. **D3** preserves existing importer/catalog/recipe/view consumers until equivalent behavior, performance, café isolation and rollback are tested. These observations change earlier *assumptions and missing-proof entries*, **not** the owner's approved D1–D3 principles.\n\n**Required executed acceptance for future implementation (all currently MISSING):** (1) malformed row beside 99 valid orders: 99 saved, malformed evidence/retry preserved, no fabricated amounts; (2) inject a **database-only** invalid cast/constraint/trigger inside an otherwise valid day and prove good orders are not indefinitely stranded; (3) timeout at every page/SQL/after-import phase, rate limit, retry-exhaustion and cursor resume preserve existing committed orders and missing coverage; (4) duplicate/reordered/re-delivered/changed orders preserve GUIDs, nested modifiers, actual cents, idempotent line counts and no double sales; (5) unknown base/size/modifier saves sale, 563-pattern ambiguity remains unresolved **without guessing**, 0 new menu fetch on unchanged publication metadata; (6) changed metadata triggers at most one validated full snapshot for staging and canonical updates, correct restaurant/version/permission and bounded retry; (7) empty/partial/wrong-location/version-race/failed menu response **does not** deactivate items/modifiers/groups, overwrite recipes/names or break historic order references; authoritative retire/unpublish, temporary availability, out-of-stock, visibility and zero-sales cases remain distinct; (8) 10-minute tick cannot mask stale/failed family, one family failure does not suppress others, actual screen/Supervisor results and provenance match by café/date; (9) measure API request count, p50/p95 SQL/latency, writes/bytes/cost and isolation/rollback against preserved baseline. Test with real source-shaped fixtures on migrated **disposable** DB and actual registered Supervisor turn; production read-only aggregate checks are diagnostic only. **Future owners:** POS0e shared freshness and read-path boundary, POS0d menu/catalog behavior, separate owner-assigned order importer SQL/recovery scope, POS0f integrated acceptance. No changes to imports, menus, SQL, records or crons in POS0a, and **final architecture/sign-off remains pending**.
+
+### Binding lifecycle and classification — follow `docs/rules/pos-data.md` after #400 merges
+
+| Object or path | Single purpose | Live Supervisor use |
+|---|---|---|
+| `toast_raw_records` | **OPERATIONAL_CURRENT**: one authoritative current Toast object per verified café/restaurant/object identity | **YES**, via shared existing readers (current non-order wiring is defective) |
+| `toast_raw_changes` | **OPERATIONAL_CHANGE_LOG**: factual before/after field delta, not repeated snapshots | **YES** when asking about actual changes, never as second current payload |
+| Existing typed/organized facts / `toast_today_live` | **OPERATIONAL_DERIVED**: consistent screen calculations and provisional today summary | **YES** only with correct source, freshness and shared metrics |
+| `toast_raw_samples`, `toast_raw_samples_latest` and `rawSample.server.ts` | **LEGACY_DIAGNOSTIC_ONLY**: endpoint discovery, error/shape evidence; rename/retire safely when possible | **NO**; not even a stale fallback when current fetch fails |
+| `scripts/*test*`, disposable-DB fixtures and test-café mirrors | **TEST_FIXTURE_ONLY**: isolated acceptance, negative tests | **NO** real-café evidence; no production read consumer |
+| Current official Toast Standard OpenAPI snapshot | **SCHEMA_DEFINITION**: operations/types/all nested paths; not a café observation | Field catalog for discovery; **not** evidence a café returned a value |
+
+**New naming contract:** investigation-only additions must contain `diagnostic_` or `diag_`; synthetic/test additions must contain `fixture_` or `test_`; current sources use explicit business-domain/operational names. Legacy `toast_raw_samples` keeps its deployed name **only pending cutover**, not as an authorized naming precedent. A naming guard is helpful but cannot substitute for final SQL dependency inspection.
+
+### Compact source-to-Supervisor traceability (families, not an exhaustive field inventory)
+
+| Field family (examples, NOT total field count) | Official source & owner | One current source record/key | Reader / actual current gap | Required real Supervisor proof | Task |
+|---|---|---|---|---|---|
+| Orders/checks/items/payments; guest and customer identity/contact where returned | Standard Orders / payment relations, café entitlement | Existing keyed order under `toast_raw_records`; child provider GUIDs | Order branch exists, but redaction may drop names; customer association must use genuine IDs | Purchases/repeat visits by stable ID; sales/cents parity; null guest does not lose sale | POS0e policy + POS0f |
+| Employees/jobs/clock-in/out/breaks/wages/tips/shifts | Standard Labor / time entries + granted staff API | Existing keyed current object by employee/job/time-entry GUID and restaurant/café (where supported) | Some staging/typed data; current generic non-order reader uses diagnostic samples, cadence is daily gated | Who worked, when, at which role, break/tips; Staff/payroll parity | POS0e foundation, POS0b |
+| Cash/deposits/tenders | Standard Cash Management / payment relations where entitled | Current entry/deposit/payment identity with true provider keys | `cv_cash` currently sample-based; **NOT current operating truth** | Real register cash flows by date/location, no double-counting a diagnostic sample | POS0e, POS0c |
+| Stock/KDS/kitchen prep/availability | Standard stock and kitchen endpoints where entitled | Current item/fulfillment/station/provider identity; missing does not equal zero | `cv_inventory`/`cv_kitchen` currently sample-derived and may be entitlement-limited | Actual reported availability/fulfillment with measured timestamps and source freshness | POS0e, POS0c |
+| Menu/config/tax/discount/location/device/dining options & remaining eligible Standard GETs | Standard Menu/Configuration/Restaurant/etc per official version and grants | Versioned current object per real GUID/valid composite, only changed writes | Partial staged readers; `cv_dining_options` still sample-backed; missing official paths not exhaustively indexed | Prices/taxes/modifiers/status; exact menu/screen parity and rare nested field lookup | POS0e, POS0d |
+
+**Field-by-field ledger below is an investigation ledger, NOT a certified complete official schema.** For each official endpoint+nested path the required statuses are independently `documented`, `entitled`, `fetched`, `returned`, `retained`, `discoverable`, `queryable`, `missing`, `stale`, `unavailable`, with evidence timestamps and explicit `not_tested` rather than conflating missing with unsupported. `integrated_proven` requires a linked real agent-turn test. A schema field absent from recent café responses must still be discoverable and distinguishable from an observed null. Record authoritative source version/hash, per-café grants, real field path, card credential exception, object key, exact writer, SQL reader, Supervisor question, screen consumer, latest success/freshness, test file/job and final-head SHA. An automated scheduled spec-diff check and failing unrecognized-field/coverage regression is **required in POS0f**, not proven by POS0a's diagnostic capture.
+
+### D4C owner-approved published-menu lifecycle — implementation specification still pending (November 7)
+
+**Decision and distinction:** The [owner's D4C approval](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714937954) approves **non-destructive provider publication state transitions**, not SQL schema, import code, PR merge, automatic hard deletion or a broader daily/full-menu poll. The previously approved [D4A change-driven cadence](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714042938) remains unchanged: existing 10-minute coordinator may cheaply check `/menus/v2/metadata`/publication version (or a documented supported change signal); the expensive full `/menus/v2/menus` fetch occurs only on a **real detected change**, justified missing-data repair or bounded completeness reconciliation. Webhooks may assist when scoped/available, never replace reconciliation or make every cron tick a full fetch. Record each café/restaurant's version, verified publication time, fetch/check timestamps, completeness, permission, staleness and retry state independently; do not misreport last check as last complete published-menu success.
+
+**Actual existing code and discrepancy (read-only investigation):** `lib/pos/toast/optionalSync.ts` checks `/menus/v2/metadata` but can trigger full catalog copy solely when `menu_checked_local_day` changes; `operationalCopy.ts` → `operationalStaging.ts` and `adapter.ts` currently cause **two** full published-menu requests, with independently checked restaurant GUIDs but no immutable version-consistent snapshot across staging and canonical projections. `lib/pos/syncCatalog.ts` defaults `archiveMissing` on, which can deactivate missing provider items/modifiers and delete associations on a response whose completeness was not independently proven. The published-data API can lag a fresh publication and may omit archived/temporarily unavailable sources. The 563 unmapped historical Seiyun lines/7 ambiguous size GUIDs are evidence of incomplete order-to-size linking, **not** evidence of a newly unpublished item or permission to guess a size. These are current gaps to fix in an owner-approved future POS0d implementation, not fixes in this document.
+
+**Candidate source-to-consumer cutover (NOT accepted physical design):** Authenticate and verify café + restaurant scope and Toast Menus V2 permission; obtain a lightweight version/last-updated signal where supported and compare against the last **verified** snapshot. On legitimate change or justified bounded repair, obtain **one** full published snapshot and validate the restaurant GUID, source version/time consistency against metadata or a documented reconciliation policy, item/modifier/group and referenced-option IDs, structural completeness and response success. Stage and project from that **same** immutable validated source version, not separate out-of-sync network fetches. Investigate the current database relationships, price/alias history, owner-owned recipe/menu fields and every screen/Supervisor reader **before** selecting an additive transactional publication-status design. Deactivation cannot be inferred from a successful HTTP status alone, absence from sales/order lines or an ambiguous inferred base/name/price. The existing two-fetch behavior and archive/delete consumers remain intact until D3's complete consumer inventory and correctness/completeness/performance/isolation/rollback replacement proof passes.
+
+**State transition invariants:** From a *verified complete authenticated version-consistent published menu*, if a Toast item, modifier, group/option association or other provider-owned publication relationship truly disappears, mark its **Toast publication status inactive** for that restaurant; display as confirmed inactive for owner review, without automatic hard deletion. Preserve its stable source GUID, prior names/prices/versions, menu ownership and separately managed recipe/ingredients/corrections, and every historical order/line/modifier/size/option reference and sale. On later confirmed republish of the **same source GUID**, reactivate that publication status **in place**, never duplicate source identities or overwrite independent owner edits. An explicitly requested permanent removal requires independent owner confirmation and complete dependency/history checks, and cannot erase historical transaction evidence. Toast unpublish is distinct from out-of-stock, availability, scheduling, visibility, historical zero sales and unresolved order-line size attribution.
+
+**Fail-closed application, not source availability:** If the published response is empty, truncated, malformed, partially fetched, unknown completeness, reference-incomplete, 204/403/unauthorized, failed, stale, for the wrong restaurant, version-inconsistent or delayed by publication lag, it is **not authorization** to deactivate *anything*. Preserve the prior verified provider-publication state and original as-of/version; record precise reason and retry/backoff through existing coordinator, with a bounded complete-snapshot reconciliation only when justified. Other independently valid orders/labor/menus remain answerable, and uncertain menu freshness must be reflected consistently by one Supervisor and screens rather than invented inactive or zero. A later valid version corrects the status; never use a partial snapshot as destructive evidence.
+
+**Future executed acceptance, presently NOT PROVEN:** On fully migrated disposable Supabase with source-shaped Menus V2 responses and real registered Supervisor/screen consumers, assert (1) unchanged metadata means **zero** full menu GETs during routine checks; (2) changed version uses a single validated full snapshot to stage/project, consistent even if a version changes mid-fetch; (3) missing-data repair is bounded, not a loop; (4) empty, partial, malformed, 204/403, wrong restaurant/version, publication delay and dangling referenced options do not deactivate last-known-good items/modifiers/group links, change owner recipes or delete history; (5) a verified unpublish marks only provider-publication inactive, preserving identities/historical sales/prices; (6) republish of the same GUID reactivates without duplicate/overwrite; (7) explicit permanent-delete decision requires owner approval plus history/dependency check and never destroys transaction proof; (8) cross-café isolation, screen/registered Supervisor/query provenance, historical order/ambiguous-size references, API request count, p50/p95 SQL and safe rollback meet the existing baseline. See #400's new POS0d brief, machine acceptance and binding POS rule. Link actual final-head CI, SQL migration state and Codex proof; mock/skipped tests are insufficient.
+
+**File-by-file ownership still open:** **POS0d** is the proposed owner of later menu lifecycle in `lib/pos/toast/optionalSync.ts`, `operationalCopy.ts`, `operationalStaging.ts`, `adapter.ts`, `lib/pos/syncCatalog.ts`, associated SQL schema/tests and downstream menu consumers. But `optionalSync.ts` and shared scheduler also appear in proposed **POS0e** ownership, while `operationalCopy.ts` and `operationalStaging.ts` overlap proposed **POS0c** cash/stock/kitchen. **Do not grant overlapping edit access from this text.** Before dispatch, the owner must accept exact non-overlapping files, SQL and migration identifiers, the source-to-status schema/reader path, data transition strategy, app-vs-provider ownership boundaries and release rollback. POS0e owns shared freshness/current reader; POS0f independently executes final parity and absence-of-diagnostic-authority proof. The D3 preserve-until-proven condition still applies to each old consumer. Both PRs #398/#400 stay **DRAFT / HOLD**; this is architecture-only.
+
+### Exact existing-file ownership reservations — proposed until assigned/approved
+
+| Task / PR | Exclusive implementation ownership (current files; paths verified on main) | No-overlap boundary / dependencies |
+|---|---|---|
+| **POS0a #398** | Existing matrix, read-only test `scripts/toast-standard-api-coverage.test.mjs`, incomplete source-acquisition manifest `docs/plans/toast-openapi-spec-snapshot.json` (all exactly owner-approved). Matrix refactor `cac78a`; manifest `9695995`; test `49c555a`; structural trusted acceptance run #42527951896 (4 tests passed) | Full official OpenAPI schema bytes/SHA, nested fields, permissions and source→reader proof still missing; architecture/spec remains draft |
+| **POS0 authority PR #400** | `AGENTS.md`, `docs/rules/pos-data.md`, `docs/rules/tests.md`, `docs/README.md`, `docs/data-dictionary-notes.md`, `docs/data-dictionary.md`, POS0 machine queue/briefs/operations/delivery plan, dispatcher handoff and tests, diagnostic capture classification + guard and tests; exact PR diff is authority | Enforces *new* code references and manual diagnostics; **does NOT fix existing SQL**, no production purge, no merge until owner says |
+| **POS0e — FIRST shared foundation** | One exclusive reader+retention owner: `lib/pos/toast/redact.ts`, `lib/pos/toast/redact.test.ts`, `lib/pos/toast/optionalSync.ts`, `lib/pos/toast/scheduler.ts`, `lib/ai/agent/tools/dataQuery.ts`, `lib/data/canonical/dictionary.ts`, `docs/data-dictionary.md`; named active SQL reader migration(s), old diagnostic-positive SQL integration tests + new negative lineage tests. **Exact new timestamped migration/test names are unassigned until dispatch**, not invented here | Replace final active `toast_records_for` and `cv_*` sources; full retained-field catalog; payment credential handling; generic 10-min scheduling/freshness. No parallel coding in these shared files |
+| **POS0b — staff/labor** | `lib/pos/toast/laborSync.ts`, `lib/pos/toast/laborBackfill.ts`, `lib/pos/toast/laborCoverage.ts` and corresponding unit/integration tests; separate assigned migration(s) | No edits to POS0e reader/redactor/scheduler; source and end-to-end staff answer proofs depend on POS0e |
+| **POS0c — cash/stock/kitchen** | `lib/pos/toast/operationalCopy.ts`, `lib/pos/toast/operationalStaging.ts`, corresponding tests and distinct source-specific migrations | No diagnostic sample fallback, no shared POS0e file edits; source and end-to-end cash/stock/kitchen proof |
+| **POS0d — menu/config/remaining Standard** | `lib/pos/toast/adapter.ts`, menu/config/restaurant collectors and their exact verified existing paths/tests, separate migration(s) assigned after official field inventory | No shared reader/redactor/scheduler edits; do not claim extra Standard/ERA entitlements |
+| **POS0f — final source/AI and retirement proof** | New POS0 field/schema parity test + final migrated-DB lineage/agent tests; diagnostic mirror `scripts/sync-cafe-data.mjs` and dedicated mirror tests; obsolete capture/diagnostic table retirement **by separately approved, newly numbered SQL migration** | Zero active consumer dependence before destructive deletion; owner must separately authorize retention policy and production application |
+
+The listed **existing paths are ownership reservations in the architecture, not approved editable scopes or permission to dispatch**. POS0e is the **single** shared foundation for the machine DAG (`POS0a → POS0e → POS0b/c/d → POS0f`); split its implementation into **sequential disjoint sub-PRs only if the final owner-approved brief requires it**. Earlier discussion of two simultaneously owned POS0e foundations is superseded by this table. Confirm exact current files, contracts and nonoverlapping ownership on latest main and open PR list before coding. No coder may infer permission from these proposed paths.
+
+### Troubleshooting / migration/retirement flow (must be executed, not narrated)
+
+1. **Question fails:** capture the exact authorized café-scoped question, needed source field and correct expected business value (or unknown). Follow the *actual* registered tool invocation and its SQL call; no guess from a file name.
+2. **Field absent from `describe_data`:** check current official schema snapshot/version and retained-field inventory, then actual current object; do **not** increase the 30-record sampling limit or interpret "not sampled" as unsupported.
+3. **Field discoverable, but query fails:** inspect `toast_records_for`, `ai_query_view`, authorized joins, pagination/row-budget truncation, business/date/restaurant scope and real SQL definition. **Do not fall back to `toast_raw_samples`.**
+4. **Current value absent:** trace the existing scheduler/endpoints, permissions and fetch timing, raw current-object writer, redaction exceptions and real change log. Distinguish `403`, `204`, `429`, failed, stale, null and not_fetched; do not convert to zero or discard other fields.
+5. **Before retiring a legacy path:** inventory every SQL/function/view/code/mirror/test consumer; introduce a new additive migration; run disposable DB negative samples plus current-object positives, real tool/agent and screen parity; ensure final active SQL lineage has **no** direct/indirect diagnostic dependency. Then separately review data retention, backups, `DROP`/purge plan and production permissions. **Physical diagnostic storage deletion is NOT authorized by this approval.**
+6. **Release:** field family integrated only after final-head exercised tests, non-skipped CI, resolved Codex findings and owner confirmation. A merged PR is not proof of running production migration; preserve the previously merged #399 coordination workflow.
+
+### Items still OPEN for final owner sign-off (NOT assumptions)
+
+- **Official Standard schema acquisition now executed:** all 12 Standard family official YAMLs were downloaded in [trusted read-only capture #42529761170](https://github.com/killbill2792/aicafe/actions/runs/42529761170), with version, URL, raw SHA-256, 74 GET operations and 2,320 nested response-field records pinned as normalized JSON in the **existing approved snapshot path**. The stock/packaging Swagger-versus-request URL differences are classified from Toast's official operation examples (not café responses). Verify missing/optional/nullable field semantics and all café-level grants, true writers/readers/privacy statuses. The 1,629 historical October paths remain separate and never prove live data. **Strict source→storage→query→Supervisor/screen acceptance remains unexecuted.**
+- Reconcile exact per-tenant Toast grants / inaccessible GETs / required ID lookups / current live vs historical data with safe read-only evidence; document accurate status for each field. Official availability does **not** guarantee a café entitlement or observed value.
+- Confirm final shared-reader SQL signature/relationships and full cross-café/role security, backfill/retention of names previously stripped, per-family freshness guarantee and provider quota strategy; all tested before runtime implementation sign-off.
+- Review the *separate* safe cleanup decision for diagnostic table rows, index/leases, workflow, fixtures and mirror: count/bytes, live dependencies, retention/legal requirements, backup/rollback and production operator. No mass delete during architecture discussion.
+- Obtain final owner confirmation of #398 specification, #400 enforcement and exact task ownership/branch sequence, and log the required authenticated GitHub approval comment/merge SHAs before opening POS0e/b/c/d/f coding tasks.
+
+**This concise section is the binding owner-reviewed target; detailed older sections below remain *audit/historical/proposed evidence* only. If a downstream paragraph suggests diagnostic capture as operating truth, current redaction as the approved target, or POS0e after POS0b/c/d, follow THIS section instead.** No existing runtime defect is magically fixed by documenting it.
+
+## MANDATORY Toast storage ownership, duplication and reader-dependency audit — OPEN, not yet certified (November 7, 2026)
+
+**Owner-requested binding audit; documentation-only PR #398, no table deletion/migration and NO merge before final owner approval.** Every existing live `public.toast_*` table plus the shared app tables that supply Toast screens, Supervisor, financial or labor calculations is enumerated below. **This is a live database object inventory, NOT an assertion that every writer, trigger and consumer has been fully traced.** The audit stays **OPEN** until each row has an exact writer/trigger, every screen/AI/job/rollup/replication consumer, field-level duplication classification and a benchmarked safe replacement decision; items with incomplete lineage remain **U**. The new source-authority PR #400 guards new diagnostic references but does **not** repair old SQL. #398 continues as a draft, with no runtime implementation authorization.
+
+**Evidence date/scope:** 2026-11-07, read-only Supabase PostgreSQL catalog; `pg_total_relation_size` includes heap, TOAST overflow and indexes; `pg_class.reltuples` is an **estimate** and `-1` means *not analyzed*, **NOT zero**. Separate read-only counts and key joins were executed on priority tables; no user names, order payloads, secrets, business IDs or row-level customer data were retrieved. Source code cross-check: `killbill2792/aicafe` main current at `9a87b96b85921f61bf9a92c8fe3483e87fab6bd6`; **main can change**, so later PRs must re-run at their base/head. Catalog references list **potential** SQL-function consumers; mere text mention is **not** proof a routine writes or a path is invoked by screens. A trigger or direct view dependency *is* database-catalog proof, but indirect function/RLS/job clients still need code and runtime trace.
+
+**Legend:** **V** = core stated purpose/writer/reader supported by inspected production SQL or app code (not exhaustive call graph); **U** = remaining writer/consumer lineage unverified; **P** = potential indexed-query/read-only-view consolidation **requires performance/security/parity evidence**, NOT approved. **V+P is still OPEN for consolidation**. Absence of a direct view, zero estimated rows or no SQL routine mention never proves unused. Record exact ownership/reader evidence for all U entries in POS0e/b/c/d/f before physical retirement.
+
+### Verified priority cross-table comparison (measured, not hypothetical)
+
+| Pair / projection | Read-only production observation | Meaning and owner-controlled next step |
+|---|---|---|
+| `toast_payment_facts` ⇄ `toast_payment_summaries` | Each has **20,472 actual rows**; **20,472 full-key matches**, **0** unmatched and **0** mismatches in shared payment type/status, amount, tip and record status. The same payments are physically represented by two different tables with identical values in the shared columns (not necessarily identical full rows). | **POS0e** evaluate a *single indexed payment projection/view*, but preserve **fees/card type/entry mode/fee basis** only in facts and **server_guid/paid_at** only in summaries. The current `cv_payments` reads **facts first**, then **summaries only if the entire business+restaurant+day has no facts**; test mixed partial days and source/fee parity, not just row equality. `toast_payment_summaries` writer is `toast_rebuild_day_payments` using staged day pages; `toast_payment_facts` writer is `toast_refresh_typed_payment_facts` invoked by `toast_day_status.toast_payment_facts_current_on_import`, and `paymentFeeFacts.server.ts` later updates app fee decisions. **No removal until writer schedule and fallback consumption are cut over.** |
+| `toast_labor_entries` ⇄ `toast_open_labor_summaries` ⇄ `timecards` | **402 provider-stage entries** and **804 summary rows**, split into **402 source-café rows + 402 test-café mirrored rows**. All 402 same-tenant stage→summary matches agree on the compared fields; the other 402 have no *same-tenant* staging row, but match all 402 source Toast entry GUIDs and compared operational values across the two café scopes. There are 804 Toast-linked `timecards` (402 per café). | **POS0b**: these are **not 402 missing source time entries**: `scripts/sync-cafe-data.mjs` day-mirrors summaries/timecards with remapped tenant/restaurant identity but does **not** mirror `toast_labor_entries`. Preserve independent test-café isolation, not a second source of operational truth. Live `toast_open_labor_copy` INSERT/UPDATE trigger still writes source summaries, and `cv_labor_entries` reads timecards + summary hour lookups with an anti-duplicate fallback (0 fallback rows today). **Six wage-status inconsistencies across both cafés** and remaining screen/Supervisor parity prevent consolidation approval. See Decision 3 below. |
+| `toast_order_typed_facts` ⇄ `toast_raw_records` | **20,483 typed rows**, **20,483 current raw order objects**, **20,483 valid typed→raw FK matches**, **0 raw orders missing typed row** at inspection time. | **POS0e** typed JSON discount/tax/refund/duration projection is derived, but may avoid repeated expensive nested-JSON scans. Raw AFTER INSERT trigger `toast_raw_order_typed_capture` calls `toast_capture_typed_order`; `toast_archive_order` explicitly deletes/rebuilds typed projection when payload actually changes. `toast_current_typed_order_facts_v` and item/discount/refund views depend on it. Replace only with safe indexed/equivalent source-backed query and benchmark. |
+| `orders` + `order_lines` ⇄ raw Toast JSON | `orders` ≈ **53,943** rows and `order_lines` ≈ **74,246** rows (catalog estimates; multiple app/Toast sources, not same entity count). | **POS0e/POS0f** keep app/CSV sources, owner corrections/exclusions, customer links, POS reconciliation, indexed screen/rollup operations distinct from provider source facts. A raw JSON query must preserve local accounting semantics and latency. No assumption these entire tables are redundant. |
+| `toast_raw_samples` ⇄ live canonical readers | Diagnostic table currently ≈ **2.54 MB**, **683** estimated rows. Direct active dependencies verified in `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` via `toast_raw_samples_latest`; `toast_records_for` non-order branch contains direct table reference. | **POS0e** remove diagnostic source from *all actual operating readers and tests* first; **POS0f** separately decide on diagnostic archive retention and rollback before any `DROP`/purge. The diagnostic table is small compared with operating projections; deleting it alone does not solve overall storage growth. |
+
+
+### Decision 3 — labor event ownership, test-café replication, and shared-reader consistency (read-only verification, 2026-11-07)
+
+**Decision status: D3 owner principle and preservation safety rule APPROVED; the following live findings are verified read-only observations, NOT permission for consolidation or implementation.** The owner operates **two intentionally distinct café-scoped datasets**: the connected Toast source and a separate replicated café for testing. Their repeated facts must not be misidentified as two independent live provider ingests, nor may test mirrors become live operational authority. The existing script's terms *source* and *destination* refer to café business identities, not interchangeable copies inside one tenant. Business/restaurant identity remains part of every uniqueness and authorization key; never deduplicate across cafés merely because provider event GUIDs or amounts match. Neither café is currently marked `businesses.is_demo=true`, so `is_demo` alone is **not a reliable test/production discriminator**; use explicit approved source/test provenance and confirmed connection ownership.
+
+**Verified read-only evidence (no personal values or identifying tenant IDs exposed):**
+
+| Question | 2026-11-07 live observation | Interpretation |
+|---|---|---|
+| Total rows and partition | `toast_labor_entries` = **402** in one verified Toast restaurant/café; `toast_open_labor_summaries` = **804**, **402 in that same verified café** and **402 in a second café whose Toast mapping is not verified** | Do not interpret the 402 outside the staging table as missing/stale provider events |
+| Same-café equality | **402** complete business+restaurant+time-entry-key matches; **0** differences over employee GUID, clock times, normalized nullable wage, wage status, regular/overtime hours and deleted flag | These compared fields overlap physically; other fields such as breaks, modified/fetched timestamps and app decisions are not identical projections |
+| The other 402 summaries | **0** same-café stage matches; **402/402** match a staged *source* event GUID across cafés; **402/402** agree on employee, clock, provider regular/overtime fields. Full cross-café summary comparison of each source/destination pair found **0 operational disagreements** | Strong evidence for deliberate replicated test summaries, independently confirmed in sync script; *not* a request to merge tenant keys |
+| Canonical timecards | **804** `timecards` with `source_provider='Toast'`, **402 per café**, keyed as `toast:<restaurant_guid>:<time_entry_guid>`. Every summary has the correctly **prefixed** same-café timecard key. Direct `pos_timecard_id = time_entry_guid` is the **wrong join** and misleadingly gives zero | `cv_labor_entries` currently returns **804** Toast rows plus **310** app rows, with **0** `staged-timecard:` fallback rows (all 804 summaries have a timecard) |
+| Status / wage parity | Per café, **399** summaries have `status=actual`, **3** have `status=needs_match`. The associated **6** timecards across both cafés have zero wage cents / `wage_source=pos`, and `cv_labor_entries` labels all **6** as `actual` | **Verified defect / unresolved business semantics**: missing wage is not a proven actual zero; screen/agent status parity is **NOT PROVEN** even though event counts agree |
+| Storage and timing | `toast_labor_entries` ≈ **256 kB**, `toast_open_labor_summaries` ≈ **320 kB** including indexes; owner-reported previous count timings ≈ **0.45 ms** and **0.37 ms**, respectively. Fresh read-only `EXPLAIN ANALYZE` count timings **0.256 ms** and **0.181 ms**, respectively (single samples, including planner/executor effects) | Both counts are sub-millisecond. **No meaningful storage-vs-view speed or cost advantage is demonstrated** by these tiny count scans; run real reader, filtered/date/tenant/role benchmarks with representative load before deciding |
+
+**Exact present writer and provenance trace:** `lib/pos/toast/laborSync.ts` maps Toast time entries and calls `toast_stage_labor_entries` keyed by `(business_id, restaurant_guid, external_time_entry_id)`; the live stage table has `toast_open_labor_copy` AFTER INSERT/UPDATE → `toast_sync_open_labor_summary` (upserts summary in the **same transaction**) and `toast_archive_toast_labor_entries` archival trigger. `pos_import_toast_attendance` imports complete linked staged shifts into app `timecards`, matches `toast:<restaurant_guid>:<time_entry_guid>`, and protects app/person/overlap semantics; `pos_protect_owner_timecard_edit` and source-revision triggers are additional timecard writers/guards. Separately, `.github/workflows/sync-cafe-data.yml` runs the test mirror on a configured 30-minute schedule (subject to the workflow cutoff); `scripts/sync-cafe-data.mjs` lists **`timecards` and `toast_open_labor_summaries`** as day-mirrored tables, remaps the test café and synthetic restaurant key, and **does not list `toast_labor_entries`**. Its test-location mapping deliberately resets `verified_at` and scheduler tick metadata to avoid Toast polling from the test café. `cafe_sync_runs` had **95** tracking rows and a latest run dated 2026-11-07; this shows logged mirror activity, not that every scheduled run succeeded. This is a complete explanation for *why this specific 402-row discrepancy exists*, **not** an exhaustive writer inventory for all other labor operations.
+
+**Reader / semantics trace and remaining proof:** Live `cv_labor_entries` uses `timecards` as its first branch, looks up `toast_open_labor_summaries` for regular/overtime hours by the **prefixed** business+restaurant+entry identity, and only unions summary rows not already present as canonical timecards. It excludes `source_type='owner_schedule'`; summary fallback excludes `deleted=true`, while timecard deletion/import rules depend on `toast_labor_entries`. `toast_attendance_review` directly reads stages, employee mapping and timecards; `lib/data/canonical/reads.server.ts` exposes `readLaborEntries` through the common `cv_labor_entries` reader, and `query_data`/canonical dictionary advertise the view to Supervisor. **This proves present SQL identity/fallback logic, not that every payroll screen, dashboard or actual Supervisor answer uses identical status/count, business-date, wage or freshness rules.** The verified six-row wage/status discrepancy explicitly prevents claiming that parity now. Any other direct `timecards`/staging/payroll rollup consumers, imported owner corrections, backfill/deliveries and historical provider-hour semantics must still be traced.
+
+**Binding authority and acceptance gate for POS0b (with POS0e shared-reader ownership, POS0f final proof):** One café-scoped **authoritative provider labor event** (existing current `toast_raw_records` identity and real change journal) plus **shared read-only views / canonical app-owned corrections**, never two independently refreshed copies competing as live truth. Test data is a separately scoped replica/fixture with explicit provenance, excluded from real-café live reader authority; it must remain usable for tests. Distinguish provider clock/break/hour/wage values from app-owned employee links, edited/approved time, payroll policies and necessary historical decisions. A stored projection is permitted **only if indexed current reads/views demonstrably fail required latency/cost or preserve necessary distinct history**, and only with atomic or verifiably consistent source-to-projection updates, documented deletion/tombstone behavior, freshness and a replay/reconciliation test. Never infer absence/zero from a missing time entry or wage.
+
+Before owner approval to consolidate, **POS0b must** (1) inventory every DB trigger/RPC/job/sync/backfill/mirror and application write, including status identity and delete/update ordering; (2) enumerate screen, payroll, and Supervisor call graphs with exact tenant/date/role filters, and check the underlying `query_data` answer—not only the view; (3) reconcile the 402 test copies, all 804 prefixed timecards and the six missing-wage cases without collapsing tenant identities; (4) execute source-shaped, out-of-order, corrected, deleted, open, no-wage and mirror-contamination tests on a disposable DB; (5) prove same event counts, statuses, hours, cost, actual-vs-unknown labels and provenance for the *same café/date* on screen and in registered Supervisor turns; and (6) benchmark existing indexed query/view versus each stored projection at representative scale, document costs/security and safe rollback. **POS0e** owns shared-view/agent access changes; **POS0f** owns the end-to-end reconciliation and non-production acceptance record. Separate owner approval is required for any consolidation or migration; **PR #398 changes documentation only and neither table may be deleted, migrated or reclassified as disposable here**.
+
+
+### D3 current ownership / retention / proposed-consolidation register (the 68-table register below remains authoritative for all other existing tables)
+
+Each row distinguishes **verified writer/consumer evidence** from **unknown** consumers. A listed screen/agent reader is a *known interface or potential dependency*, not an independently executed parity test. `SOURCE_OVERLAP` is **not the same** as `unnecessary duplicate`: only an exhaustively proven equivalent view/reconstruction with no missing app/history/performance requirement can make redundancy a deletion candidate.
+
+| Objects / classification | Verified current writer(s) and consumer path(s) | Why keep the current objects today | Verified vs still unknown; proposed replacement (NOT approved) | Future PR owner |
+|---|---|---|---|---|
+| `toast_raw_records` **provider current truth** + `toast_raw_changes` **necessary history** | Existing current-object writer/order archive; real-delta change journal; `cv_toast_records`/shared `toast_records_for` and domain views | One latest provider object per true café/restaurant/object identity **plus factual before/after journal**, **not two full refreshed snapshots** | Verified purpose/structure; missing complete family/field coverage, writer replay and all-reader proof. **Retain both**; do not consolidate a genuine delta history into a mutable current row without separately proving equivalent history | **POS0e**, **POS0f** |
+| `toast_labor_entries` **provider staging**, `toast_open_labor_summaries` **operational derivative + test mirror**, `timecards` **app-owned/imported attendance** | `laborSync.ts` → `toast_stage_labor_entries` → `toast_open_labor_copy` → `toast_sync_open_labor_summary`; `pos_import_toast_attendance` to `timecards`; `scripts/sync-cafe-data.mjs` mirrors summaries/timecards to separate café; `cv_labor_entries`, `toast_attendance_review`, canonical `readLaborEntries`/Supervisor query surface | Preserve provider modified/deleted/break/hour evidence, app linked employees and owner corrections, statuses and test isolation; 402 extra summaries are replicated test data, **not extra source shifts** | Verified 402 staged, 804 summaries (402+402), 804 Toast-linked timecards, matched values and six `needs_match` vs `actual` anomalies. Unknown every screen/payroll/worker read and full historical/wage/status semantics; **candidate read-only shared event view only after reconciliation**, no drop | **POS0b** labor ownership, **POS0e** shared view, **POS0f** final acceptance |
+| `toast_payment_facts` **typed provider/fee projection** + `toast_payment_summaries` **day-level provider projection** + `processing_fee_daily_facts` **app fee estimation** | `toast_refresh_typed_payment_facts` (import-state trigger) and `paymentFeeFacts.server.ts` fee decisions; `toast_rebuild_day_payments` builds summaries; `cv_payments` reads facts, day-level summary fallback; `cv_card_fees` reads calculated fee facts | Matched amount/tip/status facts **overlap**, but summaries preserve server/paid-time and facts preserve card/fee/entry details; app fee estimates/decisions are distinct, current partial-day fallback is a dependent behavior | 20,472 keyed matches and 0 compared-field mismatches were observed; unknown all consumer paths, incomplete days/re-import, fee calculations, indexes and p95. **Candidate single indexed payment read projection, only if every field/behavior survives**, not assumed redundant | **POS0e** payments/AI reader, **POS0f** totals/perf/rollback |
+| `toast_order_typed_facts` **indexed typed projection** + `orders`/`order_lines` **app POS/CSV/accounting entities** + raw Toast order | Raw AFTER INSERT `toast_raw_order_typed_capture`/archive rebuild; `toast_current_typed_order_facts_v`/item/discount/refund views; order importer + app calculations, rollups, reconciliation and screens | Raw is original provider payload; typed nested JSON fields can make screens fast. `orders`/`order_lines` also carry app/CSV sources, corrections and line relationships, **not just copies of Toast JSON** | 20,483 typed/raw key matches observed; missing exact field-by-field classification, every direct reader, mixed-source semantics, indexed-JSON latency and recovery. **Retain unless equivalent query/view and explicit original consumer behavior proven** | **POS0e** typed/read contract, **POS0f** screen/AI tests |
+| `daily_rollups`, `hourly_sales_rollup`, `employee_sales_rollup` and other aggregations **performance/accounting projections** | POS rollup/rebuild pipeline; `cv_sales_days`, `cv_sales_hours`, dashboard/reporting/Supervisor; labor and payroll aggregation may use `timecards` | Cached calculations have different grain, cutoffs, source exclusions and cost; may be required to meet screen latency and keep money answers consistent | Some direct view/writer evidence exists; exhaustive writer/reader inventory, app-owned exceptions, baseline p50/p95, computational cost and exact parity remain **unknown**. **Optional indexed view/query only after benchmark**, no removal assumption | **POS0e** shared money, **POS0b** labor-sensitive metrics, **POS0f** proof |
+| `employees`, `menu_items`, `pos_scheduled_shifts`, `scheduled_shifts`, `pos_import_reviews`, fee candidates and corrections **application-owned state / reconciliation** | Existing staff/menu/scheduling/import review/fee writers, owner inputs and reconciliation RPCs; `cv_staff`, `cv_menu`, `cv_shifts`, payroll, inventory and owner screens | Identity links, owner permissions, schedule plans, cost assumptions, approvals, customer linkage and review decisions are **not replaceable by provider fields**; same-value mirror columns are not enough to prove the full table redundant | Some pathways cataloged below; exact writer/reader/version provenance incomplete. **Keep app-owned facts even if Toast attribute overlap is normalized into a shared view** | **POS0b/c/d/e** per family; **POS0f** audit |
+| `toast_catalog_price_versions`, `toast_raw_changes`, past reconciliations and import/coverage/audit state **necessary history** | Provider capture/change/version writer, audit/health/reconciliation consumers; documented trigger/RPC candidates in inventory below | Historical price, before/after, correction and source-grant/coverage evidence cannot be reconstructed from today's latest object alone | Exact retention/privacy/legal constraints and read consumers remain partly unknown; **not disposable as duplicate current storage** | **POS0d** menu history, **POS0e** changes, **POS0f** retention |
+| `toast_raw_samples` / `toast_raw_samples_latest` **diagnostic only**; test-café mirrors **TEST_FIXTURE_ONLY** | `rawSample.server.ts`/capture and test-café sync; **legacy** `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` and non-order `toast_records_for` have active diagnostic dependencies | Diagnostics remain available for audits and tests but **are not valid operational current truth**. Retiring their operational reader dependence is a later code change; test replicas must remain tenant-scoped | SQL diagnostic dependencies verified; **unknown** all nested/indirect consumers and cleanup retention. **Candidate reader rewire first, physical retirement only after separate approval**, no diagnostic fallback | **POS0e** shared live-source replacement, **POS0c/d** domain parity, **POS0f** negative contamination/rollback |
+
+**Exhaustive safety decision for each candidate:** (a) enumerate **all** direct and indirect **writers, triggers, views, RPCs, screens, Supervisor, workers, jobs, imports/exports, mirror/test consumers** by exact function/path and café/date/role; (b) classify each overlapping field as `SOURCE_DUPLICATE`, `APP_OWNED`, `DERIVED_CALCULATION`, `HISTORY`, `RECONCILIATION`, `IMPORT_STATE`, `TEST_FIXTURE_ONLY` or `DIAGNOSTIC_ONLY`; (c) demonstrate complete same-event identity, money units, timezone, state transitions, permissions and missing/null/unknown behavior; (d) run equivalent old/new results in disposable DB plus permitted live read-only comparisons, real registered Supervisor question and screen on the *same* café/date, including test-café isolation; (e) benchmark p50/p95, DB work, storage and AI payload against existing production queries; (f) prove unchanged operational behavior, atomic/verifiably consistent projected updates, reconciliation/error/retry, independent acceptance and rehearsed rollback. **If any test or dependency is missing, proposed consolidation is NOT APPROVED and old tables/readers remain untouched.** Additive replacements may be proposed in a later owner-approved PR; removing old code/data is a **separate explicitly approved** cutover/retirement step, with no data loss or invisible fallback.
+
+
+### Every live Toast-named table and shared app dependency — ownership register
+
+**Each row has an observed storage size and an explicit author/consumer assessment.** In the evidence column, listed triggers and direct view dependencies were retrieved from `pg_trigger` and `pg_depend` on live Postgres; SQL routine names come from source-text matches and **are not necessarily writers**, so the register deliberately keeps unresolved work visible. For names under `toast_analytics_*`, paid analytics is a separate entitlement and must not be conflated with Standard GET field coverage. No migration, destructive SQL or table rewrite has been executed.
+
+| Live table | Allocated size incl. indexes (MB) / estimated rows | Purpose and authority classification | Writer(s) including trigger / readers (screens, AI, jobs) | Duplicate vs distinct / safe replacement question | Database metadata evidence (partial call graph) | Later PR + state |
+|---|---|---|---|---|---|---|
+| `businesses` | 0.03 MB / 8 | APP_SHARED_DEPENDENCY; exact distinct-purpose classification pending | **Write:** UNRESOLVED: identify writer in SQL/app and all trigger paths. **Read:** UNRESOLVED: identify screens, Supervisor, jobs and exports. | Not proven duplicate; no deletion/replacement until source/consumer & performance audit | trigger=initialize_cafe_access, p1_forbid_truncate, p1_revision_delete (+2); direct view=cv_dining_options, cv_inventory, cv_item_sales, cv_labor_entries, cv_shifts, toast_sync_health_v; SQL routine mentions=admin_change_cafe_access, admin_cost_rollup, admin_pattern_rollup (+41). | **POS0f (or family owner after scope approval)** · **U** |
+| `daily_rollups` | 0.16 MB / 244 | OPERATIONAL_DERIVED_CACHE; day financial totals | **Write:** lib/pos/rollup.ts and refresh jobs (all trigger paths to verify). **Read:** cv_sales_days, daily dashboard and Supervisor. | Derived from orders, lines, timecards; replace only if indexed current-source aggregation matches latency/cost and finance definitions. | trigger=p1_forbid_truncate, p1_revision_delete, p1_revision_insert (+2); direct view=cv_sales_days; SQL routine mentions=p1_authoritative_source_snapshot, pantry_usage_sales_evidence, toast_certify_day_voids (+8). | **POS0e + POS0f** · **U+P** |
+| `employees` | 0.14 MB / 43 | APP_OWNED_IDENTITY; staff profile, wages/consent/preferences | **Write:** staff_write_person, Toast employee sync/link, scheduling UI; p1 source revision, consent and wage triggers. **Read:** cv_staff, scheduling, payroll, toastScheduledShifts and app staff screens. | Some Toast name/role mirrored; app-owned pay, schedule preference, consent, permission edits cannot derive from Toast. | trigger=p1_forbid_truncate, p1_revision_delete, p1_revision_insert (+5); direct view=cv_staff; SQL routine mentions=p1_authoritative_source_snapshot, pantry_usage_sales_evidence, pos_rebuild_sales_fact_rollups_v1 (+17). | **POS0b + POS0f** · **V+P** |
+| `hourly_sales_rollup` | 0.45 MB / 1,960 | OPERATIONAL_DERIVED_CACHE; hourly sales | **Write:** POS rollup pipeline (all writer paths to verify). **Read:** cv_sales_hours, reporting screens/Supervisor. | Hourly buckets duplicate calculable sums; may be important performance cache. | trigger=none observed; direct view=cv_sales_hours; SQL routine mentions=pos_rebuild_sales_fact_rollups_v1. | **POS0e + POS0f** · **U+P** |
+| `locations` | 0.11 MB / 4 | APP_SHARED_DEPENDENCY; exact distinct-purpose classification pending | **Write:** UNRESOLVED: identify writer in SQL/app and all trigger paths. **Read:** UNRESOLVED: identify screens, Supervisor, jobs and exports. | Not proven duplicate; no deletion/replacement until source/consumer & performance audit | trigger=p1_forbid_truncate, p1_revision_delete, p1_revision_insert (+3); direct view=none observed; SQL routine mentions=scheduling_pr3_approve, scheduling_pr3_publish, scheduling_pr3_source_token_internal (+8). | **POS0f (or family owner after scope approval)** · **U** |
+| `menu_items` | 0.66 MB / 130 | APP_OWNED_PLUS_TOAST_CATALOG; menu identity/categories/recipe associations | **Write:** syncCatalog, pos menu copy, owner edits; p1 source revision triggers. **Read:** cv_menu, order_lines.menu_item_id, pricing/recipe/screens. | Source name/price may mirror catalog; app-owned recipes/categories/owner overrides cannot derive solely from Toast. | trigger=p1_forbid_truncate, p1_revision_delete, p1_revision_insert (+1); direct view=cv_menu; SQL routine mentions=menu_add_manual_ingredient_price_if_revision, p1_authoritative_source_snapshot, p1_track_source_statement (+11). | **POS0d + POS0f** · **V+P** |
+| `order_lines` | 57.04 MB / 74,246 | OPERATIONAL_DERIVED; per-line keyed sales, category, modifiers | **Write:** toast_import_day, pos_replace_order_lines, CSV/app import; p1 source revision triggers. **Read:** cv_item_sales, menu-item usage, rollup screens, Supervisor. | Duplicates Toast selections but includes link/categorization and app/void treatment. Indexed query candidate. | trigger=p1_forbid_truncate, p1_revision_delete, p1_revision_insert (+1); direct view=cv_item_sales; SQL routine mentions=csv_finalize_sales_job, menu_item_quantities_sold, pos_relink_toast_lines (+4). | **POS0e + POS0f** · **V+P** |
+| `orders` | 30.95 MB / 53,943 | OPERATIONAL_DERIVED plus app-owned source corrections/sales metrics | **Write:** toast_import_day, CSV/app import; p1 revision/forbid-truncate and toast_supersede_late_order triggers. **Read:** cv_orders, cv_item_sales, cv_discounts, daily_rollups, POS rollup/screens and query_data. | Duplicated Toast order fields + app-owned exclusion/correction/fees. Candidate indexed view ONLY after screen/AI parity. | trigger=p1_forbid_truncate, p1_revision_delete, p1_revision_insert (+2); direct view=cv_discounts, cv_item_sales, cv_orders; SQL routine mentions=ai_query_view, csv_finalize_sales_job, initiative_daily_order_sales_proof (+33). | **POS0e + POS0f** · **V+P** |
+| `pantry_stock_counts` | 0.03 MB / unestimated | APP_OWNED_INVENTORY; ingredient counts | **Write:** pantry count actions (trace exact writer). **Read:** cv_inventory APP branch, inventory screens. | Distinct café ingredient counts vs Toast menu-item availability; NEVER merge as same unit. | trigger=none observed; direct view=cv_inventory; SQL routine mentions=none observed. | **POS0c + POS0f** · **V** |
+| `pos_connections` | 0.05 MB / unestimated | APP_SHARED_DEPENDENCY; exact distinct-purpose classification pending | **Write:** UNRESOLVED: identify writer in SQL/app and all trigger paths. **Read:** UNRESOLVED: identify screens, Supervisor, jobs and exports. | Not proven duplicate; no deletion/replacement until source/consumer & performance audit | trigger=p1_forbid_truncate, p1_revision_delete, p1_revision_insert (+1); direct view=none observed; SQL routine mentions=none observed. | **POS0f (or family owner after scope approval)** · **U** |
+| `pos_import_reviews` | 0.02 MB / unestimated | APP_SHARED_DEPENDENCY; exact distinct-purpose classification pending | **Write:** UNRESOLVED: identify writer in SQL/app and all trigger paths. **Read:** UNRESOLVED: identify screens, Supervisor, jobs and exports. | Not proven duplicate; no deletion/replacement until source/consumer & performance audit | trigger=none observed; direct view=cv_menu, cv_staff; SQL routine mentions=pos_import_toast_attendance, pos_resolve_staff_import_review, toast_resolve_linked_timecard_reviews. | **POS0f (or family owner after scope approval)** · **U** |
+| `pos_scheduled_shifts` | 0.09 MB / 78 | APP_SHARED_DEPENDENCY; exact distinct-purpose classification pending | **Write:** UNRESOLVED: identify writer in SQL/app and all trigger paths. **Read:** UNRESOLVED: identify screens, Supervisor, jobs and exports. | Not proven duplicate; no deletion/replacement until source/consumer & performance audit | trigger=none observed; direct view=cv_shifts; SQL routine mentions=toast_apply_schedule_window. | **POS0f (or family owner after scope approval)** · **U** |
+| `processing_fee_daily_facts` | 0.17 MB / 152 | APP_CALCULATION; fee source/estimate & provenance | **Write:** fee recompute / owner fee configuration (trace exact writer). **Read:** cv_card_fees / business financial reporting. | App fee estimate/provenance distinct from provider payment fees; must preserve. | trigger=p1_forbid_truncate, p1_revision_delete, p1_revision_insert (+1); direct view=cv_card_fees; SQL routine mentions=refresh_processing_fee_daily_fact, set_processing_fee_candidate_eligibility, upsert_processing_fee_daily_candidate. | **POS0e + POS0f** · **U+P** |
+| `scheduled_shifts` | 0.04 MB / unestimated | APP_SHARED_DEPENDENCY; exact distinct-purpose classification pending | **Write:** UNRESOLVED: identify writer in SQL/app and all trigger paths. **Read:** UNRESOLVED: identify screens, Supervisor, jobs and exports. | Not proven duplicate; no deletion/replacement until source/consumer & performance audit | trigger=none observed; direct view=cv_shifts; SQL routine mentions=staff_handoff_week_shifts, staff_mark_owner_delivery, supervisor_commit_staff_proposal (+3). | **POS0f (or family owner after scope approval)** · **U** |
+| `timecards` | 1.02 MB / 1,050 (catalog estimate) | APP_OWNED_PLUS_IMPORTED_TIME in each tenant; 804 Toast-linked rows across source + test café, other app/demo timecards are distinct | **Source write:** `pos_import_toast_attendance` (plus owner changes/scheduling, exact additional writers open); **test write:** `scripts/sync-cafe-data.mjs` day mirror with remapped `pos_timecard_id`. **Read:** `cv_labor_entries`, labor rollup/payroll, `toast_attendance_review`; screens and Supervisor full invocation trace pending. | Toast clock/wage/hour facts overlap stage and summary, while employee mapping, app pay policy, corrections, scheduling and approved history are distinct. **6** mirrored missing-wage cases are `needs_match` in summary but `actual`/zero cents in `cv_labor_entries`; no consolidation before reconciling status/unknown semantics. | trigger=p1_forbid_truncate, p1_revision_delete, p1_revision_insert (+2); direct view=cv_labor_entries, toast_attendance_review; SQL routine mentions=csv_finalize_labor_job, pantry_usage_sales_evidence, pos_import_toast_attendance (+5). | **POS0b + POS0f** · **U+P** |
+| `toast_analytics_credentials` | 0.02 MB / unestimated | ANALYTICS_CONFIG; provider secret metadata | **Write:** connection settings (verify). **Read:** analytics client configuration (verify). | Security credential, never AI-readable field. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_disable_official_check, toast_enable_official_check. | **POS0f** · **U** |
+| `toast_analytics_jobs` | 0.02 MB / unestimated | ANALYTICS_JOB; ERA provider query job | **Write:** analytics job worker; AFTER INSERT/UPDATE archive-stage trigger. **Read:** analyticsClient/analytics job reconciliation. | Job metadata/response; not normal Standard current business fact. | trigger=toast_archive_toast_analytics_jobs; direct view=none observed; SQL routine mentions=toast_enable_official_check, toast_expire_era_job_after_import, toast_invalidate_era_report_on_import (+1). | **POS0f** · **U** |
+| `toast_analytics_rate_calls` | 0.05 MB / unestimated | ANALYTICS_QUOTA; analytics API cost budget | **Write:** analytics client. **Read:** analytics quota checks. | Not business fact; separate paid entitlement. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_claim_era_request. | **POS0f** · **U** |
+| `toast_analytics_results` | 0.02 MB / unestimated | ANALYTICS_ERA_NON_STANDARD; provider analytics result snapshot | **Write:** analytics client and service. **Read:** cv_analytics, restricted analytics queries. | Separate paid/entitlement-based report, NOT Standard source parity; retain scope distinction. | trigger=none observed; direct view=cv_analytics; SQL routine mentions=none observed. | **POS0f** · **U** |
+| `toast_api_credentials` | 0.12 MB / 2 | APP_SECRET_CONFIG; Standard integration credentials | **Write:** connection setup/rotation. **Read:** Toast client only, no Supervisor payload. | Security material, NEVER exposed to AI or copied to raw. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_business_scope_summary, toast_check_evidence, toast_claim_auth_lease (+6). | **POS0f** · **U** |
+| `toast_automation_leases` | 0.05 MB / 2 | OPERATIONAL_LOCK; scheduler lease | **Write:** Toast automation lock functions. **Read:** scheduler/cron. | Concurrency lease not duplicate. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_acquire_lease, toast_release_lease. | **POS0f** · **U** |
+| `toast_canonical_corrections` | 0.02 MB / unestimated | APP_OWNED_CORRECTION; reconciliation override | **Write:** canonical correction RPC (trace). **Read:** toast_financial_reporting_status. | Distinct reviewed app correction, not raw duplicate. | trigger=none observed; direct view=toast_financial_reporting_status; SQL routine mentions=toast_promote_reconciled_day_pre_baseline, toast_store_order_fact. | **POS0e + POS0f** · **U** |
+| `toast_catalog_facts` | 0.13 MB / 113 | OPERATIONAL_STAGED; source catalog item fields | **Write:** syncCatalog.ts; AFTER INSERT/UPDATE archive-stage trigger. **Read:** syncCatalog.ts / pilot operational route; exact downstream readers need trace. | Toast menu attributes overlap raw + menu_items; mapping and catalog confidence may differ. | trigger=toast_archive_toast_catalog_facts; direct view=none observed; SQL routine mentions=pantry_usage_sales_evidence, pantry_usage_toast_evidence, toast_link_catalog (+3). | **POS0d** · **U+P** |
+| `toast_catalog_price_versions` | 0.09 MB / 113 | OPERATIONAL_VERSION_HISTORY; catalog price change | **Write:** catalog writer; AFTER INSERT/UPDATE archive-stage trigger. **Read:** cv_menu, price audit. | Price versions necessary historical evidence; not current duplicate. | trigger=toast_archive_toast_catalog_price_versions; direct view=cv_menu; SQL routine mentions=toast_save_configuration, toast_stage_catalog, toast_stage_object_key. | **POS0d + POS0f** · **V** |
+| `toast_client_budgets` | 0.27 MB / 1 | OPERATIONAL_QUOTA_STATE; provider rate budget | **Write:** Toast client rate-limiter. **Read:** Toast scheduler/client. | Distinct API quota/lease bookkeeping. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_claim_client_budget. | **POS0f** · **U** |
+| `toast_day_owner_flags` | 0.02 MB / unestimated | APP_OWNED_REVIEW; flagged unresolved Toast day | **Write:** day import reconciliation. **Read:** toast_owner_attention_days_v / status route. | Distinct owner review flags, not provider source. | trigger=none observed; direct view=toast_owner_attention_days_v; SQL routine mentions=toast_answer_first_import_check, toast_certify_day_voids, toast_set_day_owner_flag. | **POS0f** · **V** |
+| `toast_day_pages` | 0.38 MB / 0 | OPERATIONAL_TRANSIENT; paged import staging | **Write:** lib/pos/toast/dayImport.ts and toast_stage_day_page. **Read:** toast_archive_page trigger; toast_rebuild_day_payments; import pipeline. | Same source pages during import but temporary/transactional; do not conflate with permanent duplicates. | trigger=toast_archive_page_delete, toast_archive_page_insert; direct view=none observed; SQL routine mentions=toast_archive_day_pages, toast_cleanup_abandoned_pages, toast_import_day (+6). | **POS0e + POS0f** · **V+P** |
+| `toast_day_status` | 0.20 MB / 154 | OPERATIONAL_JOB_STATE; import completion/owner guard | **Write:** toast_import_day, scheduler reconciliation; many BEFORE/AFTER import triggers. **Read:** toast_refresh_typed_payment_facts, cv typed fact current, reporting/status/health jobs. | Distinct import lifecycle and provenance; cannot replace with raw JSON alone. | trigger=toast_clear_internal_proof_after_import, toast_clear_recheck, toast_compare_summary_after_import (+7); direct view=toast_current_typed_order_facts_v, toast_owner_attention_days_v, toast_sync_health_v; SQL routine mentions=run_data_health_check, toast_answer_first_import_check, toast_archive_collapse_day (+19). | **POS0e + POS0f** · **V** |
+| `toast_employee_directory` | 0.08 MB / 34 | OPERATIONAL_STAGED+IDENTITY_LINK; Toast employee→app employee mapping | **Write:** toast_stage_employee_roster/toast_link_employee; AFTER INSERT/UPDATE toast_archive_stage_trigger('employee'). **Read:** toast_attendance_review, toast_import_day, toastScheduledShifts.server.ts, syncEmployees and promote. | Toast name/GUID duplicates raw employee object; linked_employee_id and linked_at are application-owned identity decisions. | trigger=toast_archive_toast_employee_directory; direct view=toast_attendance_review; SQL routine mentions=pantry_usage_toast_evidence, pos_import_toast_attendance, pos_resolve_staff_import_review (+6). | **POS0b + POS0e** · **V+P** |
+| `toast_first_import_check` | 0.03 MB / unestimated | OPERATIONAL_EVIDENCE; initial import audit | **Write:** toast_save_first_import_check. **Read:** first-import route. | Review/checkpoint, not source copy. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_answer_first_import_check. | **POS0f** · **U** |
+| `toast_internal_check_cache` | 2.01 MB / 146 | OPERATIONAL_DIAGNOSTIC_CACHE; temporary reconciliation proof | **Write:** reconcile.ts; toast_clear_internal_check_cache trigger from toast_day_status. **Read:** reconcile.ts / import health. | May be redundant cached evidence; TTL/index/perf and retention proof needed. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_clear_internal_check_cache. | **POS0f** · **U+P** |
+| `toast_job_directory` | 0.06 MB / 7 | OPERATIONAL_STAGED; Toast job GUID/title/wage | **Write:** optionalSync.ts, toast_stage_job_catalog; AFTER INSERT/UPDATE archive-stage trigger. **Read:** labor staging + staff job matching (consumer trace pending). | Job metadata also in raw current object; app role mappings may be distinct. | trigger=toast_archive_toast_job_directory; direct view=none observed; SQL routine mentions=toast_stage_object_key. | **POS0b** · **U+P** |
+| `toast_labor_backfill_progress` | 0.02 MB / unestimated | OPERATIONAL_CURSOR; time-entry historical backfill | **Write:** laborBackfill.ts. **Read:** labor backfill / stale recovery. | Distinct progress bookmark. | trigger=none observed; direct view=none observed; SQL routine mentions=none observed. | **POS0b** · **U** |
+| `toast_labor_entries` | 0.25 MB / 402 | OPERATIONAL_STAGED; Toast time-entry details, breaks, provider modified hours | **Write:** toast_stage_labor_entries; AFTER INSERT/UPDATE archive-stage and toast_open_labor_copy triggers. **Read:** toast_attendance_review, pos_import_toast_attendance, POS rollup, staging recovery. | Source clock/wage/hours overlap timecards and labor summaries; provider modified/deleted/break provenance matters. | trigger=toast_archive_toast_labor_entries, toast_open_labor_copy; direct view=toast_attendance_review; SQL routine mentions=pantry_usage_toast_evidence, pos_import_toast_attendance, pos_resolve_staff_import_review (+4). | **POS0b** · **V+P** |
+| `toast_location_mappings` | 0.11 MB / 2 | APP_OWNED_CONFIG; verified café/Toast restaurant mapping, closeout | **Write:** connection setup; closeout invalidation trigger. **Read:** imports, authorization, local time mapping. | Distinct tenancy/ownership config; keep. | trigger=toast_closeout_configuration_changed; direct view=toast_owner_attention_counts_v, toast_sync_health_v; SQL routine mentions=pantry_usage_toast_evidence, pos_import_toast_attendance, pos_relink_toast_lines (+35). | **POS0f** · **V** |
+| `toast_modified_orders_staging` | 0.02 MB / unestimated | OPERATIONAL_STAGING; modified order needing reconciliation | **Write:** modified orders sync; AFTER INSERT/UPDATE archive stage trigger. **Read:** cv_item_sales review-only branch / reconciliation. | Review state not counted sales; not a second current order. | trigger=toast_archive_toast_modified_orders_staging; direct view=cv_item_sales; SQL routine mentions=toast_save_configuration, toast_stage_object_key, toast_store_order_fact_pre_correction. | **POS0e + POS0f** · **V** |
+| `toast_open_labor_summaries` | 0.31 MB / 804 | OPERATIONAL_DERIVED in a connected source café; also TEST_CAFE_MIRROR in the separate replicated café, not a second live provider feed | **Source write:** `toast_sync_open_labor_summary` via `toast_open_labor_copy` AFTER INSERT/UPDATE on `toast_labor_entries`; **test write:** `scripts/sync-cafe-data.mjs` day mirror; prior backfill needs separate history review. **Read:** `cv_labor_entries` provider-hour lookups and conditional fallback, plus other readers pending full call-graph proof. | Two café scopes contain 402 rows apiece; only source scope has 402 staged entries. All 402 test summary rows are paired with remapped test timecards and share source Toast entry GUIDs and operational facts; these are replica data, **not 402 extra shifts**. Keep pending explicit test/production provenance, atomicity, status parity, reader and performance proof. | trigger=none observed on summary; direct view=cv_labor_entries; SQL routine mentions=toast_sync_open_labor_summary; test mirror configured as refresh-window table. | **POS0b + POS0e + POS0f** · **V+P; OPEN** |
+| `toast_optional_sync_state` | 0.06 MB / 2 | OPERATIONAL_CURSOR; optional source freshness | **Write:** optionalSync.ts. **Read:** optionalSync.ts, scheduler. | Distinct checkpoint; daily gating known defect, coordinate 10-min target. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_queue_attendance_repair. | **POS0b + POS0e** · **V** |
+| `toast_order_events` | 0.03 MB / unestimated | OPERATIONAL_WEBHOOK_EVENT; incoming event evidence | **Write:** webhook/[subscriptionId] route. **Read:** webhook replay/queue (trace final consuming job). | Event history is not another current order; retention to review. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_claim_order_events, toast_finish_order_event, toast_save_configuration. | **POS0f** · **U** |
+| `toast_order_poll_progress` | 0.01 MB / unestimated | OPERATIONAL_CURSOR; order poll resume | **Write:** order polling worker. **Read:** polling worker (verify). | Cursor; empty allocated table does not prove obsolete. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_stage_order_poll_page. | **POS0f** · **U** |
+| `toast_order_revisions` | 0.03 MB / unestimated | OPERATIONAL_HISTORY; before/after order net amount | **Write:** toast_import_day on actual net-change. **Read:** historical review/rollback consumer not fully traced. | Separate history from current order, preserve if needed by audit. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_import_day. | **POS0f** · **U** |
+| `toast_order_typed_facts` | 23.91 MB / 20,468 | OPERATIONAL_DERIVED; cached nested order discounts/taxes/voids/refunds/duration | **Write:** toast_capture_typed_order; raw INSERT trigger; changed raw order invokes delete+recapture via toast_archive_order. **Read:** toast_current_typed_order_facts_v → cv_item_sales/cv_discounts/cv_voids_refunds. | All source-derived from raw JSON but typed arrays avoid heavy repeated JSON work. Keep until benchmark proves on-demand indexed query no slower. | trigger=none observed; direct view=toast_current_typed_order_facts_v; SQL routine mentions=toast_archive_order, toast_capture_typed_order. | **POS0e + POS0f** · **V+P** |
+| `toast_owner_summary_entries` | 0.02 MB / unestimated | OPERATIONAL_REPORT_EVIDENCE; report observations | **Write:** toast_save_owner_summary. **Read:** toast_owner_attention_days_v / status route. | Distinct verification provenance, not another current order. | trigger=none observed; direct view=toast_owner_attention_days_v; SQL routine mentions=toast_check_evidence, toast_refresh_owner_summary, toast_save_owner_summary. | **POS0f** · **U** |
+| `toast_payment_day_events` | 0.02 MB / unestimated | OPERATIONAL_STAGED; event lacking amount until hydrated | **Write:** payment event webhook/collector; archive-stage trigger. **Read:** cv_payments event branch. | Payment observation is different from settled amount; do not double-count as known payment. | trigger=toast_archive_toast_payment_day_events; direct view=cv_payments; SQL routine mentions=toast_promote_reconciled_day, toast_stage_object_key, toast_stage_payment_day_events (+1). | **POS0e + POS0f** · **V** |
+| `toast_payment_facts` | 9.08 MB / 20,472 | OPERATIONAL_DERIVED; fees/card type/status and amount in cents | **Write:** toast_day_status AFTER IMPORT trigger toast_refresh_typed_payment_facts; paymentFeeFacts.server.ts updates fee classifications. **Read:** cv_payments first branch; paymentFeeFacts.server.ts fee backfill; Supervisor via cv_payments. | Same keyed amount/tip/status as summaries (20,472 matches, 0 shared discrepancies); distinct card/fee fields + app fee rules. | trigger=none observed; direct view=cv_payments; SQL routine mentions=toast_refresh_typed_payment_facts. | **POS0e + POS0f** · **V+P** |
+| `toast_payment_summaries` | 9.86 MB / 20,472 | OPERATIONAL_DERIVED; payment server/timestamp day projection | **Write:** toast_rebuild_day_payments from toast_day_pages; toast_fill_organized_fields. **Read:** cv_payments legacy fallback; sync-cafe-data test mirror; SQL imports/tests. | Same shared key/values as facts now, BUT server_guid and paid_at live here, absent in facts. Never drop without carrying both and testing fallback. | trigger=none observed; direct view=cv_payments; SQL routine mentions=toast_fill_organized_fields, toast_rebuild_day_payments. | **POS0e + POS0f** · **V+P** |
+| `toast_pilot_days` | 0.02 MB / unestimated | APP_OWNED_PILOT; eligible piloted dates | **Write:** pilot route; AFTER INSERT/UPDATE archive-stage trigger. **Read:** toast_financial_reporting_status. | Owner rollout config not raw. | trigger=toast_archive_toast_pilot_days; direct view=toast_financial_reporting_status; SQL routine mentions=pantry_usage_toast_evidence, toast_promote_reconciled_day_legacy, toast_promote_reconciled_day_pre_independent_verification (+6). | **POS0f** · **U** |
+| `toast_poll_leases` | 0.02 MB / unestimated | OPERATIONAL_LOCK; order polling lease | **Write:** toast_claim_poll. **Read:** poll worker. | Concurrency state not duplicate. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_begin_poll_recovery, toast_claim_poll, toast_finish_poll (+3). | **POS0f** · **U** |
+| `toast_poll_recovery` | 0.02 MB / unestimated | OPERATIONAL_RECOVERY; poll failure checkpoint | **Write:** poll recovery routine. **Read:** orderQueue/poll worker (verify). | Recovery history/state, not duplicate provider fact. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_begin_poll_recovery, toast_complete_attendance_recovery, toast_mark_poll_recovery_failure (+1). | **POS0f** · **U** |
+| `toast_promotion_order_baselines` | 0.02 MB / unestimated | OPERATIONAL_EVIDENCE; promotion baseline | **Write:** promotion job (trace). **Read:** promotion compare/guard (trace). | Evidence/history, verify actual use. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_promote_reconciled_day_pre_payment_dates, toast_store_order_fact. | **POS0f** · **U** |
+| `toast_raw_changes` | 0.95 MB / 1,569 | OPERATIONAL_CHANGE_LOG; one real before/after JSON diff | **Write:** toast_archive_order and toast_archive_stage_snapshot (same transaction as current update). **Read:** Historical change consumers not exhaustively traced; no live metric should treat deltas as another snapshot. | Distinct required history, not duplicate full snapshot. Keep. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_archive_collapse_day, toast_archive_collapse_snapshots, toast_archive_order (+1). | **POS0f** · **U** |
+| `toast_raw_records` | 135.22 MB / 21,396 | OPERATIONAL_CURRENT; currently sanitized Toast JSON under verified entity key; target all permitted fields | **Write:** toast_archive_order / toast_archive_stage_snapshot / toast_archive_page; raw-order AFTER INSERT capture trigger. **Read:** toast_records_for (order branch), typed-payment refresh, typed capture, import/data-health; Supervisor via cv_toast_records. | Many source fields also exist in typed/organized projections. Keep current truth; optimize downstream only. | trigger=toast_raw_order_typed_capture; direct view=none observed; SQL routine mentions=run_data_health_check, toast_archive_collapse_day, toast_archive_collapse_snapshots (+9). | **POS0e + POS0f** · **V+P** |
+| `toast_raw_sample_leases` | 0.02 MB / unestimated | DIAGNOSTIC_CONTROL; rate-limited capture lease | **Write:** toast_claim_raw_sample / diagnostic capture only. **Read:** diagnostic capture orchestration, no Supervisor allowed. | Not business fact; remove only with manual capture retirement. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_acquire_raw_sample_lease, toast_release_raw_sample_lease, toast_renew_raw_sample_lease. | **POS0f** · **U** |
+| `toast_raw_samples` | 2.54 MB / 683 | LEGACY_DIAGNOSTIC_ONLY; old API response evidence | **Write:** rawSample.server.ts / toast_claim_raw_sample, optional manual diagnostic capture. **Read:** toast_api_coverage_v only as desired; DEFECT: cv_cash/cv_inventory/cv_kitchen/cv_dining_options and toast_records_for still use it via latest/function. | Not an operating copy; retire operational consumers in POS0e; separately review retention/backup/size before delete. | trigger=none observed; direct view=toast_api_coverage_v, toast_raw_samples_latest; SQL routine mentions=toast_claim_raw_sample, toast_records_for. | **POS0e then POS0f** · **V+P** |
+| `toast_refund_facts` | 0.02 MB / unestimated | OPERATIONAL_DERIVED; keyed refund facts | **Write:** toast_import_day; archive-stage trigger. **Read:** cv_voids_refunds and import checks. | Refund event amount/provider references overlap raw; keyed reporting may be indexed necessity. | trigger=toast_archive_toast_refund_facts; direct view=cv_voids_refunds; SQL routine mentions=toast_import_day, toast_stage_object_key. | **POS0e + POS0f** · **V+P** |
+| `toast_repull_scan_state` | 0.05 MB / 1 | OPERATIONAL_CURSOR; modified scan checkpoint | **Write:** scheduler / scan RPC. **Read:** scheduler. | Distinct cursor; keep if replay protection. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_checkpoint_repull_scan_page, toast_commit_repull_scan. | **POS0f** · **V** |
+| `toast_rollup_refresh_jobs` | 0.07 MB / 77 | OPERATIONAL_QUEUE; rollup recompute jobs | **Write:** toast_enqueue_rollup_refresh; rollupRetries.ts. **Read:** rollupRetries/dayImport/staleLaborRecovery. | Queue not a duplicate; needed until proven unnecessary. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_ack_rollup_refresh, toast_defer_rollup_refresh, toast_enqueue_rollup_refresh (+1). | **POS0f** · **V** |
+| `toast_sync_health` | 0.06 MB / 1 | OPERATIONAL_HEALTH; sync status | **Write:** laborSync/operationalStaging/orderQueue etc. **Read:** toast_sync_health_v, app status/badges. | Distinct error/freshness evidence; no business fact. | trigger=none observed; direct view=toast_financial_reporting_status; SQL routine mentions=toast_begin_poll_recovery, toast_finish_poll, toast_save_configuration. | **POS0f** · **V** |
+| `toast_sync_phase_errors` | 0.06 MB / 10 | OPERATIONAL_DIAGNOSTICS; sync phase errors | **Write:** scheduler/staging sync. **Read:** Toast status/ops health. | Error log separate from diagnostic raw samples; not current business fact. | trigger=none observed; direct view=none observed; SQL routine mentions=none observed. | **POS0f** · **U** |
+| `toast_sync_preferences` | 0.02 MB / unestimated | APP_OWNED_CONFIG; sync preference | **Write:** sync-preferences route. **Read:** Toast scheduler/preferences route. | App intent not provider fact. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_claim_due_sync, toast_finish_due_sync, toast_set_sync_preference. | **POS0f** · **V** |
+| `toast_sync_runs` | 0.35 MB / 997 | OPERATIONAL_JOB_HISTORY; sync execution log | **Write:** toast scheduler/day import. **Read:** sync scheduler, Toast status, duplicate prevention. | Distinct audit/cursor state not business fact. | trigger=none observed; direct view=toast_sync_health_v; SQL routine mentions=toast_archive_items, toast_certify_day_voids, toast_checkpoint_day (+14). | **POS0f** · **V** |
+| `toast_today_live` | 0.06 MB / 2 | OPERATIONAL_SUMMARY; provisional live-day sales | **Write:** today-live cron and Toast live archive pipeline. **Read:** todayLive.server.ts, event evidence, Supervisor eventReadiness. | Derived recent aggregate, useful low-latency cache; not another full order archive. | trigger=none observed; direct view=none observed; SQL routine mentions=none observed. | **POS0e + POS0f** · **V+P** |
+| `toast_unparsed_orders` | 0.02 MB / unestimated | OPERATIONAL_REVIEW; import parse exceptions | **Write:** toast_import_day. **Read:** import coverage and reconciliation. | Distinct exceptions; must preserve pending review. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_import_day. | **POS0f** · **U** |
+| `toast_verified_report_evidence` | 0.02 MB / unestimated | OPERATIONAL_EVIDENCE; owner-verified report observations | **Write:** owner report evidence workflow (trace). **Read:** coverage/closeout (trace). | Distinct report reference; may be retained for provenance. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_promote_reconciled_day_pre_correction. | **POS0f** · **U** |
+| `toast_void_facts` | 0.16 MB / 258 | OPERATIONAL_DERIVED; void provider events and status | **Write:** import pipeline; archive-stage and void-amount-invalidation triggers. **Read:** cv_voids_refunds; reconcile.ts; owner totals. | Void amount/status overlaps order raw but invalidation/review semantics distinct. | trigger=toast_archive_toast_void_facts, toast_void_amount_changed; direct view=cv_voids_refunds; SQL routine mentions=toast_certify_day_voids, toast_checkpoint_repull_scan_page, toast_commit_repull_scan (+4). | **POS0e + POS0f** · **V+P** |
+| `toast_void_reason_directory` | 0.03 MB / 4 | TOAST_LEGACY_OR_SUPPORT; exact distinct-purpose classification pending | **Write:** UNRESOLVED: identify writer in SQL/app and all trigger paths. **Read:** UNRESOLVED: identify screens, Supervisor, jobs and exports. | Not proven duplicate; no deletion/replacement until source/consumer & performance audit | trigger=none observed; direct view=none observed; SQL routine mentions=none observed. | **POS0f (or family owner after scope approval)** · **U** |
+| `toast_void_repull_coverage` | 0.05 MB / 18 | OPERATIONAL_COVERAGE; void re-fetch proof | **Write:** void repair jobs. **Read:** data-health/reconciliation (trace). | Distinct coverage evidence, not source amount. | trigger=none observed; direct view=none observed; SQL routine mentions=toast_certify_day_voids, toast_commit_repull_scan_window, toast_invalidate_on_closeout_change. | **POS0f** · **U** |
+| `toast_webhook_subscriptions` | 0.02 MB / unestimated | OPERATIONAL_CONFIG; Toast webhook subscriptions | **Write:** webhook/subscriptions route. **Read:** webhook delivery route. | External integration control not duplicated business facts. | trigger=none observed; direct view=none observed; SQL routine mentions=none observed. | **POS0f** · **U** |
+
+**Inventory coverage:** 68 live relations explicitly listed (53 `toast_*` and 15 shared operational/config tables); 29 rows have a traced *primary* role/writer/reader and 39 remain largely unresolved. **NONE are certified for physical deletion**. All mapped named tables are present. If a newly deployed `toast_*` table or an additional app-owned Toast consumer appears, POS0f's coverage test must add it rather than silently ignoring it. Shared generic app identity/config tables are listed to show dependency boundaries but are **not** assumed to be duplicate Toast storage.
+
+### Precise contract for the proposed replacement and safe rollback (NO DDL in POS0a)
+
+1. **Writer ownership proof — exhaustive per-table:** extract current final `pg_trigger` + `pg_get_triggerdef`, `pg_get_functiondef`, all upsert/update/delete RPCs, Next.js server writers, cron/sync jobs, owner edits, ingestion retries, import/staging cleanup and test-café mirror/export consumers. For a newly discovered writer/consumer, link exact path+function and move the row from U only after validation. Also inspect RLS/grants, schema history and exact indexes. Not every `toast_*` table is a business-fact duplicate.
+2. **Field duplication proof:** compare the official provider field JSON path (and provider GUID/version) against every derived column. Mark `SOURCE_DUPLICATE`, `DERIVED_CALCULATION`, `APP_OWNED`, `RECONCILIATION_LINK`, `HISTORY`, `IMPORT_STATE`, `DIAGNOSTIC_ONLY` **per column**, not per table. E.g. `toast_payment_summaries.server_guid`/`paid_at` must survive a fee-fact consolidation; `timecards` owner-corrected wages and schedule fields must never be overwritten with raw Toast wages. Mixed-provenance records may justify keeping an organized table.
+3. **Candidate selection:** a proposed indexed query or existing read-only `cv_*` view must use **only** the current authoritative Toast object plus legitimate app-owned facts, preserve all keys/status/time zones/money units, use tenant-scoped predicates, and never reach `toast_raw_samples` as fallback. Benchmark unchanged/current/partially authorized answers, critical `cv_payments`, `cv_labor_entries`, `cv_item_sales`, `cv_orders`, `cv_sales_days`, `cv_sales_hours` and all relevant screen loaders **before and after**.
+4. **Required performance/cost evidence:** same representative per-café data distributions/cardinality/queries on migrated disposable Postgres and production-safe **read-only** plans where authorized; record `EXPLAIN (ANALYZE, BUFFERS)` for indexed current query vs existing materialization, p50/p95 query time, rows/bytes scanned, index/heap/TOAST bytes, CPU/IO, write amplification, concurrency lock/trigger cost, Supabase DB and transport usage, and actual response payload to AI. Simulate 10-minute incremental synchronization, high-sales days, historical queries, null/partial records, multi-café RLS and 95th-percentile screen concurrency. **A table cannot be retired on storage savings alone**: no unacceptable p95 or total compute/storage-cost regression and no changed financial answer; thresholds/baseline must be documented and reviewed, not invented.
+5. **Two-phase cutover, no second business truth:** in a separately owner-approved implementation PR, first add or update the existing **read-only** shared current-source view/function, test producer parity and a single indexed query through existing `describe_data`/`query_data`, then switch screens, Supervisor and workers to it **without introducing a competing archive**. Preserve legitimate `APP_OWNED` values, payment server/paid time, historical labor hours, exclusions, approval status, fee decisions and re-import behavior. Negative tests assert diagnostic-only rows and stale staging do not influence live answers. Production-read parity must be proven while old derived table exists; only a second, approved retirement migration may remove dead writers/triggers/table, with a safe rollback to previous read definitions and a verified restoration strategy if data was deleted. Do not leave a permanent dual-write or silent legacy fallback.
+6. **Owners & proof:** **POS0e** owns shared Toast current-object readers, payment projections/typed order/read optimization; **POS0b** owns labor entries, summary/timecard/staff identity lineage and source-key parity; **POS0c** owns dynamic cash/stock/kitchen and its separate app-owned inventory; **POS0d** owns menu/catalog versioning; **POS0f** owns exhaustive final writer/reader inventory, performance and integration/diagnostic/rollback checks. Exact editable scopes require separate approval. Until proven, keep table marked P and never claim deletion authorized.
+
+### Current proven problematic dependency map (must not be hidden)
+
+| Operational reader | Live dependency seen in `pg_depend`/function definition | Why it is forbidden | Repair owner + proof |
+|---|---|---|---|
+| `cv_cash` | `toast_raw_samples_latest → toast_raw_samples` | Investigative cash events can masquerade as current cash | POS0e; negative diagnostic-only and positive current-source cash in same current canonical query |
+| `cv_inventory` | `pantry_stock_counts` APP branch **UNION** `toast_raw_samples_latest` Toast branch | Real app ingredient counts are valid, but the Toast branch uses old samples and units must not be conflated | POS0e/POS0c; distinct pantry and provider menu-item stock/quantity tests |
+| `cv_kitchen` | `toast_raw_samples_latest` | KDS prep-station/example captures may be treated as current fulfillment | POS0e/POS0c; current source + date/source provenance tests |
+| `cv_dining_options` | `toast_raw_samples_latest` | Snapshot config treated as operating config | POS0e/POS0d; current published options and missing-grant behavior |
+| `toast_records_for` (non-order branch) | Direct `toast_raw_samples` SQL reference | Supervisor can miss latest labor, staff, cash, kitchen while seeing outdated example records | POS0e; final current SQL definition and real `describe_data` → `query_data` → Supervisor tests |
+| `cv_payments` | `toast_payment_facts` **UNION** summary fallback **UNION** event-only observations | Overlap/partial-day fallback may conceal missing payment or double interpretation; events lack confirmed amounts | POS0e; per-key complete/partial payment days, fee cents, server identity, real agent/screen totals |
+| `cv_labor_entries` | `timecards` + provider hours read from `toast_open_labor_summaries` + fallback staged summary rows | 402 summary rows without matching staging entry still provide provider hours for canonical timecards | POS0b/POS0e; no omitted hours, duplicate timecards, missed wage/edited break values |
+
+### Mandatory performance, source-parity, failure and regression tests
+
+- **Payment 20,472 match baseline:** compare all actual keyed provider payments, fee category and adjusted fee basis, plus `server_guid`/`paid_at`, exact cents, `needs_match`, gift/cash treatment, payment events with no known amount, partial-day summary fallback, multi-restaurant/date identity; query p95 and CPU/IO before/after.
+- **Labor 804/402 baseline:** current open/closed, canonical timecard and staged rows, all 402 historical summary-only→canonical matches, provider regular/overtime precision, deleted/stale flag, owner wage overrides, scheduled-vs-actual hours, break edits, orphan/duplicate prevention, day boundary; compare `cv_labor_entries`/Payroll/Staff/real Supervisor answer and p95 latency.
+- **Typed order 20,483 baseline:** update/insert/re-import/shuffled nested arrays, genuine delta-only journaling, discount VOID and refunds, modifier taxes, time-duration, open/closed, correct current-run selection; do not trade away existing indexed screen performance for repeated raw JSON scans.
+- **Forbidden diagnostic contamination:** seed synthetic conflicting amounts in `toast_raw_samples` with no current objects; **all** operating views, screens and agent answers must reject those as current business data. Diagnostic API-coverage reporting may still inspect them. Final active view/function lineage checks `pg_get_viewdef`/`pg_get_functiondef` **and indirect dependencies** after every migration; a diff-only source-code grep is insufficient.
+- **Traceable AI access:** for each Standard field family, stored permitted name/identity/money/time/notes/nested path → `describe_data` discoverability → `query_data` complete authorized DB aggregate (bounded returned bytes) → registered Supervisor answer → relevant screen parity. Missing/null/no-entitlement/stale must not erase unrelated data. Test café A cannot read café B and source names cannot grant privilege.
+- **Operational safety:** migrations must be additive, individually permissioned and reversible; table retirement requires 100% mapped writer/consumer list, index plans, documented performance threshold, exact backup/rollback and separately approved production application. A green storage-only test or stale fixture test does not count.
+
+### Reproducible read-only inspection SQL (metadata and aggregate counts only)
+
+```sql
+-- Run in Supabase SQL editor, read only; no café data rows/personal values returned.
+select c.relname as table_name, c.reltuples::bigint estimated_rows,
+       pg_total_relation_size(c.oid) as total_bytes
+from pg_class c join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='public' and c.relkind in ('r','p')
+  and (c.relname like 'toast_%' or c.relname in
+       ('orders','order_lines','employees','timecards','menu_items',
+        'daily_rollups','hourly_sales_rollup','processing_fee_daily_facts'))
+order by pg_total_relation_size(c.oid) desc;
+
+-- Trigger and function ownership; routine source inspection is required for direction:
+select c.relname as table_name,t.tgname,pg_get_triggerdef(t.oid) as trigger_definition
+from pg_trigger t join pg_class c on c.oid=t.tgrelid
+join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='public' and not t.tgisinternal
+  and (c.relname like 'toast_%' or c.relname in ('orders','order_lines','employees','timecards'));
+
+-- Final CURRENT view dependencies (not historical migration file text):
+select v.relname view_name,src.relname source_table
+from pg_class v join pg_namespace vn on vn.oid=v.relnamespace
+join pg_rewrite rw on rw.ev_class=v.oid
+join pg_depend d on d.objid=rw.oid and d.classid='pg_rewrite'::regclass
+  and d.refclassid='pg_class'::regclass
+join pg_class src on src.oid=d.refobjid
+where vn.nspname='public' and v.relkind in ('v','m') and src.oid<>v.oid
+  and v.relname in ('cv_cash','cv_inventory','cv_kitchen','cv_dining_options',
+                    'cv_labor_entries','cv_payments','cv_orders','cv_item_sales');
+-- Also inspect pg_get_functiondef('public.toast_records_for(uuid,date,date)'::regprocedure)
+-- because function text may hide a source dependency not exposed by view rewrite deps.
+```
+
+**Approved D3 safeguard overrides any shorthand below:** no table, view, reader, writer or operational behavior is removed/replaced until all dependencies and the equivalent correctness/completeness/performance/isolation/rollback tests pass with separately approved implementation. The 68-table inventory is **not** a 68-table certification; entries still labeled U remain blockers.\n\n**Completion gate (NOT MET):** the inventory contains 68 physically present candidate tables, with measurable overlaps and proven reader defects, but **not every writer, consumer, authoritative field/derived calculation, query benchmark, or safe rollback is fully traced**. Therefore **NO TABLE CONSOLIDATION/RETIREMENT DECISION IS APPROVED** and PR #398 remains DRAFT until owner confirms the final specification. Future review must sign each table/field row V and P with actual evidence links, not merely delete the U label.
+
+## Decision and invariant
+
+**Preserve/no rewrite:** Existing working `/orders/v2/ordersBulk` day-import and today's 15-minute closed-order staging/archive path, `toast_archive_order`, `toast_raw_records` order payload, unique one-current-object key, `toast_raw_changes`, `toast_records_for`/ `cv_toast_records`, and screen rollups. The existing order path is an **independently working capability**; do not fork it or re-import into a second store. A proposed downstream fix must extend its **existing** writer and one canonical reader, with parity tests.
+
+**Proposed lifecycle, NOT authorized to code yet:** Toast Standard API (scope + café/location check) → existing Toast client/normal sync → `redactToastRaw` → one current object keyed by (business,restaurant,kind,provider GUID/verified composite) → only genuinely changed fields in `toast_raw_changes` → existing typed projections for screens + extended *same* `toast_records_for` / canonical dictionary / `describe_data` / `query_data` for Supervisor. Never use `toast_raw_samples` as a competing operational feed. Missing credentials, 403, 204, missing provider GUID, not attempted, and stale records stay separate. No unknown becomes zero. Owner must approve **each field, identity rule, cadence and sensitive-field rule** for POS0b–e.
+
+## Owner-approved correction plan — retire investigative sources from production decisions, prove every data path (November 7)
+
+**Status:** **Detailed implementation architecture / owner-requested design, NOT implemented by POS0a.** Owner has approved the principle that `toast_raw_samples` is **diagnostics only**, current Toast objects belong to **one existing authoritative store and one shared owner-scoped reader**, both existing `toast_raw_records` and `toast_raw_changes` remain, all permitted business and personal fields are retained except card-payment credentials/authentication secrets, and absent optional fields do not stop ingestion or AI answers. This section is the mandatory brief for downstream POS0 tasks and generic future source cutovers. It changes **no production database, runtime reader, cron or provider rights**.
+
+### A. Root cause reconstructed from actual repository files
+
+| Stage / code | What changed | Architectural consequence |
+|---|---|---|
+| Migration 107, `toast_raw_samples`; `rawSample.server.ts` | Investigation table records endpoint HTTP status, captured example JSON, field paths and failures | Diagnostic evidence, **not** authoritative café operations |
+| Migration 114, `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` | Operationally named canonical views were connected to diagnostic examples | The diagnostic source **crossed into production query lineage without an explicit source promotion decision** |
+| Migration 119, `toast_raw_samples_latest` | Limited sample joins to the newest capture to avoid repeat-counting the same cash event | Duplicate-sample arithmetic was repaired, but **diagnostic provenance remained an operating dependency** |
+| Migration 130, `toast_records_for` and `ai_toast_fields` | Orders read live archive, non-orders read diagnostic captures; field discovery samples 30 recent records (35 days), depth 8, cap 200 paths | A single nominal reader concealed **two incompatible data sources** and incomplete discovery |
+| Migrations 140/143/151/152/155 | Current-object uniqueness/change journaling and live orders improved, but later `toast_records_for` still selects `toast_raw_samples` for non-orders; 155 projects money from that function | New storage was built without a completed **all-consumers cutover** |
+| `scripts/toast-db-integration.sql`, `scripts/ai-toast-records-sql-integration.sql` | Old tests insert diagnostic rows and assert results from the affected operational views | CI can be green while validating precisely the **legacy architecture we intend to retire** |
+| `scripts/sync-cafe-data.mjs` | Test-café mirroring includes `toast_raw_samples` in the day mirror table list | Test/demo mirrors may perpetuate investigative records as if operational; investigate all consumers before retirement |
+| `docs/rules/pos-data.md` and `docs/data-dictionary-notes.md` | Binding/reader notes still describe diagnostics feeding operational views | Developers following the written rules can unintentionally recreate the same dependency |
+
+**Repeated process failure:** the project accepted *storage success*, *view existence*, and *mock/legacy-fixture tests* separately, without an enforceable contract proving which **actual source** the real agent and screens consume. Replacements lacked both an explicit old-consumer retirement list and a negative assertion that diagnostic-only records **cannot** affect live answers. Historical migrations must **never** be edited to hide the earlier design: apply a new additive/corrective migration, update live readers/tests/rules and add durable guards.
+
+### B. Binding source authority and consumer boundary
+
+```text
+Toast Standard API (per connected café, granted permissions; real values)
+    └─ existing lib/pos/toast client + 10-minute scheduler
+         └─ existing adapters and keyed writer (only card/auth secrets filtered)
+              ├─ toast_raw_records    = one latest complete object per true ID
+              ├─ toast_raw_changes    = real before/after field delta (same DB transaction)
+              └─ existing organized facts / screen calculations (not another raw truth)
+                   └─ EXISTING shared scoped read: toast_records_for / cv_toast_records
+                        + existing domain cv_* views / dictionary / ai_query_view
+                        + describe_data / query_data → ONE Supervisor + screens
+
+DIAGNOSTIC ONLY: rawSample.server.ts + toast_raw_samples + capture workflow
+    └─ endpoint status / audit/field-shape evidence for diagnostics
+    └─ FORBIDDEN as a source of Supervisor decisions, sales/cash/stock/kitchen/staff
+       metrics, current canonical business views, customer identity or live answers
+```
+
+A diagnostic capture may exist independently for investigation, but **may not be used as fallback** when an operational fetch is unavailable. Failures/403/204/empty/timeout/partial/stale return a *scoped coverage/missing reason*, **never** a stale diagnostic value or an invented zero. No extra customer store, field database, new AI agent, new model SQL capability, parallel ingestion service or second operational record. The one 10-minute scheduler coordinates all permitted families, using provider modified-time/version cursors and endpoint-specific bounded paging/leases/continuation and rate-limit backoff; each family reports actual `last_success_at` and staleness (the tick itself is not proof every endpoint finished).
+
+**Field contract:** maintain original present/null/absent semantics, stable object and nested-child IDs, real source and timestamp provenance, explicit scope absence, and correct original money/quantity/boolean units. A partly populated Toast response saves all valid present fields. An omitted field in a partial response cannot destroy a previously verified value or pretend it is fresh; explicit authoritative deletion/null can update it. Names, emails, phone numbers, customer/loyalty IDs, staff identity, notes and every other *permitted* Toast business field are retained for authorized café-scoped readers, subject to actual Toast response and lawful entitlement. Exclude payment card PAN/CVV/track data, reusable card credentials and non-business authentication secrets; **do not redact every human field as a shortcut**. No data from Café A can enter Café B's view. A missing customer ID does not erase the order, and name equality is not identity proof.
+
+### C. Task order, ownership and dependencies — binding table is ABOVE
+
+The owner-confirmation hold and single correct dependency graph are now stated in the **FINAL-REVIEW OWNER DECISIONS** section: **POS0a → POS0e shared retention/reader foundation → POS0b/c/d separate source families → POS0f exhaustive proof and safe cleanup**. Exact existing-path ownership reservations are listed there, not here. **Older alternate proposals (including two simultaneous foundation owners or POS0e following b/c/d) are withdrawn.** No coding scope or destructive production cleanup is authorized. PRs may be drafted/stacked only after the owner separately approves the final specification, file assignments and the current source-specific plan. CI and Codex success do not bypass the owner's explicit do-not-merge hold.
+
+### D. Retirement and CI: what prevents the same error being reintroduced
+
+1. **Source classification as a code-review contract, not a new runtime registry.** Every data PR names **authoritative operational source**, **diagnostic/test source**, **reader consumers**, **replacement**, **retirement owner**, and **how absent data behaves**. Diagnostic/test fixtures are synthetic and may **never** stand in for operational production values. Update `AGENTS.md`-linked `docs/rules/pos-data.md` / `docs/rules/tests.md` and `docs/data-dictionary-notes.md` during the cutover (single file owner). Mark any old notes no longer current; preserve historical records without leaving contradictory active instructions.
+2. **Retire at the consumer edge, not by deleting history.** New additive SQL migration replaces the *live* definitions of `toast_records_for` and affected `cv_*` so diagnostic tables are no longer joined into current business reads. Existing historical migrations 107/114/119/130/151/152 remain immutable. Do **not** drop `toast_raw_samples` or delete retained diagnostics without a separate approved retention/privacy plan; the diagnostic route/workflow may continue **diagnostics-only**, preferably saving endpoint/field-shape evidence instead of a parallel full business archive. No production read path can use it as fallback.
+3. **Executable ban on regressions:** Add a guard to existing `scripts/guards/run-all.mjs` CI chain that fails if **new/changed operational code, new migrations, active canonical views/functions or Supervisor readers** reference `toast_raw_samples` or `toast_raw_samples_latest`. Explicitly allow diagnostic code, diagnostic tests, old immutable migrations and archived history. Avoid a blanket grep that fails on documented history. The code-only guard is necessary **but not sufficient**.
+4. **Database lineage assertion:** In disposable migrated Supabase inspect **final** `pg_get_functiondef('public.toast_records_for(uuid,date,date)'::regprocedure)` and `pg_get_viewdef`/catalog dependencies for `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` and other operational views. Assert none use either diagnostic relation, including indirectly through `toast_raw_samples_latest`. Diagnostic views may exist but **cannot** feed operational consumers. Check final definitions after **all migrations**, not by searching immutable migration 114 alone.
+5. **Negative authority test:** Seed **only** a diagnostic $75 cash entry, stale stock "100", a diagnostic kitchen fulfillment and a sample guest name. An owner-scoped `query_data`, Supervisor and screens **must not** report them as current facts. Then insert **current** cash $60, stock 3, real kitchen fact and authorized named customer in the existing object path; the same tools must report **only those values**. Replaying diagnostics or altering their timestamps must have **zero effect** on operating outputs. A 403, 204 and absent source return honestly missing/stale, not sample fallback.
+6. **Correct existing tests rather than hiding them:** `scripts/toast-db-integration.sql` and `scripts/ai-toast-records-sql-integration.sql` currently positively assert diagnostic-derived operational views. Their named behavior is being intentionally retired; replace those assertions with current-source positive cases and sample-isolation **negative** cases. Preserve separate `scripts/toast-raw-sample-sql-integration.sql` checks proving diagnostics still record endpoint status correctly. Review `scripts/sync-cafe-data.mjs` day mirroring so sample rows cannot make synthetic/test café operational answers appear filled. Every changed assertion must cite this architecture decision; no deleting valid unrelated regressions or weakening them to mocks.
+7. **Source-to-AI parity test in every source PR:** For each tested returned field, assert `Toast response → safety filter → one current object + real-only change log → toast_records_for/cv_* → describe_data → query_data → real registered one-agent Supervisor turn`. Count/hash compare source fields to stored fields excluding only explicitly classified credential fields. Include null, absent, partial, rare, nested, over-30, over-200, older-than-35-day, multi-page, changed and unchanged object versions; full ledger/order/payroll screen parity. If the reader is not ready, that PR **fails its own acceptance**, even if its storage tests pass.
+8. **Quality gates that cannot be waved away:** Run the **actual** new SQL tests on disposable migrated PostgreSQL/Supabase in CI, plus adapter tests and deterministic full-tool/agent-loop tests, on the exact final commit. Show test command, returned values/assertions, job URL, head/base SHA and Codex resolution. A passing docs-only guard, mocked tool registration, unrun/skipped SQL step, old diagnostic fixture, or checkbox is **not** a release result. Production migration application, live provider permissions and owner-authorized read-only real-café pilot are tracked **separately**. Never claim a merged PR is a completed rollout.
+
+### E. Developer stop/reject rules — copy to every downstream PR brief and Codex review
+
+**Reject the PR / raise P1** if any of these are true:
+- A **diagnostic, fixture, test-café mirror or historical sample** is used for a current Supervisor answer or real café metric, even through a canonical view.
+- A new source writer has no proven route through existing `describe_data`, `query_data` **and** a normal Supervisor question; "data is stored" is insufficient.
+- A replacement is added while its old active consumer remains, without a named, tested and enforced retirement in the same release stage.
+- Any permitted source field is dropped (other than payment card/authentication credentials) without an explicit approved field-specific reason; a missing name/phone/job/break makes an unrelated order/time entry fail.
+- Field discovery depends on the newest 30/35-day/200-path sample as its *complete universe*, or output limits of 100 rows/6 KB are misrepresented as a database access limit.
+- A view silently substitutes zero/stale diagnostics for null/absent/403/204/429/incomplete or treats an all-fields-present fixture as proof for all cafés.
+- A PR adds a **second** business ingest, customer record store, AI agent, arbitrary model-authored SQL mechanism or alternative calculation source instead of extending the approved existing reader.
+- Code, tests and binding rules disagree about which current source is authoritative, or an old legacy-path test is kept green by continuing the retired operational dependency.
+- A required migrated-DB / end-to-end tool / agent / RLS test is unrun/skipped, code ownership overlaps another active branch, Codex has unresolved substantive findings, or actual final-head CI/merge/proof is missing.
+
+**Generic process rule for ALL future AI CAFE architecture changes:** every investigative/prototype source is labeled **DIAGNOSTIC / TEST ONLY** from creation. Promotion to operational truth requires an owner-approved source contract, explicit reader/consumer list and end-to-end proof; when replacing a source, the PR or named dependent cutover **removes every old active consumer and adds a negative regression test** showing the old source cannot affect the new answer. **No "new path complete" without "old path retired".** This is a lifecycle / CI rule, *not* a new subsystem.
+
+## Owner's follow-up: retire diagnostic samples as operational truth; discover and query every retained field on demand (November 7)
+
+**Decision from owner conversation:** AI CAFE **must** expose *all permitted, retained Toast fields* to the **existing** Supervisor on demand. Never solve the problem by dumping thousands of full rows into the model context, raising an arbitrary field-sample limit or inventing a second AI/database subsystem. Do not delete `toast_raw_samples` as part of POS0a; treat it strictly as a legacy **diagnostic, endpoint-discovery and coverage-evidence** input, not a present-day or otherwise authoritative operational record.
+
+### Why `toast_raw_samples` exists, and why it is not an operating source
+
+- Migration `20261028000107_toast_raw_samples.sql` calls the table **"Owner-visible, redacted Toast diagnostics"**. It stores `endpoint`, `fetched_at`, HTTP status, `field_paths` and sampled `sample` JSON. The `rawSample.server.ts` implementation populates it during standalone API capture. The optional GitHub workflow `.github/workflows/toast-raw-capture-daily.yml` uses `TOAST_DAILY_CAPTURE_ENABLED`; it is not the existing 10-minute operational scheduler and its schedule is not evidence it ran.
+- Migrations `20261028000114_toast_optional_canonical_views.sql` and `20261029000119_toast_latest_raw_capture.sql` source `cv_cash`, `cv_inventory`, `cv_kitchen`, `cv_dining_options` from these **diagnostic** snapshots. Migration 119 explicitly fixes duplicated totals when the same cash item was captured repeatedly (e.g. a $50 entry erroneously appearing as $100). Reusing this source for operational AI facts can return stale or snapshot-only information.
+- Migration `20261031000130_ai_reads_all_toast_fields.sql` began using current `toast_raw_records` for orders, **but diagnostic `toast_raw_samples` for non-order records** in `toast_records_for`. Migration `20261104000151_toast_live_orders_archive.sql` retains that split. Meanwhile migrations 140/143 and current normal sync improved real current-object storage. **The AI reader never fully reconciled to this newer storage contract**. This is an **existing integration gap**, not a request for new archive architecture. Fix the reader's non-order branch to project current objects from the same `toast_raw_records`/organized facts (matching source identities and avoiding double counting). Historical diagnostic samples may remain visible only under an explicit diagnostic/provenance designation; never silently union them with current authoritative facts.
+
+### Why `ai_toast_fields` fails to discover legitimate fields
+
+- Migration 130 defines `ai_toast_fields` by inspecting **up to 30 most recent records of a type in a 35-day window**, traversing **up to 8 nested segments**, then returning **up to 200 paths**. Those limits made a bounded exploratory sampler, **not a complete schema index**. Rare fields, optional data, older records, unsampled variants, nested paths, and fields stripped before save cannot be discovered reliably.
+- **Correct existing-path design:** `describe_data` should obtain the field catalog from the **versioned current official Standard API schema** plus a deterministic **retained-field inventory** of the existing current-object sources, instead of inferring the universe of possible fields from 30 response examples. Distinguish `defined_in_standard_schema`, `persisted_here`, `observed_on_this_café`, `null_or_absent`, `permission_unverified`, `source_stale`, `filtered_card_credential` and `query_supported`. No new per-café source table or AI brain; improve `ai_toast_fields` and the canonical dictionary/read service. At query time, consult existing stored data, not stale precomputed sample values. A missing field in one recent response must never remove it from the discoverable universe.
+- **Correct retrieval design:** `query_data` / `ai_query_view` may retain strict owner scope, bounded results and database-side counts/joins/aggregations. The present per-response **100-row / ~6000-byte** caps are *transport/prompt-budget safeguards*, not a limit on the accessible database or lookback. Within the existing tool, implement verified, bounded continuation/targeted retrieval and safe relationship joins keyed by true order, check, employee, time entry, customer and item IDs for full-question answers when ordinary grouped queries are insufficient. The model should ask for the facts it needs, not receive all raw rows; `truncated` must prompt continuation/aggregation, never a false complete answer. Preserve existing money and screen-number definitions, rather than summing arbitrary JSON money fields.
+- **No data loss before storage:** Owner requires retention of names, customer IDs, email, phone, staff identity, business metadata and all other permitted Standard fields. **Only payment-card account/authentication details (PAN, CVV, track data, reusable payment credentials) and security secrets must be excluded**; accessible names/identifiers are never discarded because they are personal. Café-scoped authorization and compliant access remain mandatory. Current `lib/pos/toast/redact.ts` does not meet this policy; previously stripped data needs an allowed provider re-fetch rather than fictional reconstruction.
+
+**No source field = no invented answer, not an ingestion failure.** A field that is null, omitted, scope-unavailable or stale remains accurately labeled; Supervisor answers unrelated parts from actual present records and can say exactly what is missing.
+
+### Read-path release gate: fail closed on claims of completeness
+
+**POS0e comes FIRST** and must reconcile all current non-order read branches and replace sample-based discovery with complete official-schema/retained-source discovery. Only then may POS0b, POS0c and POS0d integrate distinct data families; each must demonstrate a real current-object→existing-tools→Supervisor answer test for every new family, never "stored but inaccessible". POS0f proves exhaustive endpoint×nested-field coverage, negative diagnostic cases and unfamiliar questions against migrated disposable DB with actually executed CI. Green storage-only, mocks, diagnostics-only source or a truncated 30-record field listing are **not** evidence that Supervisor can reach all permitted data.
+
+**POS0a scope remains docs-only.** Above is the owner-approved future architecture/acceptance, **not a current-code fix, production change, test pass or permission to edit files outside POS0a**.
+
+## Owner approval: universal existing-path architecture and AI retrieval is mandatory (November 7)
+
+**Owner-approved high-level direction (NOT final field-level sign-off or merge approval):** The owner previously approved the single-system architecture, then explicitly reserved final specification approval for a later review on November 7. The approved architecture is: one Toast Standard integration contract for **every** connected café, both existing `toast_raw_records` and `toast_raw_changes` tables, one existing 10-minute sync scheduler, current-object deduplication, retention of every available and permitted customer/employee/business field (notably customer names, email, phone, IDs and order/visit history), exclusion of card PAN/CVV/payment authentication credentials, partial-field tolerance, café-scoped access, and **one existing canonical/query path that makes *all retained fields* discoverable and actually retrievable by Supervisor**. This is approval of architecture and its testable behavior, **not an assertion that the final official per-field registry is complete, the implementation files are owned, or code may bypass AGENTS.md and proof gates**.
+
+**Most important owner acceptance criterion — stored data must be answerable, not merely ingested:** An endpoint/field is **not delivered** merely because its payload appears in `toast_raw_records`, an organized table, or a dictionary. It is delivered only when the existing real owner-scoped `describe_data` can discover its record type/field and the existing `query_data` can retrieve and aggregate it via the same current canonical records; a **normal one-agent Supervisor turn** must be able to select the tool and give a grounded answer, with correct source/field/date/freshness and honest missing information. No new ad hoc SQL tool, new sidecar AI index, duplicate raw store, shadow canonical query path, or hardcoded per-question workarounds. Existing specialized `get_staff`, `get_schedule`, `get_sales`, `get_profit` and UI facts should share the same source truth and definitions; row-level access for a café never confers access to another café.
+
+### Current code gap inventory — observable, not yet repaired
+
+1. **Non-order read source mismatch (P0):** Migrations `20261031000130_ai_reads_all_toast_fields.sql` and `20261104000151_toast_live_orders_archive.sql` define `toast_records_for`: the **order** branch is sourced from current `toast_raw_records`, while its **non-order** branch selects the newest success rows in `toast_raw_samples` (old diagnostic captures), **not** today's archive/staged current staff, jobs, time entries, cash, stock or kitchen objects. The current view `cv_toast_records` simply exposes this function. The broader `cv_staff` / `cv_labor_entries` canonical views expose selected *organized columns*, not necessarily every field in those stored objects. Thus **stored in current object** does not imply **AI can read every field**. POS0e must extend the same function to read current non-order objects and preserve order/child splitting; POS0b–d must make each family's permitted fields reach its existing keyed current-object writer first.
+2. **Field discovery is sampled, not exhaustive (P0):** `ai_toast_fields`, defined in migration 130, samples only the **latest 30** records of one record type for a **35-day lookback**, walks JSON up to **8 levels** and returns only **200 field paths**. It misses rare, older, deeply nested or simply never-sampled valid source fields, and fields lost during current redaction. `describe_data` currently calls it without a schema-backed alternative. POS0e must make the shared field catalog reliably reflect the **official allowed schema plus actually retained paths**, with per-field present/null/permission/stale status; do not create per-café bespoke tables or pretend that a missing sample proves a field is absent from the Standard API.
+3. **Bounded query must still finish the question (P0):** `lib/ai/agent/tools/dataQuery.ts` enforces max **100 rows** and `MAX_ROW_CHARS=6000`, with PostgreSQL `ai_query_view` also bounding serialized output to **6000 bytes**. This is a useful token and safety boundary, **not a reason to hide data**. Use existing `query_data` for supported database-side count, distinct, sum, min/max, averaging and grouping; add safe scoped traversal/cursor or targeted retrieval **within that same tool** where proven needed. Do not treat a truncated preview as the full dataset. `query_data` requires a valid café context and returns `canonical_reader_unavailable` when not registered; `invalid_query`, `column_not_allowed`, `source_read_failed`, `snapshotOnly`, and `empty` are different failure/missing paths and need observable follow-up and user-visible truth, not generic "I cannot see it" or invented zeros.
+4. **Some views explicitly describe old diagnostic data:** `dataQuery.ts` flags `cv_cash`, `cv_inventory`, `cv_kitchen`, and `cv_dining_options` as `snapshotOnly`. These currently cannot be certified as live just because an endpoint exists in the registry. Provide a current-source-backed view or existing reader extension as appropriate (same canonical foundation), and change the snapshot warning only after a real current-source test passes.
+5. **Provider fields are stripped before the reader can see them:** `lib/pos/toast/redact.ts` removes customer/guest names, email, phone, stable customer identifiers and some staff names. An AI query cannot recover these from pre-sanitized rows, even if the field was present in the API. After separate runtime approval, retain the owner's permitted CRM/staff fields in the *existing* current-object pipeline and keep only card credentials/secrets excluded. Missing `Check.customer` is a field gap, **never** failure to retain/query valid order fields.
+6. **Tools are registered, but registration is not proof of answers:** `lib/ai/agent/tools/index.ts` exposes `describe_data` and `query_data` through the one existing agent. Tests `dataQuery.registered.test.ts` and `dataQuery.sharedRead.test.ts` show tool routing/SQL usage, while `dataQuery.ownerParity.live.test.ts` contains a seeded-agent parity harness. They do **not** prove every official field is currently exposed or that actual café questions succeeded. POS0f requires actual executed disposable-DB/full-agent tests with CI link, not a passing mock-only test or a claim based on a view definition.
+
+**Mandatory downstream proof for POS0b–POS0f:** For every eligible field/endpoint, prove **official Toast response (including optional/null fields) → existing retained current object/true stable key → real change log only on change → shared current `toast_records_for` → `describe_data` lists it → `query_data` reads/filters/aggregates it → full Supervisor answer → parity with any applicable screen**, with actual no-customer, named-customer, stale, access-denied, partial, historical and changed-data scenarios. Seed realistic fixtures in a **disposable** migrated DB and include a real owner-scoped agent-loop acceptance question such as **"Which known customers visited most often this month, and what did they buy?"** Compare every answer against database truth; when Toast omits customer identity, preserve the sale and show that subset as **unidentified, not zero visits**. Verify staff shift/attendance, cash, stock, kitchen, and unfamiliar nested-field queries too. A partial query or field discovery failure may be diagnosed but never falsely reported as a fully accessible field. **POS0f cannot be integrated_proven without this exact end-to-end retrieval gate.**
+
+## Owner decision: one universal Toast integration contract, field-by-field partial tolerance (November 7)
+
+**Applies to every AI CAFE café/client, not one test restaurant.** Each Toast Standard API field and operation belongs in the **universal integration contract** even if one café's token has not been proven to have a required scope. A provider scope condition is a **runtime per-integration entitlement**, *not* justification to exclude a Standard API field from the shared schema, importer or AI field dictionary. Do not create a standalone customer integration, customer-specific archive, parallel staged operational truth, second current record for the same Toast source object, or second AI querying pathway. Reuse the existing Toast client, scheduler, current-object writer, typed facts and `toast_records_for` / `cv_toast_records` / canonical dictionary / `describe_data` / `query_data`. Existing staging may be a transient step of the same established import transaction, **never a competing durable source of truth**.
+
+**Owner-approved end-to-end requirements:**
+- Preserve **all API-returned, permitted business fields** and their precise source nesting, including guest/customer name, email, phone, stable customer/loyalty IDs, staff names/IDs, order/visit/purchase history, attendance, jobs, shifts, payments, menu, kitchen, stock, cash and configuration. AI and relevant café screens must be able to access the organized fields through the existing shared authorized path. This is **not** an instruction to manufacture unsupplied fields or assume that an optional `Check.customer` is non-null. Keep existing café-user authorization; **never leak another café's data**. Exclude card PAN, CVV/CVC, track data and payment authentication secrets.
+- **Every source object remains independently ingestible when any individual field is absent.** An absent customer object/name/phone/identifier must not fail, roll back, silently drop or discard an otherwise valid order or any other Toast object. Likewise missing staff metadata must not block time-entry, job, or sales ingestion. Save all valid present fields even where another field's permissions are missing. Supervisor should answer from present data, explicitly mark only the unsupported subquestion/field unavailable, and **never treat unknown as 0, empty string, anonymous known identity or a failed whole-café query**.
+- **Distinguish field states rather than silently erase values:** explicit Toast JSON `null`, property not included, endpoint/field scope unavailable, fetch error/timeout, no observed current source, and staleness are different conditions. In the raw stored payload, preserve the source's original `null` versus *absent property* semantics; expose source coverage/freshness alongside the existing reader rather than inventing fake Toast values. A partial or permission-reduced response must **not null-overwrite a previously verified value** without verified source deletion/correction; equally, a formerly seen value must not be asserted as fresh when the present scope no longer returns it. The implementation needs field-level merge/provenance tests before making any such preservation claim.
+- **No duplicate current-object storage.** `toast_raw_records` remains the latest payload for each verified provider object key and `toast_raw_changes` its separate real-field-change journal; the owner approved retaining **both**. Both belong to the same source-to-reader contract. The same 10-minute scheduler should coordinate all permitted Standard API families (modified-since or revision checking when the API supports them), with per-endpoint success/staleness and bounded retries. Do not add an independent 10-minute polling service or require a new customer table just to expose customer data.
+- **Evidence gate:** current `redact.ts` discards many customer/staff names and identifiers, so the new all-permitted-fields contract is **not implemented yet**. Current daily-gated `optionalSync.ts` is also **not** the requested 10-minute all-family coverage. The matrix shall state current/proposed behavior separately. POS0a changes documentation only; implementation and acceptance are separately scoped, and scope grants vary per connected café.
+
+**Acceptance scenarios for the follow-up implementation, not asserted passed today:** (1) order has no `Check.customer`, all other order fields persist and Supervisor computes sales; (2) source includes customer name/contact/ID under granted Standard scope, same order object retains them and authorized Supervisor can query them; (3) customer field omitted in a partial response does not erase a previously verified field or fabricate current provenance; (4) one café lacks a scope, other valid fields continue to ingest and a different café with the scope gets the fields through the *same* code/reader; (5) staff modified-time-entry data ingests through the established 10-minute scheduler even if optional roster fields are absent; (6) unchanged re-poll creates no extra raw object/history row; real change produces one current update and a field-delta event; (7) card PAN/CVV/credentials are absent and cross-café query access is denied.
+
+## Owner direction: retain useful identities; one 10-minute operational sync (November 7 clarification)
+
+**Owner-requested target architecture — recorded for review, NOT implemented or a grant to change runtime files.** This refines the earlier proposal without authorizing POS0b–POS0e code. Reconcile exact fields, permissible Toast scope, and data access in the completed owner-reviewed matrix before implementation.
+
+1. **Existing storage is not a new raw copy for every poll.** [Merged PR #341](https://github.com/killbill2792/aicafe/pull/341) / migration 140 enforces one current order payload per café/restaurant/order key and saves only actual field differences in `toast_raw_changes`; [#345](https://github.com/killbill2792/aicafe/pull/345) / migration 143 deduplicates staged staff, job, menu and attendance snapshots under their existing source keys. [#361](https://github.com/killbill2792/aicafe/pull/361) / migration 151 reuses the **same** order archive for today's closed orders. The canonical `cv_toast_records` is a **view** over `toast_records_for`, **not** a second raw-payload storage table. `toast_today_live` separately holds a bounded *sales summary*, not an alternate order object archive. Preserve all of these contracts. **No extra copy per repeated poll**; if unchanged, update freshness metadata only, not payload/history.
+2. **One existing 10-minute scheduler, with a 10-minute target for each permitted operational Standard GET family**, not only sales: employee/roster, jobs, shifts, time entries/clock-ins, orders/payments, cash, stock, kitchen, availability, and other authorized records must have an explicit `last_success_at`, source timestamp/change cursor where offered, bounded incremental poll, and visible stale/403/not-configured reason. The owner clarified that the existing 10-minute scheduler should also check every permitted Standard GET family every cycle; static configuration/menu sources may use a cheap version/metadata GET on the same tick and fetch full details when the source changes or a detail is needed. Verify Toast API quotas/entitlement/window semantics before setting per-endpoint request limits; never silently claim a promised 10-minute SLA if the provider forbids it. Current `vercel.json`: `/api/cron/today-live` every 15 minutes; `/api/cron/toast-sync` every 10 minutes, **but** `optionalSync.ts` currently gates roster/jobs/labor/void reasons by `local.today` (daily). Thus a tick every 10 minutes is **not** evidence of 10-minute staff freshness. POS0b–d must change the existing optional sync path after approval, not create a competing one.
+3. **Keep business-useful personal names and stable identities** when supplied and permitted by Toast: customers/guests, employees and their safe record identifiers, associated orders, visits, and permitted contact/loyalty fields. The owner needs Supervisor to answer authorized questions such as identifying regular customers; do **not** drop guest or staff names merely because they are personal. To join visits correctly, use a **stable café-scoped Toast customer/loyalty identifier when available**; identical names alone do **not** establish the same person, and absence of a stable key must remain an explicit gap. Existing `lib/pos/toast/redact.ts` currently strips many customer/employee names, email, phone, personal location, free-form content, and HMACs/omits customer GUIDs; this **current code does not match the new target**. Previously sanitized fields cannot be reconstructed from stored records without an authorized source re-fetch. Any redaction change requires separately owned runtime code and realistic security tests; POS0a does not change it.
+4. **Payment account authentication material must still be excluded.** The owner specifically wants card numbers removed. For the same purpose, full payment PAN, CVV/CVC, magnetic-stripe/track data, and sensitive payment authentication credentials/tokens must remain out of durable business payloads and AI context. Do not conflate safe business payment ID/amount/type/fee with a reusable payment credential. Independently, preserve the existing café-level authorization boundary: **only a Supervisor acting for an authenticated, authorized café user may read that café's names and permitted personal fields**; never allow cross-café access. This is access enforcement, not a blanket erasure of permitted personal names. Verify compliance with provider and applicable privacy obligations before final field-by-field signoff.
+
+**Impact on this matrix:** all existing field classifications that say `DROP`, `HMAC`, or `not allowed` because of `redact.ts` describe **current implemented behavior / October sanitized diagnostic input**, not the owner's requested target. For the signoff sheet add separate **current behavior** and **proposed retained/access** treatment per field. This revision does **not** claim that name/loyalty/contact source fields have already been captured, that Toast supplies a stable customer ID, or that any 10-minute non-order job has been implemented. Both require executable source→storage→shared-reader proof before the later code PRs.
+
+### Owner-approved storage decision and Standard guest-data scope (November 7)
+
+**Owner decision — keep both physical tables.** Retain `toast_raw_records` as the **one current complete Toast object** and `toast_raw_changes` as the **separate field-level change journal**. One sync path and the existing transaction-controlled writer connect them. No nested in-row JSON history migration, no duplicated full snapshots and no replacement data store. This decision resolves the earlier open storage-design tradeoff; it **does not** approve any production code or migration in documentation-only POS0a.
+
+**`guest.pi:read` is a Toast *Standard API scope*, not an out-of-scope feature.** See [Toast Standard API scopes](https://doc.toasttab.com/doc/devguide/devApiAccessScopes.html) and [orders GET required scopes](https://doc.toasttab.com/doc/devguide/apiOrdersGetScopes.html): `orders:read` permits orders excluding guest information, whereas `guest.pi:read` additionally permits the `Check.customer` guest name/contact data and curbside pickup information. `delivery_info.address:read` is an additional Standard scope for delivery addresses. **Include every such field in the complete official Standard schema inventory** and mark whether the integration actually has each independently granted scope. Not having verified the grant means `PERMISSION UNVERIFIED`, not `OUT OF SCOPE`. The [Toast CRM integration guide](https://doc.toasttab.com/doc/cookbook/apiHowToBuildACrmGuestEngagementIntegration.html) explicitly uses customer names, phone/email and order history, and cautions that `Customer` is null for in-store orders. Do not promise names for records where Toast does not provide them. Current `redact.ts` separately strips names and contact fields **even if Toast returns them**; this is a **local implemented loss**, not a provider Standard API exclusion. The owner requested a separately approved future correction to preserve permitted identity/contact data for café-scoped Supervisor CRM queries while excluding card PAN, CVV and payment credentials.
+
+### Owner's single-sync and history-table question (November 7 — clarification, not runtime approval)
+
+- **One refresh schedule does not require a single physical table.** Current `toast_raw_records` is the one complete current-value object; `toast_raw_changes` is a small event/delta journal, not a second complete object snapshot. In migration 151, `toast_archive_order` computes `toast_json_diff` and inserts a `changes` JSON array with `path`, `before`, `after` and `changed_at` **in the same PostgreSQL function and transaction** as its current-payload update. Migration 143 applies a comparable staged-object rule. In `cv_toast_records`, the `view` is a read projection only. An unchanged provider record is not another full raw copy or an event. The current schema retains full **current payload** and separate **changed portions**, intentionally.
+- **History storage decision:** The owner explicitly chose to **keep both existing tables** on November 7. A growing `change_history` JSON array inside `toast_raw_records` would rewrite the row and make audit queries costly; the owner did not select that option. Retain the existing one-current-record plus separate-delta-journal architecture.
+- **One existing scheduler / one source-to-reader path:** `vercel.json` invokes `/api/cron/toast-sync` every 10 minutes, but the current `TICK_MS=240000` per invocation and `optionalSync.ts` daily `local.today` gates mean many staff/config families are not polled on each tick. The later implementation should remove *daily skip conditions* for permitted operational fetches, keep each source in the same scheduler phase, use a durable per-endpoint continuation/cursor and attempt each eligible **collection/source family** every 10-minute cycle. Detail-by-ID operations should fetch changed/relevant IDs instead of blindly requesting every existing object each tick. Use each endpoint's modification/version checks when supported; `adapter.ts` already offers `fetchAttendanceChanges` using `modifiedStartDate`/`modifiedEndDate`, but only the daily-gated block calls it today. Empty/403/no access/429/unattempted must stay distinct from verified success and from zero.
+- **Shared time, not manufactured timestamps:** every tick can have a shared `sync_started_at` correlation, but each endpoint/object keeps its **actual** `last_success_at`, provider `modified_at`, `last_seen_at` and actual `changed_at`. Do **not** stamp a field change on an unchanged poll or pretend all API responses arrived simultaneously. If a provider is slow/rate-limited, report the stale source and retry without duplicating storage.
+- **Toast limits:** official [rate limiting](https://doc.toasttab.com/doc/devguide/apiRateLimiting.html) currently notes global/default 20 requests/second and 10,000 per 15 minutes, with endpoint constraints including one `GET /menus` request/second/location and `/ordersBulk` constraints, potentially stricter for multi-location integrations. Treat 10 minutes as an owner target subject to proven throughput and recorded exceptions, not a promise that all remote calls finish in the same scheduler invocation.
+- **Keep customer and employee data:** official [Orders scopes](https://doc.toasttab.com/doc/devguide/apiOrdersGetScopes.html) specify `guest.pi:read` for `Check.customer` and `delivery_info.address:read` for delivery details. The owner requests retaining all **permitted** guest/customer names, phone, email, customer GUID/identifiers, loyalty associations, visits/orders, and employee identity; no blanket personal-data redaction. The existing `redact.ts` does **not** implement that request. Still exclude **payment card PAN/CVV/track data and payment authentication credentials**, and preserve café/role-scoped access so identity data is only supplied to authorized users/queries. Name-only matching is insufficient to prove repeat visits; rely on Toast's stable customer identity when returned under the actual granted scopes.
+- **Approval boundary:** this is the documented *target* and tradeoff; this POS0a PR owns only documentation. No schema/table merging, cron change, redactor change, provider fetch, or live data processing was performed or approved by editing this matrix. The later implementation file list, migration choice if any, and exact retained fields still require explicit owner sign-off and executable proof.
+
+## Evidence classes and precision
+
+- **Official current specification (updated Nov 8):** [trusted read-only capture #42529761170](https://github.com/killbill2792/aicafe/actions/runs/42529761170) downloaded Toast-owned Swagger YAML for 12 Standard families, pinned every source URL/version/raw SHA in `docs/plans/toast-openapi-spec-snapshot.json`, and indexed 74 GET operations / 2,320 nested 2xx response-field rows with zero unresolved refs. Official **definition acquisition is evidenced**, and stock/packaging Swagger-versus-gateway prefixes are cross-referenced with official curl paths; actual café grants, source null/omission status and every source-to-current-object/reader contract remain **UNVERIFIED**. Do not mark A1/A2 end-to-end passed.
+- **Code:** Registry is explicitly enumerated but its comment counts are stale. This checked-out main registry has `102` rows: `76` candidate Standard/non-Analytics/non-V3 GET records (including partner rows requiring entitlement review), `19` Analytics rows (9 POST requests plus GET polling/results), `2` Menus V3 excluded rows, and `5` no-GET family sentinels. **These are registry counts, not a claim about every current official endpoint**.
+- **Café-specific permission:** Two credential rows; one verified record has `labor=true`, `menus=true`, `config=true`; one disconnected record has no scope flags. Those coarse application flags are **not a proof of all Toast scopes**. All other family scopes and field grants remain **not tested/unknown today**, even where an October HTTP 200 exists. Avoid copying business identifiers or secrets into docs.
+- **Historical diagnostic:** `toast_raw_samples` 768 rows, 104 distinct recorded endpoint names (including excluded classes and aliases), all observed from October 28, 2026 (05:51–17:08 UTC). `65` historical endpoint names have non-empty redacted `field_paths` (including one missing from this registry); `1629` endpoint-field pairs belong to candidate Standard registry operations. This is NOT a complete official field schema. Capture workflow `.github/workflows/toast-raw-capture-daily.yml` is opt-in using `TOAST_DAILY_CAPTURE_ENABLED`; present GitHub variable/production execution NOT verified.
+- **Current production objects:** `toast_raw_records` order=20,327 (last_seen 2026-11-07 04:45Z); employee=34 (Nov 6 12:20Z); job=7 (Nov 6 08:00Z); menu_item=113 (Nov 6 08:00Z); price_version=113 (Oct 29); time_entry=398 (Nov 6 13:01Z); void=257 (Nov 6 19:37Z). `toast_raw_changes` 1,319 rows: 1,275 order + 44 time_entry; this does not prove revision history for other entities.
+- **Sync diagnostics:** `toast_sync_runs` 987 completed / 1 failed (988 total); latest run started Nov 6 18:22Z. `toast_sync_health` recent time-entry, menu and schedule timestamps on Nov 6, but `last_order_fetch_at` is null there; order current-object freshness is separate evidence. `toast_optional_sync_state` menu/roster/attendance copy timestamps on Nov 6. They prove selected syncs ran, **not** every Toast field was stored.
+- **Reader mismatch:** `lib/ai/agent/tools/dataQuery.ts` explicitly marks `cv_cash`, `cv_inventory`, `cv_kitchen`, and `cv_dining_options` `snapshotOnly`, as they read October `toast_raw_samples`. The `toast_records_for` order branch reads current archived orders (actual/provisional), while its non-order branch reads latest historical diagnostic samples. Staff canonical views read organized staff data, not every original labor JSON path.
+
+**Official schema version correction:** The current [Orders API overview](https://doc.toasttab.com/openapi/orders/overview/) displays **2.17.0**, not 2.16.0. Official Orders YAML 2.17.0 and its raw SHA-256 are now pinned in the versioned source snapshot; this alone cannot certify a café's permissions, current data or tool answers.
+
+### Official family version and grant reference
+
+Source for Standard scope table: [Toast Standard API access scopes](https://doc.toasttab.com/doc/devguide/devApiAccessScopes.html). Source for GET vs other methods and integration class: [Toast API overview](https://doc.toasttab.com/doc/devguide/apiOverview.html). Downloaded official YAML versions and raw SHA-256 are pinned by family in the existing snapshot (source run #42529761170); a future drift test must compare newly downloaded bytes/schema, and actual per-café access remains unverified.
+
+| Registry family | Official YAML version (raw SHA pinned in snapshot) | Official OpenAPI link | Standard/other scope to verify per café |
+|---|---|---|---|
+| `orders` | `2.17.0` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/orders/overview/) | orders:read |
+| `menus` | `2.7.0` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/menus/overview/) | menus:read (V2 only) |
+| `config` | `2.5.0` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/configuration/overview/) | config:read |
+| `labor` | `1.9.0` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/labor/overview/) | labor:read; labor.employees:read for employees (must verify actual granted scopes) |
+| `cashmgmt` | `1.1.0` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/cashmanagement/overview/) | cashmgmt:read (not observed as granted current café scope) |
+| `stock` | `1.0.0` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/stock/overview/) | stock:read (not verified current café scope) |
+| `kitchen` | `1.0.2` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/kitchen/overview/) | kitchen:read (not verified current café scope) |
+| `partners` | `1.0.2` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/partners/overview/) | Partner entitlement / not on Standard scope table: NOT assumed Standard |
+| `packaging` | `1.0.0` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/packaging/overview/) | packaging:read (not verified current café scope) |
+| `restaurant-availability` | `1.0.1` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/rx.availability.service/overview/) | restaurants:read (not verified current café scope) |
+| `ordermgmt-config` | `1.0.1` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/ordermgmt.configuration/overview/) | digital_schedule:read (not verified current café scope) |
+| `device-details` | `1.0.0` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/devicedetails/overview/) | device-details.info:read (not verified current café scope) |
+| `restaurants` | `1.0.0` (official YAML downloaded; SHA pinned in snapshot) | [Toast overview](https://doc.toasttab.com/openapi/restaurants/overview/) | restaurants:read (not verified current café scope) |
+| `menus/v3` | Excluded; Menus V3 has separate access | [Menus V3 overview](https://doc.toasttab.com/openapi/menusv3/overview/) | Do not count V3 HTTP 403 as Standard failure |
+| `era/*` | Excluded; Analytics separate authorization | [Analytics overview](https://doc.toasttab.com/openapi/analytics/overview/) | Not configured in October; independent Analytics contract |
+| `authentication`, `creditcards`, `giftcards`, `loyalty`, `tender` | No-GET sentinels | [API reference](https://doc.toasttab.com/openapi/) | No Standard GET coverage required where no GET exists |
+
+## Field inheritance contract: each field row below inherits these exact source, destination and consumer mappings
+
+These are **proposed family contracts**, not claims of complete source coverage or an approved implementation. In the field matrix, the path is the historical sanitized JSON property; its identity belongs to the closest provider object, **never** to an import-run ID. A nested list without a guaranteed GUID/version is **unresolved**, not implicitly indexed or deduplicated.
+
+| Family | Current/required scope | Canonical identity | Current storage owner/key | Existing job/source path | Observed cadence | Current reader/view | Supervisor query field | Screen consumer | Gap/owning follow-up |
+|---|---|---|---|---|---|---|---|---|---|
+| `orders` | orders:read | order.guid; nested check.guid / selection.guid / payment.guid | toast_raw_records (`order`), key (business_id,restaurant_guid,entity,entity_guid) | 15-minute live closed orders; post-close Toast day import; standalone detail GET not scheduled | 15 min provisional; 5 AM final / import retries | toast_records_for → cv_toast_records; cv_orders,cv_payments and shared metrics | query_data: data.<field> scoped to order/check/item/payment; get_sales, get_profit | Sales, Home, Money, order drill-down | POS0a preserve working order archive; fields dropped by privacy filter are excluded, child-specific full parity unverified |
+| `menus` | menus:read (V2 only) | menu item GUID, menu group GUID; nested structure IDs if stable | toast_raw_records (`menu_item`, `price_version`) plus toast_catalog_facts; other menu fields not persisted | optionalSync → published menu metadata → copyToastPublishedMenu | Daily / publish lastUpdated; not historical snapshot for all menu fields | cv_menu; cv_toast_records non-order path currently October diagnostic | query_data: cv_menu; data.<field> via cv_toast_records currently snapshot only | Menu, pricing, recipe/cost | POS0d full V2 field coverage/publish history and reader parity |
+| `config` | config:read | per-config object GUID; detail id requires a GUID | toast_void_reason_directory only for void reasons; other configuration families: no proven current object | optionalSync refreshes voidReasons; raw sample diagnostic covers collection/detail | Daily voidReasons; other config only Oct 28 diagnostic | cv_dining_options and cv_toast_records from toast_raw_samples (historical) | query_data: data.<field> snapshot only; most config absent canonical dictionary | Menu, setup, Money as applicable | POS0d implement allowed current objects using existing writer; price/config identity and all fields unproven |
+| `labor` | labor:read; labor.employees:read for employees (must verify actual granted scopes) | employee GUID; job GUID; shift GUID; timeEntry GUID | toast_raw_records (`employee`,`job`,`time_entry`) for staged entities; pos_scheduled_shifts; toast_labor_entries; employee/job directory | optionalSync → copyToastStaff / copyToastAttendance / syncToastLaborReadOnly / schedule window | Daily roster/jobs + prior-day attendance + 7-day modifications + schedule window | cv_staff,cv_labor_entries,cv_shifts; cv_toast_records still uses diagnostic non-order sample | query_data on labor canonical views; get_team/get_labor/get_schedule from shared reads | Staff, payroll, schedule | POS0b reduced mapping loses unprojected source fields, schedule stored separately; full source-to-reader round trip NOT proven |
+| `cashmgmt` | cashmgmt:read (not observed as granted current café scope) | cash entry GUID / deposit GUID, if supplied; verify API identity | No current toast_raw_records cash object; toast_raw_samples diagnostic only | rawSample capture only (October); no normal current sync | No running cadence proven; planned bounded operational polling | cv_cash from October toast_raw_samples | query_data cv_cash snapshotOnly; no current data.<field> guarantee | Money / cash only where explicitly wired | POS0c current canonical cash object, bounded cadence and no phantom zero |
+| `stock` | stock:read (not verified current café scope) | inventory item and location identity: spec inspection needed | No current toast_raw_records stock object; toast_raw_samples diagnostic only | rawSample capture only | No running cadence proven; planned bounded operational polling | cv_inventory from October toast_raw_samples | query_data cv_inventory snapshotOnly | Inventory, Supplies | POS0c dynamic stock identity/version, no null → zero |
+| `kitchen` | kitchen:read (not verified current café scope) | item fulfillment event GUID or composite identity requires spec validation; prep station GUID | No current kitchen raw object; toast_raw_samples diagnostic only | rawSample capture only; order selection status from existing order path is separate | No running cadence proven; planned bounded polling for permitted endpoints | cv_kitchen from October toast_raw_samples; order selection fulfillment_status independent | query_data cv_kitchen snapshotOnly; no current KDS timing claims | Operations/kitchen only if consumer exists; otherwise none proven | POS0c treat 204 as no-content (NOT zero), do not infer station/fulfilled times |
+| `partners` | Partner entitlement / not on Standard scope table: NOT assumed Standard | connected restaurant GUID, if supplied | No proven current partner object; historical diagnostic only | rawSample capture only | Not scheduled beyond historical diagnostic | No proven current canonical reader | query_data no current object guarantee | No verified screen consumer | POS0d classify access type with official entitlement |
+| `packaging` | packaging:read (not verified current café scope) | restaurant + configuration version; verify stable key | No proven current packaging object | rawSample capture only | No current cadence proven; proposed daily setup | cv_toast_records diagnostic only | query_data data.<field> snapshot only | Menu/settings only if actual consumer verified | POS0d stable setup identity and full reader |
+| `restaurant-availability` | restaurants:read (not verified current café scope) | restaurant GUID + status timestamp/version if supplied | No proven current availability object | rawSample capture only | No current cadence proven; proposed bounded operational polling | cv_toast_records diagnostic only | query_data data.<field> snapshot only | Operations / ordering availability not proven | POS0c current availability semantics and freshness |
+| `ordermgmt-config` | digital_schedule:read (not verified current café scope) | restaurant GUID + published schedule/version | No proven current ordering-schedule object | rawSample capture only | No current cadence proven; proposed daily / modification | cv_toast_records diagnostic only | query_data data.<field> snapshot only | Operations / menu availability not proven | POS0c/POS0d define schedule key and null semantics |
+| `device-details` | device-details.info:read (not verified current café scope) | device identifier may be private; prefer privacy-safe business key after spec review | No proven current device object | rawSample capture only | No current cadence proven; proposed stable setup daily | cv_toast_records diagnostic only | query_data data.<field> snapshot only | No verified screen consumer | POS0d confirm device access, identifier redaction |
+| `restaurants` | restaurants:read (not verified current café scope) | restaurant GUID / management group GUID requires validated entitlement | No current restaurant-details object proven | rawSample capture only | No current cadence proven; proposed daily | cv_toast_records diagnostic only | query_data data.<field> snapshot only | Setup/settings, no verified shared live field consumer | POS0d restaurant setup; group detail needs managementGroupGUID |
+
+**Current-code privacy policy (NOT the approved target; see owner direction above):** `lib/pos/toast/redact.ts` is the existing single pre-save policy: drop guest/contact addresses, email, phone, payment credentials, secrets, unstructured notes and identifying names in personal contexts; HMAC sensitive person/customer/card identifiers **only when a configured hash key is present**, otherwise omit; preserve actual non-sensitive business fields. A field suppressed under the *currently deployed policy* is **not presently available to AI**. This is an existing limitation, **not** the owner-requested retention plan. A future change needs source authority, field-level signoff, scoped access and tests. Staff identity must follow authenticated café roles and established directory/RLS, not be released wholesale. The field-level privacy column is a **review classification**, not an assertion that current objects pass a complete privacy audit. Real examples: `Customer.email` DROP, `DeliveryInfo.address` DROP, card PAN/CVV/token DROP, `Customer.guid` hash/omit, `Order.guid` retain, `TimeEntry.guid` retain subject to café permission.
+
+## Operation-by-operation status (registry candidates only)
+
+Definitions: **historical success** = at least one non-placeholder October 2xx row (including zero items); **historical HTTP 204** = no content, not zero inventory/work; **historical HTTP 403** = authorization denied in that October attempt; **missing_resource_guid** = prerequisite ID absent, not proof that resource count is zero; **not configured** = separate service credentials absent; **not tested** = no qualifying diagnostic evidence. A historical success does NOT establish today's granted scopes. Each link is the corresponding official operation page; spec version display comes from family overview. An ID-detail operation is a **distinct GET** but shares a source collection, not a separate ongoing sync by assumption.
+
+| Operation / resource | Official operation link + family version | Scope/ID prerequisite | Required API scope | October outcome | Last diagnostic | Owning family | Current proof |
+|---|---|---|---|---|---|---|---|
+| `orders/v2/ordersBulk` | [official op](https://doc.toasttab.com/openapi/orders/operation/ordersBulkGet/) / 2.17.0 | date | orders:read | historical success | 2026-10-28 | orders | **not live-proven** except separately verified current-family sync |
+| `orders/v2/payments` | [official op](https://doc.toasttab.com/openapi/orders/operation/paymentsGet/) / 2.17.0 | date | orders:read | historical success | 2026-10-28 | orders | **not live-proven** except separately verified current-family sync |
+| `orders/v2/orders` | [official op](https://doc.toasttab.com/openapi/orders/operation/ordersGet/) / 2.17.0 | date | orders:read | historical success | 2026-10-28 | orders | **not live-proven** except separately verified current-family sync |
+| `menus/v2/menus` | [official op](https://doc.toasttab.com/openapi/menus/operation/menusGet/) / 2.7.0 | none | menus:read (V2 only) | historical success | 2026-10-28 | menus | **not live-proven** except separately verified current-family sync |
+| `menus/v2/metadata` | [official op](https://doc.toasttab.com/openapi/menus/operation/metadataGet/) / 2.7.0 | none | menus:read (V2 only) | historical success | 2026-10-28 | menus | **not live-proven** except separately verified current-family sync |
+| `config/v2/alternatePaymentTypes` | [official op](https://doc.toasttab.com/openapi/configuration/operation/alternatePaymentTypesGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/breakTypes` | [official op](https://doc.toasttab.com/openapi/configuration/operation/breakTypesGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/cashDrawers` | [official op](https://doc.toasttab.com/openapi/configuration/operation/cashDrawersGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/diningOptions` | [official op](https://doc.toasttab.com/openapi/configuration/operation/diningOptionsGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/discounts` | [official op](https://doc.toasttab.com/openapi/configuration/operation/discountsGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/menuGroups` | [official op](https://doc.toasttab.com/openapi/configuration/operation/menuGroupsGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/menuItems` | [official op](https://doc.toasttab.com/openapi/configuration/operation/menuItemsGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/menuOptionGroups` | [official op](https://doc.toasttab.com/openapi/configuration/operation/menuOptionGroupsGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/menus` | [official op](https://doc.toasttab.com/openapi/configuration/operation/menusGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/noSaleReasons` | [official op](https://doc.toasttab.com/openapi/configuration/operation/noSaleReasonsGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/payoutReasons` | [official op](https://doc.toasttab.com/openapi/configuration/operation/payoutReasonsGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/preModifierGroups` | [official op](https://doc.toasttab.com/openapi/configuration/operation/preModifierGroupsGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/preModifiers` | [official op](https://doc.toasttab.com/openapi/configuration/operation/preModifiersGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/priceGroups` | [official op](https://doc.toasttab.com/openapi/configuration/operation/priceGroupsGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/printers` | [official op](https://doc.toasttab.com/openapi/configuration/operation/printersGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/restaurantServices` | [official op](https://doc.toasttab.com/openapi/configuration/operation/restaurantServicesGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/revenueCenters` | [official op](https://doc.toasttab.com/openapi/configuration/operation/revenueCentersGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/salesCategories` | [official op](https://doc.toasttab.com/openapi/configuration/operation/salesCategoriesGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/serviceAreas` | [official op](https://doc.toasttab.com/openapi/configuration/operation/serviceAreasGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/serviceCharges` | [official op](https://doc.toasttab.com/openapi/configuration/operation/serviceChargesGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/tables` | [official op](https://doc.toasttab.com/openapi/configuration/operation/tablesGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/taxRates` | [official op](https://doc.toasttab.com/openapi/configuration/operation/taxRatesGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/tipWithholding` | [official op](https://doc.toasttab.com/openapi/configuration/operation/tipWithholdingGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/voidReasons` | [official op](https://doc.toasttab.com/openapi/configuration/operation/voidReasonsGet/) / 2.5.0 | none | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `labor/v1/employees` | [official op](https://doc.toasttab.com/openapi/labor/operation/employeesGet/) / 1.9.0 | none | labor:read; labor.employees:read for employees (must verify actual granted scopes) | historical success | 2026-10-28 | labor | **not live-proven** except separately verified current-family sync |
+| `labor/v1/jobs` | [official op](https://doc.toasttab.com/openapi/labor/operation/jobsGet/) / 1.9.0 | none | labor:read; labor.employees:read for employees (must verify actual granted scopes) | historical success | 2026-10-28 | labor | **not live-proven** except separately verified current-family sync |
+| `labor/v1/shifts` | [official op](https://doc.toasttab.com/openapi/labor/operation/shiftsGet/) / 1.9.0 | window | labor:read; labor.employees:read for employees (must verify actual granted scopes) | historical success | 2026-10-28 | labor | **not live-proven** except separately verified current-family sync |
+| `labor/v1/timeEntries` | [official op](https://doc.toasttab.com/openapi/labor/operation/timeEntriesGet/) / 1.9.0 | window | labor:read; labor.employees:read for employees (must verify actual granted scopes) | historical success | 2026-10-28 | labor | **not live-proven** except separately verified current-family sync |
+| `cashmgmt/v1/deposits` | [official op](https://doc.toasttab.com/openapi/cashmanagement/operation/depositsGet/) / 1.1.0 | date | cashmgmt:read (not observed as granted current café scope) | historical success | 2026-10-28 | cashmgmt | **not live-proven** except separately verified current-family sync |
+| `cashmgmt/v1/entries` | [official op](https://doc.toasttab.com/openapi/cashmanagement/operation/entriesGet/) / 1.1.0 | date | cashmgmt:read (not observed as granted current café scope) | historical success | 2026-10-28 | cashmgmt | **not live-proven** except separately verified current-family sync |
+| `stock/v1/inventory` | [official op](https://doc.toasttab.com/openapi/stock/operation/getInventory/) / 1.0.0 | none | stock:read (not verified current café scope) | historical success | 2026-10-28 | stock | **not live-proven** except separately verified current-family sync |
+| `kitchen/v1/export/itemFulfillments` | [official op](https://doc.toasttab.com/openapi/kitchen/operation/itemFulfillmentsGet/) / 1.0.2 | date | kitchen:read (not verified current café scope) | historical HTTP 204 | 2026-10-28 | kitchen | **not live-proven** except separately verified current-family sync |
+| `kitchen/v1/published/prepStations` | [official op](https://doc.toasttab.com/openapi/kitchen/operation/prepStationsGet/) / 1.0.2 | none | kitchen:read (not verified current café scope) | historical success | 2026-10-28 | kitchen | **not live-proven** except separately verified current-family sync |
+| `partners/v1/connectedRestaurants` | [official op](https://doc.toasttab.com/openapi/partners/operation/connectedRestaurantsGet/) / 1.0.2 | none | Partner entitlement / not on Standard scope table: NOT assumed Standard | historical success | 2026-10-28 | partners | **not live-proven** except separately verified current-family sync |
+| `partners/v1/restaurants` | [official op](https://doc.toasttab.com/openapi/partners/operation/restaurantsGet/) / 1.0.2 | none | Partner entitlement / not on Standard scope table: NOT assumed Standard | historical success | 2026-10-28 | partners | **not live-proven** except separately verified current-family sync |
+| `packaging/v1/published/packagingConfig` | [official op](https://doc.toasttab.com/openapi/packaging/operation/getPackagingConfig/) / 1.0.0 | none | packaging:read (not verified current café scope) | historical success | 2026-10-28 | packaging | **not live-proven** except separately verified current-family sync |
+| `restaurant-availability/v1/availability` | [official op](https://doc.toasttab.com/openapi/rx.availability.service/operation/availabilityGet/) / 1.0.1 | none | restaurants:read (not verified current café scope) | historical success | 2026-10-28 | restaurant-availability | **not live-proven** except separately verified current-family sync |
+| `ordermgmt-config/v1/published/orderingSchedule` | [official op](https://doc.toasttab.com/openapi/ordermgmt.configuration/operation/orderingScheduleGet/) / 1.0.1 | none | digital_schedule:read (not verified current café scope) | historical success | 2026-10-28 | ordermgmt-config | **not live-proven** except separately verified current-family sync |
+| `device-details/v1/device-info` | [official op](https://doc.toasttab.com/openapi/devicedetails/operation/getDeviceInfo/) / 1.0.0 | none | device-details.info:read (not verified current café scope) | historical success | 2026-10-28 | device-details | **not live-proven** except separately verified current-family sync |
+| `restaurants/v1/restaurants/{restaurantGUID}` | [official op](https://doc.toasttab.com/openapi/restaurants/operation/restaurantsRestaurantGuidGet/) / 1.0.0 | restaurant | restaurants:read (not verified current café scope) | historical success | 2026-10-28 | restaurants | **not live-proven** except separately verified current-family sync |
+| `orders/v2/payments/{guid}` | [official op](https://doc.toasttab.com/openapi/orders/operation/paymentsGuidGet/) / 2.17.0 | id ← `orders/v2/payments` | orders:read | historical success | 2026-10-28 | orders | **not live-proven** except separately verified current-family sync |
+| `orders/v2/orders/{guid}` | [official op](https://doc.toasttab.com/openapi/orders/operation/ordersGuidGet/) / 2.17.0 | id ← `orders/v2/ordersBulk` | orders:read | historical success | 2026-10-28 | orders | **not live-proven** except separately verified current-family sync |
+| `config/v2/alternatePaymentTypes/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/alternatePaymentTypesGuidGet/) / 2.5.0 | id ← `config/v2/alternatePaymentTypes` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/breakTypes/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/breakTypesGuidGet/) / 2.5.0 | id ← `config/v2/breakTypes` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/cashDrawers/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/cashDrawersGuidGet/) / 2.5.0 | id ← `config/v2/cashDrawers` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/diningOptions/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/diningOptionsGuidGet/) / 2.5.0 | id ← `config/v2/diningOptions` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/discounts/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/discountsGuidGet/) / 2.5.0 | id ← `config/v2/discounts` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/menuGroups/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/menuGroupsGuidGet/) / 2.5.0 | id ← `config/v2/menuGroups` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/menuItems/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/menuItemsGuidGet/) / 2.5.0 | id ← `config/v2/menuItems` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/menuOptionGroups/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/menuOptionGroupsGuidGet/) / 2.5.0 | id ← `config/v2/menuOptionGroups` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/menus/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/menusGuidGet/) / 2.5.0 | id ← `config/v2/menus` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/noSaleReasons/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/noSaleReasonsGuidGet/) / 2.5.0 | id ← `config/v2/noSaleReasons` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/payoutReasons/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/payoutReasonsGuidGet/) / 2.5.0 | id ← `config/v2/payoutReasons` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/preModifierGroups/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/preModifierGroupsGuidGet/) / 2.5.0 | id ← `config/v2/preModifierGroups` | config:read | missing_resource_guid | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/preModifiers/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/preModifiersGuidGet/) / 2.5.0 | id ← `config/v2/preModifiers` | config:read | missing_resource_guid | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/priceGroups/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/priceGroupsGuidGet/) / 2.5.0 | id ← `config/v2/priceGroups` | config:read | missing_resource_guid | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/printers/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/printersGuidGet/) / 2.5.0 | id ← `config/v2/printers` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/restaurantServices/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/restaurantServicesGuidGet/) / 2.5.0 | id ← `config/v2/restaurantServices` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/revenueCenters/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/revenueCentersGuidGet/) / 2.5.0 | id ← `config/v2/revenueCenters` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/salesCategories/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/salesCategoriesGuidGet/) / 2.5.0 | id ← `config/v2/salesCategories` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/serviceAreas/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/serviceAreasGuidGet/) / 2.5.0 | id ← `config/v2/serviceAreas` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/serviceCharges/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/serviceChargesGuidGet/) / 2.5.0 | id ← `config/v2/serviceCharges` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/tables/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/tablesGuidGet/) / 2.5.0 | id ← `config/v2/tables` | config:read | missing_resource_guid | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/taxRates/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/taxRatesGuidGet/) / 2.5.0 | id ← `config/v2/taxRates` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `config/v2/voidReasons/{guid}` | [official op](https://doc.toasttab.com/openapi/configuration/operation/voidReasonsGuidGet/) / 2.5.0 | id ← `config/v2/voidReasons` | config:read | historical success | 2026-10-28 | config | **not live-proven** except separately verified current-family sync |
+| `labor/v1/employees/{employeeId}` | [official op](https://doc.toasttab.com/openapi/labor/operation/employeesEmployeeIdGet/) / 1.9.0 | id ← `labor/v1/employees` | labor:read; labor.employees:read for employees (must verify actual granted scopes) | historical success | 2026-10-28 | labor | **not live-proven** except separately verified current-family sync |
+| `labor/v1/jobs/{jobId}` | [official op](https://doc.toasttab.com/openapi/labor/operation/jobsJobIdGet/) / 1.9.0 | id ← `labor/v1/jobs` | labor:read; labor.employees:read for employees (must verify actual granted scopes) | historical success | 2026-10-28 | labor | **not live-proven** except separately verified current-family sync |
+| `labor/v1/shifts/{shiftId}` | [official op](https://doc.toasttab.com/openapi/labor/operation/shiftsShiftIdGet/) / 1.9.0 | id ← `labor/v1/shifts` | labor:read; labor.employees:read for employees (must verify actual granted scopes) | historical success | 2026-10-28 | labor | **not live-proven** except separately verified current-family sync |
+| `labor/v1/timeEntries/{timeEntryId}` | [official op](https://doc.toasttab.com/openapi/labor/operation/timeEntriesTimeEntryIdGet/) / 1.9.0 | id ← `labor/v1/timeEntries` | labor:read; labor.employees:read for employees (must verify actual granted scopes) | historical success | 2026-10-28 | labor | **not live-proven** except separately verified current-family sync |
+| `kitchen/v1/published/prepStations/{guid}` | [official op](https://doc.toasttab.com/openapi/kitchen/operation/prepStationsGuidGet/) / 1.0.2 | id ← `kitchen/v1/published/prepStations` | kitchen:read (not verified current café scope) | historical success | 2026-10-28 | kitchen | **not live-proven** except separately verified current-family sync |
+| `restaurants/v1/groups/{managementGroupGUID}/restaurants` | [official op](https://doc.toasttab.com/openapi/restaurants/operation/groupsManagementGroupGuidRestaurantsGet/) / 1.0.0 | id ← `__management_group__` | restaurants:read (not verified current café scope) | historical success | 2026-10-28 | restaurants | **not live-proven** except separately verified current-family sync |
+
+**Historical endpoint names not present in the checked-in registry:** `restaurants/v1/restaurants`. These need official alias/GET/spec review; they are not silently counted as covered.
+
+
+### Excluded/non-Standard/no-GET classifications
+
+| Registry record | Reason | October observation | Official source |
+|---|---|---|---|
+| `menus/v3/menus` | Menus V3 excluded from Standard menus:read | historical HTTP 403; other error | [source](https://doc.toasttab.com/openapi/menusv3/operation/menusGet/) |
+| `menus/v3/metadata` | Menus V3 excluded from Standard menus:read | historical HTTP 403; other error | [source](https://doc.toasttab.com/openapi/menusv3/operation/metadataGet/) |
+| `era/v1/metrics/day` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/postMetricsReportingDataSpecificTimeRangeRequest/) |
+| `era/v1/metrics` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/postMetricsReportingDataCustomTimeRangeRequest/) |
+| `era/v1/check/day` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/postCheckReportingDataSpecificTimeRangeRequest/) |
+| `era/v1/labor/day` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/postLaborReportingDataSpecificTimeRangeRequest/) |
+| `era/v1/menu/day` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/postMenuReportSpecificTimeRange/) |
+| `era/v1/payout/day` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/postPayoutReportSettledDateSpecificTimeRange/) |
+| `era/v1/payout/payments/day` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/postPayoutReportPaymentsSpecificTimeRange/) |
+| `era/v1/payout/sales-date/day` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/postPayoutReportSalesDateSpecificTimeRange/) |
+| `era/v1/guest/payments/day` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/postGuestReportPaymentDateSpecificTimeRange/) |
+| `era/v1/restaurants-information` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/getManagementGroupRestaurantsInformation/) |
+| `era/v1/check/{reportRequestGuid}` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/getCheckReportingData/) |
+| `era/v1/guest/payments/{reportRequestGuid}` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/getGuestByPaymentDateReportingData/) |
+| `era/v1/labor/{reportRequestGuid}` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/getLaborReportingData/) |
+| `era/v1/menu/{reportRequestGuid}` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/getMenuReportingData/) |
+| `era/v1/metrics/{reportRequestGuid}` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/getMetricsReportingData/) |
+| `era/v1/metrics/{timeRange}/{reportRequestGuid}` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/getMetricsReportingDataSpecificTimeRange/) |
+| `era/v1/payout/{reportRequestGuid}` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/getPayoutSettledDateReportingData/) |
+| `era/v1/payout/payments/{reportRequestGuid}` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/getPayoutPaymentsReportingData/) |
+| `era/v1/payout/sales-date/{reportRequestGuid}` | Analytics separate credentials/scope, excluded from Standard | not configured | [source](https://doc.toasttab.com/openapi/analytics/operation/getPayoutSalesDateReportingData/) |
+| `authentication/no_get_operations` | No documented GET operation (inbound/POST family) | other error | [source](https://doc.toasttab.com/openapi/authentication/overview/) |
+| `creditcards/no_get_operations` | No documented GET operation (inbound/POST family) | other error | [source](https://doc.toasttab.com/openapi/creditcards/overview/) |
+| `giftcards/no_get_operations` | No documented GET operation (inbound/POST family) | other error | [source](https://doc.toasttab.com/openapi/giftcards/overview/) |
+| `loyalty/no_get_operations` | No documented GET operation (inbound/POST family) | other error | [source](https://doc.toasttab.com/openapi/loyalty/overview/) |
+| `tender/no_get_operations` | No documented GET operation (inbound/POST family) | other error | [source](https://doc.toasttab.com/openapi/tender/overview/) |
+
+## Individual historically observed JSON paths — normalized lossless evidence ledger
+
+**Provenance:** October 28 **redacted diagnostic** paths ONLY; they are NOT complete official OpenAPI definitions, November operational data, proven currently retained fields, live Supervisor facts or confirmed café grants. This inventory retains all 1,629 endpoint/path observations from the previous 8-column table. The 13 repeated six-column source/identity/privacy/reader/proof contracts are factored into the legend below; joining a row's `H#` code to its legend is equivalent to the original row. No raw guest/staff values or café identifiers appear. For field-level type/nullability, official presence, identity details and permissions, the official machine-readable schema **is now pinned separately** in `docs/plans/toast-openapi-spec-snapshot.json`; however **A2/A4 remain unverified** until each field's entitled/returned/current stored/accessible status is independently proved. These October rows are never official or current operational facts.
+
+**How to read:** find a literal endpoint+path below; resolve its `H#` into the exact historical proposed object key, current storage, privacy treatment, reader, AI query and proof status. Family cadence, UI consumers and permissions remain in [Field inheritance contract](#field-inheritance-contract-each-field-row-below-inherits-these-exact-source-destination-and-consumer-mappings); this evidence NEVER authorizes fallback from `toast_raw_samples` to live queries.
+
+### Historical observation contract legend (identical values reused; do not treat as runtime proof)
+
+| Code | Proposed identity | Current stored owner/key | Privacy classification | Existing reader | Supervisor query field | Evidence limitation |
+|---|---|---|---|---|---|---|
+| H1 | (business,restaurant,order.guid), child GUID for checks/items/payments | toast_raw_records (`order`), key (business_id,restaurant_guid,entity,entity_guid) | Observed redacted diagnostic; retain only after official/spec + privacy check | toast_records_for → cv_toast_records; cv_orders,cv_payments and shared metrics | query_data: data.<field> scoped to order/check/item/payment; get_sales, get_profit | **Oct 28 only, type/spec not verified** |
+| H2 | (business,restaurant,menu item GUID; nested child GUID if available) | toast_raw_records (`menu_item`, `price_version`) plus toast_catalog_facts; other menu fields not persisted | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_menu; cv_toast_records non-order path currently October diagnostic | query_data: cv_menu; data.<field> via cv_toast_records currently snapshot only | **Oct 28 only, type/spec not verified** |
+| H3 | (business,restaurant,configuration type, GUID; verify from source) | toast_void_reason_directory only for void reasons; other configuration families: no proven current object | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_dining_options and cv_toast_records from toast_raw_samples (historical) | query_data: data.<field> snapshot only; most config absent canonical dictionary | **Oct 28 only, type/spec not verified** |
+| H4 | (business,restaurant,employee/job/shift/timeEntry GUID) | toast_raw_records (`employee`,`job`,`time_entry`) for staged entities; pos_scheduled_shifts; toast_labor_entries; employee/job directory | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_staff,cv_labor_entries,cv_shifts; cv_toast_records still uses diagnostic non-order sample | query_data on labor canonical views; get_team/get_labor/get_schedule from shared reads | **Oct 28 only, type/spec not verified** |
+| H5 | (business,restaurant,cash entry/deposit GUID unverified) | No current toast_raw_records cash object; toast_raw_samples diagnostic only | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_cash from October toast_raw_samples | query_data cv_cash snapshotOnly; no current data.<field> guarantee | **Oct 28 only, type/spec not verified** |
+| H6 | (business,restaurant,inventory item/location composite unverified) | No current toast_raw_records stock object; toast_raw_samples diagnostic only | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_inventory from October toast_raw_samples | query_data cv_inventory snapshotOnly | **Oct 28 only, type/spec not verified** |
+| H7 | (business,restaurant,fulfillment/station identity unverified) | No current kitchen raw object; toast_raw_samples diagnostic only | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_kitchen from October toast_raw_samples; order selection fulfillment_status independent | query_data cv_kitchen snapshotOnly; no current KDS timing claims | **Oct 28 only, type/spec not verified** |
+| H8 | (business,restaurant,source object GUID/version UNVERIFIED) | No proven current partner object; historical diagnostic only | Observed redacted diagnostic; retain only after official/spec + privacy check | No proven current canonical reader | query_data no current object guarantee | **Oct 28 only, type/spec not verified** |
+| H9 | (business,restaurant,source object GUID/version UNVERIFIED) | No proven current packaging object | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_toast_records diagnostic only | query_data data.<field> snapshot only | **Oct 28 only, type/spec not verified** |
+| H10 | (business,restaurant,source object GUID/version UNVERIFIED) | No proven current availability object | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_toast_records diagnostic only | query_data data.<field> snapshot only | **Oct 28 only, type/spec not verified** |
+| H11 | (business,restaurant,source object GUID/version UNVERIFIED) | No proven current ordering-schedule object | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_toast_records diagnostic only | query_data data.<field> snapshot only | **Oct 28 only, type/spec not verified** |
+| H12 | (business,restaurant,source object GUID/version UNVERIFIED) | No proven current device object | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_toast_records diagnostic only | query_data data.<field> snapshot only | **Oct 28 only, type/spec not verified** |
+| H13 | (business,restaurant,source object GUID/version UNVERIFIED) | No current restaurant-details object proven | Observed redacted diagnostic; retain only after official/spec + privacy check | cv_toast_records diagnostic only | query_data data.<field> snapshot only | **Oct 28 only, type/spec not verified** |
+
+### Historical observed endpoint/path list — complete diagnostic evidence, not official spec
+
+| Historical endpoint | Observed redacted JSON path | Contract |
+|---|---|---|
+| `orders/v2/ordersBulk` | `[].appliedPackagingInfo` | H1 |
+| `orders/v2/ordersBulk` | `[].approvalStatus` | H1 |
+| `orders/v2/ordersBulk` | `[].businessDate` | H1 |
+| `orders/v2/ordersBulk` | `[].calculatedGuestCount` | H1 |
+| `orders/v2/ordersBulk` | `[].channelGuid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].amount` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].appliedDiscounts` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].appliedDiscounts[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].appliedLoyaltyInfo` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].appliedServiceCharges` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].appliedServiceCharges[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].closedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].createdByClientName` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].createdDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].createdDevice` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].createdDevice.id` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].customer` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].deleted` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].deletedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].displayNumber` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].duration` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].lastModifiedDevice` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].lastModifiedDevice.id` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].modifiedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].openedBy` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].openedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].paidDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].amount` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].amountTendered` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].cardEntryMode` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].cardProcessorType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].cardType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].cashDrawer` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].cashDrawer.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].cashDrawer.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].cashDrawer.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].checkGuid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].createdByClientName` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].createdDevice` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].createdDevice.id` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].first6Digits` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].houseAccount` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].isProcessedOffline` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].lastModifiedDevice` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].lastModifiedDevice.id` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].mcaRepaymentAmount` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].networkTransactionIdentifier` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].orderGuid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].originalProcessingFee` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].otherPayment` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].paidBusinessDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].paidDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].paymentMethodId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].paymentStatus` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].refund` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].refundStatus` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].server` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].server.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].server.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].server.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].surchargeAmount` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].tenderTransactionGuid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].tipAmount` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].type` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidApprover` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidApprover.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidApprover.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidApprover.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidBusinessDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidReason` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidUser` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidUser.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidUser.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].payments[].voidInfo.voidUser.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].paymentStatus` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedDiscounts` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedDiscounts[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].applicationOrdinal` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].displayName` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].facilitatorCollectAndRemitTax` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].jurisdiction` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].jurisdictionType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].name` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].rate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].taxAmount` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].taxRate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].taxRate.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].taxRate.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].appliedTaxes[].type` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].createdByClientName` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].createdDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].deferred` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].diningOption` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].diningOption.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].diningOption.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].diningOption.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].displayName` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].fulfillment` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].fulfillmentStatus` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].giftCardSelectionInfo` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].guestCountWeight` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].item` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].item.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].item.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].item.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].item.multiLocationId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].itemGroup` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].itemGroup.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].itemGroup.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].itemGroup.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].itemGroup.multiLocationId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].appliedDiscounts` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].appliedDiscounts[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].appliedTaxes` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].appliedTaxes[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].createdByClientName` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].createdDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].deferred` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].diningOption` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].diningOption.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].diningOption.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].diningOption.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].displayName` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].fulfillment` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].fulfillmentStatus` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].giftCardSelectionInfo` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].guestCountWeight` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].item` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].item.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].item.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].item.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].item.multiLocationId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].itemGroup` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].modifiedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].modifiers` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].modifiers[]` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].optionGroup` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].optionGroup.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].optionGroup.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].optionGroup.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].optionGroup.multiLocationId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].optionGroupPricingMode` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].plu` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].preDiscountPrice` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].preModifier` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].premodifierPlu` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].price` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].quantity` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].receiptLinePrice` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].refundDetails` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].salesCategory` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].salesCategoryPlu` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].seatNumber` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].selectionType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].splitOrigin` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].storedValueTransactionId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].tax` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].taxInclusion` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].toastGiftCard` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].unitOfMeasure` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].voidBusinessDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].voidDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].voided` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].modifiers[].voidReason` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].optionGroup` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].optionGroupPricingMode` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].plu` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].preDiscountPrice` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].preModifier` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].premodifierPlu` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].price` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].quantity` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].receiptLinePrice` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].refundDetails` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].salesCategory` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].salesCategoryPlu` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].seatNumber` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].selectionType` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].splitOrigin` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].storedValueTransactionId` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].tax` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].taxInclusion` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].toastGiftCard` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].unitOfMeasure` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].voidBusinessDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].voidDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].voided` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].selections[].voidReason` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].splitOrigin` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].tabName` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].taxAmount` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].taxExempt` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].taxExemptionAccount` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].totalAmount` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].voidBusinessDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].voidDate` | H1 |
+| `orders/v2/ordersBulk` | `[].checks[].voided` | H1 |
+| `orders/v2/ordersBulk` | `[].closedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].createdByClientName` | H1 |
+| `orders/v2/ordersBulk` | `[].createdDate` | H1 |
+| `orders/v2/ordersBulk` | `[].createdDevice` | H1 |
+| `orders/v2/ordersBulk` | `[].createdDevice.id` | H1 |
+| `orders/v2/ordersBulk` | `[].createdInTestMode` | H1 |
+| `orders/v2/ordersBulk` | `[].curbsidePickupInfo` | H1 |
+| `orders/v2/ordersBulk` | `[].deleted` | H1 |
+| `orders/v2/ordersBulk` | `[].deletedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].deliveryInfo` | H1 |
+| `orders/v2/ordersBulk` | `[].diningOption` | H1 |
+| `orders/v2/ordersBulk` | `[].diningOption.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].diningOption.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].diningOption.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].displayNumber` | H1 |
+| `orders/v2/ordersBulk` | `[].duration` | H1 |
+| `orders/v2/ordersBulk` | `[].entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].estimatedFulfillmentDate` | H1 |
+| `orders/v2/ordersBulk` | `[].excessFood` | H1 |
+| `orders/v2/ordersBulk` | `[].externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].guid` | H1 |
+| `orders/v2/ordersBulk` | `[].lastModifiedDevice` | H1 |
+| `orders/v2/ordersBulk` | `[].lastModifiedDevice.id` | H1 |
+| `orders/v2/ordersBulk` | `[].modifiedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].numberOfGuests` | H1 |
+| `orders/v2/ordersBulk` | `[].openedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].paidDate` | H1 |
+| `orders/v2/ordersBulk` | `[].pricingFeatures` | H1 |
+| `orders/v2/ordersBulk` | `[].pricingFeatures[]` | H1 |
+| `orders/v2/ordersBulk` | `[].promisedDate` | H1 |
+| `orders/v2/ordersBulk` | `[].requiredPrepTime` | H1 |
+| `orders/v2/ordersBulk` | `[].restaurantService` | H1 |
+| `orders/v2/ordersBulk` | `[].restaurantService.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].restaurantService.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].restaurantService.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].revenueCenter` | H1 |
+| `orders/v2/ordersBulk` | `[].revenueCenter.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].revenueCenter.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].revenueCenter.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].server` | H1 |
+| `orders/v2/ordersBulk` | `[].server.entityType` | H1 |
+| `orders/v2/ordersBulk` | `[].server.externalId` | H1 |
+| `orders/v2/ordersBulk` | `[].server.guid` | H1 |
+| `orders/v2/ordersBulk` | `[].serviceArea` | H1 |
+| `orders/v2/ordersBulk` | `[].source` | H1 |
+| `orders/v2/ordersBulk` | `[].table` | H1 |
+| `orders/v2/ordersBulk` | `[].thirdPartyProviderInfo` | H1 |
+| `orders/v2/ordersBulk` | `[].voidBusinessDate` | H1 |
+| `orders/v2/ordersBulk` | `[].voidDate` | H1 |
+| `orders/v2/ordersBulk` | `[].voided` | H1 |
+| `menus/v2/menus` | `lastUpdated` | H2 |
+| `menus/v2/menus` | `menus` | H2 |
+| `menus/v2/menus` | `menus[]` | H2 |
+| `menus/v2/menus` | `menus[].availability` | H2 |
+| `menus/v2/menus` | `menus[].availability.alwaysAvailable` | H2 |
+| `menus/v2/menus` | `menus[].description` | H2 |
+| `menus/v2/menus` | `menus[].guid` | H2 |
+| `menus/v2/menus` | `menus[].highResImage` | H2 |
+| `menus/v2/menus` | `menus[].image` | H2 |
+| `menus/v2/menus` | `menus[].masterId` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].combos` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].description` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].guid` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].image` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].itemTags` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].itemTags[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].masterId` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuGroups` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuGroups[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].allergens` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].allergens[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].calories` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].contentAdvisories` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].contentAdvisories.alcohol` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].contentAdvisories.alcohol.containsAlcohol` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].description` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].dimensionUnitOfMeasure` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].eligiblePaymentAssistancePrograms` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].eligiblePaymentAssistancePrograms[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].guestCount` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].guid` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].height` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].image` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].images` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].images[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].isComboParent` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].isDeferred` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].isDiscountable` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].itemTags` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].itemTags[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].kitchenName` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].length` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].masterId` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].modifierGroupReferences` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].modifierGroupReferences[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].multiLocationId` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].name` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].plu` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].portions` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].portions[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].posButtonColorDark` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].posButtonColorLight` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].posName` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].prepStations` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].prepStations[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].prepTime` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].price` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].pricingRules` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].pricingRules.sizeSequencePricingRules` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].pricingRules.sizeSequencePricingRules[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].pricingRules.sizeSpecificPricingGuid` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].pricingRules.timeSpecificPricingRules` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].pricingRules.timeSpecificPricingRules[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].pricingStrategy` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].salesCategory` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].sku` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].sortOrder` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].taxInclusion` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].taxInfo` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].taxInfo[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].unitOfMeasure` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].visibility` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].visibility[]` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].weight` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].weightUnitOfMeasure` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].menuItems[].width` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].multiLocationId` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].name` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].posButtonColorDark` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].posButtonColorLight` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].posName` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].visibility` | H2 |
+| `menus/v2/menus` | `menus[].menuGroups[].visibility[]` | H2 |
+| `menus/v2/menus` | `menus[].multiLocationId` | H2 |
+| `menus/v2/menus` | `menus[].name` | H2 |
+| `menus/v2/menus` | `menus[].posButtonColorDark` | H2 |
+| `menus/v2/menus` | `menus[].posButtonColorLight` | H2 |
+| `menus/v2/menus` | `menus[].posName` | H2 |
+| `menus/v2/menus` | `menus[].visibility` | H2 |
+| `menus/v2/menus` | `menus[].visibility[]` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.defaultOptionsChargePrice` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.defaultOptionsSubstitutionPricing` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.guid` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.isMultiSelect` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.masterId` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.maxSelections` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.minSelections` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.modifierOptionReferences` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.modifierOptionReferences[]` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.multiLocationId` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.posButtonColorDark` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.posButtonColorLight` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.posName` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.preModifierGroupReference` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.pricingRules` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.pricingStrategy` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.referenceId` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.requiredMode` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.visibility` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.1.visibility[]` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.defaultOptionsChargePrice` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.defaultOptionsSubstitutionPricing` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.guid` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.isMultiSelect` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.masterId` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.maxSelections` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.minSelections` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.modifierOptionReferences` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.modifierOptionReferences[]` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.multiLocationId` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.posButtonColorDark` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.posButtonColorLight` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.posName` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.preModifierGroupReference` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.pricingRules` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.pricingStrategy` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.referenceId` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.requiredMode` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.visibility` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.4.visibility[]` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.defaultOptionsChargePrice` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.defaultOptionsSubstitutionPricing` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.guid` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.isMultiSelect` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.masterId` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.maxSelections` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.minSelections` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.modifierOptionReferences` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.modifierOptionReferences[]` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.multiLocationId` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.posButtonColorDark` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.posButtonColorLight` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.posName` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.preModifierGroupReference` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.pricingRules` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.pricingStrategy` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.referenceId` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.requiredMode` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.visibility` | H2 |
+| `menus/v2/menus` | `modifierGroupReferences.8.visibility[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.allergens` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.allergens[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.allowsDuplicates` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.calories` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.contentAdvisories` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.contentAdvisories.alcohol` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.contentAdvisories.alcohol.containsAlcohol` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.dimensionUnitOfMeasure` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.guid` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.height` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.image` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.isDefault` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.itemTags` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.itemTags[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.kitchenName` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.length` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.masterId` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.modifierGroupReferences` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.modifierGroupReferences[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.modifierOptionTaxInfo` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.modifierOptionTaxInfo.overrideItemTaxRates` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.modifierOptionTaxInfo.taxRateGuids` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.modifierOptionTaxInfo.taxRateGuids[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.multiLocationId` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.plu` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.portions` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.portions[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.posButtonColorDark` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.posButtonColorLight` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.posName` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.prepStations` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.prepStations[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.prepTime` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.price` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.pricingRules` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.pricingStrategy` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.referenceId` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.salesCategory` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.sku` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.sortOrder` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.taxInfo` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.taxInfo[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.unitOfMeasure` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.visibility` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.visibility[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.weight` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.weightUnitOfMeasure` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.2.width` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.allergens` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.allergens[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.allowsDuplicates` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.calories` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.contentAdvisories` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.contentAdvisories.alcohol` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.contentAdvisories.alcohol.containsAlcohol` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.dimensionUnitOfMeasure` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.guid` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.height` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.image` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.isDefault` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.itemTags` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.itemTags[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.kitchenName` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.length` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.masterId` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.modifierGroupReferences` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.modifierGroupReferences[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.modifierOptionTaxInfo` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.modifierOptionTaxInfo.overrideItemTaxRates` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.modifierOptionTaxInfo.taxRateGuids` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.modifierOptionTaxInfo.taxRateGuids[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.multiLocationId` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.plu` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.portions` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.portions[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.posButtonColorDark` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.posButtonColorLight` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.posName` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.prepStations` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.prepStations[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.prepTime` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.price` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.pricingRules` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.pricingStrategy` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.referenceId` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.salesCategory` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.sku` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.sortOrder` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.taxInfo` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.taxInfo[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.unitOfMeasure` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.visibility` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.visibility[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.weight` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.weightUnitOfMeasure` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.3.width` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.allergens` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.allergens[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.allowsDuplicates` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.calories` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.contentAdvisories` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.contentAdvisories.alcohol` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.contentAdvisories.alcohol.containsAlcohol` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.dimensionUnitOfMeasure` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.guid` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.height` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.image` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.isDefault` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.itemTags` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.itemTags[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.kitchenName` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.length` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.masterId` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.modifierGroupReferences` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.modifierGroupReferences[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.modifierOptionTaxInfo` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.modifierOptionTaxInfo.overrideItemTaxRates` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.modifierOptionTaxInfo.taxRateGuids` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.modifierOptionTaxInfo.taxRateGuids[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.multiLocationId` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.plu` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.portions` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.portions[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.posButtonColorDark` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.posButtonColorLight` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.posName` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.prepStations` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.prepStations[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.prepTime` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.price` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.pricingRules` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.pricingStrategy` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.referenceId` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.salesCategory` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.sku` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.sortOrder` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.taxInfo` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.taxInfo[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.unitOfMeasure` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.visibility` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.visibility[]` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.weight` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.weightUnitOfMeasure` | H2 |
+| `menus/v2/menus` | `modifierOptionReferences.5.width` | H2 |
+| `menus/v2/menus` | `preModifierGroupReferences` | H2 |
+| `menus/v2/menus` | `restaurantGuid` | H2 |
+| `menus/v2/menus` | `restaurantTimeZone` | H2 |
+| `menus/v2/metadata` | `lastUpdated` | H2 |
+| `menus/v2/metadata` | `restaurantGuid` | H2 |
+| `config/v2/alternatePaymentTypes` | `[].entityType` | H3 |
+| `config/v2/alternatePaymentTypes` | `[].externalId` | H3 |
+| `config/v2/alternatePaymentTypes` | `[].guid` | H3 |
+| `config/v2/alternatePaymentTypes` | `[].name` | H3 |
+| `config/v2/breakTypes` | `[].active` | H3 |
+| `config/v2/breakTypes` | `[].breakIntervalHrs` | H3 |
+| `config/v2/breakTypes` | `[].breakIntervalMins` | H3 |
+| `config/v2/breakTypes` | `[].duration` | H3 |
+| `config/v2/breakTypes` | `[].enforceMinimumTime` | H3 |
+| `config/v2/breakTypes` | `[].entityType` | H3 |
+| `config/v2/breakTypes` | `[].guid` | H3 |
+| `config/v2/breakTypes` | `[].name` | H3 |
+| `config/v2/breakTypes` | `[].paid` | H3 |
+| `config/v2/breakTypes` | `[].trackBreakAcknowledgement` | H3 |
+| `config/v2/breakTypes` | `[].trackMissedBreaks` | H3 |
+| `config/v2/cashDrawers` | `[].entityType` | H3 |
+| `config/v2/cashDrawers` | `[].guid` | H3 |
+| `config/v2/cashDrawers` | `[].printer` | H3 |
+| `config/v2/cashDrawers` | `[].printer.entityType` | H3 |
+| `config/v2/cashDrawers` | `[].printer.guid` | H3 |
+| `config/v2/diningOptions` | `[].behavior` | H3 |
+| `config/v2/diningOptions` | `[].curbside` | H3 |
+| `config/v2/diningOptions` | `[].driveThru` | H3 |
+| `config/v2/diningOptions` | `[].entityType` | H3 |
+| `config/v2/diningOptions` | `[].externalId` | H3 |
+| `config/v2/diningOptions` | `[].guid` | H3 |
+| `config/v2/diningOptions` | `[].name` | H3 |
+| `config/v2/discounts` | `[].active` | H3 |
+| `config/v2/discounts` | `[].amount` | H3 |
+| `config/v2/discounts` | `[].entityType` | H3 |
+| `config/v2/discounts` | `[].fixedTotal` | H3 |
+| `config/v2/discounts` | `[].guid` | H3 |
+| `config/v2/discounts` | `[].itemPickingPriority` | H3 |
+| `config/v2/discounts` | `[].name` | H3 |
+| `config/v2/discounts` | `[].nonExclusive` | H3 |
+| `config/v2/discounts` | `[].percentage` | H3 |
+| `config/v2/discounts` | `[].promoCodes` | H3 |
+| `config/v2/discounts` | `[].promoCodes[]` | H3 |
+| `config/v2/discounts` | `[].selectionType` | H3 |
+| `config/v2/discounts` | `[].type` | H3 |
+| `config/v2/menuGroups` | `[].entityType` | H3 |
+| `config/v2/menuGroups` | `[].externalId` | H3 |
+| `config/v2/menuGroups` | `[].guid` | H3 |
+| `config/v2/menuGroups` | `[].images` | H3 |
+| `config/v2/menuGroups` | `[].images[]` | H3 |
+| `config/v2/menuGroups` | `[].inheritOptionGroups` | H3 |
+| `config/v2/menuGroups` | `[].inheritUnitOfMeasure` | H3 |
+| `config/v2/menuGroups` | `[].items` | H3 |
+| `config/v2/menuGroups` | `[].items[]` | H3 |
+| `config/v2/menuGroups` | `[].items[].entityType` | H3 |
+| `config/v2/menuGroups` | `[].items[].externalId` | H3 |
+| `config/v2/menuGroups` | `[].items[].guid` | H3 |
+| `config/v2/menuGroups` | `[].menu` | H3 |
+| `config/v2/menuGroups` | `[].menu.entityType` | H3 |
+| `config/v2/menuGroups` | `[].menu.externalId` | H3 |
+| `config/v2/menuGroups` | `[].menu.guid` | H3 |
+| `config/v2/menuGroups` | `[].name` | H3 |
+| `config/v2/menuGroups` | `[].optionGroups` | H3 |
+| `config/v2/menuGroups` | `[].optionGroups[]` | H3 |
+| `config/v2/menuGroups` | `[].orderableOnline` | H3 |
+| `config/v2/menuGroups` | `[].parent` | H3 |
+| `config/v2/menuGroups` | `[].subgroups` | H3 |
+| `config/v2/menuGroups` | `[].subgroups[]` | H3 |
+| `config/v2/menuGroups` | `[].unitOfMeasure` | H3 |
+| `config/v2/menuGroups` | `[].visibility` | H3 |
+| `config/v2/menuItems` | `[].calories` | H3 |
+| `config/v2/menuItems` | `[].entityType` | H3 |
+| `config/v2/menuItems` | `[].externalId` | H3 |
+| `config/v2/menuItems` | `[].guid` | H3 |
+| `config/v2/menuItems` | `[].images` | H3 |
+| `config/v2/menuItems` | `[].images[]` | H3 |
+| `config/v2/menuItems` | `[].inheritOptionGroups` | H3 |
+| `config/v2/menuItems` | `[].inheritUnitOfMeasure` | H3 |
+| `config/v2/menuItems` | `[].name` | H3 |
+| `config/v2/menuItems` | `[].optionGroups` | H3 |
+| `config/v2/menuItems` | `[].optionGroups[]` | H3 |
+| `config/v2/menuItems` | `[].optionGroups[].entityType` | H3 |
+| `config/v2/menuItems` | `[].optionGroups[].externalId` | H3 |
+| `config/v2/menuItems` | `[].optionGroups[].guid` | H3 |
+| `config/v2/menuItems` | `[].orderableOnline` | H3 |
+| `config/v2/menuItems` | `[].plu` | H3 |
+| `config/v2/menuItems` | `[].sku` | H3 |
+| `config/v2/menuItems` | `[].type` | H3 |
+| `config/v2/menuItems` | `[].unitOfMeasure` | H3 |
+| `config/v2/menuItems` | `[].visibility` | H3 |
+| `config/v2/menuOptionGroups` | `[].entityType` | H3 |
+| `config/v2/menuOptionGroups` | `[].externalId` | H3 |
+| `config/v2/menuOptionGroups` | `[].guid` | H3 |
+| `config/v2/menuOptionGroups` | `[].maxSelections` | H3 |
+| `config/v2/menuOptionGroups` | `[].minSelections` | H3 |
+| `config/v2/menuOptionGroups` | `[].name` | H3 |
+| `config/v2/menuOptionGroups` | `[].options` | H3 |
+| `config/v2/menuOptionGroups` | `[].options[]` | H3 |
+| `config/v2/menuOptionGroups` | `[].options[].entityType` | H3 |
+| `config/v2/menuOptionGroups` | `[].options[].externalId` | H3 |
+| `config/v2/menuOptionGroups` | `[].options[].guid` | H3 |
+| `config/v2/menus` | `[].entityType` | H3 |
+| `config/v2/menus` | `[].externalId` | H3 |
+| `config/v2/menus` | `[].groups` | H3 |
+| `config/v2/menus` | `[].groups[]` | H3 |
+| `config/v2/menus` | `[].groups[].entityType` | H3 |
+| `config/v2/menus` | `[].groups[].externalId` | H3 |
+| `config/v2/menus` | `[].groups[].guid` | H3 |
+| `config/v2/menus` | `[].guid` | H3 |
+| `config/v2/menus` | `[].images` | H3 |
+| `config/v2/menus` | `[].images[]` | H3 |
+| `config/v2/menus` | `[].name` | H3 |
+| `config/v2/menus` | `[].orderableOnline` | H3 |
+| `config/v2/menus` | `[].unitOfMeasure` | H3 |
+| `config/v2/menus` | `[].visibility` | H3 |
+| `config/v2/noSaleReasons` | `[].entityType` | H3 |
+| `config/v2/noSaleReasons` | `[].guid` | H3 |
+| `config/v2/noSaleReasons` | `[].name` | H3 |
+| `config/v2/payoutReasons` | `[].entityType` | H3 |
+| `config/v2/payoutReasons` | `[].guid` | H3 |
+| `config/v2/payoutReasons` | `[].name` | H3 |
+| `config/v2/printers` | `[].entityType` | H3 |
+| `config/v2/printers` | `[].guid` | H3 |
+| `config/v2/printers` | `[].name` | H3 |
+| `config/v2/restaurantServices` | `[].entityType` | H3 |
+| `config/v2/restaurantServices` | `[].guid` | H3 |
+| `config/v2/restaurantServices` | `[].name` | H3 |
+| `config/v2/revenueCenters` | `[].description` | H3 |
+| `config/v2/revenueCenters` | `[].entityType` | H3 |
+| `config/v2/revenueCenters` | `[].guid` | H3 |
+| `config/v2/revenueCenters` | `[].name` | H3 |
+| `config/v2/salesCategories` | `[].entityType` | H3 |
+| `config/v2/salesCategories` | `[].guid` | H3 |
+| `config/v2/salesCategories` | `[].name` | H3 |
+| `config/v2/serviceAreas` | `[].entityType` | H3 |
+| `config/v2/serviceAreas` | `[].guid` | H3 |
+| `config/v2/serviceAreas` | `[].name` | H3 |
+| `config/v2/serviceAreas` | `[].revenueCenter` | H3 |
+| `config/v2/serviceAreas` | `[].revenueCenter.entityType` | H3 |
+| `config/v2/serviceAreas` | `[].revenueCenter.externalId` | H3 |
+| `config/v2/serviceAreas` | `[].revenueCenter.guid` | H3 |
+| `config/v2/serviceAreas` | `[].serviceAreaType` | H3 |
+| `config/v2/serviceCharges` | `[].amount` | H3 |
+| `config/v2/serviceCharges` | `[].amountType` | H3 |
+| `config/v2/serviceCharges` | `[].applicableTaxes` | H3 |
+| `config/v2/serviceCharges` | `[].applicableTaxes[]` | H3 |
+| `config/v2/serviceCharges` | `[].criteria` | H3 |
+| `config/v2/serviceCharges` | `[].criteria.delivery` | H3 |
+| `config/v2/serviceCharges` | `[].criteria.dineIn` | H3 |
+| `config/v2/serviceCharges` | `[].criteria.maxCheckAmount` | H3 |
+| `config/v2/serviceCharges` | `[].criteria.minCheckAmount` | H3 |
+| `config/v2/serviceCharges` | `[].criteria.minDeliveryDistance` | H3 |
+| `config/v2/serviceCharges` | `[].criteria.takeout` | H3 |
+| `config/v2/serviceCharges` | `[].destination` | H3 |
+| `config/v2/serviceCharges` | `[].entityType` | H3 |
+| `config/v2/serviceCharges` | `[].externalId` | H3 |
+| `config/v2/serviceCharges` | `[].gratuity` | H3 |
+| `config/v2/serviceCharges` | `[].guid` | H3 |
+| `config/v2/serviceCharges` | `[].name` | H3 |
+| `config/v2/serviceCharges` | `[].percent` | H3 |
+| `config/v2/serviceCharges` | `[].serviceChargeCalculation` | H3 |
+| `config/v2/serviceCharges` | `[].taxable` | H3 |
+| `config/v2/serviceCharges` | `[].taxInclusive` | H3 |
+| `config/v2/serviceCharges` | `[].taxProrated` | H3 |
+| `config/v2/taxRates` | `[].conditionalTaxRates` | H3 |
+| `config/v2/taxRates` | `[].conditionalTaxRates[]` | H3 |
+| `config/v2/taxRates` | `[].entityType` | H3 |
+| `config/v2/taxRates` | `[].guid` | H3 |
+| `config/v2/taxRates` | `[].isDefault` | H3 |
+| `config/v2/taxRates` | `[].name` | H3 |
+| `config/v2/taxRates` | `[].rate` | H3 |
+| `config/v2/taxRates` | `[].roundingType` | H3 |
+| `config/v2/taxRates` | `[].taxTable` | H3 |
+| `config/v2/taxRates` | `[].taxTable[]` | H3 |
+| `config/v2/taxRates` | `[].type` | H3 |
+| `config/v2/tipWithholding` | `enabled` | H3 |
+| `config/v2/tipWithholding` | `entityType` | H3 |
+| `config/v2/tipWithholding` | `guid` | H3 |
+| `config/v2/tipWithholding` | `percentage` | H3 |
+| `config/v2/voidReasons` | `[].entityType` | H3 |
+| `config/v2/voidReasons` | `[].guid` | H3 |
+| `config/v2/voidReasons` | `[].name` | H3 |
+| `labor/v1/employees` | `[].createdDate` | H4 |
+| `labor/v1/employees` | `[].deleted` | H4 |
+| `labor/v1/employees` | `[].deletedDate` | H4 |
+| `labor/v1/employees` | `[].entityType` | H4 |
+| `labor/v1/employees` | `[].externalEmployeeId` | H4 |
+| `labor/v1/employees` | `[].externalId` | H4 |
+| `labor/v1/employees` | `[].guid` | H4 |
+| `labor/v1/employees` | `[].jobReferences` | H4 |
+| `labor/v1/employees` | `[].jobReferences[]` | H4 |
+| `labor/v1/employees` | `[].jobReferences[].entityType` | H4 |
+| `labor/v1/employees` | `[].jobReferences[].externalId` | H4 |
+| `labor/v1/employees` | `[].jobReferences[].guid` | H4 |
+| `labor/v1/employees` | `[].modifiedDate` | H4 |
+| `labor/v1/employees` | `[].v2EmployeeGuid` | H4 |
+| `labor/v1/employees` | `[].wageOverrides` | H4 |
+| `labor/v1/employees` | `[].wageOverrides[]` | H4 |
+| `labor/v1/employees` | `[].wageOverrides[].jobReference` | H4 |
+| `labor/v1/employees` | `[].wageOverrides[].jobReference.entityType` | H4 |
+| `labor/v1/employees` | `[].wageOverrides[].jobReference.externalId` | H4 |
+| `labor/v1/employees` | `[].wageOverrides[].jobReference.guid` | H4 |
+| `labor/v1/employees` | `[].wageOverrides[].wage` | H4 |
+| `labor/v1/jobs` | `[].code` | H4 |
+| `labor/v1/jobs` | `[].createdDate` | H4 |
+| `labor/v1/jobs` | `[].defaultWage` | H4 |
+| `labor/v1/jobs` | `[].deleted` | H4 |
+| `labor/v1/jobs` | `[].deletedDate` | H4 |
+| `labor/v1/jobs` | `[].entityType` | H4 |
+| `labor/v1/jobs` | `[].excludeFromReporting` | H4 |
+| `labor/v1/jobs` | `[].externalId` | H4 |
+| `labor/v1/jobs` | `[].guid` | H4 |
+| `labor/v1/jobs` | `[].modifiedDate` | H4 |
+| `labor/v1/jobs` | `[].tipped` | H4 |
+| `labor/v1/jobs` | `[].title` | H4 |
+| `labor/v1/jobs` | `[].wageFrequency` | H4 |
+| `labor/v1/shifts` | `[].createdDate` | H4 |
+| `labor/v1/shifts` | `[].deleted` | H4 |
+| `labor/v1/shifts` | `[].deletedDate` | H4 |
+| `labor/v1/shifts` | `[].employeeReference` | H4 |
+| `labor/v1/shifts` | `[].employeeReference.entityType` | H4 |
+| `labor/v1/shifts` | `[].employeeReference.externalId` | H4 |
+| `labor/v1/shifts` | `[].employeeReference.guid` | H4 |
+| `labor/v1/shifts` | `[].entityType` | H4 |
+| `labor/v1/shifts` | `[].externalId` | H4 |
+| `labor/v1/shifts` | `[].guid` | H4 |
+| `labor/v1/shifts` | `[].inDate` | H4 |
+| `labor/v1/shifts` | `[].jobReference` | H4 |
+| `labor/v1/shifts` | `[].jobReference.entityType` | H4 |
+| `labor/v1/shifts` | `[].jobReference.externalId` | H4 |
+| `labor/v1/shifts` | `[].jobReference.guid` | H4 |
+| `labor/v1/shifts` | `[].modifiedDate` | H4 |
+| `labor/v1/shifts` | `[].outDate` | H4 |
+| `labor/v1/shifts` | `[].scheduleConfig` | H4 |
+| `labor/v1/shifts` | `[].scheduleConfig.guid` | H4 |
+| `labor/v1/shifts` | `[].scheduleConfig.minAfterClockIn` | H4 |
+| `labor/v1/shifts` | `[].scheduleConfig.minAfterClockOut` | H4 |
+| `labor/v1/shifts` | `[].scheduleConfig.minBeforeClockIn` | H4 |
+| `labor/v1/shifts` | `[].scheduleConfig.minBeforeClockOut` | H4 |
+| `labor/v1/timeEntries` | `[].autoClockedOut` | H4 |
+| `labor/v1/timeEntries` | `[].breaks` | H4 |
+| `labor/v1/timeEntries` | `[].breaks[]` | H4 |
+| `labor/v1/timeEntries` | `[].businessDate` | H4 |
+| `labor/v1/timeEntries` | `[].cashGratuityServiceCharges` | H4 |
+| `labor/v1/timeEntries` | `[].cashSales` | H4 |
+| `labor/v1/timeEntries` | `[].createdDate` | H4 |
+| `labor/v1/timeEntries` | `[].declaredCashTips` | H4 |
+| `labor/v1/timeEntries` | `[].deleted` | H4 |
+| `labor/v1/timeEntries` | `[].deletedDate` | H4 |
+| `labor/v1/timeEntries` | `[].employeeReference` | H4 |
+| `labor/v1/timeEntries` | `[].employeeReference.entityType` | H4 |
+| `labor/v1/timeEntries` | `[].employeeReference.externalId` | H4 |
+| `labor/v1/timeEntries` | `[].employeeReference.guid` | H4 |
+| `labor/v1/timeEntries` | `[].entityType` | H4 |
+| `labor/v1/timeEntries` | `[].externalId` | H4 |
+| `labor/v1/timeEntries` | `[].guid` | H4 |
+| `labor/v1/timeEntries` | `[].hourlyWage` | H4 |
+| `labor/v1/timeEntries` | `[].inDate` | H4 |
+| `labor/v1/timeEntries` | `[].jobReference` | H4 |
+| `labor/v1/timeEntries` | `[].jobReference.entityType` | H4 |
+| `labor/v1/timeEntries` | `[].jobReference.externalId` | H4 |
+| `labor/v1/timeEntries` | `[].jobReference.guid` | H4 |
+| `labor/v1/timeEntries` | `[].modifiedDate` | H4 |
+| `labor/v1/timeEntries` | `[].nonCashGratuityServiceCharges` | H4 |
+| `labor/v1/timeEntries` | `[].nonCashSales` | H4 |
+| `labor/v1/timeEntries` | `[].nonCashTips` | H4 |
+| `labor/v1/timeEntries` | `[].nonCashTipsRoundingLoss` | H4 |
+| `labor/v1/timeEntries` | `[].outDate` | H4 |
+| `labor/v1/timeEntries` | `[].overtimeHours` | H4 |
+| `labor/v1/timeEntries` | `[].regularHours` | H4 |
+| `labor/v1/timeEntries` | `[].shiftReference` | H4 |
+| `labor/v1/timeEntries` | `[].tipsWithheld` | H4 |
+| `cashmgmt/v1/entries` | `[].amount` | H5 |
+| `cashmgmt/v1/entries` | `[].approverOrShiftReviewSubject` | H5 |
+| `cashmgmt/v1/entries` | `[].cashDrawer` | H5 |
+| `cashmgmt/v1/entries` | `[].cashDrawer.entityType` | H5 |
+| `cashmgmt/v1/entries` | `[].cashDrawer.guid` | H5 |
+| `cashmgmt/v1/entries` | `[].creatorOrShiftReviewSubject` | H5 |
+| `cashmgmt/v1/entries` | `[].creatorOrShiftReviewSubject.entityType` | H5 |
+| `cashmgmt/v1/entries` | `[].creatorOrShiftReviewSubject.guid` | H5 |
+| `cashmgmt/v1/entries` | `[].date` | H5 |
+| `cashmgmt/v1/entries` | `[].employee1` | H5 |
+| `cashmgmt/v1/entries` | `[].employee1.entityType` | H5 |
+| `cashmgmt/v1/entries` | `[].employee1.externalId` | H5 |
+| `cashmgmt/v1/entries` | `[].employee1.guid` | H5 |
+| `cashmgmt/v1/entries` | `[].employee2` | H5 |
+| `cashmgmt/v1/entries` | `[].entityType` | H5 |
+| `cashmgmt/v1/entries` | `[].guid` | H5 |
+| `cashmgmt/v1/entries` | `[].noSaleReason` | H5 |
+| `cashmgmt/v1/entries` | `[].payoutReason` | H5 |
+| `cashmgmt/v1/entries` | `[].reason` | H5 |
+| `cashmgmt/v1/entries` | `[].type` | H5 |
+| `cashmgmt/v1/entries` | `[].undoes` | H5 |
+| `stock/v1/inventory` | `[].guid` | H6 |
+| `stock/v1/inventory` | `[].itemGuidValidity` | H6 |
+| `stock/v1/inventory` | `[].multiLocationId` | H6 |
+| `stock/v1/inventory` | `[].quantity` | H6 |
+| `stock/v1/inventory` | `[].status` | H6 |
+| `stock/v1/inventory` | `[].versionId` | H6 |
+| `kitchen/v1/published/prepStations` | `[].connectedPrepStations` | H7 |
+| `kitchen/v1/published/prepStations` | `[].connectedPrepStations[]` | H7 |
+| `kitchen/v1/published/prepStations` | `[].entityType` | H7 |
+| `kitchen/v1/published/prepStations` | `[].expoRouting` | H7 |
+| `kitchen/v1/published/prepStations` | `[].guid` | H7 |
+| `kitchen/v1/published/prepStations` | `[].includeWithExpediter` | H7 |
+| `kitchen/v1/published/prepStations` | `[].kitchenPrinter` | H7 |
+| `kitchen/v1/published/prepStations` | `[].kitchenPrinter.entityType` | H7 |
+| `kitchen/v1/published/prepStations` | `[].kitchenPrinter.guid` | H7 |
+| `kitchen/v1/published/prepStations` | `[].name` | H7 |
+| `kitchen/v1/published/prepStations` | `[].printingMode` | H7 |
+| `partners/v1/connectedRestaurants` | `currentPageNum` | H8 |
+| `partners/v1/connectedRestaurants` | `lastPageNum` | H8 |
+| `partners/v1/connectedRestaurants` | `nextPageNum` | H8 |
+| `partners/v1/connectedRestaurants` | `pageSize` | H8 |
+| `partners/v1/connectedRestaurants` | `previousPageNum` | H8 |
+| `partners/v1/connectedRestaurants` | `results` | H8 |
+| `partners/v1/connectedRestaurants` | `results[]` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].createdDate` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].deleted` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].externalGroupRef` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].externalRestaurantRef` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].isoCreatedDate` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].isoModifiedDate` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].locationName` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].managementGroupGuid` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].modifiedDate` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].restaurantGuid` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].restaurantName` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].scopes` | H8 |
+| `partners/v1/connectedRestaurants` | `results[].scopes[]` | H8 |
+| `partners/v1/connectedRestaurants` | `totalCount` | H8 |
+| `partners/v1/connectedRestaurants` | `totalResultCount` | H8 |
+| `partners/v1/restaurants` | `[].createdDate` | H8 |
+| `partners/v1/restaurants` | `[].deleted` | H8 |
+| `partners/v1/restaurants` | `[].externalGroupRef` | H8 |
+| `partners/v1/restaurants` | `[].externalRestaurantRef` | H8 |
+| `partners/v1/restaurants` | `[].isoCreatedDate` | H8 |
+| `partners/v1/restaurants` | `[].isoModifiedDate` | H8 |
+| `partners/v1/restaurants` | `[].locationName` | H8 |
+| `partners/v1/restaurants` | `[].managementGroupGuid` | H8 |
+| `partners/v1/restaurants` | `[].modifiedDate` | H8 |
+| `partners/v1/restaurants` | `[].restaurantGuid` | H8 |
+| `partners/v1/restaurants` | `[].restaurantName` | H8 |
+| `partners/v1/restaurants` | `[].scopes` | H8 |
+| `packaging/v1/published/packagingConfig` | `enabled` | H9 |
+| `packaging/v1/published/packagingConfig` | `items` | H9 |
+| `packaging/v1/published/packagingConfig` | `items[]` | H9 |
+| `restaurant-availability/v1/availability` | `reason` | H10 |
+| `restaurant-availability/v1/availability` | `reasonKey` | H10 |
+| `restaurant-availability/v1/availability` | `restaurantGuid` | H10 |
+| `restaurant-availability/v1/availability` | `status` | H10 |
+| `ordermgmt-config/v1/published/orderingSchedule` | `acceptScheduledOrders` | H11 |
+| `ordermgmt-config/v1/published/orderingSchedule` | `lastOrderConfiguration` | H11 |
+| `ordermgmt-config/v1/published/orderingSchedule` | `overrides` | H11 |
+| `ordermgmt-config/v1/published/orderingSchedule` | `overrides[]` | H11 |
+| `ordermgmt-config/v1/published/orderingSchedule` | `scheduledOrderMaxDays` | H11 |
+| `ordermgmt-config/v1/published/orderingSchedule` | `servicePeriods` | H11 |
+| `ordermgmt-config/v1/published/orderingSchedule` | `servicePeriods[]` | H11 |
+| `ordermgmt-config/v1/published/orderingSchedule` | `timeZoneId` | H11 |
+| `device-details/v1/device-info` | `[].deviceModel` | H12 |
+| `device-details/v1/device-info` | `[].deviceModelName` | H12 |
+| `device-details/v1/device-info` | `[].deviceType` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.androidOsSdkLevel` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.androidOsVersion` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.deviceName` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.deviceUptimeMillis` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.firmwareVersion` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.ipType` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.lastSyncedAt` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.networkConnectionType` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.networkName` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.orderAutofireEnabled` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.pciCompliant` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.pciNonComplianceReason` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.posAppVersion` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.posType` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.primaryMode` | H12 |
+| `device-details/v1/device-info` | `[].posDeviceInfo.securityPatchVersion` | H12 |
+| `device-details/v1/device-info` | `[].printerDeviceInfo` | H12 |
+| `device-details/v1/device-info` | `[].printerDeviceInfo.deviceName` | H12 |
+| `device-details/v1/device-info` | `[].printerDeviceInfo.firmwareVersion` | H12 |
+| `device-details/v1/device-info` | `[].printerDeviceInfo.ipType` | H12 |
+| `device-details/v1/device-info` | `[].printerDeviceInfo.lastSyncedAt` | H12 |
+| `device-details/v1/device-info` | `[].printerDeviceInfo.printerPort` | H12 |
+| `device-details/v1/device-info` | `[].serialNumber` | H12 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `delivery` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `delivery.area` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `delivery.enabled` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `delivery.minimum` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `general` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `general.archived` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `general.closeoutHour` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `general.currencyCode` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `general.firstBusinessDate` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `general.locationCode` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `general.locationName` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `general.managementGroupGuid` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `general.name` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `general.timeZone` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `guid` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `location` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `location.administrativeArea` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `location.city` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `location.country` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `location.stateCode` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.enabled` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions.ccTip` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions.delivery` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions.delivery.cash` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions.delivery.ccFuture` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions.delivery.ccSameDay` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions.takeout` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions.takeout.cash` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions.takeout.ccFuture` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions.takeout.ccInStore` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.paymentOptions.takeout.ccSameDay` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.scheduling` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `onlineOrdering.specialRequests` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `prepTimes` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `prepTimes.deliveryPrepTime` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `prepTimes.deliveryThrottlingTime` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `prepTimes.deliveryTimeAfterOpen` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `prepTimes.deliveryTimeBeforeClose` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `prepTimes.takeoutPrepTime` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `prepTimes.takeoutThrottlingTime` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `prepTimes.takeoutTimeAfterOpen` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `prepTimes.takeoutTimeBeforeClose` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `schedules` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `schedules.daySchedules` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `schedules.weekSchedule` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `schedules.weekSchedule.friday` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `schedules.weekSchedule.monday` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `schedules.weekSchedule.saturday` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `schedules.weekSchedule.sunday` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `schedules.weekSchedule.thursday` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `schedules.weekSchedule.tuesday` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `schedules.weekSchedule.wednesday` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `urls` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `urls.checkGiftCard` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `urls.facebook` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `urls.orderOnline` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `urls.purchaseGiftCard` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `urls.twitter` | H13 |
+| `restaurants/v1/restaurants/{restaurantGUID}` | `urls.website` | H13 |
+| `orders/v2/payments/{guid}` | `amount` | H1 |
+| `orders/v2/payments/{guid}` | `amountTendered` | H1 |
+| `orders/v2/payments/{guid}` | `cardEntryMode` | H1 |
+| `orders/v2/payments/{guid}` | `cardProcessorType` | H1 |
+| `orders/v2/payments/{guid}` | `cardType` | H1 |
+| `orders/v2/payments/{guid}` | `cashDrawer` | H1 |
+| `orders/v2/payments/{guid}` | `cashDrawer.entityType` | H1 |
+| `orders/v2/payments/{guid}` | `cashDrawer.externalId` | H1 |
+| `orders/v2/payments/{guid}` | `cashDrawer.guid` | H1 |
+| `orders/v2/payments/{guid}` | `checkGuid` | H1 |
+| `orders/v2/payments/{guid}` | `createdByClientName` | H1 |
+| `orders/v2/payments/{guid}` | `createdDevice` | H1 |
+| `orders/v2/payments/{guid}` | `createdDevice.id` | H1 |
+| `orders/v2/payments/{guid}` | `entityType` | H1 |
+| `orders/v2/payments/{guid}` | `externalId` | H1 |
+| `orders/v2/payments/{guid}` | `first6Digits` | H1 |
+| `orders/v2/payments/{guid}` | `guid` | H1 |
+| `orders/v2/payments/{guid}` | `houseAccount` | H1 |
+| `orders/v2/payments/{guid}` | `isProcessedOffline` | H1 |
+| `orders/v2/payments/{guid}` | `lastModifiedDevice` | H1 |
+| `orders/v2/payments/{guid}` | `lastModifiedDevice.id` | H1 |
+| `orders/v2/payments/{guid}` | `mcaRepaymentAmount` | H1 |
+| `orders/v2/payments/{guid}` | `networkTransactionIdentifier` | H1 |
+| `orders/v2/payments/{guid}` | `orderGuid` | H1 |
+| `orders/v2/payments/{guid}` | `originalProcessingFee` | H1 |
+| `orders/v2/payments/{guid}` | `otherPayment` | H1 |
+| `orders/v2/payments/{guid}` | `paidBusinessDate` | H1 |
+| `orders/v2/payments/{guid}` | `paidDate` | H1 |
+| `orders/v2/payments/{guid}` | `paymentMethodId` | H1 |
+| `orders/v2/payments/{guid}` | `paymentStatus` | H1 |
+| `orders/v2/payments/{guid}` | `refund` | H1 |
+| `orders/v2/payments/{guid}` | `refundStatus` | H1 |
+| `orders/v2/payments/{guid}` | `server` | H1 |
+| `orders/v2/payments/{guid}` | `server.entityType` | H1 |
+| `orders/v2/payments/{guid}` | `server.externalId` | H1 |
+| `orders/v2/payments/{guid}` | `server.guid` | H1 |
+| `orders/v2/payments/{guid}` | `surchargeAmount` | H1 |
+| `orders/v2/payments/{guid}` | `tenderTransactionGuid` | H1 |
+| `orders/v2/payments/{guid}` | `tipAmount` | H1 |
+| `orders/v2/payments/{guid}` | `type` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidApprover` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidApprover.entityType` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidApprover.externalId` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidApprover.guid` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidBusinessDate` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidDate` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidReason` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidUser` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidUser.entityType` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidUser.externalId` | H1 |
+| `orders/v2/payments/{guid}` | `voidInfo.voidUser.guid` | H1 |
+| `orders/v2/orders/{guid}` | `appliedPackagingInfo` | H1 |
+| `orders/v2/orders/{guid}` | `approvalStatus` | H1 |
+| `orders/v2/orders/{guid}` | `businessDate` | H1 |
+| `orders/v2/orders/{guid}` | `calculatedGuestCount` | H1 |
+| `orders/v2/orders/{guid}` | `channelGuid` | H1 |
+| `orders/v2/orders/{guid}` | `checks` | H1 |
+| `orders/v2/orders/{guid}` | `checks[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].amount` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].appliedDiscounts` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].appliedDiscounts[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].appliedLoyaltyInfo` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].appliedServiceCharges` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].appliedServiceCharges[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].closedDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].createdByClientName` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].createdDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].createdDevice` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].createdDevice.id` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].customer` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].deleted` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].deletedDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].displayNumber` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].duration` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].lastModifiedDevice` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].lastModifiedDevice.id` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].modifiedDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].openedBy` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].openedBy.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].openedBy.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].openedBy.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].openedDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].paidDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].amount` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].amountTendered` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].cardEntryMode` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].cardProcessorType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].cardType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].cashDrawer` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].cashDrawer.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].cashDrawer.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].cashDrawer.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].checkGuid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].createdByClientName` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].createdDevice` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].createdDevice.id` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].houseAccount` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].isProcessedOffline` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].lastModifiedDevice` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].lastModifiedDevice.id` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].mcaRepaymentAmount` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].networkTransactionIdentifier` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].orderGuid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].originalProcessingFee` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].otherPayment` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].paidBusinessDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].paidDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].paymentMethodId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].paymentStatus` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].refund` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].refundStatus` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].server` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].server.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].server.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].server.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].surchargeAmount` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].tenderTransactionGuid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].tipAmount` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].type` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidApprover` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidApprover.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidApprover.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidApprover.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidBusinessDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidReason` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidUser` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidUser.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidUser.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].payments[].voidInfo.voidUser.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].paymentStatus` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedDiscounts` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedDiscounts[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].applicationOrdinal` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].displayName` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].facilitatorCollectAndRemitTax` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].jurisdiction` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].jurisdictionType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].name` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].rate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].taxAmount` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].taxRate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].taxRate.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].taxRate.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].appliedTaxes[].type` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].createdByClientName` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].createdDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].deferred` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].diningOption` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].diningOption.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].diningOption.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].diningOption.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].displayName` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].fulfillment` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].fulfillmentStatus` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].giftCardSelectionInfo` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].guestCountWeight` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].item` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].item.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].item.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].item.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].item.multiLocationId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].itemGroup` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].itemGroup.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].itemGroup.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].itemGroup.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].itemGroup.multiLocationId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiedDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].appliedDiscounts` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].appliedDiscounts[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].appliedTaxes` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].appliedTaxes[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].createdByClientName` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].createdDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].deferred` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].diningOption` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].diningOption.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].diningOption.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].diningOption.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].displayName` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].fulfillment` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].fulfillmentStatus` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].giftCardSelectionInfo` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].guestCountWeight` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].item` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].item.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].item.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].item.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].item.multiLocationId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].itemGroup` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].modifiedDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].modifiers` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].modifiers[]` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].optionGroup` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].optionGroup.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].optionGroup.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].optionGroup.guid` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].optionGroup.multiLocationId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].optionGroupPricingMode` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].plu` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].preDiscountPrice` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].preModifier` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].premodifierPlu` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].price` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].quantity` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].receiptLinePrice` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].refundDetails` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].salesCategory` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].salesCategoryPlu` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].seatNumber` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].selectionType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].splitOrigin` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].storedValueTransactionId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].tax` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].taxInclusion` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].toastGiftCard` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].unitOfMeasure` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].voidBusinessDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].voidDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].voided` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].modifiers[].voidReason` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].optionGroup` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].optionGroupPricingMode` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].plu` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].preDiscountPrice` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].preModifier` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].premodifierPlu` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].price` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].quantity` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].receiptLinePrice` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].refundDetails` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].salesCategory` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].salesCategoryPlu` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].seatNumber` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].selectionType` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].splitOrigin` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].storedValueTransactionId` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].tax` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].taxInclusion` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].toastGiftCard` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].unitOfMeasure` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].voidBusinessDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].voidDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].voided` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].selections[].voidReason` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].splitOrigin` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].taxAmount` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].taxExempt` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].taxExemptionAccount` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].totalAmount` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].voidBusinessDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].voidDate` | H1 |
+| `orders/v2/orders/{guid}` | `checks[].voided` | H1 |
+| `orders/v2/orders/{guid}` | `closedDate` | H1 |
+| `orders/v2/orders/{guid}` | `createdByClientName` | H1 |
+| `orders/v2/orders/{guid}` | `createdDate` | H1 |
+| `orders/v2/orders/{guid}` | `createdDevice` | H1 |
+| `orders/v2/orders/{guid}` | `createdDevice.id` | H1 |
+| `orders/v2/orders/{guid}` | `createdInTestMode` | H1 |
+| `orders/v2/orders/{guid}` | `curbsidePickupInfo` | H1 |
+| `orders/v2/orders/{guid}` | `deleted` | H1 |
+| `orders/v2/orders/{guid}` | `deletedDate` | H1 |
+| `orders/v2/orders/{guid}` | `deliveryInfo` | H1 |
+| `orders/v2/orders/{guid}` | `diningOption` | H1 |
+| `orders/v2/orders/{guid}` | `diningOption.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `diningOption.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `diningOption.guid` | H1 |
+| `orders/v2/orders/{guid}` | `displayNumber` | H1 |
+| `orders/v2/orders/{guid}` | `duration` | H1 |
+| `orders/v2/orders/{guid}` | `entityType` | H1 |
+| `orders/v2/orders/{guid}` | `estimatedFulfillmentDate` | H1 |
+| `orders/v2/orders/{guid}` | `excessFood` | H1 |
+| `orders/v2/orders/{guid}` | `externalId` | H1 |
+| `orders/v2/orders/{guid}` | `guid` | H1 |
+| `orders/v2/orders/{guid}` | `lastModifiedDevice` | H1 |
+| `orders/v2/orders/{guid}` | `lastModifiedDevice.id` | H1 |
+| `orders/v2/orders/{guid}` | `modifiedDate` | H1 |
+| `orders/v2/orders/{guid}` | `numberOfGuests` | H1 |
+| `orders/v2/orders/{guid}` | `openedDate` | H1 |
+| `orders/v2/orders/{guid}` | `paidDate` | H1 |
+| `orders/v2/orders/{guid}` | `pricingFeatures` | H1 |
+| `orders/v2/orders/{guid}` | `pricingFeatures[]` | H1 |
+| `orders/v2/orders/{guid}` | `promisedDate` | H1 |
+| `orders/v2/orders/{guid}` | `requiredPrepTime` | H1 |
+| `orders/v2/orders/{guid}` | `restaurantService` | H1 |
+| `orders/v2/orders/{guid}` | `restaurantService.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `restaurantService.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `restaurantService.guid` | H1 |
+| `orders/v2/orders/{guid}` | `revenueCenter` | H1 |
+| `orders/v2/orders/{guid}` | `revenueCenter.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `revenueCenter.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `revenueCenter.guid` | H1 |
+| `orders/v2/orders/{guid}` | `server` | H1 |
+| `orders/v2/orders/{guid}` | `server.entityType` | H1 |
+| `orders/v2/orders/{guid}` | `server.externalId` | H1 |
+| `orders/v2/orders/{guid}` | `server.guid` | H1 |
+| `orders/v2/orders/{guid}` | `serviceArea` | H1 |
+| `orders/v2/orders/{guid}` | `source` | H1 |
+| `orders/v2/orders/{guid}` | `table` | H1 |
+| `orders/v2/orders/{guid}` | `thirdPartyProviderInfo` | H1 |
+| `orders/v2/orders/{guid}` | `voidBusinessDate` | H1 |
+| `orders/v2/orders/{guid}` | `voidDate` | H1 |
+| `orders/v2/orders/{guid}` | `voided` | H1 |
+| `config/v2/alternatePaymentTypes/{guid}` | `entityType` | H3 |
+| `config/v2/alternatePaymentTypes/{guid}` | `externalId` | H3 |
+| `config/v2/alternatePaymentTypes/{guid}` | `guid` | H3 |
+| `config/v2/alternatePaymentTypes/{guid}` | `name` | H3 |
+| `config/v2/breakTypes/{guid}` | `active` | H3 |
+| `config/v2/breakTypes/{guid}` | `breakIntervalHrs` | H3 |
+| `config/v2/breakTypes/{guid}` | `breakIntervalMins` | H3 |
+| `config/v2/breakTypes/{guid}` | `duration` | H3 |
+| `config/v2/breakTypes/{guid}` | `enforceMinimumTime` | H3 |
+| `config/v2/breakTypes/{guid}` | `entityType` | H3 |
+| `config/v2/breakTypes/{guid}` | `guid` | H3 |
+| `config/v2/breakTypes/{guid}` | `name` | H3 |
+| `config/v2/breakTypes/{guid}` | `paid` | H3 |
+| `config/v2/breakTypes/{guid}` | `trackBreakAcknowledgement` | H3 |
+| `config/v2/breakTypes/{guid}` | `trackMissedBreaks` | H3 |
+| `config/v2/cashDrawers/{guid}` | `entityType` | H3 |
+| `config/v2/cashDrawers/{guid}` | `guid` | H3 |
+| `config/v2/cashDrawers/{guid}` | `printer` | H3 |
+| `config/v2/cashDrawers/{guid}` | `printer.entityType` | H3 |
+| `config/v2/cashDrawers/{guid}` | `printer.guid` | H3 |
+| `config/v2/diningOptions/{guid}` | `behavior` | H3 |
+| `config/v2/diningOptions/{guid}` | `curbside` | H3 |
+| `config/v2/diningOptions/{guid}` | `driveThru` | H3 |
+| `config/v2/diningOptions/{guid}` | `entityType` | H3 |
+| `config/v2/diningOptions/{guid}` | `externalId` | H3 |
+| `config/v2/diningOptions/{guid}` | `guid` | H3 |
+| `config/v2/diningOptions/{guid}` | `name` | H3 |
+| `config/v2/discounts/{guid}` | `active` | H3 |
+| `config/v2/discounts/{guid}` | `amount` | H3 |
+| `config/v2/discounts/{guid}` | `entityType` | H3 |
+| `config/v2/discounts/{guid}` | `fixedTotal` | H3 |
+| `config/v2/discounts/{guid}` | `guid` | H3 |
+| `config/v2/discounts/{guid}` | `itemPickingPriority` | H3 |
+| `config/v2/discounts/{guid}` | `name` | H3 |
+| `config/v2/discounts/{guid}` | `nonExclusive` | H3 |
+| `config/v2/discounts/{guid}` | `percentage` | H3 |
+| `config/v2/discounts/{guid}` | `promoCodes` | H3 |
+| `config/v2/discounts/{guid}` | `promoCodes[]` | H3 |
+| `config/v2/discounts/{guid}` | `selectionType` | H3 |
+| `config/v2/discounts/{guid}` | `type` | H3 |
+| `config/v2/menuGroups/{guid}` | `entityType` | H3 |
+| `config/v2/menuGroups/{guid}` | `externalId` | H3 |
+| `config/v2/menuGroups/{guid}` | `guid` | H3 |
+| `config/v2/menuGroups/{guid}` | `images` | H3 |
+| `config/v2/menuGroups/{guid}` | `images[]` | H3 |
+| `config/v2/menuGroups/{guid}` | `inheritOptionGroups` | H3 |
+| `config/v2/menuGroups/{guid}` | `inheritUnitOfMeasure` | H3 |
+| `config/v2/menuGroups/{guid}` | `items` | H3 |
+| `config/v2/menuGroups/{guid}` | `items[]` | H3 |
+| `config/v2/menuGroups/{guid}` | `items[].entityType` | H3 |
+| `config/v2/menuGroups/{guid}` | `items[].externalId` | H3 |
+| `config/v2/menuGroups/{guid}` | `items[].guid` | H3 |
+| `config/v2/menuGroups/{guid}` | `menu` | H3 |
+| `config/v2/menuGroups/{guid}` | `menu.entityType` | H3 |
+| `config/v2/menuGroups/{guid}` | `menu.externalId` | H3 |
+| `config/v2/menuGroups/{guid}` | `menu.guid` | H3 |
+| `config/v2/menuGroups/{guid}` | `name` | H3 |
+| `config/v2/menuGroups/{guid}` | `optionGroups` | H3 |
+| `config/v2/menuGroups/{guid}` | `optionGroups[]` | H3 |
+| `config/v2/menuGroups/{guid}` | `orderableOnline` | H3 |
+| `config/v2/menuGroups/{guid}` | `parent` | H3 |
+| `config/v2/menuGroups/{guid}` | `subgroups` | H3 |
+| `config/v2/menuGroups/{guid}` | `subgroups[]` | H3 |
+| `config/v2/menuGroups/{guid}` | `unitOfMeasure` | H3 |
+| `config/v2/menuGroups/{guid}` | `visibility` | H3 |
+| `config/v2/menuItems/{guid}` | `calories` | H3 |
+| `config/v2/menuItems/{guid}` | `entityType` | H3 |
+| `config/v2/menuItems/{guid}` | `externalId` | H3 |
+| `config/v2/menuItems/{guid}` | `guid` | H3 |
+| `config/v2/menuItems/{guid}` | `images` | H3 |
+| `config/v2/menuItems/{guid}` | `images[]` | H3 |
+| `config/v2/menuItems/{guid}` | `inheritOptionGroups` | H3 |
+| `config/v2/menuItems/{guid}` | `inheritUnitOfMeasure` | H3 |
+| `config/v2/menuItems/{guid}` | `name` | H3 |
+| `config/v2/menuItems/{guid}` | `optionGroups` | H3 |
+| `config/v2/menuItems/{guid}` | `optionGroups[]` | H3 |
+| `config/v2/menuItems/{guid}` | `optionGroups[].entityType` | H3 |
+| `config/v2/menuItems/{guid}` | `optionGroups[].externalId` | H3 |
+| `config/v2/menuItems/{guid}` | `optionGroups[].guid` | H3 |
+| `config/v2/menuItems/{guid}` | `orderableOnline` | H3 |
+| `config/v2/menuItems/{guid}` | `plu` | H3 |
+| `config/v2/menuItems/{guid}` | `sku` | H3 |
+| `config/v2/menuItems/{guid}` | `type` | H3 |
+| `config/v2/menuItems/{guid}` | `unitOfMeasure` | H3 |
+| `config/v2/menuItems/{guid}` | `visibility` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `entityType` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `externalId` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `guid` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `maxSelections` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `minSelections` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `name` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `options` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `options[]` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `options[].entityType` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `options[].externalId` | H3 |
+| `config/v2/menuOptionGroups/{guid}` | `options[].guid` | H3 |
+| `config/v2/menus/{guid}` | `entityType` | H3 |
+| `config/v2/menus/{guid}` | `externalId` | H3 |
+| `config/v2/menus/{guid}` | `groups` | H3 |
+| `config/v2/menus/{guid}` | `groups[]` | H3 |
+| `config/v2/menus/{guid}` | `groups[].entityType` | H3 |
+| `config/v2/menus/{guid}` | `groups[].externalId` | H3 |
+| `config/v2/menus/{guid}` | `groups[].guid` | H3 |
+| `config/v2/menus/{guid}` | `guid` | H3 |
+| `config/v2/menus/{guid}` | `images` | H3 |
+| `config/v2/menus/{guid}` | `images[]` | H3 |
+| `config/v2/menus/{guid}` | `name` | H3 |
+| `config/v2/menus/{guid}` | `orderableOnline` | H3 |
+| `config/v2/menus/{guid}` | `unitOfMeasure` | H3 |
+| `config/v2/menus/{guid}` | `visibility` | H3 |
+| `config/v2/noSaleReasons/{guid}` | `entityType` | H3 |
+| `config/v2/noSaleReasons/{guid}` | `guid` | H3 |
+| `config/v2/noSaleReasons/{guid}` | `name` | H3 |
+| `config/v2/payoutReasons/{guid}` | `entityType` | H3 |
+| `config/v2/payoutReasons/{guid}` | `guid` | H3 |
+| `config/v2/payoutReasons/{guid}` | `name` | H3 |
+| `config/v2/printers/{guid}` | `entityType` | H3 |
+| `config/v2/printers/{guid}` | `guid` | H3 |
+| `config/v2/printers/{guid}` | `name` | H3 |
+| `config/v2/restaurantServices/{guid}` | `entityType` | H3 |
+| `config/v2/restaurantServices/{guid}` | `guid` | H3 |
+| `config/v2/restaurantServices/{guid}` | `name` | H3 |
+| `config/v2/revenueCenters/{guid}` | `description` | H3 |
+| `config/v2/revenueCenters/{guid}` | `entityType` | H3 |
+| `config/v2/revenueCenters/{guid}` | `guid` | H3 |
+| `config/v2/revenueCenters/{guid}` | `name` | H3 |
+| `config/v2/salesCategories/{guid}` | `entityType` | H3 |
+| `config/v2/salesCategories/{guid}` | `guid` | H3 |
+| `config/v2/salesCategories/{guid}` | `name` | H3 |
+| `config/v2/serviceAreas/{guid}` | `entityType` | H3 |
+| `config/v2/serviceAreas/{guid}` | `guid` | H3 |
+| `config/v2/serviceAreas/{guid}` | `name` | H3 |
+| `config/v2/serviceAreas/{guid}` | `revenueCenter` | H3 |
+| `config/v2/serviceAreas/{guid}` | `revenueCenter.entityType` | H3 |
+| `config/v2/serviceAreas/{guid}` | `revenueCenter.externalId` | H3 |
+| `config/v2/serviceAreas/{guid}` | `revenueCenter.guid` | H3 |
+| `config/v2/serviceAreas/{guid}` | `serviceAreaType` | H3 |
+| `config/v2/serviceCharges/{guid}` | `amount` | H3 |
+| `config/v2/serviceCharges/{guid}` | `amountType` | H3 |
+| `config/v2/serviceCharges/{guid}` | `applicableTaxes` | H3 |
+| `config/v2/serviceCharges/{guid}` | `applicableTaxes[]` | H3 |
+| `config/v2/serviceCharges/{guid}` | `criteria` | H3 |
+| `config/v2/serviceCharges/{guid}` | `criteria.delivery` | H3 |
+| `config/v2/serviceCharges/{guid}` | `criteria.dineIn` | H3 |
+| `config/v2/serviceCharges/{guid}` | `criteria.maxCheckAmount` | H3 |
+| `config/v2/serviceCharges/{guid}` | `criteria.minCheckAmount` | H3 |
+| `config/v2/serviceCharges/{guid}` | `criteria.minDeliveryDistance` | H3 |
+| `config/v2/serviceCharges/{guid}` | `criteria.takeout` | H3 |
+| `config/v2/serviceCharges/{guid}` | `destination` | H3 |
+| `config/v2/serviceCharges/{guid}` | `entityType` | H3 |
+| `config/v2/serviceCharges/{guid}` | `externalId` | H3 |
+| `config/v2/serviceCharges/{guid}` | `gratuity` | H3 |
+| `config/v2/serviceCharges/{guid}` | `guid` | H3 |
+| `config/v2/serviceCharges/{guid}` | `name` | H3 |
+| `config/v2/serviceCharges/{guid}` | `percent` | H3 |
+| `config/v2/serviceCharges/{guid}` | `serviceChargeCalculation` | H3 |
+| `config/v2/serviceCharges/{guid}` | `taxable` | H3 |
+| `config/v2/serviceCharges/{guid}` | `taxInclusive` | H3 |
+| `config/v2/serviceCharges/{guid}` | `taxProrated` | H3 |
+| `config/v2/taxRates/{guid}` | `conditionalTaxRates` | H3 |
+| `config/v2/taxRates/{guid}` | `conditionalTaxRates[]` | H3 |
+| `config/v2/taxRates/{guid}` | `entityType` | H3 |
+| `config/v2/taxRates/{guid}` | `guid` | H3 |
+| `config/v2/taxRates/{guid}` | `isDefault` | H3 |
+| `config/v2/taxRates/{guid}` | `name` | H3 |
+| `config/v2/taxRates/{guid}` | `rate` | H3 |
+| `config/v2/taxRates/{guid}` | `roundingType` | H3 |
+| `config/v2/taxRates/{guid}` | `taxTable` | H3 |
+| `config/v2/taxRates/{guid}` | `taxTable[]` | H3 |
+| `config/v2/taxRates/{guid}` | `type` | H3 |
+| `config/v2/voidReasons/{guid}` | `entityType` | H3 |
+| `config/v2/voidReasons/{guid}` | `guid` | H3 |
+| `config/v2/voidReasons/{guid}` | `name` | H3 |
+| `labor/v1/employees/{employeeId}` | `createdDate` | H4 |
+| `labor/v1/employees/{employeeId}` | `deleted` | H4 |
+| `labor/v1/employees/{employeeId}` | `deletedDate` | H4 |
+| `labor/v1/employees/{employeeId}` | `entityType` | H4 |
+| `labor/v1/employees/{employeeId}` | `externalEmployeeId` | H4 |
+| `labor/v1/employees/{employeeId}` | `externalId` | H4 |
+| `labor/v1/employees/{employeeId}` | `guid` | H4 |
+| `labor/v1/employees/{employeeId}` | `jobReferences` | H4 |
+| `labor/v1/employees/{employeeId}` | `jobReferences[]` | H4 |
+| `labor/v1/employees/{employeeId}` | `jobReferences[].entityType` | H4 |
+| `labor/v1/employees/{employeeId}` | `jobReferences[].externalId` | H4 |
+| `labor/v1/employees/{employeeId}` | `jobReferences[].guid` | H4 |
+| `labor/v1/employees/{employeeId}` | `modifiedDate` | H4 |
+| `labor/v1/employees/{employeeId}` | `v2EmployeeGuid` | H4 |
+| `labor/v1/employees/{employeeId}` | `wageOverrides` | H4 |
+| `labor/v1/employees/{employeeId}` | `wageOverrides[]` | H4 |
+| `labor/v1/employees/{employeeId}` | `wageOverrides[].jobReference` | H4 |
+| `labor/v1/employees/{employeeId}` | `wageOverrides[].jobReference.entityType` | H4 |
+| `labor/v1/employees/{employeeId}` | `wageOverrides[].jobReference.externalId` | H4 |
+| `labor/v1/employees/{employeeId}` | `wageOverrides[].jobReference.guid` | H4 |
+| `labor/v1/employees/{employeeId}` | `wageOverrides[].wage` | H4 |
+| `labor/v1/jobs/{jobId}` | `code` | H4 |
+| `labor/v1/jobs/{jobId}` | `createdDate` | H4 |
+| `labor/v1/jobs/{jobId}` | `defaultWage` | H4 |
+| `labor/v1/jobs/{jobId}` | `deleted` | H4 |
+| `labor/v1/jobs/{jobId}` | `deletedDate` | H4 |
+| `labor/v1/jobs/{jobId}` | `entityType` | H4 |
+| `labor/v1/jobs/{jobId}` | `excludeFromReporting` | H4 |
+| `labor/v1/jobs/{jobId}` | `externalId` | H4 |
+| `labor/v1/jobs/{jobId}` | `guid` | H4 |
+| `labor/v1/jobs/{jobId}` | `modifiedDate` | H4 |
+| `labor/v1/jobs/{jobId}` | `tipped` | H4 |
+| `labor/v1/jobs/{jobId}` | `title` | H4 |
+| `labor/v1/jobs/{jobId}` | `wageFrequency` | H4 |
+| `labor/v1/shifts/{shiftId}` | `createdDate` | H4 |
+| `labor/v1/shifts/{shiftId}` | `deleted` | H4 |
+| `labor/v1/shifts/{shiftId}` | `deletedDate` | H4 |
+| `labor/v1/shifts/{shiftId}` | `employeeReference` | H4 |
+| `labor/v1/shifts/{shiftId}` | `employeeReference.entityType` | H4 |
+| `labor/v1/shifts/{shiftId}` | `employeeReference.externalId` | H4 |
+| `labor/v1/shifts/{shiftId}` | `employeeReference.guid` | H4 |
+| `labor/v1/shifts/{shiftId}` | `entityType` | H4 |
+| `labor/v1/shifts/{shiftId}` | `externalId` | H4 |
+| `labor/v1/shifts/{shiftId}` | `guid` | H4 |
+| `labor/v1/shifts/{shiftId}` | `inDate` | H4 |
+| `labor/v1/shifts/{shiftId}` | `jobReference` | H4 |
+| `labor/v1/shifts/{shiftId}` | `jobReference.entityType` | H4 |
+| `labor/v1/shifts/{shiftId}` | `jobReference.externalId` | H4 |
+| `labor/v1/shifts/{shiftId}` | `jobReference.guid` | H4 |
+| `labor/v1/shifts/{shiftId}` | `modifiedDate` | H4 |
+| `labor/v1/shifts/{shiftId}` | `outDate` | H4 |
+| `labor/v1/shifts/{shiftId}` | `scheduleConfig` | H4 |
+| `labor/v1/shifts/{shiftId}` | `scheduleConfig.guid` | H4 |
+| `labor/v1/shifts/{shiftId}` | `scheduleConfig.minAfterClockIn` | H4 |
+| `labor/v1/shifts/{shiftId}` | `scheduleConfig.minAfterClockOut` | H4 |
+| `labor/v1/shifts/{shiftId}` | `scheduleConfig.minBeforeClockIn` | H4 |
+| `labor/v1/shifts/{shiftId}` | `scheduleConfig.minBeforeClockOut` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `autoClockedOut` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `breaks` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `breaks[]` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `businessDate` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `cashGratuityServiceCharges` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `cashSales` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `createdDate` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `declaredCashTips` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `deleted` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `deletedDate` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `employeeReference` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `employeeReference.entityType` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `employeeReference.externalId` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `employeeReference.guid` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `entityType` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `externalId` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `guid` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `hourlyWage` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `inDate` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `jobReference` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `jobReference.entityType` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `jobReference.externalId` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `jobReference.guid` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `modifiedDate` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `nonCashGratuityServiceCharges` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `nonCashSales` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `nonCashTips` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `nonCashTipsRoundingLoss` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `outDate` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `overtimeHours` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `regularHours` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `shiftReference` | H4 |
+| `labor/v1/timeEntries/{timeEntryId}` | `tipsWithheld` | H4 |
+| `kitchen/v1/published/prepStations/{guid}` | `connectedPrepStations` | H7 |
+| `kitchen/v1/published/prepStations/{guid}` | `connectedPrepStations[]` | H7 |
+| `kitchen/v1/published/prepStations/{guid}` | `entityType` | H7 |
+| `kitchen/v1/published/prepStations/{guid}` | `expoRouting` | H7 |
+| `kitchen/v1/published/prepStations/{guid}` | `guid` | H7 |
+| `kitchen/v1/published/prepStations/{guid}` | `includeWithExpediter` | H7 |
+| `kitchen/v1/published/prepStations/{guid}` | `kitchenPrinter` | H7 |
+| `kitchen/v1/published/prepStations/{guid}` | `kitchenPrinter.entityType` | H7 |
+| `kitchen/v1/published/prepStations/{guid}` | `kitchenPrinter.guid` | H7 |
+| `kitchen/v1/published/prepStations/{guid}` | `name` | H7 |
+| `kitchen/v1/published/prepStations/{guid}` | `printingMode` | H7 |
+| `restaurants/v1/groups/{managementGroupGUID}/restaurants` | `[].guid` | H13 |
+
+**Audit invariant:** 1629 endpoint/path evidence rows, 13 exact shared contracts; do not silently drop an observed path when importing an official schema. Missing from this ledger DOES NOT mean absent from Toast's official or granted Standard API response.
+
+## Current official response fields that expose concrete implementation gaps
+
+The official operation pages show fields **even when the 2026-10-28 café sample did not return them**. This focused cross-check is more reliable than interpreting the old diagnostic as a complete schema. These are examples of proven contract shapes, **not** a substitute for full downloaded OpenAPI schema enumeration.
+
+| Official operation | Fields and types visible on official response sample | Identity/changes | Existing November store vs gap |
+|---|---|---|---|
+| [Get time entries](https://doc.toasttab.com/openapi/labor/operation/timeEntriesGet/) (Labor 1.9.0) | `guid` string, `entityType` string, `externalId` string, `createdDate` date-time, `modifiedDate` date-time, `deletedDate` date-time, `deleted` boolean, `jobReference.{guid,entityType,externalId}` strings, `employeeReference.{guid,entityType,externalId}` strings, `shiftReference.{guid,entityType,externalId}` strings, `inDate` and `outDate` date-time, `autoClockedOut` boolean, `businessDate` string, `regularHours` and `overtimeHours` numbers, `hourlyWage` number, `breaks[]` objects including `guid`, `breakType.{guid,entityType}`, `paid` boolean, `inDate`, `outDate`, `missed`, `waived`, `auditResponse`, and tip/sales number fields `declaredCashTips`, `nonCashTips`, `nonCashTipsRoundingLoss`, `cashGratuityServiceCharges`, `nonCashGratuityServiceCharges`, `tipsWithheld`, `nonCashSales`, `cashSales`. | `(business_id, restaurant_guid, timeEntry.guid)` plus `modifiedDate`; nested breaks have own GUIDs; do not identify one shift by employee/date alone. | `laborSync.ts:mapToastLaborEntry` retains employee ID, clock in/out, wage, deleted, modified, regular/overtime and breaks; **jobReference, shiftReference, autoClockedOut, businessDate, tip/sales fields and other metadata are not explicitly mapped** into `toast_labor_entries`. Raw current `time_entry` may retain fields but query parity is unproven. POS0b must enumerate all fields and prove stored→reader parity. |
+| [Get menu item inventory](https://doc.toasttab.com/openapi/stock/operation/getInventory/) (Stock 1.0.0) | `guid` UUID, `itemGuidValidity` enum string, `status` enum string, `quantity` number, `multiLocationId` string, `versionId` UUID. | Propose business/restaurant/item `guid` current key; preserve `multiLocationId` and `versionId` to identify real revisions; validate stable semantics before code. | **Important semantic trap:** official GET lists only `OUT_OF_STOCK` or `QUANTITY` statuses; normal `IN_STOCK` items are omitted by design. An absent row is NOT verified zero inventory or no stock record. Only historical `cv_inventory` diagnostic exists; POS0c needs a current bounded sync. |
+| [Get item fulfillments](https://doc.toasttab.com/openapi/kitchen/operation/itemFulfillmentsGet/) (Kitchen 1.0.2) | `restaurantGuid`, `orderGuid`, `selectionGuid`, `selectionMenuItemGuid`, `selectionMenuItemName`, `selectionMenuItemMultiLocationId`, `ticketGuid`, `ticketFiredAt`, `itemFulfilledAt`, `itemStartedAt`, `itemFulfillmentLevel`, `prepStationGuid`, `prepStationName`, `prepStationMultiLocationId`, `diningOptionGuid`, `diningOptionName`, `diningOptionBehavior`, `courseGuid`, `courseName`, `orderSource`. Date-time stamps and integer level; other GUIDs/labels are strings. | No single event GUID is shown in the official sample; a stable composite must be validated against repeated ticket/selection events and timestamp changes; **never use the import run ID as identity**. | Official `204` means no active Toast Restaurant Management Suite Pro+ subscription; Oct 28 diagnostic recorded `204`. Do **not** infer kitchen progress or completion from `204` or from order's separate selection fulfillment status. |
+| [Get cash entries](https://doc.toasttab.com/openapi/cashmanagement/operation/entriesGet/) (Cash 1.1.0) | `guid` string, `entityType` string, `amount` number, `reason` string, `date` date-time, `type` enum string, `cashDrawer.{guid,entityType}`, `payoutReason.{guid,entityType}`, `noSaleReason.{guid,entityType}`, `undoes` string, `employee1/employee2.{guid,entityType,externalId}`, `creatorOrShiftReviewSubject.{guid,entityType}`, `approverOrShiftReviewSubject.{guid,entityType}`. | Propose `(business_id,restaurant_guid,entry.guid)`, preserve `undoes` link. Verify change/version behavior and subject privacy. | Historical diagnostic success does not establish a November cash ingest. No current raw cash-entry object or `cv_cash` current reader demonstrated; POS0c must avoid double-counting undo/reversals and expose provenance. |
+
+**Field-level authorization rule:** even if Toast returns fields protected by separate `guest.pi:read` or `delivery_info.address:read`, the existing privacy filter excludes personal content; optional provider permission does not itself authorize Supervisor disclosure. Schema samples give types and examples, but do not prove a field is actually present at a given café.
+
+### Reconciled official operation caveats (November 7, 2026)
+
+1. The official [Restaurants API 1.0.0](https://doc.toasttab.com/openapi/restaurants/overview/) currently documents **two** GETs: [restaurant configuration by GUID](https://doc.toasttab.com/openapi/restaurants/operation/restaurantsRestaurantGuidGet/) and [restaurants in a management group](https://doc.toasttab.com/openapi/restaurants/operation/groupsManagementGroupGuidRestaurantsGet/). Historical diagnostic `restaurants/v1/restaurants` is **not one of those documented current operations**: it must remain an observed historical alias or stale diagnostic, not be counted as an official operation without further documentation.
+2. Official [Partners GET access](https://doc.toasttab.com/openapi/partners/operation/restaurantsGet/) describes **partner API clients**. Standard API docs instead enumerate configured read scopes and reference the restaurant GUID access process. An October partner endpoint 200 does not prove that the verified **Standard** credential currently has partner entitlement; classify the two registry partner GETs as **partner/conditional, not certified Standard**, until documented credential-specific entitlement is confirmed.
+3. [Standard API access](https://doc.toasttab.com/doc/devguide/devApiAccessFAQs.html) supports GET only and explicitly excludes Menus V3. [Menus V3](https://doc.toasttab.com/doc/devguide/apiScopes.html) uses `menus.channel:read`, separate from Standard `menus:read`. [Kitchen GET item fulfillments](https://doc.toasttab.com/doc/devguide/apiKitchenOverview.html) needs RMS Pro+; its `204` is an entitlement/data-availability condition, not confirmation of zero kitchen events.
+4. Current official operation links include a **Download OpenAPI specification** YAML link, for example [Labor 1.9.0 YAML](https://doc.toasttab.com/toast-api-specifications/toast-labor-api.yaml). The downloaded bytes and SHA are **not pinned** in this repository, so this document does **not** certify an exhaustive official operation/response schema comparison. A reproducible signed-off test must fetch/pin only from the owner's approved audit-fixture location (see PR owner question). No invented full endpoint total should be inferred from the 76 registry candidates.
+
+## Architecture decisions requiring owner sign-off **before** POS0b–e data code
+
+| Proposed data source | Required persisted object / key | Shared read design | Exact unresolved design / owner decision |
+|---|---|---|---|
+| Labor employees, jobs, time entries, scheduled shifts | Reuse same `toast_raw_records` current writer with exact GUID per object; preserve `toast_labor_entries`, `pos_scheduled_shifts`, linked employee records | Extend same `toast_records_for`, `cv_labor_entries`, `cv_staff`, `cv_shifts`; project no new standalone reader | Approve each spec field and privacy class, employee vs time-entry modification cursor, actual shift vs scheduled separation, provider rate/tip/break null semantics (POS0b) |
+| Cash deposits/entries, stock, kitchen item fulfillments, stations and dynamic availability | Reuse current-object writer; validate provider-native GUID or composite + version/date for each family; track genuine changes only | `toast_records_for` + `ai_query_view`, existing `cv_cash`/`cv_inventory`/`cv_kitchen` updated to current canonical evidence, no second reader | Approve keys, 204/403/empty vs zero, cadence per location/closeout and PII, no phantom effects (POS0c) |
+| Config collections and details, Menus V2, device/setup/partner/packaging/restaurant | Reuse current-object writer and existing menu/catalog stages; one row per config GUID or verified versioned restaurant setup object | Same `toast_records_for`, dictionary, `query_data`; existing Menu and Money metrics remain truth source | Confirm Standard eligibility and scopes per operation, detail GUID provenance, price/discount history, dynamic published versions, device privacy (POS0d) |
+| All retained allowed fields | No second data store | Extend EXISTING `toast_records_for` / `cv_toast_records` / `ai_query_view` / `describe_data` / `query_data`, reuse metric screen readers | Per-field actor, business-ID, date, freshness, stable ID traversal, null, cost/fee parity tests before release (POS0e) |
+
+### Reproducible read-only audit SQL (no data or provider write)
+
+Execute in authorized Supabase SQL editor; the queries report **counts/paths only**, never secrets or raw customer payloads. Source: `public.toast_raw_samples`, `toast_raw_records`, `toast_raw_changes`, `toast_sync_runs`, `toast_sync_health`. The executed read-only aggregate checks in the connected project yielded the values recorded above on Nov 7 UTC. No immutable job URL or public run artifact exists for these direct checks; **this is not an acceptance workflow proof link**.
+
+```sql
+-- Read-only operation outcomes. Do not merge historical evidence into current status.
+select endpoint, max(fetched_at) last_capture,
+ count(*) filter (where http_status between 200 and 299 and error_code is null) success,
+ count(*) filter (where http_status=204) no_content,
+ count(*) filter (where http_status=403) forbidden,
+ count(*) filter (where error_code='missing_resource_guid') missing_resource_guid,
+ count(*) filter (where error_code='not_configured') not_configured
+from public.toast_raw_samples group by endpoint order by endpoint;
+
+-- Read-only redacted observed path inventory; historical, never complete official spec.
+select endpoint, path from
+ (select distinct endpoint, unnest(field_paths) path
+  from public.toast_raw_samples where http_status between 200 and 299
+    and error_code is null) observed
+order by endpoint,path;
+
+-- Independent operational evidence, not endpoint-by-endpoint response proof.
+select entity, count(*) current_objects, max(last_seen) last_seen
+from public.toast_raw_records group by entity order by entity;
+select entity, count(*) change_events, max(changed_at) newest_change
+from public.toast_raw_changes group by entity order by entity;
+select state, count(*) runs, max(started_at) newest_run
+from public.toast_sync_runs group by state;
+```
+
+Read-only registry reproduction (requires the repository dependency environment; this is an **inventory inspection**, not an accepted test or shell evaluation by the proof workflow):
+
+```text
+Source: lib/pos/toast/rawSample.server.ts → TOAST_READ_ENDPOINTS
+Classification: exclude scope=unsupported; exclude endpoint prefixed era/ or menus/v3/; split id-scope from collection. Compare names against SQL outcomes above and the official operation list; do not accept a hardcoded count.
+```
+
+## Acceptance and execution evidence ledger
+
+| AC | Result as of this document | Missing independent executable proof |
+|---|---|---|
+| A1: every official Standard GET + response field, per-café scope/status | **PARTIAL: source definition acquired** | 12 original Toast-owned YAML downloads, 74 GETs and 2,320 recursive response-field rows with zero unresolved refs, URL/version/SHA in pinned snapshot; [capture #42529761170](https://github.com/killbill2792/aicafe/actions/runs/42529761170). **Two Swagger-path differences now classified with Toast's official operation-page curl request URLs**: [Stock](https://doc.toasttab.com/openapi/stock/operation/getInventory/) and [Packaging](https://doc.toasttab.com/openapi/packaging/operation/getPackagingConfig/). Actual café grant/response status still requires evidence; not end-to-end proof. |
+| A2: every allowed field, key, owner, cadence, privacy, reader/AI/screen | **NOT PROVEN beyond pinned source schema** | Current actual grants/null/missing/PII, writer current-object key, stored source shape, shared `describe_data`/`query_data`, SQL lineage and every screen/registered-Supervisor consumer are unverified for many of the 2,320 official response-field rows. October samples are diagnostic only. |
+| A3: separate code paths, current prod and stale diagnostic; proposed plan | **PARTIAL; D1–D3 principles APPROVED, final field-level plan still owner-review pending** | Current aggregates and code paths checked; full per-field source → current object → shared read design and every legacy consumer still require evidence and a separate runtime go-ahead; no field-level code changes permitted |
+| A4: reproducible matrix command + immutable proof link, preserve orders | **PARTIAL — official source/ledger audit executed, current API→Supervisor still open** | `node --test scripts/toast-standard-api-coverage.test.mjs`: **6/6** deterministic offline assertions executed in [trusted Acceptance Evidence #42530568911](https://github.com/killbill2792/aicafe/actions/runs/42530568911) at `5200920`; validates the original 12 downloaded source SHA/version, 74 official GETs, 2,320 nested schema field rows, 102 repo candidates, 1,629 October paths and 13 historical contract legends. Two Swagger-versus-request path differences are explicitly preserved and source-classified. **NO** live café grants/returned fields, stored-current source parity, `describe_data`/`query_data`, SQL, screen or registered one-Supervisor turn is established; strict full proof remains open. |
+
+**No READY PR / merge certification from this document alone.** Trusted acceptance `result=passed` applies **only** to the structural audit test actually run and recorded above; **not** to A1/A2/A4 end-to-end fields and real Supervisor/screen answers. Prior acceptance `Unverified task/head/base` arose from stale SHA and an empty row list; the corrected matching-head run executed and uploaded structural proof. The approved snapshot now pins **normalized official Swagger GET schema evidence plus raw source SHA**, but **not a café-specific field implementation**. Exactly the two approved audit paths are in scope; any further file change or production operation needs separate approval.
+
+## Source code inspected and boundaries
+
+- `AGENTS.md`, `PROGRESS.md`, `docs/plans/universal-supervisor-task-briefs.md#task-pos0a`, `docs/plans/toast-storage.md`, `docs/rules/pos-data.md`, `docs/rules/safety-and-privacy.md`.
+- `lib/pos/toast/rawSample.server.ts`, `redact.ts`, `client.ts`, `dayImport.ts`, `adapter.ts`, `optionalSync.ts`, `laborSync.ts`, `operationalCopy.ts`, `.github/workflows/toast-raw-capture-daily.yml`.
+- `lib/ai/agent/tools/dataQuery.ts`, `lib/data/canonical/dictionary.ts`, `supabase/migrations/20261104000152_toast_removed_discounts.sql`.
+- **No runtime files changed.** No Supabase writes, no Toast calls, no privileged customer detail fetched. Production release and full field authorization remain unproven.
