@@ -47,7 +47,19 @@ current_nonorders as not materialized (
   r.business_date,r.payload,
   coalesce(nullif(r.payload->>'endpoint',''),r.entity)::text record_type
  from public.toast_raw_records r
- where r.entity<>'order' and jsonb_typeof(r.payload)='object'
+ where r.entity not in ('order','check','payment','item','modifier',
+  'item_discount','check_discount','service_charge')
+  and jsonb_typeof(r.payload)='object'
+  -- Stage-table triggers also fire when Test Café copies source data. A staged
+  -- object is eligible for an operational answer ONLY when its café+restaurant
+  -- mapping was verified by Toast. The mirror resets verified_at to NULL
+  -- intentionally: those staged rows are fixtures, never provider authority.
+  -- Direct current-object archives and order projections retain their existing
+  -- identity/date logic; a disconnected real café retains historical records.
+  and (r.capture_key not like 'stage:%' or exists (
+   select 1 from public.toast_location_mappings m
+   where m.business_id=r.business_id and m.restaurant_guid=r.restaurant_guid
+    and m.verified_at is not null))
   and (p_business_id is null or r.business_id=p_business_id)
   and (p_from is null or r.business_date is null or r.business_date>=p_from)
   and (p_to is null or r.business_date is null or r.business_date<=p_to)
