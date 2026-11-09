@@ -181,12 +181,20 @@ async function main() {
   const autoMerge = process.env.DISPATCH_AUTO_MERGE === "true" && commit;
   if (autoMerge && ledger) {
     for (const [id, rec] of Object.entries(proposed.state.tasks)) {
-      if (!rec.pr_number || rec.github_state !== "open" || rec.draft) continue;
+      if (!rec.pr_number || rec.github_state !== "open") continue;
       const task = taskById.get(id);
       if (!task || !rec.approved || !rec.acceptance_evidence) continue;
       const predecessorRecords = predecessorsForMerge(task, queue, proposed.state.tasks);
+      // Draft-to-ready and merge use the exact same executed proof gate.
+      // A successful ready transition is NOT merged in this same stale snapshot;
+      // GitHub must observe/review the ready PR again on the next run.
       const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
-        evidence: rec.acceptance_evidence, expectedAcceptance: task.acceptance, enabled: true });
+        evidence: rec.acceptance_evidence, expectedAcceptance: task.acceptance, enabled: true,
+        action: rec.draft ? "ready" : "merge" });
+      if (outcome.status === "ready_for_review") {
+        console.log(`Verified PR #${rec.pr_number} for task ${id} is ready for review; merge awaits fresh GitHub reconciliation`);
+        continue;
+      }
       if (outcome.status === "merged_unproven") {
         await ledger.transaction(state => {
           const currentRec = state.tasks[id];
