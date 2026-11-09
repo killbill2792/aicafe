@@ -314,8 +314,10 @@ test("Every official nested field has a non-fabricated architecture disposition"
    assert.equal(address.response,"not_tested");
   }
   const status=resolve("orders",operation,"200",prefix+"deliveryInfo.deliveryState");
-  assert.equal(status.exception,null,
-   "Do not require delivery address scope for unrelated delivery state fields");
+  assert.equal(status.exception.field_prefix,prefix+"deliveryInfo",
+   "Toast returns the complete deliveryInfo object as null without delivery_info.address:read");
+  assert.match(status.exception.additional_or_required_scope,/delivery_info\.address:read/);
+  assert.equal(status.response,"not_tested");
  }
  assert.equal(manifest.coverage_complete,false,
   "Full runtime source→retention→SQL→one-Supervisor gate must remain fail-closed");
