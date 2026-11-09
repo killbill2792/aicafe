@@ -63,7 +63,7 @@ export function createDelivery({ task, record, action, actionId }) {
     'CI AND COSTS: Use the existing GitHub Actions jobs and disposable test resources. NEVER create or enable Vercel preview deployments/builds. Targeted browser/Playwright acceptance belongs in GitHub CI when required; E2 remains separately gated and proposed. A local Next.js CI build is not a Vercel deployment.',
     `Task ${task.id}: ${task.title}`,
     `Goal: ${task.goal}`,
-    `Approved file ownership: ${task.exclusive_files.join(', ')}`,
+    `Approved file ownership: ${task.exclusive_files.length > 8 ? `${task.exclusive_files.length} EXACT signed paths: read task ${task.id}.exclusive_files in the current approved queue, and edit ONLY those paths. Full list is covered by approvalSignature (not omitted from the owner authorization).` : task.exclusive_files.join(', ')}`,
     `Task brief: ${REPO}/blob/main/${task.brief}`,
     `Read ${REPO}/blob/main/AGENTS.md and PROGRESS.md before coding.`,
     'SAME PR/chat for follow-ups. Mark ready/merge only after latest-head executed acceptance, CI, Codex clean/threads resolved, integrated dependencies, current base and approved file ownership. Record merge SHA and separate integration proof.',
