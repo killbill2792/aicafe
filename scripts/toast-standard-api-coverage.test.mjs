@@ -236,7 +236,7 @@ test("Every official nested field has a non-fabricated architecture disposition"
   "current_operational_reader","supervisor_reader","screen_consumer","downstream_owner","known_gap"];
  const rowIds=new Set(),matchedExceptions=new Set();
  const sameOrChild=(field,prefix)=>field===prefix||field.startsWith(prefix+".")||field.startsWith(prefix+"[]");
- function resolve(family,path,status,field){
+ function resolve(family,path,status,field,tupleMetadata=[]){
   const inherited=byFamily.get(family);
   assert.ok(inherited,"Unknown official Standard family: "+family);
   assert.ok(codes.has(inherited.historical_contract),"Unknown H-contract for official source family");
@@ -255,7 +255,7 @@ test("Every official nested field has a non-fabricated architecture disposition"
   if(exception){
    assert.ok(exception.additional_or_required_scope&&exception.privacy_override&&exception.field_gap);
   }
-  return {inherited,exception,privacy,source_key:[family,path,status,field].join("|"),
+  return {inherited,exception,privacy,source_key:[family,path,status,field,...tupleMetadata].join("|"),
    grant:contract.per_cafe_field_defaults.grant,
    response:contract.per_cafe_field_defaults.response,
    retained:contract.per_cafe_field_defaults.field_retained,
@@ -265,9 +265,9 @@ test("Every official nested field has a non-fabricated architecture disposition"
  for(const family of manifest.official_snapshot.families)
   for(const op of family.operations)
    for(const res of op.responses)
-    for(const [field] of res.fields){
-     const row=resolve(family.family,op.path,res.status,field);
-     assert.ok(!rowIds.has(row.source_key),"Duplicate official family/GET/status/path disposition");
+    for(const [field,...tupleMetadata] of res.fields){
+     const row=resolve(family.family,op.path,res.status,field,tupleMetadata);
+     assert.ok(!rowIds.has(row.source_key),"Duplicate official family/GET/status/path/type/format/null disposition");
      rowIds.add(row.source_key);
      assert.equal(row.grant,"not_tested");
      assert.equal(row.response,"not_tested");
