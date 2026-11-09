@@ -2,6 +2,7 @@
 // GitHub verifies authenticated GitHub commit actor, exact action/hash/URL and CAS state.
 import { createHash } from 'node:crypto';
 import { acceptDeliveryReceipt } from './receipt.mjs';
+import { validConversationUrl } from './delivery.mjs';
 import { acceptOwnerNoticeReceipt } from './alerts.mjs';
 const sha = s => createHash('sha256').update(s).digest('hex');
 
@@ -41,11 +42,17 @@ export function applyReceipts(state, inbox, actorMap) {
       continue;
     }
     const action = next.actions?.[receipt.action_id];
-    // A first assignment may be cancelled as stale when its PR is created
-    // before the original browser receipt arrives. Validation in receipt.mjs
-    // may recover its verified chat URL; other cancelled sends remain held.
-    if (action?.status !== 'planned' &&
-        !(action?.status === 'cancelled_stale_head' && action.type === 'assign')) continue;
+    // After the PR appears, initial assignment receipts can arrive late.
+    // Invalid legacy placeholder destinations (for example local-chatgpt URLs)
+    // must not poison the entire inbox and prevent unrelated valid chat recovery.
+    // Never mark those invalid receipts as delivered or trusted.
+    const late = action?.status === 'cancelled_stale_head' && action.type === 'assign';
+    if (action?.status !== 'planned' && !late) continue;
+    if (late && !validConversationUrl(action.delivery?.provider, receipt.conversation_url)) {
+      const task = next.tasks?.[action.task_id];
+      if (task && !task.conversation_ref) task.chat_recovery_blocker = 'invalid_original_conversation_url';
+      continue;
+    }
     next = acceptDeliveryReceipt(next, receipt, { authenticatedCourier: courier });
   }
   return next;
