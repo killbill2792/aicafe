@@ -1,7 +1,4 @@
 -- POS0c: disposable migrated Supabase SQL proof; never point to production.
--- Run with: psql -X -v ON_ERROR_STOP=1 -f scripts/pos0c-ops-sql-integration.sql
--- Existing scripts/db/run-all.sh cannot invoke this without a separately
--- owner-authorized out-of-scope edit. No skipped execution is claimed as proof.
 \set ON_ERROR_STOP on
 BEGIN;
 CREATE FUNCTION pg_temp.assert_true(ok boolean,msg text) RETURNS void LANGUAGE plpgsql AS $$
@@ -113,8 +110,6 @@ BEGIN
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
   WHERE business_id=b AND entity='restaurant-availability/v1/availability'),
   'single current availability; never a new snapshot per check');
- -- One missing row or missing grant must not delete last-good; this writer is
- -- deliberately additive and receives only successful, validated object rows.
  PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',
   '2026-11-08','[]');
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
