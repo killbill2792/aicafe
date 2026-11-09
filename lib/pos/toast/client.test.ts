@@ -50,4 +50,16 @@ describe("Toast token cache and read-only client",()=>{
     await client.request("/labor/v1/employees",guid,z.array(z.unknown()),{allowUnverified:true});
     expect(counts()).toEqual({logins:1,responses:2});
   });
+
+  it("does not turn an empty 204 stock response into a zero-inventory fact",async()=>{
+    const {db}=fakeDB();
+    vi.stubGlobal("fetch",vi.fn(async(url:string)=>
+      url.includes("/authentication/")
+        ?new Response(JSON.stringify({token:{accessToken:"access",expiresIn:3600}}),{status:200})
+        :new Response(null,{status:204})));
+    const client=createToastClient(db,"00000000-0000-4000-8000-000000000001");
+    await expect(client.request("/stock/v1/inventory",
+      "00000000-0000-4000-8000-000000000002",z.array(z.unknown()),{allowUnverified:true}))
+      .rejects.toMatchObject({category:"unavailable",status:204});
+  });
 });
