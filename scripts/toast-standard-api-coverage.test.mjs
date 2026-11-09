@@ -212,3 +212,91 @@ test("Registry route-prefix differences remain visible rather than auto-resolved
  assert.ok(manifest.acceptance_gates.A1_official_get_operation_inventory.includes("OPEN"),
   "Official source route evidence does not establish café grant or live response");
 });
+
+/**
+ * Official source rows are enumerated from the PINNED 2xx snapshot, never the
+ * October diagnostic. Family H# contracts describe current writer/reader
+ * evidence; most individual current fields remain not_verified. Per-café
+ * grant/response remains not_tested even when an October attempt returned 200.
+ */
+test("Every official nested field has a non-fabricated architecture disposition",()=>{
+ const contract=manifest.official_field_resolution;
+ assert.equal(contract.version,1);
+ const codes=legendCodes();
+ const byFamily=new Map(contract.family_contracts.map(x=>[x.family,x]));
+ assert.equal(byFamily.size,manifest.official_snapshot.families.length,"One inherited contract per official family");
+ assert.equal(contract.family_contracts.length,12,"No missing or duplicated family inheritance");
+ for(const value of Object.values(contract.per_cafe_field_defaults))
+  assert.ok(["not_tested","not_verified"].includes(value),"Never fabricate current café/field access proof");
+ assert.equal(contract.per_cafe_field_defaults.grant,"not_tested");
+ assert.equal(contract.per_cafe_field_defaults.response,"not_tested");
+ assert.equal(contract.per_cafe_field_defaults.field_queryable,"not_verified");
+ assert.equal(contract.per_cafe_field_defaults.registered_supervisor_and_screen,"not_verified");
+ const required=["source_scope","object_identity","current_writer_storage","existing_ingest_cadence",
+  "current_operational_reader","supervisor_reader","screen_consumer","downstream_owner","known_gap"];
+ const rowIds=new Set(),matchedExceptions=new Set();
+ const sameOrChild=(field,prefix)=>field===prefix||field.startsWith(prefix+".")||field.startsWith(prefix+"[]");
+ function resolve(family,path,status,field){
+  const inherited=byFamily.get(family);
+  assert.ok(inherited,"Unknown official Standard family: "+family);
+  assert.ok(codes.has(inherited.historical_contract),"Unknown H-contract for official source family");
+  for(const key of required)
+   assert.ok(typeof inherited[key]==="string"&&inherited[key].length>12,
+    "Missing current/proposed evidence mapping "+family+"."+key);
+  const matches=contract.field_prefix_exceptions
+   .filter(e=>e.family===family&&e.operation_path===path&&sameOrChild(field,e.field_prefix))
+   .sort((a,b)=>b.field_prefix.length-a.field_prefix.length);
+  if(matches.length)matchedExceptions.add(contract.field_prefix_exceptions.indexOf(matches[0]));
+  const exception=matches[0]??null;
+  const lower=field.toLowerCase();
+  const privacy=contract.risk_precedence.find(r=>r.field_segments_or_substrings.length===0||
+   r.field_segments_or_substrings.some(part=>lower.includes(part)));
+  assert.ok(privacy?.treatment,"No privacy classification: "+family+" "+field);
+  if(exception){
+   assert.ok(exception.additional_or_required_scope&&exception.privacy_override&&exception.field_gap);
+  }
+  return {inherited,exception,privacy,source_key:[family,path,status,field].join("|"),
+   grant:contract.per_cafe_field_defaults.grant,
+   response:contract.per_cafe_field_defaults.response,
+   retained:contract.per_cafe_field_defaults.field_retained,
+   queryable:contract.per_cafe_field_defaults.field_queryable};
+ }
+ let count=0;
+ for(const family of manifest.official_snapshot.families)
+  for(const op of family.operations)
+   for(const res of op.responses)
+    for(const [field] of res.fields){
+     const row=resolve(family.family,op.path,res.status,field);
+     assert.ok(!rowIds.has(row.source_key),"Duplicate official family/GET/status/path disposition");
+     rowIds.add(row.source_key);
+     assert.equal(row.grant,"not_tested");
+     assert.equal(row.response,"not_tested");
+     assert.equal(row.retained,"not_verified");
+     assert.equal(row.queryable,"not_verified");
+     count++;
+    }
+ assert.equal(count,manifest.official_snapshot.nested_response_field_rows);
+ assert.equal(rowIds.size,2320);
+ assert.equal(matchedExceptions.size,contract.field_prefix_exceptions.length,
+  "Each field-specific exception must attach to a real official operation/field");
+ const customer=resolve("orders","/orders/v2/ordersBulk","200","[].checks[].customer.email");
+ assert.equal(customer.inherited.historical_contract,"H1");
+ assert.equal(customer.exception.field_prefix,"[].checks[].customer.email");
+ assert.equal(customer.exception.additional_or_required_scope,"guest.pi:read");
+ assert.match(customer.exception.privacy_override,/CURRENT_DROP/);
+ const identity=resolve("orders","/orders/v2/orders/{guid}","200","checks[].customer.guid");
+ assert.match(identity.exception.privacy_override,/HASH_IF_CONFIGURED_ELSE_OMIT/);
+ const labor=resolve("labor","/labor/v1/timeEntries","200","[].jobReference.guid");
+ assert.equal(labor.inherited.historical_contract,"H4");
+ assert.equal(labor.exception.field_prefix,"[].jobReference");
+ assert.match(labor.exception.field_gap,/NOT VERIFIED/);
+ const stock=resolve("stock","/v1/inventory","200","[].quantity");
+ assert.equal(stock.inherited.historical_contract,"H6");
+ assert.equal(stock.exception.field_prefix,"[].quantity");
+ assert.match(stock.inherited.current_operational_reader,/NO CURRENT OPERATIONAL READER/);
+ assert.match(stock.exception.privacy_override,/never replace 403/);
+ assert.equal(manifest.coverage_complete,false,
+  "Full runtime source→retention→SQL→one-Supervisor gate must remain fail-closed");
+ assert.ok(matrix.includes("POS0a A1–A4 architecture acceptance reconciliation"));
+ assert.ok(matrix.includes("Official source row → inherited contract → exception"));
+});
