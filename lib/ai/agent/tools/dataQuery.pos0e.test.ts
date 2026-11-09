@@ -20,26 +20,40 @@ describe("POS0e retained current-source dictionary and shared reader",()=>{
   expect(toastOfficialFieldCatalog.orders.fields.length).toBeGreaterThan(400);
   expect(toastOfficialFieldCatalog.orders.version).toMatch(/^\d+\.\d+\.\d+$/);
   expect(toastOfficialFieldCatalog.orders.sha256).toMatch(/^[0-9a-f]{64}$/);
-  const order=officialToastFields("order");
-  expect(order).toEqual(expect.arrayContaining([
-   expect.objectContaining({field:"data.checks.0.selections.0.displayName",
-    source:"official_schema",observed:false,grant:"not_verified"})
-  ]));
+  const cases=[
+   ["order","data.guid","data.checks.0.amount"],
+   ["check","data.amount","data.selections.0.displayName"],
+   ["item","data.displayName","data.appliedDiscounts.0.discountAmount"],
+   ["payment","data.amount","data.checks.0.payments.0.amount"],
+   ["item_discount","data.discountAmount","data.checks.0.selections.0.appliedDiscounts.0.discountAmount"],
+   ["check_discount","data.discountAmount","data.checks.0.appliedDiscounts.0.discountAmount"],
+   ["service_charge","data.chargeAmount","data.checks.0.appliedServiceCharges.0.chargeAmount"]
+  ];
+  for(const [recordType,exposed,impossible] of cases){
+   const fields=officialToastFields(recordType).map(v=>v.field);
+   expect(fields,recordType+" exposes its actual split-record field").toContain(exposed);
+   expect(fields,recordType+" cannot query a removed parent/child JSON").not.toContain(impossible);
+  }
+  // Staged employee projections have typed DB field names; official labor
+  // response paths are not the same object and must not be falsely advertised.
+  expect(officialToastFields("employee")).toEqual([]);
+  expect(officialToastFields("time_entry")).toEqual([]);
+  expect(officialToastFields("modifier")).toEqual([]);
   expect(officialToastFields("cashmgmt/v1/entries").length).toBeGreaterThan(5);
   expect(officialToastFields("nonexistent-api/facts")).toEqual([]);
  });
  it("describes never-observed permitted paths as unverified, not invented field values",async()=>{
   const rpc=vi.fn(async()=>({data:[],error:null}));
   const result=await dataQueryTools.describe_data.execute({
-   record_type:"order",view:null,field_prefix:"data.checks.0.selections.0.displayName"
+   record_type:"item",view:null,field_prefix:"data.displayName"
   },{db:{rpc} as never,businessId:cafeA});
   expect(rpc).toHaveBeenCalledWith("ai_toast_fields",{
-   p_business_id:cafeA,p_record_type:"order"
+   p_business_id:cafeA,p_record_type:"item"
   });
   expect(result.missing).toContain("source_not_observed");
   expect(result.missing).toContain("schema_grants_unverified");
   expect(result.fields).toEqual(expect.arrayContaining([
-   expect.objectContaining({field:"data.checks.0.selections.0.displayName",
+   expect.objectContaining({field:"data.displayName",
     grant:"not_verified",observed:false})
   ]));
   expect(JSON.stringify(result.fields)).not.toContain("customer@example.com");
