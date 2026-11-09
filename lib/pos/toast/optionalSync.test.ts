@@ -104,9 +104,7 @@ describe("first-time Toast catalog before sales",()=>{
    m.catalog.mockRejectedValueOnce(new ToastApiError("invalid_response"));
    await expect(ensureToastFirstCatalog(f.db,scope,now,Date.now()+20000))
      .rejects.toMatchObject({category:"invalid_response"});
-   expect(f.sourceState().labor_modified).toMatchObject({
-   status:"missing_permissions",error:"missing_permissions"});
-  expect(f.writes.filter(w=>w.operational_sources)).toHaveLength(1);
+   expect(f.writes).toEqual([]);
  });
 });
 
@@ -171,7 +169,9 @@ describe("independent optional Toast source phases",()=>{
   expect(m.roster).not.toHaveBeenCalled();
   expect(m.labor).not.toHaveBeenCalled();
   expect(m.attendance).not.toHaveBeenCalled();
-  expect(f.writes).toEqual([]);
+  expect(f.sourceState().labor_modified).toMatchObject({
+   status:"missing_permissions",error:"missing_permissions"});
+  expect(f.writes.filter(w=>w.operational_sources)).toHaveLength(1);
  });
 });
 
