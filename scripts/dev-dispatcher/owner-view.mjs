@@ -77,6 +77,7 @@ export function renderOwnerView(state, {repo, asOf, runUrl} = {}) {
     ...(outstanding.length ? outstanding : ['No current GitHub owner questions.']),
     '',
     '### Muse delivery and retries',
+    '[Open authenticated private Muse queue](https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/owner-queue.md) — requires access to the private repository.',
     `**${planned.length}** planned Muse instruction(s); planned is not delivered.`,
     nextWake.length ? `Earliest planned-action recheck: **${new Date(Math.min(...nextWake)).toISOString()} UTC** (only when the existing GitHub workflow runs).`
       : 'No planned-action recheck.',
