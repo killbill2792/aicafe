@@ -718,3 +718,30 @@ test('a newly running Codex summary never reuses an earlier same-head clean revi
  assert.equal(result.codex_state,'pending');
  assert.equal(result.codex_reviewed_sha,null);
 });
+
+test('newer current-head Codex rejection outranks older clean bot summary, even without inline findings',async()=>{
+ const sha='e'.repeat(40),now='2026-11-09T22:00:00Z';
+ const summary='<!-- codex-pull-request-review-summary -->\\n<!-- codex-review-state:v1 '+
+  JSON.stringify({code_review:{commit_sha:sha,status:'completed',
+   has_any_findings:false,has_unresolved_findings:false}})+' -->';
+ const pr={number:82,head:{sha,ref:'feat/code'},base:{sha:'d'.repeat(40),ref:'main'},
+   labels:[],body:'',draft:true,updated_at:now};
+ const facts=new GitHubFacts({repo:'o/r',token:'dummy',fetchFn:async url=>{
+  let data;
+  if(url.includes('/check-runs?'))data={total_count:0,check_runs:[]};
+  else if(url.includes('/reviews?'))data=[{user:{login:'codex[bot]'},commit_id:sha,
+    state:'CHANGES_REQUESTED',submitted_at:now,body:'Block on P1 risk'}];
+  else if(url.includes('/comments?'))data=[{user:{login:'chatgpt-codex-connector[bot]'},
+    body:summary,updated_at:'2026-11-09T21:00:00Z'}];
+  else if(url.includes('/commits/'+sha))data={commit:{committer:{date:now}}};
+  else if(url.includes('/compare/'))data={behind_by:0,files:[{filename:'src/code.ts'}]};
+  else if(url.endsWith('/graphql'))data={data:{repository:{pullRequest:{reviewThreads:{
+    pageInfo:{hasNextPage:false},nodes:[]}}}}};
+  else throw Error(url);
+  return {ok:true,json:async()=>data};
+ }});
+ const result=await facts.one(pr);
+ assert.equal(result.codex_state,'findings');
+ assert.equal(result.codex_reviewed_sha,sha);
+ assert.equal(result.codex_review_at,now);
+});
