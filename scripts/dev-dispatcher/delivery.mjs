@@ -39,7 +39,7 @@ export function createDelivery({ task, record, action, actionId }) {
     : [];
   const stacked = Boolean(record.prerequisite_pr && record.base_branch && record.base_branch !== 'main');
   const details = [
-    'You own ONE approved AI CAFE task and ONE PR from its early draft through final review, merge and proven integration. Use the connected GitHub plugin and current GitHub evidence, not assumptions or old chat summaries.',
+    'Own ONE approved AI CAFE task and ONE PR from early draft through verified integration. Use connected GitHub and current evidence, not old chat assumptions.',
     'BEFORE EDITING: current main AGENTS.md (highest), PROGRESS.md (read-only), docs/rules/skills.md, task brief and docs/plans/universal-supervisor-queue.json; relevant binding docs/rules/* and applicable skills. docs/plans/universal-supervisor-agent-operations.md and docs/plans/universal-supervisor-delivery-queue-2026-11.md are lifecycle/context, NOT new approval paths. No priority/PR implies authorization.',
     'MANDATORY SKILLS: Explicitly fetch and read .claude/skills/aicafe-pr-lifecycle/SKILL.md, .claude/skills/aicafe-dependency-check/SKILL.md and .claude/skills/aicafe-proof-gate/SKILL.md. Read other applicable SKILL.md files selected through docs/rules/skills.md. ChatGPT must load skills by path; Claude may auto-discover them but must still verify applicability.',
     `TASK-SPECIFIC SKILLS from the approved queue: ${JSON.stringify(selectedSkills)}. Check each skill against docs/rules/skills.md, explicitly read its .claude/skills/<skill>/SKILL.md if installed and applicable, and document any unavailable entry rather than inventing skill instructions.`,
@@ -58,7 +58,7 @@ export function createDelivery({ task, record, action, actionId }) {
       : 'INDEPENDENT TASK: OPEN A DRAFT PR PROMPTLY against current main; do not wait to finish implementation, acceptance or review before creating the PR. Keep working in that SAME draft until the checks and final Codex are complete.',
     'CODEX LIFECYCLE: Early draft Codex is not final proof. Inspect current-head review, all owner comments and unresolved threads; fix and verify before resolving threads, then request a fresh Codex review after substantive changes. Repeat until the final applicable head is reviewed clean, with resolved threads. Pending is not CLEAN; avoid redundant paid reviews.',
     'COMMENT ACCOUNTABILITY: Fetch ALL owner/agent PR conversation comments and inline review threads, including comments newer than the latest commit. In this SAME PR description update one Comment disposition checklist keyed by exact GitHub comment/thread IDs: acknowledged, working, blocked-owner, fixed-awaiting-proof, verified or superseded; include owning file/task and commit+executed CI/test or blocker. Reconcile every actionable ID before edits and before reporting done. A reply, checkmark, Codex clean or resolved thread alone is not verification; never silently discard a newer decision. No parallel queue.',
-    'Stay in this SAME coding conversation and PR until evidence is complete. Check CI and Codex outcomes, repair findings in place and finish under AGENTS.md. DO NOT create a background monitoring loop, cron or separate watcher; coordinator resumes THIS SAME chat using saved GitHub head. Never open a replacement chat.',
+    'Stay in this SAME PR/chat through proof. Fix CI/Codex in place under AGENTS.md. DO NOT create a background monitoring loop, cron or separate watcher; coordinator resumes THIS SAME chat at saved GitHub head. Never open a replacement chat.',
     'OWNER DECISION: If any architecture, file ownership, secret or consequential action needs owner approval, promptly publish the precise question on this same draft PR, add the needs-owner-decision label and exactly one <!-- aicafe-owner-question your concise question --> marker in the PR body. Leave the PR open and STOP only the unapproved part; do not silently wait or invent approval. Remove/resolve the blocker only after a verifiable owner decision.',
     'CI AND COSTS: Use the existing GitHub Actions jobs and disposable test resources. NEVER create or enable Vercel preview deployments/builds. Targeted browser/Playwright acceptance belongs in GitHub CI when required; E2 remains separately gated and proposed. A local Next.js CI build is not a Vercel deployment.',
     `Task ${task.id}: ${task.title}`,
@@ -66,7 +66,7 @@ export function createDelivery({ task, record, action, actionId }) {
     `Approved file ownership: ${task.exclusive_files.join(', ')}`,
     `Task brief: ${REPO}/blob/main/${task.brief}`,
     `Read ${REPO}/blob/main/AGENTS.md and PROGRESS.md before coding.`,
-    'Work in the SAME PR and conversation for follow-ups. Mark draft ready and merge only after latest-head executed acceptance, CI, Codex clean/threads resolved, dependencies integrated, up-to-date base and approved ownership are verified. Record exact merge SHA and later integration proof separately.',
+    'SAME PR/chat for follow-ups. Mark ready/merge only after latest-head executed acceptance, CI, Codex clean/threads resolved, integrated dependencies, current base and approved file ownership. Record merge SHA and separate integration proof.',
     'Do not claim that a merge proves integration or production release.',
   ];
   if (/^POS0[a-f]$/.test(task.id)) details.splice(2, 0,
