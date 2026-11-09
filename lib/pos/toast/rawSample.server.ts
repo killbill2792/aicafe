@@ -1,3 +1,5 @@
+// DIAGNOSTIC_ONLY: Toast API investigation only; never source Supervisor or screens.
+// See docs/rules/pos-data.md for the authoritative operational source.
 import "server-only";
 import {createHmac,randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";

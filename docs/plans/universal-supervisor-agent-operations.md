@@ -1,47 +1,22 @@
 # AI CAFE — coding-agent operations (short, owner-review draft)
 
-**Required reading for every agent:** latest main `AGENTS.md`, `PROGRESS.md`, relevant `docs/rules/*`, [task queue](universal-supervisor-queue.json), [Universal Supervisor delivery plan](universal-supervisor-delivery-queue-2026-11.md), this operations guide, and the exact [task brief](universal-supervisor-task-briefs.md). Use the **connected GitHub plugin** to fetch actual files, PRs, commits, CI/check logs, Codex reviews, comments and thread resolution; explicitly read applicable `.claude/skills/*/SKILL.md` from GitHub. Do not assume a cloud shell, uninterrupted waiting, skill auto-loading or live production access.
+**Required first read, in order:** latest main `AGENTS.md` (and `PROGRESS.md` as read-only status) → [binding POS rules](../rules/pos-data.md) for POS tasks → #398 concise POS0a handoff (now retrievable on the latest draft head), then only selected evidence/spec sections (official full-field proof still open) → the **one assigned** [task brief](universal-supervisor-task-briefs.md) and [machine queue](universal-supervisor-queue.json) with approval/ownership checks → current implementation/active SQL → [executable tests](../rules/tests.md). Read applicable `.claude/skills/*/SKILL.md` and topic-specific rules; consult this operations guide and [delivery plan](universal-supervisor-delivery-queue-2026-11.md) for lifecycle/context, **not** as an additional approval source or repeated mandatory prompt. Use connected GitHub evidence for current commits, owner conversation comments, review threads and CI; reconcile every actionable comment in the same PR's **Comment disposition** checklist before claiming completion. Do not assume continuous background work, skill auto-loading or live production access.
 
 ## Current dispatch order — POS0 before PR6
 
-Owner decision (Nov 6): the existing queue's first task is **POS0a**, a READ-ONLY inventory
-of each current Toast Standard API endpoint/field, configured scope, existing ingestion,
-one-current-object key, freshness, authorized reader, screen/AI consumer and verified gaps.
-POS0b/0c/0d/0e then fill existing writers and readers without touching working order
-semantics; **POS0f** proves the entire API → stored object → `describe_data` →
-`query_data` → Supervisor + relevant screen flow, using actual executed CI tests.
-**Do not automatically assign new E2, PR6, PR9, PR10 or downstream tasks until POS0f
-has durable `integrated_proven` evidence.** This is enforced through dependency DAG
-edges, not merely this paragraph. Preserve ongoing already-open PR fixes/reviews.
+**First-read execution sequence, not a new authority:** read latest `AGENTS.md` (+ `PROGRESS.md` as read-only status) → `docs/rules/pos-data.md` → [#398 concise POS0a handoff](toast-standard-api-coverage-matrix.md#pos0a-handoff--read-this-card-before-large-evidence-tables-2026-11-08) and selected [evidence sections](toast-standard-api-coverage-matrix.md), not a compulsory download of its entire observed-field ledger → *both* assigned task brief and machine queue (owner approval remains false for POS0b–f) → inspect actual code + deployed SQL → run `docs/rules/tests.md` acceptance and report the CI link. Direct and indirect reader/status/tenant history must be listed, as must known defects and unapproved work. This ordering is required in generated ChatGPT/Claude handoffs and tests; historical pilot runbooks and immutable old migrations do not override it. Dedicated SQL importer row-error recovery ownership is **unassigned pending separate owner-approved file/PR scope**, while POS0d owns catalog snapshots, POS0e the active diagnostic reader and metadata cutover, POS0f final migrated DB lineage.
 
-**Parallel opening rule:** five ChatGPT coding chats are the permitted active capacity.
-After POS0a's source-to-storage-to-reader architecture is merged to main,
-verified as integrated_proven AND separately accepted by the owner, POS0b/c/d
-may begin in parallel from main when each has its own approved exact scope and
-nonoverlapping file ownership. Record this owner acceptance in
-`dispatch_rules.architecture_foundation_implementation_approval`: `approved=true`,
-the exact `POS0a.merge_sha` from its verified integration record and the
-authenticated owner GitHub review comment URL for that merged source contract.
-It remains `approved=false` until the owner actually reviews the final matrix;
-do not reuse the earlier read-only audit approval. When POS0a is integrated
-and that implementation signoff is missing, the existing private owner-alert
-queue prepares one Muse notification with the verified existing ChatGPT
-conversation link: "Your approval is needed. ChatGPT chat: <URL>".
-Muse uses its existing opaque signal, 3-minute quiet/10-minute batching,
-and authenticated receipt path; never guess the link, expose it in the
-public signal, send duplicate notices, or treat a sent message as approval.
-If the task's conversation receipt is missing, the GitHub summary reports
-that the approval notice is waiting for that verified link. This gate is distinct
-from ordinary PR code dependencies: do not let an early approval or POS0a draft
-start implementation against an unfinalized source contract. POS0e
-has multiple functional predecessors and an explicit stack base POS0d; it may
-open a draft against POS0d's verified open PR branch once all three predecessor
-PRs exist (draft or ready-for-review). Their independent branches need not
-merge first. Other dependencies must integrate before POS0e merges. POS0f can
-stack against POS0e's open branch. This is parallel **work**, with ordered
-**merges** and final-head acceptance after retargeting; do not serialize PR
-opening on completed upstream merges. Only POS0a is authorized **now**;
-no automatic field-level code approvals are implied.
+**Current mandatory first-read contract for all POS0 coding tasks:** [docs/rules/pos-data.md](../rules/pos-data.md). It is the single authoritative classification of OPERATIONAL_CURRENT (`toast_raw_records`), OPERATIONAL_CHANGE_LOG (`toast_raw_changes`), LEGACY_DIAGNOSTIC_ONLY (`toast_raw_samples`), TEST_FIXTURE_ONLY, existing source writers/readers, naming, no fallback, safe retirement, and real source-to-Supervisor proof. Code/migrations/fixtures with contradictory comments **do not override it**. The generated ChatGPT/Claude coding handoff explicitly requires `source_authority_checked: yes` in every POS0 PR and actual consumer inspection.
+
+**Owner D4A/D4B reconciliation (architecture only):** Use the single #398 decision card and binding `docs/rules/pos-data.md`, not a second owner prompt. The approach is family-specific change-driven synchronization plus bounded automatic reconciliation using the existing 10-minute coordinator and separate 15-minute live read. DB-only malformed-order recovery must preserve existing #189/#203/#264/#297 lease/backfill/fairness/payment-gap and generation-bound cost queue. `POS0-order-recovery` is a **proposed, non-dispatchable future implementation owner** until SQL design/exclusive files receive separate owner sign-off; no new scheduler, queue or runtime edits authorized in #398/#400.
+
+**Corrected source-first DAG:** POS0a is the read-only operation/field/key/scope audit, then **POS0e FIRST** owns the shared existing Toast reader/field discovery/retention-policy cutover. POS0e retires current Supervisor/canonical dependencies on diagnostic samples before the new source-family PRs. POS0b staff/labor, POS0c cash/stock/kitchen and POS0d menu/config may then run on **disjoint** adapters and current-object writers, all using POS0e's shared tools. POS0f finally proves all field→stored→reader→Supervisor→screen paths and finishes the tracked diagnostic/fixture retirement only after dependency and retention checks. Do not build duplicate customer tables, new AI readers, sample fallbacks, or new agents. Every permitted field is available to authorized café AI on demand; only card PAN/CVV/track and reusable card/security credentials are filtered. Missing optional fields do not block other records/answers.
+
+**Priority and authorization stay distinct.** POS0f is the proof gate before any new E2/PR6/PR9/PR10 assignment. POS0a's earlier read-only approval does not imply approval for field-level implementation, an exact file list or production database deletion. After POS0a's actual merged SHA is `integrated_proven`, the owner must review its final field/key/source/reader contract and supply an authenticated GitHub comment URL. Record exact SHA, `approved=true`, and review comment under `dispatch_rules.architecture_foundation_implementation_approval`. Until that, the existing gate stays `approved=false`; **do not start POS0e code or POS0b–d** merely because this is the planned sequence. **Owner November 8 switch:** the existing dispatcher may track issues and maintain queue state but must not deliver POS0b–f coding instructions until the owner personally enables coding after POS0a architecture/documentation closeout. Comment disposition stays manual in #398/#400 for this phase; automatic comment harvesting/merge blocking is deferred, not an additional acceptance gate.
+
+**Stacking:** POS0e opens on the verified POS0a prerequisite branch if open (with approved exact scope). POS0b/c/d each depend on POS0e and POS0a; stack on POS0e's branch while open, each with exclusive nonoverlapping files and no independent edit to the global reader/redactor. POS0f depends on POS0e plus b/c/d; select its declared stack base `POS0d` when multiple predecessors remain open and keep all other predecessor proofs as merge gates. Once prerequisites merge, update the dependent branch onto latest main and re-run final-head CI/Codex. The owner-alert flow for unresolved architecture decisions and the established same-chat PR lifecycle remain unchanged.
+
+**Diagnostic storage cleanup:** Former scheduled raw endpoint capture is retired in source-authority PR #400; the manual diagnostic workflow is **not** operational. Old database rows/relations are not deleted while the currently deployed SQL still depends on them. POS0e must cut over all live consumer definitions; POS0f must verify no SQL/JS/mirror/test dependency and record an owner-controlled destructive migration/retention plan before actual purge. No compatibility view that silently re-exposes samples.
 
 All assigned coding chats must verify earlier merged PRs against live GitHub:
 actual merge SHA, current main code and consumers, executed tests/integration proof,
@@ -69,50 +44,13 @@ a pending Codex verdict never counts as clean.
 - `aicafe-proof-gate`: actual run/test/CI evidence and post-merge consumer verification; merged does not imply finished.
 - Load `gh-fix-ci`, `gh-address-comments`, `receiving-code-review`, `pr`, `verification-before-completion`, `supabase`, `vitest`, `playwright-cli` etc. **only when relevant**. Full list: `docs/rules/skills.md`.
 
-## Copy-paste dispatcher prompt
+## One current dispatch/handoff path — no standalone copy-paste prompts
 
-```text
-Use connected GitHub plugin. Read AGENTS.md, PROGRESS.md,
-docs/rules/skills.md and the approved queue at
-docs/plans/universal-supervisor-queue.json on latest main.
-Load aicafe-dependency-check and aicafe-proof-gate from .claude/skills/.
-Confirm actual merged commits, executed required tests and on-main integration
-before satisfying dependencies. PRIORITIZE POS0a then POS0b/c/d, POS0e, POS0f;
-do not create new E2/PR6/PR9/PR10 assignments before POS0f integrated proof. Check open PR changed files and file-owner locks.
-Assign up to 5 ChatGPT and 2 Claude approved tasks, independent or
-stacked NOW on open prerequisite branches (PR base = that branch).
-Never confuse opened with mergeable. Advance after real merges and proof;
-send a concise task brief + branch/base/owned files/skills to each agent.
-Do not invent owner approvals, secrets or live deployment authority.
-```
+**The only executable coding-agent prompt** comes from the existing deterministic `scripts/dev-dispatcher/run.mjs` → `scripts/dev-dispatcher/delivery.mjs#createDelivery`, supplied with an **approved** task from `docs/plans/universal-supervisor-queue.json` and its exact `docs/plans/universal-supervisor-task-briefs.md` anchor. It includes the D1–D4A/D4B contract by first-read links, real predecessor SHA, exclusive files, acceptance and owner hold. The bridge resumes the same saved chat/PR; never manually replace or concatenate prompts. The former dispatcher and coding-agent copy-paste examples were **superseded and removed from this CURRENT operations page** (their history remains in Git) because those duplicated instructions and could omit owner decisions.
 
-## Copy-paste ChatGPT coding-agent prompt
+**Agent setup/preflight, not a prompt:** current main `AGENTS.md` and `PROGRESS.md` (read-only) → binding `docs/rules/pos-data.md` → latest #398 concise POS0a handoff and only relevant source/evidence passages (approved D4A/B, unresolved D4B SQL mechanism); complete official A1/A2/A4 proof remains #398's responsibility → assigned brief **AND** queue with `architecture_foundation_implementation_approval.approved=false` until separate owner signoff → inspect current code and deployed SQL → actually execute `docs/rules/tests.md` acceptance. When #398 remains draft, a reviewer reads the actual PR head, but cannot use an absent on-main file to bypass the owner gate.
 
-```text
-Use connected GitHub plugin. Implement approved AI CAFE task TASK_ID.
-Build toward one proactive universal cafe operator; reuse canonical Toast POS
-readers, shared calculations, one AI loop and existing approval/inbox paths.
-Read AGENTS.md + PROGRESS.md from current main, the task in
-docs/plans/universal-supervisor-task-briefs.md, current queue and
-relevant docs/rules/* and .claude/skills/*/SKILL.md.
-Load aicafe-pr-lifecycle, aicafe-dependency-check, aicafe-proof-gate.
-Verify predecessor real code and executed acceptance, not its merged label.
-Open a DRAFT PR PROMPTLY once authorized: independent = latest main;
-dependent on an open PR = branch FROM prerequisite and PR base = that branch.
-An unmerged upstream is a merge blocker, not permission to stop coding;
-develop and test against its committed branch. Do not invent missing interfaces.
-Edit only assigned files. Stay in THIS SAME CHAT for all CI errors,
-Codex findings, thread resolutions, fresh reviews and main updates.
-Check Codex during this active execution; do not create a background
-monitor, cron or polling service. If execution ends, the dispatcher resumes
-this SAME PR and chat where it stopped. Never call a pending review clean. If upstream merges, rebase/retarget, verify integration,
-rerun relevant tests and obtain new Codex review. Merge only under AGENTS.md.
-Show exact test command, run URL, head SHA, outcomes, merged SHA or blocker.
-Use targeted Playwright in GitHub CI only for relevant UI/browser changes;
-NEVER deploy/build a Vercel preview (owner disabled previews for cost).
-Never edit PROGRESS.md inside a coding PR; one coordinator updates it alone
-on current main after merge/proof. No production effects.
-```
+**Dispatch safety:** Do not send a task whose exact file scope or owner approval is missing, change the saved task approval signature during an existing assignment, create a separate `POS0-order-recovery` task, or activate implementation because D4A/B principles were approved. Only a separate authenticated owner decision after approved SQL design and file/PR ownership can authorize that future work. Any manual emergency workaround must first resolve the source/approval discrepancy; no independently authored alternate coding prompt.
 
 ## Dispatcher rules
 

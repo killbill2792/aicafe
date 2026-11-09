@@ -71,7 +71,7 @@
       "POS0e",
       "POS0f"
     ],
-    "architecture_foundation_note": "POS0a may audit read-only, but implementation cannot start until its exact merged SHA has integration proof AND the owner has separately reviewed/approved that merged architecture with an explicit linked GitHub comment. POS0b/c/d then start concurrently on main after each has its own field-level approval and nonoverlapping owned files. POS0e/f may stack on verified open upstream PRs, with all dependencies still required for merging.",
+    "architecture_foundation_note": "TWO DISTINCT GATES (owner audit #6729826693): POS0a is a READ-ONLY, official-schema-per-field source/permission/current-vs-target lineage and field-gap DESIGN CONTRACT, with all Standard GET/nested fields inventoried, each actual permission/response marked observed or NOT_TESTED/403/missing ID/not configured, truthful existing writer/storage/reader/consumer mapping or explicit MISSING gap, implementation PR/file/SQL/test owners proposed, source provenance and reproducible audit. It does NOT require POS0e/b/c/d SQL, writer, or registered Supervisor implementation to already exist. Owner architecture signoff and the existing approved=false coding-delivery gate are separate, and exact downstream ownership/authorization must be accepted before coding. POS0e FIRST implements/tests shared current-source retained-field policy, SQL/current reader and existing describe_data/query_data; POS0b labor, POS0c cash/stock/kitchen, POS0d menu/setup/price each implement/tests distinct source family atop POS0e; POS0f independently proves ALL eligible field-level source→stored→discover→query→registered one Supervisor/screen plus final-schema negative diagnostic lineage on migrated disposable DB. Never weaken downstream acceptance or classify POS0a audit-only CI as integrated_proven. Future POS0e/f PRs need authorization to begin, NOT completion before authorization. No new agent, store, scheduler, dispatcher or merging these draft PRs.",
     "architecture_foundation_implementation_approval": {
       "approved": false,
       "merged_sha": null,
@@ -86,7 +86,286 @@
       "POS0d",
       "POS0e",
       "POS0f"
-    ]
+    ],
+    "pos_source_authority": {
+      "mandatory_first_read": "AGENTS.md",
+      "mandatory_pos_rule_second_read": "docs/rules/pos-data.md",
+      "ordered_first_read": [
+        "AGENTS.md (PROGRESS.md read only)",
+        "docs/rules/pos-data.md (binding source/consumer decisions)",
+        "PR #398 concise POS0a handoff FIRST at docs/plans/toast-standard-api-coverage-matrix.md#pos0a-handoff--read-this-card-before-large-evidence-tables-2026-11-08 (read actual latest draft PR head); then targeted field evidence only, A1 official schema and A2/A4 actual-cafe / reader / registered-Supervisor evidence honestly status-coded; implementation belongs to later tasks",
+        "docs/plans/universal-supervisor-task-briefs.md#task-<POS0_ID> and this machine queue (no runtime authorization)",
+        "existing code plus deployed pg_get_functiondef/pg_get_viewdef and consumers",
+        "docs/rules/tests.md and actually executed acceptance/rollback evidence"
+      ],
+      "known_deployed_defects": [
+        "non-order toast_records_for / cv_cash / cv_inventory / cv_kitchen / cv_dining_options read diagnostic snapshots: POS0e current-reader cutover, POS0f final lineage",
+        "canonical dictionary still says daily capture: POS0e dictionary source and generated docs",
+        "seen_run_id is referenced by active toast_archive_order and toast_records_for: do not remove on old storage-plan wording",
+        "SQL toast_import_day may roll back a valid day on row failure; liveArchive.server.ts suppresses archive-page RPC errors and skips remaining pages: later owner-assigned order SQL/live-archive recovery PR, NOT YET APPROVED",
+        "menu copying fetches full menu twice and retirement requires snapshot proof: POS0d, POS0f acceptance",
+        "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof",
+        "D4A menu daily full download and duplicate Menus V2 GETs; D4B SQL-day atomic rollback and live archive missed-page recovery; preserve merged #189/#203/#264/#297 nonstarvation"
+      ],
+      "owner_hold": "D1-D4 architecture principles only; PR398/PR400 final review pending; #399 trusted owner-question routing merged; existing coding dispatcher issue tracking is NOT coding delivery. Owner alone enables POS0b-f delivery after POS0a read-only documentation/field-gap architecture approval; POS0e/f runtime implementation proof is NOT a prerequisite to authorizing their work. Gate approved=false; manual #398/#400 comment ledger sufficient, automatic comment merge gate deferred",
+      "approved_record_store": "toast_raw_records",
+      "approved_change_log": "toast_raw_changes",
+      "legacy_diagnostic_only": [
+        "toast_raw_samples",
+        "toast_raw_samples_latest"
+      ],
+      "operational_reader": "toast_records_for / cv_toast_records / ai_query_view / describe_data / query_data",
+      "preflight_pr_line": "source_authority_checked: yes",
+      "non_negotiable": "No test/diagnostic/mirror data in operational screens or Supervisor; no newly stored field without real existing-reader/agent proof",
+      "retirement": "POS0e active SQL cutover before POS0b/c/d; POS0f only after zero old consumers may retire diagnostic capture/mirror/rows; production deletion is a distinct owner-controlled action",
+      "enforcement": "scripts/guards/toast-diagnostic-boundary.mjs (additions) + POS0e/0f final migrated database lineage and negative contamination tests (all active definitions)",
+      "status": "plan+additions guard; final source retirement not yet implemented"
+    },
+    "pos_d4_contract": {
+      "owner_comments": [
+        "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714042938",
+        "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714102679",
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714105378",
+        "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714387485",
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714390122",
+        "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714662444",
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714662690",
+        "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714937954",
+        "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714938291"
+      ],
+      "architecture_approach": "D4A_APPROVED_B_change_driven_existing_sync_not_each_endpoint_every_tick",
+      "order_failure_outcome": "D4B_APPROVED_Approach1_REPAIR_existing_day_import_and_live_archive_only_no_second_importer_preserve_good_orders_and_day_financial_atomicity",
+      "implementation_approved": false,
+      "existing_infrastructure": [
+        "10-minute coordinated Toast location lease/scheduler",
+        "separate 15-minute live-order read to same archive",
+        "toast_raw_records current object and toast_raw_changes genuine deltas",
+        "staged cursor, daily closeout, bounded modified and payment-gap repair",
+        "generation-bound post-commit toast_rollup_refresh_jobs"
+      ],
+      "must_preserve_merged_prs": [
+        189,
+        203,
+        264,
+        297
+      ],
+      "future_order_recovery": {
+        "proposed_owner_task_id": "POS0-order-recovery",
+        "architecture_approach": "OWNER APPROVED Approach 1 repair existing Toast day-import/live archive/staged pages/GUID recovery; REJECT Approach 2 separate per-order ingest/queue (owner #398 comment 6727889494); precise SQL isolation, archive-page N retry, timing and files NOT approved",
+        "queue_task_created": false,
+        "dispatchable": false,
+        "separate_owner_sql_and_file_approval_required": true,
+        "proposed_existing_file_candidates": [
+          "lib/pos/toast/dayImport.ts",
+          "lib/pos/toast/scheduler.ts",
+          "lib/pos/toast/missingDays.ts",
+          "lib/pos/toast/liveArchive.server.ts",
+          "lib/pos/toast/rollupRetries.ts"
+        ],
+        "owned_files_reserved": [],
+        "schema_migration": "new additive migration only after owner-authorized next-free number",
+        "sql_mechanism": "B1 row-savepoint/transaction design NOT owner approved; preserve financial/day certification and independently queryable committed orders; no new queue",
+        "disposable_sql_acceptance": "99 valid orders plus one database-only cast/constraint/trigger failure; durable idempotent valid orders; bounded failed-object replay; no false complete day, later-day/payment-gap starvation or lost generation-bound cost refresh; 99 immediately queryable while day aggregate incomplete; good last-certified as-of remains available, negative refunds not lower bound, full DB outage/permission/429 separately handled",
+        "regression": "#189 nonce, cursor, 429/Retry-After; #203 first backfill/shared five-day cap and 100+ cafe fairness; #264 timeout and fee-gap nonstarvation; #297 five-date and 1h-to-24h no-duplicate recovery; live archive page failure; screen/Supervisor same status",
+        "proposed_prerequisites": [
+          "POS0a complete approved architecture/field contract with exact D4B SQL transaction and partial-day certification reviewed by authenticated owner",
+          "inspect the latest main code and independently verify merged #189/#203/#264/#297 lease/backfill/payment-gap/cost refresh protections",
+          "confirm exclusive file ownership and migration number against every open POS0b/c/d/e PR; existing scheduler.ts is shared and cannot have competing editors",
+          "run 99-valid-plus-1-database-failing and queue nonstarvation acceptance on migrated disposable DB with rollback",
+          "POS0f independently verifies final source-to-registered Supervisor/screen parity after source and recovery work",
+          "owner must separately approve B1 SQL isolation and urgent bounded recovery scheduling policy; they are approved outcomes only",
+          "owner-approved D4B logical café+restaurant+Toast GUID processing-state contract; physical schema placement and no-GUID/failed-row fallback still require separately accepted detail"
+        ],
+        "file_scope_status": "candidate existing paths only: no conflict-free exclusive ownership proved or reserved; actual owner signoff required",
+        "sql_scope_status": "no SQL isolation mechanism or exact additive migration path selected; owner approval pending"
+      },
+      "independent_cost_queue_diagnostic": {
+        "observed_date": "2026-11-07",
+        "due_jobs": 77,
+        "zero_attempts": 77,
+        "rollups_present": 77,
+        "owner": "separate read-only root-cause investigation",
+        "do_not_conflate_with_import_failure": true
+      },
+      "granular_availability_approved": {
+        "status": "owner_approved_outcome_NOT_implementation",
+        "record_contract": "one failed database/order operation never hides independent validated durably committed orders; same source/as-of on screens and registered Supervisor",
+        "metric_contract": "only affected metrics partial/unverified; final day aggregation requires complete proof; valid record available independent of completed day",
+        "negative_adjustment_rule": "sum of known orders is not necessarily final/minimum/estimate because refunds and adjustments can reverse signs; do not fabricate",
+        "last_good_rule": "previous certified snapshot may be used with its ORIGINAL as-of status, never presented as newly current",
+        "current_code_to_preserve": [
+          "lib/data/toastDayTrust.server.ts: stored rows remain usable on day status failure",
+          "lib/calc/toastOwnerDay.ts: aggregates require complete eligible day"
+        ],
+        "schema_and_registered_agent_acceptance": "99 valid + 1 DB bad order; 99 immediately queryable with provenance; negative refunds truthful; separate affected vs unaffected metrics and no false full-day certification"
+      },
+      "urgent_recovery_approved": {
+        "status": "owner_approved_priority_outcome_NOT_scheduling_policy",
+        "source_identity_and_existing_state": [
+          "toast_unparsed_orders",
+          "toast_sync_runs",
+          "existing staged page checkpoint and lease",
+          "missingDays.ts bounded repulls",
+          "toast_raw_records",
+          "toast_raw_changes"
+        ],
+        "failure_taxonomy": [
+          "transient provider/429/auth/permission",
+          "per-record parse or data error",
+          "SQL cast/constraint/trigger row error",
+          "whole database outage",
+          "invalid or expired run",
+          "permanent unfixable upstream data"
+        ],
+        "priority_safety": "bounded durable observable retry; source-targeted recovery if official API supports, otherwise day reconciliation; preserve current/live and daily jobs, #203 backfill priority, #264 payment gap, #297 capped retries, 100+ cafe fairness and derivative cost queue; no forever-hot loops",
+        "open_design_decisions": [
+          "D4B B1 SQL row-savepoint/transaction isolation choice",
+          "exact urgent recovery scheduling priority policy and fairness proof"
+        ],
+        "permanent_defect": "may remain honestly unresolved and owner visible; no unrelated work frozen; intervention only genuinely unresolvable external/permission issues"
+      },
+      "separate_cost_queue_ack_defect": {
+        "status": "verified_main_source_read_only_unfixed",
+        "file": "lib/pos/toast/rollupRetries.ts",
+        "current_observation": "toast_ack_rollup_refresh RPC error checked but return data false not checked; may count a false ACK as processed",
+        "required": "distinguish false vs superseded generation, retain durable attempts/retry/ACK, do not replay committed sales",
+        "owner": "separately authorized cost-refresh ownership; not merged into POS0-order-recovery without explicit approval"
+      },
+      "order_guid_processing_metadata_approved": {
+        "status": "OWNER_APPROVED_LOGICAL_ASSOCIATION_ONLY_NO_PHYSICAL_SCHEMA_AUTHORIZATION",
+        "source_identity": [
+          "authorized business_id",
+          "restaurant_guid",
+          "Toast order GUID"
+        ],
+        "never_key_by": [
+          "sync run",
+          "download page",
+          "field or modifier name"
+        ],
+        "existing_source": "toast_raw_records current object; original Toast JSON unchanged; toast_raw_changes only genuine provider changes",
+        "logical_stages": [
+          "received",
+          "raw_saved",
+          "parsed_validated",
+          "canonical_promoted",
+          "metric_reconciled"
+        ],
+        "clear_issues_only_after": [
+          "durable save proof",
+          "relevant validation proof",
+          "applicable canonical/metric reconciliation proof"
+        ],
+        "no_status_column_or_table_claimed": true,
+        "normal_same_day_retry": "existing 15-minute full business-day ordersBulk (eligible finished orders only), provider-GUID/content idempotence, subject to pagination and time budget",
+        "unwritten_or_missing_guid_fallback": "no saved-row status possible; use existing staged page, toast_unparsed_orders and day status/checkpoint/reconciliation evidence as eligible",
+        "after_rollover": "existing closeout/day importer and bounded missing or modified-date repull; no second queue/cron",
+        "open_order_rule": "open/unclosed order not marked final",
+        "owner_decision": "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714662444",
+        "unapproved_design": [
+          "physical persistence/table placement",
+          "SQL row-isolation method",
+          "recovery scheduling priority",
+          "no-row evidence extensions"
+        ],
+        "disposable_migrated_acceptance": "invalid/missing field or GUID, DB row/page failure, truncated Toast page, repeated 15-minute pull, rollover, provider correction, 98/99 good records independently available, no false day-total certification, eventual bounded repair, full Supervisor/screen metric provenance"
+      },
+      "menu_publication_lifecycle_approved": {
+        "status": "OWNER_APPROVED_BEHAVIOR_NOT_RUNTIME_IMPLEMENTATION",
+        "owner_decisions": [
+          "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6714937954",
+          "https://github.com/killbill2792/aicafe/pull/400#issuecomment-6714938291"
+        ],
+        "implementation_approved": false,
+        "future_owner": "POS0d",
+        "inherited_fetch_contract": "D4A Approach B: 10-minute coordinator may check metadata/publication version; full Menus V2 fetch only on actual change, missing-data repair or bounded completeness reconciliation",
+        "unchanged_version_full_menu_gets": 0,
+        "validated_snapshot": "authenticated and restaurant-scoped, complete published menu with version consistency and intact item/modifier/group references; one verified full snapshot shared by staging and canonical projections is proposed, not yet approved physical implementation",
+        "verified_unpublish": "only confirmed absent Toast item, modifier or relationship becomes inactive in provider-publication state; owner review required",
+        "auto_hard_delete": false,
+        "republish_same_guid": "reactivate same provider GUID without duplicate identities or owner-edit overwrite",
+        "never_destroy": [
+          "historical sales/orders and line/modifier/size identities",
+          "Toast GUIDs, names, previous prices and version history",
+          "owner-managed recipes, ingredients, aliases and corrections"
+        ],
+        "unverified_snapshots_never_deactivate": [
+          "empty",
+          "partial",
+          "malformed",
+          "unauthorized or missing permission",
+          "wrong restaurant",
+          "stale or failed",
+          "publication version mismatch or delay",
+          "missing reference",
+          "unknown completeness"
+        ],
+        "evidence_not_removal": [
+          "zero sales",
+          "no historical order line",
+          "ambiguous historical size/modifier/name/price",
+          "temporary out-of-stock, schedule or visibility"
+        ],
+        "permanent_removal": "requires explicit owner confirmation plus dependency/history audit; must never erase historical evidence",
+        "existing_paths_to_inspect": [
+          "lib/pos/toast/optionalSync.ts",
+          "lib/pos/toast/adapter.ts",
+          "lib/pos/toast/operationalCopy.ts",
+          "lib/pos/toast/operationalStaging.ts",
+          "lib/pos/syncCatalog.ts"
+        ],
+        "requires_disposable_db_and_supervisor_screen_proof": true,
+        "unapproved": [
+          "precise physical publication-state schema",
+          "single-snapshot code refactor",
+          "exact file/SQL ownership",
+          "migrations",
+          "production writes",
+          "PR merge"
+        ]
+      },
+      "toast_first_catalog_and_experiment_approved": {
+        "status": "OWNER_APPROVED_MENU_SOURCE_EXPERIMENT_SOURCE_REMINDERS_AND_ROLLING_CLOCK_NOT_RUNTIME",
+        "owner_decisions": [
+          "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6715239569",
+          "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6715319027",
+          "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6715859919",
+          "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6726147168",
+          "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6728419191"
+        ],
+        "draft_specs": [
+          "specs/0001-d4c-toast-menu-authority-and-owner-review.md",
+          "specs/0002-pos-change-verified-experiment-activation.md"
+        ],
+        "connected_menu": "ONE live authenticated complete restaurant/version-consistent Toast published catalog for connected-cafe All/search/groups/categories/pricing/Needs attention/Customer Menu and Supervisor: real base+size/option GUIDs, current names/prices/publication status; verified per-size recipe cost or explicit missing, NEVER price-inferred; owner enrichment separate",
+        "manual_owner_draft": "SUPERSEDED legacy test entries are HIDDEN for connected Toast cafes, not shown in Menu/pricing attention or any Owner review tab; NO local Add Item/unpublished draft product. Retain DB rows solely for D3 historical/FK/deletion safety pending separate approval. New products and Toast-owned names/sizes/prices via Toast Web publish then metadata/version sync; AI CAFE can enrich recipes/ingredients/quantities/costs only on verified Toast-linked products. Toast Menus API read-only; disconnected cafes keep manual/CSV flow",
+        "automatic_option_a": "automatic unambiguous provider-GUID/verified-alias matching, or independently approved deterministic reversible tenant-scoped identity/size evidence; ambiguity stays unresolved for later owner adjudication, NOT a connected legacy Owner review tab; never name-only or charged-price-only",
+        "historical_rule": "563 Aug-Sep historical order lines are valid saved sales but unresolved old product/size GUID/version and recipe links; NEVER reimport/guess name-price mapping, alter original sales or invent COGS; historical Option B evidence-first APPROVED (distinct from current Option A): original same-cafe/restaurant GUID, old size/group/option, dated Toast catalog/recipe/owner proof; unique auditable reversible link only, ambiguous owner review; physical SQL/threshold/migration still NOT approved",
+        "source_price_rule": "local price edit/proposed target/manual_done not verified Toast publication; only authenticated version-consistent exact cafe/restaurant/item/size published price activates existing experiment with source as-of",
+        "pending_reminders": "first at about approval+2h; at most two per owner/experiment/cafe-local day including next morning; dedup and stop at verification/cancellation/supersession; respect provider freshness and owner channels; NOT a limit on separate seven daily observation reports",
+        "unrequested_price_change_observation": "OWNER APPROVED desired behavior (NOT IMPLEMENTED, #398 comment 6728419191): authentic complete restaurant/version/current Toast published item+size/context price DELTA, even with NO owner experiment, triggers ONE Supervisor proactive owner notice, seven rolling 24h OBSERVATIONAL days with DAILY insight on EACH day 1-7 plus final cumulative report. Preserve source effective if proven versus observation/as-of, real sales/order-time comparability, closed/no-data periods, partial COGS, correlation not causation. Revert/new price splits actual exposure periods; bounded dedup owner digest without skipped reporting days. Separate owner-requested experiment needs verified target, agreed N rolling windows, at most two pending reminders per cafe-local day and owner adjudication on mid-test revert; NEVER auto-restart an approved experiment. Reuse existing Toast menu metadata sync, price history, one Supervisor/Operating Board/notification and task 8a; no second watcher/cron/price store or Toast writeback. Exact durable watch schema, SQL, channel, closeout algorithm, exclusive files, migrated DB/registered agent tests, implementation and dispatch remain UNAPPROVED.",
+        "open_owner_choices": [
+          "exact authoritative effective/observation timestamp and verified operating-hours/intraday-order reader selection; schema/rollback and missing-evidence semantics",
+          "exact reversible matching algorithm and schema/rollback",
+          "exclusive implementation/source reader/UI/action ownership",
+          "notification delivery idempotent storage and price context"
+        ],
+        "future_implementation_approved": false,
+        "measurement_clock_rule": "Owner-approved 2026-11-08: begin exactly at independently verified Toast published price effective/observation instant; N consecutive rolling windows of 24 elapsed hours each (UTC instants, café-local display), not calendar business dates. If final boundary occurs while cafe is trading and actual closing is later, report trading until that same day's close as a separate extension (hours/revenue). No automatic Toast revert; stop/cancel with partial exposure. Timestamp provenance, actual operating-hours source, source-shaped order-time sales, DST, and inability-to-verify require truthful insufficient_evidence; detailed implementation and file ownership still pending."
+      }
+    },
+    "pos0a_owner_approved_audit_scope_extension": {
+      "status": "owner_approved_audit_files_only_not_new_dispatch_authorization",
+      "owner_comment_url": "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6713567512",
+      "additional_paths": [
+        "scripts/toast-standard-api-coverage.test.mjs",
+        "docs/plans/toast-openapi-spec-snapshot.json"
+      ],
+      "original_signed_task_exclusive_files_unchanged": true,
+      "existing_saved_assignment_signature_must_not_be_invalidated": true,
+      "runtime_or_merge_approval": false,
+      "execution_state": "official pinned schema and deterministic read-only audit not yet committed/executed"
+    }
   },
   "tasks": [
     {
@@ -94,7 +373,7 @@
       "milestone": "POS0",
       "title": "P0 Standard API source-to-AI coverage contract and gap matrix",
       "depends_on": [],
-      "goal": "Inventory every currently documented Standard API read operation and every permitted response field against actual scopes, fetch cadence, stored current object, privacy filter, change history, canonical reader and Supervisor; owner approves the field-level design before data-code PRs.",
+      "goal": "READ-ONLY official GET/nested-field design and gap matrix: observed café grants where available; unknown grants, missing writers/readers, current-vs-target consumers and future owners explicitly labeled. Owner reviews architecture before separately authorizing POS0e/b/c/d/f code; actual SQL/registered Supervisor proof belongs to those later PRs.",
       "scope_hint": "Read-only official-spec + current repo + disposable/authorized read-only database inventory; new docs/plans/toast-standard-api-coverage-matrix.md. Own no existing runtime or migration file.",
       "exclusive_files": [
         "docs/plans/toast-standard-api-coverage-matrix.md"
@@ -104,7 +383,7 @@
         "owner_direction": "Owner approved prioritizing a READ-ONLY field-by-field Standard API audit and written implementation contract before other Supervisor work; no production changes or coding approval for later POS0 tasks.",
         "contract": {
           "source": "Current official Toast Standard API OpenAPI definitions and real café scope/response evidence (no hardcoded endpoint count).",
-          "persisted": "Documentation and exact source-field/record-key/current-storage mapping only; no data writes.",
+          "persisted": "READ-ONLY documentation of official fields, real observed versus NOT_TESTED cafe grants, existing writer/storage/current-reader findings OR explicitly missing reader and proposed future owner; no new data writes, migration or integration claim.",
           "consumer": "The following POS0 tasks and owner architecture sign-off.",
           "failures": "Classify missing permission, no resource ID, empty response, not collected, field redaction, stale/unknown separately.",
           "scope": "New coverage matrix document only; zero production calls/writes beyond safe read-only evidence."
@@ -120,10 +399,10 @@
         "pr"
       ],
       "acceptance": [
-        "Every official current Standard API GET operation and response field is recorded with official spec version/link, café-specific scope/permission and observed result (success/empty/403/missing-id/not configured/not tested), with Analytics/menus-v3 and no-GET families excluded or classified accurately.",
-        "Each allowed field has explicit canonical object identity, storage owner/key, existing ingest job, cadence, privacy treatment, current-reader/view, Supervisor query field, screen consumer, freshness and known gap; no invented endpoint counts or silent assumed coverage.",
-        "Compare actual code paths, current production object evidence and stale diagnostics separately; distinguish old October capture from current order/staff sync; owner reviews exact proposed source → stored object → shared reader plan before coding.",
-        "A reproducible matrix audit command and proof link are recorded, and the original working order path is marked preserve/no rewrite."
+        "READ-ONLY A1 official current Toast Standard GET-operation and complete recursively nested response-field inventory, with official family/version/source SHA, operation/path/field provenance, documented scope and exclusion of Analytics ERA/Menus V3/no-GET families. No hardcoded historical endpoint/field count or fabricated official response success.",
+        "Each official field has a documented expected type/object identity and an existing source→writer/key→stored current fact→canonical reader/describe_data/query_data→app screen/registered Supervisor chain WHERE ACTUALLY VERIFIED; else explicit GAP/NOT_COLLECTED/READER_MISSING/NOT_TESTED. Record consumer/privacy/cadence/freshness/status and proposed POS0e vs POS0b/c/d vs POS0f implementation owner for every gap. This is an auditable DESIGN MAP, not assertion that downstream retention/registered answers already work.",
+        "For each observed cafe API permission/response, record exact read-only observation/source/date and distinguish 200-with-values, 200-empty, 204, 403, missing GUID, missing entitlement, stale, not configured, failed, and not tested. Do not require permission tests not safely available or invent response/field access; explicitly mark unverified café grants. Reconcile live current operational order/staff evidence versus October diagnostic snapshots and list existing actual SQL/reader defects for future POS0e/0f.",
+        "Provide a reproducible READ-ONLY official-schema/registry audit command with executed same-head test result; owner-reviewable source → current OR missing stored object → shared-reader/one Supervisor/screen implementation plan, exclusive files/SQL/test dependencies proposed for future PRs, baseline/preservation/rollback conditions, and exact unresolved facts. Owner field-contract approval permits separate task authorization after the existing gate; actual POS0e/b/c/d implementations and POS0f final migrated-DB end-to-end proof are later acceptance, not prerequisites to authorizing their PRs."
       ],
       "test_kinds": [
         "docs",
@@ -144,9 +423,10 @@
       "milestone": "POS0",
       "title": "P0 staff and labor permitted-field completeness and freshness",
       "depends_on": [
-        "POS0a"
+        "POS0a",
+        "POS0e"
       ],
-      "goal": "Extend existing Toast labor/staff import and current-object snapshot writer to retain every permitted employee/job/time-entry/shift field and genuine revisions, with correct actor identity and live/final dates.",
+      "goal": "Extend existing Toast labor/staff import and current-object snapshot writer to retain every permitted employee/job/time-entry/shift field and genuine revisions, with correct actor identity and live/final dates. Must operate on POS0e current-only reader (never on toast_raw_samples), and prove each newly collected field is answerable through Supervisor.",
       "scope_hint": "Existing lib/pos/toast/adapter.ts, laborSync.ts, operationalCopy.ts, optionalSync.ts; current toast_labor_entries, employee/job directory, scheduled shifts, timecards, archive writer and change log. Assign exact files and any migration exclusively after matrix approval.",
       "exclusive_files": [],
       "architecture_approval": null,
@@ -160,10 +440,12 @@
         "pr"
       ],
       "acceptance": [
+        "Before any edits PR body contains source_authority_checked: yes, actual current/diagnostic/test source classification, true provider object key, old consumer/retirement list and exact changed-file ownership, with link to docs/rules/pos-data.md.",
         "For each permitted Toast employee/job/shift/time-entry JSON path, full source → one current object → canonical facts → query_data round-trip matches source; no job/tip/break/reference or null/zero loss.",
         "One object per business+restaurant+Toast object GUID; repeated unchanged data makes no new snapshot/history; modified wage, break, tip or clock edit updates exactly once and produces before/after change evidence.",
         "Attendance and planned shifts refresh on appropriate bounded operational cadence with modified cursor/backfill, timezone and overnight coverage; failures and stale/permission gaps remain visible, never zero or owner questions.",
-        "Existing Staff, scheduling, payroll and Money screen projections and certified labor cents remain unchanged or parity-proven; existing order import tests remain green."
+        "Existing Staff, scheduling, payroll and Money screen projections and certified labor cents remain unchanged or parity-proven; existing order import tests remain green.",
+        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots."
       ],
       "test_kinds": [
         "unit",
@@ -180,16 +462,18 @@
       "merge_commit": null,
       "ci_proof": null,
       "integrated_proof": null,
-      "owner": null
+      "owner": null,
+      "stack_base_task": "POS0e"
     },
     {
       "id": "POS0c",
       "milestone": "POS0",
       "title": "P0 operational Standard API endpoint integration",
       "depends_on": [
-        "POS0a"
+        "POS0a",
+        "POS0e"
       ],
-      "goal": "Connect eligible cash, stock, kitchen and operational availability endpoints to the EXISTING current-object/upsert-change-log writer, not a parallel raw-dump service.",
+      "goal": "Connect eligible cash, stock, kitchen and operational availability endpoints to the EXISTING current-object/upsert-change-log writer, not a parallel raw-dump service. Must operate on POS0e current-only reader (never on toast_raw_samples), and prove each newly collected field is answerable through Supervisor.",
       "scope_hint": "Existing Toast Standard client, capture registry, archive writer; cashmgmt, stock, kitchen/prep, availability/ordering schedule. Source keys/cadences/RLS from POS0a; exclusive file owners and migrations assigned before coding.",
       "exclusive_files": [],
       "architecture_approval": null,
@@ -203,10 +487,12 @@
         "pr"
       ],
       "acceptance": [
+        "Before any edits PR body contains source_authority_checked: yes, actual current/diagnostic/test source classification, true provider object key, old consumer/retirement list and exact changed-file ownership, with link to docs/rules/pos-data.md.",
         "Each eligible operational GET and field is durably current, source-identified, change-logged, discoverable by the shared reader and truthfully marked unavailable on missing scope, empty 204 or API failure.",
         "Operational deltas are refreshed at bounded POS-safe intervals; no unapproved blanket 30-minute polling, duplicated objects, or assumption of stock zero / kitchen-ready from absent evidence.",
         "Idempotent changed/unchanged/reordered responses and recoverable 429/5xx/timeout/partial/café-isolation are verified on disposable migrated DB; no new competing POS writer or financial totals.",
-        "Existing sales, cash, stock, kitchen and orders consumers remain compatible; screen and Supervisor source parity is proved wherever those screens exist."
+        "Existing sales, cash, stock, kitchen and orders consumers remain compatible; screen and Supervisor source parity is proved wherever those screens exist.",
+        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots."
       ],
       "test_kinds": [
         "unit",
@@ -223,16 +509,18 @@
       "merge_commit": null,
       "ci_proof": null,
       "integrated_proof": null,
-      "owner": null
+      "owner": null,
+      "stack_base_task": "POS0e"
     },
     {
       "id": "POS0d",
       "milestone": "POS0",
       "title": "P0 remaining eligible setup, menu and restaurant endpoint integration",
       "depends_on": [
-        "POS0a"
+        "POS0a",
+        "POS0e"
       ],
-      "goal": "Complete durable retained-field coverage for all remaining accessible Standard API configuration, menus v2, payments/lookup, restaurant, device, packaging, partner and related endpoints using the one current-object writer.",
+      "goal": "Complete durable retained-field coverage for all remaining accessible Standard API configuration, menus v2, payments/lookup, restaurant, device, packaging, partner and related endpoints using the one current-object writer. Must operate on POS0e current-only reader (never on toast_raw_samples), and prove each newly collected field is answerable through Supervisor.",
       "scope_hint": "Reuse existing menu/config/restaurant collectors and canonical table/readers; diff by exact endpoint and source key. Exclude ERA separate credentials and Menus v3 non-Standard instead of silently calling them missing.",
       "exclusive_files": [],
       "architecture_approval": null,
@@ -246,10 +534,20 @@
         "pr"
       ],
       "acceptance": [
+        "Before any edits PR body contains source_authority_checked: yes, actual current/diagnostic/test source classification, true provider object key, old consumer/retirement list and exact changed-file ownership, with link to docs/rules/pos-data.md.",
         "Every eligible endpoint not owned by POS0b/POS0c has field-by-field source/storage/query proof; config and ID lookup no-resource cases tracked as reasons, with daily/modified refresh where applicable.",
         "Menu, price, taxes, service charges, discounts, item modifiers, payment types, employees and restaurant keys preserve existing canonical screen numbers and provider definitions.",
         "No loss of historical order/change evidence or sensitive-data policy; immutable business identity, tenant authorization, dedup, changes, retry and permission/no-content classification verified.",
-        "Any endpoint truly unavailable under Standard credentials is recorded with exact recent response or provider prerequisite, never fabricated success; tests do not assume the old October audit is current."
+        "Any endpoint truly unavailable under Standard credentials is recorded with exact recent response or provider prerequisite, never fabricated success; tests do not assume the old October audit is current.",
+        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots.",
+        "Owner D4C: metadata/version unchanged causes ZERO full Menus V2 fetches; real change/missing repair uses authenticated restaurant-scoped complete version-consistent snapshot, preferably ONE snapshot for staging and catalog with no duplicated full fetch or race.",
+        "Only a verified complete published menu can mark disappeared provider item, modifier or group/option relationship INACTIVE, never hard-delete automatically; same GUID republished reactivates without duplicate and owner-managed recipes/ingredients/overrides, historical prices and order/size/option references remain intact.",
+        "Empty, partial, malformed, 204/403, stale, delayed publication, wrong restaurant/version, missing referenced options, zero sales or unknown historical size MUST NOT deactivate last-good menu. Require migrated disposable DB, real registered Supervisor/screen same-cafe source-as-of parity, negative isolation and rollback/API cost proof; permanent removal needs separate owner approval and history/dependency checks.",
+        "Owner-approved Toast-first Menu: connected cafe published All/search/groups/Needs attention/unpriced/Archived, customer surfaces and Supervisor show only validated Toast GUID/size/option/price; old manual test rows stay hidden with NO legacy Owner review tab or local Add Item; connected owner uses Add/manage in Toast Web for product/name/size/price then sync; AI CAFE enriches verified Toast-linked recipes. Disconnected cafes retain manual menu. Test server actions/deep links and 563 historical size-unlinked sales with partial COGS.",
+        "Owner-approved current Option A: recipe/ingredient/cost enrichment on VERIFIED Toast-linked item+size only; optional unambiguous proven association, NO forced transfer of old manual test recipes, connected legacy review tab, local Add Item or draft. Ambiguous historical source GUID/variant evidence stays unresolved/grouped for separately approved Option B adjudication, not current Menu promotion. Spec 0001 SQL/UX implementation remains In Review.",
+        "Published Toast price versus proposed target: local Menu edit/manual_done cannot update source-owned price or activate an experiment; require version-consistent exact cafe/restaurant/item/size published source evidence and the existing experiment owner. Spec 0002 remains In Review, exact ownership and migrated DB/Menu/Supervisor/Experiments proof pending.",
+        "Source-verified price experiment activation must deliver truthful source effective/observed time; owner approved N rolling 24 elapsed-hour windows and separately labeled final trading until actual cafe close if later. Reuse actual published Toast change, native per-order timestamps and authoritative cafe hours; daily business_date totals alone cannot prove exact window. DST, provider lag, cancellation and insufficient_evidence must be tested by later authorized implementation owner.",
+        "Separate from owner experiments: a verified real Toast published item+size price DELTA, even without request, must trigger one proactive Supervisor owner notice plus 7-day OBSERVATIONAL watch, DAILY day1-7 source-qualified insights and cumulative report. Test wrong-cafe/size/version/context, stale menu, closed days, source lag, actual order timestamps, partial money/COGS, comparison caveats and correlation not causation; change/revert creates separate truthful price segments, idempotent dedup owner digests. No new watcher/scheduler/price store or runtime approval."
       ],
       "test_kinds": [
         "unit",
@@ -266,20 +564,18 @@
       "merge_commit": null,
       "ci_proof": null,
       "integrated_proof": null,
-      "owner": null
+      "owner": null,
+      "stack_base_task": "POS0e"
     },
     {
       "id": "POS0e",
       "milestone": "POS0",
-      "title": "P0 one reusable data-access foundation for screens and Supervisor",
+      "title": "P0 shared current-source reader and all-field retention FIRST foundation",
       "depends_on": [
-        "POS0b",
-        "POS0c",
-        "POS0d"
+        "POS0a"
       ],
-      "stack_base_task": "POS0d",
-      "goal": "Extend existing describe_data/query_data + approved canonical readers and relationships so Supervisor can discover/query all stored permitted Toast fields without per-question views, invented SQL or a second data path.",
-      "scope_hint": "Existing ai_query_view, toast_records_for/cv_toast_records, canonical dictionary, lib/ai/agent/tools/dataQuery.ts, shared source readers and metrics; check all callers before changing. Exact SQL and shared-file owner require field-level approval.",
+      "goal": "FIRST cut operational Supervisor/canonical views off toast_raw_samples and historical diagnostic capture, reuse current toast_raw_records/change log with full permitted field retention (customer/staff PII excluding card credentials), complete schema-backed describe_data and bounded full-data query_data; generic source-family reader before POS0b–d.",
+      "scope_hint": "One exclusive owner for current toast_records_for / cv_* active SQL replacement migration; lib/ai/agent/tools/dataQuery.ts, lib/data/canonical/dictionary.ts, existing lib/pos/toast/redact.ts, and relevant SQL/agent tests. Freeze shared file ownership; no additional AI query path, store or historical migration edits. Existing tests asserting diagnostic-backed operational values must be corrected and negative source-isolation tests executed.",
       "exclusive_files": [],
       "architecture_approval": null,
       "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0e",
@@ -292,10 +588,11 @@
         "pr"
       ],
       "acceptance": [
-        "Every permitted current object field is discoverable with provenance and queryable through existing scoped tools, including normalized staff ↔ time-entry names, date/employee/order/payment relationships, while keeping row/byte/call bounds and RLS.",
-        "One source of business truth: specialized get_staff/get_sales/get_profit and all screens are projections over the same authorized canonical fact readers; correct but distinct semantics (currently working vs worked during date) do not dead-end.",
-        "Money/screen numbers use lib/metrics/core (not model-generated SQL or calculate); other sourced arithmetic uses the existing calculate tool; today provisional versus finalized and stale/missing source states are explicit.",
-        "Tests reject cross-café IDs, arbitrary SQL, disallowed sensitive fields, fabricated zero/complete answers, unverified joins and wrong café-local day; old query tests are strengthened rather than deleted to hide gaps."
+        "Preflight in PR body: source_authority_checked: yes, concrete current/diagnostic/fixture file classification, exact dataflow, provider permissions, source key and retirement list verified against docs/rules/pos-data.md; all changed paths are exclusive.",
+        "Final migrated disposable Supabase defines toast_records_for / all current cv_* operational views with ZERO direct/indirect dependencies on toast_raw_samples or toast_raw_samples_latest; obsolete diagnostic fixtures cannot affect Supervisor/screens; no stale fallback after provider failure.",
+        "Existing redactor retains customer and employee names, allowed contact/loyalty/stable IDs and other permitted fields, excluding PAN/CVV/track and reusable payment/security secrets; partial null/missing cannot block unrelated data; tenant/role scope enforced.",
+        "describe_data lists every permitted field using versioned Standard schema plus actual retained sources even if unseen in newest 30/35-day/200-path samples; query_data can filter/aggregate over all relevant current records without dumping full raw rows into model context; bounded response and safe stable-ID lookup.",
+        "Real registered one-agent Supervisor-turn proof with seeded current source facts (staff, cash, stock, orders) and conflicting diagnostic-only values; named customer/employee answer, safe numbers, screen parity and negative cross-cafe test; final-head SQL/agent CI and Codex clean."
       ],
       "test_kinds": [
         "unit",
@@ -319,7 +616,10 @@
       "milestone": "POS0",
       "title": "P0 complete Standard API → storage → Supervisor acceptance and regression gate",
       "depends_on": [
-        "POS0e"
+        "POS0e",
+        "POS0b",
+        "POS0c",
+        "POS0d"
       ],
       "goal": "Make full permitted Standard API source-to-storage-to-universal-reader-to-screen/agent coverage an executable, non-skipped release gate; close every missing/incorrect test and document exact exceptions.",
       "scope_hint": "Existing Toast adapter/SQL tests, canonical dictionary tests, Supervisor evals and CI disposable migrated Supabase; shared test ownership assigned after code PRs to avoid conflicts. Real café validation read-only and owner-authorized.",
@@ -335,11 +635,18 @@
         "pr"
       ],
       "acceptance": [
+        "Before coding PR body includes source_authority_checked: yes and the exact current/diagnostic/test consumer classification, retirement schedule and linked POS0e integrated proof.",
         "CI enumerates all eligible current Standard API endpoints/fields (not hardcoded 76/86) and checks redaction, full retained fields, one-row-per-object, changes-only history, receipts/failures, modified/same/reordered retry cases.",
         "CI asserts complete chain Toast-shaped input → existing writer → stored canonical object → describe_data → query_data → Supervisor turn and matching relevant screen for staff, orders, payments, sales, cash, stock, kitchen, configuration and unknown cross-domain questions.",
         "Replace or strengthen every incomplete/misleading test and fixture; preserve valid regressions; required SQL/RLS/AI parity job executes in CI against disposable migrated Supabase and is never silently skipped for no key/flag.",
         "Production read-only evidence compares current response/field coverage and applicable real-café screen and chat results with explicit dates, counts and reconciliation; no production migrations or new OAuth scopes without separate owner authorization.",
-        "For each unavailable endpoint record exact reason and last verified date, for each owner-permitted data field show a passed retrieval assertion; changed code paths have final-head CI links, Codex clean, no skipped required proof."
+        "For each unavailable endpoint record exact reason and last verified date, for each owner-permitted data field show a passed retrieval assertion; changed code paths have final-head CI links, Codex clean, no skipped required proof.",
+        "After all migrations, final SQL function and view lineage has zero active direct/indirect diagnostic source dependencies; seeded sample-only values have zero impact on Supervisor/screens; existing diagnostic-positive test assertions rewritten as negative isolation proofs.",
+        "Only after zero readers/capture consumers remain and a verified retention, migration and rollback plan exists, retire and purge stale diagnostic rows/capture/test-cafe mirroring in a separately controlled release; record production migration owner approval, disk space before/after and actual real-cafe post-release read proof.",
+        "D4C independent final proof: real unpublished and republished same-GUID menu transitions preserve owner recipes, historic orders/options/prices and stable identities; invalid/partial/wrong-version menu cannot retire anything; registered Supervisor/screen agree with retained current published-source state across cafés on migrated disposable DB.",
+        "Final independently executed migrated-DB parity for Toast-only connected published Menu, NO connected legacy review/draft/Add Item UI, Toast Web guidance and verified Toast-linked recipe enrichment, Option A unambiguous recipe association, source actual versus proposed price, authenticated source-triggered experiment start, and +2h/next-morning max-two-per-day notification dedup. Real registered Supervisor, Menu, Experiments, negative cross-cafe/stale/ambiguous size and historical sales proofs required.",
+        "Owner-approved experiment rolling 24-hour measurement: exact verified-source start, N elapsed windows, separate same-last-day trading-until-close extension; registered Supervisor, real order-time reader and Menu/Experiments agree on dates/prices/sales and missing-evidence flags. Test DST, overnight/early closing, stale verification, cancel/revert, wrong cafe, no calendar-day synthetic allocation, same source as-of and no invented clock.",
+        "FINAL one-Supervisor/Menu/Experiments/owner-channel parity for unrequested published Toast price change: an authenticated same-cafe real price delta triggers observational 7-day watch without any experiment, initial notice, DAILY day1-7 updates and final cumulative report; revert/second change keeps source-backed exposure segments, no duplicate watches/spam, partial COGS and attribution honest. Distinguish from separately requested published-target experiments and at-most-two pending reminders. Migrated disposable DB, tenant isolation, actual order times, rollback, source error and delivery idempotence proof required."
       ],
       "test_kinds": [
         "unit",
@@ -358,7 +665,8 @@
       "merge_commit": null,
       "ci_proof": null,
       "integrated_proof": null,
-      "owner": null
+      "owner": null,
+      "stack_base_task": "POS0d"
     },
     {
       "id": "E2",
@@ -509,7 +817,9 @@
       "acceptance": [
         "Existing experiment observations and reports match before/after cutover",
         "No duplicate runs or notices",
-        "Old cron disabled only after verified parity and rollback"
+        "Old cron disabled only after verified parity and rollback",
+        "Toast-connected experiment: only fresh authenticated exact Toast item/size/context published target activates existing monitoring; owner Done/local edit does not. First pending reminder about +2h, at most two per owner/experiment/cafe-local day including next morning, idempotent and stopped on confirmation/cancel/supersession; stale source status unverified. Owner-approved measurement: N exact rolling 24-hour windows beginning at verified source event (not next morning), then separately report any final-day trading until actual cafe closing if later; test UTC/DST, actual order timestamps, true close, cancellation, insufficient evidence. Timestamp/SQL/ownership detail requires separate approval.",
+        "Distinct APPROVED OUTCOME, not implementation authorization: even without an experiment, an independently verified Toast-published cafe/restaurant/item+size price delta triggers ONE Supervisor notification plus seven rolling 24h observational days with DAILY reports all 7 and cumulative analysis; segment reverts/second changes, preserve prior price as-of, partial cost, no false causality or duplicate watches. Reuse existing operating/experiment notification delivery; exact files/SQL/state/owner remain separately unapproved."
       ],
       "test_kinds": [
         "unit",

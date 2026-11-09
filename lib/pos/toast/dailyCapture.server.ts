@@ -1,3 +1,5 @@
+// DIAGNOSTIC_ONLY: manually invoked API coverage; not the operating Toast sync.
+// Results must not source Supervisor or operational canonical views.
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {captureToastRawSample} from "./rawSample.server";

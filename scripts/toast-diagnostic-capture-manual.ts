@@ -1,4 +1,4 @@
-/** Run with: NODE_OPTIONS=--conditions=react-server npx tsx scripts/toast-raw-capture-daily.ts
+/** DIAGNOSTIC_ONLY — never feed Supervisor, screens or operating current objects.\n * Manual investigation only.\n * Run with: NODE_OPTIONS=--conditions=react-server npx tsx scripts/toast-diagnostic-capture-manual.ts
  * Captures every Toast endpoint for each verified café's recent closed days that are
  * not yet complete. Requires server environment credentials. Prints counts only. */
 import {createClient} from "@supabase/supabase-js";

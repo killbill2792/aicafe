@@ -4,16 +4,19 @@
 
 **Authority:** [AGENTS.md](../../AGENTS.md) and its linked rules; this plan never overrides them. A proposed mandate is not permission to contact employees, write to POS, move funds or deploy. Existing restrictions stay until separately owner-approved rule changes. Every external source and stored record needs the plain-language architecture sheet in AGENTS.md before coding. The owner can approve a complete shared contract once, then coding agents implement within that scope without repeating the same discussion.
 
-**Read only three files for dispatch:** [machine task queue](universal-supervisor-queue.json) (IDs, dependency DAG, proof status), [task briefs](universal-supervisor-task-briefs.md) (unique task acceptance) and [agent operations](universal-supervisor-agent-operations.md) (short copy-paste prompt). Reusable process belongs in `.claude/skills/aicafe-*/SKILL.md`; do not paste all rules into each coding turn.
+**For Toast/POS work, after AGENTS.md and read-only PROGRESS.md, read [binding POS source authority](../rules/pos-data.md), #398's retrievable concise handoff, the ONE assigned task brief and machine queue; `delivery.mjs` generates the only handoff. This plan is lifecycle context, not a three-file independent dispatch instruction. Diagnostic/test capture never supplies live Supervisor answers.**
+
+**One generated dispatch handoff, not three independent instructions:** the existing GitHub dispatcher reads the [machine queue](universal-supervisor-queue.json) (DAG, ownership, proof and approval gate) and [assigned task brief](universal-supervisor-task-briefs.md) (acceptance); its `delivery.mjs` creates the sole bounded ChatGPT/Claude assignment or continuation prompt. [Agent operations](universal-supervisor-agent-operations.md) is lifecycle context, **not** a copy-paste prompt or second approval path. AGENTS.md, read-only PROGRESS.md, binding POS rules, applicable skills and #398's retrievable POS0a handoff card is the architecture first-read; the matrix's historical field ledger is selective evidence, not a mandatory prompt dump.
 
 ## PRIORITY ZERO — complete Toast Standard API data and one AI read path (owner decision, Nov 6)
 
 **This now comes before the remaining Universal Supervisor PR6–PR17 work, including E2.** The
-[existing machine queue](universal-supervisor-queue.json) adds **POS0a → POS0b/POS0c/POS0d →
-POS0e → POS0f**, and explicitly makes POS0f an integrated-proof dependency of E2, PR6, PR9
+[existing machine queue](universal-supervisor-queue.json) adds **POS0a → POS0e shared current-reader/retention foundation → POS0b/POS0c/POS0d → POS0f**, and explicitly makes POS0f an integrated-proof dependency of E2, PR6, PR9
 and PR10 (hence the rest of the queue). The actual deterministic dispatcher checks dependencies;
 this is not merely a change of prose priority. Finish existing open PR CI/Codex/reviews normally,
 but do not create new lower-priority dispatch assignments while POS0f is unproven.
+
+**D4 owner-approved architecture clarification (NOT implementation):** D4A selects change-driven family-specific refresh and automatic reconciliation in the existing 10-minute coordinator plus separate 15-minute live orders; never blanket GET every tick or webhook-only. D4B owner-selected **Approach 1** repairs the existing Toast day-import/live-archive/recovery pipeline (NEVER a separate per-order importer); the future SQL/page implementation must isolate bad records without starving valid orders, daily jobs, payment-gap recovery or generation-bound cost work; preserve prior #189/#203/#264/#297 regressions. Proposed `POS0-order-recovery` has no dispatch/file/SQL approval, and the 77 due cost-refresh jobs with zero attempts are a separate diagnostic. **One briefing path:** [binding POS rules](../rules/pos-data.md) → [#398 D4 card](toast-standard-api-coverage-matrix.md#d4ad4b-approved-architecture-outcome--no-runtime-approval-nov-7) → [task brief](universal-supervisor-task-briefs.md) + [queue](universal-supervisor-queue.json). Do not add another prompt.
 
 **Why first:** The current one-record-per-order writer, revision log, sales imports and canonical
 screen numbers are working and must remain. The gap is complete **field retention and current-object
@@ -24,24 +27,24 @@ a current importer. Do not rebuild orders or keep parallel raw snapshots.
 | Task | Outcome | Dependency | Proof |
 |---|---|---|---|
 | **POS0a (start now)** | Current official Standard API operation/field/permission/storage/reader matrix; explicit one-object-key and privacy architecture for owner sign-off | None | Read-only repeatable audit; no production changes |
-| **POS0b** | Current staff, jobs, shifts, attendance: all retained permitted fields, correct edits and refresh | POS0a | Source-field/DB/AI + Staff/labor/money parity |
-| **POS0c** | Current cash, stock, kitchen and operational availability | POS0a | API-to-current-object change logs, failure/freshness and query tests |
-| **POS0d** | Current eligible menu, configuration, restaurant, device, packaging and remaining Standard API data | POS0a | Every eligible source-field mapping, revisions, canonical screen parity |
-| **POS0e** | Universal Supervisor access through existing shared readers, safe relationships and canonical metric definitions | POS0b–d | Arbitrary café questions, no competing path, cross-café/field safety |
-| **POS0f (release prerequisite)** | Executed and enforced end-to-end completeness gate; old weak tests strengthened, no required skip | POS0e | Official inventory × field → API-shaped response → one-object writer → `describe_data` → `query_data` → Supervisor + screen, disposable SQL CI and owner-authorized read-only live proof |
+| **POS0b** | Current staff, jobs, shifts, attendance: all permitted fields, correct changes and 10-minute coordinated refresh; genuine current-object → Supervisor proof | POS0a + POS0e | Source-field/DB/AI + Staff/labor/money parity |
+| **POS0c** | Current cash, stock, kitchen and operational availability; diagnostic-only values never appear as actual | POS0a + POS0e | API-to-current-object change logs, failure/freshness and query tests |
+| **POS0d** | Current eligible menu, configuration, restaurant, device, packaging and remaining Standard API data | POS0a + POS0e | Every eligible source-field mapping, revisions, canonical screen parity |
+| **POS0e — FIRST foundation** | Retire diagnostic-backed live SQL, retain all permitted customer/staff fields, complete existing schema-backed discovery and bounded on-demand reads for all current-object families | POS0a | Actual current object vs conflicting diagnostic values, same existing tools, cross-café isolation, no stored-but-inaccessible source |
+| **POS0f (release prerequisite)** | Final endpoint × field Supervisor/screen proof, active SQL lineage zero diagnostics, and safe tracked retirement/cleanup of obsolete captures/mirrors/rows | POS0e + POS0b/c/d | Official inventory × field → API-shaped response → one-object writer → `describe_data` → `query_data` → Supervisor + screen, disposable SQL CI and owner-authorized read-only live proof |
 
 **Preserve existing working architecture:** `toast_raw_records` current objects,
 `toast_raw_changes` field diffs, existing organized tables, live/closeout order importer,
 screen metrics in `lib/metrics/core`, specialized tool projections, `calculate`,
 `describe_data` and `query_data`. No duplicate ingestion/read path, no new tool/view per
 question, no arbitrary AI SQL, no data loss and no indiscriminate 30-minute requests.
-Operational data refreshes at bounded provider-safe intervals; configuration daily/on change.
-A restricted endpoint is a documented, date-stamped `permission`/`not_supported`/`empty` reason,
+**Target, NOT verified current behavior:** the existing 10-minute coordinator should make bounded per-family change checks and report actual freshness, but optional labor/config paths are still daily gated. Future approved POS0b–d work must reuse that coordinator, respect quotas/backoff and prefer revision/metadata checks before a validated full snapshot; no current 10-minute freshness guarantee.
+Names, customer IDs, phone/email, staff details, notes and other fields Toast returns under real permissions must be retained for café-authorized AI, except card PAN/CVV/track and payment/authentication credentials. A missing optional field cannot block an unrelated order or answer. `toast_raw_samples` and `toast_raw_samples_latest` are LEGACY_DIAGNOSTIC_ONLY and must never feed operational `cv_*`, Supervisor or screen figures. A restricted endpoint is a documented, date-stamped `permission`/`not_supported`/`empty` reason,
 not an invented zero. Standard API is distinct from optional paid Toast Analytics/ERA and
 Menus V3 limitations.
 
 **Owner approval boundary:** The user approved **priority** and the high-level architecture.
-POS0a is approved for **read-only contract/audit work**. Before POS0b–POS0e begin coding,
+POS0a is approved for **read-only contract/audit work**. **November 8 owner switch remains OFF:** dispatcher issue/queue tracking does not authorize delivery of POS0b–f coding prompts; the owner will personally activate the existing coding dispatcher after #398/#399/#400 architecture closeout. Comment reconciliation remains manual in these draft PR bodies, not a new blocking automation task. Before POS0e or POS0b–d begin coding,
 AGENTS.md §15 still requires a source-field-by-field mapping, stable object keys, destinations,
 redaction, permissions, readers and exact file ownership that the owner has reviewed.
 Production migrations/deploys and new credentials need separate approval.
@@ -79,7 +82,7 @@ These are **delivery milestones**; suffixed IDs in the queue (e.g. `14a`, `16b`)
 
 **Open now, merge later:** independent approved tasks start on latest main. If task B depends on open A, create B's branch from A's branch and open **a draft PR targeting A's branch immediately**, with stable file ownership; B is not blocked from coding merely because A is unmerged. As soon as A merges, B incorporates latest main, checks actual shared exports/schema/registration, reruns relevant tests and gets new Codex review. Only one PR owns any shared file/migration; no duplicate readers or dead adapters.
 
-**Current first wave:** POS0a only (approved read-only inventory). POS0b–POS0e require owner-approved field contracts; POS0f requires the integrated slice proofs. After POS0f is integrated-proven, the earlier E2/PR6/PR9/PR10 wave may proceed against the latest main on nonoverlapping scopes. Previously opened lower-priority PRs are not abandoned. Up to **five ChatGPT and two Claude** active tasks; no forced slot-filling if scopes conflict. The queue determines the actual frontier from latest GitHub facts; these are examples, not automatic authorizations.
+**Current first wave:** POS0a only (approved read-only inventory), plus a distinct source-authority/naming guard PR #400 with no SQL/data deletion. POS0e is the proposed first shared code foundation after POS0a's actual approved field contract; POS0b/c/d depend on its integrated reader; POS0f requires all slice proofs. Do not mark any unmerged proposal released. After POS0f is integrated-proven, the earlier E2/PR6/PR9/PR10 wave may proceed against the latest main on nonoverlapping scopes. Previously opened lower-priority PRs are not abandoned. Up to **five ChatGPT and two Claude** active tasks; no forced slot-filling if scopes conflict. The queue determines the actual frontier from latest GitHub facts; these are examples, not automatic authorizations.
 
 ## Test policy: meaningful, fast and real
 

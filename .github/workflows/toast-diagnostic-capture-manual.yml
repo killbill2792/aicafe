@@ -1,15 +1,10 @@
-name: Toast daily capture
+name: Toast DIAGNOSTIC capture (manual only)
 
-# Captures every Toast endpoint for each verified café's last three closed business
-# days that are not yet complete (AGENTS.md section 4b, PROGRESS step 4a). Complete
-# days are skipped, so the extra runs only retry partial or missed captures.
-# Scheduled runs start only after the owner sets the repository variable
-# TOAST_DAILY_CAPTURE_ENABLED=true; a manual run is always allowed.
+# DIAGNOSTIC_ONLY: explicit owner-invoked API coverage investigation.
+# Does NOT populate operational current records and MUST NOT feed Supervisor,
+# production canonical views or screen metrics. No scheduled data accumulation.
+# Existing shared Toast 10-minute operational cron is separate.
 on:
-  schedule:
-    - cron: "17 11 * * *"
-    - cron: "17 15 * * *"
-    - cron: "17 19 * * *"
   workflow_dispatch:
 
 permissions:
@@ -21,7 +16,7 @@ concurrency:
 
 jobs:
   capture:
-    if: github.event_name == 'workflow_dispatch' || vars.TOAST_DAILY_CAPTURE_ENABLED == 'true'
+    if: github.event_name == 'workflow_dispatch'
     environment: toast-prod
     runs-on: ubuntu-latest
     timeout-minutes: 58
@@ -48,7 +43,7 @@ jobs:
           output="$(mktemp)"
           trap 'rm -f "$output"' EXIT
           set +e
-          NODE_OPTIONS=--conditions=react-server ./node_modules/.bin/tsx scripts/toast-raw-capture-daily.ts >"$output" 2>&1
+          NODE_OPTIONS=--conditions=react-server ./node_modules/.bin/tsx scripts/toast-diagnostic-capture-manual.ts >"$output" 2>&1
           code=$?
           node - "$output" "$code" <<'NODE'
           const fs = require('node:fs');

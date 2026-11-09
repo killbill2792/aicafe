@@ -4,17 +4,20 @@
 the café through the Supervisor chat). Start with [AGENTS.md](../AGENTS.md) and [PROGRESS.md — Now](../PROGRESS.md).
 If any document conflicts with AGENTS.md, AGENTS.md wins.
 
+**Before ANY POS/Toast/AI-data work, read [binding POS source authority and file classification](rules/pos-data.md) first.** It identifies the real operating record and change log, the legacy diagnostic-only `toast_raw_samples` (which must never drive Supervisor or screens), the correct data-reader chain, naming rules, retirement steps and mandatory executable proof. [POS0a coverage audit](plans/toast-standard-api-coverage-matrix.md) records current gaps; [POS0b–POS0f PR briefs](plans/universal-supervisor-task-briefs.md) own fixes. **Do not start from historical SQL migrations, passing diagnostic fixture tests, or descriptive file names to decide which data is authoritative.**
+
 ## Current docs
+- **POS0 first read:** [binding source/consumer rules](rules/pos-data.md) → [#398 concise POS0a handoff](plans/toast-standard-api-coverage-matrix.md#pos0a-handoff--read-this-card-before-large-evidence-tables-2026-11-08), then specific [matrix field evidence](plans/toast-standard-api-coverage-matrix.md) only when needed (retrievability verified at #398 head; official field audit remains incomplete) → [assigned POS0a–f brief](plans/universal-supervisor-task-briefs.md) + [machine queue](plans/universal-supervisor-queue.json) → existing source + [acceptance tests](rules/tests.md). Architecture principles approved; implementation/final PR approval pending. **Draft cross-PR note:** #398's matrix is not on main while its PR is open; read the latest [PR #398](https://github.com/killbill2792/aicafe/pull/398) head for review, never dispatch implementation to work around an unavailable on-main file or the false queue approval gate.
 - [Universal Supervisor delivery queue (owner-review draft)](plans/universal-supervisor-delivery-queue-2026-11.md) — concise PR6–PR17 roadmap; **not** an implementation authorization until owner approved.
 - [Universal Supervisor task briefs](plans/universal-supervisor-task-briefs.md) — per-task dependencies, acceptance, skills and proposed scope.
-- [Universal Supervisor coding operations](plans/universal-supervisor-agent-operations.md) — copy-paste GitHub-plugin dispatcher/coding prompts, stacked PR/Codex/CI lifecycle.
+- [Universal Supervisor coding operations](plans/universal-supervisor-agent-operations.md) — **single generated dispatcher handoff** and stacked PR/Codex/CI lifecycle; old manual prompt templates retired.
 - [Universal Supervisor machine queue](plans/universal-supervisor-queue.json) — structured DAG; not a persistent assignment engine.
 - [01 product](01-product.md) — what the operator does, limits for now, and what not to build.
 - [02 design system](02-design-system.md) — design, accessibility and localization (binding for UI).
 - [03 screens](03-screens.md) — existing screen specifications. New capabilities go to the chat first.
-- [04 data model](04-data-model.md) — database entities and policies.
+- [04 data model](04-data-model.md) — **original model/DDL reference**; not authoritative for current Toast SQL; verify live schema.
 - [05 calculations](05-calculations.md) — canonical math and test fixtures.
-- [06 integrations](06-integrations.md) — integrations and data connection guidance.
+- [06 integrations](06-integrations.md) — older integration guidance, including **obsolete Toast “v1 = CSV” wording**; not current Toast API source/sync instructions.
 - [08 pricing engine plan](08-pricing-engine-plan.md) — pricing-engine design and decisions.
 - [scheduling architecture](scheduling-architecture.md) — scheduling boundaries and contracts.
 - [AI CAFE skills index](rules/skills.md) — current reusable skills, including ChatGPT + connected GitHub loading.
@@ -23,7 +26,10 @@ If any document conflicts with AGENTS.md, AGENTS.md wins.
 - [admin dashboard merge checklist](admin-dashboard-merge-checklist.md) — admin dashboard review checklist.
 - [auth pr133 testing](auth-pr133-testing.md) — authentication testing notes.
 
-### Toast integration (current)
+### Toast integration — historical phase runbooks (NOT current operating authority)
+
+These PR1/pilot documents describe past disabled staging, polling, promotion and early migration states. They are preserved for investigation **only**; do not use their flags, cadence, migration instructions, source-readers or “not yet implemented” claims as current deployment instructions. For live current/target distinctions use [POS0a's concise handoff and discrepancy index](plans/toast-standard-api-coverage-matrix.md#pos0a-handoff--read-this-card-before-large-evidence-tables-2026-11-08) and [binding POS rules](rules/pos-data.md); use actual code and deployed SQL to verify current behavior. `toast-net-sales.md` retains useful historical accounting explanation, not a second calculation authority. The original runbooks have **not** been deleted or their migration instructions applied.
+
 - [toast runbook](toast-runbook.md), [toast net sales](toast-net-sales.md), [toast polling](toast-polling.md),
   [toast order queue](toast-order-queue.md), [toast database tests](toast-database-tests.md),
   [toast labor staging](toast-labor-staging.md), [toast promotion guard](toast-promotion-guard.md),
@@ -33,6 +39,10 @@ If any document conflicts with AGENTS.md, AGENTS.md wins.
   [toast pr63 final verification](toast-pr63-final-verification.md), [toast stabilization 63](toast-stabilization-63.md),
   [toast adapter dependent](toast-adapter-dependent.md), [toast pilot dependent](toast-pilot-dependent.md),
   [toast webhook dependent](toast-webhook-dependent.md).
+
+**Current source caveat:** [generated data dictionary](data-dictionary.md) still repeats an old “daily capture” source claim from `lib/data/canonical/dictionary.ts`. The [notes footer](data-dictionary-notes.md) flags the defect; only POS0e can correct the dictionary source and active migrated SQL under separate owner approval. `seen_run_id` also remains active despite an old retirement plan. Neither is safe to delete by documentation.
+
+**Investigation capture:** [.github/workflows/toast-diagnostic-capture-manual.yml](../.github/workflows/toast-diagnostic-capture-manual.yml) is manually invoked diagnostics only; automatic `toast-raw-capture-daily.yml` and its CLI entrypoint were retired. `toast_raw_samples` rows remain a legacy diagnostic data-cleanup task until the POS0e/0f reader cutover and dependency proof.
 
 ## Background (may be outdated; not instructions)
 - [team collaboration (Oct 15)](team-collaboration.md) — older human-only workflow; AGENTS.md current parallel/auto-merge rules win.
@@ -52,6 +62,7 @@ chat-first features).
 - [p1 authoritative revisions](p1-authoritative-revisions.md).
 
 ## Historical (do not implement)
+- [Toast storage Nov 3 plan](plans/toast-storage.md) — **historical architectural intent**. Its “retire `seen_run_id`” text was **not** the final deployed contract: current `toast_archive_order` and `toast_records_for` still use it. Consult [#398 discrepancy register](plans/toast-standard-api-coverage-matrix.md#start-here--durable-agent-handoff-and-conflicts-index-2026-11-07); never remove existing history/reader fields without D3 consumer/rollback proof.
 - [Progress before November 5 cleanup](history/progress-snapshot-2026-11-05.md) — all old checkboxes and detailed work preserved; not today's task status.
 - [Earlier universal Supervisor proposal](history/universal-supervisor-initial-proposal-2026-11-05.md) — original detailed draft superseded by the compact queue and task briefs.
 - [supervisor-conversational-investigation.md](history/supervisor-conversational-investigation.md) — retired design.

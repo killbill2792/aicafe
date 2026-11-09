@@ -157,7 +157,68 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
     new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
   validateQueue(actual);
   assert.equal(actual.capacity.chatgpt, 5);
-  assert.equal(actual.tasks.find(t=>t.id==="POS0e").stack_base_task,"POS0d");
+  // Owner-corrected sequence: repair the single reader first so new source families
+  // cannot publish data that the existing Supervisor still cannot access.
+  const reader = actual.tasks.find(t=>t.id==="POS0e");
+  assert.deepEqual(reader.depends_on, ["POS0a"]);
+  assert.equal(reader.stack_base_task, undefined);
+  for (const id of ["POS0b","POS0c","POS0d"]) {
+    const source = actual.tasks.find(t=>t.id===id);
+    assert.ok(source.depends_on.includes("POS0e"), id);
+    assert.equal(source.stack_base_task, "POS0e");
+  }
+  const release = actual.tasks.find(t=>t.id==="POS0f");
+  assert.deepEqual(release.depends_on, ["POS0e","POS0b","POS0c","POS0d"]);
+  assert.equal(release.stack_base_task, "POS0d");
+  assert.equal(actual.dispatch_rules.pos_source_authority.mandatory_first_read, "AGENTS.md");
+  assert.equal(actual.dispatch_rules.pos_source_authority.mandatory_pos_rule_second_read, "docs/rules/pos-data.md");
+  assert.equal(actual.dispatch_rules.pos_source_authority.legacy_diagnostic_only.includes("toast_raw_samples"), true);
+  const d4=actual.dispatch_rules.pos_d4_contract;
+  assert.match(d4.architecture_approach,/D4A_APPROVED_B_change_driven/);
+  assert.equal(d4.implementation_approved,false);
+  assert.deepEqual(d4.must_preserve_merged_prs,[189,203,264,297]);
+  assert.equal(d4.future_order_recovery.dispatchable,false);
+  const identity=d4.order_guid_processing_metadata_approved;
+  assert.match(identity.status,/OWNER_APPROVED_LOGICAL_ASSOCIATION/);
+  assert.deepEqual(identity.source_identity,["authorized business_id","restaurant_guid","Toast order GUID"]);
+  assert.deepEqual(identity.logical_stages,[
+    "received","raw_saved","parsed_validated","canonical_promoted","metric_reconciled"
+  ]);
+  assert.equal(identity.no_status_column_or_table_claimed,true);
+  assert.match(identity.normal_same_day_retry,/15-minute full business-day ordersBulk/);
+  assert.match(identity.unwritten_or_missing_guid_fallback,/no saved-row status possible/);
+  assert.ok(!actual.tasks.some(t=>t.id==="POS0-order-recovery"));
+  assert.deepEqual(d4.future_order_recovery.owned_files_reserved,[]);
+  assert.equal(d4.future_order_recovery.proposed_prerequisites.length,7);
+  assert.match(d4.future_order_recovery.proposed_prerequisites[6],/logical caf.*order|café\+restaurant\+Toast GUID/i);
+  assert.match(d4.future_order_recovery.proposed_prerequisites[2],/competing editors/);
+  assert.match(d4.future_order_recovery.file_scope_status,/no conflict-free exclusive ownership/);
+  assert.match(d4.future_order_recovery.sql_scope_status,/owner approval pending/);
+  assert.ok(!actual.tasks.some(t=>t.id==="POS0-order-recovery"));
+  // Do not invalidate the active POS0a chat's signed approval hash just to
+  // document the separately approved two audit-only files.
+  assert.deepEqual(actual.tasks.find(t=>t.id==="POS0a").exclusive_files,[
+    "docs/plans/toast-standard-api-coverage-matrix.md"
+  ]);
+  const extension=actual.dispatch_rules.pos0a_owner_approved_audit_scope_extension;
+  assert.equal(extension.existing_saved_assignment_signature_must_not_be_invalidated,true);
+  assert.deepEqual(extension.additional_paths,[
+    "scripts/toast-standard-api-coverage.test.mjs",
+    "docs/plans/toast-openapi-spec-snapshot.json"
+  ]);
+  assert.equal(extension.runtime_or_merge_approval,false);
+  const d4c=d4.menu_publication_lifecycle_approved;
+  assert.equal(d4c.status,"OWNER_APPROVED_BEHAVIOR_NOT_RUNTIME_IMPLEMENTATION");
+  assert.equal(d4c.implementation_approved,false);
+  assert.equal(d4c.future_owner,"POS0d");
+  assert.equal(d4c.unchanged_version_full_menu_gets,0);
+  assert.equal(d4c.auto_hard_delete,false);
+  assert.match(d4c.verified_unpublish,/inactive/);
+  assert.match(d4c.republish_same_guid,/reactivate/);
+  assert.ok(d4c.unverified_snapshots_never_deactivate.includes("missing reference"));
+  assert.equal(actual.tasks.find(t=>t.id==="POS0d").architecture_approval,null);
+  assert.ok(actual.tasks.find(t=>t.id==="POS0d").acceptance.some(a=>a.includes("same GUID")));
+  assert.equal(d4.independent_cost_queue_diagnostic.due_jobs,77);
   assert.equal(actual.dispatch_rules.architecture_foundation_proof_task,"POS0a");
   assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
   assert.deepEqual(actual.dispatch_rules.architecture_foundation_dependent_task_ids,
