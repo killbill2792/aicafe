@@ -693,3 +693,28 @@ test('Dispatcher-only PR is not a mystery task while mixed PR remains unmapped',
    {pr_number:414,branch:'feat/mixed',infrastructure_pr:false}];
  assert.deepEqual(linkPullRequests(state,tasks).unmapped,[414]);
 });
+
+test('a newly running Codex summary never reuses an earlier same-head clean review',async()=>{
+ const sha='f'.repeat(40),now='2026-11-09T21:40:00Z';
+ const body='<!-- codex-pull-request-review-summary -->\\n<!-- codex-review-state:v1 '+
+  JSON.stringify({code_review:{commit_sha:sha,status:'running',
+   has_any_findings:null,has_unresolved_findings:null}})+' -->';
+ const pr={number:81,head:{sha,ref:'feat/test'},base:{sha:'d'.repeat(40),ref:'main'},
+   labels:[],body:'',draft:true,updated_at:now};
+ const facts=new GitHubFacts({repo:'o/r',token:'dummy',fetchFn:async url=>{
+  let data;
+  if(url.includes('/check-runs?'))data={total_count:0,check_runs:[]};
+  else if(url.includes('/reviews?'))data=[{user:{login:'codex[bot]'},commit_id:sha,
+    state:'COMMENTED',submitted_at:'2026-11-09T21:10:00Z'}];
+  else if(url.includes('/comments?'))data=[{user:{login:'chatgpt-codex-connector[bot]'},body,updated_at:now}];
+  else if(url.includes('/commits/'+sha))data={commit:{committer:{date:now}}};
+  else if(url.includes('/compare/'))data={behind_by:0,files:[{filename:'src/code.ts'}]};
+  else if(url.endsWith('/graphql'))data={data:{repository:{pullRequest:{reviewThreads:{
+    pageInfo:{hasNextPage:false},nodes:[]}}}}};
+  else throw Error(url);
+  return {ok:true,json:async()=>data};
+ }});
+ const result=await facts.one(pr);
+ assert.equal(result.codex_state,'pending');
+ assert.equal(result.codex_reviewed_sha,null);
+});
