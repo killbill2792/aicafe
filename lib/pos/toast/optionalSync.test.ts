@@ -226,11 +226,11 @@ describe("independent POS0b modified labor freshness within POS0c-owned optional
    expect(f.sourceState().labor_modified).toMatchObject({
      status:"invalid_response",last_success_at:first.last_success_at,
      complete_through:first.complete_through});
-   const denied=new Date(now.getTime()+20*60000);
+   const denied=new Date(now.getTime()+12*60000);
    // Failure backoff keeps the same checkpoint and never makes an API request.
    await syncToastOptionalSources(f.db,scope,denied,Date.now()+20000);
    expect(m.attendance).toHaveBeenCalledTimes(2);
-   const afterBackoff=new Date(now.getTime()+23*60000);
+   const afterBackoff=new Date(now.getTime()+14*60000);
    m.attendance.mockRejectedValueOnce(new ToastApiError("missing_scope_or_location",403));
    await syncToastOptionalSources(f.db,scope,afterBackoff,Date.now()+20000);
    expect(f.sourceState().labor_modified).toMatchObject({
