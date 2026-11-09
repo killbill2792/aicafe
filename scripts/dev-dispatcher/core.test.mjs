@@ -653,6 +653,10 @@ test('Codex connector summary is accepted only for exact current head and strict
  assert.equal(parseCodexReviewState('Codex Review: Didn\'t find any major issues '+head.slice(0,10),head),null);
  const flagged=summary.replace('has_any_findings":false','has_any_findings":true');
  assert.equal(parseCodexReviewState(flagged,head).state,'findings');
+ const running=summary.replace('"status":"completed"','"status":"running"')
+   .replace('"has_any_findings":false','"has_any_findings":null')
+   .replace('"has_unresolved_findings":false','"has_unresolved_findings":null');
+ assert.equal(parseCodexReviewState(running,head).state,'pending');
 });
 
 test('GitHub current-head Codex summary changes clean vs pending but unresolved threads still block',async()=>{
