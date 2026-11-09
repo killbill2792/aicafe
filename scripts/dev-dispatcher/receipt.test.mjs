@@ -102,3 +102,26 @@ test('late original Muse receipt restores the exact chat after the PR cancels as
  assert.throws(()=>acceptDeliveryReceipt(late,placeholder,{authenticatedCourier:'muse'}));
  assert.throws(()=>acceptDeliveryReceipt(late,envelope,{authenticatedCourier:'dave'}));
 });
+
+test('superseded continuation receipt is audited but never revives old-head work',()=>{
+ const url='https://chatgpt.com/c/existing-123';
+ const stale={tasks:{'6':{approved:true,approval_hash:d.approval_hash,head_sha:'new',
+   conversation_ref:url,last_submission_at:'2026-11-09T20:00:00Z',submission_state:'idle'}},
+   actions:{'fix:6':{status:'cancelled_stale_head',type:'repair_ci',delivery_owner:'muse',
+     task_id:'6',head_sha:'old',delivery:{...d,action_id:'fix:6',
+       intent:'continue_existing_chat',conversation_url:url}}}};
+ const submitted={...receipt,action_id:'fix:6',conversation_url:url,
+   submitted_at:'2026-11-09T19:59:00Z'};
+ const audit=applyReceipts(stale,[{actor:'muse-app[bot]',receipt:submitted}],
+   {'muse-app[bot]':'muse'});
+ assert.equal(audit.actions['fix:6'].status,'cancelled_stale_head');
+ assert.equal(audit.actions['fix:6'].superseded_receipt.submitted_at,submitted.submitted_at);
+ assert.equal(audit.tasks['6'].last_submission_at,'2026-11-09T20:00:00Z');
+ assert.equal(audit.tasks['6'].submission_state,'idle');
+ assert.equal(applyReceipts(audit,[{actor:'muse-app[bot]',receipt:submitted}],
+   {'muse-app[bot]':'muse'}).actions['fix:6'].status,'cancelled_stale_head');
+ assert.throws(()=>acceptDeliveryReceipt(stale,{...submitted,prompt_hash:'bad'},
+   {authenticatedCourier:'muse'}),/Receipt does not match/);
+ assert.throws(()=>acceptDeliveryReceipt(stale,submitted,{authenticatedCourier:'dave'}),
+   /does not own/);
+});
