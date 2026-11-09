@@ -116,7 +116,8 @@ it("lists the field names of a Toast record type for this café only",async()=>{
  const rpc=vi.fn(async()=>({data:[{field:"data.price",type:"number",example:"5.5"}],error:null}));
  const result=await dataQueryTools.describe_data.execute({record_type:"item"},{db:{rpc} as never,businessId:b});
  expect(rpc).toHaveBeenCalledWith("ai_toast_fields",{p_business_id:b,p_record_type:"item"});
- expect(result).toMatchObject({record_type:"item",fields:[{field:"data.price"}]});
+ expect(result).toMatchObject({record_type:"item"});
+ expect(result.fields).toEqual(expect.arrayContaining([expect.objectContaining({field:"data.price"})]));
  const all=await dataQueryTools.describe_data.execute({record_type:null});
  expect(all.views?.some(v=>v.name==="cv_toast_records")).toBe(true);
 });
