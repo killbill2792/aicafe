@@ -135,6 +135,9 @@ export async function refresh(fetchFn=fetch) {
     render(data);
     line.textContent=`Page checked ${new Date().toLocaleTimeString()}. Updates every 2 minutes while this tab is open.`;
   }catch(error){
+    const pill=document.querySelector('#freshness');
+    pill.className='health stale';
+    pill.textContent='Cannot verify current GitHub status';
     line.textContent=`Could not refresh: ${error.message}. Showing the previous snapshot, if any.`;
   }finally{loading=false;}
 }
