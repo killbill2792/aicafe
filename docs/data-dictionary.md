@@ -186,7 +186,7 @@ Recurring owner costs
 
 ## cv_inventory
 
-App pantry counts and Toast at-risk menu item stock captured snapshots
+App pantry counts and retained current Toast inventory objects; unknown stock is not zero
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
@@ -196,7 +196,7 @@ App pantry counts and Toast at-risk menu item stock captured snapshots
 | status | Actual, estimated, open, needs match or owner provided. | label | app | Which facts are incomplete? |
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
-| menu_item_ref | Toast menu-item reference for at-risk stock snapshots; absent items are not zero. | identifier | toast | What was recorded? |
+| menu_item_ref | Toast menu-item reference from current retained provider stock; absent items are not zero. | identifier | toast | What was recorded? |
 | stock_status | Toast OUT_OF_STOCK or QUANTITY status; null for app pantry rows. | label | toast | What was recorded? |
 | quantity | Reported quantity when known; pantry base quantity for app rows. | quantity | toast | What was recorded? |
 
@@ -264,7 +264,7 @@ Cash movements and deposits from redacted Toast diagnostics, not continuous cash
 
 ## cv_kitchen
 
-Toast kitchen fulfillment and prep station diagnostic snapshots; optional KDS/Pro access.
+Retained current Toast kitchen fulfillment and prep station facts; KDS permission and freshness must be verified.
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
@@ -317,6 +317,8 @@ Every Toast record and field, one row each: orders, checks, items, modifiers, pa
 | discount_amount_cents | Toast item/check applied discount data.discountAmount projected to integer cents; filter counts_in_sales=true to exclude VOID uses. | cents | toast | What discount amounts were recorded? |
 
 # LEGACY DIAGNOSTIC SOURCE WARNING — NOT AN OPERATING CONTRACT
+
+**POS0e authorized-scope preflight (2026-11-09, implementation not yet proven):** The approved queue grants POS0e only its 18 exact file paths for the existing current-source reader, redactor, dictionary and disposable SQL/agent tests. `toast_raw_records` is current operational truth; `toast_raw_changes` is the change log; `toast_raw_samples` / `toast_raw_samples_latest` remain diagnostic only. Existing SQL consumers still require a verified additive cutover; this note alone neither changes runtime behavior nor authorizes production migration, data deletion or deployment.
 
 **Generated-dictionary contradiction requiring later code ownership (2026-11-07):** The `cv_toast_records` summary **above this footer** is generated from `lib/data/canonical/dictionary.ts` and still says non-order labor/cash/kitchen/menu/setup data comes “from the daily capture.” That is a **historical description of a known current-reader defect**, not the approved source: `toast_raw_samples` is diagnostic-only. The generator `scripts/gen-data-dictionary.mjs` combines the runtime dictionary and this notes footer; editing only the generated summary would be overwritten and would not correct runtime metadata. **POS0e (separate owner-approved implementation)** must fix `dictionary.ts`, regenerate this Markdown, replace SQL active readers and test final migrated direct/transitive dependencies. **POS0f** independently verifies final source-to-Supervisor/screen parity. Until then, follow `docs/rules/pos-data.md` and the #398 handoff; do not re-enable daily diagnostic capture, use old captured values as current, or assume this document proves runtime migration. Preserve historical migration files unchanged.
 
