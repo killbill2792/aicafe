@@ -7,7 +7,7 @@ import { noticeHash } from './alerts.mjs';
 
 export function signalFor(state, secret) {
   if (!secret || secret.length < 32) throw new Error('Signal signing secret must be >= 32 characters');
-  const deliveries = pendingActions(state).filter(a => a.delivery_owner === 'muse').map(a => a.key + ':' + a.delivery.prompt_hash);
+  const deliveries = pendingActions(state).filter(a => a.delivery_owner === 'muse').map(a => a.key + ':' + a.delivery.prompt_hash + ':' + (a.wake_round || 0));
   const notices = Object.entries(state.owner_alerts || {}).filter(([,a]) =>
     a.status === 'planned' && a.delivery_owner === 'muse' && a.notice_hash === noticeHash(a))
     .map(([key,a]) => 'owner:' + key + ':' + a.notice_hash);

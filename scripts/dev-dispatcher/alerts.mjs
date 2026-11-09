@@ -10,7 +10,7 @@ export function noticeHash({kind,task_id,pr_number,question,source_sha}){
  if(kind==='architecture_approval')identity.push(source_sha||null);
  return sha(JSON.stringify(identity));
 }
-export function queueOwnerAlerts(state,{unmappedPrs=[],queue=null,now=new Date().toISOString()}={}){
+export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date().toISOString()}={}){
  const next=structuredClone(state);
  next.owner_alerts ||= {};
  const add=(kind,task_id,pr_number,question,source_sha=null)=>{
@@ -39,7 +39,10 @@ export function queueOwnerAlerts(state,{unmappedPrs=[],queue=null,now=new Date()
     n.kind==='owner_decision' && n.task_id===id &&
     n.pr_number===(rec.pr_number||null));
   if(question) {
-   const detail='PR #'+(rec.pr_number||'not opened')+': '+question;
+   const source=rec.github_owner_question_url;
+   const detail='PR #'+(rec.pr_number||'not opened')+': '+question+
+     (typeof source==='string' && /^https:\/\/github\.com\/[^\s]+$/.test(source)
+       ? ' Source: '+source : '');
    const chat=rec.agent==='chatgpt' && validConversationUrl('chatgpt',rec.conversation_ref)
      ? ' Your approval is needed. ChatGPT chat: '+rec.conversation_ref : '';
    const desired=detail+chat;
@@ -83,8 +86,19 @@ export function queueOwnerAlerts(state,{unmappedPrs=[],queue=null,now=new Date()
   if(awaitingReview && message)
    add('architecture_approval',foundation,rec.pr_number,message,rec.merge_sha);
  }
- for(const pr of unmappedPrs)
-  add('unmapped_pr',null,pr,'Identify the approved task and existing coding conversation for PR #'+pr+'. Do not guess ownership.');
+ // Only a fresh GitHub open-PR snapshot may retire prior unmapped alerts.
+ // The second notice pass in run.mjs deliberately lacks a snapshot and must
+ // not cancel current notices just because no list was supplied.
+ if (Array.isArray(unmappedPrs)) {
+  const active=new Set(unmappedPrs);
+  for(const notice of Object.values(next.owner_alerts)) {
+   if(notice.kind==='unmapped_pr' && notice.status==='planned' &&
+      !active.has(notice.pr_number))
+    notice.status='cancelled_no_longer_needed';
+  }
+  for(const pr of unmappedPrs)
+   add('unmapped_pr',null,pr,'Identify the approved task and existing coding conversation for PR #'+pr+'. Do not guess ownership.');
+ }
  return next;
 }
 export function acceptOwnerNoticeReceipt(state,receipt,{authenticatedCourier}={}){

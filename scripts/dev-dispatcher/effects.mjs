@@ -17,9 +17,18 @@ export function canMerge(record, predecessors, evidence) {
   return mergeGate({ ...record, acceptance_proven: verifyEvidence(record, evidence) }, predecessors);
 }
 
-export async function mergeApprovedPr({ github, record, predecessors = [], evidence, expectedAcceptance = [], enabled = false }) {
+export async function mergeApprovedPr({ github, record, predecessors = [], evidence,
+  expectedAcceptance = [], enabled = false, action = 'merge' }) {
   if (!enabled) return { status: 'disabled' };
-  if (!canMerge(record, predecessors, evidence).eligible) return { status: 'blocked', reasons: canMerge(record, predecessors, evidence).reasons };
+  if (!['ready', 'merge'].includes(action)) return {status:'blocked',reasons:['invalid_lifecycle_action']};
+  const prepareReady = action === 'ready';
+  // Draft-to-ready must prove EVERY merge prerequisite except the draft flag.
+  // This reuses the same artifact/CI/review/predecessor verifier; no shortcut.
+  if (prepareReady && record?.draft !== true)
+    return {status:'blocked',reasons:['not_a_draft']};
+  const gateRecord = prepareReady ? {...record,draft:false} : record;
+  const gate = canMerge(gateRecord, predecessors, evidence);
+  if (!gate.eligible) return {status:'blocked',reasons:gate.reasons};
   if (!expectedAcceptance.length || evidence.acceptance.length !== expectedAcceptance.length ||
       !expectedAcceptance.every((_, i) => evidence.acceptance[i]?.id === String(i + 1)))
     return { status: 'blocked', reasons: ['acceptance_scenarios_not_accounted_for'] };
@@ -64,17 +73,42 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
     if (file.type !== 'file') return { status: 'blocked', reasons: ['test_file_missing'] };
   }
   const pr = await github.request(`/pulls/${record.pr_number}`);
-  if (pr.merged || pr.state !== 'open' || pr.draft || pr.head.sha !== record.head_sha ||
-      pr.base.sha !== record.base_sha || pr.base.ref !== 'main' || record.base_branch !== 'main')
+  if (pr.merged || pr.state !== 'open' || pr.draft !== prepareReady ||
+      pr.head.sha !== record.head_sha || pr.base.sha !== record.base_sha ||
+      pr.base.ref !== 'main' || record.base_branch !== 'main')
     return { status: 'blocked', reasons: ['live_pr_changed'] };
+  if ((pr.labels || []).some(label => label.name === 'needs-owner-decision') ||
+      (typeof pr.body === 'string' && pr.body.includes('<!-- aicafe-owner-question')))
+    return {status:'blocked',reasons:['live_owner_question_pending']};
   const live = await github.one(pr);
   if (live.ci_state !== 'success' || live.codex_state !== 'clean' ||
-      !live.codex_reviewed_sha || !live.threads_resolved)
+      !live.codex_reviewed_sha || !live.threads_resolved ||
+      live.github_owner_question)
     return { status: 'blocked', reasons: ['live_checks_changed'] };
   // Re-fetch base SHA immediately before merge to reject intervening main changes.
   const latest = await github.request(`/pulls/${record.pr_number}`);
+  if ((latest.labels || []).some(label => label.name === 'needs-owner-decision') ||
+      (typeof latest.body === 'string' && latest.body.includes('<!-- aicafe-owner-question')))
+    return {status:'blocked',reasons:['live_owner_question_pending']};
   if (latest.head.sha !== record.head_sha || latest.base.sha !== record.base_sha ||
-      latest.base.ref !== 'main' || latest.mergeable !== true) return { status: 'blocked', reasons: ['merge_conflict_or_stale_base'] };
+      latest.base.ref !== 'main' || latest.mergeable !== true ||
+      latest.draft !== prepareReady)
+    return { status: 'blocked', reasons: ['merge_conflict_or_stale_base'] };
+  if (prepareReady) {
+    if (typeof latest.node_id !== 'string' || !latest.node_id.trim())
+      return {status:'blocked',reasons:['missing_github_pr_node_id']};
+    const result = await github.request('https://api.github.com/graphql', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        query:'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{id isDraft}}}',
+        variables:{id:latest.node_id},
+      }),
+    });
+    if (result.errors?.length ||
+        result.data?.markPullRequestReadyForReview?.pullRequest?.isDraft !== false)
+      return {status:'blocked',reasons:['github_ready_not_verified']};
+    return {status:'ready_for_review'};
+  }
   const result = await github.request(`/pulls/${record.pr_number}/merge`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ merge_method: 'squash', sha: record.head_sha,
