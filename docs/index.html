@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Read-only AI CAFE GitHub dispatcher status and link to the authenticated private Muse queue.">
+  <title>AI CAFE — Owner Control Center</title>
+  <link rel="stylesheet" href="./owner-dashboard.css">
+  <script type="module" src="./owner-dashboard.mjs"></script>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Primary">
+      <div class="logo"><span class="logo-mark" aria-hidden="true">A</span><span>AI CAFE <span style="font-weight:400;color:var(--muted)">/ Owner Operations</span></span></div>
+      <a href="https://github.com/killbill2792/aicafe/issues/411" target="_blank" rel="noopener noreferrer">View GitHub control center</a>
+    </nav>
+  </header>
+  <main class="container">
+    <div class="hero">
+      <div>
+        <p class="eyebrow">GitHub dispatcher · Read-only</p>
+        <h1>Development operations</h1>
+        <p class="subtitle">See what's moving, what needs approval, and whether Muse has delivered an instruction.</p>
+      </div>
+      <div id="freshness" class="health stale" role="status">Checking dispatcher…</div>
+    </div>
+    <p id="fetch-status" aria-live="polite">Checking GitHub…</p>
+    <section class="grid" aria-label="Task overview">
+      <article class="panel metric"><strong id="count-tasks">—</strong><span>Tracked PRs</span></article>
+      <article class="panel metric"><strong id="count-decisions">—</strong><span>Owner questions</span></article>
+      <article class="panel metric"><strong id="count-queued">—</strong><span>Delivery queued</span></article>
+    </section>
+    <section class="panel" aria-labelledby="pr-heading">
+      <div class="box-head"><h2 id="pr-heading">Tasks and handoffs</h2><span class="meta">Source: latest GitHub reconciliation</span></div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th scope="col">Task</th><th scope="col">PR</th><th scope="col">Stage</th>
+            <th scope="col">CI</th><th scope="col">Codex</th><th scope="col">Muse delivery</th>
+            <th scope="col">Next actor</th>
+          </tr></thead>
+          <tbody id="task-rows"><tr><td colspan="7">Loading the latest GitHub status…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <div class="two">
+      <section class="panel" aria-labelledby="approval-heading">
+        <div class="box-head"><h2 id="approval-heading">Needs your decision</h2><span class="meta">Approval is never inferred</span></div>
+        <div id="decisions" class="decisions"><p class="empty">Loading owner questions…</p></div>
+      </section>
+      <section class="panel private" aria-labelledby="queue-heading">
+        <p class="eyebrow">Restricted · GitHub login required</p>
+        <h2 id="queue-heading">Private Muse queue</h2>
+        <p>See every pending delivery, deferred instruction, receipt, wake-up round and owner notice, in your existing private task ledger repository.</p>
+        <a id="private-queue" class="action" href="https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/owner-queue.md" target="_blank" rel="noopener noreferrer">Open authenticated queue</a>
+        <p class="meta" style="margin-top:18px">Private prompts and conversation URLs are never loaded by this public page. GitHub controls access to the private view.</p>
+      </section>
+    </div>
+    <div class="trust">
+      <strong>Last successful dispatcher reconciliation:</strong> <span id="heartbeat">Checking…</span>
+      <span aria-hidden="true"> · </span>
+      <strong>Last private state change:</strong> <span id="ledger">Checking…</span>
+      <p>Refreshing this page does not submit messages, approve requests or run the dispatcher. The page checks GitHub every 2 minutes while it is open; GitHub Actions schedules remain best-effort.</p>
+    </div>
+  </main>
+  <footer class="container">AI CAFE · One GitHub dispatcher, one private Muse queue · Read-only monitoring</footer>
+</body>
+</html>
