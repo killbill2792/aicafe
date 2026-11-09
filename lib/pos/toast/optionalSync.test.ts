@@ -4,7 +4,7 @@ const m=vi.hoisted(()=>({request:vi.fn(),roster:vi.fn(),catalog:vi.fn(),labor:vi
 vi.mock("server-only",()=>({}));
 vi.mock("./client",async()=>{
  const {z}=await import("zod");
- class ToastApiError extends Error{constructor(public category:string){super(category);}}
+ class ToastApiError extends Error{constructor(public category:string, public status?:number, public retryAt?:string){super(category);}}
  return {ToastApiError,GUID:z.uuid(),createToastClient:()=>({request:m.request})};
 });
 vi.mock("./operationalCopy",()=>({
@@ -30,6 +30,7 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
  let copyAt=alreadyCopied?"2026-10-22T00:00:00Z":null;
  let rosterAt=alreadyCopied?"2026-10-22T00:00:00Z":null;
  let attendanceAt=alreadyCopied?"2026-10-22T00:00:00Z":null;
+ let operationalSources:Record<string,unknown>={};
  const db={
   async rpc(name:string){rpcCalls.push(name);return {error:null,data:0};},
   from(table:string){
@@ -41,9 +42,12 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
         roster_copied_at:rosterAt,attendance_copied_at:attendanceAt,
         menu_checked_local_day:stale?"2026-10-23":null,
         roster_local_day:stale?"2026-10-23":null,
-        labor_local_day:stale?"2026-10-23":null}:null,error:null};},
+        labor_local_day:stale?"2026-10-23":null,
+        operational_sources:operationalSources}:null,error:null};},
     async upsert(value:Record<string,unknown>){
       writes.push(value);
+      if(value.operational_sources&&typeof value.operational_sources==="object")
+        operationalSources=value.operational_sources as Record<string,unknown>;
       if(typeof value.menu_last_updated==="string")lastMenu=value.menu_last_updated;
       if(typeof value.menu_copied_at==="string")copyAt=value.menu_copied_at;
       if(typeof value.roster_copied_at==="string")rosterAt=value.roster_copied_at;
@@ -52,7 +56,8 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
    };return q;
   }
  };
- return {db:db as unknown as SupabaseClient,writes,rpcCalls};
+ return {db:db as unknown as SupabaseClient,writes,rpcCalls,
+  sourceState:()=>operationalSources as Record<string,{status:string;last_success_at?:string;complete_through?:string;next_at?:string}>};
 }
 beforeEach(()=>{
  Object.values(m).forEach(fn=>fn.mockReset());
@@ -99,7 +104,9 @@ describe("first-time Toast catalog before sales",()=>{
    m.catalog.mockRejectedValueOnce(new ToastApiError("invalid_response"));
    await expect(ensureToastFirstCatalog(f.db,scope,now,Date.now()+20000))
      .rejects.toMatchObject({category:"invalid_response"});
-   expect(f.writes).toEqual([]);
+   expect(f.sourceState().labor_modified).toMatchObject({
+   status:"missing_permissions",error:"missing_permissions"});
+  expect(f.writes.filter(w=>w.operational_sources)).toHaveLength(1);
  });
 });
 
@@ -165,5 +172,69 @@ describe("independent optional Toast source phases",()=>{
   expect(m.labor).not.toHaveBeenCalled();
   expect(m.attendance).not.toHaveBeenCalled();
   expect(f.writes).toEqual([]);
+ });
+});
+
+describe("independent POS0b modified labor freshness within POS0c-owned optional phase",()=>{
+ it("rechecks changed entries on the same café day after a complete cursor and does not refetch daily history",async()=>{
+   const f=mockDB({menus:false,labor:true,config:false},true,true);
+   const deadline=Date.now()+20000;
+   await syncToastOptionalSources(f.db,scope,now,deadline);
+   expect(m.attendance).toHaveBeenCalledTimes(1);
+   expect(m.attendance).toHaveBeenCalledWith(expect.anything(),expect.anything(),
+     expect.objectContaining({since:expect.any(Date),until:now}),"modified");
+   expect(f.sourceState().labor_modified).toMatchObject({
+     status:"complete",complete_through:now.toISOString(),last_success_at:now.toISOString()});
+   await syncToastOptionalSources(f.db,scope,new Date(now.getTime()+5*60000),deadline);
+   expect(m.attendance).toHaveBeenCalledTimes(1); // bounded, no per-tick full reread
+   const next=new Date(now.getTime()+11*60000);
+   await syncToastOptionalSources(f.db,scope,next,deadline);
+   expect(m.attendance).toHaveBeenCalledTimes(2);
+   expect(m.attendance.mock.calls[1][3]).toBe("modified");
+   const replay=m.attendance.mock.calls[1][2] as {since:Date;until:Date};
+   expect(replay.since.getTime()).toBe(now.getTime()-600000);
+   expect(replay.until.toISOString()).toBe(next.toISOString());
+   expect(m.labor).not.toHaveBeenCalled(); // daily schedules separate
+ });
+ it("preserves last complete scan and retry clock on 429 and does not pretend a successful retry",async()=>{
+   const f=mockDB({menus:false,labor:true,config:false},true,true);
+   const retryAt=new Date(now.getTime()+25*60000).toISOString();
+   m.attendance.mockRejectedValueOnce(new ToastApiError("rate_limited",429,retryAt));
+   await expect(syncToastOptionalSources(f.db,scope,now,Date.now()+20000))
+     .rejects.toMatchObject({category:"rate_limited"});
+   const failed=f.sourceState().labor_modified;
+   expect(failed).toMatchObject({status:"rate_limited",error:"rate_limited"});
+   expect(failed.last_success_at).toBeUndefined();
+   expect(failed.complete_through).toBeUndefined();
+   expect(failed.next_at).toBe(retryAt);
+   await syncToastOptionalSources(f.db,scope,new Date(now.getTime()+10*60000),Date.now()+20000);
+   expect(m.attendance).toHaveBeenCalledTimes(1);
+   const resume=new Date(now.getTime()+26*60000);
+   await syncToastOptionalSources(f.db,scope,resume,Date.now()+20000);
+   expect(m.attendance).toHaveBeenCalledTimes(2);
+   expect(f.sourceState().labor_modified).toMatchObject({
+    status:"complete",complete_through:resume.toISOString()});
+ });
+ it("partial/malformed response and 403 retain the existing verified checkpoint without phantom freshness",async()=>{
+   const f=mockDB({menus:false,labor:true,config:false},true,true);
+   await syncToastOptionalSources(f.db,scope,now,Date.now()+20000);
+   const first=f.sourceState().labor_modified;
+   const later=new Date(now.getTime()+11*60000);
+   m.attendance.mockRejectedValueOnce(new ToastApiError("invalid_response"));
+   await expect(syncToastOptionalSources(f.db,scope,later,Date.now()+20000))
+     .rejects.toMatchObject({category:"invalid_response"});
+   expect(f.sourceState().labor_modified).toMatchObject({
+     status:"invalid_response",last_success_at:first.last_success_at,
+     complete_through:first.complete_through});
+   const denied=new Date(now.getTime()+20*60000);
+   // Failure backoff keeps the same checkpoint and never makes an API request.
+   await syncToastOptionalSources(f.db,scope,denied,Date.now()+20000);
+   expect(m.attendance).toHaveBeenCalledTimes(2);
+   const afterBackoff=new Date(now.getTime()+23*60000);
+   m.attendance.mockRejectedValueOnce(new ToastApiError("missing_scope_or_location",403));
+   await syncToastOptionalSources(f.db,scope,afterBackoff,Date.now()+20000);
+   expect(f.sourceState().labor_modified).toMatchObject({
+     status:"missing_scope_or_location",complete_through:first.complete_through,
+     last_success_at:first.last_success_at});
  });
 });
