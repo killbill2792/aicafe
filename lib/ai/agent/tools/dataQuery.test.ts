@@ -110,7 +110,7 @@ it("accepts only plain field names inside data",async()=>{
  const f=testDb();
  for(const column of ["data","data.","data.a;drop","data.a b","data."+Array(17).fill("deep").join("."),"meta.x"])
   expect((await dataQueryTools.query_data.execute({...input("cv_toast_records"),columns:null,
-   group_by:[column],metrics:null},{db:f.db,businessId:b})).error,column).toBe(column==="data"?undefined:"column_not_allowed");
+   group_by:[column],metrics:null},{db:f.db,businessId:b})).error,column).toBe("column_not_allowed");
 });
 it("lists the field names of a Toast record type for this café only",async()=>{
  const rpc=vi.fn(async()=>({data:[{field:"data.price",type:"number",example:"5.5"}],error:null}));
@@ -187,6 +187,6 @@ it("the Toast plain-read projection includes the newly validated cent columns",a
  },{db:f.db,businessId:b});
  expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
   p_view:"cv_toast_records",
-  p_columns:expect.arrayContaining(["record_type","data","price_cents","discount_amount_cents"])
+  p_columns:expect.arrayContaining(["record_type","price_cents","discount_amount_cents"])
  }));
 });
