@@ -7,12 +7,16 @@
  *
  * Historical DEFAULT_SUPERVISOR_OPENAI_MODEL is kept for the low-cost event
  * search/research consumers which import it directly. It is NOT the
- * production Supervisor conversation model; changing it would also alter
- * those independent paid event searches.
+ * production Supervisor conversation model; changing the selector's
+ * no-env fallback also alters independent paid event verification.
  */
 export const PRODUCTION_SUPERVISOR_OPENAI_MODEL="gpt-6-luna" as const;
 export const PRODUCTION_SUPERVISOR_OPENAI_FALLBACK_MODEL="gpt-4.1-mini" as const;
 export const DEFAULT_SUPERVISOR_OPENAI_MODEL="gpt-4.1-mini" as const;
 export function configuredSupervisorModel():string{
-  return process.env.SUPERVISOR_OPENAI_MODEL?.trim()||PRODUCTION_SUPERVISOR_OPENAI_MODEL;
+  // Preserve historical low-cost behavior for event verification, which
+  // also calls configuredSupervisorModel() when its own override is absent.
+  // The deployed Supervisor sets SUPERVISOR_OPENAI_MODEL=gpt-6-luna, and
+  // owner-gated E2 explicitly sets/tests that exact production value.
+  return process.env.SUPERVISOR_OPENAI_MODEL?.trim()||DEFAULT_SUPERVISOR_OPENAI_MODEL;
 }
