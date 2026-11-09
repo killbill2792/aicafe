@@ -4,7 +4,6 @@ import {z} from "zod";
 import {GUID,createToastClient} from "./client";
 import {redactToastRaw} from "./redact";
 import {addCalendarDays,localClock} from "./scheduleDates";
-// Existing one-object archive path is shared with operational Standard GETs.
 import {affectedLocalDays} from "../timecardDay";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createToastAdapter} from "./adapter";
@@ -74,8 +73,6 @@ export async function recordToastCopyFailure(db:SupabaseClient,p:ToastCopyScope,
  if(healthError)throw healthError;
 }
 
-/** POS0c current-object capture. Uses the existing database stage-snapshot
- * writer, never a new raw dump or financial-total writer. */
 const operationalCash=z.object({guid:GUID,amount:z.number().finite(),date:z.string().min(1)}).passthrough();
 const operationalStock=z.object({guid:GUID,status:z.enum(["QUANTITY","OUT_OF_STOCK","IN_STOCK"]),
  quantity:z.number().finite().nullish()}).passthrough().refine(
@@ -136,9 +133,6 @@ function operationalPlan(now:Date,timeZone:string,closeoutHour:number):Operation
    family:"ordering",minutes:360,businessDate:today,schema:operationalSchedule,single:true},
  ];
 }
-/** Source-native identity is retained even when the raw row needs an internal
- * UUID for the existing change journal (a restaurant singleton or KDS composite).
- * Missing/partial/204 never withdraws the last-good source object. */
 export async function syncToastOperationalSources(db:SupabaseClient,
  p:ToastCopyScope & {closeoutHour:number},now:Date,deadlineAt:number){
  const {data:credentials,error:ce}=await db.from("toast_api_credentials").select("scopes_available")
@@ -163,7 +157,6 @@ export async function syncToastOperationalSources(db:SupabaseClient,
  for(const op of operationalPlan(now,p.timezone,p.closeoutHour)){
   if(Date.now()>=deadlineAt)break;
   const previous=states[op.key]??{};
-  // Failures have their own bounded retry clock. Never declare success by a tick.
   if(previous.next_at&&Date.parse(previous.next_at)>now.getTime())continue;
   const checked=now.toISOString();
   attempts.push(op.key);
@@ -186,14 +179,11 @@ export async function syncToastOperationalSources(db:SupabaseClient,
     const rows=(op.single?[response]:response) as Array<Record<string,unknown>>;
     if(!rows.length){if(page===0)break; /* Empty terminal page is normal. */}
     for(const row of rows){
-     // Validate even when a caller/proxy has bypassed the client's schema
-     // parse; a partial list must not reach the durable writer.
      if(!op.schema.safeParse(row).success)
       throw new ToastApiError("invalid_response");
      if(typeof row.restaurantGuid==="string"&&
       row.restaurantGuid.toLowerCase()!==p.restaurantGuid.toLowerCase())
       throw new ToastApiError("unauthorized_location");
-     // A row with a missing provider object key makes this capture incomplete.
      nativeOperationalKey(op.endpoint,row,op.businessDate);
      data.push(row);
     }
@@ -202,8 +192,6 @@ export async function syncToastOperationalSources(db:SupabaseClient,
     if(nextToken===cursor||page===24)throw new ToastApiError("invalid_response");
     cursor=nextToken;
    }
-   // Only complete, validated source sets are written; do NOT delete absent
-   // inventory or KDS rows (Toast omits stock IN_STOCK; KDS can return 204).
    for(let offset=0;offset<data.length;offset+=200){
     const rows=data.slice(offset,offset+200).map(row=>{
      const key=nativeOperationalKey(op.endpoint,row,op.businessDate);
