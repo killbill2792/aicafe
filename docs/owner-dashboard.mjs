@@ -11,7 +11,9 @@ const onlyGithubUrl = value => {
   try {
     const u = new URL(value);
     return u.protocol === 'https:' && u.hostname === 'github.com' &&
-      !u.username && !u.password && !u.search && !u.hash &&
+      !u.username && !u.password && !u.search &&
+      (!u.hash || (/^\/killbill2792\/aicafe\/pull\/\d+\/?$/.test(u.pathname) &&
+        /^#issuecomment-\d+$/.test(u.hash))) &&
       /^\/(?:killbill2792\/aicafe\/(?:pull|actions\/runs)\/\d+|killbill2792\/dave-task-queue\/blob\/main\/dispatcher\/owner-queue\.md)\/?$/.test(u.pathname)
       ? u.href : null;
   } catch { return null; }
