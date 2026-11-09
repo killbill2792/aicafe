@@ -92,10 +92,12 @@ export const dataQueryTools={
      if(error)return {source:"toast_fields",period:null,missing:["source_read_failed"],record_type:recordType,fields:[]};
      const observed=Array.isArray(data)?data.filter((item:unknown)=>
       item!==null&&typeof item==="object"&&"field" in item&&
-      typeof item.field==="string") as Array<Record<string,unknown>>:[];
-     const seen=new Set(observed.map(item=>String(item.field)));
+      typeof item.field==="string") as Array<{field:string;[key:string]:unknown}>:[];
+     const seen=new Set(observed.map(item=>item.field));
      const schemaFields=officialToastFields(recordType).filter(item=>!seen.has(item.field));
-     const allFields=[...observed.map(item=>({...item,observed:true})),...schemaFields];
+     // Keep observed records' existing schema/shape; only never-seen fields
+     // receive an explicit unverified official-source annotation.
+     const allFields:Array<{field:string;[key:string]:unknown}>=[...observed,...schemaFields];
      const matching=prefix===null?allFields:allFields.filter(item=>
       typeof item.field==="string"&&item.field.startsWith(prefix));
      const fit=fitRows(matching);
