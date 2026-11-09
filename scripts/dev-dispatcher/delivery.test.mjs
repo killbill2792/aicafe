@@ -132,7 +132,7 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
  assert.equal(queue.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
  assert.equal(queue.dispatch_rules.priority_gate_task,'POS0f');
  assert.match(queue.dispatch_rules.architecture_foundation_note,/TWO DISTINCT GATES/);
- assert.match(queue.dispatch_rules.architecture_foundation_note,/future POS0e\/b\/c\/d/);
+ assert.match(queue.dispatch_rules.architecture_foundation_note,/POS0e FIRST implements\/tests/);
  const pos0a=queue.tasks.find(t=>t.id==='POS0a');
  const pos0e=queue.tasks.find(t=>t.id==='POS0e');
  const pos0f=queue.tasks.find(t=>t.id==='POS0f');
