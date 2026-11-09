@@ -7,11 +7,38 @@ import {resolve} from "node:path";
 import pg from "pg";
 import {it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {runAgentTurn} from "../loop.server";
+import {runAgentTurn,openAIProvider} from "../loop.server";
+import type {AgentProvider} from "../loop.server";
 import type {AgentToolContext} from "./index";
 const dbUrl=process.env.AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL;
 const enabled=process.env.AGENT_LIVE_EVAL==="1"&&Boolean(dbUrl&&process.env.OPENAI_API_KEY);
 const run=enabled?it:it.skip;
+
+// The budget applies to the real model *transport*, across ALL turns in this
+// disposable acceptance test. Serialized UTF-8 bytes conservatively bound
+// provider-input tokens without requiring a paid tokenizer or extra API call.
+// At published gpt-4.1-mini rates (Nov 2026), the 200k-byte input and\n// 12k reserved output-token envelope is about $0.10 per gated execution.\n// Check BEFORE sending, including the provider's per-response output ceiling.
+// A limit hit FAILS the test; it can never turn partial E2 into a passing proof.
+const smoke=process.env.POS0E_E2_SMOKE==="1";
+const MAX_PAID_CALLS=12;
+const MAX_INPUT_REQUEST_BYTES=200_000;
+const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
+let paidCalls=0,requestBytes=0,outputTokensReserved=0;
+const budgetedProvider:AgentProvider=async function*(params,signal){
+ if(params.model!=="gpt-4.1-mini")
+  throw new Error("POS0e E2 requires the approved low-cost gpt-4.1-mini model");
+ const payloadBytes=Buffer.byteLength(JSON.stringify(params),"utf8");
+ const outputCap=Math.min(Number(params.max_output_tokens)||MAX_OUTPUT_TOKENS_PER_CALL,
+  MAX_OUTPUT_TOKENS_PER_CALL);
+ if(paidCalls+1>MAX_PAID_CALLS||
+    requestBytes+payloadBytes>MAX_INPUT_REQUEST_BYTES||
+    outputTokensReserved+outputCap>MAX_PAID_CALLS*MAX_OUTPUT_TOKENS_PER_CALL)
+  throw new Error("POS0e paid E2 budget exceeded: stop without additional API calls");
+ paidCalls++;
+ requestBytes+=payloadBytes;
+ outputTokensReserved+=outputCap;
+ yield* openAIProvider({...params,max_output_tokens:outputCap},signal);
+};
 const allowedHost=(raw:string)=>{
  const {hostname}=new URL(raw);
  if(!["127.0.0.1","localhost","::1"].includes(hostname))
@@ -106,11 +133,11 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    tools:{} as AgentToolContext["tools"],
    canonicalData:async()=>({db:db as never,businessId:biz.id})
   } as AgentToolContext;
-  for(const {question,truth} of scalarQuestions){
+  for(const {question,truth} of (smoke?scalarQuestions.slice(0,0):scalarQuestions)){
    const expected=(await client.query<{n:number}>(truth,params)).rows[0].n;
    // Standard owner-facing answer; the requested line keeps acceptance numeric
    // (without an extra reviewer model) and still permits the incomplete-day note.
-   const turn=await runAgentTurn({context,ownerText:
+   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:
     question+" Answer with 'Number: N' and a short source/coverage note."});
    expect(turn.tools,question).toContain("query_data");
    const number=turn.text.match(/\bNumber\s*[:=]\s*(\d+)\b/i);
@@ -125,9 +152,9 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    {question:"Give units sold yesterday by item display name. Call absent names 'Unnamed'. Use Name: N lines.",
     truth:`select coalesce(data->>'displayName','Unnamed') k, sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$2) where record_type='item' and counts_in_sales=true group by coalesce(data->>'displayName','Unnamed') order by 1`}
   ] as const;
-  for(const {question,truth} of breakdowns){
+  for(const {question,truth} of (smoke?breakdowns.slice(0,0):breakdowns)){
    const expected=(await client.query<{k:string;n:number}>(truth,params)).rows;
-   const turn=await runAgentTurn({context,ownerText:question});
+   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:question});
    expect(turn.tools,question).toContain("query_data");
    for(const row of expected){
     const line=turn.text.split("\n").find(line=>line.includes(row.k));
@@ -151,7 +178,7 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   for(const {question,truth,ref} of namedQuestions){
    const expected=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0]?.answer;
    expect(expected,question).toBeTruthy();
-   const turn=await runAgentTurn({context,ownerText:question+
+   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:question+
     " Use retained current source facts, not diagnostic snapshots or another café."});
    expect(turn.tools,question).toContain("query_data");
    expect(turn.text,question).toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
@@ -169,7 +196,7 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
    expect(expected,question).not.toBeNull();
    expect(expected,question).not.toBeUndefined();
-   const turn=await runAgentTurn({context,ownerText:question});
+   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:question});
    expect(turn.tools,question).toContain("query_data");
    const match=turn.text.match(new RegExp("\\b"+label+"\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)","i"));
    expect(match,question+" => "+turn.text).not.toBeNull();
