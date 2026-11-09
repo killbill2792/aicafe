@@ -184,13 +184,16 @@ describe("POS0c operational source capture uses the shared staged current writer
    onResponse?:(v:{status:number;nextPageToken:string|null})=>void})=>{
    if(path.startsWith("/kitchen/v1/published/prepStations")){
     opts?.onResponse?.({status:200,nextPageToken:path.includes("pageToken=")?null:"next"});
-    return [{guid:path.includes("pageToken=")?guid2:guid1}];
+    return path.includes("pageToken=")?[{guid:guid2}]:[
+     {guid:guid1},...Array.from({length:204},(_,i)=>({
+      guid:"33333333-3333-4333-8333-"+String(i+1).padStart(12,"0")}))];
    }
    return [];
   });
   await syncToastOperationalSources(f.db,opScope,observed,Date.now()+300000);
   const batch=f.log.filter(x=>x.args.p_endpoint==="kitchen/v1/published/prepStations");
-  expect(batch).toHaveLength(1);
+  expect(batch).toHaveLength(1); // 206 validated objects, one atomic RPC; never two partial commits
+  expect(batch[0].args.p_objects).toHaveLength(206);
   expect(batch[0].args.p_objects).toEqual(expect.arrayContaining([
    expect.objectContaining({guid:guid1}),expect.objectContaining({guid:guid2})]));
  });
