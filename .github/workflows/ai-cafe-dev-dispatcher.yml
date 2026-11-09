@@ -43,7 +43,9 @@ permissions:
   checks: read
 
 concurrency:
-  group: aicafe-development-dispatcher
+  # PR-head deterministic tests must not compete with the single trusted-main
+  # ledger writer. Keep credential-bearing events serialized together.
+  group: ${{ github.event_name == 'pull_request' && format('aicafe-dispatcher-pr-{0}', github.event.pull_request.number) || 'aicafe-development-dispatcher-trusted' }}
   cancel-in-progress: false
 
 jobs:
