@@ -102,7 +102,8 @@ from checks k cross join lateral jsonb_array_elements(case when jsonb_typeof(k.c
 where jsonb_typeof(d.v)='object'
 union all
 select r.business_id,'toast'::text,'toast-current:'||r.id::text,
- 'stored'::text,r.business_date,r.record_type,
+ -- Until source-specific freshness is verified, stored is not the same as final.
+ 'open'::text,r.business_date,r.record_type,
  coalesce(r.entity_guid::text,nullif(r.payload->>'guid',''),
   nullif(r.payload->>'employee_guid',''),nullif(r.payload->>'provider_guid','')),
  null::text,null::text,null::boolean,r.payload
