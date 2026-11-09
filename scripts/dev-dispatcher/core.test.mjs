@@ -357,6 +357,25 @@ test("same state cannot be sent twice and uncertain submissions fail closed", ()
   assert.equal(decideNudge({ ...record, submission_state: "needs_login" }, clock).kind, "hold");
   assert.notEqual(actionKey(record, "continue_pr"), actionKey({ ...record, head_sha: "new" }, "continue_pr"));
 });
+test("submitted activity-qualified continuation keeps its key until a newer PR change", () => {
+  const record = pr({ draft: true, ci_state: "failure", acceptance_evidence: null,
+    last_commit_at: new Date(clock - 2000000).toISOString(),
+    last_github_activity: new Date(clock - 900000).toISOString(),
+    last_submission_at: new Date(clock - 2200000).toISOString() });
+  const first = decideNudge(record, clock);
+  assert.equal(first.kind, "propose");
+  assert.equal(first.key.split(":").length, 6);
+  const delivered = { ...record, last_action_key: first.key,
+    last_submission_at: new Date(clock - 800000).toISOString(),
+    submission_state: "submitted" };
+  assert.equal(actionKey(delivered, "repair_ci"), first.key);
+  assert.equal(decideNudge(delivered, clock).reason, "already_sent_or_capped");
+  const newer = { ...delivered, last_github_activity:
+    new Date(clock - 100000).toISOString() };
+  assert.notEqual(actionKey(newer, "repair_ci"), first.key);
+  assert.equal(decideNudge(newer, clock).kind, "propose");
+});
+
 test("new commit invalidates stale checks and requires a fresh Codex review", () => {
   const changed = invalidateOnHeadChange(pr({ next_check_at: old, last_action_key: "old" }), "new", new Date(clock).toISOString());
   assert.equal(changed.head_sha, "new");
