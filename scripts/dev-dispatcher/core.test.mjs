@@ -256,11 +256,22 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.merged_sha,
     "90e06ca57809ef0c29084d459d82a1be266b503a");
   assert.equal(actual.tasks.find(t=>t.id==="POS0e").architecture_approval,null);
-  assert.deepEqual(actual.tasks.find(t=>t.id==="POS0e").exclusive_files,[]);
+  assert.ok(actual.tasks.find(t=>t.id==="POS0e").exclusive_files.length >= 15);
+  assert.ok(actual.tasks.find(t=>t.id==="POS0e").exclusive_files.includes(
+    "supabase/migrations/20261109000156_pos0e_shared_current_reader.sql"));
+  // File reservation by itself does not launch an agent. Require this exact task's owner signoff.
+  const docsMerged={POS0a:{status:"merged",merge_sha:"90e06ca57809ef0c29084d459d82a1be266b503a"}};
+  assert.equal(dispatchFrontier(actual,docsMerged).some(a=>a.task_id==="POS0e"),false);
+  const activated=structuredClone(actual);
+  const readerOn=activated.tasks.find(t=>t.id==="POS0e");
+  readerOn.state="architecture_approved";
+  readerOn.architecture_approval={approved:true,owner_direction:"explicit coding release"};
+  assert.deepEqual(dispatchFrontier(activated,docsMerged).filter(a=>a.task_id==="POS0e"),
+    [{type:"assign",task_id:"POS0e",agent:"chatgpt",base_branch:"main",prerequisite_pr:null}]);
   assert.deepEqual(actual.dispatch_rules.architecture_foundation_dependent_task_ids,
     ["POS0b","POS0c","POS0d","POS0e","POS0f"]);
   assert.equal(actual.dispatch_rules.priority_gate_task, "POS0f");
-  assert.equal(actual.initial_parallel_candidates[0], "POS0a");
+  assert.equal(actual.initial_parallel_candidates[0], "POS0e");
   for (const id of ["E2", "6", "9", "10"]) {
     assert.ok(actual.tasks.find(t => t.id === id)?.depends_on.includes("POS0f"), id);
   }

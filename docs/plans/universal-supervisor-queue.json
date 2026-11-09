@@ -53,7 +53,7 @@
     }
   ],
   "initial_parallel_candidates": [
-    "POS0a"
+    "POS0e"
   ],
   "dispatch_rules": {
     "open_dependent_pr_immediately": "start from prerequisite branch; draft PR base = prerequisite branch",
@@ -71,7 +71,7 @@
       "POS0e",
       "POS0f"
     ],
-    "architecture_foundation_note": "TWO DISTINCT GATES (owner audit #6729826693): POS0a is a READ-ONLY, official-schema-per-field source/permission/current-vs-target lineage and field-gap DESIGN CONTRACT, with all Standard GET/nested fields inventoried, each actual permission/response marked observed or NOT_TESTED/403/missing ID/not configured, truthful existing writer/storage/reader/consumer mapping or explicit MISSING gap, implementation PR/file/SQL/test owners proposed, source provenance and reproducible audit. It does NOT require POS0e/b/c/d SQL, writer, or registered Supervisor implementation to already exist. Owner architecture signoff and the existing approved=false coding-delivery gate are separate, and exact downstream ownership/authorization must be accepted before coding. POS0e FIRST implements/tests shared current-source retained-field policy, SQL/current reader and existing describe_data/query_data; POS0b labor, POS0c cash/stock/kitchen, POS0d menu/setup/price each implement/tests distinct source family atop POS0e; POS0f independently proves ALL eligible field-level source→stored→discover→query→registered one Supervisor/screen plus final-schema negative diagnostic lineage on migrated disposable DB. Never weaken downstream acceptance or classify POS0a audit-only CI as integrated_proven. Future POS0e/f PRs need authorization to begin, NOT completion before authorization. No new agent, store, scheduler, dispatcher or merging these draft PRs.",
+    "architecture_foundation_note": "TWO DISTINCT GATES (owner audit #6729826693): POS0a is a READ-ONLY, official-schema-per-field source/permission/current-vs-target lineage and field-gap DESIGN CONTRACT, with all Standard GET/nested fields inventoried, each actual permission/response marked observed or NOT_TESTED/403/missing ID/not configured, truthful existing writer/storage/reader/consumer mapping or explicit MISSING gap, implementation PR/file/SQL/test owners proposed, source provenance and reproducible audit. It does NOT require POS0e/b/c/d SQL, writer, or registered Supervisor implementation to already exist. Owner documentation signoff is approved on merged #398; individual POS0e/b/c/d/f task coding approvals and exact file scope remain separate mandatory dispatch gates. POS0e FIRST implements/tests shared current-source retained-field policy, SQL/current reader and existing describe_data/query_data; POS0b labor, POS0c cash/stock/kitchen, POS0d menu/setup/price each implement/tests distinct source family atop POS0e; POS0f independently proves ALL eligible field-level source→stored→discover→query→registered one Supervisor/screen plus final-schema negative diagnostic lineage on migrated disposable DB. Never weaken downstream acceptance or classify POS0a audit-only CI as integrated_proven. Future POS0e/f PRs need authorization to begin, NOT completion before authorization. PRs #398/#399/#400 are merged; do not create a new agent, store, scheduler or dispatcher.",
     "architecture_foundation_implementation_approval": {
       "approved": true,
       "merged_sha": "90e06ca57809ef0c29084d459d82a1be266b503a",
@@ -93,7 +93,7 @@
       "ordered_first_read": [
         "AGENTS.md (PROGRESS.md read only)",
         "docs/rules/pos-data.md (binding source/consumer decisions)",
-        "PR #398 concise POS0a handoff FIRST at docs/plans/toast-standard-api-coverage-matrix.md#pos0a-handoff--read-this-card-before-large-evidence-tables-2026-11-08 (read actual latest draft PR head); then targeted field evidence only, A1 official schema and A2/A4 actual-cafe / reader / registered-Supervisor evidence honestly status-coded; implementation belongs to later tasks",
+        "PR #398 concise POS0a handoff FIRST at docs/plans/toast-standard-api-coverage-matrix.md#pos0a-handoff--read-this-card-before-large-evidence-tables-2026-11-08 (read merged main); then targeted field evidence only, A1 official schema and A2/A4 actual-cafe / reader / registered-Supervisor evidence honestly status-coded; implementation belongs to later tasks",
         "docs/plans/universal-supervisor-task-briefs.md#task-<POS0_ID> and this machine queue (no runtime authorization)",
         "existing code plus deployed pg_get_functiondef/pg_get_viewdef and consumers",
         "docs/rules/tests.md and actually executed acceptance/rollback evidence"
@@ -107,7 +107,7 @@
         "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof",
         "D4A menu daily full download and duplicate Menus V2 GETs; D4B SQL-day atomic rollback and live archive missed-page recovery; preserve merged #189/#203/#264/#297 nonstarvation"
       ],
-      "owner_hold": "OWNER MERGE ACCEPTED: PRs #398/#399/#400 are merged. POS0a is a read-only source audit/document, accepted by authenticated owner at #398 comment 6734438172; no runtime integrated_proven prerequisite for POS0a. CODING STILL HELD: POS0e/b/c/d/f each require their OWN architecture_approval.approved=true and nonempty exclusive_files before dispatch. POS0f remains the unchanged proof gate for unrelated tasks. No production deployment, migration or data deletion authorized.",
+      "owner_hold": "OWNER MERGE ACCEPTED: PRs #398/#399/#400 are merged. POS0a is a read-only source audit/document, accepted by authenticated owner at #398 comment 6734438172; no runtime integrated_proven prerequisite for POS0a. CODING STILL HELD: POS0e has an exact exclusive file reservation but architecture_approval=null and state=proposed. Owner must separately authorize that exact task and switch to architecture_approved before dispatch; POS0b/c/d/f remain unapproved with no file reservations. POS0f remains the unchanged proof gate for unrelated tasks. No production deployment, migration or data deletion authorized.",
       "approved_record_store": "toast_raw_records",
       "approved_change_log": "toast_raw_changes",
       "legacy_diagnostic_only": [
@@ -575,8 +575,27 @@
         "POS0a"
       ],
       "goal": "FIRST cut operational Supervisor/canonical views off toast_raw_samples and historical diagnostic capture, reuse current toast_raw_records/change log with full permitted field retention (customer/staff PII excluding card credentials), complete schema-backed describe_data and bounded full-data query_data; generic source-family reader before POS0b–d.",
-      "scope_hint": "One exclusive owner for current toast_records_for / cv_* active SQL replacement migration; lib/ai/agent/tools/dataQuery.ts, lib/data/canonical/dictionary.ts, existing lib/pos/toast/redact.ts, and relevant SQL/agent tests. Freeze shared file ownership; no additional AI query path, store or historical migration edits. Existing tests asserting diagnostic-backed operational values must be corrected and negative source-isolation tests executed.",
-      "exclusive_files": [],
+      "scope_hint": "PREPARED (NOT CODING-AUTHORIZED): exact one-owner POS0e shared-reader SQL/migration, dataQuery, canonical reader/dictionary, safe redactor, data dictionary/active POS rule, existing and new SQL/agent tests are reserved in exclusive_files. Existing migrations stay unchanged; current diagnostics are excluded from operational readers without deleting audit tables. Owner must separately set this task architecture_approval.approved=true and state=architecture_approved before the existing dispatcher can assign ChatGPT. No implementation, production DB writes or release approved by file reservation.",
+      "exclusive_files": [
+        "supabase/migrations/20261109000156_pos0e_shared_current_reader.sql",
+        "scripts/pos0e-current-reader-sql-integration.sql",
+        "scripts/ai-toast-records-sql-integration.sql",
+        "scripts/ai-data-query-distinct-sql-integration.sql",
+        "scripts/toast-db-integration.sql",
+        "lib/ai/agent/tools/dataQuery.ts",
+        "lib/ai/agent/tools/dataQuery.test.ts",
+        "lib/ai/agent/tools/dataQuery.registered.test.ts",
+        "lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts",
+        "lib/ai/agent/tools/dataQuery.pos0e.test.ts",
+        "lib/data/canonical/dictionary.ts",
+        "lib/data/canonical/reads.server.ts",
+        "lib/data/canonical/canonicalViews.test.ts",
+        "lib/pos/toast/redact.ts",
+        "lib/pos/toast/redact.test.ts",
+        "docs/data-dictionary.md",
+        "docs/data-dictionary-notes.md",
+        "docs/rules/pos-data.md"
+      ],
       "architecture_approval": null,
       "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0e",
       "skills": [

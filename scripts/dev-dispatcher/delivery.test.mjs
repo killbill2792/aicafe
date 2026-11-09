@@ -189,6 +189,11 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
    assert.match(d.prompt,/TASK ACCEPTANCE \(signed\): Read EVERY task\.acceptance entry/);
    assert.equal(d.prompt.includes(JSON.stringify(real.acceptance)),false,'full signed acceptance must not be duplicated in browser prompt');
    assert.ok(d.prompt.length<12000,id+' '+agent+' assignment: '+d.prompt.length);
+   if(id==='POS0e'){
+     assert.match(d.prompt,/18 EXACT signed paths:/);
+     assert.match(d.prompt,/task POS0e\.exclusive_files in the current approved queue/);
+     assert.equal(d.prompt.includes(real.exclusive_files[0]),false,'large list is owned in queue, not duplicated');
+   }
    // A saved conversation and changed base add more text than first assignment.
    const follow={...record,agent,
      conversation_ref:agent==='claude'?'https://claude.ai/chat/test-pos0-aicafe':'https://chatgpt.com/c/test-pos0-aicafe',
