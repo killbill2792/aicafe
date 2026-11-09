@@ -207,7 +207,7 @@ export async function syncToastOperationalSources(db:SupabaseClient,
       operational_object_uuid:GUID.safeParse(row.guid).success?undefined:
        internalOperationalId(p.businessId,p.restaurantGuid,op.endpoint,key),
       ...(op.businessDate?{business_date:op.businessDate}:{}),
-      fetched_at:checked};
+      fetched_at:checked,lastSuccessAt:checked};
     });
     const {data:written,error:writeError}=await db.rpc("toast_stage_operational_batch",{
      p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
