@@ -56,9 +56,6 @@ BEGIN
   FROM public.toast_raw_changes WHERE business_id=b and entity_guid=e),
   'exact cents field diff with source amount (dollars)');
  PERFORM pg_temp.check((SELECT amount_cents=1525 FROM public.cv_cash
-  WHERE business_id=b and record_type IS NULL LIMIT 1) IS NOT FALSE,
-  'cash can be read without inventing cents'); -- view's entry_type is the public label
- PERFORM pg_temp.check((SELECT amount_cents=1525 FROM public.cv_cash
   WHERE business_id=b and entry_type='CASH_IN' LIMIT 1),
   'same cash amount through the existing POS0e canonical screen/tool view');
 
