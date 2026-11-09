@@ -119,7 +119,15 @@ describe("POS0c operational source capture uses the shared staged current writer
   expect(rows).toHaveLength(2);
   expect(rows[0].provider_key).not.toBe(rows[1].provider_key);
   expect(rows[0].operational_object_uuid).not.toBe(rows[1].operational_object_uuid);
-  expect(calls.request.mock.calls.some(c=>String(c[0]).includes("businessDate=20261023"))).toBe(true);
+  const requested=calls.request.mock.calls.map(c=>String(c[0]));
+  expect(requested).toEqual(expect.arrayContaining([
+   "/cashmgmt/v1/entries?businessDate=20261023",
+   "/cashmgmt/v1/entries?businessDate=20261022",
+   "/cashmgmt/v1/deposits?businessDate=20261023",
+   "/cashmgmt/v1/deposits?businessDate=20261022",
+   "/kitchen/v1/export/itemFulfillments?businessDate=20261023",
+  ]));
+  expect(requested).toContain("/stock/v1/inventory"); // no unsupported date query
   const before=calls.request.mock.calls.length;
   await syncToastOperationalSources(f.db,opScope,observed,Date.now()+300000);
   expect(calls.request).toHaveBeenCalledTimes(before); // independent bounded next_at
