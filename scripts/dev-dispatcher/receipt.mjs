@@ -16,7 +16,7 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
   // Recover ONLY that original same-task assignment, never a cancelled
   // continuation, revoked scope, or a second conversation.
   const lateAssignment = action?.status === 'cancelled_stale_head' &&
-    action?.type === 'assign' && action?.key !== 'other' &&
+    action?.type === 'assign' &&
     action?.task_id === task?.task_id &&
     task?.github_state === 'open' && Number.isInteger(task?.pr_number) &&
     task?.branch === 'feat/aicafe-task-' + task.task_id &&
