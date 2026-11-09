@@ -68,7 +68,7 @@ export function queueOwnerAlerts(state,{unmappedPrs=[],queue=null,now=new Date()
  const foundation=queue?.dispatch_rules?.architecture_foundation_proof_task;
  if(foundation) {
   const rec=next.tasks?.[foundation];
-  const awaitingReview=['integrated_proven','released_proven'].includes(rec?.status) &&
+  const awaitingReview=['merged','integrated_proven','released_proven'].includes(rec?.status) &&
     !architectureFoundationReady(queue,next.tasks) && /^[a-f0-9]{40}$/.test(rec?.merge_sha||'');
   const chat=rec?.agent==='chatgpt' && validConversationUrl('chatgpt',rec?.conversation_ref)
     ? rec.conversation_ref : null;

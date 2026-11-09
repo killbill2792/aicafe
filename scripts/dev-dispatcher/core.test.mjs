@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub, progressUpdatePolicy } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub, progressUpdatePolicy, predecessorsForMerge } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
 import { GitHubFacts, parseAcceptanceEvidence } from "./github.mjs";
 
@@ -91,7 +91,7 @@ test("fan-in dependencies open a stacked draft on an explicit parent, but do not
   assert.equal(blocked.eligible,false);
 });
 test("Toast architecture foundation requires owner-reviewed merged-main proof before downstream assignment", () => {
-  const all = { ...queue([task("POS0a"), task("POS0b",["POS0a"]),
+  const all = { ...queue([{...task("POS0a"),test_kinds:["docs","read_only_audit"]}, task("POS0b",["POS0a"]),
       task("POS0c",["POS0a"]), task("POS0d",["POS0a"])]),
     dispatch_rules: {
       architecture_foundation_proof_task:"POS0a",
@@ -110,6 +110,10 @@ test("Toast architecture foundation requires owner-reviewed merged-main proof be
     architecture_foundation_implementation_approval:{
       approved:true,merged_sha:mergedSha,
       owner_review_url:"https://github.com/killbill2792/aicafe/pull/395#issuecomment-123"}}};
+  const ownerMergedDocs = {POS0a:{status:"merged",merge_sha:mergedSha}};
+  assert.deepEqual(dispatchFrontier(approved,ownerMergedDocs)
+    .map(x=>[x.task_id,x.base_branch]),[
+      ["POS0b","main"],["POS0c","main"],["POS0d","main"]]);
   assert.deepEqual(dispatchFrontier(approved,integrated)
     .map(x=>[x.task_id,x.base_branch]),[
       ["POS0b","main"],["POS0c","main"],["POS0d","main"]]);
@@ -124,6 +128,34 @@ test("Toast architecture foundation requires owner-reviewed merged-main proof be
   assert.throws(()=>validateQueue({ ...all,
     dispatch_rules:{...all.dispatch_rules,architecture_foundation_dependent_task_ids:["unknown"]} }),
     /Invalid architecture foundation proof gate/);
+});
+test("merge honors only owner-accepted POS0a docs; runtime predecessors still need integration", () => {
+  const sha = "a".repeat(40);
+  const tasks = [{...task("POS0a"),test_kinds:["docs","read_only_audit"]},
+    task("POS0e", ["POS0a"]), task("POS0b",["POS0a","POS0e"])];
+  const unsigned={...queue(tasks),dispatch_rules:{
+    architecture_foundation_proof_task:"POS0a",
+    architecture_foundation_dependent_task_ids:["POS0e","POS0b"],
+    architecture_foundation_implementation_approval:{approved:false,merged_sha:null,owner_review_url:null}
+  }};
+  const signed={...unsigned,dispatch_rules:{...unsigned.dispatch_rules,
+    architecture_foundation_implementation_approval:{approved:true,merged_sha:sha,
+      owner_review_url:"https://github.com/killbill2792/aicafe/pull/398#issuecomment-123"}
+  }};
+  const docsMerged={POS0a:{status:"merged",merge_sha:sha}};
+  const ready={...pr(),threads_resolved:true,base_current:true,acceptance_proven:true};
+  assert.deepEqual(predecessorsForMerge(tasks[1],unsigned,docsMerged),[docsMerged.POS0a]);
+  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[1],unsigned,docsMerged)).eligible,false);
+  assert.deepEqual(predecessorsForMerge(tasks[1],signed,docsMerged),[]);
+  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[1],signed,docsMerged)).eligible,true);
+  const mismatched={POS0a:{status:"merged",merge_sha:"b".repeat(40)}};
+  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[1],signed,mismatched)).eligible,false);
+  const withUnprovenRuntime={...docsMerged,POS0e:{status:"merged",merge_sha:"c".repeat(40)}};
+  assert.deepEqual(predecessorsForMerge(tasks[2],signed,withUnprovenRuntime),
+    [withUnprovenRuntime.POS0e]);
+  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[2],signed,withUnprovenRuntime)).eligible,false);
+  withUnprovenRuntime.POS0e.status="integrated_proven";
+  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[2],signed,withUnprovenRuntime)).eligible,true);
 });
 test("priority proof gate blocks unrelated dispatch even when gate PR is draft or merged", () => {
   const all = {
@@ -220,7 +252,11 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   assert.ok(actual.tasks.find(t=>t.id==="POS0d").acceptance.some(a=>a.includes("same GUID")));
   assert.equal(d4.independent_cost_queue_diagnostic.due_jobs,77);
   assert.equal(actual.dispatch_rules.architecture_foundation_proof_task,"POS0a");
-  assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
+  assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,true);
+  assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.merged_sha,
+    "90e06ca57809ef0c29084d459d82a1be266b503a");
+  assert.equal(actual.tasks.find(t=>t.id==="POS0e").architecture_approval,null);
+  assert.deepEqual(actual.tasks.find(t=>t.id==="POS0e").exclusive_files,[]);
   assert.deepEqual(actual.dispatch_rules.architecture_foundation_dependent_task_ids,
     ["POS0b","POS0c","POS0d","POS0e","POS0f"]);
   assert.equal(actual.dispatch_rules.priority_gate_task, "POS0f");

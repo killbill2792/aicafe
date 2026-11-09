@@ -69,10 +69,26 @@ export function architectureFoundationReady(queue, records = {}) {
   if (!id) return true;
   const proof = records[id];
   const signoff = queue.dispatch_rules.architecture_foundation_implementation_approval;
-  return ["integrated_proven", "released_proven"].includes(proof?.status) &&
+  const documentationAudit = id === "POS0a" && queue.tasks?.some(task =>
+    task.id === id && task.test_kinds?.includes("read_only_audit"));
+  // POS0a is an owner-merged design document, not a runtime integration.
+  // Every actual implementation task continues to require its own execution proof.
+  return (["integrated_proven", "released_proven"].includes(proof?.status) ||
+    (documentationAudit && proof?.status === "merged")) &&
     signoff?.approved === true && signoff.merged_sha === proof?.merge_sha &&
     /^[a-f0-9]{40}$/.test(signoff.merged_sha || "") &&
     /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+#issuecomment-\d+$/.test(signoff.owner_review_url || "");
+}
+// Merge gate receives only operational predecessors. The owner-accepted POS0a
+// document may satisfy a dependency without pretending it ran production proof.
+export function predecessorsForMerge(task, queue, records = {}) {
+  const foundationId = queue?.dispatch_rules?.architecture_foundation_proof_task;
+  const documentationAccepted = foundationId === "POS0a" &&
+    queue?.tasks?.some(item => item.id === foundationId && item.test_kinds?.includes("read_only_audit")) &&
+    architectureFoundationReady(queue, records);
+  return (task.depends_on || [])
+    .filter(dep => !(dep === foundationId && documentationAccepted))
+    .map(dep => records[dep] || {status:"unknown"});
 }
 export function dispatchFrontier(queue, records = {}, capacity = null) {
   const tasks = validateQueue(queue);
@@ -113,6 +129,7 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
     let blocked = false;
     for (const dep of task.depends_on) {
       const previous = records[dep];
+      if (dep === queue.dispatch_rules?.architecture_foundation_proof_task && foundationProven) continue;
       if (integrated(dep, tasks, records)) continue;
       // A verified open upstream PR can be draft OR ready-for-review.
       // Require a real PR number: an assigned branch name alone is not an open PR.

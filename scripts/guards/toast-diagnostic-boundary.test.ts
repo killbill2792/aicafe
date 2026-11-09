@@ -181,7 +181,12 @@ describe('Toast diagnostics may not feed operational data', () => {
 
     expect(rules).toContain('First-read and conflict priority');
     expect(notes).toContain('Generated-dictionary contradiction requiring later code ownership');
-    expect(queue.dispatch_rules.architecture_foundation_implementation_approval.approved).toBe(false);
+    expect(queue.dispatch_rules.architecture_foundation_implementation_approval.approved).toBe(true);
+    expect(queue.dispatch_rules.architecture_foundation_implementation_approval.merged_sha)
+      .toBe('90e06ca57809ef0c29084d459d82a1be266b503a');
+    const pos0e = queue.tasks.find((t: {id: string}) => t.id === 'POS0e');
+    expect(pos0e.architecture_approval).toBeNull();
+    expect(pos0e.exclusive_files).toEqual([]);
     expect(queue.dispatch_rules.pos_source_authority.ordered_first_read).toHaveLength(6);
     expect(queue.dispatch_rules.pos_source_authority.known_deployed_defects.join(' ')).toContain('SQL toast_import_day');
     expect(agents).toContain('D4A/D4B owner decisions');

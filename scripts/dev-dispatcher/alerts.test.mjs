@@ -68,7 +68,8 @@ test('architecture review notification waits for actual chat receipt and cancels
  assert.equal(Object.keys(queueOwnerAlerts(invalid,{queue:cfg}).owner_alerts).length,0);
  const mergedUnproven={...initial,tasks:{POS0a:{...initial.tasks.POS0a,
   status:'merged',conversation_ref:chat}}};
- assert.equal(Object.keys(queueOwnerAlerts(mergedUnproven,{queue:cfg}).owner_alerts).length,0);
+ // A merged documentation audit must still request owner review until the exact signed gate is accepted.
+ assert.equal(Object.keys(queueOwnerAlerts(mergedUnproven,{queue:cfg}).owner_alerts).length,1);
  const approved={...cfg,dispatch_rules:{...cfg.dispatch_rules,
   architecture_foundation_implementation_approval:{approved:true,merged_sha:sha,
    owner_review_url:'https://github.com/killbill2792/aicafe/pull/401#issuecomment-123'}}};

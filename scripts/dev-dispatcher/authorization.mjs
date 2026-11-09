@@ -59,8 +59,9 @@ export function assignmentActionKey(state, taskId, queue) {
     ? queue?.dispatch_rules?.architecture_foundation_proof_task
     : action.status === 'cancelled_priority_gate'
       ? queue?.dispatch_rules?.priority_gate_task : null;
-  if (!gate || !['integrated_proven','released_proven'].includes(state.tasks?.[gate]?.status) ||
-      (architectureCancelled && !architectureFoundationReady(queue, state.tasks)) ||
+  if (!gate || (architectureCancelled
+      ? !architectureFoundationReady(queue, state.tasks)
+      : !['integrated_proven','released_proven'].includes(state.tasks?.[gate]?.status)) ||
       action.receipt || action.claimed_at || action.submitted_at ||
       action.delivery_claim || state.tasks?.[taskId]?.conversation_ref ||
       Number.isInteger(state.tasks?.[taskId]?.pr_number)) return null;

@@ -129,7 +129,7 @@ test('POS0 data contributors receive the mandatory source classification and pro
 
 test('POS0a-f agent receives exact approved/defective/unapproved contract in order', () => {
  const queue=JSON.parse(readFileSync(new URL('../../docs/plans/universal-supervisor-queue.json',import.meta.url),'utf8'));
- assert.equal(queue.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
+ assert.equal(queue.dispatch_rules.architecture_foundation_implementation_approval.approved,true);
  assert.equal(queue.dispatch_rules.priority_gate_task,'POS0f');
  assert.match(queue.dispatch_rules.architecture_foundation_note,/TWO DISTINCT GATES/);
  assert.match(queue.dispatch_rules.architecture_foundation_note,/POS0e FIRST implements\/tests/);
@@ -152,7 +152,7 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
   assert.ok(t.acceptance.some(s=>s.includes('writer→current-object→describe_data→query_data→normal one-agent Supervisor answer')),id+' executable field proof intact');
  }
  assert.match(queue.dispatch_rules.pos_source_authority.ordered_first_read[2],/PR #398 concise POS0a handoff FIRST/);
- assert.match(queue.dispatch_rules.pos_source_authority.owner_hold,/Owner alone enables POS0b-f delivery/);
+ assert.match(queue.dispatch_rules.pos_source_authority.owner_hold,/CODING STILL HELD/);
  assert.equal(queue.dispatch_rules.pos_d4_contract.implementation_approved,false);
  assert.equal(queue.dispatch_rules.pos_d4_contract.future_order_recovery.dispatchable,false);
  assert.ok(!queue.tasks.some(t=>t.id==='POS0-order-recovery'));
@@ -200,8 +200,8 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
    assert.ok(resumed.prompt.length<12000,id+' '+agent+' continuation: '+resumed.prompt.length);
    assert.match(d.prompt,/COMMENT ACCOUNTABILITY/);
    assert.match(resumed.prompt,/COMMENT ACCOUNTABILITY/);
-   assert.match(d.prompt,/owner coding delivery OFF \(tracking != activation\)/);
-   assert.match(resumed.prompt,/POS0b-f coding delivery only after owner's explicit switch/);
+   assert.match(d.prompt,/own task coding approval mandatory \(tracking != activation\)/);
+   assert.match(resumed.prompt,/POS0e-f coding still requires each task's explicit file-scope owner approval/);
     assert.match(d.prompt,/POS0a=read-only official field\/GAP map; POS0e\/f=FUTURE reader\/agent proof/);
     assert.match(resumed.prompt,/POS0a=read-only official field\/GAP map; POS0e\/f=FUTURE reader\/agent proof/);
    assert.match(d.prompt,/targeted docs\/plans\/toast-standard-api-coverage-matrix\.md evidence only/);
@@ -220,7 +220,7 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
    for(const fact of ['D1-D4A/D4B/D4C PRINCIPLES approved only','architecture_foundation_implementation_approval.approved','false means STOP',
      'non-order toast_records_for','cv_cash/cv_inventory/cv_kitchen/cv_dining_options',
      'seen_run_id','SQL day import','liveArchive.server.ts','menu full fetch twice','POS0e','POS0b','POS0c','POS0d','POS0f',
-     'NO separately owner-approved implementation PR','#398/#400 draft, #399 trusted owner-question transport merged/preserve','source_authority_checked: yes',
+     'NO separately owner-approved implementation PR','PRs #398/#399/#400 merged','source_authority_checked: yes',
       'D4A Approach B','D4B lossless SQL','Approach 1 REPAIR existing day-import/liveArchive','POS0-order-recovery','#189','#203','#264','#297',
       '10-minute coordinator','15-minute live-order','99 good plus one DB-failing order',
       'processing stages received/raw_saved/parsed_validated/canonical_promoted/metric_reconciled',

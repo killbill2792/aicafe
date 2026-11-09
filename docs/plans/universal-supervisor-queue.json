@@ -73,9 +73,9 @@
     ],
     "architecture_foundation_note": "TWO DISTINCT GATES (owner audit #6729826693): POS0a is a READ-ONLY, official-schema-per-field source/permission/current-vs-target lineage and field-gap DESIGN CONTRACT, with all Standard GET/nested fields inventoried, each actual permission/response marked observed or NOT_TESTED/403/missing ID/not configured, truthful existing writer/storage/reader/consumer mapping or explicit MISSING gap, implementation PR/file/SQL/test owners proposed, source provenance and reproducible audit. It does NOT require POS0e/b/c/d SQL, writer, or registered Supervisor implementation to already exist. Owner architecture signoff and the existing approved=false coding-delivery gate are separate, and exact downstream ownership/authorization must be accepted before coding. POS0e FIRST implements/tests shared current-source retained-field policy, SQL/current reader and existing describe_data/query_data; POS0b labor, POS0c cash/stock/kitchen, POS0d menu/setup/price each implement/tests distinct source family atop POS0e; POS0f independently proves ALL eligible field-level source→stored→discover→query→registered one Supervisor/screen plus final-schema negative diagnostic lineage on migrated disposable DB. Never weaken downstream acceptance or classify POS0a audit-only CI as integrated_proven. Future POS0e/f PRs need authorization to begin, NOT completion before authorization. No new agent, store, scheduler, dispatcher or merging these draft PRs.",
     "architecture_foundation_implementation_approval": {
-      "approved": false,
-      "merged_sha": null,
-      "owner_review_url": null
+      "approved": true,
+      "merged_sha": "90e06ca57809ef0c29084d459d82a1be266b503a",
+      "owner_review_url": "https://github.com/killbill2792/aicafe/pull/398#issuecomment-6734438172"
     },
     "priority_gate_task": "POS0f",
     "priority_gate_note": "The existing dispatcher explicitly checks this proof-only gate: no task outside the allow-list is newly assigned until POS0f has integrated_proven/released_proven status, even if POS0f has a draft branch. Ordinary stacked drafts still work within POS0.",
@@ -107,7 +107,7 @@
         "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof",
         "D4A menu daily full download and duplicate Menus V2 GETs; D4B SQL-day atomic rollback and live archive missed-page recovery; preserve merged #189/#203/#264/#297 nonstarvation"
       ],
-      "owner_hold": "D1-D4 architecture principles only; PR398/PR400 final review pending; #399 trusted owner-question routing merged; existing coding dispatcher issue tracking is NOT coding delivery. Owner alone enables POS0b-f delivery after POS0a read-only documentation/field-gap architecture approval; POS0e/f runtime implementation proof is NOT a prerequisite to authorizing their work. Gate approved=false; manual #398/#400 comment ledger sufficient, automatic comment merge gate deferred",
+      "owner_hold": "OWNER MERGE ACCEPTED: PRs #398/#399/#400 are merged. POS0a is a read-only source audit/document, accepted by authenticated owner at #398 comment 6734438172; no runtime integrated_proven prerequisite for POS0a. CODING STILL HELD: POS0e/b/c/d/f each require their OWN architecture_approval.approved=true and nonempty exclusive_files before dispatch. POS0f remains the unchanged proof gate for unrelated tasks. No production deployment, migration or data deletion authorized.",
       "approved_record_store": "toast_raw_records",
       "approved_change_log": "toast_raw_changes",
       "legacy_diagnostic_only": [
