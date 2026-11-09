@@ -60,7 +60,7 @@ returns jsonb language sql immutable set search_path=public as $cmp$
     then p_row-'lastSuccessAt' else p_row end)
   - (case when p_row->>'source_business_date_kind'='observed_cafe_day'
     then array['business_date']::text[] else array[]::text[] end)
-  - array['fetched_at','first_seen','last_seen','checked_at',
+  - array['id','fetched_at','first_seen','last_seen','checked_at',
     'last_checked_at','report_checked_at','observed_at','updated_at'])
 $cmp$;
 
