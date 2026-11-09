@@ -21,6 +21,9 @@ const CARD_SEQUENCE=/(?:\d[ -]?){13,19}/g;
 const SECRET_TEXT=/(?:\bBearer\s+\S+|\b(?:password|api[_ -]?key|client[_ -]?secret|access[_ -]?token)\s*[:=]\s*\S+|\bsk-[A-Za-z0-9_-]{12,})/i;
 const PHONE_FIELD=/^(?:phone|phoneNumber|mobile|mobileNumber|contactPhone|telephone|fax)$/i;
 const GUID_FIELD=/(?:^guid$|Guid$|UUID$|Uuid$|^id$|Id$)/;
+const CARD_CONTAINER=/(?:^|\.)(?:card|cardInfo|cardDetails|cardData|creditCard|paymentCard|giftCard|giftCardInfo|magstripe|paymentMethod)(?:\.|$)/i;
+const CARD_CHILD_SECRET=/^(?:number|value|last4|first5|first6|lastFour|maskedNumber|expirationDate|expiryDate|expiryMonth|expiryYear|expMonth|expYear|holderName|cardholderName|networkId|networkTransactionIdentifier|accountId|accountNumber|tokenId)$/i;
+
 
 function plausibleCardNumber(value:string):boolean {
  const matches=value.match(CARD_SEQUENCE)??[];
@@ -57,8 +60,10 @@ export function redactToastRaw(value:unknown,depth=0,key="",_hashKey?:string,
  if(Array.isArray(value))return value.map(v=>redactToastRaw(v,depth+1,key,_hashKey,_context,_scope));
  if(value&&typeof value==="object"){
   return Object.fromEntries(Object.entries(value as Record<string,unknown>)
-   .filter(([k])=>KEY.test(k)&&!SECRET_KEY.test(k)&&!ENDS_WITH_SECRET.test(k))
-   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,_hashKey,k,_scope)]));
+   .filter(([k])=>KEY.test(k)&&!SECRET_KEY.test(k)&&!ENDS_WITH_SECRET.test(k)&&
+    !(CARD_CONTAINER.test(_context)&&CARD_CHILD_SECRET.test(k)))
+   .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,_hashKey,
+    _context?_context+"."+k:k,_scope)]));
  }
  if(typeof value==="string")return safeString(value,key);
  return value;
