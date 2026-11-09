@@ -189,12 +189,19 @@ export class GitHubFacts {
         valid: Boolean(parseCodexReviewState(c.body, sha)) }))
       .filter(c => c.valid).sort((a,b)=>Date.parse(b.at||0)-Date.parse(a.at||0));
     const summary = botSummaries[0] || null;
-    const reviewed = summary || codex;
+    // A newer formal rejection/dismissal must override an earlier bot summary,
+    // even if its findings are in a review body rather than an inline thread.
+    const formalAt = Date.parse(codex?.submitted_at || '');
+    const summaryAt = Date.parse(summary?.at || '');
+    const useFormal = Boolean(codex) &&
+      (!summary || !Number.isFinite(summaryAt) ||
+       (Number.isFinite(formalAt) && formalAt >= summaryAt));
+    const formalState = codex?.state === 'CHANGES_REQUESTED' ? 'findings' :
+      codex?.state === 'APPROVED' ? 'clean' : 'pending';
+    const latestState = useFormal ? formalState : summary?.state || 'pending';
+    const reviewed = latestState !== 'pending' ? sha : null;
     const codexState = unresolved === null ? "unknown" :
-      unresolved > 0 && (codexReviews.length || summary) ? "findings" :
-      summary ? summary.state :
-      !codex ? "pending" : codex.state === "CHANGES_REQUESTED" ? "findings" :
-      ["APPROVED", "COMMENTED"].includes(codex.state) ? "clean" : "pending";
+      unresolved > 0 && (codexReviews.length || summary) ? "findings" : latestState;
     return { pr_number: pr.number, head_sha: sha, base_branch: pr.base.ref,
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
@@ -202,11 +209,10 @@ export class GitHubFacts {
       github_owner_question: ownerDecision.question,
       github_owner_question_url: ownerDecision.url,
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
-      codex_review_at: summary?.at || codex?.submitted_at || null,
+      codex_review_at: useFormal ? codex?.submitted_at : summary?.at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
       ci_state: ci, ci_failure_kind: baseline?.conclusion === 'startup_failure' ? 'startup_failure' : null,
-      codex_state: codexState, codex_reviewed_sha:
-        summary?.state === 'pending' ? null : reviewed ? sha : null,
+      codex_state: codexState, codex_reviewed_sha: reviewed,
       threads_resolved: unresolved === 0,
       // Explicitly known dispatcher-only PRs are not orphan coding tasks.
       infrastructure_pr: Array.isArray(comparison.files) &&
