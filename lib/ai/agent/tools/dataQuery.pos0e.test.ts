@@ -127,6 +127,20 @@ describe("POS0e retained current-source dictionary and shared reader",()=>{
   expect(JSON.stringify(discovery.fields)).not.toMatch(/data\.cardNumber|data\.employee\.apiKey/);
   expect(discovery.retainedFields).toBe(1);
  });
+ it("blocks credential-bearing object paths but retains permitted customer and staff fields",async()=>{
+  const rpc=vi.fn(async()=>({data:{rows:[],sourceCount:0,truncated:false},error:null}));
+  for(const path of ["data.cardInfo","data.customer.paymentMethod.value","data.cardNumber"]){
+   const res=await dataQueryTools.query_data.execute({...query,group_by:[path]},
+    {db:{rpc} as never,businessId:cafeA});
+   expect(res.error,path).toBe("column_not_allowed");
+  }
+  for(const path of ["data.customer.email","data.employee.firstName"]){
+   const res=await dataQueryTools.query_data.execute({...query,group_by:[path]},
+    {db:{rpc} as never,businessId:cafeA});
+   expect(res.error,path).toBeUndefined();
+  }
+  expect(rpc).toHaveBeenCalledTimes(2);
+ });
  it("does not treat provider null, no rows, or a partial result as known zero",async()=>{
   const rpc=vi.fn(async()=>({data:{
    rows:[{"data.type":"CASH_IN","sum_data.amount":null}],
