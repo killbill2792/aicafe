@@ -71,7 +71,7 @@ test('late original Muse receipt restores the exact chat after the PR cancels as
      pr_number:405,branch:'feat/aicafe-task-6',conversation_ref:null}},
    actions:{'assign:6':{...state.actions['assign:6'],
      type:'assign',status:'cancelled_stale_head'}}};
- const envelope={...receipt,project:{id:'aicafe',name:'AI CAFE'}};
+ const envelope={...receipt,approval_hash:d.approval_hash,project:{id:'aicafe',name:'AI CAFE'}};
  delete envelope.project_id;
  const next=applyReceipts(late,[{receipt:envelope,actor:'courier-id'}],
    {'courier-id':'muse'});
