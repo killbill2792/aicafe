@@ -71,7 +71,7 @@
       "POS0e",
       "POS0f"
     ],
-    "architecture_foundation_note": "TWO DISTINCT GATES (owner audit #6729826693): POS0a is a READ-ONLY, official-schema-per-field source/permission/current-vs-target lineage and field-gap DESIGN CONTRACT, with all Standard GET/nested fields inventoried, each actual permission/response marked observed or NOT_TESTED/403/missing ID/not configured, truthful existing writer/storage/reader/consumer mapping or explicit MISSING gap, implementation PR/file/SQL/test owners proposed, source provenance and reproducible audit. It does NOT require POS0e/b/c/d SQL, writer, or registered Supervisor implementation to already exist. Owner documentation signoff is approved on merged #398; individual POS0e/b/c/d/f task coding approvals and exact file scope remain separate mandatory dispatch gates. POS0e FIRST implements/tests shared current-source retained-field policy, SQL/current reader and existing describe_data/query_data; POS0b labor, POS0c cash/stock/kitchen, POS0d menu/setup/price each implement/tests distinct source family atop POS0e; POS0f independently proves ALL eligible field-level source→stored→discover→query→registered one Supervisor/screen plus final-schema negative diagnostic lineage on migrated disposable DB. Never weaken downstream acceptance or classify POS0a audit-only CI as integrated_proven. Future POS0e/f PRs need authorization to begin, NOT completion before authorization. PRs #398/#399/#400 are merged; do not create a new agent, store, scheduler or dispatcher.",
+    "architecture_foundation_note": "TWO DISTINCT GATES (owner audit #6729826693): POS0a is a READ-ONLY, official-schema-per-field source/permission/current-vs-target lineage and field-gap DESIGN CONTRACT, with all Standard GET/nested fields inventoried, each actual permission/response marked observed or NOT_TESTED/403/missing ID/not configured, truthful existing writer/storage/reader/consumer mapping or explicit MISSING gap, implementation PR/file/SQL/test owners proposed, source provenance and reproducible audit. It does NOT require POS0e/b/c/d SQL, writer, or registered Supervisor implementation to already exist. Owner documentation signoff is approved on merged #398; individual POS0e/b/c/d/f task coding approvals and exact file scope remain separate mandatory dispatch gates. POS0e FIRST implements/tests shared current-source retained-field policy, SQL/current reader and existing describe_data/query_data; POS0b labor, POS0c cash/stock/kitchen, POS0d menu/setup/price each implement/tests distinct source family atop POS0e; POS0f independently proves ALL eligible field-level source→stored→discover→query→registered one Supervisor/screen plus final-schema negative diagnostic lineage on migrated disposable DB. Never weaken downstream acceptance or classify POS0a audit-only CI as integrated_proven. POS0e/b/c/d/f have separate exact-file coding authorizations; none is integrated until its strict proof passes. PRs #398/#399/#400 are merged; do not create a new agent, store, scheduler or dispatcher.",
     "architecture_foundation_implementation_approval": {
       "approved": true,
       "merged_sha": "90e06ca57809ef0c29084d459d82a1be266b503a",
@@ -107,7 +107,7 @@
         "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof",
         "D4A menu daily full download and duplicate Menus V2 GETs; D4B SQL-day atomic rollback and live archive missed-page recovery; preserve merged #189/#203/#264/#297 nonstarvation"
       ],
-      "owner_hold": "OWNER MERGE ACCEPTED: PRs #398/#399/#400 are merged. POS0a is a read-only source audit/document, accepted by authenticated owner at #398 comment 6734438172; no runtime integrated_proven prerequisite for POS0a. CODING STILL HELD: POS0e has an exact exclusive file reservation but architecture_approval=null and state=proposed. Owner must separately authorize that exact task and switch to architecture_approved before dispatch; POS0b/c/d/f remain unapproved with no file reservations. POS0f remains the unchanged proof gate for unrelated tasks. No production deployment, migration or data deletion authorized.",
+      "owner_hold": "OWNER CODING RELEASED IN EXACT QUEUE SCOPES: #398/#399/#400 merged, POS0a read-only field contract signed at #398 comment 6734438172. POS0e/b/c/d/f each have exact disjoint owned files and task-specific architecture approvals in this queue. GitHub may queue task coding handoffs; Muse/OpenClaw are user-started browser courier only. E first, BCD concurrent early stacked PRs after E open draft, F final integration proof. No automatic production migration/deletion/deployment, new credentials or unsettled design authorization. POS0f priority gate, CI/Codex and executed acceptance remain strict.",
       "approved_record_store": "toast_raw_records",
       "approved_change_log": "toast_raw_changes",
       "legacy_diagnostic_only": [
@@ -365,7 +365,8 @@
       "existing_saved_assignment_signature_must_not_be_invalidated": true,
       "runtime_or_merge_approval": false,
       "execution_state": "official pinned schema and deterministic read-only audit not yet committed/executed"
-    }
+    },
+    "owner_hold": "OWNER SCOPED CODING RELEASE: #398/#399/#400/#401/#402 merged foundation. POS0a owner-accepted read-only documentation without runtime integrated_proven. POS0e/b/c/d/f are NOW authorized for exact disjoint coding scope in this machine queue, but are not yet implemented/proven. GitHub queues signed task handoffs; Muse/OpenClaw only deliver/continue browser prompts AFTER owner starts courier. POS0e first, POS0b/c/d parallel once POS0e draft PR exists, POS0f final. No production writes/deletes/deployments/new scopes or unapproved order-recovery coding. Existing POS0f priority gate and final-head acceptance/CI/Codex/owner controls remain."
   },
   "tasks": [
     {
@@ -427,9 +428,38 @@
         "POS0e"
       ],
       "goal": "Extend existing Toast labor/staff import and current-object snapshot writer to retain every permitted employee/job/time-entry/shift field and genuine revisions, with correct actor identity and live/final dates. Must operate on POS0e current-only reader (never on toast_raw_samples), and prove each newly collected field is answerable through Supervisor.",
-      "scope_hint": "Existing lib/pos/toast/adapter.ts, laborSync.ts, operationalCopy.ts, optionalSync.ts; current toast_labor_entries, employee/job directory, scheduled shifts, timecards, archive writer and change log. Assign exact files and any migration exclusively after matrix approval.",
-      "exclusive_files": [],
-      "architecture_approval": null,
+      "scope_hint": "AUTHORIZED EXACT-OWNERSHIP 22 paths for POS0b. Staff and labor source family. Use one existing dispatcher and same coding chat/PR. POS0b/c/d may work in PARALLEL on disjoint files once POS0e opens an actual GitHub draft; stack their PRs on the POS0e branch, retarget/retest against main after POS0e integration. POS0f may prepare a stacked PR after approved source-family PRs open, but can only merge after every predecessor is integrated_proven. Preserve all CI/Codex, tenant/source parity, strict owner/production gates.",
+      "exclusive_files": [
+        "supabase/migrations/20261109000157_pos0b_staff_labor_current.sql",
+        "scripts/pos0b-staff-labor-sql-integration.sql",
+        "lib/pos/toast/laborSync.ts",
+        "lib/pos/toast/laborSync.test.ts",
+        "lib/pos/toast/laborBackfill.ts",
+        "lib/pos/toast/laborBackfill.test.ts",
+        "lib/pos/toast/laborCoverage.ts",
+        "lib/pos/toast/laborCoverage.test.ts",
+        "lib/pos/toast/staleLaborRecovery.ts",
+        "lib/pos/toast/staleLaborRecovery.test.ts",
+        "lib/pos/syncEmployees.ts",
+        "lib/pos/syncEmployees.test.ts",
+        "lib/pos/syncEmployees.ownerEdits.test.ts",
+        "lib/pos/timecardDay.ts",
+        "lib/pos/timecardDay.test.ts",
+        "lib/pos/timecardDay.toastPay.test.ts",
+        "lib/pos/rollup.toastLabor.test.ts",
+        "lib/ai/agent/tools/staff.ts",
+        "lib/ai/agent/tools/staff.test.ts",
+        "lib/ai/agent/tools/payrollEvidence.test.ts",
+        "lib/pos/toast/ownerAccess.ts",
+        "lib/pos/toast/ownerAccess.test.ts"
+      ],
+      "architecture_approval": {
+        "approved": true,
+        "owner_direction": "Owner requested continuous POS0 coding readiness: POS0e shared reader first; POS0b staff/labor, POS0c cash/stock/kitchen, POS0d menu/setup/price in parallel once POS0e draft PR is open; POS0f final field-level one-Supervisor/screen end-to-end verification. Muse/OpenClaw do prompt delivery only after owner starts them.",
+        "scope": "Already owner-approved architecture implemented in these exact exclusive files, plus disposable migrated-DB proof, final-head CI/Codex and existing strict PR auto-merge. Coding authorization is NOT runtime/integration evidence.",
+        "restrictions": "No production migration, deletion, deployment, new Toast permission/credential, unresolved architecture decision or new subsystem. Dedicated SQL order recovery remains unapproved; escalate genuine new owner decisions in same PR. No release/destructive action is authorized.",
+        "handoff": "Use existing trusted-main dispatcher and signed queue, same task/ChatGPT conversation and one PR each. Courier must verify and record new conversation URL/receipt for followups; do not claim browser send merely because OpenClaw exited 0."
+      },
       "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0b",
       "skills": [
         "aicafe-pr-lifecycle",
@@ -456,7 +486,7 @@
         "failure"
       ],
       "ui_or_browser_test": "targeted_if_user_flow_changed",
-      "state": "proposed",
+      "state": "architecture_approved",
       "can_start_stacked": true,
       "github_pr": null,
       "merge_commit": null,
@@ -474,9 +504,37 @@
         "POS0e"
       ],
       "goal": "Connect eligible cash, stock, kitchen and operational availability endpoints to the EXISTING current-object/upsert-change-log writer, not a parallel raw-dump service. Must operate on POS0e current-only reader (never on toast_raw_samples), and prove each newly collected field is answerable through Supervisor.",
-      "scope_hint": "Existing Toast Standard client, capture registry, archive writer; cashmgmt, stock, kitchen/prep, availability/ordering schedule. Source keys/cadences/RLS from POS0a; exclusive file owners and migrations assigned before coding.",
-      "exclusive_files": [],
-      "architecture_approval": null,
+      "scope_hint": "AUTHORIZED EXACT-OWNERSHIP 21 paths for POS0c. Cash, stock, kitchen and operational collector/shared client. Use one existing dispatcher and same coding chat/PR. POS0b/c/d may work in PARALLEL on disjoint files once POS0e opens an actual GitHub draft; stack their PRs on the POS0e branch, retarget/retest against main after POS0e integration. POS0f may prepare a stacked PR after approved source-family PRs open, but can only merge after every predecessor is integrated_proven. Preserve all CI/Codex, tenant/source parity, strict owner/production gates.",
+      "exclusive_files": [
+        "supabase/migrations/20261109000158_pos0c_operational_current.sql",
+        "scripts/pos0c-ops-sql-integration.sql",
+        "lib/pos/toast/optionalSync.ts",
+        "lib/pos/toast/optionalSync.test.ts",
+        "lib/pos/toast/operationalCopy.ts",
+        "lib/pos/toast/operationalStaging.ts",
+        "lib/pos/toast/operationalStaging.test.ts",
+        "lib/pos/toast/client.ts",
+        "lib/pos/toast/client.test.ts",
+        "lib/pos/toast/poll.ts",
+        "lib/pos/toast/poll.test.ts",
+        "lib/pos/toast/ownerCoverage.ts",
+        "lib/pos/toast/ownerCoverage.test.ts",
+        "lib/pos/toast/verificationState.ts",
+        "lib/pos/toast/statusSchema.ts",
+        "lib/pos/toast/scheduler.ts",
+        "lib/pos/toast/scheduler.test.ts",
+        "lib/ai/agent/tools/supplies.ts",
+        "lib/ai/agent/tools/supplies.test.ts",
+        "lib/ai/agent/tools/money.ts",
+        "lib/ai/agent/tools/money.test.ts"
+      ],
+      "architecture_approval": {
+        "approved": true,
+        "owner_direction": "Owner requested continuous POS0 coding readiness: POS0e shared reader first; POS0b staff/labor, POS0c cash/stock/kitchen, POS0d menu/setup/price in parallel once POS0e draft PR is open; POS0f final field-level one-Supervisor/screen end-to-end verification. Muse/OpenClaw do prompt delivery only after owner starts them.",
+        "scope": "Already owner-approved architecture implemented in these exact exclusive files, plus disposable migrated-DB proof, final-head CI/Codex and existing strict PR auto-merge. Coding authorization is NOT runtime/integration evidence.",
+        "restrictions": "No production migration, deletion, deployment, new Toast permission/credential, unresolved architecture decision or new subsystem. Dedicated SQL order recovery remains unapproved; escalate genuine new owner decisions in same PR. No release/destructive action is authorized.",
+        "handoff": "Use existing trusted-main dispatcher and signed queue, same task/ChatGPT conversation and one PR each. Courier must verify and record new conversation URL/receipt for followups; do not claim browser send merely because OpenClaw exited 0."
+      },
       "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0c",
       "skills": [
         "aicafe-pr-lifecycle",
@@ -503,7 +561,7 @@
         "parity"
       ],
       "ui_or_browser_test": "targeted_if_user_flow_changed",
-      "state": "proposed",
+      "state": "architecture_approved",
       "can_start_stacked": true,
       "github_pr": null,
       "merge_commit": null,
@@ -521,9 +579,43 @@
         "POS0e"
       ],
       "goal": "Complete durable retained-field coverage for all remaining accessible Standard API configuration, menus v2, payments/lookup, restaurant, device, packaging, partner and related endpoints using the one current-object writer. Must operate on POS0e current-only reader (never on toast_raw_samples), and prove each newly collected field is answerable through Supervisor.",
-      "scope_hint": "Reuse existing menu/config/restaurant collectors and canonical table/readers; diff by exact endpoint and source key. Exclude ERA separate credentials and Menus v3 non-Standard instead of silently calling them missing.",
-      "exclusive_files": [],
-      "architecture_approval": null,
+      "scope_hint": "AUTHORIZED EXACT-OWNERSHIP 27 paths for POS0d. Published menu V2, setup, versioned price experiments and owner observation. Use one existing dispatcher and same coding chat/PR. POS0b/c/d may work in PARALLEL on disjoint files once POS0e opens an actual GitHub draft; stack their PRs on the POS0e branch, retarget/retest against main after POS0e integration. POS0f may prepare a stacked PR after approved source-family PRs open, but can only merge after every predecessor is integrated_proven. Preserve all CI/Codex, tenant/source parity, strict owner/production gates.",
+      "exclusive_files": [
+        "supabase/migrations/20261109000159_pos0d_menu_setup_price.sql",
+        "scripts/pos0d-menu-config-sql-integration.sql",
+        "lib/pos/toast/adapter.ts",
+        "lib/pos/toast/adapter.test.ts",
+        "lib/pos/toast/adapterPagination.test.ts",
+        "lib/pos/toast/restaurantInfo.ts",
+        "lib/pos/toast/automaticCatalog.test.ts",
+        "lib/pos/toast/afterImport.ts",
+        "lib/pos/toast/afterImport.test.ts",
+        "lib/pos/syncCatalog.ts",
+        "lib/pos/syncCatalog.idempotent.test.ts",
+        "lib/pos/catalogMatching.ts",
+        "lib/pos/catalogMatching.test.ts",
+        "lib/pos/catalogMatching.identity.test.ts",
+        "lib/menu/pricedMenuVisibility.ts",
+        "lib/menu/pricedMenuVisibility.test.ts",
+        "lib/menu/priceHistory.ts",
+        "lib/menu/priceHistory.test.ts",
+        "components/menu/MenuCatalog.tsx",
+        "components/menu/ProductDetailScreen.tsx",
+        "components/menu/MenuPricePreview.tsx",
+        "lib/ai/agent/tools/priceMonitor.ts",
+        "lib/ai/agent/tools/priceMonitor.test.ts",
+        "lib/ai/agent/tools/priceExperiment.ts",
+        "lib/ai/agent/tools/priceExperimentValidation.test.ts",
+        "lib/ai/agent/tools/pricingOwnerEvidence.ts",
+        "lib/ai/agent/tools/pricingOwnerEvidence.test.ts"
+      ],
+      "architecture_approval": {
+        "approved": true,
+        "owner_direction": "Owner requested continuous POS0 coding readiness: POS0e shared reader first; POS0b staff/labor, POS0c cash/stock/kitchen, POS0d menu/setup/price in parallel once POS0e draft PR is open; POS0f final field-level one-Supervisor/screen end-to-end verification. Muse/OpenClaw do prompt delivery only after owner starts them.",
+        "scope": "Already owner-approved architecture implemented in these exact exclusive files, plus disposable migrated-DB proof, final-head CI/Codex and existing strict PR auto-merge. Coding authorization is NOT runtime/integration evidence.",
+        "restrictions": "No production migration, deletion, deployment, new Toast permission/credential, unresolved architecture decision or new subsystem. Dedicated SQL order recovery remains unapproved; escalate genuine new owner decisions in same PR. No release/destructive action is authorized.",
+        "handoff": "Use existing trusted-main dispatcher and signed queue, same task/ChatGPT conversation and one PR each. Courier must verify and record new conversation URL/receipt for followups; do not claim browser send merely because OpenClaw exited 0."
+      },
       "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0d",
       "skills": [
         "aicafe-pr-lifecycle",
@@ -558,7 +650,7 @@
         "failure"
       ],
       "ui_or_browser_test": "targeted_if_user_flow_changed",
-      "state": "proposed",
+      "state": "architecture_approved",
       "can_start_stacked": true,
       "github_pr": null,
       "merge_commit": null,
@@ -575,7 +667,7 @@
         "POS0a"
       ],
       "goal": "FIRST cut operational Supervisor/canonical views off toast_raw_samples and historical diagnostic capture, reuse current toast_raw_records/change log with full permitted field retention (customer/staff PII excluding card credentials), complete schema-backed describe_data and bounded full-data query_data; generic source-family reader before POS0b–d.",
-      "scope_hint": "PREPARED (NOT CODING-AUTHORIZED): exact one-owner POS0e shared-reader SQL/migration, dataQuery, canonical reader/dictionary, safe redactor, data dictionary/active POS rule, existing and new SQL/agent tests are reserved in exclusive_files. Existing migrations stay unchanged; current diagnostics are excluded from operational readers without deleting audit tables. Owner must separately set this task architecture_approval.approved=true and state=architecture_approved before the existing dispatcher can assign ChatGPT. No implementation, production DB writes or release approved by file reservation.",
+      "scope_hint": "AUTHORIZED EXACT-OWNERSHIP 18 paths for POS0e. FIRST current-source SQL, redaction and universal reader. Use one existing dispatcher and same coding chat/PR. POS0b/c/d may work in PARALLEL on disjoint files once POS0e opens an actual GitHub draft; stack their PRs on the POS0e branch, retarget/retest against main after POS0e integration. POS0f may prepare a stacked PR after approved source-family PRs open, but can only merge after every predecessor is integrated_proven. Preserve all CI/Codex, tenant/source parity, strict owner/production gates.",
       "exclusive_files": [
         "supabase/migrations/20261109000156_pos0e_shared_current_reader.sql",
         "scripts/pos0e-current-reader-sql-integration.sql",
@@ -596,7 +688,13 @@
         "docs/data-dictionary-notes.md",
         "docs/rules/pos-data.md"
       ],
-      "architecture_approval": null,
+      "architecture_approval": {
+        "approved": true,
+        "owner_direction": "Owner requested continuous POS0 coding readiness: POS0e shared reader first; POS0b staff/labor, POS0c cash/stock/kitchen, POS0d menu/setup/price in parallel once POS0e draft PR is open; POS0f final field-level one-Supervisor/screen end-to-end verification. Muse/OpenClaw do prompt delivery only after owner starts them.",
+        "scope": "Already owner-approved architecture implemented in these exact exclusive files, plus disposable migrated-DB proof, final-head CI/Codex and existing strict PR auto-merge. Coding authorization is NOT runtime/integration evidence.",
+        "restrictions": "No production migration, deletion, deployment, new Toast permission/credential, unresolved architecture decision or new subsystem. Dedicated SQL order recovery remains unapproved; escalate genuine new owner decisions in same PR. No release/destructive action is authorized.",
+        "handoff": "Use existing trusted-main dispatcher and signed queue, same task/ChatGPT conversation and one PR each. Courier must verify and record new conversation URL/receipt for followups; do not claim browser send merely because OpenClaw exited 0."
+      },
       "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0e",
       "skills": [
         "aicafe-pr-lifecycle",
@@ -622,7 +720,7 @@
         "failure"
       ],
       "ui_or_browser_test": "targeted_if_user_flow_changed",
-      "state": "proposed",
+      "state": "architecture_approved",
       "can_start_stacked": true,
       "github_pr": null,
       "merge_commit": null,
@@ -641,9 +739,31 @@
         "POS0d"
       ],
       "goal": "Make full permitted Standard API source-to-storage-to-universal-reader-to-screen/agent coverage an executable, non-skipped release gate; close every missing/incorrect test and document exact exceptions.",
-      "scope_hint": "Existing Toast adapter/SQL tests, canonical dictionary tests, Supervisor evals and CI disposable migrated Supabase; shared test ownership assigned after code PRs to avoid conflicts. Real café validation read-only and owner-authorized.",
-      "exclusive_files": [],
-      "architecture_approval": null,
+      "scope_hint": "AUTHORIZED EXACT-OWNERSHIP 15 paths for POS0f. Independent final migrated-db source-to-registered-Supervisor and screen proof, without production deletion. Use one existing dispatcher and same coding chat/PR. POS0b/c/d may work in PARALLEL on disjoint files once POS0e opens an actual GitHub draft; stack their PRs on the POS0e branch, retarget/retest against main after POS0e integration. POS0f may prepare a stacked PR after approved source-family PRs open, but can only merge after every predecessor is integrated_proven. Preserve all CI/Codex, tenant/source parity, strict owner/production gates.",
+      "exclusive_files": [
+        "scripts/pos0f-final-source-coverage.test.mjs",
+        "scripts/pos0f-final-migrated-sql-integration.sql",
+        "scripts/supervisor-all-data-db-integration.sql",
+        "scripts/supervisor-all-data-schema-check.sql",
+        "scripts/toast-standard-api-coverage.test.mjs",
+        "scripts/toast-raw-sample-sql-integration.sql",
+        "scripts/sync-cafe-data.mjs",
+        "scripts/sync-cafe-data-db-integration.mjs",
+        "lib/ai/agent/tools/dataQuery.precise.test.ts",
+        "lib/ai/agent/tools/dataQuery.sharedRead.test.ts",
+        "lib/pos/toast/reportingCoverage.test.ts",
+        "lib/pos/toast/foundation.test.ts",
+        "scripts/guards/toast-diagnostic-boundary.mjs",
+        "scripts/guards/toast-diagnostic-boundary.test.ts",
+        ".github/workflows/ai-cafe-integration-proof.yml"
+      ],
+      "architecture_approval": {
+        "approved": true,
+        "owner_direction": "Owner requested continuous POS0 coding readiness: POS0e shared reader first; POS0b staff/labor, POS0c cash/stock/kitchen, POS0d menu/setup/price in parallel once POS0e draft PR is open; POS0f final field-level one-Supervisor/screen end-to-end verification. Muse/OpenClaw do prompt delivery only after owner starts them.",
+        "scope": "Already owner-approved architecture implemented in these exact exclusive files, plus disposable migrated-DB proof, final-head CI/Codex and existing strict PR auto-merge. Coding authorization is NOT runtime/integration evidence.",
+        "restrictions": "No production migration, deletion, deployment, new Toast permission/credential, unresolved architecture decision or new subsystem. Dedicated SQL order recovery remains unapproved; escalate genuine new owner decisions in same PR. No release/destructive action is authorized.",
+        "handoff": "Use existing trusted-main dispatcher and signed queue, same task/ChatGPT conversation and one PR each. Courier must verify and record new conversation URL/receipt for followups; do not claim browser send merely because OpenClaw exited 0."
+      },
       "brief": "docs/plans/universal-supervisor-task-briefs.md#task-pos0f",
       "skills": [
         "aicafe-pr-lifecycle",
@@ -678,7 +798,7 @@
         "failure"
       ],
       "ui_or_browser_test": "targeted_if_user_flow_changed",
-      "state": "proposed",
+      "state": "architecture_approved",
       "can_start_stacked": true,
       "github_pr": null,
       "merge_commit": null,

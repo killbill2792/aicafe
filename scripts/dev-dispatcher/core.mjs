@@ -17,6 +17,21 @@ export function validateQueue(queue) {
       throw new Error(`Invalid stack base for ${task.id}`);
     tasks.set(task.id, task);
   }
+  // Ownership is exclusive across the whole approved queue, not just
+  // currently-running tasks. Fail closed before spawning parallel coders.
+  const exclusiveOwners = new Map();
+  for (const task of queue.tasks) {
+    if (!Array.isArray(task.exclusive_files)) continue;
+    for (const path of task.exclusive_files) {
+      if (typeof path !== "string" || !path || path.startsWith("/") ||
+          path.includes("*") || path.includes(".."))
+        throw new Error("Invalid exclusive file ownership for " + task.id);
+      const owner = exclusiveOwners.get(path);
+      if (owner) throw new Error("Overlapping exclusive file ownership: " +
+        path + " (" + owner + " and " + task.id + ")");
+      exclusiveOwners.set(path, task.id);
+    }
+  }
   const visiting = new Set(), visited = new Set();
   function visit(id) {
     if (visiting.has(id)) throw new Error(`Dependency cycle: ${id}`);
