@@ -173,13 +173,10 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
  for(const id of ['POS0a','POS0b','POS0c','POS0d','POS0e','POS0f']){
   const real=queue.tasks.find(t=>t.id===id);
   assert.ok(real,id);
-  if(id==='POS0a'){
-   assert.equal(real.architecture_approval?.approved,true,'POS0a documentation audit already authorized');
-   assert.doesNotThrow(()=>createDelivery({task:real,record,action:'assign',actionId:'approved:'+id}));
-  }else{
-   assert.notEqual(real.architecture_approval?.approved,true,id+' must remain unauthorized');
-   assert.throws(()=>createDelivery({task:real,record,action:'assign',actionId:'unapproved:'+id}));
-  }
+  assert.equal(real.architecture_approval?.approved,true,id+" must have task-specific authorization");
+  assert.doesNotThrow(()=>createDelivery({task:real,record,action:"assign",actionId:"approved:"+id}));
+  assert.throws(()=>createDelivery({task:{...real,architecture_approval:null},
+    record,action:"assign",actionId:"revoked:"+id}));
   const mockApproved={...task,id,title:real.title,goal:real.goal,brief:real.brief,skills:real.skills,
     acceptance:real.acceptance,exclusive_files:real.exclusive_files.length?real.exclusive_files:['docs/rules/tests.md']};
   for(const agent of ['chatgpt','claude']){

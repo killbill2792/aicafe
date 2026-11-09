@@ -248,26 +248,45 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   assert.match(d4c.verified_unpublish,/inactive/);
   assert.match(d4c.republish_same_guid,/reactivate/);
   assert.ok(d4c.unverified_snapshots_never_deactivate.includes("missing reference"));
-  assert.equal(actual.tasks.find(t=>t.id==="POS0d").architecture_approval,null);
+  assert.equal(actual.tasks.find(t=>t.id==="POS0d").architecture_approval?.approved,true);
   assert.ok(actual.tasks.find(t=>t.id==="POS0d").acceptance.some(a=>a.includes("same GUID")));
   assert.equal(d4.independent_cost_queue_diagnostic.due_jobs,77);
   assert.equal(actual.dispatch_rules.architecture_foundation_proof_task,"POS0a");
   assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.approved,true);
   assert.equal(actual.dispatch_rules.architecture_foundation_implementation_approval.merged_sha,
     "90e06ca57809ef0c29084d459d82a1be266b503a");
-  assert.equal(actual.tasks.find(t=>t.id==="POS0e").architecture_approval,null);
-  assert.ok(actual.tasks.find(t=>t.id==="POS0e").exclusive_files.length >= 15);
-  assert.ok(actual.tasks.find(t=>t.id==="POS0e").exclusive_files.includes(
-    "supabase/migrations/20261109000156_pos0e_shared_current_reader.sql"));
-  // File reservation by itself does not launch an agent. Require this exact task's owner signoff.
+  const owners=new Map();
+  for (const id of ["POS0e","POS0b","POS0c","POS0d","POS0f"]) {
+    const t=actual.tasks.find(x=>x.id===id);
+    assert.equal(t.architecture_approval?.approved,true,id);
+    assert.equal(t.state,"architecture_approved",id);
+    assert.ok(t.exclusive_files.length>=15,id);
+    for (const path of t.exclusive_files) {
+      assert.equal(owners.has(path),false,id+" overlaps "+owners.get(path)+": "+path);
+      owners.set(path,id);
+    }
+  }
+  assert.ok(owners.has("supabase/migrations/20261109000156_pos0e_shared_current_reader.sql"));
+  assert.throws(()=>validateQueue({...actual,tasks:actual.tasks.map(t=>t.id==="POS0c"
+    ?{...t,exclusive_files:[...t.exclusive_files,"lib/pos/toast/redact.ts"]}:t)}),
+    /Overlapping exclusive file ownership/);
   const docsMerged={POS0a:{status:"merged",merge_sha:"90e06ca57809ef0c29084d459d82a1be266b503a"}};
-  assert.equal(dispatchFrontier(actual,docsMerged).some(a=>a.task_id==="POS0e"),false);
-  const activated=structuredClone(actual);
-  const readerOn=activated.tasks.find(t=>t.id==="POS0e");
-  readerOn.state="architecture_approved";
-  readerOn.architecture_approval={approved:true,owner_direction:"explicit coding release"};
-  assert.deepEqual(dispatchFrontier(activated,docsMerged).filter(a=>a.task_id==="POS0e"),
-    [{type:"assign",task_id:"POS0e",agent:"chatgpt",base_branch:"main",prerequisite_pr:null}]);
+  assert.deepEqual(dispatchFrontier(actual,docsMerged).map(x=>x.task_id),["POS0e"]);
+  const eOpen={...docsMerged,POS0e:{status:"draft_open",github_state:"open",
+    pr_number:450,branch:"feat/aicafe-task-POS0e",agent:"chatgpt"}};
+  assert.deepEqual(dispatchFrontier(actual,eOpen).map(x=>[x.task_id,x.agent,x.base_branch,x.prerequisite_pr]),[
+    ["POS0b","chatgpt","feat/aicafe-task-POS0e",450],
+    ["POS0c","chatgpt","feat/aicafe-task-POS0e",450],
+    ["POS0d","chatgpt","feat/aicafe-task-POS0e",450]]);
+  assert.equal(dispatchFrontier(actual,eOpen).some(x=>x.task_id==="POS0f"),false);
+  const bcdOpen={...eOpen};
+  for (const [id,n] of [["POS0b",451],["POS0c",452],["POS0d",453]])
+    bcdOpen[id]={status:"draft_open",github_state:"open",
+      pr_number:n,branch:"feat/aicafe-task-"+id,agent:"chatgpt"};
+  assert.deepEqual(dispatchFrontier(actual,bcdOpen).filter(x=>x.task_id==="POS0f"),
+    [{type:"assign",task_id:"POS0f",agent:"chatgpt",
+      base_branch:"feat/aicafe-task-POS0d",prerequisite_pr:453}]);
+  assert.equal(dispatchFrontier(actual,bcdOpen).some(x=>x.task_id==="6"),false);
   assert.deepEqual(actual.dispatch_rules.architecture_foundation_dependent_task_ids,
     ["POS0b","POS0c","POS0d","POS0e","POS0f"]);
   assert.equal(actual.dispatch_rules.priority_gate_task, "POS0f");
