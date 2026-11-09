@@ -47,7 +47,19 @@ current_nonorders as not materialized (
   r.business_date,r.payload,
   coalesce(nullif(r.payload->>'endpoint',''),r.entity)::text record_type
  from public.toast_raw_records r
- where r.entity<>'order' and jsonb_typeof(r.payload)='object'
+ where r.entity not in ('order','check','payment','item','modifier',
+  'item_discount','check_discount','service_charge')
+  and jsonb_typeof(r.payload)='object'
+  -- Stage-table triggers also fire when Test Café copies source data. A staged
+  -- object is eligible for an operational answer ONLY when its café+restaurant
+  -- mapping was verified by Toast. The mirror resets verified_at to NULL
+  -- intentionally: those staged rows are fixtures, never provider authority.
+  -- Direct current-object archives and order projections retain their existing
+  -- identity/date logic; a disconnected real café retains historical records.
+  and (r.capture_key not like 'stage:%' or exists (
+   select 1 from public.toast_location_mappings m
+   where m.business_id=r.business_id and m.restaurant_guid=r.restaurant_guid
+    and m.verified_at is not null))
   and (p_business_id is null or r.business_id=p_business_id)
   and (p_from is null or r.business_date is null or r.business_date>=p_from)
   and (p_to is null or r.business_date is null or r.business_date<=p_to)
@@ -181,16 +193,27 @@ revoke all on public.cv_inventory,public.cv_cash,public.cv_dining_options,public
 grant select on public.cv_inventory,public.cv_cash,public.cv_dining_options,public.cv_kitchen
  to authenticated,service_role;
 
--- Safe named JSON paths, supporting deeper official nested fields.
+-- Safe, bounded named JSON paths from the existing reader. Never expose a
+-- card credential, token or reusable security secret, even in old raw payloads.
+-- This is a defense-in-depth filter: the operational writer also redacts data.
 create or replace function public.ai_query_path(p_col text) returns text[]
 language sql immutable set search_path=public as $path$
  select case when p_col ~ '^data(\.([A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})){1,16}$'
-  then string_to_array(substr(p_col,6),'.') end $path$;
+  and not exists (
+   select 1 from unnest(string_to_array(substr(p_col,6),'.')) s(part)
+   where part ~* '^(pan|primaryAccountNumber|cardNumber|paymentCardNumber|cvv|cvc|cvv2|cvc2|cardVerificationValue|securityCode|magstripe|track|track1|track2|trackData|track1Data|track2Data|cardLast4|last4Digits|lastFour|first5|first6|expiration|expiry|expireDate|expirationDate|cardExpiry|cardExpiration|password|passcode|pin|apiKey|secret|clientSecret|privateKey|accessToken|refreshToken|sessionToken|authToken|authorization|authorizationToken|paymentToken|cardToken|token|tokenId|fingerprint|networkTransactionIdentifier|routingNumber|bankAccountNumber|accountNumber|signature)$'
+      or part ~* '(Password|Secret|ApiKey|PrivateKey|AccessToken|RefreshToken|SessionToken|AuthToken|PaymentToken|CardToken|CardNumber|TrackData|SecurityCode|VerificationValue|Magstripe)$'
+      or part ~* '^(card|cardInfo|cardDetails|cardData|creditCard|paymentCard|giftCard|giftCardInfo|paymentMethod)$'
+  )
+  and not (
+   p_col ~* '^data\.(card|cardInfo|cardDetails|cardData|creditCard|paymentCard|giftCard|giftCardInfo|paymentMethod)\.(number|value|last4|first5|first6|lastFour|maskedNumber|expirationDate|expiryDate|expiryMonth|expiryYear|expMonth|expYear|holderName|cardholderName|networkId|networkTransactionIdentifier|accountId|accountNumber|tokenId)(\.|$)'
+  )
+ then string_to_array(substr(p_col,6),'.') end $path$;
 revoke all on function public.ai_query_path(text) from public,anon;
 grant execute on function public.ai_query_path(text) to authenticated,service_role;
 
--- Full current-field discovery: no recent-35-day, newest-30-row or 200-path cap.
--- The handler also supplies official never-observed schema paths without inventing values.
+-- Full retained-field discovery, no recent-window or arbitrary row/path sample.
+-- Schema-defined never-observed paths are supplied separately by describe_data.
 create or replace function public.ai_toast_fields(p_business_id uuid,p_record_type text)
 returns jsonb language sql stable security invoker set search_path=public as $fields$
  with recursive walk(path,v,depth) as (
@@ -207,12 +230,17 @@ returns jsonb language sql stable security invoker set search_path=public as $fi
      case when jsonb_typeof(w.v)='array' then w.v else '[]'::jsonb end
     ) element(value)
    ) e
-  where w.depth<16),
+  where w.depth<16
+ ),
  leaves as (
   select path,min(jsonb_typeof(v)) kind
-  from walk where path<>'data' and jsonb_typeof(v) not in ('object','array','null')
-  group by path)
+  from walk where path<>'data'
+   and jsonb_typeof(v) not in ('object','array','null')
+   and public.ai_query_path(path) is not null
+  group by path
+ )
  select coalesce(jsonb_agg(jsonb_build_object('field',path,'type',kind,
-  'source','retained_current') order by path),'[]'::jsonb) from leaves $fields$;
+  'source','retained_current') order by path),'[]'::jsonb)
+ from leaves $fields$;
 revoke all on function public.ai_toast_fields(uuid,text) from public,anon;
 grant execute on function public.ai_toast_fields(uuid,text) to authenticated,service_role;

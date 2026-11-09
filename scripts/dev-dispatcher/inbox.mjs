@@ -2,6 +2,7 @@
 // GitHub verifies authenticated GitHub commit actor, exact action/hash/URL and CAS state.
 import { createHash } from 'node:crypto';
 import { acceptDeliveryReceipt } from './receipt.mjs';
+import { validConversationUrl } from './delivery.mjs';
 import { acceptOwnerNoticeReceipt } from './alerts.mjs';
 const sha = s => createHash('sha256').update(s).digest('hex');
 
@@ -40,7 +41,35 @@ export function applyReceipts(state, inbox, actorMap) {
       next = acceptOwnerNoticeReceipt(next, receipt, { authenticatedCourier: courier });
       continue;
     }
-    if (next.actions?.[receipt.action_id]?.status !== 'planned') continue;
+    const action = next.actions?.[receipt.action_id];
+    // After the PR appears, initial assignment receipts can arrive late.
+    // Invalid legacy placeholder destinations (for example local-chatgpt URLs)
+    // must not poison the entire inbox and prevent unrelated valid chat recovery.
+    // Never mark those invalid receipts as delivered or trusted.
+    const late = action?.status === 'cancelled_stale_head' && action.type === 'assign';
+    // A stale continuation may have reached the browser before a newer PR head.
+    // Record its verified historical receipt without reviving its authorization.
+    const superseded = action?.status === 'cancelled_stale_head' &&
+      action.type !== 'assign' && action.delivery?.intent === 'continue_existing_chat' &&
+      !action.superseded_receipt;
+    if (action?.status !== 'planned' && !late && !superseded) continue;
+    if (late) {
+      const task = next.tasks?.[action.task_id];
+      // No historical receipt may stop unrelated tasks after its own PR closed,
+      // approval changed, chat was already registered, or ownership diverged.
+      if (!task || !task.approved || task.github_state !== 'open' ||
+          !Number.isInteger(task.pr_number) || task.conversation_ref ||
+          receipt.action_id !== 'assign:' + task.task_id ||
+          action.task_id !== task.task_id ||
+          task.branch !== 'feat/aicafe-task-' + task.task_id)
+        continue;
+      if (receipt.approval_hash !== task.approval_hash ||
+          receipt.approval_hash !== action.delivery?.approval_hash ||
+          !validConversationUrl(action.delivery?.provider, receipt.conversation_url)) {
+        task.chat_recovery_blocker = 'invalid_or_unsigned_original_receipt';
+        continue;
+      }
+    }
     next = acceptDeliveryReceipt(next, receipt, { authenticatedCourier: courier });
   }
   return next;

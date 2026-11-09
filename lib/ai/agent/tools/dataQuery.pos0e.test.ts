@@ -20,26 +20,40 @@ describe("POS0e retained current-source dictionary and shared reader",()=>{
   expect(toastOfficialFieldCatalog.orders.fields.length).toBeGreaterThan(400);
   expect(toastOfficialFieldCatalog.orders.version).toMatch(/^\d+\.\d+\.\d+$/);
   expect(toastOfficialFieldCatalog.orders.sha256).toMatch(/^[0-9a-f]{64}$/);
-  const order=officialToastFields("order");
-  expect(order).toEqual(expect.arrayContaining([
-   expect.objectContaining({field:"data.checks.0.selections.0.displayName",
-    source:"official_schema",observed:false,grant:"not_verified"})
-  ]));
+  const cases=[
+   ["order","data.guid","data.checks.0.amount"],
+   ["check","data.amount","data.selections.0.displayName"],
+   ["item","data.displayName","data.appliedDiscounts.0.discountAmount"],
+   ["payment","data.amount","data.checks.0.payments.0.amount"],
+   ["item_discount","data.discountAmount","data.checks.0.selections.0.appliedDiscounts.0.discountAmount"],
+   ["check_discount","data.discountAmount","data.checks.0.appliedDiscounts.0.discountAmount"],
+   ["service_charge","data.chargeAmount","data.checks.0.appliedServiceCharges.0.chargeAmount"]
+  ];
+  for(const [recordType,exposed,impossible] of cases){
+   const fields=officialToastFields(recordType).map(v=>v.field);
+   expect(fields,recordType+" exposes its actual split-record field").toContain(exposed);
+   expect(fields,recordType+" cannot query a removed parent/child JSON").not.toContain(impossible);
+  }
+  // Staged employee projections have typed DB field names; official labor
+  // response paths are not the same object and must not be falsely advertised.
+  expect(officialToastFields("employee")).toEqual([]);
+  expect(officialToastFields("time_entry")).toEqual([]);
+  expect(officialToastFields("modifier")).toEqual([]);
   expect(officialToastFields("cashmgmt/v1/entries").length).toBeGreaterThan(5);
   expect(officialToastFields("nonexistent-api/facts")).toEqual([]);
  });
  it("describes never-observed permitted paths as unverified, not invented field values",async()=>{
   const rpc=vi.fn(async()=>({data:[],error:null}));
   const result=await dataQueryTools.describe_data.execute({
-   record_type:"order",view:null,field_prefix:"data.checks.0.selections.0.displayName"
+   record_type:"item",view:null,field_prefix:"data.displayName"
   },{db:{rpc} as never,businessId:cafeA});
   expect(rpc).toHaveBeenCalledWith("ai_toast_fields",{
-   p_business_id:cafeA,p_record_type:"order"
+   p_business_id:cafeA,p_record_type:"item"
   });
   expect(result.missing).toContain("source_not_observed");
   expect(result.missing).toContain("schema_grants_unverified");
   expect(result.fields).toEqual(expect.arrayContaining([
-   expect.objectContaining({field:"data.checks.0.selections.0.displayName",
+   expect.objectContaining({field:"data.displayName",
     grant:"not_verified",observed:false})
   ]));
   expect(JSON.stringify(result.fields)).not.toContain("customer@example.com");
@@ -86,6 +100,46 @@ describe("POS0e retained current-source dictionary and shared reader",()=>{
    {db:{rpc} as never,businessId:cafeA});
   expect(wrong.error).toBe("column_not_allowed");
   expect(rpc).toHaveBeenCalledTimes(1);
+ });
+ it("keeps whole Toast JSON out of tool replies and denies credential paths",async()=>{
+  const rpc=vi.fn(async()=>({data:{rows:[],sourceCount:0,truncated:false},error:null}));
+  const ctx={db:{rpc} as never,businessId:cafeA};
+  const plain={...query,columns:null,group_by:null,metrics:null};
+  await dataQueryTools.query_data.execute(plain,ctx);
+  const fields=(rpc.mock.calls[0] as unknown as [string,Record<string,unknown>])[1].p_columns;
+  expect(fields).not.toContain("data");
+  expect(fields).toContain("record_ref");
+  const before=rpc.mock.calls.length;
+  for(const forbidden of ["data.cardNumber","data.customer.accessToken",
+   "data.checks.0.payments.0.cvv","data.networkTransactionIdentifier"]){
+   const out=await dataQueryTools.query_data.execute({...plain,columns:[forbidden]},ctx);
+   expect(out.error,forbidden).toBe("column_not_allowed");
+  }
+  expect(rpc.mock.calls).toHaveLength(before);
+  const observed=[{field:"data.customer.firstName",type:"string"},
+   {field:"data.cardNumber",type:"string"},{field:"data.employee.apiKey",type:"string"}];
+  const fieldsRpc=vi.fn(async()=>({data:observed,error:null}));
+  const discovery=await dataQueryTools.describe_data.execute({record_type:"order",
+   field_prefix:"data."},{db:{rpc:fieldsRpc} as never,businessId:cafeA});
+  expect(discovery.fields).toEqual(expect.arrayContaining([
+   expect.objectContaining({field:"data.customer.firstName"})
+  ]));
+  expect(JSON.stringify(discovery.fields)).not.toMatch(/data\.cardNumber|data\.employee\.apiKey/);
+  expect(discovery.retainedFields).toBe(1);
+ });
+ it("blocks credential-bearing object paths but retains permitted customer and staff fields",async()=>{
+  const rpc=vi.fn(async()=>({data:{rows:[],sourceCount:0,truncated:false},error:null}));
+  for(const path of ["data.cardInfo","data.customer.paymentMethod.value","data.cardNumber"]){
+   const res=await dataQueryTools.query_data.execute({...query,group_by:[path]},
+    {db:{rpc} as never,businessId:cafeA});
+   expect(res.error,path).toBe("column_not_allowed");
+  }
+  for(const path of ["data.customer.email","data.employee.firstName"]){
+   const res=await dataQueryTools.query_data.execute({...query,group_by:[path]},
+    {db:{rpc} as never,businessId:cafeA});
+   expect(res.error,path).toBeUndefined();
+  }
+  expect(rpc).toHaveBeenCalledTimes(2);
  });
  it("does not treat provider null, no rows, or a partial result as known zero",async()=>{
   const rpc=vi.fn(async()=>({data:{

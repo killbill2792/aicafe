@@ -43,7 +43,9 @@ permissions:
   checks: read
 
 concurrency:
-  group: aicafe-development-dispatcher
+  # PR-head deterministic tests must not compete with the single trusted-main
+  # ledger writer. Keep credential-bearing events serialized together.
+  group: ${{ github.event_name == 'pull_request' && format('aicafe-dispatcher-pr-{0}', github.event.pull_request.number) || 'aicafe-development-dispatcher-trusted' }}
   cancel-in-progress: false
 
 jobs:
@@ -59,7 +61,10 @@ jobs:
       (github.event_name != 'issue_comment' ||
        (github.event.issue.pull_request &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-                 github.event.comment.author_association)))
+                 github.event.comment.author_association)) ||
+       (!github.event.issue.pull_request &&
+        github.event.issue.number == 411 &&
+        github.event.comment.user.login == github.repository_owner))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -86,6 +91,7 @@ jobs:
       pull-requests: write
       checks: read
       actions: write
+      issues: write
     needs: unit
     steps:
       - uses: actions/checkout@v4
@@ -102,9 +108,13 @@ jobs:
           DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
           DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
           DISPATCH_COURIER_ACTORS: ${{ vars.DISPATCH_COURIER_ACTORS }}
-          DISPATCH_AUTO_MERGE: ${{ vars.DISPATCH_AUTO_MERGE }}
+          # Owner opt-in Nov 9: only exact-head CI/Codex/actual-acceptance-proven PRs;
+          # an explicit repository variable 'false' overrides this default.
+          DISPATCH_AUTO_MERGE: ${{ vars.DISPATCH_AUTO_MERGE || 'true' }}
           DISPATCH_BRANCH_MAINTENANCE: ${{ vars.DISPATCH_BRANCH_MAINTENANCE }}
           DISPATCH_TRANSIENT_CI_RETRY: ${{ vars.DISPATCH_TRANSIENT_CI_RETRY }}
+          # Existing GitHub issue is the owner's public-safe live status surface.
+          DISPATCH_OWNER_DASHBOARD_ISSUE: '411'
           PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
         run: |
           if [ "$PERSIST" = "true" ]; then

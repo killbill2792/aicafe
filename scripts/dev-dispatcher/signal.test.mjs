@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { signalFor } from './signal.mjs';
+import { wakePendingActions } from './core.mjs';
 import { noticeHash } from './alerts.mjs';
 import { createHash } from 'node:crypto';
 const prompt = 'approved task';
@@ -41,4 +42,28 @@ test('owner notices wake Muse without exposing the question or PR ID',()=>{
  assert.doesNotMatch(JSON.stringify(signaled),/987|Which task|notice:one/);
  const stale=structuredClone(withOwner);stale.owner_alerts['notice:one'].status='submitted';
  assert.equal(signalFor(stale,secret).pending_count,1);
+});
+
+test('overdue planned Muse delivery creates a private-ledger wake without resending',()=>{
+ const secret='secret'.repeat(8);
+ const base=structuredClone(state);
+ base.actions['assign:6'].created_at='2026-11-09T19:00:00Z';
+ const now=Date.parse('2026-11-09T19:16:00Z');
+ const initial=signalFor(base,secret);
+ wakePendingActions(base,now);
+ assert.equal(base.actions['assign:6'].status,'planned');
+ assert.equal(base.actions['assign:6'].wake_round,1);
+ const repeated=signalFor(base,secret);
+ assert.notEqual(repeated.fingerprint,initial.fingerprint);
+ assert.equal(repeated.pending_count,1);
+ assert.doesNotMatch(JSON.stringify(repeated),/assign:6|aicafe/);
+ wakePendingActions(base,now+600000);
+ assert.equal(base.actions['assign:6'].wake_round,1);
+ wakePendingActions(base,now+900000);
+ assert.equal(base.actions['assign:6'].wake_round,2);
+ const superseded=structuredClone(base);
+ superseded.actions['assign:6'].status='cancelled_stale_head';
+ wakePendingActions(superseded,now+3600000);
+ assert.equal(superseded.actions['assign:6'].wake_round,2);
+ assert.equal(signalFor(superseded,secret).pending_count,0);
 });
