@@ -2,6 +2,8 @@
 -- provider versions. The existing stage trigger captures only INSERT/UPDATE,
 -- so unchanged modified-scan replays must not manufacture new archive snapshots.
 -- Scope is existing time-entry staging; no second importer/reader/cron.
+set lock_timeout = '5s';
+set statement_timeout = '45s';
 CREATE OR REPLACE FUNCTION public.toast_stage_labor_entries(
  p_business_id uuid,p_restaurant_guid uuid,p_location_id uuid,p_rows jsonb
 ) RETURNS integer
