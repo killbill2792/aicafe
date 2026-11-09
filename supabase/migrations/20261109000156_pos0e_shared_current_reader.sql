@@ -193,15 +193,26 @@ revoke all on public.cv_inventory,public.cv_cash,public.cv_dining_options,public
 grant select on public.cv_inventory,public.cv_cash,public.cv_dining_options,public.cv_kitchen
  to authenticated,service_role;
 
--- Safe named JSON paths, supporting deeper official nested fields.
+-- Safe, bounded named JSON paths from the existing reader. Never expose a
+-- card credential, token or reusable security secret, even in old raw payloads.
+-- This is a defense-in-depth filter: the operational writer also redacts data.
 create or replace function public.ai_query_path(p_col text) returns text[]
 language sql immutable set search_path=public as $path$
- select case when p_col ~ '^data(\.([A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})){1,16}
+ select case when p_col ~ '^data(\.([A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})){1,16}$'
+  and not exists (
+   select 1 from unnest(string_to_array(substr(p_col,6),'.')) s(part)
+   where part ~* '^(pan|primaryAccountNumber|cardNumber|paymentCardNumber|cvv|cvc|cvv2|cvc2|cardVerificationValue|securityCode|magstripe|track|track1|track2|trackData|track1Data|track2Data|cardLast4|last4Digits|lastFour|first5|first6|expiration|expiry|expireDate|expirationDate|cardExpiry|cardExpiration|password|passcode|pin|apiKey|secret|clientSecret|privateKey|accessToken|refreshToken|sessionToken|authToken|authorization|authorizationToken|paymentToken|cardToken|token|tokenId|fingerprint|networkTransactionIdentifier|routingNumber|bankAccountNumber|accountNumber|signature)$'
+      or part ~* '(Password|Secret|ApiKey|PrivateKey|AccessToken|RefreshToken|SessionToken|AuthToken|PaymentToken|CardToken|CardNumber|TrackData|SecurityCode|VerificationValue|Magstripe)$'
+  )
+  and not (
+   p_col ~* '^data\.(card|cardInfo|cardDetails|cardData|creditCard|paymentCard|giftCard|giftCardInfo|paymentMethod)\.(number|value|last4|first5|first6|lastFour|maskedNumber|expirationDate|expiryDate|expiryMonth|expiryYear|expMonth|expYear|holderName|cardholderName|networkId|networkTransactionIdentifier|accountId|accountNumber|tokenId)(\.|$)'
+  )
+ then string_to_array(substr(p_col,6),'.') end $path$;
 revoke all on function public.ai_query_path(text) from public,anon;
 grant execute on function public.ai_query_path(text) to authenticated,service_role;
 
--- Full current-field discovery: no recent-35-day, newest-30-row or 200-path cap.
--- The handler also supplies official never-observed schema paths without inventing values.
+-- Full retained-field discovery, no recent-window or arbitrary row/path sample.
+-- Schema-defined never-observed paths are supplied separately by describe_data.
 create or replace function public.ai_toast_fields(p_business_id uuid,p_record_type text)
 returns jsonb language sql stable security invoker set search_path=public as $fields$
  with recursive walk(path,v,depth) as (
@@ -218,78 +229,17 @@ returns jsonb language sql stable security invoker set search_path=public as $fi
      case when jsonb_typeof(w.v)='array' then w.v else '[]'::jsonb end
     ) element(value)
    ) e
-  where w.depth<16),
+  where w.depth<16
+ ),
  leaves as (
   select path,min(jsonb_typeof(v)) kind
-  from walk where path<>'data' and jsonb_typeof(v) not in ('object','array','null')
+  from walk where path<>'data'
+   and jsonb_typeof(v) not in ('object','array','null')
    and public.ai_query_path(path) is not null
-  group by path)
+  group by path
+ )
  select coalesce(jsonb_agg(jsonb_build_object('field',path,'type',kind,
-  'source','retained_current') order by path),'[]'::jsonb) from leaves $fields$;
-revoke all on function public.ai_toast_fields(uuid,text) from public,anon;
-grant execute on function public.ai_toast_fields(uuid,text) to authenticated,service_role;
-
-  and not exists (select 1 from unnest(string_to_array(substr(p_col,6),'.')) s(part)
-   where part ~* '^(pan|primaryAccountNumber|cardNumber|paymentCardNumber|cvv|cvc|cvv2|cvc2|cardVerificationValue|securityCode|magstripe|track|track1|track2|trackData|track1Data|track2Data|cardLast4|last4Digits|first5|first6|expiration|expiry|expireDate|cardExpiry|cardExpiration|password|passcode|pin|apiKey|secret|clientSecret|privateKey|accessToken|refreshToken|sessionToken|authToken|authorization|authorizationToken|paymentToken|cardToken|token|tokenId|fingerprint|networkTransactionIdentifier|routingNumber|bankAccountNumber|accountNumber|signature)
-revoke all on function public.ai_query_path(text) from public,anon;
-grant execute on function public.ai_query_path(text) to authenticated,service_role;
-
--- Full current-field discovery: no recent-35-day, newest-30-row or 200-path cap.
--- The handler also supplies official never-observed schema paths without inventing values.
-create or replace function public.ai_toast_fields(p_business_id uuid,p_record_type text)
-returns jsonb language sql stable security invoker set search_path=public as $fields$
- with recursive walk(path,v,depth) as (
-  select 'data'::text,r.data,0
-  from public.toast_records_for(p_business_id,null,null) r
-  where r.record_type=p_record_type
-  union all
-  select w.path||'.'||e.key,e.value,w.depth+1 from walk w
-   cross join lateral (
-    select key,value from jsonb_each(case when jsonb_typeof(w.v)='object'
-     then w.v else '{}'::jsonb end)
-    union all
-    select '0',element.value from jsonb_array_elements(
-     case when jsonb_typeof(w.v)='array' then w.v else '[]'::jsonb end
-    ) element(value)
-   ) e
-  where w.depth<16),
- leaves as (
-  select path,min(jsonb_typeof(v)) kind
-  from walk where path<>'data' and jsonb_typeof(v) not in ('object','array','null')
-  group by path)
- select coalesce(jsonb_agg(jsonb_build_object('field',path,'type',kind,
-  'source','retained_current') order by path),'[]'::jsonb) from leaves $fields$;
-revoke all on function public.ai_toast_fields(uuid,text) from public,anon;
-grant execute on function public.ai_toast_fields(uuid,text) to authenticated,service_role;
-)
-  then string_to_array(substr(p_col,6),'.') end $path$;
-revoke all on function public.ai_query_path(text) from public,anon;
-grant execute on function public.ai_query_path(text) to authenticated,service_role;
-
--- Full current-field discovery: no recent-35-day, newest-30-row or 200-path cap.
--- The handler also supplies official never-observed schema paths without inventing values.
-create or replace function public.ai_toast_fields(p_business_id uuid,p_record_type text)
-returns jsonb language sql stable security invoker set search_path=public as $fields$
- with recursive walk(path,v,depth) as (
-  select 'data'::text,r.data,0
-  from public.toast_records_for(p_business_id,null,null) r
-  where r.record_type=p_record_type
-  union all
-  select w.path||'.'||e.key,e.value,w.depth+1 from walk w
-   cross join lateral (
-    select key,value from jsonb_each(case when jsonb_typeof(w.v)='object'
-     then w.v else '{}'::jsonb end)
-    union all
-    select '0',element.value from jsonb_array_elements(
-     case when jsonb_typeof(w.v)='array' then w.v else '[]'::jsonb end
-    ) element(value)
-   ) e
-  where w.depth<16),
- leaves as (
-  select path,min(jsonb_typeof(v)) kind
-  from walk where path<>'data' and jsonb_typeof(v) not in ('object','array','null')
-  group by path)
- select coalesce(jsonb_agg(jsonb_build_object('field',path,'type',kind,
-  'source','retained_current') order by path),'[]'::jsonb) from leaves $fields$;
+  'source','retained_current') order by path),'[]'::jsonb)
+ from leaves $fields$;
 revoke all on function public.ai_toast_fields(uuid,text) from public,anon;
 grant execute on function public.ai_toast_fields(uuid,text) to authenticated,service_role;
