@@ -173,7 +173,20 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
   return actions;
 }
 export function actionKey(record, action) {
-  const parts = [record.task_id, action, record.head_sha || "pre-pr", record.prompt_version || "v1", record.last_commit_at || "start", record.last_github_activity || "no-pr-activity"];
+  // Keep the deployed five-part key for unchanged work. Migrating every
+  // existing key would re-send previously submitted continuations.
+  const committed = record.last_commit_at || record.last_github_activity || "start";
+  const parts = [record.task_id, action, record.head_sha || "pre-pr",
+    record.prompt_version || "v1", committed];
+  const activity = Date.parse(record.last_github_activity || "");
+  const after = Date.parse(record.last_submission_at || "");
+  const code = Date.parse(committed);
+  // A new GitHub/PR decision after BOTH the code and most recent courier send
+  // merits one new follow-up; otherwise preserve the exact legacy key.
+  if (Number.isFinite(activity) &&
+      (!Number.isFinite(code) || activity > code) &&
+      (!Number.isFinite(after) || activity > after))
+    parts.push(record.last_github_activity);
   return parts.map(s => encodeURIComponent(String(s))).join(":");
 }
 // Shared progress is written only by the coordinator, after merge, in its own
