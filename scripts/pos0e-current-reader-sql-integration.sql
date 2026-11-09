@@ -92,7 +92,9 @@ BEGIN
  PERFORM pg_temp.pos0e_assert(
   public.ai_query_path('data.customer.email')=ARRAY['customer','email']::text[]
    and public.ai_query_path('data.cardNumber') is null
-   and public.ai_query_path('data.employee.apiKey') is null,
+   and public.ai_query_path('data.employee.apiKey') is null
+   and public.ai_query_path('data.cardInfo') is null
+   and public.ai_query_path('data.customer.paymentMethod.value') is null,
   'SQL keeps permitted contact paths while denying credential paths');
  PERFORM pg_temp.pos0e_assert(
   not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
