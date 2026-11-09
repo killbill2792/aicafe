@@ -14,7 +14,7 @@ const sample=[
   '| POS0e | [#404](https://github.com/killbill2792/aicafe/pull/404) | Draft | success | findings | no active delivery | Owner decision + coder can continue signed work |',
   '| POS0c | [#406](https://github.com/killbill2792/aicafe/pull/406) | Draft | failure | findings | repair_ci: queued (not sent) | Owner decision + coder can continue signed work |',
   '### Needs owner approval (no approvals inferred from alert delivery)',
-  '- **POS0c [#406](https://github.com/killbill2792/aicafe/pull/406):** Approve narrowly scoped CI runner edit? [Open original GitHub question](https://github.com/killbill2792/aicafe/pull/406). Muse notification: **not yet confirmed**; owner approval: **still pending**.',
+  '- **POS0c [#406](https://github.com/killbill2792/aicafe/pull/406):** Approve narrowly scoped CI runner edit? [Open original GitHub question](https://github.com/killbill2792/aicafe/pull/406#issuecomment-6752771905). Muse notification: **not yet confirmed**; owner approval: **still pending**.',
   '### Muse delivery and retries',
   'No secret prompts here.'
 ].join('\n');
@@ -30,7 +30,7 @@ test('public owner status parser honors real issue comment marker, PR links and 
  });
  assert.equal(output.decisions.length,1);
  assert.match(output.decisions[0].text,/Approve narrowly scoped CI runner edit/);
- assert.equal(output.decisions[0].url,'https://github.com/killbill2792/aicafe/pull/406');
+ assert.equal(output.decisions[0].url,'https://github.com/killbill2792/aicafe/pull/406#issuecomment-6752771905');
  assert.equal(output.checkedAt,'2026-11-09T22:55:14.979Z');
  assert.equal(output.ledgerAt,'2026-11-09T22:54:46.168Z');
 });
@@ -38,7 +38,7 @@ test('public dashboard refuses arbitrary body and does not follow unsafe URLs',(
  assert.throws(()=>parseOwnerSnapshot('## Fake queue'),/trusted public status projection/);
  const malicious=sample.replace(
   'https://github.com/killbill2792/aicafe/pull/406). Muse notification',
-  'https://evil.example/private). Muse notification');
+  'https://evil.example/private#issuecomment-6752771905). Muse notification');
  const parsed=parseOwnerSnapshot(malicious);
  assert.equal(parsed.decisions[0].url,'https://github.com/killbill2792/aicafe/pull/406');
 });
