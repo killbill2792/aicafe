@@ -125,3 +125,24 @@ test('superseded continuation receipt is audited but never revives old-head work
  assert.throws(()=>acceptDeliveryReceipt(stale,submitted,{authenticatedCourier:'dave'}),
    /does not own/);
 });
+
+test('same-cycle PR head change is reconciled before accepting an old repair receipt',async()=>{
+ const {reconcileGithub}=await import('./core.mjs');
+ const url='https://chatgpt.com/c/existing-123';
+ const waiting={tasks:{'6':{task_id:'6',approved:true,agent:'chatgpt',
+   status:'draft_open',pr_number:101,github_state:'open',head_sha:'old',
+   approval_hash:d.approval_hash,conversation_ref:url,submission_state:'idle'}},
+   actions:{'fix:6':{status:'planned',type:'repair_ci',head_sha:'old',
+     task_id:'6',delivery_owner:'muse',delivery:{...d,action_id:'fix:6',
+       intent:'continue_existing_chat',conversation_url:url}}}};
+ const observed=[{pr_number:101,head_sha:'new',draft:true,base_sha:'base',
+   github_owner_question:null,last_commit_at:'2026-11-09T20:00:00Z'}];
+ const invalidated=reconcileGithub(waiting,observed);
+ assert.equal(invalidated.actions['fix:6'].status,'cancelled_stale_head');
+ const delivered=applyReceipts(invalidated,[{actor:'muse-app[bot]',
+   receipt:{...receipt,action_id:'fix:6',conversation_url:url}}],
+   {'muse-app[bot]':'muse'});
+ assert.equal(delivered.actions['fix:6'].status,'cancelled_stale_head');
+ assert.ok(delivered.actions['fix:6'].superseded_receipt);
+ assert.equal(delivered.tasks['6'].submission_state,'idle');
+});
