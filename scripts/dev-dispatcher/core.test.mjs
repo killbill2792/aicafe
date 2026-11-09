@@ -403,11 +403,13 @@ test("submitted activity-qualified continuation keeps its key until a newer PR c
     last_submission_at: new Date(clock - 800000).toISOString(),
     submission_state: "submitted" };
   assert.equal(actionKey(delivered, "repair_ci"), first.key);
-  assert.equal(decideNudge(delivered, clock).reason, "already_sent_or_capped");
+  assert.equal(decideNudge(delivered, clock).reason, "post_delivery_quiet");
+  const eligibleAt = clock + 100001; // 15 minutes have now elapsed after Muse's receipt
+  assert.equal(decideNudge(delivered, eligibleAt).action, "repair_ci");
   const newer = { ...delivered, last_github_activity:
     new Date(clock - 100000).toISOString() };
   assert.notEqual(actionKey(newer, "repair_ci"), first.key);
-  assert.equal(decideNudge(newer, clock).kind, "propose");
+  assert.equal(decideNudge(newer, eligibleAt).kind, "propose");
 });
 
 test("new commit invalidates stale checks and requires a fresh Codex review", () => {
