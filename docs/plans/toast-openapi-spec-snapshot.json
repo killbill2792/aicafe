@@ -16465,7 +16465,7 @@
   },
   "official_field_resolution": {
     "version": 1,
-    "source_row_key": "family | exact official GET operation.path | exact 2xx response status | exact source response field[0]; type/format/null marker are the immutable response field[1..3] from official_snapshot",
+    "source_row_key": "family | exact official GET operation.path | exact 2xx response status | exact source response field[0] AND field[1..3] (type, format, null marker); 13 official path/status collisions have distinct schema variants and must not collapse",
     "enumeration": "Every official 2xx row inherits its family's H-code storage/reader contract here; exact path prefixes below override narrower source scope/privacy/gap. Longest matching field_prefix wins. An exception applies to itself and its nested descendants (dot or []), never an unrelated field with the same leading letters.",
     "evidence_boundary": "This is a conservative source-to-CURRENT-CODE+PROPOSED-READER architecture crosswalk, NOT café permission/observed field/verified retention/integrated availability proof. October diagnostic outcomes never upgrade any status.",
     "per_cafe_field_defaults": {
