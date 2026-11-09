@@ -20,7 +20,7 @@ This is **not** a second GitHub dispatcher, an app capability, a browser-click s
 2. Give **AI CAFE GitHub Actions** a fine-grained PAT with Contents **read/write only on that private queue repo**. Store it in AI CAFE's Actions secret `DISPATCH_LEDGER_TOKEN`; set Actions variable `DISPATCH_LEDGER_REPO=yourname/dave-task-queue`. This token is NEVER given to OpenClaw.
 3. Run the GitHub Action `AI CAFE Development Dispatcher` manually once with `persist_private_ledger=true`. Verify only `dispatcher/state.json` appeared in the private repository. Then set Actions variable `DISPATCH_LEDGER_AUTO_PERSIST=true` to allow the existing five-minute schedule to update it. If no private ledger is configured, scheduled work remains dry-run.
 4. Create a **different fine-grained PAT with Contents read-only** on that same private queue repository. Configure `DISPATCH_LEDGER_READ_TOKEN` and `DISPATCH_LEDGER_REPO` privately for the Ubuntu bridge. **Never** give Dave a token for AI CAFE code.
-5. AI CAFE's Supervisor queue currently contains proposed tasks with **empty exact file ownership**. The existing dispatcher correctly refuses to assign these until the owner approves a task's architecture and its exact nonoverlapping owned files. This PR does not approve any task.
+5. The owner separately authorized POS0e/b/c/d/f with exact disjoint file scopes in the existing machine queue. GitHub can queue signed ChatGPT coding handoffs after this change reaches trusted main. POS0e starts first, then POS0b/c/d can branch in parallel after E has an open draft PR. The bridge is browser-only and still does not create new-chat URL/provider receipts; verify the first delivery and reconcile its private receipt before automatic follow-ups.
 
 ## Ubuntu (after PR review/merge)
 
