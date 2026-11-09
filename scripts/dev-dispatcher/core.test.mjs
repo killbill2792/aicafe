@@ -425,6 +425,8 @@ test("merge requires final head, proven acceptance, branch and predecessors", ()
   const ready = { ...pr(), threads_resolved: true, base_current: true, acceptance_proven: true };
   assert.equal(mergeGate(ready, [{ status: "integrated_proven" }]).eligible, true);
   assert.equal(mergeGate({ ...ready, base_current: false }).eligible, false);
+  assert.deepEqual(mergeGate({...ready,github_owner_question:'Unapproved shared-file scope?' }).reasons,['owner_decision_pending']);
+  assert.deepEqual(mergeGate({...ready,owner_question:'Approval pending'}).reasons,['owner_decision_pending']);
   assert.deepEqual(mergeGate({ ...ready, base_branch: "feat/predecessor" }).reasons, ["non_main_destination"]);
   assert.deepEqual(mergeGate(ready, [{ status: "merged" }]).reasons, ["predecessor_not_proven"]);
   assert.equal(mergeGate({ ...ready, codex_reviewed_sha: null }).eligible, false);
