@@ -50,7 +50,8 @@ export function applyReceipts(state, inbox, actorMap) {
     // A stale continuation may have reached the browser before a newer PR head.
     // Record its verified historical receipt without reviving its authorization.
     const superseded = action?.status === 'cancelled_stale_head' &&
-      action.type !== 'assign' && !action.superseded_receipt;
+      action.type !== 'assign' && action.delivery?.intent === 'continue_existing_chat' &&
+      !action.superseded_receipt;
     if (action?.status !== 'planned' && !late && !superseded) continue;
     if (late) {
       const task = next.tasks?.[action.task_id];
