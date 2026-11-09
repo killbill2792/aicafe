@@ -221,31 +221,52 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
   // proof that an agent is active. Do not leave those drafts silent forever.
   // At the normal 10-minute quiet window, ask the SAME chat to inspect CI,
   // obtain Codex and continue; the courier only checks the composer is idle.
-  if (isPr && !record.draft &&
-      (["pending","unknown"].includes(record.ci_state) ||
-       ["pending","unknown"].includes(record.codex_state)))
+  // Pending/unknown CI or Codex results are not permission to merge, but an
+  // indefinitely pending review is still actionable work. After fifteen minutes
+  // without a code change, resume the same coder to inspect/request the checks.
+  const waitingForChecks = isPr && !record.draft &&
+    (!["success", "failure"].includes(record.ci_state) ||
+     !["clean", "findings"].includes(record.codex_state));
+  const lastCodeMs = Date.parse(record.last_commit_at || record.last_github_activity || "");
+  if (waitingForChecks && (!Number.isFinite(lastCodeMs) || nowMs - lastCodeMs < 900000))
     return { kind: "hold", reason: "checks_pending_or_unknown" };
-  if (isPr && !record.draft &&
-      (!["success", "failure"].includes(record.ci_state) ||
-       !["clean", "findings"].includes(record.codex_state)))
-    return { kind: "hold", reason: "unverified_checks" };
   if (record.agent === "claude") return { kind: "hold", reason: "claude_no_routine_nudges" };
   // GitHub cannot see the browser. The courier checks the idle composer before any reminder.
   if (!isPr && record.browser_busy === true) return { kind: "hold", reason: "browser_confirmed_busy" };
   const last = Date.parse(isPr ? (record.codex_state === "findings" && record.codex_review_at && Date.parse(record.codex_review_at) > Date.parse(record.last_commit_at || 0) ? record.codex_review_at : record.last_commit_at) : record.last_submission_at);
   if (!Number.isFinite(last) || nowMs - last < (isPr ? quietMs : prePrMs)) return { kind: "hold", reason: "not_quiet" };
+  // A verified Muse submission starts its own quiet period. Without this,
+  // a PR that has not committed after the first reminder never resumes again.
+  const sentMs = Date.parse(record.last_submission_at || "");
+  if (isPr && record.submission_state === "submitted" &&
+      Number.isFinite(sentMs) && nowMs - sentMs < 900000)
+    return { kind: "hold", reason: "post_delivery_quiet" };
   if (record.next_check_at && nowMs < Date.parse(record.next_check_at)) return { kind: "hold", reason: "cooldown" };
   // No generic reminder for an already reviewed ready PR with captured proof.
   // A draft must still be completed and marked ready; early Codex clean is not
   // the final-head merge gate.
   if (isPr && !record.draft && record.ci_state === "success" && record.codex_state === "clean" &&
-      record.acceptance_evidence && record.threads_resolved !== false &&
+      record.acceptance_evidence && record.acceptance_proven === true &&
+      record.threads_resolved !== false &&
       record.base_current !== false && record.review_base_current !== false)
     return { kind: "hold", reason: "no_actionable_findings" };
   const action = isPr ? (record.ci_state === "failure" ? "repair_ci" :
     record.codex_state === "findings" ? "repair_review" : "continue_pr") : "pre_pr_reminder";
-  const key = actionKey(record, action);
-  if (record.last_action_key === key || record.submission_state === "pending" || record.attempts >= (record.max_attempts ?? 3)) return { kind: "hold", reason: "already_sent_or_capped" };
+  let key = actionKey(record, action);
+  if (isPr && record.submission_state === "submitted" &&
+      record.last_action_key === key && Number.isFinite(sentMs)) {
+    // The previous prompt was genuinely delivered and the quiet period passed,
+    // yet no newer GitHub action changed its key. Create exactly ONE new
+    // task/head/receipt-scoped retry; do not grow an unbounded nested action ID.
+    const root = [record.task_id, action, record.head_sha || "pre-pr",
+      record.prompt_version || "v1",
+      record.last_commit_at || record.last_github_activity || "start"]
+      .map(v => encodeURIComponent(String(v))).join(":");
+    key = root + ":retry:" + encodeURIComponent(record.last_submission_at);
+  }
+  if (record.last_action_key === key || record.submission_state === "pending" ||
+      record.attempts >= (record.max_attempts ?? 3))
+    return { kind: "hold", reason: "already_sent_or_capped" };
   return { kind: "propose", action, key };
 }
 export function invalidateOnHeadChange(record, newSha, at) {
