@@ -295,6 +295,28 @@ test("Every official nested field has a non-fabricated architecture disposition"
  assert.equal(stock.exception.field_prefix,"[].quantity");
  assert.match(stock.inherited.current_operational_reader,/NO CURRENT OPERATIONAL READER/);
  assert.match(stock.exception.privacy_override,/never replace 403/);
+ const protectedOperations=[
+  ["/orders/v2/ordersBulk","[]."],
+  ["/orders/v2/orders/{guid}",""]
+ ];
+ const addressFields=["address1","address2","administrativeArea","city","country",
+  "latitude","longitude","state","zipCode"];
+ for(const [operation,prefix] of protectedOperations){
+  const curbside=resolve("orders",operation,"200",prefix+"curbsidePickupInfo.transportDescription");
+  assert.equal(curbside.exception.field_prefix,prefix+"curbsidePickupInfo");
+  assert.match(curbside.exception.additional_or_required_scope,/guest\\.pi:read/);
+  assert.equal(curbside.grant,"not_tested");
+  for(const leaf of addressFields){
+   const address=resolve("orders",operation,"200",prefix+"deliveryInfo."+leaf);
+   assert.equal(address.exception.field_prefix,prefix+"deliveryInfo."+leaf);
+   assert.match(address.exception.additional_or_required_scope,/delivery_info\\.address:read/);
+   assert.match(address.exception.privacy_override,/DELIVERY_ADDRESS_RESTRICTED/);
+   assert.equal(address.response,"not_tested");
+  }
+  const status=resolve("orders",operation,"200",prefix+"deliveryInfo.deliveryState");
+  assert.equal(status.exception,null,
+   "Do not require delivery address scope for unrelated delivery state fields");
+ }
  assert.equal(manifest.coverage_complete,false,
   "Full runtime source→retention→SQL→one-Supervisor gate must remain fail-closed");
  assert.ok(matrix.includes("POS0a A1–A4 architecture acceptance reconciliation"));
