@@ -98,8 +98,9 @@ function internalOperationalId(business:string,restaurant:string,endpoint:string
 function nativeOperationalKey(endpoint:string,row:Record<string,unknown>,businessDate?:string):string{
  if(endpoint==="kitchen/v1/export/itemFulfillments"){
   const r=operationalKitchen.parse(row);
-  return [businessDate,r.orderGuid,r.selectionGuid,r.itemFulfillmentLevel,
-   r.prepStationGuid??"none"].join("|");
+  return [businessDate,r.orderGuid,
+   GUID.safeParse(row.ticketGuid).success?String(row.ticketGuid):"none",
+   r.selectionGuid,r.itemFulfillmentLevel,r.prepStationGuid??"none"].join("|");
  }
  if(endpoint==="restaurant-availability/v1/availability"||
     endpoint==="ordermgmt-config/v1/published/orderingSchedule")return "restaurant-singleton";
