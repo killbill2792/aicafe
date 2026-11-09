@@ -54,10 +54,14 @@ $id$;
 create or replace function public.toast_stage_comparable(p_row jsonb)
 returns jsonb language sql immutable set search_path=public as $cmp$
  select public.toast_stable_json(
-  (case when p_row->>'source_business_date_kind'='observed_cafe_day'
-    then p_row-'business_date' else p_row end)
+  (case when p_row->>'source_key_kind' in
+    ('provider_guid','provider_composite','restaurant_singleton')
+    and p_row ? 'endpoint'
+    then p_row-'lastSuccessAt' else p_row end)
+  - (case when p_row->>'source_business_date_kind'='observed_cafe_day'
+    then array['business_date']::text[] else array[]::text[] end)
   - array['fetched_at','first_seen','last_seen','checked_at',
-    'last_checked_at','report_checked_at','observed_at','updated_at','lastSuccessAt'])
+    'last_checked_at','report_checked_at','observed_at','updated_at'])
 $cmp$;
 
 -- Batch wrapper ONLY; the existing toast_archive_stage_snapshot owns every
