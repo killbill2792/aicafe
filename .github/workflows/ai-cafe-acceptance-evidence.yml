@@ -101,6 +101,16 @@ jobs:
           supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
           supabase db reset --local --yes
           pg_isready -q -h 127.0.0.1 -p 54322 -U postgres
+      - name: Verify POS0e synthetic fixture without any API key or model calls
+        if: ${{ steps.pos0e_owner.outputs.approved == 'true' }}
+        working-directory: candidate
+        env:
+          POS0E_E2_SQL_ONLY: '1'
+          AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: |
+          set -euo pipefail
+          # SQL_ONLY returns before creating a model provider request.
+          timeout 4m npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
       - name: Run bounded real one-agent POS0e preflight (no acceptance claim)
         if: ${{ steps.pos0e_owner.outputs.approved == 'true' && !contains(github.event.pull_request.body, 'aicafe-acceptance-evidence') }}
         working-directory: candidate
