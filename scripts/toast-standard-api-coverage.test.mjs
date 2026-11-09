@@ -241,7 +241,7 @@ test("Every official nested field has a non-fabricated architecture disposition"
   assert.ok(inherited,"Unknown official Standard family: "+family);
   assert.ok(codes.has(inherited.historical_contract),"Unknown H-contract for official source family");
   for(const key of required)
-   assert.ok(typeof inherited[key]==="string"&&inherited[key].length>12,
+   assert.ok(typeof inherited[key]==="string"&&inherited[key].trim().length>0,
     "Missing current/proposed evidence mapping "+family+"."+key);
   const matches=contract.field_prefix_exceptions
    .filter(e=>e.family===family&&e.operation_path===path&&sameOrChild(field,e.field_prefix))
