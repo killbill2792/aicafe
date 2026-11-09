@@ -8,6 +8,7 @@ import pg from "pg";
 import {it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {runAgentTurn,openAIProvider} from "../loop.server";
+import {PRODUCTION_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import type {AgentProvider} from "../loop.server";
 import type {AgentToolContext} from "./index";
 const dbUrl=process.env.AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL;
@@ -21,7 +22,10 @@ const run=enabled?it:it.skip;
 // The budget applies to the real model *transport*, across ALL turns in this
 // disposable acceptance test. Serialized UTF-8 bytes conservatively bound
 // provider-input tokens without requiring a paid tokenizer or extra API call.
-// At published gpt-4.1-mini rates (Nov 2026), the 200k-byte input and\n// 12k reserved output-token envelope is about $0.10 per gated execution.\n// Check BEFORE sending, including the provider's per-response output ceiling.
+// The primary is the verified Vercel production model gpt-6-luna, not the
+// fallback gpt-4.1-mini. This cap bounds request bytes, model calls, and
+// output tokens; actual provider billing may differ from any dollar estimate.
+// Check BEFORE sending, including the provider's per-response output ceiling.
 // A limit hit FAILS the test; it can never turn partial E2 into a passing proof.
 const smoke=process.env.POS0E_E2_SMOKE==="1";
 const MAX_PAID_CALLS=12;
@@ -29,8 +33,8 @@ const MAX_INPUT_REQUEST_BYTES=200_000;
 const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
 let paidCalls=0,requestBytes=0,outputTokensReserved=0;
 const budgetedProvider:AgentProvider=async function*(params,signal){
- if(params.model!=="gpt-4.1-mini")
-  throw new Error("POS0e E2 requires the approved low-cost gpt-4.1-mini model");
+ if(params.model!==PRODUCTION_SUPERVISOR_OPENAI_MODEL)
+  throw new Error("POS0e E2 requires owner-verified production Supervisor model "+PRODUCTION_SUPERVISOR_OPENAI_MODEL);
  const payloadBytes=Buffer.byteLength(JSON.stringify(params),"utf8");
  const outputCap=Math.min(Number(params.max_output_tokens)||MAX_OUTPUT_TOKENS_PER_CALL,
   MAX_OUTPUT_TOKENS_PER_CALL);
