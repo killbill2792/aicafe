@@ -186,6 +186,10 @@ export async function syncToastOperationalSources(db:SupabaseClient,
     const rows=(op.single?[response]:response) as Array<Record<string,unknown>>;
     if(!rows.length){if(page===0)break; /* Empty terminal page is normal. */}
     for(const row of rows){
+     // Validate even when a caller/proxy has bypassed the client's schema
+     // parse; a partial list must not reach the durable writer.
+     if(!op.schema.safeParse(row).success)
+      throw new ToastApiError("invalid_response");
      if(typeof row.restaurantGuid==="string"&&
       row.restaurantGuid.toLowerCase()!==p.restaurantGuid.toLowerCase())
       throw new ToastApiError("unauthorized_location");
