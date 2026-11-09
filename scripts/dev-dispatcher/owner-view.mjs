@@ -33,11 +33,14 @@ export function renderOwnerView(state, {repo, asOf, runUrl} = {}) {
       ? `${clean(pending.type)}: ${pending.status === 'planned' ? 'queued (not sent)' : pending.status}`
       : delivered ? `${clean(delivered.type)}: submitted (receipt recorded)` : 'no active delivery';
     const owner = r.github_owner_question || r.owner_question;
-    const next = owner ? 'Owner decision + coder can continue signed work'
+    const finished = r.github_state === 'merged' ||
+      ['merged','integrated_proven','released_proven'].includes(r.status);
+    const next = finished ? (r.status === 'merged'
+        ? 'Dispatcher verifies merged-main integration proof' : 'Integrated; no coder action')
+      : owner ? 'Owner decision + coder can continue signed work'
       : r.ci_state === 'failure' ? 'Coder fixes CI'
       : r.codex_state === 'findings' ? 'Coder resolves review findings'
       : r.draft ? 'Coder finishes draft/proof'
-      : r.status === 'merged' || r.github_state === 'merged' ? 'Merged; integration proof check'
       : 'Dispatcher evaluates proof/merge gates';
     const stage = r.github_state === 'merged' || r.status === 'merged' ||
       ['integrated_proven','released_proven'].includes(r.status)
