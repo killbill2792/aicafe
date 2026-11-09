@@ -173,7 +173,7 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
   return actions;
 }
 export function actionKey(record, action) {
-  const parts = [record.task_id, action, record.head_sha || "pre-pr", record.prompt_version || "v1", record.last_commit_at || record.last_github_activity || "start"];
+  const parts = [record.task_id, action, record.head_sha || "pre-pr", record.prompt_version || "v1", record.last_commit_at || "start", record.last_github_activity || "no-pr-activity"];
   return parts.map(s => encodeURIComponent(String(s))).join(":");
 }
 // Shared progress is written only by the coordinator, after merge, in its own
@@ -189,7 +189,13 @@ export function progressUpdatePolicy(changedPaths) {
 export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 } = {}) {
   if (!record || !record.approved || !record.conversation_ref) return { kind: "hold", reason: "unapproved_or_missing_chat" };
   if (record.submission_state === "uncertain" || record.submission_state === "needs_login") return { kind: "hold", reason: record.submission_state };
-  if (record.owner_question || record.github_owner_question) return {kind:"hold",reason:"owner_decision_required"};
+  // An unanswered question blocks ONLY its unapproved portion, not already
+  // signed CI repairs, review fixes or the owner's response in this SAME chat.
+  // The coder must reconcile any actual owner answer in the PR, and must not
+  // widen file ownership or treat a courier notification as approval.
+  if ((record.owner_question || record.github_owner_question) &&
+      (!Number.isInteger(record.pr_number) || record.github_state !== "open"))
+    return {kind:"hold",reason:"owner_decision_required"};
   const isPr = Number.isInteger(record.pr_number);
   // Ready PRs need real check conclusions for targeted repair/merge routing.
   // Draft PRs may legitimately have NO Codex review yet; pending/unknown is not
