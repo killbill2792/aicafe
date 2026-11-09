@@ -14,7 +14,7 @@ const clock = Date.parse("2026-11-05T16:00:00Z");
 const old = new Date(clock - 700000).toISOString();
 const pr = (more = {}) => ({ task_id: "a", approved: true, conversation_ref: "private",
   pr_number: 101, head_sha: "abc", base_branch:"main", prompt_version: "v1",
-  last_github_activity: old, last_commit_at: old, draft: false, ci_state: "success", codex_state: "clean", acceptance_evidence:{acceptance:[{id:'1'}]},
+  last_github_activity: old, last_commit_at: old, draft: false, ci_state: "success", codex_state: "clean", acceptance_proven:true, acceptance_evidence:{acceptance:[{id:'1'}]},
   codex_reviewed_sha: "abc", attempts: 0, ...more });
 
 test("queue validates 32-task style DAG, rejects missing prerequisites and cycles", () => {
@@ -331,6 +331,40 @@ test("draft PR gets same-chat continuation after ten quiet minutes even if Codex
   const picked=decideNudge(pending,clock);
   assert.equal(decideNudge({...pending,last_action_key:picked.key},clock).reason,"already_sent_or_capped");
   assert.equal(decideNudge({...pending,agent:"claude"},clock).reason,"claude_no_routine_nudges");
+});
+test("missing verified acceptance remains actionable even with a clean ready PR", () => {
+  assert.equal(decideNudge(pr({acceptance_proven:false}),clock).action,"continue_pr");
+});
+test("same-chat follow-up waits 15 minutes after verified Muse send then rechecks unchanged PR", () => {
+  const code = new Date(clock-3600000).toISOString();
+  const sent = new Date(clock-1200000).toISOString();
+  const draft = pr({draft:true,ci_state:"failure",acceptance_evidence:null,
+    acceptance_proven:false,last_commit_at:code,last_github_activity:code,
+    last_submission_at:sent,submission_state:"submitted"});
+  const previous = actionKey(draft,"repair_ci");
+  const idle = {...draft,last_action_key:previous};
+  const first = decideNudge(idle,clock);
+  assert.equal(first.action,"repair_ci");
+  assert.notEqual(first.key,previous);
+  assert.match(first.key,/retry:/);
+  assert.equal(decideNudge(idle,clock).key,first.key);
+  const delivered = {...idle,last_action_key:first.key,
+    last_submission_at:new Date(clock-100000).toISOString()};
+  assert.equal(decideNudge(delivered,clock).reason,"post_delivery_quiet");
+  const later = clock+900001;
+  const follow = decideNudge(delivered,later);
+  assert.equal(follow.action,"repair_ci");
+  assert.notEqual(follow.key,first.key);
+  assert.equal(follow.key.split(":").length,7);
+  const changed = invalidateOnHeadChange(delivered,"new-head",new Date(later).toISOString());
+  assert.notEqual(actionKey(changed,"repair_ci"),first.key);
+});
+test("ready PR with stale pending Codex is resumed, not held forever", () => {
+  const stale = pr({ci_state:"success",codex_state:"pending",
+    last_commit_at:new Date(clock-1800000).toISOString()});
+  assert.equal(decideNudge(stale,clock).action,"continue_pr");
+  const recent = {...stale,last_commit_at:new Date(clock-500000).toISOString()};
+  assert.equal(decideNudge(recent,clock).reason,"checks_pending_or_unknown");
 });
 test("only a dedicated coordinator PR can change the shared progress checklist",()=>{
  assert.equal(progressUpdatePolicy(["lib/a.ts","docs/b.md"]).allowed,true);
