@@ -607,3 +607,35 @@ test('dismissed Codex review cannot be treated as clean on current head',async()
  const [result]=await new GitHubFacts({repo:'owner/aicafe',token:'example',fetchFn:fake}).snapshot();
  assert.equal(result.codex_state,'pending');
 });
+
+test('owner question in trusted PR comment is published even when PR body has no marker',async()=>{
+ const pr={number:404,body:'No question in description',html_url:'https://github.com/o/r/pull/404',
+   labels:[{name:'needs-owner-decision'}]};
+ const seen=[];
+ const facts=new GitHubFacts({repo:'o/r',token:'fake',fetchFn:async url=>{
+   seen.push(url);
+   return {ok:true,json:async()=>[
+     {author_association:'NONE',body:'<!-- aicafe-owner-question Fake approval? -->'},
+     {author_association:'OWNER',body:'<!-- aicafe-owner-question May two tests be edited? -->',
+       html_url:'https://github.com/o/r/pull/404#issuecomment-17'}]};
+ }});
+ const result=await facts.ownerDecision(pr);
+ assert.equal(result.question,'May two tests be edited?');
+ assert.equal(result.url,'https://github.com/o/r/pull/404#issuecomment-17');
+ assert.equal(seen.length,1);
+ const noticeState={tasks:{POS0e:{agent:'chatgpt',pr_number:404,
+   github_owner_question:result.question,github_owner_question_url:result.url}},actions:{}};
+ const {queueOwnerAlerts}=await import('./alerts.mjs');
+ const notice=Object.values(queueOwnerAlerts(noticeState).owner_alerts)[0];
+ assert.match(notice.question,/May two tests be edited\?/);
+ assert.match(notice.question,/issuecomment-17/);
+});
+
+test('unstructured owner-decision label is blocking; ordinary PRs add no comments API call',async()=>{
+ const pr={number:405,body:'No marker',html_url:'https://github.com/o/r/pull/405',
+   labels:[{name:'needs-owner-decision'}]};
+ const facts=new GitHubFacts({repo:'o/r',token:'fake',fetchFn:async()=>({
+   ok:true,json:async()=>[]})});
+ assert.match((await facts.ownerDecision(pr)).question,/Owner decision requested/);
+ assert.deepEqual(await facts.ownerDecision({...pr,labels:[]}),{question:null,url:null});
+});
