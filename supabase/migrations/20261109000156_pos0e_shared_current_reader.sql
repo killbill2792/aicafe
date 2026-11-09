@@ -1,5 +1,5 @@
 -- POS0e: additive current-source cutover only; do not apply to production.
--- Preserve the proven day-import and 15-minute live-order branch unchanged.
+-- Preserve the latest migration-152 discount exclusion, day-import and live-order eligibility.
 -- Diagnostic source capture remains audit-only and is never a live fallback.
 create or replace function public.toast_records_for(p_business_id uuid,p_from date,p_to date)
 returns table(business_id uuid,source text,source_ref text,status text,business_date date,
@@ -73,7 +73,8 @@ from items i cross join lateral jsonb_array_elements(case when jsonb_typeof(i.s-
 where jsonb_typeof(m.v)='object'
 union all
 select i.business_id,'toast','toast-item-discount:'||i.id::text||':'||i.cn||':'||i.sn||':'||d.n,i.st,
- i.business_date,'item_discount',d.v->>'guid',i.o->>'guid',i.c->>'guid',not i.s_void,
+ i.business_date,'item_discount',d.v->>'guid',i.o->>'guid',i.c->>'guid',not i.s_void
+  and (d.v->>'processingState') is distinct from 'VOID',
  d.v||jsonb_build_object('item_ref',i.s->>'guid')
 from items i cross join lateral jsonb_array_elements(case when jsonb_typeof(i.s->'appliedDiscounts')='array'
  then i.s->'appliedDiscounts' else '[]'::jsonb end) with ordinality d(v,n)
@@ -88,7 +89,8 @@ from checks k cross join lateral jsonb_array_elements(case when jsonb_typeof(k.c
 where jsonb_typeof(p.v)='object'
 union all
 select k.business_id,'toast','toast-check-discount:'||k.id::text||':'||k.cn||':'||d.n,k.st,k.business_date,
- 'check_discount',d.v->>'guid',k.o->>'guid',k.c->>'guid',not k.c_void,d.v
+ 'check_discount',d.v->>'guid',k.o->>'guid',k.c->>'guid',not k.c_void
+  and (d.v->>'processingState') is distinct from 'VOID',d.v
 from checks k cross join lateral jsonb_array_elements(case when jsonb_typeof(k.c->'appliedDiscounts')='array'
  then k.c->'appliedDiscounts' else '[]'::jsonb end) with ordinality d(v,n)
 where jsonb_typeof(d.v)='object'
