@@ -179,7 +179,7 @@ grant select on public.cv_inventory,public.cv_cash,public.cv_dining_options,publ
 -- Safe named JSON paths, supporting deeper official nested fields.
 create or replace function public.ai_query_path(p_col text) returns text[]
 language sql immutable set search_path=public as $path$
- select case when p_col ~ '^data(\\.([A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})){1,16}$'
+ select case when p_col ~ '^data(\.([A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})){1,16}$'
   then string_to_array(substr(p_col,6),'.') end $path$;
 revoke all on function public.ai_query_path(text) from public,anon;
 grant execute on function public.ai_query_path(text) to authenticated,service_role;
