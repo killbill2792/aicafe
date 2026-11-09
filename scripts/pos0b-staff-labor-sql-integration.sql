@@ -71,7 +71,7 @@ SELECT pg_temp.pos0b_assert(
   'dddddddd-dddd-4ddd-8ddd-dddddddddd01',
   'dddddddd-dddd-4ddd-8ddd-dddddddddd03',
   'dddddddd-dddd-4ddd-8ddd-dddddddddd02',
-  jsonb_build_array(row||'{"clock_out":"2026-11-09T09:00:00Z",
+  jsonb_build_array(row||'{"clock_out":"2026-11-09T11:00:00Z",
    "provider_modified_at":"2026-11-08T13:00:00Z"}'::jsonb))
  FROM pos0b_test_payload)=0,'older modified-date revision cannot overwrite newest');
 
