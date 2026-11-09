@@ -178,16 +178,22 @@ export function actionKey(record, action) {
   const committed = record.last_commit_at || record.last_github_activity || "start";
   const parts = [record.task_id, action, record.head_sha || "pre-pr",
     record.prompt_version || "v1", committed];
+  const legacyKey = parts.map(s => encodeURIComponent(String(s))).join(":");
   const activity = Date.parse(record.last_github_activity || "");
   const after = Date.parse(record.last_submission_at || "");
   const code = Date.parse(committed);
-  // A new GitHub/PR decision after BOTH the code and most recent courier send
-  // merits one new follow-up; otherwise preserve the exact legacy key.
+  // A newly observed PR comment/decision after BOTH code and last courier send
+  // gets one activity-qualified continuation. Never change that key back to
+  // the legacy key when the courier receipt advances last_submission_at:
+  // that would queue the same prompt again without any GitHub change.
   if (Number.isFinite(activity) &&
       (!Number.isFinite(code) || activity > code) &&
       (!Number.isFinite(after) || activity > after))
-    parts.push(record.last_github_activity);
-  return parts.map(s => encodeURIComponent(String(s))).join(":");
+    return legacyKey + ":" + encodeURIComponent(record.last_github_activity);
+  const prior = record.last_action_key;
+  if (typeof prior === "string" && prior.startsWith(legacyKey + ":"))
+    return prior;
+  return legacyKey;
 }
 // Shared progress is written only by the coordinator, after merge, in its own
 // conflict-checked PR. Concurrent implementation PRs may read but never edit it.
