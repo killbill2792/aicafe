@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub, progressUpdatePolicy, predecessorsForMerge } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
-import { GitHubFacts, parseAcceptanceEvidence } from "./github.mjs";
+import { GitHubFacts, parseAcceptanceEvidence, parseCodexReviewState } from "./github.mjs";
+import { linkPullRequests } from "./dependencies.mjs";
 
 const task = (id, depends_on = [], state = "architecture_approved") => ({
   id, depends_on, state, acceptance: ["real proof"], brief: "docs/plans/brief.md",
@@ -462,6 +463,7 @@ test("GitHub PR reads distinguish pending CI/review from success", async () => {
     if (url.includes("/pulls?")) return { ok: true, json: async () => [{ number: 2, head: { sha: "abc", ref: "feat/b" }, base: { ref: "main", sha: "base" }, updated_at: old, draft: true }] };
     if (url.includes("check-runs")) return { ok: true, json: async () => ({ total_count: 1, check_runs: [{ name: "AI CAFE PR baseline", status: "completed", conclusion: "success" }] }) };
     if (url.includes("/reviews?")) return { ok: true, json: async () => [] };
+    if (url.includes("/issues/2/comments?")) return { ok: true, json: async () => [] };
     if (url.includes("/compare/")) return { ok: true, json: async () => ({ behind_by: 0 }) };
     if (url.includes("/commits/abc")) return { ok: true, json: async () => ({ commit: { committer: { date: old } } }) };
     if (url.includes("/graphql")) return { ok: true, json: async () => ({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] } } } } }) };
@@ -600,6 +602,7 @@ test('dismissed Codex review cannot be treated as clean on current head',async()
   if(url.includes('check-runs'))return {ok:true,json:async()=>({total_count:1,check_runs:[{name:'AI CAFE PR baseline',status:'completed',conclusion:'success'}]})};
   if(url.includes('/reviews?'))return {ok:true,json:async()=>[review]};
   if(url.includes('/compare/'))return {ok:true,json:async()=>({behind_by:0})};
+  if(url.includes('/issues/2/comments?'))return {ok:true,json:async()=>[]};
   if(url.includes('/commits/abc'))return {ok:true,json:async()=>({commit:{committer:{date:old}}})};
   if(url.includes('/graphql'))return {ok:true,json:async()=>({data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false},nodes:[]}}}}})};
   throw Error(url);
@@ -638,4 +641,51 @@ test('unstructured owner-decision label is blocking; ordinary PRs add no comment
    ok:true,json:async()=>[]})});
  assert.match((await facts.ownerDecision(pr)).question,/Owner decision requested/);
  assert.deepEqual(await facts.ownerDecision({...pr,labels:[]}),{question:null,url:null});
+});
+
+test('Codex connector summary is accepted only for exact current head and strict shape',()=>{
+ const head='b'.repeat(40);
+ const summary='<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 '+
+  JSON.stringify({code_review:{commit_sha:head,status:'completed',
+    has_any_findings:false,has_unresolved_findings:false}})+' -->';
+ assert.deepEqual(parseCodexReviewState(summary,head),{state:'clean',sha:head});
+ assert.equal(parseCodexReviewState(summary,'c'.repeat(40)),null);
+ assert.equal(parseCodexReviewState('Codex Review: Didn\'t find any major issues '+head.slice(0,10),head),null);
+ const flagged=summary.replace('has_any_findings":false','has_any_findings":true');
+ assert.equal(parseCodexReviewState(flagged,head).state,'findings');
+});
+
+test('GitHub current-head Codex summary changes clean vs pending but unresolved threads still block',async()=>{
+ const sha='c'.repeat(40),now='2026-11-09T21:10:00Z';
+ const body='<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 '+
+   JSON.stringify({code_review:{commit_sha:sha,status:'completed',
+     has_any_findings:false,has_unresolved_findings:false}})+' -->';
+ const pr={number:407,head:{sha,ref:'feat/menu'},base:{sha:'d'.repeat(40),ref:'main'},
+   labels:[],body:'',draft:true,updated_at:now};
+ const makeFacts=(unresolved=false,user='chatgpt-codex-connector[bot]')=>
+  new GitHubFacts({repo:'o/r',token:'dummy',fetchFn:async(url)=>{
+  let data;
+  if(url.includes('/check-runs?'))data={total_count:0,check_runs:[]};
+  else if(url.includes('/reviews?'))data=[];
+  else if(url.includes('/comments?'))data=[{user:{login:user},body,updated_at:now}];
+  else if(url.includes('/commits/'+sha))data={commit:{committer:{date:now}}};
+  else if(url.includes('/compare/'))data={behind_by:0,files:[{filename:'src/menu.ts'}]};
+  else if(url.endsWith('/graphql'))data={data:{repository:{pullRequest:{reviewThreads:{
+    pageInfo:{hasNextPage:false},nodes:unresolved?[{isResolved:false}]:[]}}}}};
+  else throw Error(url);
+  return {ok:true,json:async()=>data};
+ }});
+ const clean=await makeFacts().one(pr);
+ assert.equal(clean.codex_state,'clean');
+ assert.equal(clean.codex_reviewed_sha,sha);
+ assert.equal(clean.codex_review_at,now);
+ assert.equal((await makeFacts(true).one(pr)).codex_state,'findings');
+ assert.equal((await makeFacts(false,'untrusted-user').one(pr)).codex_state,'pending');
+});
+test('Dispatcher-only PR is not a mystery task while mixed PR remains unmapped',()=>{
+ const state={tasks:{POS0e:{pr_number:404,branch:'feat/e'}}};
+ const tasks=[{pr_number:404,branch:'feat/e',draft:true,base_branch:'main'},
+   {pr_number:413,branch:'fix/dev',infrastructure_pr:true},
+   {pr_number:414,branch:'feat/mixed',infrastructure_pr:false}];
+ assert.deepEqual(linkPullRequests(state,tasks).unmapped,[414]);
 });
