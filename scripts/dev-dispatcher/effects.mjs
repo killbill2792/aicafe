@@ -87,6 +87,9 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
     return { status: 'blocked', reasons: ['live_checks_changed'] };
   // Re-fetch base SHA immediately before merge to reject intervening main changes.
   const latest = await github.request(`/pulls/${record.pr_number}`);
+  if ((latest.labels || []).some(label => label.name === 'needs-owner-decision') ||
+      (typeof latest.body === 'string' && latest.body.includes('<!-- aicafe-owner-question')))
+    return {status:'blocked',reasons:['live_owner_question_pending']};
   if (latest.head.sha !== record.head_sha || latest.base.sha !== record.base_sha ||
       latest.base.ref !== 'main' || latest.mergeable !== true ||
       latest.draft !== prepareReady)
