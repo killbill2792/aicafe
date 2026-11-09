@@ -16845,6 +16845,14 @@
       {
         "family": "orders",
         "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].deliveryInfo",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read gates the entire deliveryInfo object, not just address leaves; Toast returns deliveryInfo=null without this scope. Current café grant not_tested.",
+        "privacy_override": "DELIVERY_INFO_SCOPE_GATED: every nested delivery state/date/employee/address/note value is source-unavailable without delivery_info.address:read; specific address/coordinates and free-text content additionally require privacy/role review and current redaction may omit.",
+        "field_gap": "Entire deliveryInfo subtree current raw-retention/current-reader/registered Supervisor/screen proof NOT VERIFIED; do not infer denial from null alone; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
         "field_prefix": "[].deliveryInfo.address1",
         "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
         "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
@@ -16921,6 +16929,14 @@
         "additional_or_required_scope": "orders:read + guest.pi:read for the curbsidePickupInfo response subtree (Toast Standard guest permission); grant still not_tested",
         "privacy_override": "CURBSIDE_GUEST_PERSONAL_CONTEXT: restrict; current redactor drops notes/free text and may suppress protected identity; only retain under actual granted scope, café/restaurant and role checks",
         "field_gap": "Curbside original fields are not verified retained/discoverable/queryable in current order reader, registered Supervisor or screen; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "deliveryInfo",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read gates the entire deliveryInfo object, not just address leaves; Toast returns deliveryInfo=null without this scope. Current café grant not_tested.",
+        "privacy_override": "DELIVERY_INFO_SCOPE_GATED: every nested delivery state/date/employee/address/note value is source-unavailable without delivery_info.address:read; specific address/coordinates and free-text content additionally require privacy/role review and current redaction may omit.",
+        "field_gap": "Entire deliveryInfo subtree current raw-retention/current-reader/registered Supervisor/screen proof NOT VERIFIED; do not infer denial from null alone; POS0e privacy/reader and POS0f integration proof"
       },
       {
         "family": "orders",
