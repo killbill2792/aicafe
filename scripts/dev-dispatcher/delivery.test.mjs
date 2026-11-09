@@ -130,6 +130,27 @@ test('POS0 data contributors receive the mandatory source classification and pro
 test('POS0a-f agent receives exact approved/defective/unapproved contract in order', () => {
  const queue=JSON.parse(readFileSync(new URL('../../docs/plans/universal-supervisor-queue.json',import.meta.url),'utf8'));
  assert.equal(queue.dispatch_rules.architecture_foundation_implementation_approval.approved,false);
+ assert.equal(queue.dispatch_rules.priority_gate_task,'POS0f');
+ assert.match(queue.dispatch_rules.architecture_foundation_note,/TWO DISTINCT GATES/);
+ assert.match(queue.dispatch_rules.architecture_foundation_note,/future POS0e\/b\/c\/d/);
+ const pos0a=queue.tasks.find(t=>t.id==='POS0a');
+ const pos0e=queue.tasks.find(t=>t.id==='POS0e');
+ const pos0f=queue.tasks.find(t=>t.id==='POS0f');
+ assert.equal(pos0a.architecture_approval.approved,true);
+ assert.deepEqual(pos0e.depends_on,['POS0a']);
+ assert.deepEqual(pos0f.depends_on,['POS0e','POS0b','POS0c','POS0d']);
+ assert.match(pos0a.goal,/READ-ONLY official GET\/nested-field/);
+ assert.ok(pos0a.acceptance.some(s=>s.includes('READER_MISSING/NOT_TESTED')));
+ assert.ok(pos0a.acceptance.some(s=>s.includes('actual POS0e\/b\/c\/d implementations and POS0f final migrated-DB end-to-end proof are later acceptance')));
+ assert.ok(pos0e.acceptance.some(s=>s.includes('Final migrated disposable Supabase')));
+ assert.ok(pos0f.acceptance.some(s=>s.includes('CI asserts complete chain Toast-shaped input')));
+ assert.ok(pos0f.acceptance.some(s=>s.includes('registered Supervisor')));
+ for(const id of ['POS0b','POS0c','POS0d']){
+  const t=queue.tasks.find(t=>t.id===id);
+  assert.deepEqual(t.depends_on,['POS0a','POS0e'],id+' must follow shared-reader foundation');
+  assert.notEqual(t.architecture_approval?.approved,true,id+' still requires owner activation');
+  assert.ok(t.acceptance.some(s=>s.includes('writer→current-object→describe_data→query_data→normal one-agent Supervisor answer')),id+' executable field proof intact');
+ }
  assert.match(queue.dispatch_rules.pos_source_authority.ordered_first_read[2],/PR #398 concise POS0a handoff FIRST/);
  assert.match(queue.dispatch_rules.pos_source_authority.owner_hold,/Owner alone enables POS0b-f delivery/);
  assert.equal(queue.dispatch_rules.pos_d4_contract.implementation_approved,false);
@@ -181,6 +202,8 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
    assert.match(resumed.prompt,/COMMENT ACCOUNTABILITY/);
    assert.match(d.prompt,/owner coding delivery OFF \(tracking != activation\)/);
    assert.match(resumed.prompt,/POS0b-f coding delivery only after owner's explicit switch/);
+    assert.match(d.prompt,/POS0a=read-only official field\/GAP map; POS0e\/f=FUTURE reader\/agent proof/);
+    assert.match(resumed.prompt,/POS0a=read-only official field\/GAP map; POS0e\/f=FUTURE reader\/agent proof/);
    assert.match(d.prompt,/targeted docs\/plans\/toast-standard-api-coverage-matrix\.md evidence only/);
    assert.match(resumed.prompt,/Comment disposition checklist/);
    const block=d.prompt.slice(d.prompt.indexOf('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING'));
