@@ -61,17 +61,49 @@ const describeSchema=z.strictObject({
 /** Official fields are schema definitions, NOT confirmation of granted Toast
  * permissions or observed/current business values. The registered tool merges
  * them with all actual retained paths returned by ai_toast_fields. */
+/** Each split row exposes ITS OWN JSON object, not its parent Toast order.
+ * The official orders response schema is rooted at data.checks[*] etc; rebase
+ * it onto the exact JSON returned by toast_records_for before advertising
+ * paths that the query_data SQL reader can actually traverse.
+ *
+ * Staged employee/shift/other typed projections have independent column names:
+ * they are discovered from retained rows, not silently given guessed official
+ * JSON paths just because the family is called labor.
+ */
+const SPLIT_ORDER_SCHEMA:Readonly<Record<string,string>>={
+ order:"data.",check:"data.checks.0.",item:"data.checks.0.selections.0.",
+ payment:"data.checks.0.payments.0.",
+ item_discount:"data.checks.0.selections.0.appliedDiscounts.0.",
+ check_discount:"data.checks.0.appliedDiscounts.0.",
+ service_charge:"data.checks.0.appliedServiceCharges.0.",
+ modifier:"data.checks.0.selections.0.modifiers.0."
+};
+const OMIT_SPLIT_CHILDREN:Readonly<Record<string,readonly string[]>>={
+ order:["checks"],check:["selections","payments","appliedDiscounts","appliedServiceCharges"],
+ item:["modifiers","appliedDiscounts"]
+};
 export function officialToastFields(recordType:string){
- const family=recordType.includes("/")?recordType.split("/")[0]:
-  ["order","check","item","modifier","payment","item_discount",
-   "check_discount","service_charge"].includes(recordType)?"orders":
-  ["employee","time_entry","shift","job"].includes(recordType)?"labor":
-  recordType;
+ const splitPrefix=SPLIT_ORDER_SCHEMA[recordType];
+ const family=splitPrefix!==undefined?"orders":
+  recordType.includes("/")?recordType.split("/")[0]:recordType;
+ // Bare typed/staged record names are NOT official endpoint response shapes.
+ if(splitPrefix===undefined&&!recordType.includes("/"))return [];
  const schema=toastOfficialFieldCatalog[family];
- return schema?.fields.map(([field,types])=>({
-  field,type:types.join("|"),source:"official_schema",observed:false,
-  grant:"not_verified",schema_version:schema.version,schema_sha256:schema.sha256
- }))??[];
+ if(!schema)return [];
+ const prefix=splitPrefix??"data.";
+ const excluded=OMIT_SPLIT_CHILDREN[recordType]??[];
+ return schema.fields.flatMap(([field,types])=>{
+  if(!field.startsWith(prefix))return [];
+  const suffix=field.slice(prefix.length);
+  if(!suffix||excluded.some(child=>suffix===child||suffix.startsWith(child+".")))return [];
+  // "order" intentionally excludes its split check children. For other split
+  // rows, every returned field has exactly the same root as query_data sees.
+  return [{
+   field:"data."+suffix,type:types.join("|"),source:"official_schema",
+   observed:false,grant:"not_verified",schema_version:schema.version,
+   schema_sha256:schema.sha256
+  }];
+ });
 }
 export const dataQueryTools={
  describe_data:{
