@@ -11,6 +11,25 @@ export function parseOwnerQuestion(body) {
   if (matches.length !== 1 || matches[0][1].length > 1200) return null;
   return matches[0][1].trim() || null;
 }
+// Only GitHub's authenticated Codex connector summary and an exact 40-digit head
+// may establish a completed review. A short text receipt never grants merge.
+export function parseCodexReviewState(body, sha) {
+  if (typeof body !== 'string' || !/^[a-f0-9]{40}$/.test(sha || '')) return null;
+  const match = body.match(/^<!-- codex-pull-request-review-summary -->\s*<!-- codex-review-state:v1 (\{[^\n]{1,1200}\}) -->/);
+  if (!match) return null;
+  try {
+    const review = JSON.parse(match[1]).code_review;
+    if (!review || review.commit_sha !== sha) return null;
+    // A running newer review overrides an earlier clean review on the same SHA.
+    if (review.status === 'running' || review.status === 'queued')
+      return {state:'pending',sha};
+    if (review.status !== 'completed' ||
+        typeof review.has_any_findings !== 'boolean' ||
+        typeof review.has_unresolved_findings !== 'boolean') return null;
+    return { state: review.has_any_findings || review.has_unresolved_findings ? 'findings' : 'clean',
+      sha };
+  } catch { return null; }
+}
 export function parseAcceptanceEvidence(body) {
   if (typeof body !== "string" || body.length > 100000) return null;
   const match = body.match(/<!-- aicafe-acceptance-evidence\s*([\s\S]*?)\s*-->/);
@@ -124,14 +143,14 @@ export class GitHubFacts {
     if (threads.pageInfo.hasNextPage) return null; // do not silently ignore further threads
     return threads.nodes.filter(t => !t.isResolved).length;
   }
-  async ownerDecision(pr) {
+  async ownerDecision(pr, comments = null) {
     if (!(pr.labels || []).some(label => label.name === 'needs-owner-decision'))
       return { question: null, url: null };
     const inBody = parseOwnerQuestion(pr.body);
     if (inBody) return { question: inBody, url: pr.html_url || null };
     // Owners can request a decision in the PR conversation, not only in its body.
     // Only trusted repository contributors may supply an actionable question.
-    const comments = await this.request(`/issues/${pr.number}/comments?per_page=100`);
+    comments ??= await this.request(`/issues/${pr.number}/comments?per_page=100`);
     if (!Array.isArray(comments) || comments.length >= 100)
       throw new Error('Owner-question comments require verified pagination');
     const trusted = comments.filter(c =>
@@ -144,14 +163,17 @@ export class GitHubFacts {
   }
   async one(pr) {
     const sha = pr.head.sha;
-    const ownerDecision = await this.ownerDecision(pr);
-    const [checks, reviews, unresolved, commit, comparison] = await Promise.all([
+    const [checks, reviews, unresolved, commit, comparison, comments] = await Promise.all([
       this.request(`/commits/${sha}/check-runs?per_page=100`),
       this.request(`/pulls/${pr.number}/reviews?per_page=100`),
       this.unresolved(pr.number),
       this.request(`/commits/${sha}`),
       this.request(`/compare/${encodeURIComponent(pr.base.sha)}...${encodeURIComponent(sha)}`),
+      this.request(`/issues/${pr.number}/comments?per_page=100`),
     ]);
+    if (!Array.isArray(comments) || comments.length >= 100)
+      throw new Error('PR comments require verified pagination');
+    const ownerDecision = await this.ownerDecision(pr, comments);
     if (checks.total_count > 100 || reviews.length >= 100) throw new Error("PR review/check pagination not verified");
     const baseline = checks.check_runs.find(c => c.name === "AI CAFE PR baseline");
     const ci = !baseline || baseline.status !== "completed" ? "pending" :
@@ -161,10 +183,25 @@ export class GitHubFacts {
     // Preserve unresolved findings from an earlier revision for repair routing.
     // Clean merge permission still requires a final-head review under AGENTS.md.
     const codex = codexReviews.find(r => r.commit_id === sha);
+    const botSummaries = comments.filter(c => c.user?.login === 'chatgpt-codex-connector[bot]')
+      .map(c => ({ ...parseCodexReviewState(c.body, sha),
+        at: c.updated_at || c.created_at,
+        valid: Boolean(parseCodexReviewState(c.body, sha)) }))
+      .filter(c => c.valid).sort((a,b)=>Date.parse(b.at||0)-Date.parse(a.at||0));
+    const summary = botSummaries[0] || null;
+    // A newer formal rejection/dismissal must override an earlier bot summary,
+    // even if its findings are in a review body rather than an inline thread.
+    const formalAt = Date.parse(codex?.submitted_at || '');
+    const summaryAt = Date.parse(summary?.at || '');
+    const useFormal = Boolean(codex) &&
+      (!summary || !Number.isFinite(summaryAt) ||
+       (Number.isFinite(formalAt) && formalAt >= summaryAt));
+    const formalState = codex?.state === 'CHANGES_REQUESTED' ? 'findings' :
+      codex?.state === 'APPROVED' ? 'clean' : 'pending';
+    const latestState = useFormal ? formalState : summary?.state || 'pending';
+    const reviewed = latestState !== 'pending' ? sha : null;
     const codexState = unresolved === null ? "unknown" :
-      unresolved > 0 && codexReviews.length ? "findings" :
-      !codex ? "pending" : codex.state === "CHANGES_REQUESTED" ? "findings" :
-      ["APPROVED", "COMMENTED"].includes(codex.state) ? "clean" : "pending";
+      unresolved > 0 && (codexReviews.length || summary) ? "findings" : latestState;
     return { pr_number: pr.number, head_sha: sha, base_branch: pr.base.ref,
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
@@ -172,11 +209,17 @@ export class GitHubFacts {
       github_owner_question: ownerDecision.question,
       github_owner_question_url: ownerDecision.url,
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
-      codex_review_at: codex?.submitted_at || null,
+      codex_review_at: useFormal ? codex?.submitted_at : summary?.at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
       ci_state: ci, ci_failure_kind: baseline?.conclusion === 'startup_failure' ? 'startup_failure' : null,
-      codex_state: codexState, codex_reviewed_sha: codex?.commit_id || null,
-      threads_resolved: unresolved === 0, merged: false };
+      codex_state: codexState, codex_reviewed_sha: reviewed,
+      threads_resolved: unresolved === 0,
+      // Explicitly known dispatcher-only PRs are not orphan coding tasks.
+      infrastructure_pr: Array.isArray(comparison.files) &&
+        comparison.files.length > 0 && comparison.files.every(file =>
+          /^scripts\/dev-dispatcher\//.test(file.filename) ||
+          file.filename === '.github/workflows/ai-cafe-dev-dispatcher.yml'),
+      merged: false };
   }
   async snapshot() {
     const prs = await this.openPulls();

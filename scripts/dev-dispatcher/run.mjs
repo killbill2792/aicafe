@@ -12,6 +12,7 @@ import { linkPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration, retryStartupFailure } from "./effects.mjs";
 import { collectReceipts, applyReceipts } from "./inbox.mjs";
 import { queueOwnerAlerts } from "./alerts.mjs";
+import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
@@ -266,5 +267,22 @@ async function main() {
   ].join("\n");
   console.log(summary);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+  // Single owner-facing view in issue #411, updated by the same trusted-main
+  // reconciliation. Dashboard publishing is never allowed to block the
+  // private ledger or the opaque Muse wake-up signal.
+  const ownerIssue = Number(process.env.DISPATCH_OWNER_DASHBOARD_ISSUE);
+  if (commit && ledger && persisted && Number.isSafeInteger(ownerIssue) && ownerIssue > 0) {
+    const runUrl = process.env.GITHUB_RUN_ID
+      ? `https://github.com/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}` : null;
+    try {
+      const body = renderOwnerView(effectiveState,{repo,asOf:new Date().toISOString(),runUrl});
+      const published = await publishOwnerView({github:gh,issue:ownerIssue,body});
+      console.log(`Owner control center ${published.status}: issue #${ownerIssue}, comment ${published.id}`);
+    } catch (error) {
+      console.error(`Owner control center publication failed: ${error.message}`);
+      if (process.env.GITHUB_STEP_SUMMARY)
+        appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\n**Owner dashboard update failed** — see the reconciliation log. Private ledger and courier signal remain independent.\n');
+    }
+  }
 }
 main().catch(error => { console.error(`Dispatcher failed: ${error.message}`); process.exitCode = 1; });
