@@ -1,5 +1,4 @@
 -- POS0c: eligible operational Standard GETs reuse the EXISTING stage -> raw current/change writer.
--- Additive, service-role only, no Toast writeback, no separate raw service.
 set lock_timeout = '5s';
 set statement_timeout = '45s';
 
@@ -9,7 +8,6 @@ alter table public.toast_optional_sync_state
  add constraint toast_operational_sources_object
  check (jsonb_typeof(operational_sources)='object') not valid;
 
--- Extend the existing stage writer's object key, preserving every prior origin.
 create or replace function public.toast_stage_object_key(p_origin text,p_row jsonb)
 returns text language sql immutable set search_path=public as $key$
  select case when bool_and(nullif(p_row->>c,'') is not null)
@@ -31,8 +29,6 @@ returns text language sql immutable set search_path=public as $key$
  having count(*)>0
 $key$;
 
--- Native GUID when provided; deterministic internal row identity only for
--- source-native composite and restaurant-singleton keys (never a claimed Toast GUID).
 create or replace function public.toast_stage_object_id(p_row jsonb)
 returns uuid language sql immutable set search_path=public as $id$
  select case when v ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
@@ -49,8 +45,6 @@ returns uuid language sql immutable set search_path=public as $id$
   nullif(p_row->>'operational_object_uuid','')) v) x
 $id$;
 
--- A new read/check timestamp is metadata, not a provider field delta.
--- The existing stage writer still diffs the complete sanitized source payload.
 create or replace function public.toast_stage_comparable(p_row jsonb)
 returns jsonb language sql immutable set search_path=public as $cmp$
  select public.toast_stable_json(
@@ -64,8 +58,6 @@ returns jsonb language sql immutable set search_path=public as $cmp$
     'last_checked_at','report_checked_at','observed_at','updated_at'])
 $cmp$;
 
--- Batch wrapper ONLY; the existing toast_archive_stage_snapshot owns every
--- raw_records upsert and raw_changes diff, in this one database transaction.
 create or replace function public.toast_stage_operational_batch(
  p_business_id uuid,p_restaurant_guid uuid,p_endpoint text,
  p_business_date date,p_objects jsonb
@@ -97,10 +89,6 @@ begin
      and row_value->>'business_date' is distinct from p_business_date::text)
   then raise exception 'wrong identity for operational object' using errcode='22023'; end if;
   perform public.toast_archive_stage_snapshot(row_value,p_endpoint,'toast_operational_current');
-  -- The shared writer keeps the original first-seen business_date on UPDATE.
-  -- For current operational objects, advance the indexed capture date too,
-  -- otherwise the existing date-filtered cv_* / query_data hides fresh stock
-  -- as soon as the local calendar advances. Do not touch other origins.
   update public.toast_raw_records r set business_date=p_business_date
   where r.business_id=p_business_id
     and r.capture_key='stage:toast_operational_current:key:'||
