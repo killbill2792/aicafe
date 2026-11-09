@@ -4,7 +4,7 @@
 -- owner-authorized out-of-scope edit. No skipped execution is claimed as proof.
 \set ON_ERROR_STOP on
 BEGIN;
-CREATE FUNCTION pg_temp.check(ok boolean,msg text) RETURNS void LANGUAGE plpgsql AS $$
+CREATE FUNCTION pg_temp.assert_true(ok boolean,msg text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'POS0c FAILURE: %',msg;END IF;END $$;
 
 DO $pos0c$
@@ -35,27 +35,27 @@ BEGIN
   'provider_key',e,'guid',e,'amount',12.50,'date','2026-11-08T15:00:00Z',
   'business_date','2026-11-08','type','CASH_IN','fetched_at','2026-11-08T16:00:00Z',
   'lastSuccessAt','2026-11-08T16:00:00Z');
- PERFORM pg_temp.check(public.toast_stage_operational_batch(b,r,'cashmgmt/v1/entries',
+ PERFORM pg_temp.assert_true(public.toast_stage_operational_batch(b,r,'cashmgmt/v1/entries',
   '2026-11-08',jsonb_build_array(cash))=1,'first operation saved');
- PERFORM pg_temp.check(public.toast_stage_operational_batch(b,r,'cashmgmt/v1/entries',
+ PERFORM pg_temp.assert_true(public.toast_stage_operational_batch(b,r,'cashmgmt/v1/entries',
   '2026-11-08',jsonb_build_array(cash||'{"fetched_at":"2026-11-08T16:15:00Z",
    "lastSuccessAt":"2026-11-08T16:15:00Z"}'::jsonb))=1,'re-fetch saved');
  SELECT count(*) INTO n FROM public.toast_raw_records
  WHERE business_id=b and restaurant_guid=r and entity='cashmgmt/v1/entries';
- PERFORM pg_temp.check(n=1,'same cash GUID must never double count');
- PERFORM pg_temp.check(not exists(SELECT 1 FROM public.toast_raw_changes
+ PERFORM pg_temp.assert_true(n=1,'same cash GUID must never double count');
+ PERFORM pg_temp.assert_true(not exists(SELECT 1 FROM public.toast_raw_changes
   WHERE business_id=b),'new fetch time is not a business delta');
  PERFORM public.toast_stage_operational_batch(b,r,'cashmgmt/v1/entries',
   '2026-11-08',jsonb_build_array(cash||'{"amount":15.25}'::jsonb));
- PERFORM pg_temp.check((SELECT count(*)=1 FROM public.toast_raw_records
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
   WHERE business_id=b and entity='cashmgmt/v1/entries'),'cash updates in place');
- PERFORM pg_temp.check((SELECT count(*)=1 FROM public.toast_raw_changes
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_changes
   WHERE business_id=b and entity_guid=e),'exactly one native cash amount delta');
- PERFORM pg_temp.check((SELECT changes->0->>'path'='.amount'
+ PERFORM pg_temp.assert_true((SELECT changes->0->>'path'='.amount'
   AND changes->0->'before'='12.50'::jsonb AND changes->0->'after'='15.25'::jsonb
   FROM public.toast_raw_changes WHERE business_id=b and entity_guid=e),
   'exact cents field diff with source amount (dollars)');
- PERFORM pg_temp.check((SELECT amount_cents=1525 FROM public.cv_cash
+ PERFORM pg_temp.assert_true((SELECT amount_cents=1525 FROM public.cv_cash
   WHERE business_id=b and entry_type='CASH_IN' LIMIT 1),
   'same cash amount through the existing POS0e canonical screen/tool view');
 
@@ -66,11 +66,11 @@ BEGIN
   jsonb_build_array(inv));
  PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,
   jsonb_build_array(inv||'{"quantity":2.5}'::jsonb));
- PERFORM pg_temp.check((SELECT count(*)=1 FROM public.toast_raw_records
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
   WHERE business_id=b AND entity='stock/v1/inventory'),'one stock item current');
- PERFORM pg_temp.check((SELECT count(*)=1 FROM public.toast_raw_changes
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_changes
   WHERE business_id=b AND entity_guid=stock),'stock delta saved, no duplicate');
- PERFORM pg_temp.check((SELECT quantity=2.5 FROM public.cv_inventory
+ PERFORM pg_temp.assert_true((SELECT quantity=2.5 FROM public.cv_inventory
   WHERE business_id=b AND source='toast' AND menu_item_ref=stock::text LIMIT 1),
   'inventory query reads current quantity, not missing=zero');
  kitchen:=jsonb_build_object('business_id',b,'restaurant_guid',r,
@@ -84,9 +84,9 @@ BEGIN
   '2026-11-08',jsonb_build_array(kitchen));
  PERFORM public.toast_stage_operational_batch(b,r,'kitchen/v1/export/itemFulfillments',
   '2026-11-08',jsonb_build_array(kitchen||'{"itemFulfilledAt":"2026-11-08T17:05:00Z"}'::jsonb));
- PERFORM pg_temp.check((SELECT count(*)=1 FROM public.toast_raw_changes
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_changes
   WHERE business_id=b AND entity_guid=synthetic),'KDS composite change journal');
- PERFORM pg_temp.check((SELECT ready_at='2026-11-08T17:05:00Z' FROM public.cv_kitchen
+ PERFORM pg_temp.assert_true((SELECT ready_at='2026-11-08T17:05:00Z' FROM public.cv_kitchen
   WHERE business_id=b AND ticket_ref is null LIMIT 1),'KDS completion through canonical view');
  availability:=jsonb_build_object('business_id',b,'restaurant_guid',r,
   'endpoint','restaurant-availability/v1/availability',
@@ -94,25 +94,25 @@ BEGIN
   'source_key_kind','restaurant_singleton','status','ONLINE','restaurantGuid',r);
  PERFORM public.toast_stage_operational_batch(b,r,'restaurant-availability/v1/availability',
   null,jsonb_build_array(availability));
- PERFORM pg_temp.check((SELECT count(*)=1 FROM public.toast_raw_records
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
   WHERE business_id=b AND entity='restaurant-availability/v1/availability'),
   'single current availability; never a new snapshot per check');
  -- One missing row or missing grant must not delete last-good; this writer is
  -- deliberately additive and receives only successful, validated object rows.
  PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,'[]');
- PERFORM pg_temp.check((SELECT count(*)=1 FROM public.toast_raw_records
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
   WHERE business_id=b AND entity='stock/v1/inventory'),'empty result does not infer stock zero');
- PERFORM pg_temp.check((SELECT jsonb_array_length(public.ai_toast_fields(
+ PERFORM pg_temp.assert_true((SELECT jsonb_array_length(public.ai_toast_fields(
   b,'stock/v1/inventory'))>0),'current-only field discovery sees stock');
 
  BEGIN
   PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,
    jsonb_build_array(inv||jsonb_build_object('restaurant_guid',r2)));
  EXCEPTION WHEN sqlstate '22023' THEN bad:=true;END;
- PERFORM pg_temp.check(bad,'cross-restaurant row rejected before any durable write');
- PERFORM pg_temp.check(not exists(SELECT 1 FROM public.toast_raw_records
+ PERFORM pg_temp.assert_true(bad,'cross-restaurant row rejected before any durable write');
+ PERFORM pg_temp.assert_true(not exists(SELECT 1 FROM public.toast_raw_records
   WHERE business_id=b2),'no cross-café operational leakage');
- PERFORM pg_temp.check(not has_function_privilege('anon',
+ PERFORM pg_temp.assert_true(not has_function_privilege('anon',
   'public.toast_stage_operational_batch(uuid,uuid,text,date,jsonb)','EXECUTE'),
   'untrusted clients cannot call the operational writer');
 END $pos0c$;
