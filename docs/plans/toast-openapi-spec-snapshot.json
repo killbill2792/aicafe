@@ -16462,5 +16462,379 @@
         "status": "CLASSIFIED_OFFICIAL_REQUEST_EXAMPLE_NO_CAFE_FETCH"
       }
     ]
+  },
+  "official_field_resolution": {
+    "version": 1,
+    "source_row_key": "family | exact official GET operation.path | exact 2xx response status | exact source response field[0]; type/format/null marker are the immutable response field[1..3] from official_snapshot",
+    "enumeration": "Every official 2xx row inherits its family's H-code storage/reader contract here; exact path prefixes below override narrower source scope/privacy/gap. Longest matching field_prefix wins. An exception applies to itself and its nested descendants (dot or []), never an unrelated field with the same leading letters.",
+    "evidence_boundary": "This is a conservative source-to-CURRENT-CODE+PROPOSED-READER architecture crosswalk, NOT café permission/observed field/verified retention/integrated availability proof. October diagnostic outcomes never upgrade any status.",
+    "per_cafe_field_defaults": {
+      "grant": "not_tested",
+      "response": "not_tested",
+      "field_retained": "not_verified",
+      "field_discoverable": "not_verified",
+      "field_queryable": "not_verified",
+      "registered_supervisor_and_screen": "not_verified",
+      "freshness": "not_verified"
+    },
+    "response_outcome_vocabulary": [
+      "not_tested",
+      "observed_success",
+      "observed_null",
+      "field_omitted",
+      "empty_success",
+      "403_forbidden",
+      "missing_resource_id",
+      "not_configured",
+      "204_no_content",
+      "stale",
+      "failed"
+    ],
+    "privacy_default": "FIELD_LEVEL_REVIEW_REQUIRED: allowed noncredential business facts retained only with grants, café RLS and security checks; identity/contact/staff/payroll data only under allowed scope and role; card PAN/CVV/track/auth secrets/payment credentials never retained; legacy redactor drops more than owner target. Default DOES NOT certify safe retention.",
+    "risk_precedence": [
+      {
+        "id": "credential_or_card",
+        "field_segments_or_substrings": [
+          "cardnumber",
+          "pan",
+          "cvv",
+          "cvc",
+          "trackdata",
+          "token",
+          "credential",
+          "password",
+          "secret",
+          "apikey",
+          "authorization",
+          "routingnumber",
+          "accountnumber",
+          "passcode"
+        ],
+        "treatment": "EXCLUDE_CREDENTIAL; verify context before classifying similarly named legitimate metadata"
+      },
+      {
+        "id": "identity_contact_or_payroll",
+        "field_segments_or_substrings": [
+          "customer",
+          "guest",
+          "employee",
+          "email",
+          "phone",
+          "address",
+          "name",
+          "wage",
+          "payroll",
+          "tip"
+        ],
+        "treatment": "RESTRICTED_PII_OR_PAYROLL_REVIEW; retain only if actual additional scope, owner-approved safe field handling, role and café RLS; current redactor may DROP/HMAC"
+      },
+      {
+        "id": "free_text",
+        "field_segments_or_substrings": [
+          "notes",
+          "memo",
+          "comment",
+          "message",
+          "instructions",
+          "description",
+          "text"
+        ],
+        "treatment": "FREE_TEXT_REVIEW; current redactor may DROP; prompt-injection-safe source data"
+      },
+      {
+        "id": "business_default",
+        "field_segments_or_substrings": [],
+        "treatment": "BUSINESS_FIELD_REVIEW; retention/SQL reader not independently verified"
+      }
+    ],
+    "family_contracts": [
+      {
+        "family": "orders",
+        "historical_contract": "H1",
+        "source_scope": "orders:read; guest.pi:read additionally for checks[].customer protected fields",
+        "object_identity": "cafe+restaurant+order.guid; children check/selection/payment GUID only when returned",
+        "current_writer_storage": "PARTIAL_CURRENT: toast_raw_records entity=order; existing order, check, payment projections; exact child field retention not certified",
+        "existing_ingest_cadence": "15-minute eligible live orders + day importer; detail GET not a separately proven scheduled source",
+        "current_operational_reader": "PARTIAL_CURRENT: toast_records_for order branch/current cv_toast_records, cv_orders, cv_payments; per-field discoverability NOT VERIFIED",
+        "supervisor_reader": "query_data current orders plus get_sales/get_profit for defined metrics; raw customer identity NOT VERIFIED",
+        "screen_consumer": "Sales/Home/Money/order details; customer identity screen NOT VERIFIED",
+        "downstream_owner": "POS0e retained fields+reader; existing-order repair separately scoped; POS0f final proof",
+        "known_gap": "redactor currently drops contacts/names and HMACs/omits customer GUID; field-level child reader/PII grant unproven"
+      },
+      {
+        "family": "menus",
+        "historical_contract": "H2",
+        "source_scope": "menus:read (Menus V2 published only)",
+        "object_identity": "cafe+restaurant+source menu-item/group/option GUID and published version; nested no-GUID key not assumed",
+        "current_writer_storage": "PARTIAL_CURRENT: toast_raw_records menu_item/price_version; toast_catalog_facts projections; complete V2 response not proved",
+        "existing_ingest_cadence": "optionalSync metadata then copyToastPublishedMenu, daily-gated; current double full menu copy needs repair",
+        "current_operational_reader": "PARTIAL_CURRENT: cv_menu curated fields only; cv_toast_records NON-ORDER diagnostic, not operational",
+        "supervisor_reader": "query_data cv_menu selected fields; full menu source paths NOT VERIFIED",
+        "screen_consumer": "Toast-only current Menu, pricing/cost screens; only validated publication should surface",
+        "downstream_owner": "POS0d published menu writer/price, POS0e reader, POS0f proof",
+        "known_gap": "full source version consistency, nested size/option and field retention not proven"
+      },
+      {
+        "family": "config",
+        "historical_contract": "H3",
+        "source_scope": "config:read",
+        "object_identity": "cafe+restaurant+configuration type+source GUID when present; validate ID for detail",
+        "current_writer_storage": "PARTIAL_CURRENT: toast_void_reason_directory for void reasons; NO CURRENT OBJECT PROVEN for other config GETs",
+        "existing_ingest_cadence": "optionalSync voidReasons only; other GETs October diagnostic, not active cadence",
+        "current_operational_reader": "NO CURRENT OPERATIONAL RAW FIELD READER; cv_dining_options diagnostic sample, not current",
+        "supervisor_reader": "query_data cv_dining_options snapshotOnly; exact other config fields NO CURRENT READER",
+        "screen_consumer": "Menu/setup/Money only where independently connected; other screen NONE PROVEN",
+        "downstream_owner": "POS0d config source, POS0e current reader, POS0f proof",
+        "known_gap": "do not infer current configuration from diagnostic samples"
+      },
+      {
+        "family": "labor",
+        "historical_contract": "H4",
+        "source_scope": "labor:read; labor.employees:read for employee GET; exact café grant untested",
+        "object_identity": "cafe+restaurant+employee/job/shift/timeEntry GUID as source allows; nested jobReference.guid is a relation, NOT time entry key",
+        "current_writer_storage": "PARTIAL_CURRENT: toast_raw_records employee/job/time_entry; pos_scheduled_shifts, toast_labor_entries, directories are typed/projection paths",
+        "existing_ingest_cadence": "optionalSync copyToastStaff, copyToastAttendance, syncToastLaborReadOnly; roster/day gate and schedule window",
+        "current_operational_reader": "PARTIAL_CURRENT: cv_staff/cv_labor_entries/cv_shifts curated; toast_records_for NON-ORDER diagnostic; arbitrary jobReference raw path NOT VERIFIED",
+        "supervisor_reader": "query_data curated labor views; get_team/get_labor/get_schedule; raw nested source access NOT VERIFIED",
+        "screen_consumer": "Staff/payroll/schedule where mapped; no claim raw jobReference screen field",
+        "downstream_owner": "POS0b labor writer, POS0e shared reader+privacy, POS0f proof",
+        "known_gap": "redactor strips names/contact; wage and role privacy gated; repeated job reference provenance/field parity unproved"
+      },
+      {
+        "family": "cashmgmt",
+        "historical_contract": "H5",
+        "source_scope": "cashmgmt:read (grant not tested)",
+        "object_identity": "cafe+restaurant+actual cash entry/deposit GUID if supplied; otherwise key unresolved",
+        "current_writer_storage": "NO CURRENT OBJECT PROVEN: no operational toast_raw_records cash entity; October samples diagnostic",
+        "existing_ingest_cadence": "October rawSample diagnostic ONLY; no normal cash GET cadence verified",
+        "current_operational_reader": "NO CURRENT OPERATIONAL READER: cv_cash diagnostic snapshotOnly",
+        "supervisor_reader": "query_data cv_cash diagnostic-only, cannot represent current live cash",
+        "screen_consumer": "Money/cash only if independently wired; no live consumer proven",
+        "downstream_owner": "POS0c cash source, POS0e reader, POS0f proof",
+        "known_gap": "no phantom zero or total from sample"
+      },
+      {
+        "family": "stock",
+        "historical_contract": "H6",
+        "source_scope": "stock:read (grant not tested)",
+        "object_identity": "cafe+restaurant+inventory [].guid + location [].multiLocationId and versionId; stable uniqueness/composite STILL UNVERIFIED",
+        "current_writer_storage": "NO CURRENT OBJECT PROVEN: stock not retained operationally in toast_raw_records; October samples diagnostic",
+        "existing_ingest_cadence": "October diagnostic ONLY; no existing current GET inventory cadence verified",
+        "current_operational_reader": "NO CURRENT OPERATIONAL READER: cv_inventory diagnostic snapshotOnly",
+        "supervisor_reader": "query_data cv_inventory diagnostic-only; [].quantity not current-queryable",
+        "screen_consumer": "Inventory/Supplies screen current Toast stock consumer NOT VERIFIED",
+        "downstream_owner": "POS0c stock source+identity, POS0e reader, POS0f proof",
+        "known_gap": "[].quantity/status/version are official definitions not observed live inventory/stock"
+      },
+      {
+        "family": "kitchen",
+        "historical_contract": "H7",
+        "source_scope": "kitchen:read (grant not tested)",
+        "object_identity": "cafe+restaurant+fulfillment/station GUID or verified composite; not established",
+        "current_writer_storage": "NO CURRENT OBJECT PROVEN: no operational kitchen raw object",
+        "existing_ingest_cadence": "October diagnostic ONLY; order selection fulfillment_status separate existing order fact",
+        "current_operational_reader": "NO CURRENT OPERATIONAL READER: cv_kitchen diagnostic snapshotOnly",
+        "supervisor_reader": "query_data cv_kitchen diagnostic-only; source timestamps not established",
+        "screen_consumer": "Kitchen/Operations consumer NOT VERIFIED",
+        "downstream_owner": "POS0c kitchen source, POS0e reader, POS0f proof",
+        "known_gap": "204/no content not a zero or absence-of-work assertion"
+      },
+      {
+        "family": "packaging",
+        "historical_contract": "H9",
+        "source_scope": "packaging:read (grant not tested)",
+        "object_identity": "cafe+restaurant+published packaging configuration version or verified identity; not established",
+        "current_writer_storage": "NO CURRENT OBJECT PROVEN; historical diagnostic only",
+        "existing_ingest_cadence": "October diagnostic ONLY; raw Swagger /v1 path vs official gateway /packaging/v1 classified",
+        "current_operational_reader": "NO CURRENT OPERATIONAL READER: non-order cv_toast_records diagnostic",
+        "supervisor_reader": "no current query_data data.<field> source guarantee",
+        "screen_consumer": "Menu/settings consumer NOT VERIFIED",
+        "downstream_owner": "POS0d packaging/config source, POS0e reader, POS0f proof",
+        "known_gap": "gateway mapping is URL definition, not live permissions or retention"
+      },
+      {
+        "family": "restaurant-availability",
+        "historical_contract": "H10",
+        "source_scope": "restaurants:read (grant not tested)",
+        "object_identity": "cafe+restaurant+status timestamp/version only if actually returned",
+        "current_writer_storage": "NO CURRENT OBJECT PROVEN; historical diagnostic only",
+        "existing_ingest_cadence": "October diagnostic ONLY; no active current GET cadence",
+        "current_operational_reader": "NO CURRENT OPERATIONAL READER: non-order cv_toast_records diagnostic",
+        "supervisor_reader": "no current query_data data.<field> source guarantee",
+        "screen_consumer": "Operations/availability consumer NOT VERIFIED",
+        "downstream_owner": "POS0c availability source, POS0e reader, POS0f proof",
+        "known_gap": "status freshness/no resource must be explicit"
+      },
+      {
+        "family": "ordermgmt-config",
+        "historical_contract": "H11",
+        "source_scope": "digital_schedule:read (grant not tested)",
+        "object_identity": "cafe+restaurant+published ordering schedule/version if provided; key unresolved",
+        "current_writer_storage": "NO CURRENT OBJECT PROVEN; historical diagnostic only",
+        "existing_ingest_cadence": "October diagnostic ONLY; no active current GET cadence",
+        "current_operational_reader": "NO CURRENT OPERATIONAL READER: non-order cv_toast_records diagnostic",
+        "supervisor_reader": "no current query_data data.<field> source guarantee",
+        "screen_consumer": "Order availability/Menu consumer NOT VERIFIED",
+        "downstream_owner": "POS0d schedule/config source, POS0e reader, POS0f proof",
+        "known_gap": "do not infer daily status from stale schedule"
+      },
+      {
+        "family": "device-details",
+        "historical_contract": "H12",
+        "source_scope": "device-details.info:read (grant not tested)",
+        "object_identity": "cafe+restaurant+authorized device GUID or safe scoped identifier if returned; unresolved",
+        "current_writer_storage": "NO CURRENT OBJECT PROVEN; historical diagnostic only",
+        "existing_ingest_cadence": "October diagnostic ONLY; no active current GET cadence",
+        "current_operational_reader": "NO CURRENT OPERATIONAL READER: non-order cv_toast_records diagnostic",
+        "supervisor_reader": "no current query_data data.<field> source guarantee",
+        "screen_consumer": "NO VERIFIED SCREEN CONSUMER",
+        "downstream_owner": "POS0d device source, POS0e reader, POS0f proof",
+        "known_gap": "device identifier and token security require source-specific privacy check"
+      },
+      {
+        "family": "restaurants",
+        "historical_contract": "H13",
+        "source_scope": "restaurants:read (grant not tested)",
+        "object_identity": "cafe+restaurant GUID / managementGroupGUID required by respective endpoint; parent group entitlement untested",
+        "current_writer_storage": "NO CURRENT OBJECT PROVEN: restaurant-details GET not operationally retained as a full object",
+        "existing_ingest_cadence": "October diagnostic ONLY; no active current GET cadence",
+        "current_operational_reader": "NO CURRENT OPERATIONAL READER: non-order cv_toast_records diagnostic",
+        "supervisor_reader": "no current query_data data.<field> source guarantee",
+        "screen_consumer": "Setup/settings specific reader NOT VERIFIED",
+        "downstream_owner": "POS0d restaurant source, POS0e reader, POS0f proof",
+        "known_gap": "management group permissions and full response not confirmed"
+      }
+    ],
+    "field_prefix_exceptions": [
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].checks[].customer",
+        "additional_or_required_scope": "guest.pi:read",
+        "privacy_override": "PII_ALLOWED_IF_ACTUALLY_GRANTED; current raw redactor suppresses name/contact and hashes/omits sensitive customer identity; absent customer must not suppress order",
+        "field_gap": "Source-linked customer GUID/contact NOT currently evidenced in shared reader; POS0e+POS0f"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "checks[].customer",
+        "additional_or_required_scope": "guest.pi:read",
+        "privacy_override": "PII_ALLOWED_IF_ACTUALLY_GRANTED; current raw redactor suppresses name/contact and hashes/omits sensitive customer identity; absent customer must not suppress order",
+        "field_gap": "Source-linked customer GUID/contact NOT currently evidenced in shared reader; POS0e+POS0f"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].checks[].customer.guid",
+        "additional_or_required_scope": "guest.pi:read",
+        "privacy_override": "CURRENT_HASH_IF_CONFIGURED_ELSE_OMIT; future permitted stable identity requires scoped review; never infer from name",
+        "field_gap": "No clear current source GUID available in order generic reader"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].checks[].customer.email",
+        "additional_or_required_scope": "guest.pi:read",
+        "privacy_override": "CURRENT_DROP; future retained permitted email gated by café scope, role and PII review",
+        "field_gap": "No current source email reader"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "checks[].customer.guid",
+        "additional_or_required_scope": "guest.pi:read",
+        "privacy_override": "CURRENT_HASH_IF_CONFIGURED_ELSE_OMIT; future permitted stable identity requires scoped review; never infer from name",
+        "field_gap": "No clear current source GUID available in order generic reader"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "checks[].customer.email",
+        "additional_or_required_scope": "guest.pi:read",
+        "privacy_override": "CURRENT_DROP; future retained permitted email gated by café scope, role and PII review",
+        "field_gap": "No current source email reader"
+      },
+      {
+        "family": "labor",
+        "operation_path": "/labor/v1/employees",
+        "field_prefix": "[].jobReferences",
+        "additional_or_required_scope": "labor.employees:read",
+        "privacy_override": "EMPLOYEE_RELATION_GATED; actual provider job GUID must join source job entity, not display name",
+        "field_gap": "Raw-to-directory/Staff/Supervisor jobReference field parity NOT VERIFIED; POS0b/e/f"
+      },
+      {
+        "family": "labor",
+        "operation_path": "/labor/v1/employees/{employeeId}",
+        "field_prefix": "jobReferences",
+        "additional_or_required_scope": "labor.employees:read",
+        "privacy_override": "EMPLOYEE_RELATION_GATED; actual provider job GUID must join source job entity, not display name",
+        "field_gap": "Raw-to-directory/Staff/Supervisor jobReference field parity NOT VERIFIED; POS0b/e/f"
+      },
+      {
+        "family": "labor",
+        "operation_path": "/labor/v1/employees",
+        "field_prefix": "[].wageOverrides[].jobReference",
+        "additional_or_required_scope": "labor.employees:read",
+        "privacy_override": "EMPLOYEE_WAGE_ROLE_SENSITIVE; grant+payroll role authorization needed",
+        "field_gap": "Wage override jobReference source-to-consumer NOT VERIFIED; POS0b/e/f"
+      },
+      {
+        "family": "labor",
+        "operation_path": "/labor/v1/employees/{employeeId}",
+        "field_prefix": "wageOverrides[].jobReference",
+        "additional_or_required_scope": "labor.employees:read",
+        "privacy_override": "EMPLOYEE_WAGE_ROLE_SENSITIVE; grant+payroll role authorization needed",
+        "field_gap": "Wage override jobReference source-to-consumer NOT VERIFIED; POS0b/e/f"
+      },
+      {
+        "family": "labor",
+        "operation_path": "/labor/v1/timeEntries",
+        "field_prefix": "[].jobReference",
+        "additional_or_required_scope": "labor:read",
+        "privacy_override": "STAFF_ROLE_REFERENCE_GATED; preserve source GUID, avoid inferred job-name join",
+        "field_gap": "TimeEntry current object exists, exact jobReference path in query_data NOT VERIFIED; POS0b/e/f"
+      },
+      {
+        "family": "labor",
+        "operation_path": "/labor/v1/timeEntries/{timeEntryId}",
+        "field_prefix": "jobReference",
+        "additional_or_required_scope": "labor:read",
+        "privacy_override": "STAFF_ROLE_REFERENCE_GATED; preserve source GUID, avoid inferred job-name join",
+        "field_gap": "TimeEntry current object exists, exact jobReference path in query_data NOT VERIFIED; POS0b/e/f"
+      },
+      {
+        "family": "labor",
+        "operation_path": "/labor/v1/shifts",
+        "field_prefix": "[].jobReference",
+        "additional_or_required_scope": "labor:read",
+        "privacy_override": "STAFF_ROLE_REFERENCE_GATED; preserve source GUID, avoid inferred job-name join",
+        "field_gap": "Shift is a typed projection, raw jobReference field parity NOT VERIFIED; POS0b/e/f"
+      },
+      {
+        "family": "labor",
+        "operation_path": "/labor/v1/shifts/{shiftId}",
+        "field_prefix": "jobReference",
+        "additional_or_required_scope": "labor:read",
+        "privacy_override": "STAFF_ROLE_REFERENCE_GATED; preserve source GUID, avoid inferred job-name join",
+        "field_gap": "Shift is a typed projection, raw jobReference field parity NOT VERIFIED; POS0b/e/f"
+      },
+      {
+        "family": "stock",
+        "operation_path": "/v1/inventory",
+        "field_prefix": "[]",
+        "additional_or_required_scope": "stock:read",
+        "privacy_override": "BUSINESS_STOCK_QUANTITY; classification subject to café entitlement and field-level privacy review",
+        "field_gap": "NO current stock writer/current reader; POS0c source+key; POS0e reader; POS0f proof"
+      },
+      {
+        "family": "stock",
+        "operation_path": "/v1/inventory",
+        "field_prefix": "[].quantity",
+        "additional_or_required_scope": "stock:read",
+        "privacy_override": "BUSINESS_STOCK_QUANTITY, never replace 403/no-ID/null/204 with numeric zero",
+        "field_gap": "NO live quantity reader; cv_inventory is historical diagnostic"
+      }
+    ],
+    "excluded_note": "Partner-only entitlement H8 remains in historical 13-contract register, NOT among official Standard GET rows; Analytics ERA, Menus V3 and no-GET sentinels stay independently classified."
   }
 }
