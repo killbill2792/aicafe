@@ -4,7 +4,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
-import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge } from "./core.mjs";
 import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
@@ -184,7 +184,7 @@ async function main() {
       if (!rec.pr_number || rec.github_state !== "open" || rec.draft) continue;
       const task = taskById.get(id);
       if (!task || !rec.approved || !rec.acceptance_evidence) continue;
-      const predecessorRecords = (task.depends_on || []).map(dep => proposed.state.tasks[dep] || {status:"unknown"});
+      const predecessorRecords = predecessorsForMerge(task, queue, proposed.state.tasks);
       const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
         evidence: rec.acceptance_evidence, expectedAcceptance: task.acceptance, enabled: true });
       if (outcome.status === "merged_unproven") {

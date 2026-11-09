@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub, progressUpdatePolicy } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub, progressUpdatePolicy, predecessorsForMerge } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
 import { GitHubFacts, parseAcceptanceEvidence } from "./github.mjs";
 
@@ -128,6 +128,34 @@ test("Toast architecture foundation requires owner-reviewed merged-main proof be
   assert.throws(()=>validateQueue({ ...all,
     dispatch_rules:{...all.dispatch_rules,architecture_foundation_dependent_task_ids:["unknown"]} }),
     /Invalid architecture foundation proof gate/);
+});
+test("merge honors only owner-accepted POS0a docs; runtime predecessors still need integration", () => {
+  const sha = "a".repeat(40);
+  const tasks = [{...task("POS0a"),test_kinds:["docs","read_only_audit"]},
+    task("POS0e", ["POS0a"]), task("POS0b",["POS0a","POS0e"])];
+  const unsigned={...queue(tasks),dispatch_rules:{
+    architecture_foundation_proof_task:"POS0a",
+    architecture_foundation_dependent_task_ids:["POS0e","POS0b"],
+    architecture_foundation_implementation_approval:{approved:false,merged_sha:null,owner_review_url:null}
+  }};
+  const signed={...unsigned,dispatch_rules:{...unsigned.dispatch_rules,
+    architecture_foundation_implementation_approval:{approved:true,merged_sha:sha,
+      owner_review_url:"https://github.com/killbill2792/aicafe/pull/398#issuecomment-123"}
+  }};
+  const docsMerged={POS0a:{status:"merged",merge_sha:sha}};
+  const ready={...pr(),threads_resolved:true,base_current:true,acceptance_proven:true};
+  assert.deepEqual(predecessorsForMerge(tasks[1],unsigned,docsMerged),[docsMerged.POS0a]);
+  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[1],unsigned,docsMerged)).eligible,false);
+  assert.deepEqual(predecessorsForMerge(tasks[1],signed,docsMerged),[]);
+  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[1],signed,docsMerged)).eligible,true);
+  const mismatched={POS0a:{status:"merged",merge_sha:"b".repeat(40)}};
+  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[1],signed,mismatched)).eligible,false);
+  const withUnprovenRuntime={...docsMerged,POS0e:{status:"merged",merge_sha:"c".repeat(40)}};
+  assert.deepEqual(predecessorsForMerge(tasks[2],signed,withUnprovenRuntime),
+    [withUnprovenRuntime.POS0e]);
+  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[2],signed,withUnprovenRuntime)).eligible,false);
+  withUnprovenRuntime.POS0e.status="integrated_proven";
+  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[2],signed,withUnprovenRuntime)).eligible,true);
 });
 test("priority proof gate blocks unrelated dispatch even when gate PR is draft or merged", () => {
   const all = {

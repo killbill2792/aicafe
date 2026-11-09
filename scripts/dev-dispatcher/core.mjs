@@ -79,6 +79,17 @@ export function architectureFoundationReady(queue, records = {}) {
     /^[a-f0-9]{40}$/.test(signoff.merged_sha || "") &&
     /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+#issuecomment-\d+$/.test(signoff.owner_review_url || "");
 }
+// Merge gate receives only operational predecessors. The owner-accepted POS0a
+// document may satisfy a dependency without pretending it ran production proof.
+export function predecessorsForMerge(task, queue, records = {}) {
+  const foundationId = queue?.dispatch_rules?.architecture_foundation_proof_task;
+  const documentationAccepted = foundationId === "POS0a" &&
+    queue?.tasks?.some(item => item.id === foundationId && item.test_kinds?.includes("read_only_audit")) &&
+    architectureFoundationReady(queue, records);
+  return (task.depends_on || [])
+    .filter(dep => !(dep === foundationId && documentationAccepted))
+    .map(dep => records[dep] || {status:"unknown"});
+}
 export function dispatchFrontier(queue, records = {}, capacity = null) {
   const tasks = validateQueue(queue);
   // The owner-approved capacity comes from the queue, not a stale hardcoded default.
