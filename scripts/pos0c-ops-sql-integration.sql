@@ -23,6 +23,11 @@ DECLARE
  cash jsonb;inv jsonb;kitchen jsonb;availability jsonb;
  n integer;bad boolean:=false;
 BEGIN
+ PERFORM pg_temp.assert_true(
+  not exists(select 1 from public.toast_json_diff(
+   public.toast_stage_comparable('{"id":21,"amount":5}'::jsonb),
+   public.toast_stage_comparable('{"id":22,"amount":5}'::jsonb))),
+  'POS0c cannot regress migration 144: internal refund row id changes are not Toast deltas');
  INSERT INTO public.businesses(id,name,is_demo) VALUES
  (b,'POS0c disposable café',false),(b2,'POS0c second tenant',false);
  INSERT INTO public.locations(id,business_id,name)
