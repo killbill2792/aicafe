@@ -187,13 +187,12 @@ export async function syncToastOperationalSources(db:SupabaseClient,
      nativeOperationalKey(op.endpoint,row,op.businessDate);
      data.push(row);
     }
-    if(data.length>15000)throw new ToastApiError("invalid_response");
+    if(data.length>5000)throw new ToastApiError("invalid_response");
     if(!op.paginated||!nextToken)break;
     if(nextToken===cursor||page===24)throw new ToastApiError("invalid_response");
     cursor=nextToken;
    }
-   for(let offset=0;offset<data.length;offset+=200){
-    const rows=data.slice(offset,offset+200).map(row=>{
+   const rows=data.map(row=>{
      const key=nativeOperationalKey(op.endpoint,row,op.businessDate);
      const clean=redactToastRaw(row) as Record<string,unknown>;
      return {...clean,business_id:p.businessId,restaurant_guid:p.restaurantGuid,
@@ -211,7 +210,6 @@ export async function syncToastOperationalSources(db:SupabaseClient,
      p_endpoint:op.endpoint,p_business_date:op.businessDate??null,p_objects:rows
     });
     if(writeError||written!==rows.length)throw new ToastApiError("unavailable");
-   }
    states[op.key]={last_checked_at:checked,last_success_at:checked,
     status:data.length?"current":"empty",count:data.length,failures:0,error:null,
     next_at:new Date(now.getTime()+op.minutes*60000).toISOString()};
