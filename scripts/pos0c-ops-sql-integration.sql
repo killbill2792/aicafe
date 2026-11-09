@@ -72,6 +72,15 @@ BEGIN
   WHERE business_id=b AND entity='stock/v1/inventory'),'one stock item current');
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_changes
   WHERE business_id=b AND entity_guid=stock),'stock delta saved, no duplicate');
+ PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',
+  '2026-11-09',jsonb_build_array(inv||'{"quantity":2.5,
+   "business_date":"2026-11-09","lastSuccessAt":"2026-11-09T16:00:00Z"}'::jsonb));
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_changes
+  WHERE business_id=b AND entity_guid=stock),
+  're-observing unchanged stock next café day must not log phantom source delta');
+ PERFORM pg_temp.assert_true((SELECT business_date='2026-11-09'
+  FROM public.toast_raw_records WHERE business_id=b AND entity_guid=stock LIMIT 1),
+  'latest observed café stock day is queryable');
  PERFORM pg_temp.assert_true((SELECT quantity=2.5 FROM public.cv_inventory
   WHERE business_id=b AND source='toast' AND menu_item_ref=stock::text LIMIT 1),
   'inventory query reads current quantity, not missing=zero');
@@ -109,7 +118,7 @@ BEGIN
   b,'stock/v1/inventory'))>0),'current-only field discovery sees stock');
  PERFORM pg_temp.assert_true((public.ai_query_view(b,'cv_inventory',
   ARRAY['source','menu_item_ref','quantity']::text[],'[]'::jsonb,
-  '{}'::text[],'[]'::jsonb,'2026-11-08','2026-11-08',
+  '{}'::text[],'[]'::jsonb,'2026-11-09','2026-11-09',
   NULL,30)->>'sourceCount')::integer >= 1,
   'existing query_data SQL path sees current dated inventory');
 
