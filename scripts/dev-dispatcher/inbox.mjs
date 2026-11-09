@@ -40,7 +40,12 @@ export function applyReceipts(state, inbox, actorMap) {
       next = acceptOwnerNoticeReceipt(next, receipt, { authenticatedCourier: courier });
       continue;
     }
-    if (next.actions?.[receipt.action_id]?.status !== 'planned') continue;
+    const action = next.actions?.[receipt.action_id];
+    // A first assignment may be cancelled as stale when its PR is created
+    // before the original browser receipt arrives. Validation in receipt.mjs
+    // may recover its verified chat URL; other cancelled sends remain held.
+    if (action?.status !== 'planned' &&
+        !(action?.status === 'cancelled_stale_head' && action.type === 'assign')) continue;
     next = acceptDeliveryReceipt(next, receipt, { authenticatedCourier: courier });
   }
   return next;
