@@ -61,8 +61,10 @@ BEGIN
 
  inv:=jsonb_build_object('business_id',b,'restaurant_guid',r,'endpoint','stock/v1/inventory',
   'provider_key',stock,'guid',stock,'status','QUANTITY','quantity',3.5,
+  'business_date','2026-11-08','source_business_date_kind','observed_cafe_day',
   'lastSuccessAt','2026-11-08T16:00:00Z');
- PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,
+ PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',
+  '2026-11-08',
   jsonb_build_array(inv));
  PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,
   jsonb_build_array(inv||'{"quantity":2.5}'::jsonb));
@@ -99,11 +101,17 @@ BEGIN
   'single current availability; never a new snapshot per check');
  -- One missing row or missing grant must not delete last-good; this writer is
  -- deliberately additive and receives only successful, validated object rows.
- PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,'[]');
+ PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',
+  '2026-11-08','[]');
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
   WHERE business_id=b AND entity='stock/v1/inventory'),'empty result does not infer stock zero');
  PERFORM pg_temp.assert_true((SELECT jsonb_array_length(public.ai_toast_fields(
   b,'stock/v1/inventory'))>0),'current-only field discovery sees stock');
+ PERFORM pg_temp.assert_true((public.ai_query_view(b,'cv_inventory',
+  ARRAY['source','menu_item_ref','quantity']::text[],'[]'::jsonb,
+  '{}'::text[],'[]'::jsonb,'2026-11-08','2026-11-08',
+  NULL,30)->>'sourceCount')::integer >= 1,
+  'existing query_data SQL path sees current dated inventory');
 
  BEGIN
   PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,
