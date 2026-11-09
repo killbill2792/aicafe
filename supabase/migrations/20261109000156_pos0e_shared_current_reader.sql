@@ -1,6 +1,8 @@
 -- POS0e: additive current-source cutover only; do not apply to production.
 -- Preserve the latest migration-152 discount exclusion, day-import and live-order eligibility.
 -- Diagnostic source capture remains audit-only and is never a live fallback.
+set lock_timeout = '5s';
+set statement_timeout = '45s';
 create or replace function public.toast_records_for(p_business_id uuid,p_from date,p_to date)
 returns table(business_id uuid,source text,source_ref text,status text,business_date date,
  record_type text,record_ref text,order_ref text,check_ref text,counts_in_sales boolean,data jsonb)
