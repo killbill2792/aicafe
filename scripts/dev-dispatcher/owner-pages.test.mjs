@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseOwnerSnapshot, statusLevel, freshness,
-  PUBLIC_COMMENT_URL, PRIVATE_QUEUE_URL, REFRESH_INTERVAL_MS } from '../../docs/owner-dashboard.mjs';
+  PUBLIC_COMMENT_URL, PRIVATE_QUEUE_URL, REFRESH_INTERVAL_MS, refresh } from '../../docs/owner-dashboard.mjs';
 
 const sample=[
   '<!-- aicafe-dispatcher-owner-view:v1 -->',
@@ -57,4 +57,20 @@ test('public browser source only queries public issue comment and links out to p
  assert.equal(PRIVATE_QUEUE_URL,
   'https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/owner-queue.md');
  assert.equal(REFRESH_INTERVAL_MS,120000);
+});
+
+test('failed public GitHub refresh visibly revokes healthy status rather than falsely claiming live',async()=>{
+ const nodes=new Map([['#freshness',{className:'health current',textContent:'recent'}],
+  ['#fetch-status',{textContent:'before'}]]);
+ const old=globalThis.document;
+ globalThis.document={querySelector:selector=>nodes.get(selector)};
+ try {
+  await refresh(async()=>({ok:false,status:429}));
+  assert.equal(nodes.get('#freshness').className,'health stale');
+  assert.match(nodes.get('#freshness').textContent,/Cannot verify/);
+  assert.match(nodes.get('#fetch-status').textContent,/GitHub HTTP 429/);
+ }finally {
+  if(old===undefined)delete globalThis.document;
+  else globalThis.document=old;
+ }
 });
