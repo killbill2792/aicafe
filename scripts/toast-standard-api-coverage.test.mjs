@@ -49,10 +49,10 @@ function loadToastReadRegistry(){
    return stub(id);
   throw Error("Unexpected import from Toast registry module: "+id);
  };
- const module={exports:{}};
- runInNewContext(result.outputText,{module,exports:module.exports,require:safeRequire,
+ const sandboxModule={exports:{}};
+ runInNewContext(result.outputText,{module:sandboxModule,exports:sandboxModule.exports,require:safeRequire,
   process:Object.freeze({env:Object.freeze({})})},{timeout:3000,filename:"rawSample.server.audit.cjs"});
- const actual=module.exports.TOAST_READ_ENDPOINTS;
+ const actual=sandboxModule.exports.TOAST_READ_ENDPOINTS;
  assert.ok(Array.isArray(actual),"Real exported TOAST_READ_ENDPOINTS array exists");
  // VM realms have distinct Array prototypes; compare serialized public facts.
  return JSON.parse(JSON.stringify(actual));
