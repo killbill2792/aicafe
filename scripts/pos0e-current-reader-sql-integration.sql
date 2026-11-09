@@ -35,7 +35,7 @@ BEGIN
  VALUES
  (a,rest_a,'cashmgmt/v1/entries',d,
   '{"guid":"cash-current-A","amount":12.50,"type":"CASH_IN",
-    "employee":{"guid":"employee-A","firstName":"Ava"},
+    "cardNumber":"4111111111111111","employee":{"guid":"employee-A","firstName":"Ava"},
     "extra":{"nested":[{"common":true},{"lateOptional":"present-in-second-element"}]}}',
   repeat('a',64),'pos0e:cash-a'),
  (a,rest_a,'stock/v1/inventory',d,
@@ -88,6 +88,16 @@ BEGIN
   public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
    '[{"field":"data.extra.nested.0.lateOptional","type":"string"}]'::jsonb,
   'describe_data must inspect later array elements and nested optional fields');
+
+ PERFORM pg_temp.pos0e_assert(
+  public.ai_query_path('data.customer.email')=ARRAY['customer','email']::text[]
+   and public.ai_query_path('data.cardNumber') is null
+   and public.ai_query_path('data.employee.apiKey') is null,
+  'SQL keeps permitted contact paths while denying credential paths');
+ PERFORM pg_temp.pos0e_assert(
+  not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
+    '[{"field":"data.cardNumber"}]'::jsonb),
+  'legacy credential must not be described even when it exists in a retained row');
  FOR n IN 1..36 LOOP
   INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
    payload,payload_sha256,capture_key)
