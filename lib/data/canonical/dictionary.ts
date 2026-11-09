@@ -673,7 +673,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_inventory": {
-    "meaning": "App pantry counts and Toast at-risk menu item stock captured snapshots",
+    "meaning": "App pantry counts and retained current Toast inventory objects; unknown stock is not zero",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -712,7 +712,7 @@ export const canonicalDictionary = {
         "example": "Show the source detail."
       },
       "menu_item_ref": {
-        "meaning": "Toast menu-item reference for at-risk stock snapshots; absent items are not zero.",
+        "meaning": "Toast menu-item reference from current retained provider stock; absent items are not zero.",
         "unit": "identifier",
         "source": "toast",
         "example": "What was recorded?"
@@ -956,7 +956,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_kitchen": {
-    "meaning": "Toast kitchen fulfillment and prep station diagnostic snapshots; optional KDS/Pro access.",
+    "meaning": "Retained current Toast kitchen fulfillment and prep station facts; KDS permission and freshness must be verified.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -1179,7 +1179,7 @@ export function isCanonicalColumn(view:CanonicalView,column:string):boolean {
 /** A named field inside a view's data JSON, e.g. "data.server.guid" or
  * "data.checks.0.amount". Matches the database rule in ai_query_path. */
 export function isDataField(column:string):boolean {
- return /^data(\.([A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})){1,8}$/.test(column);
+ return /^data(\.([A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})){1,16}$/.test(column);
 }
 
 // POS0e: Generated from the pinned official Toast Standard GET/2xx schema snapshot
