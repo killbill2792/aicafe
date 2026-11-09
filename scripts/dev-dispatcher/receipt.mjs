@@ -16,7 +16,7 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
   // Recover ONLY that original same-task assignment, never a cancelled
   // continuation, revoked scope, or a second conversation.
   const lateAssignment = action?.status === 'cancelled_stale_head' &&
-    action?.type === 'assign' &&
+    action?.type === 'assign' && receipt.action_id === 'assign:' + task?.task_id &&
     action?.task_id === task?.task_id &&
     task?.github_state === 'open' && Number.isInteger(task?.pr_number) &&
     task?.branch === 'feat/aicafe-task-' + task.task_id &&
@@ -30,7 +30,10 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
   const d = action.delivery;
   if (!d || d.action_id !== receipt.action_id || d.task_id !== action.task_id ||
       d.approval_hash !== task.approval_hash || hash(d.prompt) !== d.prompt_hash ||
-      receipt.prompt_hash !== d.prompt_hash || !validConversationUrl(d.provider, receipt.conversation_url))
+      receipt.prompt_hash !== d.prompt_hash ||
+      (receipt.approval_hash != null && receipt.approval_hash !== d.approval_hash) ||
+      (lateAssignment && receipt.approval_hash !== d.approval_hash) ||
+      !validConversationUrl(d.provider, receipt.conversation_url))
     throw new Error('Receipt does not match approved delivery');
   if (d.intent === 'continue_existing_chat' && receipt.conversation_url !== d.conversation_url)
     throw new Error('Follow-up destination changed');
