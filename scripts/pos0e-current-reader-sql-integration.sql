@@ -21,7 +21,7 @@ BEGIN
   pg_get_functiondef('public.ai_toast_fields(uuid,text)'::regprocedure)
    NOT ILIKE '%toast_raw_sam%',
   'active operational reader functions must exclude diagnostic snapshots');
- FOREACH p IN ARRAY ARRAY['cv_cash','cv_inventory','cv_kitchen','cv_dining_options','cv_toast_records']
+ FOR p IN SELECT viewname FROM pg_views WHERE schemaname='public' AND left(viewname,3)='cv_'
  LOOP
   PERFORM pg_temp.pos0e_assert(
    pg_get_viewdef(('public.'||p)::regclass,true) NOT ILIKE '%toast_raw_sam%',
