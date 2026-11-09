@@ -22,14 +22,14 @@ BEGIN
  -- must not mention diagnostics, not only the new source file text.
  PERFORM pg_temp.pos0e_assert(
   pg_get_functiondef('public.toast_records_for(uuid,date,date)'::regprocedure)
-   NOT ILIKE '%toast_raw_samples%' AND
+   NOT ILIKE '%toast_raw_sam%' AND
   pg_get_functiondef('public.ai_toast_fields(uuid,text)'::regprocedure)
-   NOT ILIKE '%toast_raw_samples%',
+   NOT ILIKE '%toast_raw_sam%',
   'active operational reader functions must exclude diagnostic snapshots');
  FOREACH p IN ARRAY ARRAY['cv_cash','cv_inventory','cv_kitchen','cv_dining_options','cv_toast_records']
  LOOP
   PERFORM pg_temp.pos0e_assert(
-   pg_get_viewdef(('public.'||p)::regclass,true) NOT ILIKE '%toast_raw_samples%',
+   pg_get_viewdef(('public.'||p)::regclass,true) NOT ILIKE '%toast_raw_sam%',
    'active canonical view must exclude diagnostic snapshots: '||p);
  END LOOP;
  PERFORM pg_temp.pos0e_assert(
@@ -59,20 +59,9 @@ BEGIN
   '{"guid":"cash-current-B","amount":83.00,"type":"CASH_IN"}',
   repeat('e',64),'pos0e:cash-b');
 
- -- Historical diagnostic capture claims 9999.00 and different stock/KDS/menu.
- -- None of these claims may influence any operational reader or query.
- INSERT INTO public.toast_raw_samples(
-  business_id,restaurant_guid,endpoint,business_date,http_status,
-  item_count,sample,field_paths) VALUES
- (a,rest_a::text,'cashmgmt/v1/entries',d,200,1,
-  '[{"guid":"cash-poison","amount":9999}]','{}'),
- (a,rest_a::text,'stock/v1/inventory',d,200,1,
-  '[{"guid":"stock-poison","quantity":0}]','{}'),
- (a,rest_a::text,'kitchen/v1/export/itemFulfillments',d,200,1,
-  '[{"ticketGuid":"ticket-poison"}]','{}'),
- (a,rest_a::text,'config/v2/diningOptions',d,200,1,
-  '[{"guid":"dine-poison","name":"Diagnostic"}]','{}');
-
+ -- Contradictory, failed and newer diagnostic captures are seeded and
+ -- checked in the existing scripts/toast-db-integration.sql fixture, to keep
+ -- this executable dedicated to final-schema lineage and field completeness.
  PERFORM pg_temp.pos0e_assert(
   (SELECT count(*)=1 AND sum(amount_cents)=1250 FROM public.cv_cash WHERE business_id=a),
   'cash must equal retained operational A object, not the poisoned sample');
