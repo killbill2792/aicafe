@@ -19,7 +19,11 @@ export function parseCodexReviewState(body, sha) {
   if (!match) return null;
   try {
     const review = JSON.parse(match[1]).code_review;
-    if (!review || review.commit_sha !== sha || review.status !== 'completed' ||
+    if (!review || review.commit_sha !== sha) return null;
+    // A running newer review overrides an earlier clean review on the same SHA.
+    if (review.status === 'running' || review.status === 'queued')
+      return {state:'pending',sha};
+    if (review.status !== 'completed' ||
         typeof review.has_any_findings !== 'boolean' ||
         typeof review.has_unresolved_findings !== 'boolean') return null;
     return { state: review.has_any_findings || review.has_unresolved_findings ? 'findings' : 'clean',
@@ -201,7 +205,8 @@ export class GitHubFacts {
       codex_review_at: summary?.at || codex?.submitted_at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
       ci_state: ci, ci_failure_kind: baseline?.conclusion === 'startup_failure' ? 'startup_failure' : null,
-      codex_state: codexState, codex_reviewed_sha: reviewed ? sha : null,
+      codex_state: codexState, codex_reviewed_sha:
+        summary?.state === 'pending' ? null : reviewed ? sha : null,
       threads_resolved: unresolved === 0,
       // Explicitly known dispatcher-only PRs are not orphan coding tasks.
       infrastructure_pr: Array.isArray(comparison.files) &&
