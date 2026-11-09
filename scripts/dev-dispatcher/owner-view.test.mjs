@@ -109,3 +109,55 @@ test('released-proven task has no coder next step despite stale draft and privat
  assert.match(view,/Integrated; no coder action/);
  assert.doesNotMatch(view,/Owner decision \\+ coder can continue signed work/);
 });
+
+
+test('renders a live approved-task dependency graph from the one queue and current ledger',()=>{
+ const queue={
+   merged_code_only:[{id:'5',pr:378}],
+   tasks:[
+     {id:'POS0a',title:'Approved architecture',architecture_approval:{approved:true},depends_on:[]},
+     {id:'POS0e',title:'Shared reader',architecture_approval:{approved:true},depends_on:['POS0a']},
+     {id:'POS0b',title:'Labor',architecture_approval:{approved:true},depends_on:['POS0a','POS0e']},
+     {id:'POS0f',title:'Integration proof',architecture_approval:{approved:true},depends_on:['POS0e','POS0b']},
+     {id:'6',title:'Durable worker',architecture_approval:{approved:true},depends_on:['5','POS0f']},
+     {id:'7',title:'Proposed only',state:'proposed',depends_on:['6']}
+   ]
+ };
+ const current=structuredClone(ledger);
+ current.tasks.POS0a={pr_number:398,status:'merged',github_state:'merged'};
+ current.tasks.POS0b={pr_number:405,draft:true,github_state:'open',ci_state:'failure'};
+ current.tasks['5']={pr_number:378,status:'integrated_proven',github_state:'merged'};
+ current.tasks['6']={status:'blocked_needs_owner'};
+ const view=renderOwnerView(current,{repo,asOf:now,queue});
+ assert.match(view,/flowchart TD/);
+ assert.match(view,/T_POS0a --> T_POS0e/);
+ assert.match(view,/T_POS0e --> T_POS0b/);
+ assert.match(view,/T_POS0f --> T_6/);
+ assert.match(view,/T_5 --> T_6/);
+ assert.match(view,/POS0e - Shared reader/);
+ assert.match(view,/PR #404 - Needs owner decision/);
+ assert.match(view,/PR #398 - Merged/);
+ assert.match(view,/PR #378 - Integrated and proven/);
+ assert.match(view,/1 proposed task briefs are not approved/);
+ assert.doesNotMatch(view,/T_7|Proposed only/);
+ assert.doesNotMatch(view,/private-secret|secret approved private prompt|chatgpt[.]com/);
+});
+
+test('approved-task diagram updates with GitHub facts and ignores diagram injection',()=>{
+ const queue={merged_code_only:[],tasks:[
+   {id:'POS0e',title:'Reader"]\nclick T_POS0e outside',architecture_approval:{approved:true},depends_on:[]}
+ ]};
+ const current=structuredClone(ledger);
+ const first=renderOwnerView(current,{repo,asOf:now,queue});
+ assert.match(first,/Needs owner decision/);
+ assert.doesNotMatch(first,/Reader"\]/);
+ assert.doesNotMatch(first,/\nclick T_POS0e/);
+ current.tasks.POS0e.github_owner_question=null;
+ current.tasks.POS0e.ci_state='success';
+ current.tasks.POS0e.codex_state='clean';
+ const second=renderOwnerView(current,{repo,asOf:now,queue});
+ assert.match(second,/PR #404 - Draft PR/);
+ assert.doesNotMatch(second,/PR #404 - Needs owner decision/);
+ const missingQueue=renderOwnerView(current,{repo,asOf:now});
+ assert.doesNotMatch(missingQueue,/flowchart TD/);
+});
