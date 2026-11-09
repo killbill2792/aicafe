@@ -93,6 +93,15 @@ begin
      and row_value->>'business_date' is distinct from p_business_date::text)
   then raise exception 'wrong identity for operational object' using errcode='22023'; end if;
   perform public.toast_archive_stage_snapshot(row_value,p_endpoint,'toast_operational_current');
+  -- The shared writer keeps the original first-seen business_date on UPDATE.
+  -- For current operational objects, advance the indexed capture date too,
+  -- otherwise the existing date-filtered cv_* / query_data hides fresh stock
+  -- as soon as the local calendar advances. Do not touch other origins.
+  update public.toast_raw_records r set business_date=p_business_date
+  where r.business_id=p_business_id
+    and r.capture_key='stage:toast_operational_current:key:'||
+      public.toast_stage_object_key('toast_operational_current',row_value)
+    and r.business_date is distinct from p_business_date;
   n:=n+1;
  end loop;
  return n;
