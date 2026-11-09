@@ -163,3 +163,7 @@ BEGIN
 END $ai_records$;
 
 ROLLBACK;
+
+-- Run the independent POS0e migrated-schema, cross-café and poisoned-capture
+-- negative proof as part of the existing trusted database CI invocation.
+\ir pos0e-current-reader-sql-integration.sql
