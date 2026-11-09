@@ -997,7 +997,7 @@ BEGIN
  insert into public.toast_raw_samples(business_id,restaurant_guid,endpoint,business_date,
  fetched_at,http_status,item_count,sample,field_paths,capture_id) values
  (b,r,'cashmgmt/v1/entries','2026-10-26',clock_timestamp()+interval '1 minute',200,1,
-  '[{"guid":"entry-a","type":"CASH_IN","amount":12.50,
+  '[{"guid":"entry-a","type":"CASH_IN","amount":9999.00,
      "cashDrawer":{"guid":"drawer-a"},"employee1":{"guid":"employee-a"}}]'::jsonb,
   ARRAY['type','amount'],gen_random_uuid()),
  (b,r,'cashmgmt/v1/entries','2026-10-26',clock_timestamp()+interval '2 minute',429,0,
@@ -1005,6 +1005,10 @@ BEGIN
  perform pg_temp.assert_true((select sum(amount_cents) from public.cv_cash
   where business_id=b and business_date='2026-10-26' and entry_type='CASH_IN')=1250,
   'diagnostic captures and failures cannot affect current operational cash');
+ perform pg_temp.assert_true(NOT EXISTS(
+  select 1 from public.cv_cash
+  where business_id=b and amount_cents=999900),
+  'poisoned diagnostic cash value must NEVER appear as a real cash row');
 END $optional_views$;
 
 ROLLBACK;
