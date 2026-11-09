@@ -100,3 +100,12 @@ test('merged and integrated PRs never request draft coding work from a stale dra
  assert.match(view,/Integrated; no coder action/);
  assert.doesNotMatch(view,/Coder finishes draft\/proof/);
 });
+
+test('released-proven task has no coder next step despite stale draft and private question',()=>{
+ const state=structuredClone(ledger);
+ state.tasks.POS0e={pr_number:398,github_state:'merged',status:'released_proven',
+   draft:true,owner_question:'obsolete private question'};
+ const view=renderOwnerView(state,{repo,asOf:now});
+ assert.match(view,/Integrated; no coder action/);
+ assert.doesNotMatch(view,/Owner decision \\+ coder can continue signed work/);
+});
