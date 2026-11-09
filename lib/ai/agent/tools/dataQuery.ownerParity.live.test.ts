@@ -17,11 +17,11 @@ const run=enabled?it:it.skip;
 // The budget applies to the real model *transport*, across ALL turns in this
 // disposable acceptance test. Serialized UTF-8 bytes conservatively bound
 // provider-input tokens without requiring a paid tokenizer or extra API call.
-// Check BEFORE sending, including the provider's per-response output ceiling.
+// At published gpt-4.1-mini rates (Nov 2026), the 200k-byte input and\n// 12k reserved output-token envelope is about $0.10 per gated execution.\n// Check BEFORE sending, including the provider's per-response output ceiling.
 // A limit hit FAILS the test; it can never turn partial E2 into a passing proof.
 const smoke=process.env.POS0E_E2_SMOKE==="1";
 const MAX_PAID_CALLS=12;
-const MAX_INPUT_REQUEST_BYTES=650_000;
+const MAX_INPUT_REQUEST_BYTES=200_000;
 const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
 let paidCalls=0,requestBytes=0,outputTokensReserved=0;
 const budgetedProvider:AgentProvider=async function*(params,signal){
