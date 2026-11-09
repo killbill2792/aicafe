@@ -49,6 +49,15 @@ returns uuid language sql immutable set search_path=public as $id$
   nullif(p_row->>'operational_object_uuid','')) v) x
 $id$;
 
+-- A new read/check timestamp is metadata, not a provider field delta.
+-- The existing stage writer still diffs the complete sanitized source payload.
+create or replace function public.toast_stage_comparable(p_row jsonb)
+returns jsonb language sql immutable set search_path=public as $cmp$
+ select public.toast_stable_json(p_row - array['fetched_at','first_seen',
+  'last_seen','checked_at','last_checked_at','report_checked_at','observed_at',
+  'updated_at','lastSuccessAt'])
+$cmp$;
+
 -- Batch wrapper ONLY; the existing toast_archive_stage_snapshot owns every
 -- raw_records upsert and raw_changes diff, in this one database transaction.
 create or replace function public.toast_stage_operational_batch(
