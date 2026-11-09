@@ -16,7 +16,7 @@ export function linkPullRequests(state, prs) {
     rec.base_branch=pr.base_branch;
     rec.status=pr.draft?'draft_open':'review_fixing';
   }
-  return {state:next,unmapped:prs.filter(pr=>!used.has(pr.pr_number)).map(pr=>pr.pr_number)};
+  return {state:next,unmapped:prs.filter(pr=>!used.has(pr.pr_number) && !pr.infrastructure_pr).map(pr=>pr.pr_number)};
 }
 
 export function dependencyBase(task, records) {
