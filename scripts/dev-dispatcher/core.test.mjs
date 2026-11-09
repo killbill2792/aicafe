@@ -602,7 +602,7 @@ test('dismissed Codex review cannot be treated as clean on current head',async()
   if(url.includes('check-runs'))return {ok:true,json:async()=>({total_count:1,check_runs:[{name:'AI CAFE PR baseline',status:'completed',conclusion:'success'}]})};
   if(url.includes('/reviews?'))return {ok:true,json:async()=>[review]};
   if(url.includes('/compare/'))return {ok:true,json:async()=>({behind_by:0})};
-  if(url.includes('/issues/2/comments?'))return {ok:true,json:async()=>[]};
+  if(url.includes('/issues/52/comments?'))return {ok:true,json:async()=>[]};
   if(url.includes('/commits/abc'))return {ok:true,json:async()=>({commit:{committer:{date:old}}})};
   if(url.includes('/graphql'))return {ok:true,json:async()=>({data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false},nodes:[]}}}}})};
   throw Error(url);
