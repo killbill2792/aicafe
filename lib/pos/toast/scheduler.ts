@@ -7,6 +7,7 @@ import {createToastClient,ToastApiError,toToastTimestamp} from "./client";
 import {retryToastRollupRefreshes} from "./rollupRetries";
 import {z} from "zod";
 import {syncToastOptionalSources,ensureToastFirstCatalog} from "./optionalSync";
+import {syncToastOperationalSources} from "./operationalCopy";
 import {readAllPages} from "./readAllPages";
 import {reconcileToastDays} from "./reconcile";
 import {queueToastMissingDays} from "./missingDays";
@@ -245,6 +246,12 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
     if(daily&&shouldResume(daily as Run,Date.now()))
      processed+=await runDue(db,m,daily as Run,deadlineAt,5,paceHistorical);
    }
+   });
+   await isolated("operational",async()=>{
+    if(Date.now()<deadlineAt)await syncToastOperationalSources(db,{
+     businessId:m.business_id,restaurantGuid:m.restaurant_guid,
+     locationId:m.location_id,timezone:m.toast_time_zone,closeoutHour:m.closeout_hour
+    },now,Math.min(deadlineAt,Date.now()+12000));
    });
    await isolated("backfill",async()=>{
    if(Date.now()>=deadlineAt)return;
