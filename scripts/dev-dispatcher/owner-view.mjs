@@ -22,8 +22,9 @@ const when = value => typeof value === 'string' && !Number.isNaN(Date.parse(valu
  * Use a bounded number of nodes so an expanding roadmap cannot overflow an issue.
  */
 export function renderApprovedTaskMap(state, queue, repo) {
+  const parts = String(repo || '').split('/');
   if (!Array.isArray(queue?.tasks) || !Array.isArray(queue?.merged_code_only) ||
-      !/^[\\w.-]+\\/[\\w.-]+$/.test(repo || '')) return [];
+      parts.length !== 2 || !parts.every(p => /^[A-Za-z0-9_.-]+$/.test(p))) return [];
   const approved = queue.tasks.filter(t =>
     t?.architecture_approval?.approved === true && /^[a-zA-Z0-9_]+$/.test(String(t.id)));
   if (!approved.length) return [];
@@ -38,8 +39,8 @@ export function renderApprovedTaskMap(state, queue, repo) {
     ''
   ];
   const ids = new Set(nodes.map(t => t.id));
-  const label = value => String(value ?? '').replace(/[\\[\\]{}()<>\x60"\\\\|\\r\\n]/g, ' ')
-    .replace(/[^a-zA-Z0-9 _:/.-]/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 64);
+  const label = value => String(value ?? '').replace(/[^a-zA-Z0-9 _.:,-]/g, ' ')
+    .replace(/ +/g, ' ').trim().slice(0, 64);
   const status = (task, record) => {
     if (record?.status === 'released_proven') return 'Released and proven';
     if (record?.status === 'integrated_proven') return 'Integrated and proven';
@@ -50,7 +51,7 @@ export function renderApprovedTaskMap(state, queue, repo) {
       if (record.codex_state === 'findings') return 'Codex findings';
       return record.draft ? 'Draft PR' : 'Open PR';
     }
-    return task.architecture_approval?.approved ? 'Approved - not started' : 'Historical prerequisite';
+    return task.architecture_approval?.approved ? 'Approved, not started' : 'Historical prerequisite';
   };
   const chart = ['flowchart TD'];
   for (const t of nodes) {
@@ -67,7 +68,7 @@ export function renderApprovedTaskMap(state, queue, repo) {
   }
   const count = queue.tasks.filter(t => t.state === 'proposed').length;
   return [
-    '### Approved architecture → implementation map',
+    '### Approved architecture to implementation map',
     '**This map reflects the approved queue and last reconciled task status; it does not grant approval.** ' +
       'The [living blueprint](https://github.com/' + repo +
       '/blob/main/docs/plans/owner-living-blueprint.md) explains the decisions behind these tasks.',
