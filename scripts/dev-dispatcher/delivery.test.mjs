@@ -148,11 +148,11 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
  for(const id of ['POS0b','POS0c','POS0d']){
   const t=queue.tasks.find(t=>t.id===id);
   assert.deepEqual(t.depends_on,['POS0a','POS0e'],id+' must follow shared-reader foundation');
-  assert.notEqual(t.architecture_approval?.approved,true,id+' still requires owner activation');
+  assert.equal(t.architecture_approval?.approved,true,id+' task-specific coding scope is approved');
   assert.ok(t.acceptance.some(s=>s.includes('writer→current-object→describe_data→query_data→normal one-agent Supervisor answer')),id+' executable field proof intact');
  }
  assert.match(queue.dispatch_rules.pos_source_authority.ordered_first_read[2],/PR #398 concise POS0a handoff FIRST/);
- assert.match(queue.dispatch_rules.pos_source_authority.owner_hold,/CODING STILL HELD/);
+ assert.match(queue.dispatch_rules.pos_source_authority.owner_hold,/OWNER CODING RELEASED IN EXACT QUEUE SCOPES/);
  assert.equal(queue.dispatch_rules.pos_d4_contract.implementation_approved,false);
  assert.equal(queue.dispatch_rules.pos_d4_contract.future_order_recovery.dispatchable,false);
  assert.ok(!queue.tasks.some(t=>t.id==='POS0-order-recovery'));

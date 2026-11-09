@@ -107,7 +107,7 @@
         "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof",
         "D4A menu daily full download and duplicate Menus V2 GETs; D4B SQL-day atomic rollback and live archive missed-page recovery; preserve merged #189/#203/#264/#297 nonstarvation"
       ],
-      "owner_hold": "OWNER MERGE ACCEPTED: PRs #398/#399/#400 are merged. POS0a is a read-only source audit/document, accepted by authenticated owner at #398 comment 6734438172; no runtime integrated_proven prerequisite for POS0a. CODING STILL HELD: POS0e has an exact exclusive file reservation but architecture_approval=null and state=proposed. Owner must separately authorize that exact task and switch to architecture_approved before dispatch; POS0b/c/d/f remain unapproved with no file reservations. POS0f remains the unchanged proof gate for unrelated tasks. No production deployment, migration or data deletion authorized.",
+      "owner_hold": "OWNER CODING RELEASED IN EXACT QUEUE SCOPES: #398/#399/#400 merged, POS0a read-only field contract signed at #398 comment 6734438172. POS0e/b/c/d/f each have exact disjoint owned files and task-specific architecture approvals in this queue. GitHub may queue task coding handoffs; Muse/OpenClaw are user-started browser courier only. E first, BCD concurrent early stacked PRs after E open draft, F final integration proof. No automatic production migration/deletion/deployment, new credentials or unsettled design authorization. POS0f priority gate, CI/Codex and executed acceptance remain strict.",
       "approved_record_store": "toast_raw_records",
       "approved_change_log": "toast_raw_changes",
       "legacy_diagnostic_only": [

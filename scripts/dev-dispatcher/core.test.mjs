@@ -443,11 +443,13 @@ test("owner approval and exact nonoverlapping files are mandatory for dispatch",
   const a = task("a"), b = task("b"), c = task("c");
   b.exclusive_files = [...a.exclusive_files];
   c.architecture_approval = { approved: false };
-  assert.deepEqual(dispatchFrontier(queue([a, b, c]), {}).map(x => x.task_id), ["a"]);
-  assert.deepEqual(dispatchFrontier(queue([b]), { a: { status: "draft_open", agent: "chatgpt" } }).map(x => x.task_id), ["b"]);
-  assert.deepEqual(dispatchFrontier(queue([a]), { a: { status: "draft_open", agent: "chatgpt" } }), []);
+  assert.throws(()=>dispatchFrontier(queue([a,b,c]),{}),/Overlapping exclusive file ownership/);
+  b.exclusive_files = ["scripts/owned-b.mjs"];
+  assert.deepEqual(dispatchFrontier(queue([a,b,c]),{}).map(x=>x.task_id),["a","b"]);
+  assert.deepEqual(dispatchFrontier(queue([b]),{a:{status:"draft_open",agent:"chatgpt"}}).map(x=>x.task_id),["b"]);
+  assert.deepEqual(dispatchFrontier(queue([a]),{a:{status:"draft_open",agent:"chatgpt"}}),[]);
   a.exclusive_files = ["scripts/**"];
-  assert.deepEqual(dispatchFrontier(queue([a]), {}), []);
+  assert.throws(()=>dispatchFrontier(queue([a]),{}),/Invalid exclusive file ownership/);
 });
 
 test("historical code merge must have integration proof before downstream starts", () => {
@@ -508,9 +510,9 @@ test("PR acceptance metadata parses only bounded JSON",()=>{
 test('owner question blocks nudges and retains exclusive-file ownership',()=>{
  const blocked={...pr(),owner_question:'Which files are authorized?',status:'blocked_needs_owner',agent:'chatgpt'};
  assert.equal(decideNudge(blocked,clock).reason,'owner_decision_required');
- const a=task('a'),b=task('b');
- b.exclusive_files=[...a.exclusive_files];
- // An already-started coding chat with an owner question still retains its file lock.
+ const a=task('a'),b=task('b',['a']);
+ // An owner-blocked prerequisite cannot authorize downstream dispatch.
+ // Reserved owned paths stay unique across all tasks, whether active or not.
  const assigned=dispatchFrontier(queue([a,b]),{a:{status:'blocked_needs_owner',agent:'chatgpt',conversation_ref:'https://chatgpt.com/c/existing'}});
  assert.equal(assigned.some(item=>item.task_id==='b'),false);
  const state={...emptyLedger(),tasks:{a:blocked}};
