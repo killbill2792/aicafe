@@ -77,7 +77,7 @@ begin
    'ordermgmt-config/v1/published/orderingSchedule')
  then raise exception 'unsupported operational endpoint' using errcode='22023'; end if;
  if jsonb_typeof(p_objects) is distinct from 'array'
-  or jsonb_array_length(p_objects)>200
+  or jsonb_array_length(p_objects)>5000
  then raise exception 'invalid operational batch' using errcode='22023'; end if;
  for row_value in select value from jsonb_array_elements(p_objects) loop
   if jsonb_typeof(row_value) is distinct from 'object'
