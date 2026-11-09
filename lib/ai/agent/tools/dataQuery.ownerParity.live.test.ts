@@ -63,6 +63,25 @@ run("Supervisor answers 13 varied owner questions with exact direct SQL counts a
   const prior=(await client.query<{prior:string}>(
    "select ($1::date - 1)::text prior",[biz.today])).rows[0].prior;
   const params=[biz.id,prior,biz.today];
+  // POS0e opt-in E2: all source-family facts are synthetic and inside the same
+  // rollback transaction as the existing historic/live-order parity fixture.
+  const restaurant="eeeeeeee-3333-4eee-8eee-eeeeeeeeee01";
+  const staffGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee00a1";
+  const stockGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee00b1";
+  const firstOrderGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee0001";
+  const otherCafe="eeeeeeee-4444-4eee-8eee-eeeeeeeeee00";
+  const otherRestaurant="eeeeeeee-4444-4eee-8eee-eeeeeeeeee01";
+  await client.query("insert into public.businesses(id,name,is_demo) values($1,'Other synthetic café',false)",[otherCafe]);
+  const modified=await client.query("update public.toast_raw_records set payload=payload ||\n jsonb_build_object('customer',jsonb_build_object('firstName','Maya','lastName','Shah','email','maya@example.test'))\n where business_id=$1 and entity='order' and payload->>'guid'=$2",[biz.id,firstOrderGuid]);
+  expect(modified.rowCount).toBe(1);
+  await client.query("insert into public.toast_raw_records\n (business_id,restaurant_guid,entity,entity_guid,business_date,payload,payload_sha256,capture_key)\n values\n ($1,$2,'employee',$3,$4::date,\n  jsonb_build_object('guid',$3::text,'firstName','Nadia','lastName','Rao','email','nadia@example.test'),\n  repeat('a',64),'pos0e:e2:employee'),\n ($1,$2,'labor/v1/timeEntries',null,$4::date,\n  jsonb_build_object('guid','time-pos0e','employeeGuid',$3::text,'regularHours',5.5),\n  repeat('a',64),'pos0e:e2:time'),\n ($1,$2,'cashmgmt/v1/entries',null,$4::date,\n  jsonb_build_object('guid','cash-pos0e','type','CASH_IN','amount',18.75,\n   'employee',jsonb_build_object('guid',$3::text)),repeat('a',64),'pos0e:e2:cash'),\n ($1,$2,'stock/v1/inventory',$5,$4::date,\n  jsonb_build_object('guid',$5::text,'quantity',4.5,'status','QUANTITY'),\n  repeat('a',64),'pos0e:e2:stock'),\n ($6,$7,'cashmgmt/v1/entries',null,$4::date,\n  '{\"guid\":\"other-cafe-cash\",\"amount\":9999.99,\"type\":\"CASH_IN\"}'::jsonb,\n  repeat('a',64),'pos0e:e2:other-cafe')",
+   [biz.id,restaurant,staffGuid,biz.today,stockGuid,otherCafe,otherRestaurant]);
+  // The poison is purposefully newer-looking, but NEVER an operational value.
+  await client.query("insert into public.toast_raw_samples\n (business_id,restaurant_guid,endpoint,business_date,http_status,item_count,sample,field_paths)\n values\n ($1,$2,'cashmgmt/v1/entries',$3::date,200,1,'[{\"guid\":\"poison-cash\",\"amount\":9999.99}]'::jsonb,'{}'::jsonb),\n ($1,$2,'stock/v1/inventory',$3::date,200,1,'[{\"guid\":\"poison-stock\",\"quantity\":9999}]'::jsonb,'{}'::jsonb),\n ($1,$2,'labor/v1/timeEntries',$3::date,200,1,'[{\"guid\":\"poison-time\",\"firstName\":\"PoisonEmployee\"}]'::jsonb,'{}'::jsonb)",[biz.id,restaurant,biz.today]);
+  const leak=(await client.query<{n:number}>("select count(*)::integer n from public.toast_records_for($1,$2,$3)\n where data->>'guid' in ('other-cafe-cash','poison-cash','poison-stock','poison-time')",
+   [biz.id,prior,biz.today])).rows[0].n;
+  expect(leak).toBe(0);
+
   // SupabaseClient.rpc-compatible adapter backed by the SAME transaction in which
   // the fixture and direct truth live. Query SQL is still solely the allowlisted RPC.
   const db={rpc:async(name:string,p:Record<string,unknown>)=>{
