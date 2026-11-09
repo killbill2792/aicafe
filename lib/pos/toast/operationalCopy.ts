@@ -78,7 +78,10 @@ export async function recordToastCopyFailure(db:SupabaseClient,p:ToastCopyScope,
  * writer, never a new raw dump or financial-total writer. */
 const operationalCash=z.object({guid:GUID,amount:z.number().finite(),date:z.string().min(1)}).passthrough();
 const operationalStock=z.object({guid:GUID,status:z.enum(["QUANTITY","OUT_OF_STOCK","IN_STOCK"]),
- quantity:z.number().finite().nullish()}).passthrough();
+ quantity:z.number().finite().nullish()}).passthrough().refine(
+ row=>row.status!=="QUANTITY"||
+  (typeof row.quantity==="number"&&row.quantity>0),
+ {message:"Toast QUANTITY stock requires positive, known source quantity"});
 const operationalKitchen=z.object({restaurantGuid:GUID,orderGuid:GUID,selectionGuid:GUID,
  itemFulfillmentLevel:z.number().int().min(0).max(2),prepStationGuid:GUID.nullish()}).passthrough();
 const operationalStation=z.object({guid:GUID}).passthrough();
