@@ -71,7 +71,7 @@
       "POS0e",
       "POS0f"
     ],
-    "architecture_foundation_note": "POS0a audits field contracts; owner high-level architecture approved in chat, but exhaustive per-field proof, exact file ownership and a linked current-main signoff remain required by the existing gate. POS0e is FIRST: existing global retained-field policy + current operational reader cutover/discovery replacing diagnostic sources; POS0b/c/d depend on POS0e and work on disjoint source adapters; POS0f depends on all. No diagnostic/test data may feed Supervisor; no task reaches integrated_proven without real source→stored→discover→query→agent tests and final-schema negative tests.",
+    "architecture_foundation_note": "TWO DISTINCT GATES (owner audit #6729826693): POS0a is a READ-ONLY, official-schema-per-field source/permission/current-vs-target lineage and field-gap DESIGN CONTRACT, with all Standard GET/nested fields inventoried, each actual permission/response marked observed or NOT_TESTED/403/missing ID/not configured, truthful existing writer/storage/reader/consumer mapping or explicit MISSING gap, implementation PR/file/SQL/test owners proposed, source provenance and reproducible audit. It does NOT require POS0e/b/c/d SQL, writer, or registered Supervisor implementation to already exist. Owner architecture signoff and the existing approved=false coding-delivery gate are separate, and exact downstream ownership/authorization must be accepted before coding. POS0e FIRST implements/tests shared current-source retained-field policy, SQL/current reader and existing describe_data/query_data; POS0b labor, POS0c cash/stock/kitchen, POS0d menu/setup/price each implement/tests distinct source family atop POS0e; POS0f independently proves ALL eligible field-level source→stored→discover→query→registered one Supervisor/screen plus final-schema negative diagnostic lineage on migrated disposable DB. Never weaken downstream acceptance or classify POS0a audit-only CI as integrated_proven. Future POS0e/f PRs need authorization to begin, NOT completion before authorization. No new agent, store, scheduler, dispatcher or merging these draft PRs.",
     "architecture_foundation_implementation_approval": {
       "approved": false,
       "merged_sha": null,
@@ -93,7 +93,7 @@
       "ordered_first_read": [
         "AGENTS.md (PROGRESS.md read only)",
         "docs/rules/pos-data.md (binding source/consumer decisions)",
-        "PR #398 concise POS0a handoff FIRST at docs/plans/toast-standard-api-coverage-matrix.md#pos0a-handoff--read-this-card-before-large-evidence-tables-2026-11-08 (retrievable draft head 11ccc52); then targeted field evidence only, official A1/A2/A4 still OPEN",
+        "PR #398 concise POS0a handoff FIRST at docs/plans/toast-standard-api-coverage-matrix.md#pos0a-handoff--read-this-card-before-large-evidence-tables-2026-11-08 (read actual latest draft PR head); then targeted field evidence only, A1 official schema and A2/A4 actual-cafe / reader / registered-Supervisor evidence honestly status-coded; implementation belongs to later tasks",
         "docs/plans/universal-supervisor-task-briefs.md#task-<POS0_ID> and this machine queue (no runtime authorization)",
         "existing code plus deployed pg_get_functiondef/pg_get_viewdef and consumers",
         "docs/rules/tests.md and actually executed acceptance/rollback evidence"
@@ -107,7 +107,7 @@
         "labor missing-wage summary versus canonical status differs: POS0b, POS0e shared status, POS0f proof",
         "D4A menu daily full download and duplicate Menus V2 GETs; D4B SQL-day atomic rollback and live archive missed-page recovery; preserve merged #189/#203/#264/#297 nonstarvation"
       ],
-      "owner_hold": "D1-D4 architecture principles only; PR398/PR400 final review pending; #399 trusted owner-question routing merged; existing coding dispatcher issue tracking is NOT coding delivery. Owner alone enables POS0b-f delivery after POS0a closeout. Gate approved=false; manual #398/#400 comment ledger sufficient, automatic comment merge gate deferred",
+      "owner_hold": "D1-D4 architecture principles only; PR398/PR400 final review pending; #399 trusted owner-question routing merged; existing coding dispatcher issue tracking is NOT coding delivery. Owner alone enables POS0b-f delivery after POS0a read-only documentation/field-gap architecture approval; POS0e/f runtime implementation proof is NOT a prerequisite to authorizing their work. Gate approved=false; manual #398/#400 comment ledger sufficient, automatic comment merge gate deferred",
       "approved_record_store": "toast_raw_records",
       "approved_change_log": "toast_raw_changes",
       "legacy_diagnostic_only": [
@@ -373,7 +373,7 @@
       "milestone": "POS0",
       "title": "P0 Standard API source-to-AI coverage contract and gap matrix",
       "depends_on": [],
-      "goal": "Inventory every currently documented Standard API read operation and every permitted response field against actual scopes, fetch cadence, stored current object, privacy filter, change history, canonical reader and Supervisor; owner approves the field-level design before data-code PRs.",
+      "goal": "Deliver an exhaustive READ-ONLY official Standard GET/nested-field/source→existing-or-MISSING writer/storage/reader/consumer architecture and implementation-gap contract: observed source grants/values verified only as far as safely available, unknown/untested explicitly marked, exact planned owners/acceptance attached. Obtain owner architecture review before separately authorizing implementation; do NOT require future POS0e/f code or live Supervisor proof in POS0a.",
       "scope_hint": "Read-only official-spec + current repo + disposable/authorized read-only database inventory; new docs/plans/toast-standard-api-coverage-matrix.md. Own no existing runtime or migration file.",
       "exclusive_files": [
         "docs/plans/toast-standard-api-coverage-matrix.md"
@@ -383,7 +383,7 @@
         "owner_direction": "Owner approved prioritizing a READ-ONLY field-by-field Standard API audit and written implementation contract before other Supervisor work; no production changes or coding approval for later POS0 tasks.",
         "contract": {
           "source": "Current official Toast Standard API OpenAPI definitions and real café scope/response evidence (no hardcoded endpoint count).",
-          "persisted": "Documentation and exact source-field/record-key/current-storage mapping only; no data writes.",
+          "persisted": "READ-ONLY documentation of official fields, real observed versus NOT_TESTED cafe grants, existing writer/storage/current-reader findings OR explicitly missing reader and proposed future owner; no new data writes, migration or integration claim.",
           "consumer": "The following POS0 tasks and owner architecture sign-off.",
           "failures": "Classify missing permission, no resource ID, empty response, not collected, field redaction, stale/unknown separately.",
           "scope": "New coverage matrix document only; zero production calls/writes beyond safe read-only evidence."
@@ -399,10 +399,10 @@
         "pr"
       ],
       "acceptance": [
-        "Every official current Standard API GET operation and response field is recorded with official spec version/link, café-specific scope/permission and observed result (success/empty/403/missing-id/not configured/not tested), with Analytics/menus-v3 and no-GET families excluded or classified accurately.",
-        "Each allowed field has explicit canonical object identity, storage owner/key, existing ingest job, cadence, privacy treatment, current-reader/view, Supervisor query field, screen consumer, freshness and known gap; no invented endpoint counts or silent assumed coverage.",
-        "Compare actual code paths, current production object evidence and stale diagnostics separately; distinguish old October capture from current order/staff sync; owner reviews exact proposed source → stored object → shared reader plan before coding.",
-        "A reproducible matrix audit command and proof link are recorded, and the original working order path is marked preserve/no rewrite."
+        "READ-ONLY A1 official current Toast Standard GET-operation and complete recursively nested response-field inventory, with official family/version/source SHA, operation/path/field provenance, documented scope and exclusion of Analytics ERA/Menus V3/no-GET families. No hardcoded historical endpoint/field count or fabricated official response success.",
+        "Each official field has a documented expected type/object identity and an existing source→writer/key→stored current fact→canonical reader/describe_data/query_data→app screen/registered Supervisor chain WHERE ACTUALLY VERIFIED; else explicit GAP/NOT_COLLECTED/READER_MISSING/NOT_TESTED. Record consumer/privacy/cadence/freshness/status and proposed POS0e vs POS0b/c/d vs POS0f implementation owner for every gap. This is an auditable DESIGN MAP, not assertion that downstream retention/registered answers already work.",
+        "For each observed cafe API permission/response, record exact read-only observation/source/date and distinguish 200-with-values, 200-empty, 204, 403, missing GUID, missing entitlement, stale, not configured, failed, and not tested. Do not require permission tests not safely available or invent response/field access; explicitly mark unverified café grants. Reconcile live current operational order/staff evidence versus October diagnostic snapshots and list existing actual SQL/reader defects for future POS0e/0f.",
+        "Provide a reproducible READ-ONLY official-schema/registry audit command with executed same-head test result; owner-reviewable source → current OR missing stored object → shared-reader/one Supervisor/screen implementation plan, exclusive files/SQL/test dependencies proposed for future PRs, baseline/preservation/rollback conditions, and exact unresolved facts. Owner field-contract approval permits separate task authorization after the existing gate; actual POS0e/b/c/d implementations and POS0f final migrated-DB end-to-end proof are later acceptance, not prerequisites to authorizing their PRs."
       ],
       "test_kinds": [
         "docs",
