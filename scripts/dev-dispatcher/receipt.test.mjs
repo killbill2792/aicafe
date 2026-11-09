@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { acceptDeliveryReceipt } from './receipt.mjs';
+import { applyReceipts } from './inbox.mjs';
 const prompt='implement approved task';
 const prompt_hash=createHash('sha256').update(prompt).digest('hex');
 const d={action_id:'assign:6',task_id:'6',project:{id:'aicafe',name:'AI CAFE'},
@@ -62,4 +63,42 @@ test('receipt project identity is fail-closed if missing, conflicting or malform
  assert.throws(()=>acceptDeliveryReceipt(state,{...both,prompt_hash:'f'.repeat(64)},{authenticatedCourier:'muse'}),/Receipt does not match/);
  assert.throws(()=>acceptDeliveryReceipt(state,{...both,conversation_url:'https://evil.example/c/fake'},{authenticatedCourier:'muse'}),/Receipt does not match/);
  assert.throws(()=>acceptDeliveryReceipt(state,both,{authenticatedCourier:'dave'}),/does not own/);
+});
+
+test('late original Muse receipt restores the exact chat after the PR cancels assignment',()=>{
+ const late={...structuredClone(state),
+   tasks:{'6':{...state.tasks['6'],task_id:'6',github_state:'open',
+     pr_number:405,branch:'feat/aicafe-task-6',conversation_ref:null}},
+   actions:{'assign:6':{...state.actions['assign:6'],
+     type:'assign',status:'cancelled_stale_head'}}};
+ const envelope={...receipt,approval_hash:d.approval_hash,project:{id:'aicafe',name:'AI CAFE'}};
+ delete envelope.project_id;
+ const next=applyReceipts(late,[{receipt:envelope,actor:'courier-id'}],
+   {'courier-id':'muse'});
+ assert.equal(next.tasks['6'].conversation_ref,receipt.conversation_url);
+ assert.equal(next.actions['assign:6'].status,'submitted');
+ assert.equal(next.actions['assign:6'].recovered_original_chat_after_pr,true);
+ assert.equal(late.actions['assign:6'].status,'cancelled_stale_head');
+ assert.deepEqual(applyReceipts(next,[{receipt:envelope,actor:'courier-id'}],
+   {'courier-id':'muse'}),next);
+ // PR-head cancellation may restore identity, but never revive stale
+ // follow-up prompts, revoked tasks, wrong branches or invalid chat URLs.
+ const follow=structuredClone(late);
+ follow.actions['assign:6'].type='continue_pr';
+ assert.deepEqual(applyReceipts(follow,[{receipt:envelope,actor:'courier-id'}],
+   {'courier-id':'muse'}),follow);
+ for(const changed of [
+   {branch:'feat/aicafe-task-another'},
+   {github_state:'closed'},
+   {approved:false},
+   {conversation_ref:'https://chatgpt.com/c/other'},
+ ]) {
+   const wrong=structuredClone(late);
+   Object.assign(wrong.tasks['6'],changed);
+   assert.throws(()=>acceptDeliveryReceipt(wrong,envelope,{authenticatedCourier:'muse'}));
+ }
+ const placeholder={...envelope,conversation_url:
+   'https://chatgpt.com/g/g-p-aicafe/c/local-chatgpt%3Aplaceholder'};
+ assert.throws(()=>acceptDeliveryReceipt(late,placeholder,{authenticatedCourier:'muse'}));
+ assert.throws(()=>acceptDeliveryReceipt(late,envelope,{authenticatedCourier:'dave'}));
 });
