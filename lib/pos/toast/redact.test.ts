@@ -44,7 +44,7 @@ describe("Toast day pages are redacted once in the app",()=>{
    notes:"Customer prefers oat milk",employee:{guid:guid(41),firstName:"Lou",lastName:"Rivera"},
    checks:[{...order.checks[0],payments:[{...order.checks[0].payments[0],
     cardNumber:"4111111111111111",cvv:"123",trackData:"track secret",
-    accessToken:"access-secret",paymentToken:"reusable"}]}]}],0,"",undefined,"orders") as any[];
+    accessToken:"access-secret",paymentToken:"reusable"}]}]}],0,"",undefined,"orders") as unknown[];
   const text=JSON.stringify(safe);
   for(const kept of ["Ana's order","Ana L","Ani","Lopez","ana@example.com","555-123-4567",
    "Customer prefers oat milk","Rivera",guid(4),guid(41)])
@@ -59,7 +59,7 @@ describe("Toast day pages are redacted once in the app",()=>{
   const source={customer:{guid:guid(50),firstName:null,email:"guest@example.com"},
    staff:{displayName:"Cam",phone:"555-123-4567"},notes:"Call me, card 4111 1111 1111 1111",
    comments:"No allergen substitutions",device:{sessionToken:"secret"},missing:null};
-  const safe=redactToastRaw(source) as any;
+  const safe=redactToastRaw(source) as Record<string,unknown>;
   expect(safe.customer).toEqual(source.customer);
   expect(safe.staff).toEqual(source.staff);
   expect(safe.notes).toBe("[redacted]");
