@@ -10,10 +10,7 @@ export const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
 // The separate manual diagnostic field-frequency counter uses this helper to
 // classify identity fields. Operational retention intentionally does NOT hash
 // or discard permitted stable customer/employee/loyalty identifiers.
-export const isSensitiveId=(key:string,context:string)=>
- /^(?:customer|guest|loyalty|card|creditCard|giftCard)(?:Id|Guid|Identifier|AccountId|AccountGuid|AccountNumber|ExternalId|Fingerprint|TokenId)$/i.test(key)||
- /^(?:id|guid|referenceId|externalId|accountId|accountGuid|fingerprint|identifier|tokenId)$/i.test(key)&&
- /^(?:customer|customerInfo|customerDetails|guest|guestInfo|loyalty|loyaltyAccount|patron|card|cardInfo|cardDetails|giftCard|giftCardInfo|creditCard|paymentCard|cardholder)$/i.test(context);
+export const isSensitiveId=(key:string,context:string)=>legacyIsSensitiveId(key,context);
 
 // Only payment credentials and reusable security secrets are excluded. A name,
 // contact address, loyalty GUID, staff GUID, order reference or note is not a
