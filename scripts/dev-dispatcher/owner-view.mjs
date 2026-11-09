@@ -15,7 +15,74 @@ const sourceLink = (rec, repo) => {
 const when = value => typeof value === 'string' && !Number.isNaN(Date.parse(value))
   ? new Date(value).toISOString() : 'unknown';
 
-export function renderOwnerView(state, {repo, asOf, runUrl} = {}) {
+
+/**
+ * Owner-facing read-only graph. Nodes are sourced from the ONE approved queue
+ * and current GitHub ledger; this never records a decision or authorizes work.
+ * Use a bounded number of nodes so an expanding roadmap cannot overflow an issue.
+ */
+export function renderApprovedTaskMap(state, queue, repo) {
+  if (!Array.isArray(queue?.tasks) || !Array.isArray(queue?.merged_code_only) ||
+      !/^[\\w.-]+\\/[\\w.-]+$/.test(repo || '')) return [];
+  const approved = queue.tasks.filter(t =>
+    t?.architecture_approval?.approved === true && /^[a-zA-Z0-9_]+$/.test(String(t.id)));
+  if (!approved.length) return [];
+  const deps = new Set(approved.flatMap(t => Array.isArray(t.depends_on) ? t.depends_on : []));
+  const historical = queue.merged_code_only.filter(t =>
+    deps.has(t.id) && /^[a-zA-Z0-9_]+$/.test(String(t.id)));
+  const nodes = [...historical, ...approved];
+  if (nodes.length > 20) return [
+    '### Approved work and dependencies',
+    'More than 20 approved/dependent tasks are active; use the [canonical task queue](https://github.com/' +
+       repo + '/blob/main/docs/plans/universal-supervisor-queue.json) and the live task table below.',
+    ''
+  ];
+  const ids = new Set(nodes.map(t => t.id));
+  const label = value => String(value ?? '').replace(/[\\[\\]{}()<>\x60"\\\\|\\r\\n]/g, ' ')
+    .replace(/[^a-zA-Z0-9 _:/.-]/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 64);
+  const status = (task, record) => {
+    if (record?.status === 'released_proven') return 'Released and proven';
+    if (record?.status === 'integrated_proven') return 'Integrated and proven';
+    if (record?.github_state === 'merged' || record?.status === 'merged') return 'Merged';
+    if (Number.isInteger(record?.pr_number)) {
+      if (record.github_owner_question || record.owner_question) return 'Needs owner decision';
+      if (record.ci_state === 'failure') return 'CI failing';
+      if (record.codex_state === 'findings') return 'Codex findings';
+      return record.draft ? 'Draft PR' : 'Open PR';
+    }
+    return task.architecture_approval?.approved ? 'Approved - not started' : 'Historical prerequisite';
+  };
+  const chart = ['flowchart TD'];
+  for (const t of nodes) {
+    const r = state.tasks?.[t.id];
+    const name = label(t.title || (t.id === '5' ? 'Durable run and step storage' : 'Task'));
+    const line = label(status(t, r));
+    chart.push('  T_' + t.id + '["' + label(t.id) + ' - ' + name +
+      '<br/>' + (Number.isInteger(r?.pr_number) ? 'PR #' + r.pr_number + ' - ' : '') + line + '"]');
+  }
+  for (const task of approved) {
+    for (const dep of Array.isArray(task.depends_on) ? task.depends_on : []) {
+      if (ids.has(dep)) chart.push('  T_' + dep + ' --> T_' + task.id);
+    }
+  }
+  const count = queue.tasks.filter(t => t.state === 'proposed').length;
+  return [
+    '### Approved architecture → implementation map',
+    '**This map reflects the approved queue and last reconciled task status; it does not grant approval.** ' +
+      'The [living blueprint](https://github.com/' + repo +
+      '/blob/main/docs/plans/owner-living-blueprint.md) explains the decisions behind these tasks.',
+    '',
+    '\x60\x60\x60mermaid',
+    ...chart,
+    '\x60\x60\x60',
+    '',
+    count ? '**Later ideas:** ' + count + ' proposed task briefs are not approved to code.' : '',
+    'Select the linked PR in the task table below for exact questions, CI, Codex and executed proof.',
+    ''
+  ].filter(Boolean);
+}
+
+export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
   if (!state?.tasks || !state.actions || !/^[\w.-]+\/[\w.-]+$/.test(repo || ''))
     throw new Error('Invalid owner view state/repository');
   const now = when(asOf);
@@ -68,6 +135,7 @@ export function renderOwnerView(state, {repo, asOf, runUrl} = {}) {
     runUrl && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d+$/.test(runUrl)
       ? `[Open dispatcher execution](${runUrl})` : '',
     '',
+    ...renderApprovedTaskMap(state,queue,repo),
     '### What is happening',
     '| Task | PR | Stage | CI | Codex | Muse | Next responsible party |',
     '|---|---|---|---|---|---|---|---|',
