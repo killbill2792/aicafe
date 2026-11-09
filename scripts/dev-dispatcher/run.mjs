@@ -43,8 +43,11 @@ async function main() {
   }
   function reconcile(state, observed) {
     const linked = linkPullRequests(state, observed.snapshot);
+    // First invalidate old-head actions, THEN process Muse receipts. A receipt
+    // arriving during the same GitHub reconciliation must not revive old work.
+    const live = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
     const copy = queueOwnerAlerts(
-      reconcileGithub(linked.state, observed.snapshot, observed.closedByPr),
+      applyReceipts(live, inbox, actorMap),
       {unmappedPrs:linked.unmapped,queue});
     revalidateQueuedActions(copy, taskById, queue);
 
@@ -93,7 +96,7 @@ async function main() {
   }));
   const inbox = ledger ? await collectReceipts({ ledger, allowedActors: Object.keys(actorMap) }) : [];
   const observed = await observe(current);
-  const proposed = reconcile(applyReceipts(current, inbox, actorMap), observed);
+  const proposed = reconcile(current, observed);
   const unmappedPrs = linkPullRequests(current, observed.snapshot).unmapped;
   async function promoteIntegration(state) {
     const required = ["TypeScript", "ESLint", "Full regression tests",
@@ -145,7 +148,7 @@ async function main() {
     // identical state every five minutes (avoids 288 empty commits per day).
     persisted = await ledger.transaction(async existing => {
       const latest = await observe(existing);
-      const next = reconcile(applyReceipts(existing, inbox, actorMap), latest).state;
+      const next = reconcile(existing, latest).state;
       await promoteIntegration(next);
       // Integration may become proven during this same pass: queue the owner
       // review with the actual saved chat URL without a second delayed cycle.
