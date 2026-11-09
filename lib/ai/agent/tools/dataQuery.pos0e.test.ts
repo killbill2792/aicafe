@@ -31,7 +31,7 @@ describe("POS0e retained current-source dictionary and shared reader",()=>{
  it("describes never-observed permitted paths as unverified, not invented field values",async()=>{
   const rpc=vi.fn(async()=>({data:[],error:null}));
   const result=await dataQueryTools.describe_data.execute({
-   record_type:"order",view:null,field_prefix:"data.checks.0.selections.0"
+   record_type:"order",view:null,field_prefix:"data.checks.0.selections.0.displayName"
   },{db:{rpc} as never,businessId:cafeA});
   expect(rpc).toHaveBeenCalledWith("ai_toast_fields",{
    p_business_id:cafeA,p_record_type:"order"
