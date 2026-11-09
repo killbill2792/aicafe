@@ -16466,7 +16466,7 @@
   "official_field_resolution": {
     "version": 1,
     "source_row_key": "family | exact official GET operation.path | exact 2xx response status | exact source response field[0] AND field[1..3] (type, format, null marker); 13 official path/status collisions have distinct schema variants and must not collapse",
-    "enumeration": "Every official 2xx row inherits its family's H-code storage/reader contract here; exact path prefixes below override narrower source scope/privacy/gap. Longest matching field_prefix wins. An exception applies to itself and its nested descendants (dot or []), never an unrelated field with the same leading letters.",
+    "enumeration": "Every official 2xx row inherits its family's H-code storage/reader contract here; exact path prefixes below override narrower source scope/privacy/gap. Longest matching field_prefix wins. An exception applies to itself and its nested descendants (dot or []), never an unrelated field with the same leading letters. Delivery-address exceptions attach only to nine address/location child fields under deliveryInfo (per collection/detail), not unrelated delivery state/employee/dispatch facts. Curbside subtree requires guest.pi:read.",
     "evidence_boundary": "This is a conservative source-to-CURRENT-CODE+PROPOSED-READER architecture crosswalk, NOT café permission/observed field/verified retention/integrated availability proof. October diagnostic outcomes never upgrade any status.",
     "per_cafe_field_defaults": {
       "grant": "not_tested",
@@ -16833,6 +16833,166 @@
         "additional_or_required_scope": "stock:read",
         "privacy_override": "BUSINESS_STOCK_QUANTITY, never replace 403/no-ID/null/204 with numeric zero",
         "field_gap": "NO live quantity reader; cv_inventory is historical diagnostic"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].curbsidePickupInfo",
+        "additional_or_required_scope": "orders:read + guest.pi:read for the curbsidePickupInfo response subtree (Toast Standard guest permission); grant still not_tested",
+        "privacy_override": "CURBSIDE_GUEST_PERSONAL_CONTEXT: restrict; current redactor drops notes/free text and may suppress protected identity; only retain under actual granted scope, café/restaurant and role checks",
+        "field_gap": "Curbside original fields are not verified retained/discoverable/queryable in current order reader, registered Supervisor or screen; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].deliveryInfo.address1",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].deliveryInfo.address2",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].deliveryInfo.administrativeArea",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].deliveryInfo.city",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].deliveryInfo.country",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].deliveryInfo.latitude",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].deliveryInfo.longitude",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].deliveryInfo.state",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/ordersBulk",
+        "field_prefix": "[].deliveryInfo.zipCode",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "curbsidePickupInfo",
+        "additional_or_required_scope": "orders:read + guest.pi:read for the curbsidePickupInfo response subtree (Toast Standard guest permission); grant still not_tested",
+        "privacy_override": "CURBSIDE_GUEST_PERSONAL_CONTEXT: restrict; current redactor drops notes/free text and may suppress protected identity; only retain under actual granted scope, café/restaurant and role checks",
+        "field_gap": "Curbside original fields are not verified retained/discoverable/queryable in current order reader, registered Supervisor or screen; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "deliveryInfo.address1",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "deliveryInfo.address2",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "deliveryInfo.administrativeArea",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "deliveryInfo.city",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "deliveryInfo.country",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "deliveryInfo.latitude",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "deliveryInfo.longitude",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "deliveryInfo.state",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
+      },
+      {
+        "family": "orders",
+        "operation_path": "/orders/v2/orders/{guid}",
+        "field_prefix": "deliveryInfo.zipCode",
+        "additional_or_required_scope": "orders:read + delivery_info.address:read for this delivery address/location field; café grant not_tested; other deliveryInfo business fields do NOT inherit this additional scope",
+        "privacy_override": "DELIVERY_ADDRESS_RESTRICTED: present only under actual delivery_info.address:read scope and tenant+role access; current redactor may DROP/omit and exact current retained field NOT VERIFIED",
+        "field_gap": "No verified source-address retention or query_data/registered one-Supervisor/screen path; POS0e privacy/reader and POS0f integration proof"
       }
     ],
     "excluded_note": "Partner-only entitlement H8 remains in historical 13-contract register, NOT among official Standard GET rows; Analytics ERA, Menus V3 and no-GET sentinels stay independently classified."
