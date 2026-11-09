@@ -304,12 +304,12 @@ test("Every official nested field has a non-fabricated architecture disposition"
  for(const [operation,prefix] of protectedOperations){
   const curbside=resolve("orders",operation,"200",prefix+"curbsidePickupInfo.transportDescription");
   assert.equal(curbside.exception.field_prefix,prefix+"curbsidePickupInfo");
-  assert.match(curbside.exception.additional_or_required_scope,/guest\\.pi:read/);
+  assert.match(curbside.exception.additional_or_required_scope,/guest\.pi:read/);
   assert.equal(curbside.grant,"not_tested");
   for(const leaf of addressFields){
    const address=resolve("orders",operation,"200",prefix+"deliveryInfo."+leaf);
    assert.equal(address.exception.field_prefix,prefix+"deliveryInfo."+leaf);
-   assert.match(address.exception.additional_or_required_scope,/delivery_info\\.address:read/);
+   assert.match(address.exception.additional_or_required_scope,/delivery_info\.address:read/);
    assert.match(address.exception.privacy_override,/DELIVERY_ADDRESS_RESTRICTED/);
    assert.equal(address.response,"not_tested");
   }
