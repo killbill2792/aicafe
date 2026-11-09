@@ -37,8 +37,9 @@ test('public owner status parser honors real issue comment marker, PR links and 
 test('public dashboard refuses arbitrary body and does not follow unsafe URLs',()=>{
  assert.throws(()=>parseOwnerSnapshot('## Fake queue'),/trusted public status projection/);
  const malicious=sample.replace(
-  'https://github.com/killbill2792/aicafe/pull/406). Muse notification',
-  'https://evil.example/private#issuecomment-6752771905). Muse notification');
+  '[Open original GitHub question](https://github.com/killbill2792/aicafe/pull/406#issuecomment-6752771905)',
+  '[Open original GitHub question](https://evil.example/private#issuecomment-6752771905)');
+ assert.notEqual(malicious,sample);
  const parsed=parseOwnerSnapshot(malicious);
  assert.equal(parsed.decisions[0].url,'https://github.com/killbill2792/aicafe/pull/406');
 });
