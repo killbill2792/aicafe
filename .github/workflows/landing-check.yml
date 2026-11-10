@@ -30,3 +30,6 @@ jobs:
           LANDING_EXIT_CODE: ${{ steps.smoke.outputs.exit_code }}
           LANDING_LOG: ${{ runner.temp }}/landing.log
         run: node .github/scripts/landing-receipt.cjs
+      - name: Show failed smoke in post-merge Actions status (never a PR gate)
+        if: ${{ steps.smoke.outputs.exit_code != '0' }}
+        run: exit 1
