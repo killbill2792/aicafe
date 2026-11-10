@@ -139,7 +139,7 @@ jobs:
             node scripts/dev-dispatcher/run.mjs
           fi
       - name: Publish opaque wake-up signal (only after private ledger persistence)
-        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
+        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
