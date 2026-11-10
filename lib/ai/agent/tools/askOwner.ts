@@ -65,8 +65,8 @@ export const askOwnerTools={ask_owner:{
   if(!state||state.asked)return {source:"ask_owner",period:null,missing:["alreadyAsked"],error:"askOwnerLimit"};
   // The rejected card must not consume state.asked: the next model step can
   // use the existing query_data tool instead of prompting the owner.
-  if(input.kind==="facts"&&input.changeSaved!==true&&
-     asksRecordedPosCount(ctx.ownerText??state.ownerText)){
+  // changeSaved is model-authored and must not bypass POS fact protection.
+  if(input.kind==="facts"&&asksRecordedPosCount(ctx.ownerText??state.ownerText)){
     return {source:"ask_owner",period:null,missing:["posFactRequiresReader"],
      error:"posFactRequiresReader",nextTool:"query_data",
      note:"This is a recorded POS fact, not an owner-entered input. Call query_data on the existing café-scoped records and aggregate the requested dates. Do not ask the owner."};
