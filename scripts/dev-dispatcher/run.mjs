@@ -14,6 +14,7 @@ import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterP
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
 import { queueOwnerAlerts } from "./alerts.mjs";
+import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
@@ -32,7 +33,9 @@ async function main() {
   const gh = new GitHubFacts({ repo, token: githubToken });
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
   async function observe(state) {
-    const snapshot = await gh.snapshot();
+    const mainRef = await gh.request("/git/ref/heads/main");
+    const mainSha=mainRef.object?.sha || null;
+    const snapshot = await gh.snapshot(mainSha);
     const closedByPr = {};
     const openNumbers = new Set(snapshot.map(x => x.pr_number));
     // Check actual merge metadata; disappearing from the open list is not proof of merge.
@@ -42,8 +45,9 @@ async function main() {
       closedByPr[rec.pr_number] = { merged: Boolean(closed.merged_at),
         merge_sha: closed.merged_at ? closed.merge_commit_sha || null : null };
     }
-    const mainRef = await gh.request("/git/ref/heads/main");
-    return { snapshot, closedByPr, mainSha: mainRef.object?.sha || null };
+    const history=await gh.request('/actions/workflows/ai-cafe-dev-dispatcher.yml/runs?event=schedule&per_page=3').catch(()=>null);
+    const previous=(history?.workflow_runs||[]).find(r=>r.created_at && r.id!==Number(process.env.GITHUB_RUN_ID));
+    return {snapshot,closedByPr,mainSha,lastScheduleAt:previous?.created_at || null};
   }
   function reconcile(state, observed) {
     const initiallyLinked = linkPullRequests(state, observed.snapshot);
@@ -145,6 +149,8 @@ async function main() {
       for (const action of Object.values(copy.actions)) {
         if (action.task_id !== id || action.status !== 'planned' ||
             action.type === 'assign') continue;
+        if (rec.codex_state === 'findings' && action.type === 'codex_comments' &&
+            action.head_sha === rec.head_sha && rec.github_state === 'open') continue;
         if (proposal.kind !== 'propose' || action.delivery?.action_id !== proposal.key)
           action.status = 'cancelled_state_changed';
       }
@@ -185,13 +191,22 @@ async function main() {
     // URLs. Keep a per-PR index only in the private ledger.
     copy.pr_chat_links ||= {};
     for (const [id, rec] of Object.entries(copy.tasks)) {
-      if (!Number.isInteger(rec.pr_number) || !rec.conversation_ref ||
-          rec.github_state !== 'open') continue;
-      copy.pr_chat_links[String(rec.pr_number)] = {
-        task_id:id,conversation_url:rec.conversation_ref,
-        head_sha:rec.head_sha || null,
-        updated_at:rec.last_submission_at || now
-      };
+      if (!Number.isInteger(rec.pr_number)) continue;
+      const indexed=copy.pr_chat_links[String(rec.pr_number)];
+      if (indexed?.conversation_url && (!rec.conversation_ref ||
+          Date.parse(indexed.updated_at||'') > Date.parse(rec.last_submission_at||''))) {
+        rec.conversation_ref=indexed.conversation_url;
+        rec.conversation_url=indexed.conversation_url;
+      }
+      if (!rec.conversation_ref) continue;
+      rec.conversation_url=rec.conversation_ref;
+      if (!indexed || indexed.conversation_url !== rec.conversation_ref ||
+          indexed.head_sha !== (rec.head_sha||null))
+        copy.pr_chat_links[String(rec.pr_number)] = {
+          task_id:id,conversation_url:rec.conversation_ref,
+          head_sha:rec.head_sha || null,
+          updated_at:rec.last_submission_at || now
+        };
     }
     // Proposals persist for later authorized delivery, never sent by this script.
     return { state: copy, assigned, nudges };
@@ -206,47 +221,35 @@ async function main() {
     : {accepted:[],rejected:[],complete:false,scan_error:'private_ledger_unavailable'};
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
+  proposed.state=recordDrift(trackScheduleGap(proposed.state,{
+    eventName:process.env.GITHUB_EVENT_NAME,now:new Date().toISOString(),
+    observedScheduleAt:observed.lastScheduleAt}),current,observed.snapshot);
   const unmappedPrs = linkPullRequests(current, observed.snapshot).unmapped;
   async function promoteIntegration(state) {
-    const required = ["TypeScript", "ESLint", "Full regression tests",
-      "Dispatcher regression tests", "Production build", "Capability integration scenarios"];
-    for (const [id, rec] of Object.entries(state.tasks)) {
-      if (rec.status !== "merged" || !rec.merge_sha) continue;
-      const expected = taskById.get(id)?.acceptance;
-      const submitted = rec.acceptance_evidence?.acceptance;
-      if (!Array.isArray(expected) || !expected.length ||
-          !Array.isArray(submitted) || submitted.length !== expected.length) continue;
-      // Token-initiated squash merges require an explicit workflow_dispatch;
-      // manual merges use push. Only an executed proof on exact merged SHA counts.
-      // Proof runs may fall beyond GitHub's first page during parallel merges.
-      // Exhaust the bounded workflow history instead of leaving tasks unproven.
-      const runs = await gh.workflowRuns('ai-cafe-integration-proof.yml', 'branch=main');
-      for (const run of runs) {
-        if (run.name !== 'AI CAFE Integration Proof' || run.head_branch !== 'main' ||
-            !['push','workflow_dispatch'].includes(run.event) ||
-            run.status !== 'completed' || run.conclusion !== 'success' ||
-            (run.event === 'push' && run.head_sha !== rec.merge_sha)) continue;
-        const jobs = await gh.workflowJobs(run.id);
-        const job = jobs.find(j => j.name === 'Required merged-main integration checks' &&
-          j.status === 'completed' && j.conclusion === 'success');
-        if (!job || !required.every(name => job.steps?.some(step => step.name === name &&
-          step.status === 'completed' && step.conclusion === 'success'))) continue;
-        const artifact = await gh.integrationProof(run.id);
-        if (!artifact || artifact.task_id !== id || artifact.run_id !== run.id ||
-            artifact.head_sha !== rec.merge_sha || artifact.base_sha !== rec.merge_sha ||
-            artifact.acceptance_digest !== acceptanceDigest(submitted) ||
-            !Array.isArray(artifact.acceptance) || artifact.acceptance.length !== expected.length ||
-            !artifact.acceptance.every((item,i) => item.id === String(i+1) &&
-              item.command === submitted[i].command && item.test_file === submitted[i].test_file &&
-              item.result === 'passed')) continue;
-        const proof = {main_sha:rec.merge_sha,merged_sha:rec.merge_sha,
-          workflow_run_id:run.id,conclusion:'success',required_scenarios:artifact.acceptance};
-        if (integrationStatus({merged_sha:rec.merge_sha,main_sha:rec.merge_sha,
-          proof,expectedAcceptance:expected}) === 'integrated_proven') {
-          rec.integration_proof = proof;
-          rec.status = 'integrated_proven';
-          break;
-        }
+    const pending=Object.entries(state.tasks).filter(([,r])=>
+      r.status==='merged' && /^[a-f0-9]{40}$/.test(r.merge_sha||''));
+    if(!pending.length)return;
+    const runs=await gh.workflowRuns('ai-cafe-integration-proof.yml','branch=main');
+    for(const [id,rec] of pending) for(const run of runs) {
+      if(run.name!=='AI CAFE Integration Proof' || run.head_branch!=='main' ||
+         !['push','workflow_dispatch'].includes(run.event) ||
+         run.status!=='completed'||run.conclusion!=='success'||
+         (run.event==='push'&&run.head_sha!==rec.merge_sha))continue;
+      const jobs=await gh.workflowJobs(run.id);
+      const job=jobs.find(j=>j.name==='Required merged-main integration checks'&&
+        j.status==='completed'&&j.conclusion==='success');
+      if(!job)continue;
+      // The exact push-SHA itself proves identity. Dispatch runs require the
+      // independently verified artifact: never use an unrelated main build.
+      const artifact=run.event==='workflow_dispatch'
+        ? await gh.integrationProof(run.id).catch(()=>null) : null;
+      const proof=verifiedMergedProof({run,job,artifact,taskId:id,mergeSha:rec.merge_sha});
+      if(proof&&integrationStatus({merged_sha:rec.merge_sha,
+        main_sha:rec.merge_sha,proof})==='integrated_proven') {
+        rec.integration_proof=proof;rec.integration_dispatch='verified';
+        rec.status='integrated_proven';
+        console.log('drift_fixed: integration PR #'+rec.pr_number+' proof run '+run.id);
+        break;
       }
     }
   }
@@ -257,8 +260,28 @@ async function main() {
     // identical state every five minutes (avoids 288 empty commits per day).
     persisted = await ledger.transaction(async existing => {
       const latest = await observe(existing);
-      const next = reconcile(existing, latest).state;
+      let next = reconcile(existing, latest).state;
+      // Migrate old authorization only for the same substantive goal/scope/tests.
+      // Do not rewrite a signed in-flight courier delivery.
+      for(const [id,task] of taskById){
+        const rec=next.tasks[id];
+        if(!rec||rec.pr_number||rec.conversation_ref||
+           task.architecture_approval?.approved!==true)continue;
+        if(rec.priority_deferred&&rec.status==='blocked_needs_owner'){
+          rec.approved=true;rec.status='proposed';
+          rec.approval_hash=approvalSignature(task);
+          rec.approval_signature_version=3;
+        }else if(rec.approved&&approvalMatches(task,rec.approval_hash)&&
+          !Object.values(next.actions).some(a=>a.task_id===id&&
+            ['planned','claimed','uncertain'].includes(a.status))){
+          rec.approval_hash=approvalSignature(task);
+          rec.approval_signature_version=3;
+        }
+      }
+      next=trackScheduleGap(next,{eventName:process.env.GITHUB_EVENT_NAME,
+        now:new Date().toISOString(),observedScheduleAt:latest.lastScheduleAt});
       await promoteIntegration(next);
+      next=recordDrift(next,existing,latest.snapshot);
       // Dependency proof is recorded for reporting, not an unsolicited chat prompt.
       // Integration may become proven during this same pass: queue the owner
       // review with the actual saved chat URL without a second delayed cycle.
