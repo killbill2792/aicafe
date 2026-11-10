@@ -40,8 +40,9 @@ test('independent and dependent authorized tasks open their draft immediately on
     prerequisite_pr:398},action:'assign',actionId:'stacked'});
   assert.match(independent.prompt,/PR base main/);
   assert.match(stacked.prompt,/PR base feat\/parent \(parent PR #398\)/);
-  assert.match(stacked.prompt,/Keep coding, committing and running CI while parent is open/);
-  assert.match(stacked.prompt,/Do not rebase or request Codex until parent merged/);
+  assert.match(stacked.prompt,/Work\/commit\/test while parent is open/);
+  assert.match(independent.prompt,/one final-head Codex review/);
+  assert.match(stacked.prompt,/NO rebase or Codex until parent merged/);
   assert.doesNotMatch(stacked.prompt,/blocked until .* merges/i);
   assert.equal(stacked.base_branch,'feat/parent');
 });
