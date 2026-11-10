@@ -361,6 +361,7 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
         branch_maintenance_merge_sha: pr.mergeable === true && pr.mergeable_state === 'clean'
           ? null : updated.branch_maintenance_merge_sha,
         base_changed_at: baseChangedAt || null, review_base_current: reviewBaseCurrent,
+        ready_transition_at: rec.draft === true && pr.draft === false ? now : rec.ready_transition_at || null,
         owner_question: pr.owner_approved ? null : updated.owner_question,
         ...(directWork ? {owner_direct_action:{head_sha:pr.head_sha,
           kind:'push',actor:pr.last_commit_actor || null,at:now}} : {}),
@@ -368,7 +369,8 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
           {owner_directive_record:{kind:pr.owner_directive,
             comment_id:pr.owner_directive_id || null,at:pr.latest_owner_comment_at,
             url:pr.owner_directive_url || null}} : {}),
-        status: pr.sensitive_owner_block ? "blocked_needs_owner" :
+        status: ['integrated_proven','released_proven'].includes(rec.status) ? rec.status :
+          pr.sensitive_owner_block ? "blocked_needs_owner" :
           pr.draft ? "draft_open" : "review_fixing", github_state: "open",
         submission_state: updated.submission_state };
     }

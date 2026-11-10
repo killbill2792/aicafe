@@ -68,7 +68,16 @@ test('released-proven record is never downgraded to merged or blocked',()=>{
   const changed = reconcileGithub(previous,[],{378:true});
   revalidateQueuedActions(changed,new Map());
   assert.equal(changed.tasks['5'].status,'released_proven');
-  assert.equal(changed.actions['old:5'].status,'cancelled_approval_changed');
+  assert.equal(changed.actions['old:5'].status,'cancelled_owner_state_changed');
+});
+test('reopened PR never rewrites historical proven status',()=>{
+ for(const status of ['integrated_proven','released_proven']){
+  const s=makeState({status,head_sha:'a'.repeat(40)});
+  const out=reconcileGithub(s,[{pr_number:390,head_sha:'b'.repeat(40),base_sha:'c'.repeat(40),draft:true,mergeable:true}]);
+  revalidateQueuedActions(out,new Map());
+  assert.equal(out.tasks['6'].status,status);
+  assert.equal(out.actions['fix:6'].status,'cancelled_approval_changed');
+ }
 });
 test('revoking new sends does not erase already proven integration on same task',()=>{
   const s=makeState({status:'integrated_proven'});
