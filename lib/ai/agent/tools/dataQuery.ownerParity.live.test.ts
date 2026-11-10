@@ -28,25 +28,82 @@ const run=enabled?it:it.skip;
 // Check BEFORE sending, including the provider's per-response output ceiling.
 // A limit hit FAILS the test; it can never turn partial E2 into a passing proof.
 const smoke=process.env.POS0E_E2_SMOKE==="1";
-const MAX_PAID_CALLS=12;
-const MAX_INPUT_REQUEST_BYTES=200_000;
+// The cost-capped smoke is a system-initiated reader acceptance, so expose
+// only the TWO existing registered read tools, not unrelated action/scheduling
+// schemas on every paid turn. The full suite still uses the unrestricted
+// production Supervisor toolset; never claim smoke proves that whole surface.
+const smokeReaderTools=["describe_data","query_data"] as const;
+// Owner explicitly approved ONE additional cost-capped five-question Luna smoke.
+// Full 18-question acceptance intentionally retains its earlier stricter cap;
+// a larger full run requires its own separate authorization.
+const MAX_PAID_CALLS=smoke?16:12;
+const MAX_INPUT_REQUEST_BYTES=smoke?600_000:200_000;
 const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
 let paidCalls=0,requestBytes=0,outputTokensReserved=0;
+// A rejected transport budget is not an OpenAI/Luna failure. Never include
+// prompts, tool parameters, customer rows or secrets in this diagnostic.
+let budgetRejection:{reason:string;attemptBytes:number;priorBytes:number;
+ priorCalls:number;attemptOutputTokens:number}|null=null;
+// Record only response status, token counts and output item TYPES, never
+// provider text, prompts, tool arguments, credentials or customer data.
+const providerReceipts:Array<{event:string;status:string;reason:string|null;
+ outputTokens:number|null;outputTypes:string[]}>= [];
 const budgetedProvider:AgentProvider=async function*(params,signal){
  if(params.model!==PRODUCTION_SUPERVISOR_OPENAI_MODEL)
   throw new Error("POS0e E2 requires owner-verified production Supervisor model "+PRODUCTION_SUPERVISOR_OPENAI_MODEL);
  const payloadBytes=Buffer.byteLength(JSON.stringify(params),"utf8");
  const outputCap=Math.min(Number(params.max_output_tokens)||MAX_OUTPUT_TOKENS_PER_CALL,
   MAX_OUTPUT_TOKENS_PER_CALL);
- if(paidCalls+1>MAX_PAID_CALLS||
-    requestBytes+payloadBytes>MAX_INPUT_REQUEST_BYTES||
-    outputTokensReserved+outputCap>MAX_PAID_CALLS*MAX_OUTPUT_TOKENS_PER_CALL)
-  throw new Error("POS0e paid E2 budget exceeded: stop without additional API calls");
+ const reason=paidCalls+1>MAX_PAID_CALLS?"model_call_count":
+  requestBytes+payloadBytes>MAX_INPUT_REQUEST_BYTES?"input_request_bytes":
+  outputTokensReserved+outputCap>MAX_PAID_CALLS*MAX_OUTPUT_TOKENS_PER_CALL?
+   "output_token_reservation":null;
+ if(reason){
+  budgetRejection={reason,attemptBytes:payloadBytes,priorBytes:requestBytes,
+   priorCalls:paidCalls,attemptOutputTokens:outputCap};
+  throw new Error("POS0e paid E2 budget exceeded ("+reason+"): stop without additional API calls");
+ }
  paidCalls++;
  requestBytes+=payloadBytes;
  outputTokensReserved+=outputCap;
- yield* openAIProvider({...params,max_output_tokens:outputCap},signal);
+ for await(const event of openAIProvider({...params,max_output_tokens:outputCap},signal)){
+  if(["response.completed","response.incomplete","response.failed"].includes(event.type)){
+   const response=event.response as {status?:string;incomplete_details?:{reason?:string}|null;
+    usage?:{output_tokens?:number};output?:Array<{type?:string}>}|undefined;
+   providerReceipts.push({event:event.type,status:response?.status??"unknown",
+    reason:response?.incomplete_details?.reason??null,
+    outputTokens:response?.usage?.output_tokens??null,
+    outputTypes:(response?.output??[]).map(item=>item.type??"unknown")});
+  }
+  yield event;
+ }
 };
+function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:number):string{
+ return JSON.stringify({endReason:turn.endReason,
+  modelCalls:turn.usage.modelCalls,inputTokens:turn.usage.inputTokens,
+  cachedTokens:turn.usage.cachedTokens,outputTokens:turn.usage.outputTokens,
+  chargedTransportCalls:paidCalls,serializedRequestBytes:requestBytes,
+  outputTokensReserved,budgetRejection,
+  tools:turn.tools,
+  resultStatus:turn.results.map(result=>({source:result.source,
+   missing:result.missing,error:result.error??null})),
+  providerReceipts:providerReceipts.slice(since)});
+}
+// Free deterministic regression: a bad or overlarge provider request must be
+// rejected BEFORE calling OpenAI, without mistaking the guard for Luna failure.
+it("POS0e paid transport refuses an oversized request at zero model cost",async()=>{
+ const beforeCalls=paidCalls,beforeBytes=requestBytes;
+ const oversized={model:PRODUCTION_SUPERVISOR_OPENAI_MODEL,
+  max_output_tokens:MAX_OUTPUT_TOKENS_PER_CALL,
+  input:"x".repeat(MAX_INPUT_REQUEST_BYTES)};
+ await expect(budgetedProvider(oversized,new AbortController().signal)[Symbol.asyncIterator]().next())
+  .rejects.toThrow("POS0e paid E2 budget exceeded (input_request_bytes)");
+ expect(paidCalls).toBe(beforeCalls);
+ expect(requestBytes).toBe(beforeBytes);
+ expect(budgetRejection).toMatchObject({reason:"input_request_bytes"});
+ budgetRejection=null;
+});
+
 const allowedHost=(raw:string)=>{
  const {hostname}=new URL(raw);
  if(!["127.0.0.1","localhost","::1"].includes(hostname))
@@ -116,6 +173,25 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   const leak=(await client.query<{n:number}>("select count(*)::integer n from public.toast_records_for($1,$2,$3)\n where data->>'guid' in ('other-cafe-cash','poison-cash','poison-stock','poison-time')",
    [biz.id,prior,biz.today])).rows[0].n;
   expect(leak).toBe(0);
+  // Independent SQL truths are shared by the free preflight and the real agent
+  // assertions; a broken bind cannot silently burn a paid Luna run.
+  const namedQuestions=[
+   {question:"For current Toast order GUID "+firstOrderGuid+
+     ", what is this customer's first name? Answer exactly Name: X.",
+    truth:"select data->'customer'->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='order' and record_ref=$4",ref:firstOrderGuid},
+   {question:"For current Toast employee GUID "+staffGuid+
+     ", what is this employee's first name? Answer exactly Name: X.",
+    truth:"select data->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
+  ];
+  const familyQuestions=[
+   {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
+    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,biz.today]},
+   {question:"For current Toast stock item GUID "+stockGuid+
+     ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
+    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
+   {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
+    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
+  ];
   // Test the source/fixture contract at zero model cost. Paid acceptance must
   // still execute the registered Supervisor, and never sets SQL_ONLY.
   if(sqlOnly){
@@ -123,6 +199,17 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
     [biz.id,prior,biz.today]);
    expect(expected.rows[0].n).toBeGreaterThanOrEqual(3);
+   // Exact same independently sourced truth SQL and bound argument arrays as
+   // the real-agent test; no provider/model request in SQL-only mode.
+   for(const {question,truth,ref} of namedQuestions){
+    const truthRow=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0];
+    expect(truthRow?.answer,question).toBeTruthy();
+   }
+   for(const {question,truth,args} of familyQuestions){
+    const truthRow=(await client.query<{n:number|string|null}>(truth,args)).rows[0];
+    expect(truthRow?.n,question).not.toBeNull();
+    expect(truthRow?.n,question).not.toBeUndefined();
+   }
    return;
   }
 
@@ -154,7 +241,8 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    const expected=(await client.query<{n:number}>(truth,params)).rows[0].n;
    // Standard owner-facing answer; the requested line keeps acceptance numeric
    // (without an extra reviewer model) and still permits the incomplete-day note.
-   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:
     question+" Answer with 'Number: N' and a short source/coverage note."});
    expect(turn.tools,question).toContain("query_data");
    const number=turn.text.match(/\bNumber\s*[:=]\s*(\d+)\b/i);
@@ -171,7 +259,8 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   ] as const;
   for(const {question,truth} of (smoke?breakdowns.slice(0,0):breakdowns)){
    const expected=(await client.query<{k:string;n:number}>(truth,params)).rows;
-   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:question});
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:question});
    expect(turn.tools,question).toContain("query_data");
    for(const row of expected){
     const line=turn.text.split("\n").find(line=>line.includes(row.k));
@@ -184,36 +273,23 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   // These real turns close the signed POS0e gap not covered by the earlier
   // discount-only test. Expected facts come from the SAME disposable database
   // transaction, not the model, snapshots or copied fixture guesses.
-  const namedQuestions=[
-   {question:"For current Toast order GUID "+firstOrderGuid+
-     ", what is this customer's first name? Answer exactly Name: X.",
-    truth:"select data->'customer'->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='order' and record_ref=$4",ref:firstOrderGuid},
-   {question:"For current Toast employee GUID "+staffGuid+
-     ", what is this employee's first name? Answer exactly Name: X.",
-    truth:"select data->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
-  ];
   for(const {question,truth,ref} of namedQuestions){
    const expected=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0]?.answer;
    expect(expected,question).toBeTruthy();
-   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:question+
+   const receiptStart=providerReceipts.length;
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:question+
     " Use retained current source facts, not diagnostic snapshots or another café."});
    expect(turn.tools,question).toContain("query_data");
-   expect(turn.text,question).toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
+   expect(turn.text,question+"; "+safeFailureDetails(turn,receiptStart))
+    .toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
   }
-  const familyQuestions=[
-   {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
-    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,biz.today]},
-   {question:"For current Toast stock item GUID "+stockGuid+
-     ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
-    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
-   {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
-    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
-  ];
   for(const {question,truth,label,args} of familyQuestions){
    const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
    expect(expected,question).not.toBeNull();
    expect(expected,question).not.toBeUndefined();
-   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:question});
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:question});
    expect(turn.tools,question).toContain("query_data");
    const match=turn.text.match(new RegExp("\\b"+label+"\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)","i"));
    expect(match,question+" => "+turn.text).not.toBeNull();

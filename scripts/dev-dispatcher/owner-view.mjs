@@ -97,8 +97,11 @@ export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
       .sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))[0];
     const delivered = actions.filter(a=>a.task_id===id && a.status==='submitted')
       .sort((a,b)=>String(b.submitted_at||'').localeCompare(String(a.submitted_at||'')))[0];
+    const receiptHold = Object.values(state.receipt_feedback||{})
+      .find(f=>f.task_id===id&&f.status==='rejected');
     const muse = pending
       ? `${clean(pending.type)}: ${pending.status === 'planned' ? 'queued (not sent)' : pending.status}`
+      : receiptHold ? 'receipt rejected; Muse re-authenticates original (no resend)'
       : delivered ? `${clean(delivered.type)}: submitted (receipt recorded)` : 'no active delivery';
     const owner = r.github_owner_question || r.owner_question;
     const finished = r.github_state === 'merged' ||
@@ -106,6 +109,7 @@ export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
     const next = finished ? (r.status === 'merged'
         ? 'Dispatcher verifies merged-main integration proof' : 'Integrated; no coder action')
       : owner ? 'Owner decision + coder can continue signed work'
+      : receiptHold ? 'Muse repairs signed receipt; same original chat'
       : r.ci_state === 'failure' ? 'Coder fixes CI'
       : r.codex_state === 'findings' ? 'Coder resolves review findings'
       : r.draft ? 'Coder finishes draft/proof'
@@ -146,6 +150,9 @@ export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
     ...(outstanding.length ? outstanding : ['No current GitHub owner questions.']),
     '',
     '### Muse delivery and retries',
+    `**${Object.values(state.receipt_feedback||{}).filter(f=>f.status==='rejected').length}** receipt-authentication hold(s): Muse must repair original evidence, never resend an unverified browser prompt.`,
+    state.receipt_scan?.complete===false ? '**Courier receipt scan incomplete:** keep previous delivery holds until verified.' : '',
+    '[Open authenticated private Muse queue](https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/owner-queue.md) — requires access to the private repository.',
     `**${planned.length}** planned Muse instruction(s); planned is not delivered.`,
     nextWake.length ? `Earliest planned-action recheck: **${new Date(Math.min(...nextWake)).toISOString()} UTC** (only when the existing GitHub workflow runs).`
       : 'No planned-action recheck.',

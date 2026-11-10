@@ -1,0 +1,138 @@
+// Owner-readable projection IN THE EXISTING PRIVATE LEDGER REPOSITORY ONLY.
+// Never publish this string to the public status comment or GitHub Pages.
+import { validateHandoff, validTarget } from './bridge/bridge.mjs';
+
+export const PRIVATE_VIEW_PATH = 'dispatcher/owner-queue.md';
+const escapeCell = value => String(value ?? '—')
+  .replace(/[\r\n\t]/g,' ').replace(/[|<>]/g,' ').replace(/\[(.*?)\]\((.*?)\)/g,'$1')
+  .replace(/\\/g,'').slice(0,320).trim() || '—';
+const time = value => Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : '—';
+const short = key => escapeCell(String(key||'').slice(0,44));
+const githubPr = n => Number.isInteger(n) && n>0
+  ? `[#${n}](https://github.com/killbill2792/aicafe/pull/${n})` : '—';
+function privateChat(rec, action) {
+  const url = action?.delivery?.conversation_url;
+  return typeof url==='string' && rec?.conversation_ref===url &&
+    validTarget(action.delivery.provider,url) ? `[Open existing chat](${url})` : '—';
+}
+function signedStatus(action, task) {
+  if (action.status !== 'planned')return 'History only — do not send';
+  if (validateHandoff({...action,key:action.key},task))
+    return 'Signed/current-head delivery; browser idle check required';
+  return 'INELIGIBLE — hold; inspect approval/head/target';
+}
+function lastReceipt(action) {
+  if(action.superseded_receipt)return 'Historical receipt only (superseded)';
+  if(action.receipt || action.status==='submitted')return 'Receipt recorded';
+  if(action.status==='planned')return 'No verified submission';
+  return 'No current receipt';
+}
+
+function privateReceiptRepairRows(state) {
+  const items=Object.entries(state.receipt_feedback||{})
+    .filter(([,f])=>f.status==='rejected')
+    .sort((a,b)=>String(a[1].first_seen_at||'').localeCompare(String(b[1].first_seen_at||'')));
+  const reasons={
+    unattributed_git_actor:'Git commit not linked to GitHub account; re-commit SAME receipt via authorized GitHub Contents API',
+    unapproved_git_actor:'GitHub commit actor not allowlisted; use the already authorized courier identity',
+    invalid_receipt_identity:'Receipt file and signed action mismatch; inspect original, never guess target',
+    receipt_validation_failed:'Signed handoff validation rejected content; inspect original action, do not resend',
+    github_receipt_read_failed:'GitHub receipt read error; retry read only',
+    assignment_receipt_missing:'Original assignment not verified; inspect prior browser hold, never resend blindly'
+  };
+  return items.map(([id,f])=>{
+    const task=state.tasks[f.task_id]||{};
+    return '| '+escapeCell(f.task_id)+' | '+githubPr(task.pr_number)+
+      ' | '+escapeCell(id)+' | '+escapeCell(reasons[f.code]||'Receipt verification required')+
+      ' | '+time(f.first_seen_at)+' | '+time(f.last_checked_at)+
+      ' | '+escapeCell(f.wake_round||0)+' |';
+  });
+}
+
+export function renderPrivateQueue(state, {repo='killbill2792/dave-task-queue'} = {}) {
+  if(state?.version!==1 || !state.tasks || !state.actions || !state.owner_alerts)
+    throw new Error('Invalid private owner queue state');
+  if(repo!=='killbill2792/dave-task-queue')throw new Error('Unexpected private queue repository');
+  const entries=Object.entries(state.actions).map(([key,action])=>({key,...action}));
+  const pending=entries.filter(a=>['planned','claimed','uncertain'].includes(a.status))
+    .sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||'')));
+  const noticeEntries=Object.entries(state.owner_alerts)
+    .map(([key,n])=>({key,...n}));
+  const openNotices=noticeEntries.filter(n=>['planned','claimed','uncertain'].includes(n.status));
+  const repairRows=privateReceiptRepairRows(state);
+  const histories=entries.filter(a=>!pending.includes(a))
+    .sort((a,b)=>String(b.submitted_at||b.created_at||'').localeCompare(
+      String(a.submitted_at||a.created_at||''))).slice(0,35);
+  const row=action=>{
+    const task=state.tasks[action.task_id]||{};
+    return `| ${escapeCell(action.task_id)} | ${githubPr(task.pr_number)} | ${escapeCell(action.type)} | ${escapeCell(action.status)} | ${escapeCell(signedStatus(action,task))} | ${escapeCell(action.wake_round||0)} | ${time(action.last_wake_at||action.created_at)} | ${lastReceipt(action)} | ${privateChat(task,action)} |`;
+  };
+  const noticeRows=openNotices.map(n=>
+    `| ${escapeCell(n.task_id)} | ${githubPr(n.pr_number)} | ${escapeCell(n.kind)} | ${escapeCell(n.status)} | ${time(n.created_at)} | ${escapeCell(n.question)} |`);
+  const historyRows=histories.map(a=>{
+    const task=state.tasks[a.task_id]||{};
+    return `| ${escapeCell(a.task_id)} | ${githubPr(task.pr_number)} | ${escapeCell(a.type)} | ${escapeCell(a.status)} | ${escapeCell(signedStatus(a,task))} | ${time(a.submitted_at||a.created_at)} | ${lastReceipt(a)} |`;
+  });
+  return [
+    '# AI CAFE — private Muse delivery queue',
+    '',
+    '> **PRIVATE — GitHub authentication required.** This file is generated by the existing trusted-main dispatcher inside the private ledger repository. It does NOT authorize, send, approve, retry, or merge anything.',
+    '',
+    `**Authoritative ledger snapshot:** ${time(state.updated_at)} UTC`,
+    `**Pending/uncertain deliveries:** ${pending.length}  ·  **Open owner notices:** ${openNotices.length}`,
+    '',
+    '**Important:** `planned` means *not sent*. A signed/current-head action is still subject to Muse checking the correct idle browser chat and its own submission dedupe. A pending owner question does not by itself revoke an already-signed in-scope repair; it never authorizes the disputed scope.',
+    '',
+    '## Current Muse actions (delivery order)',
+    '| Task | PR | Action | Status | Eligibility under GitHub handoff contract | Wake round | Last wake / queued | Receipt | Chat |',
+    '|---|---|---|---|---|---:|---|---|---|',
+    ...(pending.length ? pending.map(row) : ['| — | — | — | No active delivery | — | — | — | — | — |']),
+    '',
+    '## Outstanding owner notices (not approvals)',
+    '| Task | PR | Notice kind | Delivery status | Created | Question excerpt |',
+    '|---|---|---|---|---|---|',
+    ...(noticeRows.length ? noticeRows : ['| — | — | — | No outstanding notices | — | — |']),
+    '',
+    '## Receipt authentication and same-action recovery (Muse-only)',
+    '**Repair the receipt, NOT the browser send.** Read the existing authorized action and original receipt in this private repository. Re-commit the same receipt with a GitHub-attributed allowlisted courier account; retain action ID, prompt/approval hashes, project, provider and original chat URL. Reconciliation then acknowledges it. Never start a new chat or resend an uncertain browser turn.',
+    '',
+    `**Receipt scan:** ${state.receipt_scan?.complete===true?'complete':'incomplete; previous holds retained'} · **Unresolved receipt repairs:** ${repairRows.length}`,
+    '| Task | PR | Original action | Failure and Muse repair | First detected | Last checked | Wake round |',
+    '|---|---|---|---|---|---|---:|',
+    ...(repairRows.length?repairRows:['| — | — | — | No unresolved receipt repair | — | — | — |']),
+    '',
+    '## Recent delivery history (audit, not current authorization)',
+    '| Task | PR | Action | Recorded status | Eligibility | When | Receipt |',
+    '|---|---|---|---|---|---|---|',
+    ...(historyRows.length ? historyRows : ['| — | — | — | No history | History only | — | — |']),
+    '',
+    '## Where to verify full details',
+    '- [Original private ledger and immutable action IDs](https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/state.json)',
+    '- [Remote courier receipt files](https://github.com/killbill2792/dave-task-queue/tree/main/dispatcher/receipts)',
+    '- [Public-safe owner control center](https://github.com/killbill2792/aicafe/issues/411#issuecomment-6752417190)',
+    '',
+    'This view is a disposable read-only projection; `dispatcher/state.json` remains the only action authority. The GitHub public Pages site links here but cannot read this file.',
+    ''
+  ].join('\n');
+}
+
+export async function publishPrivateQueue({ledger}) {
+  if(!ledger || typeof ledger.load!=='function' || typeof ledger.request!=='function')
+    throw new Error('Private ledger client required');
+  // Always derive from the newest remote ledger, never from an older public view.
+  const loaded=await ledger.load();
+  const view=renderPrivateQueue(loaded.state,{repo:ledger.repo});
+  const current=await ledger.request(`/contents/${PRIVATE_VIEW_PATH}?ref=main`);
+  if(!current.absent && (!current.sha || typeof current.content!=='string'))
+    throw new Error('Unexpected private view file response');
+  if(!current.absent) {
+    const prior=Buffer.from(current.content.replace(/\s/g,''),'base64').toString('utf8');
+    if(prior===view)return {status:'unchanged'};
+  }
+  const payload={message:'chore(dispatcher): refresh private owner queue view',
+    content:Buffer.from(view).toString('base64'),branch:'main'};
+  if(!current.absent)payload.sha=current.sha;
+  const result=await ledger.request(`/contents/${PRIVATE_VIEW_PATH}`,{
+    method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  return {status:current.absent?'created':'updated',sha:result.commit?.sha||null};
+}

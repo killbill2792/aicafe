@@ -10,9 +10,11 @@ import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration, retryStartupFailure } from "./effects.mjs";
-import { collectReceipts, applyReceipts } from "./inbox.mjs";
+import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
+import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
 import { queueOwnerAlerts } from "./alerts.mjs";
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
+import { publishPrivateQueue } from "./private-owner-view.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
@@ -47,11 +49,14 @@ async function main() {
     // First invalidate old-head actions, THEN process Muse receipts. A receipt
     // arriving during the same GitHub reconciliation must not revive old work.
     const live = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
-    const copy = queueOwnerAlerts(
-      applyReceipts(live, inbox, actorMap),
-      {unmappedPrs:linked.unmapped,queue});
+    const applied = applyReceiptsSafely(live,receiptScan.accepted,actorMap);
+    const withFeedback = reconcileReceiptFeedback(applied.state,{
+      ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
+    },new Date().toISOString());
+    const copy = queueOwnerAlerts(withFeedback,{unmappedPrs:linked.unmapped,queue});
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
+    wakeReceiptFeedback(copy, Date.now());
 
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
@@ -96,7 +101,9 @@ async function main() {
     if (!actor || !["muse", "dave"].includes(courier)) throw new Error("Invalid courier actor mapping");
     return [actor, courier];
   }));
-  const inbox = ledger ? await collectReceipts({ ledger, allowedActors: Object.keys(actorMap) }) : [];
+  const receiptScan = ledger
+    ? await inspectReceipts({ledger,allowedActors:Object.keys(actorMap)})
+    : {accepted:[],rejected:[],complete:false,scan_error:'private_ledger_unavailable'};
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
   const unmappedPrs = linkPullRequests(current, observed.snapshot).unmapped;
@@ -257,6 +264,8 @@ async function main() {
     `- Approved new assignments: **${proposed.assigned.length}**`,
     `- Eligible follow-ups (NOT sent): **${proposed.nudges.length}**`,
     `- Planned Muse owner notices (NOT sent): **${Object.values(effectiveState.owner_alerts || {}).filter(n=>n.status==="planned").length}**`,
+    `- Muse receipt-authentication repairs: **${Object.values(effectiveState.receipt_feedback || {}).filter(f=>f.status==="rejected").length}** (same receipt; no browser re-send)`,
+    `- Courier receipt scan: **${effectiveState.receipt_scan?.complete===true?"complete":"incomplete; preserve existing holds"}**`,
     `- Architecture owner review pending: **${foundationReviewPending ? (hasChatReceipt ? "Muse notice queued or already submitted" : "waiting for verified ChatGPT conversation receipt") : "no"}**`,
     `- Tracked merge gates: ready **${gateCounts.ready}**, blocked **${gateCounts.blocked}**`,
     `- Private durable state: **${commit ? persisted?.committed ? "saved" : "unchanged" : ledger ? "read-only" : "not configured"} (no external actions)**`,
@@ -267,6 +276,20 @@ async function main() {
   ].join("\n");
   console.log(summary);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+  // A separate owner-readable projection lives IN THE ALREADY PRIVATE
+  // ledger repository; never place its contents in a public issue or Pages.
+  // Failure cannot stop courier signals or the authoritative JSON ledger.
+  if (commit && ledger && persisted) {
+    try {
+      const privateView = await publishPrivateQueue({ledger});
+      console.log(`Private Muse owner queue ${privateView.status}`);
+    } catch (error) {
+      console.error(`Private Muse owner queue publication failed: ${error.message}`);
+      if (process.env.GITHUB_STEP_SUMMARY)
+        appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+          '\\n**Private queue view update failed** — see runner log; authoritative ledger is unchanged.\\n');
+    }
+  }
   // Single owner-facing view in issue #411, updated by the same trusted-main
   // reconciliation. Dashboard publishing is never allowed to block the
   // private ledger or the opaque Muse wake-up signal.
