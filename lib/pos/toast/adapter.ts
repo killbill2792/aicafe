@@ -89,7 +89,7 @@ const itemSchema=z.object({
   visibility:z.array(z.string().nullable()).nullish(),
   image:z.string().nullish(),plu:z.string().nullish(),sku:z.string().nullish(),
   salesCategory:z.object({name:z.string().nullish()}).passthrough().nullish(),
-  modifierGroupReferences:z.array(z.number())
+  modifierGroupReferences:z.array(z.number()).nullish()
 }).passthrough();
 type MenuGroup={name:string;menuItems:z.infer<typeof itemSchema>[];menuGroups:MenuGroup[];
  availability?:unknown};
