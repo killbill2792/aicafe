@@ -503,7 +503,7 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      fromScope:"today",toScope:"today",outcome:"rows"
     });
    }
-   // The five failed full-Luna scalar cases must first be executable through
+   // Every previously failed full-Luna scalar case must first be executable through
    // the ACTUAL registered query_data RPC on the existing disposable fixture.
    // Compare each with independent source SQL before making another paid call.
    const failedScalarReaderCases=[
@@ -517,6 +517,15 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      {column:"counts_in_sales",op:"=",value:true},
      {column:"data.name",op:"ilike",value:"%student%"}],
      metric:{fn:"count_distinct",column:"check_ref"}},
+    // Compare every previously failed real Luna aggregate with independent SQL.
+    {index:3,filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"count",column:"source_ref"}},
+    {index:4,filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"count_distinct",column:"data.name"}},
     {index:5,filters:[
      {column:"record_type",op:"=",value:"item"},
      {column:"counts_in_sales",op:"=",value:true},
@@ -529,7 +538,16 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     {index:7,filters:[
      {column:"record_type",op:"=",value:"order"},
      {column:"counts_in_sales",op:"=",value:true}],
-     metric:{fn:"sum",column:"data.numberOfGuests"}}
+     metric:{fn:"sum",column:"data.numberOfGuests"}},
+    {index:9,filters:[
+     {column:"record_type",op:"=",value:"order"},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.source",op:"=",value:"Online"}],
+     metric:{fn:"count_distinct",column:"record_ref"}},
+    {index:10,filters:[
+     {column:"record_type",op:"=",value:"item"},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"sum",column:"data.quantity"}}
    ] as const;
    for(const spec of failedScalarReaderCases){
     const question=scalarQuestions[spec.index];
