@@ -89,6 +89,16 @@ BEGIN
    (SELECT count(*)=1 FROM public.toast_records_for(a,d,d)
     WHERE record_type='job' and data->>'name'='Shift leader'),
    'authentic staged source job visible before config re-save');
+  -- The first verified sync can precede the optional restaurant-info GET.
+  -- Current verification by itself must continue to authorize genuine stage.
+  UPDATE public.toast_location_mappings SET info_refreshed_at=NULL
+   WHERE business_id=a AND restaurant_guid=rest_a;
+  PERFORM pg_temp.pos0e_assert(
+   (SELECT count(*)=1 FROM public.toast_records_for(a,d,d)
+    WHERE record_type='job' and data->>'name'='Shift leader'),
+   'active verified mapping remains readable before restaurant info refresh');
+  UPDATE public.toast_location_mappings SET info_refreshed_at=now()
+   WHERE business_id=a AND restaurant_guid=rest_a;
   PERFORM pg_temp.pos0e_assert(
    (SELECT count(*)=0 FROM public.toast_records_for(b,d,d)
     WHERE record_type='job'),
