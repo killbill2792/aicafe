@@ -5,17 +5,15 @@ import { parseCodexReviewState } from './github.mjs';
 
 const sha40 = value => /^[a-f0-9]{40}$/.test(value || '');
 const marker = sha => '<!-- '+settings.naming.marker_prefix+'-dispatcher-codex-review:' + sha + ' -->';
-const SETTLE_MS=settings.codex.settle_seconds*1000;
-export const settled=(at,now=Date.now())=>Number.isFinite(Date.parse(at||'')) &&
-  now-Date.parse(at)>=SETTLE_MS;
+// New commits may trigger Codex only after all required CI checks finish green.
+// The ready transition already triggers automatic review; no CI-parallel timer.
 
 export async function requestCodexReview({github,record,task,records = {}}) {
   const sha=record?.head_sha;
   // Green current head is enough to start Codex. No coder-done,
   // acceptance artifact, integrated dependency or routine owner hold.
   if ((!task && !record?.adhoc) || (record?.adhoc && record?.dispatcher_only) ||
-      record?.draft===true || !settled(record?.last_github_activity || record?.last_commit_at) ||
-      !settled(record?.ready_transition_at || '2000-01-01T00:00:00Z') || !sha40(sha) || !Number.isInteger(record.pr_number) ||
+      record?.draft===true || !sha40(sha) || !Number.isInteger(record.pr_number) ||
       record.github_state !== 'open' || record.ci_state !== 'success' ||
       record.codex_review_requested_sha === sha ||
       record.codex_in_progress_sha === sha ||
@@ -25,11 +23,9 @@ export async function requestCodexReview({github,record,task,records = {}}) {
   const pr=await github.request('/pulls/' + record.pr_number);
   if (pr.state !== 'open' || pr.head?.sha !== sha)
     return {status:'stale'};
-  if(pr.draft || !settled(pr.created_at || '2000-01-01T00:00:00Z'))
-    return {status:'automatic_review_grace'};
+  if(pr.draft)return {status:'draft_not_ready'};
   const live=await github.one(pr);
   if (live.head_sha !== sha || live.ci_state !== 'success' ||
-      !settled(live.last_github_activity || live.last_commit_at || record.last_github_activity || record.last_commit_at) ||
       live.codex_reviewed_sha === sha || live.codex_in_progress_sha === sha ||
       live.codex_state === 'clean' ||
       live.codex_state === 'findings' || live.sensitive_owner_block)

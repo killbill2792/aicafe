@@ -119,8 +119,8 @@ async function main() {
         .find(p => p && p.pr_number === rec.prerequisite_pr);
       if (parent?.github_state === 'open') {
         rec.parent_open = true;
-        rec.waiting_only_for_parent = rec.coder_done && rec.ci_state === 'success' &&
-          Boolean(rec.acceptance_evidence);
+        rec.waiting_only_for_parent = rec.ci_state === 'success' &&
+          rec.github_state === 'open';
       } else {
         rec.parent_open = false;
         rec.waiting_only_for_parent = false;
@@ -500,9 +500,17 @@ async function main() {
       const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
         enabled: true, action: rec.draft ? "ready" : "merge" });
       if (outcome.status === "ready_for_review") {
+        await ledger.transaction(state=>{
+          const r=state.tasks?.[id];
+          if(!r||r.head_sha!==rec.head_sha)return null;
+          // Ready itself invokes GitHub's automatic Codex review. Never duplicate.
+          r.codex_review_requested_sha=rec.head_sha;
+          r.ready_transition_at=new Date().toISOString();
+          return state;
+        });
         await dispatchReceiptWake({token:githubToken,event:'dispatcher_delayed'}).catch(e=>
           console.error('Ready transition self-wake failed: '+e.message));
-        console.log(`Verified PR #${rec.pr_number} for task ${id} is ready for review; merge awaits fresh GitHub reconciliation`);
+        console.log(`Verified PR #${rec.pr_number} ready on green exact head; automatic Codex follows`);
         continue;
       }
       if (outcome.status === "merged_unproven") {

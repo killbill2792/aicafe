@@ -307,11 +307,14 @@ export class GitHubFacts {
       throw new Error('PR comments require verified pagination');
     const ownerDecision = await this.ownerDecision(pr, comments);
     if (checks.total_count > 100 || reviews.length >= 100) throw new Error("PR review/check pagination not verified");
-    const baseline = checks.check_runs.find(c => c.name === settings.required_checks.baseline);
-    const ci = !baseline || baseline.status !== "completed" ? "pending" :
-      baseline.conclusion === "success" ? "success" : "failure";
-    const failingJob = checks.check_runs.find(c => c.conclusion === 'failure' &&
-      c.name !== baseline?.name) || (ci === 'failure' ? baseline : null);
+    const required = settings.required_checks.names || [settings.required_checks.baseline];
+    const relevant = checks.check_runs.filter(c=>!/^codex\b/i.test(c.name||''));
+    const missing = required.some(name=>!relevant.some(c=>c.name===name));
+    const failingJob = relevant.find(c=>['failure','cancelled','timed_out','action_required'].includes(c.conclusion) ||
+      (required.includes(c.name)&&c.status==='completed'&&c.conclusion!=='success'));
+    const pending = missing || relevant.some(c=>c.status!=='completed'||!c.conclusion);
+    const ci = failingJob ? 'failure' : pending ? 'pending' : 'success';
+    const baseline = relevant.find(c=>c.name===settings.required_checks.baseline);
     let failureFix=null;
     let observed403=false;
     if (failingJob?.id) {
@@ -381,8 +384,7 @@ export class GitHubFacts {
       last_commit_actor: commit.author?.login || commit.committer?.login || null,
       owner_direct_push: commit.author?.login === ownerLogin || commit.committer?.login === ownerLogin,
       github_owner_question_url: ownerDecision.url,
-      coder_done: typeof pr.body === 'string' &&
-        pr.body.includes('<!-- '+settings.naming.marker_prefix+'-coder-done -->'),
+      coder_done: false, // informational legacy property; never inferred from PR body
       latest_owner_comment: trustedOwner ? String(trustedOwner.body||'').slice(0,350) : null,
       latest_owner_comment_at: trustedOwner?.created_at || null,
       connector_403: reportedConnector403(comments,pr.user?.login) || observed403,

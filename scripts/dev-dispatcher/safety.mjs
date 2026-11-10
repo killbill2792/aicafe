@@ -40,8 +40,9 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
       rec.stall_seen=null;
       rec.stall_pending=null;
       rec.stall_escalate=false;
+      rec.stall_nudged_at=null;
     }
-    if(headMoved || rec.github_state!=='open'||!sha.test(head||'')||rec.coder_done ||
+    if(headMoved || rec.github_state!=='open'||!sha.test(head||'')||
         !rec.approved||!rec.conversation_ref||rec.repo_mismatch) {
       rec.stall_pending=null;
       continue;
@@ -57,17 +58,15 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
       continue;
     }
     const identity=head+':'+rec.last_submission_at;
-    if(rec.stall_seen===identity) continue;
-    rec.stall_seen=identity;
-    rec.stall_count=Math.min(3,(rec.stall_count||0)+1);
-    rec.safety_event={kind:'no_push_after_prompt',head_sha:head,pr_number:rec.pr_number,
-      count:rec.stall_count,at:now};
-    if(rec.stall_count>=3) {
-      rec.stall_pending=null;
-      rec.stall_escalate=true;
-    } else {
-      rec.stall_pending='stall:'+encodeURIComponent(id)+':'+head+':'+rec.stall_count;
+    if(rec.stall_count>=1) {
+      if(clock-Date.parse(rec.stall_nudged_at||rec.last_submission_at||'')>=minutes*60000){
+        rec.stall_pending=null;rec.stall_escalate=true;
+      }
+      continue;
     }
+    rec.stall_seen=identity;rec.stall_count=1;rec.stall_nudged_at=now;
+    rec.safety_event={kind:'no_push_after_prompt',head_sha:head,pr_number:rec.pr_number,count:1,at:now};
+    rec.stall_pending='stall:'+encodeURIComponent(id)+':'+head+':1;
   }
   return next;
 }

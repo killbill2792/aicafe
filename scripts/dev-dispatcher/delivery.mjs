@@ -146,7 +146,7 @@ export function createDelivery({ task, record, action, actionId }) {
       String(record.owner_answer_text || 'Read PR decision').replace(/\s+/g,' ').slice(0,240) +
       '\nApply only within signed edits; reconcile the original PR comment ID and tests.',
     idle_continue:'idle_continue: Continue this SAME PR/chat. Finish scoped edits and tests; inspect ' +
-      'latest CI/owner comments. When complete, put <!-- '+settings.naming.marker_prefix+'-coder-done --> in the PR body. ' +
+      'latest CI/owner comments. Keep PR draft while coding; dispatcher marks Ready only after all CI checks pass. ' +
       'Do not request Codex before CI green or on intermediate pushes.',
     repair_ci:'ci_failed: Diagnose the failing job on ' + pr + '; fix and rerun actual CI.',
     repair_review:'codex_comments: Read unresolved review threads on ' + pr +
@@ -169,9 +169,9 @@ export function createDelivery({ task, record, action, actionId }) {
       '; PR base ' + (record.base_branch || 'main') +
       (record.prerequisite_pr ? ' (parent PR #' + record.prerequisite_pr + ')' : '') +
       (stacked ? '. Work/commit/test while parent is open; NO rebase or Codex until parent merged.' :
-        '. Finish CI/evidence first; after coder-done/ready, one final-head Codex review.') +
+        ' . Finish all CI/evidence first; dispatcher marks Ready after green checks, triggering exact-head Codex review.') +
       ' Use acceptance tests from signed queue; include exact execution links, ' +
-      'PR comment dispositions and <!-- '+settings.naming.marker_prefix+'-coder-done --> only when actually complete.'
+      'PR comment dispositions and confirmed head-specific CI receipts; no done marker is required.'
     : reason[action];
   const isPr = Number.isInteger(record.pr_number);
   const checklist = isPr ? [
