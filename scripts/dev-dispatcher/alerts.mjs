@@ -37,7 +37,8 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
     if(prior.task_id!==id || prior.status!=='planned') continue;
     if((prior.kind==='wrong_repo' && !rec.repo_mismatch) ||
        (prior.kind==='repeated_stall' && !rec.stall_escalate) ||
-       (prior.kind==='connector_403' && !rec.connector_403))
+       (prior.kind==='connector_403' && !rec.connector_403) ||
+       (prior.kind==='codex_watchdog' && rec.codex_referee_sha!==rec.head_sha))
       prior.status='cancelled_no_longer_needed';
   }
   // One open PR may have only one active owner question. A revised or removed
@@ -76,6 +77,10 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
   if(rec.stall_escalate)
    add('repeated_stall',id,rec.pr_number,'D7 referee: three identical no_push_after_prompt stalls for PR #'+rec.pr_number+
      ' on '+rec.head_sha+'. Stop re-prompting this head.');
+  if(rec.codex_referee_sha && rec.codex_referee_sha===rec.head_sha)
+   add('codex_watchdog',id,rec.pr_number,
+     'Referee: Codex gave no review or reaction after two requests for PR #'+
+     rec.pr_number+' on head '+rec.head_sha+'. Stop requesting Codex on this head.');
   if(rec.connector_403) {
    const assigned=queue?.tasks?.find(t=>t.id===id);
    const expected=rec.repo_mismatch?.expected || assigned?.repository || assigned?.repo ||
