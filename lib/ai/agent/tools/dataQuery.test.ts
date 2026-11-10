@@ -6,7 +6,7 @@ vi.mock("@/lib/data/toastDayTrust.server",()=>({
 import {dataQueryTools,fitRows} from "./dataQuery";
 import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 const b="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-function input(view="cv_sales_days"){return {view,columns:["business_date","net_sales_cents"],
+function input(view="cv_sales_days"){return {view,columns:["business_date"],
  filters:null,group_by:["business_date"],metrics:[{fn:"sum",column:"net_sales_cents"}],
  date_from:"2026-10-01",date_to:"2026-10-10",order_by:null,limit:100};}
 function testDb(rows:unknown[]=[],error:unknown=null){
@@ -81,9 +81,19 @@ it("rejects aggregate and sort shapes that the existing SQL RPC cannot execute",
   ...input(),order_by:{column:"sum_net_sales_cents",direction:"desc"}},ctx);
  expect(alias.error).toBeUndefined();
  const plain=await dataQueryTools.query_data.execute({
-  ...input(),group_by:null,metrics:null},ctx);
+  ...input(),columns:["business_date","net_sales_cents"],group_by:null,metrics:null},ctx);
  expect(plain.error).toBeUndefined();
- expect(f.rpc).toHaveBeenCalledTimes(2);
+ // Omitted plain-read columns expand to canonical allowlisted columns, so
+ // sorting by one of those keys must remain valid.
+ const sorted=await dataQueryTools.query_data.execute({
+  ...input(),columns:null,group_by:null,metrics:null,
+  order_by:{column:"business_date",direction:"desc"}},ctx);
+ expect(sorted.error).toBeUndefined();
+ expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+  p_columns:expect.arrayContaining(["business_date","net_sales_cents"]),
+  p_order_by:{column:"business_date",direction:"desc"}
+ }));
+ expect(f.rpc).toHaveBeenCalledTimes(3);
 });
 it("empty and failed queries are explicit, not invented zero totals",async()=>{
  const f=testDb();
@@ -199,7 +209,7 @@ it("keeps current-day incompleteness on ungrouped sales rows",async()=>{
   sourceCount:1,sourceMix:{app:1},hasIncomplete:false,currentDayIncomplete:true,truncated:false
  },error:null}));
  const value=await dataQueryTools.query_data.execute({
-  ...input(),group_by:null,metrics:null
+  ...input(),columns:["business_date","net_sales_cents"],group_by:null,metrics:null
  },{db:{rpc} as never,businessId:b});
  expect(value.missing).toContain("currentDayIncomplete");
  expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({p_view:"cv_sales_days"}));
