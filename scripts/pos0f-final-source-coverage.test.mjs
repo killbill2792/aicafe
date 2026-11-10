@@ -26,7 +26,7 @@ export function officialFieldInventory(snapshot = manifest) {
     for (const operation of family.operations) {
       assert.equal(operation.method, "GET", "Only permitted read-operation definitions belong in this inventory");
       for (const response of operation.responses) {
-        assert.match(response.status, /^2\\d\\d$/);
+        assert.match(response.status, /^2\d\d$/);
         for (const field of response.fields) {
           assert.equal(field.length, 4, "Field provenance must retain path/type/format/nullability");
           const id = JSON.stringify([family.family, operation.path, response.status, field[0]]);
