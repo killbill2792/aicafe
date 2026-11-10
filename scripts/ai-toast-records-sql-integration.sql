@@ -19,7 +19,7 @@ BEGIN
   execute 'select public.toast_save_configuration($1,$2,$3,$4,$5)'
    using b,'https://ws-api.toasttab.com','ai_client','synthetic_ciphertext',
    jsonb_build_array(jsonb_build_object('location_id',loc,'restaurant_guid',r));
-  execute 'update public.toast_location_mappings set verified_at=now() where business_id=$1' using b;
+  execute 'update public.toast_location_mappings set verified_at=now(),info_refreshed_at=now() where business_id=$1' using b;
  else
   insert into public.businesses(id) values(b);
  end if;
@@ -68,14 +68,23 @@ BEGIN
  perform public.toast_archive_day_pages(run_b,d);
  delete from public.toast_day_pages where run_id=run_b;
 
- -- Other Toast endpoints from the daily capture. Setup lists keep only the newest copy.
+ -- Operational non-order objects are retained once by the existing current writer.
+ -- A diagnostic sample for the same endpoint is deliberately contradictory.
+ insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
+  payload,payload_sha256,capture_key)
+ values
+ (b,r,'labor/v1/timeEntries',d,
+  '{"guid":"te-1","regularHours":6.5,"jobReference":{"guid":"job-1"}}',
+  repeat('a',64),'pos0e:time-entry:te-1'),
+ (b,r,'config/v2/tables',null,'{"guid":"t-1","name":"Patio 4"}',
+  repeat('b',64),'pos0e:table:t-1'),
+ (b,r,'config/v2/tables',null,'{"guid":"t-2","name":"Bar 1"}',
+  repeat('c',64),'pos0e:table:t-2');
+
  insert into public.toast_raw_samples(business_id,restaurant_guid,endpoint,business_date,
   fetched_at,http_status,item_count,sample,field_paths) values
- (b,r::text,'labor/v1/timeEntries',d,now()-interval '1 hour',200,1,
-  '[{"guid":"te-1","regularHours":6.5,"jobReference":{"guid":"job-1"}}]','{}'),
- (b,r::text,'config/v2/tables','2026-10-10',now()-interval '9 days',200,1,'[{"guid":"t-old","name":"Old"}]','{}'),
- (b,r::text,'config/v2/tables','2026-10-18',now()-interval '1 day',200,2,
-  '[{"guid":"t-1","name":"Patio 4"},{"guid":"t-2","name":"Bar 1"}]','{}'),
+ (b,r::text,'config/v2/tables','2026-10-18',now(),200,1,
+  '[{"guid":"DIAGNOSTIC-ONLY","name":"WRONG"}]','{}'),
  (b,r::text,'orders/v2/ordersBulk',d,now(),200,1,'[{"guid":"dup"}]','{}');
 
  perform pg_temp.assert_true((select count(*)=2 from public.cv_toast_records
@@ -99,8 +108,11 @@ BEGIN
  perform pg_temp.assert_true(not exists(select 1 from public.cv_toast_records
   where business_id=b and record_type like 'orders/%'),'orders are read once, from the archive');
  perform pg_temp.assert_true((select count(*)=2 and bool_and(business_date is null) from public.cv_toast_records
-  where business_id=b and record_type='config/v2/tables'),'setup lists show only the newest copy, undated');
+  where business_id=b and record_type='config/v2/tables'),'setup objects from current retained records are undated and unique');
 
+ perform pg_temp.assert_true(not exists(select 1 from public.cv_toast_records
+  where business_id=b and record_ref='DIAGNOSTIC-ONLY'),
+  'historical diagnostic capture cannot enter the operational reader');
  -- Named fields: sales of counted items, grouped by item name.
  execute q into res using b,null::text[],
   '[{"column":"record_type","op":"=","value":"item"},{"column":"counts_in_sales","op":"=","value":true}]'::jsonb,
@@ -151,3 +163,7 @@ BEGIN
 END $ai_records$;
 
 ROLLBACK;
+
+-- Run the independent POS0e migrated-schema, cross-café and poisoned-capture
+-- negative proof as part of the existing trusted database CI invocation.
+\ir pos0e-current-reader-sql-integration.sql
