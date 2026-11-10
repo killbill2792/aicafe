@@ -315,6 +315,12 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
     if (!open.has(rec.pr_number)) {
       const closed = closedByPr[rec.pr_number];
       const merged = closed === true || closed?.merged === true;
+      // Owner-initiated merges/closures immediately supersede undelivered coder
+      // prompts; a vanished PR is not a reason to re-open work.
+      if (closed) for (const action of Object.values(copy.actions || {})) {
+        if (action.task_id === id && action.status === 'planned')
+          action.status = 'cancelled_owner_state_changed';
+      }
       copy.tasks[id] = { ...rec, github_owner_question: merged ? null : rec.github_owner_question,
         github_state: merged ? "merged" : "not_open_unverified",
         merge_sha: merged ? (closed?.merge_sha || rec.merge_sha || null) : rec.merge_sha,
@@ -324,10 +330,16 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
   for (const pr of openPrs) {
     for (const [id, rec] of Object.entries(copy.tasks)) {
       if (rec.pr_number !== pr.pr_number) continue;
-      if (rec.head_sha !== pr.head_sha) {
+      const ownerCommentChanged = Boolean(pr.latest_owner_comment_at &&
+        pr.latest_owner_comment_at !== rec.latest_owner_comment_at);
+      const directWork = Boolean((rec.head_sha !== pr.head_sha && pr.owner_direct_push) ||
+        (rec.head_sha !== pr.head_sha && ownerCommentChanged));
+      if (rec.head_sha !== pr.head_sha ||
+          (ownerCommentChanged && ['approved','hold','go_live'].includes(pr.owner_directive))) {
         for (const action of Object.values(copy.actions)) {
           if (action.task_id === id && action.status === "planned" &&
-              action.head_sha !== pr.head_sha) {
+              (action.head_sha !== pr.head_sha ||
+               (ownerCommentChanged && ['approved','hold','go_live'].includes(pr.owner_directive)))) {
             action.status = "cancelled_stale_head";
           }
         }
@@ -349,6 +361,12 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
           ? null : updated.branch_maintenance_merge_sha,
         base_changed_at: baseChangedAt || null, review_base_current: reviewBaseCurrent,
         owner_question: pr.owner_approved ? null : updated.owner_question,
+        ...(directWork ? {owner_direct_action:{head_sha:pr.head_sha,
+          kind:'push',actor:pr.last_commit_actor || null,at:now}} : {}),
+        ...(ownerCommentChanged && pr.owner_directive ?
+          {owner_directive_record:{kind:pr.owner_directive,
+            comment_id:pr.owner_directive_id || null,at:pr.latest_owner_comment_at,
+            url:pr.owner_directive_url || null}} : {}),
         status: pr.sensitive_owner_block ? "blocked_needs_owner" :
           pr.draft ? "draft_open" : "review_fixing", github_state: "open",
         submission_state: updated.submission_state };
