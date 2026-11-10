@@ -102,7 +102,7 @@ describe('Toast diagnostics may not feed operational data', () => {
       '--- /dev/null', '+++ b/' + proof,
       '@@ -0,0 +1 @@',
       '+INSERT INTO toast_raw_samples(sample) VALUES (\'{}\');',
-    ].join('\\n');
+    ].join('\n');
     expect(addedDiagnosticReferences(allowedPatch)).toEqual([]);
     const deniedPatch = allowedPatch.replaceAll(proof, 'scripts/pos0f-final-migrated-sql-integration-production.sql');
     expect(addedDiagnosticReferences(deniedPatch)).toEqual([
