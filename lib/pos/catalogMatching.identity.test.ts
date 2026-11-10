@@ -20,32 +20,34 @@ describe("provider catalog matching identities",()=>{
   const result=matchCatalogItem(item(),[a,candidate({id:"row-2"})]);
   expect(result).toMatchObject({status:"matched",candidateId:"row-1",score:1});
  });
- it("links unique owner item only when name, size and price agree",()=>{
-  expect(matchCatalogItem(item(),[candidate()])).toMatchObject({status:"matched",candidateId:"row-1"});
-  expect(matchCatalogItem(item(),[candidate({priceCents:500})])).toMatchObject({
-   status:"needs_review",candidateId:"row-1"});
+ it("never claims a legacy owner recipe using only the same Toast item name, size and price",()=>{
+  expect(matchCatalogItem(item(),[candidate()],"toast")).toMatchObject({status:"new",candidateId:null});
+  expect(matchCatalogItem(item(),[candidate({priceCents:500})],"toast")).toMatchObject({
+   status:"new",candidateId:null});
  });
- it("two same-name owner candidates always need review, never a duplicate",()=>{
+ it("keeps two same-name owner candidates unrelated to a new Toast GUID",()=>{
   expect(matchCatalogItem(item(),[candidate(),candidate({id:"row-2"})])).toMatchObject({
-   status:"needs_review",candidateId:null});
+   status:"new",candidateId:null});
  });
- it("links CSV median-priced rows even when the published provider price changed",()=>{
+ it("preserves a CSV median row as separate history instead of transferring its recipe to Toast",()=>{
   expect(matchCatalogItem(item({priceCents:550}),[
    candidate({posItemId:"csv-item-latte",catalogSource:"csv",priceCents:500})
-  ])).toMatchObject({status:"matched",candidateId:"row-1"});
+  ])).toMatchObject({status:"new",candidateId:null});
  });
- it("refuses to steal the same name from an existing different POS",()=>{
+ it("never transfers a different provider identity to the Toast GUID",()=>{
   expect(matchCatalogItem(item(),[candidate({
    posItemId:"square:variation-7",catalogSource:"square"
-  })])).toMatchObject({status:"needs_review",candidateId:"row-1"});
+  })])).toMatchObject({status:"new",candidateId:null});
  });
- it("treats each size as a distinct canonical row",()=>{
+ it("matches only an identical source GUID and size, not an equivalent manual size",()=>{
   const medium=id("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")+":size:cccccccc-cccc-4ccc-8ccc-cccccccccccc";
   const choice=item({posItemId:medium,name:"Latte - Medium",sizeLabel:"Medium",priceCents:500});
   expect(matchCatalogItem(choice,[
    candidate({sizeLabel:"Small",priceCents:400}),
    candidate({id:"medium-row",sizeLabel:"Medium",priceCents:500})
-  ])).toMatchObject({status:"matched",candidateId:"medium-row"});
+  ])).toMatchObject({status:"new",candidateId:null});
+  expect(matchCatalogItem(choice,[candidate({id:"proved",posItemId:medium})]))
+    .toMatchObject({status:"matched",candidateId:"proved"});
  });
  it("brand-new Toast café preserves two distinct GUIDs with the same name",()=>{
   const existing=candidate({posItemId:latte,catalogSource:"toast"});
@@ -62,19 +64,19 @@ describe("provider catalog matching identities",()=>{
     [candidate({posItemId:latte,catalogSource:"toast",priceCents:550})],"csv"))
     .toMatchObject({status:"matched",candidateId:"row-1"});
  });
- it("open-price items do not automatically claim unknown-priced manual items",()=>{
+ it("does not treat matching unknown prices as independent identity proof",()=>{
   expect(matchCatalogItem(item({priceCents:null}),[
    candidate({priceCents:null})
-  ])).toMatchObject({status:"needs_review"});
+  ])).toMatchObject({status:"new",candidateId:null});
  });
- it("keeps Arabic names distinct and links equivalent accented Spanish names",()=>{
+ it("does not use Arabic or accent-normalized names as Toast ownership evidence",()=>{
   expect(matchCatalogItem(item({name:"قهوة",baseName:"قهوة",priceCents:300}),[
     candidate({id:"tea",name:"شاي",baseName:"شاي",priceCents:300}),
     candidate({id:"coffee",name:"قهوة",baseName:"قهوة",priceCents:300}),
-  ])).toMatchObject({status:"matched",candidateId:"coffee"});
+  ])).toMatchObject({status:"new",candidateId:null});
   expect(matchCatalogItem(item({name:"Café con leche",baseName:"Café con leche"}),[
     candidate({name:"Cafe con leche",baseName:"Cafe con leche"}),
-  ])).toMatchObject({status:"matched",candidateId:"row-1"});
+  ])).toMatchObject({status:"new",candidateId:null});
  });
  it("brand new menu silently returns new when no candidates",()=>{
   expect(matchCatalogItem(item(),[])).toMatchObject({status:"new",candidateId:null});

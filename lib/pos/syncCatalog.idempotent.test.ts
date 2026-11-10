@@ -134,3 +134,49 @@ describe("Toast catalog GUID identity without owner clicks",()=>{
   expect(f.tables.pos_catalog_matches).toHaveLength(0);
  });
 });
+
+
+describe("Toast unverified publication never retires stored histories",()=>{
+ it("preserves item, modifier and group while a feed omits them, even with archiveMissing requested",async()=>{
+  const f=fixture();
+  const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const itemId="toast:"+restaurant+":cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const modifierId="toast:"+restaurant+":dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const catalog:PosCatalogItem={
+   posItemId:itemId,name:"Latte",baseName:"Latte",sizeLabel:null,
+   priceCents:null,category:"drink",modifierGroups:[{
+    posGroupId:"toast:"+restaurant+":eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    name:"Milk",minSelections:0,maxSelections:1,required:false,
+    options:[{posModifierId:modifierId,name:"Oat",priceCents:75,
+     pricingStrategy:"BASE_PRICE"}]
+   }]
+  };
+  let published:PosCatalogItem[]=[catalog];
+  const adapter={provider:"toast",fetchCatalogItems:async()=>published} as unknown as PosAdapter;
+  const initial=await syncCanonicalCatalog(f.db,business,adapter,{restaurantGuid:restaurant});
+  expect(initial.created).toBe(1);
+  expect(f.tables.menu_item_modifier_groups).toHaveLength(1);
+  expect(f.tables.modifier_recipes).toHaveLength(1);
+  const writes=f.writes;
+  published=[];
+  const unverified=await syncCanonicalCatalog(f.db,business,adapter,
+   {restaurantGuid:restaurant,archiveMissing:true});
+  expect(unverified.changed).toBe(0);
+  expect(f.writes).toBe(writes);
+  expect(f.tables.menu_items[0].is_active).toBe(true);
+  expect(f.tables.modifier_recipes[0].is_active).toBe(true);
+  expect(f.tables.menu_item_modifier_groups).toHaveLength(1);
+  published=[{...catalog,modifierGroups:[]}];
+  const incomplete=await syncCanonicalCatalog(f.db,business,adapter,
+   {restaurantGuid:restaurant,archiveMissing:true});
+  expect(incomplete.changed).toBe(0);
+  expect(f.tables.modifier_recipes[0].is_active).toBe(true);
+  expect(f.tables.menu_item_modifier_groups).toHaveLength(1);
+  published=[catalog];
+  const replay=await syncCanonicalCatalog(f.db,business,adapter,{restaurantGuid:restaurant});
+  expect(replay.created).toBe(0);
+  expect(f.tables.menu_items).toHaveLength(1);
+  expect(f.tables.modifier_recipes).toHaveLength(1);
+  expect(f.tables.menu_item_modifier_groups).toHaveLength(1);
+ });
+});

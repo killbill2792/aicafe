@@ -50,8 +50,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
  })));
  let matched=0,needsReview=0,created=0,changed=0;
  const seen=new Set<string>();
- const seenModifierIds=new Set(imported.flatMap(item=>
-  (item.modifierGroups??[]).flatMap(group=>group.options.map(option=>option.posModifierId))));
+
  for(const item of imported){
   if(seen.has(item.posItemId))continue;
   seen.add(item.posItemId);
@@ -184,7 +183,10 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
      }
     }
    }
-   for(const old of oldGroups??[])if(!groupIds.includes(old.pos_group_id)){
+   // Toast group associations can be historic selection evidence. Until a
+   // complete version-consistent publication snapshot and non-destructive
+   // provider-state transition exist, never delete a linked Toast group.
+   for(const old of oldGroups??[])if(adapter.provider!=="toast"&&!groupIds.includes(old.pos_group_id)){
     const {error:delError}=await db.from("menu_item_modifier_groups").delete()
       .eq("business_id",businessId).eq("menu_item_id",itemId).eq("pos_group_id",old.pos_group_id);
     resultError(delError);changed++;
@@ -203,14 +205,13 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
    }
   }
  }
- // A complete menu snapshot archives only published items owned by this same provider.
- if(adapter.provider!=="csv"&&options.archiveMissing!==false){
+ // Only non-Toast adapters retain their previous archive contract. Toast
+ // currently has no verified version/completeness receipt here, so even a
+ // successful request is NOT evidence that an absent item was unpublished.
+ if(adapter.provider!=="csv"&&adapter.provider!=="toast"&&options.archiveMissing!==false){
   for(const row of rows){
-   // Toast snapshots are restaurant-specific. Never archive another location's
-   // published menu merely because it wasn't in this restaurant's response.
-   if(adapter.provider==="toast"&&
-      (!options.restaurantGuid||!row.pos_item_id?.startsWith("toast:"+options.restaurantGuid+":")))
-     continue;
+   // This branch is only for non-Toast providers. Published Toast rows
+   // are retained until independent version/completeness proof exists.
    if(row.catalog_source!==adapter.provider||!row.pos_item_id||seen.has(row.pos_item_id)||!row.is_active)continue;
    const {error:archError}=await db.from("menu_items").update({
     is_active:false,pos_archived_at:new Date().toISOString()
@@ -218,22 +219,9 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
    resultError(archError);changed++;
   }
  }
- // Retire only provider-owned options no longer published by this exact
- // location. Owner ingredient/quantity overrides and historical rows remain.
- if(adapter.provider==="toast"&&options.restaurantGuid){
-  const prior=await readAllPosRows((from,to)=>db.from("modifier_recipes")
-   .select("id,pos_modifier_id,is_active").eq("business_id",businessId)
-   .eq("catalog_source","toast")
-   .like("pos_modifier_id","toast:"+options.restaurantGuid+":%")
-   .order("id").range(from,to),"Toast modifier snapshot");
-  for(const row of prior){
-   if(!row.is_active||!row.pos_modifier_id||seenModifierIds.has(row.pos_modifier_id))continue;
-   const {error:archiveError}=await db.from("modifier_recipes").update({
-    is_active:false,catalog_last_synced_at:new Date().toISOString()
-   }).eq("business_id",businessId).eq("id",row.id);
-   resultError(archiveError);changed++;
-  }
- }
+ // Intentionally retain all previously verified Toast modifier identities and
+ // recipe activity until the provider-publication status transition is proven.
+ // A blank/partial feed or ambiguous historic variant is never an archive.
  if(adapter.provider==="toast"&&(options.restaurantGuid||imported.length)){
   const restaurantGuid=options.restaurantGuid??imported[0].posItemId.split(":")[1];
   const {error:relinkError}=await db.rpc("pos_relink_toast_lines",{

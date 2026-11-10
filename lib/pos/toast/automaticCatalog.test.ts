@@ -6,6 +6,7 @@ vi.mock("./client",async(importOriginal)=>{
  return {...original,createToastClient:()=>({request})};
 });
 import {createToastAdapter} from "./adapter";
+import {ToastApiError} from "./client";
 import type {SupabaseClient} from "@supabase/supabase-js";
 const rg="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const itemGuid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -75,6 +76,82 @@ describe("Toast published catalog adapter",()=>{
   expect(oat?.priceCents).toBeNull();
   expect(oat?.pricingStrategy).toBe("GROUP_PRICE");
   expect(oat?.posMetadata?.guid).toBe(op(13));
+ });
+ it("never picks an arbitrary published price when one GUID has two menu contexts",async()=>{
+  const conflicting=structuredClone(menu) as unknown as {menus:Array<{name:string;menuGroups:unknown[]}>};
+  const sameItem=menu.menus[0].menuGroups[0].menuGroups[0].menuItems[0];
+  conflicting.menus.push({name:"Lunch",menuGroups:[{name:"Counter",
+    menuItems:[{...sameItem,price:7,pricingStrategy:"BASE_PRICE"}],menuGroups:[]}]});
+  request.mockResolvedValue(conflicting);
+  await expect(adapter.fetchCatalogItems()).rejects.toMatchObject({category:"invalid_response"});
+ });
+ it("keeps one canonical product for identical GUID, price and strategy across menu contexts",async()=>{
+  const repeated=structuredClone(menu) as unknown as {menus:Array<{name:string;menuGroups:unknown[]}>};
+  const sameItem=menu.menus[0].menuGroups[0].menuGroups[0].menuItems[0];
+  repeated.menus.push({name:"Evening",menuGroups:[{name:"Counter",
+    menuItems:[{...sameItem}],menuGroups:[]}]});
+  request.mockResolvedValue(repeated);
+  const items=await adapter.fetchCatalogItems();
+  expect(items.filter(x=>x.posItemId==="toast:"+rg+":"+op(8))).toHaveLength(1);
+  expect(items.find(x=>x.posItemId==="toast:"+rg+":"+op(8))).toMatchObject({
+    priceCents:null,menuGroup:"Drinks / Coffee / Iced"});
+ });
+ it("never restores a unique price after three conflicting occurrences of one Toast GUID",async()=>{
+  const conflicting=structuredClone(menu) as unknown as {menus:Array<{name:string;menuGroups:unknown[]}>};
+  const sameItem=menu.menus[0].menuGroups[0].menuGroups[0].menuItems[0];
+  for(const name of ["Lunch","Dinner"])
+    conflicting.menus.push({name,menuGroups:[{name:"Counter",
+      menuItems:[{...sameItem,price:7,pricingStrategy:"BASE_PRICE"}],menuGroups:[]}]});
+  request.mockResolvedValue(conflicting);
+  const facts=await adapter.fetchCatalogFacts();
+  expect(facts.find(f=>f.kind==="item"&&f.provider_guid===op(8))?.price_cents).toBeNull();
+ });
+ it("rejects an omitted menuItems array while another group still contains products",async()=>{
+  const partial=structuredClone(menu);
+  delete (partial.menus[0].menuGroups[0] as unknown as Record<string,unknown>).menuItems;
+  request.mockResolvedValue(partial);
+  await expect(adapter.fetchCatalogItems()).rejects.toMatchObject({category:"invalid_response"});
+  await expect(adapter.fetchCatalogFacts()).rejects.toMatchObject({category:"invalid_response"});
+ });
+ it("rejects an omitted modifier option list instead of treating the group as empty",async()=>{
+  const partial=structuredClone(menu);
+  delete (partial.modifierGroupReferences["2"] as unknown as Record<string,unknown>).modifierOptionReferences;
+  request.mockResolvedValue(partial);
+  await expect(adapter.fetchCatalogItems()).rejects.toMatchObject({category:"invalid_response"});
+  await expect(adapter.fetchCatalogFacts()).rejects.toMatchObject({category:"invalid_response"});
+ });
+ it("rejects missing referenced options instead of certifying a partial published catalog",async()=>{
+  const incomplete=structuredClone(menu);
+  delete (incomplete.modifierOptionReferences as Record<string,unknown>)["11"];
+  request.mockResolvedValue(incomplete);
+  await expect(adapter.fetchCatalogItems()).rejects.toThrow(ToastApiError);
+ });
+ it("does not treat an empty published menu as evidence that prior items disappeared",async()=>{
+  request.mockResolvedValue({...menu,menus:[]});
+  await expect(adapter.fetchCatalogItems()).rejects.toThrow(ToastApiError);
+  await expect(adapter.fetchCatalogFacts()).rejects.toThrow(ToastApiError);
+ });
+ it("rejects a missing referenced modifier group or size instead of silently dropping it",async()=>{
+  const incomplete=structuredClone(menu);
+  delete (incomplete.modifierGroupReferences as Record<string,unknown>)["1"];
+  request.mockResolvedValue(incomplete);
+  await expect(adapter.fetchCatalogItems()).rejects.toThrow(ToastApiError);
+ });
+ it("rejects another restaurant's metadata before any menu version is trusted",async()=>{
+  request.mockResolvedValue({restaurantGuid:op(99),lastUpdated:"2026-11-09T09:00:00Z"});
+  await expect(adapter.fetchMenuMetadata()).rejects.toMatchObject({category:"unauthorized_location"});
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(request.mock.calls[0][0]).toBe("/menus/v2/metadata");
+ });
+ it("accepts authenticated metadata for the selected restaurant",async()=>{
+  const metadata={restaurantGuid:rg,lastUpdated:"2026-11-09T09:00:00Z"};
+  request.mockResolvedValue(metadata);
+  await expect(adapter.fetchMenuMetadata()).resolves.toEqual(metadata);
+ });
+ it("never accepts a different restaurant's authenticated published menu",async()=>{
+  request.mockResolvedValue({...menu,restaurantGuid:op(99)});
+  await expect(adapter.fetchCatalogItems()).rejects.toThrow(ToastApiError);
+  await expect(adapter.fetchCatalogFacts()).rejects.toThrow(ToastApiError);
  });
  it("maps Toast job title and wage without excluding deleted staff from roster",async()=>{
   const person="ffffffff-ffff-4fff-8fff-ffffffffffff";

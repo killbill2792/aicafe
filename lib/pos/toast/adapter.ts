@@ -66,16 +66,16 @@ type MenuGroup={name:string;menuItems:z.infer<typeof itemSchema>[];menuGroups:Me
  availability?:unknown};
 const groupSchema:z.ZodType<MenuGroup>=z.lazy(()=>z.object({
   name:z.string(),availability:z.unknown().optional(),
-  menuItems:z.array(itemSchema).default([]),menuGroups:z.array(groupSchema).default([])
+  menuItems:z.array(itemSchema),menuGroups:z.array(groupSchema)
 }).passthrough());
 const menusSchema=z.object({restaurantGuid:GUID,menus:z.array(
   z.object({name:z.string().nullish(),availability:z.unknown().optional(),
-    menuGroups:z.array(groupSchema).default([])}).passthrough()),
+    menuGroups:z.array(groupSchema)}).passthrough()),
   modifierGroupReferences:z.record(z.string(),z.object({
     guid:GUID,name:z.string().nullish(),minSelections:z.number().int().nullish(),
     maxSelections:z.number().int().nullish(),requiredMode:z.string().nullish(),
     pricingStrategy:z.string().nullish(),pricingRules:pricingRulesSchema.nullish(),
-    modifierOptionReferences:z.array(z.number()).default([])
+    modifierOptionReferences:z.array(z.number())
   }).passthrough()).default({}),
   modifierOptionReferences:z.record(z.string(),z.object({
     guid:GUID,name:z.string().min(1),price:z.number().nullish(),
@@ -207,6 +207,46 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
   if(!GUID.safeParse(restaurantGuid).success)throw new ToastApiError("unauthorized_location");
   const client=createToastClient(db,businessId);
   const request=<T>(path:string,schema:z.ZodType<T>)=>client.request(path,restaurantGuid,schema,{deadlineAt:params.deadlineAt});
+  /** A partial published menu has no authority to remove prior provider items.
+   * Toast can return a success response with missing referenced options; never
+   * silently filter those references into a seemingly complete snapshot. */
+  async function fetchValidatedPublishedMenu() {
+    const data=await request("/menus/v2/menus",menusSchema);
+    if(data.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
+      throw new ToastApiError("unauthorized_location");
+    const groups=data.modifierGroupReferences;
+    const options=data.modifierOptionReferences;
+    let itemCount=0;
+    for(const group of Object.values(groups)) {
+      if(!Array.isArray(group.modifierOptionReferences))
+        throw new ToastApiError("invalid_response");
+      for(const ref of group.modifierOptionReferences)
+        if(!options[String(ref)])throw new ToastApiError("invalid_response");
+    }
+    const verifyGroup=(group:MenuGroup):void=>{
+      if(!Array.isArray(group.menuItems)||!Array.isArray(group.menuGroups))
+        throw new ToastApiError("invalid_response");
+      for(const item of group.menuItems) {
+        itemCount++;
+        for(const ref of item.modifierGroupReferences??[])
+          if(!groups[String(ref)])throw new ToastApiError("invalid_response");
+        if(item.pricingStrategy==="SIZE_PRICE") {
+          const guid=item.pricingRules?.sizeSpecificPricingGuid;
+          const sizeGroup=Object.values(groups).find(g=>g.guid===guid);
+          if(!sizeGroup||!sizeGroup.modifierOptionReferences.length)
+            throw new ToastApiError("invalid_response");
+        }
+      }
+      for(const child of group.menuGroups)verifyGroup(child);
+    };
+    for(const menu of data.menus){
+      if(!Array.isArray(menu.menuGroups))throw new ToastApiError("invalid_response");
+      for(const group of menu.menuGroups)verifyGroup(group);
+    }
+    // No-items may be legitimate upstream, but it cannot certify unpublication.
+    if(!itemCount)throw new ToastApiError("invalid_response");
+    return data;
+  }
   async function statePage(range:Range,page:number):Promise<{facts:ToastOrderFact[];hasMore:boolean}> {
     if(!Number.isSafeInteger(page)||page<1||page>1000)throw new ToastApiError("invalid_response");
     const search=query(range);
@@ -284,12 +324,31 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
     },
     // Incremental changes only, never verified-zero coverage.
     fetchOrders:(range)=>allOrders(query(range)),
-    fetchMenuMetadata:()=>request("/menus/v2/metadata",metadataSchema),
-    async fetchCatalogItems():Promise<PosCatalogItem[]> {
-      const data=await request("/menus/v2/menus",menusSchema);
-      if(data.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
+    async fetchMenuMetadata(){
+      const metadata=await request("/menus/v2/metadata",metadataSchema);
+      if(metadata.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
         throw new ToastApiError("unauthorized_location");
+      return metadata;
+    },
+    async fetchCatalogItems():Promise<PosCatalogItem[]> {
+      const data=await fetchValidatedPublishedMenu();
       const items=new Map<string,PosCatalogItem>();
+      // One canonical item/size key cannot assert two different published prices.
+      // Toast may repeat a GUID across menu contexts; retain a stable first
+      // representation only when price, strategy and provider identity agree.
+      // A conflicting price needs explicit context modeling before a sync can
+      // replace the last-known published price or start price-change monitoring.
+      const addPublished=(item:PosCatalogItem)=>{
+        const prior=items.get(item.posItemId);
+        if(prior){
+          if(prior.priceCents!==item.priceCents||
+            prior.pricingStrategy!==item.pricingStrategy||
+            prior.name!==item.name||prior.sizeLabel!==item.sizeLabel)
+            throw new ToastApiError("invalid_response");
+          return;
+        }
+        items.set(item.posItemId,item);
+      };
       const groups=Object.values(data.modifierGroupReferences);
       const options=data.modifierOptionReferences;
       const posId=(guid:string)=>"toast:"+restaurantGuid+":"+guid;
@@ -348,12 +407,12 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
               const id=posId(i.guid)+":size:"+option.guid;
               // Toast publishes size prices on the Size group's option items.
               const sizePrice=resolvedRulePrice(option.pricingStrategy??"NONE",option.price,option.pricingRules);
-              items.set(id,{...common,posItemId:id,sizeLabel:option.name,priceCents:sizePrice,
+              addPublished({...common,posItemId:id,sizeLabel:option.name,priceCents:sizePrice,
                 posMetadata:{...common.posMetadata,sizeOption:option}});
             }
           }else{
             const id=posId(i.guid);
-            items.set(id,{...common,posItemId:id,sizeLabel:null,priceCents:resolvedPrice});
+            addPublished({...common,posItemId:id,sizeLabel:null,priceCents:resolvedPrice});
           }
         }
         for(const child of g.menuGroups)visit(child,[...path,child.name],menuAvailability);
@@ -364,9 +423,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       return [...items.values()];
     },
     async fetchCatalogFacts():Promise<ToastCatalogFact[]> {
-      const data=await request("/menus/v2/menus",menusSchema);
-      if(data.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
-        throw new ToastApiError("unauthorized_location");
+      const data=await fetchValidatedPublishedMenu();
       const seen=new Map<string,ToastCatalogFact>();
       const groups=data.modifierGroupReferences;
       const options=data.modifierOptionReferences;
