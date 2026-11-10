@@ -27,6 +27,28 @@ function lastReceipt(action) {
   if(action.status==='planned')return 'No verified submission';
   return 'No current receipt';
 }
+
+function privateReceiptRepairRows(state) {
+  const items=Object.entries(state.receipt_feedback||{})
+    .filter(([,f])=>f.status==='rejected')
+    .sort((a,b)=>String(a[1].first_seen_at||'').localeCompare(String(b[1].first_seen_at||'')));
+  const reasons={
+    unattributed_git_actor:'Git commit not linked to GitHub account; re-commit SAME receipt via authorized GitHub Contents API',
+    unapproved_git_actor:'GitHub commit actor not allowlisted; use the already authorized courier identity',
+    invalid_receipt_identity:'Receipt file and signed action mismatch; inspect original, never guess target',
+    receipt_validation_failed:'Signed handoff validation rejected content; inspect original action, do not resend',
+    github_receipt_read_failed:'GitHub receipt read error; retry read only',
+    assignment_receipt_missing:'Original assignment not verified; inspect prior browser hold, never resend blindly'
+  };
+  return items.map(([id,f])=>{
+    const task=state.tasks[f.task_id]||{};
+    return '| '+escapeCell(f.task_id)+' | '+githubPr(task.pr_number)+
+      ' | '+escapeCell(id)+' | '+escapeCell(reasons[f.code]||'Receipt verification required')+
+      ' | '+time(f.first_seen_at)+' | '+time(f.last_checked_at)+
+      ' | '+escapeCell(f.wake_round||0)+' |';
+  });
+}
+
 export function renderPrivateQueue(state, {repo='killbill2792/dave-task-queue'} = {}) {
   if(state?.version!==1 || !state.tasks || !state.actions || !state.owner_alerts)
     throw new Error('Invalid private owner queue state');
@@ -37,6 +59,7 @@ export function renderPrivateQueue(state, {repo='killbill2792/dave-task-queue'} 
   const noticeEntries=Object.entries(state.owner_alerts)
     .map(([key,n])=>({key,...n}));
   const openNotices=noticeEntries.filter(n=>['planned','claimed','uncertain'].includes(n.status));
+  const repairRows=privateReceiptRepairRows(state);
   const histories=entries.filter(a=>!pending.includes(a))
     .sort((a,b)=>String(b.submitted_at||b.created_at||'').localeCompare(
       String(a.submitted_at||a.created_at||''))).slice(0,35);
@@ -69,6 +92,14 @@ export function renderPrivateQueue(state, {repo='killbill2792/dave-task-queue'} 
     '| Task | PR | Notice kind | Delivery status | Created | Question excerpt |',
     '|---|---|---|---|---|---|',
     ...(noticeRows.length ? noticeRows : ['| — | — | — | No outstanding notices | — | — |']),
+    '',
+    '## Receipt authentication and same-action recovery (Muse-only)',
+    '**Repair the receipt, NOT the browser send.** Read the existing authorized action and original receipt in this private repository. Re-commit the same receipt with a GitHub-attributed allowlisted courier account; retain action ID, prompt/approval hashes, project, provider and original chat URL. Reconciliation then acknowledges it. Never start a new chat or resend an uncertain browser turn.',
+    '',
+    `**Receipt scan:** ${state.receipt_scan?.complete===true?'complete':'incomplete; previous holds retained'} · **Unresolved receipt repairs:** ${repairRows.length}`,
+    '| Task | PR | Original action | Failure and Muse repair | First detected | Last checked | Wake round |',
+    '|---|---|---|---|---|---|---:|',
+    ...(repairRows.length?repairRows:['| — | — | — | No unresolved receipt repair | — | — | — |']),
     '',
     '## Recent delivery history (audit, not current authorization)',
     '| Task | PR | Action | Recorded status | Eligibility | When | Receipt |',
