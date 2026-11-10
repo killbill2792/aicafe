@@ -42,7 +42,7 @@ export function validateQueue(queue) {
   for (const task of queue.tasks) {
     const edits = editableFiles(task), uses = usedFiles(task);
     if (!Array.isArray(edits) || !Array.isArray(uses) ||
-        !edits.length || edits.some(path => !validPath(path)) ||
+        (edits.length===0 && approved(task)) || edits.some(path => !validPath(path)) ||
         new Set(edits).size !== edits.length)
       throw new Error('Invalid exclusive file ownership for ' + task.id);
     if (uses.some(path => !validPath(path)) || new Set(uses).size !== uses.length)
@@ -254,7 +254,12 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
     return {kind:'hold',reason:'browser_confirmed_busy'};
   if ((record.owner_question || record.github_owner_question) && !isPr)
     return {kind:'hold',reason:'owner_decision_required'};
-  const last = Date.parse(isPr ? record.last_commit_at : record.last_submission_at);
+  if (isPr && (record.owner_question || record.github_owner_question) &&
+      record.ci_state !== 'failure' && record.codex_state !== 'findings' &&
+      !record.owner_answer_text) return {kind:'hold',reason:'owner_decision_required'};
+  const reviewAt = record.codex_state === 'findings' ? Date.parse(record.codex_review_at || '') : NaN;
+  const commitAt = Date.parse(isPr ? record.last_commit_at : record.last_submission_at);
+  const last = Number.isFinite(reviewAt) ? Math.max(commitAt,reviewAt) : commitAt;
   const quietFor = nowMs - last;
   if (!Number.isFinite(last) || quietFor < (isPr ? quietMs : prePrMs))
     return {kind:'hold',reason:'not_quiet'};
@@ -267,10 +272,17 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
     return {kind:'hold',reason:'delivery_pending'};
   // A merged parent gets one stable rebase action regardless of intermediate child pushes.
   const parentSha = record.parent_merged_sha;
-  const rebaseDue = isPr && parentSha && record.last_parent_rebase_sha !== parentSha;
+  const rebaseDue = isPr && parentSha && record.base_branch === 'main' &&
+    record.branch_maintenance_merge_sha === parentSha &&
+    record.last_parent_rebase_sha !== parentSha;
   if (rebaseDue) return {kind:'propose',action:'parent_merged',
     key:'parent_merged:'+encodeURIComponent(record.task_id)+':'+parentSha};
-  if (isPr && record.waiting_only_for_parent)
+  if (isPr && record.parent_merged_sha &&
+      record.last_parent_rebase_sha === record.parent_merged_sha &&
+      record.base_branch !== 'main')
+    return {kind:'hold',reason:'parent_rebase_already_notified'};
+  if (isPr && record.waiting_only_for_parent && record.ci_state !== 'failure' &&
+      record.codex_state !== 'findings')
     return {kind:'hold',reason:'parent_open_work_already_done'};
   if (isPr && record.review_requested_sha === record.head_sha &&
       record.ci_state === 'success' && record.codex_state !== 'findings')
@@ -283,7 +295,7 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
   const action = !isPr ? 'pre_pr_reminder' :
     record.ci_state === 'failure' ? 'ci_failed' :
     record.codex_state === 'findings' ? 'codex_comments' :
-    record.owner_answer_text && record.last_owner_answer_key !== record.owner_answer_key
+    record.owner_answer_text && (!record.owner_answer_key || record.last_owner_answer_key !== record.owner_answer_key)
       ? 'owner_answered' : 'idle_continue';
   let key = actionKey(record,action);
   if (record.last_action_key === key && record.submission_state === 'submitted' &&
