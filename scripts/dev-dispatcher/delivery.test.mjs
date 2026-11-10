@@ -197,7 +197,7 @@ test('POS0e Codex follow-up with three maximum excerpts is delivered even past 2
 test('oversize prompts warn past 4096 bytes but still return without leaking prompt text', () => {
   const longScope = Array.from({ length: 8 }, (_, i) =>
     'lib/' + 'long-safe-path-'.repeat(45) + i + '.mjs');
-  const expanded = { ...task, edits: longScope };
+  const expanded = { ...task, exclusive_files: longScope };
   const warnings = [];
   const original = console.warn;
   console.warn = message => warnings.push(message);
