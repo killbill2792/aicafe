@@ -42,7 +42,10 @@ async function main() {
       const closed = await gh.request(`/pulls/${rec.pr_number}`);
       const mergeSha=closed.merged_at ? closed.merge_commit_sha || null : null;
       let landingFailure=null;
-      if (mergeSha) {
+      // Only recent merges need a landing receipt; historical merged PRs must
+      // not add unbounded API traffic to each existing five-minute tick.
+      const recentlyMerged=closed.merged_at && Date.now()-Date.parse(closed.merged_at) < 2*60*60*1000;
+      if (mergeSha && recentlyMerged && !rec.landing_failure) {
         const issueComments=await gh.paginated('/issues/'+rec.pr_number+'/comments','comments');
         landingFailure=landingFailureForMerge(issueComments,mergeSha);
       }
