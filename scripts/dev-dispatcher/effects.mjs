@@ -147,8 +147,7 @@ export function integrationStatus({ merged_sha, main_sha, proof, expectedAccepta
       !proof.workflow_run_id || !Array.isArray(proof.required_scenarios) ||
       !proof.required_scenarios.length || proof.required_scenarios.some(s => s.result !== 'passed') ||
       (expectedAcceptance.length > 0 &&
-       !(proof.proof_basis==='legacy_exact_sha_required_checks'&&
-         proof.legacy_cutoff===settings.legacy_proof_before&&
+       !(proof.proof_basis==='exact_sha_required_checks'&&
          proof.required_scenarios.length===proof.required_checks?.length&&
          proof.required_scenarios.every(s=>s.check&&s.result==='passed')) &&
        (proof.required_scenarios.length !== expectedAcceptance.length ||

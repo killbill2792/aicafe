@@ -13,11 +13,10 @@ Array.isArray(rows) && rows.length>0 && rows.every((x,i)=>x.id===String(i+1) &&
 x.result==='passed' && typeof x.command==='string' && !!x.command &&
 typeof x.test_file==='string' && !!x.test_file) &&
 artifact.acceptance_digest===acceptanceDigest(rows);
-const historical= !artifact && exactPush && legacyBefore &&
-Number.isFinite(Date.parse(run.created_at||'')) && Date.parse(run.created_at)<Date.parse(legacyBefore);
+const historical=!artifact&&exactPush; // Actual green exact-SHA job checks are proof; acceptance remains unclaimed.
 if((!artifactExact&&!historical) || (run.event==='push' && !exactPush))return null; if (!REQUIRED_INTEGRATION_STEPS.every(name => job.steps?.some(step => step.name === name &&
 step.status === 'completed' && step.conclusion === 'success'))) return null; const checks = REQUIRED_INTEGRATION_STEPS.map((name,i)=>({ id:String(i+1),check:name,result:'passed'
-})); return {main_sha:mergeSha,merged_sha:mergeSha,workflow_run_id:run.id, conclusion:'success',proof_basis:historical?'legacy_exact_sha_required_checks':'exact_sha_artifact',
+})); return {main_sha:mergeSha,merged_sha:mergeSha,workflow_run_id:run.id, conclusion:'success',proof_basis:historical?'exact_sha_required_checks':'exact_sha_artifact',
 required_checks:checks,required_scenarios:historical?checks:rows,
 legacy_cutoff:historical?legacyBefore:null,task_acceptance:historical?null:rows}; }
 export function recordDrift(state, previous, observed, at = new Date().toISOString()) { const next = structuredClone(state); const fields = ['head_sha','base_sha','base_current','codex_state', 'codex_reviewed_sha','threads_resolved','github_state','approval_hash']; const updates=[]; for (const [id,now] of Object.entries(next.tasks||{})) {

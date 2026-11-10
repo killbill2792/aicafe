@@ -15,7 +15,7 @@ import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure, dispatchLandingCheck } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
-import { queueOwnerAlerts,applyOwnerStartApprovals } from "./alerts.mjs";
+import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
@@ -322,7 +322,15 @@ async function main() {
         j.status==='completed'&&j.conclusion==='success');
       if(!job)continue;
       // Skipped acceptance cannot promote integration even if the job is green.
-      const artifact=await gh.integrationProof(run.id).catch(()=>null);
+      let artifact;
+      try{artifact=await gh.integrationProof(run.id);}
+      catch(error){
+        const notice=queueOwnerIssue(state,{kind:'integration_proof_fetch_failed',task_id:id,
+          pr_number:rec.pr_number,identity:rec.merge_sha,
+          message:'PR #'+rec.pr_number+' integration artifact could not be read: '+error.message,
+          needs:'Restore proof API access or verify a successful exact-merge-SHA run'});
+        state.owner_alerts=notice.owner_alerts;continue;
+      }
       const proof=verifiedMergedProof({run,job,artifact,taskId:id,mergeSha:rec.merge_sha,
         legacyBefore:settings.legacy_proof_before});
       const task=taskById.get(id);
@@ -330,10 +338,18 @@ async function main() {
         main_sha:rec.merge_sha,proof,expectedAcceptance:task.acceptance})==='integrated_proven') {
         rec.integration_proof=proof;rec.integration_dispatch='verified';
         rec.status='integrated_proven';
+        state.owner_alerts=resolveOwnerIssue(state,'integration_pending',rec.pr_number).owner_alerts;
         console.log('drift_fixed: integration PR #'+rec.pr_number+' proof run '+run.id+
           ' basis '+proof.proof_basis);
         break;
       }
+    }
+    for(const [id,rec] of pending){
+      if(rec.status==='integrated_proven')continue;
+      state.owner_alerts=queueOwnerIssue(state,{kind:'integration_pending',task_id:id,
+        pr_number:rec.pr_number,identity:rec.merge_sha,
+        message:'PR #'+rec.pr_number+' remains merged but integration cannot be promoted for '+rec.merge_sha,
+        needs:'A completed exact-SHA Integration Proof job with all required green steps'}).owner_alerts;
     }
   }
 
