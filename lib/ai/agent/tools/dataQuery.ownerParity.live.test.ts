@@ -32,6 +32,10 @@ const MAX_PAID_CALLS=12;
 const MAX_INPUT_REQUEST_BYTES=200_000;
 const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
 let paidCalls=0,requestBytes=0,outputTokensReserved=0;
+// A rejected transport budget is not an OpenAI/Luna failure. Never include
+// prompts, tool parameters, customer rows or secrets in this diagnostic.
+let budgetRejection:{reason:string;attemptBytes:number;priorBytes:number;
+ priorCalls:number;attemptOutputTokens:number}|null=null;
 // Record only response status, token counts and output item TYPES, never
 // provider text, prompts, tool arguments, credentials or customer data.
 const providerReceipts:Array<{event:string;status:string;reason:string|null;
@@ -42,10 +46,15 @@ const budgetedProvider:AgentProvider=async function*(params,signal){
  const payloadBytes=Buffer.byteLength(JSON.stringify(params),"utf8");
  const outputCap=Math.min(Number(params.max_output_tokens)||MAX_OUTPUT_TOKENS_PER_CALL,
   MAX_OUTPUT_TOKENS_PER_CALL);
- if(paidCalls+1>MAX_PAID_CALLS||
-    requestBytes+payloadBytes>MAX_INPUT_REQUEST_BYTES||
-    outputTokensReserved+outputCap>MAX_PAID_CALLS*MAX_OUTPUT_TOKENS_PER_CALL)
-  throw new Error("POS0e paid E2 budget exceeded: stop without additional API calls");
+ const reason=paidCalls+1>MAX_PAID_CALLS?"model_call_count":
+  requestBytes+payloadBytes>MAX_INPUT_REQUEST_BYTES?"input_request_bytes":
+  outputTokensReserved+outputCap>MAX_PAID_CALLS*MAX_OUTPUT_TOKENS_PER_CALL?
+   "output_token_reservation":null;
+ if(reason){
+  budgetRejection={reason,attemptBytes:payloadBytes,priorBytes:requestBytes,
+   priorCalls:paidCalls,attemptOutputTokens:outputCap};
+  throw new Error("POS0e paid E2 budget exceeded ("+reason+"): stop without additional API calls");
+ }
  paidCalls++;
  requestBytes+=payloadBytes;
  outputTokensReserved+=outputCap;
@@ -63,12 +72,30 @@ const budgetedProvider:AgentProvider=async function*(params,signal){
 };
 function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:number):string{
  return JSON.stringify({endReason:turn.endReason,
-  modelCalls:turn.usage.modelCalls,outputTokens:turn.usage.outputTokens,
+  modelCalls:turn.usage.modelCalls,inputTokens:turn.usage.inputTokens,
+  cachedTokens:turn.usage.cachedTokens,outputTokens:turn.usage.outputTokens,
+  chargedTransportCalls:paidCalls,serializedRequestBytes:requestBytes,
+  outputTokensReserved,budgetRejection,
   tools:turn.tools,
   resultStatus:turn.results.map(result=>({source:result.source,
    missing:result.missing,error:result.error??null})),
   providerReceipts:providerReceipts.slice(since)});
 }
+// Free deterministic regression: a bad or overlarge provider request must be
+// rejected BEFORE calling OpenAI, without mistaking the guard for Luna failure.
+it("POS0e paid transport refuses an oversized request at zero model cost",async()=>{
+ const beforeCalls=paidCalls,beforeBytes=requestBytes;
+ const oversized={model:PRODUCTION_SUPERVISOR_OPENAI_MODEL,
+  max_output_tokens:MAX_OUTPUT_TOKENS_PER_CALL,
+  input:"x".repeat(MAX_INPUT_REQUEST_BYTES)};
+ await expect(budgetedProvider(oversized,new AbortController().signal).next())
+  .rejects.toThrow("POS0e paid E2 budget exceeded (input_request_bytes)");
+ expect(paidCalls).toBe(beforeCalls);
+ expect(requestBytes).toBe(beforeBytes);
+ expect(budgetRejection?.reason).toBe("input_request_bytes");
+ budgetRejection=null;
+});
+
 const allowedHost=(raw:string)=>{
  const {hostname}=new URL(raw);
  if(!["127.0.0.1","localhost","::1"].includes(hostname))
