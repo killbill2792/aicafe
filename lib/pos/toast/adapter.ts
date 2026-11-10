@@ -30,21 +30,50 @@ const check=z.object({amount:z.number(),taxAmount:z.number(),paymentStatus:z.str
 const ordersSchema=z.array(z.object({guid:GUID,server:z.object({guid:GUID}).nullish(),openedBy:z.object({guid:GUID}).nullish(),diningOption:z.object({name:z.string().nullish()}).nullish(),source:z.string().nullish(),numberOfGuests:z.number().int().min(0).max(32767).nullish(),closedDate:z.string().nullish(),
   createdInTestMode:z.boolean().nullish(),deleted:z.boolean().nullish(),voided:z.boolean().nullish(),modifiedDate:z.string().nullish(),
   checks:z.array(check)}));
-const employeesSchema=z.array(z.object({guid:GUID,firstName:z.string().nullish(),
+/** Whitelist official permitted labor response fields. Credential/passcode and
+ * unrelated provider extensions are deliberately stripped, never persisted. */
+const laborRefSchema=z.object({guid:GUID,entityType:z.string().nullish(),
+  externalId:z.string().nullish()});
+const employeeSourceSchema=z.object({guid:GUID,firstName:z.string().nullish(),
   chosenName:z.string().nullish(),lastName:z.string().nullish(),deleted:z.boolean().nullish(),
-  jobReferences:z.array(z.object({guid:GUID}).passthrough()).nullish(),
-  wageOverrides:z.array(z.object({jobReference:z.object({guid:GUID}).passthrough(),wage:z.number()}).passthrough()).nullish()
-}).passthrough());
-const timeEntriesSchema=z.array(z.object({guid:GUID,modifiedDate:z.string().nullish(),employeeReference:z.object({guid:GUID}),
-  jobReference:z.object({guid:GUID}).nullish(),
-  inDate:z.string(),outDate:z.string().nullish(),hourlyWage:z.number().nullish(),
-  regularHours:z.number().finite().nullish(),overtimeHours:z.number().finite().nullish(),
-  deleted:z.boolean().nullish(),breaks:z.array(z.object({
+  createdDate:z.string().nullish(),modifiedDate:z.string().nullish(),
+  deletedDate:z.string().nullish(),email:z.string().nullish(),
+  phoneNumber:z.string().nullish(),phoneNumberCountryCode:z.string().nullish(),
+  externalEmployeeId:z.string().nullish(),v2EmployeeGuid:GUID.nullish(),
+  entityType:z.string().nullish(),externalId:z.string().nullish(),
+  jobReferences:z.array(laborRefSchema).nullish(),
+  wageOverrides:z.array(z.object({jobReference:laborRefSchema,wage:z.number()})).nullish()
+});
+const employeesSchema=z.array(employeeSourceSchema);
+const timeEntrySourceSchema=z.object({guid:GUID,modifiedDate:z.string().nullish(),
+  employeeReference:laborRefSchema,jobReference:laborRefSchema.nullish(),
+  shiftReference:laborRefSchema.nullish(),inDate:z.string(),outDate:z.string().nullish(),
+  hourlyWage:z.number().nullish(),regularHours:z.number().finite().nullish(),
+  overtimeHours:z.number().finite().nullish(),deleted:z.boolean().nullish(),
+  createdDate:z.string().nullish(),deletedDate:z.string().nullish(),
+  businessDate:z.string().nullish(),autoClockedOut:z.boolean().nullish(),
+  declaredCashTips:z.number().finite().nullish(),nonCashTips:z.number().finite().nullish(),
+  nonCashTipsRoundingLoss:z.number().finite().nullish(),tipsWithheld:z.number().finite().nullish(),
+  cashSales:z.number().finite().nullish(),nonCashSales:z.number().finite().nullish(),
+  cashGratuityServiceCharges:z.number().finite().nullish(),
+  nonCashGratuityServiceCharges:z.number().finite().nullish(),
+  breaks:z.array(z.object({guid:GUID.nullish(),
     inDate:z.string().nullish(),outDate:z.string().nullish(),
-    paid:z.boolean().nullish(),missed:z.boolean().nullish()})).nullish()}));
-const shiftsSchema=z.array(z.object({guid:GUID,employeeReference:z.object({guid:GUID}),
-  jobReference:z.object({guid:GUID}).nullish(),inDate:z.string(),outDate:z.string(),
-  deleted:z.boolean().nullish()}));
+    paid:z.boolean().nullish(),missed:z.boolean().nullish(),
+    waived:z.boolean().nullish(),auditResponse:z.boolean().nullish(),
+    breakType:laborRefSchema.nullish()})).nullish()
+});
+const timeEntriesSchema=z.array(timeEntrySourceSchema);
+const shiftSourceSchema=z.object({guid:GUID,employeeReference:laborRefSchema,
+  jobReference:laborRefSchema.nullish(),inDate:z.string(),outDate:z.string(),
+  deleted:z.boolean().nullish(),createdDate:z.string().nullish(),
+  modifiedDate:z.string().nullish(),deletedDate:z.string().nullish(),
+  entityType:z.string().nullish(),externalId:z.string().nullish(),
+  scheduleConfig:z.object({guid:GUID.nullish(),minAfterClockIn:z.number().nullish(),
+    minAfterClockOut:z.number().nullish(),minBeforeClockIn:z.number().nullish(),
+    minBeforeClockOut:z.number().nullish()}).nullish()
+});
+const shiftsSchema=z.array(shiftSourceSchema);
 const pricingRulesSchema=z.object({
   sizeSpecificPricingGuid:GUID.nullish(),
   timeSpecificPricingRules:z.array(z.object({
@@ -82,10 +111,15 @@ const menusSchema=z.object({restaurantGuid:GUID,menus:z.array(
     pricingStrategy:z.string().nullish(),pricingRules:pricingRulesSchema.nullish()
   }).passthrough()).default({})
 }).passthrough();
-const toastJobSchema=z.array(z.object({
+const jobSourceSchema=z.object({
   guid:GUID,title:z.string().nullish(),defaultWage:z.number().nullish(),
-  wageFrequency:z.enum(["HOURLY","SALARY"]).nullish(),deleted:z.boolean().nullish()
-}).passthrough());
+  wageFrequency:z.enum(["HOURLY","SALARY"]).nullish(),deleted:z.boolean().nullish(),
+  code:z.string().nullish(),tipped:z.boolean().nullish(),
+  excludeFromReporting:z.boolean().nullish(),createdDate:z.string().nullish(),
+  modifiedDate:z.string().nullish(),deletedDate:z.string().nullish(),
+  entityType:z.string().nullish(),externalId:z.string().nullish()
+});
+const toastJobSchema=z.array(jobSourceSchema);
 const metadataSchema=z.object({restaurantGuid:GUID,lastUpdated:z.string().min(1)});
 function validRange(range:Range) {
   if(!Number.isFinite(range.since.getTime())||!Number.isFinite(range.until.getTime())||
@@ -152,12 +186,20 @@ export function normalizeToastOrder(order:Order,restaurantGuid:string):PosOrder|
     processingFeeStatus:"missing",processingFeeCents:0,
     netSalesCents:netBeforeRefunds-refunds,lines};
 }
+export type ToastLaborEmployeeSource={employeeGuid:string;restaurantGuid:string;
+  sourceFields:z.infer<typeof employeeSourceSchema>};
+export type ToastLaborJobSource={jobGuid:string;restaurantGuid:string;
+  sourceFields:z.infer<typeof jobSourceSchema>};
 export type ToastScheduledShift={externalShiftId:string;externalEmployeeId:string;externalLocationId:string;
-  scheduledStart:string;scheduledEnd:string;externalJobId:string|null;deleted:boolean;sourceProvider:"toast"};
+  scheduledStart:string;scheduledEnd:string;externalJobId:string|null;deleted:boolean;sourceProvider:"toast";
+  /** Source-shaped, whitelisted evidence for the POS0b consumer; not another store. */
+  sourceFields?:z.infer<typeof shiftSourceSchema>};
 export type ToastAttendanceFact={externalTimeEntryId:string;externalEmployeeId:string;
   externalLocationId:string;clockIn:string;clockOut:string|null;hourlyWageCents:number|null;
   providerRegularHours?:number|null;providerOvertimeHours?:number|null;
-  breaks:PosTimecard["breaks"];deleted:boolean;modifiedAt?:string|null;sourceProvider:"toast"};
+  breaks:PosTimecard["breaks"];deleted:boolean;modifiedAt?:string|null;sourceProvider:"toast";
+  /** Optional to keep existing payroll mapping compatible until POS0b consumes it. */
+  sourceFields?:z.infer<typeof timeEntrySourceSchema>};
 export type ToastOrderState="completed"|"open"|"reopened"|"voided"|"deleted"|"refunded"|"ambiguous";
 export type ToastOrderFact={orderGuid:string;restaurantGuid:string;modifiedAt:string;state:ToastOrderState;normalizedOrder:PosOrder|null};
 export function classifyToastOrder(order:Order,restaurantGuid:string):ToastOrderFact {
@@ -195,6 +237,8 @@ export type ToastAdapter=PosAdapter&{
   fetchMenuMetadata():Promise<{restaurantGuid:string;lastUpdated:string}>;
   fetchCatalogFacts():Promise<ToastCatalogFact[]>;
   fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]>;
+  fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]>;
+  fetchLaborJobSources():Promise<ToastLaborJobSource[]>;
   fetchScheduledShifts(range:Range):Promise<ToastScheduledShift[]>;
   fetchAttendanceFacts(range:Range):Promise<ToastAttendanceFact[]>;
   fetchAttendanceChanges(range:Range):Promise<ToastAttendanceFact[]>;
@@ -300,6 +344,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       hourlyWageCents:r.hourlyWage==null?null:cents(r.hourlyWage),
       providerRegularHours:r.regularHours??null,providerOvertimeHours:r.overtimeHours??null,
       deleted:Boolean(r.deleted),sourceProvider:"toast" as const,
+      sourceFields:r,
       breaks:(r.breaks??[]).filter(b=>b.missed===false&&b.inDate&&b.outDate)
         .map(b=>({start:timestamp(b.inDate!),end:timestamp(b.outDate!),paid:b.paid===true}))
     }));
@@ -466,6 +511,14 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         deleted:Boolean(r.deleted)
       }));
     },
+    async fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]> {
+      const rows=await request("/labor/v1/employees",employeesSchema);
+      return rows.map(r=>({employeeGuid:r.guid,restaurantGuid,sourceFields:r}));
+    },
+    async fetchLaborJobSources():Promise<ToastLaborJobSource[]> {
+      const rows=await request("/labor/v1/jobs",toastJobSchema);
+      return rows.map(r=>({jobGuid:r.guid,restaurantGuid,sourceFields:r}));
+    },
     async fetchEmployees():Promise<PosEmployee[]> {
       const [rows,jobs]=await Promise.all([
         request("/labor/v1/employees",employeesSchema),
@@ -501,7 +554,8 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       return rows.map(r=>({externalShiftId:r.guid,
         externalEmployeeId:r.employeeReference.guid,externalLocationId:restaurantGuid,
         scheduledStart:timestamp(r.inDate),scheduledEnd:timestamp(r.outDate),
-        externalJobId:r.jobReference?.guid??null,deleted:Boolean(r.deleted),sourceProvider:"toast"}));
+        externalJobId:r.jobReference?.guid??null,deleted:Boolean(r.deleted),
+        sourceProvider:"toast",sourceFields:r}));
     }
   };
   return result;
