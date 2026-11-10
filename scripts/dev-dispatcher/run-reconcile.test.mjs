@@ -42,6 +42,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     },
     reconcileReceiptFeedback: state => state,
     queueOwnerAlerts: state => state,
+    noticeOperationalIssues: state => state,
     applySafetySignals: state => state,
     stallMinutes: () => 20,
     repo: 'killbill2792/aicafe',
