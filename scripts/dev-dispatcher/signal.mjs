@@ -11,7 +11,11 @@ export function signalFor(state, secret) {
   const notices = Object.entries(state.owner_alerts || {}).filter(([,a]) =>
     a.status === 'planned' && a.delivery_owner === 'muse' && a.notice_hash === noticeHash(a))
     .map(([key,a]) => 'owner:' + key + ':' + a.notice_hash);
-  const ids = [...deliveries, ...notices].sort();
+  // Opaque repair hint: same courier, same receipt; NEVER a new browser send.
+  const repairs = Object.entries(state.receipt_feedback || {})
+    .filter(([,f]) => f.status === 'rejected')
+    .map(([id,f]) => 'receipt:' + id + ':' + f.code + ':' + (f.wake_round || 0));
+  const ids = [...deliveries, ...notices, ...repairs].sort();
   return { version: 1, pending_count: ids.length,
     fingerprint: createHmac('sha256', secret).update(JSON.stringify(ids)).digest('hex') };
 }

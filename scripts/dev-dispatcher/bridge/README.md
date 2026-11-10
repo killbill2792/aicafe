@@ -58,3 +58,15 @@ If the queue reader and OpenClaw run under the **same Ubuntu user**, text instru
 ```bash
 node --test scripts/dev-dispatcher/delivery.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs
 ```
+
+## Same-receipt self-recovery in the existing Muse poller
+
+When the private owner queue shows a rejected receipt, Muse should run the **one-shot** existing-courier helper `bridge/repair-receipts.mjs` at its next normal polling/wake cycle, **before** looking for new browser deliveries. This script requires no agent/model call. Use Muse's **already configured** GitHub private-queue Contents write token in `MUSE_GITHUB_TOKEN` or `GH_TOKEN`, and the existing `DISPATCH_LEDGER_REPO`. Optionally mirror the trusted-main `DISPATCH_COURIER_ACTORS` mapping (e.g. `login=muse`) to enforce the actor allowlist locally too. Do **not** grant a browser-only Dave worker a write token.
+
+```bash
+node bridge/repair-receipts.mjs
+```
+
+The helper checks that the GitHub token resolves to a real account, the queue repository is private, the exact original action remains approved/open, and the previously created receipt contains matching provider/project/approval/prompt hashes and a valid original chat URL. It writes **only** a new GitHub API commit of the **same receipt at the same path**, with a `reconfirmed_at` audit timestamp; no custom Git author or committer. It verifies GitHub now attributes the commit to that account, otherwise leaves the hold. The trusted-main dispatcher independently validates the allowed actor and resumes the original chat on its next tick.
+
+A receipt that is missing, invalid, submitted already, belongs to a closed PR, or requires a different chat destination is **not repaired automatically**. The courier must never replay a browser message just to repair the receipt or treat the helper's result as a verified delivery. This is a one-time update to Muse's **existing** polling configuration; no new timer, agent, model or paid service. GitHub-side feedback is only fully autonomous once the already running Muse poller invokes this helper.

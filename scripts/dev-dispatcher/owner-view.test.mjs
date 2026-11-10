@@ -161,3 +161,19 @@ test('approved-task diagram updates with GitHub facts and ignores diagram inject
  const missingQueue=renderOwnerView(current,{repo,asOf:now});
  assert.doesNotMatch(missingQueue,/flowchart TD/);
 });
+
+
+test('public owner view flags Muse receipt repair without leaking action identity or private URL',()=>{
+ const s=structuredClone(ledger);
+ s.actions={};
+ delete s.tasks.POS0e.github_owner_question;
+ s.receipt_feedback={'assign:POS0e':{task_id:'POS0e',status:'rejected',
+  code:'unattributed_git_actor',first_seen_at:'2026-11-09T20:00:00Z'}};
+ s.receipt_scan={complete:false};
+ const html=renderOwnerView(s,{repo,asOf:now});
+ assert.match(html,/receipt rejected; Muse re-authenticates original/);
+ assert.match(html,/Muse repairs signed receipt/);
+ assert.match(html,/receipt-authentication hold/);
+ assert.match(html,/Courier receipt scan incomplete/);
+ assert.doesNotMatch(html,/assign:POS0e|unattributed_git_actor|chatgpt\.com/);
+});

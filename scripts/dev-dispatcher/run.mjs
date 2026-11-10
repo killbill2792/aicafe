@@ -10,7 +10,8 @@ import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration, retryStartupFailure } from "./effects.mjs";
-import { collectReceipts, applyReceipts } from "./inbox.mjs";
+import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
+import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
 import { queueOwnerAlerts } from "./alerts.mjs";
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
@@ -48,11 +49,14 @@ async function main() {
     // First invalidate old-head actions, THEN process Muse receipts. A receipt
     // arriving during the same GitHub reconciliation must not revive old work.
     const live = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
-    const copy = queueOwnerAlerts(
-      applyReceipts(live, inbox, actorMap),
-      {unmappedPrs:linked.unmapped,queue});
+    const applied = applyReceiptsSafely(live,receiptScan.accepted,actorMap);
+    const withFeedback = reconcileReceiptFeedback(applied.state,{
+      ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
+    },new Date().toISOString());
+    const copy = queueOwnerAlerts(withFeedback,{unmappedPrs:linked.unmapped,queue});
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
+    wakeReceiptFeedback(copy, Date.now());
 
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
@@ -97,7 +101,9 @@ async function main() {
     if (!actor || !["muse", "dave"].includes(courier)) throw new Error("Invalid courier actor mapping");
     return [actor, courier];
   }));
-  const inbox = ledger ? await collectReceipts({ ledger, allowedActors: Object.keys(actorMap) }) : [];
+  const receiptScan = ledger
+    ? await inspectReceipts({ledger,allowedActors:Object.keys(actorMap)})
+    : {accepted:[],rejected:[],complete:false,scan_error:'private_ledger_unavailable'};
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
   const unmappedPrs = linkPullRequests(current, observed.snapshot).unmapped;
@@ -258,6 +264,8 @@ async function main() {
     `- Approved new assignments: **${proposed.assigned.length}**`,
     `- Eligible follow-ups (NOT sent): **${proposed.nudges.length}**`,
     `- Planned Muse owner notices (NOT sent): **${Object.values(effectiveState.owner_alerts || {}).filter(n=>n.status==="planned").length}**`,
+    `- Muse receipt-authentication repairs: **${Object.values(effectiveState.receipt_feedback || {}).filter(f=>f.status==="rejected").length}** (same receipt; no browser re-send)`,
+    `- Courier receipt scan: **${effectiveState.receipt_scan?.complete===true?"complete":"incomplete; preserve existing holds"}**`,
     `- Architecture owner review pending: **${foundationReviewPending ? (hasChatReceipt ? "Muse notice queued or already submitted" : "waiting for verified ChatGPT conversation receipt") : "no"}**`,
     `- Tracked merge gates: ready **${gateCounts.ready}**, blocked **${gateCounts.blocked}**`,
     `- Private durable state: **${commit ? persisted?.committed ? "saved" : "unchanged" : ledger ? "read-only" : "not configured"} (no external actions)**`,
