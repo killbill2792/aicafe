@@ -41,7 +41,8 @@ export function reconcileReceiptFeedback(state, scan, now=new Date().toISOString
   for(const [id,action] of Object.entries(next.actions)){
     if(action.type!=='assign'||action.status!=='cancelled_stale_head')continue;
     const task=next.tasks[action.task_id];
-    if(live(action,task)&&!task.conversation_ref&&!problems.has(id))
+    if(live(action,task)&&!task.conversation_ref&&!problems.has(id)&&
+       (scan?.complete===true || next.receipt_feedback[id]?.status!=='rejected'))
       problems.set(id,'assignment_receipt_missing');
   }
   for(const [id,code] of problems){
