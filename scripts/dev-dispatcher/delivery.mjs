@@ -93,8 +93,9 @@ export function createDelivery({ task, record, action, actionId }) {
     ? 'assign: Open EARLY DRAFT now; branch ' + (record.branch || 'feat/aicafe-task-'+task.id) +
       '; PR base ' + (record.base_branch || 'main') +
       (record.prerequisite_pr ? ' (parent PR #' + record.prerequisite_pr + ')' : '') +
-      '. Keep coding, committing and running CI while parent is open. Do not rebase or request Codex ' +
-      'until parent merged. Use acceptance tests from signed queue; include exact execution links, ' +
+      (stacked ? '. Work/commit/test while parent is open; NO rebase or Codex until parent merged.' :
+        '. Finish CI/evidence first; after coder-done/ready, one final-head Codex review.') +
+      ' Use acceptance tests from signed queue; include exact execution links, ' +
       'PR comment dispositions and <!-- aicafe-coder-done --> only when actually complete.'
     : reason[action];
   const lines = [
