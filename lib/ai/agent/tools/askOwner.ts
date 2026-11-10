@@ -45,7 +45,10 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
  * comes from the original authenticated owner utterance, not model card text
  * or untrusted POS data.
  */
-function asksRecordedPosCount(ownerText:string):boolean{
+function asksRecordedPosCount(ownerText:unknown):boolean{
+ // Some trusted internal callers do not carry an owner utterance; preserve
+ // their existing clarification behavior rather than guessing user intent.
+ if(typeof ownerText!=="string")return false;
  const q=ownerText.toLowerCase().replace(/\s+/g," ").trim();
  if(!/\b(?:how many|number of|count(?: of)?|total(?: number| amount)? of|how much)\b/.test(q))
   return false;
