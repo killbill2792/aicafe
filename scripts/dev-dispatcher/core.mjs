@@ -39,6 +39,12 @@ export function validateQueue(queue) {
     tasks.set(task.id, task);
   }
   // Read-only uses never reserve a path; only two writers conflict.
+  const ancestor=(later,earlier,seen=new Set())=>{
+    if(later===earlier)return true;
+    if(seen.has(later))return false;
+    seen.add(later);
+    return (tasks.get(later)?.depends_on||[]).some(dep=>ancestor(dep,earlier,seen));
+  };
   const exclusiveOwners = new Map();
   for (const task of queue.tasks) {
     const edits = editableFiles(task), uses = usedFiles(task);
@@ -50,8 +56,9 @@ export function validateQueue(queue) {
       throw new Error('Invalid read-only file usage for ' + task.id);
     for (const path of edits) {
       const owner = exclusiveOwners.get(path);
-      if (owner) throw new Error('Overlapping exclusive file ownership: ' +
-        path + ' (' + owner + ' and ' + task.id + ')');
+      if (owner && !(queue.sequential_edit_overlap===true&&ancestor(task.id,owner)))
+        throw new Error('Overlapping exclusive file ownership: ' +
+          path + ' (' + owner + ' and ' + task.id + ')');
       exclusiveOwners.set(path,task.id);
     }
   }

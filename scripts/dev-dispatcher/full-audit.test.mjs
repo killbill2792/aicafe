@@ -13,12 +13,17 @@ test('external studio plan loads through its own configured repo without reading
  const config=structuredClone(settings);config.repo='killbill2792/MVPStyli';
  config.queue={repo:'killbill2792/studio',path:'studio/ideas/stylit-agent/tasks.json',ref:'main'};
  let requests=0;
- const plan={tasks:[{id:'styli-1',architecture_approval:{approved:true}}]};
+ const plan={merge_order:['styli-1'],tasks:[{id:'styli-1',edits:['src/job.ts'],
+  acceptance:['must pass'],depends_on:[],status:'proposed'}]};
  const actual=await loadQueue({config,github:{request:async(url)=>{
   requests++;assert.match(url,/killbill2792\/studio\/contents\/studio\/ideas\/stylit-agent\/tasks.json/);
   return {type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(plan)).toString('base64')};
  }},readLocal:()=>{throw Error('must not read AI CAFE queue');}});
- assert.deepEqual(actual,plan);assert.equal(requests,1);
+ assert.equal(actual.tasks[0].brief,'https://github.com/killbill2792/studio/blob/main/studio/ideas/stylit-agent/tasks.json#task-styli-1');
+ assert.equal(actual.tasks[0].architecture_approval.approved,false);
+ assert.deepEqual(actual.merged_code_only,[]);
+ assert.equal(actual.sequential_edit_overlap,true);assert.equal(requests,1);
+ const {validateQueue}=await import('./core.mjs');assert.ok(validateQueue(actual));
  await assert.rejects(loadQueue({config,github:{request:async()=>({type:'dir'})}}),/missing or not a JSON file/);
 });
 
@@ -100,4 +105,18 @@ test('combined owner dashboard reads independent ledgers only and never writes',
  assert.ok(renderDashboard(rows).includes('killbill2792/MVPStyli'));
  assert.equal(urls.filter(x=>x[0]===settings.ledger.repo).length,1);
  assert.equal(urls.filter(x=>x[0]===target.ledger.repo).length,1);
+});
+
+test('studio merge_order serializes overlapping file ownership without granting unapproved coding',async()=>{
+ const {normalizeExternalPlan}=await import('./queue-source.mjs');
+ const {validateQueue,dispatchFrontier}=await import('./core.mjs');
+ const source={repo:'killbill2792/studio',ref:'main',path:'studio/ideas/stylit-agent/tasks.json'};
+ const normalized=normalizeExternalPlan({merge_order:['0a','0b'],tasks:[
+  {id:'0a',depends_on:[],acceptance:['check A'],edits:['app/main.ts'],status:'proposed'},
+  {id:'0b',depends_on:['0a'],acceptance:['check B'],edits:['app/main.ts'],status:'proposed'}]},source);
+ assert.equal(normalized.tasks[1].depends_on.includes('0a'),true);
+ assert.equal(validateQueue(normalized).size,2);
+ assert.deepEqual(dispatchFrontier(normalized,{}),[]);
+ const wrong={...normalized,tasks:normalized.tasks.map(t=>({...t,depends_on:[]}))};
+ assert.throws(()=>validateQueue(wrong),/Overlapping exclusive file ownership/);
 });

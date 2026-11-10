@@ -105,8 +105,10 @@ export function createDelivery({ task, record, action, actionId }) {
   if (url && !validConversationUrl(record.agent,url))
     throw new Error('Invalid destination URL');
   const taskBrief = task.brief?.split('#')[0];
-  if (!taskBrief?.startsWith(settings.paths.task_brief_root+'/') ||
-      !/^[a-zA-Z0-9_./-]+\.md$/.test(taskBrief) || taskBrief.includes('..'))
+  const external='https://github.com/'+settings.queue.repo+'/blob/'+settings.queue.ref+'/'+settings.queue.path;
+  const externalBrief=settings.queue.repo!==settings.repo&&taskBrief===external;
+  if(!externalBrief&&(!taskBrief?.startsWith(settings.paths.task_brief_root+'/') ||
+      !/^[a-zA-Z0-9_./-]+\.md$/.test(taskBrief)||taskBrief.includes('..')))
     throw new Error('Invalid task brief');
   const project = {id:settings.chatgpt.project_id,name:settings.chatgpt.project_name};
   const links = [
@@ -116,8 +118,8 @@ export function createDelivery({ task, record, action, actionId }) {
     'PR lifecycle: ' + REPO + '/blob/main/.claude/skills/'+settings.naming.task_prefix+'-pr-lifecycle/SKILL.md',
     'Dependency/proof skills: ' + REPO + '/blob/main/.claude/skills/'+settings.naming.task_prefix+'-dependency-check/SKILL.md and ' +
       REPO + '/blob/main/.claude/skills/'+settings.naming.task_prefix+'-proof-gate/SKILL.md',
-    'Signed queue: ' + REPO + '/blob/main/'+settings.queue.path,
-    'Task brief: ' + REPO + '/blob/main/' + task.brief
+    'Signed queue: https://github.com/'+settings.queue.repo+'/blob/'+settings.queue.ref+'/'+settings.queue.path,
+    'Task brief: ' + (externalBrief?task.brief:REPO + '/blob/main/' + task.brief)
   ];
   const pr = record.pr_number ? REPO + '/pull/' + record.pr_number : 'not opened';
   const comments = (record.unresolved_codex_comments || []).slice(0,3)
