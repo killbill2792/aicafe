@@ -41,10 +41,22 @@ const empty=(code:string)=>({source:"canonical_data",period:null,
 // Fail closed while distinguishing malformed model-authored SQL from outages.
 // Never expose PostgreSQL error messages, parameters, SQL text or source rows.
 const INVALID_QUERY_SQLSTATES=new Set(["22023","22P02","42703","42702","42804","22007"]);
+// The existing invoker-RLS ai_query_view RPC uses default P0001 for these
+// exact, fixed query-validator messages. They are NOT Toast read outages.
+// Compare trusted constants only. Never send underlying SQL/error details to AI.
+const INVALID_QUERY_RPC_MESSAGES=new Set([
+ "invalid view","invalid date range","invalid limit","query too large",
+ "invalid column","invalid filter column","invalid operator","invalid null filter",
+ "invalid in","invalid between","invalid scalar","invalid aggregate",
+ "columns require group by","ungrouped columns","invalid order by"
+]);
 function safeReadFailure(error:unknown):"invalid_query"|"source_read_failed"{
- const code=error&&typeof error==="object"&&"code" in error?
-  (error as {code?:unknown}).code:null;
- return typeof code==="string"&&INVALID_QUERY_SQLSTATES.has(code)?
+ if(!error||typeof error!=="object")return "source_read_failed";
+ const code="code" in error?(error as {code?:unknown}).code:null;
+ const message="message" in error?(error as {message?:unknown}).message:null;
+ return typeof code==="string"&&(
+  INVALID_QUERY_SQLSTATES.has(code)||
+  (code==="P0001"&&typeof message==="string"&&INVALID_QUERY_RPC_MESSAGES.has(message)))?
   "invalid_query":"source_read_failed";
 }
 function validColumns(view:CanonicalView,columns:string[]):boolean{
