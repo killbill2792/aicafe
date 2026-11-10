@@ -137,7 +137,7 @@ test('watchdog times out once to referee without ever issuing another request',(
 test('Codex review, running summary and exact GitHub reaction suppress escalation',()=>{
  assert.equal(decision('2026-11-10T11:00:00Z',{reviews:[{commit_id:head,
   user:{login:'chatgpt-codex-connector'}}]}).status,'receipt');
- const running='<!-- codex-review-state:v1 '+JSON.stringify({code_review:
+ const running='<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 '+JSON.stringify({code_review:
    {commit_sha:head,status:'running',has_any_findings:null,has_unresolved_findings:null}})+' -->';
  assert.equal(decision('2026-11-10T11:00:00Z',{comments:[firstRequest,
   {user:{login:'chatgpt-codex-connector[bot]'},body:running}]}).status,'receipt');
