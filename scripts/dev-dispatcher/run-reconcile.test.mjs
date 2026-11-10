@@ -44,6 +44,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [] } 
     applySafetySignals: state => state,
     stallMinutes: () => 20,
     repo: 'killbill2792/aicafe',
+    process: {env:{}},
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},
     wakeReceiptFeedback: () => {},
