@@ -80,10 +80,11 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
       pr.head.sha !== record.head_sha || pr.base.sha !== record.base_sha ||
       pr.base.ref !== 'main' || record.base_branch !== 'main')
     return { status: 'blocked', reasons: ['live_pr_changed'] };
-  if ((pr.labels || []).some(label => label.name === 'needs-owner-decision') ||
-      (typeof pr.body === 'string' && pr.body.includes('<!-- aicafe-owner-question')))
-    return {status:'blocked',reasons:['live_owner_question_pending']};
   const live = await github.one(pr);
+  // Authenticated, later owner approval can supersede an old label/marker.
+  // Never infer approval from PR body text or an untrusted author.
+  if (live.github_owner_question || record.owner_question)
+    return {status:'blocked',reasons:['live_owner_question_pending']};
   if (live.ci_state !== 'success' ||
       (!prepareReady && (live.codex_state !== 'clean' ||
         live.codex_reviewed_sha !== record.head_sha)) ||
@@ -92,8 +93,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
     return { status: 'blocked', reasons: ['live_checks_changed'] };
   // Re-fetch base SHA immediately before merge to reject intervening main changes.
   const latest = await github.request(`/pulls/${record.pr_number}`);
-  if ((latest.labels || []).some(label => label.name === 'needs-owner-decision') ||
-      (typeof latest.body === 'string' && latest.body.includes('<!-- aicafe-owner-question')))
+  if ((await github.ownerDecision(latest)).question)
     return {status:'blocked',reasons:['live_owner_question_pending']};
   if (latest.head.sha !== record.head_sha || latest.base.sha !== record.base_sha ||
       latest.base.ref !== 'main' || latest.mergeable !== true ||
