@@ -172,6 +172,24 @@ export class GitHubFacts {
     return { question: 'Owner decision requested on PR; check its discussion for the exact scope.',
       url: pr.html_url || null };
   }
+
+  // Only unresolved human/Codex review threads are included in coder nudges.
+  // This is GitHub evidence, not an instruction source or merge proof.
+  async unresolvedComments(number) {
+    const [owner,name]=this.repo.split('/');
+    const query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){pageInfo{hasNextPage} nodes{isResolved comments(first:10){pageInfo{hasNextPage} nodes{body url}}}}}}}}';
+    const result=await this.request('https://api.github.com/graphql',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query,variables:{owner,name,number}})});
+    const threads=result.data?.repository?.pullRequest?.reviewThreads;
+    if(result.errors?.length || !threads || threads.pageInfo.hasNextPage)
+      return [];
+    return threads.nodes.filter(t=>!t.isResolved).slice(0,4).map(t=>{
+      const comment=t.comments?.nodes?.[0];
+      return {body:String(comment?.body || 'Unresolved review thread')
+        .replace(/\s+/g,' ').slice(0,160),url:comment?.url || null};
+    });
+  }
   async one(pr) {
     const sha = pr.head.sha;
     const [checks, reviews, unresolved, commit, comparison, comments] = await Promise.all([
@@ -189,6 +207,8 @@ export class GitHubFacts {
     const baseline = checks.check_runs.find(c => c.name === "AI CAFE PR baseline");
     const ci = !baseline || baseline.status !== "completed" ? "pending" :
       baseline.conclusion === "success" ? "success" : "failure";
+    const failingJob = checks.check_runs.find(c => c.conclusion === 'failure' &&
+      c.name !== baseline?.name) || (ci === 'failure' ? baseline : null);
     const codexReviews = reviews.filter(r => /codex/i.test(r.user?.login || ""))
       .sort((a, b) => Date.parse(b.submitted_at) - Date.parse(a.submitted_at));
     // Preserve unresolved findings from an earlier revision for repair routing.
@@ -213,12 +233,23 @@ export class GitHubFacts {
     const reviewed = latestState !== 'pending' ? sha : null;
     const codexState = unresolved === null ? "unknown" :
       unresolved > 0 && (codexReviews.length || summary) ? "findings" : latestState;
+    const unresolvedComments = codexState === 'findings'
+      ? await this.unresolvedComments(pr.number).catch(()=>[]) : [];
+    const trustedOwner = comments.filter(c=>c.author_association==='OWNER')
+      .sort((a,b)=>Date.parse(b.created_at||0)-Date.parse(a.created_at||0))[0];
     return { pr_number: pr.number, head_sha: sha, base_branch: pr.base.ref,
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
       github_owner_question: ownerDecision.question,
       github_owner_question_url: ownerDecision.url,
+      coder_done: typeof pr.body === 'string' &&
+        pr.body.includes('<!-- aicafe-coder-done -->'),
+      latest_owner_comment: trustedOwner ? String(trustedOwner.body||'').slice(0,350) : null,
+      latest_owner_comment_at: trustedOwner?.created_at || null,
+      unresolved_codex_comments: unresolvedComments,
+      ci_failure_job: ci === 'failure' ? (failingJob?.name || 'AI CAFE PR baseline') : null,
+      ci_failure_url: ci === 'failure' ? (failingJob?.html_url || pr.html_url) : null,
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
       codex_review_at: useFormal ? codex?.submitted_at : summary?.at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,

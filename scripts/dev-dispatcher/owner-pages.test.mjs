@@ -49,6 +49,8 @@ test('status freshness reveals stale GitHub scheduler without claiming false liv
  assert.equal(freshness('2026-11-09T22:30:00Z',now),'stale');
  assert.equal(freshness(null,now),'stale');
  assert.equal(statusLevel('repair_ci: queued (not sent)'),'warn');
+ assert.equal(statusLevel('idle_continue: courier unconfirmed (queued; no receipt)'),'warn');
+ assert.equal(statusLevel('superseded'),'neutral');
  assert.equal(statusLevel('clean'),'good');
 });
 test('public browser source only queries public issue comment and links out to private GitHub',()=>{

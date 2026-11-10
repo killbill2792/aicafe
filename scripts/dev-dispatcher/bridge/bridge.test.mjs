@@ -8,6 +8,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
+import { createDelivery, approvalSignature } from '../delivery.mjs';
+import { signalFor } from '../signal.mjs';
 import { validateHandoff, pendingActions, agentInstruction, fetchLedger,
   reserveReceipt, runOnce, invokeOpenClaw, taskHoldFile } from './bridge.mjs';
 
@@ -142,4 +144,93 @@ test('Dave never sends Muse-owned actions even when live sending enabled',async(
     fetchImpl:makeFetch(next),sendEnabled:true,invoke:()=>{throw Error('must not invoke')}});
   assert.equal(result.status,'idle');
  } finally {await fs.rm(dir,{recursive:true,force:true});}
+});
+
+
+test('v2 reason-specific continuations are signed, head-bound, and visible to pendingActions',()=>{
+  const url='https://chatgpt.com/c/abc-123';
+  const head='a'.repeat(40);
+  const live={...record,pr_number:408,github_state:'open',head_sha:head,
+    base_branch:'main',conversation_ref:url};
+  const make = (type,actionId,headSha=head) => {
+    const prompt='Approved v2 '+type;
+    return {...action,key:actionId,task_id:'6',type,head_sha:headSha,
+      delivery:{...delivery,action_id:actionId,intent:'continue_existing_chat',
+        conversation_url:url,base_branch:'main',prompt,
+        prompt_hash:createHash('sha256').update(prompt).digest('hex')}};
+  };
+  const kinds=['ci_failed','codex_comments','owner_answered','idle_continue'];
+  const actions=Object.fromEntries(kinds.map(type=>{
+    const id='v2:'+type+':6';
+    const item=make(type,id);
+    assert.equal(validateHandoff(item,live),true,type);
+    assert.equal(validateHandoff(item,{...live,head_sha:'b'.repeat(40)}),false,
+      type+' must be current-head only');
+    assert.equal(validateHandoff(item,{...live,github_state:'merged'}),false);
+    return [id,(({key,...rest})=>rest)(item)];
+  }));
+  assert.deepEqual(pendingActions({version:1,tasks:{'6':live},actions})
+    .map(x=>x.type),kinds);
+});
+
+test('parent_merged continuation remains eligible after child head moves, but never before verified main retarget',()=>{
+  const url='https://chatgpt.com/c/abc-123',merged='f'.repeat(40);
+  const live={...record,pr_number:408,github_state:'open',head_sha:'a'.repeat(40),
+    base_branch:'main',conversation_ref:url,parent_merged_sha:merged,
+    branch_maintenance_merge_sha:merged,last_parent_rebase_sha:merged};
+  const key='parent_merged:6:'+merged,prompt='Verified parent merged: rebase onto main and continue';
+  const item={...action,key,task_id:'6',type:'parent_merged',head_sha:null,
+    delivery:{...delivery,action_id:key,intent:'continue_existing_chat',
+      conversation_url:url,base_branch:'main',prompt,
+      prompt_hash:createHash('sha256').update(prompt).digest('hex')}};
+  assert.equal(validateHandoff(item,live),true);
+  assert.deepEqual(pendingActions({version:1,tasks:{'6':live},
+    actions:{[key]:(({key,...rest})=>rest)(item)}}).map(x=>x.key),[key]);
+  assert.equal(validateHandoff(item,{...live,head_sha:'b'.repeat(40)}),true);
+  for(const rec of [
+    {...live,base_branch:'feat/parent'},
+    {...live,branch_maintenance_merge_sha:null},
+    {...live,last_parent_rebase_sha:null},
+    {...live,parent_merged_sha:'e'.repeat(40)},
+    {...live,github_state:'merged'},
+  ]) assert.equal(validateHandoff(item,rec),false);
+  assert.equal(validateHandoff({...item,head_sha:'a'.repeat(40)},live),false);
+  assert.equal(validateHandoff({...item,key:key+':retry'},live),false);
+  assert.equal(validateHandoff({...item,delivery:{...item.delivery,base_branch:'feat/parent'}},live),false);
+});
+
+
+
+test('v2 dispatcher nudges pass bridge and opaque wake-up signal without changing receipt identity',()=>{
+  const task={id:'6',title:'Continuation',goal:'finish authorized work',
+    state:'ready',architecture_approval:{approved:true},exclusive_files:['scripts/owned.mjs'],
+    brief:'docs/plans/universal-supervisor-task-briefs.md#task-6'};
+  const signature=approvalSignature(task), url='https://chatgpt.com/c/abc-123';
+  const head='a'.repeat(40), merged='b'.repeat(40);
+  const current={task_id:'6',approved:true,agent:'chatgpt',approval_hash:signature,
+    conversation_ref:url,pr_number:390,github_state:'open',head_sha:head,base_branch:'main',
+    parent_merged_sha:merged,branch_maintenance_merge_sha:merged,last_parent_rebase_sha:merged};
+  for(const type of ['codex_comments','ci_failed','parent_merged','owner_answered','idle_continue']){
+    const key=type==='parent_merged'?'parent_merged:6:'+merged:'nudge:'+type;
+    const d=createDelivery({task,record:current,action:type,actionId:key});
+    const pending={key,task_id:'6',type,status:'planned',delivery_owner:'muse',
+      head_sha:type==='parent_merged'?null:head,delivery:d};
+    const ledger={version:1,tasks:{'6':current},actions:{[key]:(({key,...a})=>a)(pending)}};
+    assert.equal(validateHandoff(pending,current),true,type);
+    assert.deepEqual(pendingActions(ledger).map(a=>a.key),[key],type);
+    assert.equal(signalFor(ledger,'secret'.repeat(8)).pending_count,1,type);
+    assert.equal(d.prompt_hash,createHash('sha256').update(d.prompt).digest('hex'));
+    if(type==='parent_merged'){
+      assert.equal(validateHandoff(pending,{...current,head_sha:'c'.repeat(40)}),true,
+        'verified parent-merge action is head-independent');
+      assert.equal(validateHandoff(pending,{...current,branch_maintenance_merge_sha:'c'.repeat(40)}),false);
+      assert.equal(validateHandoff(pending,{...current,base_branch:'feat/parent'}),false);
+      assert.equal(validateHandoff({...pending,head_sha:head},current),false);
+    }else{
+      assert.equal(validateHandoff(pending,{...current,head_sha:'c'.repeat(40)}),false,
+        type+' must remain exact-head');
+    }
+  }
+  const unknown={...action,type:'unapproved_action'};
+  assert.equal(validateHandoff(unknown,record),false);
 });
