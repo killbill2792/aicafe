@@ -163,7 +163,7 @@ export class GitHubFacts {
         Authorization:'Bearer ' + this.token,
         Accept:'application/vnd.github+json',
         'X-GitHub-Api-Version':'2022-11-28'
-      }});
+      }}).catch(()=>{throw githubNetworkFailure('Proof artifact');});
     if (!response.ok) throw await githubFailure(response,'Proof artifact');
     return decodeAcceptanceArchive(Buffer.from(await response.arrayBuffer()), filename);
   }

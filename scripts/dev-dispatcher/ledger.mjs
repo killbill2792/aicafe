@@ -44,6 +44,7 @@ export class GitHubLedger {
     }
     if (!response.ok) {
       const error=await githubFailure(response,'Ledger');
+      error.message='Ledger HTTP '+response.status+'; '+error.message;
       if (response.status === 404 && (!options.method || options.method === "GET")) return { absent: true };
       if ([409, 412, 422].includes(response.status)) throw Object.assign(error, { code: "CONFLICT" });
       throw error;

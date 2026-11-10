@@ -1,39 +1,20 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import {stablePatchId,classifyCodexChange,verifyLiveCarryOver} from './codex-carryover.mjs'; const a='a'.repeat(40),b='b'.repeat(40),c='c'.repeat(40),d='d'.repeat(40);
-const file=(path='src/a.js',after='new')=>({
-  filename:path,status:'modified',patch:'@@ -1 +1 @@\n-old\n+'+after
-}); const prior={head_sha:b,codex_clean_head_sha:b,codex_clean_base_sha:a,
-  codex_state:'clean',codex_reviewed_sha:b,
-  codex_branch_update:{old_head_sha:b,new_base_sha:c,status:'accepted_no_conflicts'}}; const live={head_sha:d,base_sha:c};
-const fake=(before=[file()],after=[file()],main=[],status='ahead',parents=[b,c])=>({
-  request:async path=>{
-    if(path==='/compare/'+a+'...'+b)return {files:before};
-    if(path==='/compare/'+c+'...'+d)return {files:after};
-    if(path==='/compare/'+a+'...'+c)return {files:main,status,behind_by:0};
-    if(path==='/git/commits/'+d)return {parents:parents.map(sha=>({sha}))}; throw Error('Unexpected compare '+path); } });
-test('git stable patch id ignores shifted hunk locations, but not changed lines',()=>{
-  const x=file(),y={...x,patch:x.patch.replace('@@ -1 +1 @@','@@ -80 +109 @@')}; assert.equal(stablePatchId([x]),stablePatchId([y])); assert.notEqual(stablePatchId([x]),stablePatchId([file('src/a.js','different')])); assert.equal(stablePatchId([{filename:'binary.png',status:'modified'}]),null); });
-test('case A: PR changed its own patch -> fresh review',async()=>{
-  const e=await classifyCodexChange({github:fake([file()],[file('src/a.js','different')]),
-    previous:prior,current:live}); assert.equal(e.case,'A'); assert.notEqual(e.old_patch_id,e.new_patch_id); });
-test('case A: own commit after update cannot reuse unchanged patch evidence',async()=>{
- const e=await classifyCodexChange({github:fake([file()],[file()],[],'ahead',[b,'e'.repeat(40)]),previous:prior,current:live});
- assert.equal(e.case,'A');
-});
-test('case B: verified update, unchanged patch, no main overlap -> carried',async()=>{
-  const gh=fake([file()],[file()],[file('docs/README.md')]); const e=await classifyCodexChange({github:gh,previous:prior,current:live}); assert.equal(e.case,'B'); assert.equal(e.old_patch_id,e.new_patch_id); assert.deepEqual(e.overlapping_files,[]); assert.equal(await verifyLiveCarryOver({github:gh,record:{...prior,codex_carried_over:e},live}),true); });
-test('case C: new main changed a PR file -> fresh review',async()=>{
-  const e=await classifyCodexChange({github:fake([file()],[file()],[file('src/a.js')]),
-    previous:prior,current:live}); assert.equal(e.case,'C'); assert.deepEqual(e.overlapping_files,['src/a.js']); });
-test('case D: hand-resolved conflict always forces review, even same patch',async()=>{
-  const e=await classifyCodexChange({github:fake(),previous:{
-    ...prior,codex_branch_conflict:{old_head_sha:b} },current:live}); assert.equal(e.case,'D');assert.equal(e.hand_resolved_conflicts,true); });
-test('unverified manual branch update never carries review',async()=>{
-  const e=await classifyCodexChange({github:fake(),previous:{
-    ...prior,codex_branch_update:null
-  },current:live}); assert.equal(e.case,'A'); });
-test('stale carry claim is refused at live merge preflight',async()=>{
-  const evidence={case:'B',new_head_sha:d,base_after_sha:c,
-    old_patch_id:stablePatchId([file()]),new_patch_id:stablePatchId([file()])}; assert.equal(await verifyLiveCarryOver({github:fake([file()],[file()],[file('src/a.js')]),
-    record:{...prior,codex_carried_over:evidence},live}),false); });
+import test from 'node:test'; import assert from 'node:assert/strict';
+import {stablePatchId,classifyCodexChange,verifyLiveCarryOver} from './codex-carryover.mjs'; const a='a'.repeat(40),b='b'.repeat(40),c='c'.repeat(40),d='d'.repeat(40); const file=(path='src/a.js',after='new')=>({
+filename:path,status:'modified',patch:'@@ -1 +1 @@\n-old\n+'+after }); const prior={head_sha:b,codex_clean_head_sha:b,codex_clean_base_sha:a,
+codex_state:'clean',codex_reviewed_sha:b, codex_branch_update:{old_head_sha:b,new_base_sha:c,status:'accepted_no_conflicts'}}; const live={head_sha:d,base_sha:c};
+const fake=(before=[file()],after=[file()],main=[],status='ahead',parents=[b,c])=>({ request:async path=>{
+if(path==='/compare/'+a+'...'+b)return {files:before}; if(path==='/compare/'+c+'...'+d)return {files:after};
+if(path==='/compare/'+a+'...'+c)return {files:main,status,behind_by:0}; if(path==='/git/commits/'+d)return {parents:parents.map(sha=>({sha}))}; throw Error('Unexpected compare '+path); } });
+test('git stable patch id ignores shifted hunk locations, but not changed lines',()=>{ const x=file(),y={...x,patch:x.patch.replace('@@ -1 +1 @@','@@ -80 +109 @@')}; assert.equal(stablePatchId([x]),stablePatchId([y])); assert.notEqual(stablePatchId([x]),stablePatchId([file('src/a.js','different')])); assert.equal(stablePatchId([{filename:'binary.png',status:'modified'}]),null); });
+test('case A: PR changed its own patch -> fresh review',async()=>{ const e=await classifyCodexChange({github:fake([file()],[file('src/a.js','different')]),
+previous:prior,current:live}); assert.equal(e.case,'A'); assert.notEqual(e.old_patch_id,e.new_patch_id); }); test('case A: own commit after update cannot reuse unchanged patch evidence',async()=>{
+const e=await classifyCodexChange({github:fake([file()],[file()],[],'ahead',[b,'e'.repeat(40)]),previous:prior,current:live}); assert.equal(e.case,'A');
+}); test('case B: verified update, unchanged patch, no main overlap -> carried',async()=>{
+const gh=fake([file()],[file()],[file('docs/README.md')]); const e=await classifyCodexChange({github:gh,previous:prior,current:live}); assert.equal(e.case,'B'); assert.equal(e.old_patch_id,e.new_patch_id); assert.deepEqual(e.overlapping_files,[]); assert.equal(await verifyLiveCarryOver({github:gh,record:{...prior,codex_carried_over:e},live}),true); }); test('case C: new main changed a PR file -> fresh review',async()=>{
+const e=await classifyCodexChange({github:fake([file()],[file()],[file('src/a.js')]), previous:prior,current:live}); assert.equal(e.case,'C'); assert.deepEqual(e.overlapping_files,['src/a.js']); });
+test('case D: hand-resolved conflict always forces review, even same patch',async()=>{ const e=await classifyCodexChange({github:fake(),previous:{
+...prior,codex_branch_conflict:{old_head_sha:b} },current:live}); assert.equal(e.case,'D');assert.equal(e.hand_resolved_conflicts,true); }); test('unverified manual branch update never carries review',async()=>{
+const e=await classifyCodexChange({github:fake(),previous:{ ...prior,codex_branch_update:null
+},current:live}); assert.equal(e.case,'A'); }); test('stale carry claim is refused at live merge preflight',async()=>{
+const evidence={case:'B',new_head_sha:d,base_after_sha:c, old_patch_id:stablePatchId([file()]),new_patch_id:stablePatchId([file()])}; assert.equal(await verifyLiveCarryOver({github:fake([file()],[file()],[file('src/a.js')]),
+record:{...prior,codex_carried_over:evidence},live}),false); });
