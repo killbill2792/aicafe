@@ -59,3 +59,34 @@ test('Muse owner_reply arrives over existing receipt path, never as unauthentica
  assert.deepEqual(applyReceipts(a,[{receipt:r,actor:'muse-bot'}],{'muse-bot':'muse'}),a);
  assert.throws(()=>applyReceipts(state,[{receipt:r,actor:'helper'}],{'helper':'dave'}));
 });
+
+test('existing authenticated private receipt directory carries Muse continuation, then one write updates chat and PR link',async()=>{
+ const {inspectReceipts}=await import('./inbox.mjs');
+ const old='https://chatgpt.com/c/old-777',fresh='https://chatgpt.com/c/new-888';
+ const prompt='repair head',h=hash(prompt),act='work:POS0b';
+ const receipt={action_id:act,prompt_hash:h,provider:'chatgpt',project_id:'aicafe',
+  conversation_url:fresh,continuation_of:old,continuation_reason:'stale_chat',effort:'high'};
+ const filename=hash(act+':'+h)+'.json',file='dispatcher/receipts/'+filename;
+ const ledger={request:async path=>{
+  if(path==='/contents/dispatcher/receipts?ref=main')return [{type:'file',name:filename,path:file}];
+  if(path.startsWith('/commits?path='))return [{author:{login:'muse-actor'}}];
+  if(path==='/contents/'+file+'?ref=main')return {content:Buffer.from(JSON.stringify(receipt)).toString('base64')};
+  throw Error('unexpected ledger path: '+path);
+ }};
+ const scanned=await inspectReceipts({ledger,allowedActors:['muse-actor']});
+ assert.equal(scanned.complete,true);assert.equal(scanned.accepted.length,1);
+ const d={version:1,action_id:act,task_id:'POS0b',project:{id:'aicafe'},
+  provider:'chatgpt',intent:'continue_existing_chat',conversation_url:old,
+  prompt,prompt_hash:h,approval_hash:'a'.repeat(64),effort:'high'};
+ const state={tasks:{POS0b:{task_id:'POS0b',approved:true,agent:'chatgpt',
+  approval_hash:d.approval_hash,pr_number:405,github_state:'merged',conversation_ref:old}},
+  actions:{[act]:{task_id:'POS0b',type:'codex_comments',status:'planned',
+    delivery_owner:'muse',delivery:d}},pr_chat_links:{405:{conversation_url:old}}};
+ const after=applyReceipts(state,scanned.accepted,{'muse-actor':'muse'});
+ assert.equal(after.tasks.POS0b.conversation_ref,fresh);
+ assert.equal(after.pr_chat_links['405'].conversation_url,fresh);
+ assert.equal(after.actions[act].status,'submitted');
+ assert.equal(state.tasks.POS0b.conversation_ref,old);
+ const denied=await inspectReceipts({ledger,allowedActors:['other-actor']});
+ assert.equal(denied.accepted.length,0);
+});
