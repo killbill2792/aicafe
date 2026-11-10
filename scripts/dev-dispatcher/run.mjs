@@ -68,14 +68,7 @@ async function main() {
     const initiallyLinked = linkPullRequests(state, observed.snapshot);
     const adopted = adoptAdhocPullRequests(initiallyLinked.state, observed.snapshot, [...taskById.keys()]);
     const linked = linkPullRequests(adopted.state, observed.snapshot);
-    linked.unmapped = linked.unmapped.filter(n => !adopted.skipped.includes(n));
-    linked.state.adhoc_unlinked_logged ||= {};
-    for (const n of adopted.skipped) {
-      if (!linked.state.adhoc_unlinked_logged[n]) {
-        console.log('Open PR #' + n + ' not adopted: no valid chat marker');
-        linked.state.adhoc_unlinked_logged[n] = true;
-      }
-    }
+    // Never latch unlinked PRs: re-evaluate branch receipts and optional markers on every wake.
     // First invalidate old-head actions, THEN process Muse receipts. A receipt
     // arriving during the same GitHub reconciliation must not revive old work.
     const live = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
@@ -99,7 +92,7 @@ async function main() {
     const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
       minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
     const copy = queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
-      {unmappedPrs:linked.unmapped,queue});
+      {unmappedPrs:linked.unmapped,openPrs:observed.snapshot,queue});
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
@@ -264,8 +257,9 @@ async function main() {
     if (!actor || !["muse", "dave"].includes(courier)) throw new Error("Invalid courier actor mapping");
     return [actor, courier];
   }));
+  actorMap[settings.owner.login] ||= 'owner';
   const receiptScan = ledger
-    ? await inspectReceipts({ledger,allowedActors:Object.keys(actorMap)})
+    ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])]})
     : {accepted:[],rejected:[],complete:false,scan_error:'private_ledger_unavailable'};
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
@@ -354,7 +348,8 @@ async function main() {
       // Dependency proof is recorded for reporting, not an unsolicited chat prompt.
       // Integration may become proven during this same pass: queue the owner
       // review with the actual saved chat URL without a second delayed cycle.
-      const withNotices = queueOwnerAlerts(next,{queue});
+      const withNotices = queueOwnerAlerts(next,{queue,
+        unmappedPrs:linkPullRequests(next,latest.snapshot).unmapped,openPrs:latest.snapshot});
       return JSON.stringify(withNotices) === JSON.stringify(existing) ? null : withNotices;
     });
   }

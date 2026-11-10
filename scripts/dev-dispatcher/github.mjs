@@ -357,7 +357,7 @@ export class GitHubFacts {
       ? 'approved' : /^(?:owner\s+)?hold\b/i.test(instructionText)
       ? 'hold' : /^(?:owner\s+)?go[ -]?live\b/i.test(instructionText)
       ? 'go_live' : instructionText ? 'comment' : null;
-    return { pr_number: pr.number, head_sha: sha, base_branch: pr.base.ref,
+    return { pr_number: pr.number,title:pr.title||'Untitled PR', head_sha: sha, base_branch: pr.base.ref,
       base_sha: pr.base.sha, main_sha:mainSha,
       base_merge_sha:comparison.merge_base_commit?.sha || null,
       base_current: comparison.behind_by === 0,

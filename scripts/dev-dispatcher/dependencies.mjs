@@ -11,15 +11,16 @@ export function adoptAdhocPullRequests(state, prs, queueIds = []) {
     if (used.has(pr.pr_number) || queue.has(pr.task_marker) ||
         (pr.branch || '').startsWith(settings.naming.branch_prefix)) continue;
     if (!pr.same_repo || pr.bot_author) continue;
-    if (!pr.chat_marker) { skipped.push(pr.pr_number); continue; }
+    const chat=next.branch_chat_links?.[pr.branch]?.conversation_url||pr.chat_marker;
+    if (!chat) { skipped.push(pr.pr_number); continue; }
     const id = 'ADHOC-' + pr.pr_number;
     const prev = next.tasks[id];
     if (prev && prev.pr_number !== pr.pr_number) continue;
     next.tasks[id] = {
       ...prev, task_id:id, pr_number:pr.pr_number, branch:pr.branch,
       base_branch:pr.base_branch, agent:'chatgpt', approved:true,
-      adhoc:true, conversation_ref:pr.chat_marker,
-      approval_hash:createHash('sha256').update(settings.naming.task_prefix+':adhoc:' + pr.pr_number + ':' + pr.chat_marker).digest('hex'),
+      adhoc:true, conversation_ref:chat,
+      approval_hash:createHash('sha256').update(settings.naming.task_prefix+':adhoc:' + pr.pr_number + ':' + chat).digest('hex'),
       prompt_version:'v2', prerequisite_pr:null,
       status:pr.draft ? 'draft_open':'review_fixing'
     };
@@ -43,6 +44,14 @@ export function linkPullRequests(state, prs) {
     if(rec.pr_number && rec.pr_number!==pr.pr_number) throw new Error('PR changed');
     rec.pr_number=pr.pr_number;
     rec.branch=pr.branch;
+    const linked=next.branch_chat_links?.[pr.branch];
+    if(linked?.conversation_url && (!rec.conversation_ref||rec.conversation_ref!==linked.conversation_url))
+      rec.conversation_ref=rec.conversation_url=linked.conversation_url;
+    if(rec.conversation_ref){
+      next.pr_chat_links||={};
+      next.pr_chat_links[String(pr.pr_number)]={task_id:id,branch:pr.branch,
+        conversation_url:rec.conversation_ref,head_sha:pr.head_sha,updated_at:linked?.updated_at||new Date().toISOString()};
+    }
     rec.base_branch=pr.base_branch;
     rec.status=pr.draft?'draft_open':'review_fixing';
   }

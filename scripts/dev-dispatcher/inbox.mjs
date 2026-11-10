@@ -44,8 +44,8 @@ export async function inspectReceipts({ ledger, allowedActors }) {
       }
       const identity=receipt?.kind==='owner_notice'
         ? 'owner:'+receipt.notice_id+':'+receipt.notice_hash
-        : receipt?.kind==='owner_reply'
-        ? 'owner_reply:'+receipt.event_id+':'+JSON.stringify(receipt.target)+':'+sha(receipt.text||'')
+        : ['owner_reply','owner_instruction'].includes(receipt?.kind)
+        ? receipt.kind+':'+receipt.event_id+':'+JSON.stringify(receipt.target)+':'+sha(receipt.text||'')
         : receipt?.action_id+':'+receipt?.prompt_hash;
       if(sha(identity)+'.json'!==entry.name){
         rejected.push({file:entry.name,code:'invalid_receipt_identity'});continue;
@@ -81,8 +81,31 @@ export function applyReceipts(state, inbox, actorMap) {
     const courier = actorMap[actor];
     if (!courier) continue;
     // Historical receipts stay in the inbox; never replay or revive cancelled actions.
+    if(receipt.kind==='owner_instruction'){
+      if(courier!=='muse'||!receipt.target||typeof receipt.text!=='string'||
+        !/^[a-zA-Z0-9_-]{1,100}$/.test(receipt.event_id||''))throw Error('Unverified owner instruction');
+      next=structuredClone(next);next.owner_instruction_events||={};
+      next.owner_instruction_events[receipt.event_id]??={target:receipt.target,
+        text:receipt.text.slice(0,400),courier:'muse',at:receipt.submitted_at||new Date().toISOString()};
+      // Only a chat URL registration is automated; arbitrary instructions are never executed.
+      const url=receipt.chat_url||receipt.text.trim();
+      if(validConversationUrl('chatgpt',url)&&typeof receipt.target.branch==='string'&&
+        /^[a-zA-Z0-9_./-]{1,160}$/.test(receipt.target.branch)){
+        next.branch_chat_links||={};
+        next.branch_chat_links[receipt.target.branch]={branch:receipt.target.branch,
+          conversation_url:url,updated_at:receipt.submitted_at||new Date().toISOString(),source:'verified_muse'};
+      }
+      continue;
+    }
     if (receipt.kind === 'owner_reply') {
-      next = acceptMuseOwnerReply(next,receipt,{authenticatedCourier:courier});
+      if(validConversationUrl('chatgpt',receipt.text?.trim())&&
+        (courier==='muse'||actor===settings.owner.login)&&receipt.target?.branch){
+        next=structuredClone(next);next.branch_chat_links||={};
+        next.branch_chat_links[receipt.target.branch]={branch:receipt.target.branch,
+          conversation_url:receipt.text.trim(),updated_at:receipt.submitted_at||new Date().toISOString(),source:'owner_or_muse'};
+      }else{
+        next = acceptMuseOwnerReply(next,receipt,{authenticatedCourier:courier});
+      }
       continue;
     }
     if (receipt.kind === 'owner_notice') {
