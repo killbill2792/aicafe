@@ -5,7 +5,7 @@ export const promptHash = prompt => createHash('sha256').update(prompt).digest('
 // Generated ONLY on trusted main by the existing deterministic dispatcher.
 const PROVIDERS = new Set(['chatgpt', 'claude']);
 const ACTIONS = new Set(['assign', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder',
-  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'idle_continue', 'plan', 'brainstorm']);
+  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'dependency_proven', 'idle_continue', 'plan', 'brainstorm']);
 const REPO = 'https://github.com/killbill2792/aicafe';
 
 // POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING is mandatory and remains
@@ -93,6 +93,9 @@ export function createDelivery({ task, record, action, actionId }) {
       '. Rebase onto main and continue in this SAME child PR/chat. Dispatcher already retargeted to main ' +
       'and attempted update-branch: verify the updated head first, do not duplicate a successful update, ' +
       'and resolve conflicts if required. Rerun CI/acceptance; Codex once on the final green ready head.',
+    dependency_proven:'dependency_proven: Verified merged-main integration proof for ' +
+      String(record.dependency_proven_text || 'one or more prerequisites') +
+      '. Continue this SAME PR/chat; verify newly available dependencies and rerun your exact-head tests.',
     owner_answered:'owner_answered: Authenticated GitHub owner answer: ' +
       String(record.owner_answer_text || 'Read PR decision').replace(/\s+/g,' ').slice(0,240) +
       '\nApply only within signed edits; reconcile the original PR comment ID and tests.',
@@ -124,9 +127,25 @@ export function createDelivery({ task, record, action, actionId }) {
       ' Use acceptance tests from signed queue; include exact execution links, ' +
       'PR comment dispositions and <!-- aicafe-coder-done --> only when actually complete.'
     : reason[action];
+  const isPr = Number.isInteger(record.pr_number);
+  const checklist = isPr ? [
+    'ONE combined PR checklist; answer with ONE authenticated delivery receipt:',
+    'CI: ' + (record.ci_state || 'unknown') +
+      (record.ci_failure_job ? ' (' + record.ci_failure_job + ')' : '') +
+      '; verify checks on current head ' + (record.head_sha || 'unknown'),
+    'Codex: ' + (record.codex_state || 'unknown') +
+      '; exact-head receipt ' + (record.codex_reviewed_sha || 'none') +
+      '; resolve outstanding review threads without using old-head findings as current state',
+    'Owner decision: ' + (record.github_owner_question || record.owner_question || 'none') +
+      '; acceptance: ' + (record.acceptance_proven === true ? 'proven' : 'not yet proven') +
+      '; coder done: ' + (record.coder_done === true ? 'yes' : 'no'),
+    ...(record.dependency_proven_text ? ['Proven dependencies: ' + record.dependency_proven_text] : []),
+    'Do all applicable fixes together; keep this same PR/chat and do not open competing prompts.'
+  ] : [];
   const lines = [
     'AI CAFE ' + action + ' | task ' + task.id + ' | PR ' + pr,
     step,
+    ...checklist,
     'Edits ONLY: ' + scope + '. Uses READ-ONLY: ' +
       (uses.length ? (uses.length > 4 ? 'see queue uses (' + uses.length + ')' : uses.join(', ')) : 'none') + '.',
     stacked && !isNew && action !== 'parent_merged' ?
