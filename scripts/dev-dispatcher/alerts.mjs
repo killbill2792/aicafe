@@ -1,24 +1,74 @@
 // Durable owner-attention notices in the SAME private dispatcher ledger.
 // Muse delivers these later; GitHub never sends owner messages directly.
 import {createHash} from 'node:crypto';
-import {architectureFoundationReady} from './core.mjs';
+import {architectureFoundationReady,approved} from './core.mjs';
+import {approvalSignature} from './delivery.mjs';
 import {validConversationUrl} from './delivery.mjs';
 const sha=s=>createHash('sha256').update(s).digest('hex');
 export function noticeHash({kind,task_id,pr_number,question,source_sha}){
  const identity=[kind,task_id||null,pr_number||null,question];
  // Version-bound owner review: an edited/newly merged architecture is a NEW notice.
- if(kind==='architecture_approval')identity.push(source_sha||null);
+ if(['architecture_approval','next_task_start'].includes(kind))identity.push(source_sha||null);
+ if(kind==='next_task_start')return sha(JSON.stringify([kind,task_id,source_sha]));
  return sha(JSON.stringify(identity));
+}
+// Prior priority deferral never suppresses a newly eligible owner's start ask.
+export function startTaskReady(task,state,queue){
+ const rec=state.tasks?.[task?.id],gate=queue?.dispatch_rules?.priority_gate_task;
+ if(!rec||!approved(task)||rec.pr_number||rec.conversation_ref||
+    ['assigned','draft_open','review_fixing'].includes(rec.status)||
+    !(rec.approved===false||rec.status==='blocked_needs_owner'||rec.priority_deferred)||
+    (gate&&!['integrated_proven','released_proven'].includes(state.tasks?.[gate]?.status)))
+   return false;
+ return (task.depends_on||[]).every(id=>{
+   const dep=state.tasks?.[id];
+   if(['integrated_proven','released_proven'].includes(dep?.status))return true;
+   const plan=queue.tasks.find(t=>t.id===id);
+   return dep?.status==='merged'&&dep.github_state==='merged'&&
+     /^[a-f0-9]{40}$/.test(dep.merge_sha||'')&&
+     (dep.proof_required===false||plan?.test_kinds?.includes('read_only_audit'));
+ });
+}
+export function applyOwnerStartApprovals(state,queue){
+ const next=structuredClone(state);
+ for(const task of queue.tasks){
+  if(!startTaskReady(task,next,queue))continue;
+  const hash=approvalSignature(task),id='notice:'+noticeHash({
+    kind:'next_task_start',task_id:task.id,source_sha:hash});
+  const notice=next.owner_alerts?.[id];
+  if(notice?.status!=='submitted'||notice.source_sha!==hash)continue;
+  if(!Object.values(next.tasks[task.id].owner_reply_events||{}).some(event=>
+    event.courier==='muse'&&event.target?.notice_id===id&&
+    /^yes(?: to start)?[.!]?$/i.test(event.text)))continue;
+  Object.assign(next.tasks[task.id],{approved:true,status:'proposed',
+    priority_deferred:false,approval_hash:hash,approval_signature_version:3});
+ }
+ return next;
 }
 export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date().toISOString()}={}){
  const next=structuredClone(state);
  next.owner_alerts ||= {};
+ const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start']);
+ const route=entry=>{
+  entry.recipient=ownerKinds.has(entry.kind)?'owner':'referee';
+  if(entry.recipient==='owner'){
+   entry.target_url=entry.pr_number
+    ?'https://github.com/killbill2792/aicafe/pull/'+entry.pr_number
+    :'https://github.com/killbill2792/aicafe/blob/main/docs/plans/universal-supervisor-queue.json';
+   entry.owner_message=(entry.target_url+' — '+entry.question).slice(0,1200);
+  }
+  return entry;
+ };
+ // Preserve historical notice identity and submitted status. Do not re-send.
+ for(const notice of Object.values(next.owner_alerts))route(notice);
  const add=(kind,task_id,pr_number,question,source_sha=null)=>{
   if(typeof question!=='string'||!question.trim()||question.length>1200)return;
   if(pr_number!=null&&(!Number.isInteger(pr_number)||pr_number<1))return;
   const entry={kind,task_id:task_id||null,pr_number:pr_number||null,
-   question:question.trim(),delivery_owner:'muse',status:'planned',created_at:now};
-  if(kind==='architecture_approval')entry.source_sha=source_sha;
+   question:question.trim(),recipient:ownerKinds.has(kind)?'owner':'referee',
+   delivery_owner:'muse',status:'planned',created_at:now};
+  if(['architecture_approval','next_task_start'].includes(kind))entry.source_sha=source_sha;
+  route(entry);
   entry.notice_hash=noticeHash(entry);
   const key='notice:'+entry.notice_hash;
   const prior=next.owner_alerts[key];
@@ -61,6 +111,31 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
    for(const prior of previous)
      if(prior.status==='planned') prior.status='cancelled_no_longer_needed';
   }
+  const base='https://github.com/killbill2792/aicafe';
+  const target=Number.isInteger(rec.pr_number)
+    ? base+'/pull/'+rec.pr_number
+    : base+'/blob/main/docs/plans/universal-supervisor-queue.json';
+  if(rec.sensitive_owner_block===true || rec.owner_directive==='go_live' ||
+      rec.owner_directive==='hold')
+    add(rec.owner_directive==='go_live'?'go_live':'owner_sensitive_hold',
+      id,rec.pr_number,'Owner decision for '+id+': '+target+
+      ' — '+(rec.owner_directive==='go_live'?'Go-live instruction requires owner authorization':
+        rec.owner_directive==='hold'?'Owner requested hold':
+        'Paid/live/prod/secret scope requires owner approval'));
+  const task=queue?.tasks?.find(t=>t.id===id);
+  const ready=task&&startTaskReady(task,next,queue);
+  if(ready)add('next_task_start',id,rec.pr_number,
+    id+' / '+(task.title||id)+' is ready to start: '+
+    String(task.goal||'Begin approved work').replace(/\s+/g,' ').slice(0,180)+
+    '. Reply yes to start.',approvalSignature(task));
+  if(rec.status==='blocked_needs_owner' && rec.approved===false &&
+     !rec.priority_deferred && (!task || rec.pr_number))
+    add('approval_hash',id,rec.pr_number,
+      'Owner approval needed for '+id+': '+target+' — signed goal/scope/acceptance differs');
+  for(const notice of Object.values(next.owner_alerts))
+    if(notice.kind==='next_task_start'&&notice.task_id===id&&
+       notice.status==='planned'&&(!ready||notice.source_sha!==approvalSignature(task)))
+      notice.status='cancelled_no_longer_needed';
   if(rec.agent==='claude'&&rec.blocker?.confirmed===true &&
      ['usage_limit','confirmed_blocker'].includes(rec.blocker.kind))
    add('claude_blocker',id,rec.pr_number,

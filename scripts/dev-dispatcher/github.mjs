@@ -1,6 +1,25 @@
 import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
+export async function githubFailure(response,kind='GitHub',token=''){
+ let message='unavailable';
+ try{message=String((await response.json())?.message||message).replace(/\s+/g,' ').slice(0,250);}catch{}
+ const h=k=>response.headers?.get?.(k)||'unavailable';
+ const detail=kind+' request failed: status='+response.status+' message='+message+
+  ' x-github-request-id='+h('x-github-request-id')+
+  ' x-ratelimit-limit='+h('x-ratelimit-limit')+
+  ' x-ratelimit-remaining='+h('x-ratelimit-remaining')+
+  ' x-ratelimit-reset='+h('x-ratelimit-reset')+
+  ' retry-after='+h('retry-after');
+ const safe=token?detail.split(token).join('[REDACTED]'):detail;
+ console.error(safe);return new Error(safe);
+}
+export function githubNetworkFailure(kind){
+ const detail=kind+' request failed: status=network message=transport_error'+
+  ' x-github-request-id=unavailable x-ratelimit-limit=unavailable'+
+  ' x-ratelimit-remaining=unavailable x-ratelimit-reset=unavailable';
+ console.error(detail);return new Error(detail);
+}
 export function parseTaskMarker(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;
   const marks = [...body.matchAll(/<!-- aicafe-task-id\s+([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\s*-->/g)];
@@ -107,8 +126,8 @@ export class GitHubFacts {
     const response = await this.fetchFn(url.startsWith("https:") ? url : `https://api.github.com/repos/${this.repo}${url}`, {
       ...options, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
         "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
-    });
-    if (!response.ok) throw new Error(`GitHub request failed: ${response.status}`);
+    }).catch(()=>{throw githubNetworkFailure('GitHub');});
+    if (!response.ok) throw await githubFailure(response,'GitHub',this.token);
     if (response.status === 204) return { ok:true };
     return response.json();
   }
@@ -145,8 +164,8 @@ export class GitHubFacts {
         Authorization:'Bearer ' + this.token,
         Accept:'application/vnd.github+json',
         'X-GitHub-Api-Version':'2022-11-28'
-      }});
-    if (!response.ok) throw new Error('Proof artifact download failed: ' + response.status);
+      }}).catch(()=>{throw githubNetworkFailure('Proof artifact');});
+    if (!response.ok) throw await githubFailure(response,'Proof artifact',this.token);
     return decodeAcceptanceArchive(Buffer.from(await response.arrayBuffer()), filename);
   }
   async acceptanceProof(runId) {
@@ -255,14 +274,14 @@ export class GitHubFacts {
       body:JSON.stringify({query,variables:{owner,name,number}})});
     const threads=result.data?.repository?.pullRequest?.reviewThreads;
     if(result.errors?.length || !threads || threads.pageInfo.hasNextPage)
-      return [];
-    return threads.nodes.filter(t=>!t.isResolved).slice(0,4).map(t=>{
+       throw new Error('Unresolved review threads could not be enumerated');
+    return threads.nodes.filter(t=>!t.isResolved).slice(0,8).map(t=>{
       const comment=t.comments?.nodes?.[0];
       return {body:String(comment?.body || 'Unresolved review thread')
         .replace(/\s+/g,' ').slice(0,160),url:comment?.url || null};
     });
   }
-  async one(pr) {
+  async one(pr, mainSha = pr.base.sha) {
     const sha = pr.head.sha;
     // List-PR responses may omit GitHub's computed mergeability. Resolve the
     // detail on the same head rather than treating a missing field as proof.
@@ -275,7 +294,7 @@ export class GitHubFacts {
       this.request(`/pulls/${pr.number}/reviews?per_page=100`),
       this.unresolved(pr.number),
       this.request(`/commits/${sha}`),
-      this.request(`/compare/${encodeURIComponent(pr.base.sha)}...${encodeURIComponent(sha)}`),
+      this.request(`/compare/${encodeURIComponent(mainSha)}...${encodeURIComponent(sha)}`),
       this.request(`/issues/${pr.number}/comments?per_page=100`),
     ]);
     if (!Array.isArray(comments) || comments.length >= 100)
@@ -312,12 +331,20 @@ export class GitHubFacts {
     // Historical unresolved threads remain an independent merge gate, but do
     // not override the newest authenticated Codex receipt for this head.
     const codexState = latestState;
-    const unresolvedComments = codexState === 'findings'
+    const unresolvedComments = unresolved > 0
       ? await this.unresolvedComments(pr.number).catch(()=>[]) : [];
-    const trustedOwner = comments.filter(c=>c.author_association==='OWNER')
+    const ownerLogin = this.repo.split('/')[0];
+    const trustedOwner = comments.filter(c=>c.user?.login===ownerLogin)
       .sort((a,b)=>Date.parse(b.created_at||0)-Date.parse(a.created_at||0))[0];
+    const instructionText = String(trustedOwner?.body||'').trim();
+    const ownerDirective = /^(?:owner\s+)?(?:approved?|approve)\b/i.test(instructionText)
+      ? 'approved' : /^(?:owner\s+)?hold\b/i.test(instructionText)
+      ? 'hold' : /^(?:owner\s+)?go[ -]?live\b/i.test(instructionText)
+      ? 'go_live' : instructionText ? 'comment' : null;
     return { pr_number: pr.number, head_sha: sha, base_branch: pr.base.ref,
-      base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
+      base_sha: pr.base.sha, main_sha:mainSha,
+      base_merge_sha:comparison.merge_base_commit?.sha || null,
+      base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
       chat_marker: parseChatMarker(pr.body),
@@ -333,7 +360,12 @@ export class GitHubFacts {
         !/^(?:approved|owner-approved)/i.test(label.name || '')),
       mergeable,
       mergeable_state: pr.mergeable_state || null,
-      owner_approved: ownerDecision.approved === true,
+      owner_approved: ownerDecision.approved === true || ownerDirective === 'approved',
+      owner_directive: ownerDirective,
+      owner_directive_id: trustedOwner?.id || null,
+      owner_directive_url: trustedOwner?.html_url || null,
+      last_commit_actor: commit.author?.login || commit.committer?.login || null,
+      owner_direct_push: commit.author?.login === ownerLogin || commit.committer?.login === ownerLogin,
       github_owner_question_url: ownerDecision.url,
       coder_done: typeof pr.body === 'string' &&
         pr.body.includes('<!-- aicafe-coder-done -->'),
@@ -354,12 +386,12 @@ export class GitHubFacts {
       infrastructure_pr: isDispatcherMaintenanceChange(comparison.files),
       merged: false };
   }
-  async snapshot() {
+  async snapshot(mainSha = null) {
     const prs = await this.openPulls();
     // Read bounded batches to avoid hitting GitHub burst limits on busy public repositories.
     const output = [];
     for (let i = 0; i < prs.length; i += 4) {
-      output.push(...await Promise.all(prs.slice(i, i + 4).map(pr => this.one(pr))));
+      output.push(...await Promise.all(prs.slice(i, i + 4).map(pr => this.one(pr, mainSha || pr.base.sha))));
     }
     return output;
   }

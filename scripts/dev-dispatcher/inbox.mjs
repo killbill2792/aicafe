@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { acceptDeliveryReceipt } from './receipt.mjs';
 import { validConversationUrl } from './delivery.mjs';
 import { acceptOwnerNoticeReceipt } from './alerts.mjs';
+import { acceptMuseOwnerReply } from './self-heal.mjs';
 const sha = s => createHash('sha256').update(s).digest('hex');
 
 // The GitHub commit actor is the authentication boundary. A self-declared
@@ -42,6 +43,8 @@ export async function inspectReceipts({ ledger, allowedActors }) {
       }
       const identity=receipt?.kind==='owner_notice'
         ? 'owner:'+receipt.notice_id+':'+receipt.notice_hash
+        : receipt?.kind==='owner_reply'
+        ? 'owner_reply:'+receipt.event_id+':'+JSON.stringify(receipt.target)+':'+sha(receipt.text||'')
         : receipt?.action_id+':'+receipt?.prompt_hash;
       if(sha(identity)+'.json'!==entry.name){
         rejected.push({file:entry.name,code:'invalid_receipt_identity'});continue;
@@ -77,6 +80,10 @@ export function applyReceipts(state, inbox, actorMap) {
     const courier = actorMap[actor];
     if (!courier) continue;
     // Historical receipts stay in the inbox; never replay or revive cancelled actions.
+    if (receipt.kind === 'owner_reply') {
+      next = acceptMuseOwnerReply(next,receipt,{authenticatedCourier:courier});
+      continue;
+    }
     if (receipt.kind === 'owner_notice') {
       if (next.owner_alerts?.[receipt.notice_id]?.status !== 'planned') continue;
       next = acceptOwnerNoticeReceipt(next, receipt, { authenticatedCourier: courier });

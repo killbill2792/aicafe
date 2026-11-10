@@ -1,3 +1,4 @@
+import {githubFailure,githubNetworkFailure} from './github.mjs';
 // Durable dispatcher ledger in a SEPARATE PRIVATE GitHub repository.
 // GitHub Contents API gives compare-and-swap writes via blob SHA.
 const PATH = "dispatcher/state.json";
@@ -36,15 +37,17 @@ export class GitHubLedger {
       response = await this.fetchFn(`https://api.github.com/repos/${this.repo}${path}`, {
         ...options, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
           "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
-      });
+      }).catch(()=>{throw githubNetworkFailure('Ledger');});
       if (response.ok || !Number.isInteger(response.status) ||
           response.status < 500 || response.status > 599 || attempt === 2) break;
       await new Promise(resolve => setTimeout(resolve, 250 * (2 ** attempt)));
     }
     if (!response.ok) {
+      const error=await githubFailure(response,'Ledger',this.token);
+      error.message='Ledger HTTP '+response.status+'; '+error.message;
       if (response.status === 404 && (!options.method || options.method === "GET")) return { absent: true };
-      if ([409, 412, 422].includes(response.status)) throw Object.assign(new Error("Ledger write collision"), { code: "CONFLICT" });
-      throw new Error(`Ledger HTTP ${response.status}`);
+      if ([409, 412, 422].includes(response.status)) throw Object.assign(error, { code: "CONFLICT" });
+      throw error;
     }
     return response.json();
   }

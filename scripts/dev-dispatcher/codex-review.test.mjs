@@ -58,13 +58,13 @@ test('existing current-head dispatcher request is not duplicated',async()=>{
   assert.equal(github.posted.length,0);
 });
 
-test('green current head triggers Codex even for draft with no coder-done or acceptance',async()=>{
+test('draft waits for automatic Codex on ready; no manual request',async()=>{
   const github=fakeGithub({draft:true});
   const current={...rec(),draft:true,coder_done:false,acceptance_evidence:null};
   const outcome=await requestCodexReview({github,record:current,task,
     records:{parent:{status:'draft_open'}}});
-  assert.equal(outcome.status,'requested');
-  assert.equal(github.posted.length,1);
+  assert.equal(outcome.status,'held');
+  assert.equal(github.posted.length,0);
 });
 test('red check, older head receipt and sensitive owner hold do not trigger Codex',async()=>{
   for(const changes of [
@@ -100,4 +100,22 @@ test('live current-head in-progress Codex signal holds without posting',async()=
   const result=await requestCodexReview({github:gh,record:rec(),task});
   assert.equal(result.status,'held_live');
   assert.equal(gh.posted.length,0);
+});
+
+test('five-minute push and ready settle windows suppress duplicate requests',async()=>{
+ const gh=fakeGithub(),now=new Date().toISOString();
+ assert.equal((await requestCodexReview({github:gh,record:{...rec(),last_commit_at:now},task})).status,'held');
+ assert.equal((await requestCodexReview({github:gh,record:{...rec(),last_github_activity:now},task})).status,'held');
+ assert.equal((await requestCodexReview({github:gh,record:{...rec(),ready_transition_at:now},task})).status,'held');
+ gh.request=async(path)=>path==='/pulls/423'
+  ? {state:'open',draft:false,created_at:now,head:{sha:head},base:{sha:base}}
+  : Promise.reject(Error('Unexpected '+path));
+ assert.equal((await requestCodexReview({github:gh,record:rec(),task})).status,'automatic_review_grace');
+ assert.equal(gh.posted.length,0);
+});
+test('dispatcher-only owner-merge PR never requests Codex',async()=>{
+ const gh=fakeGithub();
+ assert.equal((await requestCodexReview({github:gh,record:{
+   ...rec(),adhoc:true,dispatcher_only:true},task:null})).status,'held');
+ assert.equal(gh.posted.length,0);
 });

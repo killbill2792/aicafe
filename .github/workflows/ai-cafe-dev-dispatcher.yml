@@ -35,7 +35,7 @@ on:
         required: false
         default: false
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited, labeled, unlabeled, closed]
     # Run deterministic PR-head tests only for dispatcher changes; privileged
     # reconciliation always checks out main, not untrusted PR code.
   # All credential-bearing events use code checked out from protected main.
@@ -70,11 +70,15 @@ jobs:
       (github.event_name != 'pull_request_review' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-                 github.event.review.author_association))) &&
+                 github.event.review.author_association) ||
+        github.event.review.user && github.event.review.user.login == 'chatgpt-codex-connector[bot]' ||
+        github.event.review.user && github.event.review.user.login == 'codex[bot]')) &&
       (github.event_name != 'issue_comment' ||
        (github.event.issue.pull_request &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-                 github.event.comment.author_association)) ||
+                 github.event.comment.author_association) ||
+        github.event.comment.user && github.event.comment.user.login == 'chatgpt-codex-connector[bot]' ||
+        github.event.comment.user && github.event.comment.user.login == 'codex[bot]') ||
        (!github.event.issue.pull_request &&
         github.event.issue.number == 411 &&
         github.event.comment.user.login == github.repository_owner))
@@ -99,8 +103,7 @@ jobs:
       github.event_name == 'issue_comment' ||
       github.event_name == 'check_suite' ||
       github.event_name == 'check_run' ||
-      github.event_name == 'pull_request_review' ||
-      github.event_name == 'pull_request'
+      github.event_name == 'pull_request_review'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -131,7 +134,7 @@ jobs:
           DISPATCH_TRANSIENT_CI_RETRY: ${{ vars.DISPATCH_TRANSIENT_CI_RETRY }}
           # Existing GitHub issue is the owner's public-safe live status surface.
           DISPATCH_OWNER_DASHBOARD_ISSUE: '411'
-          PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
+          PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
         run: |
           if [ "$PERSIST" = "true" ]; then
             node scripts/dev-dispatcher/run.mjs --commit
@@ -139,7 +142,7 @@ jobs:
             node scripts/dev-dispatcher/run.mjs
           fi
       - name: Publish opaque wake-up signal (only after private ledger persistence)
-        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
+        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}

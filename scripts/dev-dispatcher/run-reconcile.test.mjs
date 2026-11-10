@@ -23,9 +23,9 @@ const record = id => ({
 const initial = (tasks = {}, actions = {}) => ({
   version: 1, tasks, actions, owner_alerts: { notice: { status: 'planned' } }
 });
-function harness({ assignments = [], proposals = {}, fail = [], receipts = [] } = {}) {
+function harness({ assignments = [], proposals = {}, fail = [], receipts = [], frontier = null, startApproval = state => state } = {}) {
   const errors = [];
-  const taskById = new Map(['bad', 'good', 'POS0b', 'POS0c', 'POS0d', 'POS0e']
+  const taskById = new Map(['bad', 'good', 'POS0b', 'POS0c', 'POS0d', 'POS0e', '6']
     .map(id => [id, task(id)]));
   const deps = {
     queue: { tasks: [...taskById.values()] }, taskById,
@@ -41,10 +41,11 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [] } 
     },
     reconcileReceiptFeedback: state => state,
     queueOwnerAlerts: state => state,
+    applyOwnerStartApprovals: startApproval,
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},
     wakeReceiptFeedback: () => {},
-    dispatchFrontier: () => assignments,
+    dispatchFrontier: (_queue, records) => frontier ? frontier(records) : assignments,
     assignmentActionKey: (_state, id) => 'assign:' + id,
     approvalSignature: () => 'signed',
     approvalMatches: (_task, signed) => signed === 'signed',
@@ -116,4 +117,81 @@ test('one live pending checklist per PR even if two task records reference it',(
   const planned=Object.values(result.state.actions).filter(a=>a.status==='planned');
   assert.equal(planned.length,1);
   assert.equal(planned[0].task_id,'bad');
+});
+
+
+test('current-head Codex finding keeps its planned coder prompt until a real push or receipt',()=>{
+  const current='f'.repeat(40);
+  const actionKey='work:POS0f:'+current+':codex_comments:review-1';
+  const prior=initial({POS0f:{...record('POS0f'),pr_number:422,
+    codex_state:'findings',head_sha:current,submission_state:'idle'}},{
+    [actionKey]:{task_id:'POS0f',type:'codex_comments',
+      head_sha:current,status:'planned',
+      delivery:{action_id:actionKey,conversation_url:'https://chatgpt.com/c/test-123'}}
+  });
+  const run=harness({proposals:{POS0f:{kind:'hold',reason:'already_delivered_for_state'}}}).run;
+  const next=run(prior).state;
+  assert.equal(next.actions[actionKey].status,'planned');
+  assert.equal(Object.values(next.actions).filter(a=>a.status==='planned').length,1);
+});
+test('merged PR chat index is retained and newest courier URL repairs stale task link',()=>{
+  const newUrl='https://chatgpt.com/c/verified-new';
+  const state=initial({POS0d:{...record('POS0d'),pr_number:407,
+    github_state:'merged',last_submission_at:'2026-11-10T11:00:00Z'}});
+  state.pr_chat_links={407:{task_id:'POS0d',conversation_url:newUrl,
+    updated_at:'2026-11-10T19:00:00Z',head_sha:'f'.repeat(40)}};
+  const out=harness().run(state).state;
+  assert.equal(out.tasks.POS0d.conversation_ref,newUrl);
+  assert.equal(out.tasks.POS0d.conversation_url,newUrl);
+  assert.equal(out.pr_chat_links[407].conversation_url,newUrl);
+});
+
+
+test('failed replacement Codex delivery cannot cancel current planned findings prompt',()=>{
+ const prev='old:review-1',next='work:bad:new-review';
+ const h=harness({proposals:{bad:{kind:'propose',action:'codex_comments',key:next}},fail:['bad']});
+ const rec={...record('bad'),head_sha:'f'.repeat(40),codex_state:'findings',
+  submission_state:'idle'};
+ const state=initial({bad:rec},{[prev]:{task_id:'bad',type:'codex_comments',
+  status:'planned',head_sha:rec.head_sha,delivery:{action_id:prev}}});
+ const out=h.run(state).state;
+ assert.equal(out.actions[prev].status,'planned');
+ assert.equal(out.actions[next],undefined);
+ assert.match(h.errors.join('\n'),/delivery creation failed/);
+});
+test('successful replacement Codex delivery supersedes old planned prompt atomically',()=>{
+ const prev='old:review-1',next='work:bad:new-review';
+ const h=harness({proposals:{bad:{kind:'propose',action:'codex_comments',key:next}}});
+ const rec={...record('bad'),head_sha:'f'.repeat(40),codex_state:'findings',
+  submission_state:'idle'};
+ const state=initial({bad:rec},{[prev]:{task_id:'bad',type:'codex_comments',
+  status:'planned',head_sha:rec.head_sha,delivery:{action_id:prev}}});
+ const out=h.run(state).state;
+ assert.equal(out.actions[prev].status,'cancelled_state_changed');
+ assert.equal(out.actions[next].status,'planned');
+ assert.equal(Object.values(out.actions).filter(x=>x.status==='planned').length,1);
+});
+
+
+test('Task 6 held approval never silently assigns after priority clearance',()=>{
+ const current={task_id:'6',status:'blocked_needs_owner',agent:'chatgpt',
+  approved:false,priority_deferred:true,approval_hash:'old-annotation-signature'};
+ const out=harness({frontier:records=>records['6']?.approved?
+  [{task_id:'6',agent:'chatgpt',base_branch:'main'}]:[]}).run(initial({'6':current}));
+ assert.equal(out.state.actions['assign:6'],undefined);
+ assert.equal(out.state.tasks['6'].approved,false);
+});
+test('hash-bound Muse yes resumes the same-tick frontier with one assignment',async()=>{
+ const {applyOwnerStartApprovals,noticeHash}=await import('./alerts.mjs');
+ const {approvalSignature}=await import('./delivery.mjs');
+ const plan=task('6'),hash=approvalSignature(plan),key='notice:'+noticeHash({kind:'next_task_start',task_id:'6',source_sha:hash});
+ const tasks={'6':{task_id:'6',approved:false,status:'blocked_needs_owner',priority_deferred:true,
+  owner_reply_events:{yes:{courier:'muse',text:'yes',target:{notice_id:key}}}}};
+ const s=initial(tasks);s.owner_alerts={[key]:{kind:'next_task_start',status:'submitted',source_sha:hash}};
+ const h=harness({startApproval:applyOwnerStartApprovals,
+  frontier:records=>records['6']?.approved&&records['6'].status==='proposed'
+   ?[{task_id:'6',agent:'chatgpt',base_branch:'main'}]:[]});
+ const out=h.run(s).state;assert.equal(out.tasks['6'].status,'assigned');
+ assert.equal(out.actions['assign:6'].status,'planned');
+ assert.equal(out.actions['assign:6'].delivery_owner,'muse');
 });
