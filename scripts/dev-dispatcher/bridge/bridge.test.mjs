@@ -8,6 +8,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
+import { createDelivery, approvalSignature } from '../delivery.mjs';
+import { signalFor } from '../signal.mjs';
 import { validateHandoff, pendingActions, agentInstruction, fetchLedger,
   reserveReceipt, runOnce, invokeOpenClaw, taskHoldFile } from './bridge.mjs';
 
@@ -197,3 +199,38 @@ test('parent_merged continuation remains eligible after child head moves, but ne
   assert.equal(validateHandoff({...item,delivery:{...item.delivery,base_branch:'feat/parent'}},live),false);
 });
 
+
+
+test('v2 dispatcher nudges pass bridge and opaque wake-up signal without changing receipt identity',()=>{
+  const task={id:'6',title:'Continuation',goal:'finish authorized work',
+    state:'ready',architecture_approval:{approved:true},exclusive_files:['scripts/owned.mjs'],
+    brief:'docs/plans/universal-supervisor-task-briefs.md#task-6'};
+  const signature=approvalSignature(task), url='https://chatgpt.com/c/abc-123';
+  const head='a'.repeat(40), merged='b'.repeat(40);
+  const current={task_id:'6',approved:true,agent:'chatgpt',approval_hash:signature,
+    conversation_ref:url,pr_number:390,github_state:'open',head_sha:head,base_branch:'main',
+    parent_merged_sha:merged,branch_maintenance_merge_sha:merged,last_parent_rebase_sha:merged};
+  for(const type of ['codex_comments','ci_failed','parent_merged','owner_answered','idle_continue']){
+    const key=type==='parent_merged'?'parent_merged:6:'+merged:'nudge:'+type;
+    const d=createDelivery({task,record:current,action:type,actionId:key});
+    const pending={key,task_id:'6',type,status:'planned',delivery_owner:'muse',
+      head_sha:type==='parent_merged'?null:head,delivery:d};
+    const ledger={version:1,tasks:{'6':current},actions:{[key]:(({key,...a})=>a)(pending)}};
+    assert.equal(validateHandoff(pending,current),true,type);
+    assert.deepEqual(pendingActions(ledger).map(a=>a.key),[key],type);
+    assert.equal(signalFor(ledger,'secret'.repeat(8)).pending_count,1,type);
+    assert.equal(d.prompt_hash,createHash('sha256').update(d.prompt).digest('hex'));
+    if(type==='parent_merged'){
+      assert.equal(validateHandoff(pending,{...current,head_sha:'c'.repeat(40)}),true,
+        'verified parent-merge action is head-independent');
+      assert.equal(validateHandoff(pending,{...current,branch_maintenance_merge_sha:'c'.repeat(40)}),false);
+      assert.equal(validateHandoff(pending,{...current,base_branch:'feat/parent'}),false);
+      assert.equal(validateHandoff({...pending,head_sha:head},current),false);
+    }else{
+      assert.equal(validateHandoff(pending,{...current,head_sha:'c'.repeat(40)}),false,
+        type+' must remain exact-head');
+    }
+  }
+  const unknown={...action,type:'unapproved_action'};
+  assert.equal(validateHandoff(unknown,record),false);
+});
