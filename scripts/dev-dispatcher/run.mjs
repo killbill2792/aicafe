@@ -179,16 +179,16 @@ async function main() {
           !Array.isArray(submitted) || submitted.length !== expected.length) continue;
       // Token-initiated squash merges require an explicit workflow_dispatch;
       // manual merges use push. Only an executed proof on exact merged SHA counts.
-      const runs = await gh.request('/actions/workflows/ai-cafe-integration-proof.yml/runs?branch=main&per_page=100');
-      if (runs.total_count > 100) continue; // never silently ignore pagination
-      for (const run of runs.workflow_runs || []) {
+      // Proof runs may fall beyond GitHub's first page during parallel merges.
+      // Exhaust the bounded workflow history instead of leaving tasks unproven.
+      const runs = await gh.workflowRuns('ai-cafe-integration-proof.yml', 'branch=main');
+      for (const run of runs) {
         if (run.name !== 'AI CAFE Integration Proof' || run.head_branch !== 'main' ||
             !['push','workflow_dispatch'].includes(run.event) ||
             run.status !== 'completed' || run.conclusion !== 'success' ||
             (run.event === 'push' && run.head_sha !== rec.merge_sha)) continue;
-        const jobs = await gh.request(`/actions/runs/${run.id}/jobs?per_page=100`);
-        if (jobs.total_count > 100) continue;
-        const job = jobs.jobs?.find(j => j.name === 'Required merged-main integration checks' &&
+        const jobs = await gh.workflowJobs(run.id);
+        const job = jobs.find(j => j.name === 'Required merged-main integration checks' &&
           j.status === 'completed' && j.conclusion === 'success');
         if (!job || !required.every(name => job.steps?.some(step => step.name === name &&
           step.status === 'completed' && step.conclusion === 'success'))) continue;
