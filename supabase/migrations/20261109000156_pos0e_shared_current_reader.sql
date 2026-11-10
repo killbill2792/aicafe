@@ -50,16 +50,16 @@ current_nonorders as not materialized (
  where r.entity not in ('order','check','payment','item','modifier',
   'item_discount','check_discount','service_charge')
   and jsonb_typeof(r.payload)='object'
-  -- Stage-table triggers also fire when Test Café copies source data. A staged
-  -- object is eligible for an operational answer ONLY when its café+restaurant
-  -- mapping was verified by Toast. The mirror resets verified_at to NULL
-  -- intentionally: those staged rows are fixtures, never provider authority.
-  -- Direct current-object archives and order projections retain their existing
-  -- identity/date logic; a disconnected real café retains historical records.
+  -- Stage triggers also capture mirrored/test rows. A staged object needs a
+  -- durable authenticated restaurant-info GET for the same café and Toast
+  -- restaurant, not the transient verified_at flag. Credential re-save or
+  -- failed re-verification clears verified_at but NOT info_refreshed_at.
+  -- The mirror lacks provider-identity evidence and remains excluded. Direct
+  -- current-object archives and order projections are unchanged.
   and (r.capture_key not like 'stage:%' or exists (
    select 1 from public.toast_location_mappings m
    where m.business_id=r.business_id and m.restaurant_guid=r.restaurant_guid
-    and m.verified_at is not null))
+    and m.info_refreshed_at is not null))
   and (p_business_id is null or r.business_id=p_business_id)
   and (p_from is null or r.business_date is null or r.business_date>=p_from)
   and (p_to is null or r.business_date is null or r.business_date<=p_to)
@@ -226,9 +226,11 @@ returns jsonb language sql stable security invoker set search_path=public as $fi
     select key,value from jsonb_each(case when jsonb_typeof(w.v)='object'
      then w.v else '{}'::jsonb end)
     union all
-    select '0',element.value from jsonb_array_elements(
-     case when jsonb_typeof(w.v)='array' then w.v else '[]'::jsonb end
-    ) element(value)
+    -- A discovered index must match ai_query_view's literal data #> traversal.
+     -- Named-path grammar supports indices 0 through 999.
+     select (element.n-1)::text,element.value from jsonb_array_elements(
+      case when jsonb_typeof(w.v)='array' then w.v else '[]'::jsonb end
+     ) with ordinality as element(value,n) where element.n<=1000
    ) e
   where w.depth<16
  ),
