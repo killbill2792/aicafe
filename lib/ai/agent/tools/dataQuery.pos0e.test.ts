@@ -4,6 +4,8 @@ vi.mock("@/lib/data/toastDayTrust.server",()=>({
  readToastDayTrust:vi.fn(async()=>({blocked:new Set(),quality:[],notes:[]}))
 }));
 import {dataQueryTools,officialToastFields} from "./dataQuery";
+import {runAgentTurn,type AgentProvider} from "../loop.server";
+import type {AgentToolContext} from "./index";
 import {toastOfficialFieldCatalog} from "@/lib/data/canonical/dictionary";
 
 const cafeA="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -13,6 +15,27 @@ const query={view:"cv_toast_records",columns:null,filters:[
  {column:"record_type",op:"=",value:"cashmgmt/v1/entries"}],
  group_by:["data.type"],metrics:[{fn:"sum",column:"data.amount"}],
  ...range,order_by:null,limit:20};
+
+it("builds the complete registered one-Supervisor tool request before any paid provider call",async()=>{
+ let seen=0;
+ const fake:AgentProvider=async function*(params){
+  seen++;
+  const encoded=JSON.stringify(params);
+  expect(encoded.length).toBeLessThan(3_000_000);
+  const names=(params.tools as Array<{name:string}>).map(tool=>tool.name);
+  expect(names).toContain("query_data");
+  expect(names).toContain("describe_data");
+  expect(names.length).toBeGreaterThan(2);
+  yield {type:"response.output_text.delta",delta:"Registered tool request built."};
+  yield {type:"response.completed",response:{status:"completed",output:[],
+   usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const ctx={asOf:"2026-11-09",timezone:"America/Los_Angeles",
+  locale:"en",tools:{}} as unknown as AgentToolContext;
+ await runAgentTurn({context:ctx,provider:fake,
+  ownerText:"Verify the registered tool request can be constructed."});
+ expect(seen).toBe(1);
+});
 
 describe("POS0e retained current-source dictionary and shared reader",()=>{
  it("describes the correct Toast menu-item GUID lookup without confusing evidence refs",async()=>{
