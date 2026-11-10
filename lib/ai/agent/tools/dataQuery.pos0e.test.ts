@@ -1,5 +1,10 @@
 import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
+const rosterClient=vi.hoisted(()=>({request:vi.fn()}));
+vi.mock("@/lib/pos/toast/client",async importOriginal=>{
+ const source=await importOriginal<typeof import("@/lib/pos/toast/client")>();
+ return {...source,createToastClient:()=>rosterClient};
+});
 vi.mock("@/lib/data/toastDayTrust.server",()=>({
  readToastDayTrust:vi.fn(async()=>({blocked:new Set(),quality:[],notes:[]}))
 }));
@@ -7,6 +12,7 @@ import {dataQueryTools,officialToastFields} from "./dataQuery";
 import {runAgentTurn,type AgentProvider} from "../loop.server";
 import {agentToolDefinitions,type AgentToolContext} from "./index";
 import {toastOfficialFieldCatalog} from "@/lib/data/canonical/dictionary";
+import {createToastAdapter} from "@/lib/pos/toast/adapter";
 
 const cafeA="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const cafeB="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -35,6 +41,21 @@ it("builds the complete registered one-Supervisor tool request before any paid p
  await runAgentTurn({context:ctx,provider:fake,
   ownerText:"Verify the registered tool request can be constructed."});
  expect(seen).toBe(1);
+});
+
+it("uses the actual Toast roster adapter's retained full-name projection",async()=>{
+ const guid="d1d1d1d1-1111-4111-8111-111111111111";
+ rosterClient.request.mockResolvedValueOnce([{guid,firstName:"Nadia",
+  lastName:"Rao",chosenName:null,deleted:false}]);
+ const adapter=createToastAdapter({db:{} as never,businessId:cafeA,
+  restaurantGuid:"e1e1e1e1-1111-4111-8111-111111111111"});
+ const facts=await adapter.fetchEmployeeRosterFacts();
+ expect(facts).toEqual([{employee_guid:guid,display_name:"Nadia Rao",deleted:false}]);
+ expect(facts[0]).not.toHaveProperty("firstName");
+ expect(facts[0]).not.toHaveProperty("lastName");
+ expect(rosterClient.request).toHaveBeenCalledWith(
+  "/labor/v1/employees",expect.anything(),
+  "e1e1e1e1-1111-4111-8111-111111111111",expect.anything());
 });
 
 describe("POS0e retained current-source dictionary and shared reader",()=>{
