@@ -54,6 +54,8 @@ const providerReceipts:Array<{event:string;status:string;reason:string|null;
 // Never log filter VALUES, SQL text, raw rows, model arguments or credentials.
 const diagnosticFields=new Set(["amount_cents","quantity","net_sales_cents",
  "business_date","record_type","record_ref","menu_item_ref","source_ref",
+ "order_ref","check_ref","counts_in_sales","data.name","data.quantity",
+ "data.numberOfGuests","data.displayName","data.source","data.type",
  "source","stock_status","status","data.guid","data.firstName",
  "data.customer.firstName"]);
 const safeField=(value:unknown)=>typeof value==="string"&&diagnosticFields.has(value)?
@@ -110,6 +112,15 @@ function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:
   providerReceipts:providerReceipts.slice(since),sqlFailures:sqlFailures.slice(-3),
   queryShapes:queryShapes.slice(-5)});
 }
+// Only static, reviewed schema identifiers may appear in failed-case
+// diagnostics. Never record provider filter values, café IDs or arbitrary paths.
+it("POS0e query-shape diagnostics redact unknown field names at zero cost",()=>{
+ for(const field of ["order_ref","check_ref","counts_in_sales","data.quantity",
+  "data.numberOfGuests","data.name"])
+  expect(safeField(field)).toBe(field);
+ for(const secret of ["data.privateNotes.secret","guid-value","random_email"])
+  expect(safeField(secret)).toBe("other");
+});
 // Free deterministic regression: a bad or overlarge provider request must be
 // rejected BEFORE calling OpenAI, without mistaking the guard for Luna failure.
 it("POS0e paid transport refuses an oversized request at zero model cost",async()=>{
