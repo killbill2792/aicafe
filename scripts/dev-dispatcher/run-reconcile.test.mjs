@@ -13,7 +13,7 @@ const reconcileSource = source.slice(start, end);
 
 const sha = 'f'.repeat(40);
 const task = id => ({
-  id, edits: ['scripts/' + id + '.mjs'], architecture_approval: { approved: true },
+  id, exclusive_files: ['scripts/' + id + '.mjs'], architecture_approval: { approved: true },
   state: 'architecture_approved'
 });
 const record = id => ({
@@ -46,7 +46,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [] } 
     dispatchFrontier: () => assignments,
     assignmentActionKey: (_state, id) => 'assign:' + id,
     approvalSignature: () => 'signed',
-    editableFiles: t => t?.edits || [],
+    editableFiles: t => t?.exclusive_files || [],
     decideNudge: rec => proposals[rec.task_id] || { kind: 'hold' },
     createDelivery: ({ record: rec, action, actionId }) => {
       if (fail.includes(rec.task_id)) throw new Error('synthetic delivery failure');
