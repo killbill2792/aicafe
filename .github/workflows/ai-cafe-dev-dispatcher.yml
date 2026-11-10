@@ -35,7 +35,7 @@ on:
         required: false
         default: false
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited, labeled, unlabeled, closed]
     # Run deterministic PR-head tests only for dispatcher changes; privileged
     # reconciliation always checks out main, not untrusted PR code.
   # All credential-bearing events use code checked out from protected main.
@@ -70,11 +70,15 @@ jobs:
       (github.event_name != 'pull_request_review' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-                 github.event.review.author_association))) &&
+                 github.event.review.author_association) ||
+        github.event.review.user.login == 'chatgpt-codex-connector[bot]' ||
+        github.event.review.user.login == 'codex[bot]')) &&
       (github.event_name != 'issue_comment' ||
        (github.event.issue.pull_request &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-                 github.event.comment.author_association)) ||
+                 github.event.comment.author_association) ||
+        github.event.comment.user.login == 'chatgpt-codex-connector[bot]' ||
+        github.event.comment.user.login == 'codex[bot]') ||
        (!github.event.issue.pull_request &&
         github.event.issue.number == 411 &&
         github.event.comment.user.login == github.repository_owner))

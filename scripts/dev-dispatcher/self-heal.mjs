@@ -98,3 +98,19 @@ export function acceptMuseOwnerReply(state, receipt, {authenticatedCourier}={}) 
   task.owner_answer_key='muse:'+receipt.event_id;
   return next;
 }
+
+
+// The existing Actions workflow permits the same trusted-main reconciler to
+// be woken by these events. This classifier is for receipt diagnostics only,
+// not a new authorizer, scheduler or merge gate.
+export function dispatchWakeEvent({name,actor,runName,runCompleted,pr=false,relation=null}={}){
+  const trusted=['OWNER','MEMBER','COLLABORATOR'].includes(relation);
+  const codex=/^(?:chatgpt-codex-connector|codex)\[bot\]$/.test(actor||'');
+  if(name==='schedule'||name==='workflow_dispatch'||name==='push'||name==='pull_request')return true;
+  if(name==='workflow_run')return runCompleted &&
+    ['AI CAFE Pull Request Baseline','AI CAFE Acceptance Evidence','AI CAFE Integration Proof'].includes(runName);
+  if(name==='issue_comment')return pr&&(trusted||codex);
+  if(name==='pull_request_review')return trusted||codex;
+  if(name==='check_run'||name==='check_suite')return actor==='github-actions[bot]';
+  return false;
+}

@@ -16,8 +16,10 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
  const add=(kind,task_id,pr_number,question,source_sha=null)=>{
   if(typeof question!=='string'||!question.trim()||question.length>1200)return;
   if(pr_number!=null&&(!Number.isInteger(pr_number)||pr_number<1))return;
+  const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash']);
   const entry={kind,task_id:task_id||null,pr_number:pr_number||null,
-   question:question.trim(),delivery_owner:'muse',status:'planned',created_at:now};
+   question:question.trim(),recipient:ownerKinds.has(kind)?'owner':'referee',
+   delivery_owner:'muse',status:'planned',created_at:now};
   if(kind==='architecture_approval')entry.source_sha=source_sha;
   entry.notice_hash=noticeHash(entry);
   const key='notice:'+entry.notice_hash;
@@ -61,6 +63,21 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
    for(const prior of previous)
      if(prior.status==='planned') prior.status='cancelled_no_longer_needed';
   }
+  const base='https://github.com/killbill2792/aicafe';
+  const target=Number.isInteger(rec.pr_number)
+    ? base+'/pull/'+rec.pr_number
+    : base+'/blob/main/docs/plans/universal-supervisor-queue.json';
+  if(rec.sensitive_owner_block===true || rec.owner_directive==='go_live' ||
+      rec.owner_directive==='hold')
+    add(rec.owner_directive==='go_live'?'go_live':'owner_sensitive_hold',
+      id,rec.pr_number,'Owner decision for '+id+': '+target+
+      ' — '+(rec.owner_directive==='go_live'?'Go-live instruction requires owner authorization':
+        rec.owner_directive==='hold'?'Owner requested hold':
+        'Paid/live/prod/secret scope requires owner approval'));
+  if(rec.status==='blocked_needs_owner' && rec.approved===false &&
+      !rec.priority_deferred)
+    add('approval_hash',id,rec.pr_number,
+      'Owner approval needed for '+id+': '+target+' — signed goal/scope/acceptance differs');
   if(rec.agent==='claude'&&rec.blocker?.confirmed===true &&
      ['usage_limit','confirmed_blocker'].includes(rec.blocker.kind))
    add('claude_blocker',id,rec.pr_number,
