@@ -119,7 +119,7 @@ test('dispatcher-only owner-merge PR never requests Codex',async()=>{
    ...rec(),adhoc:true,dispatcher_only:true},task:null})).status,'held');
  assert.equal(gh.posted.length,0);
 });
- 
+
 const watchRecord=()=>({...rec(),codex_review_requested_sha:head,codex_state:'pending'});
 const firstRequest={id:10,created_at:'2026-11-10T10:00:00Z',author_association:'OWNER',
  user:{login:'killbill2792'},body:'@codex review\n<!-- aicafe-dispatcher-codex-review:'+head+' -->'};
