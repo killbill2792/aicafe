@@ -32,6 +32,10 @@ const MAX_PAID_CALLS=12;
 const MAX_INPUT_REQUEST_BYTES=200_000;
 const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
 let paidCalls=0,requestBytes=0,outputTokensReserved=0;
+// Record only response status, token counts and output item TYPES, never
+// provider text, prompts, tool arguments, credentials or customer data.
+const providerReceipts:Array<{event:string;status:string;reason:string|null;
+ outputTokens:number|null;outputTypes:string[]}>= [];
 const budgetedProvider:AgentProvider=async function*(params,signal){
  if(params.model!==PRODUCTION_SUPERVISOR_OPENAI_MODEL)
   throw new Error("POS0e E2 requires owner-verified production Supervisor model "+PRODUCTION_SUPERVISOR_OPENAI_MODEL);
@@ -45,8 +49,26 @@ const budgetedProvider:AgentProvider=async function*(params,signal){
  paidCalls++;
  requestBytes+=payloadBytes;
  outputTokensReserved+=outputCap;
- yield* openAIProvider({...params,max_output_tokens:outputCap},signal);
+ for await(const event of openAIProvider({...params,max_output_tokens:outputCap},signal)){
+  if(["response.completed","response.incomplete","response.failed"].includes(event.type)){
+   const response=event.response as {status?:string;incomplete_details?:{reason?:string}|null;
+    usage?:{output_tokens?:number};output?:Array<{type?:string}>}|undefined;
+   providerReceipts.push({event:event.type,status:response?.status??"unknown",
+    reason:response?.incomplete_details?.reason??null,
+    outputTokens:response?.usage?.output_tokens??null,
+    outputTypes:(response?.output??[]).map(item=>item.type??"unknown")});
+  }
+  yield event;
+ }
 };
+function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:number):string{
+ return JSON.stringify({endReason:turn.endReason,
+  modelCalls:turn.usage.modelCalls,outputTokens:turn.usage.outputTokens,
+  tools:turn.tools,
+  resultStatus:turn.results.map(result=>({source:result.source,
+   missing:result.missing,error:result.error??null})),
+  providerReceipts:providerReceipts.slice(since)});
+}
 const allowedHost=(raw:string)=>{
  const {hostname}=new URL(raw);
  if(!["127.0.0.1","localhost","::1"].includes(hostname))
@@ -195,10 +217,12 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   for(const {question,truth,ref} of namedQuestions){
    const expected=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0]?.answer;
    expect(expected,question).toBeTruthy();
+   const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:question+
     " Use retained current source facts, not diagnostic snapshots or another café."});
    expect(turn.tools,question).toContain("query_data");
-   expect(turn.text,question).toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
+   expect(turn.text,question+"; "+safeFailureDetails(turn,receiptStart))
+    .toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
   }
   const familyQuestions=[
    {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
