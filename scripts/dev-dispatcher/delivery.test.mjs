@@ -264,4 +264,3 @@ test('one-review policy holds Codex on drafts/stacked children until eligible CI
  assert.match(child.prompt,/no review for comments or same head/i);
  assert.match(child.prompt,/Exact-head, threads and acceptance gates stay mandatory/);
 });
-
