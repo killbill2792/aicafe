@@ -91,6 +91,25 @@ describe('Toast diagnostics may not feed operational data', () => {
     expect(result.stdout).toContain('no newly introduced operational dependencies');
   });
 
+  it('exempts only the signed POS0f negative SQL proof, not adjacent operational SQL or mirror code', () => {
+    const proof = 'scripts/pos0f-final-migrated-sql-integration.sql';
+    expect(isOperationalSource(proof)).toBe(false);
+    expect(isOperationalSource('scripts/pos0f-final-migrated-sql-integration.mjs')).toBe(true);
+    expect(isOperationalSource('scripts/pos0f-final-migrated-sql-integration-production.sql')).toBe(true);
+    expect(isOperationalSource('scripts/sync-cafe-data.mjs')).toBe(true);
+    const allowedPatch = [
+      'diff --git a/' + proof + ' b/' + proof,
+      '--- /dev/null', '+++ b/' + proof,
+      '@@ -0,0 +1 @@',
+      '+INSERT INTO toast_raw_samples(sample) VALUES (\'{}\');',
+    ].join('\\n');
+    expect(addedDiagnosticReferences(allowedPatch)).toEqual([]);
+    const deniedPatch = allowedPatch.replaceAll(proof, 'scripts/pos0f-final-migrated-sql-integration-production.sql');
+    expect(addedDiagnosticReferences(deniedPatch)).toEqual([
+      expect.stringContaining('scripts/pos0f-final-migrated-sql-integration-production.sql:1:')
+    ]);
+  });
+
   it('does not allow misleading naming to disguise a new canonical dependency', () => {
     expect(isOperationalSource('lib/data/canonical/reads.server.ts')).toBe(true);
     expect(isOperationalSource('scripts/sync-cafe-data.mjs')).toBe(true);
