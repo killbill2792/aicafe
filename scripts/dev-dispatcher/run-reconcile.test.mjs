@@ -46,6 +46,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [] } 
     dispatchFrontier: () => assignments,
     assignmentActionKey: (_state, id) => 'assign:' + id,
     approvalSignature: () => 'signed',
+    approvalMatches: (_task, signed) => signed === 'signed',
     editableFiles: t => t?.exclusive_files || [],
     decideNudge: rec => proposals[rec.task_id] || { kind: 'hold' },
     createDelivery: ({ record: rec, action, actionId }) => {
