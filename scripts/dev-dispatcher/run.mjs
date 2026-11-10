@@ -236,8 +236,13 @@ async function main() {
       // Ordinary main-based stale branches are refreshed automatically, never
       // force-pushed. A new head must rerun all exact-head CI/acceptance/Codex.
       if (rec.base_current === false && rec.base_branch === 'main') {
-        const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
-        console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
+        try {
+          const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
+          console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
+        } catch (error) {
+          // A temporarily conflicting update must not stall other approved PRs.
+          console.error('PR #'+rec.pr_number+' main branch update will retry: '+error.message);
+        }
       }
     }
   }
