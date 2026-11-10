@@ -195,6 +195,18 @@ export const dataQueryTools={
     (["is_null","is_not_null"].includes(f.op)?f.value!==null:
      f.value===null||(!["between","in"].includes(f.op)&&Array.isArray(f.value)))))
     return empty("invalid_filter");
+   // Match the existing ai_query_view aggregation grammar before making an
+   // RPC call. A malformed AI query is NOT a missing source/outage; it should
+   // be a safe invalid_query that the bounded agent can correct. Do not coerce
+   // or silently ignore unsupported columns or aggregations.
+   const groups=p.group_by??[],metrics=p.metrics??[],selected=p.columns??[];
+   if((metrics.length>0&&groups.length===0&&selected.length>0)||
+    (groups.length>0&&selected.some(column=>!groups.includes(column)))||
+    (p.order_by!==null&&p.order_by!==undefined&&
+     !selected.includes(p.order_by.column)&&
+     !groups.includes(p.order_by.column)&&
+     !metrics.some(m=>m.fn+"_"+m.column===p.order_by?.column)))
+    return empty("invalid_query");
    // Preserve the previous plain-read SELECT * contract, but only over the
    // canonical dictionary's physical columns (never raw tables). PostgreSQL
    // still bounds the rows and bytes and supplies the same coverage labels.
