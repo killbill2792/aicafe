@@ -120,10 +120,10 @@ test('default branch maintenance verifies live parent merge before retarget, the
     calls.push([path,options?.method]);
     if(path==='/pulls/400')return {merged_at:'2026-11-09T22:00:00Z',
       merge_commit_sha:merged,head:{ref:'feat/parent'}};
+    if(path==='/pulls/408' && options?.method==='PATCH'){updated=true;return {};}
     if(path==='/pulls/408')return {state:'open',merged:false,head:{sha:head},
       base:{ref:updated?'main':'feat/parent'}};
     if(path==='/pulls/408/update-branch') return {message:'Update branch requested'};
-    if(path==='/pulls/408' && options?.method==='PATCH'){updated=true;return {};}
     throw Error('Unexpected request '+path);
   }};
   const v=await updateChildAfterParentMerge({github,dependent:child,predecessor:parent});
