@@ -97,7 +97,7 @@ test('failure routes one action to adopted marker chat, and a new head changes w
     actions:{[proposal.key]:action}};
   assert.equal(validateHandoff({...action,key:proposal.key},live),true);
   assert.deepEqual(pendingActions(ledger).map(a=>a.key),[proposal.key]);
-  assert.equal(signalFor(ledger,'test-secret-for-opaque-signal').pending_count,1);
+  assert.equal(signalFor(ledger,'test-secret-for-opaque-signal'.repeat(2)).pending_count,1);
   const receipt={action_id:proposal.key,prompt_hash:delivery.prompt_hash,
     approval_hash:delivery.approval_hash,provider:'chatgpt',
     project:{id:'aicafe'},conversation_url:chat,status:'submitted'};
