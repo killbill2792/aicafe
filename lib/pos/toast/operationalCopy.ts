@@ -7,7 +7,7 @@ import {addCalendarDays,localClock} from "./scheduleDates";
 import {affectedLocalDays} from "../timecardDay";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createToastAdapter} from "./adapter";
-import {stageToastCatalog,stageToastRoster} from "./operationalStaging";
+import {stageToastCatalog,stageToastRoster,reconcileToastOperationalHealth} from "./operationalStaging";
 import {syncCanonicalCatalog} from "../syncCatalog";
 import {syncCanonicalEmployees} from "../syncEmployees";
 import {syncToastLaborReadOnly} from "./laborSync";
@@ -230,5 +230,6 @@ export async function syncToastOperationalSources(db:SupabaseClient,
    await persist();
   }
  }
+ await reconcileToastOperationalHealth(db,p,states);
  return {attempted:attempts,states};
 }

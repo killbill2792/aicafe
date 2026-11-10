@@ -2,7 +2,7 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
 const m=vi.hoisted(()=>({importDay:vi.fn(),reconcile:vi.fn(),optional:vi.fn(),firstCatalog:vi.fn(),
- refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn(),operational:vi.fn()}));
+ refresh:vi.fn(),costs:vi.fn(),request:vi.fn(),paymentGaps:vi.fn(),operational:vi.fn(),operationalHealth:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./dayImport",()=>({importToastBusinessDay:m.importDay}));
 vi.mock("./reconcile",()=>({reconcileToastDays:m.reconcile}));
@@ -11,6 +11,7 @@ vi.mock("./restaurantInfo",()=>({refreshToastRestaurantInfo:m.refresh}));
 vi.mock("./missingDays",()=>({queueToastMissingDays:m.paymentGaps}));
 vi.mock("./rollupRetries",()=>({retryToastRollupRefreshes:m.costs}));
 vi.mock("./operationalCopy",()=>({syncToastOperationalSources:m.operational}));
+vi.mock("./operationalStaging",()=>({reconcileToastOperationalHealth:m.operationalHealth}));
 vi.mock("./client",()=>{
  class ToastApiError extends Error{
   constructor(public category:string){super(category);}
@@ -127,6 +128,7 @@ beforeEach(()=>{
  m.reconcile.mockResolvedValue(0);
  m.refresh.mockResolvedValue(null);
  m.paymentGaps.mockResolvedValue([]);
+ m.operationalHealth.mockResolvedValue(undefined);
 });
 describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
  it("flag off performs no database writes or lease claims",async()=>{
@@ -165,6 +167,7 @@ describe("leased Toast cron phases (spec C1, 13, 16, 17, 20, 21)",()=>{
   await runToastSyncTick(f.db,now,Date.now()+60000);
   expect(f.calls).toContain("toast_acquire_lease");
   expect(f.calls).toContain("toast_release_lease");
+  expect(m.operationalHealth).toHaveBeenCalledWith(f.db,{businessId:b,restaurantGuid:g});
   expect(f.imports.filter(x=>x===d)).toHaveLength(1);
   expect(f.calls.filter(x=>x==="toast_queue_backfill")).toHaveLength(1);
   await runToastSyncTick(f.db,now,Date.now()+60000);
@@ -366,4 +369,14 @@ it("re-pulls a previously imported day through the same guarded importer",async(
   state:"completed",days_done:1
  });
  expect(m.reconcile).toHaveBeenCalled();
+});
+
+it("reconciles owner-visible operational health after optional phases, even on an optional failure",async()=>{
+ const f=makeDB(),sequence:string[]=[];
+ m.optional.mockImplementation(async()=>{sequence.push("optional");throw new ToastApiError("unavailable");});
+ m.operationalHealth.mockImplementation(async()=>{sequence.push("health");});
+ const result=await runToastSyncTick(f.db,now,Date.now()+60000) as {errors:number};
+ expect(sequence).toEqual(["optional","health"]);
+ expect(result.errors).toBeGreaterThanOrEqual(1);
+ expect(f.calls.at(-1)).toBe("toast_release_lease");
 });

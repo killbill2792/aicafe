@@ -11,7 +11,7 @@ vi.mock("./client",async()=>{
 vi.mock("./adapter",()=>({createToastAdapter:()=>({
  fetchEmployeeRosterFacts:calls.roster,fetchCatalogFacts:calls.catalog
 })}));
-import {stageToastRoster,stageToastCatalog} from "./operationalStaging";
+import {stageToastRoster,stageToastCatalog,reconcileToastOperationalHealth} from "./operationalStaging";
 import {syncToastOperationalSources} from "./operationalCopy";
 import {ToastApiError} from "./client";
 import type {SupabaseClient} from "@supabase/supabase-js";
@@ -50,14 +50,21 @@ const guid2="22222222-2222-4222-8222-222222222222";
 function operationalDb(scopes:Record<string,boolean>={}){
  const log:Array<{name:string;args:Record<string,unknown>}>=[];
  let sources:Record<string,unknown>={};
+ let healthCategory:string|null=null;
+ const healthWrites:Record<string,unknown>[]=[];
  const db={
   from(table:string){
    const q={
     select(_fields:string){return q;},eq(_key:string,_value:unknown){return q;},
     async maybeSingle(){return {data:table==="toast_api_credentials"
-     ?{scopes_available:scopes}:{operational_sources:sources},error:null};},
+     ?{scopes_available:scopes}:table==="toast_sync_health"
+      ?{last_failure_category:healthCategory}:{operational_sources:sources},error:null};},
     async upsert(values:Record<string,unknown>){
      if(table==="toast_optional_sync_state")sources=values.operational_sources as Record<string,unknown>;
+     if(table==="toast_sync_health"){
+      healthCategory=values.last_failure_category as string|null;
+      healthWrites.push(values);
+     }
      return {error:null};
     }
    };
@@ -68,8 +75,10 @@ function operationalDb(scopes:Record<string,boolean>={}){
    return {error:null,data:(args.p_objects as unknown[]).length};
   }
  };
- return {db:db as unknown as SupabaseClient,log,
-  state:()=>sources as Record<string,{status:string;last_success_at?:string;next_at:string}>};
+ return {db:db as unknown as SupabaseClient,log,healthWrites,
+  state:()=>sources as Record<string,{status:string;error?:string|null;last_success_at?:string;next_at:string}>,
+  health:()=>healthCategory,setHealth:(v:string|null)=>{healthCategory=v;},
+  setStates:(v:Record<string,unknown>)=>{sources=v;}};
 }
 beforeEach(()=>{
  calls.request.mockReset();
@@ -149,6 +158,7 @@ describe("POS0c operational source capture uses the shared staged current writer
   expect(f.state().stock_inventory.status).toBe("invalid_response");
   expect(f.state().kitchen_fulfillments.status).toBe("subscription_unavailable");
   expect(f.state().cash_entries_today.status).toBe("missing_scope_or_location");
+  expect(f.health()).toContain("operational:cash_entries_today:missing_scope_or_location");
   expect(f.state().online_availability.status).toBe("unauthorized_location");
   expect(f.log.filter(x=>x.args.p_endpoint==="stock/v1/inventory")).toHaveLength(0);
   expect(f.log.filter(x=>x.args.p_endpoint==="kitchen/v1/export/itemFulfillments")).toHaveLength(0);
@@ -173,6 +183,7 @@ describe("POS0c operational source capture uses the shared staged current writer
   });
   await syncToastOperationalSources(f.db,opScope,observed,Date.now()+300000);
   expect(f.state().online_availability.status).toBe("rate_limited");
+  expect(f.health()).toContain("operational:cash_entries_today:missing_permissions");
   expect(f.state().online_availability.last_success_at).toBeUndefined();
   expect(Date.parse(f.state().online_availability.next_at))
    .toBeGreaterThanOrEqual(Date.parse("2026-10-24T19:00:00Z"));
@@ -196,5 +207,33 @@ describe("POS0c operational source capture uses the shared staged current writer
   expect(batch[0].args.p_objects).toHaveLength(206);
   expect(batch[0].args.p_objects).toEqual(expect.arrayContaining([
    expect.objectContaining({guid:guid1}),expect.objectContaining({guid:guid2})]));
+ });
+});
+
+describe("POS0c owner-facing operational health",()=>{
+ it("preserves unrelated failure categories and clears only recovered operational errors",async()=>{
+  const f=operationalDb();
+  f.setHealth("timeout"); // another Toast family has an independent failure
+  f.setStates({stock_inventory:{error:"rate_limited",next_at:"2026-10-24T19:00:00Z"}});
+  await reconcileToastOperationalHealth(f.db,s);
+  expect(f.health()).toBe("timeout|operational:stock_inventory:rate_limited");
+  expect(f.healthWrites).toContainEqual(expect.objectContaining({
+   business_id:s.businessId,restaurant_guid:s.restaurantGuid,
+   last_failure_category:"timeout|operational:stock_inventory:rate_limited"}));
+  f.setStates({stock_inventory:{error:null,next_at:"2026-10-24T19:00:00Z"}});
+  await reconcileToastOperationalHealth(f.db,s);
+  expect(f.health()).toBe("timeout"); // don't clear a sales/roster failure
+  f.setHealth("operational:cash_entries_today:timeout");
+  await reconcileToastOperationalHealth(f.db,s);
+  expect(f.health()).toBeNull();
+ });
+ it("reasserts a still-pending source failure after another phase cleared the health row",async()=>{
+  const f=operationalDb();
+  f.setStates({ordering_schedule:{error:"invalid_response",next_at:"2026-10-24T19:00:00Z"}});
+  await reconcileToastOperationalHealth(f.db,s);
+  expect(f.health()).toBe("operational:ordering_schedule:invalid_response");
+  f.setHealth(null); // a successful labor sync writes the same health row
+  await reconcileToastOperationalHealth(f.db,s);
+  expect(f.health()).toBe("operational:ordering_schedule:invalid_response");
  });
 });

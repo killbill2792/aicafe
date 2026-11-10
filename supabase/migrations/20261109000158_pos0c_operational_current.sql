@@ -58,11 +58,32 @@ returns jsonb language sql immutable set search_path=public as $cmp$
     'last_checked_at','report_checked_at','observed_at','updated_at'])
 $cmp$;
 
+-- Reject incomplete operational refreshes instead of replacing last-good payload or
+-- advancing lastSuccessAt. Explicit JSON null is a reported value, not an omitted key.
+create or replace function public.toast_operational_has_missing_keys(p_old jsonb,p_new jsonb)
+returns boolean language plpgsql immutable set search_path=public as $missing$
+declare field_name text; prior_value jsonb;
+begin
+ if jsonb_typeof(p_old) is distinct from 'object' then return false; end if;
+ if jsonb_typeof(p_new) is distinct from 'object' then return true; end if;
+ for field_name,prior_value in select key,value from jsonb_each(p_old) loop
+  if not (p_new ? field_name) then return true; end if;
+  if jsonb_typeof(prior_value)='object' and jsonb_typeof(p_new->field_name)='object'
+   and public.toast_operational_has_missing_keys(prior_value,p_new->field_name)
+  then return true; end if;
+ end loop;
+ return false;
+end $missing$;
+revoke all on function public.toast_operational_has_missing_keys(jsonb,jsonb)
+ from public,anon,authenticated;
+grant execute on function public.toast_operational_has_missing_keys(jsonb,jsonb)
+ to service_role;
+
 create or replace function public.toast_stage_operational_batch(
  p_business_id uuid,p_restaurant_guid uuid,p_endpoint text,
  p_business_date date,p_objects jsonb
 ) returns integer language plpgsql security definer set search_path=public as $ops$
-declare row_value jsonb; n integer:=0;
+declare row_value jsonb; prior_payload jsonb; n integer:=0;
 begin
  if auth.role()<>'service_role' and current_user not in ('postgres','supabase_admin')
  then raise exception 'service role only' using errcode='42501'; end if;
@@ -88,6 +109,18 @@ begin
    or (p_business_date is not null
      and row_value->>'business_date' is distinct from p_business_date::text)
   then raise exception 'wrong identity for operational object' using errcode='22023'; end if;
+  -- A partial GET cannot erase already verified fields or refresh their as-of.
+  -- The existing writer is unchanged; reject the whole partial batch first.
+  select r.payload into prior_payload from public.toast_raw_records r
+  where r.business_id=p_business_id
+    and r.capture_key='stage:toast_operational_current:key:'||
+      public.toast_stage_object_key('toast_operational_current',row_value)
+  for update;
+  if found and public.toast_operational_has_missing_keys(
+    prior_payload-array['business_date','source_business_date_kind',
+      'fetched_at','lastSuccessAt','checked_at','last_checked_at'],row_value)
+  then raise exception 'partial operational object omitted verified source fields'
+    using errcode='22023'; end if;
   perform public.toast_archive_stage_snapshot(row_value,p_endpoint,'toast_operational_current');
   update public.toast_raw_records r set business_date=p_business_date
   where r.business_id=p_business_id

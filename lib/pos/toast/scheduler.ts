@@ -8,6 +8,7 @@ import {retryToastRollupRefreshes} from "./rollupRetries";
 import {z} from "zod";
 import {syncToastOptionalSources,ensureToastFirstCatalog} from "./optionalSync";
 import {syncToastOperationalSources} from "./operationalCopy";
+import {reconcileToastOperationalHealth} from "./operationalStaging";
 import {readAllPages} from "./readAllPages";
 import {reconcileToastDays} from "./reconcile";
 import {queueToastMissingDays} from "./missingDays";
@@ -350,6 +351,11 @@ export async function runToastSyncTick(db:SupabaseClient,now=new Date(),
    });
   }catch{errors++;}
   finally{
+   // Restore persisted operational errors after other optional phases may have
+   // written their own health status; don't hide their unrelated failures.
+   try{await reconcileToastOperationalHealth(db,{
+    businessId:m.business_id,restaurantGuid:m.restaurant_guid
+   });}catch{errors++;}
    // Never leak the nonce or delete a different worker's lease.
    await db.rpc("toast_release_lease",{p_nonce:nonce});
   }

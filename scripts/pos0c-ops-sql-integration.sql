@@ -17,7 +17,7 @@ DECLARE
  ord uuid:='f0c00000-0000-4000-8000-000000000401';
  item uuid:='f0c00000-0000-4000-8000-000000000402';
  synthetic uuid:='f0c00000-0000-4000-8000-000000000403';
- cash jsonb;inv jsonb;kitchen jsonb;availability jsonb;
+ cash jsonb;inv jsonb;kitchen jsonb;availability jsonb;schedule jsonb;
  n integer;bad boolean:=false;
 BEGIN
  PERFORM pg_temp.assert_true(
@@ -138,5 +138,66 @@ BEGIN
  PERFORM pg_temp.assert_true(not has_function_privilege('anon',
   'public.toast_stage_operational_batch(uuid,uuid,text,date,jsonb)','EXECUTE'),
   'untrusted clients cannot call the operational writer');
+
+ -- P1: missing optional operational fields never replace a complete last-good
+ -- object, and must not advance its source-as-of. An explicit null is different.
+ kitchen:=kitchen||'{"itemFulfilledAt":"2026-11-08T17:05:00Z",
+  "itemStartedAt":"2026-11-08T17:01:00Z",
+  "lastSuccessAt":"2026-11-08T17:06:00Z"}'::jsonb;
+ PERFORM public.toast_stage_operational_batch(b,r,
+  'kitchen/v1/export/itemFulfillments','2026-11-08',jsonb_build_array(kitchen));
+ bad:=false;
+ BEGIN
+  PERFORM public.toast_stage_operational_batch(b,r,
+   'kitchen/v1/export/itemFulfillments','2026-11-08',
+   jsonb_build_array((kitchen-'itemStartedAt')||
+    '{"lastSuccessAt":"2026-11-08T17:10:00Z"}'::jsonb));
+ EXCEPTION WHEN sqlstate '22023' THEN bad:=true; END;
+ PERFORM pg_temp.assert_true(bad,'omitted KDS timestamp rejected as incomplete');
+ PERFORM pg_temp.assert_true((SELECT payload->>'itemStartedAt'='2026-11-08T17:01:00Z'
+  AND payload->>'lastSuccessAt'='2026-11-08T17:06:00Z'
+  FROM public.toast_raw_records WHERE business_id=b
+   AND entity='kitchen/v1/export/itemFulfillments' LIMIT 1),
+  'partial KDS response preserves original timing and source freshness');
+ PERFORM public.toast_stage_operational_batch(b,r,
+  'kitchen/v1/export/itemFulfillments','2026-11-08',
+  jsonb_build_array(kitchen||'{"itemStartedAt":null}'::jsonb));
+ PERFORM pg_temp.assert_true((SELECT payload ? 'itemStartedAt'
+  AND payload->'itemStartedAt'='null'::jsonb
+  FROM public.toast_raw_records WHERE business_id=b
+   AND entity='kitchen/v1/export/itemFulfillments' LIMIT 1),
+  'explicit source null may clear an old KDS field; absence cannot');
+
+ schedule:=jsonb_build_object('business_id',b,'restaurant_guid',r,
+  'endpoint','ordermgmt-config/v1/published/orderingSchedule',
+  'provider_key','restaurant-singleton','operational_object_uuid',synthetic,
+  'source_key_kind','restaurant_singleton','acceptScheduledOrders',true,
+  'servicePeriods',jsonb_build_array(jsonb_build_object('name','morning')),
+  'sourceWindow',jsonb_build_object('start','09:00','end','17:00'),
+  'lastSuccessAt','2026-11-08T16:00:00Z');
+ PERFORM public.toast_stage_operational_batch(b,r,
+  'ordermgmt-config/v1/published/orderingSchedule',null,jsonb_build_array(schedule));
+ bad:=false;
+ BEGIN
+  PERFORM public.toast_stage_operational_batch(b,r,
+   'ordermgmt-config/v1/published/orderingSchedule',null,
+   jsonb_build_array((schedule-'servicePeriods')||
+    '{"lastSuccessAt":"2026-11-08T16:20:00Z"}'::jsonb));
+ EXCEPTION WHEN sqlstate '22023' THEN bad:=true; END;
+ PERFORM pg_temp.assert_true(bad,'omitted ordering service periods rejected');
+ bad:=false;
+ BEGIN
+  PERFORM public.toast_stage_operational_batch(b,r,
+   'ordermgmt-config/v1/published/orderingSchedule',null,
+   jsonb_build_array(schedule||'{"sourceWindow":{"start":"09:00"},
+     "lastSuccessAt":"2026-11-08T16:30:00Z"}'::jsonb));
+ EXCEPTION WHEN sqlstate '22023' THEN bad:=true; END;
+ PERFORM pg_temp.assert_true(bad,'omitted nested schedule field rejected');
+ PERFORM pg_temp.assert_true((SELECT payload->'servicePeriods' IS NOT NULL
+  AND payload->'sourceWindow'->>'end'='17:00'
+  AND payload->>'lastSuccessAt'='2026-11-08T16:00:00Z'
+  FROM public.toast_raw_records WHERE business_id=b
+   AND entity='ordermgmt-config/v1/published/orderingSchedule' LIMIT 1),
+  'rejected schedule responses leave prior source fields and as-of intact');
 END $pos0c$;
 ROLLBACK;
