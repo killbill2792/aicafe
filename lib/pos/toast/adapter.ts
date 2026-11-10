@@ -529,7 +529,8 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         throw new ToastApiError("invalid_response");
       // Source metadata's lastUpdated is the publication version/last-modified
       // reference, NOT a verified historical effective time.
-      const publicationVersion=timestamp(after.lastUpdated);
+      timestamp(after.lastUpdated); // Valid date, but preserve Toast's exact version string.
+      const publicationVersion=after.lastUpdated;
       const items=catalogItemsFromSnapshot(snapshot);
       const facts=catalogFactsFromSnapshot(snapshot);
       return {items,facts,receipt:{restaurantGuid,publicationVersion,
