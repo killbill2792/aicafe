@@ -3,8 +3,23 @@ on:
   push:
     branches: [main]
   pull_request:
+    # Exact approved POS0f ownership: required proof must rerun on *any*
+    # scoped test/fixture change, not only edits to the two new test files.
     paths:
-      - 'scripts/pos0f-final-*'
+      - 'scripts/pos0f-final-source-coverage.test.mjs'
+      - 'scripts/pos0f-final-migrated-sql-integration.sql'
+      - 'scripts/supervisor-all-data-db-integration.sql'
+      - 'scripts/supervisor-all-data-schema-check.sql'
+      - 'scripts/toast-standard-api-coverage.test.mjs'
+      - 'scripts/toast-raw-sample-sql-integration.sql'
+      - 'scripts/sync-cafe-data.mjs'
+      - 'scripts/sync-cafe-data-db-integration.mjs'
+      - 'lib/ai/agent/tools/dataQuery.precise.test.ts'
+      - 'lib/ai/agent/tools/dataQuery.sharedRead.test.ts'
+      - 'lib/pos/toast/reportingCoverage.test.ts'
+      - 'lib/pos/toast/foundation.test.ts'
+      - 'scripts/guards/toast-diagnostic-boundary.mjs'
+      - 'scripts/guards/toast-diagnostic-boundary.test.ts'
       - '.github/workflows/ai-cafe-integration-proof.yml'
   workflow_dispatch:
     inputs:
