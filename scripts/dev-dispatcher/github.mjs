@@ -289,9 +289,11 @@ export class GitHubFacts {
     const failingJob = checks.check_runs.find(c => c.conclusion === 'failure' &&
       c.name !== baseline?.name) || (ci === 'failure' ? baseline : null);
     let failureFix=null;
+    let observed403=false;
     if (failingJob?.id && ci === 'failure') {
       const annotations=await this.request('/check-runs/'+failingJob.id+'/annotations?per_page=100').catch(()=>[]);
       failureFix=failureInstruction(annotations);
+      observed403=annotations.some(a=>/403.{0,80}Resource not accessible by integration|Resource not accessible by integration.{0,80}403/i.test(a.message||''));
     }
     const codexReviews = reviews.filter(r => /codex/i.test(r.user?.login || ""))
       .sort((a, b) => Date.parse(b.submitted_at) - Date.parse(a.submitted_at));
@@ -345,7 +347,7 @@ export class GitHubFacts {
         pr.body.includes('<!-- aicafe-coder-done -->'),
       latest_owner_comment: trustedOwner ? String(trustedOwner.body||'').slice(0,350) : null,
       latest_owner_comment_at: trustedOwner?.created_at || null,
-      connector_403: reportedConnector403(comments,pr.user?.login),
+      connector_403: reportedConnector403(comments,pr.user?.login) || observed403,
       unresolved_codex_comments: unresolvedComments,
       ci_failure_job: ci === 'failure' ? (failingJob?.name || 'AI CAFE PR baseline') : null,
       ci_failure_url: ci === 'failure' ? (failingJob?.html_url || pr.html_url) : null,
