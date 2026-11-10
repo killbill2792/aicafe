@@ -26,7 +26,11 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
    if(path.startsWith('/actions/runs/')) return path.includes('/jobs') ? {total_count:1,jobs:[{name:'AI CAFE PR baseline',conclusion:'success'}]} : {id:10,head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
    if(path.startsWith('/contents/')) return {type:'file'};
    return pr;
- },one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',coder_done:true,threads_resolved:true}),
+ },ownerDecision:async pr=>({question:
+    (pr.labels || []).some(label=>label.name==='needs-owner-decision') ||
+    String(pr.body || '').includes('<!-- aicafe-owner-question') ?
+      'Pending authenticated owner decision' : null}),
+  one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',coder_done:true,threads_resolved:true}),
  acceptanceProof:async()=>({task_id:'6',run_id:11,head_sha:'head',base_sha:'base',acceptance_digest:acceptanceDigest(evidence.acceptance),acceptance:[{...evidence.acceptance[0]}]})};
  assert.equal((await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:false})).status,'disabled');
  const done=await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true});
