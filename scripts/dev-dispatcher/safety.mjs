@@ -71,7 +71,8 @@ export function landingFailureForMerge(comments, mergeSha) {
 }
 export function reportedConnector403(comments, prAuthor) {
   return Array.isArray(comments) && comments.some(c=>
-    (c.user?.login===prAuthor || c.author_association==='OWNER') &&
+    (c.user?.login===prAuthor || c.author_association==='OWNER' ||
+     c.user?.login==='chatgpt-codex-connector[bot]') &&
     /403.{0,80}Resource not accessible by integration|Resource not accessible by integration.{0,80}403/i.test(c.body||''));
 }
 // Action log messages are trusted CI annotations, not guesses from the model.
