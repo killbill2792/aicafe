@@ -47,6 +47,16 @@ describe("POS0e retained current-source dictionary and shared reader",()=>{
   expect(description).toContain("sum data.numberOfGuests");
   expect(description).toContain("retained canonical records");
   expect(description).toContain("Never ask the café owner");
+  // Six actual full-Luna failures: keep route selection and aggregate semantics
+  // specific, while all real answer assertions remain unchanged.
+  expect(description).toContain("count_distinct data.name with group_by:null");
+  expect(description).toContain("For ALL applied uses of ANY name");
+  expect(description).toContain("filter data.quantity >= 2");
+  expect(description).toContain("data.source=Online");
+  expect(description).toContain("count_distinct record_ref");
+  expect(description).toContain("the canonical source column is data provenance");
+  expect(description).toContain("avoid repeated schema discovery");
+  expect(description).toContain("call query_data directly");
  });
  it("describes the correct Toast menu-item GUID lookup without confusing evidence refs",async()=>{
   const described=await dataQueryTools.describe_data.execute({view:"cv_inventory"});
