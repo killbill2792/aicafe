@@ -16,14 +16,30 @@ const REPO = 'https://github.com/killbill2792/aicafe';
 // The short prompt is not a substitute for any of those linked contracts.
 // Stable authorization identity. A changed task brief, scope, approval or dependency
 // requires a new owner-reviewed assignment, never reuse an old browser envelope.
+function approvalFields(task) {
+  return [task.id, task.state, task.architecture_approval, task.exclusive_files,
+    task.depends_on, task.title, task.goal, task.brief, task.acceptance];
+}
+const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+// V2 authorization signs the immutable WRITE scope; informational read-only
+// 'uses' additions cannot silently revoke an already-approved task.
 export function approvalSignature(task) {
   if (!task) return null;
-  const fields = [task.id, task.state, task.architecture_approval, task.exclusive_files,
-    task.depends_on, task.title, task.goal, task.brief, task.acceptance];
-  // Do not invalidate signatures of already-planned, owner-signed legacy tasks.
-  if (Object.hasOwn(task,'edits') || Object.hasOwn(task,'uses'))
-    fields.push(task.edits,task.uses);
-  return createHash('sha256').update(JSON.stringify(fields)).digest('hex');
+  return 'v2:' + digest([...approvalFields(task), editableFiles(task)]);
+}
+export function approvalMatches(task, signed) {
+  if (!task || typeof signed !== 'string') return false;
+  if (signed === approvalSignature(task)) return true;
+  // Historical v1 approvals were unversioned and sometimes omitted 'uses'
+  // before the optional read-only import field was added. Accept either
+  // historical shape without weakening exclusive-file / edits validation.
+  const fields = approvalFields(task);
+  const historical = [
+    fields,
+    [...fields,task.edits,task.uses],
+    [...fields,task.edits,undefined]
+  ];
+  return historical.some(parts => digest(parts) === signed);
 }
 
 
@@ -38,7 +54,7 @@ export function createDelivery({ task, record, action, actionId }) {
   if (typeof actionId !== 'string' || !actionId || actionId.length > 400)
     throw new Error('Invalid action ID');
   const authorization = approvalSignature(task);
-  if (record.approval_hash && record.approval_hash !== authorization)
+  if (record.approval_hash && !approvalMatches(task, record.approval_hash))
     throw new Error('Task approval or scope changed');
   const isNew = action === 'assign';
   const url = record.conversation_ref || null;
