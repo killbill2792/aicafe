@@ -134,28 +134,28 @@ const allowedHost=(raw:string)=>{
 // hardcoded answer or a mocked tool result. These questions exercise genuinely
 // different paths: counts, distinct orders, mixed filters, time, items and gaps.
 const scalarQuestions=[
- {question:"How many applied student discount uses did we record today? The day is still incomplete.",
-  truth:`select count(*)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
- {question:"How many different orders received a student discount today? Do not count checks as orders.",
-  truth:`select count(distinct order_ref)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
- {question:"How many distinct checks had student discounts today?",
-  truth:`select count(distinct check_ref)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
- {question:"How many valid item and check discount uses of any name are recorded today?",
-  truth:`select count(*)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount')`},
- {question:"How many different applied discount names are there across yesterday and today?",
+ {scope:"today",question:"How many applied student discount uses did we record today? The day is still incomplete.",
+  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
+ {scope:"today",question:"How many different orders received a student discount today? Do not count checks as orders.",
+  truth:`select count(distinct order_ref)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
+ {scope:"today",question:"How many distinct checks had student discounts today?",
+  truth:`select count(distinct check_ref)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
+ {scope:"today",question:"How many valid item and check discount uses of any name are recorded today?",
+  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount')`},
+ {scope:"span",question:"How many different applied discount names are there across yesterday and today?",
   truth:`select count(distinct data->>'name')::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount')`},
- {question:"How many individual item selections across these two days had quantity at least two?",
+ {scope:"span",question:"How many individual item selections across these two days had quantity at least two?",
   truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item' and (data->>'quantity')::numeric>=2`},
- {question:"How many units of items were sold yesterday? Count units, not selection lines.",
-  truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$2) where counts_in_sales=true and record_type='item'`},
- {question:"How many guests did Toast record yesterday, using the orders?",
-  truth:`select sum((data->>'numberOfGuests')::numeric)::integer n from public.toast_records_for($1,$2,$2) where counts_in_sales=true and record_type='order'`},
- {question:"How many item selection records yesterday are missing their displayName?",
-  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$2) where counts_in_sales=true and record_type='item' and data->>'displayName' is null`},
- {question:"How many Online orders were recorded across yesterday and today?",
+ {scope:"prior",question:"How many units of items were sold yesterday? Count units, not selection lines.",
+  truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item'`},
+ {scope:"prior",question:"How many guests did Toast record yesterday, using the orders?",
+  truth:`select sum((data->>'numberOfGuests')::numeric)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='order'`},
+ {scope:"prior",question:"How many item selection records yesterday are missing their displayName?",
+  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item' and data->>'displayName' is null`},
+ {scope:"span",question:"How many Online orders were recorded across yesterday and today?",
   truth:`select count(distinct record_ref)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='order' and data->>'source'='Online'`},
- {question:"How many units are there today across all item selections, regardless of their number of lines?",
-  truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type='item'`}
+ {scope:"today",question:"How many units are there today across all item selections, regardless of their number of lines?",
+  truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item'`}
 ] as const;
 run("Supervisor proves current-source orders, staff, cash, stock, names and screen parity",async()=>{
  allowedHost(dbUrl!);
@@ -212,6 +212,17 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
    {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
     truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
+  ];
+  const breakdowns=[
+   {scope:"span",question:"Give applied discount USE counts for yesterday and today, one line per date as YYYY-MM-DD: N.",
+    truth:`select business_date::text k,count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('item_discount','check_discount') and counts_in_sales=true group by business_date order by business_date`},
+   {scope:"prior",question:"Give units sold yesterday by item display name. Call absent names 'Unnamed'. Use Name: N lines.",
+    truth:`select coalesce(data->>'displayName','Unnamed') k, sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$3) where record_type='item' and counts_in_sales=true group by coalesce(data->>'displayName','Unnamed') order by 1`}
+  ] as const;
+  // Share EXACTLY the same positional binds between free SQL verification
+  // and real Luna acceptance. Three contiguous parameters: café, from, to.
+  const truthArgs=(scope:"today"|"prior"|"span")=>[
+   biz.id,scope==="today"?biz.today:prior,scope==="prior"?prior:biz.today
   ];
   // Test the source/fixture contract at zero model cost. Paid acceptance must
   // still execute the registered Supervisor, and never sets SQL_ONLY.
@@ -310,6 +321,36 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
     [biz.id,prior,biz.today]);
    expect(expected.rows[0].n).toBeGreaterThanOrEqual(3);
+   // Validate all 11 scalar and 2 breakdown independent SQL truths BEFORE
+   // paid Luna can be called. Previously these were skipped in SQL_ONLY and
+   // positional parameter gaps aborted the shared rollback transaction.
+   for(const [index,item] of scalarQuestions.entries()){
+    const r=await client.query<{n:number|null}>(item.truth,truthArgs(item.scope));
+    expect(r.rows[0]?.n,"scalar SQL truth "+(index+1)).not.toBeNull();
+    expect(r.rows[0]?.n,"scalar SQL truth "+(index+1)).not.toBeUndefined();
+   }
+   for(const [index,item] of breakdowns.entries()){
+    const r=await client.query<{k:string;n:number}>(item.truth,truthArgs(item.scope));
+    expect(r.rows.length,"breakdown SQL truth "+(index+1)).toBeGreaterThan(0);
+    for(const row of r.rows)expect(Number.isFinite(Number(row.n))).toBe(true);
+   }
+   // Prove full tool-roster request construction with a fake provider using
+   // the same real question and seeded context, never the paid API.
+   let fakeCalls=0;
+   const fake:AgentProvider=async function*(request){
+    fakeCalls++;
+    const tools=request.tools as Array<{name:string}>;
+    expect(tools.map(x=>x.name)).toContain("query_data");
+    expect(tools.map(x=>x.name)).toContain("describe_data");
+    expect(tools.length).toBeGreaterThan(2);
+    yield {type:"response.output_text.delta",delta:"Preflight ready."};
+    yield {type:"response.completed",response:{status:"completed",output:[],
+     usage:{input_tokens:1,output_tokens:1}}};
+   };
+   const probe=await runAgentTurn({context,provider:fake,
+    ownerText:scalarQuestions[0].question});
+   expect(fakeCalls).toBe(1);
+   expect(probe.endReason).toBe("complete");
    // Exact same independently sourced truth SQL and bound argument arrays as
    // the real-agent test; no provider/model request in SQL-only mode.
    for(const {question,truth,ref} of namedQuestions){
@@ -408,9 +449,9 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    }
   };
   let scalarIndex=0;
-  for(const {question,truth} of (smoke?scalarQuestions.slice(0,0):scalarQuestions)){
+  for(const {question,truth,scope} of (smoke?scalarQuestions.slice(0,0):scalarQuestions)){
    await record("scalar-"+ ++scalarIndex,async capture=>{
-   const expected=(await client.query<{n:number}>(truth,params)).rows[0].n;
+   const expected=(await client.query<{n:number}>(truth,truthArgs(scope))).rows[0].n;
    // Standard owner-facing answer; the requested line keeps acceptance numeric
    // (without an extra reviewer model) and still permits the incomplete-day note.
    const receiptStart=providerReceipts.length;
@@ -426,16 +467,10 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     expect(turn.text,question+" => "+turn.text).toMatch(/so far|partial|incomplete|provisional/i);
    });
   }
-  const breakdowns=[
-   {question:"Give applied discount USE counts for yesterday and today, one line per date as YYYY-MM-DD: N.",
-    truth:`select business_date::text k,count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('item_discount','check_discount') and counts_in_sales=true group by business_date order by business_date`},
-   {question:"Give units sold yesterday by item display name. Call absent names 'Unnamed'. Use Name: N lines.",
-    truth:`select coalesce(data->>'displayName','Unnamed') k, sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$2) where record_type='item' and counts_in_sales=true group by coalesce(data->>'displayName','Unnamed') order by 1`}
-  ] as const;
   let breakdownIndex=0;
-  for(const {question,truth} of (smoke?breakdowns.slice(0,0):breakdowns)){
+  for(const {question,truth,scope} of (smoke?breakdowns.slice(0,0):breakdowns)){
    await record("breakdown-"+ ++breakdownIndex,async capture=>{
-   const expected=(await client.query<{k:string;n:number}>(truth,params)).rows;
+   const expected=(await client.query<{k:string;n:number}>(truth,truthArgs(scope))).rows;
    const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:question});
