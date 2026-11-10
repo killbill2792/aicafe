@@ -39,7 +39,7 @@ BEGIN
   FOR p IN
     SELECT c.oid, c.relname
     FROM pg_class c WHERE c.relnamespace='public'::regnamespace
-     AND c.relkind IN ('v','m') AND c.relname LIKE 'cv\\_%' ESCAPE '\\'
+     AND c.relkind IN ('v','m') AND left(c.relname,3)='cv_'
   LOOP
     PERFORM pg_temp.pos0f_assert(
       pg_get_viewdef(p.oid, true) !~* '\\mtoast_raw_samples(_latest)?\\M',
@@ -65,7 +65,7 @@ BEGIN
   SELECT count(*) INTO bad_count
   FROM depends_on d JOIN pg_class v ON v.oid=d.view_oid
    JOIN pg_class source ON source.oid=d.referenced_oid
-  WHERE v.relnamespace='public'::regnamespace AND v.relname LIKE 'cv\\_%' ESCAPE '\\'
+  WHERE v.relnamespace='public'::regnamespace AND left(v.relname,3)='cv_'
     AND source.relnamespace='public'::regnamespace
     AND source.relname IN ('toast_raw_samples','toast_raw_samples_latest');
   PERFORM pg_temp.pos0f_assert(bad_count=0,
