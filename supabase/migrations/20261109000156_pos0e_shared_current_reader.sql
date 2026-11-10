@@ -52,14 +52,14 @@ current_nonorders as not materialized (
   and jsonb_typeof(r.payload)='object'
   -- Stage triggers also capture mirrored/test rows. A staged object needs a
   -- durable authenticated restaurant-info GET for the same café and Toast
-  -- restaurant, not the transient verified_at flag. Credential re-save or
+  -- restaurant OR a currently verified mapping awaiting its info GET. Re-save or
   -- failed re-verification clears verified_at but NOT info_refreshed_at.
   -- The mirror lacks provider-identity evidence and remains excluded. Direct
   -- current-object archives and order projections are unchanged.
   and (r.capture_key not like 'stage:%' or exists (
    select 1 from public.toast_location_mappings m
    where m.business_id=r.business_id and m.restaurant_guid=r.restaurant_guid
-    and m.info_refreshed_at is not null))
+    and (m.verified_at is not null or m.info_refreshed_at is not null)))
   and (p_business_id is null or r.business_id=p_business_id)
   and (p_from is null or r.business_date is null or r.business_date>=p_from)
   and (p_to is null or r.business_date is null or r.business_date<=p_to)
