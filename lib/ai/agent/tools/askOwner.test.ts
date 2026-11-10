@@ -152,6 +152,15 @@ describe("ask_owner tool",()=>{
      options[0],{label:"Maria B",value:"44444444-4444-4444-8444-444444444444"}],allowOther:false},another);
    expect(mixed.missing).toContain("unverifiedOption");
  });
+ it("preserves internal owner-fact calls without a source owner utterance",async()=>{
+  // Existing event/location callers can provide a partial resolveState.
+  const state={...newResolveState("What is our delivery area?"),ownerText:undefined};
+  const ctx={resolveState:state,locale:"en"} as unknown as AgentToolContext;
+  const card=await askOwnerTools.ask_owner.execute({kind:"facts",question:"Where are you located?",
+   options:[],allowOther:false,fields:[{key:"cafe_location",label:"Location",
+    inputType:"text",units:[],defaultUnit:""}]},ctx);
+  expect(card).toMatchObject({kind:"facts",missing:[]});
+ });
  it.each([
   "How many individual item selections across these two days had quantity at least two?",
   "How many selection records yesterday had quantity at least five?",
