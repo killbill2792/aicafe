@@ -177,7 +177,7 @@ test('parent_merged continuation is exact-head and requires verified main retarg
   const url='https://chatgpt.com/c/abc-123',merged='f'.repeat(40);
   const live={...record,pr_number:408,github_state:'open',head_sha:'a'.repeat(40),
     base_branch:'main',conversation_ref:url,parent_merged_sha:merged,
-    branch_maintenance_merge_sha:merged,last_parent_rebase_sha:merged};
+    branch_maintenance_merge_sha:merged,last_parent_rebase_sha:null};
   const key='parent_merged:6:'+merged,prompt='Verified parent merged: rebase onto main and continue';
   const item={...action,key,task_id:'6',type:'parent_merged',head_sha:live.head_sha,
     delivery:{...delivery,action_id:key,intent:'continue_existing_chat',
@@ -190,7 +190,7 @@ test('parent_merged continuation is exact-head and requires verified main retarg
   for(const rec of [
     {...live,base_branch:'feat/parent'},
     {...live,branch_maintenance_merge_sha:null},
-    {...live,last_parent_rebase_sha:null},
+    {...live,last_parent_rebase_sha:merged},
     {...live,parent_merged_sha:'e'.repeat(40)},
     {...live,github_state:'merged'},
   ]) assert.equal(validateHandoff(item,rec),false);
@@ -209,7 +209,7 @@ test('v2 dispatcher nudges pass bridge and opaque wake-up signal without changin
   const head='a'.repeat(40), merged='b'.repeat(40);
   const current={task_id:'6',approved:true,agent:'chatgpt',approval_hash:signature,
     conversation_ref:url,pr_number:390,github_state:'open',head_sha:head,base_branch:'main',
-    parent_merged_sha:merged,branch_maintenance_merge_sha:merged,last_parent_rebase_sha:merged};
+    parent_merged_sha:merged,branch_maintenance_merge_sha:merged,last_parent_rebase_sha:null};
   for(const type of ['codex_comments','ci_failed','parent_merged','owner_answered','idle_continue']){
     const key=type==='parent_merged'?'parent_merged:6:'+merged:'nudge:'+type;
     const d=createDelivery({task,record:current,action:type,actionId:key});
