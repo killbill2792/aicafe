@@ -71,8 +71,9 @@ export function createDelivery({ task, record, action, actionId }) {
       (record.ci_failure_url || pr) +
       '\nDiagnose and fix the actual failure; do not weaken tests; rerun CI.',
     parent_merged:'parent_merged: Verified parent merge ' + (record.parent_merged_sha || 'unknown') +
-      '. Dispatcher retargeted this child to main and attempted update-branch. Check the updated base/head, ' +
-      'resolve any conflict, rerun CI/acceptance and continue. Exactly one final-head Codex review after green CI.',
+      '. Rebase onto main and continue in this SAME child PR/chat. Dispatcher already retargeted to main ' +
+      'and attempted update-branch: verify the updated head first, do not duplicate a successful update, ' +
+      'and resolve conflicts if required. Rerun CI/acceptance; Codex once on the final green ready head.',
     owner_answered:'owner_answered: Authenticated GitHub owner answer: ' +
       String(record.owner_answer_text || 'Read PR decision').replace(/\s+/g,' ').slice(0,240) +
       '\nApply only within signed edits; reconcile the original PR comment ID and tests.',
