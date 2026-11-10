@@ -24,7 +24,7 @@ test('assignment is a linked step-specific early draft, not a full copied rulebo
   assert.match(d.prompt,/docs\/plans\/universal-supervisor-queue\.json/);
   assert.match(d.prompt,/task-6/);
   assert.match(d.prompt,/acceptance tests from signed queue/);
-  assert.match(d.prompt,/Comment/);
+  assert.match(d.prompt,/comment dispositions/);
   assert.match(d.prompt,/<!-- aicafe-coder-done -->/);
   assert.match(d.prompt,/owner questions/);
   assert.match(d.prompt,/exact-head CI\/Codex/);
