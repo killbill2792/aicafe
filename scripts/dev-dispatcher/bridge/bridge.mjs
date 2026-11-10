@@ -50,7 +50,7 @@ export function validateHandoff(action, task) {
         d.base_branch !== 'main' || action.head_sha !== task.head_sha ||
         !/^[a-f0-9]{40}$/.test(merged || '') ||
         task.branch_maintenance_merge_sha !== merged ||
-        task.last_parent_rebase_sha !== merged ||
+        task.last_parent_rebase_sha === merged ||
         action.key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + merged)
       return false;
   }
