@@ -3,10 +3,30 @@
 -- No production writes, no migration replacement, and no diagnostic purge.
 \set ON_ERROR_STOP on
 BEGIN;
+-- Exercise the regex under the production-default PostgreSQL string semantics.
+SET LOCAL standard_conforming_strings = on;
 CREATE FUNCTION pg_temp.pos0f_assert(ok boolean, detail text) RETURNS void
 LANGUAGE plpgsql AS $$ BEGIN
   IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'POS0f final-source proof failed: %', detail; END IF;
 END $$;
+
+-- Shared by real function/view lineage checks and the deliberate poison probes.
+-- With standard_conforming_strings=on, regex word boundaries need ONE slash.
+CREATE FUNCTION pg_temp.pos0f_reject_diagnostic_definition(definition text, detail text)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM pg_temp.pos0f_assert(
+    definition !~* '\mtoast_raw_samples(_latest)?\M', detail);
+END $$;
+
+-- Disposable function BODY reference (not a view dependency); this must be
+-- rejected by the exact same definition check as the operational readers.
+CREATE FUNCTION pg_temp.pos0f_poisoned_reader() RETURNS bigint
+LANGUAGE sql AS $poison$
+  SELECT count(*) FROM public.toast_raw_samples
+$poison$;
+CREATE VIEW pg_temp.pos0f_poisoned_view AS
+  SELECT count(*) AS diagnostic_rows FROM public.toast_raw_samples;
 
 DO $pos0f$
 DECLARE
@@ -18,10 +38,36 @@ DECLARE
   owner_a uuid := 'f5f5f5f5-5555-4555-8555-555555555555';
   outsider uuid := 'f6f6f6f6-6666-4666-8666-666666666666';
   forbidden_stage boolean := false;
+  poisoned_function_rejected boolean := false;
+  poisoned_view_rejected boolean := false;
   p record;
   result jsonb;
   bad_count integer;
 BEGIN
+  -- Behavioral negative regression: PostgreSQL must THROW for definitions
+  -- actually containing a diagnostic table, including inside a function body.
+  BEGIN
+    PERFORM pg_temp.pos0f_reject_diagnostic_definition(
+      pg_get_functiondef('pg_temp.pos0f_poisoned_reader()'::regprocedure),
+      'deliberately contaminated function');
+  EXCEPTION WHEN raise_exception THEN
+    poisoned_function_rejected :=
+      SQLERRM = 'POS0f final-source proof failed: deliberately contaminated function';
+  END;
+  PERFORM pg_temp.pos0f_assert(poisoned_function_rejected,
+    'Function-body diagnostic reference was not rejected');
+
+  BEGIN
+    PERFORM pg_temp.pos0f_reject_diagnostic_definition(
+      pg_get_viewdef('pg_temp.pos0f_poisoned_view'::regclass, true),
+      'deliberately contaminated view');
+  EXCEPTION WHEN raise_exception THEN
+    poisoned_view_rejected :=
+      SQLERRM = 'POS0f final-source proof failed: deliberately contaminated view';
+  END;
+  PERFORM pg_temp.pos0f_assert(poisoned_view_rejected,
+    'View diagnostic reference was not rejected');
+
   -- Check final effective function definitions, not an old migration or diff.
   FOR p IN
     SELECT oid, proname
@@ -29,8 +75,8 @@ BEGIN
      WHERE pronamespace = 'public'::regnamespace
        AND proname IN ('toast_records_for','ai_toast_fields','ai_query_view')
   LOOP
-    PERFORM pg_temp.pos0f_assert(
-      pg_get_functiondef(p.oid) !~* '\\mtoast_raw_samples(_latest)?\\M',
+    PERFORM pg_temp.pos0f_reject_diagnostic_definition(
+      pg_get_functiondef(p.oid),
       'Operational function still mentions diagnostic storage: '||p.proname);
   END LOOP;
   PERFORM pg_temp.pos0f_assert(
@@ -45,8 +91,8 @@ BEGIN
     FROM pg_class c WHERE c.relnamespace='public'::regnamespace
      AND c.relkind IN ('v','m') AND left(c.relname,3)='cv_'
   LOOP
-    PERFORM pg_temp.pos0f_assert(
-      pg_get_viewdef(p.oid, true) !~* '\\mtoast_raw_samples(_latest)?\\M',
+    PERFORM pg_temp.pos0f_reject_diagnostic_definition(
+      pg_get_viewdef(p.oid, true),
       'Final operational view still mentions diagnostics: '||p.relname);
   END LOOP;
 
