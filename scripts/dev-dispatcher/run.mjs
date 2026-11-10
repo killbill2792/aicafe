@@ -4,12 +4,12 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
-import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions, editableFiles } from "./core.mjs";
 import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
-import { mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterIntegration, retryStartupFailure } from "./effects.mjs";
+import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
 import { queueOwnerAlerts } from "./alerts.mjs";
@@ -57,6 +57,30 @@ async function main() {
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
+    for (const [id, rec] of Object.entries(copy.tasks)) {
+      const task = taskById.get(id);
+      if (!task || rec.github_state !== 'open') continue;
+      const parent = (task.depends_on || [])
+        .map(dep => copy.tasks[dep])
+        .find(p => p && p.pr_number === rec.prerequisite_pr);
+      if (parent?.github_state === 'open') {
+        rec.parent_open = true;
+        rec.waiting_only_for_parent = rec.coder_done && rec.ci_state === 'success' &&
+          Boolean(rec.acceptance_evidence);
+      } else {
+        rec.parent_open = false;
+        rec.waiting_only_for_parent = false;
+        if (parent && ['merged','integrated_proven','released_proven'].includes(parent.status) &&
+            parent.merge_sha) rec.parent_merged_sha = parent.merge_sha;
+      }
+      const previous = state.tasks[id];
+      if (previous?.github_owner_question && !rec.github_owner_question &&
+          rec.latest_owner_comment && rec.latest_owner_comment_at &&
+          rec.latest_owner_comment_at !== previous.latest_owner_comment_at) {
+        rec.owner_answer_text = rec.latest_owner_comment;
+        rec.owner_answer_key = rec.latest_owner_comment_at;
+      }
+    }
 
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
@@ -67,7 +91,7 @@ async function main() {
       const record = { task_id: assignment.task_id, status: "assigned",
         agent: assignment.agent, branch: `feat/aicafe-task-${assignment.task_id}`, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
         approval_hash: approvalSignature(taskById.get(assignment.task_id)),
-        prompt_id: `task:${assignment.task_id}`, prompt_version: "v1" };
+        prompt_id: `task:${assignment.task_id}`, prompt_version: "v2" };
       const delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
         action: "assign", actionId: key });
       copy.actions[key] = { ...assignment, task_id: assignment.task_id,
@@ -83,13 +107,17 @@ async function main() {
         const task = taskById.get(id);
         // Only approved, exactly owned tasks from the trusted queue can reach Dave.
         if (!task || task.architecture_approval?.approved !== true ||
-            !task.exclusive_files?.length || rec.approval_hash !== approvalSignature(task) ||
+            !editableFiles(task).length || rec.approval_hash !== approvalSignature(task) ||
             (Number.isInteger(rec.pr_number) && rec.github_state !== "open")) continue;
         const delivery = createDelivery({ task, record: rec,
           action: proposal.action, actionId: proposal.key });
         rec.last_action_key = proposal.key;
+        if (proposal.action === 'parent_merged') rec.last_parent_rebase_sha = rec.parent_merged_sha;
+        if (proposal.action === 'owner_answered') rec.last_owner_answer_key = rec.owner_answer_key;
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
-          status: "planned", delivery_owner: "muse", head_sha: rec.head_sha || null, created_at: now, delivery };
+          status: "planned", delivery_owner: "muse",
+          head_sha: proposal.action === 'parent_merged' ? null : rec.head_sha || null,
+          created_at: now, delivery };
         nudges.push({ task_id: id, action: proposal.action });
       }
     }
@@ -172,20 +200,50 @@ async function main() {
       if (result.status === "retry_requested") console.log(`Retried verified CI startup failure for task ${id} (run ${result.run_id})`);
     }
   }
-  // Optional branch maintenance never rebases, force-pushes or resolves conflicts.
-  if (commit && process.env.DISPATCH_BRANCH_MAINTENANCE === "true") {
-    for (const [id, rec] of Object.entries(proposed.state.tasks)) {
-      if (rec.github_state !== "open" || !rec.pr_number) continue;
+  // Default branch maintenance, always using verified trusted-main GitHub facts.
+  // Parent merge -> retarget to main -> update-branch -> exactly one subsequent
+  // parent_merged same-chat nudge. This cannot release any merge proof gate.
+  if (commit && ledger) {
+    const currentTasks = persisted?.state?.tasks || proposed.state.tasks;
+    for (const [id, rec] of Object.entries(currentTasks)) {
+      if (rec.github_state !== 'open' || !rec.pr_number || !rec.approved) continue;
       const task = taskById.get(id);
-      if (!task || !rec.approved) continue;
-      const upstream = (task.depends_on || []).map(dep => proposed.state.tasks[dep])
-        .filter(p => p?.branch === rec.base_branch && ["integrated_proven","released_proven"].includes(p.status));
-      if (upstream.length === 1) {
-        await retargetAfterIntegration({github:gh,dependent:rec,predecessor:upstream[0],enabled:true});
-        continue; // recheck the changed base on next trusted reconciliation
+      if (!task) continue;
+      const parent = (task.depends_on || []).map(dep=>currentTasks[dep])
+        .find(p=>p?.pr_number === rec.prerequisite_pr && p?.branch);
+      if (parent?.merge_sha && ['merged','integrated_proven','released_proven'].includes(parent.status) &&
+          rec.branch_maintenance_merge_sha !== parent.merge_sha) {
+        let result;
+        try {
+          result = await updateChildAfterParentMerge({github:gh,dependent:rec,predecessor:parent});
+        } catch (error) {
+          console.error('Child #'+rec.pr_number+' automatic branch update needs retry: '+error.message);
+          continue;
+        }
+        if (['update_requested','update_failed_needs_coder'].includes(result.status)) {
+          await ledger.transaction(latest=>{
+            const child=latest.tasks[id];
+            if (!child || child.pr_number!==rec.pr_number ||
+                child.parent_merged_sha!==parent.merge_sha) return null;
+            child.branch_maintenance_merge_sha=parent.merge_sha;
+            child.branch_maintenance_result=result.status;
+            return latest;
+          });
+          console.log('Child #'+rec.pr_number+': parent merged; branch maintenance '+result.status);
+        } else console.log('Child #'+rec.pr_number+': branch maintenance held ('+result.reason+')');
+        continue;
       }
-      if (rec.base_current === false && rec.base_branch === "main")
-        await safeUpdateBranch({github:gh,record:rec,enabled:true});
+      // Ordinary main-based stale branches are refreshed automatically, never
+      // force-pushed. A new head must rerun all exact-head CI/acceptance/Codex.
+      if (rec.base_current === false && rec.base_branch === 'main') {
+        try {
+          const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
+          console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
+        } catch (error) {
+          // A temporarily conflicting update must not stall other approved PRs.
+          console.error('PR #'+rec.pr_number+' main branch update will retry: '+error.message);
+        }
+      }
     }
   }
   // Auto-merge is separately opt-in and requires independently verified acceptance evidence.
@@ -271,7 +329,7 @@ async function main() {
     `- Private durable state: **${commit ? persisted?.committed ? "saved" : "unchanged" : ledger ? "read-only" : "not configured"} (no external actions)**`,
     "- Browser submissions: **not performed by GitHub**; courier execution is separate.",
     `- Auto-merge opt-in: **${autoMerge ? "enabled (strict gates enforced)" : "disabled"}**.`,
-    `- Branch maintenance opt-in: **${commit && process.env.DISPATCH_BRANCH_MAINTENANCE === "true" ? "enabled" : "disabled"}**.`,
+    `- Branch maintenance: **${commit && ledger ? "enabled by default (trusted-main; exact-head proof unchanged)" : "read-only"}**.`,
     `- Transient CI retry opt-in: **${commit && process.env.DISPATCH_TRANSIENT_CI_RETRY === "true" ? "enabled" : "disabled"}**.`,
   ].join("\n");
   console.log(summary);

@@ -26,7 +26,7 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
    if(path.startsWith('/actions/runs/')) return path.includes('/jobs') ? {total_count:1,jobs:[{name:'AI CAFE PR baseline',conclusion:'success'}]} : {id:10,head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
    if(path.startsWith('/contents/')) return {type:'file'};
    return pr;
- },one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',threads_resolved:true}),
+ },one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',coder_done:true,threads_resolved:true}),
  acceptanceProof:async()=>({task_id:'6',run_id:11,head_sha:'head',base_sha:'base',acceptance_digest:acceptanceDigest(evidence.acceptance),acceptance:[{...evidence.acceptance[0]}]})};
  assert.equal((await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:false})).status,'disabled');
  const done=await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true});
@@ -34,7 +34,7 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
  assert.equal(done.integration_dispatch,'requested');
  assert.deepEqual(calls.at(-2),['/pulls/100/merge','PUT']);
  assert.deepEqual(calls.at(-1),['/actions/workflows/ai-cafe-integration-proof.yml/dispatches','POST']);
- const draftPr={...pr,draft:true,node_id:'PR_100',labels:[],body:''};
+ const draftPr={...pr,draft:true,node_id:'PR_100',labels:[],body:'<!-- aicafe-coder-done -->'};
  const readyCalls=[];
  const readyGitHub={...github,request:async(path,options)=>{
    readyCalls.push([path,options?.method]);
@@ -44,22 +44,22 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
    return github.request(path,options);
  }};
  const prepared=await mergeApprovedPr({github:readyGitHub,
-   record:{...rec,draft:true},evidence,expectedAcceptance:['scenario'],
+   record:{...rec,draft:true,coder_done:true},evidence,expectedAcceptance:['scenario'],
    enabled:true,action:'ready'});
  assert.equal(prepared.status,'ready_for_review');
  assert.ok(readyCalls.some(([path,method])=>path==='https://api.github.com/graphql' && method==='POST'));
  assert.equal(readyCalls.some(([path])=>path==='/pulls/100/merge'),false);
  const disputed=await mergeApprovedPr({github:readyGitHub,
-   record:{...rec,draft:true,github_owner_question:'Approve scope expansion?'},
+   record:{...rec,draft:true,coder_done:true,github_owner_question:'Approve scope expansion?'},
    evidence,expectedAcceptance:['scenario'],enabled:true,action:'ready'});
  assert.deepEqual(disputed.reasons,['owner_decision_pending']);
  const staleLabel={...readyGitHub,request:async(path,options)=>
    path==='/pulls/100'?{...draftPr,labels:[{name:'needs-owner-decision'}]}:
    readyGitHub.request(path,options)};
  assert.deepEqual((await mergeApprovedPr({github:staleLabel,
-   record:{...rec,draft:true},evidence,expectedAcceptance:['scenario'],
+   record:{...rec,draft:true,coder_done:true},evidence,expectedAcceptance:['scenario'],
    enabled:true,action:'ready'})).reasons,['live_owner_question_pending']);
- assert.equal((await mergeApprovedPr({github:readyGitHub,record:{...rec,draft:true},
+ assert.equal((await mergeApprovedPr({github:readyGitHub,record:{...rec,draft:true,coder_done:true},
    evidence,expectedAcceptance:['scenario'],enabled:false,action:'ready'})).status,'disabled');
  let readyReads=0;
  const lastMinuteReady={...readyGitHub,request:async(path,options)=>{
@@ -70,7 +70,7 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
    return readyGitHub.request(path,options);
  }};
  assert.deepEqual((await mergeApprovedPr({github:lastMinuteReady,
-   record:{...rec,draft:true},evidence,expectedAcceptance:['scenario'],
+   record:{...rec,draft:true,coder_done:true},evidence,expectedAcceptance:['scenario'],
    enabled:true,action:'ready'})).reasons,['live_owner_question_pending']);
  let mergeReads=0;
  const lastMinuteMerge={...github,request:async(path,options)=>{
@@ -133,17 +133,28 @@ test('safe update branch requires live SHA and blocks conflicts',async()=>{
  assert.equal((await safeUpdateBranch({github:gh,record:{...rec,head_sha:'stale',github_state:'open'},enabled:true})).status,'blocked');
  assert.equal(writes,1);
 });
-test('retarget requires integrated predecessor and matching live base',async()=>{
- let writes=0;
+test('legacy retarget entrypoint reuses live-verified merged parent plus branch update',async()=>{
+ let patches=0, updates=0, base='feat/parent';
+ const sha='f'.repeat(40);
  const gh={request:async(path,opts)=>{
-  if(opts?.method==='PATCH'){writes++;return {base:{ref:'main'}};}
-  return {state:'open',head:{sha:'head'},base:{ref:'feat/parent'}};
+   if(path==='/pulls/99')return{merged_at:'2026-11-09T22:00:00Z',
+     merge_commit_sha:sha,head:{ref:'feat/parent'}};
+   if(path==='/pulls/100'&&opts?.method==='PATCH'){patches++;base='main';return{};}
+   if(path==='/pulls/100')return{state:'open',merged:false,
+     head:{sha:'head'},base:{ref:base}};
+   if(path==='/pulls/100/update-branch'){updates++;return{};}
+   throw Error(path);
  }};
- const dependent={pr_number:100,head_sha:'head'};
- const predecessor={branch:'feat/parent',status:'merged'};
- assert.equal((await retargetAfterIntegration({github:gh,dependent,predecessor,enabled:true})).status,'blocked');
- assert.equal((await retargetAfterIntegration({github:gh,dependent,predecessor:{...predecessor,status:'integrated_proven'},enabled:true})).status,'retargeted');
- assert.equal(writes,1);
+ const child={pr_number:100,head_sha:'head',github_state:'open'};
+ const parent={pr_number:99,branch:'feat/parent',status:'merged',merge_sha:sha};
+ assert.equal((await retargetAfterIntegration({github:gh,dependent:child,
+   predecessor:{...parent,merge_sha:null},enabled:true})).status,'blocked');
+ assert.equal(patches,0);
+ const updated=await retargetAfterIntegration({github:gh,dependent:child,
+   predecessor:parent,enabled:true});
+ assert.equal(updated.status,'update_requested');
+ assert.equal(patches,1);
+ assert.equal(updates,1);
 });
 
 test('verified infrastructure CI retry is at-most-once and fails closed',async()=>{

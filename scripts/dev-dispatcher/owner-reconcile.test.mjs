@@ -46,7 +46,7 @@ test('existing draft owner question produces one Muse notice, stops stale remind
   assert.equal(rec.conversation_ref,conversation);
   // A scoped owner question may remain pending while already-approved
   // CI/review work resumes in the same verified conversation.
-  assert.equal(decideNudge(rec,Date.parse('2026-11-07T10:00:00Z')).action,'continue_pr');
+  assert.equal(decideNudge(rec,Date.parse('2026-11-07T10:00:00Z')).action,'idle_continue');
   assert.equal(first.actions['POS0a:pre_pr_reminder:pre-pr:v1:start'].status,'cancelled_stale_head');
   const entries=Object.entries(first.owner_alerts);
   assert.equal(entries.length,1);

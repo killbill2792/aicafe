@@ -8,7 +8,17 @@ import { spawn } from 'node:child_process';
 
 const safeName = s => typeof s === 'string' && /^[a-zA-Z0-9_.-]{1,80}$/.test(s);
 const sha = s => createHash('sha256').update(s).digest('hex');
-const ACTION_INTENTS = { assign: 'start_new_chat', repair_ci: 'continue_existing_chat', repair_review: 'continue_existing_chat', continue_pr: 'continue_existing_chat', pre_pr_reminder: 'continue_existing_chat' };
+const ACTION_INTENTS = {
+  assign: 'start_new_chat',
+  repair_ci: 'continue_existing_chat', repair_review: 'continue_existing_chat',
+  continue_pr: 'continue_existing_chat', pre_pr_reminder: 'continue_existing_chat',
+  // Dispatcher v2 uses reason-specific names; these are the same saved-chat
+  // continuation intent, NOT new receipt types or a new courier.
+  ci_failed: 'continue_existing_chat', codex_comments: 'continue_existing_chat',
+  parent_merged: 'continue_existing_chat', owner_answered: 'continue_existing_chat',
+  idle_continue: 'continue_existing_chat',
+  plan: 'continue_existing_chat', brainstorm: 'continue_existing_chat'
+};
 
 export function validateHandoff(action, task) {
   const d = action?.delivery;
@@ -26,9 +36,25 @@ export function validateHandoff(action, task) {
       typeof d.base_branch !== 'string' || !/^[a-zA-Z0-9_./-]+$/.test(d.base_branch) ||
       !/^[a-f0-9]{64}$/.test(d.approval_hash || '') ||
       d.approval_hash !== task.approval_hash) return false;
-  const prFollowup = ['repair_ci', 'repair_review', 'continue_pr'].includes(action.type);
+  const prFollowup = ['repair_ci', 'repair_review', 'continue_pr',
+    'ci_failed', 'codex_comments', 'owner_answered', 'idle_continue'].includes(action.type);
   if (prFollowup && (!Number.isInteger(task.pr_number) || task.github_state !== 'open' ||
       !task.head_sha || action.head_sha !== task.head_sha)) return false;
+  // Parent-merged is deliberately head-independent: GitHub update-branch can
+  // change the child's head before the browser receives the ONE follow-up.
+  // Anchor it instead to a verified parent merge, completed maintenance,
+  // main destination, task identity and the stable action key.
+  if (action.type === 'parent_merged') {
+    const merged = task.parent_merged_sha;
+    if (!Number.isInteger(task.pr_number) || task.github_state !== 'open' ||
+        !task.head_sha || task.base_branch !== 'main' ||
+        d.base_branch !== 'main' || action.head_sha != null ||
+        !/^[a-f0-9]{40}$/.test(merged || '') ||
+        task.branch_maintenance_merge_sha !== merged ||
+        task.last_parent_rebase_sha !== merged ||
+        action.key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + merged)
+      return false;
+  }
   if (action.type === 'pre_pr_reminder' && Number.isInteger(task.pr_number)) return false;
   if (d.intent === 'start_new_chat') return d.conversation_url == null && !task.conversation_ref;
   return validTarget(d.provider, d.conversation_url) && task.conversation_ref === d.conversation_url;
