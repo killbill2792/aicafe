@@ -129,12 +129,20 @@ async function main() {
       copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
-      // Never queue a second browser action while a prior delivery is pending or unverified.
+      const proposal = decideNudge(rec, Date.now());
+      // A not-yet-claimed checklist becomes obsolete as soon as its actionable
+      // state changes. Never cancel claimed/uncertain sends or invent receipts.
+      for (const action of Object.values(copy.actions)) {
+        if (action.task_id !== id || action.status !== 'planned' ||
+            action.type === 'assign') continue;
+        if (proposal.kind !== 'propose' || action.delivery?.action_id !== proposal.key)
+          action.status = 'cancelled_state_changed';
+      }
+      // Exactly one live prompt per PR, including any claimed/uncertain action.
       if (Object.values(copy.actions).some(a =>
           ["planned", "claimed", "uncertain"].includes(a.status) &&
           (a.task_id === id || (Number.isInteger(rec.pr_number) &&
             copy.tasks[a.task_id]?.pr_number === rec.pr_number)))) continue;
-      const proposal = decideNudge(rec, Date.now());
       if (proposal.kind !== "propose") continue;
       if (!copy.actions[proposal.key]) {
         const task = taskById.get(id);
