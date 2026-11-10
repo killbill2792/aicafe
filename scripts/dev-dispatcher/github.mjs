@@ -1,9 +1,30 @@
+import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
 export function parseTaskMarker(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;
   const marks = [...body.matchAll(/<!-- aicafe-task-id\s+([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\s*-->/g)];
   return marks.length === 1 ? marks[0][1] : null;
+}
+export function parseChatMarker(body) {
+  if (typeof body !== 'string' || body.length > 100000) return null;
+  const matches = [...body.matchAll(/<!--\s*aicafe-chat-url\s+(\S+)\s*-->/g)];
+  if (matches.length !== 1) return null;
+  try {
+    const url = new URL(matches[0][1]);
+    if (url.protocol !== 'https:' || url.host !== 'chatgpt.com' ||
+        url.username || url.password || url.search || url.hash ||
+        !/^\/(?:c\/[a-zA-Z0-9-]+|g\/[a-zA-Z0-9_-]+\/c\/[a-zA-Z0-9-]+)\/?$/.test(url.pathname))
+      return null;
+    return url.href;
+  } catch { return null; }
+}
+
+export function dispatcherOnlyFiles(files) {
+  return Array.isArray(files) && files.length > 0 &&
+    files.every(f => typeof f?.filename === 'string' &&
+      (/^scripts\/dev-dispatcher\//.test(f.filename) ||
+       /^\.github\/workflows\//.test(f.filename)));
 }
 export function parseOwnerQuestion(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;
@@ -91,11 +112,33 @@ export class GitHubFacts {
     if (response.status === 204) return { ok:true };
     return response.json();
   }
+  // Collection pagination is mandatory for prompt proof transitions: stopping at
+  // page one delays integrated_proven indefinitely on busy repositories.
+  async paginated(path, key, maxPages = 20) {
+    const items = [];
+    for (let page = 1; page <= maxPages; page++) {
+      const separator = path.includes('?') ? '&' : '?';
+      const result = await this.request(path + separator + 'per_page=100&page=' + page);
+      const chunk = Array.isArray(result) ? result : result?.[key];
+      if (!Array.isArray(chunk)) throw new Error('Invalid GitHub pagination: ' + key);
+      items.push(...chunk);
+      if (chunk.length < 100) return items;
+    }
+    throw new Error('GitHub pagination limit reached: ' + key);
+  }
+  async workflowRuns(workflow, filters = '') {
+    if (!/^[a-z0-9-]+\.yml$/.test(workflow)) throw new Error('Invalid workflow');
+    return this.paginated('/actions/workflows/' + workflow + '/runs' +
+      (filters ? '?' + filters : ''), 'workflow_runs');
+  }
+  async workflowJobs(runId) {
+    if (!Number.isSafeInteger(runId) || runId < 1) throw new Error('Invalid workflow run');
+    return this.paginated('/actions/runs/' + runId + '/jobs', 'jobs');
+  }
   async proofArtifact(runId, artifactName, filename) {
     if (!Number.isSafeInteger(runId) || runId < 1) throw new Error('Invalid proof run');
-    const list = await this.request('/actions/runs/' + runId + '/artifacts?per_page=100');
-    if (list.total_count > 100 || !Array.isArray(list.artifacts)) throw new Error('Unverified proof pagination');
-    const matches = list.artifacts.filter(a => a.name === artifactName && !a.expired);
+    const artifacts = await this.paginated('/actions/runs/' + runId + '/artifacts','artifacts');
+    const matches = artifacts.filter(a => a.name === artifactName && !a.expired);
     if (matches.length !== 1) return null;
     const response = await this.fetchFn('https://api.github.com/repos/' + this.repo +
       '/actions/artifacts/' + matches[0].id + '/zip', {headers:{
@@ -156,14 +199,43 @@ export class GitHubFacts {
   }
   async ownerDecision(pr, comments = null) {
     if (!(pr.labels || []).some(label => label.name === 'needs-owner-decision'))
-      return { question: null, url: null };
+      return { question: null, url: null, approved: false };
     const inBody = parseOwnerQuestion(pr.body);
-    if (inBody) return { question: inBody, url: pr.html_url || null };
-    // Owners can request a decision in the PR conversation, not only in its body.
-    // Only trusted repository contributors may supply an actionable question.
+    // A newer authenticated owner approval resolves the decision even if the
+    // label or structured question marker has not yet been removed.
     comments ??= await this.request(`/issues/${pr.number}/comments?per_page=100`);
     if (!Array.isArray(comments) || comments.length >= 100)
       throw new Error('Owner-question comments require verified pagination');
+    const latestApproval = comments.filter(c => c.author_association === 'OWNER' &&
+      /^\s*Owner approved\b/i.test(String(c.body || '')))
+      .sort((a,b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || ''))[0];
+    const questionTime = comments.filter(c =>
+      ['OWNER','MEMBER','COLLABORATOR'].includes(c.author_association) &&
+      parseOwnerQuestion(c.body)).reduce((at,c) =>
+        Math.max(at,Date.parse(c.created_at || '') || 0), 0);
+    // A historical comment question cannot authorize a newly edited PR-body
+    // question. Without a body-revision receipt, a later PR update holds the
+    // decision conservatively rather than guessing what "Owner approved" meant.
+    // Prefer an explicit question-identity receipt when one is supplied; never
+    // apply an approval naming an earlier question to a revised question.
+    const latestCommentQuestion = comments.filter(c =>
+      ['OWNER','MEMBER','COLLABORATOR'].includes(c.author_association) &&
+      parseOwnerQuestion(c.body)).sort((a,b)=>
+        Date.parse(b.created_at || '') - Date.parse(a.created_at || ''))[0];
+    const activeQuestion = inBody || parseOwnerQuestion(latestCommentQuestion?.body);
+    const bound = String(latestApproval?.body || '').match(
+      /<!-- aicafe-owner-approved-question ([a-f0-9]{64}) -->/);
+    const activeDigest = activeQuestion
+      ? createHash('sha256').update(activeQuestion).digest('hex') : null;
+    const identityMatches = !bound || bound[1] === activeDigest;
+    const approvalAfterRevision = latestApproval &&
+      Date.parse(latestApproval.created_at || '') >= questionTime &&
+      (!inBody || Date.parse(latestApproval.created_at || '') >= Date.parse(pr.updated_at || ''));
+    if (approvalAfterRevision && identityMatches)
+      return { question: null, url: null, approved: true };
+    if (inBody) return { question: inBody, url: pr.html_url || null };
+    // Owners can request a decision in the PR conversation, not only in its body.
+    // Only trusted repository contributors may supply an actionable question.
     const trusted = comments.filter(c =>
       ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(c.author_association));
     const match = trusted.reverse().find(c => parseOwnerQuestion(c.body));
@@ -192,6 +264,12 @@ export class GitHubFacts {
   }
   async one(pr) {
     const sha = pr.head.sha;
+    // List-PR responses may omit GitHub's computed mergeability. Resolve the
+    // detail on the same head rather than treating a missing field as proof.
+    const detail = typeof pr.mergeable === 'boolean' ? pr :
+      await this.request(`/pulls/${pr.number}`).catch(() => null);
+    const mergeable = detail?.head?.sha === sha && detail?.base?.sha === pr.base.sha &&
+      detail.mergeable === true;
     const [checks, reviews, unresolved, commit, comparison, comments] = await Promise.all([
       this.request(`/commits/${sha}/check-runs?per_page=100`),
       this.request(`/pulls/${pr.number}/reviews?per_page=100`),
@@ -231,8 +309,9 @@ export class GitHubFacts {
       codex?.state === 'APPROVED' ? 'clean' : 'pending';
     const latestState = useFormal ? formalState : summary?.state || 'pending';
     const reviewed = latestState !== 'pending' ? sha : null;
-    const codexState = unresolved === null ? "unknown" :
-      unresolved > 0 && (codexReviews.length || summary) ? "findings" : latestState;
+    // Historical unresolved threads remain an independent merge gate, but do
+    // not override the newest authenticated Codex receipt for this head.
+    const codexState = latestState;
     const unresolvedComments = codexState === 'findings'
       ? await this.unresolvedComments(pr.number).catch(()=>[]) : [];
     const trustedOwner = comments.filter(c=>c.author_association==='OWNER')
@@ -241,7 +320,20 @@ export class GitHubFacts {
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
+      chat_marker: parseChatMarker(pr.body),
+      same_repo: pr.head?.repo?.full_name === this.repo &&
+        pr.base?.repo?.full_name === this.repo,
+      bot_author: /(?:\[bot\]|bot$)/i.test(pr.user?.login || '') ||
+        pr.user?.type === 'Bot',
+      dispatcher_only: dispatcherOnlyFiles(comparison.files),
       github_owner_question: ownerDecision.question,
+      // Routine decisions are informational; only privileged work is held.
+      sensitive_owner_block: (pr.labels || []).some(label =>
+        /(?:^|[-_])(paid|live|prod|production|secret|secrets)(?:$|[-_])/i.test(label.name || '') &&
+        !/^(?:approved|owner-approved)/i.test(label.name || '')),
+      mergeable,
+      mergeable_state: pr.mergeable_state || null,
+      owner_approved: ownerDecision.approved === true,
       github_owner_question_url: ownerDecision.url,
       coder_done: typeof pr.body === 'string' &&
         pr.body.includes('<!-- aicafe-coder-done -->'),
@@ -255,6 +347,7 @@ export class GitHubFacts {
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
       ci_state: ci, ci_failure_kind: baseline?.conclusion === 'startup_failure' ? 'startup_failure' : null,
       codex_state: codexState, codex_reviewed_sha: reviewed,
+      codex_in_progress_sha: summary?.state === 'pending' && !useFormal ? sha : null,
       threads_resolved: unresolved === 0,
       // GitHub's verified compare paths (not a PR marker) distinguish
       // dispatcher/AGENTS maintenance from unknown coding-task PRs.

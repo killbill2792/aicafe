@@ -11,6 +11,12 @@ function checkedRange(range:Range){
 }
 export function mapToastLaborEntry(p:LocationParams,f:ToastAttendanceFact) {
  if(f.externalLocationId!==p.restaurantGuid)throw new ToastApiError("unauthorized_location");
+ const clockIn=Date.parse(f.clockIn);
+ const clockOut=f.clockOut===null?null:Date.parse(f.clockOut);
+ if(!Number.isFinite(clockIn)||
+   (clockOut!==null&&(!Number.isFinite(clockOut)||clockOut<clockIn))||
+   (f.modifiedAt!=null&&!Number.isFinite(Date.parse(f.modifiedAt))))
+   throw new ToastApiError("invalid_response");
  return {
    business_id:p.businessId,restaurant_guid:p.restaurantGuid,
    location_id:p.locationId,external_time_entry_id:f.externalTimeEntryId,
@@ -24,7 +30,9 @@ export function mapToastLaborEntry(p:LocationParams,f:ToastAttendanceFact) {
  };
 }
 export function mapToastScheduledShift(p:LocationParams,s:ToastScheduledShift) {
- if(s.externalLocationId!==p.restaurantGuid||Date.parse(s.scheduledEnd)<=Date.parse(s.scheduledStart))
+ if(s.externalLocationId!==p.restaurantGuid)throw new ToastApiError("unauthorized_location");
+ const start=Date.parse(s.scheduledStart),end=Date.parse(s.scheduledEnd);
+ if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)
    throw new ToastApiError("invalid_response");
  return {
    business_id:p.businessId,location_id:p.locationId,

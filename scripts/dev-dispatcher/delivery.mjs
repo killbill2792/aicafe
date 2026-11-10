@@ -5,7 +5,7 @@ export const promptHash = prompt => createHash('sha256').update(prompt).digest('
 // Generated ONLY on trusted main by the existing deterministic dispatcher.
 const PROVIDERS = new Set(['chatgpt', 'claude']);
 const ACTIONS = new Set(['assign', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder',
-  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'idle_continue', 'plan', 'brainstorm']);
+  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'dependency_proven', 'repair_conflict', 'idle_continue', 'plan', 'brainstorm']);
 const REPO = 'https://github.com/killbill2792/aicafe';
 
 // POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING is mandatory and remains
@@ -16,16 +16,63 @@ const REPO = 'https://github.com/killbill2792/aicafe';
 // The short prompt is not a substitute for any of those linked contracts.
 // Stable authorization identity. A changed task brief, scope, approval or dependency
 // requires a new owner-reviewed assignment, never reuse an old browser envelope.
+function approvalFields(task) {
+  return [task.id, task.state, task.architecture_approval, task.exclusive_files,
+    task.depends_on, task.title, task.goal, task.brief, task.acceptance];
+}
+const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+// V2 authorization signs the immutable WRITE scope; informational read-only
+// 'uses' additions cannot silently revoke an already-approved task.
 export function approvalSignature(task) {
   if (!task) return null;
-  const fields = [task.id, task.state, task.architecture_approval, task.exclusive_files,
-    task.depends_on, task.title, task.goal, task.brief, task.acceptance];
-  // Do not invalidate signatures of already-planned, owner-signed legacy tasks.
-  if (Object.hasOwn(task,'edits') || Object.hasOwn(task,'uses'))
-    fields.push(task.edits,task.uses);
-  return createHash('sha256').update(JSON.stringify(fields)).digest('hex');
+  return digest(['v2', ...approvalFields(task), editableFiles(task)]);
+}
+export function approvalMatches(task, signed) {
+  if (!task || typeof signed !== 'string') return false;
+  if (signed === approvalSignature(task)) return true;
+  // Historical v1 approvals were unversioned and sometimes omitted 'uses'
+  // before the optional read-only import field was added. Accept either
+  // historical shape without weakening exclusive-file / edits validation.
+  const fields = approvalFields(task);
+  const historical = [
+    [...fields,task.edits,task.uses],
+    [...fields,task.edits,undefined],
+    [...fields,task.edits,[]]
+  ];
+  // The no-edits v1 signature is valid only when no new explicit write
+  // scope was introduced; otherwise it would authorize unsigned edits.
+  if (!Object.hasOwn(task, 'edits')) historical.push(fields);
+  return historical.some(parts => digest(parts) === signed);
 }
 
+
+export function createAdhocDelivery({record,action,actionId}) {
+  if (!record?.adhoc || !record.approved || record.github_state !== 'open' ||
+      record.task_id !== 'ADHOC-' + record.pr_number ||
+      !['ci_failed','codex_comments','repair_conflict'].includes(action) ||
+      typeof actionId !== 'string' || !actionId || actionId.length > 400 ||
+      !validConversationUrl('chatgpt',record.conversation_ref) ||
+      !/^[a-f0-9]{64}$/.test(record.approval_hash || ''))
+    throw new Error('Invalid ad hoc PR handoff');
+  const pr = REPO + '/pull/' + record.pr_number;
+  const reason = action === 'ci_failed'
+    ? 'Diagnose current-head CI failure: ' + (record.ci_failure_url || pr)
+    : action === 'codex_comments'
+      ? 'Resolve current-head Codex findings and review threads on ' + pr
+      : 'Resolve the GitHub merge conflict on ' + pr;
+  const prompt = [
+    'AI CAFE ' + action + ' | task ' + record.task_id + ' | PR ' + pr,
+    reason,
+    'Continue this SAME PR/chat; inspect exact head ' + record.head_sha +
+      ', fix only relevant files, rerun checks and obtain clean exact-head Codex review.',
+    'Authority: ' + REPO + '/blob/main/AGENTS.md',
+    'Do not merge dispatcher/workflow-only PRs; owner must merge those.'
+  ].join('\n');
+  return {version:1,approval_signature_version:2,action_id:actionId,
+    project:{id:'aicafe',name:'AI CAFE'},approval_hash:record.approval_hash,
+    provider:'chatgpt',intent:'continue_existing_chat',base_branch:record.base_branch || 'main',
+    conversation_url:record.conversation_ref,task_id:record.task_id,prompt,prompt_hash:promptHash(prompt)};
+}
 
 export function createDelivery({ task, record, action, actionId }) {
   const edits = editableFiles(task);
@@ -38,7 +85,7 @@ export function createDelivery({ task, record, action, actionId }) {
   if (typeof actionId !== 'string' || !actionId || actionId.length > 400)
     throw new Error('Invalid action ID');
   const authorization = approvalSignature(task);
-  if (record.approval_hash && record.approval_hash !== authorization)
+  if (record.approval_hash && !approvalMatches(task, record.approval_hash))
     throw new Error('Task approval or scope changed');
   const isNew = action === 'assign';
   const url = record.conversation_ref || null;
@@ -67,6 +114,7 @@ export function createDelivery({ task, record, action, actionId }) {
     codex_comments:'codex_comments: Resolve these unresolved Codex threads:\n' +
       (comments || 'Read unresolved threads on ' + pr) +
       '\nFix together; rerun CI before ONE re-review on the final head.',
+    repair_conflict:'repair_conflict: GitHub reports a merge conflict or failed branch update. Resolve the conflict on the current PR head and rerun required checks.',
     ci_failed:'ci_failed: ' + (record.ci_failure_job || 'Find failing CI job') + '\n' +
       (record.ci_failure_url || pr) +
       '\nDiagnose and fix the actual failure; do not weaken tests; rerun CI.',
@@ -74,6 +122,9 @@ export function createDelivery({ task, record, action, actionId }) {
       '. Rebase onto main and continue in this SAME child PR/chat. Dispatcher already retargeted to main ' +
       'and attempted update-branch: verify the updated head first, do not duplicate a successful update, ' +
       'and resolve conflicts if required. Rerun CI/acceptance; Codex once on the final green ready head.',
+    dependency_proven:'dependency_proven: Verified merged-main integration proof for ' +
+      String(record.dependency_proven_text || 'one or more prerequisites') +
+      '. Continue this SAME PR/chat; verify newly available dependencies and rerun your exact-head tests.',
     owner_answered:'owner_answered: Authenticated GitHub owner answer: ' +
       String(record.owner_answer_text || 'Read PR decision').replace(/\s+/g,' ').slice(0,240) +
       '\nApply only within signed edits; reconcile the original PR comment ID and tests.',
@@ -105,9 +156,25 @@ export function createDelivery({ task, record, action, actionId }) {
       ' Use acceptance tests from signed queue; include exact execution links, ' +
       'PR comment dispositions and <!-- aicafe-coder-done --> only when actually complete.'
     : reason[action];
+  const isPr = Number.isInteger(record.pr_number);
+  const checklist = isPr ? [
+    'ONE combined PR checklist; answer with ONE authenticated delivery receipt:',
+    'CI: ' + (record.ci_state || 'unknown') +
+      (record.ci_failure_job ? ' (' + record.ci_failure_job + ')' : '') +
+      '; verify checks on current head ' + (record.head_sha || 'unknown'),
+    'Codex: ' + (record.codex_state || 'unknown') +
+      '; exact-head receipt ' + (record.codex_reviewed_sha || 'none') +
+      '; resolve outstanding review threads without using old-head findings as current state',
+    'Privileged owner hold: ' + (record.sensitive_owner_block ? 'paid/live/prod/secret approval needed' : 'none') +
+      '; acceptance: ' + (record.acceptance_proven === true ? 'proven' : 'not yet proven') +
+      '; coder done: ' + (record.coder_done === true ? 'yes' : 'no'),
+    ...(record.dependency_proven_text ? ['Proven dependencies: ' + record.dependency_proven_text] : []),
+    'Do all applicable fixes together; keep this same PR/chat and do not open competing prompts.'
+  ] : [];
   const lines = [
     'AI CAFE ' + action + ' | task ' + task.id + ' | PR ' + pr,
     step,
+    ...checklist,
     'Edits ONLY: ' + scope + '. Uses READ-ONLY: ' +
       (uses.length ? (uses.length > 4 ? 'see queue uses (' + uses.length + ')' : uses.join(', ')) : 'none') + '.',
     stacked && !isNew && action !== 'parent_merged' ?
@@ -125,7 +192,8 @@ export function createDelivery({ task, record, action, actionId }) {
   const promptBytes = Buffer.byteLength(prompt,'utf8');
   if (promptBytes > 4096)
     console.warn(`Task ${task.id} delivery prompt exceeds 4096 bytes (${promptBytes}); continuing`);
-  return {version:1,action_id:actionId,project,approval_hash:authorization,
+  return {version:1,approval_signature_version:record.approval_hash && record.approval_hash !== authorization ? 1 : 2,
+    action_id:actionId,project,approval_hash:record.approval_hash || authorization,
     provider:record.agent,intent:isNew?'start_new_chat':'continue_existing_chat',
     base_branch:record.base_branch || 'main',conversation_url:url,
     task_id:task.id,prompt,prompt_hash:promptHash(prompt)};
