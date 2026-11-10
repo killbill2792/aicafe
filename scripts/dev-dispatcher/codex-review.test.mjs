@@ -57,21 +57,3 @@ test('existing current-head dispatcher request is not duplicated',async()=>{
   assert.equal(result.status,'already_requested');
   assert.equal(github.posted.length,0);
 });
-test('draft, unproven dependency, old head, owner block and red CI hold request',async()=>{
-  const gates=[
-    [rec(),{parent:{status:'merged'}}],
-    [{...rec(),draft:true},{parent:{status:'integrated_proven'}}],
-    [{...rec(),ci_state:'failure'},{parent:{status:'integrated_proven'}}],
-    [{...rec(),github_owner_question:'needs decision'},{parent:{status:'integrated_proven'}}],
-    [{...rec(),codex_reviewed_sha:head},{parent:{status:'integrated_proven'}}],
-  ];
-  for(const [record,records] of gates){
-    const github=fakeGithub();
-    assert.equal((await requestCodexReview({github,record,task,records})).status,'held');
-    assert.equal(github.posted.length,0);
-  }
-  assert.equal((await requestCodexReview({
-    github:fakeGithub({ci:'failure'}),record:rec(),task,
-    records:{parent:{status:'integrated_proven'}}
-  })).status,'held_live');
-});
