@@ -92,3 +92,12 @@ test('authenticated running Codex summary on current head suppresses second trig
   assert.equal(result.status,'already_running');
   assert.equal(gh.posted.length,0);
 });
+
+test('live current-head in-progress Codex signal holds without posting',async()=>{
+  const gh=fakeGithub();
+  gh.one=async()=>({...rec(),codex_in_progress_sha:head,
+    codex_reviewed_sha:null,ci_state:'success',sensitive_owner_block:false});
+  const result=await requestCodexReview({github:gh,record:rec(),task});
+  assert.equal(result.status,'held_live');
+  assert.equal(gh.posted.length,0);
+});
