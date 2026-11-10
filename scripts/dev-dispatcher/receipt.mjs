@@ -73,6 +73,15 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
   action.receipt = { courier: authenticatedCourier, prompt_hash: d.prompt_hash,
     conversation_url: receipt.conversation_url };
   task.conversation_ref = receipt.conversation_url;
+  if (Number.isInteger(task.pr_number) && task.github_state === 'open') {
+    next.pr_chat_links ||= {};
+    next.pr_chat_links[String(task.pr_number)] = {
+      task_id:task.task_id,conversation_url:receipt.conversation_url,
+      head_sha:task.head_sha || null,updated_at:action.submitted_at
+    };
+  }
+  if (action.type === 'dependency_proven' && action.dependency_signature)
+    task.last_dependency_proven_signature = action.dependency_signature;
   task.last_submission_at = action.submitted_at;
   task.submission_state = 'submitted';
   return next;
