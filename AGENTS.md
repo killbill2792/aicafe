@@ -41,11 +41,26 @@ Where an older line in this file conflicts with these rules, these rules win.
    authorized work. Independent PRs branch from the latest `main`. If PR B depends on open
    PR A, open B with **base = A's branch (not `main`)**; keep B's code ready and its CI green on that
    base. **B merges only after A is on `main`.** Then rebase B onto (or retarget B to) the latest
-   `main`, re-run CI and Codex review, re-check migration numbers, and list any other open PRs that
-   touch the same files. Merge only under the auto-merge rule.
+   `main`, re-run CI, and request one Codex review only after the merged-parent child is CI-green
+   and ready. Re-check migration numbers and list any other open PRs that touch the same files. Merge only under the auto-merge rule.
 8. **Merge readiness.** A PR is mergeable only when CI is green, the Codex review is clean (or every comment
    is fixed and re-reviewed), it is rebased on current main, and the PR body says what changed, what was
    deleted and what was not touched.
+8b. **One Codex request per meaningful ready state, never per push.** Keep early PRs as drafts
+   without requesting review. Request Codex only after the *complete applicable CI suite* is green
+   for the implementation under review and the PR is actually ready. Count a Codex review triggered
+   automatically by marking the PR ready as the one request; do not also post `@codex review`.
+   Do not re-request for issue/PR comments, non-semantic documentation/comment-only edits,
+   unchanged-code rebases, or routine CI churn. If substantive code, security or binding
+   governance logic changes after a clean review (or actionable findings are fixed), wait for
+   full CI green and request one new review of that new meaningful ready state; resolve findings
+   with executed proof. Re-check the final GitHub head, code diff, CI and review evidence before
+   merge; record why a previous review remains applicable if only non-semantic content changed.
+   **Stacked children:** work and run CI in draft against their parent's branch, but do not
+   request Codex or mark ready while the parent is unmerged/moving. After the parent merges,
+   rebase or retarget each child onto current `main`, pass full CI and request one review.
+   This is review deduplication, not a waiver of exact implementation review, acceptance,
+   owner authorization, resolved threads or merge gates.
 8a. **Never lose a PR or owner comment.** In the **same existing PR description**, maintain one
    **Comment disposition** checklist keyed by original GitHub issue-comment ID or
    inline review-thread ID. Include new owner decisions, requested repairs, Codex
@@ -87,7 +102,8 @@ Where an older line in this file conflicts with these rules, these rules win.
     If two PRs need the same file, assign the overlap to one owner or the foundation PR; do not hold
     the other PR unopened. Open it against the owning PR's branch instead. Independent PRs use latest
     `main`. After each prerequisite merges, update the dependent PR onto latest `main`, switch to
-    merged shared pieces, take the next free migration number, and re-run CI and Codex. Only merge when
+    merged shared pieces, take the next free migration number, and re-run CI. Request one Codex
+    review after the child is CI-green and the merged-parent state is ready. Only merge when
     its prerequisites are on `main` and all checks are green under the auto-merge rule.
 17. **End-to-end testing.** "Done" means every acceptance scenario was tested end to end on the real app
     and real café data (chat answer, screen, stored rows, scheduled job), not only unit tests or a few
@@ -98,8 +114,8 @@ Where an older line in this file conflicts with these rules, these rules win.
     loads them from `.claude/skills/`, other agents open a skill's `SKILL.md` by path.
 19. **One coding chat and PR lifecycle.** Each authorized ChatGPT or Claude task opens its own draft
     promptly, continues working in that same PR/chat through executable CI, actual Codex review,
-    required fixes, resolved threads and fresh final-head review, then completes the proven merge.
-    Do not claim a Codex review of an empty early draft proves the final implementation. Do not
+    required fixes and resolved threads, then requests the nonduplicated ready-state Codex review
+    described in rule 8b before a proven merge. An empty early draft does not prove the final implementation. Do not
     start a background polling loop or invent uninterrupted cloud execution; after a chat ends,
     the existing dispatcher resumes it at the saved GitHub head. Explicit owner questions must
     be published on the same PR, including drafts, not left waiting in an invisible chat.
