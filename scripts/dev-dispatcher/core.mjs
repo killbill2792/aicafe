@@ -273,7 +273,7 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
       record.branch_maintenance_merge_sha === parentSha &&
       record.last_parent_rebase_sha !== parentSha)
     return {kind:'propose',action:'parent_merged',
-      key:'parent_merged:'+encodeURIComponent(record.task_id)+':'+parentSha};
+      key:'parent_merged:'+encodeURIComponent(record.task_id)+':'+parentSha+':'+record.head_sha};
   const reviewAt = record.codex_state === 'findings' ? Date.parse(record.codex_review_at || '') : NaN;
   const commitAt = Date.parse(isPr ? record.last_commit_at : record.last_submission_at);
   const last = Number.isFinite(reviewAt) ? Math.max(commitAt,reviewAt) : commitAt;
