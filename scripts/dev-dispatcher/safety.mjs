@@ -22,6 +22,7 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
     rec.repo_mismatch=rec.github_state==='open' && expected.toLowerCase()!==repo.toLowerCase()
       ? {expected,actual:repo,pr_number:rec.pr_number} : null;
     const head=rec.head_sha;
+    const headMoved=Boolean(rec.stall_head && rec.stall_head!==head);
     if(rec.stall_head!==head) {
       rec.stall_head=head;
       rec.stall_count=0;
@@ -29,7 +30,7 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
       rec.stall_pending=null;
       rec.stall_escalate=false;
     }
-    if(rec.github_state!=='open'||!sha.test(head||'')||rec.coder_done ||
+    if(headMoved || rec.github_state!=='open'||!sha.test(head||'')||rec.coder_done ||
         !rec.approved||!rec.conversation_ref||rec.repo_mismatch) {
       rec.stall_pending=null;
       continue;
