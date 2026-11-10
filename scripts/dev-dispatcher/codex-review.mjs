@@ -84,7 +84,8 @@ export function codexWatchDecision({record, comments=[], reviews=[], reactions=[
   if (!requestComments.length) return {status:'no_verified_request'};
   // Both the initial request and the one retry are tagged on GitHub, so
   // losing a private ledger update cannot cause a third request.
-  const count=requestComments.some(c=>(c.body||'').includes(retryMarker(head))) ? 2 : 1;
+  const count=requestComments.some(c=>(c.body||'').includes(retryMarker(head))) ||
+    requestComments.length>=2 ? 2 : 1;
   const last=requestComments.at(-1), when=Date.parse(last.created_at||'');
   if (!Number.isFinite(when) || !Number.isFinite(now) ||
       now-when < minutes*60_000) return {status:'pending',attempts:count};
@@ -102,6 +103,13 @@ export async function inspectCodexWatch({github,record,now=Date.now(),minutes=20
     github.paginated('/pulls/'+record.pr_number+'/reviews','reviews')
   ]);
   const reactions=[];
+  const firstRequestAt=Math.min(...comments.filter(c=>isRequest(c,record.head_sha,record.last_commit_at))
+    .map(c=>Date.parse(c.created_at||'')).filter(Number.isFinite));
+  // The connector can react directly to the PR instead of to @codex's comment.
+  if (Number.isFinite(firstRequestAt)) {
+    const issueReactions=await github.paginated('/issues/'+record.pr_number+'/reactions','reactions');
+    reactions.push(...issueReactions.filter(r=>Date.parse(r.created_at||'')>=firstRequestAt));
+  }
   for (const c of comments.filter(c=>isRequest(c,record.head_sha,record.last_commit_at))) {
     if (Number.isInteger(c.id))
       reactions.push(...await github.paginated('/issues/comments/'+c.id+'/reactions','reactions'));
