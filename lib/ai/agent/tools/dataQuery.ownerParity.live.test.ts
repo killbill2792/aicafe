@@ -447,11 +447,11 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    // the free preflight must catch a broken field path before spending tokens.
    const namedToolCases=[
     {recordType:"order",ref:firstOrderGuid,field:"data.customer.firstName"},
-    {recordType:"employee",ref:staffGuid,field:"data.firstName"}
+    {recordType:"employee",ref:staffGuid,field:"data.display_name"}
    ];
    for(const spec of namedToolCases){
     const expected=(await client.query<{answer:string}>(
-     "select case when $3='order' then data->'customer'->>'firstName' else data->>'firstName' end answer from public.toast_records_for($1,$4,$5) where record_type=$3 and record_ref=$2",
+     "select case when $3='order' then data->'customer'->>'firstName' else data->>'display_name' end answer from public.toast_records_for($1,$4,$5) where record_type=$3 and record_ref=$2",
      [biz.id,spec.ref,spec.recordType,prior,biz.today])).rows[0]?.answer;
     expect(expected,spec.recordType+" source truth").toBeTruthy();
     const result=await executeAgentTool("query_data",{
@@ -464,7 +464,7 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     expect(result.error,spec.recordType+" registered reader").toBeUndefined();
     const rows=result.rows as Array<Record<string,unknown>>|undefined;
     expect(rows,spec.recordType+" registered reader").toHaveLength(1);
-    expect(rows?.[0]?.[spec.field],spec.recordType+" permitted first name")
+    expect(rows?.[0]?.[spec.field],spec.recordType+" permitted recorded name")
      .toBe(expected);
    }
    // A schema-valid but SQL-invalid aggregate must not abort the shared
