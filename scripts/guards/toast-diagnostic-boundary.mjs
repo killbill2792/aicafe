@@ -14,6 +14,14 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const DIAGNOSTIC_REFERENCE =
   /\b(?:toast_raw_samples(?:_latest)?|toast_raw_sample_leases|toast_claim_raw_sample|toast_acquire_raw_sample_lease|captureToastRawSample|rawSample(?:\.server)?)\b/;
+// This approved POS0f SQL integration test intentionally seeds *poisoned*
+// diagnostic rows to prove they do not reach current operational readers.
+// Keep the exemption exact-path only: adjacent scripts and migrations remain
+// operational, and added diagnostic dependencies there still fail closed.
+const NON_OPERATIONAL_NEGATIVE_PROOFS = new Set([
+  'scripts/pos0f-final-migrated-sql-integration.sql',
+]);
+
 const DIAGNOSTIC_IMPLEMENTATIONS = new Set([
   'lib/pos/toast/rawSample.server.ts',
   'lib/pos/toast/rawSample.test.ts',
@@ -24,7 +32,7 @@ const DIAGNOSTIC_IMPLEMENTATIONS = new Set([
 ]);
 
 export function isOperationalSource(path) {
-  if (DIAGNOSTIC_IMPLEMENTATIONS.has(path)) return false;
+  if (DIAGNOSTIC_IMPLEMENTATIONS.has(path) || NON_OPERATIONAL_NEGATIVE_PROOFS.has(path)) return false;
   // Coding-agent instructions mention these names as warnings; they are not data readers.
   if (path.startsWith('scripts/dev-dispatcher/')) return false;
   if (/^supabase\/migrations\/[^/]+\.sql$/.test(path)) return true;
