@@ -1,3 +1,30 @@
+// Adopt only open, same-repo, human-authored PRs with a validated chat marker.
+// Queue tasks retain exclusive ownership of their signed delivery flow.
+export function adoptAdhocPullRequests(state, prs, queueIds = []) {
+  const next = structuredClone(state);
+  const queue = new Set(queueIds);
+  const used = new Set(Object.values(next.tasks).map(r => r.pr_number).filter(Number.isInteger));
+  const skipped = [];
+  for (const pr of prs) {
+    if (used.has(pr.pr_number) || queue.has(pr.task_marker) ||
+        /^feat\/aicafe-task-/.test(pr.branch || '')) continue;
+    if (!pr.same_repo || pr.bot_author) continue;
+    if (!pr.chat_marker) { skipped.push(pr.pr_number); continue; }
+    const id = 'ADHOC-' + pr.pr_number;
+    const prev = next.tasks[id];
+    if (prev && prev.pr_number !== pr.pr_number) continue;
+    next.tasks[id] = {
+      ...prev, task_id:id, pr_number:pr.pr_number, branch:pr.branch,
+      base_branch:pr.base_branch, agent:'chatgpt', approved:true,
+      adhoc:true, conversation_ref:pr.chat_marker,
+      prompt_version:'v2', prerequisite_pr:null,
+      status:pr.draft ? 'draft_open':'review_fixing'
+    };
+    used.add(pr.pr_number);
+  }
+  return {state:next,skipped};
+}
+
 // Map PRs only through explicit task marker or known branch; never guess ownership.
 export function linkPullRequests(state, prs) {
   const next=structuredClone(state);
