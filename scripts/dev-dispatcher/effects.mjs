@@ -13,6 +13,20 @@ export function verifyEvidence(record, evidence) {
   return true;
 }
 
+// Same landing workflow as normal main pushes. GITHUB_TOKEN merges suppress
+// automatic push-triggered Actions, so dispatch only AFTER a confirmed merge.
+export async function dispatchLandingCheck(github, mergedSha) {
+  if (!/^[a-f0-9]{40}$/.test(mergedSha||'')) return 'invalid_merge_sha';
+  try {
+    await github.request('/actions/workflows/landing-check.yml/dispatches',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ref:'main',inputs:{merged_sha:mergedSha}})
+    });
+    return 'requested';
+  } catch {
+    return 'failed_needs_retry';
+  }
+}
 export function canMerge(record, predecessors) {
   return mergeGate(record, predecessors);
 }
@@ -95,7 +109,8 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
       body:JSON.stringify({ref:'main',inputs:{merged_sha:result.sha}}),
     });
   } catch { integration_dispatch = 'failed_needs_retry'; }
-  return { status: 'merged_unproven', merge_sha: result.sha, integration_dispatch };
+  const landing_dispatch=await dispatchLandingCheck(github,result.sha);
+  return { status: 'merged_unproven', merge_sha: result.sha, integration_dispatch, landing_dispatch };
 }
 
 // Only a GitHub-confirmed runner startup failure is retried; no guessing from a red CI badge.

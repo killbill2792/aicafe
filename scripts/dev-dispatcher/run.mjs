@@ -10,7 +10,7 @@ import { approvalSignature, approvalMatches, createDelivery, createAdhocDelivery
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
 import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
-import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure } from "./effects.mjs";
+import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure, dispatchLandingCheck } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
 import { queueOwnerAlerts } from "./alerts.mjs";
@@ -407,9 +407,25 @@ async function main() {
           if (!currentRec || currentRec.head_sha !== rec.head_sha) return null;
           currentRec.status = "merged"; currentRec.merge_sha = outcome.merge_sha;
           currentRec.github_state = "merged"; currentRec.integration_dispatch = outcome.integration_dispatch;
+          currentRec.landing_dispatch = outcome.landing_dispatch;
           return state;
         });
       }
+    }
+  }
+  // Failed post-merge dispatch is retryable independently. Never reopen a
+  // merge, require a human, or deliver a guessed chat message.
+  if (commit && ledger) {
+    for (const [id, rec] of Object.entries(persisted?.state?.tasks || proposed.state.tasks)) {
+      if (rec.landing_dispatch !== 'failed_needs_retry' || !rec.merge_sha ||
+          !['merged','integrated_proven','released_proven'].includes(rec.status)) continue;
+      const outcome=await dispatchLandingCheck(gh,rec.merge_sha);
+      if (outcome === 'requested') await ledger.transaction(state=>{
+        const task=state.tasks?.[id];
+        if (!task || task.merge_sha!==rec.merge_sha || task.landing_dispatch!=='failed_needs_retry') return null;
+        task.landing_dispatch='requested';
+        return state;
+      });
     }
   }
   const gateCounts = { ready: 0, blocked: 0 };
