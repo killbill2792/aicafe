@@ -40,7 +40,13 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
       (lateAssignment && receipt.approval_hash !== d.approval_hash) ||
       !validConversationUrl(d.provider, receipt.conversation_url))
     throw new Error('Receipt does not match approved delivery');
-  if (d.intent === 'continue_existing_chat' && receipt.conversation_url !== d.conversation_url)
+  const continuation = d.intent === 'continue_existing_chat' &&
+    receipt.conversation_url !== d.conversation_url;
+  // Muse may recover a stale browser chat, but only when its authenticated
+  // receipt binds the NEW URL to the EXACT old approved destination.
+  if (continuation && !(authenticatedCourier === 'muse' &&
+      receipt.continuation_of === d.conversation_url &&
+      receipt.continuation_reason === 'stale_chat'))
     throw new Error('Follow-up destination changed');
   if (d.intent === 'start_new_chat' && task.conversation_ref)
     throw new Error('Task already has a conversation');
@@ -57,6 +63,8 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
         Array.isArray(receipt.project) || receipt.project.id !== d.project.id)) ||
       receipt.provider !== d.provider)
     throw new Error('Receipt project/provider mismatch');
+  if (d.effort && receipt.effort != null && receipt.effort !== d.effort)
+    throw new Error('Receipt effort mismatches delivery');
   if (receipt.status && receipt.status !== 'submitted')
     throw new Error('Non-submission cannot be marked delivered');
   if (supersededContinuation) {
@@ -71,9 +79,13 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
   if (lateAssignment) action.recovered_original_chat_after_pr = true;
   action.submitted_at = receipt.submitted_at || new Date().toISOString();
   action.receipt = { courier: authenticatedCourier, prompt_hash: d.prompt_hash,
-    conversation_url: receipt.conversation_url };
+    conversation_url: receipt.conversation_url,
+    ...(d.effort ? {effort:d.effort} : {}),
+    ...(continuation ? {continuation_of:d.conversation_url} : {}) };
   task.conversation_ref = receipt.conversation_url;
-  if (Number.isInteger(task.pr_number) && task.github_state === 'open') {
+  task.conversation_url = receipt.conversation_url;
+  if (d.effort) task.effort = d.effort;
+  if (Number.isInteger(task.pr_number)) {
     next.pr_chat_links ||= {};
     next.pr_chat_links[String(task.pr_number)] = {
       task_id:task.task_id,conversation_url:receipt.conversation_url,
