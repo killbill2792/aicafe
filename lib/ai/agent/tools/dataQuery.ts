@@ -37,7 +37,8 @@ export const dataQuerySchema=z.strictObject({
  limit:z.number().int().min(1).max(MAX_ROWS).nullable()
 });
 const empty=(code:string)=>({source:"canonical_data",period:null,
- missing:[code],empty:true,error:code,rows:[],rowCount:0,truncated:false,sourceMix:{}});
+ missing:[code],empty:true,error:code,rows:[],rowCount:0,aggregate:undefined,
+ truncated:false,sourceMix:{}});
 // Fail closed while distinguishing malformed model-authored SQL from outages.
 // Never expose PostgreSQL error messages, parameters, SQL text or source rows.
 const INVALID_QUERY_SQLSTATES=new Set(["22023","22P02","42703","42702","42804","22007"]);
