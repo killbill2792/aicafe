@@ -18,6 +18,10 @@ export function matchCatalogItem(imported:PosCatalogItem,candidates:CanonicalMen
  const inputName=normalize(imported.baseName??imported.name);
  const inputSize=normalize(imported.sizeLabel??null);
  const source=provider??(imported.posItemId.startsWith("toast:")?"toast":undefined);
+ // Toast publication identity cannot be inferred from title, price or a CSV
+ // median. The caller already checks immutable GUID and audited alias matches.
+ // All other name/size candidates remain separate legacy owner records.
+ if(source==="toast")return {imported,candidateId:null,score:0,status:"new"};
  const matchingNames=candidates.filter(c=>(
    normalize(c.baseName??c.name)===inputName&&normalize(c.sizeLabel)===inputSize
  ));

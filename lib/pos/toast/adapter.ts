@@ -30,21 +30,50 @@ const check=z.object({amount:z.number(),taxAmount:z.number(),paymentStatus:z.str
 const ordersSchema=z.array(z.object({guid:GUID,server:z.object({guid:GUID}).nullish(),openedBy:z.object({guid:GUID}).nullish(),diningOption:z.object({name:z.string().nullish()}).nullish(),source:z.string().nullish(),numberOfGuests:z.number().int().min(0).max(32767).nullish(),closedDate:z.string().nullish(),
   createdInTestMode:z.boolean().nullish(),deleted:z.boolean().nullish(),voided:z.boolean().nullish(),modifiedDate:z.string().nullish(),
   checks:z.array(check)}));
-const employeesSchema=z.array(z.object({guid:GUID,firstName:z.string().nullish(),
+/** Whitelist official permitted labor response fields. Credential/passcode and
+ * unrelated provider extensions are deliberately stripped, never persisted. */
+const laborRefSchema=z.object({guid:GUID,entityType:z.string().nullish(),
+  externalId:z.string().nullish()});
+const employeeSourceSchema=z.object({guid:GUID,firstName:z.string().nullish(),
   chosenName:z.string().nullish(),lastName:z.string().nullish(),deleted:z.boolean().nullish(),
-  jobReferences:z.array(z.object({guid:GUID}).passthrough()).nullish(),
-  wageOverrides:z.array(z.object({jobReference:z.object({guid:GUID}).passthrough(),wage:z.number()}).passthrough()).nullish()
-}).passthrough());
-const timeEntriesSchema=z.array(z.object({guid:GUID,modifiedDate:z.string().nullish(),employeeReference:z.object({guid:GUID}),
-  jobReference:z.object({guid:GUID}).nullish(),
-  inDate:z.string(),outDate:z.string().nullish(),hourlyWage:z.number().nullish(),
-  regularHours:z.number().finite().nullish(),overtimeHours:z.number().finite().nullish(),
-  deleted:z.boolean().nullish(),breaks:z.array(z.object({
+  createdDate:z.string().nullish(),modifiedDate:z.string().nullish(),
+  deletedDate:z.string().nullish(),email:z.string().nullish(),
+  phoneNumber:z.string().nullish(),phoneNumberCountryCode:z.string().nullish(),
+  externalEmployeeId:z.string().nullish(),v2EmployeeGuid:GUID.nullish(),
+  entityType:z.string().nullish(),externalId:z.string().nullish(),
+  jobReferences:z.array(laborRefSchema).nullish(),
+  wageOverrides:z.array(z.object({jobReference:laborRefSchema,wage:z.number()})).nullish()
+});
+const employeesSchema=z.array(employeeSourceSchema);
+const timeEntrySourceSchema=z.object({guid:GUID,modifiedDate:z.string().nullish(),
+  employeeReference:laborRefSchema,jobReference:laborRefSchema.nullish(),
+  shiftReference:laborRefSchema.nullish(),inDate:z.string(),outDate:z.string().nullish(),
+  hourlyWage:z.number().nullish(),regularHours:z.number().finite().nullish(),
+  overtimeHours:z.number().finite().nullish(),deleted:z.boolean().nullish(),
+  createdDate:z.string().nullish(),deletedDate:z.string().nullish(),
+  businessDate:z.string().nullish(),autoClockedOut:z.boolean().nullish(),
+  declaredCashTips:z.number().finite().nullish(),nonCashTips:z.number().finite().nullish(),
+  nonCashTipsRoundingLoss:z.number().finite().nullish(),tipsWithheld:z.number().finite().nullish(),
+  cashSales:z.number().finite().nullish(),nonCashSales:z.number().finite().nullish(),
+  cashGratuityServiceCharges:z.number().finite().nullish(),
+  nonCashGratuityServiceCharges:z.number().finite().nullish(),
+  breaks:z.array(z.object({guid:GUID.nullish(),
     inDate:z.string().nullish(),outDate:z.string().nullish(),
-    paid:z.boolean().nullish(),missed:z.boolean().nullish()})).nullish()}));
-const shiftsSchema=z.array(z.object({guid:GUID,employeeReference:z.object({guid:GUID}),
-  jobReference:z.object({guid:GUID}).nullish(),inDate:z.string(),outDate:z.string(),
-  deleted:z.boolean().nullish()}));
+    paid:z.boolean().nullish(),missed:z.boolean().nullish(),
+    waived:z.boolean().nullish(),auditResponse:z.boolean().nullish(),
+    breakType:laborRefSchema.nullish()})).nullish()
+});
+const timeEntriesSchema=z.array(timeEntrySourceSchema);
+const shiftSourceSchema=z.object({guid:GUID,employeeReference:laborRefSchema,
+  jobReference:laborRefSchema.nullish(),inDate:z.string(),outDate:z.string(),
+  deleted:z.boolean().nullish(),createdDate:z.string().nullish(),
+  modifiedDate:z.string().nullish(),deletedDate:z.string().nullish(),
+  entityType:z.string().nullish(),externalId:z.string().nullish(),
+  scheduleConfig:z.object({guid:GUID.nullish(),minAfterClockIn:z.number().nullish(),
+    minAfterClockOut:z.number().nullish(),minBeforeClockIn:z.number().nullish(),
+    minBeforeClockOut:z.number().nullish()}).nullish()
+});
+const shiftsSchema=z.array(shiftSourceSchema);
 const pricingRulesSchema=z.object({
   sizeSpecificPricingGuid:GUID.nullish(),
   timeSpecificPricingRules:z.array(z.object({
@@ -66,26 +95,38 @@ type MenuGroup={name:string;menuItems:z.infer<typeof itemSchema>[];menuGroups:Me
  availability?:unknown};
 const groupSchema:z.ZodType<MenuGroup>=z.lazy(()=>z.object({
   name:z.string(),availability:z.unknown().optional(),
-  menuItems:z.array(itemSchema).default([]),menuGroups:z.array(groupSchema).default([])
+  menuItems:z.array(itemSchema),menuGroups:z.array(groupSchema)
 }).passthrough());
-const menusSchema=z.object({restaurantGuid:GUID,menus:z.array(
+const menusSchema=z.object({restaurantGuid:GUID,lastUpdated:z.string().min(1).nullish(),menus:z.array(
   z.object({name:z.string().nullish(),availability:z.unknown().optional(),
-    menuGroups:z.array(groupSchema).default([])}).passthrough()),
+    menuGroups:z.array(groupSchema)}).passthrough()),
   modifierGroupReferences:z.record(z.string(),z.object({
     guid:GUID,name:z.string().nullish(),minSelections:z.number().int().nullish(),
     maxSelections:z.number().int().nullish(),requiredMode:z.string().nullish(),
     pricingStrategy:z.string().nullish(),pricingRules:pricingRulesSchema.nullish(),
-    modifierOptionReferences:z.array(z.number()).default([])
+    modifierOptionReferences:z.array(z.number())
   }).passthrough()).default({}),
   modifierOptionReferences:z.record(z.string(),z.object({
     guid:GUID,name:z.string().min(1),price:z.number().nullish(),
     pricingStrategy:z.string().nullish(),pricingRules:pricingRulesSchema.nullish()
   }).passthrough()).default({})
 }).passthrough();
-const toastJobSchema=z.array(z.object({
+const jobSourceSchema=z.object({
   guid:GUID,title:z.string().nullish(),defaultWage:z.number().nullish(),
-  wageFrequency:z.enum(["HOURLY","SALARY"]).nullish(),deleted:z.boolean().nullish()
-}).passthrough());
+  wageFrequency:z.enum(["HOURLY","SALARY"]).nullish(),deleted:z.boolean().nullish(),
+  code:z.string().nullish(),tipped:z.boolean().nullish(),
+  excludeFromReporting:z.boolean().nullish(),createdDate:z.string().nullish(),
+  modifiedDate:z.string().nullish(),deletedDate:z.string().nullish(),
+  entityType:z.string().nullish(),externalId:z.string().nullish()
+});
+const toastJobSchema=z.array(jobSourceSchema);
+/** Preserve only the approved fields even if a client/test double supplies an
+ * unvalidated payload. Unknown credentials must never escape this adapter. */
+function validatedLaborSource<T>(schema:z.ZodType<T>,payload:unknown):T {
+  const parsed=schema.safeParse(payload);
+  if(!parsed.success)throw new ToastApiError("invalid_response");
+  return parsed.data;
+}
 const metadataSchema=z.object({restaurantGuid:GUID,lastUpdated:z.string().min(1)});
 function validRange(range:Range) {
   if(!Number.isFinite(range.since.getTime())||!Number.isFinite(range.until.getTime())||
@@ -152,12 +193,20 @@ export function normalizeToastOrder(order:Order,restaurantGuid:string):PosOrder|
     processingFeeStatus:"missing",processingFeeCents:0,
     netSalesCents:netBeforeRefunds-refunds,lines};
 }
+export type ToastLaborEmployeeSource={employeeGuid:string;restaurantGuid:string;
+  sourceFields:z.infer<typeof employeeSourceSchema>};
+export type ToastLaborJobSource={jobGuid:string;restaurantGuid:string;
+  sourceFields:z.infer<typeof jobSourceSchema>};
 export type ToastScheduledShift={externalShiftId:string;externalEmployeeId:string;externalLocationId:string;
-  scheduledStart:string;scheduledEnd:string;externalJobId:string|null;deleted:boolean;sourceProvider:"toast"};
+  scheduledStart:string;scheduledEnd:string;externalJobId:string|null;deleted:boolean;sourceProvider:"toast";
+  /** Source-shaped, whitelisted evidence for the POS0b consumer; not another store. */
+  sourceFields?:z.infer<typeof shiftSourceSchema>};
 export type ToastAttendanceFact={externalTimeEntryId:string;externalEmployeeId:string;
   externalLocationId:string;clockIn:string;clockOut:string|null;hourlyWageCents:number|null;
   providerRegularHours?:number|null;providerOvertimeHours?:number|null;
-  breaks:PosTimecard["breaks"];deleted:boolean;modifiedAt?:string|null;sourceProvider:"toast"};
+  breaks:PosTimecard["breaks"];deleted:boolean;modifiedAt?:string|null;sourceProvider:"toast";
+  /** Optional to keep existing payroll mapping compatible until POS0b consumes it. */
+  sourceFields?:z.infer<typeof timeEntrySourceSchema>};
 export type ToastOrderState="completed"|"open"|"reopened"|"voided"|"deleted"|"refunded"|"ambiguous";
 export type ToastOrderFact={orderGuid:string;restaurantGuid:string;modifiedAt:string;state:ToastOrderState;normalizedOrder:PosOrder|null};
 export function classifyToastOrder(order:Order,restaurantGuid:string):ToastOrderFact {
@@ -194,7 +243,12 @@ export type ToastAdapter=PosAdapter&{
   fetchModifiedOrderStatesPage(range:Range,page:number):Promise<{facts:ToastOrderFact[];hasMore:boolean}>;
   fetchMenuMetadata():Promise<{restaurantGuid:string;lastUpdated:string}>;
   fetchCatalogFacts():Promise<ToastCatalogFact[]>;
+  /** Receipt requires stable authenticated metadata before/after one full Menus V2 GET. */
+  fetchPublishedCatalogBundle():Promise<{items:PosCatalogItem[];facts:ToastCatalogFact[];
+    receipt:{restaurantGuid:string;publicationVersion:string;observedAt:string}}>;
   fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]>;
+  fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]>;
+  fetchLaborJobSources():Promise<ToastLaborJobSource[]>;
   fetchScheduledShifts(range:Range):Promise<ToastScheduledShift[]>;
   fetchAttendanceFacts(range:Range):Promise<ToastAttendanceFact[]>;
   fetchAttendanceChanges(range:Range):Promise<ToastAttendanceFact[]>;
@@ -207,6 +261,48 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
   if(!GUID.safeParse(restaurantGuid).success)throw new ToastApiError("unauthorized_location");
   const client=createToastClient(db,businessId);
   const request=<T>(path:string,schema:z.ZodType<T>)=>client.request(path,restaurantGuid,schema,{deadlineAt:params.deadlineAt});
+  /** A partial published menu has no authority to remove prior provider items.
+   * Toast can return a success response with missing referenced options; never
+   * silently filter those references into a seemingly complete snapshot. */
+  async function fetchValidatedPublishedMenu() {
+    const data=await request("/menus/v2/menus",menusSchema);
+    if(data.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
+      throw new ToastApiError("unauthorized_location");
+    const groups=data.modifierGroupReferences;
+    const options=data.modifierOptionReferences;
+    let itemCount=0;
+    for(const group of Object.values(groups)) {
+      if(!Array.isArray(group.modifierOptionReferences))
+        throw new ToastApiError("invalid_response");
+      for(const ref of group.modifierOptionReferences)
+        if(!options[String(ref)])throw new ToastApiError("invalid_response");
+    }
+    const verifyGroup=(group:MenuGroup):void=>{
+      if(!Array.isArray(group.menuItems)||!Array.isArray(group.menuGroups))
+        throw new ToastApiError("invalid_response");
+      for(const item of group.menuItems) {
+        itemCount++;
+        if(!Array.isArray(item.modifierGroupReferences))
+          throw new ToastApiError("invalid_response");
+        for(const ref of item.modifierGroupReferences)
+          if(!groups[String(ref)])throw new ToastApiError("invalid_response");
+        if(item.pricingStrategy==="SIZE_PRICE") {
+          const guid=item.pricingRules?.sizeSpecificPricingGuid;
+          const sizeGroup=Object.values(groups).find(g=>g.guid===guid);
+          if(!sizeGroup||!sizeGroup.modifierOptionReferences.length)
+            throw new ToastApiError("invalid_response");
+        }
+      }
+      for(const child of group.menuGroups)verifyGroup(child);
+    };
+    for(const menu of data.menus){
+      if(!Array.isArray(menu.menuGroups))throw new ToastApiError("invalid_response");
+      for(const group of menu.menuGroups)verifyGroup(group);
+    }
+    // No-items may be legitimate upstream, but it cannot certify unpublication.
+    if(!itemCount)throw new ToastApiError("invalid_response");
+    return data;
+  }
   async function statePage(range:Range,page:number):Promise<{facts:ToastOrderFact[];hasMore:boolean}> {
     if(!Number.isSafeInteger(page)||page<1||page>1000)throw new ToastApiError("invalid_response");
     const search=query(range);
@@ -260,36 +356,29 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       hourlyWageCents:r.hourlyWage==null?null:cents(r.hourlyWage),
       providerRegularHours:r.regularHours??null,providerOvertimeHours:r.overtimeHours??null,
       deleted:Boolean(r.deleted),sourceProvider:"toast" as const,
+      sourceFields:validatedLaborSource(timeEntrySourceSchema,r),
       breaks:(r.breaks??[]).filter(b=>b.missed===false&&b.inDate&&b.outDate)
         .map(b=>({start:timestamp(b.inDate!),end:timestamp(b.outDate!),paid:b.paid===true}))
     }));
   }
-  const result:ToastAdapter={
-    provider:"toast",
-    fetchModifiedOrders:(range)=>allOrders(query(range)),
-    fetchModifiedOrderStates:(range)=>allStateOrders(query(range)),
-    fetchModifiedOrderStatesPage:statePage,
-    fetchBusinessDayOrders:(day)=>{
-      if(!/^\d{8}$/.test(day))throw new ToastApiError("invalid_response");
-      return allOrders("businessDate="+day);
-    },
-    async fetchOrderStateByGuid(orderGuid) {
-      if(!GUID.safeParse(orderGuid).success)throw new ToastApiError("invalid_response");
-      const row=await request("/orders/v2/orders/"+orderGuid,ordersSchema.element);
-      if(row.guid.toLowerCase()!==orderGuid.toLowerCase())throw new ToastApiError("invalid_response");
-      return classifyToastOrder(row,restaurantGuid);
-    },
-    async fetchOrderByGuid(orderGuid) {
-      return (await result.fetchOrderStateByGuid(orderGuid)).normalizedOrder;
-    },
-    // Incremental changes only, never verified-zero coverage.
-    fetchOrders:(range)=>allOrders(query(range)),
-    fetchMenuMetadata:()=>request("/menus/v2/metadata",metadataSchema),
-    async fetchCatalogItems():Promise<PosCatalogItem[]> {
-      const data=await request("/menus/v2/menus",menusSchema);
-      if(data.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
-        throw new ToastApiError("unauthorized_location");
+  function catalogItemsFromSnapshot(data:z.infer<typeof menusSchema>):PosCatalogItem[] {
       const items=new Map<string,PosCatalogItem>();
+      // One canonical item/size key cannot assert two different published prices.
+      // Toast may repeat a GUID across menu contexts; retain a stable first
+      // representation only when price, strategy and provider identity agree.
+      // A conflicting price needs explicit context modeling before a sync can
+      // replace the last-known published price or start price-change monitoring.
+      const addPublished=(item:PosCatalogItem)=>{
+        const prior=items.get(item.posItemId);
+        if(prior){
+          if(prior.priceCents!==item.priceCents||
+            prior.pricingStrategy!==item.pricingStrategy||
+            prior.name!==item.name||prior.sizeLabel!==item.sizeLabel)
+            throw new ToastApiError("invalid_response");
+          return;
+        }
+        items.set(item.posItemId,item);
+      };
       const groups=Object.values(data.modifierGroupReferences);
       const options=data.modifierOptionReferences;
       const posId=(guid:string)=>"toast:"+restaurantGuid+":"+guid;
@@ -348,12 +437,12 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
               const id=posId(i.guid)+":size:"+option.guid;
               // Toast publishes size prices on the Size group's option items.
               const sizePrice=resolvedRulePrice(option.pricingStrategy??"NONE",option.price,option.pricingRules);
-              items.set(id,{...common,posItemId:id,sizeLabel:option.name,priceCents:sizePrice,
+              addPublished({...common,posItemId:id,sizeLabel:option.name,priceCents:sizePrice,
                 posMetadata:{...common.posMetadata,sizeOption:option}});
             }
           }else{
             const id=posId(i.guid);
-            items.set(id,{...common,posItemId:id,sizeLabel:null,priceCents:resolvedPrice});
+            addPublished({...common,posItemId:id,sizeLabel:null,priceCents:resolvedPrice});
           }
         }
         for(const child of g.menuGroups)visit(child,[...path,child.name],menuAvailability);
@@ -362,11 +451,9 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         visit(group,[menu.name??"Menu",group.name],menu.availability??null);
       if(items.size>5000)throw new ToastApiError("invalid_response");
       return [...items.values()];
-    },
-    async fetchCatalogFacts():Promise<ToastCatalogFact[]> {
-      const data=await request("/menus/v2/menus",menusSchema);
-      if(data.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
-        throw new ToastApiError("unauthorized_location");
+  }
+
+  function catalogFactsFromSnapshot(data:z.infer<typeof menusSchema>):ToastCatalogFact[] {
       const seen=new Map<string,ToastCatalogFact>();
       const groups=data.modifierGroupReferences;
       const options=data.modifierOptionReferences;
@@ -399,6 +486,58 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       }
       if(seen.size>5000)throw new ToastApiError("invalid_response");
       return [...seen.values()];
+  }
+
+  const result:ToastAdapter={
+    provider:"toast",
+    fetchModifiedOrders:(range)=>allOrders(query(range)),
+    fetchModifiedOrderStates:(range)=>allStateOrders(query(range)),
+    fetchModifiedOrderStatesPage:statePage,
+    fetchBusinessDayOrders:(day)=>{
+      if(!/^\d{8}$/.test(day))throw new ToastApiError("invalid_response");
+      return allOrders("businessDate="+day);
+    },
+    async fetchOrderStateByGuid(orderGuid) {
+      if(!GUID.safeParse(orderGuid).success)throw new ToastApiError("invalid_response");
+      const row=await request("/orders/v2/orders/"+orderGuid,ordersSchema.element);
+      if(row.guid.toLowerCase()!==orderGuid.toLowerCase())throw new ToastApiError("invalid_response");
+      return classifyToastOrder(row,restaurantGuid);
+    },
+    async fetchOrderByGuid(orderGuid) {
+      return (await result.fetchOrderStateByGuid(orderGuid)).normalizedOrder;
+    },
+    // Incremental changes only, never verified-zero coverage.
+    fetchOrders:(range)=>allOrders(query(range)),
+    async fetchMenuMetadata(){
+      const metadata=await request("/menus/v2/metadata",metadataSchema);
+      if(metadata.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
+        throw new ToastApiError("unauthorized_location");
+      return metadata;
+    },
+    fetchCatalogItems:async()=>catalogItemsFromSnapshot(await fetchValidatedPublishedMenu()),
+    fetchCatalogFacts:async()=>catalogFactsFromSnapshot(await fetchValidatedPublishedMenu()),
+    async fetchPublishedCatalogBundle(){
+      // Observe publication metadata on both sides of the SINGLE full Menus V2
+      // request. A changed version, wrong location or incomplete reference set
+      // is never authority to deactivate last-good provider state.
+      const before=await request("/menus/v2/metadata",metadataSchema);
+      if(before.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
+        throw new ToastApiError("unauthorized_location");
+      const snapshot=await fetchValidatedPublishedMenu();
+      const after=await request("/menus/v2/metadata",metadataSchema);
+      if(after.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
+        throw new ToastApiError("unauthorized_location");
+      if(before.lastUpdated!==after.lastUpdated||
+        !snapshot.lastUpdated||snapshot.lastUpdated!==after.lastUpdated)
+        throw new ToastApiError("invalid_response");
+      // Source metadata's lastUpdated is the publication version/last-modified
+      // reference, NOT a verified historical effective time.
+      timestamp(after.lastUpdated); // Valid date, but preserve Toast's exact version string.
+      const publicationVersion=after.lastUpdated;
+      const items=catalogItemsFromSnapshot(snapshot);
+      const facts=catalogFactsFromSnapshot(snapshot);
+      return {items,facts,receipt:{restaurantGuid,publicationVersion,
+        observedAt:new Date().toISOString()}};
     },
     async fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]> {
       const rows=await request("/labor/v1/employees",employeesSchema);
@@ -408,6 +547,16 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
           "Toast employee "+r.guid.slice(0,8)),
         deleted:Boolean(r.deleted)
       }));
+    },
+    async fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]> {
+      const rows=await request("/labor/v1/employees",employeesSchema);
+      return rows.map(r=>({employeeGuid:r.guid,restaurantGuid,
+        sourceFields:validatedLaborSource(employeeSourceSchema,r)}));
+    },
+    async fetchLaborJobSources():Promise<ToastLaborJobSource[]> {
+      const rows=await request("/labor/v1/jobs",toastJobSchema);
+      return rows.map(r=>({jobGuid:r.guid,restaurantGuid,
+        sourceFields:validatedLaborSource(jobSourceSchema,r)}));
     },
     async fetchEmployees():Promise<PosEmployee[]> {
       const [rows,jobs]=await Promise.all([
@@ -444,7 +593,8 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       return rows.map(r=>({externalShiftId:r.guid,
         externalEmployeeId:r.employeeReference.guid,externalLocationId:restaurantGuid,
         scheduledStart:timestamp(r.inDate),scheduledEnd:timestamp(r.outDate),
-        externalJobId:r.jobReference?.guid??null,deleted:Boolean(r.deleted),sourceProvider:"toast"}));
+        externalJobId:r.jobReference?.guid??null,deleted:Boolean(r.deleted),
+        sourceProvider:"toast",sourceFields:validatedLaborSource(shiftSourceSchema,r)}));
     }
   };
   return result;
