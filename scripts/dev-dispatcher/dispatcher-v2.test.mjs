@@ -71,7 +71,7 @@ test('each reason produces a single short explicit prompt with its actual eviden
       {body:'Guard the null case',url:'https://github.com/example/a/pull/408#discussion_r1'}]},/Guard the null case/],
     ['ci_failed',{ci_state:'failure',ci_failure_job:'unit checks',
       ci_failure_url:'https://github.com/example/a/actions/runs/99'},/unit checks/],
-    ['parent_merged',{parent_merged_sha:'f'.repeat(40),base_branch:'feat/parent'},/retargeted this child to main/i],
+    ['parent_merged',{parent_merged_sha:'f'.repeat(40),base_branch:'feat/parent'},/Rebase onto main and continue/i],
     ['owner_answered',{owner_answer_text:'Use existing path only'},/Use existing path only/],
     ['idle_continue',{},/Continue/],
   ];
