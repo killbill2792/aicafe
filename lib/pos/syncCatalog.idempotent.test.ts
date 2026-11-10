@@ -2,7 +2,7 @@ import {describe,it,expect,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {PosAdapter,PosCatalogItem} from "./types";
 vi.mock("server-only",()=>({}));
-import {syncCanonicalCatalog} from "./syncCatalog";
+import {syncCanonicalCatalog,applyPublishedToastCatalogReceipt} from "./syncCatalog";
 
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const product="square:variation-101";
@@ -178,5 +178,75 @@ describe("Toast unverified publication never retires stored histories",()=>{
   expect(f.tables.menu_items).toHaveLength(1);
   expect(f.tables.modifier_recipes).toHaveLength(1);
   expect(f.tables.menu_item_modifier_groups).toHaveLength(1);
+ });
+});
+
+describe("one verified Toast publication receipt handed to the existing POS0c copy",()=>{
+ const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+ const itemGuid="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+ const modifierGuid="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+ const groupGuid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+ const prefix="toast:"+restaurant+":";
+ const receipt={restaurantGuid:restaurant,
+  publicationVersion:"2026-11-10T09:00:00Z",
+  observedAt:"2026-11-10T09:00:09Z"};
+ const payload=()=>({receipt,
+  items:[{posItemId:prefix+itemGuid,name:"Latte",category:"drink",
+   priceCents:625,modifierGroups:[{
+    posGroupId:prefix+groupGuid,name:"Milk",
+    minSelections:0,maxSelections:1,required:false,
+    options:[{posModifierId:prefix+modifierGuid,name:"Oat",priceCents:80,
+     pricingStrategy:"BASE_PRICE"}]
+   }]} satisfies PosCatalogItem],
+  facts:[{kind:"item" as const,provider_guid:itemGuid,name:"Latte",
+   category:"Coffee",price_cents:625,pricing_strategy:"BASE_PRICE",
+   modifier_group_guids:[groupGuid]}]});
+ it("uses the same item, modifier and link IDs in exactly one authorized DB RPC",async()=>{
+  const rpc=vi.fn().mockResolvedValue({data:{
+   inactiveItems:1,inactiveModifiers:0,inactiveGroups:1},error:null});
+  const result=await applyPublishedToastCatalogReceipt(
+   {rpc} as unknown as SupabaseClient,business,payload());
+  expect(result).toEqual({inactiveItems:1,inactiveModifiers:0,inactiveGroups:1});
+  expect(rpc).toHaveBeenCalledExactlyOnceWith("toast_apply_verified_menu_presence",{
+   p_business_id:business,p_restaurant_guid:restaurant,
+   p_version:receipt.publicationVersion,p_observed_at:receipt.observedAt,
+   p_item_ids:[prefix+itemGuid],p_modifier_ids:[prefix+modifierGuid],
+   p_group_links:[{item_pos_id:prefix+itemGuid,pos_group_id:prefix+groupGuid}]
+  });
+ });
+ it("fails before database mutation for another café's item or modifier",async()=>{
+  const rpc=vi.fn();
+  const cross=payload();
+  cross.items[0].posItemId="toast:ffffffff-ffff-4fff-8fff-ffffffffffff:"+itemGuid;
+  await expect(applyPublishedToastCatalogReceipt(
+   {rpc} as unknown as SupabaseClient,business,cross)).rejects
+    .toThrow("wrong_restaurant_catalog_item");
+  const crossModifier=payload();
+  crossModifier.items[0].modifierGroups[0].options[0].posModifierId=
+   "toast:ffffffff-ffff-4fff-8fff-ffffffffffff:"+modifierGuid;
+  await expect(applyPublishedToastCatalogReceipt(
+   {rpc} as unknown as SupabaseClient,business,crossModifier)).rejects
+    .toThrow("wrong_restaurant_catalog_modifier");
+  expect(rpc).not.toHaveBeenCalled();
+ });
+ it("rejects absent staged facts and missing receipts before declaring provider unpublish",async()=>{
+  const rpc=vi.fn(),missing=payload();
+  missing.facts=[];
+  await expect(applyPublishedToastCatalogReceipt(
+   {rpc} as unknown as SupabaseClient,business,missing)).rejects
+    .toThrow("incomplete_verified_toast_publication");
+  const bad={...payload(),receipt:{...receipt,observedAt:"not-a-date"}};
+  await expect(applyPublishedToastCatalogReceipt(
+   {rpc} as unknown as SupabaseClient,business,bad)).rejects
+    .toThrow("incomplete_verified_toast_publication");
+  expect(rpc).not.toHaveBeenCalled();
+ });
+ it("does not claim success when the guarded SQL rejects stale copied source version",async()=>{
+  const rpc=vi.fn().mockResolvedValue({data:null,
+   error:{code:"22023",message:"Stale menu version"}});
+  await expect(applyPublishedToastCatalogReceipt(
+   {rpc} as unknown as SupabaseClient,business,payload()))
+   .rejects.toMatchObject({code:"22023"});
+  expect(rpc).toHaveBeenCalledOnce();
  });
 });
