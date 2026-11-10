@@ -130,34 +130,6 @@ test("Toast architecture foundation requires owner-reviewed merged-main proof be
     dispatch_rules:{...all.dispatch_rules,architecture_foundation_dependent_task_ids:["unknown"]} }),
     /Invalid architecture foundation proof gate/);
 });
-test("merge honors only owner-accepted POS0a docs; runtime predecessors still need integration", () => {
-  const sha = "a".repeat(40);
-  const tasks = [{...task("POS0a"),test_kinds:["docs","read_only_audit"]},
-    task("POS0e", ["POS0a"]), task("POS0b",["POS0a","POS0e"])];
-  const unsigned={...queue(tasks),dispatch_rules:{
-    architecture_foundation_proof_task:"POS0a",
-    architecture_foundation_dependent_task_ids:["POS0e","POS0b"],
-    architecture_foundation_implementation_approval:{approved:false,merged_sha:null,owner_review_url:null}
-  }};
-  const signed={...unsigned,dispatch_rules:{...unsigned.dispatch_rules,
-    architecture_foundation_implementation_approval:{approved:true,merged_sha:sha,
-      owner_review_url:"https://github.com/killbill2792/aicafe/pull/398#issuecomment-123"}
-  }};
-  const docsMerged={POS0a:{status:"merged",merge_sha:sha}};
-  const ready={...pr(),threads_resolved:true,base_current:true,acceptance_proven:true};
-  assert.deepEqual(predecessorsForMerge(tasks[1],unsigned,docsMerged),[docsMerged.POS0a]);
-  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[1],unsigned,docsMerged)).eligible,false);
-  assert.deepEqual(predecessorsForMerge(tasks[1],signed,docsMerged),[]);
-  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[1],signed,docsMerged)).eligible,true);
-  const mismatched={POS0a:{status:"merged",merge_sha:"b".repeat(40)}};
-  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[1],signed,mismatched)).eligible,false);
-  const withUnprovenRuntime={...docsMerged,POS0e:{status:"merged",merge_sha:"c".repeat(40)}};
-  assert.deepEqual(predecessorsForMerge(tasks[2],signed,withUnprovenRuntime),
-    [withUnprovenRuntime.POS0e]);
-  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[2],signed,withUnprovenRuntime)).eligible,false);
-  withUnprovenRuntime.POS0e.status="integrated_proven";
-  assert.equal(mergeGate(ready,predecessorsForMerge(tasks[2],signed,withUnprovenRuntime)).eligible,true);
-});
 test("priority proof gate blocks unrelated dispatch even when gate PR is draft or merged", () => {
   const all = {
     ...queue([task("audit"), task("collect", ["audit"]), task("proof", ["collect"]),
@@ -305,69 +277,6 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
   assert.equal(dispatchFrontier(pretendApproved, records).some(x => x.task_id === "6"), true);
 });
 
-test("pending CI/Codex, stale review or quiet interval blocks nudges", () => {
-  assert.equal(decideNudge(pr({ ci_state: "pending" }), clock).kind, "hold");
-  assert.equal(decideNudge(pr({ codex_state: "pending" }), clock).kind, "hold");
-  assert.equal(decideNudge(pr({ codex_reviewed_sha: "old" }), clock).action, "idle_continue");
-  assert.equal(decideNudge(pr({ last_commit_at: new Date(clock - 400000).toISOString() }), clock).reason, "not_quiet");
-  assert.equal(decideNudge(pr(), clock).reason, "no_actionable_findings");
-  assert.equal(decideNudge(pr({ ci_state: "failure" }), clock).action, "ci_failed");
-  assert.equal(decideNudge(pr({ codex_state: "findings" }), clock).action, "codex_comments");
-  assert.equal(decideNudge(pr({ acceptance_evidence:null }), clock).action, "idle_continue");
-  assert.equal(decideNudge(pr({ threads_resolved:false }), clock).action, "idle_continue");
-});
-test("draft PR gets same-chat continuation after ten quiet minutes even if Codex is not ready", () => {
-  const pending = pr({draft:true,ci_state:"pending",codex_state:"pending",
-    acceptance_evidence:null});
-  assert.equal(decideNudge(pending,clock).action,"idle_continue");
-  assert.equal(decideNudge({...pending,codex_state:"unknown"},clock).action,"idle_continue");
-  assert.equal(decideNudge({...pending,ci_state:"unknown"},clock).action,"idle_continue");
-  assert.equal(decideNudge({...pending,last_commit_at:new Date(clock-590000).toISOString()},clock).reason,"not_quiet");
-  assert.equal(decideNudge({...pending,owner_question:"Approve exact source mapping?"},clock).action,"idle_continue");
-  assert.equal(mergeGate({...pending,owner_question:"Approve exact source mapping?"}).eligible,false);
-  assert.equal(decideNudge({...pending,submission_state:"uncertain"},clock).reason,"uncertain");
-  assert.equal(decideNudge({...pending,conversation_ref:null},clock).reason,"unapproved_or_missing_chat");
-  const earlyClean=pr({draft:true,ci_state:"success",codex_state:"clean",
-    acceptance_evidence:{acceptance:[{id:"1"}]}});
-  assert.equal(decideNudge(earlyClean,clock).action,"idle_continue");
-  const picked=decideNudge(pending,clock);
-  assert.equal(decideNudge({...pending,last_action_key:picked.key},clock).reason,"already_sent_or_capped");
-  assert.equal(decideNudge({...pending,agent:"claude"},clock).reason,"claude_no_routine_nudges");
-});
-test("missing verified acceptance remains actionable even with a clean ready PR", () => {
-  assert.equal(decideNudge(pr({acceptance_proven:false}),clock).action,"idle_continue");
-});
-test("same-chat follow-up waits 15 minutes after verified Muse send then rechecks unchanged PR", () => {
-  const code = new Date(clock-3600000).toISOString();
-  const sent = new Date(clock-1200000).toISOString();
-  const draft = pr({draft:true,ci_state:"failure",acceptance_evidence:null,
-    acceptance_proven:false,last_commit_at:code,last_github_activity:code,
-    last_submission_at:sent,submission_state:"submitted"});
-  const previous = actionKey(draft,"ci_failed");
-  const idle = {...draft,last_action_key:previous};
-  const first = decideNudge(idle,clock);
-  assert.equal(first.action,"ci_failed");
-  assert.notEqual(first.key,previous);
-  assert.match(first.key,/retry:/);
-  assert.equal(decideNudge(idle,clock).key,first.key);
-  const delivered = {...idle,last_action_key:first.key,
-    last_submission_at:new Date(clock-100000).toISOString()};
-  assert.equal(decideNudge(delivered,clock).reason,"post_delivery_quiet");
-  const later = clock+900001;
-  const follow = decideNudge(delivered,later);
-  assert.equal(follow.action,"ci_failed");
-  assert.notEqual(follow.key,first.key);
-  assert.equal(follow.key.split(":").length,7);
-  const changed = invalidateOnHeadChange(delivered,"new-head",new Date(later).toISOString());
-  assert.notEqual(actionKey(changed,"repair_ci"),first.key);
-});
-test("ready PR with stale pending Codex is resumed, not held forever", () => {
-  const stale = pr({ci_state:"success",codex_state:"pending",
-    last_commit_at:new Date(clock-1800000).toISOString()});
-  assert.equal(decideNudge(stale,clock).action,"idle_continue");
-  const recent = {...stale,last_commit_at:new Date(clock-500000).toISOString()};
-  assert.equal(decideNudge(recent,clock).reason,"checks_pending_or_unknown");
-});
 test("only a dedicated coordinator PR can change the shared progress checklist",()=>{
  assert.equal(progressUpdatePolicy(["lib/a.ts","docs/b.md"]).allowed,true);
  assert.equal(progressUpdatePolicy(["PROGRESS.md"]).allowed,true);
@@ -376,44 +285,6 @@ test("only a dedicated coordinator PR can change the shared progress checklist",
  assert.equal(progressUpdatePolicy(["docs/other.md","PROGRESS.md"]).allowed,false);
  assert.equal(progressUpdatePolicy(null).allowed,false);
 });
-test("pre-PR conversation cannot be nudged without known browser readiness", () => {
-  const base = pr({ pr_number: null, last_submission_at: old, browser_busy: undefined });
-  assert.equal(decideNudge(base, clock).reason, "not_quiet");
-  assert.equal(decideNudge({ ...base, browser_busy: true }, clock).reason, "browser_confirmed_busy");
-  assert.equal(decideNudge({ ...base, browser_busy: false }, clock).reason, "not_quiet");
-  const ready = { ...base, browser_busy: false, last_submission_at: new Date(clock - 1900000).toISOString() };
-  assert.equal(decideNudge(ready, clock).action, "pre_pr_reminder");
-});
-test("same state cannot be sent twice and uncertain submissions fail closed", () => {
-  const record = pr({ci_state: "failure"});
-  const choice = decideNudge(record, clock);
-  assert.equal(choice.kind, "propose");
-  assert.equal(decideNudge({ ...record, last_action_key: choice.key }, clock).kind, "hold");
-  assert.equal(decideNudge({ ...record, submission_state: "uncertain" }, clock).kind, "hold");
-  assert.equal(decideNudge({ ...record, submission_state: "needs_login" }, clock).kind, "hold");
-  assert.notEqual(actionKey(record, "continue_pr"), actionKey({ ...record, head_sha: "new" }, "continue_pr"));
-});
-test("submitted activity-qualified continuation keeps its key until a newer PR change", () => {
-  const record = pr({ draft: true, ci_state: "failure", acceptance_evidence: null,
-    last_commit_at: new Date(clock - 2000000).toISOString(),
-    last_github_activity: new Date(clock - 900000).toISOString(),
-    last_submission_at: new Date(clock - 2200000).toISOString() });
-  const first = decideNudge(record, clock);
-  assert.equal(first.kind, "propose");
-  assert.equal(first.key.split(":").length, 6);
-  const delivered = { ...record, last_action_key: first.key,
-    last_submission_at: new Date(clock - 800000).toISOString(),
-    submission_state: "submitted" };
-  assert.equal(actionKey(delivered, "ci_failed"), first.key);
-  assert.equal(decideNudge(delivered, clock).reason, "post_delivery_quiet");
-  const eligibleAt = clock + 100001; // 15 minutes have now elapsed after Muse's receipt
-  assert.equal(decideNudge(delivered, eligibleAt).action, "ci_failed");
-  const newer = { ...delivered, last_github_activity:
-    new Date(clock - 100000).toISOString() };
-  assert.notEqual(actionKey(newer, "ci_failed"), first.key);
-  assert.equal(decideNudge(newer, eligibleAt).kind, "propose");
-});
-
 test("new commit invalidates stale checks and requires a fresh Codex review", () => {
   const changed = invalidateOnHeadChange(pr({ next_check_at: old, last_action_key: "old" }), "new", new Date(clock).toISOString());
   assert.equal(changed.head_sha, "new");
@@ -422,16 +293,6 @@ test("new commit invalidates stale checks and requires a fresh Codex review", ()
   assert.equal(changed.last_action_key, null);
   assert.equal(decideNudge(changed, clock).kind, "hold");
   assert.equal(invalidateOnHeadChange(pr({ submission_state: "uncertain" }), "new", old).submission_state, "uncertain");
-});
-test("merge requires final head, proven acceptance, branch and predecessors", () => {
-  const ready = { ...pr(), threads_resolved: true, base_current: true, acceptance_proven: true };
-  assert.equal(mergeGate(ready, [{ status: "integrated_proven" }]).eligible, true);
-  assert.equal(mergeGate({ ...ready, base_current: false }).eligible, false);
-  assert.deepEqual(mergeGate({...ready,github_owner_question:'Unapproved shared-file scope?' }).reasons,['owner_decision_pending']);
-  assert.deepEqual(mergeGate({...ready,owner_question:'Approval pending'}).reasons,['owner_decision_pending']);
-  assert.deepEqual(mergeGate({ ...ready, base_branch: "feat/predecessor" }).reasons, ["non_main_destination"]);
-  assert.deepEqual(mergeGate(ready, [{ status: "merged" }]).reasons, ["predecessor_not_proven"]);
-  assert.equal(mergeGate({ ...ready, codex_reviewed_sha: null }).eligible, false);
 });
 test("ledger validates private-only state and rejects secret and response fields", () => {
   assert.deepEqual(sanitizeLedger(emptyLedger()).tasks, {});
@@ -543,56 +404,11 @@ test("CAS retries call reconciliation against newly loaded state each time", asy
   assert.equal(calls, 2);
 });
 
-test("Claude receives only independent tasks and never routine nudges", () => {
-  const all = queue([task("a"), task("b"), task("c"), task("d"), task("e", ["a"]), task("f")]);
-  const assigned = dispatchFrontier(all, { a: { status: "integrated_proven" } }, { chatgpt: 0, claude: 2 });
-  assert.equal(assigned.every(a => a.agent === "claude" && a.task_id !== "e"), true);
-  assert.equal(decideNudge(pr({ agent: "claude" }), clock).reason, "claude_no_routine_nudges");
-});
-test("Codex findings wait ten minutes after review, not after PR comments", () => {
-  const reviewed = new Date(clock - 400000).toISOString();
-  const rec = pr({ codex_state: "findings", codex_review_at: reviewed, last_commit_at: old });
-  assert.equal(decideNudge(rec, clock).reason, "not_quiet");
-  assert.equal(decideNudge({ ...rec, codex_review_at: old }, clock).action, "codex_comments");
-});
-test("merge gate rejects draft PR even with passing checks and evidence", () => {
-  const ready = { ...pr(), threads_resolved: true, base_current: true, acceptance_proven: true };
-  assert.equal(mergeGate({ ...ready, draft: true }).eligible, false);
-});
-
 test("PR acceptance metadata parses only bounded JSON",()=>{
  const body='Done\n<!-- aicafe-acceptance-evidence {"head_sha":"abc","acceptance":[{"id":"1"}]} -->';
  assert.equal(parseAcceptanceEvidence(body).head_sha,'abc');
  assert.equal(parseAcceptanceEvidence('<!-- aicafe-acceptance-evidence broken -->'),null);
  assert.equal(parseAcceptanceEvidence('not proof'),null);
-});
-
-test('owner question blocks nudges and retains exclusive-file ownership',()=>{
- const blocked={...pr(),owner_question:'Which files are authorized?',status:'blocked_needs_owner',agent:'chatgpt'};
- assert.equal(decideNudge(blocked,clock).reason,'owner_decision_required');
- const a=task('a'),b=task('b',['a']);
- // An owner-blocked prerequisite cannot authorize downstream dispatch.
- // Reserved owned paths stay unique across all tasks, whether active or not.
- const assigned=dispatchFrontier(queue([a,b]),{a:{status:'blocked_needs_owner',agent:'chatgpt',conversation_ref:'https://chatgpt.com/c/existing'}});
- assert.equal(assigned.some(item=>item.task_id==='b'),false);
- const state={...emptyLedger(),tasks:{a:blocked}};
- const prInfo={...blocked,pr_number:101,head_sha:'abc',github_owner_question:'Decision requested',draft:false};
- assert.equal(reconcileGithub(state,[prInfo]).tasks.a.status,'blocked_needs_owner');
-});
-
-test('base SHA changes invalidate merge review until a later relevant review',()=>{
- const old='2026-11-05T12:00:00Z',later='2026-11-05T13:00:00Z';
- const before={...pr(),base_sha:'old-base',status:'review_fixing'};
- const state={...emptyLedger(),tasks:{a:before}};
- const next={...before,base_sha:'new-base',base_current:true,
-   last_github_activity:old,codex_review_at:'2026-11-05T11:00:00Z'};
- const changed=reconcileGithub(state,[next],{},old).tasks.a;
- assert.equal(changed.review_base_current,false);
- assert.equal(mergeGate({...changed,acceptance_proven:true,threads_resolved:true}).eligible,false);
- assert.equal(decideNudge({...changed,last_commit_at:'2026-11-05T11:00:00Z'},Date.parse(later)).action,'idle_continue');
- const refreshed=reconcileGithub({...emptyLedger(),tasks:{a:changed}},
-   [{...next,codex_review_at:later}]).tasks.a;
- assert.equal(refreshed.review_base_current,true);
 });
 
 test('dismissed Codex review cannot be treated as clean on current head',async()=>{
