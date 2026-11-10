@@ -9,7 +9,7 @@ export async function requestCodexReview({github,record,task,records = {}}) {
   const sha=record?.head_sha;
   // Green current head is enough to start Codex. No coder-done,
   // acceptance artifact, integrated dependency or routine owner hold.
-  if (!task || !sha40(sha) || !Number.isInteger(record.pr_number) ||
+  if ((!task && !record?.adhoc) || !sha40(sha) || !Number.isInteger(record.pr_number) ||
       record.github_state !== 'open' || record.ci_state !== 'success' ||
       record.codex_review_requested_sha === sha ||
       record.codex_in_progress_sha === sha ||
