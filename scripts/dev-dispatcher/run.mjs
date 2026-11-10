@@ -13,7 +13,7 @@ import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
-import { queueOwnerAlerts } from "./alerts.mjs";
+import { queueOwnerAlerts,applyOwnerStartApprovals } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
@@ -82,24 +82,8 @@ async function main() {
     const withFeedback = reconcileReceiptFeedback(applied.state,{
       ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
     },new Date().toISOString());
-    const copy = queueOwnerAlerts(withFeedback,{unmappedPrs:linked.unmapped,queue});
-    // Recover signed v3 owner approvals before computing this tick's dispatch
-    // frontier, so a cleared existing priority gate incurs no extra wait.
-    for(const [id,task] of taskById){
-      const rec=copy.tasks[id];
-      if(!rec||rec.pr_number||rec.conversation_ref||
-         task.architecture_approval?.approved!==true)continue;
-      if(rec.priority_deferred&&rec.status==='blocked_needs_owner'){
-        rec.approved=true;rec.status='proposed';
-        rec.approval_hash=approvalSignature(task);
-        rec.approval_signature_version=3;
-      }else if(rec.approved&&approvalMatches(task,rec.approval_hash)&&
-        !Object.values(copy.actions).some(a=>a.task_id===id&&
-          ['planned','claimed','uncertain'].includes(a.status))){
-        rec.approval_hash=approvalSignature(task);
-        rec.approval_signature_version=3;
-      }
-    }
+    const copy = queueOwnerAlerts(applyOwnerStartApprovals(withFeedback,queue),
+      {unmappedPrs:linked.unmapped,queue});
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());

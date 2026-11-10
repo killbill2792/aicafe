@@ -14,3 +14,57 @@ test('only owner-level decisions route via Muse to owner; referee receives other
 test('previously submitted owner approval gains a link without a duplicate notice',()=>{
  const previous={kind:'owner_decision',task_id:'x',pr_number:422,question:'Approve exact scope?',
   notice_hash:'a'.repeat(64),status:'submitted',delivery_owner:'muse',receipt:{courier:'muse'}}; const id='notice:'+previous.notice_hash; const before={tasks:{},actions:{},owner_alerts:{[id]:previous}}; const after=queueOwnerAlerts(before); assert.equal(Object.keys(after.owner_alerts).length,1); assert.equal(after.owner_alerts[id].recipient,'owner'); assert.match(after.owner_alerts[id].owner_message,/github.com\/killbill2792\/aicafe\/pull\/422/); assert.equal(after.owner_alerts[id].status,'submitted'); assert.equal(before.owner_alerts[id].recipient,undefined); });
+
+test('one start ask after dependency proof and hash-bound Muse yes',async()=>{
+ const {startTaskReady,applyOwnerStartApprovals,noticeHash}=await import('./alerts.mjs');
+ const {approvalSignature}=await import('./delivery.mjs');
+ const task={id:'6',title:'Durable worker',goal:'Resume a leased worker safely',
+  state:'architecture_approved',architecture_approval:{approved:true},
+  depends_on:['5','POS0f'],exclusive_files:['lib/worker.ts'],acceptance:['restart']};
+ const queue={tasks:[task],dispatch_rules:{priority_gate_task:'POS0f'}};
+ const state={tasks:{'6':{approved:false,status:'blocked_needs_owner',priority_deferred:true},
+  '5':{status:'integrated_proven'},POS0f:{status:'merged',github_state:'merged',merge_sha:'a'.repeat(40)}},
+  actions:{},owner_alerts:{}};
+ assert.equal(startTaskReady(task,state,queue),false);
+ assert.equal(Object.keys(queueOwnerAlerts(state,{queue}).owner_alerts).length,0);
+ state.tasks.POS0f.status='integrated_proven';
+ const once=queueOwnerAlerts(state,{queue}), twice=queueOwnerAlerts(once,{queue});
+ assert.equal(Object.keys(twice.owner_alerts).length,1);
+ const [key,notice]=Object.entries(twice.owner_alerts)[0];
+ assert.equal(notice.kind,'next_task_start');assert.equal(notice.recipient,'owner');
+ assert.equal(notice.delivery_owner,'muse');assert.match(notice.question,/Reply yes to start/);
+ assert.equal(key,'notice:'+noticeHash({kind:'next_task_start',task_id:'6',source_sha:approvalSignature(task)}));
+ assert.equal(applyOwnerStartApprovals(twice,queue).tasks['6'].approved,false);
+ notice.status='submitted';
+ twice.tasks['6'].owner_reply_events={old:{text:'yes',courier:'muse',target:{notice_id:'wrong'}},
+  no:{text:'no',courier:'muse',target:{notice_id:key}}};
+ assert.equal(applyOwnerStartApprovals(twice,queue).tasks['6'].approved,false);
+ twice.tasks['6'].owner_reply_events.yes={text:'yes',courier:'muse',target:{notice_id:key}};
+ const approved=applyOwnerStartApprovals(twice,queue);
+ assert.equal(approved.tasks['6'].status,'proposed');assert.equal(approved.tasks['6'].approved,true);
+ assert.equal(approved.tasks['6'].approval_hash,approvalSignature(task));
+ assert.equal(queueOwnerAlerts(approved,{queue}).owner_alerts[key].status,'submitted');
+ const changed={...task,goal:'new scope'};
+ assert.equal(applyOwnerStartApprovals(twice,{...queue,tasks:[changed]}).tasks['6'].approved,false);
+});
+test('GitHub and ledger 403 log status/body/request-id/rate-limits and not token',async()=>{
+ const {GitHubFacts}=await import('./github.mjs');
+ const {GitHubLedger}=await import('./ledger.mjs');
+ const headers={'x-github-request-id':'RID-403','x-ratelimit-limit':'5000',
+  'x-ratelimit-remaining':'0','x-ratelimit-reset':'12345'};
+ const make=()=>new Response(JSON.stringify({message:'Resource not accessible by integration'}),
+  {status:403,headers}); const logs=[],orig=console.error;console.error=x=>logs.push(x);
+ try{
+  await assert.rejects(new GitHubFacts({repo:'owner/repo',token:'secret-NEVER-LOG',
+    fetchFn:async()=>make()}).request('/pulls'),/RID-403/);
+  await assert.rejects(new GitHubLedger({repo:'owner/ledger',token:'secret-NEVER-LOG',
+    fetchFn:async()=>make()}).request('/contents/state.json'),/Resource not accessible/);
+ }finally{console.error=orig;}
+ assert.equal(logs.length,2);
+ for(const line of logs){
+  assert.match(line,/status=403.*message=Resource not accessible by integration/);
+  assert.match(line,/x-github-request-id=RID-403/);
+  assert.match(line,/x-ratelimit-remaining=0/);
+  assert.doesNotMatch(line,/secret-NEVER-LOG/);
+ }
+});

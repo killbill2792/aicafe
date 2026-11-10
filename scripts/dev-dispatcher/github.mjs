@@ -1,6 +1,24 @@
 import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
+export async function githubFailure(response,kind='GitHub'){
+ let message='unavailable';
+ try{message=String((await response.json())?.message||message).replace(/\s+/g,' ').slice(0,250);}catch{}
+ const h=k=>response.headers?.get?.(k)||'unavailable';
+ const detail=kind+' request failed: status='+response.status+' message='+message+
+  ' x-github-request-id='+h('x-github-request-id')+
+  ' x-ratelimit-limit='+h('x-ratelimit-limit')+
+  ' x-ratelimit-remaining='+h('x-ratelimit-remaining')+
+  ' x-ratelimit-reset='+h('x-ratelimit-reset')+
+  ' retry-after='+h('retry-after');
+ console.error(detail);return new Error(detail);
+}
+export function githubNetworkFailure(kind){
+ const detail=kind+' request failed: status=network message=transport_error'+
+  ' x-github-request-id=unavailable x-ratelimit-limit=unavailable'+
+  ' x-ratelimit-remaining=unavailable x-ratelimit-reset=unavailable';
+ console.error(detail);return new Error(detail);
+}
 export function parseTaskMarker(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;
   const marks = [...body.matchAll(/<!-- aicafe-task-id\s+([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\s*-->/g)];
@@ -107,8 +125,8 @@ export class GitHubFacts {
     const response = await this.fetchFn(url.startsWith("https:") ? url : `https://api.github.com/repos/${this.repo}${url}`, {
       ...options, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
         "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
-    });
-    if (!response.ok) throw new Error(`GitHub request failed: ${response.status}`);
+    }).catch(()=>{throw githubNetworkFailure('GitHub');});
+    if (!response.ok) throw await githubFailure(response);
     if (response.status === 204) return { ok:true };
     return response.json();
   }
@@ -146,7 +164,7 @@ export class GitHubFacts {
         Accept:'application/vnd.github+json',
         'X-GitHub-Api-Version':'2022-11-28'
       }});
-    if (!response.ok) throw new Error('Proof artifact download failed: ' + response.status);
+    if (!response.ok) throw await githubFailure(response,'Proof artifact');
     return decodeAcceptanceArchive(Buffer.from(await response.arrayBuffer()), filename);
   }
   async acceptanceProof(runId) {
