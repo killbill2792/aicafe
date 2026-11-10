@@ -10,7 +10,7 @@ vi.mock("server-only",()=>({}));
 import {runAgentTurn,openAIProvider} from "../loop.server";
 import {PRODUCTION_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import type {AgentProvider} from "../loop.server";
-import type {AgentToolContext} from "./index";
+import {executeAgentTool,type AgentToolContext} from "./index";
 const dbUrl=process.env.AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL;
 // A free, provider-independent dry run validates ALL fixture writes and
 // tenant/diagnostic isolation before any paid call. This is NOT agent proof.
@@ -33,8 +33,11 @@ const smoke=process.env.POS0E_E2_SMOKE==="1";
 // schemas on every paid turn. The full suite still uses the unrestricted
 // production Supervisor toolset; never claim smoke proves that whole surface.
 const smokeReaderTools=["describe_data","query_data"] as const;
-const MAX_PAID_CALLS=12;
-const MAX_INPUT_REQUEST_BYTES=200_000;
+// Owner explicitly approved ONE additional cost-capped five-question Luna smoke.
+// Full 18-question acceptance intentionally retains its earlier stricter cap;
+// a larger full run requires its own separate authorization.
+const MAX_PAID_CALLS=smoke?16:12;
+const MAX_INPUT_REQUEST_BYTES=smoke?600_000:200_000;
 const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
 let paidCalls=0,requestBytes=0,outputTokensReserved=0;
 // A rejected transport budget is not an OpenAI/Luna failure. Never include
@@ -170,16 +173,27 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   const leak=(await client.query<{n:number}>("select count(*)::integer n from public.toast_records_for($1,$2,$3)\n where data->>'guid' in ('other-cafe-cash','poison-cash','poison-stock','poison-time')",
    [biz.id,prior,biz.today])).rows[0].n;
   expect(leak).toBe(0);
+  // Independent SQL truths are shared by the free preflight and the real agent
+  // assertions; a broken bind cannot silently burn a paid Luna run.
+  const namedQuestions=[
+   {question:"For current Toast order GUID "+firstOrderGuid+
+     ", what is this customer's first name? Answer exactly Name: X.",
+    truth:"select data->'customer'->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='order' and record_ref=$4",ref:firstOrderGuid},
+   {question:"For current Toast employee GUID "+staffGuid+
+     ", what is this employee's first name? Answer exactly Name: X.",
+    truth:"select data->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
+  ];
+  const familyQuestions=[
+   {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
+    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,biz.today]},
+   {question:"For current Toast stock item GUID "+stockGuid+
+     ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
+    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
+   {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
+    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
+  ];
   // Test the source/fixture contract at zero model cost. Paid acceptance must
   // still execute the registered Supervisor, and never sets SQL_ONLY.
-  if(sqlOnly){
-   const expected=await client.query<{n:number}>(
-    "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
-    [biz.id,prior,biz.today]);
-   expect(expected.rows[0].n).toBeGreaterThanOrEqual(3);
-   return;
-  }
-
   // SupabaseClient.rpc-compatible adapter backed by the SAME transaction in which
   // the fixture and direct truth live. Query SQL is still solely the allowlisted RPC.
   const db={rpc:async(name:string,p:Record<string,unknown>)=>{
@@ -204,6 +218,48 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    tools:{} as AgentToolContext["tools"],
    canonicalData:async()=>({db:db as never,businessId:biz.id})
   } as AgentToolContext;
+  if(sqlOnly){
+   const expected=await client.query<{n:number}>(
+    "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
+    [biz.id,prior,biz.today]);
+   expect(expected.rows[0].n).toBeGreaterThanOrEqual(3);
+   // Exact same independently sourced truth SQL and bound argument arrays as
+   // the real-agent test; no provider/model request in SQL-only mode.
+   for(const {question,truth,ref} of namedQuestions){
+    const truthRow=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0];
+    expect(truthRow?.answer,question).toBeTruthy();
+   }
+   for(const {question,truth,args} of familyQuestions){
+    const truthRow=(await client.query<{n:number|string|null}>(truth,args)).rows[0];
+    expect(truthRow?.n,question).not.toBeNull();
+    expect(truthRow?.n,question).not.toBeUndefined();
+   }
+   // Prove the real registered query_data dispatch and SQL RPC, not just a
+   // direct SELECT of the source. This never reaches a model provider.
+   const familyToolCases=[
+    {view:"cv_cash" as const,metric:"amount_cents",day:biz.today,filters:null},
+    {view:"cv_inventory" as const,metric:"quantity",day:biz.today,
+     filters:[{column:"menu_item_ref",op:"=",value:stockGuid}]},
+    {view:"cv_sales_days" as const,metric:"net_sales_cents",day:prior,filters:null}
+   ];
+   for(const [index,testCase] of familyToolCases.entries()){
+    const spec=familyQuestions[index];
+    const truthValue=(await client.query<{n:number|string|null}>(spec.truth,spec.args)).rows[0]?.n;
+    const result=await executeAgentTool("query_data",{
+     view:testCase.view,columns:null,filters:testCase.filters,
+     group_by:null,metrics:[{fn:"sum",column:testCase.metric}],
+     date_from:testCase.day,date_to:testCase.day,order_by:null,limit:10
+    },context);
+    expect(result.error,spec.question+"; "+JSON.stringify(result.missing)).toBeUndefined();
+    expect(result.missing,spec.question).not.toContain("source_read_failed");
+    const rows=result.rows as Array<Record<string,unknown>>|undefined;
+    expect(rows,spec.question).toHaveLength(1);
+    expect(Number(rows?.[0]?.["sum_"+testCase.metric]),spec.question)
+     .toBeCloseTo(Number(truthValue),2);
+   }
+   return;
+  }
+
   for(const {question,truth} of (smoke?scalarQuestions.slice(0,0):scalarQuestions)){
    const expected=(await client.query<{n:number}>(truth,params)).rows[0].n;
    // Standard owner-facing answer; the requested line keeps acceptance numeric
@@ -240,14 +296,6 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   // These real turns close the signed POS0e gap not covered by the earlier
   // discount-only test. Expected facts come from the SAME disposable database
   // transaction, not the model, snapshots or copied fixture guesses.
-  const namedQuestions=[
-   {question:"For current Toast order GUID "+firstOrderGuid+
-     ", what is this customer's first name? Answer exactly Name: X.",
-    truth:"select data->'customer'->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='order' and record_ref=$4",ref:firstOrderGuid},
-   {question:"For current Toast employee GUID "+staffGuid+
-     ", what is this employee's first name? Answer exactly Name: X.",
-    truth:"select data->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
-  ];
   for(const {question,truth,ref} of namedQuestions){
    const expected=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0]?.answer;
    expect(expected,question).toBeTruthy();
@@ -259,24 +307,16 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    expect(turn.text,question+"; "+safeFailureDetails(turn,receiptStart))
     .toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
   }
-  const familyQuestions=[
-   {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
-    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,biz.today]},
-   {question:"For current Toast stock item GUID "+stockGuid+
-     ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
-    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
-   {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
-    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
-  ];
   for(const {question,truth,label,args} of familyQuestions){
    const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
    expect(expected,question).not.toBeNull();
    expect(expected,question).not.toBeUndefined();
+   const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:question});
    expect(turn.tools,question).toContain("query_data");
    const match=turn.text.match(new RegExp("\\b"+label+"\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)","i"));
-   expect(match,question+" => "+turn.text).not.toBeNull();
+   expect(match,question+" => "+turn.text+"; "+safeFailureDetails(turn,receiptStart)).not.toBeNull();
    expect(Number(match![1]),question+" => "+turn.text).toBeCloseTo(Number(expected),2);
   }
  }finally{

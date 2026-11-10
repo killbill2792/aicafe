@@ -89,3 +89,18 @@ test('private view never grants approval or invokes a courier browser',()=>{
  assert.match(result,/remains the only action authority/);
  assert.equal(result.includes('BEGIN APPROVED INSTRUCTION'),false);
 });
+
+
+test('private owner queue shows same-action receipt repair but never a new send',()=>{
+ const s=structuredClone(state);
+ s.receipt_feedback={'assign:POS0c':{task_id:'POS0c',status:'rejected',
+  code:'unattributed_git_actor',first_seen_at:'2026-11-09T20:00:00Z',
+  last_checked_at:'2026-11-09T20:15:00Z',wake_round:2}};
+ s.receipt_scan={complete:true};
+ const view=renderPrivateQueue(s);
+ assert.match(view,/Receipt authentication and same-action recovery/);
+ assert.match(view,/assign:POS0c/);
+ assert.match(view,/authorized GitHub Contents API/);
+ assert.match(view,/Never start a new chat/);
+ assert.doesNotMatch(view,/private test-only instruction not suitable/);
+});

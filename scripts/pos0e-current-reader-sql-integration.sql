@@ -84,6 +84,16 @@ BEGIN
  PERFORM pg_temp.pos0e_assert(
   response->'rows'->0->>'count_source_ref'='1' AND response->>'truncated'='false',
   'bounded query_data must count one retained current event');
+ -- Test the same registered query_data SQL function for real cash amounts,
+ -- independently of Luna model decisions or direct cv_cash SELECTs.
+ response:=public.ai_query_view(a,'cv_cash',null::text[],
+  '[]'::jsonb,null::text[],
+  '[{"fn":"sum","column":"amount_cents"}]'::jsonb,d,d,null,100);
+ PERFORM pg_temp.pos0e_assert(
+  (response->'rows'->0->>'sum_amount_cents')::numeric=1250
+  AND (response->>'truncated')::boolean=false,
+  'current Toast cash cents must be accessible through canonical query_data RPC');
+
  PERFORM pg_temp.pos0e_assert(
   public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
    '[{"field":"data.extra.nested.0.lateOptional","type":"string"}]'::jsonb,

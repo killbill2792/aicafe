@@ -847,7 +847,7 @@ export const canonicalDictionary = {
         "example": "Is this record complete?"
       },
       "business_date": {
-        "meaning": "Café local business date associated with the record or sample.",
+        "meaning": "Café local business date of the retained current Toast record, when supplied.",
         "unit": "local date",
         "source": "app",
         "example": "What happened on this date?"
@@ -891,7 +891,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_cash": {
-    "meaning": "Cash movements and deposits from redacted Toast diagnostics, not continuous cash sync.",
+    "meaning": "Retained current Toast cash movements and deposits, not diagnostic captures; source freshness and permissions remain unverified until the relevant live sync proves coverage.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -918,7 +918,7 @@ export const canonicalDictionary = {
         "example": "Is this record complete?"
       },
       "business_date": {
-        "meaning": "Café local business date associated with the record or sample.",
+        "meaning": "Café local business date of the retained current Toast record, when supplied.",
         "unit": "local date",
         "source": "app",
         "example": "What happened on this date?"
@@ -983,7 +983,7 @@ export const canonicalDictionary = {
         "example": "Is this record complete?"
       },
       "business_date": {
-        "meaning": "Café local business date associated with the record or sample.",
+        "meaning": "Café local business date of the retained current Toast record, when supplied.",
         "unit": "local date",
         "source": "app",
         "example": "What happened on this date?"
@@ -1033,7 +1033,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_dining_options": {
-    "meaning": "Toast dining-option name configuration from optional redacted captures.",
+    "meaning": "Retained current Toast dining-option configuration, not diagnostic captures; provider permissions and freshness may be incomplete.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -1060,7 +1060,7 @@ export const canonicalDictionary = {
         "example": "Is this record complete?"
       },
       "business_date": {
-        "meaning": "Café local business date associated with the record or sample.",
+        "meaning": "Café local business date of the retained current Toast record, when supplied.",
         "unit": "local date",
         "source": "app",
         "example": "What happened on this date?"
@@ -1086,7 +1086,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_toast_records": {
-    "meaning": "Count discount uses with record_type in (item_discount, check_discount) and counts_in_sales=true, grouped by data.name; count source_ref for uses, count_distinct order_ref for different orders, count_distinct check_ref for different checks. An order may have several checks and discount uses. Removed processingState VOID is retained but excluded. Today's closed orders are provisional and totals are incomplete until closeout. Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day; for today, before the closeout import, the closed orders saved so far with status provisional), plus labor, cash, kitchen, menus and setup lists from the daily capture. Use it for anything the other views do not cover. Never use it to rebuild a screen number (net sales, profit, labor cost, card fees, break-even, item cost): use their tools.",
+    "meaning": "Count discount uses with record_type in (item_discount, check_discount) and counts_in_sales=true, grouped by data.name; count source_ref for uses, count_distinct order_ref for different orders, count_distinct check_ref for different checks. An order may have several checks and discount uses. Removed processingState VOID is retained but excluded. Today's closed orders are provisional and totals are incomplete until closeout. Every Toast record and field, one row each: orders, checks, items, modifiers, payments, discounts, service charges (latest import of each day; for today, before the closeout import, the closed orders saved so far with status provisional), plus retained current labor, cash, kitchen, menus and setup objects from authoritative stored Toast records, never diagnostic samples. Use it for anything the other views do not cover. Never use it to rebuild a screen number (net sales, profit, labor cost, card fees, break-even, item cost): use their tools.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
