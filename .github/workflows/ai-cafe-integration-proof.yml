@@ -2,6 +2,10 @@ name: AI CAFE Integration Proof
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - 'scripts/pos0f-final-*'
+      - '.github/workflows/ai-cafe-integration-proof.yml'
   workflow_dispatch:
     inputs:
       merged_sha:
@@ -16,6 +20,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   integrated-main:
+    if: github.event_name != 'pull_request'
     name: Required merged-main integration checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -59,3 +64,44 @@ jobs:
           path: ${{ runner.temp }}/integration-proof.json
           if-no-files-found: ignore
           retention-days: 14
+
+  pos0f-final-migrated-db:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feat/aicafe-task-POS0f'
+    name: POS0f required current-source SQL isolation (disposable DB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify the actual submitted stacked head is included
+        env:
+          POS0F_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          [[ "$POS0F_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$POS0F_HEAD_SHA" HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Install pinned dependencies and run official field inventory
+        run: |
+          npm ci
+          node --test scripts/pos0f-final-source-coverage.test.mjs
+          node --test scripts/toast-standard-api-coverage.test.mjs
+      - name: Start fully migrated disposable Supabase (no production access)
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+          supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - name: Execute negative diagnostic lineage and shared cash/stock/kitchen/menu/tenant SQL proof
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -X -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -f scripts/pos0f-final-migrated-sql-integration.sql
+      - name: Shut down disposable Supabase
+        if: always()
+        run: supabase stop --no-backup
