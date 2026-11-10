@@ -4,7 +4,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
-import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions, editableFiles } from "./core.mjs";
 import { approvalSignature, createDelivery } from "./delivery.mjs";
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
@@ -57,6 +57,30 @@ async function main() {
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
+    for (const [id, rec] of Object.entries(copy.tasks)) {
+      const task = taskById.get(id);
+      if (!task || rec.github_state !== 'open') continue;
+      const parent = (task.depends_on || [])
+        .map(dep => copy.tasks[dep])
+        .find(p => p && p.pr_number === rec.prerequisite_pr);
+      if (parent?.github_state === 'open') {
+        rec.parent_open = true;
+        rec.waiting_only_for_parent = rec.coder_done && rec.ci_state === 'success' &&
+          Boolean(rec.acceptance_evidence);
+      } else {
+        rec.parent_open = false;
+        rec.waiting_only_for_parent = false;
+        if (parent && ['merged','integrated_proven','released_proven'].includes(parent.status) &&
+            parent.merge_sha) rec.parent_merged_sha = parent.merge_sha;
+      }
+      const previous = state.tasks[id];
+      if (previous?.github_owner_question && !rec.github_owner_question &&
+          rec.latest_owner_comment && rec.latest_owner_comment_at &&
+          rec.latest_owner_comment_at !== previous.latest_owner_comment_at) {
+        rec.owner_answer_text = rec.latest_owner_comment;
+        rec.owner_answer_key = rec.latest_owner_comment_at;
+      }
+    }
 
     const assigned = dispatchFrontier(queue, copy.tasks);
     const nudges = [];
@@ -67,7 +91,7 @@ async function main() {
       const record = { task_id: assignment.task_id, status: "assigned",
         agent: assignment.agent, branch: `feat/aicafe-task-${assignment.task_id}`, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
         approval_hash: approvalSignature(taskById.get(assignment.task_id)),
-        prompt_id: `task:${assignment.task_id}`, prompt_version: "v1" };
+        prompt_id: `task:${assignment.task_id}`, prompt_version: "v2" };
       const delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
         action: "assign", actionId: key });
       copy.actions[key] = { ...assignment, task_id: assignment.task_id,
@@ -83,13 +107,20 @@ async function main() {
         const task = taskById.get(id);
         // Only approved, exactly owned tasks from the trusted queue can reach Dave.
         if (!task || task.architecture_approval?.approved !== true ||
-            !task.exclusive_files?.length || rec.approval_hash !== approvalSignature(task) ||
+            !editableFiles(task).length || rec.approval_hash !== approvalSignature(task) ||
             (Number.isInteger(rec.pr_number) && rec.github_state !== "open")) continue;
         const delivery = createDelivery({ task, record: rec,
           action: proposal.action, actionId: proposal.key });
         rec.last_action_key = proposal.key;
+        if (proposal.action === 'parent_merged') rec.last_parent_rebase_sha = rec.parent_merged_sha;
+        if (proposal.action === 'owner_answered') rec.last_owner_answer_key = rec.owner_answer_key;
+        if (proposal.action === 'idle_continue' && rec.draft === false &&
+            rec.ci_state === 'success' && rec.codex_state === 'pending' &&
+            rec.codex_reviewed_sha !== rec.head_sha) rec.review_requested_sha = rec.head_sha;
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
-          status: "planned", delivery_owner: "muse", head_sha: rec.head_sha || null, created_at: now, delivery };
+          status: "planned", delivery_owner: "muse",
+          head_sha: proposal.action === 'parent_merged' ? null : rec.head_sha || null,
+          created_at: now, delivery };
         nudges.push({ task_id: id, action: proposal.action });
       }
     }
