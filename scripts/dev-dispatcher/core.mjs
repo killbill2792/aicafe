@@ -386,7 +386,7 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
       if (rec.head_sha !== pr.head_sha) {
         for (const action of Object.values(copy.actions)) {
           if (action.task_id === id && action.status === "planned" &&
-              action.type !== 'parent_merged' && action.head_sha !== pr.head_sha) {
+              action.head_sha !== pr.head_sha) {
             action.status = "cancelled_stale_head";
           }
         }
