@@ -11,6 +11,7 @@ DECLARE
  b uuid:='f2f2f2f2-2222-4222-8222-222222222222';
  rest_a uuid:='e1e1e1e1-1111-4111-8111-111111111111';
  rest_b uuid:='e2e2e2e2-2222-4222-8222-222222222222';
+ employee_a uuid:='d1d1d1d1-1111-4111-8111-111111111111';
  d date:='2026-10-26'; response jsonb; p text; n int;
 BEGIN
  INSERT INTO public.businesses(id,name,is_demo) VALUES
@@ -51,6 +52,18 @@ BEGIN
  (b,rest_b,'cashmgmt/v1/entries',d,
   '{"guid":"cash-current-B","amount":83.00,"type":"CASH_IN"}',
   repeat('e',64),'pos0e:cash-b');
+ -- Same current stored typed employee record used by the registered
+ -- Supervisor reader, not labor/v1/employees or diagnostic samples.
+ INSERT INTO public.toast_raw_records(
+  business_id,restaurant_guid,entity,entity_guid,business_date,payload,payload_sha256,capture_key)
+ VALUES (a,rest_a,'employee',employee_a,d,
+  jsonb_build_object('guid',employee_a::text,'firstName','Nadia','lastName','Rao'),
+  repeat('f',64),'pos0e:employee-a');
+ PERFORM pg_temp.pos0e_assert(
+  (SELECT count(*)=1 FROM public.toast_records_for(a,d,d)
+   WHERE record_type='employee' AND record_ref=employee_a::text
+    AND data->>'firstName'='Nadia'),
+  'current retained employee identity must be available by record_ref GUID');
  PERFORM pg_temp.pos0e_assert(
   (SELECT count(*)=1 AND sum(amount_cents)=1250 FROM public.cv_cash WHERE business_id=a),
   'cash must equal retained operational A object, not the poisoned sample');
@@ -93,6 +106,18 @@ BEGIN
   (response->'rows'->0->>'sum_amount_cents')::numeric=1250
   AND (response->>'truncated')::boolean=false,
   'current Toast cash cents must be accessible through canonical query_data RPC');
+ -- Exercise the exact GUID-filtered named JSON field that Luna needs:
+ -- current employee uses record_type=employee, NOT labor/v1/employees.
+ response:=public.ai_query_view(a,'cv_toast_records',ARRAY['data.firstName']::text[],
+  jsonb_build_array(
+   jsonb_build_object('column','record_type','op','=','value','employee'),
+   jsonb_build_object('column','record_ref','op','=','value',employee_a::text)),
+  null::text[],null::jsonb,d,d,null,10);
+ PERFORM pg_temp.pos0e_assert(
+  response->'rows'->0->>'data.firstName'='Nadia'
+  AND jsonb_array_length(response->'rows')=1,
+  'registered canonical query_data must return current employee by GUID and permitted named field');
+
 
  PERFORM pg_temp.pos0e_assert(
   public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
