@@ -145,6 +145,24 @@ BEGIN
   (SELECT count(*)=1 FROM public.cv_dining_options WHERE business_id=a AND dining_option_ref='dine-A')
   AND NOT EXISTS(SELECT 1 FROM public.cv_dining_options WHERE business_id=a AND dining_option_ref='dine-poison'),
   'dining options must never consume diagnostic-only names');
+ -- Undated current configuration is a timeless reference fact. Query a
+ -- different day to prove the registered reader does not fabricate dates.
+ response:=public.ai_query_view(a,'cv_dining_options',
+  ARRAY['dining_option_ref','dining_option_name','business_date']::text[],
+  '[{"column":"dining_option_ref","op":"=","value":"dine-A"}]'::jsonb,
+  null::text[],null::jsonb,d-90,d-80,null,10);
+ PERFORM pg_temp.pos0e_assert(
+  jsonb_array_length(response->'rows')=1 AND
+  response->'rows'->0->>'dining_option_ref'='dine-A' AND
+  response->'rows'->0->>'dining_option_name'='Patio' AND
+  response->'rows'->0->>'business_date' IS NULL,
+  'query_data must retrieve undated dining options without invented dates');
+ response:=public.ai_query_view(b,'cv_dining_options',
+  ARRAY['dining_option_ref']::text[],'[]'::jsonb,
+  null::text[],null::jsonb,d-90,d-80,null,10);
+ PERFORM pg_temp.pos0e_assert(
+  jsonb_array_length(response->'rows')=0,
+  'undated configuration retrieval must remain café-scoped');
  PERFORM pg_temp.pos0e_assert(
   (SELECT count(*)=1 FROM public.toast_records_for(a,d,d) r
    WHERE record_type='cashmgmt/v1/entries' AND data->>'guid'='cash-current-A'),
