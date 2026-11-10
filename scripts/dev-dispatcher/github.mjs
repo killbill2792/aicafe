@@ -158,12 +158,25 @@ export class GitHubFacts {
     if (!(pr.labels || []).some(label => label.name === 'needs-owner-decision'))
       return { question: null, url: null };
     const inBody = parseOwnerQuestion(pr.body);
-    if (inBody) return { question: inBody, url: pr.html_url || null };
-    // Owners can request a decision in the PR conversation, not only in its body.
-    // Only trusted repository contributors may supply an actionable question.
+    // A newer authenticated owner approval resolves the decision even if the
+    // label or structured question marker has not yet been removed.
     comments ??= await this.request(`/issues/${pr.number}/comments?per_page=100`);
     if (!Array.isArray(comments) || comments.length >= 100)
       throw new Error('Owner-question comments require verified pagination');
+    const latestApproval = comments.filter(c => c.author_association === 'OWNER' &&
+      /^\s*Owner approved\b/i.test(String(c.body || '')))
+      .sort((a,b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || ''))[0];
+    const questionTime = comments.filter(c =>
+      ['OWNER','MEMBER','COLLABORATOR'].includes(c.author_association) &&
+      parseOwnerQuestion(c.body)).reduce((at,c) =>
+        Math.max(at,Date.parse(c.created_at || '') || 0), 0);
+    if (latestApproval && Date.parse(latestApproval.created_at || '') >= questionTime &&
+        (!inBody || Date.parse(latestApproval.created_at || '') >= Date.parse(pr.updated_at || '') ||
+          questionTime > 0))
+      return { question: null, url: null };
+    if (inBody) return { question: inBody, url: pr.html_url || null };
+    // Owners can request a decision in the PR conversation, not only in its body.
+    // Only trusted repository contributors may supply an actionable question.
     const trusted = comments.filter(c =>
       ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(c.author_association));
     const match = trusted.reverse().find(c => parseOwnerQuestion(c.body));
@@ -231,8 +244,9 @@ export class GitHubFacts {
       codex?.state === 'APPROVED' ? 'clean' : 'pending';
     const latestState = useFormal ? formalState : summary?.state || 'pending';
     const reviewed = latestState !== 'pending' ? sha : null;
-    const codexState = unresolved === null ? "unknown" :
-      unresolved > 0 && (codexReviews.length || summary) ? "findings" : latestState;
+    // Historical unresolved threads remain an independent merge gate, but do
+    // not override the newest authenticated Codex receipt for this head.
+    const codexState = latestState;
     const unresolvedComments = codexState === 'findings'
       ? await this.unresolvedComments(pr.number).catch(()=>[]) : [];
     const trustedOwner = comments.filter(c=>c.author_association==='OWNER')
