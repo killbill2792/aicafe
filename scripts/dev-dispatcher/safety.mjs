@@ -38,8 +38,11 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
     // Authenticated courier receipt is the clock. Chat prose is not trusted state.
     const delivered=Date.parse(rec.last_submission_at||'');
     const committed=Date.parse(rec.last_commit_at||'');
+    const advanced=sha.test(rec.last_prompt_head_sha||'')
+      ? rec.last_prompt_head_sha!==head
+      : Number.isFinite(committed)&&committed>delivered;
     if(!Number.isFinite(delivered)||!Number.isFinite(clock) ||
-       clock-delivered < minutes*60000 || (Number.isFinite(committed)&&committed>delivered)) {
+       clock-delivered < minutes*60000 || advanced) {
       rec.stall_pending=null;
       continue;
     }
