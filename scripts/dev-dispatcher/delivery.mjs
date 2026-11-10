@@ -35,11 +35,13 @@ export function approvalMatches(task, signed) {
   // historical shape without weakening exclusive-file / edits validation.
   const fields = approvalFields(task);
   const historical = [
-    fields,
     [...fields,task.edits,task.uses],
     [...fields,task.edits,undefined],
     [...fields,task.edits,[]]
   ];
+  // The no-edits v1 signature is valid only when no new explicit write
+  // scope was introduced; otherwise it would authorize unsigned edits.
+  if (!Object.hasOwn(task, 'edits')) historical.push(fields);
   return historical.some(parts => digest(parts) === signed);
 }
 
