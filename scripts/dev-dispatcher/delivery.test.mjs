@@ -68,7 +68,7 @@ test('every coding agent receives exact current authority, three skill files, sh
    'needs-owner-decision','aicafe-owner-question',
    'Vercel preview deployments/builds'
   ]) assert.ok(prompt.toLowerCase().includes(required.toLowerCase()), required);
-  assert.match(prompt,/final applicable head is reviewed clean/);
+  assert.match(prompt,/Exact-head, threads and acceptance gates stay mandatory/);
   assert.match(prompt,/resolved threads/);
   assert.match(prompt,/COMMENT ACCOUNTABILITY/);
   for (const phrase of ['ALL owner/agent PR conversation comments','Comment disposition checklist',
@@ -77,8 +77,8 @@ test('every coding agent receives exact current authority, three skill files, sh
 
   assert.match(prompt,/request ONE final-head re-review/);
   assert.match(prompt,/full CI is GREEN/);
-  assert.match(prompt,/DO NOT request Codex on an early draft/);
-  assert.match(prompt,/never add a duplicate @codex request/);
+  assert.match(prompt,/Draft\/stacked-parent-moving\/CI-pending means NO Codex request/);
+  assert.match(prompt,/do not @codex again/);
   assert.match(prompt,/NEVER edit PROGRESS.md/);
   assert.doesNotMatch(prompt,/Muse|browser tabs|courier receipts/i);
   assert.ok(prompt.length<12000);
@@ -94,7 +94,7 @@ test('same-chat follow-up owns pre-PR/draft/CI repair without replacing task or 
   assert.equal(d.intent,'continue_existing_chat');
   assert.match(d.prompt,/Continue from where you left off in THIS SAME chat/);
   assert.match(d.prompt,/If PR is missing, open its draft now/);
-  assert.match(d.prompt,/final-head Codex review/);
+  assert.match(d.prompt,/ONE final-head re-review/);
   assert.match(d.prompt,/DO NOT create a background monitoring loop/);
   assert.doesNotMatch(d.prompt,/Muse|courier receipts/i);
  }
@@ -254,9 +254,9 @@ test('one-review policy holds Codex on drafts/stacked children until eligible CI
    action:'assign',actionId:'assign:6-review-child'});
  assert.match(independ.prompt,/ONE ready-state Codex review/);
  assert.match(independ.prompt,/full CI is GREEN/);
- assert.match(child.prompt,/NEVER request Codex while the parent is changing/);
- assert.match(child.prompt,/after full CI is green/);
- assert.match(child.prompt,/stacked parent remains unmerged/);
+ assert.match(child.prompt,/never while parent moves/);
+ assert.match(child.prompt,/final CI-green head/);
+ assert.match(child.prompt,/stacked-parent-moving/);
  assert.doesNotMatch(child.prompt,/After changes request a fresh Codex review until/);
  const authority=readFileSync(new URL('../../AGENTS.md',import.meta.url),'utf8');
  assert.match(authority,/one Codex request per ready state/i);
