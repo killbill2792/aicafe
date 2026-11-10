@@ -290,7 +290,7 @@ async function main() {
     const runUrl = process.env.GITHUB_RUN_ID
       ? `https://github.com/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}` : null;
     try {
-      const body = renderOwnerView(effectiveState,{repo,asOf:new Date().toISOString(),runUrl});
+      const body = renderOwnerView(effectiveState,{repo,asOf:new Date().toISOString(),runUrl,queue});
       const published = await publishOwnerView({github:gh,issue:ownerIssue,body});
       console.log(`Owner control center ${published.status}: issue #${ownerIssue}, comment ${published.id}`);
     } catch (error) {
