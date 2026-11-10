@@ -130,7 +130,10 @@ async function main() {
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
       // Never queue a second browser action while a prior delivery is pending or unverified.
-      if (Object.values(copy.actions).some(a => a.task_id === id && ["planned", "claimed", "uncertain"].includes(a.status))) continue;
+      if (Object.values(copy.actions).some(a =>
+          ["planned", "claimed", "uncertain"].includes(a.status) &&
+          (a.task_id === id || (Number.isInteger(rec.pr_number) &&
+            copy.tasks[a.task_id]?.pr_number === rec.pr_number)))) continue;
       const proposal = decideNudge(rec, Date.now());
       if (proposal.kind !== "propose") continue;
       if (!copy.actions[proposal.key]) {
