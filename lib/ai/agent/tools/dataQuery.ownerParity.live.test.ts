@@ -48,6 +48,15 @@ let budgetRejection:{reason:string;attemptBytes:number;priorBytes:number;
 // provider text, prompts, tool arguments, credentials or customer data.
 const providerReceipts:Array<{event:string;status:string;reason:string|null;
  outputTokens:number|null;outputTypes:string[]}>= [];
+// Only approved static column identifiers and SQLSTATE are ever recorded.
+// Never log filter VALUES, SQL text, raw rows, model arguments or credentials.
+const diagnosticFields=new Set(["amount_cents","quantity","net_sales_cents",
+ "business_date","record_type","record_ref","menu_item_ref",
+ "data.firstName","data.customer.firstName"]);
+const safeField=(value:unknown)=>typeof value==="string"&&diagnosticFields.has(value)?
+ value:"other";
+const sqlFailures:Array<{sqlstate:string;view:string;columns:string[];
+ filterColumns:string[];filterOperators:string[];metricFns:string[];metricColumns:string[]}>= [];
 const budgetedProvider:AgentProvider=async function*(params,signal){
  if(params.model!==PRODUCTION_SUPERVISOR_OPENAI_MODEL)
   throw new Error("POS0e E2 requires owner-verified production Supervisor model "+PRODUCTION_SUPERVISOR_OPENAI_MODEL);
@@ -87,7 +96,7 @@ function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:
   tools:turn.tools,
   resultStatus:turn.results.map(result=>({source:result.source,
    missing:result.missing,error:result.error??null})),
-  providerReceipts:providerReceipts.slice(since)});
+  providerReceipts:providerReceipts.slice(since),sqlFailures:sqlFailures.slice(-3)});
 }
 // Free deterministic regression: a bad or overlarge provider request must be
 // rejected BEFORE calling OpenAI, without mistaking the guard for Luna failure.
@@ -201,10 +210,35 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     const args=[p.p_business_id,p.p_view,p.p_columns,JSON.stringify(p.p_filters),
      p.p_group_by,JSON.stringify(p.p_metrics),p.p_date_from,p.p_date_to,
      p.p_order_by===null?null:JSON.stringify(p.p_order_by),p.p_limit];
-    const result=await client.query(
-     "select public.ai_query_view($1::uuid,$2::text,$3::text[],$4::jsonb,$5::text[],$6::jsonb,$7::date,$8::date,$9::jsonb,$10::integer) value",
-     args);
-    return {data:result.rows[0].value,error:null};
+    try{
+     const result=await client.query(
+      "select public.ai_query_view($1::uuid,$2::text,$3::text[],$4::jsonb,$5::text[],$6::jsonb,$7::date,$8::date,$9::jsonb,$10::integer) value",
+      args);
+     return {data:result.rows[0].value,error:null};
+    }catch(error){
+     const code=error&&typeof error==="object"&&"code" in error?
+      (error as {code?:unknown}).code:null;
+     const filters=Array.isArray(p.p_filters)?p.p_filters:[];
+     const metrics=Array.isArray(p.p_metrics)?p.p_metrics:[];
+     sqlFailures.push({
+      sqlstate:typeof code==="string"&&/^[0-9A-Z]{5}$/.test(code)?code:"unknown",
+      view:typeof p.p_view==="string"&&/^[a-z_]{1,40}$/.test(p.p_view)?p.p_view:"other",
+      columns:Array.isArray(p.p_columns)?p.p_columns.map(safeField):[],
+      filterColumns:filters.map((f:unknown)=>safeField(
+       f&&typeof f==="object"&&"column" in f?(f as {column:unknown}).column:null)),
+      filterOperators:filters.map((f:unknown)=>{
+       const op=f&&typeof f==="object"&&"op" in f?(f as {op:unknown}).op:null;
+       return typeof op==="string"&&["=","in","between","is_null","is_not_null",">","<","<=",">=","!=","ilike"].includes(op)?op:"other";
+      }),
+      metricFns:metrics.map((m:unknown)=>{
+       const fn=m&&typeof m==="object"&&"fn" in m?(m as {fn:unknown}).fn:null;
+       return typeof fn==="string"&&["sum","count","count_distinct","avg","min","max"].includes(fn)?fn:"other";
+      }),
+      metricColumns:metrics.map((m:unknown)=>safeField(
+       m&&typeof m==="object"&&"column" in m?(m as {column:unknown}).column:null))
+     });
+     throw error;
+    }
    }
    if(name==="ai_toast_fields"){
     const result=await client.query("select public.ai_toast_fields($1::uuid,$2::text) value",
