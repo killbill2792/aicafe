@@ -19,7 +19,7 @@ BEGIN
   execute 'select public.toast_save_configuration($1,$2,$3,$4,$5)'
    using b,'https://ws-api.toasttab.com','ai_client','synthetic_ciphertext',
    jsonb_build_array(jsonb_build_object('location_id',loc,'restaurant_guid',r));
-  execute 'update public.toast_location_mappings set verified_at=now() where business_id=$1' using b;
+  execute 'update public.toast_location_mappings set verified_at=now(),info_refreshed_at=now() where business_id=$1' using b;
  else
   insert into public.businesses(id) values(b);
  end if;
