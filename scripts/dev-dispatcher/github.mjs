@@ -179,7 +179,7 @@ export class GitHubFacts {
   }
   async ownerDecision(pr, comments = null) {
     if (!(pr.labels || []).some(label => label.name === 'needs-owner-decision'))
-      return { question: null, url: null };
+      return { question: null, url: null, approved: false };
     const inBody = parseOwnerQuestion(pr.body);
     // A newer authenticated owner approval resolves the decision even if the
     // label or structured question marker has not yet been removed.
@@ -196,7 +196,7 @@ export class GitHubFacts {
     if (latestApproval && Date.parse(latestApproval.created_at || '') >= questionTime &&
         (!inBody || Date.parse(latestApproval.created_at || '') >= Date.parse(pr.updated_at || '') ||
           questionTime > 0))
-      return { question: null, url: null };
+      return { question: null, url: null, approved: true };
     if (inBody) return { question: inBody, url: pr.html_url || null };
     // Owners can request a decision in the PR conversation, not only in its body.
     // Only trusted repository contributors may supply an actionable question.
@@ -279,6 +279,7 @@ export class GitHubFacts {
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
       github_owner_question: ownerDecision.question,
+      owner_approved: ownerDecision.approved === true,
       github_owner_question_url: ownerDecision.url,
       coder_done: typeof pr.body === 'string' &&
         pr.body.includes('<!-- aicafe-coder-done -->'),
