@@ -49,7 +49,7 @@ test('both independent and dependent authorized tasks open a draft early',()=>{
  assert.match(independent.prompt,/INDEPENDENT TASK/);
  assert.match(independent.prompt,/OPEN A DRAFT PR PROMPTLY/);
  assert.doesNotMatch(independent.prompt,/before opening a READY FOR REVIEW/);
- assert.match(stacked.prompt,/Do not wait for that dependency to merge/);
+ assert.match(stacked.prompt,/Do not wait for the parent to merge before approved code\/tests/);
  assert.match(stacked.prompt,/Other dependencies remain merge blockers/);
 });
 
@@ -68,14 +68,17 @@ test('every coding agent receives exact current authority, three skill files, sh
    'needs-owner-decision','aicafe-owner-question',
    'Vercel preview deployments/builds'
   ]) assert.ok(prompt.toLowerCase().includes(required.toLowerCase()), required);
-  assert.match(prompt,/final applicable head is reviewed clean/);
-  assert.match(prompt,/resolved threads/);
+  assert.match(prompt,/Exact-head, threads and acceptance gates stay mandatory/);
+  assert.match(prompt,/threads and acceptance gates stay mandatory/);
   assert.match(prompt,/COMMENT ACCOUNTABILITY/);
   for (const phrase of ['ALL owner/agent PR conversation comments','Comment disposition checklist',
     'GitHub comment/thread IDs','fixed-awaiting-proof','commit+executed CI/test','before reporting done',
     'No parallel queue']) assert.ok(prompt.includes(phrase),phrase);
 
-  assert.match(prompt,/request a fresh Codex review/);
+  assert.match(prompt,/request ONE final-head re-review/);
+  assert.match(prompt,/full CI GREEN/);
+  assert.match(prompt,/Draft\/stacked-parent-moving\/CI-pending means NO Codex request/);
+  assert.match(prompt,/do not @codex again/);
   assert.match(prompt,/NEVER edit PROGRESS.md/);
   assert.doesNotMatch(prompt,/Muse|browser tabs|courier receipts/i);
   assert.ok(prompt.length<12000);
@@ -91,7 +94,7 @@ test('same-chat follow-up owns pre-PR/draft/CI repair without replacing task or 
   assert.equal(d.intent,'continue_existing_chat');
   assert.match(d.prompt,/Continue from where you left off in THIS SAME chat/);
   assert.match(d.prompt,/If PR is missing, open its draft now/);
-  assert.match(d.prompt,/final-head Codex review/);
+  assert.match(d.prompt,/ONE final-head re-review/);
   assert.match(d.prompt,/DO NOT create a background monitoring loop/);
   assert.doesNotMatch(d.prompt,/Muse|courier receipts/i);
  }
@@ -241,4 +244,23 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
    assert.ok(d.prompt.indexOf('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING')<d.prompt.indexOf('OPEN THE DRAFT PR PROMPTLY'));
   }
  }
+});
+
+
+test('one-review policy holds Codex on drafts/stacked children until eligible CI-green ready state',()=>{
+ const independ=createDelivery({task,record:{...record,base_branch:'main'},
+   action:'assign',actionId:'assign:6-review-policy'});
+ const child=createDelivery({task,record:{...record,base_branch:'feat/parent',prerequisite_pr:398},
+   action:'assign',actionId:'assign:6-review-child'});
+ assert.match(independ.prompt,/ONE ready-state Codex review/);
+ assert.match(independ.prompt,/full CI GREEN/);
+ assert.match(child.prompt,/never while parent moves/);
+ assert.match(child.prompt,/final CI-green head/);
+ assert.match(child.prompt,/stacked-parent-moving/);
+ assert.doesNotMatch(child.prompt,/After changes request a fresh Codex review until/);
+ // Verify actual generated instructions, not the wording of AGENTS.md.
+ assert.match(independ.prompt,/request ONE review/);
+ assert.match(independ.prompt,/do not @codex again/);
+ assert.match(child.prompt,/no review for comments or same head/i);
+ assert.match(child.prompt,/Exact-head, threads and acceptance gates stay mandatory/);
 });
