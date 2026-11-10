@@ -51,6 +51,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
     return {status:'blocked',reasons:['adhoc_base_or_owner_merge_changed']};
   const directClean=live.codex_state==='clean' && live.codex_reviewed_sha===record.head_sha;
   const carriedClean=!prepareReady && !directClean &&
+    live.codex_state!=='findings' && live.codex_in_progress_sha!==live.head_sha &&
     await verifyLiveCarryOver({github,record,live});
   if (live.head_sha !== record.head_sha || live.ci_state !== 'success' ||
       live.sensitive_owner_block || (!prepareReady &&

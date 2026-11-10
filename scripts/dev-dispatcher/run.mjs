@@ -244,6 +244,10 @@ async function main() {
         rec.codex_carried_over=null;
         continue;
       }
+      if((rec.codex_state==='findings'&&rec.codex_reviewed_sha===rec.head_sha)||
+         rec.codex_in_progress_sha===rec.head_sha){
+        rec.codex_carried_over=null;continue;
+      }
       if(before?.head_sha===rec.head_sha &&
          before.codex_carried_over?.case==='B' &&
          before.codex_carried_over.base_after_sha===rec.base_sha){
@@ -259,8 +263,8 @@ async function main() {
           ?before.head_sha:null);
       rec.codex_clean_base_sha=before.codex_clean_base_sha ||
         (rec.codex_clean_head_sha===before.head_sha?before.base_merge_sha:null);
-      rec.codex_carried_over=evidence.case==='B'?evidence:null;
-      if(evidence.case==='B'){
+      rec.codex_carried_over=evidence.case==='B'&&rec.codex_state!=='findings'?evidence:null;
+      if(rec.codex_carried_over){
         rec.codex_state='clean';rec.codex_reviewed_sha=rec.head_sha;
       }
     }
@@ -280,13 +284,12 @@ async function main() {
       const job=jobs.find(j=>j.name==='Required merged-main integration checks'&&
         j.status==='completed'&&j.conclusion==='success');
       if(!job)continue;
-      // The exact push-SHA itself proves identity. Dispatch runs require the
-      // independently verified artifact: never use an unrelated main build.
-      const artifact=run.event==='workflow_dispatch'
-        ? await gh.integrationProof(run.id).catch(()=>null) : null;
+      // Skipped acceptance cannot promote integration even if the job is green.
+      const artifact=await gh.integrationProof(run.id).catch(()=>null);
       const proof=verifiedMergedProof({run,job,artifact,taskId:id,mergeSha:rec.merge_sha});
-      if(proof&&integrationStatus({merged_sha:rec.merge_sha,
-        main_sha:rec.merge_sha,proof})==='integrated_proven') {
+      const task=taskById.get(id);
+      if(task&&proof&&integrationStatus({merged_sha:rec.merge_sha,
+        main_sha:rec.merge_sha,proof,expectedAcceptance:task.acceptance})==='integrated_proven') {
         rec.integration_proof=proof;rec.integration_dispatch='verified';
         rec.status='integrated_proven';
         console.log('drift_fixed: integration PR #'+rec.pr_number+' proof run '+run.id);

@@ -18,3 +18,9 @@ const e=await classifyCodexChange({github:fake(),previous:{ ...prior,codex_branc
 },current:live}); assert.equal(e.case,'A'); }); test('stale carry claim is refused at live merge preflight',async()=>{
 const evidence={case:'B',new_head_sha:d,base_after_sha:c, old_patch_id:stablePatchId([file()]),new_patch_id:stablePatchId([file()])}; assert.equal(await verifyLiveCarryOver({github:fake([file()],[file()],[file('src/a.js')]),
 record:{...prior,codex_carried_over:evidence},live}),false); });
+test('current-head findings or running review veto verified historical case-B carry-over',async()=>{
+const e=await classifyCodexChange({github:fake(),previous:prior,current:live});
+assert.equal(e.case,'B');const record={...prior,codex_carried_over:e};
+assert.equal(await verifyLiveCarryOver({github:fake(),record,live:{...live,codex_state:'findings',codex_reviewed_sha:d}}),false);
+assert.equal(await verifyLiveCarryOver({github:fake(),record,live:{...live,codex_state:'pending',codex_in_progress_sha:d}}),false);
+});

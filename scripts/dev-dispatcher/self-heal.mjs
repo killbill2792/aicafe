@@ -1,14 +1,21 @@
+import {acceptanceDigest} from './acceptance-runner.mjs';
 export const REQUIRED_INTEGRATION_STEPS = [ 'TypeScript','ESLint','Full regression tests','Dispatcher regression tests', 'Production build','Capability integration scenarios'
 ]; export function trackScheduleGap(state, {eventName, now, observedScheduleAt = null} = {}) { const next = structuredClone(state); const at = new Date(now).toISOString(); next.schedule_health ||= {}; const health = next.schedule_health; const last = health.last_schedule_at || observedScheduleAt; if (eventName === 'schedule') {
 if (last && Date.parse(at) - Date.parse(last) > 15 * 60_000) health.missed_schedule = {last_schedule_at:last, noticed_at:at, gap_minutes:Math.floor((Date.parse(at)-Date.parse(last))/60_000)}; health.last_schedule_at = at;
 return next; } if (!health.last_schedule_at && last) health.last_schedule_at = last; if (last && Date.parse(at)-Date.parse(last) > 15*60_000 && health.missed_schedule?.last_schedule_at !== last) health.missed_schedule = {last_schedule_at:last, noticed_at:at,
 gap_minutes:Math.floor((Date.parse(at)-Date.parse(last))/60_000)}; return next; } export function verifiedMergedProof({run,job,artifact=null,taskId,mergeSha} = {}) {
 if (!/^[a-f0-9]{40}$/.test(mergeSha||'') || run?.name !== 'AI CAFE Integration Proof' || run.head_branch !== 'main' || !['push','workflow_dispatch'].includes(run.event) ||
-run.status !== 'completed' || run.conclusion !== 'success' || job?.name !== 'Required merged-main integration checks' || job.status !== 'completed' || job.conclusion !== 'success') return null; const exactPush = run.event === 'push' && run.head_sha === mergeSha; const artifactExact = artifact && artifact.task_id === taskId &&
-artifact.run_id === run.id && artifact.head_sha === mergeSha && artifact.base_sha === mergeSha; if (!exactPush && !artifactExact) return null; if (artifact && !artifactExact) return null; if (!REQUIRED_INTEGRATION_STEPS.every(name => job.steps?.some(step => step.name === name &&
+run.status !== 'completed' || run.conclusion !== 'success' || job?.name !== 'Required merged-main integration checks' || job.status !== 'completed' || job.conclusion !== 'success') return null; const exactPush = run.event === 'push' && run.head_sha === mergeSha; const rows=artifact?.acceptance;
+const artifactExact = artifact?.version===1 && artifact.task_id === taskId &&
+artifact.run_id === run.id && artifact.head_sha === mergeSha && artifact.base_sha === mergeSha &&
+Array.isArray(rows) && rows.length>0 && rows.every((x,i)=>x.id===String(i+1) &&
+x.result==='passed' && typeof x.command==='string' && !!x.command &&
+typeof x.test_file==='string' && !!x.test_file) &&
+artifact.acceptance_digest===acceptanceDigest(rows);
+if(!artifactExact || (run.event==='push' && !exactPush))return null; if (!REQUIRED_INTEGRATION_STEPS.every(name => job.steps?.some(step => step.name === name &&
 step.status === 'completed' && step.conclusion === 'success'))) return null; const checks = REQUIRED_INTEGRATION_STEPS.map((name,i)=>({ id:String(i+1),check:name,result:'passed'
 })); return {main_sha:mergeSha,merged_sha:mergeSha,workflow_run_id:run.id, conclusion:'success',proof_basis:artifactExact?'exact_sha_artifact':'exact_sha_push',
-required_checks:checks,required_scenarios:checks, ...(artifactExact && Array.isArray(artifact.acceptance) ? {task_acceptance:artifact.acceptance} : {})}; }
+required_checks:checks,required_scenarios:rows,task_acceptance:rows}; }
 export function recordDrift(state, previous, observed, at = new Date().toISOString()) { const next = structuredClone(state); const fields = ['head_sha','base_sha','base_current','codex_state', 'codex_reviewed_sha','threads_resolved','github_state','approval_hash']; const updates=[]; for (const [id,now] of Object.entries(next.tasks||{})) {
 const before=previous.tasks?.[id]; if (!before) continue; for (const field of fields) { if (before[field] !== now[field] && now[field] !== undefined) updates.push({task_id:id,field,from:before[field]??null,to:now[field]??null}); } const link = next.pr_chat_links?.[String(now.pr_number)]; if (link && link.conversation_url !== now.conversation_ref)
 updates.push({task_id:id,field:'chat_link',from:now.conversation_ref||null, to:link.conversation_url}); } if (updates.length) { next.drift_fixed ||= []; next.drift_fixed.push({at,changes:updates.slice(0,30)}); next.drift_fixed = next.drift_fixed.slice(-20); }

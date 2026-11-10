@@ -16,6 +16,7 @@ if(conflict){evidence.case='D';evidence.reason='hand_resolved_conflicts';return 
 !parents.includes(current.base_sha)){ evidence.reason='not_single_GitHub_update_merge';return evidence; }
 if(evidence.old_patch_id!==evidence.new_patch_id){ evidence.reason='PR_patch_modified';return evidence; } if(evidence.overlapping_files.length){
 evidence.case='C';evidence.reason='main_touches_PR_file';return evidence; } evidence.case='B';evidence.reason='unchanged_patch_no_overlap'; } catch {evidence.reason='compare_unavailable';} return evidence; } export async function verifyLiveCarryOver({github,record,live}) {
+if(live?.codex_state==='findings'||live?.codex_in_progress_sha===live?.head_sha)return false;
 const saved=record?.codex_carried_over; if(saved?.case!=='B'||saved.new_head_sha!==live?.head_sha || saved.base_after_sha!==live?.base_sha ||
 !record.codex_branch_update || !record.codex_clean_head_sha || !record.codex_clean_base_sha)return false; const checked=await classifyCodexChange({github,previous:{ ...record,head_sha:record.codex_branch_update.old_head_sha
 },current:live}); return checked.case==='B' && checked.old_patch_id===saved.old_patch_id &&
