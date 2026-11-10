@@ -339,7 +339,8 @@ async function main() {
           rec.github_state!=='open' || rec.codex_review_requested_sha!==rec.head_sha) continue;
       try {
         const decision=await inspectCodexWatch({github:gh,record:rec,minutes});
-        if (decision.status==='rerequest') {
+        if (decision.status==='rerequest' && rec.codex_watchdog?.sha!==rec.head_sha) {
+          const reservationAt=new Date().toISOString();
           // Reserve the sole retry in the existing CAS ledger BEFORE POST.
           // An uncertain GitHub response cannot lead to blind replay.
           const reserved=await ledger.transaction(latest=>{
@@ -348,11 +349,12 @@ async function main() {
                 task.codex_review_requested_sha!==rec.head_sha ||
                 task.codex_watchdog?.sha===rec.head_sha) return null;
             task.codex_watchdog={sha:rec.head_sha,attempts:2,status:'reserved',
-              at:new Date().toISOString()};
+              at:reservationAt};
             return latest;
           });
           if (reserved?.state?.tasks?.[id]?.codex_watchdog?.sha!==rec.head_sha ||
-              reserved?.state?.tasks?.[id]?.codex_watchdog?.status!=='reserved') continue;
+              reserved?.state?.tasks?.[id]?.codex_watchdog?.status!=='reserved' ||
+              reserved.state.tasks[id].codex_watchdog.at!==reservationAt) continue;
           const outcome=await rerequestCodexReview({github:gh,record:rec,minutes});
           if (outcome.status==='codex_rerequested') {
             await ledger.transaction(latest=>{
