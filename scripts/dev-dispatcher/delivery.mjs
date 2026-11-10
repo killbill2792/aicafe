@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
+import { editableFiles, usedFiles } from './core.mjs';
 export const promptHash = prompt => createHash('sha256').update(prompt).digest('hex');
 // Approved plan metadata -> bounded, provider-neutral browser handoff.
 // Generated ONLY on trusted main by the existing deterministic dispatcher.
 const PROVIDERS = new Set(['chatgpt', 'claude']);
-const ACTIONS = new Set(['assign', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder']);
+const ACTIONS = new Set(['assign', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder',
+  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'idle_continue']);
+const V2_NUDGES = new Set(['codex_comments','ci_failed','parent_merged','owner_answered','idle_continue']);
 const REPO = 'https://github.com/killbill2792/aicafe';
 
 // Stable authorization identity. A changed task brief, scope, approval or dependency
@@ -12,6 +15,9 @@ export function approvalSignature(task) {
   if (!task) return null;
   const fields = [task.id, task.state, task.architecture_approval, task.exclusive_files,
     task.depends_on, task.title, task.goal, task.brief, task.acceptance];
+  // Do not invalidate signatures of already-planned, owner-signed legacy tasks.
+  if (Object.hasOwn(task,'edits') || Object.hasOwn(task,'uses'))
+    fields.push(task.edits,task.uses);
   return createHash('sha256').update(JSON.stringify(fields)).digest('hex');
 }
 
@@ -19,7 +25,7 @@ export function approvalSignature(task) {
 export function createDelivery({ task, record, action, actionId }) {
   if (!task || task.architecture_approval?.approved !== true ||
       !['architecture_approved', 'ready'].includes(task.state) ||
-      !Array.isArray(task.exclusive_files) || !task.exclusive_files.length ||
+      !Array.isArray(editableFiles(task)) || !editableFiles(task).length ||
       record?.approved !== true || !ACTIONS.has(action) || !PROVIDERS.has(record.agent))
     throw new Error('Task is not authorized for browser delivery');
   if (typeof actionId !== 'string' || !actionId || actionId.length > 400) throw new Error('Invalid action ID');
@@ -31,6 +37,32 @@ export function createDelivery({ task, record, action, actionId }) {
   if (!isNew && !url) throw new Error('Follow-up requires a saved conversation URL');
   if (url && !validConversationUrl(record.agent, url)) throw new Error('Invalid destination URL');
   const project = { id: 'aicafe', name: 'AI CAFE' }; // this dispatcher plans only AI CAFE; bridge is project-neutral
+  if (V2_NUDGES.has(action)) {
+    const pr = record.pr_number ? REPO + '/pull/' + record.pr_number : 'the existing PR';
+    const head = record.head_sha || 'unverified';
+    const comments = (record.unresolved_codex_comments || []).slice(0,4)
+      .map(c => '- ' + String(c.body || 'Unresolved review thread').replace(/\\s+/g,' ').slice(0,180) +
+        (c.url && /^https:\\/\\/github\\.com\\//.test(c.url) ? ' ' + c.url : '')).join('\\n');
+    const byReason = {
+      codex_comments: 'Codex comments: ' + (comments || 'Read unresolved inline comments on ' + pr) +
+        '\\nFix the actual findings together; rerun CI before one exact-head re-review.',
+      ci_failed: 'CI failed: ' + (record.ci_failure_job || 'check the failing job') +
+        (record.ci_failure_url ? ' ' + record.ci_failure_url : ' (' + pr + ')') +
+        '. Diagnose the failing test/job and fix it without weakening assertions. Rerun CI.',
+      parent_merged: 'Parent PR merged (' + (record.parent_merged_sha || 'verify merge SHA') +
+        '). Rebase onto main and continue in this same child PR. Rerun CI and acceptance on the new base. Do not request Codex until the final main-based head is green.',
+      owner_answered: 'Owner answered: ' + String(record.owner_answer_text || 'Read the signed answer on ' + pr).slice(0,350) +
+        '\\nApply only the answer within approved file scope; update PR comment dispositions and rerun applicable CI.',
+      idle_continue: 'Continue the same PR and branch. Check the latest GitHub state, finish the approved code/CI/acceptance and reconcile comments. When green and complete, mark coder done in the PR; ready state triggers Codex once, not on intermediate pushes.'
+    };
+    const prompt = 'Task ' + task.id + ', PR ' + pr + ', head ' + head + '.\\n' +
+      byReason[action] + '\\nDo not expand approved edits or bypass owner/merge gates.';
+    if (prompt.trim().split(/\\s+/).length >= 120) throw new Error('Nudge exceeds 120 words');
+    return {version:1,action_id:actionId,project,approval_hash:authorization,
+      provider:record.agent,intent:'continue_existing_chat',
+      base_branch:record.base_branch || 'main',conversation_url:url,
+      task_id:task.id,prompt,prompt_hash:promptHash(prompt)};
+  }
   const taskBrief = task.brief?.split('#')[0];
   if (!/^docs\/plans\/[a-zA-Z0-9_./-]+\.md$/.test(taskBrief || '') || taskBrief.includes('..'))
     throw new Error('Invalid task brief');
@@ -56,6 +88,7 @@ export function createDelivery({ task, record, action, actionId }) {
     stacked
        ? `DEPENDENT TASK: OPEN A DRAFT PR PROMPTLY on prerequisite branch ${record.base_branch} (PR #${record.prerequisite_pr}), NOT main. Do not wait for the parent to merge before approved code/tests; keep the same stacked draft. Other dependencies remain merge blockers. After the parent merges, retarget onto main, rerun CI/acceptance, and request Codex ONCE on the final CI-green head; never while parent moves.`
        : 'INDEPENDENT TASK: OPEN A DRAFT PR PROMPTLY against current main; keep working in this SAME draft. Finish code/CI, then request ONE ready-state Codex review. No extra @codex if GitHub started it.',
+    'READY SIGNAL: When implementation, applicable tests and actual CI are done, add exactly one <!-- aicafe-coder-done --> marker to the existing PR description. The dispatcher observes this GitHub-visible completion signal; a chat statement alone is not observable from GitHub. Keep dependent drafts coding/CI while parents are open; they become ready only after main rebase and all proof gates.',
     'CODEX LIFECYCLE: Draft/stacked-parent-moving/CI-pending means NO Codex request. Finish code, docs and owner decisions first. With full CI GREEN on current-main final head, mark ready and request ONE review; if ready triggered Codex, do not @codex again. No review for comments or same head. Batch substantive fixes, rerun CI, then request ONE final-head re-review. Exact-head, threads and acceptance gates stay mandatory.',
     'COMMENT ACCOUNTABILITY: Fetch ALL owner/agent PR conversation comments and inline review threads, including comments newer than the latest commit. In this SAME PR description update one Comment disposition checklist keyed by exact GitHub comment/thread IDs: acknowledged, working, blocked-owner, fixed-awaiting-proof, verified or superseded; include owning file/task and commit+executed CI/test or blocker. Reconcile every actionable ID before edits and before reporting done. A reply, checkmark, Codex clean or resolved thread alone is not verification; never silently discard a newer decision. No parallel queue.',
     'Stay in this SAME PR/chat through proof. Fix CI/Codex in place under AGENTS.md. DO NOT create a background monitoring loop, cron or separate watcher; coordinator resumes THIS SAME chat at saved GitHub head. Never open a replacement chat.',
@@ -63,7 +96,8 @@ export function createDelivery({ task, record, action, actionId }) {
     'CI AND COSTS: Use the existing GitHub Actions jobs and disposable test resources. NEVER create or enable Vercel preview deployments/builds. Targeted browser/Playwright acceptance belongs in GitHub CI when required; E2 remains separately gated and proposed. A local Next.js CI build is not a Vercel deployment.',
     `Task ${task.id}: ${task.title}`,
     `Goal: ${task.goal}`,
-    `Approved file ownership: ${task.exclusive_files.length > 8 ? `${task.exclusive_files.length} EXACT signed paths: read task ${task.id}.exclusive_files in the current approved queue, and edit ONLY those paths. Full list is covered by approvalSignature (not omitted from the owner authorization).` : task.exclusive_files.join(', ')}`,
+    `Approved file ownership: ${editableFiles(task).length > 8 ? `${editableFiles(task).length} EXACT signed edit paths: read task ${task.id}.edits (or signed legacy exclusive_files) in the current approved queue, and edit ONLY those paths. Other tasks' files in uses may be imported READ-ONLY. Full list is covered by approvalSignature.` : editableFiles(task).join(', ')}`,
+    `Read-only shared uses (may import; NEVER edit): ${JSON.stringify(usedFiles(task))}`,
     `Task brief: ${REPO}/blob/main/${task.brief}`,
     `Read ${REPO}/blob/main/AGENTS.md and PROGRESS.md before coding.`,
     'SAME PR/chat for follow-ups. Mark ready/merge only after latest-head executed acceptance, CI, Codex clean/threads resolved, integrated dependencies, current base and approved file ownership. Record merge SHA and separate integration proof.',
