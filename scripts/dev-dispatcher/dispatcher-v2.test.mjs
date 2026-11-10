@@ -165,6 +165,7 @@ test('already-main child requests update without a second retarget; conflicts su
     import.meta.url),'utf8');
   assert.match(run,/if \(commit && ledger\) \{\s*const currentTasks/);
   assert.match(run,/updateChildAfterParentMerge/);
+  assert.match(run,/main branch update will retry/);
   assert.doesNotMatch(run,/process\.env\.DISPATCH_BRANCH_MAINTENANCE/);
   assert.doesNotMatch(workflow,/DISPATCH_BRANCH_MAINTENANCE/);
 });
