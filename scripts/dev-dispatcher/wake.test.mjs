@@ -38,7 +38,8 @@ test('authenticated Muse receipt and owner yes wake immediately without cron',as
   payloads.push(JSON.parse(o.body));return {ok:true,status:204};};
  await dispatchReceiptWake({token:'mock',event:'dispatcher_receipt',fetchFn});
  await dispatchReceiptWake({token:'mock',event:'dispatcher_owner_reply',fetchFn});
+ await dispatchReceiptWake({token:'mock',event:'dispatcher_owner_instruction',fetchFn});
  await dispatchReceiptWake({token:'mock',event:'dispatcher_delayed',fetchFn});
- assert.deepEqual(payloads.map(x=>x.event_type),['dispatcher_receipt','dispatcher_owner_reply','dispatcher_delayed']);
+ assert.deepEqual(payloads.map(x=>x.event_type),['dispatcher_receipt','dispatcher_owner_reply','dispatcher_owner_instruction','dispatcher_delayed']);
  await assert.rejects(dispatchReceiptWake({repo:two.repo,token:'mock',fetchFn}),/cross-project/);
 });

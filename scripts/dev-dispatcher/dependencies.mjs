@@ -4,11 +4,11 @@ import { createHash } from 'node:crypto';
 // Queue tasks retain exclusive ownership of their signed delivery flow.
 export function adoptAdhocPullRequests(state, prs, queueIds = []) {
   const next = structuredClone(state);
-  const queue = new Set(queueIds);
+  // PR-body task markers are optional hints, never authority.
   const used = new Set(Object.values(next.tasks).map(r => r.pr_number).filter(Number.isInteger));
   const skipped = [];
   for (const pr of prs) {
-    if (used.has(pr.pr_number) || queue.has(pr.task_marker) ||
+    if (used.has(pr.pr_number) ||
         (pr.branch || '').startsWith(settings.naming.branch_prefix)) continue;
     if (!pr.same_repo || pr.bot_author) continue;
     const chat=next.branch_chat_links?.[pr.branch]?.conversation_url||pr.chat_marker;
