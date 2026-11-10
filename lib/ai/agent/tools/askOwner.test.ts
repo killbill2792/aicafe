@@ -1,4 +1,5 @@
-import {describe,it,expect} from "vitest";
+import {describe,it,expect,vi} from "vitest";
+import {runAgentTurn,type AgentProvider} from "../loop.server";
 import {askOwnerSchema,askOwnerTools} from "./askOwner";
 import {newResolveState,observeToolResult} from "../resolve";
 import type {AgentToolContext} from "./index";
@@ -151,4 +152,107 @@ describe("ask_owner tool",()=>{
      options[0],{label:"Maria B",value:"44444444-4444-4444-8444-444444444444"}],allowOther:false},another);
    expect(mixed.missing).toContain("unverifiedOption");
  });
+ it.each([
+  "How many individual item selections across these two days had quantity at least two?",
+  "How many selection records yesterday had quantity at least five?",
+  "How many applied discounts were recorded today?",
+  "What is the total number of Online orders yesterday?",
+  "How many refund transactions were recorded last week?",
+  "How much sales were recorded today?"
+ ])("blocks a model-generated owner fact card for recorded POS data: %s",async ownerText=>{
+  const ctx={resolveState:newResolveState(ownerText),locale:"en"} as AgentToolContext;
+  const request={kind:"facts",question:"Please give me that number",options:[],allowOther:false,
+   fields:[{key:"generic_count",label:"Count",inputType:"number",units:[],defaultUnit:""}]};
+  const rejected=await askOwnerTools.ask_owner.execute(request,ctx);
+  expect(rejected).toMatchObject({source:"ask_owner",error:"posFactRequiresReader",
+   missing:["posFactRequiresReader"],nextTool:"query_data"});
+  expect(rejected.question).toBeUndefined();
+  expect(ctx.resolveState!.asked).toBe(false);
+  // A rejected owner card must not use the sole clarification slot.
+  const ownerOnly=await askOwnerTools.ask_owner.execute({kind:"facts",
+   question:"What monthly rent do you pay?",options:[],allowOther:false,
+   fields:[{key:"monthly_rent_cents",label:"Monthly rent",inputType:"money",units:[],defaultUnit:""}]},
+   {resolveState:newResolveState("What is our monthly rent?"),locale:"en"} as AgentToolContext);
+  expect(ownerOnly).toMatchObject({kind:"facts",missing:[]});
+ });
+ it.each([
+  "How many seats do we have?",
+  "How many cups should I buy tomorrow?",
+  "How many supplier purchase orders do I need to place?",
+  "How many orders should we target next month?",
+  "What is our monthly rent?",
+  "What will our sales be next month?"
+ ])("preserves genuine owner-only or planning questions: %s",async ownerText=>{
+  const ctx={resolveState:newResolveState(ownerText),locale:"en"} as AgentToolContext;
+  const card=await askOwnerTools.ask_owner.execute({kind:"facts",
+   question:"What would you enter?",options:[],allowOther:false,
+   fields:[{key:"owner_context",label:"Your input",inputType:"text",units:[],defaultUnit:""}]},ctx);
+  expect(card).toMatchObject({source:"ask_owner",kind:"facts",missing:[]});
+  expect(ctx.resolveState!.asked).toBe(true);
+ });
+ it("does not allow model-invented POS intent to override a non-POS owner question",async()=>{
+  const ctx={resolveState:newResolveState("How many seats are at our café?"),locale:"en"} as AgentToolContext;
+  const card=await askOwnerTools.ask_owner.execute({kind:"facts",
+   question:"How many selection records?",options:[],allowOther:false,
+   fields:[{key:"seat_count",label:"Seats",inputType:"number",units:[],defaultUnit:""}]},ctx);
+  expect(card).toMatchObject({kind:"facts",missing:[]});
+ });
+ it("keeps verified choice cards available even when the question contains POS terms",async()=>{
+  const ctx=context();
+  ctx.resolveState!.ownerText="Which of these orders is the one you meant?";
+  const choice=await askOwnerTools.ask_owner.execute({question:"Which Latte?",options,allowOther:true},ctx);
+  expect(choice).toMatchObject({kind:"choice",missing:[]});
+ });
+ it("recovers from a wrong ask_owner decision to the actual registered POS reader in one turn",async()=>{
+  const ownerText="How many individual item selections across these two days had quantity at least two?";
+  const metricQuery={view:"cv_toast_records",columns:null,filters:[
+   {column:"record_type",op:"=",value:"item"},
+   {column:"counts_in_sales",op:"=",value:true},
+   {column:"data.quantity",op:">=",value:2}
+  ],group_by:null,metrics:[{fn:"count",column:"source_ref"}],
+  date_from:"2026-11-08",date_to:"2026-11-09",order_by:null,limit:10};
+  const ownerCard={kind:"facts",question:"How many item selections were sold?",
+   options:[],allowOther:false,fields:[{key:"item_count",label:"Item count",
+    inputType:"number",units:[],defaultUnit:""}]};
+  const tool=(name:string,args:unknown,id:string)=>({type:"response.output_item.done",
+   item:{type:"function_call",name,arguments:JSON.stringify(args),call_id:id}});
+  const completed={type:"response.completed",response:{usage:{input_tokens:10,output_tokens:10}}};
+  const rounds:unknown[][]=[
+   [tool("ask_owner",ownerCard,"ask-1"),completed],
+   [tool("query_data",metricQuery,"query-2"),completed],
+   [{type:"response.output_text.delta",delta:"Number: 2. Source: recorded item selections."},completed]
+  ];
+  let round=0;
+  const provider:AgentProvider=async function*(){
+   for(const event of rounds[round++]??[])yield event as never;
+  };
+  const rpc=vi.fn(async(name:string)=>{
+   if(name==="ai_query_view")return {data:{rows:[{count_source_ref:2}],
+    sourceCount:2,sourceMix:{toast:2},truncated:false},error:null};
+   return {data:[],error:null};
+  });
+  const context={asOf:"2026-11-09",timezone:"America/Los_Angeles",locale:"en",
+   canonicalData:async()=>({db:{rpc} as never,
+    businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}),
+   tools:{getMenuCatalog:async()=>({available:true,value:[],quality:{
+    level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+    getSalesTrend:async()=>({available:false,value:null,quality:{
+     level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+    getProfitability:async()=>({available:false,value:null,quality:{
+     level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}})}
+  } as AgentToolContext;
+  const turn=await runAgentTurn({ownerText,context,provider});
+  expect(turn.endReason).toBe("complete");
+  expect(turn.tools).toEqual(expect.arrayContaining(["ask_owner","query_data"]));
+  expect(turn.results.find(x=>x.source==="ask_owner")).toMatchObject({
+   error:"posFactRequiresReader",missing:["posFactRequiresReader"],nextTool:"query_data"});
+  expect(turn.results.find(x=>x.source==="canonical_data")).toMatchObject({
+   aggregate:{metric:"count_source_ref",value:2}});
+  expect(turn.results.some(x=>x.source==="ask_owner"&&x.missing.length===0)).toBe(false);
+  expect(turn.text).toContain("Number: 2");
+  expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+   p_view:"cv_toast_records",p_filters:metricQuery.filters,p_metrics:metricQuery.metrics
+  }));
+ });
+
 });
