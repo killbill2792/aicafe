@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
-import {priceMonitorTools,mapPriceMonitorRows,monitorCafeDate} from "./priceMonitor";
+import {priceMonitorTools,mapPriceMonitorRows,monitorCafeDate,
+ planVerifiedToastPriceObservations,type VerifiedToastPriceDelta} from "./priceMonitor";
 import type {OwnerProposalRow,OwnerReportRow} from "@/lib/ai/supervisor/loop/reads.server";
 import type {AgentToolContext} from "./index";
 
@@ -88,4 +89,65 @@ describe("get_price_monitor_status",()=>{
       .toMatchObject({stage:"finished",day:null,finalReportMissing:true});
   });
 
+});
+
+describe("source-verified seven-day Toast price observation plan (no sends)",()=>{
+ const restaurant="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+ const item="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+ const observation:VerifiedToastPriceDelta={
+  businessId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",restaurantGuid:restaurant,
+  menuItemId:item,posItemId:"toast:"+restaurant+":"+item,
+  contextKey:"published-default",sourceType:"connected_pos",sourceProvider:"toast",
+  oldPriceCents:700,newPriceCents:750,publicationVersion:"2026-11-01T08:30:00Z",
+  observedAt:"2026-11-01T08:30:00Z",sourceEffectiveAt:null
+ };
+ it("uses exactly seven elapsed 24-hour windows across DST without invented effective time",()=>{
+  const windows=planVerifiedToastPriceObservations([observation],"2026-11-09T09:30:00Z");
+  expect(windows).toHaveLength(7);
+  expect(windows.map(w=>w.day)).toEqual([1,2,3,4,5,6,7]);
+  expect(windows[0]).toMatchObject({
+   from:"2026-11-01T08:30:00.000Z",to:"2026-11-02T08:30:00.000Z",
+   sourceEffectiveAt:null,coverage:"not_assessed",kind:"observational",due:true,
+   interrupted:false
+  });
+  expect(windows[6].to).toBe("2026-11-08T08:30:00.000Z");
+  expect(windows.map(w=>w.deliveryKey).filter((k,i,a)=>a.indexOf(k)===i)).toHaveLength(7);
+ });
+ it("never creates due notifications before the actual observed time or measured window",()=>{
+  expect(planVerifiedToastPriceObservations([observation],"2026-11-01T08:00:00Z"))
+   .toEqual([]);
+  const windows=planVerifiedToastPriceObservations([observation],"2026-11-01T09:00:00Z");
+  expect(windows).toHaveLength(7);
+  expect(windows.every(w=>w.due===false)).toBe(true);
+  expect(windows.every(w=>w.coverage==="not_assessed")).toBe(true);
+ });
+ it("preserves separate old/reverted-price exposure segments without causal claims",()=>{
+  const second={...observation,oldPriceCents:750,newPriceCents:700,
+   publicationVersion:"2026-11-02T20:00:00Z",
+   observedAt:"2026-11-02T20:00:00Z"};
+  const windows=planVerifiedToastPriceObservations(
+   [second,observation],"2026-11-05T00:00:00Z");
+  expect(windows.filter(w=>w.publicationVersion===observation.publicationVersion))
+   .toHaveLength(2);
+  expect(windows[1]).toMatchObject({day:2,interrupted:true,
+   to:"2026-11-02T20:00:00.000Z",due:true});
+  expect(windows.filter(w=>w.publicationVersion===second.publicationVersion))
+   .toHaveLength(7);
+  expect(windows[2]).toMatchObject({day:1,newPriceCents:700,
+   from:"2026-11-02T20:00:00.000Z"});
+ });
+ it("denies cross-restaurant identity, unverified manual changes and unknown prices",()=>{
+  const mismatch={...observation,restaurantGuid:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"};
+  const manual={...observation,sourceType:"owner_manual"} as unknown as VerifiedToastPriceDelta;
+  const unknown={...observation,oldPriceCents:0};
+  expect(planVerifiedToastPriceObservations([mismatch,manual,unknown],
+   "2026-11-09T09:30:00Z")).toEqual([]);
+ });
+ it("deduplicates repeated source-version observations and isolates café/price contexts",()=>{
+  const another={...observation,contextKey:"published-breakfast"};
+  const windows=planVerifiedToastPriceObservations(
+   [observation,observation,another],"2026-11-09T09:30:00Z");
+  expect(windows).toHaveLength(14);
+  expect(new Set(windows.map(w=>w.deliveryKey)).size).toBe(14);
+ });
 });
