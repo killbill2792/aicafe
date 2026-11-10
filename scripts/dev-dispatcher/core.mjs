@@ -343,6 +343,10 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
         updated.branch_maintenance_merge_sha = null;
       }
       copy.tasks[id] = { ...updated, ...pr, task_id: id,
+        branch_maintenance_result: pr.mergeable === true && pr.mergeable_state === 'clean'
+          ? null : updated.branch_maintenance_result,
+        branch_maintenance_merge_sha: pr.mergeable === true && pr.mergeable_state === 'clean'
+          ? null : updated.branch_maintenance_merge_sha,
         base_changed_at: baseChangedAt || null, review_base_current: reviewBaseCurrent,
         owner_question: pr.owner_approved ? null : updated.owner_question,
         status: pr.sensitive_owner_block ? "blocked_needs_owner" :
