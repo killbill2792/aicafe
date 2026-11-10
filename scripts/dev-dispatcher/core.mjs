@@ -257,8 +257,7 @@ export function decideNudge(record, _nowMs) {
     return {kind:'hold',reason:'no_open_pr'};
   // Never wake a clean PR for idle time, ordinary owner comments, parent merge,
   // missing acceptance, or an otherwise completed stage. Only coder work.
-  const conflict = record.mergeable === false || record.mergeable_state === 'dirty' ||
-    record.branch_maintenance_result === 'update_failed_needs_coder';
+  const conflict = record.mergeable === false || record.mergeable_state === 'dirty';
   const action = record.ci_state === 'failure' ? 'ci_failed' :
     record.codex_state === 'findings' ? 'codex_comments' :
     conflict ? 'repair_conflict' : null;
@@ -338,6 +337,11 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
       const baseChangedAt = baseChanged ? now : rec.base_changed_at;
       const reviewBaseCurrent = !baseChangedAt || Boolean(pr.codex_review_at &&
         Date.parse(pr.codex_review_at) > Date.parse(baseChangedAt));
+      // GitHub's fresh clean mergeability supersedes a historical failed update.
+      if (pr.mergeable === true && pr.mergeable_state === 'clean') {
+        updated.branch_maintenance_result = null;
+        updated.branch_maintenance_merge_sha = null;
+      }
       copy.tasks[id] = { ...updated, ...pr, task_id: id,
         base_changed_at: baseChangedAt || null, review_base_current: reviewBaseCurrent,
         owner_question: pr.owner_approved ? null : updated.owner_question,
