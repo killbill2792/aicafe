@@ -149,7 +149,7 @@ async function main() {
         if (proposal.action === 'owner_answered') rec.last_owner_answer_key = rec.owner_answer_key;
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
           status: "planned", delivery_owner: "muse",
-          head_sha: proposal.action === 'parent_merged' ? null : rec.head_sha || null,
+          head_sha: rec.head_sha || null,
           created_at: now, delivery };
         nudges.push({ task_id: id, action: proposal.action });
       }
