@@ -12,17 +12,19 @@ export const KEY=/^[A-Za-z_][A-Za-z0-9_]{0,100}$/;
 // or discard permitted stable customer/employee/loyalty identifiers.
 export const isSensitiveId=(key:string,context:string)=>legacyIsSensitiveId(key,context);
 
+// Keep ordinary cardholder names as permitted identity; do NOT keep PAN,
+// security codes, account credentials, expiration dates or expiry month/year.
 // Only payment credentials and reusable security secrets are excluded. A name,
 // contact address, loyalty GUID, staff GUID, order reference or note is not a
 // credential merely because it belongs to a person.
-const SECRET_KEY=/^(?:pan|primaryAccountNumber|cardNumber|paymentCardNumber|cardLast4|last4Digits|lastFour|last4|firstFive|firstSix|first5|first6|cvv|cvc|cvv2|cvc2|cardVerificationValue|securityCode|magstripe|track|trackData|track1|track2|track1Data|track2Data|expiration|expiry|expireDate|cardExpiry|cardExpiration|password|passcode|pin|apiKey|secret|clientSecret|privateKey|accessToken|refreshToken|sessionToken|authToken|authorization|authorizationToken|paymentToken|cardToken|token|tokenId|fingerprint|routingNumber|bankAccountNumber|accountNumber|networkId|networkTransactionIdentifier|signature)$/i;
+const SECRET_KEY=/^(?:pan|primaryAccountNumber|cardNumber|paymentCardNumber|cardLast4|last4Digits|lastFour|last4|firstFive|firstSix|first5|first6|cvv|cvc|cvv2|cvc2|cardVerificationValue|securityCode|magstripe|track|trackData|track1|track2|track1Data|track2Data|expiration|expiry|expireDate|cardExpiry|cardExpiration|expirationMonth|expirationYear|expiryMonth|expiryYear|expMonth|expYear|cardExpMonth|cardExpYear|cardExpirationMonth|cardExpirationYear|password|passcode|pin|apiKey|secret|clientSecret|privateKey|accessToken|refreshToken|sessionToken|authToken|authorization|authorizationToken|paymentToken|cardToken|token|tokenId|fingerprint|routingNumber|bankAccountNumber|accountNumber|networkId|networkTransactionIdentifier|signature)$/i;
 const ENDS_WITH_SECRET=/(?:Password|Secret|ApiKey|PrivateKey|AccessToken|RefreshToken|SessionToken|AuthToken|PaymentToken|CardToken|CardNumber|TrackData|SecurityCode|VerificationValue|Magstripe)$/i;
 const CARD_SEQUENCE=/(?:\d[ -]?){13,19}/g;
 const SECRET_TEXT=/(?:\bBearer\s+\S+|\b(?:password|api[_ -]?key|client[_ -]?secret|access[_ -]?token)\s*[:=]\s*\S+|\bsk-[A-Za-z0-9_-]{12,})/i;
 const PHONE_FIELD=/^(?:phone|phoneNumber|mobile|mobileNumber|contactPhone|telephone|fax)$/i;
 const GUID_FIELD=/(?:^guid$|Guid$|UUID$|Uuid$|^id$|Id$)/;
 const CARD_CONTAINER=/(?:^|\.)(?:card|cardInfo|cardDetails|cardData|creditCard|paymentCard|giftCard|giftCardInfo|magstripe|paymentMethod)(?:\.|$)/i;
-const CARD_CHILD_SECRET=/^(?:number|value|last4|first5|first6|lastFour|maskedNumber|expirationDate|expiryDate|expiryMonth|expiryYear|expMonth|expYear|holderName|cardholderName|networkId|networkTransactionIdentifier|accountId|accountNumber|tokenId)$/i;
+const CARD_CHILD_SECRET=/^(?:number|value|last4|first5|first6|lastFour|maskedNumber|expirationDate|expiryDate|expiryMonth|expiryYear|expMonth|expYear|month|year|networkId|networkTransactionIdentifier|accountId|accountNumber|tokenId)$/i;
 
 
 function plausibleCardNumber(value:string):boolean {

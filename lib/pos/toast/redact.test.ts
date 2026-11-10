@@ -67,6 +67,25 @@ describe("Toast day pages are redacted once in the app",()=>{
   expect(safe.device).toEqual({});
   expect(safe.missing).toBeNull();
  });
+ it("retains un-hashed cardholder names but never payment expiry or PAN",()=>{
+  const safe=redactToastRaw({
+   cardInfo:{cardholderName:"Ana Lopez",holderName:"Ana L",
+    number:"4111111111111111",cardNumber:"4111111111111111",
+    expiryMonth:"12",expiryYear:"2030",expirationMonth:"12",
+    expirationYear:"2030",month:"12",year:"2030",cvv:"123"},
+   payments:[{cardholderName:"Ana Lopez",expMonth:"12",expYear:"2030",
+    cardNumber:"4111111111111111",cvv:"123"}],
+   customer:{firstName:"Ana",lastName:"Lopez"},
+   staff:{firstName:"Lou",lastName:"Rivera"},
+   report:{month:"November"}
+  }) as Record<string,unknown>;
+  expect(safe.cardInfo).toEqual({cardholderName:"Ana Lopez",holderName:"Ana L"});
+  expect(safe.payments).toEqual([{cardholderName:"Ana Lopez"}]);
+  expect(safe.customer).toEqual({firstName:"Ana",lastName:"Lopez"});
+  expect(safe.staff).toEqual({firstName:"Lou",lastName:"Rivera"});
+  expect(safe.report).toEqual({month:"November"});
+  expect(JSON.stringify(safe)).not.toMatch(/hmac:|4111111111111111|expiryMonth|expirationYear|cvv/);
+ });
  it("is stable when a page is redacted twice (staged pages are read back)",()=>{
   const once=redactToastRaw([order],0,"",undefined,"orders");
   expect(redactToastRaw(once,0,"",undefined,"orders")).toEqual(once);

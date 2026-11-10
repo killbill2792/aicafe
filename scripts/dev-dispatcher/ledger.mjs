@@ -8,6 +8,14 @@ export function assertLedgerShape(value) {
   return value;
 }
 export function sanitizeLedger(value) {
+  // Verified deliveries no longer need prompt text, only the signed hash and
+  // audit receipt. Keep text for undelivered/planned actions and preserve the
+  // receipt wire format unchanged.
+  for (const action of Object.values(value?.actions || {})) {
+    if ((action.status === 'submitted' || action.superseded_receipt) &&
+        action.delivery && Object.hasOwn(action.delivery,'prompt'))
+      delete action.delivery.prompt;
+  }
   // Private ledger still never stores auth material or model response contents.
   const serialized = JSON.stringify(value);
   if (/("(?:cookie|password|access_token|refresh_token|session_state|model_response|assistant_reply)"\s*:)/i.test(serialized)) throw new Error("Forbidden secret/content field in dispatcher ledger");

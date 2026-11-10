@@ -1,6 +1,6 @@
 // Trusted-main GitHub effects. Never execute PR code with the private queue token.
 // Every irreversible action rechecks live GitHub facts; uncertainty blocks merging.
-import { mergeGate } from './core.mjs';
+import { mergeGate, readyGate } from './core.mjs';
 import { acceptanceDigest } from './acceptance-runner.mjs';
 
 export function verifyEvidence(record, evidence) {
@@ -22,12 +22,15 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
   if (!enabled) return { status: 'disabled' };
   if (!['ready', 'merge'].includes(action)) return {status:'blocked',reasons:['invalid_lifecycle_action']};
   const prepareReady = action === 'ready';
-  // Draft-to-ready must prove EVERY merge prerequisite except the draft flag.
-  // This reuses the same artifact/CI/review/predecessor verifier; no shortcut.
+  // Draft-to-ready occurs after coder completion and green exact-head CI.
+  // Codex starts ONLY once the PR is ready, so it cannot be a ready prerequisite.
+  // Executed acceptance/owner/parent/base checks below remain mandatory; merge
+  // still requires the original exact-head Codex and integration proof gates.
   if (prepareReady && record?.draft !== true)
     return {status:'blocked',reasons:['not_a_draft']};
-  const gateRecord = prepareReady ? {...record,draft:false} : record;
-  const gate = canMerge(gateRecord, predecessors, evidence);
+  const gate = prepareReady
+    ? readyGate({...record,acceptance_proven:verifyEvidence(record,evidence)},predecessors)
+    : canMerge(record, predecessors, evidence);
   if (!gate.eligible) return {status:'blocked',reasons:gate.reasons};
   if (!expectedAcceptance.length || evidence.acceptance.length !== expectedAcceptance.length ||
       !expectedAcceptance.every((_, i) => evidence.acceptance[i]?.id === String(i + 1)))
@@ -81,9 +84,11 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
       (typeof pr.body === 'string' && pr.body.includes('<!-- aicafe-owner-question')))
     return {status:'blocked',reasons:['live_owner_question_pending']};
   const live = await github.one(pr);
-  if (live.ci_state !== 'success' || live.codex_state !== 'clean' ||
-      !live.codex_reviewed_sha || !live.threads_resolved ||
-      live.github_owner_question)
+  if (live.ci_state !== 'success' ||
+      (!prepareReady && (live.codex_state !== 'clean' ||
+        live.codex_reviewed_sha !== record.head_sha)) ||
+      (prepareReady && !live.coder_done) ||
+      !live.threads_resolved || live.github_owner_question)
     return { status: 'blocked', reasons: ['live_checks_changed'] };
   // Re-fetch base SHA immediately before merge to reject intervening main changes.
   const latest = await github.request(`/pulls/${record.pr_number}`);
@@ -92,7 +97,8 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
     return {status:'blocked',reasons:['live_owner_question_pending']};
   if (latest.head.sha !== record.head_sha || latest.base.sha !== record.base_sha ||
       latest.base.ref !== 'main' || latest.mergeable !== true ||
-      latest.draft !== prepareReady)
+      latest.draft !== prepareReady ||
+      (prepareReady && !String(latest.body || '').includes('<!-- aicafe-coder-done -->')))
     return { status: 'blocked', reasons: ['merge_conflict_or_stale_base'] };
   if (prepareReady) {
     if (typeof latest.node_id !== 'string' || !latest.node_id.trim())
@@ -178,16 +184,48 @@ export async function safeUpdateBranch({ github, record, enabled = false }) {
   return {status:'updating',reason:'recheck_new_head_and_all_checks'};
 }
 
+// Compatibility entrypoint: one actual retarget/update path, never a lighter gate.
 export async function retargetAfterIntegration({github,dependent,predecessor,enabled=false}) {
-  if(!enabled)return {status:'disabled'};
-  if(!dependent?.pr_number || !predecessor?.branch ||
-      !['integrated_proven','released_proven'].includes(predecessor.status))
-    return {status:'blocked',reason:'predecessor_not_integrated'};
-  const pr=await github.request(`/pulls/${dependent.pr_number}`);
-  if(pr.state!=='open' || pr.base.ref!==predecessor.branch ||
-     pr.head.sha!==dependent.head_sha) return {status:'blocked',reason:'unexpected_pr'};
-  await github.request(`/pulls/${dependent.pr_number}`,{
-    method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({base:'main'})
-  });
-  return {status:'retargeted',reason:'all_ci_codex_and_evidence_must_be_rechecked'};
+  if (!enabled) return {status:'disabled'};
+  return updateChildAfterParentMerge({github,dependent,predecessor});
+}
+
+// Trusted-main branch maintenance is NOT a merge or integration proof gate.
+// Verify actual parent merge before changing a child, then request update-branch.
+// A conflict is reported to the same child chat rather than force-pushed.
+export async function updateChildAfterParentMerge({github,dependent,predecessor}) {
+  if (!dependent?.pr_number || !dependent?.head_sha ||
+      dependent.github_state !== 'open' ||
+      !predecessor?.pr_number || !predecessor?.merge_sha ||
+      !predecessor?.branch || !['merged','integrated_proven','released_proven'].includes(predecessor.status))
+    return {status:'blocked',reason:'unverified_predecessor_or_child'};
+  const parent = await github.request('/pulls/' + predecessor.pr_number);
+  if (!parent.merged_at || parent.merge_commit_sha !== predecessor.merge_sha ||
+      parent.head?.ref !== predecessor.branch)
+    return {status:'blocked',reason:'parent_merge_not_verified_live'};
+  let child = await github.request('/pulls/' + dependent.pr_number);
+  if (child.state !== 'open' || child.merged || child.head.sha !== dependent.head_sha ||
+      ![predecessor.branch,'main'].includes(child.base.ref))
+    return {status:'blocked',reason:'child_live_head_or_base_changed'};
+  if (child.base.ref === predecessor.branch) {
+    await github.request('/pulls/' + dependent.pr_number,{
+      method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({base:'main'})
+    });
+    child = await github.request('/pulls/' + dependent.pr_number);
+    if (child.state !== 'open' || child.head.sha !== dependent.head_sha ||
+        child.base.ref !== 'main')
+      return {status:'blocked',reason:'retarget_not_verified'};
+  }
+  // Don't force-push or override a fresh branch head. Any 422/conflict is
+  // surfaced and the existing same-chat nudge tells the coder to resolve it.
+  try {
+    await github.request('/pulls/' + dependent.pr_number + '/update-branch',{
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({expected_head_sha:dependent.head_sha})
+    });
+    return {status:'update_requested',parent_merge_sha:predecessor.merge_sha};
+  } catch {
+    return {status:'update_failed_needs_coder',parent_merge_sha:predecessor.merge_sha};
+  }
 }
