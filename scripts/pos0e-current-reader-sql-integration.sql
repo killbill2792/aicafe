@@ -52,18 +52,6 @@ BEGIN
  (b,rest_b,'cashmgmt/v1/entries',d,
   '{"guid":"cash-current-B","amount":83.00,"type":"CASH_IN"}',
   repeat('e',64),'pos0e:cash-b');
- -- Same current stored typed employee record used by the registered
- -- Supervisor reader, not labor/v1/employees or diagnostic samples.
- INSERT INTO public.toast_raw_records(
-  business_id,restaurant_guid,entity,entity_guid,business_date,payload,payload_sha256,capture_key)
- VALUES (a,rest_a,'employee',employee_a,d,
-  jsonb_build_object('employee_guid',employee_a::text,'display_name','Nadia Rao','deleted',false),
-  repeat('f',64),'pos0e:employee-a');
- PERFORM pg_temp.pos0e_assert(
-  (SELECT count(*)=1 FROM public.toast_records_for(a,d,d)
-   WHERE record_type='employee' AND record_ref=employee_a::text
-    AND data->>'display_name'='Nadia Rao' AND data->>'firstName' IS NULL),
-  'current retained employee identity must be available by record_ref GUID');
   -- Retained provider identity is durable after config re-save; a mirrored
   -- staged row without a provider-identity GET is never operational evidence.
   INSERT INTO public.locations(id,business_id,name) VALUES
@@ -78,6 +66,22 @@ BEGIN
    (business_id,location_id,restaurant_guid,verified_at,info_refreshed_at) VALUES
    (a,'a1a1a1a1-1111-4111-8111-111111111111',rest_a,now(),now()),
    (b,'b1b1b1b1-2222-4222-8222-222222222222',rest_b,null,null);
+  -- Exercise the ACTUAL typed roster writer and archive trigger, rather
+  -- than inventing an Orders-style firstName object in toast_raw_records.
+  PERFORM pg_temp.pos0e_assert(
+   public.toast_stage_employee_roster(a,rest_a,jsonb_build_array(
+    jsonb_build_object('employee_guid',employee_a,'display_name','Nadia Rao',
+     'deleted',false)))=1,
+   'trusted Toast roster writer accepted the employee');
+  PERFORM pg_temp.pos0e_assert(
+   (SELECT count(*)=1 FROM public.toast_employee_directory
+    WHERE business_id=a AND restaurant_guid=rest_a
+     AND employee_guid=employee_a AND display_name='Nadia Rao')
+   AND (SELECT count(*)=1 FROM public.toast_records_for(a,d,d)
+    WHERE record_type='employee' AND record_ref=employee_a::text
+     AND data->>'display_name'='Nadia Rao' AND data->>'firstName' IS NULL),
+   'actual roster writer archives accessible un-hashed display name by GUID');
+
   INSERT INTO public.toast_raw_records
    (business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key)
   VALUES
