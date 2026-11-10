@@ -89,3 +89,51 @@ test('verified infrastructure CI retry is at-most-once and fails closed',async()
  assert.equal((await retryStartupFailure({github,ledger,taskId:'6',record:{...eligible,ci_failure_kind:null},enabled:true})).status,'not_verified_infrastructure_failure');
  assert.equal((await retryStartupFailure({github,ledger,taskId:'6',record:eligible,enabled:false})).status,'disabled');
 });
+
+test('live merge checks exact current SHA, clean Codex, threads and mergeable base',async()=>{
+  const sha='a'.repeat(40),base='b'.repeat(40);
+  const record={task_id:'T',pr_number:50,head_sha:sha,base_sha:base,
+    draft:false,ci_state:'success',codex_state:'clean',codex_reviewed_sha:sha,
+    threads_resolved:true,mergeable:true,coder_done:false,
+    acceptance_proven:false,owner_question:'routine',github_owner_question:'routine'};
+  let calls=[];
+  const pr={number:50,state:'open',merged:false,draft:false,
+    head:{sha},base:{sha:base,ref:'main'},mergeable:true,labels:[]};
+  const github={request:async(path,options)=>{
+    calls.push(path);
+    if(path==='/pulls/50') return pr;
+    if(path==='/pulls/50/merge') return {merged:true,sha:'c'.repeat(40)};
+    if(path.includes('/dispatches')) return {ok:true};
+    throw Error('Unexpected '+path);
+  },one:async()=>({head_sha:sha,ci_state:'success',codex_state:'clean',
+    codex_reviewed_sha:sha,threads_resolved:true,sensitive_owner_block:false})};
+  const result=await mergeApprovedPr({github,record,enabled:true,
+    predecessors:[{status:'merged',merge_sha:'d'.repeat(40)}]});
+  assert.equal(result.status,'merged_unproven');
+  assert.ok(calls.includes('/pulls/50/merge'));
+  const stale=await mergeApprovedPr({github:{...github,one:async()=>({
+    head_sha:sha,ci_state:'success',codex_state:'pending',
+    codex_reviewed_sha:null,threads_resolved:true})},record,enabled:true});
+  assert.deepEqual(stale.reasons,['live_checks_changed']);
+  const conflict=await mergeApprovedPr({github:{...github,request:async(path,options)=>
+    path==='/pulls/50'?{...pr,mergeable:false}:github.request(path,options)},
+    record,enabled:true});
+  assert.equal(conflict.status,'blocked');
+  assert.deepEqual((await mergeApprovedPr({github,record,
+    predecessors:[{status:'draft_open'}],enabled:true})).reasons,['predecessor_not_merged']);
+});
+test('green draft auto-ready does not require coder-done or acceptance proof',async()=>{
+  const sha='a'.repeat(40),base='b'.repeat(40);
+  const record={task_id:'T',pr_number:50,head_sha:sha,base_sha:base,
+    draft:true,ci_state:'success',coder_done:false,acceptance_proven:false};
+  const pr={state:'open',merged:false,draft:true,node_id:'PR_50',
+    head:{sha},base:{sha:base,ref:'main'},mergeable:true,labels:[],body:''};
+  const github={request:async(path)=>{
+    if(path==='/pulls/50')return pr;
+    if(path==='https://api.github.com/graphql')
+      return {data:{markPullRequestReadyForReview:{pullRequest:{isDraft:false}}}};
+    throw Error('Unexpected '+path);
+  },one:async()=>({head_sha:sha,ci_state:'success',sensitive_owner_block:false})};
+  const done=await mergeApprovedPr({github,record,enabled:true,action:'ready'});
+  assert.equal(done.status,'ready_for_review');
+});
