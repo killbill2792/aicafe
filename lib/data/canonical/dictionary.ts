@@ -1119,13 +1119,13 @@ export const canonicalDictionary = {
         "example": "What happened on this date?"
       },
       "record_type": {
-        "meaning": "order, check, item, modifier, payment, check_discount, item_discount, service_charge, or a Toast endpoint such as labor/v1/timeEntries, labor/v1/employees, labor/v1/jobs, cashmgmt/v1/entries, config/v2/menuItems, config/v2/tables, menus/v2/menus, kitchen/v1/export/itemFulfillments. Always filter on it.",
+        "meaning": "Retained record types include order, check, item, employee, modifier, payment, check_discount, item_discount, service_charge, and endpoint-typed objects such as labor/v1/timeEntries, labor/v1/employees, labor/v1/jobs, cashmgmt/v1/entries, config/v2/menuItems, config/v2/tables, menus/v2/menus, kitchen/v1/export/itemFulfillments. A stored employee record uses record_type=employee; that is NOT the same filter as labor/v1/employees. Filter the exact type supplied by the current record.",
         "unit": "label",
         "source": "toast",
         "example": "Which kind of record?"
       },
       "record_ref": {
-        "meaning": "Toast GUID of this record.",
+        "meaning": "Toast GUID of this record. For a known order or employee GUID, filter cv_toast_records by record_type and record_ref together; do not confuse record_ref with order_ref or source_ref.",
         "unit": "identifier",
         "source": "toast",
         "example": "Which record?"
@@ -1149,7 +1149,7 @@ export const canonicalDictionary = {
         "example": "Did this count?"
       },
       "data": {
-        "meaning": "Cleaned Toast fields: read named paths such as data.name, data.server.guid, data.price. Use describe_data with one record_type to discover paths. Numeric JSON fields support comparisons, sum, min, max and averages; is_null/is_not_null find absent fields without treating them as zero. Group by business_date and any named field for unplanned per-day/per-item questions. Group by data.name for discount names; status VOID is excluded with counts_in_sales, not by summing amounts. Toast JSON money fields are dollar-valued. For the fixture-proven amounts, use price_cents for item prices and discount_amount_cents for item/check discounts; both are integer cents. Neither is the screen net-sales definition. Unproven JSON dollar fields remain unprojected.",
+        "meaning": "Cleaned Toast fields: read named paths such as data.name, data.server.guid, data.price. For retained record_type=employee, permitted first name is data.firstName; for retained record_type=order, permitted customer first name is data.customer.firstName. Select only the required named path, filter record_ref for a known GUID, and respect field availability. Use describe_data with one record_type to discover unknown paths. Numeric JSON fields support comparisons, sum, min, max and averages; is_null/is_not_null find absent fields without treating them as zero. Group by business_date and any named field for unplanned per-day/per-item questions. Group by data.name for discount names; status VOID is excluded with counts_in_sales, not by summing amounts. Toast JSON money fields are dollar-valued. For the fixture-proven amounts, use price_cents for item prices and discount_amount_cents for item/check discounts; both are integer cents. Neither is the screen net-sales definition. Unproven JSON dollar fields remain unprojected.",
         "unit": "JSON",
         "source": "toast",
         "example": "Sales by server? Average order time? Which table?"
