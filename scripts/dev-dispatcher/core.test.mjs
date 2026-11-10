@@ -323,7 +323,8 @@ test("draft PR gets same-chat continuation after ten quiet minutes even if Codex
   assert.equal(decideNudge({...pending,codex_state:"unknown"},clock).action,"idle_continue");
   assert.equal(decideNudge({...pending,ci_state:"unknown"},clock).action,"idle_continue");
   assert.equal(decideNudge({...pending,last_commit_at:new Date(clock-590000).toISOString()},clock).reason,"not_quiet");
-  assert.equal(decideNudge({...pending,owner_question:"Approve exact source mapping?"},clock).reason,"owner_decision_required");
+  assert.equal(decideNudge({...pending,owner_question:"Approve exact source mapping?"},clock).action,"idle_continue");
+  assert.equal(mergeGate({...pending,owner_question:"Approve exact source mapping?"}).eligible,false);
   assert.equal(decideNudge({...pending,submission_state:"uncertain"},clock).reason,"uncertain");
   assert.equal(decideNudge({...pending,conversation_ref:null},clock).reason,"unapproved_or_missing_chat");
   const earlyClean=pr({draft:true,ci_state:"success",codex_state:"clean",
