@@ -94,6 +94,7 @@ export function applyReceipts(state, inbox, actorMap) {
         next.branch_chat_links||={};
         next.branch_chat_links[receipt.target.branch]={branch:receipt.target.branch,
           conversation_url:url,updated_at:receipt.submitted_at||new Date().toISOString(),source:'verified_muse'};
+        next.owner_instruction_events[receipt.event_id].chat_registered=true;
       }
       continue;
     }

@@ -28,7 +28,7 @@ on:
   pull_request_review:
     types: [submitted, dismissed]
   repository_dispatch:
-    types: [dispatcher_receipt, dispatcher_owner_reply, dispatcher_delayed]
+    types: [dispatcher_receipt, dispatcher_owner_reply, dispatcher_owner_instruction, dispatcher_delayed]
   workflow_dispatch:
     inputs:
       persist_private_ledger:

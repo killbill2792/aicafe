@@ -29,6 +29,9 @@ export function targetSettings(input){
  t.task_order={strategy:'dependencies_then_priority',source:'signed_queue'};
  t.auto_test_branch=input.auto_test_branch||'dispatcher/auto-test';
  t.protected_files=input.protected_files||[];
+ if(input.repo==='killbill2792/MVPStyli'&&input.queue_repo==null)t.queue.repo='killbill2792/studio';
+ if(input.repo==='killbill2792/MVPStyli'&&input.queue_path==='ideas/stylit-agent')
+  t.queue.path='studio/ideas/stylit-agent/tasks.json';
  if(t.repo==='killbill2792/MVPStyli'&&!t.protected_files.some(g=>
    g.owner==='Lakshmi'&&g.source_repo==='killbill2792/studio'&&g.source_pr===4&&g.paths?.length))
   throw Error('Stylit requires exact protected paths owned by Lakshmi / studio PR #4');

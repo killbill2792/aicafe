@@ -63,7 +63,7 @@ export async function scheduleSelfWake({ledger,token,config=settings,now=Date.no
  return {...reserved,status:'requested'};
 }
 export async function dispatchReceiptWake({repo=settings.repo,token,event='dispatcher_receipt',fetchFn=fetch}={}){
- if(repo!==settings.repo||!token||!['dispatcher_receipt','dispatcher_owner_reply','dispatcher_delayed'].includes(event))
+ if(repo!==settings.repo||!token||!['dispatcher_receipt','dispatcher_owner_reply','dispatcher_owner_instruction','dispatcher_delayed'].includes(event))
   throw Error('Untrusted or cross-project receipt wake');
  const r=await fetchFn('https://api.github.com/repos/'+repo+'/dispatches',{
   method:'POST',headers:{Authorization:'Bearer '+token,
