@@ -57,3 +57,25 @@ test('existing current-head dispatcher request is not duplicated',async()=>{
   assert.equal(result.status,'already_requested');
   assert.equal(github.posted.length,0);
 });
+
+test('green current head triggers Codex even for draft with no coder-done or acceptance',async()=>{
+  const github=fakeGithub({draft:true});
+  const current={...rec(),draft:true,coder_done:false,acceptance_evidence:null};
+  const outcome=await requestCodexReview({github,record:current,task,
+    records:{parent:{status:'draft_open'}}});
+  assert.equal(outcome.status,'requested');
+  assert.equal(github.posted.length,1);
+});
+test('red check, older head receipt and sensitive owner hold do not trigger Codex',async()=>{
+  for(const changes of [
+    {ci_state:'pending'},{codex_review_requested_sha:head},
+    {codex_reviewed_sha:head},{codex_state:'findings'}
+  ]) {
+    const github=fakeGithub();
+    const result=await requestCodexReview({github,record:{...rec(),...changes},task});
+    assert.equal(result.status,'held');
+    assert.equal(github.posted.length,0);
+  }
+  const red=fakeGithub({ci:'failure'});
+  assert.equal((await requestCodexReview({github:red,record:rec(),task})).status,'held_live');
+});
