@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, reconcileGithub, progressUpdatePolicy, predecessorsForMerge } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, readyGate, reconcileGithub, progressUpdatePolicy, predecessorsForMerge } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
 import { GitHubFacts, parseAcceptanceEvidence, parseCodexReviewState } from "./github.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
