@@ -264,7 +264,7 @@ export function decideNudge(record, _nowMs) {
     conflict ? 'repair_conflict' : null;
   if (!action) return {kind:'hold',reason:'no_coder_work'};
   const fingerprint = [record.head_sha,action,
-    action === 'ci_failed' ? record.ci_failure_job || record.ci_failure_url || '' :
+    action === 'ci_failed' ? record.repo_marker_failure || record.ci_failure_fix || record.ci_failure_job || record.ci_failure_url || '' :
     action === 'codex_comments' ? record.codex_review_at || '' :
     record.base_sha || ''].map(v=>encodeURIComponent(String(v||''))).join(':');
   const key = 'work:' + encodeURIComponent(record.task_id) + ':' + fingerprint;
