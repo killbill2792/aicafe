@@ -203,48 +203,48 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   ];
   // Test the source/fixture contract at zero model cost. Paid acceptance must
   // still execute the registered Supervisor, and never sets SQL_ONLY.
-  // SupabaseClient.rpc-compatible adapter backed by the SAME transaction in which
-  // the fixture and direct truth live. Query SQL is still solely the allowlisted RPC.
+  // The source-shaped fixture lives inside one rollback transaction, but
+  // real Supabase RPC calls each have their own transaction. A malformed
+  // model query must NOT poison the fixture or later valid requests.
+  // Serialize savepoints because the pg.Client has only one connection.
+  let rpcTail:Promise<void>=Promise.resolve();
+  const isolatedRpc=async (work:()=>Promise<unknown>)=>{
+   let release!:()=>void;
+   const prior=rpcTail;
+   rpcTail=new Promise<void>(resolve=>{release=resolve;});
+   await prior;
+   try{
+    await client.query("SAVEPOINT pos0e_rpc");
+    try{
+     const data=await work();
+     await client.query("RELEASE SAVEPOINT pos0e_rpc");
+     return {data,error:null};
+    }catch(error){
+     await client.query("ROLLBACK TO SAVEPOINT pos0e_rpc");
+     await client.query("RELEASE SAVEPOINT pos0e_rpc");
+     // Equivalent safe Supabase RPC error code; never expose a SQL statement,
+     // provider text, row values or PostgreSQL's sensitive error message.
+     const code=error&&typeof error==="object"&&"code" in error?
+      (error as {code?:unknown}).code:null;
+     return {data:null,error:{code:typeof code==="string"?code:"XX000"}};
+    }
+   }finally{release();}
+  };
   const db={rpc:async(name:string,p:Record<string,unknown>)=>{
-   if(name==="ai_query_view"){
+   if(name==="ai_query_view")return isolatedRpc(async()=>{
     const args=[p.p_business_id,p.p_view,p.p_columns,JSON.stringify(p.p_filters),
      p.p_group_by,JSON.stringify(p.p_metrics),p.p_date_from,p.p_date_to,
      p.p_order_by===null?null:JSON.stringify(p.p_order_by),p.p_limit];
-    try{
-     const result=await client.query(
-      "select public.ai_query_view($1::uuid,$2::text,$3::text[],$4::jsonb,$5::text[],$6::jsonb,$7::date,$8::date,$9::jsonb,$10::integer) value",
-      args);
-     return {data:result.rows[0].value,error:null};
-    }catch(error){
-     const code=error&&typeof error==="object"&&"code" in error?
-      (error as {code?:unknown}).code:null;
-     const filters=Array.isArray(p.p_filters)?p.p_filters:[];
-     const metrics=Array.isArray(p.p_metrics)?p.p_metrics:[];
-     sqlFailures.push({
-      sqlstate:typeof code==="string"&&/^[0-9A-Z]{5}$/.test(code)?code:"unknown",
-      view:typeof p.p_view==="string"&&/^[a-z_]{1,40}$/.test(p.p_view)?p.p_view:"other",
-      columns:Array.isArray(p.p_columns)?p.p_columns.map(safeField):[],
-      filterColumns:filters.map((f:unknown)=>safeField(
-       f&&typeof f==="object"&&"column" in f?(f as {column:unknown}).column:null)),
-      filterOperators:filters.map((f:unknown)=>{
-       const op=f&&typeof f==="object"&&"op" in f?(f as {op:unknown}).op:null;
-       return typeof op==="string"&&["=","in","between","is_null","is_not_null",">","<","<=",">=","!=","ilike"].includes(op)?op:"other";
-      }),
-      metricFns:metrics.map((m:unknown)=>{
-       const fn=m&&typeof m==="object"&&"fn" in m?(m as {fn:unknown}).fn:null;
-       return typeof fn==="string"&&["sum","count","count_distinct","avg","min","max"].includes(fn)?fn:"other";
-      }),
-      metricColumns:metrics.map((m:unknown)=>safeField(
-       m&&typeof m==="object"&&"column" in m?(m as {column:unknown}).column:null))
-     });
-     throw error;
-    }
-   }
-   if(name==="ai_toast_fields"){
+    const result=await client.query(
+     "select public.ai_query_view($1::uuid,$2::text,$3::text[],$4::jsonb,$5::text[],$6::jsonb,$7::date,$8::date,$9::jsonb,$10::integer) value",
+     args);
+    return result.rows[0].value;
+   });
+   if(name==="ai_toast_fields")return isolatedRpc(async()=>{
     const result=await client.query("select public.ai_toast_fields($1::uuid,$2::text) value",
      [p.p_business_id,p.p_record_type]);
-    return {data:result.rows[0].value,error:null};
-   }
+    return result.rows[0].value;
+   });
    throw Error("Unexpected RPC: "+name);
   }};
   const context={
@@ -293,6 +293,15 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     expect(rows?.[0]?.[spec.field],spec.recordType+" permitted first name")
      .toBe(expected);
    }
+   // A schema-valid but SQL-invalid aggregate must not abort the shared
+   // uncommitted fixture. This is the failure mode production RPC isolation
+   // handles but a naive pg.Client transaction does not.
+   const rejected=await executeAgentTool("query_data",{
+    view:"cv_cash",columns:null,filters:null,group_by:null,
+    metrics:[{fn:"sum",column:"entry_type"}],
+    date_from:biz.today,date_to:biz.today,order_by:null,limit:10
+   },context);
+   expect(rejected.error).toBe("invalid_query");
    // Prove the real registered query_data dispatch and SQL RPC, not just a
    // direct SELECT of the source. This never reaches a model provider.
    const familyToolCases=[
