@@ -243,8 +243,9 @@ export type ToastAdapter=PosAdapter&{
   fetchModifiedOrderStatesPage(range:Range,page:number):Promise<{facts:ToastOrderFact[];hasMore:boolean}>;
   fetchMenuMetadata():Promise<{restaurantGuid:string;lastUpdated:string}>;
   fetchCatalogFacts():Promise<ToastCatalogFact[]>;
-  /** One validated full Menus V2 response for both staging and canonical projections. */
-  fetchPublishedCatalogBundle():Promise<{items:PosCatalogItem[];facts:ToastCatalogFact[]}>;
+  /** Receipt requires stable authenticated metadata before/after one full Menus V2 GET. */
+  fetchPublishedCatalogBundle():Promise<{items:PosCatalogItem[];facts:ToastCatalogFact[];
+    receipt:{restaurantGuid:string;publicationVersion:string;observedAt:string}}>;
   fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]>;
   fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]>;
   fetchLaborJobSources():Promise<ToastLaborJobSource[]>;
@@ -514,10 +515,25 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
     fetchCatalogItems:async()=>catalogItemsFromSnapshot(await fetchValidatedPublishedMenu()),
     fetchCatalogFacts:async()=>catalogFactsFromSnapshot(await fetchValidatedPublishedMenu()),
     async fetchPublishedCatalogBundle(){
-      // The caller must stage and promote these views from the same verified
-      // restaurant response; no second full GET or conflicting catalog version.
+      // Observe publication metadata on both sides of the SINGLE full Menus V2
+      // request. A changed version, wrong location or incomplete reference set
+      // is never authority to deactivate last-good provider state.
+      const before=await request("/menus/v2/metadata",metadataSchema);
+      if(before.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
+        throw new ToastApiError("unauthorized_location");
       const snapshot=await fetchValidatedPublishedMenu();
-      return {items:catalogItemsFromSnapshot(snapshot),facts:catalogFactsFromSnapshot(snapshot)};
+      const after=await request("/menus/v2/metadata",metadataSchema);
+      if(after.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
+        throw new ToastApiError("unauthorized_location");
+      if(before.lastUpdated!==after.lastUpdated)
+        throw new ToastApiError("invalid_response");
+      // Source metadata's lastUpdated is the publication version/last-modified
+      // reference, NOT a verified historical effective time.
+      const publicationVersion=timestamp(after.lastUpdated);
+      const items=catalogItemsFromSnapshot(snapshot);
+      const facts=catalogFactsFromSnapshot(snapshot);
+      return {items,facts,receipt:{restaurantGuid,publicationVersion,
+        observedAt:new Date().toISOString()}};
     },
     async fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]> {
       const rows=await request("/labor/v1/employees",employeesSchema);
