@@ -308,33 +308,33 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
 test("pending CI/Codex, stale review or quiet interval blocks nudges", () => {
   assert.equal(decideNudge(pr({ ci_state: "pending" }), clock).kind, "hold");
   assert.equal(decideNudge(pr({ codex_state: "pending" }), clock).kind, "hold");
-  assert.equal(decideNudge(pr({ codex_reviewed_sha: "old" }), clock).reason, "no_actionable_findings");
+  assert.equal(decideNudge(pr({ codex_reviewed_sha: "old" }), clock).action, "idle_continue");
   assert.equal(decideNudge(pr({ last_commit_at: new Date(clock - 400000).toISOString() }), clock).reason, "not_quiet");
   assert.equal(decideNudge(pr(), clock).reason, "no_actionable_findings");
-  assert.equal(decideNudge(pr({ ci_state: "failure" }), clock).action, "repair_ci");
-  assert.equal(decideNudge(pr({ codex_state: "findings" }), clock).action, "repair_review");
-  assert.equal(decideNudge(pr({ acceptance_evidence:null }), clock).action, "continue_pr");
-  assert.equal(decideNudge(pr({ threads_resolved:false }), clock).action, "continue_pr");
+  assert.equal(decideNudge(pr({ ci_state: "failure" }), clock).action, "ci_failed");
+  assert.equal(decideNudge(pr({ codex_state: "findings" }), clock).action, "codex_comments");
+  assert.equal(decideNudge(pr({ acceptance_evidence:null }), clock).action, "idle_continue");
+  assert.equal(decideNudge(pr({ threads_resolved:false }), clock).action, "idle_continue");
 });
 test("draft PR gets same-chat continuation after ten quiet minutes even if Codex is not ready", () => {
   const pending = pr({draft:true,ci_state:"pending",codex_state:"pending",
     acceptance_evidence:null});
-  assert.equal(decideNudge(pending,clock).action,"continue_pr");
-  assert.equal(decideNudge({...pending,codex_state:"unknown"},clock).action,"continue_pr");
-  assert.equal(decideNudge({...pending,ci_state:"unknown"},clock).action,"continue_pr");
+  assert.equal(decideNudge(pending,clock).action,"idle_continue");
+  assert.equal(decideNudge({...pending,codex_state:"unknown"},clock).action,"idle_continue");
+  assert.equal(decideNudge({...pending,ci_state:"unknown"},clock).action,"idle_continue");
   assert.equal(decideNudge({...pending,last_commit_at:new Date(clock-590000).toISOString()},clock).reason,"not_quiet");
   assert.equal(decideNudge({...pending,owner_question:"Approve exact source mapping?"},clock).reason,"owner_decision_required");
   assert.equal(decideNudge({...pending,submission_state:"uncertain"},clock).reason,"uncertain");
   assert.equal(decideNudge({...pending,conversation_ref:null},clock).reason,"unapproved_or_missing_chat");
   const earlyClean=pr({draft:true,ci_state:"success",codex_state:"clean",
     acceptance_evidence:{acceptance:[{id:"1"}]}});
-  assert.equal(decideNudge(earlyClean,clock).action,"continue_pr");
+  assert.equal(decideNudge(earlyClean,clock).action,"idle_continue");
   const picked=decideNudge(pending,clock);
   assert.equal(decideNudge({...pending,last_action_key:picked.key},clock).reason,"already_sent_or_capped");
   assert.equal(decideNudge({...pending,agent:"claude"},clock).reason,"claude_no_routine_nudges");
 });
 test("missing verified acceptance remains actionable even with a clean ready PR", () => {
-  assert.equal(decideNudge(pr({acceptance_proven:false}),clock).action,"continue_pr");
+  assert.equal(decideNudge(pr({acceptance_proven:false}),clock).action,"idle_continue");
 });
 test("same-chat follow-up waits 15 minutes after verified Muse send then rechecks unchanged PR", () => {
   const code = new Date(clock-3600000).toISOString();
@@ -342,10 +342,10 @@ test("same-chat follow-up waits 15 minutes after verified Muse send then recheck
   const draft = pr({draft:true,ci_state:"failure",acceptance_evidence:null,
     acceptance_proven:false,last_commit_at:code,last_github_activity:code,
     last_submission_at:sent,submission_state:"submitted"});
-  const previous = actionKey(draft,"repair_ci");
+  const previous = actionKey(draft,"ci_failed");
   const idle = {...draft,last_action_key:previous};
   const first = decideNudge(idle,clock);
-  assert.equal(first.action,"repair_ci");
+  assert.equal(first.action,"ci_failed");
   assert.notEqual(first.key,previous);
   assert.match(first.key,/retry:/);
   assert.equal(decideNudge(idle,clock).key,first.key);
@@ -354,7 +354,7 @@ test("same-chat follow-up waits 15 minutes after verified Muse send then recheck
   assert.equal(decideNudge(delivered,clock).reason,"post_delivery_quiet");
   const later = clock+900001;
   const follow = decideNudge(delivered,later);
-  assert.equal(follow.action,"repair_ci");
+  assert.equal(follow.action,"ci_failed");
   assert.notEqual(follow.key,first.key);
   assert.equal(follow.key.split(":").length,7);
   const changed = invalidateOnHeadChange(delivered,"new-head",new Date(later).toISOString());
@@ -363,7 +363,7 @@ test("same-chat follow-up waits 15 minutes after verified Muse send then recheck
 test("ready PR with stale pending Codex is resumed, not held forever", () => {
   const stale = pr({ci_state:"success",codex_state:"pending",
     last_commit_at:new Date(clock-1800000).toISOString()});
-  assert.equal(decideNudge(stale,clock).action,"continue_pr");
+  assert.equal(decideNudge(stale,clock).action,"idle_continue");
   const recent = {...stale,last_commit_at:new Date(clock-500000).toISOString()};
   assert.equal(decideNudge(recent,clock).reason,"checks_pending_or_unknown");
 });
@@ -403,13 +403,13 @@ test("submitted activity-qualified continuation keeps its key until a newer PR c
   const delivered = { ...record, last_action_key: first.key,
     last_submission_at: new Date(clock - 800000).toISOString(),
     submission_state: "submitted" };
-  assert.equal(actionKey(delivered, "repair_ci"), first.key);
+  assert.equal(actionKey(delivered, "ci_failed"), first.key);
   assert.equal(decideNudge(delivered, clock).reason, "post_delivery_quiet");
   const eligibleAt = clock + 100001; // 15 minutes have now elapsed after Muse's receipt
-  assert.equal(decideNudge(delivered, eligibleAt).action, "repair_ci");
+  assert.equal(decideNudge(delivered, eligibleAt).action, "ci_failed");
   const newer = { ...delivered, last_github_activity:
     new Date(clock - 100000).toISOString() };
-  assert.notEqual(actionKey(newer, "repair_ci"), first.key);
+  assert.notEqual(actionKey(newer, "ci_failed"), first.key);
   assert.equal(decideNudge(newer, eligibleAt).kind, "propose");
 });
 
@@ -552,7 +552,7 @@ test("Codex findings wait ten minutes after review, not after PR comments", () =
   const reviewed = new Date(clock - 400000).toISOString();
   const rec = pr({ codex_state: "findings", codex_review_at: reviewed, last_commit_at: old });
   assert.equal(decideNudge(rec, clock).reason, "not_quiet");
-  assert.equal(decideNudge({ ...rec, codex_review_at: old }, clock).action, "repair_review");
+  assert.equal(decideNudge({ ...rec, codex_review_at: old }, clock).action, "codex_comments");
 });
 test("merge gate rejects draft PR even with passing checks and evidence", () => {
   const ready = { ...pr(), threads_resolved: true, base_current: true, acceptance_proven: true };
@@ -588,7 +588,7 @@ test('base SHA changes invalidate merge review until a later relevant review',()
  const changed=reconcileGithub(state,[next],{},old).tasks.a;
  assert.equal(changed.review_base_current,false);
  assert.equal(mergeGate({...changed,acceptance_proven:true,threads_resolved:true}).eligible,false);
- assert.equal(decideNudge({...changed,last_commit_at:'2026-11-05T11:00:00Z'},Date.parse(later)).action,'continue_pr');
+ assert.equal(decideNudge({...changed,last_commit_at:'2026-11-05T11:00:00Z'},Date.parse(later)).action,'idle_continue');
  const refreshed=reconcileGithub({...emptyLedger(),tasks:{a:changed}},
    [{...next,codex_review_at:later}]).tasks.a;
  assert.equal(refreshed.review_base_current,true);
