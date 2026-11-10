@@ -40,15 +40,14 @@ export function validateHandoff(action, task) {
     'ci_failed', 'codex_comments', 'owner_answered', 'idle_continue'].includes(action.type);
   if (prFollowup && (!Number.isInteger(task.pr_number) || task.github_state !== 'open' ||
       !task.head_sha || action.head_sha !== task.head_sha)) return false;
-  // Parent-merged is deliberately head-independent: GitHub update-branch can
-  // change the child's head before the browser receives the ONE follow-up.
-  // Anchor it instead to a verified parent merge, completed maintenance,
-  // main destination, task identity and the stable action key.
+  // Parent-merged must carry a non-null exact child head: the courier
+  // rejects unanchored instructions. A newer push invalidates the old
+  // delivery and the reconciler may prepare a fresh one.
   if (action.type === 'parent_merged') {
     const merged = task.parent_merged_sha;
     if (!Number.isInteger(task.pr_number) || task.github_state !== 'open' ||
         !task.head_sha || task.base_branch !== 'main' ||
-        d.base_branch !== 'main' || action.head_sha != null ||
+        d.base_branch !== 'main' || action.head_sha !== task.head_sha ||
         !/^[a-f0-9]{40}$/.test(merged || '') ||
         task.branch_maintenance_merge_sha !== merged ||
         task.last_parent_rebase_sha !== merged ||
