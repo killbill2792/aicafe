@@ -97,10 +97,11 @@ describe("POS0e retained current-source dictionary and shared reader",()=>{
   const data=cols.find(col=>col.name==="data");
   expect(employeeType?.meaning).toContain("record_type=employee");
   expect(recordGuid?.meaning).toContain("record_ref");
-  expect(data?.meaning).toContain("data.firstName");
+  expect(data?.meaning).toContain("data.display_name");
+   expect(data?.meaning).toContain("data.firstName is not stored");
   expect(data?.meaning).toContain("data.customer.firstName");
   const cases=[
-   {type:"employee",ref:"d1d1d1d1-1111-4111-8111-111111111111",field:"data.firstName"},
+   {type:"employee",ref:"d1d1d1d1-1111-4111-8111-111111111111",field:"data.display_name"},
    {type:"order",ref:"d2d2d2d2-2222-4222-8222-222222222222",field:"data.customer.firstName"}
   ];
   for(const c of cases){
