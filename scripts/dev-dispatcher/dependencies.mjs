@@ -2,7 +2,7 @@ import {settings} from './settings.mjs';
 import { createHash } from 'node:crypto';
 // Adopt only open, same-repo, human-authored PRs with a validated chat marker.
 // Queue tasks retain exclusive ownership of their signed delivery flow.
-export function adoptAdhocPullRequests(state, prs, queueIds = []) {
+export function adoptAdhocPullRequests(state, prs, _queueIds = []) {
   const next = structuredClone(state);
   // PR-body task markers are optional hints, never authority.
   const used = new Set(Object.values(next.tasks).map(r => r.pr_number).filter(Number.isInteger));
