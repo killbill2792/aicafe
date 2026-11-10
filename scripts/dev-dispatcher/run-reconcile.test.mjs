@@ -44,7 +44,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},
     wakeReceiptFeedback: () => {},
-    dispatchFrontier: () => assignments,
+    dispatchFrontier: (_queue, records) => frontier ? frontier(records) : assignments,
     assignmentActionKey: (_state, id) => 'assign:' + id,
     approvalSignature: () => 'signed',
     approvalMatches: (_task, signed) => signed === 'signed',
