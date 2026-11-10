@@ -197,3 +197,43 @@ export async function retargetAfterIntegration({github,dependent,predecessor,ena
   });
   return {status:'retargeted',reason:'all_ci_codex_and_evidence_must_be_rechecked'};
 }
+
+// Trusted-main branch maintenance is NOT a merge or integration proof gate.
+// Verify actual parent merge before changing a child, then request update-branch.
+// A conflict is reported to the same child chat rather than force-pushed.
+export async function updateChildAfterParentMerge({github,dependent,predecessor}) {
+  if (!dependent?.pr_number || !dependent?.head_sha ||
+      dependent.github_state !== 'open' ||
+      !predecessor?.pr_number || !predecessor?.merge_sha ||
+      !predecessor?.branch || !['merged','integrated_proven','released_proven'].includes(predecessor.status))
+    return {status:'blocked',reason:'unverified_predecessor_or_child'};
+  const parent = await github.request('/pulls/' + predecessor.pr_number);
+  if (!parent.merged_at || parent.merge_commit_sha !== predecessor.merge_sha ||
+      parent.head?.ref !== predecessor.branch)
+    return {status:'blocked',reason:'parent_merge_not_verified_live'};
+  let child = await github.request('/pulls/' + dependent.pr_number);
+  if (child.state !== 'open' || child.merged || child.head.sha !== dependent.head_sha ||
+      ![predecessor.branch,'main'].includes(child.base.ref))
+    return {status:'blocked',reason:'child_live_head_or_base_changed'};
+  if (child.base.ref === predecessor.branch) {
+    await github.request('/pulls/' + dependent.pr_number,{
+      method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({base:'main'})
+    });
+    child = await github.request('/pulls/' + dependent.pr_number);
+    if (child.state !== 'open' || child.head.sha !== dependent.head_sha ||
+        child.base.ref !== 'main')
+      return {status:'blocked',reason:'retarget_not_verified'};
+  }
+  // Don't force-push or override a fresh branch head. Any 422/conflict is
+  // surfaced and the existing same-chat nudge tells the coder to resolve it.
+  try {
+    await github.request('/pulls/' + dependent.pr_number + '/update-branch',{
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({expected_head_sha:dependent.head_sha})
+    });
+    return {status:'update_requested',parent_merge_sha:predecessor.merge_sha};
+  } catch {
+    return {status:'update_failed_needs_coder',parent_merge_sha:predecessor.merge_sha};
+  }
+}
