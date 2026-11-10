@@ -173,20 +173,20 @@ test('v2 reason-specific continuations are signed, head-bound, and visible to pe
     .map(x=>x.type),kinds);
 });
 
-test('parent_merged continuation remains eligible after child head moves, but never before verified main retarget',()=>{
+test('parent_merged continuation is exact-head and requires verified main retarget',()=>{
   const url='https://chatgpt.com/c/abc-123',merged='f'.repeat(40);
   const live={...record,pr_number:408,github_state:'open',head_sha:'a'.repeat(40),
     base_branch:'main',conversation_ref:url,parent_merged_sha:merged,
     branch_maintenance_merge_sha:merged,last_parent_rebase_sha:merged};
   const key='parent_merged:6:'+merged,prompt='Verified parent merged: rebase onto main and continue';
-  const item={...action,key,task_id:'6',type:'parent_merged',head_sha:null,
+  const item={...action,key,task_id:'6',type:'parent_merged',head_sha:live.head_sha,
     delivery:{...delivery,action_id:key,intent:'continue_existing_chat',
       conversation_url:url,base_branch:'main',prompt,
       prompt_hash:createHash('sha256').update(prompt).digest('hex')}};
   assert.equal(validateHandoff(item,live),true);
   assert.deepEqual(pendingActions({version:1,tasks:{'6':live},
     actions:{[key]:(({key,...rest})=>rest)(item)}}).map(x=>x.key),[key]);
-  assert.equal(validateHandoff(item,{...live,head_sha:'b'.repeat(40)}),true);
+  assert.equal(validateHandoff(item,{...live,head_sha:'b'.repeat(40)}),false);
   for(const rec of [
     {...live,base_branch:'feat/parent'},
     {...live,branch_maintenance_merge_sha:null},
@@ -194,7 +194,7 @@ test('parent_merged continuation remains eligible after child head moves, but ne
     {...live,parent_merged_sha:'e'.repeat(40)},
     {...live,github_state:'merged'},
   ]) assert.equal(validateHandoff(item,rec),false);
-  assert.equal(validateHandoff({...item,head_sha:'a'.repeat(40)},live),false);
+  assert.equal(validateHandoff({...item,head_sha:null},live),false);
   assert.equal(validateHandoff({...item,key:key+':retry'},live),false);
   assert.equal(validateHandoff({...item,delivery:{...item.delivery,base_branch:'feat/parent'}},live),false);
 });
