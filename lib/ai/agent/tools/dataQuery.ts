@@ -195,26 +195,24 @@ export const dataQueryTools={
     (["is_null","is_not_null"].includes(f.op)?f.value!==null:
      f.value===null||(!["between","in"].includes(f.op)&&Array.isArray(f.value)))))
     return empty("invalid_filter");
-   // Match the existing ai_query_view aggregation grammar before making an
-   // RPC call. A malformed AI query is NOT a missing source/outage; it should
-   // be a safe invalid_query that the bounded agent can correct. Do not coerce
-   // or silently ignore unsupported columns or aggregations.
+   // Preserve the original plain-read default projection BEFORE validating
+   // sorting; business_date is a valid order key when the selected column list
+   // is omitted and the canonical view provides that field.
    const groups=p.group_by??[],metrics=p.metrics??[],selected=p.columns??[];
-   if((metrics.length>0&&groups.length===0&&selected.length>0)||
-    (groups.length>0&&selected.some(column=>!groups.includes(column)))||
-    (p.order_by!==null&&p.order_by!==undefined&&
-     !selected.includes(p.order_by.column)&&
-     !groups.includes(p.order_by.column)&&
-     !metrics.some(m=>m.fn+"_"+m.column===p.order_by?.column)))
-    return empty("invalid_query");
-   // Preserve the previous plain-read SELECT * contract, but only over the
-   // canonical dictionary's physical columns (never raw tables). PostgreSQL
-   // still bounds the rows and bytes and supplies the same coverage labels.
-   const plainRead=!(p.group_by?.length||p.metrics?.length);
-   const columns=plainRead&&!(p.columns?.length)
+   const plainRead=groups.length===0&&metrics.length===0;
+   const columns=plainRead&&selected.length===0
     ?Object.keys(canonicalDictionary[p.view].columns)
      .filter(column=>p.view!=="cv_toast_records"||column!=="data")
     :p.columns;
+   // Match the invoker-RLS SQL aggregation/order grammar without weakening it.
+   // SQL will still independently check selected fields, grouping and metrics.
+   if((metrics.length>0&&groups.length===0&&selected.length>0)||
+    (groups.length>0&&selected.some(column=>!groups.includes(column)))||
+    (p.order_by!==null&&p.order_by!==undefined&&
+     !(columns??[]).includes(p.order_by.column)&&
+     !groups.includes(p.order_by.column)&&
+     !metrics.some(m=>m.fn+"_"+m.column===p.order_by?.column)))
+    return empty("invalid_query");
    // The database independently validates the view and columns. It executes as
    // the authenticated caller, not service_role or a definer.
    try{
