@@ -36,6 +36,25 @@ function withoutEmptyChoices(field:AskOwnerField,kind:string|undefined):AskOwner
   ...(kind==="facts"&&remember==="this_question"?{remember}:{})};
 }
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+/**
+ * An owner fact card ends the current Supervisor turn. It must not replace
+ * looking up an observed POS transaction count from the same scoped reader.
+ *
+ * This guards unambiguous *recorded counts*, not owner plans, forecasts,
+ * supplier procurement, or verified owner-choice/stock-fill cards. The intent
+ * comes from the original authenticated owner utterance, not model card text
+ * or untrusted POS data.
+ */
+function asksRecordedPosCount(ownerText:string):boolean{
+ const q=ownerText.toLowerCase().replace(/\s+/g," ").trim();
+ if(!/\b(?:how many|number of|count(?: of)?|total(?: number| amount)? of|how much)\b/.test(q))
+  return false;
+ if(/\b(?:should|would|could|want|prefer|plan|planning|forecast|predict|goal|target|budget|estimate|expect|recommend|need to|will)\b/.test(q))
+  return false;
+ if(/\b(?:supplier|wholesale|purchase orders?|restock|reorder|order supplies)\b/.test(q))
+  return false;
+ return /\b(?:orders?|checks?|discounts?|refunds?|voids?|payments?|transactions?|sales?|selections?|quantit(?:y|ies)|guests?|tips?|clocked (?:hours|in|out)|hours worked|items? sold|units? sold)\b/.test(q);
+}
 export const askOwnerTools={ask_owner:{
  agentId:"alex",schema:askOwnerSchema,
  description:"Ask once each turn when a fact only the owner knows is missing, unknown, empty or failed; never for a figure the POS records. For arbitrary questions use kind=facts with 1–6 number, money, percent, text, date or choice fields; options=[] and allowOther=false. Use a generic text field when the key is unknown. For known ambiguity use verified kind=choice with 2–4 of the candidates (pick the likeliest, or ask a narrower question). Legacy pantry counts use verified kind=fill only. Never ask for a figure already returned or saved. Each facts field sets remember: lasting for stable café facts, this_question for anything about one day or period or a one-off answer. changeSaved=true only when the owner asks to change or forget saved facts, with their exact saved keys; otherwise false.",
@@ -44,6 +63,14 @@ export const askOwnerTools={ask_owner:{
   const input={...parsed,fields:parsed.fields?.map(field=>withoutEmptyChoices(field,parsed.kind))};
   const state=ctx.resolveState;
   if(!state||state.asked)return {source:"ask_owner",period:null,missing:["alreadyAsked"],error:"askOwnerLimit"};
+  // The rejected card must not consume state.asked: the next model step can
+  // use the existing query_data tool instead of prompting the owner.
+  if(input.kind==="facts"&&input.changeSaved!==true&&
+     asksRecordedPosCount(ctx.ownerText??state.ownerText)){
+    return {source:"ask_owner",period:null,missing:["posFactRequiresReader"],
+     error:"posFactRequiresReader",nextTool:"query_data",
+     note:"This is a recorded POS fact, not an owner-entered input. Call query_data on the existing café-scoped records and aggregate the requested dates. Do not ask the owner."};
+  }
   if(input.kind==="facts"){
     if(!input.fields?.length||input.options.length||input.allowOther||input.fields.length>6||
       new Set(input.fields.map(f=>f.key)).size!==input.fields.length||
