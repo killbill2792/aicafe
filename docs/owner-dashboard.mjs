@@ -1,4 +1,5 @@
 // Read-only browser view of the existing GitHub Actions owner-status comment.
+import { renderPublicExtras, loadVerifiedMerges, MERGE_REFRESH_INTERVAL_MS } from "./owner-dashboard-extras.mjs";
 // Never request private GitHub data or accept a browser token on this public site.
 export const PUBLIC_COMMENT_URL =
   'https://api.github.com/repos/killbill2792/aicafe/issues/comments/6752417190';
@@ -133,6 +134,7 @@ export async function refresh(fetchFn=fetch) {
     const result=await response.json();
     const data=parseOwnerSnapshot(result.body);
     render(data);
+    renderPublicExtras(result.body);
     line.textContent=`Page checked ${new Date().toLocaleTimeString()}. Updates every 2 minutes while this tab is open.`;
   }catch(error){
     const pill=document.querySelector('#freshness');
@@ -144,7 +146,9 @@ export async function refresh(fetchFn=fetch) {
 if(typeof document!=='undefined'){
   document.addEventListener('DOMContentLoaded',()=>{
     refresh();
+    loadVerifiedMerges();
     setInterval(()=>{if(!document.hidden)refresh();},REFRESH_INTERVAL_MS);
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
+    setInterval(()=>{if(!document.hidden)loadVerifiedMerges();},MERGE_REFRESH_INTERVAL_MS);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden){refresh();loadVerifiedMerges();}});
   });
 }

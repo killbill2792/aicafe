@@ -13,7 +13,7 @@
   <header>
     <nav class="container" aria-label="Primary">
       <div class="logo"><span class="logo-mark" aria-hidden="true">A</span><span>AI CAFE <span style="font-weight:400;color:var(--muted)">/ Owner Operations</span></span></div>
-      <a href="https://github.com/killbill2792/aicafe/issues/411" target="_blank" rel="noopener noreferrer">View GitHub control center</a>
+      <div class="nav-links"><a href="https://github.com/killbill2792/aicafe/blob/main/docs/plans/owner-living-blueprint.md" target="_blank" rel="noopener noreferrer">Living blueprint</a><a href="https://github.com/killbill2792/aicafe/issues/411" target="_blank" rel="noopener noreferrer">GitHub control center</a></div>
     </nav>
   </header>
   <main class="container">
@@ -31,6 +31,11 @@
       <article class="panel metric"><strong id="count-decisions">—</strong><span>Owner questions</span></article>
       <article class="panel metric"><strong id="count-queued">—</strong><span>Delivery queued</span></article>
     </section>
+    <section class="panel" aria-labelledby="map-heading">
+      <div class="box-head"><h2 id="map-heading">Approved architecture and PR dependencies</h2><a class="meta" href="https://github.com/killbill2792/aicafe/blob/main/docs/plans/owner-living-blueprint.md" target="_blank" rel="noopener noreferrer">Read the decisions</a></div>
+      <div id="architecture-map" class="architecture"><p class="empty">Loading approved map…</p></div>
+      <p class="panel-note">This map reflects the latest GitHub dispatcher record, not permission to code or proof that the product works.</p>
+    </section>
     <section class="panel" aria-labelledby="pr-heading">
       <div class="box-head"><h2 id="pr-heading">Tasks and handoffs</h2><span class="meta">Source: latest GitHub reconciliation</span></div>
       <div class="table-scroll">
@@ -44,6 +49,16 @@
         </table>
       </div>
     </section>
+    <div class="two log-columns">
+      <section class="panel" aria-labelledby="merged-heading">
+        <div class="box-head"><h2 id="merged-heading">Recently merged PRs</h2><span id="merge-status" class="meta">Checking GitHub…</span></div>
+        <div id="merged-prs" class="record-list"><p class="empty">Loading actual merges…</p></div>
+      </section>
+      <section class="panel" aria-labelledby="history-heading">
+        <div class="box-head"><h2 id="history-heading">GitHub dispatcher history</h2><a id="dispatcher-run" class="meta" href="https://github.com/killbill2792/aicafe/actions" target="_blank" rel="noopener noreferrer">Latest run</a></div>
+        <div id="recent-actions" class="record-list"><p class="empty">Loading actions…</p></div>
+      </section>
+    </div>
     <div class="two">
       <section class="panel" aria-labelledby="approval-heading">
         <div class="box-head"><h2 id="approval-heading">Needs your decision</h2><span class="meta">Approval is never inferred</span></div>
@@ -57,6 +72,10 @@
         <p class="meta" style="margin-top:18px">Private prompts and conversation URLs are never loaded by this public page. GitHub controls access to the private view.</p>
       </section>
     </div>
+    <section class="guide" aria-labelledby="guide-heading">
+      <h2 id="guide-heading">How to use AI CAFE development</h2>
+      <p>Discuss a fix or idea in ChatGPT, compare the existing architecture and agree the PR plan. Then ask your connected ChatGPT conversation to record your <strong>explicit approval in GitHub</strong> and confirm it was saved. Return here to see the execution, reviews, merges and pending owner decisions. Chat alone is not a GitHub approval.</p>
+    </section>
     <div class="trust">
       <strong>Last successful dispatcher reconciliation:</strong> <span id="heartbeat">Checking…</span>
       <span aria-hidden="true"> · </span>
