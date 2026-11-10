@@ -66,7 +66,7 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
     }
     rec.stall_seen=identity;rec.stall_count=1;rec.stall_nudged_at=now;
     rec.safety_event={kind:'no_push_after_prompt',head_sha:head,pr_number:rec.pr_number,count:1,at:now};
-    rec.stall_pending='stall:'+encodeURIComponent(id)+':'+head+':1;
+    rec.stall_pending='stall:'+encodeURIComponent(id)+':'+head+':1';
   }
   return next;
 }
