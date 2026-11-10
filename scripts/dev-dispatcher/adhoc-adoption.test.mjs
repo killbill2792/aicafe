@@ -5,6 +5,9 @@ import {adoptAdhocPullRequests,linkPullRequests} from './dependencies.mjs';
 import {decideNudge,mergeGate,reconcileGithub} from './core.mjs';
 import {createAdhocDelivery} from './delivery.mjs';
 import {mergeApprovedPr} from './effects.mjs';
+import {pendingActions,validateHandoff} from './bridge/bridge.mjs';
+import {signalFor} from './signal.mjs';
+import {acceptDeliveryReceipt} from './receipt.mjs';
 
 const sha='a'.repeat(40);
 const chat='https://chatgpt.com/g/ai-cafe/c/123e4567-e89b-12d3-a456-426614174000';
@@ -86,9 +89,56 @@ test('failure routes one action to adopted marker chat, and a new head changes w
   assert.equal(delivery.intent,'continue_existing_chat');
   assert.equal(delivery.task_id,'ADHOC-509');
   assert.equal(delivery.prompt_hash.length,64);
+  assert.match(delivery.approval_hash,/^[a-f0-9]{64}$/);
+  assert.equal(delivery.approval_hash,live.approval_hash);
+  const action={task_id:live.task_id,type:proposal.action,status:'planned',
+    delivery_owner:'muse',head_sha:live.head_sha,delivery};
+  const ledger={version:1,tasks:{[live.task_id]:live},
+    actions:{[proposal.key]:action}};
+  assert.equal(validateHandoff({...action,key:proposal.key},live),true);
+  assert.deepEqual(pendingActions(ledger).map(a=>a.key),[proposal.key]);
+  assert.equal(signalFor(ledger,'test-secret-for-opaque-signal').pending_count,1);
+  const receipt={action_id:proposal.key,prompt_hash:delivery.prompt_hash,
+    approval_hash:delivery.approval_hash,provider:'chatgpt',
+    project:{id:'aicafe'},conversation_url:chat,status:'submitted'};
+  const acknowledged=acceptDeliveryReceipt(ledger,receipt,{authenticatedCourier:'muse'});
+  assert.equal(acknowledged.actions[proposal.key].status,'submitted');
+  assert.equal(acknowledged.tasks[live.task_id].conversation_ref,chat);
   const next={...live,head_sha:'c'.repeat(40)};
+  assert.equal(validateHandoff({...action,key:proposal.key},next),false);
   assert.notEqual(decideNudge(next).key,proposal.key);
   assert.equal(decideNudge({...live,ci_state:'success',codex_state:'clean',mergeable:true}).kind,'hold');
   assert.throws(()=>createAdhocDelivery({record:{...live,conversation_ref:'https://evil.org/c/abc'},
     action:'ci_failed',actionId:proposal.key}));
+});
+
+test('ad hoc stacked PR must retarget to main before an auto-merge effect',async()=>{
+  const record={
+    ...pr(510,{draft:false,ci_state:'success',codex_state:'clean',
+      codex_reviewed_sha:sha,base_branch:'feat/parent',dispatcher_only:false}),
+    task_id:'ADHOC-510',adhoc:true,approved:true,github_state:'open'
+  };
+  let effects=0;
+  const github={request:async()=>{effects++;throw new Error('should not reach GitHub');}};
+  assert.deepEqual(await mergeApprovedPr({github,record,enabled:true,action:'merge'}),
+    {status:'blocked',reasons:['adhoc_parent_base_not_main']});
+  assert.equal(effects,0);
+
+  // Even a ledger claiming main cannot override GitHub's live parent base.
+  const mainRecord={...record,base_branch:'main'};
+  const livePr={state:'open',merged:false,draft:false,mergeable:true,
+    head:{sha},base:{sha:record.base_sha,ref:'feat/parent'}};
+  let mergerCalled=false;
+  const simulated={
+    request:async(url)=>{
+      if (url.endsWith('/merge')) {mergerCalled=true;throw new Error('merged unexpectedly');}
+      return livePr;
+    },
+    one:async()=>({...mainRecord,base_branch:'feat/parent',
+      ci_state:'success',codex_state:'clean',codex_reviewed_sha:sha,
+      threads_resolved:true,sensitive_owner_block:false})
+  };
+  assert.deepEqual(await mergeApprovedPr({github:simulated,record:mainRecord,
+    enabled:true,action:'merge'}),{status:'blocked',reasons:['adhoc_base_or_owner_merge_changed']});
+  assert.equal(mergerCalled,false);
 });
