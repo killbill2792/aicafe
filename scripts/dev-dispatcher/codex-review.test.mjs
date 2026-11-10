@@ -105,6 +105,7 @@ test('live current-head in-progress Codex signal holds without posting',async()=
 test('five-minute push and ready settle windows suppress duplicate requests',async()=>{
  const gh=fakeGithub(),now=new Date().toISOString();
  assert.equal((await requestCodexReview({github:gh,record:{...rec(),last_commit_at:now},task})).status,'held');
+ assert.equal((await requestCodexReview({github:gh,record:{...rec(),last_github_activity:now},task})).status,'held');
  assert.equal((await requestCodexReview({github:gh,record:{...rec(),ready_transition_at:now},task})).status,'held');
  gh.request=async(path)=>path==='/pulls/423'
   ? {state:'open',draft:false,created_at:now,head:{sha:head},base:{sha:base}}

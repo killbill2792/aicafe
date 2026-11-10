@@ -68,7 +68,7 @@ test('released-proven record is never downgraded to merged or blocked',()=>{
   const changed = reconcileGithub(previous,[],{378:true});
   revalidateQueuedActions(changed,new Map());
   assert.equal(changed.tasks['5'].status,'released_proven');
-  assert.equal(changed.actions['old:5'].status,'cancelled_approval_changed');
+  assert.equal(changed.actions['old:5'].status,'cancelled_owner_state_changed');
 });
 test('reopened PR never rewrites historical proven status',()=>{
  for(const status of ['integrated_proven','released_proven']){

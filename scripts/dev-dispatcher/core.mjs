@@ -317,7 +317,7 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
       const merged = closed === true || closed?.merged === true;
       // Owner-initiated merges/closures immediately supersede undelivered coder
       // prompts; a vanished PR is not a reason to re-open work.
-      if (closed && !['released_proven','integrated_proven'].includes(rec.status))
+      if (closed)
         for (const action of Object.values(copy.actions || {})) {
         if (action.task_id === id && action.status === 'planned')
           action.status = 'cancelled_owner_state_changed';

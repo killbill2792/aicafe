@@ -13,7 +13,7 @@ export async function requestCodexReview({github,record,task,records = {}}) {
   // Green current head is enough to start Codex. No coder-done,
   // acceptance artifact, integrated dependency or routine owner hold.
   if ((!task && !record?.adhoc) || (record?.adhoc && record?.dispatcher_only) ||
-      record?.draft===true || !settled(record?.last_commit_at) ||
+      record?.draft===true || !settled(record?.last_github_activity || record?.last_commit_at) ||
       !settled(record?.ready_transition_at || '2000-01-01T00:00:00Z') || !sha40(sha) || !Number.isInteger(record.pr_number) ||
       record.github_state !== 'open' || record.ci_state !== 'success' ||
       record.codex_review_requested_sha === sha ||
@@ -28,7 +28,7 @@ export async function requestCodexReview({github,record,task,records = {}}) {
     return {status:'automatic_review_grace'};
   const live=await github.one(pr);
   if (live.head_sha !== sha || live.ci_state !== 'success' ||
-      !settled(live.last_commit_at || record.last_commit_at) ||
+      !settled(live.last_github_activity || live.last_commit_at || record.last_github_activity || record.last_commit_at) ||
       live.codex_reviewed_sha === sha || live.codex_in_progress_sha === sha ||
       live.codex_state === 'clean' ||
       live.codex_state === 'findings' || live.sensitive_owner_block)
