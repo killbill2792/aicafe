@@ -8,6 +8,12 @@ const ACTIONS = new Set(['assign', 'repair_ci', 'repair_review', 'continue_pr', 
   'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'idle_continue', 'plan', 'brainstorm']);
 const REPO = 'https://github.com/killbill2792/aicafe';
 
+// POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING is mandatory and remains
+// linked from the compact step prompt to AGENTS.md, docs/rules/pos-data.md,
+// #398 and the signed queue. The source of truth is NOT copied into delivery.
+// D4A Approach B (change-driven Toast family checks) stays owner-approved
+// architecture only; exact task coding approval and all proof gates still apply.
+// The short prompt is not a substitute for any of those linked contracts.
 // Stable authorization identity. A changed task brief, scope, approval or dependency
 // requires a new owner-reviewed assignment, never reuse an old browser envelope.
 export function approvalSignature(task) {
