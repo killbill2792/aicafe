@@ -120,6 +120,13 @@ const jobSourceSchema=z.object({
   entityType:z.string().nullish(),externalId:z.string().nullish()
 });
 const toastJobSchema=z.array(jobSourceSchema);
+/** Preserve only the approved fields even if a client/test double supplies an
+ * unvalidated payload. Unknown credentials must never escape this adapter. */
+function validatedLaborSource<T>(schema:z.ZodType<T>,payload:unknown):T {
+  const parsed=schema.safeParse(payload);
+  if(!parsed.success)throw new ToastApiError("invalid_response");
+  return parsed.data;
+}
 const metadataSchema=z.object({restaurantGuid:GUID,lastUpdated:z.string().min(1)});
 function validRange(range:Range) {
   if(!Number.isFinite(range.since.getTime())||!Number.isFinite(range.until.getTime())||
@@ -344,7 +351,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       hourlyWageCents:r.hourlyWage==null?null:cents(r.hourlyWage),
       providerRegularHours:r.regularHours??null,providerOvertimeHours:r.overtimeHours??null,
       deleted:Boolean(r.deleted),sourceProvider:"toast" as const,
-      sourceFields:r,
+      sourceFields:validatedLaborSource(timeEntrySourceSchema,r),
       breaks:(r.breaks??[]).filter(b=>b.missed===false&&b.inDate&&b.outDate)
         .map(b=>({start:timestamp(b.inDate!),end:timestamp(b.outDate!),paid:b.paid===true}))
     }));
@@ -513,11 +520,13 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
     },
     async fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]> {
       const rows=await request("/labor/v1/employees",employeesSchema);
-      return rows.map(r=>({employeeGuid:r.guid,restaurantGuid,sourceFields:r}));
+      return rows.map(r=>({employeeGuid:r.guid,restaurantGuid,
+        sourceFields:validatedLaborSource(employeeSourceSchema,r)}));
     },
     async fetchLaborJobSources():Promise<ToastLaborJobSource[]> {
       const rows=await request("/labor/v1/jobs",toastJobSchema);
-      return rows.map(r=>({jobGuid:r.guid,restaurantGuid,sourceFields:r}));
+      return rows.map(r=>({jobGuid:r.guid,restaurantGuid,
+        sourceFields:validatedLaborSource(jobSourceSchema,r)}));
     },
     async fetchEmployees():Promise<PosEmployee[]> {
       const [rows,jobs]=await Promise.all([
@@ -555,7 +564,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         externalEmployeeId:r.employeeReference.guid,externalLocationId:restaurantGuid,
         scheduledStart:timestamp(r.inDate),scheduledEnd:timestamp(r.outDate),
         externalJobId:r.jobReference?.guid??null,deleted:Boolean(r.deleted),
-        sourceProvider:"toast",sourceFields:r}));
+        sourceProvider:"toast",sourceFields:validatedLaborSource(shiftSourceSchema,r)}));
     }
   };
   return result;
