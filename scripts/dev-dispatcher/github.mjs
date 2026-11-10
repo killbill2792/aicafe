@@ -192,9 +192,11 @@ export class GitHubFacts {
       ['OWNER','MEMBER','COLLABORATOR'].includes(c.author_association) &&
       parseOwnerQuestion(c.body)).reduce((at,c) =>
         Math.max(at,Date.parse(c.created_at || '') || 0), 0);
+    // A historical comment question cannot authorize a newly edited PR-body
+    // question. Without a body-revision receipt, a later PR update holds the
+    // decision conservatively rather than guessing what "Owner approved" meant.
     if (latestApproval && Date.parse(latestApproval.created_at || '') >= questionTime &&
-        (!inBody || Date.parse(latestApproval.created_at || '') >= Date.parse(pr.updated_at || '') ||
-          questionTime > 0))
+        (!inBody || Date.parse(latestApproval.created_at || '') >= Date.parse(pr.updated_at || '')))
       return { question: null, url: null, approved: true };
     if (inBody) return { question: inBody, url: pr.html_url || null };
     // Owners can request a decision in the PR conversation, not only in its body.
@@ -304,6 +306,7 @@ export class GitHubFacts {
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
       ci_state: ci, ci_failure_kind: baseline?.conclusion === 'startup_failure' ? 'startup_failure' : null,
       codex_state: codexState, codex_reviewed_sha: reviewed,
+      codex_in_progress_sha: summary?.state === 'pending' && !useFormal ? sha : null,
       threads_resolved: unresolved === 0,
       // GitHub's verified compare paths (not a PR marker) distinguish
       // dispatcher/AGENTS maintenance from unknown coding-task PRs.
