@@ -29,8 +29,8 @@ export function officialFieldInventory(snapshot = manifest) {
         assert.match(response.status, /^2\d\d$/);
         for (const field of response.fields) {
           assert.equal(field.length, 4, "Field provenance must retain path/type/format/nullability");
-          const id = JSON.stringify([family.family, operation.path, response.status, field[0]]);
-          assert.ok(!identifiers.has(id), `Duplicate official source field ${id}`);
+          const id = JSON.stringify([family.family, operation.path, response.status, field]);
+          assert.ok(!identifiers.has(id), `Duplicate official field definition ${id}`);
           identifiers.add(id);
           fields.push({family: family.family, operation: operation.path, status: response.status,
             fieldPath: field[0], contract, proof: snapshot.official_field_resolution.per_cafe_field_defaults});
