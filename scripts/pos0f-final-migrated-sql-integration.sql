@@ -15,6 +15,8 @@ DECLARE
   restaurant_a uuid := 'c3c3c3c3-3333-4333-8333-333333333333';
   restaurant_b uuid := 'd4d4d4d4-4444-4444-8444-444444444444';
   employee_a uuid := 'e7e7e7e7-7777-4777-8777-777777777777';
+  owner_a uuid := 'f5f5f5f5-5555-4555-8555-555555555555';
+  outsider uuid := 'f6f6f6f6-6666-4666-8666-666666666666';
   forbidden_stage boolean := false;
   p record;
   result jsonb;
@@ -238,5 +240,49 @@ BEGIN
     jsonb_array_length(result->'rows')=0
       OR (result->'rows'->0->>'sum_amount_cents') IS NULL,
     'Foreign/diagnostic-only café has no current cash sum');
+
+  -- Real PostgreSQL JWT/role isolation: the existence of source rows must
+  -- not give an unrelated authenticated account access to either the archive
+  -- or the registered reader. An owner may query A only, not B.
+  INSERT INTO auth.users
+    (id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
+  VALUES
+    (owner_a,'00000000-0000-0000-0000-000000000000','authenticated',
+      'authenticated','pos0f-owner@example.invalid','',now(),now()),
+    (outsider,'00000000-0000-0000-0000-000000000000','authenticated',
+      'authenticated','pos0f-outsider@example.invalid','',now(),now());
+  INSERT INTO public.memberships(business_id,user_id,role)
+    VALUES (a,owner_a,'owner');
+  PERFORM set_config('request.jwt.claim.sub',outsider::text,true);
+  PERFORM set_config('request.jwt.claims',
+    jsonb_build_object('sub',outsider::text,'role','authenticated')::text,true);
+  EXECUTE 'set local role authenticated';
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*)=0 FROM public.toast_records_for(a,null,null))
+    AND NOT has_table_privilege('public.toast_raw_records','SELECT'),
+    'Nonmember cannot read A via the shared reader or direct current archive');
+  result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
+    null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
+    '2026-10-26','2026-10-26',null,20);
+  PERFORM pg_temp.pos0f_assert(
+    jsonb_array_length(result->'rows')=0 OR
+    result->'rows'->0->>'sum_amount_cents' IS NULL,
+    'Authenticated nonmember must not obtain A cash through registered query_data');
+  EXECUTE 'reset role';
+  PERFORM set_config('request.jwt.claim.sub',owner_a::text,true);
+  PERFORM set_config('request.jwt.claims',
+    jsonb_build_object('sub',owner_a::text,'role','authenticated')::text,true);
+  EXECUTE 'set local role authenticated';
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*)=5 FROM public.toast_records_for(a,null,null))
+    AND (SELECT count(*)=0 FROM public.toast_records_for(b,null,null)),
+    'Member reads exact A current facts, never another café');
+  result := public.ai_query_view(a,'cv_cash',null::text[],'[]'::jsonb,
+    null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
+    '2026-10-26','2026-10-26',null,20);
+  PERFORM pg_temp.pos0f_assert(
+    (result->'rows'->0->>'sum_amount_cents')::integer=1250,
+    'Authorized owner receives same 1250 screen/query cash cents');
+  EXECUTE 'reset role';
 END $pos0f$;
 ROLLBACK;
