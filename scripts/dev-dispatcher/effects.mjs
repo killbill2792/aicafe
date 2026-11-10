@@ -27,6 +27,8 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
   if (!['ready','merge'].includes(action))
     return {status:'blocked',reasons:['invalid_lifecycle_action']};
   const prepareReady = action === 'ready';
+  if (!prepareReady && record?.adhoc && record.dispatcher_only)
+    return {status:'blocked',reasons:['owner_merge_required']};
   const gate = prepareReady ? readyGate(record) : canMerge(record,predecessors);
   if (!gate.eligible) return {status:'blocked',reasons:gate.reasons};
   // Never trust stale ledger state for irreversible effects.
