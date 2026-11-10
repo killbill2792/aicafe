@@ -226,7 +226,14 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      // provider text, row values or PostgreSQL's sensitive error message.
      const code=error&&typeof error==="object"&&"code" in error?
       (error as {code?:unknown}).code:null;
-     return {data:null,error:{code:typeof code==="string"?code:"XX000"}};
+     const message=error&&typeof error==="object"&&"message" in error?
+      (error as {message?:unknown}).message:null;
+     // Preserve only one known, fixed SQL validator phrase for the free
+     // invalid-aggregate regression; all other server messages are redacted.
+     const safeMessage=code==="P0001"&&message==="invalid aggregate"
+      ?"invalid aggregate":"redacted";
+     return {data:null,error:{code:typeof code==="string"?code:"XX000",
+      message:safeMessage}};
     }
    }finally{release();}
   };
