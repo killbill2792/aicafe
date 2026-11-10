@@ -15,6 +15,38 @@ const query={view:"cv_toast_records",columns:null,filters:[
  ...range,order_by:null,limit:20};
 
 describe("POS0e retained current-source dictionary and shared reader",()=>{
+ it("guides a single exact stored-GUID query for employee and customer names",async()=>{
+  const described=await dataQueryTools.describe_data.execute({view:"cv_toast_records"});
+  const cols=described.views?.[0]?.columns??[];
+  const employeeType=cols.find(col=>col.name==="record_type");
+  const recordGuid=cols.find(col=>col.name==="record_ref");
+  const data=cols.find(col=>col.name==="data");
+  expect(employeeType?.meaning).toContain("record_type=employee");
+  expect(recordGuid?.meaning).toContain("record_ref");
+  expect(data?.meaning).toContain("data.firstName");
+  expect(data?.meaning).toContain("data.customer.firstName");
+  const cases=[
+   {type:"employee",ref:"d1d1d1d1-1111-4111-8111-111111111111",field:"data.firstName"},
+   {type:"order",ref:"d2d2d2d2-2222-4222-8222-222222222222",field:"data.customer.firstName"}
+  ];
+  for(const c of cases){
+   const rpc=vi.fn(async()=>({data:{rows:[{[c.field]:"Example"}],
+    sourceCount:1,sourceMix:{toast:1},truncated:false},error:null}));
+   const result=await dataQueryTools.query_data.execute({
+    view:"cv_toast_records",columns:[c.field],
+    filters:[{column:"record_type",op:"=",value:c.type},
+     {column:"record_ref",op:"=",value:c.ref}],
+    group_by:null,metrics:null,date_from:"2026-10-01",date_to:"2026-10-31",
+    order_by:null,limit:10
+   },{db:{rpc} as never,businessId:cafeA});
+   expect(result.rows).toEqual([{[c.field]:"Example"}]);
+   expect(rpc).toHaveBeenCalledExactlyOnceWith("ai_query_view",
+    expect.objectContaining({p_business_id:cafeA,p_view:"cv_toast_records",
+     p_columns:[c.field],
+     p_filters:[{column:"record_type",op:"=",value:c.type},
+      {column:"record_ref",op:"=",value:c.ref}]}));
+  }
+ });
  it("describes retained current cash and setup records, never old diagnostics",async()=>{
   const cash=await dataQueryTools.describe_data.execute({view:"cv_cash"});
   const dining=await dataQueryTools.describe_data.execute({view:"cv_dining_options"});
