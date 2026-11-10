@@ -2,13 +2,14 @@
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
+import { requestCodexReview } from "./codex-review.mjs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions, editableFiles } from "./core.mjs";
-import { approvalSignature, createDelivery } from "./delivery.mjs";
+import { approvalSignature, approvalMatches, createDelivery, createAdhocDelivery } from "./delivery.mjs";
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
-import { linkPullRequests } from "./dependencies.mjs";
+import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
@@ -45,7 +46,17 @@ async function main() {
     return { snapshot, closedByPr, mainSha: mainRef.object?.sha || null };
   }
   function reconcile(state, observed) {
-    const linked = linkPullRequests(state, observed.snapshot);
+    const initiallyLinked = linkPullRequests(state, observed.snapshot);
+    const adopted = adoptAdhocPullRequests(initiallyLinked.state, observed.snapshot, [...taskById.keys()]);
+    const linked = linkPullRequests(adopted.state, observed.snapshot);
+    linked.unmapped = linked.unmapped.filter(n => !adopted.skipped.includes(n));
+    linked.state.adhoc_unlinked_logged ||= {};
+    for (const n of adopted.skipped) {
+      if (!linked.state.adhoc_unlinked_logged[n]) {
+        console.log('Open PR #' + n + ' not adopted: no valid chat marker');
+        linked.state.adhoc_unlinked_logged[n] = true;
+      }
+    }
     // First invalidate old-head actions, THEN process Muse receipts. A receipt
     // arriving during the same GitHub reconciliation must not revive old work.
     const live = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
@@ -56,7 +67,8 @@ async function main() {
       if (action.type !== 'parent_merged') continue;
       const rec = applied.state.tasks[action.task_id];
       if (!rec?.parent_merged_sha ||
-          key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + rec.parent_merged_sha)
+          (key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + rec.parent_merged_sha + ':' + rec.head_sha &&
+           key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + rec.parent_merged_sha))
         continue;
       if (action.status === 'submitted') rec.last_parent_rebase_sha = rec.parent_merged_sha;
       else if (rec.last_parent_rebase_sha === rec.parent_merged_sha)
@@ -127,20 +139,35 @@ async function main() {
       copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
-      // Never queue a second browser action while a prior delivery is pending or unverified.
-      if (Object.values(copy.actions).some(a => a.task_id === id && ["planned", "claimed", "uncertain"].includes(a.status))) continue;
       const proposal = decideNudge(rec, Date.now());
+      // A not-yet-claimed checklist becomes obsolete as soon as its actionable
+      // state changes. Never cancel claimed/uncertain sends or invent receipts.
+      for (const action of Object.values(copy.actions)) {
+        if (action.task_id !== id || action.status !== 'planned' ||
+            action.type === 'assign') continue;
+        if (proposal.kind !== 'propose' || action.delivery?.action_id !== proposal.key)
+          action.status = 'cancelled_state_changed';
+      }
+      // Exactly one live prompt per PR, including any claimed/uncertain action.
+      if (Object.values(copy.actions).some(a =>
+          ["planned", "claimed", "uncertain"].includes(a.status) &&
+          (a.task_id === id || (Number.isInteger(rec.pr_number) &&
+            copy.tasks[a.task_id]?.pr_number === rec.pr_number)))) continue;
       if (proposal.kind !== "propose") continue;
       if (!copy.actions[proposal.key]) {
         const task = taskById.get(id);
         // Only approved, exactly owned tasks from the trusted queue can reach Dave.
-        if (!task || task.architecture_approval?.approved !== true ||
-            !editableFiles(task).length || rec.approval_hash !== approvalSignature(task) ||
+        if (rec.adhoc) {
+          if (rec.github_state !== 'open' || !rec.conversation_ref) continue;
+        } else if (!task || task.architecture_approval?.approved !== true ||
+            !editableFiles(task).length || !approvalMatches(task, rec.approval_hash) ||
             (Number.isInteger(rec.pr_number) && rec.github_state !== "open")) continue;
         let delivery;
         try {
-          delivery = createDelivery({ task, record: rec,
-            action: proposal.action, actionId: proposal.key });
+          delivery = rec.adhoc
+            ? createAdhocDelivery({record:rec,action:proposal.action,actionId:proposal.key})
+            : createDelivery({ task, record: rec,
+                action: proposal.action, actionId: proposal.key });
         } catch (error) {
           console.error(`Task ${id} delivery creation failed: ${error.message}`);
           continue;
@@ -149,10 +176,22 @@ async function main() {
         if (proposal.action === 'owner_answered') rec.last_owner_answer_key = rec.owner_answer_key;
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
           status: "planned", delivery_owner: "muse",
-          head_sha: proposal.action === 'parent_merged' ? null : rec.head_sha || null,
+          head_sha: rec.head_sha || null,
           created_at: now, delivery };
         nudges.push({ task_id: id, action: proposal.action });
       }
+    }
+    // Chat destinations are authenticated courier receipts, not owner-supplied
+    // URLs. Keep a per-PR index only in the private ledger.
+    copy.pr_chat_links ||= {};
+    for (const [id, rec] of Object.entries(copy.tasks)) {
+      if (!Number.isInteger(rec.pr_number) || !rec.conversation_ref ||
+          rec.github_state !== 'open') continue;
+      copy.pr_chat_links[String(rec.pr_number)] = {
+        task_id:id,conversation_url:rec.conversation_ref,
+        head_sha:rec.head_sha || null,
+        updated_at:rec.last_submission_at || now
+      };
     }
     // Proposals persist for later authorized delivery, never sent by this script.
     return { state: copy, assigned, nudges };
@@ -179,16 +218,16 @@ async function main() {
           !Array.isArray(submitted) || submitted.length !== expected.length) continue;
       // Token-initiated squash merges require an explicit workflow_dispatch;
       // manual merges use push. Only an executed proof on exact merged SHA counts.
-      const runs = await gh.request('/actions/workflows/ai-cafe-integration-proof.yml/runs?branch=main&per_page=100');
-      if (runs.total_count > 100) continue; // never silently ignore pagination
-      for (const run of runs.workflow_runs || []) {
+      // Proof runs may fall beyond GitHub's first page during parallel merges.
+      // Exhaust the bounded workflow history instead of leaving tasks unproven.
+      const runs = await gh.workflowRuns('ai-cafe-integration-proof.yml', 'branch=main');
+      for (const run of runs) {
         if (run.name !== 'AI CAFE Integration Proof' || run.head_branch !== 'main' ||
             !['push','workflow_dispatch'].includes(run.event) ||
             run.status !== 'completed' || run.conclusion !== 'success' ||
             (run.event === 'push' && run.head_sha !== rec.merge_sha)) continue;
-        const jobs = await gh.request(`/actions/runs/${run.id}/jobs?per_page=100`);
-        if (jobs.total_count > 100) continue;
-        const job = jobs.jobs?.find(j => j.name === 'Required merged-main integration checks' &&
+        const jobs = await gh.workflowJobs(run.id);
+        const job = jobs.find(j => j.name === 'Required merged-main integration checks' &&
           j.status === 'completed' && j.conclusion === 'success');
         if (!job || !required.every(name => job.steps?.some(step => step.name === name &&
           step.status === 'completed' && step.conclusion === 'success'))) continue;
@@ -220,11 +259,41 @@ async function main() {
       const latest = await observe(existing);
       const next = reconcile(existing, latest).state;
       await promoteIntegration(next);
+      // Dependency proof is recorded for reporting, not an unsolicited chat prompt.
       // Integration may become proven during this same pass: queue the owner
       // review with the actual saved chat URL without a second delayed cycle.
       const withNotices = queueOwnerAlerts(next,{queue});
       return JSON.stringify(withNotices) === JSON.stringify(existing) ? null : withNotices;
     });
+  }
+  // The dispatcher, not a coder chat, requests the final-head review.
+  // Revalidate live GitHub CI, acceptance artifacts, PR base and owner state
+  // before one comment. The private record only deduplicates acknowledged
+  // actions; a GitHub comment marker also survives ledger write retries.
+  if (commit && ledger) {
+    const currentTasks = persisted?.state?.tasks || proposed.state.tasks;
+    for (const [id, rec] of Object.entries(currentTasks)) {
+      const task=taskById.get(id);
+      if ((!task && !rec.adhoc) || !rec.pr_number) continue;
+      try {
+        const result=await requestCodexReview({
+          github:gh,record:rec,task,records:currentTasks
+        });
+        if (['requested','already_requested'].includes(result.status)) {
+          await ledger.transaction(latest=>{
+            const stored=latest.tasks?.[id];
+            if (!stored || stored.head_sha !== result.head_sha ||
+                stored.codex_review_requested_sha === result.head_sha) return null;
+            stored.codex_review_requested_sha=result.head_sha;
+            return latest;
+          });
+          if (result.status === 'requested')
+            console.log('Codex review requested for task '+id+' on head '+result.head_sha);
+        }
+      } catch (error) {
+        console.error('Codex review preflight failed for task '+id+': '+error.message);
+      }
+    }
   }
   // Only independently classified runner startup errors may be retried, once.
   if (commit && ledger && process.env.DISPATCH_TRANSIENT_CI_RETRY === "true") {
@@ -269,7 +338,7 @@ async function main() {
       // Ordinary main-based stale branches are refreshed automatically, never
       // force-pushed. A new head must rerun all exact-head CI/acceptance/Codex.
       if (rec.base_current === false && rec.base_branch === 'main' &&
-          !(rec.draft === true && rec.coder_done !== true)) {
+          !(rec.draft === true && rec.ci_state !== 'success')) {
         try {
           const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
           console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
@@ -280,21 +349,20 @@ async function main() {
       }
     }
   }
-  // Auto-merge is separately opt-in and requires independently verified acceptance evidence.
-  // This is deliberately not enabled by merely persisting the queue.
+  // Green drafts are made ready automatically. Auto-merge remains separately
+  // controlled and still requires an exact-head clean Codex receipt.
   const autoMerge = process.env.DISPATCH_AUTO_MERGE === "true" && commit;
-  if (autoMerge && ledger) {
-    for (const [id, rec] of Object.entries(proposed.state.tasks)) {
+  if (commit && ledger) {
+    for (const [id, rec] of Object.entries(persisted?.state?.tasks || proposed.state.tasks)) {
       if (!rec.pr_number || rec.github_state !== "open") continue;
       const task = taskById.get(id);
-      if (!task || !rec.approved || !rec.acceptance_evidence) continue;
-      const predecessorRecords = predecessorsForMerge(task, queue, proposed.state.tasks);
-      // Draft-to-ready and merge use the exact same executed proof gate.
-      // A successful ready transition is NOT merged in this same stale snapshot;
-      // GitHub must observe/review the ready PR again on the next run.
+      if ((!task && !rec.adhoc) || (rec.draft !== true && !autoMerge)) continue;
+      if (rec.adhoc && rec.dispatcher_only && rec.draft !== true) continue;
+      const predecessorRecords = rec.adhoc ? [] : predecessorsForMerge(task, queue, proposed.state.tasks);
+      // Ready transitions need only green CI, not coder-done. The later merge
+      // is a separate fresh reconciliation, never the same snapshot.
       const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
-        evidence: rec.acceptance_evidence, expectedAcceptance: task.acceptance, enabled: true,
-        action: rec.draft ? "ready" : "merge" });
+        enabled: true, action: rec.draft ? "ready" : "merge" });
       if (outcome.status === "ready_for_review") {
         console.log(`Verified PR #${rec.pr_number} for task ${id} is ready for review; merge awaits fresh GitHub reconciliation`);
         continue;
@@ -323,7 +391,10 @@ async function main() {
   const rows = active.sort(([,a],[,b])=>a.pr_number-b.pr_number).map(([id,rec])=>{
     const task = taskById.get(id);
     const dependencies = task ? predecessorsForMerge(task,queue,effectiveState.tasks) : [];
-    const reasons = mergeGate(rec,dependencies).reasons;
+    const reasons = [
+      ...mergeGate(rec,dependencies).reasons,
+      ...(rec.adhoc && rec.dispatcher_only ? ['owner_merge_required'] : [])
+    ];
     const outstanding = Object.values(effectiveState.actions).filter(action=>
       action.task_id === id && action.status === "planned")
       .sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));

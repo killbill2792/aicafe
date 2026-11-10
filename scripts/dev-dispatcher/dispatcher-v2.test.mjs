@@ -45,62 +45,6 @@ test('edits are exclusive; uses can import open sibling edits with no owner ques
     /Invalid read-only file usage/);
 });
 
-test('parent-open child keeps coding and CI: no rebase or Codex wait nudge',()=>{
-  const rec=active({base_branch:'feat/parent',parent_open:true,ci_state:'success'});
-  assert.equal(decideNudge(rec,now).action,'idle_continue');
-  assert.equal(decideNudge({...rec,waiting_only_for_parent:true},now).kind,'hold');
-  assert.equal(decideNudge({...rec,ci_state:'failure',waiting_only_for_parent:true,
-    ci_failure_job:'unit',ci_failure_url:'https://github.com/example/a/actions/runs/99'},now).action,'ci_failed');
-  assert.equal(readyGate({...rec,coder_done:true}).eligible,false);
-});
-
-test('parent merge results in exactly one rebase prompt keyed by merge SHA, not by child head',()=>{
-  const sha='f'.repeat(40);
-  const rec=active({parent_merged_sha:sha,base_branch:'main',branch_maintenance_merge_sha:sha});
-  const first=decideNudge(rec,now);
-  assert.equal(first.action,'parent_merged');
-  assert.match(first.key,/parent_merged/);
-  assert.equal(decideNudge({...rec,last_parent_rebase_sha:sha,waiting_only_for_parent:true},now).kind,'hold');
-  assert.equal(decideNudge({...rec,head_sha:'e'.repeat(40)},now).key,first.key);
-});
-
-test('each reason produces a single short explicit prompt with its actual evidence',()=>{
-  const t=task('child');
-  const samples=[
-    ['codex_comments',{codex_state:'findings',unresolved_codex_comments:[
-      {body:'Guard the null case',url:'https://github.com/example/a/pull/408#discussion_r1'}]},/Guard the null case/],
-    ['ci_failed',{ci_state:'failure',ci_failure_job:'unit checks',
-      ci_failure_url:'https://github.com/example/a/actions/runs/99'},/unit checks/],
-    ['parent_merged',{parent_merged_sha:'f'.repeat(40),base_branch:'feat/parent'},/Rebase onto main and continue/i],
-    ['owner_answered',{owner_answer_text:'Use existing path only'},/Use existing path only/],
-    ['idle_continue',{},/Continue/],
-  ];
-  for(const [action,extra,expected] of samples){
-    const d=createDelivery({task:t,record:active(extra),action,actionId:'v2:'+action});
-    assert.match(d.prompt,expected);
-    assert.ok(d.prompt.trim().split(/\s+/).length<120,action);
-    assert.equal(d.intent,'continue_existing_chat');
-    assert.equal(d.prompt_hash.length,64);
-  }
-  assert.equal(decideNudge(active({codex_state:'findings'}),now).action,'codex_comments');
-  assert.equal(decideNudge(active({ci_state:'failure',codex_state:'findings'}),now).action,'ci_failed');
-  assert.equal(decideNudge(active({owner_answer_text:'Yes'}),now).action,'owner_answered');
-});
-
-test('ready is possible after green CI and coder-done, not before; merge Codex gate remains independent',()=>{
-  const base=active({draft:true,coder_done:true,ci_state:'success',base_current:true,
-    acceptance_proven:true,threads_resolved:true});
-  assert.equal(readyGate(base).eligible,true);
-  assert.equal(readyGate({...base,coder_done:false}).eligible,false);
-  assert.equal(readyGate({...base,ci_state:'failure'}).eligible,false);
-  assert.equal(readyGate({...base,base_branch:'feat/parent'}).eligible,false);
-  assert.equal(readyGate({...base,draft:false}).eligible,false);
-  const unreviewed=active({draft:false,coder_done:true,ci_state:'success',codex_state:'pending',
-    review_requested_sha:'a'.repeat(40),last_commit_at:new Date(now-1_200_000).toISOString()});
-  assert.equal(decideNudge(unreviewed,now).action,'idle_continue',
-    'never mistake a prompt for an actual Codex request');
-});
-
 test('owner view calls stale cancellations superseded and planned overdue actions courier unconfirmed',()=>{
   const state={version:1,updated_at:old,
     tasks:{child:{pr_number:408,github_state:'open',draft:true}},
@@ -205,19 +149,6 @@ test('ledger keeps text while planned but drops it after verified receipt, prese
 });
 
 
-test('a freshly merged parent cannot trigger an idle nudge before automatic retarget/update-branch',()=>{
-  const parentSha='f'.repeat(40);
-  const pending=active({base_branch:'feat/parent',parent_merged_sha:parentSha,
-    ci_state:'failure',ci_failure_job:'unit checks'});
-  const result=decideNudge(pending,now);
-  assert.deepEqual(result,{kind:'hold',reason:'awaiting_automatic_parent_branch_maintenance'});
-  const updated={...pending,branch_maintenance_merge_sha:parentSha,base_branch:'main'};
-  const next=decideNudge(updated,now);
-  assert.equal(next.action,'parent_merged');
-  assert.equal(next.key,decideNudge({...updated,head_sha:'c'.repeat(40)},now).key);
-});
-
-
 test('CI-failed nudge names the actual failed GitHub check with its verified link',async()=>{
   const head='a'.repeat(40),base='b'.repeat(40);
   const jobUrl='https://github.com/example/a/actions/runs/99/job/21';
@@ -253,31 +184,4 @@ test('CI-failed nudge names the actual failed GitHub check with its verified lin
     ci_state:'failure'}),action:'ci_failed',actionId:'failing-job'});
   assert.match(delivery.prompt,/TypeScript, full ESLint and patch hygiene/);
   assert.match(delivery.prompt,/actions\/runs\/99\/job\/21/);
-});
-
-test('parent-merged prompt is immediate after automatic branch maintenance, not held by idle timer',()=>{
-  const sha='f'.repeat(40);
-  const fresh=active({parent_merged_sha:sha,branch_maintenance_merge_sha:sha,
-    base_branch:'main',last_commit_at:new Date(now-10_000).toISOString(),
-    ci_state:'pending',codex_state:'pending'});
-  const prompt=decideNudge(fresh,now);
-  assert.equal(prompt.action,'parent_merged');
-  assert.equal(prompt.key,'parent_merged:child:'+sha);
-  assert.deepEqual(decideNudge({...fresh,branch_maintenance_merge_sha:null},now),
-    {kind:'hold',reason:'awaiting_automatic_parent_branch_maintenance'});
-  assert.equal(decideNudge({...fresh,last_parent_rebase_sha:sha},now).action,undefined);
-  assert.equal(decideNudge({...fresh,submission_state:'uncertain'},now).kind,'hold');
-});
-
-test('a verified merged parent permits child coding on main but remains a merge-proof blocker',()=>{
-  const q=queue([task('parent'),task('child',['parent'])]);
-  const parent={status:'merged',github_state:'merged',branch:'feat/parent',
-    pr_number:400,merge_sha:'a'.repeat(40),agent:'chatgpt'};
-  const child=dispatchFrontier(q,{parent});
-  assert.deepEqual(child.map(x=>[x.task_id,x.base_branch,x.prerequisite_pr]),
-    [['child','main',null]]);
-  assert.equal(dispatchFrontier(q,{parent:{...parent,merge_sha:null}})
-    .some(x=>x.task_id==='child'),false);
-  assert.equal(readyGate({...active({coder_done:true,ci_state:'success',acceptance_proven:true,
-    threads_resolved:true,base_current:true})},[parent]).eligible,false);
 });

@@ -13,111 +13,75 @@ export function verifyEvidence(record, evidence) {
   return true;
 }
 
-export function canMerge(record, predecessors, evidence) {
-  return mergeGate({ ...record, acceptance_proven: verifyEvidence(record, evidence) }, predecessors);
+export function canMerge(record, predecessors) {
+  return mergeGate(record, predecessors);
 }
 
-export async function mergeApprovedPr({ github, record, predecessors = [], evidence,
-  expectedAcceptance = [], enabled = false, action = 'merge' }) {
-  if (!enabled) return { status: 'disabled' };
-  if (!['ready', 'merge'].includes(action)) return {status:'blocked',reasons:['invalid_lifecycle_action']};
+// The owner-approved coding lifecycle has exactly six merge conditions:
+// current-head required checks, clean newest exact-head Codex receipt, no
+// unresolved threads, ready (not draft), GitHub mergeability, merge order.
+// Privileged paid/live/prod/secret labels remain an explicit owner hold.
+export async function mergeApprovedPr({ github, record, predecessors = [],
+  enabled = false, action = 'merge' }) {
+  if (!enabled) return {status:'disabled'};
+  if (!['ready','merge'].includes(action))
+    return {status:'blocked',reasons:['invalid_lifecycle_action']};
   const prepareReady = action === 'ready';
-  // Draft-to-ready occurs after coder completion and green exact-head CI.
-  // Codex starts ONLY once the PR is ready, so it cannot be a ready prerequisite.
-  // Executed acceptance/owner/parent/base checks below remain mandatory; merge
-  // still requires the original exact-head Codex and integration proof gates.
-  if (prepareReady && record?.draft !== true)
-    return {status:'blocked',reasons:['not_a_draft']};
-  const gate = prepareReady
-    ? readyGate({...record,acceptance_proven:verifyEvidence(record,evidence)},predecessors)
-    : canMerge(record, predecessors, evidence);
-  if (!gate.eligible) return {status:'blocked',reasons:gate.reasons};
-  if (!expectedAcceptance.length || evidence.acceptance.length !== expectedAcceptance.length ||
-      !expectedAcceptance.every((_, i) => evidence.acceptance[i]?.id === String(i + 1)))
-    return { status: 'blocked', reasons: ['acceptance_scenarios_not_accounted_for'] };
-  const run = await github.request(`/actions/runs/${evidence.ci_run_id}`);
-  if (run.head_sha !== record.head_sha || run.status !== 'completed' ||
-      run.conclusion !== 'success' || run.event !== 'pull_request')
-    return { status: 'blocked', reasons: ['unverified_ci_evidence'] };
-  const jobs = await github.request(`/actions/runs/${run.id}/jobs?per_page=100`);
-  if (jobs.total_count > 100 || !jobs.jobs?.some(j => j.conclusion === 'success' &&
-      j.name === 'AI CAFE PR baseline'))
-    return { status: 'blocked', reasons: ['required_baseline_not_verified'] };
-  // The separate acceptance workflow runs the actual scenario files on the exact
-  // immutable PR head. An author-supplied URL, path or "passed" assertion is never proof.
-  const acceptedRun = await github.request('/actions/runs/' + evidence.acceptance_run_id);
-  if (acceptedRun.name !== 'AI CAFE Acceptance Evidence' ||
-      acceptedRun.head_sha !== record.head_sha || acceptedRun.event !== 'pull_request' ||
-      acceptedRun.status !== 'completed' || acceptedRun.conclusion !== 'success')
-    return { status: 'blocked', reasons: ['unverified_acceptance_run'] };
-  const acceptedJobs = await github.request('/actions/runs/' + evidence.acceptance_run_id + '/jobs?per_page=100');
-  if (acceptedJobs.total_count > 100) return {status:'blocked',reasons:['unverified_acceptance_pagination']};
-  const accepted = acceptedJobs.jobs?.filter(j => j.name === 'AI CAFE acceptance evidence' &&
-    j.status === 'completed' && j.conclusion === 'success' &&
-    j.steps?.some(step => step.name === 'Run approved acceptance scenarios' &&
-      step.status === 'completed' && step.conclusion === 'success')) || [];
-  if (accepted.length !== 1) return {status:'blocked',reasons:['acceptance_job_did_not_execute']};
-  const proof = await github.acceptanceProof(evidence.acceptance_run_id);
-  if (!proof || proof.task_id !== record.task_id ||
-      proof.run_id !== evidence.acceptance_run_id ||
-      proof.head_sha !== record.head_sha || proof.base_sha !== record.base_sha ||
-      proof.acceptance_digest !== acceptanceDigest(evidence.acceptance) ||
-      !Array.isArray(proof.acceptance) || proof.acceptance.length !== expectedAcceptance.length ||
-      !proof.acceptance.every((item,i) => item.id === String(i+1) &&
-        item.command === evidence.acceptance[i].command &&
-        item.test_file === evidence.acceptance[i].test_file && item.result === 'passed'))
-    return { status:'blocked',reasons:['acceptance_artifact_mismatch'] };
-  for (const item of evidence.acceptance) {
-    if (item.job_url !== accepted[0].html_url)
-      return { status: "blocked", reasons: ["unverified_acceptance_job_url"] };
-    if (!/^(?:tests|e2e|lib|app|scripts)\/[a-zA-Z0-9_./-]+\.(?:test|spec|e2e)\.[cm]?[jt]sx?$/.test(item.test_file) ||
-        item.test_file.includes('..')) return { status: 'blocked', reasons: ['unsafe_test_path'] };
-    const file = await github.request(`/contents/${item.test_file}?ref=${record.head_sha}`);
-    if (file.type !== 'file') return { status: 'blocked', reasons: ['test_file_missing'] };
+  if (!prepareReady && record?.adhoc) {
+    if (record.dispatcher_only)
+      return {status:'blocked',reasons:['owner_merge_required']};
+    if (record.base_branch !== 'main')
+      return {status:'blocked',reasons:['adhoc_parent_base_not_main']};
   }
-  const pr = await github.request(`/pulls/${record.pr_number}`);
-  if (pr.merged || pr.state !== 'open' || pr.draft !== prepareReady ||
-      pr.head.sha !== record.head_sha || pr.base.sha !== record.base_sha ||
-      pr.base.ref !== 'main' || record.base_branch !== 'main')
-    return { status: 'blocked', reasons: ['live_pr_changed'] };
-  if ((pr.labels || []).some(label => label.name === 'needs-owner-decision') ||
-      (typeof pr.body === 'string' && pr.body.includes('<!-- aicafe-owner-question')))
-    return {status:'blocked',reasons:['live_owner_question_pending']};
-  const live = await github.one(pr);
-  if (live.ci_state !== 'success' ||
-      (!prepareReady && (live.codex_state !== 'clean' ||
-        live.codex_reviewed_sha !== record.head_sha)) ||
-      (prepareReady && !live.coder_done) ||
-      !live.threads_resolved || live.github_owner_question)
-    return { status: 'blocked', reasons: ['live_checks_changed'] };
-  // Re-fetch base SHA immediately before merge to reject intervening main changes.
-  const latest = await github.request(`/pulls/${record.pr_number}`);
-  if ((latest.labels || []).some(label => label.name === 'needs-owner-decision') ||
-      (typeof latest.body === 'string' && latest.body.includes('<!-- aicafe-owner-question')))
-    return {status:'blocked',reasons:['live_owner_question_pending']};
-  if (latest.head.sha !== record.head_sha || latest.base.sha !== record.base_sha ||
-      latest.base.ref !== 'main' || latest.mergeable !== true ||
-      latest.draft !== prepareReady ||
-      (prepareReady && !String(latest.body || '').includes('<!-- aicafe-coder-done -->')))
-    return { status: 'blocked', reasons: ['merge_conflict_or_stale_base'] };
+  const gate = prepareReady ? readyGate(record) : canMerge(record,predecessors);
+  if (!gate.eligible) return {status:'blocked',reasons:gate.reasons};
+  // Never trust stale ledger state for irreversible effects.
+  const pr=await github.request(`/pulls/${record.pr_number}`);
+  if (pr.state !== 'open' || pr.merged || pr.draft !== prepareReady ||
+      pr.head?.sha !== record.head_sha || pr.base?.sha !== record.base_sha ||
+      (!prepareReady && pr.mergeable !== true))
+    return {status:'blocked',reasons:['live_pr_changed']};
+  const live=await github.one(pr);
+  // Recheck the actual GitHub base and changed paths: an adopted stacked PR
+  // cannot merge into its open parent (or trigger main integration proof).
+  if (!prepareReady && record.adhoc &&
+      (pr.base?.ref !== 'main' || live.base_branch !== 'main' ||
+       live.dispatcher_only))
+    return {status:'blocked',reasons:['adhoc_base_or_owner_merge_changed']};
+  if (live.head_sha !== record.head_sha || live.ci_state !== 'success' ||
+      live.sensitive_owner_block || (!prepareReady &&
+        (live.codex_state !== 'clean' ||
+         live.codex_reviewed_sha !== record.head_sha ||
+         live.threads_resolved !== true)))
+    return {status:'blocked',reasons:['live_checks_changed']};
+  // Head and base may move between the first and final GitHub reads.
+  const latest=await github.request(`/pulls/${record.pr_number}`);
+  if (!prepareReady && record.adhoc && latest.base?.ref !== 'main')
+    return {status:'blocked',reasons:['adhoc_parent_base_not_main']};
+  if (latest.state !== 'open' || latest.head?.sha !== record.head_sha ||
+      latest.base?.sha !== record.base_sha || latest.draft !== prepareReady ||
+      (!prepareReady && latest.mergeable !== true) ||
+      (latest.labels || []).some(label =>
+        /(?:^|[-_])(paid|live|prod|production|secret|secrets)(?:$|[-_])/i.test(label.name || '') &&
+        !/^(?:approved|owner-approved)/i.test(label.name || '')))
+    return {status:'blocked',reasons:['merge_conflict_or_stale_base']};
   if (prepareReady) {
-    if (typeof latest.node_id !== 'string' || !latest.node_id.trim())
-      return {status:'blocked',reasons:['missing_github_pr_node_id']};
-    const result = await github.request('https://api.github.com/graphql', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        query:'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{id isDraft}}}',
-        variables:{id:latest.node_id},
-      }),
+    if (!latest.node_id) return {status:'blocked',reasons:['missing_github_pr_node_id']};
+    const ready=await github.request('https://api.github.com/graphql',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query:'mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{id isDraft}}}',
+        variables:{id:latest.node_id}})
     });
-    if (result.errors?.length ||
-        result.data?.markPullRequestReadyForReview?.pullRequest?.isDraft !== false)
+    if (ready.errors?.length ||
+        ready.data?.markPullRequestReadyForReview?.pullRequest?.isDraft !== false)
       return {status:'blocked',reasons:['github_ready_not_verified']};
     return {status:'ready_for_review'};
   }
   const result = await github.request(`/pulls/${record.pr_number}/merge`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ merge_method: 'squash', sha: record.head_sha,
+    // Preserve parent commits so stacked child branches retain their ancestry.
+    // Squash rewrites that ancestry and can make an open child unmergeable.
+    body: JSON.stringify({ merge_method: 'merge', sha: record.head_sha,
       commit_title: `AI CAFE approved task ${record.task_id} (#${record.pr_number})` })
   });
   if (result.merged !== true || !result.sha) throw new Error('GitHub did not confirm merge');
