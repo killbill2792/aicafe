@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { editableFiles, usedFiles } from './core.mjs';
+import { STALL_PROMPT } from './safety.mjs';
 export const promptHash = prompt => createHash('sha256').update(prompt).digest('hex');
 // Approved plan metadata -> bounded, provider-neutral browser handoff.
 // Generated ONLY on trusted main by the existing deterministic dispatcher.
 const PROVIDERS = new Set(['chatgpt', 'claude']);
 const ACTIONS = new Set(['assign', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder',
-  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'dependency_proven', 'repair_conflict', 'idle_continue', 'plan', 'brainstorm']);
+  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'dependency_proven', 'repair_conflict', 'idle_continue', 'no_push_after_prompt', 'landing_failed', 'plan', 'brainstorm']);
 const REPO = 'https://github.com/killbill2792/aicafe';
 
 // POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING is mandatory and remains
@@ -50,16 +51,20 @@ export function approvalMatches(task, signed) {
 
 
 export function createAdhocDelivery({record,action,actionId}) {
-  if (!record?.adhoc || !record.approved || record.github_state !== 'open' ||
+  if (!record?.adhoc || !record.approved || (record.github_state !== 'open' && !(action==='landing_failed' && record.github_state==='merged')) ||
       record.task_id !== 'ADHOC-' + record.pr_number ||
-      !['ci_failed','codex_comments','repair_conflict'].includes(action) ||
+      !['ci_failed','codex_comments','repair_conflict','no_push_after_prompt','landing_failed'].includes(action) ||
       typeof actionId !== 'string' || !actionId || actionId.length > 400 ||
       !validConversationUrl('chatgpt',record.conversation_ref) ||
       !/^[a-f0-9]{64}$/.test(record.approval_hash || ''))
     throw new Error('Invalid ad hoc PR handoff');
   const pr = REPO + '/pull/' + record.pr_number;
-  const reason = action === 'ci_failed'
-    ? 'Diagnose current-head CI failure: ' + (record.ci_failure_url || pr)
+  const reason = action === 'landing_failed'
+    ? 'Post-merge landing check failed. Forward this exact error tail to the original PR chat and repair the merged-main regression:\n'+String(record.landing_failure||'').slice(0,3500)
+    : action === 'no_push_after_prompt' ? STALL_PROMPT : action === 'ci_failed'
+    ? 'Diagnose current-head CI failure: ' + (record.ci_failure_url || pr) +
+      (record.repo_marker_failure ? '\n'+record.repo_marker_failure : '') +
+      (record.ci_failure_fix ? '\nExact check error and correction:\n'+record.ci_failure_fix : '')
     : action === 'codex_comments'
       ? 'Resolve current-head Codex findings and review threads on ' + pr
       : 'Resolve the GitHub merge conflict on ' + pr;
@@ -119,8 +124,12 @@ export function createDelivery({ task, record, action, actionId }) {
       (comments || 'Read unresolved threads on ' + pr) +
       '\nFix together; rerun CI before ONE re-review on the final head.',
     repair_conflict:'repair_conflict: GitHub reports a merge conflict or failed branch update. Resolve the conflict on the current PR head and rerun required checks.',
+    no_push_after_prompt:STALL_PROMPT,
+    landing_failed:'landing_failed: Post-merge smoke failure. Error tail from the merged PR:\n'+String(record.landing_failure||'').slice(0,3500),
     ci_failed:'ci_failed: ' + (record.ci_failure_job || 'Find failing CI job') + '\n' +
+      (record.repo_marker_failure ? record.repo_marker_failure+'\n' : '') +
       (record.ci_failure_url || pr) +
+      (record.ci_failure_fix ? '\nExact check error and correction:\n'+record.ci_failure_fix : '') +
       '\nDiagnose and fix the actual failure; do not weaken tests; rerun CI.',
     parent_merged:'parent_merged: Verified parent merge ' + (record.parent_merged_sha || 'unknown') +
       '. Rebase onto main and continue in this SAME child PR/chat. Dispatcher already retargeted to main ' +

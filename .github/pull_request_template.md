@@ -1,3 +1,6 @@
+<!-- repo: killbill2792/aicafe task: replace-with-task-id -->
+<!-- Add your REAL aicafe-chat-url marker in this PR body (required by AGENTS.md). -->
+
 ## Owner outcome, plan and scope
 - Plan link (owner-approved architecture/implementation plan, or explain N/A):
 - Task ID + approved task brief (or N/A for unplanned fix):

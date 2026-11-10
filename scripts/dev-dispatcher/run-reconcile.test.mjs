@@ -41,6 +41,10 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     },
     reconcileReceiptFeedback: state => state,
     queueOwnerAlerts: state => state,
+    applySafetySignals: state => state,
+    stallMinutes: () => 20,
+    repo: 'killbill2792/aicafe',
+    process: {env:{}},
     applyOwnerStartApprovals: startApproval,
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},
@@ -117,6 +121,21 @@ test('one live pending checklist per PR even if two task records reference it',(
   const planned=Object.values(result.state.actions).filter(a=>a.status==='planned');
   assert.equal(planned.length,1);
   assert.equal(planned[0].task_id,'bad');
+});
+
+test('merged landing failure reuses existing Muse action and keeps it planned across ticks',()=>{
+  const h=harness();
+  const sha='e'.repeat(40);
+  const task={...record('good'),github_state:'merged',status:'merged',merge_sha:sha,
+    landing_failure:'<!-- landing-check-failure sha:'+sha+' -->\\nError tail'};
+  const first=h.run(initial({good:task}));
+  const id='landing_failed:good:'+sha;
+  assert.equal(first.state.actions[id].type,'landing_failed');
+  assert.equal(first.state.actions[id].delivery_owner,'muse');
+  assert.equal(first.state.actions[id].status,'planned');
+  const again=h.run(first.state);
+  assert.equal(again.state.actions[id].status,'planned');
+  assert.equal(Object.values(again.state.actions).filter(x=>x.type==='landing_failed').length,1);
 });
 
 

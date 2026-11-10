@@ -137,3 +137,17 @@ test('green draft auto-ready does not require coder-done or acceptance proof',as
   const done=await mergeApprovedPr({github,record,enabled:true,action:'ready'});
   assert.equal(done.status,'ready_for_review');
 });
+
+test('GITHUB_TOKEN merge dispatches same landing check after merge, never before',async()=>{
+ const {dispatchLandingCheck}=await import('./effects.mjs');
+ const sha='c'.repeat(40);
+ const seen=[];
+ assert.equal(await dispatchLandingCheck({request:async(path,options)=>{
+   seen.push({path,options});return {ok:true};
+ }},sha),'requested');
+ assert.equal(seen.length,1);
+ assert.equal(seen[0].path,'/actions/workflows/landing-check.yml/dispatches');
+ assert.deepEqual(JSON.parse(seen[0].options.body),{ref:'main',inputs:{merged_sha:sha}});
+ assert.equal(await dispatchLandingCheck({request:async()=>{throw Error('temporary');}},sha),'failed_needs_retry');
+ assert.equal(await dispatchLandingCheck({request:async()=>{throw Error('should not call');}},'invalid'),'invalid_merge_sha');
+});

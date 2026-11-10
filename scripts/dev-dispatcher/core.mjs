@@ -258,12 +258,13 @@ export function decideNudge(record, _nowMs) {
   // Never wake a clean PR for idle time, ordinary owner comments, parent merge,
   // missing acceptance, or an otherwise completed stage. Only coder work.
   const conflict = record.mergeable === false || record.mergeable_state === 'dirty';
-  const action = record.ci_state === 'failure' ? 'ci_failed' :
+  const action = record.repo_marker_mismatch || record.field_check_failure ? 'ci_failed' :
+    record.ci_state === 'failure' ? 'ci_failed' :
     record.codex_state === 'findings' ? 'codex_comments' :
     conflict ? 'repair_conflict' : null;
   if (!action) return {kind:'hold',reason:'no_coder_work'};
   const fingerprint = [record.head_sha,action,
-    action === 'ci_failed' ? record.ci_failure_job || record.ci_failure_url || '' :
+    action === 'ci_failed' ? record.repo_marker_failure || record.ci_failure_fix || record.ci_failure_job || record.ci_failure_url || '' :
     action === 'codex_comments' ? record.codex_review_at || '' :
     record.base_sha || ''].map(v=>encodeURIComponent(String(v||''))).join(':');
   const key = 'work:' + encodeURIComponent(record.task_id) + ':' + fingerprint;
@@ -280,6 +281,7 @@ export function readyGate(record) {
   if (!record?.pr_number || !record?.head_sha) reasons.push('missing_pr_or_sha');
   if (record?.ci_state !== 'success') reasons.push('ci_not_green');
   if (ownerSensitiveHold(record)) reasons.push('sensitive_owner_approval_required');
+  if (record?.repo_mismatch || record?.repo_marker_mismatch) reasons.push('wrong_repository');
   return {eligible:reasons.length===0,reasons};
 }
 
@@ -301,6 +303,7 @@ export function mergeGate(record, predecessors = []) {
   if (record?.threads_resolved !== true) reasons.push('unresolved_threads');
   if (record?.mergeable !== true) reasons.push('not_mergeable');
   if (ownerSensitiveHold(record)) reasons.push('sensitive_owner_approval_required');
+  if (record?.repo_mismatch || record?.repo_marker_mismatch) reasons.push('wrong_repository');
   // Ordering is satisfied by a verified GitHub merge, not integrated_proven.
   if (predecessors.some(p => !['merged','integrated_proven','released_proven'].includes(p?.status) ||
       !p?.merge_sha)) reasons.push('predecessor_not_merged');
@@ -319,12 +322,16 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
       // prompts; a vanished PR is not a reason to re-open work.
       if (closed)
         for (const action of Object.values(copy.actions || {})) {
-        if (action.task_id === id && action.status === 'planned')
+        if (action.task_id === id && action.status === 'planned' &&
+            !(merged && action.type === 'landing_failed' &&
+              action.head_sha === (closed?.merge_sha || rec.merge_sha) &&
+              (closed?.landing_failure || rec.landing_failure)))
           action.status = 'cancelled_owner_state_changed';
       }
       copy.tasks[id] = { ...rec, github_owner_question: merged ? null : rec.github_owner_question,
         github_state: merged ? "merged" : "not_open_unverified",
         merge_sha: merged ? (closed?.merge_sha || rec.merge_sha || null) : rec.merge_sha,
+        landing_failure: merged ? (closed?.landing_failure || rec.landing_failure || null) : rec.landing_failure,
         status: merged && !["integrated_proven", "released_proven"].includes(rec.status) ? "merged" : rec.status };
     }
   }

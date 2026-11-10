@@ -2,7 +2,7 @@
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
-import { requestCodexReview } from "./codex-review.mjs";
+import { requestCodexReview, inspectCodexWatch, codexWatchMinutes } from "./codex-review.mjs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions, editableFiles } from "./core.mjs";
@@ -10,12 +10,13 @@ import { approvalSignature, approvalMatches, createDelivery, createAdhocDelivery
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
 import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
-import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure } from "./effects.mjs";
+import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure, dispatchLandingCheck } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
 import { queueOwnerAlerts,applyOwnerStartApprovals } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import {classifyCodexChange} from './codex-carryover.mjs';
+import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
@@ -43,8 +44,16 @@ async function main() {
     for (const rec of Object.values(state.tasks)) {
       if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number)) continue;
       const closed = await gh.request(`/pulls/${rec.pr_number}`);
-      closedByPr[rec.pr_number] = { merged: Boolean(closed.merged_at),
-        merge_sha: closed.merged_at ? closed.merge_commit_sha || null : null };
+      const mergeSha=closed.merged_at ? closed.merge_commit_sha || null : null;
+      // Trust only the verified Actions bot marker for this exact merge SHA.
+      let landingFailure=null;
+      const recent=closed.merged_at && Date.now()-Date.parse(closed.merged_at)<2*60*60*1000;
+      if(mergeSha && recent && !rec.landing_failure) {
+        const issueComments=await gh.paginated('/issues/'+rec.pr_number+'/comments','comments');
+        landingFailure=landingFailureForMerge(issueComments,mergeSha);
+      }
+      closedByPr[rec.pr_number]={merged:Boolean(closed.merged_at),
+        merge_sha:mergeSha,landing_failure:landingFailure};
     }
     const history=await gh.request('/actions/workflows/ai-cafe-dev-dispatcher.yml/runs?event=schedule&per_page=3').catch(()=>null);
     const previous=(history?.workflow_runs||[]).find(r=>r.created_at && r.id!==Number(process.env.GITHUB_RUN_ID));
@@ -82,7 +91,9 @@ async function main() {
     const withFeedback = reconcileReceiptFeedback(applied.state,{
       ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
     },new Date().toISOString());
-    const copy = queueOwnerAlerts(applyOwnerStartApprovals(withFeedback,queue),
+    const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
+      minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
+    const copy = queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
       {unmappedPrs:linked.unmapped,queue});
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
@@ -145,12 +156,15 @@ async function main() {
       copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
-      const proposal = decideNudge(rec, Date.now());
+      const normal=decideNudge(rec, Date.now());
+      const proposal=normal.kind==='propose' ? normal :
+        rec.stall_pending && !rec.stall_escalate
+          ? {kind:'propose',action:'no_push_after_prompt',key:rec.stall_pending} : normal;
       // Never cancel a current-head findings prompt unless the replacement is
       // built successfully. Other obsolete undelivered prompts may be dropped.
       const superseded=[];
       for(const action of Object.values(copy.actions)) {
-        if(action.task_id!==id||action.status!=='planned'||action.type==='assign')continue;
+        if(action.task_id!==id||action.status!=='planned'||['assign','landing_failed'].includes(action.type))continue;
         if(action.delivery?.action_id===proposal.key)continue;
         if(rec.codex_state==='findings'&&action.type==='codex_comments'&&
            action.head_sha===rec.head_sha&&proposal.kind!=='propose')continue;
@@ -193,6 +207,27 @@ async function main() {
           created_at: now, delivery };
         for(const stale of superseded)stale.status='cancelled_state_changed';
         nudges.push({ task_id: id, action: proposal.action });
+      }
+    }
+    // After-merge failures return to the saved conversation via the same signed
+    // Muse action and receipt path. Never reinterpret a success as a failure.
+    for (const [id, rec] of Object.entries(copy.tasks)) {
+      if (rec.github_state !== 'merged' || !rec.merge_sha || !rec.landing_failure ||
+          !rec.approved || !rec.conversation_ref) continue;
+      const key='landing_failed:'+encodeURIComponent(id)+':'+rec.merge_sha;
+      if (copy.actions[key] || Object.values(copy.actions).some(a=>
+        a.task_id===id && ['planned','claimed','uncertain'].includes(a.status))) continue;
+      const task=taskById.get(id);
+      if (!task && !rec.adhoc) continue;
+      try {
+        const delivery=rec.adhoc
+          ? createAdhocDelivery({record:rec,action:'landing_failed',actionId:key})
+          : createDelivery({task,record:rec,action:'landing_failed',actionId:key});
+        copy.actions[key]={task_id:id,type:'landing_failed',status:'planned',
+          delivery_owner:'muse',head_sha:rec.merge_sha,created_at:now,delivery};
+        nudges.push({task_id:id,action:'landing_failed'});
+      } catch (error) {
+        console.error('Landing failure routing for '+id+': '+error.message);
       }
     }
     // Chat destinations are authenticated courier receipts, not owner-supplied
@@ -345,6 +380,31 @@ async function main() {
       }
     }
   }
+  // Missing Codex receipt is a referee notice, never a second review request.
+  // The first request remains the only request for an immutable head.
+  if(commit && ledger) {
+    const minutes=codexWatchMinutes(process.env.DISPATCH_CODEX_WATCH_MINUTES);
+    const tasks=persisted?.state?.tasks || proposed.state.tasks;
+    for(const [id,rec] of Object.entries(tasks)) {
+      if((!taskById.has(id) && !rec.adhoc) || !rec.pr_number ||
+         rec.github_state!=='open' || rec.codex_review_requested_sha!==rec.head_sha ||
+         rec.codex_referee_sha===rec.head_sha)continue;
+      try {
+        const decision=await inspectCodexWatch({github:gh,record:rec,minutes});
+        if(decision.status!=='escalate')continue;
+        await ledger.transaction(latest=>{
+          const task=latest.tasks?.[id];
+          if(!task || task.head_sha!==rec.head_sha ||
+             task.codex_review_requested_sha!==rec.head_sha ||
+             task.codex_referee_sha===rec.head_sha)return null;
+          task.codex_referee_sha=rec.head_sha;
+          task.codex_watchdog={sha:rec.head_sha,attempts:1,status:'escalated',
+            event:'codex_first_miss',at:new Date().toISOString()};
+          return queueOwnerAlerts(latest,{queue});
+        });
+      } catch(error) { console.error('Codex watchdog task '+id+': '+error.message); }
+    }
+  }
   // Only independently classified runner startup errors may be retried, once.
   if (commit && ledger && process.env.DISPATCH_TRANSIENT_CI_RETRY === "true") {
     for (const [id, rec] of Object.entries(proposed.state.tasks)) {
@@ -442,9 +502,23 @@ async function main() {
           if (!currentRec || currentRec.head_sha !== rec.head_sha) return null;
           currentRec.status = "merged"; currentRec.merge_sha = outcome.merge_sha;
           currentRec.github_state = "merged"; currentRec.integration_dispatch = outcome.integration_dispatch;
+          currentRec.landing_dispatch = outcome.landing_dispatch;
           return state;
         });
       }
+    }
+  }
+  if (commit && ledger) {
+    for (const [id, rec] of Object.entries(persisted?.state?.tasks || proposed.state.tasks)) {
+      if (rec.landing_dispatch !== 'failed_needs_retry' || !rec.merge_sha ||
+          !['merged','integrated_proven','released_proven'].includes(rec.status)) continue;
+      const outcome=await dispatchLandingCheck(gh,rec.merge_sha);
+      if (outcome === 'requested') await ledger.transaction(state=>{
+        const task=state.tasks?.[id];
+        if (!task || task.merge_sha!==rec.merge_sha || task.landing_dispatch!=='failed_needs_retry') return null;
+        task.landing_dispatch='requested';
+        return state;
+      });
     }
   }
   const gateCounts = { ready: 0, blocked: 0 };

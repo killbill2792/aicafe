@@ -81,6 +81,16 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
   }
  };
  for(const [id,rec] of Object.entries(next.tasks||{})){
+  // Withdraw only UNSENT safety notices when actual facts changed. Submitted
+  // notices remain immutable audit records, never proof of a current defect.
+  for(const prior of Object.values(next.owner_alerts)) {
+    if(prior.task_id!==id || prior.status!=='planned') continue;
+    if((prior.kind==='wrong_repo' && !rec.repo_mismatch) ||
+       (prior.kind==='repeated_stall' && !rec.stall_escalate) ||
+       (prior.kind==='connector_403' && !rec.connector_403) ||
+       (prior.kind==='codex_watchdog' && rec.codex_referee_sha!==rec.head_sha))
+      prior.status='cancelled_no_longer_needed';
+  }
   // One open PR may have only one active owner question. A revised or removed
   // question supersedes an UNSENT notice; an acknowledged notice remains audit
   // history but never authorizes an owner decision or downstream implementation.
@@ -136,6 +146,22 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
     if(notice.kind==='next_task_start'&&notice.task_id===id&&
        notice.status==='planned'&&(!ready||notice.source_sha!==approvalSignature(task)))
       notice.status='cancelled_no_longer_needed';
+  if(rec.repo_mismatch)
+   add('wrong_repo',id,rec.pr_number,'Task '+id+' belongs to '+rec.repo_mismatch.expected+
+     ' but PR #'+rec.pr_number+' is in '+rec.repo_mismatch.actual+'. Correct the task-to-repo dispatch; do not use PR body as authority.');
+  if(rec.stall_escalate)
+   add('repeated_stall',id,rec.pr_number,'D7 referee: three identical no_push_after_prompt stalls for PR #'+rec.pr_number+
+     ' on '+rec.head_sha+'. Stop re-prompting this head.');
+  if(rec.codex_referee_sha && rec.codex_referee_sha===rec.head_sha)
+   add('codex_watchdog',id,rec.pr_number,
+     'Referee: Codex gave no review or reaction after one request for PR #'+
+     rec.pr_number+' on head '+rec.head_sha+'. Do not re-request unchanged code.');
+  if(rec.connector_403) {
+   const assigned=queue?.tasks?.find(t=>t.id===id);
+   const expected=rec.repo_mismatch?.expected || assigned?.repository || assigned?.repo ||
+     rec.repository || rec.repo || 'killbill2792/aicafe';
+   add('connector_403',id,rec.pr_number,'ChatGPT Codex Connector likely missing repo '+expected);
+  }
   if(rec.agent==='claude'&&rec.blocker?.confirmed===true &&
      ['usage_limit','confirmed_blocker'].includes(rec.blocker.kind))
    add('claude_blocker',id,rec.pr_number,

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
+import { validateRepo, reportedConnector403, failureInstruction } from './safety.mjs';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
 export async function githubFailure(response,kind='GitHub',token=''){
  let message='unavailable';
@@ -306,6 +307,13 @@ export class GitHubFacts {
       baseline.conclusion === "success" ? "success" : "failure";
     const failingJob = checks.check_runs.find(c => c.conclusion === 'failure' &&
       c.name !== baseline?.name) || (ci === 'failure' ? baseline : null);
+    let failureFix=null;
+    let observed403=false;
+    if (failingJob?.id) {
+      const annotations=await this.request('/check-runs/'+failingJob.id+'/annotations?per_page=100').catch(()=>[]);
+      failureFix=failureInstruction(annotations);
+      observed403=annotations.some(a=>/403.{0,80}Resource not accessible by integration|Resource not accessible by integration.{0,80}403/i.test(a.message||''));
+    }
     const codexReviews = reviews.filter(r => /codex/i.test(r.user?.login || ""))
       .sort((a, b) => Date.parse(b.submitted_at) - Date.parse(a.submitted_at));
     // Preserve unresolved findings from an earlier revision for repair routing.
@@ -347,6 +355,7 @@ export class GitHubFacts {
       base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
+      repo_marker_mismatch:validateRepo(pr.body||'',this.repo).status==='failure',
       chat_marker: parseChatMarker(pr.body),
       same_repo: pr.head?.repo?.full_name === this.repo &&
         pr.base?.repo?.full_name === this.repo,
@@ -371,9 +380,14 @@ export class GitHubFacts {
         pr.body.includes('<!-- aicafe-coder-done -->'),
       latest_owner_comment: trustedOwner ? String(trustedOwner.body||'').slice(0,350) : null,
       latest_owner_comment_at: trustedOwner?.created_at || null,
+      connector_403: reportedConnector403(comments,pr.user?.login) || observed403,
       unresolved_codex_comments: unresolvedComments,
-      ci_failure_job: ci === 'failure' ? (failingJob?.name || 'AI CAFE PR baseline') : null,
-      ci_failure_url: ci === 'failure' ? (failingJob?.html_url || pr.html_url) : null,
+      ci_failure_job: (ci === 'failure' || failureFix) ? (failingJob?.name || 'AI CAFE PR baseline') : null,
+      ci_failure_url: (ci === 'failure' || failureFix) ? (failingJob?.html_url || pr.html_url) : null,
+      ci_failure_fix:failureFix,
+      field_check_failure:Boolean(failureFix),
+      repo_marker_failure:validateRepo(pr.body||'',this.repo).status==='failure' ?
+        validateRepo(pr.body||'',this.repo).message+'\nFix: replace the marker with <!-- repo: '+this.repo+' task: <actual-task-id> -->, using the real task ID.' : null,
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
       codex_review_at: useFormal ? codex?.submitted_at : summary?.at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
