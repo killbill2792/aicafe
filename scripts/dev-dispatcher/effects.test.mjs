@@ -133,17 +133,28 @@ test('safe update branch requires live SHA and blocks conflicts',async()=>{
  assert.equal((await safeUpdateBranch({github:gh,record:{...rec,head_sha:'stale',github_state:'open'},enabled:true})).status,'blocked');
  assert.equal(writes,1);
 });
-test('retarget requires integrated predecessor and matching live base',async()=>{
- let writes=0;
+test('legacy retarget entrypoint reuses live-verified merged parent plus branch update',async()=>{
+ let patches=0, updates=0, base='feat/parent';
+ const sha='f'.repeat(40);
  const gh={request:async(path,opts)=>{
-  if(opts?.method==='PATCH'){writes++;return {base:{ref:'main'}};}
-  return {state:'open',head:{sha:'head'},base:{ref:'feat/parent'}};
+   if(path==='/pulls/99')return{merged_at:'2026-11-09T22:00:00Z',
+     merge_commit_sha:sha,head:{ref:'feat/parent'}};
+   if(path==='/pulls/100'&&opts?.method==='PATCH'){patches++;base='main';return{};}
+   if(path==='/pulls/100')return{state:'open',merged:false,
+     head:{sha:'head'},base:{ref:base}};
+   if(path==='/pulls/100/update-branch'){updates++;return{};}
+   throw Error(path);
  }};
- const dependent={pr_number:100,head_sha:'head'};
- const predecessor={branch:'feat/parent',status:'merged'};
- assert.equal((await retargetAfterIntegration({github:gh,dependent,predecessor,enabled:true})).status,'blocked');
- assert.equal((await retargetAfterIntegration({github:gh,dependent,predecessor:{...predecessor,status:'integrated_proven'},enabled:true})).status,'retargeted');
- assert.equal(writes,1);
+ const child={pr_number:100,head_sha:'head',github_state:'open'};
+ const parent={pr_number:99,branch:'feat/parent',status:'merged',merge_sha:sha};
+ assert.equal((await retargetAfterIntegration({github:gh,dependent:child,
+   predecessor:{...parent,merge_sha:null},enabled:true})).status,'blocked');
+ assert.equal(patches,0);
+ const updated=await retargetAfterIntegration({github:gh,dependent:child,
+   predecessor:parent,enabled:true});
+ assert.equal(updated.status,'update_requested');
+ assert.equal(patches,1);
+ assert.equal(updates,1);
 });
 
 test('verified infrastructure CI retry is at-most-once and fails closed',async()=>{
