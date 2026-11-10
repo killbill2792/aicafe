@@ -157,7 +157,7 @@ async function main() {
       // state changes. Never cancel claimed/uncertain sends or invent receipts.
       for (const action of Object.values(copy.actions)) {
         if (action.task_id !== id || action.status !== 'planned' ||
-            action.type === 'assign') continue;
+            ['assign','landing_failed'].includes(action.type)) continue;
         if (proposal.kind !== 'propose' || action.delivery?.action_id !== proposal.key)
           action.status = 'cancelled_state_changed';
       }
