@@ -320,7 +320,6 @@ export class GitHubFacts {
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
-      repo: this.repo,
       chat_marker: parseChatMarker(pr.body),
       same_repo: pr.head?.repo?.full_name === this.repo &&
         pr.base?.repo?.full_name === this.repo,

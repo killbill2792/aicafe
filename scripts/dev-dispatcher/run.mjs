@@ -40,8 +40,16 @@ async function main() {
     for (const rec of Object.values(state.tasks)) {
       if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number)) continue;
       const closed = await gh.request(`/pulls/${rec.pr_number}`);
-      closedByPr[rec.pr_number] = { merged: Boolean(closed.merged_at),
-        merge_sha: closed.merged_at ? closed.merge_commit_sha || null : null };
+      const mergeSha=closed.merged_at ? closed.merge_commit_sha || null : null;
+      let landingFailure=null;
+      if (mergeSha) {
+        const issueComments=await gh.paginated('/issues/'+rec.pr_number+'/comments','comments');
+        const match=issueComments.find(c=>c.user?.login==='github-actions[bot]' &&
+          (c.body||'').startsWith('<!-- landing-check-failure sha:'+mergeSha+' -->'));
+        landingFailure=match ? String(match.body).slice(0,4500) : null;
+      }
+      closedByPr[rec.pr_number] = { merged:Boolean(closed.merged_at),
+        merge_sha:mergeSha,landing_failure:landingFailure };
     }
     const mainRef = await gh.request("/git/ref/heads/main");
     return { snapshot, closedByPr, mainSha: mainRef.object?.sha || null };
@@ -183,6 +191,27 @@ async function main() {
           head_sha: rec.head_sha || null,
           created_at: now, delivery };
         nudges.push({ task_id: id, action: proposal.action });
+      }
+    }
+    // After-merge failures return to the saved conversation via the same signed
+    // Muse action and receipt path. Never reinterpret a success as a failure.
+    for (const [id, rec] of Object.entries(copy.tasks)) {
+      if (rec.github_state !== 'merged' || !rec.merge_sha || !rec.landing_failure ||
+          !rec.approved || !rec.conversation_ref) continue;
+      const key='landing_failed:'+encodeURIComponent(id)+':'+rec.merge_sha;
+      if (copy.actions[key] || Object.values(copy.actions).some(a=>
+        a.task_id===id && ['planned','claimed','uncertain'].includes(a.status))) continue;
+      const task=taskById.get(id);
+      if (!task && !rec.adhoc) continue;
+      try {
+        const delivery=rec.adhoc
+          ? createAdhocDelivery({record:rec,action:'landing_failed',actionId:key})
+          : createDelivery({task,record:rec,action:'landing_failed',actionId:key});
+        copy.actions[key]={task_id:id,type:'landing_failed',status:'planned',
+          delivery_owner:'muse',head_sha:rec.merge_sha,created_at:now,delivery};
+        nudges.push({task_id:id,action:'landing_failed'});
+      } catch (error) {
+        console.error('Landing failure routing for '+id+': '+error.message);
       }
     }
     // Chat destinations are authenticated courier receipts, not owner-supplied
