@@ -5,7 +5,7 @@ vi.mock("@/lib/data/toastDayTrust.server",()=>({
 }));
 import {dataQueryTools,officialToastFields} from "./dataQuery";
 import {runAgentTurn,type AgentProvider} from "../loop.server";
-import type {AgentToolContext} from "./index";
+import {agentToolDefinitions,type AgentToolContext} from "./index";
 import {toastOfficialFieldCatalog} from "@/lib/data/canonical/dictionary";
 
 const cafeA="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -38,6 +38,16 @@ it("builds the complete registered one-Supervisor tool request before any paid p
 });
 
 describe("POS0e retained current-source dictionary and shared reader",()=>{
+ it("exposes retained discount, item-unit and guest query semantics in registered model tool metadata",()=>{
+  const registered=agentToolDefinitions.find(tool=>tool.name==="query_data");
+  const description=registered?.description??"";
+  expect(description).toContain("count_distinct order_ref");
+  expect(description).toContain("count_distinct check_ref");
+  expect(description).toContain("sum data.quantity");
+  expect(description).toContain("sum data.numberOfGuests");
+  expect(description).toContain("retained canonical records");
+  expect(description).toContain("Never ask the café owner");
+ });
  it("describes the correct Toast menu-item GUID lookup without confusing evidence refs",async()=>{
   const described=await dataQueryTools.describe_data.execute({view:"cv_inventory"});
   const cols=described.views?.[0]?.columns??[];
