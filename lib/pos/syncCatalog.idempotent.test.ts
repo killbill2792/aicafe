@@ -207,7 +207,8 @@ describe("one verified Toast publication receipt handed to the existing POS0c co
   const result=await applyPublishedToastCatalogReceipt(
    {rpc} as unknown as SupabaseClient,business,payload());
   expect(result).toEqual({inactiveItems:1,inactiveModifiers:0,inactiveGroups:1});
-  expect(rpc).toHaveBeenCalledExactlyOnceWith("toast_apply_verified_menu_presence",{
+  expect(rpc).toHaveBeenCalledOnce();
+  expect(rpc).toHaveBeenCalledWith("toast_apply_verified_menu_presence",{
    p_business_id:business,p_restaurant_guid:restaurant,
    p_version:receipt.publicationVersion,p_observed_at:receipt.observedAt,
    p_item_ids:[prefix+itemGuid],p_modifier_ids:[prefix+modifierGuid],
