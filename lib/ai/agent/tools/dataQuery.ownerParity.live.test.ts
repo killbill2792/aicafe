@@ -228,10 +228,18 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
       (error as {code?:unknown}).code:null;
      const message=error&&typeof error==="object"&&"message" in error?
       (error as {message?:unknown}).message:null;
-     // Preserve only one known, fixed SQL validator phrase for the free
-     // invalid-aggregate regression; all other server messages are redacted.
-     const safeMessage=code==="P0001"&&message==="invalid aggregate"
-      ?"invalid aggregate":"redacted";
+     // Only exact, fixed messages from ai_query_view's allowlist validator
+     // are safe to retain. Mirrors production error classification; never
+     // pass through a raw PostgreSQL message (which could include source data).
+     const validatorMessages=new Set([
+      "invalid view","invalid date range","invalid limit","query too large",
+      "invalid column","invalid filter column","invalid operator",
+      "invalid null filter","invalid in","invalid between","invalid scalar",
+      "invalid aggregate","columns require group by","ungrouped columns",
+      "invalid order by"
+     ]);
+     const safeMessage=code==="P0001"&&typeof message==="string"&&
+      validatorMessages.has(message)?message:"redacted";
      return {data:null,error:{code:typeof code==="string"?code:"XX000",
       message:safeMessage}};
     }
