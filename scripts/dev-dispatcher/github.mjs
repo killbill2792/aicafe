@@ -207,6 +207,8 @@ export class GitHubFacts {
     const baseline = checks.check_runs.find(c => c.name === "AI CAFE PR baseline");
     const ci = !baseline || baseline.status !== "completed" ? "pending" :
       baseline.conclusion === "success" ? "success" : "failure";
+    const failingJob = checks.check_runs.find(c => c.conclusion === 'failure' &&
+      c.name !== baseline?.name) || (ci === 'failure' ? baseline : null);
     const codexReviews = reviews.filter(r => /codex/i.test(r.user?.login || ""))
       .sort((a, b) => Date.parse(b.submitted_at) - Date.parse(a.submitted_at));
     // Preserve unresolved findings from an earlier revision for repair routing.
@@ -246,8 +248,8 @@ export class GitHubFacts {
       latest_owner_comment: trustedOwner ? String(trustedOwner.body||'').slice(0,350) : null,
       latest_owner_comment_at: trustedOwner?.created_at || null,
       unresolved_codex_comments: unresolvedComments,
-      ci_failure_job: ci === 'failure' ? (baseline?.name || 'AI CAFE PR baseline') : null,
-      ci_failure_url: ci === 'failure' ? (baseline?.html_url || pr.html_url) : null,
+      ci_failure_job: ci === 'failure' ? (failingJob?.name || 'AI CAFE PR baseline') : null,
+      ci_failure_url: ci === 'failure' ? (failingJob?.html_url || pr.html_url) : null,
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
       codex_review_at: useFormal ? codex?.submitted_at : summary?.at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,
