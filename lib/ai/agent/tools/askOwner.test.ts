@@ -168,6 +168,10 @@ describe("ask_owner tool",()=>{
    missing:["posFactRequiresReader"],nextTool:"query_data"});
   expect(rejected.question).toBeUndefined();
   expect(ctx.resolveState!.asked).toBe(false);
+  // A model-authored changeSaved flag cannot turn a POS fact into owner input.
+  const forged=await askOwnerTools.ask_owner.execute({...request,changeSaved:true},ctx);
+  expect(forged).toMatchObject({error:"posFactRequiresReader",nextTool:"query_data"});
+  expect(ctx.resolveState!.asked).toBe(false);
   // A rejected owner card must not use the sole clarification slot.
   const ownerOnly=await askOwnerTools.ask_owner.execute({kind:"facts",
    question:"What monthly rent do you pay?",options:[],allowOther:false,
