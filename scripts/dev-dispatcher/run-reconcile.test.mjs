@@ -23,7 +23,7 @@ const record = id => ({
 const initial = (tasks = {}, actions = {}) => ({
   version: 1, tasks, actions, owner_alerts: { notice: { status: 'planned' } }
 });
-function harness({ assignments = [], proposals = {}, fail = [], receipts = [], frontier = null } = {}) {
+function harness({ assignments = [], proposals = {}, fail = [], receipts = [], frontier = null, startApproval = state => state } = {}) {
   const errors = [];
   const taskById = new Map(['bad', 'good', 'POS0b', 'POS0c', 'POS0d', 'POS0e', '6']
     .map(id => [id, task(id)]));
@@ -41,7 +41,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     },
     reconcileReceiptFeedback: state => state,
     queueOwnerAlerts: state => state,
-    applyOwnerStartApprovals: state => state,
+    applyOwnerStartApprovals: startApproval,
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},
     wakeReceiptFeedback: () => {},
@@ -180,4 +180,18 @@ test('Task 6 held approval never silently assigns after priority clearance',()=>
   [{task_id:'6',agent:'chatgpt',base_branch:'main'}]:[]}).run(initial({'6':current}));
  assert.equal(out.state.actions['assign:6'],undefined);
  assert.equal(out.state.tasks['6'].approved,false);
+});
+test('hash-bound Muse yes resumes the same-tick frontier with one assignment',async()=>{
+ const {applyOwnerStartApprovals,noticeHash}=await import('./alerts.mjs');
+ const {approvalSignature}=await import('./delivery.mjs');
+ const plan=task('6'),hash=approvalSignature(plan),key='notice:'+noticeHash({kind:'next_task_start',task_id:'6',source_sha:hash});
+ const tasks={'6':{task_id:'6',approved:false,status:'blocked_needs_owner',priority_deferred:true,
+  owner_reply_events:{yes:{courier:'muse',text:'yes',target:{notice_id:key}}}}};
+ const s=initial(tasks);s.owner_alerts={[key]:{kind:'next_task_start',status:'submitted',source_sha:hash}};
+ const h=harness({startApproval:applyOwnerStartApprovals,
+  frontier:records=>records['6']?.approved&&records['6'].status==='proposed'
+   ?[{task_id:'6',agent:'chatgpt',base_branch:'main'}]:[]});
+ const out=h.run(s).state;assert.equal(out.tasks['6'].status,'assigned');
+ assert.equal(out.actions['assign:6'].status,'planned');
+ assert.equal(out.actions['assign:6'].delivery_owner,'muse');
 });
