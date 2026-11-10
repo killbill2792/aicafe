@@ -254,19 +254,20 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
     return {kind:'hold',reason:'browser_confirmed_busy'};
   if ((record.owner_question || record.github_owner_question) && !isPr)
     return {kind:'hold',reason:'owner_decision_required'};
-  if (isPr && (record.owner_question || record.github_owner_question) &&
+  if (isPr && !record.draft && (record.owner_question || record.github_owner_question) &&
       record.ci_state !== 'failure' && record.codex_state !== 'findings' &&
       !record.owner_answer_text) return {kind:'hold',reason:'owner_decision_required'};
   const reviewAt = record.codex_state === 'findings' ? Date.parse(record.codex_review_at || '') : NaN;
   const commitAt = Date.parse(isPr ? record.last_commit_at : record.last_submission_at);
   const last = Number.isFinite(reviewAt) ? Math.max(commitAt,reviewAt) : commitAt;
   const quietFor = nowMs - last;
-  if (!Number.isFinite(last) || quietFor < (isPr ? quietMs : prePrMs))
-    return {kind:'hold',reason:'not_quiet'};
   if (isPr && !record.draft &&
       (record.ci_state === 'pending' || record.ci_state === 'unknown' ||
        record.codex_state === 'pending' || record.codex_state === 'unknown') &&
-      quietFor < 900000) return {kind:'hold',reason:'checks_pending_or_unknown'};
+      Number.isFinite(quietFor) && quietFor < 900000)
+    return {kind:'hold',reason:'checks_pending_or_unknown'};
+  if (!Number.isFinite(last) || quietFor < (isPr ? quietMs : prePrMs))
+    return {kind:'hold',reason:'not_quiet'};
   const sentMs = Date.parse(record.last_submission_at || '');
   if (record.submission_state === 'submitted' && Number.isFinite(sentMs) &&
       nowMs - sentMs < 900000) return {kind:'hold',reason:'post_delivery_quiet'};
@@ -293,7 +294,8 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
     return {kind:'hold',reason:'review_already_requested_on_head'};
   if (isPr && !record.draft && record.ci_state === 'success' &&
       record.codex_state === 'clean' && record.codex_reviewed_sha === record.head_sha &&
-      record.acceptance_proven === true && record.threads_resolved !== false &&
+      record.acceptance_proven === true && Boolean(record.acceptance_evidence) &&
+      record.threads_resolved !== false &&
       record.base_current !== false && record.review_base_current !== false)
     return {kind:'hold',reason:'no_actionable_findings'};
   const action = !isPr ? 'pre_pr_reminder' :
@@ -304,7 +306,12 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
   let key = actionKey(record,action);
   if (record.last_action_key === key && record.submission_state === 'submitted' &&
       Number.isFinite(sentMs)) {
-    key = key + ':retry:' + encodeURIComponent(record.last_submission_at);
+    // A retry ID has ONE bounded suffix, never recursively grows after sends.
+    const committed = record.last_commit_at || record.last_github_activity || 'start';
+    const root = [record.task_id,action,record.head_sha || 'pre-pr',
+      record.prompt_version || 'v1',committed]
+      .map(value=>encodeURIComponent(String(value))).join(':');
+    key = root + ':retry:' + encodeURIComponent(record.last_submission_at);
   }
   if (record.last_action_key === key || record.attempts >= (record.max_attempts ?? 3))
     return {kind:'hold',reason:'already_sent_or_capped'};
