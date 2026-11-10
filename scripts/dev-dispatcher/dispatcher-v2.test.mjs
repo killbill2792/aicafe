@@ -254,3 +254,17 @@ test('CI-failed nudge names the actual failed GitHub check with its verified lin
   assert.match(delivery.prompt,/TypeScript, full ESLint and patch hygiene/);
   assert.match(delivery.prompt,/actions\/runs\/99\/job\/21/);
 });
+
+test('parent-merged prompt is immediate after automatic branch maintenance, not held by idle timer',()=>{
+  const sha='f'.repeat(40);
+  const fresh=active({parent_merged_sha:sha,branch_maintenance_merge_sha:sha,
+    base_branch:'main',last_commit_at:new Date(now-10_000).toISOString(),
+    ci_state:'pending',codex_state:'pending'});
+  const prompt=decideNudge(fresh,now);
+  assert.equal(prompt.action,'parent_merged');
+  assert.equal(prompt.key,'parent_merged:child:'+sha);
+  assert.deepEqual(decideNudge({...fresh,branch_maintenance_merge_sha:null},now),
+    {kind:'hold',reason:'awaiting_automatic_parent_branch_maintenance'});
+  assert.equal(decideNudge({...fresh,last_parent_rebase_sha:sha},now).action,undefined);
+  assert.equal(decideNudge({...fresh,submission_state:'uncertain'},now).kind,'hold');
+});
