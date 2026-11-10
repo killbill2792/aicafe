@@ -37,7 +37,8 @@ export function approvalMatches(task, signed) {
   const historical = [
     fields,
     [...fields,task.edits,task.uses],
-    [...fields,task.edits,undefined]
+    [...fields,task.edits,undefined],
+    [...fields,task.edits,[]]
   ];
   return historical.some(parts => digest(parts) === signed);
 }
