@@ -67,3 +67,11 @@ test('only an actual repo marker mismatch blocks the existing merge decision',as
  assert.equal(readyGate({...good,draft:true,repo_mismatch:{expected:'x/y',actual:'a/b'}}).eligible,false);
  assert.equal(decideNudge({...good,repo_marker_mismatch:true,repo_marker_failure:'wrong repo'}).action,'ci_failed');
 });
+
+test('a newer verified head beats misleading commit author timestamps',()=>{
+ const s=structuredClone(base);
+ s.tasks.T.last_prompt_head_sha='b'.repeat(40);
+ assert.equal(run(s).tasks.T.stall_pending,null);
+ s.tasks.T.last_prompt_head_sha=head;
+ assert.equal(run(s).tasks.T.stall_count,1);
+});
