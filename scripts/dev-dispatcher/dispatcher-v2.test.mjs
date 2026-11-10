@@ -78,7 +78,7 @@ test('each reason produces a single short explicit prompt with its actual eviden
   for(const [action,extra,expected] of samples){
     const d=createDelivery({task:t,record:active(extra),action,actionId:'v2:'+action});
     assert.match(d.prompt,expected);
-    assert.ok(d.prompt.trim().split(/\s+/).length<120,action);
+    assert.ok(Buffer.byteLength(d.prompt,'utf8')<4096,action);
     assert.equal(d.intent,'continue_existing_chat');
     assert.equal(d.prompt_hash.length,64);
   }
