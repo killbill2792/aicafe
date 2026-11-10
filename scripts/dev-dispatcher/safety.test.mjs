@@ -83,7 +83,7 @@ test('existing owner notices flag wrong-repo, connector 403 and third stall',asy
  const next=queueOwnerAlerts(st,{now:'2026-11-10T11:00:00Z'});
  const notes=Object.values(next.owner_alerts);
  assert.deepEqual(notes.map(n=>n.kind).sort(),['connector_403','repeated_stall','wrong_repo']);
- assert.ok(notes.some(n=>n.question==='ChatGPT Codex Connector likely missing repo owner/product'));
+ assert.ok(notes.some(n=>n.question==='ChatGPT Codex Connector likely missing repo other/repo'));
  assert.ok(notes.some(n=>/D7 referee/.test(n.question)));
 });
 
