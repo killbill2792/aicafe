@@ -13,6 +13,7 @@ import { mergeApprovedPr, integrationStatus, safeUpdateBranch, retargetAfterInte
 import { collectReceipts, applyReceipts } from "./inbox.mjs";
 import { queueOwnerAlerts } from "./alerts.mjs";
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
+import { publishPrivateQueue } from "./private-owner-view.mjs";
 
 async function main() {
   const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
@@ -267,6 +268,20 @@ async function main() {
   ].join("\n");
   console.log(summary);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+  // A separate owner-readable projection lives IN THE ALREADY PRIVATE
+  // ledger repository; never place its contents in a public issue or Pages.
+  // Failure cannot stop courier signals or the authoritative JSON ledger.
+  if (commit && ledger && persisted) {
+    try {
+      const privateView = await publishPrivateQueue({ledger});
+      console.log(`Private Muse owner queue ${privateView.status}`);
+    } catch (error) {
+      console.error(`Private Muse owner queue publication failed: ${error.message}`);
+      if (process.env.GITHUB_STEP_SUMMARY)
+        appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+          '\\n**Private queue view update failed** — see runner log; authoritative ledger is unchanged.\\n');
+    }
+  }
   // Single owner-facing view in issue #411, updated by the same trusted-main
   // reconciliation. Dashboard publishing is never allowed to block the
   // private ledger or the opaque Muse wake-up signal.
@@ -275,7 +290,7 @@ async function main() {
     const runUrl = process.env.GITHUB_RUN_ID
       ? `https://github.com/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}` : null;
     try {
-      const body = renderOwnerView(effectiveState,{repo,asOf:new Date().toISOString(),runUrl});
+      const body = renderOwnerView(effectiveState,{repo,asOf:new Date().toISOString(),runUrl,queue});
       const published = await publishOwnerView({github:gh,issue:ownerIssue,body});
       console.log(`Owner control center ${published.status}: issue #${ownerIssue}, comment ${published.id}`);
     } catch (error) {
