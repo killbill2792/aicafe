@@ -61,6 +61,14 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
    for(const prior of previous)
      if(prior.status==='planned') prior.status='cancelled_no_longer_needed';
   }
+  if(rec.repo_mismatch)
+   add('wrong_repo',id,rec.pr_number,'Task '+id+' belongs to '+rec.repo_mismatch.expected+
+     ' but PR #'+rec.pr_number+' is in '+rec.repo_mismatch.actual+'. Correct the task-to-repo dispatch; do not use PR body as authority.');
+  if(rec.stall_escalate)
+   add('repeated_stall',id,rec.pr_number,'D7 referee: three identical no_push_after_prompt stalls for PR #'+rec.pr_number+
+     ' on '+rec.head_sha+'. Stop re-prompting this head.');
+  if(rec.connector_403)
+   add('connector_403',id,rec.pr_number,'ChatGPT Codex Connector likely missing repo '+(rec.repo || 'killbill2792/aicafe'));
   if(rec.agent==='claude'&&rec.blocker?.confirmed===true &&
      ['usage_limit','confirmed_blocker'].includes(rec.blocker.kind))
    add('claude_blocker',id,rec.pr_number,

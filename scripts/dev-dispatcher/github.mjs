@@ -320,6 +320,7 @@ export class GitHubFacts {
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
+      repo: this.repo,
       chat_marker: parseChatMarker(pr.body),
       same_repo: pr.head?.repo?.full_name === this.repo &&
         pr.base?.repo?.full_name === this.repo,
@@ -339,6 +340,7 @@ export class GitHubFacts {
         pr.body.includes('<!-- aicafe-coder-done -->'),
       latest_owner_comment: trustedOwner ? String(trustedOwner.body||'').slice(0,350) : null,
       latest_owner_comment_at: trustedOwner?.created_at || null,
+      connector_403: comments.some(c => (c.user?.login === pr.user?.login || c.author_association === 'OWNER') && /403.{0,80}Resource not accessible by integration|Resource not accessible by integration.{0,80}403/i.test(c.body || '')),
       unresolved_codex_comments: unresolvedComments,
       ci_failure_job: ci === 'failure' ? (failingJob?.name || 'AI CAFE PR baseline') : null,
       ci_failure_url: ci === 'failure' ? (failingJob?.html_url || pr.html_url) : null,

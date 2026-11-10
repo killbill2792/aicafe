@@ -14,6 +14,7 @@ import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterP
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
 import { queueOwnerAlerts } from "./alerts.mjs";
+import { applySafetySignals, stallMinutes } from "./safety.mjs";
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
@@ -77,7 +78,8 @@ async function main() {
     const withFeedback = reconcileReceiptFeedback(applied.state,{
       ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
     },new Date().toISOString());
-    const copy = queueOwnerAlerts(withFeedback,{unmappedPrs:linked.unmapped,queue});
+    const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
+    const copy = queueOwnerAlerts(safety,{unmappedPrs:linked.unmapped,queue});
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
@@ -139,7 +141,9 @@ async function main() {
       copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
-      const proposal = decideNudge(rec, Date.now());
+      const normal=decideNudge(rec, Date.now());
+      const proposal=normal.kind==='propose' ? normal :
+        rec.stall_pending && !rec.stall_escalate ? {kind:'propose',action:'no_push_after_prompt',key:rec.stall_pending} : normal;
       // A not-yet-claimed checklist becomes obsolete as soon as its actionable
       // state changes. Never cancel claimed/uncertain sends or invent receipts.
       for (const action of Object.values(copy.actions)) {
