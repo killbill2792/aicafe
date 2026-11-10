@@ -64,6 +64,57 @@ BEGIN
    WHERE record_type='employee' AND record_ref=employee_a::text
     AND data->>'firstName'='Nadia'),
   'current retained employee identity must be available by record_ref GUID');
+  -- Retained provider identity is durable after config re-save; a mirrored
+  -- staged row without a provider-identity GET is never operational evidence.
+  INSERT INTO public.locations(id,business_id,name) VALUES
+   ('a1a1a1a1-1111-4111-8111-111111111111',a,'Verified Toast source'),
+   ('b1b1b1b1-2222-4222-8222-222222222222',b,'Mirrored fixture');
+  INSERT INTO public.toast_location_mappings
+   (business_id,location_id,restaurant_guid,verified_at,info_refreshed_at) VALUES
+   (a,'a1a1a1a1-1111-4111-8111-111111111111',rest_a,now(),now()),
+   (b,'b1b1b1b1-2222-4222-8222-222222222222',rest_b,null,null);
+  INSERT INTO public.toast_raw_records
+   (business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key)
+  VALUES
+   (a,rest_a,'job',d,'{"guid":"source-job-A","name":"Shift leader"}',
+    repeat('1',64),'stage:toast_job_directory:key:source-job-A'),
+   (b,rest_b,'job',d,'{"guid":"fixture-job-B","name":"Copied fixture"}',
+    repeat('2',64),'stage:toast_job_directory:key:fixture-job-B');
+  PERFORM pg_temp.pos0e_assert(
+   (SELECT count(*)=1 FROM public.toast_records_for(a,d,d)
+    WHERE record_type='job' and data->>'name'='Shift leader'),
+   'authentic staged source job visible before config re-save');
+  PERFORM pg_temp.pos0e_assert(
+   (SELECT count(*)=0 FROM public.toast_records_for(b,d,d)
+    WHERE record_type='job'),
+   'copied stage fixture has no provider-identity evidence');
+  PERFORM public.toast_save_configuration(a,'https://ws-api.toasttab.com',
+   'synthetic_client','synthetic_ciphertext',jsonb_build_array(jsonb_build_object(
+    'location_id','a1a1a1a1-1111-4111-8111-111111111111',
+    'restaurant_guid',rest_a)));
+  PERFORM pg_temp.pos0e_assert(
+   (SELECT verified_at IS NULL AND info_refreshed_at IS NOT NULL
+    FROM public.toast_location_mappings WHERE business_id=a AND restaurant_guid=rest_a),
+   'config re-save clears active verification, not durable provider identity');
+  PERFORM pg_temp.pos0e_assert(
+   (SELECT count(*)=1 FROM public.toast_records_for(a,d,d)
+    WHERE record_type='job' and data->>'name'='Shift leader'),
+   'genuine retained job remains readable after failed verification');
+  PERFORM pg_temp.pos0e_assert(
+   public.ai_toast_fields(a,'job') @>
+    '[{"field":"data.name","type":"string"}]'::jsonb,
+   'retained staged job is still discoverable');
+  response:=public.ai_query_view(a,'cv_toast_records',array['data.name']::text[],
+   '[{"column":"record_type","op":"=","value":"job"}]'::jsonb,
+   null::text[],null::jsonb,d,d,null,10);
+  PERFORM pg_temp.pos0e_assert(
+   response->'rows'->0->>'data.name'='Shift leader' and
+    jsonb_array_length(response->'rows')=1,
+   'registered query retains the authenticated job after reset');
+  PERFORM pg_temp.pos0e_assert(
+   (SELECT count(*)=0 FROM public.toast_records_for(b,d,d)
+    WHERE record_type='job'),
+   'mirror still excluded after real cafe re-verification reset');
  PERFORM pg_temp.pos0e_assert(
   (SELECT count(*)=1 AND sum(amount_cents)=1250 FROM public.cv_cash WHERE business_id=a),
   'cash must equal retained operational A object, not the poisoned sample');
@@ -121,8 +172,20 @@ BEGIN
 
  PERFORM pg_temp.pos0e_assert(
   public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
-   '[{"field":"data.extra.nested.0.lateOptional","type":"string"}]'::jsonb,
-  'describe_data must inspect later array elements and nested optional fields');
+   '[{"field":"data.extra.nested.1.lateOptional","type":"string"}]'::jsonb,
+  'describe_data must preserve later array indices');
+  PERFORM pg_temp.pos0e_assert(
+   NOT (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
+    '[{"field":"data.extra.nested.0.lateOptional"}]'::jsonb),
+   'later array-only path must not be mislabelled index zero');
+  response:=public.ai_query_view(a,'cv_toast_records',
+   array['data.extra.nested.1.lateOptional']::text[],
+   '[{"column":"record_type","op":"=","value":"cashmgmt/v1/entries"}]'::jsonb,
+   null::text[],null::jsonb,d,d,null,10);
+  PERFORM pg_temp.pos0e_assert(
+   response->'rows'->0->>'data.extra.nested.1.lateOptional'='present-in-second-element'
+    and jsonb_array_length(response->'rows')=1,
+   'registered query retrieves the exact advertised array element');
 
  PERFORM pg_temp.pos0e_assert(
   public.ai_query_path('data.customer.email')=ARRAY['customer','email']::text[]
