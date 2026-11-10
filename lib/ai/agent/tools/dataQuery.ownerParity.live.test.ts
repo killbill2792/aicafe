@@ -348,7 +348,7 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     }
    }finally{release();}
   };
-  const db={rpc:async(name:string,p:Record<string,unknown>)=>{
+  const baseRpc=async(name:string,p:Record<string,unknown>)=>{
    if(name==="ai_query_view"){
     const filters=Array.isArray(p.p_filters)?p.p_filters as Array<Record<string,unknown>>:[];
     const metrics=Array.isArray(p.p_metrics)?p.p_metrics as Array<Record<string,unknown>>:[];
@@ -390,7 +390,89 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     return result.rows[0].value;
    });
    throw Error("Unexpected RPC: "+name);
-  }};
+  };
+  // The live harness must read ACTUAL disposable-DB Toast day coverage.
+  // Earlier this shim implemented neither .from nor coverage RPCs, causing
+  // every valid query_data result to misleadingly report toastDayStatusUnavailable.
+  const db={
+   rpc:(name:string,p:Record<string,unknown>)=>{
+    if(name==="toast_unverified_sales_dates")return isolatedRpc(async()=>{
+     const q=await client.query(
+      `select distinct day::text business_date from (
+       select o.business_date day from public.orders o where o.business_id=$1
+        and o.business_date between $2::date and $3::date
+        and o.pos_order_id like 'toast:%'
+       union all
+       select e.event_business_date day from public.toast_payment_day_events e
+        where e.business_id=$1 and e.event_business_date between $2::date and $3::date
+       union all
+       select t.business_date day from public.toast_pilot_days t
+        where t.business_id=$1 and t.business_date between $2::date and $3::date
+         and t.promoted_at is not null
+      ) x order by 1`,[p.p_business_id,p.p_from,p.p_to]);
+     return q.rows;
+    });
+    if(name==="toast_attention_days")return {range:(start:number,end:number)=>
+     isolatedRpc(async()=>{
+      const q=await client.query(
+       `select business_date::text,restaurant_guid::text
+        from public.toast_owner_attention_days_v
+        where business_id=$1 and business_date between $2::date and $3::date
+        order by business_date,restaurant_guid offset $4 limit $5`,
+       [p.p_business_id,p.p_from,p.p_to,start,end-start+1]);
+      return q.rows;
+     })};
+    return baseRpc(name,p);
+   },
+   from:(table:string)=>{
+    if(table!=="toast_day_status"&&table!=="orders")
+     throw Error("Unexpected Toast coverage table");
+    const q:{businessId:string|null;from:string|null;to:string|null;
+     dates:string[]|null;pattern:string|null}={
+     businessId:null,from:null,to:null,dates:null,pattern:null};
+    const chain={
+     select:(columns:string)=>{const expected=table==="toast_day_status"?
+      "business_date,restaurant_guid,import_state,recon_state,last_error_category":
+      "id,business_date";
+      if(columns!==expected)throw Error("Unexpected coverage columns");
+      return chain;},
+     eq:(column:string,value:string)=>{if(column!=="business_id")throw Error("Unexpected eq");
+      q.businessId=value;return chain;},
+     gte:(column:string,value:string)=>{if(column!=="business_date")throw Error("Unexpected gte");
+      q.from=value;return chain;},
+     lte:(column:string,value:string)=>{if(column!=="business_date")throw Error("Unexpected lte");
+      q.to=value;return chain;},
+     like:(column:string,value:string)=>{if(column!=="pos_order_id")throw Error("Unexpected like");
+      q.pattern=value;return chain;},
+     in:(column:string,values:string[])=>{if(column!=="business_date")throw Error("Unexpected in");
+      q.dates=values;return chain;},
+     order:(column:string)=>{if(!["business_date","restaurant_guid","id"].includes(column))
+      throw Error("Unexpected coverage order");return chain;},
+     range:(start:number,end:number)=>isolatedRpc(async()=>{
+      if(!q.businessId)throw Error("Coverage business scope missing");
+      if(table==="toast_day_status"){
+       if(!q.from||!q.to)throw Error("Coverage date scope missing");
+       const rs=await client.query(
+        `select business_date::text,restaurant_guid::text,import_state,
+         recon_state,last_error_category from public.toast_day_status
+         where business_id=$1 and business_date between $2::date and $3::date
+         order by business_date,restaurant_guid offset $4 limit $5`,
+        [q.businessId,q.from,q.to,start,end-start+1]);
+       return rs.rows;
+      }
+      if(q.pattern!=="toast:%"||!q.dates)throw Error("Canonical Toast scope missing");
+      const rs=await client.query(
+       `select id,business_date::text from public.orders
+        where business_id=$1 and pos_order_id like 'toast:%'
+         and business_date=any($2::date[])
+        order by id offset $3 limit $4`,
+       [q.businessId,q.dates,start,end-start+1]);
+      return rs.rows;
+     })
+    };
+    return chain;
+   }
+  };
   const context={
    asOf:biz.today,timezone:biz.timezone,locale:"en",
    tools:{} as AgentToolContext["tools"],
@@ -561,6 +643,8 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     },context);
     expect(actual.error,"scalar-"+(spec.index+1)+" registered reader")
      .toBeUndefined();
+    expect(actual.missing,"registered reader must use actual coverage evidence")
+     .not.toContain("toastDayStatusUnavailable");
     const rows=actual.rows as Array<Record<string,unknown>>|undefined;
     expect(rows,"scalar-"+(spec.index+1)+" returned rows").toHaveLength(1);
     const alias=spec.metric.fn+"_"+spec.metric.column;
