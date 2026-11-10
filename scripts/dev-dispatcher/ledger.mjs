@@ -37,7 +37,8 @@ export class GitHubLedger {
         ...options, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
           "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
       });
-      if (response.status < 500 || response.status > 599 || attempt === 2) break;
+      if (response.ok || !Number.isInteger(response.status) ||
+          response.status < 500 || response.status > 599 || attempt === 2) break;
       await new Promise(resolve => setTimeout(resolve, 250 * (2 ** attempt)));
     }
     if (!response.ok) {
