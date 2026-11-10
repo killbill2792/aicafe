@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
-export async function githubFailure(response,kind='GitHub'){
+export async function githubFailure(response,kind='GitHub',token=''){
  let message='unavailable';
  try{message=String((await response.json())?.message||message).replace(/\s+/g,' ').slice(0,250);}catch{}
  const h=k=>response.headers?.get?.(k)||'unavailable';
@@ -11,7 +11,8 @@ export async function githubFailure(response,kind='GitHub'){
   ' x-ratelimit-remaining='+h('x-ratelimit-remaining')+
   ' x-ratelimit-reset='+h('x-ratelimit-reset')+
   ' retry-after='+h('retry-after');
- console.error(detail);return new Error(detail);
+ const safe=token?detail.split(token).join('[REDACTED]'):detail;
+ console.error(safe);return new Error(safe);
 }
 export function githubNetworkFailure(kind){
  const detail=kind+' request failed: status=network message=transport_error'+
@@ -126,7 +127,7 @@ export class GitHubFacts {
       ...options, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
         "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
     }).catch(()=>{throw githubNetworkFailure('GitHub');});
-    if (!response.ok) throw await githubFailure(response);
+    if (!response.ok) throw await githubFailure(response,'GitHub',this.token);
     if (response.status === 204) return { ok:true };
     return response.json();
   }
@@ -164,7 +165,7 @@ export class GitHubFacts {
         Accept:'application/vnd.github+json',
         'X-GitHub-Api-Version':'2022-11-28'
       }}).catch(()=>{throw githubNetworkFailure('Proof artifact');});
-    if (!response.ok) throw await githubFailure(response,'Proof artifact');
+    if (!response.ok) throw await githubFailure(response,'Proof artifact',this.token);
     return decodeAcceptanceArchive(Buffer.from(await response.arrayBuffer()), filename);
   }
   async acceptanceProof(runId) {

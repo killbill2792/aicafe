@@ -43,7 +43,7 @@ export class GitHubLedger {
       await new Promise(resolve => setTimeout(resolve, 250 * (2 ** attempt)));
     }
     if (!response.ok) {
-      const error=await githubFailure(response,'Ledger');
+      const error=await githubFailure(response,'Ledger',this.token);
       error.message='Ledger HTTP '+response.status+'; '+error.message;
       if (response.status === 404 && (!options.method || options.method === "GET")) return { absent: true };
       if ([409, 412, 422].includes(response.status)) throw Object.assign(error, { code: "CONFLICT" });

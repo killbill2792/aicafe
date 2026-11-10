@@ -21,3 +21,4 @@ fetchFn:async()=>make()}).request('/pulls'),/RID-403/); await assert.rejects(new
 }finally{console.error=orig;} assert.equal(logs.length,2); for(const line of logs){
 assert.match(line,/status=403.*message=Resource not accessible by integration/); assert.match(line,/x-github-request-id=RID-403/); assert.match(line,/x-ratelimit-remaining=0/);
 assert.doesNotMatch(line,/secret-NEVER-LOG/); } });
+test('the API message cannot echo the credential into diagnostics',async()=>{ const {GitHubFacts}=await import('./github.mjs'); const old=console.error,logs=[];console.error=x=>logs.push(x); try{ await assert.rejects(new GitHubFacts({repo:'owner/repo',token:'secret-NEVER-LOG',fetchFn:async()=>new Response(JSON.stringify({message:'GitHub echoed secret-NEVER-LOG'}),{status:403})}).request('/x'),/REDACTED/); }finally{console.error=old;} assert.equal(logs.length,1);assert.doesNotMatch(logs[0],/secret-NEVER-LOG/); });
