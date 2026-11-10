@@ -2,6 +2,7 @@
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
+import { queueDependencyNotices } from "./dependency-notices.mjs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions, editableFiles } from "./core.mjs";
@@ -154,6 +155,18 @@ async function main() {
         nudges.push({ task_id: id, action: proposal.action });
       }
     }
+    // Chat destinations are authenticated courier receipts, not owner-supplied
+    // URLs. Keep a per-PR index only in the private ledger.
+    copy.pr_chat_links ||= {};
+    for (const [id, rec] of Object.entries(copy.tasks)) {
+      if (!Number.isInteger(rec.pr_number) || !rec.conversation_ref ||
+          rec.github_state !== 'open') continue;
+      copy.pr_chat_links[String(rec.pr_number)] = {
+        task_id:id,conversation_url:rec.conversation_ref,
+        head_sha:rec.head_sha || null,
+        updated_at:rec.last_submission_at || now
+      };
+    }
     // Proposals persist for later authorized delivery, never sent by this script.
     return { state: copy, assigned, nudges };
   }
@@ -220,6 +233,9 @@ async function main() {
       const latest = await observe(existing);
       const next = reconcile(existing, latest).state;
       await promoteIntegration(next);
+      // Dispatch the new dependency proof to the already-running chat in the
+      // SAME transaction; one current-head action and one receipt per PR.
+      queueDependencyNotices(next, queue);
       // Integration may become proven during this same pass: queue the owner
       // review with the actual saved chat URL without a second delayed cycle.
       const withNotices = queueOwnerAlerts(next,{queue});
