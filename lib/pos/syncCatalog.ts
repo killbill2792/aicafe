@@ -4,6 +4,7 @@ import type {PosAdapter,PosCatalogItem} from "./types";
 import {matchCatalogItem,type CanonicalMenuCandidate} from "./catalogMatching";
 import {recordInitialMenuPrice,setCanonicalMenuPrice} from "@/lib/menu/priceHistory";
 import {readAllPosRows} from "./pagedReads";
+import type {ToastCatalogFact} from "./toast/adapter";
 
 type Row={id:string;pos_item_id:string|null;name:string;base_name:string|null;size_label:string|null;
  price_cents:number|null;category:string|null;catalog_source:string|null;pos_name:string|null;
@@ -229,4 +230,61 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
   });resultError(relinkError);
  }
  return {imported:imported.length,matched,needsReview,created,changed};
+}
+
+/** Handoff for POS0c's existing staging/copy owner, not an alternate importer.
+ * Call only AFTER the SAME complete Menus V2 bundle has been staged, promoted
+ * and its version committed to toast_optional_sync_state. No fetch, no deletion.
+ * The database independently validates source mapping, current copied version,
+ * canonical relationships and service-role authorization before changing state. */
+export async function applyPublishedToastCatalogReceipt(
+ db:SupabaseClient,businessId:string,
+ bundle:{items:readonly PosCatalogItem[];facts:readonly ToastCatalogFact[];
+  receipt:{restaurantGuid:string;publicationVersion:string;observedAt:string}}
+):Promise<{inactiveItems:number;inactiveModifiers:number;inactiveGroups:number}>{
+ const {restaurantGuid,publicationVersion,observedAt}=bundle.receipt;
+ const prefix="toast:"+restaurantGuid.toLowerCase()+":";
+ const valid=(s:string)=>s.toLowerCase().startsWith(prefix)&&s.length>prefix.length;
+ if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(restaurantGuid)||
+   !Number.isFinite(Date.parse(observedAt))||!publicationVersion.trim()||
+   !bundle.items.length||!bundle.facts.some(f=>f.kind==="item"))
+   throw new Error("incomplete_verified_toast_publication");
+ const itemIds=new Set<string>(),modifierIds=new Set<string>();
+ const groupLinks=new Map<string,{item_pos_id:string;pos_group_id:string}>();
+ for(const item of bundle.items){
+  if(!valid(item.posItemId))throw new Error("wrong_restaurant_catalog_item");
+  itemIds.add(item.posItemId);
+  for(const group of item.modifierGroups??[]){
+   if(!valid(group.posGroupId))throw new Error("wrong_restaurant_catalog_group");
+   const key=JSON.stringify([item.posItemId,group.posGroupId]);
+   groupLinks.set(key,{item_pos_id:item.posItemId,pos_group_id:group.posGroupId});
+   for(const option of group.options){
+    if(!valid(option.posModifierId))throw new Error("wrong_restaurant_catalog_modifier");
+    modifierIds.add(option.posModifierId);
+   }
+  }
+ }
+ // The single-snapshot staged facts must contain every canonical source item.
+ // SIZE_PRICE canonical keys encode a verified base GUID and true size GUID.
+ const factGuids=new Set(bundle.facts.filter(f=>f.kind==="item").map(f=>f.provider_guid.toLowerCase()));
+ for(const id of itemIds){
+  const guid=id.slice(prefix.length).split(":size:")[0].toLowerCase();
+  if(!factGuids.has(guid))throw new Error("unverified_catalog_item_fact");
+ }
+ const {data,error}=await db.rpc("toast_apply_verified_menu_presence",{
+  p_business_id:businessId,p_restaurant_guid:restaurantGuid,
+  p_version:publicationVersion,p_observed_at:observedAt,
+  p_item_ids:[...itemIds],p_modifier_ids:[...modifierIds],
+  p_group_links:[...groupLinks.values()]
+ });
+ resultError(error);
+ const summary=data as {inactiveItems?:unknown;inactiveModifiers?:unknown;
+  inactiveGroups?:unknown}|null;
+ const count=(v:unknown)=>typeof v==="number"&&Number.isSafeInteger(v)&&v>=0?v:null;
+ const inactiveItems=count(summary?.inactiveItems),
+  inactiveModifiers=count(summary?.inactiveModifiers),
+  inactiveGroups=count(summary?.inactiveGroups);
+ if(inactiveItems===null||inactiveModifiers===null||inactiveGroups===null)
+  throw new Error("unverified_catalog_publication_result");
+ return {inactiveItems,inactiveModifiers,inactiveGroups};
 }
