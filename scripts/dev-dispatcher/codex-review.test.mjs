@@ -79,3 +79,16 @@ test('red check, older head receipt and sensitive owner hold do not trigger Code
   const red=fakeGithub({ci:'failure'});
   assert.equal((await requestCodexReview({github:red,record:rec(),task})).status,'held_live');
 });
+
+test('authenticated running Codex summary on current head suppresses second trigger',async()=>{
+  const body='<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 '+
+    JSON.stringify({code_review:{commit_sha:head,status:'running',
+      has_any_findings:null,has_unresolved_findings:null}})+' -->';
+  const gh=fakeGithub({comments:[{
+    user:{login:'chatgpt-codex-connector[bot]'},body,
+    created_at:'2026-11-10T11:00:00Z'
+  }]});
+  const result=await requestCodexReview({github:gh,record:rec(),task});
+  assert.equal(result.status,'already_running');
+  assert.equal(gh.posted.length,0);
+});
