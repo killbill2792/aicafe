@@ -49,6 +49,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
        live.dispatcher_only))
     return {status:'blocked',reasons:['adhoc_base_or_owner_merge_changed']};
   if (live.head_sha !== record.head_sha || live.ci_state !== 'success' ||
+      live.repo_marker_mismatch ||
       live.sensitive_owner_block || (!prepareReady &&
         (live.codex_state !== 'clean' ||
          live.codex_reviewed_sha !== record.head_sha ||

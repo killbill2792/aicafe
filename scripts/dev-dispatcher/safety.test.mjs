@@ -55,3 +55,15 @@ test('chat-written field failures retain exact annotation and fix text',async()=
  assert.match(failureInstruction([{message:'vision version mismatch: expected v12'}]),/vision version mismatch: expected v12\nFix:/);
  assert.equal(failureInstruction([{message:'TypeScript error'}]),null);
 });
+
+test('only an actual repo marker mismatch blocks the existing merge decision',async()=>{
+ const {mergeGate,readyGate,decideNudge}=await import('./core.mjs');
+ const good={draft:false,pr_number:17,head_sha:'a'.repeat(40),ci_state:'success',
+   codex_state:'clean',codex_reviewed_sha:'a'.repeat(40),threads_resolved:true,
+   mergeable:true,approved:true,conversation_ref:'https://chatgpt.com/c/test',
+   github_state:'open',task_id:'T'};
+ assert.equal(mergeGate(good).eligible,true);
+ assert.equal(mergeGate({...good,repo_marker_mismatch:true}).reasons.includes('wrong_repository'),true);
+ assert.equal(readyGate({...good,draft:true,repo_mismatch:{expected:'x/y',actual:'a/b'}}).eligible,false);
+ assert.equal(decideNudge({...good,repo_marker_mismatch:true,repo_marker_failure:'wrong repo'}).action,'ci_failed');
+});
