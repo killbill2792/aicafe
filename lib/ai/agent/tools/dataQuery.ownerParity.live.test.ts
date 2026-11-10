@@ -173,6 +173,25 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   const leak=(await client.query<{n:number}>("select count(*)::integer n from public.toast_records_for($1,$2,$3)\n where data->>'guid' in ('other-cafe-cash','poison-cash','poison-stock','poison-time')",
    [biz.id,prior,biz.today])).rows[0].n;
   expect(leak).toBe(0);
+  // Independent SQL truths are shared by the free preflight and the real agent
+  // assertions; a broken bind cannot silently burn a paid Luna run.
+  const namedQuestions=[
+   {question:"For current Toast order GUID "+firstOrderGuid+
+     ", what is this customer's first name? Answer exactly Name: X.",
+    truth:"select data->'customer'->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='order' and record_ref=$4",ref:firstOrderGuid},
+   {question:"For current Toast employee GUID "+staffGuid+
+     ", what is this employee's first name? Answer exactly Name: X.",
+    truth:"select data->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
+  ];
+  const familyQuestions=[
+   {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
+    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,biz.today]},
+   {question:"For current Toast stock item GUID "+stockGuid+
+     ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
+    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
+   {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
+    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
+  ];
   // Test the source/fixture contract at zero model cost. Paid acceptance must
   // still execute the registered Supervisor, and never sets SQL_ONLY.
   if(sqlOnly){
@@ -180,6 +199,17 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
     [biz.id,prior,biz.today]);
    expect(expected.rows[0].n).toBeGreaterThanOrEqual(3);
+   // Exact same independently sourced truth SQL and bound argument arrays as
+   // the real-agent test; no provider/model request in SQL-only mode.
+   for(const {question,truth,ref} of namedQuestions){
+    const truthRow=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0];
+    expect(truthRow?.answer,question).toBeTruthy();
+   }
+   for(const {question,truth,args} of familyQuestions){
+    const truthRow=(await client.query<{n:number|string|null}>(truth,args)).rows[0];
+    expect(truthRow?.n,question).not.toBeNull();
+    expect(truthRow?.n,question).not.toBeUndefined();
+   }
    return;
   }
 
@@ -243,14 +273,6 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   // These real turns close the signed POS0e gap not covered by the earlier
   // discount-only test. Expected facts come from the SAME disposable database
   // transaction, not the model, snapshots or copied fixture guesses.
-  const namedQuestions=[
-   {question:"For current Toast order GUID "+firstOrderGuid+
-     ", what is this customer's first name? Answer exactly Name: X.",
-    truth:"select data->'customer'->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='order' and record_ref=$4",ref:firstOrderGuid},
-   {question:"For current Toast employee GUID "+staffGuid+
-     ", what is this employee's first name? Answer exactly Name: X.",
-    truth:"select data->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
-  ];
   for(const {question,truth,ref} of namedQuestions){
    const expected=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0]?.answer;
    expect(expected,question).toBeTruthy();
@@ -262,15 +284,6 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    expect(turn.text,question+"; "+safeFailureDetails(turn,receiptStart))
     .toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
   }
-  const familyQuestions=[
-   {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
-    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,biz.today]},
-   {question:"For current Toast stock item GUID "+stockGuid+
-     ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
-    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
-   {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
-    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
-  ];
   for(const {question,truth,label,args} of familyQuestions){
    const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
    expect(expected,question).not.toBeNull();
