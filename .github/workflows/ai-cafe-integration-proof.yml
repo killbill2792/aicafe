@@ -15,9 +15,11 @@ on:
 permissions:
   contents: read
   pull-requests: read
+# Preserve serialized trusted-main integration proofs. Draft PR proof is isolated
+# per PR and superseded heads are cancelled, never queued behind merged-main.
 concurrency:
-  group: aicafe-main-integration
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('aicafe-pos0f-pr-{0}', github.event.pull_request.number) || 'aicafe-main-integration' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   integrated-main:
     if: github.event_name != 'pull_request'
