@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { requestCodexReview, codexWatchDecision, codexWatchMinutes, inspectCodexWatch, rerequestCodexReview } from './codex-review.mjs';
+import { requestCodexReview,codexWatchDecision,codexWatchMinutes,inspectCodexWatch } from './codex-review.mjs';
 import { acceptanceDigest } from './acceptance-runner.mjs';
 
 const head='a'.repeat(40), base='b'.repeat(40);
@@ -58,13 +58,13 @@ test('existing current-head dispatcher request is not duplicated',async()=>{
   assert.equal(github.posted.length,0);
 });
 
-test('green current head triggers Codex even for draft with no coder-done or acceptance',async()=>{
+test('draft waits for automatic Codex on ready; no manual request',async()=>{
   const github=fakeGithub({draft:true});
   const current={...rec(),draft:true,coder_done:false,acceptance_evidence:null};
   const outcome=await requestCodexReview({github,record:current,task,
     records:{parent:{status:'draft_open'}}});
-  assert.equal(outcome.status,'requested');
-  assert.equal(github.posted.length,1);
+  assert.equal(outcome.status,'held');
+  assert.equal(github.posted.length,0);
 });
 test('red check, older head receipt and sensitive owner hold do not trigger Codex',async()=>{
   for(const changes of [
@@ -102,100 +102,73 @@ test('live current-head in-progress Codex signal holds without posting',async()=
   assert.equal(gh.posted.length,0);
 });
 
-const requestedAt='2026-11-10T10:00:00Z';
-const watchdogRecord=()=>({...rec(),codex_review_requested_sha:head,codex_state:'pending'});
-const firstRequest={id:10,created_at:requestedAt,author_association:'OWNER',
-  user:{login:'killbill2792'},body:'@codex review\n<!-- aicafe-dispatcher-codex-review:'+head+' -->'};
-const secondRequest={id:11,created_at:'2026-11-10T10:21:00Z',author_association:'OWNER',
-  user:{login:'killbill2792'},body:'@codex review\n<!-- aicafe-dispatcher-codex-rerequest:'+head+' -->'};
-const decision=(at,comments=[firstRequest],extras={})=>codexWatchDecision({
-  record:watchdogRecord(),comments,now:Date.parse(at),minutes:20,...extras
+test('five-minute push and ready settle windows suppress duplicate requests',async()=>{
+ const gh=fakeGithub(),now=new Date().toISOString();
+ assert.equal((await requestCodexReview({github:gh,record:{...rec(),last_commit_at:now},task})).status,'held');
+ assert.equal((await requestCodexReview({github:gh,record:{...rec(),last_github_activity:now},task})).status,'held');
+ assert.equal((await requestCodexReview({github:gh,record:{...rec(),ready_transition_at:now},task})).status,'held');
+ gh.request=async(path)=>path==='/pulls/423'
+  ? {state:'open',draft:false,created_at:now,head:{sha:head},base:{sha:base}}
+  : Promise.reject(Error('Unexpected '+path));
+ assert.equal((await requestCodexReview({github:gh,record:rec(),task})).status,'automatic_review_grace');
+ assert.equal(gh.posted.length,0);
 });
-test('watchdog 20-minute default and explicit override never rushes an existing request',()=>{
-  assert.equal(codexWatchMinutes(),20);
-  assert.equal(codexWatchMinutes('9'),9);
-  assert.equal(codexWatchMinutes('bad'),20);
-  assert.equal(decision('2026-11-10T10:19:59Z').status,'pending');
-  assert.equal(decision('2026-11-10T10:20:00Z').status,'rerequest');
-  assert.equal(codexWatchDecision({record:watchdogRecord(),comments:[firstRequest],
-    now:Date.parse('2026-11-10T10:09:00Z'),minutes:9}).status,'rerequest');
+test('dispatcher-only owner-merge PR never requests Codex',async()=>{
+ const gh=fakeGithub();
+ assert.equal((await requestCodexReview({github:gh,record:{
+   ...rec(),adhoc:true,dispatcher_only:true},task:null})).status,'held');
+ assert.equal(gh.posted.length,0);
 });
-test('review, running bot receipt or connector reaction suppresses retry and escalation',()=>{
-  assert.equal(decision('2026-11-10T10:41:00Z',[firstRequest,secondRequest],{
-    reviews:[{commit_id:head,user:{login:'chatgpt-codex-connector'}}]}).status,'receipt');
-  const running='<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 '+
-    JSON.stringify({code_review:{commit_sha:head,status:'running',has_any_findings:null,
-      has_unresolved_findings:null}})+' -->';
-  assert.equal(decision('2026-11-10T10:41:00Z',[firstRequest,secondRequest,{
-    user:{login:'chatgpt-codex-connector[bot]'},body:running}]).status,'receipt');
-  assert.equal(decision('2026-11-10T10:41:00Z',[firstRequest,secondRequest],{
-    reactions:[{content:'+1',user:{login:'chatgpt-codex-connector[bot]'}}]}).status,'receipt');
-  assert.equal(decision('2026-11-10T10:41:00Z',[firstRequest,secondRequest],{
-    reactions:[{content:'+1',user:{login:'some-other-bot'}}]}).status,'escalate');
+ 
+const watchRecord=()=>({...rec(),codex_review_requested_sha:head,codex_state:'pending'});
+const firstRequest={id:10,created_at:'2026-11-10T10:00:00Z',author_association:'OWNER',
+ user:{login:'killbill2792'},body:'@codex review\n<!-- aicafe-dispatcher-codex-review:'+head+' -->'};
+const decision=(at,extras={})=>codexWatchDecision({record:watchRecord(),comments:[firstRequest],
+ now:Date.parse(at),...extras});
+test('watchdog times out once to referee without ever issuing another request',()=>{
+ assert.equal(codexWatchMinutes(),20);
+ assert.equal(codexWatchMinutes('9'),9);
+ assert.equal(codexWatchMinutes('invalid'),20);
+ assert.equal(decision('2026-11-10T10:19:59Z').status,'pending');
+ assert.deepEqual(decision('2026-11-10T10:20:00Z'),{status:'escalate',head_sha:head});
+ assert.equal(decision('2026-11-10T10:30:00Z').status,'escalate');
+ assert.equal(decision('2026-11-10T10:09:00Z',{minutes:9}).status,'escalate');
 });
-test('exact head and two request ceiling hold after retry, with no third request',()=>{
-  assert.equal(decision('2026-11-10T10:40:59Z',[firstRequest,secondRequest]).status,'pending');
-  assert.deepEqual(decision('2026-11-10T10:41:00Z',[firstRequest,secondRequest]),
-    {status:'escalate',head_sha:head,attempts:2});
-  assert.equal(decision('2026-11-10T12:00:00Z',[firstRequest,secondRequest]).status,'escalate');
-  const manual={...firstRequest,id:12,body:'@codex review',created_at:'2026-11-10T10:21:00Z'};
-  assert.equal(decision('2026-11-10T10:42:00Z',[firstRequest,manual]).status,'escalate');
-  assert.equal(codexWatchDecision({record:{...watchdogRecord(),head_sha:'f'.repeat(40)},
-    comments:[firstRequest],now:Date.parse('2026-11-10T11:00:00Z')}).status,'held');
-  assert.equal(codexWatchDecision({record:{...watchdogRecord(),codex_reviewed_sha:head},
-    comments:[firstRequest],now:Date.parse('2026-11-10T11:00:00Z')}).status,'held');
-  assert.equal(decision('2026-11-10T11:00:00Z',[{...firstRequest,
-    body:'<!-- aicafe-dispatcher-codex-review:'+head+' -->',author_association:'NONE',
-    user:{login:'attacker'}}]).status,'no_verified_request');
+test('Codex review, running summary and exact GitHub reaction suppress escalation',()=>{
+ assert.equal(decision('2026-11-10T11:00:00Z',{reviews:[{commit_id:head,
+  user:{login:'chatgpt-codex-connector'}}]}).status,'receipt');
+ const running='<!-- codex-review-state:v1 '+JSON.stringify({code_review:
+   {commit_sha:head,status:'running',has_any_findings:null,has_unresolved_findings:null}})+' -->';
+ assert.equal(decision('2026-11-10T11:00:00Z',{comments:[firstRequest,
+  {user:{login:'chatgpt-codex-connector[bot]'},body:running}]}).status,'receipt');
+ assert.equal(decision('2026-11-10T11:00:00Z',{reactions:[{
+  user:{login:'chatgpt-codex-connector[bot]'},content:'eyes'}]}).status,'receipt');
+ assert.equal(decision('2026-11-10T11:00:00Z',{reactions:[{
+  user:{login:'other-bot'},content:'eyes'}]}).status,'escalate');
 });
-test('watchdog checks GitHub PR head, reviews and comment reactions, then sends one exact retry',async()=>{
-  const posted=[], requests=[];
-  let replies=[],comments=[firstRequest],prReactions=[];
-  const github={
-    request:async(path,opts)=>{
-      requests.push(path);
-      if(path==='/pulls/423') return {state:'open',head:{sha:head}};
-      if(path==='/issues/423/comments'&&opts?.method==='POST'){
-        const body=JSON.parse(opts.body).body;posted.push(body);return {id:11};
-      }
-      throw Error('Unexpected GitHub request '+path);
-    },
-    paginated:async(path)=>{
-      if(path==='/issues/423/comments')return comments;
-      if(path==='/issues/423/reactions')return prReactions;
-      if(path==='/pulls/423/reviews')return [];
-      if(path==='/issues/comments/10/reactions')return replies;
-      if(path==='/issues/comments/11/reactions')return [];
-      throw Error('Unexpected paginated request '+path);
-    }
-  };
-  const now=Date.parse('2026-11-10T10:21:00Z');
-  assert.equal((await inspectCodexWatch({github,record:watchdogRecord(),now})).status,'rerequest');
-  assert.equal((await rerequestCodexReview({github,record:watchdogRecord(),now})).status,'codex_rerequested');
-  assert.equal(posted.length,1);
-  assert.match(posted[0],/@codex review/);
-  assert.match(posted[0],/aicafe-dispatcher-codex-rerequest:/);
-  comments=[firstRequest,secondRequest];
-  assert.equal((await rerequestCodexReview({github,record:watchdogRecord(),
-    now:Date.parse('2026-11-10T10:42:00Z')})).status,'escalate');
-  assert.equal(posted.length,1);
-  replies=[{user:{login:'chatgpt-codex-connector[bot]'},content:'+1'}];
-  assert.equal((await inspectCodexWatch({github,record:watchdogRecord(),
-    now:Date.parse('2026-11-10T10:42:00Z')})).status,'receipt');
-  assert.equal(posted.length,1);
-  replies=[];
-  prReactions=[{content:'+1',user:{login:'chatgpt-codex-connector[bot]'},created_at:'2026-11-10T10:12:00Z'}];
-  assert.equal((await inspectCodexWatch({github,record:watchdogRecord(),now:Date.parse('2026-11-10T10:42:00Z')})).status,'receipt');
+test('unverified commenter and changed SHA never justify a watchdog alert',()=>{
+ const fake={...firstRequest,user:{login:'stranger'},author_association:'NONE'};
+ assert.equal(decision('2026-11-10T11:00:00Z',{comments:[fake]}).status,'no_verified_request');
+ assert.equal(decision('2026-11-10T11:00:00Z',{record:{...watchRecord(),head_sha:'f'.repeat(40)}}).status,'held');
+ assert.equal(decision('2026-11-10T11:00:00Z',{record:{...watchRecord(),codex_reviewed_sha:head}}).status,'held');
 });
-test('watchdog referee uses existing owner-alert queue without a new gate',async()=>{
-  const {queueOwnerAlerts}=await import('./alerts.mjs');
-  const state={tasks:{child:{pr_number:423,head_sha:head,codex_referee_sha:head}},actions:{}};
-  const once=queueOwnerAlerts(state);
-  assert.equal(Object.values(once.owner_alerts).filter(n=>n.kind==='codex_watchdog').length,1);
-  const twice=queueOwnerAlerts(once);
-  assert.equal(Object.values(twice.owner_alerts).filter(n=>n.kind==='codex_watchdog').length,1);
-  const newHead=structuredClone(twice);
-  newHead.tasks.child.head_sha='f'.repeat(40);
-  const refreshed=queueOwnerAlerts(newHead);
-  assert.equal(Object.values(refreshed.owner_alerts).filter(n=>n.kind==='codex_watchdog'&&n.status==='planned').length,0);
+test('GitHub watchdog inspects receipts and never POSTs another Codex request',async()=>{
+ let posts=0,reactions=[];
+ const gh={request:async(path,opts)=>{
+  if(opts?.method==='POST')posts++;
+  if(path==='/pulls/423')return {state:'open',head:{sha:head}};
+  throw Error('Unexpected GitHub request '+path);
+ },paginated:async path=>{
+  if(path==='/issues/423/comments')return [firstRequest];
+  if(path==='/pulls/423/reviews')return [];
+  if(path==='/issues/423/reactions')return reactions;
+  if(path==='/issues/comments/10/reactions')return [];
+  throw Error('Unexpected paginated request '+path);
+ }};
+ const at=Date.parse('2026-11-10T11:00:00Z');
+ assert.equal((await inspectCodexWatch({github:gh,record:watchRecord(),now:at})).status,'escalate');
+ reactions=[{user:{login:'chatgpt-codex-connector[bot]'},content:'+1',
+  created_at:'2026-11-10T10:21:00Z'}];
+ assert.equal((await inspectCodexWatch({github:gh,record:watchRecord(),now:at})).status,'receipt');
+ assert.equal(posts,0);
 });

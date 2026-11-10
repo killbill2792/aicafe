@@ -2,7 +2,7 @@
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
-import { requestCodexReview, inspectCodexWatch, rerequestCodexReview, codexWatchMinutes } from "./codex-review.mjs";
+import { requestCodexReview, inspectCodexWatch, codexWatchMinutes } from "./codex-review.mjs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions, editableFiles } from "./core.mjs";
@@ -13,7 +13,9 @@ import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure, dispatchLandingCheck } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
-import { queueOwnerAlerts } from "./alerts.mjs";
+import { queueOwnerAlerts,applyOwnerStartApprovals } from "./alerts.mjs";
+import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
+import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
@@ -33,7 +35,9 @@ async function main() {
   const gh = new GitHubFacts({ repo, token: githubToken });
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
   async function observe(state) {
-    const snapshot = await gh.snapshot();
+    const mainRef = await gh.request("/git/ref/heads/main");
+    const mainSha=mainRef.object?.sha || null;
+    const snapshot = await gh.snapshot(mainSha);
     const closedByPr = {};
     const openNumbers = new Set(snapshot.map(x => x.pr_number));
     // Check actual merge metadata; disappearing from the open list is not proof of merge.
@@ -41,19 +45,19 @@ async function main() {
       if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number)) continue;
       const closed = await gh.request(`/pulls/${rec.pr_number}`);
       const mergeSha=closed.merged_at ? closed.merge_commit_sha || null : null;
+      // Trust only the verified Actions bot marker for this exact merge SHA.
       let landingFailure=null;
-      // Only recent merges need a landing receipt; historical merged PRs must
-      // not add unbounded API traffic to each existing five-minute tick.
-      const recentlyMerged=closed.merged_at && Date.now()-Date.parse(closed.merged_at) < 2*60*60*1000;
-      if (mergeSha && recentlyMerged && !rec.landing_failure) {
+      const recent=closed.merged_at && Date.now()-Date.parse(closed.merged_at)<2*60*60*1000;
+      if(mergeSha && recent && !rec.landing_failure) {
         const issueComments=await gh.paginated('/issues/'+rec.pr_number+'/comments','comments');
         landingFailure=landingFailureForMerge(issueComments,mergeSha);
       }
-      closedByPr[rec.pr_number] = { merged:Boolean(closed.merged_at),
-        merge_sha:mergeSha,landing_failure:landingFailure };
+      closedByPr[rec.pr_number]={merged:Boolean(closed.merged_at),
+        merge_sha:mergeSha,landing_failure:landingFailure};
     }
-    const mainRef = await gh.request("/git/ref/heads/main");
-    return { snapshot, closedByPr, mainSha: mainRef.object?.sha || null };
+    const history=await gh.request('/actions/workflows/ai-cafe-dev-dispatcher.yml/runs?event=schedule&per_page=3').catch(()=>null);
+    const previous=(history?.workflow_runs||[]).find(r=>r.created_at && r.id!==Number(process.env.GITHUB_RUN_ID));
+    return {snapshot,closedByPr,mainSha,lastScheduleAt:previous?.created_at || null};
   }
   function reconcile(state, observed) {
     const initiallyLinked = linkPullRequests(state, observed.snapshot);
@@ -87,8 +91,10 @@ async function main() {
     const withFeedback = reconcileReceiptFeedback(applied.state,{
       ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
     },new Date().toISOString());
-    const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
-    const copy = queueOwnerAlerts(safety,{unmappedPrs:linked.unmapped,queue});
+    const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
+      minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
+    const copy = queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
+      {unmappedPrs:linked.unmapped,queue});
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
@@ -152,21 +158,29 @@ async function main() {
     for (const [id, rec] of Object.entries(copy.tasks)) {
       const normal=decideNudge(rec, Date.now());
       const proposal=normal.kind==='propose' ? normal :
-        rec.stall_pending && !rec.stall_escalate ? {kind:'propose',action:'no_push_after_prompt',key:rec.stall_pending} : normal;
-      // A not-yet-claimed checklist becomes obsolete as soon as its actionable
-      // state changes. Never cancel claimed/uncertain sends or invent receipts.
-      for (const action of Object.values(copy.actions)) {
-        if (action.task_id !== id || action.status !== 'planned' ||
-            ['assign','landing_failed'].includes(action.type)) continue;
-        if (proposal.kind !== 'propose' || action.delivery?.action_id !== proposal.key)
-          action.status = 'cancelled_state_changed';
+        rec.stall_pending && !rec.stall_escalate
+          ? {kind:'propose',action:'no_push_after_prompt',key:rec.stall_pending} : normal;
+      // Never cancel a current-head findings prompt unless the replacement is
+      // built successfully. Other obsolete undelivered prompts may be dropped.
+      const superseded=[];
+      for(const action of Object.values(copy.actions)) {
+        if(action.task_id!==id||action.status!=='planned'||['assign','landing_failed'].includes(action.type))continue;
+        if(action.delivery?.action_id===proposal.key)continue;
+        if(rec.codex_state==='findings'&&action.type==='codex_comments'&&
+           action.head_sha===rec.head_sha&&proposal.kind!=='propose')continue;
+        superseded.push(action);
       }
-      // Exactly one live prompt per PR, including any claimed/uncertain action.
-      if (Object.values(copy.actions).some(a =>
-          ["planned", "claimed", "uncertain"].includes(a.status) &&
-          (a.task_id === id || (Number.isInteger(rec.pr_number) &&
-            copy.tasks[a.task_id]?.pr_number === rec.pr_number)))) continue;
-      if (proposal.kind !== "propose") continue;
+      // Exactly one live prompt per PR. Superseded planned actions are counted
+      // only after a replacement was actually produced.
+      if(Object.values(copy.actions).some(a=>
+          ['planned','claimed','uncertain'].includes(a.status)&&
+          !superseded.includes(a)&&
+          (a.task_id===id||(Number.isInteger(rec.pr_number)&&
+            copy.tasks[a.task_id]?.pr_number===rec.pr_number))))continue;
+      if(proposal.kind!=='propose'){
+        for(const stale of superseded)stale.status='cancelled_state_changed';
+        continue;
+      }
       if (!copy.actions[proposal.key]) {
         const task = taskById.get(id);
         // Only approved, exactly owned tasks from the trusted queue can reach Dave.
@@ -191,6 +205,7 @@ async function main() {
           status: "planned", delivery_owner: "muse",
           head_sha: rec.head_sha || null,
           created_at: now, delivery };
+        for(const stale of superseded)stale.status='cancelled_state_changed';
         nudges.push({ task_id: id, action: proposal.action });
       }
     }
@@ -219,13 +234,22 @@ async function main() {
     // URLs. Keep a per-PR index only in the private ledger.
     copy.pr_chat_links ||= {};
     for (const [id, rec] of Object.entries(copy.tasks)) {
-      if (!Number.isInteger(rec.pr_number) || !rec.conversation_ref ||
-          rec.github_state !== 'open') continue;
-      copy.pr_chat_links[String(rec.pr_number)] = {
-        task_id:id,conversation_url:rec.conversation_ref,
-        head_sha:rec.head_sha || null,
-        updated_at:rec.last_submission_at || now
-      };
+      if (!Number.isInteger(rec.pr_number)) continue;
+      const indexed=copy.pr_chat_links[String(rec.pr_number)];
+      if (indexed?.conversation_url && (!rec.conversation_ref ||
+          Date.parse(indexed.updated_at||'') > Date.parse(rec.last_submission_at||''))) {
+        rec.conversation_ref=indexed.conversation_url;
+        rec.conversation_url=indexed.conversation_url;
+      }
+      if (!rec.conversation_ref) continue;
+      rec.conversation_url=rec.conversation_ref;
+      if (!indexed || indexed.conversation_url !== rec.conversation_ref ||
+          indexed.head_sha !== (rec.head_sha||null))
+        copy.pr_chat_links[String(rec.pr_number)] = {
+          task_id:id,conversation_url:rec.conversation_ref,
+          head_sha:rec.head_sha || null,
+          updated_at:rec.last_submission_at || now
+        };
     }
     // Proposals persist for later authorized delivery, never sent by this script.
     return { state: copy, assigned, nudges };
@@ -240,47 +264,71 @@ async function main() {
     : {accepted:[],rejected:[],complete:false,scan_error:'private_ledger_unavailable'};
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
+  proposed.state=recordDrift(trackScheduleGap(proposed.state,{
+    eventName:process.env.GITHUB_EVENT_NAME,now:new Date().toISOString(),
+    observedScheduleAt:observed.lastScheduleAt}),current,observed.snapshot);
   const unmappedPrs = linkPullRequests(current, observed.snapshot).unmapped;
+  async function applyCodexProvenance(state, prior) {
+    for (const [id,rec] of Object.entries(state.tasks)) {
+      const before=prior.tasks?.[id];
+      if(!rec.head_sha || rec.github_state!=='open')continue;
+      if(rec.codex_state==='clean' && rec.codex_reviewed_sha===rec.head_sha) {
+        // Authenticate a direct Codex receipt before recording an anchor.
+        rec.codex_clean_head_sha=rec.head_sha;
+        rec.codex_clean_base_sha=rec.base_merge_sha || rec.base_sha;
+        rec.codex_carried_over=null;
+        continue;
+      }
+      if((rec.codex_state==='findings'&&rec.codex_reviewed_sha===rec.head_sha)||
+         rec.codex_in_progress_sha===rec.head_sha){
+        rec.codex_carried_over=null;continue;
+      }
+      if(before?.head_sha===rec.head_sha &&
+         before.codex_carried_over?.case==='B' &&
+         before.codex_carried_over.base_after_sha===rec.base_sha){
+        rec.codex_carried_over=before.codex_carried_over;
+        rec.codex_state='clean';rec.codex_reviewed_sha=rec.head_sha;
+        continue;
+      }
+      if(!before || before.head_sha===rec.head_sha)continue;
+      const evidence=await classifyCodexChange({github:gh,previous:before,current:rec});
+      rec.codex_change_case=evidence;
+      rec.codex_clean_head_sha=before.codex_clean_head_sha ||
+        (before.codex_state==='clean' && before.codex_reviewed_sha===before.head_sha
+          ?before.head_sha:null);
+      rec.codex_clean_base_sha=before.codex_clean_base_sha ||
+        (rec.codex_clean_head_sha===before.head_sha?before.base_merge_sha:null);
+      rec.codex_carried_over=evidence.case==='B'&&rec.codex_state!=='findings'?evidence:null;
+      if(rec.codex_carried_over){
+        rec.codex_state='clean';rec.codex_reviewed_sha=rec.head_sha;
+      }
+    }
+    return state;
+  }
   async function promoteIntegration(state) {
-    const required = ["TypeScript", "ESLint", "Full regression tests",
-      "Dispatcher regression tests", "Production build", "Capability integration scenarios"];
-    for (const [id, rec] of Object.entries(state.tasks)) {
-      if (rec.status !== "merged" || !rec.merge_sha) continue;
-      const expected = taskById.get(id)?.acceptance;
-      const submitted = rec.acceptance_evidence?.acceptance;
-      if (!Array.isArray(expected) || !expected.length ||
-          !Array.isArray(submitted) || submitted.length !== expected.length) continue;
-      // Token-initiated squash merges require an explicit workflow_dispatch;
-      // manual merges use push. Only an executed proof on exact merged SHA counts.
-      // Proof runs may fall beyond GitHub's first page during parallel merges.
-      // Exhaust the bounded workflow history instead of leaving tasks unproven.
-      const runs = await gh.workflowRuns('ai-cafe-integration-proof.yml', 'branch=main');
-      for (const run of runs) {
-        if (run.name !== 'AI CAFE Integration Proof' || run.head_branch !== 'main' ||
-            !['push','workflow_dispatch'].includes(run.event) ||
-            run.status !== 'completed' || run.conclusion !== 'success' ||
-            (run.event === 'push' && run.head_sha !== rec.merge_sha)) continue;
-        const jobs = await gh.workflowJobs(run.id);
-        const job = jobs.find(j => j.name === 'Required merged-main integration checks' &&
-          j.status === 'completed' && j.conclusion === 'success');
-        if (!job || !required.every(name => job.steps?.some(step => step.name === name &&
-          step.status === 'completed' && step.conclusion === 'success'))) continue;
-        const artifact = await gh.integrationProof(run.id);
-        if (!artifact || artifact.task_id !== id || artifact.run_id !== run.id ||
-            artifact.head_sha !== rec.merge_sha || artifact.base_sha !== rec.merge_sha ||
-            artifact.acceptance_digest !== acceptanceDigest(submitted) ||
-            !Array.isArray(artifact.acceptance) || artifact.acceptance.length !== expected.length ||
-            !artifact.acceptance.every((item,i) => item.id === String(i+1) &&
-              item.command === submitted[i].command && item.test_file === submitted[i].test_file &&
-              item.result === 'passed')) continue;
-        const proof = {main_sha:rec.merge_sha,merged_sha:rec.merge_sha,
-          workflow_run_id:run.id,conclusion:'success',required_scenarios:artifact.acceptance};
-        if (integrationStatus({merged_sha:rec.merge_sha,main_sha:rec.merge_sha,
-          proof,expectedAcceptance:expected}) === 'integrated_proven') {
-          rec.integration_proof = proof;
-          rec.status = 'integrated_proven';
-          break;
-        }
+    const pending=Object.entries(state.tasks).filter(([,r])=>
+      r.status==='merged' && /^[a-f0-9]{40}$/.test(r.merge_sha||''));
+    if(!pending.length)return;
+    const runs=await gh.workflowRuns('ai-cafe-integration-proof.yml','branch=main');
+    for(const [id,rec] of pending) for(const run of runs) {
+      if(run.name!=='AI CAFE Integration Proof' || run.head_branch!=='main' ||
+         !['push','workflow_dispatch'].includes(run.event) ||
+         run.status!=='completed'||run.conclusion!=='success'||
+         (run.event==='push'&&run.head_sha!==rec.merge_sha))continue;
+      const jobs=await gh.workflowJobs(run.id);
+      const job=jobs.find(j=>j.name==='Required merged-main integration checks'&&
+        j.status==='completed'&&j.conclusion==='success');
+      if(!job)continue;
+      // Skipped acceptance cannot promote integration even if the job is green.
+      const artifact=await gh.integrationProof(run.id).catch(()=>null);
+      const proof=verifiedMergedProof({run,job,artifact,taskId:id,mergeSha:rec.merge_sha});
+      const task=taskById.get(id);
+      if(task&&proof&&integrationStatus({merged_sha:rec.merge_sha,
+        main_sha:rec.merge_sha,proof,expectedAcceptance:task.acceptance})==='integrated_proven') {
+        rec.integration_proof=proof;rec.integration_dispatch='verified';
+        rec.status='integrated_proven';
+        console.log('drift_fixed: integration PR #'+rec.pr_number+' proof run '+run.id);
+        break;
       }
     }
   }
@@ -291,8 +339,11 @@ async function main() {
     // identical state every five minutes (avoids 288 empty commits per day).
     persisted = await ledger.transaction(async existing => {
       const latest = await observe(existing);
-      const next = reconcile(existing, latest).state;
+      let next = await applyCodexProvenance(reconcile(existing, latest).state,existing);
+      next=trackScheduleGap(next,{eventName:process.env.GITHUB_EVENT_NAME,
+        now:new Date().toISOString(),observedScheduleAt:latest.lastScheduleAt});
       await promoteIntegration(next);
+      next=recordDrift(next,existing,latest.snapshot);
       // Dependency proof is recorded for reporting, not an unsolicited chat prompt.
       // Integration may become proven during this same pass: queue the owner
       // review with the actual saved chat URL without a second delayed cycle.
@@ -329,62 +380,31 @@ async function main() {
       }
     }
   }
-  // Codex watchdog: only one additional request per immutable head, never a
-  // merge gate or a new scheduler. GitHub reviews/reactions are checked first.
-  if (commit && ledger) {
+  // Missing Codex receipt is a referee notice, never a second review request.
+  // The first request remains the only request for an immutable head.
+  if(commit && ledger) {
     const minutes=codexWatchMinutes(process.env.DISPATCH_CODEX_WATCH_MINUTES);
-    const currentTasks=persisted?.state?.tasks || proposed.state.tasks;
-    for (const [id, rec] of Object.entries(currentTasks)) {
-      if ((!taskById.has(id) && !rec.adhoc) || !rec.pr_number ||
-          rec.github_state!=='open' || rec.codex_review_requested_sha!==rec.head_sha) continue;
+    const tasks=persisted?.state?.tasks || proposed.state.tasks;
+    for(const [id,rec] of Object.entries(tasks)) {
+      if((!taskById.has(id) && !rec.adhoc) || !rec.pr_number ||
+         rec.github_state!=='open' || rec.codex_review_requested_sha!==rec.head_sha ||
+         rec.codex_referee_sha===rec.head_sha)continue;
       try {
         const decision=await inspectCodexWatch({github:gh,record:rec,minutes});
-        if (decision.status==='rerequest' && rec.codex_watchdog?.sha!==rec.head_sha) {
-          const reservationAt=new Date().toISOString();
-          const reservationId=String(process.env.GITHUB_RUN_ID||'local')+':'+id+':'+reservationAt;
-          const reserved=await ledger.transaction(latest=>{
-            const task=latest.tasks?.[id];
-            if (!task || task.head_sha!==rec.head_sha ||
-                task.codex_review_requested_sha!==rec.head_sha ||
-                task.codex_watchdog?.sha===rec.head_sha) return null;
-            task.codex_watchdog={sha:rec.head_sha,attempts:2,status:'reserved',
-              at:reservationAt,reservation_id:reservationId};
-            return latest;
-          });
-          if (reserved?.state?.tasks?.[id]?.codex_watchdog?.sha!==rec.head_sha ||
-              reserved?.state?.tasks?.[id]?.codex_watchdog?.status!=='reserved' ||
-              reserved.state.tasks[id].codex_watchdog.reservation_id!==reservationId) continue;
-          const outcome=await rerequestCodexReview({github:gh,record:rec,minutes});
-          if (outcome.status==='codex_rerequested') {
-            await ledger.transaction(latest=>{
-              const task=latest.tasks?.[id];
-              if (!task || task.head_sha!==rec.head_sha ||
-                  task.codex_watchdog?.status!=='reserved') return null;
-              task.codex_watchdog.status='sent';
-              task.codex_watchdog.event='codex_rerequested';
-              return latest;
-            });
-            console.log('Codex re-requested once for task '+id+' on '+rec.head_sha);
-          } else {
-            console.log('Codex retry suppressed for task '+id+': '+outcome.status);
-          }
-        } else if (decision.status==='escalate') {
-          await ledger.transaction(latest=>{
-            const task=latest.tasks?.[id];
-            if (!task || task.head_sha!==rec.head_sha ||
-                task.codex_referee_sha===rec.head_sha) return null;
-            task.codex_referee_sha=rec.head_sha;
-            task.codex_watchdog={sha:rec.head_sha,attempts:2,status:'escalated',
-              event:'codex_second_miss',at:new Date().toISOString()};
-            return queueOwnerAlerts(latest,{queue});
-          });
-        }
-      } catch(error) {
-        console.error('Codex watchdog task '+id+': '+error.message);
-      }
+        if(decision.status!=='escalate')continue;
+        await ledger.transaction(latest=>{
+          const task=latest.tasks?.[id];
+          if(!task || task.head_sha!==rec.head_sha ||
+             task.codex_review_requested_sha!==rec.head_sha ||
+             task.codex_referee_sha===rec.head_sha)return null;
+          task.codex_referee_sha=rec.head_sha;
+          task.codex_watchdog={sha:rec.head_sha,attempts:1,status:'escalated',
+            event:'codex_first_miss',at:new Date().toISOString()};
+          return queueOwnerAlerts(latest,{queue});
+        });
+      } catch(error) { console.error('Codex watchdog task '+id+': '+error.message); }
     }
   }
-
   // Only independently classified runner startup errors may be retried, once.
   if (commit && ledger && process.env.DISPATCH_TRANSIENT_CI_RETRY === "true") {
     for (const [id, rec] of Object.entries(proposed.state.tasks)) {
@@ -425,13 +445,32 @@ async function main() {
         } else console.log('Child #'+rec.pr_number+': branch maintenance held ('+result.reason+')');
         continue;
       }
-      // Ordinary main-based stale branches are refreshed automatically, never
-      // force-pushed. A new head must rerun all exact-head CI/acceptance/Codex.
+      // Ordinary main-based stale branches are refreshed without force-push.
+      // A new head reruns CI; Codex carry-over is allowed only for verified case B.
       if (rec.base_current === false && rec.base_branch === 'main' &&
           !(rec.draft === true && rec.ci_state !== 'success')) {
         try {
           const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
           console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
+          if(result.status==='updating') {
+            await ledger.transaction(state=>{
+              const saved=state.tasks[id];
+              if(!saved || saved.head_sha!==rec.head_sha)return null;
+              saved.codex_branch_update={old_head_sha:rec.head_sha,
+                new_base_sha:rec.base_sha,status:'accepted_no_conflicts',
+                at:new Date().toISOString()};
+              saved.codex_branch_conflict=null;
+              return state;
+            });
+          } else if(result.reason==='conflict_needs_coder') {
+            await ledger.transaction(state=>{
+              const saved=state.tasks[id];
+              if(!saved || saved.head_sha!==rec.head_sha)return null;
+              saved.codex_branch_conflict={old_head_sha:rec.head_sha,
+                at:new Date().toISOString()};
+              return state;
+            });
+          }
         } catch (error) {
           // A temporarily conflicting update must not stall other approved PRs.
           console.error('PR #'+rec.pr_number+' main branch update will retry: '+error.message);
@@ -447,7 +486,7 @@ async function main() {
       if (!rec.pr_number || rec.github_state !== "open") continue;
       const task = taskById.get(id);
       if ((!task && !rec.adhoc) || (rec.draft !== true && !autoMerge)) continue;
-      if (rec.adhoc && rec.dispatcher_only && rec.draft !== true) continue;
+      if (rec.adhoc && rec.dispatcher_only) continue; // owner-merge only
       const predecessorRecords = rec.adhoc ? [] : predecessorsForMerge(task, queue, proposed.state.tasks);
       // Ready transitions need only green CI, not coder-done. The later merge
       // is a separate fresh reconciliation, never the same snapshot.

@@ -11,11 +11,14 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
   const foundationDependents = new Set(queue?.dispatch_rules?.architecture_foundation_dependent_task_ids || []);
   const foundationProven = architectureFoundationReady(queue, state.tasks);
   for (const [id, rec] of Object.entries(state.tasks)) {
+    const landingAllowed=action=>rec.github_state==='merged' &&
+      action.type==='landing_failed' && action.head_sha===rec.merge_sha &&
+      typeof rec.landing_failure==='string' && rec.landing_failure.length>0;
     if (rec.adhoc === true) {
       for (const action of Object.values(state.actions)) {
         if (action.task_id === id && action.status === 'planned' &&
-            (rec.github_state !== 'open' ||
-             !['ci_failed','codex_comments','repair_conflict'].includes(action.type)))
+            ((rec.github_state !== 'open' && !landingAllowed(action)) ||
+             !['ci_failed','codex_comments','repair_conflict','no_push_after_prompt','landing_failed'].includes(action.type)))
           action.status = 'cancelled_adhoc_invalid';
       }
       continue;
@@ -46,7 +49,7 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
     }
     for (const action of Object.values(state.actions)) {
       if (action.task_id !== id || action.status !== 'planned') continue;
-      if (revoked || priorityHeld || architectureHeld || (prClosed && action.type !== 'assign')) {
+      if (revoked || priorityHeld || architectureHeld || (prClosed && action.type !== 'assign' && !landingAllowed(action))) {
         action.status = revoked ? 'cancelled_approval_changed' :
           priorityHeld ? 'cancelled_priority_gate' :
           architectureHeld ? 'cancelled_architecture_gate' : 'cancelled_pr_closed';

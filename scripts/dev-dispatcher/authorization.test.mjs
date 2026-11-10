@@ -68,7 +68,16 @@ test('released-proven record is never downgraded to merged or blocked',()=>{
   const changed = reconcileGithub(previous,[],{378:true});
   revalidateQueuedActions(changed,new Map());
   assert.equal(changed.tasks['5'].status,'released_proven');
-  assert.equal(changed.actions['old:5'].status,'cancelled_approval_changed');
+  assert.equal(changed.actions['old:5'].status,'cancelled_owner_state_changed');
+});
+test('reopened PR never rewrites historical proven status',()=>{
+ for(const status of ['integrated_proven','released_proven']){
+  const s=makeState({status,head_sha:'a'.repeat(40)});
+  const out=reconcileGithub(s,[{pr_number:390,head_sha:'b'.repeat(40),base_sha:'c'.repeat(40),draft:true,mergeable:true}]);
+  revalidateQueuedActions(out,new Map());
+  assert.equal(out.tasks['6'].status,status);
+  assert.equal(out.actions['fix:6'].status,'cancelled_stale_head');
+ }
 });
 test('revoking new sends does not erase already proven integration on same task',()=>{
   const s=makeState({status:'integrated_proven'});
@@ -160,4 +169,38 @@ test('architecture gate cancels unsent downstream work but preserves active PR a
   revalidateQueuedActions(started,new Map([['POS0b',b]]),gateQueue);
   assert.equal(started.tasks.POS0b.status,'review_fixing');
   assert.equal(started.actions['repair:POS0b'].status,'planned');
+});
+
+test('trusted post-merge failure survives reconciliation and stays eligible for one repair handoff',()=>{
+ const merge='f'.repeat(40),failure='<!-- landing-check-failure sha:'+merge+' -->\nreal error';
+ const s=makeState({github_state:'open',status:'review_fixing',head_sha:'a'.repeat(40)},
+  {type:'landing_failed',head_sha:merge});
+ s.tasks['6'].merge_sha=merge;
+ s.tasks['6'].landing_failure=failure;
+ const next=reconcileGithub(s,[],{390:{merged:true,merge_sha:merge,landing_failure:failure}});
+ assert.equal(next.tasks['6'].status,'merged');
+ assert.equal(next.tasks['6'].landing_failure,failure);
+ assert.equal(next.actions['fix:6'].status,'planned');
+ revalidateQueuedActions(next,tasks());
+ assert.equal(next.actions['fix:6'].status,'planned');
+ const again=reconcileGithub(next,[],{390:{merged:true,merge_sha:merge,landing_failure:null}});
+ assert.equal(again.tasks['6'].landing_failure,failure);
+ assert.equal(again.actions['fix:6'].status,'planned');
+});
+test('closed-PR landing authorization is exact merge-SHA scoped for queued and ad hoc tasks',()=>{
+ const merge='e'.repeat(40),failure='<!-- landing-check-failure sha:'+merge+' --> error';
+ for(const adHoc of [false,true]){
+  const rec={approved:true,github_state:'merged',status:'merged',merge_sha:merge,
+   landing_failure:failure,pr_number:390,adhoc:adHoc};
+  const id=adHoc?'ADHOC-390':'6';
+  if(!adHoc)rec.approval_hash=signed;
+  const make=(head_sha,type='landing_failed')=>({version:1,tasks:{[id]:rec},
+    actions:{landing:{task_id:id,type,head_sha,status:'planned'}}});
+  const authorized=make(merge);
+  revalidateQueuedActions(authorized,tasks());
+  assert.equal(authorized.actions.landing.status,'planned',id);
+  const stale=make('f'.repeat(40));
+  revalidateQueuedActions(stale,tasks());
+  assert.notEqual(stale.actions.landing.status,'planned',id);
+ }
 });

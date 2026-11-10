@@ -83,11 +83,12 @@ export function agentInstruction(action) {
   if (!d) throw new Error('Missing delivery');
   const destination = d.intent === 'start_new_chat'
     ? `Find the Project named ${JSON.stringify(d.project.name)} in the existing ${d.provider} Chrome tab and create a new chat INSIDE that project.`
-    : `Open EXACTLY this existing ${d.provider} conversation: ${d.conversation_url}. Never create another chat for this task.`;
+    : `Open EXACTLY this existing ${d.provider} conversation: ${d.conversation_url}. If and only if it is verified stale or inaccessible, Muse may open one continuation in the same project. Capture the real NEW URL and return continuation_of=${d.conversation_url}, continuation_reason=stale_chat in the signed receipt; never fabricate a URL.`;
   return [
     `You are the browser-only project coordinator. This is approved queue action ${JSON.stringify(action.key)} for project ${JSON.stringify(d.project.id)}.`,
     'Use the existing authenticated OpenClaw Chrome extension profile (chrome). Never use the isolated browser.',
     'Navigate adaptively by observing relevant navigation and composer controls; no fixed coordinates.',
+    ...(d.effort === 'high' ? ['Set the ChatGPT conversation thinking effort to High before submitting; record effort=high in the receipt.'] : []),
     destination,
     'If login, destination, project, composer, or permission is ambiguous, STOP without sending. Never guess.',
     'Do not use shell, filesystem, GitHub, code-editing tools, external APIs, or elevated permissions.',

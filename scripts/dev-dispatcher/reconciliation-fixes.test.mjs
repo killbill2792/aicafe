@@ -215,7 +215,7 @@ test('supported events reconcile, persist and publish Muse wake signals',()=>{
  const {events,unit,reconcile,persist,signal}=workflowRouting();
  for(const [event,type] of [['check_suite','completed'],['check_run','completed'],
   ['pull_request_review','submitted'],['issue_comment','created'],
-  ['pull_request','synchronize'],['workflow_run','completed']]){
+  ['workflow_run','completed']]){
   assert.ok(events.has(event),event);
   assert.ok(events.get(event)?.includes(type),event+' '+type);
   assert.equal(evaluateWorkflow(unit,{event}),true,event+' unit');
@@ -225,6 +225,12 @@ test('supported events reconcile, persist and publish Muse wake signals',()=>{
   assert.equal(evaluateWorkflow(persist,{event,enabled:'false'}),false,event+' disabled persist');
   assert.equal(evaluateWorkflow(signal,{event,enabled:'false'}),false,event+' disabled signal');
  }
+ // Raw PR updates may run tests but must not persist the private ledger.
+ assert.ok(events.get('pull_request')?.includes('synchronize'));
+ assert.equal(evaluateWorkflow(unit,{event:'pull_request'}),true);
+ assert.equal(evaluateWorkflow(reconcile,{event:'pull_request'}),false);
+ assert.equal(evaluateWorkflow(persist,{event:'pull_request'}),false);
+ assert.equal(evaluateWorkflow(signal,{event:'pull_request'}),false);
  assert.equal(evaluateWorkflow(unit,{event:'pull_request_review',trusted:false}),false);
  assert.equal(evaluateWorkflow(unit,{event:'check_run',app:'untrusted-app'}),false);
  assert.equal(evaluateWorkflow(signal,{event:'workflow_dispatch',manual:true}),true);

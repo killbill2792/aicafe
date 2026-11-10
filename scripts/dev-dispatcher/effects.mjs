@@ -2,6 +2,7 @@
 // Every irreversible action rechecks live GitHub facts; uncertainty blocks merging.
 import { mergeGate, readyGate } from './core.mjs';
 import { acceptanceDigest } from './acceptance-runner.mjs';
+import {verifyLiveCarryOver} from './codex-carryover.mjs';
 
 export function verifyEvidence(record, evidence) {
   if (!evidence || evidence.head_sha !== record.head_sha ||
@@ -62,12 +63,13 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
       (pr.base?.ref !== 'main' || live.base_branch !== 'main' ||
        live.dispatcher_only))
     return {status:'blocked',reasons:['adhoc_base_or_owner_merge_changed']};
+  const directClean=live.codex_state==='clean' && live.codex_reviewed_sha===record.head_sha;
+  const carriedClean=!prepareReady && !directClean &&
+    live.codex_state!=='findings' && live.codex_in_progress_sha!==live.head_sha &&
+    await verifyLiveCarryOver({github,record,live});
   if (live.head_sha !== record.head_sha || live.ci_state !== 'success' ||
-      live.repo_marker_mismatch ||
-      live.sensitive_owner_block || (!prepareReady &&
-        (live.codex_state !== 'clean' ||
-         live.codex_reviewed_sha !== record.head_sha ||
-         live.threads_resolved !== true)))
+      live.repo_marker_mismatch || live.sensitive_owner_block || (!prepareReady &&
+        ((!directClean && !carriedClean) || live.threads_resolved !== true)))
     return {status:'blocked',reasons:['live_checks_changed']};
   // Head and base may move between the first and final GitHub reads.
   const latest=await github.request(`/pulls/${record.pr_number}`);

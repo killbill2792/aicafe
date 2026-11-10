@@ -26,11 +26,14 @@ const digest = value => createHash('sha256').update(JSON.stringify(value)).diges
 // 'uses' additions cannot silently revoke an already-approved task.
 export function approvalSignature(task) {
   if (!task) return null;
-  return digest(['v2', ...approvalFields(task), editableFiles(task)]);
+  // v3: annotations, reviewer notes, owner direction and task titles do not
+  // revoke authorization. Only approved goal, immutable write scope and acceptance.
+  return digest(['v3',task.id,task.goal,editableFiles(task),task.acceptance]);
 }
 export function approvalMatches(task, signed) {
   if (!task || typeof signed !== 'string') return false;
   if (signed === approvalSignature(task)) return true;
+  if (signed === digest(['v2',...approvalFields(task),editableFiles(task)])) return true;
   // Historical v1 approvals were unversioned and sometimes omitted 'uses'
   // before the optional read-only import field was added. Accept either
   // historical shape without weakening exclusive-file / edits validation.
@@ -71,9 +74,10 @@ export function createAdhocDelivery({record,action,actionId}) {
     'Continue this SAME PR/chat; inspect exact head ' + record.head_sha +
       ', fix only relevant files, rerun checks and obtain clean exact-head Codex review.',
     'Authority: ' + REPO + '/blob/main/AGENTS.md',
+    'ChatGPT thinking effort: High. If acting on an owner instruction directly, note "Owner instruction: <one line>" in the PR.',
     'Do not merge dispatcher/workflow-only PRs; owner must merge those.'
   ].join('\n');
-  return {version:1,approval_signature_version:2,action_id:actionId,
+  return {version:1,approval_signature_version:3,effort:'high',action_id:actionId,
     project:{id:'aicafe',name:'AI CAFE'},approval_hash:record.approval_hash,
     provider:'chatgpt',intent:'continue_existing_chat',base_branch:record.base_branch || 'main',
     conversation_url:record.conversation_ref,task_id:record.task_id,prompt,prompt_hash:promptHash(prompt)};
@@ -190,7 +194,8 @@ export function createDelivery({ task, record, action, actionId }) {
       'Stacked child: keep coding/CI on parent base; NO rebase/Codex until parent merges.' : '',
     'Same approved task, same chat/PR. Respect owner questions, required acceptance, ' +
       'exact-head CI/Codex and existing merge/integration proof; no production/Vercel preview changes.',
-    ...links
+    ...links,
+    record.agent === 'chatgpt' ? 'ChatGPT thinking effort: High. For owner-direct changes, record "Owner instruction: <one line>" in the PR.' : ''
   ];
   if (/^POS0[a-f]$/.test(task.id)) lines.push(
     'POS0 preflight: follow AGENTS.md source-authority order; read ' +
@@ -201,7 +206,8 @@ export function createDelivery({ task, record, action, actionId }) {
   const promptBytes = Buffer.byteLength(prompt,'utf8');
   if (promptBytes > 4096)
     console.warn(`Task ${task.id} delivery prompt exceeds 4096 bytes (${promptBytes}); continuing`);
-  return {version:1,approval_signature_version:record.approval_hash && record.approval_hash !== authorization ? 1 : 2,
+  return {version:1,approval_signature_version:record.approval_hash && record.approval_hash !== authorization ? 2 : 3,
+    ...(record.agent === 'chatgpt' ? {effort:'high'} : {}),
     action_id:actionId,project,approval_hash:record.approval_hash || authorization,
     provider:record.agent,intent:isNew?'start_new_chat':'continue_existing_chat',
     base_branch:record.base_branch || 'main',conversation_url:url,
