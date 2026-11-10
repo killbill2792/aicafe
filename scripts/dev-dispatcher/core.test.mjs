@@ -641,7 +641,7 @@ test('unstructured owner-decision label is blocking; ordinary PRs add no comment
  const facts=new GitHubFacts({repo:'o/r',token:'fake',fetchFn:async()=>({
    ok:true,json:async()=>[]})});
  assert.match((await facts.ownerDecision(pr)).question,/Owner decision requested/);
- assert.deepEqual(await facts.ownerDecision({...pr,labels:[]}),{question:null,url:null});
+ assert.deepEqual(await facts.ownerDecision({...pr,labels:[]}),{question:null,url:null,approved:false});
 });
 
 test('Codex connector summary is accepted only for exact current head and strict shape',()=>{
