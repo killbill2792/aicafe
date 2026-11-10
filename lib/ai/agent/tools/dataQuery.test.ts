@@ -135,6 +135,42 @@ it("an aggregate null over no matching facts reports empty",async()=>{
  expect(x.empty).toBe(true);
  expect(x.missing).toContain("empty");
 });
+it("exposes one trustworthy POS count as a numeric aggregate with partial-day status",async()=>{
+ const rpc=vi.fn(async()=>({data:{
+  rows:[{count_source_ref:4}],sourceCount:4,hasIncomplete:true,
+  currentDayIncomplete:true,truncated:false,sourceMix:{toast:4}
+ },error:null}));
+ const args={...input("cv_toast_records"),columns:null,group_by:null,
+  filters:[{column:"record_type",op:"in",value:["item_discount","check_discount"]},
+   {column:"counts_in_sales",op:"=",value:true}],
+  metrics:[{fn:"count",column:"source_ref"}],limit:10};
+ const x=await dataQueryTools.query_data.execute(args,{db:{rpc} as never,businessId:b});
+ expect(x.aggregate).toEqual({metric:"count_source_ref",value:4,status:"so_far"});
+ expect(x.rows).toEqual([{count_source_ref:4}]);
+ expect(x.missing).toContain("currentDayIncomplete");
+ expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+  p_filters:args.filters,p_metrics:args.metrics,p_group_by:[]
+ }));
+});
+it("never treats null, empty, grouped or truncated aggregates as known totals",async()=>{
+ const args={...input("cv_toast_records"),columns:null,group_by:null,
+  metrics:[{fn:"count",column:"source_ref"}]};
+ for(const spec of [
+  {rows:[{count_source_ref:null}],sourceCount:1,truncated:false},
+  {rows:[{count_source_ref:0}],sourceCount:0,truncated:false},
+  {rows:[{count_source_ref:3}],sourceCount:1,truncated:true}
+ ]){
+  const rpc=vi.fn(async()=>({data:{...spec,sourceMix:{}},error:null}));
+  const x=await dataQueryTools.query_data.execute(args,{db:{rpc} as never,businessId:b});
+  expect(x.aggregate).toBeUndefined();
+ }
+ const grouped={...args,group_by:["business_date"],columns:["business_date"]};
+ const rpc=vi.fn(async()=>({data:{
+  rows:[{business_date:"2026-10-01",count_source_ref:3}],
+  sourceCount:3,truncated:false,sourceMix:{}},error:null}));
+ const x=await dataQueryTools.query_data.execute(grouped,{db:{rpc} as never,businessId:b});
+ expect(x.aggregate).toBeUndefined();
+});
 it("defaults to a compact 50-row result when the model gives no limit",async()=>{
  const f=testDb([{business_date:"2026-10-01",sum_net_sales_cents:1}]);
  await dataQueryTools.query_data.execute({...input(),limit:null},{db:f.db,businessId:b});
