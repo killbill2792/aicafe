@@ -78,13 +78,17 @@ it("defaults to a compact 50-row result when the model gives no limit",async()=>
  await dataQueryTools.query_data.execute({...input(),limit:null},{db:f.db,businessId:b});
  expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({p_limit:50}));
 });
-it("marks cash, stock, kitchen and dining results as snapshots, not live data",async()=>{
- const f=testDb([{entry_type:"deposit",sum_amount_cents:5000}]);
+it("does not call current Toast cash and stock diagnostic snapshots, and reports unverified freshness",async()=>{
+ const rpc=vi.fn(async()=>({data:{rows:[{entry_type:"deposit",sum_amount_cents:5000}],
+  sourceCount:1,sourceMix:{toast:1},truncated:false},error:null}));
+ const ctx={db:{rpc} as never,businessId:b};
  const cash=await dataQueryTools.query_data.execute({...input("cv_cash"),columns:["entry_type"],group_by:["entry_type"],
-  metrics:[{fn:"sum",column:"amount_cents"}]},{db:f.db,businessId:b});
- expect(cash.missing).toContain("snapshotOnly");
- const sales=await dataQueryTools.query_data.execute(input(),{db:f.db,businessId:b});
- expect(sales.missing).not.toContain("snapshotOnly");
+  metrics:[{fn:"sum",column:"amount_cents"}]},ctx);
+ expect(cash.missing).toContain("source_freshness_unverified");
+ expect(cash.missing).not.toContain("snapshotOnly");
+ expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({p_view:"cv_cash",p_business_id:b}));
+ const sales=await dataQueryTools.query_data.execute(input(),ctx);
+ expect(sales.missing).not.toContain("source_freshness_unverified");
 });
 it("reads named Toast fields through the database, never whole records",async()=>{
  const f=testDb([{"data.server.guid":"s1","sum_data.price":12.5}]);
@@ -104,15 +108,16 @@ it("reads named Toast fields through the database, never whole records",async()=
 });
 it("accepts only plain field names inside data",async()=>{
  const f=testDb();
- for(const column of ["data","data.","data.a;drop","data.a b","data.a.b.c.d.e.f.g.h.i","meta.x"])
+ for(const column of ["data","data.","data.a;drop","data.a b","data."+Array(17).fill("deep").join("."),"meta.x"])
   expect((await dataQueryTools.query_data.execute({...input("cv_toast_records"),columns:null,
-   group_by:[column],metrics:null},{db:f.db,businessId:b})).error,column).toBe(column==="data"?undefined:"column_not_allowed");
+   group_by:[column],metrics:null},{db:f.db,businessId:b})).error,column).toBe("column_not_allowed");
 });
 it("lists the field names of a Toast record type for this café only",async()=>{
  const rpc=vi.fn(async()=>({data:[{field:"data.price",type:"number",example:"5.5"}],error:null}));
  const result=await dataQueryTools.describe_data.execute({record_type:"item"},{db:{rpc} as never,businessId:b});
  expect(rpc).toHaveBeenCalledWith("ai_toast_fields",{p_business_id:b,p_record_type:"item"});
- expect(result).toMatchObject({record_type:"item",fields:[{field:"data.price"}]});
+ expect(result).toMatchObject({record_type:"item"});
+ expect(result.fields).toEqual(expect.arrayContaining([expect.objectContaining({field:"data.price"})]));
  const all=await dataQueryTools.describe_data.execute({record_type:null});
  expect(all.views?.some(v=>v.name==="cv_toast_records")).toBe(true);
 });
@@ -182,6 +187,6 @@ it("the Toast plain-read projection includes the newly validated cent columns",a
  },{db:f.db,businessId:b});
  expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
   p_view:"cv_toast_records",
-  p_columns:expect.arrayContaining(["record_type","data","price_cents","discount_amount_cents"])
+  p_columns:expect.arrayContaining(["record_type","price_cents","discount_amount_cents"])
  }));
 });

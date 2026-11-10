@@ -939,26 +939,24 @@ BEGIN
   '2026-10-26','2026-10-26',null,100)->'rows'->0->>'sum_net_sales_cents'
  )::bigint=450,'real café-scoped RPC groups current channel sales without excluded rows');
 
- insert into public.toast_raw_samples(business_id,restaurant_guid,endpoint,business_date,
- http_status,item_count,sample,field_paths) values
- (b,r,'stock/v1/inventory','2026-10-26',200,2,
-  '[{"guid":"stock-a","status":"QUANTITY","quantity":3.5},
-    {"guid":"stock-b","status":"OUT_OF_STOCK","quantity":null}]'::jsonb,ARRAY['status','quantity']),
- (b,r,'cashmgmt/v1/entries','2026-10-26',200,1,
-  '[{"guid":"entry-a","type":"CASH_IN","amount":12.50,
-     "cashDrawer":{"guid":"drawer-a"},"employee1":{"guid":"employee-a"}}]'::jsonb,ARRAY['type','amount']),
- (b,r,'cashmgmt/v1/deposits','2026-10-26',200,1,
-  '[{"guid":"deposit-a","amount":19.75,"employee":{"guid":"employee-a"}}]'::jsonb,ARRAY['amount']),
- (b,r,'kitchen/v1/export/itemFulfillments','2026-10-26',200,1,
-  '[{"orderGuid":"order-a","ticketGuid":"ticket-a",
-     "ticketFiredAt":"2026-10-26T10:00:00Z",
-     "itemStartedAt":"2026-10-26T10:01:00Z",
-     "itemFulfilledAt":"2026-10-26T10:04:00Z",
-     "prepStationGuid":"station-a"}]'::jsonb,ARRAY['ticketFiredAt','itemFulfilledAt']),
- (b,r,'config/v2/diningOptions','2026-10-26',200,1,
-  '[{"guid":"option-a","name":"Dine In","behavior":"DINE_IN"}]'::jsonb,ARRAY['name']),
- (b,r,'kitchen/v1/published/prepStations','2026-10-26',200,1,
-  '[{"guid":"station-b","name":"Cold Bar","printingMode":"ON"}]'::jsonb,ARRAY['name']);
+ -- POS0e operational fixtures come from the existing retained-current archive.
+ insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
+  payload,payload_sha256,capture_key)
+ select b,r::uuid,x.kind,'2026-10-26',x.payload,repeat('a',64),
+  'pos0e:optional:'||md5(x.kind||x.payload::text)
+ from (values
+  ('stock/v1/inventory','{"guid":"stock-a","status":"QUANTITY","quantity":3.5}'::jsonb),
+  ('stock/v1/inventory','{"guid":"stock-b","status":"OUT_OF_STOCK","quantity":null}'::jsonb),
+  ('cashmgmt/v1/entries','{"guid":"entry-a","type":"CASH_IN","amount":12.50,
+    "cashDrawer":{"guid":"drawer-a"},"employee1":{"guid":"employee-a"}}'::jsonb),
+  ('cashmgmt/v1/deposits','{"guid":"deposit-a","amount":19.75,
+    "employee":{"guid":"employee-a"}}'::jsonb),
+  ('kitchen/v1/export/itemFulfillments','{"orderGuid":"order-a","ticketGuid":"ticket-a",
+    "ticketFiredAt":"2026-10-26T10:00:00Z","itemStartedAt":"2026-10-26T10:01:00Z",
+    "itemFulfilledAt":"2026-10-26T10:04:00Z","prepStationGuid":"station-a"}'::jsonb),
+  ('config/v2/diningOptions','{"guid":"option-a","name":"Dine In","behavior":"DINE_IN"}'::jsonb),
+  ('kitchen/v1/published/prepStations','{"guid":"station-b","name":"Cold Bar","printingMode":"ON"}'::jsonb)
+ ) x(kind,payload);
 
  perform pg_temp.assert_true(exists(select 1 from public.cv_inventory
   where business_id=b and source='toast' and menu_item_ref='stock-a'
@@ -994,19 +992,23 @@ BEGIN
  perform pg_temp.assert_true(has_function_privilege('authenticated',
   'public.toast_safe_business_label(text)','EXECUTE'),
   'authenticated invoker can execute the redacting dining label helper');
- -- A second capture of the same business date (manual run + scheduled capture)
- -- must not double-count: views read only the newest successful capture.
+ -- Diagnostic-only captures, including contradictory values and failures,
+ -- cannot feed the operational canonical views.
  insert into public.toast_raw_samples(business_id,restaurant_guid,endpoint,business_date,
  fetched_at,http_status,item_count,sample,field_paths,capture_id) values
  (b,r,'cashmgmt/v1/entries','2026-10-26',clock_timestamp()+interval '1 minute',200,1,
-  '[{"guid":"entry-a","type":"CASH_IN","amount":12.50,
+  '[{"guid":"entry-a","type":"CASH_IN","amount":9999.00,
      "cashDrawer":{"guid":"drawer-a"},"employee1":{"guid":"employee-a"}}]'::jsonb,
   ARRAY['type','amount'],gen_random_uuid()),
  (b,r,'cashmgmt/v1/entries','2026-10-26',clock_timestamp()+interval '2 minute',429,0,
   '{}'::jsonb,ARRAY[]::text[],gen_random_uuid());
  perform pg_temp.assert_true((select sum(amount_cents) from public.cv_cash
   where business_id=b and business_date='2026-10-26' and entry_type='CASH_IN')=1250,
-  'a re-captured cash entry is counted once and a newer failed capture is ignored');
+  'diagnostic captures and failures cannot affect current operational cash');
+ perform pg_temp.assert_true(NOT EXISTS(
+  select 1 from public.cv_cash
+  where business_id=b and amount_cents=999900),
+  'poisoned diagnostic cash value must NEVER appear as a real cash row');
 END $optional_views$;
 
 ROLLBACK;

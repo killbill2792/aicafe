@@ -39,12 +39,33 @@ describe("Toast day pages are redacted once in the app",()=>{
   expect(parse(raw).orders[0].normalized?.netSalesCents).toBeGreaterThan(0);
   expect(parse(redactToastRaw(raw,0,"",undefined,"orders"))).toEqual(parse(raw));
  });
- it("drops customer details and card data but keeps the payment fee fields",()=>{
-  const safe=JSON.stringify(redactToastRaw([{...order,name:"Ana's order",displayName:"Ana L",nickname:"Ani"}],0,"",undefined,"orders"));
-  for(const leaked of ["Ana's order","Ana L","Ani","Lopez","ana@example.com","555-123-4567","4242","ANA LOPEZ",'"tabName"'])
-   expect(safe).not.toContain(leaked);
-  expect(safe).toContain('"originalProcessingFee":0.41');
-  expect(safe).toContain('"cardType":"VISA"');
+ it("retains permitted names, contact, notes and stable source identities but never card credentials",()=>{
+  const safe=redactToastRaw([{...order,name:"Ana's order",displayName:"Ana L",nickname:"Ani",
+   notes:"Customer prefers oat milk",employee:{guid:guid(41),firstName:"Lou",lastName:"Rivera"},
+   checks:[{...order.checks[0],payments:[{...order.checks[0].payments[0],
+    cardNumber:"4111111111111111",cvv:"123",trackData:"track secret",
+    accessToken:"access-secret",paymentToken:"reusable"}]}]}],0,"",undefined,"orders") as unknown[];
+  const text=JSON.stringify(safe);
+  for(const kept of ["Ana's order","Ana L","Ani","Lopez","ana@example.com","555-123-4567",
+   "Customer prefers oat milk","Rivera",guid(4),guid(41)])
+   expect(text).toContain(kept);
+  for(const blocked of ["4111111111111111","access-secret","reusable","track secret",
+   '"cardNumber"','"cvv"','"trackData"','"last4Digits"','"paymentToken"'])
+   expect(text).not.toContain(blocked);
+  expect(text).toContain('"originalProcessingFee":0.41');
+  expect(text).toContain('"cardType":"VISA"');
+ });
+ it("preserves unrelated null/absent values and never retains a PAN in free text",()=>{
+  const source={customer:{guid:guid(50),firstName:null,email:"guest@example.com"},
+   staff:{displayName:"Cam",phone:"555-123-4567"},notes:"Call me, card 4111 1111 1111 1111",
+   comments:"No allergen substitutions",device:{sessionToken:"secret"},missing:null};
+  const safe=redactToastRaw(source) as Record<string,unknown>;
+  expect(safe.customer).toEqual(source.customer);
+  expect(safe.staff).toEqual(source.staff);
+  expect(safe.notes).toBe("[redacted]");
+  expect(safe.comments).toBe(source.comments);
+  expect(safe.device).toEqual({});
+  expect(safe.missing).toBeNull();
  });
  it("is stable when a page is redacted twice (staged pages are read back)",()=>{
   const once=redactToastRaw([order],0,"",undefined,"orders");
