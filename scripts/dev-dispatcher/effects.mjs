@@ -33,7 +33,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
   const pr=await github.request(`/pulls/${record.pr_number}`);
   if (pr.state !== 'open' || pr.merged || pr.draft !== prepareReady ||
       pr.head?.sha !== record.head_sha || pr.base?.sha !== record.base_sha ||
-      pr.mergeable !== true)
+      (!prepareReady && pr.mergeable !== true))
     return {status:'blocked',reasons:['live_pr_changed']};
   const live=await github.one(pr);
   if (live.head_sha !== record.head_sha || live.ci_state !== 'success' ||
@@ -46,7 +46,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
   const latest=await github.request(`/pulls/${record.pr_number}`);
   if (latest.state !== 'open' || latest.head?.sha !== record.head_sha ||
       latest.base?.sha !== record.base_sha || latest.draft !== prepareReady ||
-      latest.mergeable !== true ||
+      (!prepareReady && latest.mergeable !== true) ||
       (latest.labels || []).some(label =>
         /(?:^|[-_])(paid|live|prod|production|secret|secrets)(?:$|[-_])/i.test(label.name || '') &&
         !/^(?:approved|owner-approved)/i.test(label.name || '')))
