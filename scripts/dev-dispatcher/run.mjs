@@ -82,6 +82,23 @@ async function main() {
       ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
     },new Date().toISOString());
     const copy = queueOwnerAlerts(withFeedback,{unmappedPrs:linked.unmapped,queue});
+    // Recover signed v3 owner approvals before computing this tick's dispatch
+    // frontier, so a cleared existing priority gate incurs no extra wait.
+    for(const [id,task] of taskById){
+      const rec=copy.tasks[id];
+      if(!rec||rec.pr_number||rec.conversation_ref||
+         task.architecture_approval?.approved!==true)continue;
+      if(rec.priority_deferred&&rec.status==='blocked_needs_owner'){
+        rec.approved=true;rec.status='proposed';
+        rec.approval_hash=approvalSignature(task);
+        rec.approval_signature_version=3;
+      }else if(rec.approved&&approvalMatches(task,rec.approval_hash)&&
+        !Object.values(copy.actions).some(a=>a.task_id===id&&
+          ['planned','claimed','uncertain'].includes(a.status))){
+        rec.approval_hash=approvalSignature(task);
+        rec.approval_signature_version=3;
+      }
+    }
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
@@ -267,23 +284,6 @@ async function main() {
     persisted = await ledger.transaction(async existing => {
       const latest = await observe(existing);
       let next = reconcile(existing, latest).state;
-      // Migrate old authorization only for the same substantive goal/scope/tests.
-      // Do not rewrite a signed in-flight courier delivery.
-      for(const [id,task] of taskById){
-        const rec=next.tasks[id];
-        if(!rec||rec.pr_number||rec.conversation_ref||
-           task.architecture_approval?.approved!==true)continue;
-        if(rec.priority_deferred&&rec.status==='blocked_needs_owner'){
-          rec.approved=true;rec.status='proposed';
-          rec.approval_hash=approvalSignature(task);
-          rec.approval_signature_version=3;
-        }else if(rec.approved&&approvalMatches(task,rec.approval_hash)&&
-          !Object.values(next.actions).some(a=>a.task_id===id&&
-            ['planned','claimed','uncertain'].includes(a.status))){
-          rec.approval_hash=approvalSignature(task);
-          rec.approval_signature_version=3;
-        }
-      }
       next=trackScheduleGap(next,{eventName:process.env.GITHUB_EVENT_NAME,
         now:new Date().toISOString(),observedScheduleAt:latest.lastScheduleAt});
       await promoteIntegration(next);

@@ -23,9 +23,9 @@ const record = id => ({
 const initial = (tasks = {}, actions = {}) => ({
   version: 1, tasks, actions, owner_alerts: { notice: { status: 'planned' } }
 });
-function harness({ assignments = [], proposals = {}, fail = [], receipts = [] } = {}) {
+function harness({ assignments = [], proposals = {}, fail = [], receipts = [], frontier = null } = {}) {
   const errors = [];
-  const taskById = new Map(['bad', 'good', 'POS0b', 'POS0c', 'POS0d', 'POS0e']
+  const taskById = new Map(['bad', 'good', 'POS0b', 'POS0c', 'POS0d', 'POS0e', '6']
     .map(id => [id, task(id)]));
   const deps = {
     queue: { tasks: [...taskById.values()] }, taskById,
@@ -169,4 +169,19 @@ test('successful replacement Codex delivery supersedes old planned prompt atomic
  assert.equal(out.actions[prev].status,'cancelled_state_changed');
  assert.equal(out.actions[next].status,'planned');
  assert.equal(Object.values(out.actions).filter(x=>x.status==='planned').length,1);
+});
+
+
+test('Task 6 substantive approval recovers before frontier immediately once priority clears',()=>{
+ const h=harness({frontier:records=>records['6']?.approved &&
+     records['6']?.status==='proposed' &&
+     records['6']?.approval_hash==='signed'
+       ? [{task_id:'6',agent:'chatgpt',base_branch:'main'}] : []});
+ const current={task_id:'6',status:'blocked_needs_owner',agent:'chatgpt',
+   approved:false,priority_deferred:true,approval_hash:'old-annotation-signature'};
+ const result=h.run(initial({'6':current}));
+ assert.equal(result.state.tasks['6'].status,'assigned');
+ assert.equal(result.state.tasks['6'].approval_hash,'signed');
+ assert.equal(result.state.actions['assign:6'].status,'planned');
+ assert.deepEqual(Array.from(result.assigned,a=>a.task_id),['6']);
 });
