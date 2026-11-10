@@ -684,7 +684,9 @@ test('GitHub current-head Codex summary changes clean vs pending but unresolved 
  assert.equal(clean.codex_state,'clean');
  assert.equal(clean.codex_reviewed_sha,sha);
  assert.equal(clean.codex_review_at,now);
- assert.equal((await makeFacts(true).one(pr)).codex_state,'findings');
+ const oldThread=await makeFacts(true).one(pr);
+  assert.equal(oldThread.codex_state,'clean');
+  assert.equal(oldThread.threads_resolved,false);
  assert.equal((await makeFacts(false,'untrusted-user').one(pr)).codex_state,'pending');
 });
 test('Dispatcher-only PR is not a mystery task while mixed PR remains unmapped',()=>{
