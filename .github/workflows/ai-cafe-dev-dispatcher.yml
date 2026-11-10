@@ -111,7 +111,6 @@ jobs:
           # Owner opt-in Nov 9: only exact-head CI/Codex/actual-acceptance-proven PRs;
           # an explicit repository variable 'false' overrides this default.
           DISPATCH_AUTO_MERGE: ${{ vars.DISPATCH_AUTO_MERGE || 'true' }}
-          DISPATCH_BRANCH_MAINTENANCE: ${{ vars.DISPATCH_BRANCH_MAINTENANCE }}
           DISPATCH_TRANSIENT_CI_RETRY: ${{ vars.DISPATCH_TRANSIENT_CI_RETRY }}
           # Existing GitHub issue is the owner's public-safe live status surface.
           DISPATCH_OWNER_DASHBOARD_ISSUE: '411'
