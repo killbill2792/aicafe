@@ -5,6 +5,7 @@ import { createDelivery } from './delivery.mjs';
 import { renderOwnerView } from './owner-view.mjs';
 import { updateChildAfterParentMerge } from './effects.mjs';
 import { sanitizeLedger } from './ledger.mjs';
+import { GitHubFacts } from './github.mjs';
 import { readFileSync } from 'node:fs';
 
 const now = Date.parse('2026-11-09T22:00:00Z');
@@ -213,4 +214,42 @@ test('a freshly merged parent cannot trigger an idle nudge before automatic reta
   const next=decideNudge(updated,now);
   assert.equal(next.action,'parent_merged');
   assert.equal(next.key,decideNudge({...updated,head_sha:'c'.repeat(40)},now).key);
+});
+
+
+test('CI-failed nudge names the actual failed GitHub check with its verified link',async()=>{
+  const head='a'.repeat(40),base='b'.repeat(40);
+  const jobUrl='https://github.com/example/a/actions/runs/99/job/21';
+  const responses={
+    ['/commits/'+head+'/check-runs?per_page=100']:{total_count:2,check_runs:[
+      {name:'AI CAFE PR baseline',status:'completed',conclusion:'failure',
+        html_url:'https://github.com/example/a/actions/runs/99'},
+      {name:'TypeScript, full ESLint and patch hygiene',status:'completed',
+        conclusion:'failure',html_url:jobUrl}]},
+    '/pulls/42/reviews?per_page=100':[],
+    ['/commits/'+head]:{commit:{committer:{date:old}}},
+    ['/compare/'+base+'...'+head]:{behind_by:0,files:[]},
+    '/issues/42/comments?per_page=100':[]
+  };
+  const facts=new GitHubFacts({repo:'example/a',token:'test-only',
+    fetchFn:async(url)=>{
+      const data=url==='https://api.github.com/graphql'
+        ? {data:{repository:{pullRequest:{reviewThreads:{
+            pageInfo:{hasNextPage:false},nodes:[]}}}}}
+        : responses[url.replace('https://api.github.com/repos/example/a','')];
+      if(data===undefined)throw Error('Unexpected GitHub read '+url);
+      return {ok:true,status:200,json:async()=>data};
+    }});
+  const p={number:42,head:{sha:head,ref:'feat/child'},
+    base:{sha:base,ref:'main'},labels:[],body:'',updated_at:old,
+    html_url:'https://github.com/example/a/pull/42',draft:true};
+  const observed=await facts.one(p);
+  assert.equal(observed.ci_state,'failure');
+  assert.equal(observed.ci_failure_job,'TypeScript, full ESLint and patch hygiene');
+  assert.equal(observed.ci_failure_url,jobUrl);
+  const delivery=createDelivery({task:task('child'),record:active({
+    ci_failure_job:observed.ci_failure_job,ci_failure_url:observed.ci_failure_url,
+    ci_state:'failure'}),action:'ci_failed',actionId:'failing-job'});
+  assert.match(delivery.prompt,/TypeScript, full ESLint and patch hygiene/);
+  assert.match(delivery.prompt,/actions\/runs\/99\/job\/21/);
 });
