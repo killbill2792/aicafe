@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {mkdtemp,cp,rm,mkdir} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {spawnSync} from 'node:child_process';
 import {reattestMuseReceipts} from './repair-receipts.mjs';
 const sha=v=>createHash('sha256').update(v).digest('hex');
 const prompt='Approved original coding instruction';
@@ -81,4 +86,94 @@ test('unrecognized author after API re-commit stays unacknowledged',async()=>{
   token:'token',fetchFn:env.fetchFn});
  assert.equal(r.results[0].status,'git_actor_still_unattributed');
  assert.equal(env.writes.length,1);
+});
+
+
+test('helper imports cleanly when only bridge directory is deployed on Ubuntu',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'aicafe-bridge-alone-'));
+ const bridge=join(dir,'bridge');
+ try{
+  await mkdir(bridge);
+  await cp(new URL('./repair-receipts.mjs',import.meta.url),join(bridge,'repair-receipts.mjs'));
+  await cp(new URL('./bridge.mjs',import.meta.url),join(bridge,'bridge.mjs'));
+  const check=spawnSync(process.execPath,['--input-type=module','-e',
+    'await import('+JSON.stringify(pathToFileURL(join(bridge,'repair-receipts.mjs')).href)+')'],
+    {encoding:'utf8'});
+  assert.equal(check.status,0,check.stderr);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('existing-chat repair reattests only the same signed conversation, never another chat',async()=>{
+ const action2='POS0c:repair_review:current';
+ const state2=structuredClone(state);
+ state2.tasks.POS0e.conversation_ref=chat;
+ state2.actions[action2]={...action,task_id:'POS0e',type:'repair_review',status:'planned',
+  delivery:{...delivery,action_id:action2,intent:'continue_existing_chat',conversation_url:chat}};
+ state2.receipt_feedback={[action2]:{task_id:'POS0e',status:'rejected',code:'unattributed_git_actor'}};
+ const saved={...receipt,action_id:action2,intent:'continue_existing_chat'};
+ const name='dispatcher/receipts/'+sha(action2+':'+hash)+'.json';
+ const writes=[];
+ const fetchFn=async(url,opts={})=>{
+  const path=url.replace('https://api.github.com','');
+  let result;
+  if(path==='/user')result={login:'owner-login'};
+  else if(path===basePath)result={private:true};
+  else if(path===basePath+'/contents/dispatcher/state.json?ref=main')
+    result={content:Buffer.from(JSON.stringify(state2)).toString('base64')};
+  else if(path===basePath+'/contents/'+name+'?ref=main')
+    result={sha:'original',content:Buffer.from(JSON.stringify(saved)).toString('base64')};
+  else if(path.startsWith(basePath+'/commits?'))
+    result=[{author:{login:writes.length?'owner-login':null},commit:{message:'original'}}];
+  else if(path===basePath+'/contents/'+name&&opts.method==='PUT'){
+    writes.push(JSON.parse(opts.body));result={commit:{sha:'new'}};
+  }else throw Error('Unexpected '+path);
+  return {ok:true,json:async()=>result};
+ };
+ const ok=await reattestMuseReceipts({repo:'killbill2792/dave-task-queue',token:'token',
+  fetchFn,configuredActors:{'owner-login':'muse'}});
+ assert.equal(ok.results[0].status,'reattributed_waiting_for_dispatcher');
+ assert.equal(writes.length,1);
+ const savedNew=JSON.parse(Buffer.from(writes[0].content,'base64').toString('utf8'));
+ assert.equal(savedNew.conversation_url,chat);
+ const wrong=structuredClone(saved);wrong.conversation_url='https://chatgpt.com/c/another-123';
+ const badFetch=async(url,opts)=>{
+  const path=url.replace('https://api.github.com','');
+  if(path===basePath+'/contents/'+name+'?ref=main')
+   return {ok:true,json:async()=>({sha:'original',content:Buffer.from(JSON.stringify(wrong)).toString('base64')})};
+  return fetchFn(url,opts);
+ };
+ const no=await reattestMuseReceipts({repo:'killbill2792/dave-task-queue',token:'token',
+  fetchFn:badFetch});
+ assert.equal(no.results[0].status,'receipt_validation_failed');
+ assert.equal(writes.length,1);
+});
+test('a poisoned null receipt cannot starve another valid repair',async()=>{
+ const action2='assign:POS0c',name2='dispatcher/receipts/'+sha(action2+':'+hash)+'.json';
+ const s=structuredClone(state);
+ s.tasks.POS0c={...s.tasks.POS0e};
+ s.actions[action2]={...action,task_id:'POS0c',delivery:{...delivery,action_id:action2,task_id:'POS0c'}};
+ s.receipt_feedback[action2]={task_id:'POS0c',status:'rejected',code:'unattributed_git_actor'};
+ const valid={...receipt,action_id:action2,task_id:'POS0c'};
+ let wrote=0;
+ const fetchFn=async(url,options={})=>{
+  const path=url.replace('https://api.github.com','');
+  let result;
+  if(path==='/user')result={login:'owner-login'};
+  else if(path===basePath)result={private:true};
+  else if(path===basePath+'/contents/dispatcher/state.json?ref=main')
+   result={content:Buffer.from(JSON.stringify(s)).toString('base64')};
+  else if(path===basePath+'/contents/'+target+'?ref=main')
+   result={sha:'original',content:Buffer.from('null').toString('base64')};
+  else if(path===basePath+'/contents/'+name2+'?ref=main')
+   result={sha:'original',content:Buffer.from(JSON.stringify(valid)).toString('base64')};
+  else if(path.startsWith(basePath+'/commits?'))
+   result=[{author:{login:wrote?'owner-login':null},commit:{message:'original'}}];
+  else if(path===basePath+'/contents/'+name2&&options.method==='PUT'){
+   wrote++;result={commit:{sha:'revised'}};
+  }else throw Error('Unexpected '+path);
+  return {ok:true,json:async()=>result};
+ };
+ const r=await reattestMuseReceipts({repo:'killbill2792/dave-task-queue',token:'token',fetchFn});
+ assert.equal(r.results[0].status,'original_receipt_invalid');
+ assert.equal(r.results[1].status,'reattributed_waiting_for_dispatcher');
+ assert.equal(wrote,1);
 });

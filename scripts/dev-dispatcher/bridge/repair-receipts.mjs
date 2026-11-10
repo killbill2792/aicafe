@@ -2,7 +2,7 @@
 // One-shot helper for the EXISTING Muse courier. Repairs GitHub attribution of
 // an existing receipt; NEVER sends a browser instruction or invents a receipt.
 import {createHash} from 'node:crypto';
-import {validConversationUrl} from '../delivery.mjs';
+import {validTarget} from './bridge.mjs';
 const sha=x=>createHash('sha256').update(x).digest('hex');
 const repoPattern=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const repairable=new Set(['unattributed_git_actor','unapproved_git_actor','assignment_receipt_missing']);
@@ -35,17 +35,19 @@ export async function reattestMuseReceipts({repo,token,fetchFn=fetch,now=new Dat
   const results=[];
   for(const [actionId,feedback] of jobs){
     const action=state.actions[actionId],task=state.tasks[feedback.task_id];
+    const d=action?.delivery;
     const safeResult=(status)=>({action_id:actionId,status});
     // Never restore a closed, revoked or superseded task, and never infer a
     // browser submission from a missing receipt.
     if(!action||!task||action.task_id!==feedback.task_id||
       action.delivery_owner!=='muse'||!task.approved||task.github_state!=='open'||
-      !Number.isInteger(task.pr_number)||task.conversation_ref||
+      !Number.isInteger(task.pr_number)||
+      (d?.intent==='start_new_chat'&&task.conversation_ref)||
+      (d?.intent==='continue_existing_chat'&&!task.conversation_ref)||
       action.status==='submitted'||action.receipt||
       !['planned','cancelled_stale_head'].includes(action.status)){
       results.push(safeResult('ineligible'));continue;
     }
-    const d=action.delivery;
     if(!d||typeof d.prompt!=='string'||typeof d.prompt_hash!=='string'||
       sha(d.prompt)!==d.prompt_hash||d.approval_hash!==task.approval_hash||
       d.action_id!==actionId||d.task_id!==action.task_id){
@@ -62,11 +64,17 @@ export async function reattestMuseReceipts({repo,token,fetchFn=fetch,now=new Dat
     let receipt;
     try{receipt=JSON.parse(Buffer.from(original.content.replace(/\s/g,''),'base64').toString('utf8'));}
     catch{results.push(safeResult('original_receipt_invalid'));continue;}
-    const project=receipt?.project?.id||receipt?.project_id;
+    if(!receipt||typeof receipt!=='object'||Array.isArray(receipt)){
+      results.push(safeResult('original_receipt_invalid'));continue;
+    }
+    const project=receipt.project?.id||receipt.project_id;
     if(receipt.action_id!==actionId||receipt.prompt_hash!==d.prompt_hash||
       receipt.approval_hash!==d.approval_hash||receipt.provider!==d.provider||
       project!==d.project?.id||
-      !validConversationUrl(d.provider,receipt.conversation_url)||
+      !validTarget(d.provider,receipt.conversation_url)||
+      (d.intent==='continue_existing_chat'&&
+       (receipt.conversation_url!==d.conversation_url||
+        receipt.conversation_url!==task.conversation_ref))||
       (receipt.status&&receipt.status!=='submitted')||
       (receipt.intent&&receipt.intent!==d.intent)){
       results.push(safeResult('receipt_validation_failed'));continue;
