@@ -2,7 +2,7 @@
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
-import { requestCodexReview } from "./codex-review.mjs";
+import { requestCodexReview, inspectCodexWatch, rerequestCodexReview, codexWatchMinutes } from "./codex-review.mjs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions, editableFiles } from "./core.mjs";
@@ -329,6 +329,62 @@ async function main() {
       }
     }
   }
+  // Codex watchdog: only one additional request per immutable head, never a
+  // merge gate or a new scheduler. GitHub reviews/reactions are checked first.
+  if (commit && ledger) {
+    const minutes=codexWatchMinutes(process.env.DISPATCH_CODEX_WATCH_MINUTES);
+    const currentTasks=persisted?.state?.tasks || proposed.state.tasks;
+    for (const [id, rec] of Object.entries(currentTasks)) {
+      if ((!taskById.has(id) && !rec.adhoc) || !rec.pr_number ||
+          rec.github_state!=='open' || rec.codex_review_requested_sha!==rec.head_sha) continue;
+      try {
+        const decision=await inspectCodexWatch({github:gh,record:rec,minutes});
+        if (decision.status==='rerequest') {
+          // Reserve the sole retry in the existing CAS ledger BEFORE POST.
+          // An uncertain GitHub response cannot lead to blind replay.
+          const reserved=await ledger.transaction(latest=>{
+            const task=latest.tasks?.[id];
+            if (!task || task.head_sha!==rec.head_sha ||
+                task.codex_review_requested_sha!==rec.head_sha ||
+                task.codex_watchdog?.sha===rec.head_sha) return null;
+            task.codex_watchdog={sha:rec.head_sha,attempts:2,status:'reserved',
+              at:new Date().toISOString()};
+            return latest;
+          });
+          if (reserved?.state?.tasks?.[id]?.codex_watchdog?.sha!==rec.head_sha ||
+              reserved?.state?.tasks?.[id]?.codex_watchdog?.status!=='reserved') continue;
+          const outcome=await rerequestCodexReview({github:gh,record:rec,minutes});
+          if (outcome.status==='codex_rerequested') {
+            await ledger.transaction(latest=>{
+              const task=latest.tasks?.[id];
+              if (!task || task.head_sha!==rec.head_sha ||
+                  task.codex_watchdog?.status!=='reserved') return null;
+              task.codex_watchdog.status='sent';
+              task.codex_watchdog.event='codex_rerequested';
+              return latest;
+            });
+            console.log('Codex re-requested once for task '+id+' on '+rec.head_sha);
+          } else {
+            // The reserved slot remains consumed if a message races the retry.
+            console.log('Codex retry suppressed for task '+id+': '+outcome.status);
+          }
+        } else if (decision.status==='escalate') {
+          await ledger.transaction(latest=>{
+            const task=latest.tasks?.[id];
+            if (!task || task.head_sha!==rec.head_sha ||
+                task.codex_referee_sha===rec.head_sha) return null;
+            task.codex_referee_sha=rec.head_sha;
+            task.codex_watchdog={sha:rec.head_sha,attempts:2,status:'escalated',
+              event:'codex_second_miss',at:new Date().toISOString()};
+            return queueOwnerAlerts(latest,{queue});
+          });
+        }
+      } catch(error) {
+        console.error('Codex watchdog task '+id+': '+error.message);
+      }
+    }
+  }
+
   // Only independently classified runner startup errors may be retried, once.
   if (commit && ledger && process.env.DISPATCH_TRANSIENT_CI_RETRY === "true") {
     for (const [id, rec] of Object.entries(proposed.state.tasks)) {
