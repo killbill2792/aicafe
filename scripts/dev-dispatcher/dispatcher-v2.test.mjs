@@ -268,3 +268,16 @@ test('parent-merged prompt is immediate after automatic branch maintenance, not 
   assert.equal(decideNudge({...fresh,last_parent_rebase_sha:sha},now).action,undefined);
   assert.equal(decideNudge({...fresh,submission_state:'uncertain'},now).kind,'hold');
 });
+
+test('a verified merged parent permits child coding on main but remains a merge-proof blocker',()=>{
+  const q=queue([task('parent'),task('child',['parent'])]);
+  const parent={status:'merged',github_state:'merged',branch:'feat/parent',
+    pr_number:400,merge_sha:'a'.repeat(40),agent:'chatgpt'};
+  const child=dispatchFrontier(q,{parent});
+  assert.deepEqual(child.map(x=>[x.task_id,x.base_branch,x.prerequisite_pr]),
+    [['child','main',null]]);
+  assert.equal(dispatchFrontier(q,{parent:{...parent,merge_sha:null}})
+    .some(x=>x.task_id==='child'),false);
+  assert.equal(readyGate({...active({coder_done:true,ci_state:'success',acceptance_proven:true,
+    threads_resolved:true,base_current:true})},[parent]).eligible,false);
+});
