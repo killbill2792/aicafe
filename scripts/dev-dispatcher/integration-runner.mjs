@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {settings} from './settings.mjs';
 // After a squash merge, rerun the merged PR's acceptance tests on exact main SHA.
 // No author-supplied "passed" flag is trusted; every declared test is executed.
 import {readFileSync} from 'node:fs';
@@ -8,7 +9,7 @@ import {parseEvidence,executeEvidence} from './acceptance-runner.mjs';
 
 export async function executeMainIntegration({sha,repo,token,runId=process.env.GITHUB_RUN_ID,
   cwd=process.cwd(),fetchFn=fetch,invoke=spawnSync,
-  queue=JSON.parse(readFileSync(resolve(cwd,'docs/plans/universal-supervisor-queue.json'),'utf8')),
+  queue=JSON.parse(readFileSync(resolve(cwd,settings.queue.path),'utf8')),
   output=resolve(process.env.RUNNER_TEMP||cwd,'integration-proof.json')}={}){
  if(!/^[a-f0-9]{40}$/.test(sha||'')||!/^[\w.-]+\/[\w.-]+$/.test(repo||'')||!token)
   throw Error('Missing trusted main SHA/repository/token');
@@ -26,7 +27,7 @@ export async function executeMainIntegration({sha,repo,token,runId=process.env.G
  const task=queue.tasks?.find(t=>t.id===meta.task_id && t.architecture_approval?.approved===true);
  if(!task||!Array.isArray(task.acceptance)||task.acceptance.length!==meta.acceptance.length)
   throw Error('Merged task has no matching approved acceptance criteria');
- const body='<!-- aicafe-acceptance-evidence '+JSON.stringify({...meta,head_sha:sha,base_sha:sha})+' -->';
+ const body='<!-- '+settings.naming.marker_prefix+'-acceptance-evidence '+JSON.stringify({...meta,head_sha:sha,base_sha:sha})+' -->';
  // The trusted main runner needs a GitHub token to read PR metadata; test processes do not.
  const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>
   !/(TOKEN|SECRET|PASSWORD|PRIVATE_KEY|CREDENTIAL)/i.test(k)));

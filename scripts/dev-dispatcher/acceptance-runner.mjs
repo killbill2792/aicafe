@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {settings} from './settings.mjs';
 // Trusted-main runner: execute exactly the named test files without a shell.
 import {readFileSync,writeFileSync,lstatSync,realpathSync} from 'node:fs';
 import {resolve,sep} from 'node:path';
@@ -8,7 +9,7 @@ const testPath=/^(?:tests|e2e|lib|app|scripts)\/[a-zA-Z0-9_./-]+\.(?:test|spec|e
 export const acceptanceDigest=rows=>createHash('sha256').update(JSON.stringify(rows.map(({id,command,test_file})=>({id,command,test_file})))).digest('hex');
 export function parseEvidence(body){
  if(typeof body!=='string'||body.length>100000)return null;
- const found=[...body.matchAll(/<!-- aicafe-acceptance-evidence\s*([\s\S]*?)\s*-->/g)];
+ const found=[...body.matchAll(new RegExp('<!-- '+settings.naming.marker_prefix+'-acceptance-evidence\\s*([\\s\\S]*?)\\s*-->','g'))];
  if(found.length!==1||found[0][1].length>20000)return null;
  try{const value=JSON.parse(found[0][1]);return Array.isArray(value?.acceptance)?value:null;}catch{return null;}
 }

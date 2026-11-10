@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 // Courier receipts are deposited as private GitHub files, never as public signals.
 // GitHub verifies authenticated GitHub commit actor, exact action/hash/URL and CAS state.
 import { createHash } from 'node:crypto';
@@ -14,7 +15,7 @@ export async function inspectReceipts({ ledger, allowedActors }) {
   if(!allowedActors?.length)return {accepted,rejected,complete:false,scan_error:'courier_actor_configuration_missing'};
   let list;
   try {
-    list=await ledger.request('/contents/dispatcher/receipts?ref=main');
+    list=await ledger.request('/contents/'+settings.ledger.receipts_path+'?ref=main');
   }catch {
     return {accepted,rejected,complete:false,scan_error:'receipt_directory_unavailable'};
   }
@@ -109,7 +110,7 @@ export function applyReceipts(state, inbox, actorMap) {
           !Number.isInteger(task.pr_number) || task.conversation_ref ||
           receipt.action_id !== 'assign:' + task.task_id ||
           action.task_id !== task.task_id ||
-          task.branch !== 'feat/aicafe-task-' + task.task_id)
+          task.branch !== settings.naming.branch_prefix + task.task_id)
         continue;
       if (receipt.approval_hash !== task.approval_hash ||
           receipt.approval_hash !== action.delivery?.approval_hash ||

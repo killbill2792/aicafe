@@ -1,0 +1,25 @@
+name: Wake repo dispatcher after authenticated Muse receipt
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dispatcher/receipts/**'
+permissions:
+  contents: read
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Signal target repo after Muse receipt or owner yes is committed
+        env:
+          TARGET_REPO: ${{ vars.DISPATCH_TARGET_REPO }}
+          WAKE_TOKEN: ${{ secrets.DISPATCH_TARGET_WAKE_TOKEN }}
+        run: |
+          [[ "$TARGET_REPO" =~ ^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$ ]]
+          test -n "$WAKE_TOKEN"
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $WAKE_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$TARGET_REPO/dispatches" \
+            -d '{"event_type":"dispatcher_receipt","client_payload":{"version":1}}'
