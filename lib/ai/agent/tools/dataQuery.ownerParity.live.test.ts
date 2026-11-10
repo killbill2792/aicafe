@@ -28,6 +28,11 @@ const run=enabled?it:it.skip;
 // Check BEFORE sending, including the provider's per-response output ceiling.
 // A limit hit FAILS the test; it can never turn partial E2 into a passing proof.
 const smoke=process.env.POS0E_E2_SMOKE==="1";
+// The cost-capped smoke is a system-initiated reader acceptance, so expose
+// only the TWO existing registered read tools, not unrelated action/scheduling
+// schemas on every paid turn. The full suite still uses the unrestricted
+// production Supervisor toolset; never claim smoke proves that whole surface.
+const smokeReaderTools=["describe_data","query_data"] as const;
 const MAX_PAID_CALLS=12;
 const MAX_INPUT_REQUEST_BYTES=200_000;
 const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
@@ -203,7 +208,8 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    const expected=(await client.query<{n:number}>(truth,params)).rows[0].n;
    // Standard owner-facing answer; the requested line keeps acceptance numeric
    // (without an extra reviewer model) and still permits the incomplete-day note.
-   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:
     question+" Answer with 'Number: N' and a short source/coverage note."});
    expect(turn.tools,question).toContain("query_data");
    const number=turn.text.match(/\bNumber\s*[:=]\s*(\d+)\b/i);
@@ -220,7 +226,8 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   ] as const;
   for(const {question,truth} of (smoke?breakdowns.slice(0,0):breakdowns)){
    const expected=(await client.query<{k:string;n:number}>(truth,params)).rows;
-   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:question});
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:question});
    expect(turn.tools,question).toContain("query_data");
    for(const row of expected){
     const line=turn.text.split("\n").find(line=>line.includes(row.k));
@@ -245,7 +252,8 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    const expected=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0]?.answer;
    expect(expected,question).toBeTruthy();
    const receiptStart=providerReceipts.length;
-   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:question+
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:question+
     " Use retained current source facts, not diagnostic snapshots or another café."});
    expect(turn.tools,question).toContain("query_data");
    expect(turn.text,question+"; "+safeFailureDetails(turn,receiptStart))
@@ -264,7 +272,8 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
    expect(expected,question).not.toBeNull();
    expect(expected,question).not.toBeUndefined();
-   const turn=await runAgentTurn({context,provider:budgetedProvider,ownerText:question});
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:question});
    expect(turn.tools,question).toContain("query_data");
    const match=turn.text.match(new RegExp("\\b"+label+"\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)","i"));
    expect(match,question+" => "+turn.text).not.toBeNull();
