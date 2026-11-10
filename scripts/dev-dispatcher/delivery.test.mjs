@@ -75,7 +75,10 @@ test('every coding agent receives exact current authority, three skill files, sh
     'GitHub comment/thread IDs','fixed-awaiting-proof','commit+executed CI/test','before reporting done',
     'No parallel queue']) assert.ok(prompt.includes(phrase),phrase);
 
-  assert.match(prompt,/request a fresh Codex review/);
+  assert.match(prompt,/request ONE final-head re-review/);
+  assert.match(prompt,/full CI is GREEN/);
+  assert.match(prompt,/DO NOT request Codex on an early draft/);
+  assert.match(prompt,/never add a duplicate @codex request/);
   assert.match(prompt,/NEVER edit PROGRESS.md/);
   assert.doesNotMatch(prompt,/Muse|browser tabs|courier receipts/i);
   assert.ok(prompt.length<12000);
@@ -241,4 +244,22 @@ test('POS0a-f agent receives exact approved/defective/unapproved contract in ord
    assert.ok(d.prompt.indexOf('POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING')<d.prompt.indexOf('OPEN THE DRAFT PR PROMPTLY'));
   }
  }
+});
+
+
+test('one-review policy holds Codex on drafts/stacked children until eligible CI-green ready state',()=>{
+ const independ=createDelivery({task,record:{...record,base_branch:'main'},
+   action:'assign',actionId:'assign:6-review-policy'});
+ const child=createDelivery({task,record:{...record,base_branch:'feat/parent',prerequisite_pr:398},
+   action:'assign',actionId:'assign:6-review-child'});
+ assert.match(independ.prompt,/ONE ready-state Codex review/);
+ assert.match(independ.prompt,/full CI is GREEN/);
+ assert.match(child.prompt,/NEVER request Codex while the parent is changing/);
+ assert.match(child.prompt,/after full CI is green/);
+ assert.match(child.prompt,/stacked parent remains unmerged/);
+ assert.doesNotMatch(child.prompt,/After changes request a fresh Codex review until/);
+ const authority=readFileSync(new URL('../../AGENTS.md',import.meta.url),'utf8');
+ assert.match(authority,/one Codex request per ready state/i);
+ assert.match(authority,/A PR comment or body-only edit does NOT change the head/);
+ assert.match(authority,/The exact reviewed-head merge gate stays mandatory/);
 });

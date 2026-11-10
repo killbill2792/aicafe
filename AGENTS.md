@@ -41,8 +41,10 @@ Where an older line in this file conflicts with these rules, these rules win.
    authorized work. Independent PRs branch from the latest `main`. If PR B depends on open
    PR A, open B with **base = A's branch (not `main`)**; keep B's code ready and its CI green on that
    base. **B merges only after A is on `main`.** Then rebase B onto (or retarget B to) the latest
-   `main`, re-run CI and Codex review, re-check migration numbers, and list any other open PRs that
-   touch the same files. Merge only under the auto-merge rule.
+   `main`, re-run CI, and request final-head Codex only after the parent is merged
+   and the child is ready on current main (rule 19). Re-check migration numbers
+   and overlapping PRs. Never request Codex while a stacked parent is moving.
+   Merge only under the auto-merge rule.
 8. **Merge readiness.** A PR is mergeable only when CI is green, the Codex review is clean (or every comment
    is fixed and re-reviewed), it is rebased on current main, and the PR body says what changed, what was
    deleted and what was not touched.
@@ -87,8 +89,10 @@ Where an older line in this file conflicts with these rules, these rules win.
     If two PRs need the same file, assign the overlap to one owner or the foundation PR; do not hold
     the other PR unopened. Open it against the owning PR's branch instead. Independent PRs use latest
     `main`. After each prerequisite merges, update the dependent PR onto latest `main`, switch to
-    merged shared pieces, take the next free migration number, and re-run CI and Codex. Only merge when
-    its prerequisites are on `main` and all checks are green under the auto-merge rule.
+    merged shared pieces, take the next free migration number, and re-run CI.
+    Request Codex once on the final eligible head after its prerequisites are on
+    `main` and CI is green, not while a parent is changing. Only merge when all
+    existing gates pass under the auto-merge rule.
 17. **End-to-end testing.** "Done" means every acceptance scenario was tested end to end on the real app
     and real café data (chat answer, screen, stored rows, scheduled job), not only unit tests or a few
     happy paths. The PR lists each scenario with pass or fail. Partial passes are not done. Keep CI fast:
@@ -96,13 +100,30 @@ Where an older line in this file conflicts with these rules, these rules win.
 18. **Use an existing skill first.** Before building anything, check for an official Anthropic/OpenAI skill or a repository skill that already does the job; reuse it instead of rebuilding it.
     The list, with pinned sources and the AI Cafe rules for each, is `docs/rules/skills.md`; Claude Code
     loads them from `.claude/skills/`, other agents open a skill's `SKILL.md` by path.
-19. **One coding chat and PR lifecycle.** Each authorized ChatGPT or Claude task opens its own draft
-    promptly, continues working in that same PR/chat through executable CI, actual Codex review,
-    required fixes, resolved threads and fresh final-head review, then completes the proven merge.
-    Do not claim a Codex review of an empty early draft proves the final implementation. Do not
-    start a background polling loop or invent uninterrupted cloud execution; after a chat ends,
-    the existing dispatcher resumes it at the saved GitHub head. Explicit owner questions must
-    be published on the same PR, including drafts, not left waiting in an invisible chat.
+19. **One coding chat and PR lifecycle; one Codex request per ready state.**
+    Open an early draft, finish the approved code, tests, evidence and PR-comment
+    disposition in that SAME PR/chat. Request Codex only AFTER the complete applicable
+    CI is green on a stable head, review comments and owner scope are reconciled,
+    and the PR is genuinely ready. For a stacked child, keep developing/testing
+    while its parent is open, but NEVER ask for Codex until the parent has merged,
+    the child is based on current main, and full CI is green. Do not mark the child
+    ready merely to trigger an early review.
+    The ready transition may automatically trigger Codex: if a review has already
+    started for that ready state, do NOT also post `@codex review`. Do not request
+    again for unchanged code, comments, an already-running review, or a moving stack.
+    Finish docs/file hygiene BEFORE the first final review. If substantive code
+    changes are needed after findings, fix them together, rerun all applicable CI,
+    then request ONE re-review of the final new head; do not request on every push.
+    A PR comment or body-only edit does NOT change the head and never needs another
+    request. Avoid documentation-only commits after the final review: if an
+    unavoidable commit or rebase changes the head, freeze the final new head and
+    obtain exactly one required exact-head review AFTER CI, rather than waiving
+    the immutable head/merge gate or requesting once per doc tweak.
+    A prior clean review never proves a changed-head PR. Resolve real findings with
+    executed evidence, preserve existing acceptance/base/approval/merge gates, and
+    complete the proven merge. Do not run a background polling loop or invent
+    uninterrupted cloud execution; the existing dispatcher resumes the saved chat.
+    Publish explicit owner questions on the SAME PR, including drafts.
 20. **No Vercel preview deployments/builds.** Vercel previews are disabled by owner decision for
     cost. Never enable automatic or manual Vercel preview builds for PRs, E2, or UI acceptance.
     When browser proof is needed, run the app in GitHub Actions with disposable test data and
@@ -137,7 +158,11 @@ The owner has separately **approved exact, disjoint coding scopes** for POS0e/b/
 - **Deletion safety:** retire consumers and verify them in migrated disposable CI **before** deleting obsolete diagnostic code/tables or mass-removing live rows. A diagnostic retention/purge migration must have explicit ownership, a migration/rollback plan and owner-approved production application. Never write a compatibility alias that recreates an old operational fallback.
 
 ## Code Review Rules
-Codex must review the whole PR first, then review only newly changed lines on later rounds. Check:
+Codex reviews the whole PR on its first eligible, full-CI-green ready state.
+Later rounds are only for substantive findings or a genuinely changed final head
+(after a consolidated fix and new green CI), not each push, comment, or moving
+stack. No manual duplicate request if the ready transition already started a
+review. The exact reviewed-head merge gate stays mandatory. Check:
 - **One path per capability:** no duplicate reader, calculator, attention list, inbox, agent loop or experiment system; explicitly name any replacement and deletion.
 - **No hardcoded values:** no literal currency, café ID/name, time zone, dates, price, or scenario-only test value in production paths; values come from the actual café's data/settings.
 - **Migration naming:** any new migration follows the repository's existing timestamped filename convention, uses the next free number on latest main, and does not collide with other PRs; RLS and compatibility must be checked.
