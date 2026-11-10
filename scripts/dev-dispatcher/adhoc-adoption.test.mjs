@@ -43,7 +43,7 @@ test('adopts eligible open human same-repo PR and retains destination after reco
   assert.equal(updated.tasks['ADHOC-501'].conversation_ref,chat);
 });
 
-test('excludes forks, bots, queue tasks and PRs lacking verified chat marker',()=>{
+test('excludes forks, bots and missing chat while PR-body task markers are ignored',()=>{
   const cases=[
     pr(502,{same_repo:false}),
     pr(503,{bot_author:true}),
@@ -52,7 +52,8 @@ test('excludes forks, bots, queue tasks and PRs lacking verified chat marker',()
     pr(506,{branch:'feat/aicafe-task-POS0b'})
   ];
   const found=adoptAdhocPullRequests(state(),cases,['POS0a','POS0b']);
-  assert.deepEqual(Object.keys(found.state.tasks),[]);
+  assert.deepEqual(Object.keys(found.state.tasks),['ADHOC-505']);
+  assert.equal(found.state.tasks['ADHOC-505'].conversation_ref,chat);
   assert.deepEqual(found.skipped,[504]);
 });
 
