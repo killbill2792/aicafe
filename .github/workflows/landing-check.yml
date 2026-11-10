@@ -2,6 +2,14 @@ name: Post-merge landing check
 on:
   push:
     branches: [main]
+  # GITHUB_TOKEN merges do not fire other push workflows; the existing
+  # dispatcher invokes this same post-merge check explicitly instead.
+  workflow_dispatch:
+    inputs:
+      merged_sha:
+        description: Verified merged commit SHA on main
+        required: true
+        type: string
 permissions:
   contents: read
   pull-requests: read
@@ -14,6 +22,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Verify and select merged main commit for dispatcher invocation
+        id: verify
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.merged_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid merge SHA"; exit 1; }
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$TARGET_SHA" origin/main || {
+            echo "::error::Requested SHA is not on main"; exit 1;
+          }
+          git checkout --detach "$TARGET_SHA"
       - name: Run existing fast dispatcher smoke tests
         id: smoke
         shell: bash
@@ -24,9 +47,10 @@ jobs:
           cat "$RUNNER_TEMP/landing.log"
           echo "exit_code=$result" >> "$GITHUB_OUTPUT"
       - name: Write receipt and report only real failures
-        if: always()
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || steps.verify.outcome == 'success') }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_SHA: ${{ inputs.merged_sha || github.sha }}
           LANDING_EXIT_CODE: ${{ steps.smoke.outputs.exit_code }}
           LANDING_LOG: ${{ runner.temp }}/landing.log
         run: node .github/scripts/landing-receipt.cjs
