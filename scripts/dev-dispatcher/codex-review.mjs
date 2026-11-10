@@ -56,7 +56,7 @@ export async function requestCodexReview({github,record,task,records = {}}) {
   });
   return {status:'requested',head_sha:sha};
 }
- 
+
 // Check GitHub receipts on the existing dispatcher tick. A timed-out request
 // escalates to the referee; unchanged code is never requested again.
 const codexActor=login=>/^(?:chatgpt-codex-connector(?:\[bot\])?|codex(?:\[bot\])?)$/i.test(login||'');
