@@ -398,7 +398,8 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
         Date.parse(pr.codex_review_at) > Date.parse(baseChangedAt));
       copy.tasks[id] = { ...updated, ...pr, task_id: id,
         base_changed_at: baseChangedAt || null, review_base_current: reviewBaseCurrent,
-        status: (pr.github_owner_question || updated.owner_question) ? "blocked_needs_owner" :
+        owner_question: pr.owner_approved ? null : updated.owner_question,
+        status: (pr.github_owner_question || (!pr.owner_approved && updated.owner_question)) ? "blocked_needs_owner" :
           pr.draft ? "draft_open" : "review_fixing", github_state: "open",
         submission_state: updated.submission_state };
     }
