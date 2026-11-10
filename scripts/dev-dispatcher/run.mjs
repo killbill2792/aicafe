@@ -50,6 +50,18 @@ async function main() {
     // arriving during the same GitHub reconciliation must not revive old work.
     const live = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
     const applied = applyReceiptsSafely(live,receiptScan.accepted,actorMap);
+    // A planned parent-merge prompt is not a delivered instruction. Repair
+    // pre-v2 early markers and advance only after an authenticated receipt.
+    for (const [key, action] of Object.entries(applied.state.actions)) {
+      if (action.type !== 'parent_merged') continue;
+      const rec = applied.state.tasks[action.task_id];
+      if (!rec?.parent_merged_sha ||
+          key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + rec.parent_merged_sha)
+        continue;
+      if (action.status === 'submitted') rec.last_parent_rebase_sha = rec.parent_merged_sha;
+      else if (rec.last_parent_rebase_sha === rec.parent_merged_sha)
+        rec.last_parent_rebase_sha = null;
+    }
     const withFeedback = reconcileReceiptFeedback(applied.state,{
       ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
     },new Date().toISOString());
@@ -57,6 +69,14 @@ async function main() {
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
+    // Replace only still-planned legacy child follow-ups. Never cancel a
+    // claimed/submitted/uncertain delivery or an owner-facing action.
+    for (const action of Object.values(copy.actions)) {
+      if (action.status === 'planned' &&
+          ['repair_ci', 'repair_review', 'continue_pr'].includes(action.type) &&
+          ['POS0b', 'POS0c', 'POS0d'].includes(action.task_id))
+        action.status = 'cancelled_superseded_template';
+    }
     for (const [id, rec] of Object.entries(copy.tasks)) {
       const task = taskById.get(id);
       if (!task || rec.github_state !== 'open') continue;
@@ -82,18 +102,26 @@ async function main() {
       }
     }
 
-    const assigned = dispatchFrontier(queue, copy.tasks);
+    const assignments = dispatchFrontier(queue, copy.tasks);
+    const assigned = [];
     const nudges = [];
     const now = new Date().toISOString();
-    for (const assignment of assigned) {
+    for (const assignment of assignments) {
       const key = assignmentActionKey(copy, assignment.task_id, queue);
       if (!key) continue;
       const record = { task_id: assignment.task_id, status: "assigned",
         agent: assignment.agent, branch: `feat/aicafe-task-${assignment.task_id}`, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
         approval_hash: approvalSignature(taskById.get(assignment.task_id)),
         prompt_id: `task:${assignment.task_id}`, prompt_version: "v2" };
-      const delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
-        action: "assign", actionId: key });
+      let delivery;
+      try {
+        delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
+          action: "assign", actionId: key });
+      } catch (error) {
+        console.error(`Task ${assignment.task_id} delivery creation failed: ${error.message}`);
+        continue;
+      }
+      assigned.push(assignment);
       copy.actions[key] = { ...assignment, task_id: assignment.task_id,
         type: "assign", status: "planned", delivery_owner: "muse", created_at: now, delivery };
       copy.tasks[assignment.task_id] = record;
@@ -109,10 +137,15 @@ async function main() {
         if (!task || task.architecture_approval?.approved !== true ||
             !editableFiles(task).length || rec.approval_hash !== approvalSignature(task) ||
             (Number.isInteger(rec.pr_number) && rec.github_state !== "open")) continue;
-        const delivery = createDelivery({ task, record: rec,
-          action: proposal.action, actionId: proposal.key });
+        let delivery;
+        try {
+          delivery = createDelivery({ task, record: rec,
+            action: proposal.action, actionId: proposal.key });
+        } catch (error) {
+          console.error(`Task ${id} delivery creation failed: ${error.message}`);
+          continue;
+        }
         rec.last_action_key = proposal.key;
-        if (proposal.action === 'parent_merged') rec.last_parent_rebase_sha = rec.parent_merged_sha;
         if (proposal.action === 'owner_answered') rec.last_owner_answer_key = rec.owner_answer_key;
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
           status: "planned", delivery_owner: "muse",
@@ -235,7 +268,8 @@ async function main() {
       }
       // Ordinary main-based stale branches are refreshed automatically, never
       // force-pushed. A new head must rerun all exact-head CI/acceptance/Codex.
-      if (rec.base_current === false && rec.base_branch === 'main') {
+      if (rec.base_current === false && rec.base_branch === 'main' &&
+          !(rec.draft === true && rec.coder_done !== true)) {
         try {
           const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
           console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);

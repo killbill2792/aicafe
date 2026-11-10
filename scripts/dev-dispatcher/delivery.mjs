@@ -122,7 +122,9 @@ export function createDelivery({ task, record, action, actionId }) {
     'POS0a docs approval is NOT runtime proof; task-specific signed coding scope required.'
   );
   const prompt = lines.filter(Boolean).join('\n');
-  if (Buffer.byteLength(prompt,'utf8') > 2048) throw new Error('Step prompt exceeds 2 KB');
+  const promptBytes = Buffer.byteLength(prompt,'utf8');
+  if (promptBytes > 4096)
+    console.warn(`Task ${task.id} delivery prompt exceeds 4096 bytes (${promptBytes}); continuing`);
   return {version:1,action_id:actionId,project,approval_hash:authorization,
     provider:record.agent,intent:isNew?'start_new_chat':'continue_existing_chat',
     base_branch:record.base_branch || 'main',conversation_url:url,

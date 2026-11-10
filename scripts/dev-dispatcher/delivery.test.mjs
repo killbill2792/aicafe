@@ -172,3 +172,44 @@ test('all authorized POS0 prompts are small and require linked preflight instead
       action:'assign',actionId:'revoked:'+id}));
   }
 });
+
+
+test('POS0e Codex follow-up with three maximum excerpts is delivered even past 2 KB', () => {
+  const pos0e = queue.tasks.find(t => t.id === 'POS0e');
+  const comments = Array.from({ length: 3 }, (_, i) => ({
+    body: ('Codex finding ' + i + ' ').padEnd(400, 'x'),
+    url: 'https://github.com/killbill2792/aicafe/pull/404#discussion_r' + '9'.repeat(150)
+  }));
+  const result = createDelivery({
+    task: pos0e,
+    record: { approved: true, agent: 'chatgpt', pr_number: 404,
+      conversation_ref: url, unresolved_codex_comments: comments },
+    action: 'codex_comments', actionId: 'codex_comments:POS0e:head'
+  });
+  assert.equal(result.task_id, 'POS0e');
+  assert.equal(result.intent, 'continue_existing_chat');
+  assert.ok(Buffer.byteLength(result.prompt, 'utf8') > 2048,
+    'exercise the former 2 KB hard-failure case');
+  assert.equal(result.prompt_hash, promptHash(result.prompt));
+  assert.equal((result.prompt.match(/Codex finding/g) || []).length, 3);
+});
+
+test('oversize prompts warn past 4096 bytes but still return without leaking prompt text', () => {
+  const longScope = Array.from({ length: 8 }, (_, i) =>
+    'lib/' + 'long-safe-path-'.repeat(45) + i + '.mjs');
+  const expanded = { ...task, exclusive_files: longScope };
+  const warnings = [];
+  const original = console.warn;
+  console.warn = message => warnings.push(message);
+  try {
+    const result = createDelivery({ task: expanded, record, action: 'assign',
+      actionId: 'long-scope' });
+    assert.ok(Buffer.byteLength(result.prompt, 'utf8') > 4096);
+    assert.equal(result.prompt_hash, promptHash(result.prompt));
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /4096 bytes/);
+    assert.doesNotMatch(warnings[0], /long-safe-path/);
+  } finally {
+    console.warn = original;
+  }
+});
