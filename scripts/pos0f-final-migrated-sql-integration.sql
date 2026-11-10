@@ -113,6 +113,38 @@ BEGIN
       WHERE business_id=a AND restaurant_guid=restaurant_a AND entity='employee'
         AND payload->>'display_name'='Nadia POS0f'),
     'Actual roster writer/trigger must retain exactly one current object');
+  -- The SAME operational roster writer must not create a new current row
+  -- or change-log event for an identical provider response. A real employee
+  -- name edit must replace the one object and journal exactly its changed
+  -- field, rather than overwrite unversioned history or hash the name.
+  PERFORM pg_temp.pos0f_assert(
+    public.toast_stage_employee_roster(a,restaurant_a,jsonb_build_array(
+      jsonb_build_object('employee_guid',employee_a,'display_name','Nadia POS0f',
+        'deleted',false)))=1,
+    'Repeated identical provider roster response is accepted');
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*)=1 FROM public.toast_raw_records WHERE business_id=a
+      AND restaurant_guid=restaurant_a AND entity='employee'
+      AND entity_guid=employee_a)
+    AND NOT EXISTS (SELECT 1 FROM public.toast_raw_changes
+      WHERE business_id=a AND entity='employee' AND entity_guid=employee_a),
+    'Identical roster fetch remains one current row with no artificial change');
+  PERFORM pg_temp.pos0f_assert(
+    public.toast_stage_employee_roster(a,restaurant_a,jsonb_build_array(
+      jsonb_build_object('employee_guid',employee_a,'display_name','Nadia Updated',
+        'deleted',false)))=1,
+    'A genuine provider name edit is accepted by the existing writer');
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*)=1 AND max(payload->>'display_name')='Nadia Updated'
+      FROM public.toast_raw_records WHERE business_id=a AND entity='employee'
+      AND entity_guid=employee_a)
+    AND (SELECT count(*)=1 FROM public.toast_raw_changes
+      WHERE business_id=a AND entity='employee' AND entity_guid=employee_a
+        AND EXISTS (
+          SELECT 1 FROM jsonb_array_elements(changes) d
+          WHERE d->>'path'='.display_name' AND d->>'before'='Nadia POS0f'
+            AND d->>'after'='Nadia Updated')),
+    'Changed roster name is current once, with one exact before/after audit');
   PERFORM pg_temp.pos0f_assert(
     public.ai_toast_fields(a,'employee') @>
       '[{"field":"data.display_name","type":"string"}]'::jsonb,
@@ -124,7 +156,7 @@ BEGIN
     null::text[],null::jsonb,'2026-10-26','2026-10-26',null,10);
   PERFORM pg_temp.pos0f_assert(
     jsonb_array_length(result->'rows')=1
-      AND result->'rows'->0->>'data.display_name'='Nadia POS0f',
+      AND result->'rows'->0->>'data.display_name'='Nadia Updated',
     'Registered existing query_data SQL must return real roster writer name by GUID');
   BEGIN
     PERFORM public.toast_stage_employee_roster(b,restaurant_b,jsonb_build_array(
