@@ -5,7 +5,7 @@ export const promptHash = prompt => createHash('sha256').update(prompt).digest('
 // Generated ONLY on trusted main by the existing deterministic dispatcher.
 const PROVIDERS = new Set(['chatgpt', 'claude']);
 const ACTIONS = new Set(['assign', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder',
-  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'dependency_proven', 'idle_continue', 'plan', 'brainstorm']);
+  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'dependency_proven', 'repair_conflict', 'idle_continue', 'plan', 'brainstorm']);
 const REPO = 'https://github.com/killbill2792/aicafe';
 
 // POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING is mandatory and remains
@@ -86,6 +86,7 @@ export function createDelivery({ task, record, action, actionId }) {
     codex_comments:'codex_comments: Resolve these unresolved Codex threads:\n' +
       (comments || 'Read unresolved threads on ' + pr) +
       '\nFix together; rerun CI before ONE re-review on the final head.',
+    repair_conflict:'repair_conflict: GitHub reports a merge conflict or failed branch update. Resolve the conflict on the current PR head and rerun required checks.',
     ci_failed:'ci_failed: ' + (record.ci_failure_job || 'Find failing CI job') + '\n' +
       (record.ci_failure_url || pr) +
       '\nDiagnose and fix the actual failure; do not weaken tests; rerun CI.',
@@ -136,7 +137,7 @@ export function createDelivery({ task, record, action, actionId }) {
     'Codex: ' + (record.codex_state || 'unknown') +
       '; exact-head receipt ' + (record.codex_reviewed_sha || 'none') +
       '; resolve outstanding review threads without using old-head findings as current state',
-    'Owner decision: ' + (record.github_owner_question || record.owner_question || 'none') +
+    'Privileged owner hold: ' + (record.sensitive_owner_block ? 'paid/live/prod/secret approval needed' : 'none') +
       '; acceptance: ' + (record.acceptance_proven === true ? 'proven' : 'not yet proven') +
       '; coder done: ' + (record.coder_done === true ? 'yes' : 'no'),
     ...(record.dependency_proven_text ? ['Proven dependencies: ' + record.dependency_proven_text] : []),
