@@ -8,7 +8,7 @@ const pathOK=p=>typeof p==='string'&&p.length>0&&p.length<240&&!p.startsWith('/'
 export function validateSettings(s,{expectedRepo}={}){
  if(!s||s.version!==1||(s.legacy_proof_before!=null &&
    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(s.legacy_proof_before))||!repoPattern.test(s.repo)||expectedRepo&&expectedRepo!==s.repo||
-   !repoPattern.test(s.queue?.repo)||s.queue.repo!==s.repo||!pathOK(s.queue.path)||
+   !repoPattern.test(s.queue?.repo)||!pathOK(s.queue.path)||
    s.queue.ref!=='main'||!repoPattern.test(s.ledger?.repo)||!pathOK(s.ledger.path)||
    !pathOK(s.ledger.receipts_path)||!pathOK(s.ledger.owner_view_path)||
    !/^https:\/\/chatgpt\.com\/g\/[a-zA-Z0-9_-]+\/?$/.test(s.chatgpt?.project_url||'')||
@@ -25,7 +25,10 @@ export function validateSettings(s,{expectedRepo}={}){
    !repoPattern.test(s.owner?.login+'/x')||
    !pathOK(s.paths?.signal)||!pathOK(s.paths?.authority)||!pathOK(s.paths?.progress)||
    !pathOK(s.paths?.skills)||!pathOK(s.paths?.task_brief_root)||!s.naming?.task_prefix||!s.naming.branch_prefix||
-   !/^[a-z0-9-]+$/.test(s.naming.marker_prefix))throw Error('Invalid or cross-repository dispatcher settings');
+   !/^[a-z0-9-]+$/.test(s.naming.marker_prefix)||
+   !pathOK(s.auto_test_branch)||!Array.isArray(s.protected_files)||
+   !Array.isArray(s.required_checks.names)||!s.required_checks.names.length||
+   !Array.isArray(s.setup?.required_secrets)||!Array.isArray(s.setup?.required_vars))throw Error('Invalid or cross-repository dispatcher settings');
  return s;
 }
 export function loadSettings(path=SETTINGS_PATH,options={}){

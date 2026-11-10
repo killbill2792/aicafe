@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {settings} from './settings.mjs';
+import {loadQueue} from './queue-source.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
@@ -23,9 +24,7 @@ import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
 async function main() {
-  const queue = JSON.parse(readFileSync(new URL('../../'+settings.queue.path,import.meta.url),'utf8'));
-  validateQueue(queue);
-  const taskById = new Map(queue.tasks.map(task => [task.id, task]));
+  // The checked-in queue or an external studio queue is read after GitHub auth.
   const repo = process.env.GITHUB_REPOSITORY;
   const githubToken = process.env.GITHUB_TOKEN;
   if (!repo || !githubToken || repo!==settings.repo) throw new Error('Dispatcher repository/settings mismatch');
@@ -36,6 +35,9 @@ async function main() {
   if (commit && (!ledgerRepo || !ledgerToken)) throw new Error("Cannot persist without private ledger repo and token");
   const ledger = ledgerRepo && ledgerToken ? new GitHubLedger({ repo: ledgerRepo, token: ledgerToken, path:settings.ledger.path }) : null;
   const gh = new GitHubFacts({ repo, token: githubToken });
+  const queue = await loadQueue({github:gh,config:settings});
+  validateQueue(queue);
+  const taskById = new Map(queue.tasks.map(task => [task.id, task]));
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
   async function observe(state) {
     const mainRef = await gh.request("/git/ref/heads/main");

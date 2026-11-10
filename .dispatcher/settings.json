@@ -36,7 +36,10 @@
     "baseline": "AI CAFE PR baseline",
     "baseline_workflow": "AI CAFE Pull Request Baseline",
     "acceptance_workflow": "AI CAFE Acceptance Evidence",
-    "integration_workflow": "AI CAFE Integration Proof"
+    "integration_workflow": "AI CAFE Integration Proof",
+    "names": [
+      "AI CAFE PR baseline"
+    ]
   },
   "workflows": {
     "dispatcher": "ai-cafe-dev-dispatcher.yml",
@@ -60,5 +63,24 @@
     "branch_prefix": "feat/aicafe-task-",
     "marker_prefix": "aicafe"
   },
-  "legacy_proof_before": "2026-11-10T21:47:03Z"
+  "legacy_proof_before": "2026-11-10T21:47:03Z",
+  "task_order": {
+    "strategy": "dependencies_then_priority",
+    "source": "signed_queue"
+  },
+  "auto_test_branch": "dispatcher/auto-test",
+  "protected_files": [],
+  "setup": {
+    "required_secrets": [
+      "DISPATCH_LEDGER_TOKEN",
+      "DISPATCH_SIGNAL_SECRET",
+      "DISPATCH_TARGET_WAKE_TOKEN",
+      "DISPATCH_INSTALL_TOKEN"
+    ],
+    "required_vars": [
+      "DISPATCH_COURIER_ACTORS",
+      "DISPATCH_LEDGER_AUTO_PERSIST",
+      "DISPATCH_TARGET_REPO"
+    ]
+  }
 }

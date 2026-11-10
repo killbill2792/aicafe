@@ -12,7 +12,7 @@ export function targetSettings(input){
  if(mandatory.some(k=>typeof input?.[k]!=='string'||!input[k].trim()))
   throw Error('Missing per-repository installation inputs');
  const t=structuredClone(source),slug=input.repo.split('/')[1].toLowerCase().replace(/[^a-z0-9-]/g,'-');
- delete t.legacy_proof_before; t.repo=input.repo;t.queue={repo:input.repo,path:input.queue_path,ref:'main'};
+ delete t.legacy_proof_before; t.repo=input.repo;t.queue={repo:input.queue_repo||input.repo,path:input.queue_path,ref:input.queue_ref||'main'};
  t.ledger={repo:input.ledger_repo,path:input.ledger_path||source.ledger.path,
   receipts_path:input.receipts_path||source.ledger.receipts_path,
   owner_view_path:input.owner_view_path||source.ledger.owner_view_path};
@@ -26,19 +26,30 @@ export function targetSettings(input){
  t.workflows={dispatcher:'dispatcher.yml',delayed_wake:'dispatcher-delayed-wake.yml',
   integration:input.integration_file};
  t.auto_merge={coding:input.auto_merge_coding===true,infrastructure:false};
+ t.task_order={strategy:'dependencies_then_priority',source:'signed_queue'};
+ t.auto_test_branch=input.auto_test_branch||'dispatcher/auto-test';
+ t.protected_files=input.protected_files||[];
+ t.required_checks.names=input.required_check_names||[input.baseline_check];
  t.paths.pos_preflight=input.pos_preflight||null;
  if(input.task_brief_root)t.paths.task_brief_root=input.task_brief_root;
  if(!repoOK(t.repo)||!repoOK(t.ledger.repo)||t.ledger.repo===source.ledger.repo||
     t.repo===source.repo||t.chatgpt.project_url===source.chatgpt.project_url||
     t.chatgpt.account_label===source.chatgpt.account_label||
-    t.muse.space===source.muse.space||!safePath(t.queue.path))throw Error('Shared or unsafe target runtime');
- return validateSettings(t);
+    t.muse.space===source.muse.space||!repoOK(t.queue.repo)||!safePath(t.queue.path))throw Error('Shared or unsafe target runtime');
+ const configured=validateSettings(t);
+ console.log('Dispatcher target '+configured.repo+' | queue '+configured.queue.repo+'/'+configured.queue.path+
+  ' | ledger '+configured.ledger.repo+' | Muse '+configured.muse.space+
+  ' | ChatGPT '+configured.chatgpt.account_label+' '+configured.chatgpt.project_url+
+  ' | auto-test '+configured.auto_test_branch+' | task order '+configured.task_order.strategy);
+ console.log('Required secrets: '+configured.setup.required_secrets.join(', ')+
+  '; vars: '+configured.setup.required_vars.join(', ')+
+  '; ledger-repo DISPATCH_TARGET_REPO='+configured.repo);
+ return configured;
 }
 export function templatePaths(files){
  return files.filter(x=>x.type==='blob'&&
   (x.path.startsWith('scripts/dev-dispatcher/')&&
-   (x.path.endsWith('.mjs')&&!x.path.endsWith('.test.mjs')||
-    ['settings.test.mjs','wake.test.mjs'].some(t=>x.path.endsWith('/'+t)))||
+   x.path.endsWith('.mjs')||
    x.path==='.github/workflows/'+source.workflows.dispatcher||
    x.path==='.github/workflows/'+source.workflows.delayed_wake));
 }
@@ -51,7 +62,7 @@ export function renderDispatcherYaml(content,target){
  .replaceAll(source.naming.task_prefix+'-dispatcher',target.naming.task_prefix+'-dispatcher')
  .replaceAll(String(source.owner.dashboard_issue),String(target.owner.dashboard_issue))
  .replace('node --test scripts/dev-dispatcher/*.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs',
- 'node --test scripts/dev-dispatcher/settings.test.mjs scripts/dev-dispatcher/wake.test.mjs');
+ 'node --test scripts/dev-dispatcher/*.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs');
 }
 export function destination(path,target){
  if(path==='.github/workflows/'+source.workflows.dispatcher)
