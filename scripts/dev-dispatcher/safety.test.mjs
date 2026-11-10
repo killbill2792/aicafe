@@ -86,3 +86,14 @@ test('existing owner notices flag wrong-repo, connector 403 and third stall',asy
  assert.ok(notes.some(n=>n.question==='ChatGPT Codex Connector likely missing repo owner/product'));
  assert.ok(notes.some(n=>/D7 referee/.test(n.question)));
 });
+
+test('nonrequired existing check with exact field annotation still gets same-chat repair',async()=>{
+ const {decideNudge}=await import('./core.mjs');
+ const rec={approved:true,conversation_ref:'https://chatgpt.com/c/test',pr_number:7,github_state:'open',
+ task_id:'T',head_sha:head,ci_state:'success',field_check_failure:true,
+ ci_failure_fix:'Invalid vision version\\nFix: update version'};
+ const action=decideNudge(rec);
+ assert.equal(action.kind,'propose');
+ assert.equal(action.action,'ci_failed');
+ assert.match(action.key,/Invalid%20vision/);
+});
