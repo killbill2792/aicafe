@@ -238,7 +238,7 @@ async function main() {
       }
       // Ordinary main-based stale branches are refreshed automatically, never
       // force-pushed. A new head must rerun all exact-head CI/acceptance/Codex.
-      if (!parent && rec.base_current === false && rec.base_branch === 'main') {
+      if (rec.base_current === false && rec.base_branch === 'main') {
         const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
         console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
       }
