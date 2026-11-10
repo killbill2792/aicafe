@@ -33,11 +33,13 @@ const smoke=process.env.POS0E_E2_SMOKE==="1";
 // schemas on every paid turn. The full suite still uses the unrestricted
 // production Supervisor toolset; never claim smoke proves that whole surface.
 const smokeReaderTools=["describe_data","query_data"] as const;
-// Owner explicitly approved ONE additional cost-capped five-question Luna smoke.
-// Full 18-question acceptance intentionally retains its earlier stricter cap;
-// a larger full run requires its own separate authorization.
-const MAX_PAID_CALLS=smoke?16:12;
-const MAX_INPUT_REQUEST_BYTES=smoke?600_000:200_000;
+// The owner explicitly directed closure through real-agent proof and proper
+// merge. The five-turn smoke keeps its prior caps. The ONE signed full-18
+// acceptance run gets an independently bounded envelope; hitting any cap
+// fails closed before the next provider request, not a partial acceptance pass.
+// These are usage limits, NOT a hard currency cost guarantee.
+const MAX_PAID_CALLS=smoke?16:64;
+const MAX_INPUT_REQUEST_BYTES=smoke?600_000:3_000_000;
 const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
 let paidCalls=0,requestBytes=0,outputTokensReserved=0;
 // A rejected transport budget is not an OpenAI/Luna failure. Never include
