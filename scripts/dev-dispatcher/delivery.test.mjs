@@ -61,7 +61,8 @@ test('unapproved, empty scope, changed signature, unsafe links and unknown actio
   const signed=approvalSignature(task);
   assert.equal(signed.length,64);
   assert.equal(approvalSignature({...task,uses:['lib/used.mjs']}),signed===null?null:approvalSignature({...task,uses:['lib/used.mjs']}));
-  assert.notEqual(approvalSignature({...task,edits:task.exclusive_files,uses:['lib/used.mjs']}),signed);
+  assert.notEqual(approvalSignature({...task,edits:['lib/new-write.mjs'],uses:['lib/used.mjs']}),signed);
+   assert.equal(approvalSignature({...task,uses:['lib/used.mjs']}),signed);
 });
 
 test('same-chat followups are short, state-specific, and never pretend to deliver',()=>{
