@@ -58,7 +58,8 @@ async function main() {
       if (action.type !== 'parent_merged') continue;
       const rec = applied.state.tasks[action.task_id];
       if (!rec?.parent_merged_sha ||
-          key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + rec.parent_merged_sha)
+          (key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + rec.parent_merged_sha + ':' + rec.head_sha &&
+           key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + rec.parent_merged_sha))
         continue;
       if (action.status === 'submitted') rec.last_parent_rebase_sha = rec.parent_merged_sha;
       else if (rec.last_parent_rebase_sha === rec.parent_merged_sha)
