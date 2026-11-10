@@ -57,6 +57,9 @@ describe("POS0e retained current-source dictionary and shared reader",()=>{
   expect(description).toContain("the canonical source column is data provenance");
   expect(description).toContain("avoid repeated schema discovery");
   expect(description).toContain("call query_data directly");
+  const discovery=agentToolDefinitions.find(tool=>tool.name==="describe_data");
+  expect(discovery?.description).toContain("ONLY when the canonical view or field path is genuinely unknown");
+  expect(discovery?.description).toContain("call query_data directly without schema discovery");
  });
  it("describes the correct Toast menu-item GUID lookup without confusing evidence refs",async()=>{
   const described=await dataQueryTools.describe_data.execute({view:"cv_inventory"});
