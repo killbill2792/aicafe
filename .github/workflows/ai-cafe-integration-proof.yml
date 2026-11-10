@@ -88,6 +88,8 @@ jobs:
         with:
           version: 2.121.0
       - name: Install pinned dependencies and run official field inventory
+        env:
+          POS0F_FIELD_MATRIX_PATH: ${{ runner.temp }}/pos0f-official-field-gaps.json
         run: |
           npm ci
           node --test scripts/pos0f-final-source-coverage.test.mjs
@@ -102,6 +104,14 @@ jobs:
         run: |
           psql -X -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -f scripts/pos0f-final-migrated-sql-integration.sql
+      - name: Upload exact-head field-level coverage gap matrix
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pos0f-official-field-coverage-gaps
+          path: ${{ runner.temp }}/pos0f-official-field-gaps.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Shut down disposable Supabase
         if: always()
         run: supabase stop --no-backup
