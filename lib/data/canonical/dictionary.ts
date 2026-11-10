@@ -1033,7 +1033,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_dining_options": {
-    "meaning": "Retained current Toast dining-option configuration, not diagnostic captures; provider permissions and freshness may be incomplete.",
+    "meaning": "Retained current Toast dining-option configuration, not diagnostic captures; undated reference records are included regardless of the requested café date range, without inventing a business date. Provider permissions and freshness may be incomplete.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -1060,7 +1060,7 @@ export const canonicalDictionary = {
         "example": "Is this record complete?"
       },
       "business_date": {
-        "meaning": "Café local business date of the retained current Toast record, when supplied.",
+        "meaning": "Café business date supplied by Toast; NULL for undated dining-option configuration. Reference records remain queryable for any selected date range.",
         "unit": "local date",
         "source": "app",
         "example": "What happened on this date?"
