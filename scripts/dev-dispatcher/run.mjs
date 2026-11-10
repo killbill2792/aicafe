@@ -5,7 +5,7 @@ import { readFileSync, appendFileSync } from "node:fs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions, editableFiles } from "./core.mjs";
-import { approvalSignature, createDelivery } from "./delivery.mjs";
+import { approvalSignature, approvalMatches, createDelivery } from "./delivery.mjs";
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
@@ -135,7 +135,7 @@ async function main() {
         const task = taskById.get(id);
         // Only approved, exactly owned tasks from the trusted queue can reach Dave.
         if (!task || task.architecture_approval?.approved !== true ||
-            !editableFiles(task).length || rec.approval_hash !== approvalSignature(task) ||
+            !editableFiles(task).length || !approvalMatches(task, rec.approval_hash) ||
             (Number.isInteger(rec.pr_number) && rec.github_state !== "open")) continue;
         let delivery;
         try {
