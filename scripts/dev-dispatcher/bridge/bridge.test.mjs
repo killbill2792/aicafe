@@ -214,18 +214,18 @@ test('v2 dispatcher nudges pass bridge and opaque wake-up signal without changin
     const key=type==='parent_merged'?'parent_merged:6:'+merged:'nudge:'+type;
     const d=createDelivery({task,record:current,action:type,actionId:key});
     const pending={key,task_id:'6',type,status:'planned',delivery_owner:'muse',
-      head_sha:type==='parent_merged'?null:head,delivery:d};
+      head_sha:head,delivery:d};
     const ledger={version:1,tasks:{'6':current},actions:{[key]:(({key,...a})=>a)(pending)}};
     assert.equal(validateHandoff(pending,current),true,type);
     assert.deepEqual(pendingActions(ledger).map(a=>a.key),[key],type);
     assert.equal(signalFor(ledger,'secret'.repeat(8)).pending_count,1,type);
     assert.equal(d.prompt_hash,createHash('sha256').update(d.prompt).digest('hex'));
     if(type==='parent_merged'){
-      assert.equal(validateHandoff(pending,{...current,head_sha:'c'.repeat(40)}),true,
-        'verified parent-merge action is head-independent');
+      assert.equal(validateHandoff(pending,{...current,head_sha:'c'.repeat(40)}),false,
+        'parent-merge instructions are bound to the current child head');
       assert.equal(validateHandoff(pending,{...current,branch_maintenance_merge_sha:'c'.repeat(40)}),false);
       assert.equal(validateHandoff(pending,{...current,base_branch:'feat/parent'}),false);
-      assert.equal(validateHandoff({...pending,head_sha:head},current),false);
+      assert.equal(validateHandoff({...pending,head_sha:null},current),false);
     }else{
       assert.equal(validateHandoff(pending,{...current,head_sha:'c'.repeat(40)}),false,
         type+' must remain exact-head');
