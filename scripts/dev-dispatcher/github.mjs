@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
 export function parseTaskMarker(body) {
@@ -195,8 +196,22 @@ export class GitHubFacts {
     // A historical comment question cannot authorize a newly edited PR-body
     // question. Without a body-revision receipt, a later PR update holds the
     // decision conservatively rather than guessing what "Owner approved" meant.
-    if (latestApproval && Date.parse(latestApproval.created_at || '') >= questionTime &&
-        (!inBody || Date.parse(latestApproval.created_at || '') >= Date.parse(pr.updated_at || '')))
+    // Prefer an explicit question-identity receipt when one is supplied; never
+    // apply an approval naming an earlier question to a revised question.
+    const latestCommentQuestion = comments.filter(c =>
+      ['OWNER','MEMBER','COLLABORATOR'].includes(c.author_association) &&
+      parseOwnerQuestion(c.body)).sort((a,b)=>
+        Date.parse(b.created_at || '') - Date.parse(a.created_at || ''))[0];
+    const activeQuestion = inBody || parseOwnerQuestion(latestCommentQuestion?.body);
+    const bound = String(latestApproval?.body || '').match(
+      /<!-- aicafe-owner-approved-question ([a-f0-9]{64}) -->/);
+    const activeDigest = activeQuestion
+      ? createHash('sha256').update(activeQuestion).digest('hex') : null;
+    const identityMatches = !bound || bound[1] === activeDigest;
+    const approvalAfterRevision = latestApproval &&
+      Date.parse(latestApproval.created_at || '') >= questionTime &&
+      (!inBody || Date.parse(latestApproval.created_at || '') >= Date.parse(pr.updated_at || ''));
+    if (approvalAfterRevision && identityMatches)
       return { question: null, url: null, approved: true };
     if (inBody) return { question: inBody, url: pr.html_url || null };
     // Owners can request a decision in the PR conversation, not only in its body.
