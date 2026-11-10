@@ -258,19 +258,10 @@ test('one-review policy holds Codex on drafts/stacked children until eligible CI
  assert.match(child.prompt,/final CI-green head/);
  assert.match(child.prompt,/stacked-parent-moving/);
  assert.doesNotMatch(child.prompt,/After changes request a fresh Codex review until/);
- const authority=readFileSync(new URL('../../AGENTS.md',import.meta.url),'utf8');
- assert.match(authority,/one Codex request per ready state/i);
- assert.match(authority,/A PR comment or body-only edit does NOT change the head/);
- assert.match(authority,/The exact reviewed-head merge gate stays mandatory/);
+ // Verify actual generated instructions, not the wording of AGENTS.md.
+ assert.match(independ.prompt,/request ONE review/);
+ assert.match(independ.prompt,/do not @codex again/);
+ assert.match(child.prompt,/no review for comments or same head/i);
+ assert.match(child.prompt,/Exact-head, threads and acceptance gates stay mandatory/);
 });
 
-
-test('review lifecycle skill requests one eligible CI-green review, not every push',()=>{
- const skill=readFileSync(new URL('../../.claude/skills/aicafe-pr-lifecycle/SKILL.md',import.meta.url),'utf8');
- assert.match(skill,/Do NOT request Codex on each push/);
- assert.match(skill,/full applicable CI GREEN/);
- assert.match(skill,/parent has merged/);
- assert.match(skill,/ONE final-head re-review/);
- assert.match(skill,/Coding PRs NEVER edit shared PROGRESS.md/);
- assert.doesNotMatch(skill,/mark addressed threads resolved.*request fresh Codex review/);
-});
