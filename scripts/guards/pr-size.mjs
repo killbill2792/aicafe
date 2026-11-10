@@ -23,13 +23,14 @@ export function hasBigOk(raw = '') {
 }
 
 // One GitHub-event-scoped owner approval, never a PR body or self-applied label.
-export function ownerApproved427(event,repo) {
- return repo==='killbill2792/aicafe'&&event?.pull_request?.number===427&&
+export function ownerApproved427(event,repo,head) {
+ return repo==='killbill2792/aicafe'&&/^[a-f0-9]{40}$/.test(head||'')&&
+  event?.pull_request?.head?.sha===head&&event.pull_request.number===427&&
   event.pull_request.head?.repo?.full_name===repo&&
   event.pull_request.head?.ref==='feat/dispatcher-per-repo-event-driven-20261110';
 }
 function approvedFromGitHubEvent(env=process.env){
- try{return ownerApproved427(JSON.parse(readFileSync(env.GITHUB_EVENT_PATH,'utf8')),env.GITHUB_REPOSITORY);}
+ try{return ownerApproved427(JSON.parse(readFileSync(env.GITHUB_EVENT_PATH,'utf8')),env.GITHUB_REPOSITORY,env.HEAD_SHA);}
  catch{return false;}
 }
 export function isIgnored(path) {
