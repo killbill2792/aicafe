@@ -168,18 +168,20 @@ describe("ask_owner tool",()=>{
   "What is the total number of Online orders yesterday?",
   "How many refund transactions were recorded last week?",
   "How much sales were recorded today?"
- ])("blocks a model-generated owner fact card for recorded POS data: %s",async ownerText=>{
-  const ctx={resolveState:newResolveState(ownerText),locale:"en"} as AgentToolContext;
+ ])("blocks an unsourced numeric fact with the existing POS reader available: %s",async ownerText=>{
+  const ctx={resolveState:newResolveState(ownerText),locale:"en",
+   canonicalData:async()=>{throw new Error("must not read data during provenance validation");}
+  } as AgentToolContext;
   const request={kind:"facts",question:"Please give me that number",options:[],allowOther:false,
    fields:[{key:"generic_count",label:"Count",inputType:"number",units:[],defaultUnit:""}]};
   const rejected=await askOwnerTools.ask_owner.execute(request,ctx);
-  expect(rejected).toMatchObject({source:"ask_owner",error:"posFactRequiresReader",
-   missing:["posFactRequiresReader"],nextTool:"query_data"});
+  expect(rejected).toMatchObject({source:"ask_owner",error:"numericOwnerInputUnverified",
+   missing:["numericOwnerInputUnverified"],nextTool:"query_data"});
   expect(rejected.question).toBeUndefined();
   expect(ctx.resolveState!.asked).toBe(false);
   // A model-authored changeSaved flag cannot turn a POS fact into owner input.
   const forged=await askOwnerTools.ask_owner.execute({...request,changeSaved:true},ctx);
-  expect(forged).toMatchObject({error:"posFactRequiresReader",nextTool:"query_data"});
+  expect(forged).toMatchObject({error:"numericOwnerInputUnverified",nextTool:"query_data"});
   expect(ctx.resolveState!.asked).toBe(false);
   // A rejected owner card must not use the sole clarification slot.
   const ownerOnly=await askOwnerTools.ask_owner.execute({kind:"facts",
@@ -202,6 +204,49 @@ describe("ask_owner tool",()=>{
    fields:[{key:"owner_context",label:"Your input",inputType:"text",units:[],defaultUnit:""}]},ctx);
   expect(card).toMatchObject({source:"ask_owner",kind:"facts",missing:[]});
   expect(ctx.resolveState!.asked).toBe(true);
+ });
+ it.each(["date","text","choice"] as const)(
+  "permits a missing pop-up %s clarification even when the original request is an order count",
+  async inputType=>{
+   const ownerText="How many orders did we take at the pop-up?";
+   const ctx={resolveState:newResolveState(ownerText),locale:"en",
+    canonicalData:async()=>{throw new Error("owner context must be collected first");}
+   } as AgentToolContext;
+   const field={key:"popup_context",label:"Which pop-up?",inputType,
+    units:[],defaultUnit:"",
+    ...(inputType==="choice"?{choices:[{label:"Morning",value:"am"},
+     {label:"Evening",value:"pm"}]}:{})};
+   const card=await askOwnerTools.ask_owner.execute({kind:"facts",
+    question:"Which pop-up should I use?",options:[],allowOther:false,
+    fields:[field]},ctx);
+   expect(card).toMatchObject({source:"ask_owner",kind:"facts",missing:[]});
+   expect(ctx.resolveState!.asked).toBe(true);
+  });
+ it("permits trusted owner-only numeric gaps without relying on question keywords",async()=>{
+  const ownerText="How many seats does our café have?";
+  const key="seat_count";
+  const ctx={resolveState:newResolveState(ownerText),locale:"en",
+   canonicalData:async()=>{throw new Error("not needed");},
+   turnResults:()=>[{name:"owner_facts",result:{source:"owner_facts",period:null,missing:[key]}}]
+  } as AgentToolContext;
+  const card=await askOwnerTools.ask_owner.execute({kind:"facts",
+   question:"What is the seating capacity?",options:[],allowOther:false,
+   fields:[{key,label:"Seat count",inputType:"number",units:[],defaultUnit:""}]},ctx);
+  expect(card).toMatchObject({source:"ask_owner",kind:"facts",missing:[]});
+  expect(ctx.resolveState!.asked).toBe(true);
+ });
+ it("a model's field label, saved flag, or prior POS result cannot forge number provenance",async()=>{
+  const key="item_count";
+  const ctx={resolveState:newResolveState("Tell me the item count"),locale:"en",
+   canonicalData:async()=>{throw new Error("not needed");},
+   turnResults:()=>[{name:"query_data",result:{source:"canonical_data",period:null,missing:[key]}}]
+  } as AgentToolContext;
+  const card=await askOwnerTools.ask_owner.execute({kind:"facts",
+   question:"Owner-only seat count?",options:[],allowOther:false,changeSaved:true,
+   fields:[{key,label:"Owner-only number",inputType:"number",
+    units:[],defaultUnit:"",remember:"lasting"}]},ctx);
+  expect(card).toMatchObject({error:"numericOwnerInputUnverified",nextTool:"query_data"});
+  expect(ctx.resolveState!.asked).toBe(false);
  });
  it("does not allow model-invented POS intent to override a non-POS owner question",async()=>{
   const ctx={resolveState:newResolveState("How many seats are at our café?"),locale:"en"} as AgentToolContext;
@@ -258,7 +303,7 @@ describe("ask_owner tool",()=>{
   expect(turn.endReason).toBe("complete");
   expect(turn.tools).toEqual(expect.arrayContaining(["ask_owner","query_data"]));
   expect(turn.results.find(x=>x.source==="ask_owner")).toMatchObject({
-   error:"posFactRequiresReader",missing:["posFactRequiresReader"],nextTool:"query_data"});
+   error:"numericOwnerInputUnverified",missing:["numericOwnerInputUnverified"],nextTool:"query_data"});
   expect(turn.results.find(x=>x.source==="canonical_data")).toMatchObject({
    aggregate:{metric:"count_source_ref",value:2}});
   expect(turn.results.some(x=>x.source==="ask_owner"&&x.missing.length===0)).toBe(false);
