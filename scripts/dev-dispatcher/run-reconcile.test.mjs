@@ -164,3 +164,14 @@ test('main maintenance excludes unfinished drafts without disabling parent maint
   assert.match(source, /rec\.base_current === false && rec\.base_branch === 'main' &&\s*!\(rec\.draft === true && rec\.coder_done !== true\)/);
   assert.match(source, /await updateChildAfterParentMerge\(\{github:gh,dependent:rec,predecessor:parent\}\)/);
 });
+
+test('one live pending checklist per PR even if two task records reference it',()=>{
+  const h=harness({proposals:{
+    bad:{kind:'propose',action:'idle_continue',key:'idle_continue:bad:head'},
+    good:{kind:'propose',action:'idle_continue',key:'idle_continue:good:head'}
+  }});
+  const result=h.run(initial({bad:record('bad'),good:record('good')}));
+  const planned=Object.values(result.state.actions).filter(a=>a.status==='planned');
+  assert.equal(planned.length,1);
+  assert.equal(planned[0].task_id,'bad');
+});
