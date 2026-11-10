@@ -46,6 +46,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [] } 
     dispatchFrontier: () => assignments,
     assignmentActionKey: (_state, id) => 'assign:' + id,
     approvalSignature: () => 'signed',
+    approvalMatches: (_task, signed) => signed === 'signed',
     editableFiles: t => t?.exclusive_files || [],
     decideNudge: rec => proposals[rec.task_id] || { kind: 'hold' },
     createDelivery: ({ record: rec, action, actionId }) => {
@@ -96,70 +97,18 @@ test('one failing follow-up does not block other tasks or write action or early 
   assert.match(h.errors.join('\n'), /Task bad delivery creation failed: synthetic delivery failure/);
 });
 
-test('supersede ONLY planned legacy POS0b/c/d repair and continuation actions', () => {
-  const actions = {
-    b: { task_id: 'POS0b', type: 'repair_ci', status: 'planned' },
-    c: { task_id: 'POS0c', type: 'repair_review', status: 'planned' },
-    d: { task_id: 'POS0d', type: 'continue_pr', status: 'planned' },
-    submitted: { task_id: 'POS0b', type: 'repair_ci', status: 'submitted' },
-    claimed: { task_id: 'POS0c', type: 'repair_ci', status: 'claimed' },
-    uncertain: { task_id: 'POS0d', type: 'repair_ci', status: 'uncertain' },
-    e: { task_id: 'POS0e', type: 'continue_pr', status: 'planned' },
-    decision: { task_id: 'POS0e', type: 'owner_decision', status: 'planned' },
-    unrelated: { task_id: 'POS0b', type: 'owner_alert', status: 'submitted' }
-  };
-  const h = harness({
-    proposals: Object.fromEntries(['POS0b', 'POS0c', 'POS0d'].map(id => [
-      id, { kind: 'propose', action: 'idle_continue', key: 'idle_continue:' + id + ':head' }
-    ]))
-  });
-  const result = h.run(initial({
-    POS0b: record('POS0b'), POS0c: record('POS0c'),
-    POS0d: record('POS0d'), POS0e: record('POS0e')
-  }, actions));
-  for (const key of ['b', 'c', 'd'])
-    assert.equal(result.state.actions[key].status, 'cancelled_superseded_template');
-  for (const key of ['submitted', 'claimed', 'uncertain', 'e', 'decision', 'unrelated'])
-    assert.equal(result.state.actions[key].status, actions[key].status);
-  assert.equal(result.state.actions['idle_continue:POS0b:head'].status, 'planned');
-  assert.equal(result.state.actions['idle_continue:POS0c:head'], undefined,
-    'claimed action still blocks duplicate sends');
-  assert.equal(result.state.actions['idle_continue:POS0d:head'], undefined,
-    'uncertain action still blocks duplicate sends');
-  assert.equal(result.state.owner_alerts.notice.status, 'planned');
-});
-
-test('new v2 follow-up replaces a cancelled legacy child action only once', () => {
-  const h = harness({ proposals: {
-    POS0d: { kind: 'propose', action: 'ci_failed', key: 'ci_failed:POS0d:head' }
-  } });
-  const first = h.run(initial({ POS0d: record('POS0d') }, {
-    old: { task_id: 'POS0d', status: 'planned', type: 'continue_pr' }
-  }));
-  assert.equal(first.state.actions.old.status, 'cancelled_superseded_template');
-  assert.equal(first.state.actions['ci_failed:POS0d:head'].status, 'planned');
-  const second = h.run(first.state);
-  assert.equal(Object.values(second.state.actions).filter(a =>
-    a.task_id === 'POS0d' && a.status === 'planned').length, 1);
-});
-
-test('parent-merged receipt, not planning, records the completed merge notification', () => {
-  const key = 'parent_merged:POS0b:' + sha;
-  const action = { task_id: 'POS0b', type: 'parent_merged', status: 'planned',
-    delivery: { action_id: key } };
-  const state = initial({
-    POS0b: { ...record('POS0b'), parent_merged_sha: sha,
-      last_parent_rebase_sha: sha }
-  }, { [key]: action });
-  const pending = harness().run(state);
-  assert.equal(pending.state.tasks.POS0b.last_parent_rebase_sha, null,
-    'repair the premature marker written by old dispatcher ticks');
-  const submitted = harness({ receipts: [key] }).run(pending.state);
-  assert.equal(submitted.state.actions[key].status, 'submitted');
-  assert.equal(submitted.state.tasks.POS0b.last_parent_rebase_sha, sha);
-});
-
 test('main maintenance excludes unfinished drafts without disabling parent maintenance', () => {
-  assert.match(source, /rec\.base_current === false && rec\.base_branch === 'main' &&\s*!\(rec\.draft === true && rec\.coder_done !== true\)/);
+  assert.match(source, /rec\.base_current === false && rec\.base_branch === 'main' &&\s*!\(rec\.draft === true && rec\.ci_state !== 'success'\)/);
   assert.match(source, /await updateChildAfterParentMerge\(\{github:gh,dependent:rec,predecessor:parent\}\)/);
+});
+
+test('one live pending checklist per PR even if two task records reference it',()=>{
+  const h=harness({proposals:{
+    bad:{kind:'propose',action:'idle_continue',key:'idle_continue:bad:head'},
+    good:{kind:'propose',action:'idle_continue',key:'idle_continue:good:head'}
+  }});
+  const result=h.run(initial({bad:record('bad'),good:record('good')}));
+  const planned=Object.values(result.state.actions).filter(a=>a.status==='planned');
+  assert.equal(planned.length,1);
+  assert.equal(planned[0].task_id,'bad');
 });

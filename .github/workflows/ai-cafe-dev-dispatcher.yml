@@ -6,7 +6,7 @@ on:
   # GitHub may delay/drop scheduled events. Keep one five-minute schedule but
   # offset it from the crowded :00/:05/... boundaries.
   schedule:
-    - cron: '2-59/5 * * * *'
+    - cron: '2/5 * * * *'
   # When main advances, reconcile the already-received courier receipts now,
   # rather than waiting for a best-effort scheduled event. Not a new dispatcher.
   push:
@@ -15,12 +15,18 @@ on:
   # PR-body edits / owner-decision label changes even after code CI finished.
   # The trusted runner checks out main only; no PR-head code or artifacts run with secrets.
   workflow_run:
-    workflows: ['AI CAFE Pull Request Baseline', 'AI CAFE Acceptance Evidence']
+    workflows: ['AI CAFE Pull Request Baseline', 'AI CAFE Acceptance Evidence', 'AI CAFE Integration Proof']
     types: [completed]
   # Owner questions can be published after the last PR commit. A trusted
   # collaborator comment on a PR wakes the same reconciler, without a cron.
   issue_comment:
     types: [created]
+  check_suite:
+    types: [completed]
+  check_run:
+    types: [completed]
+  pull_request_review:
+    types: [submitted, dismissed]
   workflow_dispatch:
     inputs:
       persist_private_ledger:
@@ -29,9 +35,9 @@ on:
         required: false
         default: false
   pull_request:
-    paths:
-      - 'scripts/dev-dispatcher/**'
-      - '.github/workflows/ai-cafe-dev-dispatcher.yml'
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited]
+    # Run deterministic PR-head tests only for dispatcher changes; privileged
+    # reconciliation always checks out main, not untrusted PR code.
   # All credential-bearing events use code checked out from protected main.
   # Raw pull_request events are still unprivileged tests only. For privileged
   # workflow_run/issue_comment events, unit.if rejects forks and untrusted
@@ -56,8 +62,15 @@ jobs:
     # Other events use their existing guards and trusted checkout context.
     if: >-
       (github.event_name != 'workflow_run' ||
-       (github.event.workflow_run.event == 'pull_request' &&
+       ((github.event.workflow_run.event == 'pull_request' ||
+         github.event.workflow_run.name == 'AI CAFE Integration Proof') &&
         github.event.workflow_run.head_repository.full_name == github.repository)) &&
+      (github.event_name != 'check_run' || github.event.check_run.app.slug == 'github-actions') &&
+      (github.event_name != 'check_suite' || github.event.check_suite.app.slug == 'github-actions') &&
+      (github.event_name != 'pull_request_review' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+                 github.event.review.author_association))) &&
       (github.event_name != 'issue_comment' ||
        (github.event.issue.pull_request &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
@@ -83,7 +96,11 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'workflow_run' ||
-      github.event_name == 'issue_comment'
+      github.event_name == 'issue_comment' ||
+      github.event_name == 'check_suite' ||
+      github.event_name == 'check_run' ||
+      github.event_name == 'pull_request_review' ||
+      github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -114,7 +131,7 @@ jobs:
           DISPATCH_TRANSIENT_CI_RETRY: ${{ vars.DISPATCH_TRANSIENT_CI_RETRY }}
           # Existing GitHub issue is the owner's public-safe live status surface.
           DISPATCH_OWNER_DASHBOARD_ISSUE: '411'
-          PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
+          PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
         run: |
           if [ "$PERSIST" = "true" ]; then
             node scripts/dev-dispatcher/run.mjs --commit
@@ -122,7 +139,7 @@ jobs:
             node scripts/dev-dispatcher/run.mjs
           fi
       - name: Publish opaque wake-up signal (only after private ledger persistence)
-        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
+        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}

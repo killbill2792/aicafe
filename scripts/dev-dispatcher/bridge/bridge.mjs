@@ -16,6 +16,7 @@ const ACTION_INTENTS = {
   // continuation intent, NOT new receipt types or a new courier.
   ci_failed: 'continue_existing_chat', codex_comments: 'continue_existing_chat',
   parent_merged: 'continue_existing_chat', owner_answered: 'continue_existing_chat',
+  dependency_proven: 'continue_existing_chat', repair_conflict: 'continue_existing_chat',
   idle_continue: 'continue_existing_chat',
   plan: 'continue_existing_chat', brainstorm: 'continue_existing_chat'
 };
@@ -37,22 +38,21 @@ export function validateHandoff(action, task) {
       !/^[a-f0-9]{64}$/.test(d.approval_hash || '') ||
       d.approval_hash !== task.approval_hash) return false;
   const prFollowup = ['repair_ci', 'repair_review', 'continue_pr',
-    'ci_failed', 'codex_comments', 'owner_answered', 'idle_continue'].includes(action.type);
+    'ci_failed', 'codex_comments', 'owner_answered', 'dependency_proven', 'repair_conflict', 'idle_continue'].includes(action.type);
   if (prFollowup && (!Number.isInteger(task.pr_number) || task.github_state !== 'open' ||
       !task.head_sha || action.head_sha !== task.head_sha)) return false;
-  // Parent-merged is deliberately head-independent: GitHub update-branch can
-  // change the child's head before the browser receives the ONE follow-up.
-  // Anchor it instead to a verified parent merge, completed maintenance,
-  // main destination, task identity and the stable action key.
+  // Parent-merged must carry a non-null exact child head: the courier
+  // rejects unanchored instructions. A newer push invalidates the old
+  // delivery and the reconciler may prepare a fresh one.
   if (action.type === 'parent_merged') {
     const merged = task.parent_merged_sha;
     if (!Number.isInteger(task.pr_number) || task.github_state !== 'open' ||
         !task.head_sha || task.base_branch !== 'main' ||
-        d.base_branch !== 'main' || action.head_sha != null ||
+        d.base_branch !== 'main' || action.head_sha !== task.head_sha ||
         !/^[a-f0-9]{40}$/.test(merged || '') ||
         task.branch_maintenance_merge_sha !== merged ||
-        task.last_parent_rebase_sha !== merged ||
-        action.key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + merged)
+        task.last_parent_rebase_sha === merged ||
+        action.key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + merged + ':' + task.head_sha)
       return false;
   }
   if (action.type === 'pre_pr_reminder' && Number.isInteger(task.pr_number)) return false;

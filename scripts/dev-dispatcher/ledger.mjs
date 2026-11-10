@@ -29,10 +29,18 @@ export class GitHubLedger {
     this.fetchFn = fetchFn;
   }
   async request(path, options = {}) {
-    const response = await this.fetchFn(`https://api.github.com/repos/${this.repo}${path}`, {
-      ...options, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
-        "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
-    });
+    // Bounded retries for transient GitHub/API infrastructure failures only.
+    // Never retry CAS collisions or validation/auth failures as blind writes.
+    let response;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      response = await this.fetchFn(`https://api.github.com/repos/${this.repo}${path}`, {
+        ...options, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
+          "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
+      });
+      if (response.ok || !Number.isInteger(response.status) ||
+          response.status < 500 || response.status > 599 || attempt === 2) break;
+      await new Promise(resolve => setTimeout(resolve, 250 * (2 ** attempt)));
+    }
     if (!response.ok) {
       if (response.status === 404 && (!options.method || options.method === "GET")) return { absent: true };
       if ([409, 412, 422].includes(response.status)) throw Object.assign(new Error("Ledger write collision"), { code: "CONFLICT" });

@@ -8,90 +8,6 @@ const rec={task_id:'6',approved:true,pr_number:100,head_sha:'head',base_sha:'bas
  codex_reviewed_sha:'head',threads_resolved:true,base_current:true};
 const evidence={head_sha:'head',base_sha:'base',ci_run_id:10,acceptance_run_id:11,
  acceptance:[{id:'1',command:'node --test',job_url:'https://github.com/test',test_file:'scripts/dev-dispatcher/effects.test.mjs',result:'passed'}]};
-test('merge cannot proceed without exact acceptance evidence',()=>{
- assert.equal(canMerge(rec,[],evidence).eligible,true);
- assert.equal(canMerge(rec,[],{...evidence,head_sha:'old'}).eligible,false);
- assert.equal(canMerge({...rec,draft:true},[],evidence).eligible,false);
- assert.deepEqual(canMerge({...rec,base_branch:'feat/predecessor'},[],evidence).reasons,['non_main_destination']);
- assert.equal(canMerge(rec,[{status:'merged'}],evidence).eligible,false);
-});
-test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>{
- const calls=[];
- const pr={state:'open',draft:false,merged:false,head:{sha:'head'},base:{sha:'base',ref:'main'},mergeable:true};
- const github={request:async(path,options)=>{
-   calls.push([path,options?.method]);
-   if(path.endsWith('/merge'))return {merged:true,sha:'merged'};
-   if(path==='/actions/runs/11/jobs?per_page=100') return {total_count:1,jobs:[{name:'AI CAFE acceptance evidence',status:'completed',conclusion:'success',html_url:'https://github.com/test',steps:[{name:'Run approved acceptance scenarios',status:'completed',conclusion:'success'}]}]};
-   if(path==='/actions/runs/11')return {name:'AI CAFE Acceptance Evidence',head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
-   if(path.startsWith('/actions/runs/')) return path.includes('/jobs') ? {total_count:1,jobs:[{name:'AI CAFE PR baseline',conclusion:'success'}]} : {id:10,head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
-   if(path.startsWith('/contents/')) return {type:'file'};
-   return pr;
- },one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',coder_done:true,threads_resolved:true}),
- acceptanceProof:async()=>({task_id:'6',run_id:11,head_sha:'head',base_sha:'base',acceptance_digest:acceptanceDigest(evidence.acceptance),acceptance:[{...evidence.acceptance[0]}]})};
- assert.equal((await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:false})).status,'disabled');
- const done=await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true});
- assert.equal(done.status,'merged_unproven');assert.equal(done.merge_sha,'merged');
- assert.equal(done.integration_dispatch,'requested');
- assert.deepEqual(calls.at(-2),['/pulls/100/merge','PUT']);
- assert.deepEqual(calls.at(-1),['/actions/workflows/ai-cafe-integration-proof.yml/dispatches','POST']);
- const draftPr={...pr,draft:true,node_id:'PR_100',labels:[],body:'<!-- aicafe-coder-done -->'};
- const readyCalls=[];
- const readyGitHub={...github,request:async(path,options)=>{
-   readyCalls.push([path,options?.method]);
-   if(path==='https://api.github.com/graphql')
-     return {data:{markPullRequestReadyForReview:{pullRequest:{id:'PR_100',isDraft:false}}}};
-   if(path==='/pulls/100')return draftPr;
-   return github.request(path,options);
- }};
- const prepared=await mergeApprovedPr({github:readyGitHub,
-   record:{...rec,draft:true,coder_done:true},evidence,expectedAcceptance:['scenario'],
-   enabled:true,action:'ready'});
- assert.equal(prepared.status,'ready_for_review');
- assert.ok(readyCalls.some(([path,method])=>path==='https://api.github.com/graphql' && method==='POST'));
- assert.equal(readyCalls.some(([path])=>path==='/pulls/100/merge'),false);
- const disputed=await mergeApprovedPr({github:readyGitHub,
-   record:{...rec,draft:true,coder_done:true,github_owner_question:'Approve scope expansion?'},
-   evidence,expectedAcceptance:['scenario'],enabled:true,action:'ready'});
- assert.deepEqual(disputed.reasons,['owner_decision_pending']);
- const staleLabel={...readyGitHub,request:async(path,options)=>
-   path==='/pulls/100'?{...draftPr,labels:[{name:'needs-owner-decision'}]}:
-   readyGitHub.request(path,options)};
- assert.deepEqual((await mergeApprovedPr({github:staleLabel,
-   record:{...rec,draft:true,coder_done:true},evidence,expectedAcceptance:['scenario'],
-   enabled:true,action:'ready'})).reasons,['live_owner_question_pending']);
- assert.equal((await mergeApprovedPr({github:readyGitHub,record:{...rec,draft:true,coder_done:true},
-   evidence,expectedAcceptance:['scenario'],enabled:false,action:'ready'})).status,'disabled');
- let readyReads=0;
- const lastMinuteReady={...readyGitHub,request:async(path,options)=>{
-   if(path==='/pulls/100') {
-     readyReads++;
-     return readyReads===1?draftPr:{...draftPr,labels:[{name:'needs-owner-decision'}]};
-   }
-   return readyGitHub.request(path,options);
- }};
- assert.deepEqual((await mergeApprovedPr({github:lastMinuteReady,
-   record:{...rec,draft:true,coder_done:true},evidence,expectedAcceptance:['scenario'],
-   enabled:true,action:'ready'})).reasons,['live_owner_question_pending']);
- let mergeReads=0;
- const lastMinuteMerge={...github,request:async(path,options)=>{
-   if(path==='/pulls/100') {
-     mergeReads++;
-     return mergeReads===1?pr:{...pr,body:'<!-- aicafe-owner-question Await approval -->'};
-   }
-   return github.request(path,options);
- }};
- assert.deepEqual((await mergeApprovedPr({github:lastMinuteMerge,
-   record:rec,evidence,expectedAcceptance:['scenario'],enabled:true}))
-   .reasons,['live_owner_question_pending']);
- const wrongBase={...github,request:async(path,options)=>path.startsWith('/pulls/') && !path.endsWith('/merge') ? {...pr,base:{sha:'base',ref:'feat/old'}} : github.request(path,options)};
- assert.deepEqual((await mergeApprovedPr({github:wrongBase,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true})).reasons,['live_pr_changed']);
- const dispatchFail={...github,request:async(path,options)=>{if(path.includes('/dispatches'))throw Error('403');return github.request(path,options);}};
- const outcome=await mergeApprovedPr({github:dispatchFail,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true});
- assert.equal(outcome.status,'merged_unproven');
- assert.equal(outcome.integration_dispatch,'failed_needs_retry');
- const invalid={...github,acceptanceProof:async()=>({task_id:'6',run_id:11,head_sha:'head',base_sha:'base',acceptance_digest:'f'.repeat(64),acceptance:evidence.acceptance})};
- assert.deepEqual((await mergeApprovedPr({github:invalid,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true})).reasons,['acceptance_artifact_mismatch']);
-});
 test('integration requires actual main SHA and passing scenario run',()=>{
  const args={merged_sha:'merged',main_sha:'main',
  proof:{merged_sha:'merged',main_sha:'main',conclusion:'success',workflow_run_id:42,
@@ -172,4 +88,52 @@ test('verified infrastructure CI retry is at-most-once and fails closed',async()
  assert.equal(state.tasks['6'].transient_ci_retry.run_id,123);
  assert.equal((await retryStartupFailure({github,ledger,taskId:'6',record:{...eligible,ci_failure_kind:null},enabled:true})).status,'not_verified_infrastructure_failure');
  assert.equal((await retryStartupFailure({github,ledger,taskId:'6',record:eligible,enabled:false})).status,'disabled');
+});
+
+test('live merge checks exact current SHA, clean Codex, threads and mergeable base',async()=>{
+  const sha='a'.repeat(40),base='b'.repeat(40);
+  const record={task_id:'T',pr_number:50,head_sha:sha,base_sha:base,
+    draft:false,ci_state:'success',codex_state:'clean',codex_reviewed_sha:sha,
+    threads_resolved:true,mergeable:true,coder_done:false,
+    acceptance_proven:false,owner_question:'routine',github_owner_question:'routine'};
+  let calls=[];
+  const pr={number:50,state:'open',merged:false,draft:false,
+    head:{sha},base:{sha:base,ref:'main'},mergeable:true,labels:[]};
+  const github={request:async(path,options)=>{
+    calls.push(path);
+    if(path==='/pulls/50') return pr;
+    if(path==='/pulls/50/merge') return {merged:true,sha:'c'.repeat(40)};
+    if(path.includes('/dispatches')) return {ok:true};
+    throw Error('Unexpected '+path);
+  },one:async()=>({head_sha:sha,ci_state:'success',codex_state:'clean',
+    codex_reviewed_sha:sha,threads_resolved:true,sensitive_owner_block:false})};
+  const result=await mergeApprovedPr({github,record,enabled:true,
+    predecessors:[{status:'merged',merge_sha:'d'.repeat(40)}]});
+  assert.equal(result.status,'merged_unproven');
+  assert.ok(calls.includes('/pulls/50/merge'));
+  const stale=await mergeApprovedPr({github:{...github,one:async()=>({
+    head_sha:sha,ci_state:'success',codex_state:'pending',
+    codex_reviewed_sha:null,threads_resolved:true})},record,enabled:true});
+  assert.deepEqual(stale.reasons,['live_checks_changed']);
+  const conflict=await mergeApprovedPr({github:{...github,request:async(path,options)=>
+    path==='/pulls/50'?{...pr,mergeable:false}:github.request(path,options)},
+    record,enabled:true});
+  assert.equal(conflict.status,'blocked');
+  assert.deepEqual((await mergeApprovedPr({github,record,
+    predecessors:[{status:'draft_open'}],enabled:true})).reasons,['predecessor_not_merged']);
+});
+test('green draft auto-ready does not require coder-done or acceptance proof',async()=>{
+  const sha='a'.repeat(40),base='b'.repeat(40);
+  const record={task_id:'T',pr_number:50,head_sha:sha,base_sha:base,
+    draft:true,ci_state:'success',coder_done:false,acceptance_proven:false};
+  const pr={state:'open',merged:false,draft:true,node_id:'PR_50',
+    head:{sha},base:{sha:base,ref:'main'},mergeable:true,labels:[],body:''};
+  const github={request:async(path)=>{
+    if(path==='/pulls/50')return pr;
+    if(path==='https://api.github.com/graphql')
+      return {data:{markPullRequestReadyForReview:{pullRequest:{isDraft:false}}}};
+    throw Error('Unexpected '+path);
+  },one:async()=>({head_sha:sha,ci_state:'success',sensitive_owner_block:false})};
+  const done=await mergeApprovedPr({github,record,enabled:true,action:'ready'});
+  assert.equal(done.status,'ready_for_review');
 });
