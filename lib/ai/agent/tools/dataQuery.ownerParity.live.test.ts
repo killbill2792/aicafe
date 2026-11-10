@@ -92,7 +92,7 @@ it("POS0e paid transport refuses an oversized request at zero model cost",async(
   .rejects.toThrow("POS0e paid E2 budget exceeded (input_request_bytes)");
  expect(paidCalls).toBe(beforeCalls);
  expect(requestBytes).toBe(beforeBytes);
- expect(budgetRejection?.reason).toBe("input_request_bytes");
+ expect(budgetRejection).toMatchObject({reason:"input_request_bytes"});
  budgetRejection=null;
 });
 
