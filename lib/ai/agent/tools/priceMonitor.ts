@@ -13,6 +13,70 @@ export function monitorCafeDate(asOf:string,timezone:string):string{
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
+/** Source-verified Toast price changes are OBSERVATIONS, never experiments.
+ * This is a pure handoff for the existing Operating Board/owner notifier:
+ * it schedules no job, sends no message and does not claim order-level proof.
+ * The caller must supply records annotated by the authorized current-source
+ * receipt, not old owner_manual/initial rows from menu_price_history. */
+export type VerifiedToastPriceDelta={
+ businessId:string;restaurantGuid:string;menuItemId:string;posItemId:string;
+ contextKey:string;sourceType:"connected_pos";sourceProvider:"toast";
+ oldPriceCents:number;newPriceCents:number;publicationVersion:string;
+ observedAt:string;sourceEffectiveAt:string|null;
+};
+export type ToastObservationWindow={
+ kind:"observational";businessId:string;restaurantGuid:string;
+ menuItemId:string;posItemId:string;contextKey:string;publicationVersion:string;
+ oldPriceCents:number;newPriceCents:number;observedAt:string;
+ sourceEffectiveAt:string|null;day:number;from:string;to:string;
+ due:boolean;interrupted:boolean;coverage:"not_assessed";
+ deliveryKey:string;
+};
+/** Seven elapsed 24-hour windows, preserving partial exposure when a second
+ * verified version arrives. Source lag and missing sales are NOT zero sales. */
+export function planVerifiedToastPriceObservations(
+ rows:readonly VerifiedToastPriceDelta[],asOf:string,
+):ToastObservationWindow[]{
+ const now=Date.parse(asOf);
+ if(!Number.isFinite(now))return [];
+ const DAY_MS=24*60*60*1000;
+ const valid=rows.filter(r=>{
+  const t=Date.parse(r.observedAt);
+  const idPrefix="toast:"+r.restaurantGuid.toLowerCase()+":";
+  return r.sourceType==="connected_pos"&&r.sourceProvider==="toast"&&
+   Boolean(r.businessId&&r.restaurantGuid&&r.menuItemId&&r.contextKey&&
+     r.publicationVersion&&r.posItemId.toLowerCase().startsWith(idPrefix))&&
+   Number.isFinite(t)&&t<=now&&
+   Number.isSafeInteger(r.oldPriceCents)&&r.oldPriceCents>0&&
+   Number.isSafeInteger(r.newPriceCents)&&r.newPriceCents>0&&
+   r.oldPriceCents!==r.newPriceCents;
+ }).sort((a,b)=>Date.parse(a.observedAt)-Date.parse(b.observedAt));
+ const output:ToastObservationWindow[]=[];
+ for(let i=0;i<valid.length;i++){
+  const r=valid[i],start=Date.parse(r.observedAt);
+  const next=valid.slice(i+1).find(n=>n.businessId===r.businessId&&
+   n.restaurantGuid===r.restaurantGuid&&n.posItemId===r.posItemId&&
+   n.contextKey===r.contextKey);
+  const nextStart=next?Date.parse(next.observedAt):Infinity;
+  for(let day=1;day<=7;day++){
+   const from=start+(day-1)*DAY_MS,naturalEnd=start+day*DAY_MS;
+   if(from>=nextStart)break;
+   const end=Math.min(naturalEnd,nextStart);
+   output.push({kind:"observational",businessId:r.businessId,
+    restaurantGuid:r.restaurantGuid,menuItemId:r.menuItemId,
+    posItemId:r.posItemId,contextKey:r.contextKey,
+    publicationVersion:r.publicationVersion,oldPriceCents:r.oldPriceCents,
+    newPriceCents:r.newPriceCents,observedAt:r.observedAt,
+    sourceEffectiveAt:r.sourceEffectiveAt,day,
+    from:new Date(from).toISOString(),to:new Date(end).toISOString(),
+    due:now>=end,interrupted:end<naturalEnd,coverage:"not_assessed",
+    deliveryKey:JSON.stringify([r.businessId,r.restaurantGuid,r.posItemId,
+      r.contextKey,r.publicationVersion,day])});
+  }
+ }
+ return output;
+}
+
 /** Pure mapping of the same canonical monitor rows the Operating Board uses. */
 export function mapPriceMonitorRows(rows:readonly OwnerProposalRow[],reports:readonly OwnerReportRow[],
     asOf:string,timezone:string){
