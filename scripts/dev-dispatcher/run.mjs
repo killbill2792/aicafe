@@ -15,6 +15,7 @@ import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
 import { queueOwnerAlerts } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
+import {classifyCodexChange} from './codex-carryover.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
@@ -248,6 +249,39 @@ async function main() {
     eventName:process.env.GITHUB_EVENT_NAME,now:new Date().toISOString(),
     observedScheduleAt:observed.lastScheduleAt}),current,observed.snapshot);
   const unmappedPrs = linkPullRequests(current, observed.snapshot).unmapped;
+  async function applyCodexProvenance(state, prior) {
+    for (const [id,rec] of Object.entries(state.tasks)) {
+      const before=prior.tasks?.[id];
+      if(!rec.head_sha || rec.github_state!=='open')continue;
+      if(rec.codex_state==='clean' && rec.codex_reviewed_sha===rec.head_sha) {
+        // Authenticate a direct Codex receipt before recording an anchor.
+        rec.codex_clean_head_sha=rec.head_sha;
+        rec.codex_clean_base_sha=rec.base_merge_sha || rec.base_sha;
+        rec.codex_carried_over=null;
+        continue;
+      }
+      if(before?.head_sha===rec.head_sha &&
+         before.codex_carried_over?.case==='B' &&
+         before.codex_carried_over.base_after_sha===rec.base_sha){
+        rec.codex_carried_over=before.codex_carried_over;
+        rec.codex_state='clean';rec.codex_reviewed_sha=rec.head_sha;
+        continue;
+      }
+      if(!before || before.head_sha===rec.head_sha)continue;
+      const evidence=await classifyCodexChange({github:gh,previous:before,current:rec});
+      rec.codex_change_case=evidence;
+      rec.codex_clean_head_sha=before.codex_clean_head_sha ||
+        (before.codex_state==='clean' && before.codex_reviewed_sha===before.head_sha
+          ?before.head_sha:null);
+      rec.codex_clean_base_sha=before.codex_clean_base_sha ||
+        (rec.codex_clean_head_sha===before.head_sha?before.base_merge_sha:null);
+      rec.codex_carried_over=evidence.case==='B'?evidence:null;
+      if(evidence.case==='B'){
+        rec.codex_state='clean';rec.codex_reviewed_sha=rec.head_sha;
+      }
+    }
+    return state;
+  }
   async function promoteIntegration(state) {
     const pending=Object.entries(state.tasks).filter(([,r])=>
       r.status==='merged' && /^[a-f0-9]{40}$/.test(r.merge_sha||''));
@@ -283,7 +317,7 @@ async function main() {
     // identical state every five minutes (avoids 288 empty commits per day).
     persisted = await ledger.transaction(async existing => {
       const latest = await observe(existing);
-      let next = reconcile(existing, latest).state;
+      let next = await applyCodexProvenance(reconcile(existing, latest).state,existing);
       next=trackScheduleGap(next,{eventName:process.env.GITHUB_EVENT_NAME,
         now:new Date().toISOString(),observedScheduleAt:latest.lastScheduleAt});
       await promoteIntegration(next);
@@ -371,6 +405,25 @@ async function main() {
         try {
           const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
           console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
+          if(result.status==='updating') {
+            await ledger.transaction(state=>{
+              const saved=state.tasks[id];
+              if(!saved || saved.head_sha!==rec.head_sha)return null;
+              saved.codex_branch_update={old_head_sha:rec.head_sha,
+                new_base_sha:rec.base_sha,status:'accepted_no_conflicts',
+                at:new Date().toISOString()};
+              saved.codex_branch_conflict=null;
+              return state;
+            });
+          } else if(result.reason==='conflict_needs_coder') {
+            await ledger.transaction(state=>{
+              const saved=state.tasks[id];
+              if(!saved || saved.head_sha!==rec.head_sha)return null;
+              saved.codex_branch_conflict={old_head_sha:rec.head_sha,
+                at:new Date().toISOString()};
+              return state;
+            });
+          }
         } catch (error) {
           // A temporarily conflicting update must not stall other approved PRs.
           console.error('PR #'+rec.pr_number+' main branch update will retry: '+error.message);
@@ -386,7 +439,7 @@ async function main() {
       if (!rec.pr_number || rec.github_state !== "open") continue;
       const task = taskById.get(id);
       if ((!task && !rec.adhoc) || (rec.draft !== true && !autoMerge)) continue;
-      if (rec.adhoc && rec.dispatcher_only && rec.draft !== true) continue;
+      if (rec.adhoc && rec.dispatcher_only) continue; // owner-merge only
       const predecessorRecords = rec.adhoc ? [] : predecessorsForMerge(task, queue, proposed.state.tasks);
       // Ready transitions need only green CI, not coder-done. The later merge
       // is a separate fresh reconciliation, never the same snapshot.
