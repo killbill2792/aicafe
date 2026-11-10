@@ -27,6 +27,12 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
   if (!['ready','merge'].includes(action))
     return {status:'blocked',reasons:['invalid_lifecycle_action']};
   const prepareReady = action === 'ready';
+  if (!prepareReady && record?.adhoc) {
+    if (record.dispatcher_only)
+      return {status:'blocked',reasons:['owner_merge_required']};
+    if (record.base_branch !== 'main')
+      return {status:'blocked',reasons:['adhoc_parent_base_not_main']};
+  }
   const gate = prepareReady ? readyGate(record) : canMerge(record,predecessors);
   if (!gate.eligible) return {status:'blocked',reasons:gate.reasons};
   // Never trust stale ledger state for irreversible effects.
@@ -36,6 +42,12 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
       (!prepareReady && pr.mergeable !== true))
     return {status:'blocked',reasons:['live_pr_changed']};
   const live=await github.one(pr);
+  // Recheck the actual GitHub base and changed paths: an adopted stacked PR
+  // cannot merge into its open parent (or trigger main integration proof).
+  if (!prepareReady && record.adhoc &&
+      (pr.base?.ref !== 'main' || live.base_branch !== 'main' ||
+       live.dispatcher_only))
+    return {status:'blocked',reasons:['adhoc_base_or_owner_merge_changed']};
   if (live.head_sha !== record.head_sha || live.ci_state !== 'success' ||
       live.sensitive_owner_block || (!prepareReady &&
         (live.codex_state !== 'clean' ||
@@ -44,6 +56,8 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
     return {status:'blocked',reasons:['live_checks_changed']};
   // Head and base may move between the first and final GitHub reads.
   const latest=await github.request(`/pulls/${record.pr_number}`);
+  if (!prepareReady && record.adhoc && latest.base?.ref !== 'main')
+    return {status:'blocked',reasons:['adhoc_parent_base_not_main']};
   if (latest.state !== 'open' || latest.head?.sha !== record.head_sha ||
       latest.base?.sha !== record.base_sha || latest.draft !== prepareReady ||
       (!prepareReady && latest.mergeable !== true) ||

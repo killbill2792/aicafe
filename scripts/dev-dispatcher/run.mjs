@@ -6,10 +6,10 @@ import { requestCodexReview } from "./codex-review.mjs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions, editableFiles } from "./core.mjs";
-import { approvalSignature, approvalMatches, createDelivery } from "./delivery.mjs";
+import { approvalSignature, approvalMatches, createDelivery, createAdhocDelivery } from "./delivery.mjs";
 import { acceptanceDigest } from "./acceptance-runner.mjs";
 import { revalidateQueuedActions, assignmentActionKey } from "./authorization.mjs";
-import { linkPullRequests } from "./dependencies.mjs";
+import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
@@ -46,7 +46,17 @@ async function main() {
     return { snapshot, closedByPr, mainSha: mainRef.object?.sha || null };
   }
   function reconcile(state, observed) {
-    const linked = linkPullRequests(state, observed.snapshot);
+    const initiallyLinked = linkPullRequests(state, observed.snapshot);
+    const adopted = adoptAdhocPullRequests(initiallyLinked.state, observed.snapshot, [...taskById.keys()]);
+    const linked = linkPullRequests(adopted.state, observed.snapshot);
+    linked.unmapped = linked.unmapped.filter(n => !adopted.skipped.includes(n));
+    linked.state.adhoc_unlinked_logged ||= {};
+    for (const n of adopted.skipped) {
+      if (!linked.state.adhoc_unlinked_logged[n]) {
+        console.log('Open PR #' + n + ' not adopted: no valid chat marker');
+        linked.state.adhoc_unlinked_logged[n] = true;
+      }
+    }
     // First invalidate old-head actions, THEN process Muse receipts. A receipt
     // arriving during the same GitHub reconciliation must not revive old work.
     const live = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
@@ -147,13 +157,17 @@ async function main() {
       if (!copy.actions[proposal.key]) {
         const task = taskById.get(id);
         // Only approved, exactly owned tasks from the trusted queue can reach Dave.
-        if (!task || task.architecture_approval?.approved !== true ||
+        if (rec.adhoc) {
+          if (rec.github_state !== 'open' || !rec.conversation_ref) continue;
+        } else if (!task || task.architecture_approval?.approved !== true ||
             !editableFiles(task).length || !approvalMatches(task, rec.approval_hash) ||
             (Number.isInteger(rec.pr_number) && rec.github_state !== "open")) continue;
         let delivery;
         try {
-          delivery = createDelivery({ task, record: rec,
-            action: proposal.action, actionId: proposal.key });
+          delivery = rec.adhoc
+            ? createAdhocDelivery({record:rec,action:proposal.action,actionId:proposal.key})
+            : createDelivery({ task, record: rec,
+                action: proposal.action, actionId: proposal.key });
         } catch (error) {
           console.error(`Task ${id} delivery creation failed: ${error.message}`);
           continue;
@@ -260,7 +274,7 @@ async function main() {
     const currentTasks = persisted?.state?.tasks || proposed.state.tasks;
     for (const [id, rec] of Object.entries(currentTasks)) {
       const task=taskById.get(id);
-      if (!task || !rec.pr_number) continue;
+      if ((!task && !rec.adhoc) || !rec.pr_number) continue;
       try {
         const result=await requestCodexReview({
           github:gh,record:rec,task,records:currentTasks
@@ -342,8 +356,9 @@ async function main() {
     for (const [id, rec] of Object.entries(persisted?.state?.tasks || proposed.state.tasks)) {
       if (!rec.pr_number || rec.github_state !== "open") continue;
       const task = taskById.get(id);
-      if (!task || (rec.draft !== true && !autoMerge)) continue;
-      const predecessorRecords = predecessorsForMerge(task, queue, proposed.state.tasks);
+      if ((!task && !rec.adhoc) || (rec.draft !== true && !autoMerge)) continue;
+      if (rec.adhoc && rec.dispatcher_only && rec.draft !== true) continue;
+      const predecessorRecords = rec.adhoc ? [] : predecessorsForMerge(task, queue, proposed.state.tasks);
       // Ready transitions need only green CI, not coder-done. The later merge
       // is a separate fresh reconciliation, never the same snapshot.
       const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
@@ -376,7 +391,10 @@ async function main() {
   const rows = active.sort(([,a],[,b])=>a.pr_number-b.pr_number).map(([id,rec])=>{
     const task = taskById.get(id);
     const dependencies = task ? predecessorsForMerge(task,queue,effectiveState.tasks) : [];
-    const reasons = mergeGate(rec,dependencies).reasons;
+    const reasons = [
+      ...mergeGate(rec,dependencies).reasons,
+      ...(rec.adhoc && rec.dispatcher_only ? ['owner_merge_required'] : [])
+    ];
     const outstanding = Object.values(effectiveState.actions).filter(action=>
       action.task_id === id && action.status === "planned")
       .sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));

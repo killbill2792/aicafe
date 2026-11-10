@@ -30,8 +30,9 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [] } 
   const deps = {
     queue: { tasks: [...taskById.values()] }, taskById,
     receiptScan: { accepted: receipts, rejected: [], complete: true },
-    actorMap: {}, console: { error: message => errors.push(message) },
+    actorMap: {}, console: { error: message => errors.push(message), log: () => {} },
     linkPullRequests: state => ({ state: structuredClone(state), unmapped: [] }),
+    adoptAdhocPullRequests: state => ({state:structuredClone(state),skipped:[]}),
     reconcileGithub: state => structuredClone(state),
     applyReceiptsSafely: (state, accepted) => {
       const copy = structuredClone(state);
@@ -49,6 +50,10 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [] } 
     approvalMatches: (_task, signed) => signed === 'signed',
     editableFiles: t => t?.exclusive_files || [],
     decideNudge: rec => proposals[rec.task_id] || { kind: 'hold' },
+    createAdhocDelivery: ({ record: rec, action, actionId }) => {
+      if (fail.includes(rec.task_id)) throw new Error('synthetic delivery failure');
+      return {action_id:actionId,action,task_id:rec.task_id};
+    },
     createDelivery: ({ record: rec, action, actionId }) => {
       if (fail.includes(rec.task_id)) throw new Error('synthetic delivery failure');
       return { action_id: actionId, action, task_id: rec.task_id };

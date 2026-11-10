@@ -6,6 +6,26 @@ export function parseTaskMarker(body) {
   const marks = [...body.matchAll(/<!-- aicafe-task-id\s+([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\s*-->/g)];
   return marks.length === 1 ? marks[0][1] : null;
 }
+export function parseChatMarker(body) {
+  if (typeof body !== 'string' || body.length > 100000) return null;
+  const matches = [...body.matchAll(/<!--\s*aicafe-chat-url\s+(\S+)\s*-->/g)];
+  if (matches.length !== 1) return null;
+  try {
+    const url = new URL(matches[0][1]);
+    if (url.protocol !== 'https:' || url.host !== 'chatgpt.com' ||
+        url.username || url.password || url.search || url.hash ||
+        !/^\/(?:c\/[a-zA-Z0-9-]+|g\/[a-zA-Z0-9_-]+\/c\/[a-zA-Z0-9-]+)\/?$/.test(url.pathname))
+      return null;
+    return url.href;
+  } catch { return null; }
+}
+
+export function dispatcherOnlyFiles(files) {
+  return Array.isArray(files) && files.length > 0 &&
+    files.every(f => typeof f?.filename === 'string' &&
+      (/^scripts\/dev-dispatcher\//.test(f.filename) ||
+       /^\.github\/workflows\//.test(f.filename)));
+}
 export function parseOwnerQuestion(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;
   const matches = [...body.matchAll(/<!-- aicafe-owner-question\s+([\s\S]*?)\s*-->/g)];
@@ -300,6 +320,12 @@ export class GitHubFacts {
       base_sha: pr.base.sha, base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
+      chat_marker: parseChatMarker(pr.body),
+      same_repo: pr.head?.repo?.full_name === this.repo &&
+        pr.base?.repo?.full_name === this.repo,
+      bot_author: /(?:\[bot\]|bot$)/i.test(pr.user?.login || '') ||
+        pr.user?.type === 'Bot',
+      dispatcher_only: dispatcherOnlyFiles(comparison.files),
       github_owner_question: ownerDecision.question,
       // Routine decisions are informational; only privileged work is held.
       sensitive_owner_block: (pr.labels || []).some(label =>

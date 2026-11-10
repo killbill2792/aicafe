@@ -46,6 +46,34 @@ export function approvalMatches(task, signed) {
 }
 
 
+export function createAdhocDelivery({record,action,actionId}) {
+  if (!record?.adhoc || !record.approved || record.github_state !== 'open' ||
+      record.task_id !== 'ADHOC-' + record.pr_number ||
+      !['ci_failed','codex_comments','repair_conflict'].includes(action) ||
+      typeof actionId !== 'string' || !actionId || actionId.length > 400 ||
+      !validConversationUrl('chatgpt',record.conversation_ref) ||
+      !/^[a-f0-9]{64}$/.test(record.approval_hash || ''))
+    throw new Error('Invalid ad hoc PR handoff');
+  const pr = REPO + '/pull/' + record.pr_number;
+  const reason = action === 'ci_failed'
+    ? 'Diagnose current-head CI failure: ' + (record.ci_failure_url || pr)
+    : action === 'codex_comments'
+      ? 'Resolve current-head Codex findings and review threads on ' + pr
+      : 'Resolve the GitHub merge conflict on ' + pr;
+  const prompt = [
+    'AI CAFE ' + action + ' | task ' + record.task_id + ' | PR ' + pr,
+    reason,
+    'Continue this SAME PR/chat; inspect exact head ' + record.head_sha +
+      ', fix only relevant files, rerun checks and obtain clean exact-head Codex review.',
+    'Authority: ' + REPO + '/blob/main/AGENTS.md',
+    'Do not merge dispatcher/workflow-only PRs; owner must merge those.'
+  ].join('\n');
+  return {version:1,approval_signature_version:2,action_id:actionId,
+    project:{id:'aicafe',name:'AI CAFE'},approval_hash:record.approval_hash,
+    provider:'chatgpt',intent:'continue_existing_chat',base_branch:record.base_branch || 'main',
+    conversation_url:record.conversation_ref,task_id:record.task_id,prompt,prompt_hash:promptHash(prompt)};
+}
+
 export function createDelivery({ task, record, action, actionId }) {
   const edits = editableFiles(task);
   if (!task || task.architecture_approval?.approved !== true ||
