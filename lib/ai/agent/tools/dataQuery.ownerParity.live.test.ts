@@ -434,6 +434,53 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      fromScope:"today",toScope:"today",outcome:"rows"
     });
    }
+   // The five failed full-Luna scalar cases must first be executable through
+   // the ACTUAL registered query_data RPC on the existing disposable fixture.
+   // Compare each with independent source SQL before making another paid call.
+   const failedScalarReaderCases=[
+    {index:1,filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.name",op:"ilike",value:"%student%"}],
+     metric:{fn:"count_distinct",column:"order_ref"}},
+    {index:2,filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.name",op:"ilike",value:"%student%"}],
+     metric:{fn:"count_distinct",column:"check_ref"}},
+    {index:5,filters:[
+     {column:"record_type",op:"=",value:"item"},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.quantity",op:">=",value:2}],
+     metric:{fn:"count",column:"source_ref"}},
+    {index:6,filters:[
+     {column:"record_type",op:"=",value:"item"},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"sum",column:"data.quantity"}},
+    {index:7,filters:[
+     {column:"record_type",op:"=",value:"order"},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"sum",column:"data.numberOfGuests"}}
+   ] as const;
+   for(const spec of failedScalarReaderCases){
+    const question=scalarQuestions[spec.index];
+    const expected=(await client.query<{n:number}>(question.truth,
+     truthArgs(question.scope))).rows[0].n;
+    const [,from,to]=truthArgs(question.scope);
+    const actual=await executeAgentTool("query_data",{
+     view:"cv_toast_records",columns:null,filters:spec.filters,
+     group_by:null,metrics:[spec.metric],date_from:from,date_to:to,
+     order_by:null,limit:10
+    },context);
+    expect(actual.error,"scalar-"+(spec.index+1)+" registered reader")
+     .toBeUndefined();
+    const rows=actual.rows as Array<Record<string,unknown>>|undefined;
+    expect(rows,"scalar-"+(spec.index+1)+" returned rows").toHaveLength(1);
+    const alias=spec.metric.fn+"_"+spec.metric.column;
+    expect(Number(rows?.[0]?.[alias]),
+     "scalar-"+(spec.index+1)+" registered reader vs source SQL")
+     .toBeCloseTo(Number(expected),2);
+   }
    return;
   }
 
