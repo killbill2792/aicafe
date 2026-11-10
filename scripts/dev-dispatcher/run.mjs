@@ -3,6 +3,7 @@
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
 import { queueDependencyNotices } from "./dependency-notices.mjs";
+import { requestCodexReview } from "./codex-review.mjs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
 import { validateQueue, dispatchFrontier, decideNudge, reconcileGithub, mergeGate, architectureFoundationReady, predecessorsForMerge, wakePendingActions, editableFiles } from "./core.mjs";
@@ -241,6 +242,35 @@ async function main() {
       const withNotices = queueOwnerAlerts(next,{queue});
       return JSON.stringify(withNotices) === JSON.stringify(existing) ? null : withNotices;
     });
+  }
+  // The dispatcher, not a coder chat, requests the final-head review.
+  // Revalidate live GitHub CI, acceptance artifacts, PR base and owner state
+  // before one comment. The private record only deduplicates acknowledged
+  // actions; a GitHub comment marker also survives ledger write retries.
+  if (commit && ledger) {
+    const currentTasks = persisted?.state?.tasks || proposed.state.tasks;
+    for (const [id, rec] of Object.entries(currentTasks)) {
+      const task=taskById.get(id);
+      if (!task || !rec.pr_number) continue;
+      try {
+        const result=await requestCodexReview({
+          github:gh,record:rec,task,records:currentTasks
+        });
+        if (['requested','already_requested'].includes(result.status)) {
+          await ledger.transaction(latest=>{
+            const stored=latest.tasks?.[id];
+            if (!stored || stored.head_sha !== result.head_sha ||
+                stored.codex_review_requested_sha === result.head_sha) return null;
+            stored.codex_review_requested_sha=result.head_sha;
+            return latest;
+          });
+          if (result.status === 'requested')
+            console.log('Codex review requested for task '+id+' on head '+result.head_sha);
+        }
+      } catch (error) {
+        console.error('Codex review preflight failed for task '+id+': '+error.message);
+      }
+    }
   }
   // Only independently classified runner startup errors may be retried, once.
   if (commit && ledger && process.env.DISPATCH_TRANSIENT_CI_RETRY === "true") {
