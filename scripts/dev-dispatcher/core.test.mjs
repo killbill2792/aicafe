@@ -564,3 +564,45 @@ test('newer current-head Codex rejection outranks older clean bot summary, even 
  assert.equal(result.codex_reviewed_sha,sha);
  assert.equal(result.codex_review_at,now);
 });
+
+test('six-condition merge gate uses merged order, not coder_done, acceptance or integration',()=>{
+  const candidate={pr_number:40,head_sha:'a'.repeat(40),draft:false,ci_state:'success',
+    codex_state:'clean',codex_reviewed_sha:'a'.repeat(40),threads_resolved:true,
+    mergeable:true,owner_question:'routine question',github_owner_question:'routine question',
+    coder_done:false,acceptance_proven:false};
+  assert.equal(mergeGate(candidate,[{status:'merged',merge_sha:'b'.repeat(40)}]).eligible,true);
+  assert.equal(mergeGate(candidate,[{status:'integrated_proven',merge_sha:'b'.repeat(40)}]).eligible,true);
+  assert.deepEqual(mergeGate(candidate,[{status:'draft_open'}]).reasons,['predecessor_not_merged']);
+  assert.deepEqual(mergeGate({...candidate,sensitive_owner_block:true},[]).reasons,
+    ['sensitive_owner_approval_required']);
+  for (const [patch,reason] of [
+    [{draft:true},'not_ready_for_review'],[{ci_state:'pending'},'ci_not_green'],
+    [{codex_state:'findings'},'codex_review_missing_or_findings'],
+    [{codex_reviewed_sha:'c'.repeat(40)},'codex_review_missing_or_findings'],
+    [{threads_resolved:false},'unresolved_threads'],[{mergeable:false},'not_mergeable']]) {
+    assert.ok(mergeGate({...candidate,...patch},[]).reasons.includes(reason));
+  }
+});
+test('green draft becomes ready without coder-done, acceptance, review or integration proof',()=>{
+  const rec={pr_number:77,head_sha:'c'.repeat(40),draft:true,ci_state:'success',
+    coder_done:false,acceptance_proven:false,codex_state:'pending',owner_question:'routine'};
+  assert.equal(readyGate(rec).eligible,true);
+  assert.equal(readyGate({...rec,ci_state:'failure'}).eligible,false);
+  assert.equal(readyGate({...rec,sensitive_owner_block:true}).eligible,false);
+});
+test('only actionable failures, findings and conflicts generate state-keyed coder prompts',()=>{
+  const base={task_id:'T',approved:true,agent:'chatgpt',github_state:'open',
+    conversation_ref:'https://chatgpt.com/c/abc-123',pr_number:9,
+    head_sha:'a'.repeat(40),ci_state:'success',codex_state:'clean'};
+  assert.equal(decideNudge(base,Date.now()).kind,'hold');
+  assert.equal(decideNudge({...base,parent_merged_sha:'b'.repeat(40)},Date.now()).kind,'hold');
+  assert.equal(decideNudge({...base,owner_answer_text:'Owner approved'},Date.now()).kind,'hold');
+  const failed=decideNudge({...base,ci_state:'failure',ci_failure_job:'lint'},Date.now());
+  assert.equal(failed.action,'ci_failed');
+  assert.notEqual(failed.key,decideNudge({...base,ci_state:'failure',ci_failure_job:'build'},Date.now()).key);
+  assert.equal(decideNudge({...base,codex_state:'findings'},Date.now()).action,'codex_comments');
+  assert.equal(decideNudge({...base,mergeable:false},Date.now()).action,'repair_conflict');
+  assert.equal(decideNudge({...base,ci_state:'failure',last_action_key:failed.key,
+    submission_state:'submitted',ci_failure_job:'lint'},Date.now()).kind,'hold');
+  assert.equal(decideNudge({...base,ci_state:'failure',submission_state:'uncertain'},Date.now()).kind,'hold');
+});
