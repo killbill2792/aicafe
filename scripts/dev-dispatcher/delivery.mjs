@@ -41,23 +41,23 @@ export function createDelivery({ task, record, action, actionId }) {
     const pr = record.pr_number ? REPO + '/pull/' + record.pr_number : 'the existing PR';
     const head = record.head_sha || 'unverified';
     const comments = (record.unresolved_codex_comments || []).slice(0,4)
-      .map(c => '- ' + String(c.body || 'Unresolved review thread').replace(/\\s+/g,' ').slice(0,180) +
-        (c.url && /^https:\\/\\/github\\.com\\//.test(c.url) ? ' ' + c.url : '')).join('\\n');
+      .map(c => '- ' + String(c.body || 'Unresolved review thread').replace(/\s+/g,' ').slice(0,180) +
+        (c.url && /^https:\/\/github\.com\//.test(c.url) ? ' ' + c.url : '')).join('\n');
     const byReason = {
       codex_comments: 'Codex comments: ' + (comments || 'Read unresolved inline comments on ' + pr) +
-        '\\nFix the actual findings together; rerun CI before one exact-head re-review.',
+        '\nFix the actual findings together; rerun CI before one exact-head re-review.',
       ci_failed: 'CI failed: ' + (record.ci_failure_job || 'check the failing job') +
         (record.ci_failure_url ? ' ' + record.ci_failure_url : ' (' + pr + ')') +
         '. Diagnose the failing test/job and fix it without weakening assertions. Rerun CI.',
       parent_merged: 'Parent PR merged (' + (record.parent_merged_sha || 'verify merge SHA') +
         '). Rebase onto main and continue in this same child PR. Rerun CI and acceptance on the new base. Do not request Codex until the final main-based head is green.',
       owner_answered: 'Owner answered: ' + String(record.owner_answer_text || 'Read the signed answer on ' + pr).slice(0,350) +
-        '\\nApply only the answer within approved file scope; update PR comment dispositions and rerun applicable CI.',
+        '\nApply only the answer within approved file scope; update PR comment dispositions and rerun applicable CI.',
       idle_continue: 'Continue the same PR and branch. Check the latest GitHub state, finish the approved code/CI/acceptance and reconcile comments. When green and complete, mark coder done in the PR; ready state triggers Codex once, not on intermediate pushes.'
     };
-    const prompt = 'Task ' + task.id + ', PR ' + pr + ', head ' + head + '.\\n' +
-      byReason[action] + '\\nDo not expand approved edits or bypass owner/merge gates.';
-    if (prompt.trim().split(/\\s+/).length >= 120) throw new Error('Nudge exceeds 120 words');
+    const prompt = 'Task ' + task.id + ', PR ' + pr + ', head ' + head + '.\n' +
+      byReason[action] + '\nDo not expand approved edits or bypass owner/merge gates.';
+    if (prompt.trim().split(/\s+/).length >= 120) throw new Error('Nudge exceeds 120 words');
     return {version:1,action_id:actionId,project,approval_hash:authorization,
       provider:record.agent,intent:'continue_existing_chat',
       base_branch:record.base_branch || 'main',conversation_url:url,
