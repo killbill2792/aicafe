@@ -56,17 +56,20 @@ describe("Toast permitted labor source-field handoff",()=>{
  const range={since:new Date("2026-10-10T00:00:00Z"),until:new Date("2026-10-11T00:00:00Z")};
  beforeEach(()=>request.mockReset());
  it("keeps permitted person/job identifiers, wages and contacts but strips passcodes",async()=>{
-   request.mockImplementation(async(path:string)=>path.includes("/jobs")?[{
+   const jobsResponse=[{
      guid:job,title:"Barista",defaultWage:19.5,wageFrequency:"HOURLY",
      tipped:true,excludeFromReporting:false,modifiedDate:"2026-10-10T09:00:00Z",
      code:"BAR",credential:"must-not-keep"
-   }]:[{
+   }];
+   const employeesResponse=[{
      guid:employee,firstName:"Maria",lastName:"Lopez",email:"maria@example.test",
      phoneNumber:"5550101",modifiedDate:"2026-10-10T08:00:00Z",
      jobReferences:[{guid:job,externalId:"job-3",entityType:"Job"}],
      wageOverrides:[{jobReference:{guid:job},wage:20}],
      passcode:"sensitive-passcode",apiSecret:"sensitive-api-secret"
-   }]);
+   }];
+   request.mockResolvedValueOnce(employeesResponse).mockResolvedValueOnce(jobsResponse)
+     .mockResolvedValueOnce(employeesResponse).mockResolvedValueOnce(jobsResponse);
    const employees=await adapter.fetchLaborEmployeeSources();
    const jobs=await adapter.fetchLaborJobSources();
    expect(employees).toHaveLength(1);
@@ -79,6 +82,10 @@ describe("Toast permitted labor source-field handoff",()=>{
    expect(JSON.stringify({employees,jobs})).not.toMatch(/sensitive-passcode|sensitive-api-secret|must-not-keep/);
    const existing=await adapter.fetchEmployees();
    expect(existing[0]).toMatchObject({hourlyWageCents:2000,active:true,role:"Barista"});
+   expect(request.mock.calls.map(call=>call[0])).toEqual([
+     "/labor/v1/employees","/labor/v1/jobs",
+     "/labor/v1/employees","/labor/v1/jobs"
+   ]);
  });
  it("keeps time-entry source job, shift, tips and all break statuses alongside canonical fields",async()=>{
    request.mockResolvedValue([{
