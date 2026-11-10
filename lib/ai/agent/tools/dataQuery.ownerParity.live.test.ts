@@ -175,6 +175,23 @@ it("POS0e full Luna budget reserves a conservative next-call dollar envelope",()
   .toBe(10_500);
  expect(MAX_FULL_ESTIMATED_COST_MICROS).toBeLessThan(200_000);
 });
+it("POS0e full Luna rejects an over-budget call before OpenAI transport",async()=>{
+ if(smoke)return;
+ const before=estimatedCostMicros,beforeCalls=paidCalls,beforeBytes=requestBytes;
+ estimatedCostMicros=MAX_FULL_ESTIMATED_COST_MICROS;
+ try{
+  const params={model:PRODUCTION_SUPERVISOR_OPENAI_MODEL,
+   max_output_tokens:MAX_OUTPUT_TOKENS_PER_CALL,input:"test"};
+  await expect(budgetedProvider(params,new AbortController().signal)[Symbol.asyncIterator]().next())
+   .rejects.toThrow("POS0e paid E2 budget exceeded (estimated_usd_ceiling)");
+  expect(paidCalls).toBe(beforeCalls);
+  expect(requestBytes).toBe(beforeBytes);
+  expect(budgetRejection).toMatchObject({reason:"estimated_usd_ceiling"});
+ }finally{
+  estimatedCostMicros=before;
+  budgetRejection=null;
+ }
+});
 it("POS0e paid transport refuses an oversized request at zero model cost",async()=>{
  const beforeCalls=paidCalls,beforeBytes=requestBytes;
  const oversized={model:PRODUCTION_SUPERVISOR_OPENAI_MODEL,
