@@ -385,19 +385,46 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    return;
   }
 
+  // Run and score every independent question in one owner-budgeted test.
+  // A failing answer is still a failure, but cannot conceal later failures.
+  // Once provider usage is capped, later turns are recorded as unexecuted.
+  const caseFailures:Array<{id:string;reason:string;detail:string}>=[];
+  const record=async(id:string,work:(capture:(turn:Awaited<ReturnType<typeof runAgentTurn>>,
+   since:number)=>void)=>Promise<void>)=>{
+   if(budgetRejection){caseFailures.push({id,reason:"budget_not_executed",detail:"no_provider_call"});return;}
+   let detail="no_agent_receipt";
+   try{
+    await work((turn,since)=>{
+     const packet=JSON.parse(safeFailureDetails(turn,since)) as {
+      endReason:string;tools:string[];resultStatus:unknown[];
+      budgetRejection:unknown;queryShapes:SafeQueryShape[]};
+     detail=JSON.stringify({endReason:packet.endReason,tools:packet.tools,
+      resultStatus:packet.resultStatus,budgetRejection:packet.budgetRejection,
+      queryShapes:packet.queryShapes.slice(-4)});
+    });
+   }catch{
+    // Never log raw model prose, source rows, IDs, prompts or SQL errors.
+    caseFailures.push({id,reason:budgetRejection?"transport_budget":"answer_or_reader_failure",detail});
+   }
+  };
+  let scalarIndex=0;
   for(const {question,truth} of (smoke?scalarQuestions.slice(0,0):scalarQuestions)){
+   await record("scalar-"+ ++scalarIndex,async capture=>{
    const expected=(await client.query<{n:number}>(truth,params)).rows[0].n;
    // Standard owner-facing answer; the requested line keeps acceptance numeric
    // (without an extra reviewer model) and still permits the incomplete-day note.
+   const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:
     question+" Answer with 'Number: N' and a short source/coverage note."});
+   capture(turn,receiptStart);
    expect(turn.tools,question).toContain("query_data");
    const number=turn.text.match(/\bNumber\s*[:=]\s*(\d+)\b/i);
    expect(number,question+" => "+turn.text).not.toBeNull();
    expect(Number(number![1]),question+" => "+turn.text).toBe(expected);
    if(question.includes("today"))
     expect(turn.text,question+" => "+turn.text).toMatch(/so far|partial|incomplete|provisional/i);
+   });
   }
   const breakdowns=[
    {question:"Give applied discount USE counts for yesterday and today, one line per date as YYYY-MM-DD: N.",
@@ -405,10 +432,14 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    {question:"Give units sold yesterday by item display name. Call absent names 'Unnamed'. Use Name: N lines.",
     truth:`select coalesce(data->>'displayName','Unnamed') k, sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$2) where record_type='item' and counts_in_sales=true group by coalesce(data->>'displayName','Unnamed') order by 1`}
   ] as const;
+  let breakdownIndex=0;
   for(const {question,truth} of (smoke?breakdowns.slice(0,0):breakdowns)){
+   await record("breakdown-"+ ++breakdownIndex,async capture=>{
    const expected=(await client.query<{k:string;n:number}>(truth,params)).rows;
+   const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:question});
+   capture(turn,receiptStart);
    expect(turn.tools,question).toContain("query_data");
    for(const row of expected){
     const line=turn.text.split("\n").find(line=>line.includes(row.k));
@@ -416,34 +447,43 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     expect(line,question+" wrong "+row.k+": "+turn.text).toMatch(
      new RegExp("[:=]\\s*"+row.n+"\\b"));
    }
+   });
   }
-
   // These real turns close the signed POS0e gap not covered by the earlier
   // discount-only test. Expected facts come from the SAME disposable database
   // transaction, not the model, snapshots or copied fixture guesses.
+  let namedIndex=0;
   for(const {question,truth,ref} of namedQuestions){
+   await record("named-"+ ++namedIndex,async capture=>{
    const expected=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0]?.answer;
    expect(expected,question).toBeTruthy();
    const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:question+
     " Use retained current source facts, not diagnostic snapshots or another café."});
+   capture(turn,receiptStart);
    expect(turn.tools,question).toContain("query_data");
    expect(turn.text,question+"; "+safeFailureDetails(turn,receiptStart))
     .toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
+   });
   }
+  let familyIndex=0;
   for(const {question,truth,label,args} of familyQuestions){
+   await record("family-"+ ++familyIndex,async capture=>{
    const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
    expect(expected,question).not.toBeNull();
    expect(expected,question).not.toBeUndefined();
    const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:question});
+   capture(turn,receiptStart);
    expect(turn.tools,question).toContain("query_data");
    const match=turn.text.match(new RegExp("\\b"+label+"\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)","i"));
    expect(match,question+" => "+turn.text+"; "+safeFailureDetails(turn,receiptStart)).not.toBeNull();
    expect(Number(match![1]),question+" => "+turn.text).toBeCloseTo(Number(expected),2);
+   });
   }
+  expect(caseFailures,JSON.stringify(caseFailures)).toEqual([]);
  }finally{
   await client.query("ROLLBACK").catch(()=>{});
   await client.end();
