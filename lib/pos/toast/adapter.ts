@@ -97,7 +97,7 @@ const groupSchema:z.ZodType<MenuGroup>=z.lazy(()=>z.object({
   name:z.string(),availability:z.unknown().optional(),
   menuItems:z.array(itemSchema),menuGroups:z.array(groupSchema)
 }).passthrough());
-const menusSchema=z.object({restaurantGuid:GUID,menus:z.array(
+const menusSchema=z.object({restaurantGuid:GUID,lastUpdated:z.string().min(1).nullish(),menus:z.array(
   z.object({name:z.string().nullish(),availability:z.unknown().optional(),
     menuGroups:z.array(groupSchema)}).passthrough()),
   modifierGroupReferences:z.record(z.string(),z.object({
@@ -282,7 +282,9 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         throw new ToastApiError("invalid_response");
       for(const item of group.menuItems) {
         itemCount++;
-        for(const ref of item.modifierGroupReferences??[])
+        if(!Array.isArray(item.modifierGroupReferences))
+          throw new ToastApiError("invalid_response");
+        for(const ref of item.modifierGroupReferences)
           if(!groups[String(ref)])throw new ToastApiError("invalid_response");
         if(item.pricingStrategy==="SIZE_PRICE") {
           const guid=item.pricingRules?.sizeSpecificPricingGuid;
@@ -525,7 +527,8 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       const after=await request("/menus/v2/metadata",metadataSchema);
       if(after.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
         throw new ToastApiError("unauthorized_location");
-      if(before.lastUpdated!==after.lastUpdated)
+      if(before.lastUpdated!==after.lastUpdated||
+        !snapshot.lastUpdated||snapshot.lastUpdated!==after.lastUpdated)
         throw new ToastApiError("invalid_response");
       // Source metadata's lastUpdated is the publication version/last-modified
       // reference, NOT a verified historical effective time.
