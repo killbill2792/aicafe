@@ -153,7 +153,15 @@ function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:
   budgetRejection,
   tools:turn.tools,
   resultStatus:turn.results.map(result=>({source:result.source,
-   missing:result.missing,error:result.error??null})),
+   missing:result.missing,error:result.error??null,
+   ...(result.source==="ask_owner"?{
+    // Model card prose, keys and answers are never logged. Only enum types.
+    cardKind:["facts","choice","fill"].includes(String(result.kind))?
+     result.kind:"unknown",
+    fieldTypes:(result.fields??[]).map(f=>
+     ["number","money","percent","date","text","choice"].includes(f.inputType)?
+      f.inputType:"other")
+   }:{})})),
   providerReceipts:providerReceipts.slice(since),sqlFailures:sqlFailures.slice(-3),
   queryShapes:queryShapes.slice(-5)});
 }
