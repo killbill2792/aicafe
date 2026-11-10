@@ -258,7 +258,7 @@ export function decideNudge(record, _nowMs) {
   // Never wake a clean PR for idle time, ordinary owner comments, parent merge,
   // missing acceptance, or an otherwise completed stage. Only coder work.
   const conflict = record.mergeable === false || record.mergeable_state === 'dirty';
-  const action = record.repo_marker_mismatch ? 'ci_failed' :
+  const action = record.repo_marker_mismatch || record.field_check_failure ? 'ci_failed' :
     record.ci_state === 'failure' ? 'ci_failed' :
     record.codex_state === 'findings' ? 'codex_comments' :
     conflict ? 'repair_conflict' : null;
