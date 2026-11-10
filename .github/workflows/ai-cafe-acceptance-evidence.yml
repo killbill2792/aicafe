@@ -8,12 +8,26 @@ on:
     types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
 permissions:
   contents: read
+  issues: read
 jobs:
   acceptance:
-    if: github.event.action != 'labeled' && github.event.action != 'unlabeled' && contains(github.event.pull_request.body, 'aicafe-acceptance-evidence')
+    # Ordinary PRs retain the old no-secret trusted runner. POS0e's paid
+    # test requires the OWNER to edit the PR with a marker tied to this head.
+    if: >-
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled'
+       && github.event.pull_request.number != 404
+       && contains(github.event.pull_request.body, 'aicafe-acceptance-evidence'))
+      || (github.event.action == 'edited' && github.event.pull_request.number == 404
+          && github.actor == 'killbill2792'
+          && github.event.pull_request.user.login == 'killbill2792'
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && github.event.pull_request.base.ref == 'main'
+          && github.event.changes.body.from != null
+          && !contains(github.event.changes.body.from, '<!-- aicafe-pos0e-e2-run ')
+          && contains(github.event.pull_request.body, '<!-- aicafe-pos0e-e2-run '))
     name: AI CAFE acceptance evidence
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 55
     steps:
       - name: Checkout trusted runner
         uses: actions/checkout@v4
@@ -35,14 +49,115 @@ jobs:
       - name: Install test dependencies
         working-directory: candidate
         run: npm ci
-      - name: Run approved acceptance scenarios
+      # No provider secret is available to a PR merely by adding evidence
+      # text. The exact owner comment ID + author and per-head edit are checked
+      # against GitHub before any secret-bearing step can begin.
+      - name: Verify POS0e owner approval and exact PR head
+        id: pos0e_owner
+        if: ${{ github.event.pull_request.number == 404 && github.event.action == 'edited' && github.actor == 'killbill2792' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
+          const pr=event.pull_request,sha=pr?.head?.sha;
+          const marker='<!-- aicafe-pos0e-e2-run '+sha+' -->';
+          // Only an edit that ADDS a fresh marker may spend money. A later
+          // title/body edit with the old marker still present must never
+          // restart the paid test with a new process-local usage counter.
+          const previousBody=event.changes?.body?.from;
+          if(typeof previousBody!=='string'||
+             previousBody.includes('<!-- aicafe-pos0e-e2-run '))
+            throw Error('POS0e E2 activation must be a fresh owner body edit');
+          if(event.action!=='edited'||event.sender?.login!=='killbill2792'||
+             pr?.number!==404||pr.user?.login!=='killbill2792'||
+             pr.base?.ref!=='main'||pr.head?.repo?.full_name!=='killbill2792/aicafe'||
+             event.repository?.full_name!=='killbill2792/aicafe'||
+             !/^[a-f0-9]{40}$/.test(sha||'')||!pr.body?.includes(marker))
+            throw Error('POS0e owner-only E2 gate/head mismatch');
+          const resp=await fetch(
+           'https://api.github.com/repos/killbill2792/aicafe/issues/comments/6753649289',
+           {headers:{Authorization:'Bearer '+process.env.GH_TOKEN,
+             Accept:'application/vnd.github+json'}});
+          if(!resp.ok)throw Error('Owner approval receipt unavailable');
+          const note=await resp.json();
+          if(note.user?.login!=='killbill2792'||
+             !note.body?.includes('<!-- aicafe-owner-approval POS0e real-agent-acceptance scope-extension -->'))
+            throw Error('Owner approval receipt invalid');
+          appendFileSync(process.env.GITHUB_OUTPUT,'approved=true\n');
+          NODE
+      - name: Prepare disposable PostgreSQL for approved POS0e E2
+        if: ${{ steps.pos0e_owner.outputs.approved == 'true' }}
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Start and migrate disposable local database
+        if: ${{ steps.pos0e_owner.outputs.approved == 'true' }}
         working-directory: candidate
         run: |
-          if [ -f ../coordinator/scripts/dev-dispatcher/acceptance-runner.mjs ]; then
-            node ../coordinator/scripts/dev-dispatcher/acceptance-runner.mjs
-          else
-            echo 'Trusted acceptance runner not yet merged to main; no proof generated'
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase db reset --local --yes
+          pg_isready -q -h 127.0.0.1 -p 54322 -U postgres
+      - name: Verify POS0e synthetic fixture without any API key or model calls
+        if: ${{ steps.pos0e_owner.outputs.approved == 'true' }}
+        working-directory: candidate
+        env:
+          POS0E_E2_SQL_ONLY: '1'
+          AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: |
+          set -euo pipefail
+          # SQL_ONLY returns before creating a model provider request.
+          timeout 4m npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
+      - name: Run bounded real one-agent POS0e preflight (no acceptance claim)
+        if: ${{ steps.pos0e_owner.outputs.approved == 'true' && !contains(github.event.pull_request.body, 'aicafe-acceptance-evidence') }}
+        working-directory: candidate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
+          AGENT_LIVE_EVAL: '1'
+          SUPERVISOR_OPENAI_MODEL: gpt-6-luna
+          SUPERVISOR_OPENAI_FALLBACK_MODEL: gpt-4.1-mini
+          POS0E_E2_SMOKE: '1'
+          AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: |
+          set -euo pipefail
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Existing authorized OPENAI_API_KEYS GitHub secret unavailable. No paid E2 executed."
+            exit 1
           fi
+          # Five substantive owner questions only; all other acceptance remains
+          # unproven. Test-level provider caps also stop any extra API calls.
+          timeout 8m npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
+      - name: Run approved POS0e acceptance rows at exact head
+        if: ${{ steps.pos0e_owner.outputs.approved == 'true' && contains(github.event.pull_request.body, 'aicafe-acceptance-evidence') }}
+        working-directory: candidate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
+          AGENT_LIVE_EVAL: '1'
+          SUPERVISOR_OPENAI_MODEL: gpt-6-luna
+          SUPERVISOR_OPENAI_FALLBACK_MODEL: gpt-4.1-mini
+          # A full signed acceptance run must NEVER inherit the five-turn
+          # smoke skip: that would manufacture a false passing E2 receipt.
+          POS0E_E2_SMOKE: '0'
+          AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: |
+          set -euo pipefail
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Existing authorized OPENAI_API_KEYS GitHub secret unavailable. No acceptance proof produced."
+            exit 1
+          fi
+          node ../coordinator/scripts/dev-dispatcher/acceptance-runner.mjs
+      - name: Run ordinary no-secret acceptance rows
+        if: ${{ github.event.pull_request.number != 404 && contains(github.event.pull_request.body, 'aicafe-acceptance-evidence') }}
+        working-directory: candidate
+        run: node ../coordinator/scripts/dev-dispatcher/acceptance-runner.mjs
+      - name: Stop disposable local database
+        if: ${{ always() && steps.pos0e_owner.outputs.approved == 'true' }}
+        working-directory: candidate
+        run: supabase stop --no-backup
+
       - name: Upload acceptance execution proof
         uses: actions/upload-artifact@v4
         with:

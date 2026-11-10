@@ -7,11 +7,100 @@ import {resolve} from "node:path";
 import pg from "pg";
 import {it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {runAgentTurn} from "../loop.server";
+import {runAgentTurn,openAIProvider} from "../loop.server";
+import {PRODUCTION_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
+import type {AgentProvider} from "../loop.server";
 import type {AgentToolContext} from "./index";
 const dbUrl=process.env.AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL;
-const enabled=process.env.AGENT_LIVE_EVAL==="1"&&Boolean(dbUrl&&process.env.OPENAI_API_KEY);
+// A free, provider-independent dry run validates ALL fixture writes and
+// tenant/diagnostic isolation before any paid call. This is NOT agent proof.
+const sqlOnly=process.env.POS0E_E2_SQL_ONLY==="1";
+const enabled=Boolean(dbUrl)&&(sqlOnly||
+ (process.env.AGENT_LIVE_EVAL==="1"&&Boolean(process.env.OPENAI_API_KEY)));
 const run=enabled?it:it.skip;
+
+// The budget applies to the real model *transport*, across ALL turns in this
+// disposable acceptance test. Serialized UTF-8 bytes conservatively bound
+// provider-input tokens without requiring a paid tokenizer or extra API call.
+// The primary is the verified Vercel production model gpt-6-luna, not the
+// fallback gpt-4.1-mini. This cap bounds request bytes, model calls, and
+// output tokens; actual provider billing may differ from any dollar estimate.
+// Check BEFORE sending, including the provider's per-response output ceiling.
+// A limit hit FAILS the test; it can never turn partial E2 into a passing proof.
+const smoke=process.env.POS0E_E2_SMOKE==="1";
+// The cost-capped smoke is a system-initiated reader acceptance, so expose
+// only the TWO existing registered read tools, not unrelated action/scheduling
+// schemas on every paid turn. The full suite still uses the unrestricted
+// production Supervisor toolset; never claim smoke proves that whole surface.
+const smokeReaderTools=["describe_data","query_data"] as const;
+const MAX_PAID_CALLS=12;
+const MAX_INPUT_REQUEST_BYTES=200_000;
+const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
+let paidCalls=0,requestBytes=0,outputTokensReserved=0;
+// A rejected transport budget is not an OpenAI/Luna failure. Never include
+// prompts, tool parameters, customer rows or secrets in this diagnostic.
+let budgetRejection:{reason:string;attemptBytes:number;priorBytes:number;
+ priorCalls:number;attemptOutputTokens:number}|null=null;
+// Record only response status, token counts and output item TYPES, never
+// provider text, prompts, tool arguments, credentials or customer data.
+const providerReceipts:Array<{event:string;status:string;reason:string|null;
+ outputTokens:number|null;outputTypes:string[]}>= [];
+const budgetedProvider:AgentProvider=async function*(params,signal){
+ if(params.model!==PRODUCTION_SUPERVISOR_OPENAI_MODEL)
+  throw new Error("POS0e E2 requires owner-verified production Supervisor model "+PRODUCTION_SUPERVISOR_OPENAI_MODEL);
+ const payloadBytes=Buffer.byteLength(JSON.stringify(params),"utf8");
+ const outputCap=Math.min(Number(params.max_output_tokens)||MAX_OUTPUT_TOKENS_PER_CALL,
+  MAX_OUTPUT_TOKENS_PER_CALL);
+ const reason=paidCalls+1>MAX_PAID_CALLS?"model_call_count":
+  requestBytes+payloadBytes>MAX_INPUT_REQUEST_BYTES?"input_request_bytes":
+  outputTokensReserved+outputCap>MAX_PAID_CALLS*MAX_OUTPUT_TOKENS_PER_CALL?
+   "output_token_reservation":null;
+ if(reason){
+  budgetRejection={reason,attemptBytes:payloadBytes,priorBytes:requestBytes,
+   priorCalls:paidCalls,attemptOutputTokens:outputCap};
+  throw new Error("POS0e paid E2 budget exceeded ("+reason+"): stop without additional API calls");
+ }
+ paidCalls++;
+ requestBytes+=payloadBytes;
+ outputTokensReserved+=outputCap;
+ for await(const event of openAIProvider({...params,max_output_tokens:outputCap},signal)){
+  if(["response.completed","response.incomplete","response.failed"].includes(event.type)){
+   const response=event.response as {status?:string;incomplete_details?:{reason?:string}|null;
+    usage?:{output_tokens?:number};output?:Array<{type?:string}>}|undefined;
+   providerReceipts.push({event:event.type,status:response?.status??"unknown",
+    reason:response?.incomplete_details?.reason??null,
+    outputTokens:response?.usage?.output_tokens??null,
+    outputTypes:(response?.output??[]).map(item=>item.type??"unknown")});
+  }
+  yield event;
+ }
+};
+function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:number):string{
+ return JSON.stringify({endReason:turn.endReason,
+  modelCalls:turn.usage.modelCalls,inputTokens:turn.usage.inputTokens,
+  cachedTokens:turn.usage.cachedTokens,outputTokens:turn.usage.outputTokens,
+  chargedTransportCalls:paidCalls,serializedRequestBytes:requestBytes,
+  outputTokensReserved,budgetRejection,
+  tools:turn.tools,
+  resultStatus:turn.results.map(result=>({source:result.source,
+   missing:result.missing,error:result.error??null})),
+  providerReceipts:providerReceipts.slice(since)});
+}
+// Free deterministic regression: a bad or overlarge provider request must be
+// rejected BEFORE calling OpenAI, without mistaking the guard for Luna failure.
+it("POS0e paid transport refuses an oversized request at zero model cost",async()=>{
+ const beforeCalls=paidCalls,beforeBytes=requestBytes;
+ const oversized={model:PRODUCTION_SUPERVISOR_OPENAI_MODEL,
+  max_output_tokens:MAX_OUTPUT_TOKENS_PER_CALL,
+  input:"x".repeat(MAX_INPUT_REQUEST_BYTES)};
+ await expect(budgetedProvider(oversized,new AbortController().signal)[Symbol.asyncIterator]().next())
+  .rejects.toThrow("POS0e paid E2 budget exceeded (input_request_bytes)");
+ expect(paidCalls).toBe(beforeCalls);
+ expect(requestBytes).toBe(beforeBytes);
+ expect(budgetRejection).toMatchObject({reason:"input_request_bytes"});
+ budgetRejection=null;
+});
+
 const allowedHost=(raw:string)=>{
  const {hostname}=new URL(raw);
  if(!["127.0.0.1","localhost","::1"].includes(hostname))
@@ -44,7 +133,7 @@ const scalarQuestions=[
  {question:"How many units are there today across all item selections, regardless of their number of lines?",
   truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type='item'`}
 ] as const;
-run("Supervisor answers 13 varied owner questions with exact direct SQL counts and breakdowns",async()=>{
+run("Supervisor proves current-source orders, staff, cash, stock, names and screen parity",async()=>{
  allowedHost(dbUrl!);
  const client=new pg.Client({connectionString:dbUrl!});
  await client.connect();
@@ -63,6 +152,34 @@ run("Supervisor answers 13 varied owner questions with exact direct SQL counts a
   const prior=(await client.query<{prior:string}>(
    "select ($1::date - 1)::text prior",[biz.today])).rows[0].prior;
   const params=[biz.id,prior,biz.today];
+  // POS0e opt-in E2: all source-family facts are synthetic and inside the same
+  // rollback transaction as the existing historic/live-order parity fixture.
+  const restaurant="eeeeeeee-3333-4eee-8eee-eeeeeeeeee01";
+  const staffGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee00a1";
+  const stockGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee00b1";
+  const firstOrderGuid="eeeeeeee-3333-4eee-8eee-eeeeeeee0001";
+  const otherCafe="eeeeeeee-4444-4eee-8eee-eeeeeeeeee00";
+  const otherRestaurant="eeeeeeee-4444-4eee-8eee-eeeeeeeeee01";
+  await client.query("insert into public.businesses(id,name,is_demo) values($1,'Other synthetic café',false)",[otherCafe]);
+  const modified=await client.query("update public.toast_raw_records set payload=payload ||\n jsonb_build_object('customer',jsonb_build_object('firstName','Maya','lastName','Shah','email','maya@example.test'))\n where business_id=$1 and entity='order' and payload->>'guid'=$2",[biz.id,firstOrderGuid]);
+  expect(modified.rowCount).toBe(1);
+  await client.query("insert into public.toast_raw_records\n (business_id,restaurant_guid,entity,entity_guid,business_date,payload,payload_sha256,capture_key)\n values\n ($1,$2,'employee',$3,$4::date,\n  jsonb_build_object('guid',$3::uuid::text,'firstName','Nadia','lastName','Rao','email','nadia@example.test'),\n  repeat('a',64),'pos0e:e2:employee'),\n ($1,$2,'labor/v1/timeEntries',null,$4::date,\n  jsonb_build_object('guid','time-pos0e','employeeGuid',$3::uuid::text,'regularHours',5.5),\n  repeat('a',64),'pos0e:e2:time'),\n ($1,$2,'cashmgmt/v1/entries',null,$4::date,\n  jsonb_build_object('guid','cash-pos0e','type','CASH_IN','amount',18.75,\n   'employee',jsonb_build_object('guid',$3::uuid::text)),repeat('a',64),'pos0e:e2:cash'),\n ($1,$2,'stock/v1/inventory',$5,$4::date,\n  jsonb_build_object('guid',$5::uuid::text,'quantity',4.5,'status','QUANTITY'),\n  repeat('a',64),'pos0e:e2:stock'),\n ($6,$7,'cashmgmt/v1/entries',null,$4::date,\n  '{\"guid\":\"other-cafe-cash\",\"amount\":9999.99,\"type\":\"CASH_IN\"}'::jsonb,\n  repeat('a',64),'pos0e:e2:other-cafe')",
+   [biz.id,restaurant,staffGuid,biz.today,stockGuid,otherCafe,otherRestaurant]);
+  // The poison is purposefully newer-looking, but NEVER an operational value.
+  await client.query("insert into public.toast_raw_samples\n (business_id,restaurant_guid,endpoint,business_date,http_status,item_count,sample,field_paths)\n values\n ($1,$2,'cashmgmt/v1/entries',$3::date,200,1,'[{\"guid\":\"poison-cash\",\"amount\":9999.99}]'::jsonb,ARRAY[]::text[]),\n ($1,$2,'stock/v1/inventory',$3::date,200,1,'[{\"guid\":\"poison-stock\",\"quantity\":9999}]'::jsonb,ARRAY[]::text[]),\n ($1,$2,'labor/v1/timeEntries',$3::date,200,1,'[{\"guid\":\"poison-time\",\"firstName\":\"PoisonEmployee\"}]'::jsonb,ARRAY[]::text[])",[biz.id,restaurant,biz.today]);
+  const leak=(await client.query<{n:number}>("select count(*)::integer n from public.toast_records_for($1,$2,$3)\n where data->>'guid' in ('other-cafe-cash','poison-cash','poison-stock','poison-time')",
+   [biz.id,prior,biz.today])).rows[0].n;
+  expect(leak).toBe(0);
+  // Test the source/fixture contract at zero model cost. Paid acceptance must
+  // still execute the registered Supervisor, and never sets SQL_ONLY.
+  if(sqlOnly){
+   const expected=await client.query<{n:number}>(
+    "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
+    [biz.id,prior,biz.today]);
+   expect(expected.rows[0].n).toBeGreaterThanOrEqual(3);
+   return;
+  }
+
   // SupabaseClient.rpc-compatible adapter backed by the SAME transaction in which
   // the fixture and direct truth live. Query SQL is still solely the allowlisted RPC.
   const db={rpc:async(name:string,p:Record<string,unknown>)=>{
@@ -87,11 +204,12 @@ run("Supervisor answers 13 varied owner questions with exact direct SQL counts a
    tools:{} as AgentToolContext["tools"],
    canonicalData:async()=>({db:db as never,businessId:biz.id})
   } as AgentToolContext;
-  for(const {question,truth} of scalarQuestions){
+  for(const {question,truth} of (smoke?scalarQuestions.slice(0,0):scalarQuestions)){
    const expected=(await client.query<{n:number}>(truth,params)).rows[0].n;
    // Standard owner-facing answer; the requested line keeps acceptance numeric
    // (without an extra reviewer model) and still permits the incomplete-day note.
-   const turn=await runAgentTurn({context,ownerText:
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:
     question+" Answer with 'Number: N' and a short source/coverage note."});
    expect(turn.tools,question).toContain("query_data");
    const number=turn.text.match(/\bNumber\s*[:=]\s*(\d+)\b/i);
@@ -106,9 +224,10 @@ run("Supervisor answers 13 varied owner questions with exact direct SQL counts a
    {question:"Give units sold yesterday by item display name. Call absent names 'Unnamed'. Use Name: N lines.",
     truth:`select coalesce(data->>'displayName','Unnamed') k, sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$2) where record_type='item' and counts_in_sales=true group by coalesce(data->>'displayName','Unnamed') order by 1`}
   ] as const;
-  for(const {question,truth} of breakdowns){
+  for(const {question,truth} of (smoke?breakdowns.slice(0,0):breakdowns)){
    const expected=(await client.query<{k:string;n:number}>(truth,params)).rows;
-   const turn=await runAgentTurn({context,ownerText:question});
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:question});
    expect(turn.tools,question).toContain("query_data");
    for(const row of expected){
     const line=turn.text.split("\n").find(line=>line.includes(row.k));
@@ -116,6 +235,49 @@ run("Supervisor answers 13 varied owner questions with exact direct SQL counts a
     expect(line,question+" wrong "+row.k+": "+turn.text).toMatch(
      new RegExp("[:=]\\s*"+row.n+"\\b"));
    }
+  }
+
+  // These real turns close the signed POS0e gap not covered by the earlier
+  // discount-only test. Expected facts come from the SAME disposable database
+  // transaction, not the model, snapshots or copied fixture guesses.
+  const namedQuestions=[
+   {question:"For current Toast order GUID "+firstOrderGuid+
+     ", what is this customer's first name? Answer exactly Name: X.",
+    truth:"select data->'customer'->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='order' and record_ref=$4",ref:firstOrderGuid},
+   {question:"For current Toast employee GUID "+staffGuid+
+     ", what is this employee's first name? Answer exactly Name: X.",
+    truth:"select data->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
+  ];
+  for(const {question,truth,ref} of namedQuestions){
+   const expected=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0]?.answer;
+   expect(expected,question).toBeTruthy();
+   const receiptStart=providerReceipts.length;
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:question+
+    " Use retained current source facts, not diagnostic snapshots or another café."});
+   expect(turn.tools,question).toContain("query_data");
+   expect(turn.text,question+"; "+safeFailureDetails(turn,receiptStart))
+    .toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
+  }
+  const familyQuestions=[
+   {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
+    truth:"select sum(amount_cents)::integer n from public.cv_cash\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,biz.today]},
+   {question:"For current Toast stock item GUID "+stockGuid+
+     ", what quantity is retained today? Answer Quantity: N; do not treat missing as zero.",
+    truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
+   {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
+    truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
+  ];
+  for(const {question,truth,label,args} of familyQuestions){
+   const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
+   expect(expected,question).not.toBeNull();
+   expect(expected,question).not.toBeUndefined();
+   const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
+   provider:budgetedProvider,ownerText:question});
+   expect(turn.tools,question).toContain("query_data");
+   const match=turn.text.match(new RegExp("\\b"+label+"\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)","i"));
+   expect(match,question+" => "+turn.text).not.toBeNull();
+   expect(Number(match![1]),question+" => "+turn.text).toBeCloseTo(Number(expected),2);
   }
  }finally{
   await client.query("ROLLBACK").catch(()=>{});
