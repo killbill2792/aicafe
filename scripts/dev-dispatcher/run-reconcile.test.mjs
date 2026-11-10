@@ -115,8 +115,8 @@ test('supersede ONLY planned legacy POS0b/c/d repair and continuation actions', 
     ]))
   });
   const result = h.run(initial({
-    POS0b: record('POS0b'), POS0c: record('POS0c'),
-    POS0d: record('POS0d'), POS0e: record('POS0e')
+    POS0b: record('POS0b'), POS0c: {...record('POS0c'),pr_number:401},
+    POS0d: {...record('POS0d'),pr_number:402}, POS0e: {...record('POS0e'),pr_number:403}
   }, actions));
   for (const key of ['b', 'c', 'd'])
     assert.equal(result.state.actions[key].status, 'cancelled_superseded_template');
