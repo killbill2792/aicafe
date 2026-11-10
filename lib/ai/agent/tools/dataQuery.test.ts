@@ -47,7 +47,15 @@ it("distinguishes safe invalid SQL query shapes from real outages",async()=>{
   ...ctxBase,db:{rpc:typed} as never});
  expect(malformed.error).toBe("invalid_query");
  expect(JSON.stringify(malformed)).not.toContain("secret query text");
- for(const code of ["42501","PGRST202",undefined]){
+ for(const fixedMessage of ["invalid aggregate","columns require group by",
+  "invalid order by","invalid filter column"]){
+  const rejectedRpc=vi.fn(async()=>({data:null,error:{
+   code:"P0001",message:fixedMessage}}));
+  const result=await dataQueryTools.query_data.execute(input(),{
+   ...ctxBase,db:{rpc:rejectedRpc} as never});
+  expect(result.error,fixedMessage).toBe("invalid_query");
+ }
+ for(const code of ["42501","PGRST202","P0001",undefined]){
   const outage=vi.fn(async()=>({data:null,error:{code,message:"private detail"}}));
   const result=await dataQueryTools.query_data.execute(input(),{
    ...ctxBase,db:{rpc:outage} as never});
