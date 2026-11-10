@@ -131,6 +131,7 @@ jobs:
           DISPATCH_TRANSIENT_CI_RETRY: ${{ vars.DISPATCH_TRANSIENT_CI_RETRY }}
           # Optional per-repo stall threshold; no schedule or gate is added.
           DISPATCH_STALL_MINUTES: ${{ vars.DISPATCH_STALL_MINUTES || '20' }}
+          DISPATCH_CODEX_WATCH_MINUTES: ${{ vars.DISPATCH_CODEX_WATCH_MINUTES || '20' }}
           # Existing GitHub issue is the owner's public-safe live status surface.
           DISPATCH_OWNER_DASHBOARD_ISSUE: '411'
           PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review' || github.event_name == 'pull_request') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
