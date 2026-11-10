@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { validateQueue, dispatchFrontier, resolveTaskBase, decideNudge, readyGate } from './core.mjs';
 import { createDelivery } from './delivery.mjs';
 import { renderOwnerView } from './owner-view.mjs';
+import { updateChildAfterParentMerge } from './effects.mjs';
+import { sanitizeLedger } from './ledger.mjs';
+import { readFileSync } from 'node:fs';
 
 const now = Date.parse('2026-11-09T22:00:00Z');
 const old = new Date(now-11*60_000).toISOString();
@@ -52,11 +55,11 @@ test('parent-open child keeps coding and CI: no rebase or Codex wait nudge',()=>
 
 test('parent merge results in exactly one rebase prompt keyed by merge SHA, not by child head',()=>{
   const sha='f'.repeat(40);
-  const rec=active({parent_merged_sha:sha,base_branch:'feat/parent'});
+  const rec=active({parent_merged_sha:sha,base_branch:'main',branch_maintenance_merge_sha:sha});
   const first=decideNudge(rec,now);
   assert.equal(first.action,'parent_merged');
   assert.match(first.key,/parent_merged/);
-  assert.equal(decideNudge({...rec,last_parent_rebase_sha:sha},now).kind,'hold');
+  assert.equal(decideNudge({...rec,last_parent_rebase_sha:sha,waiting_only_for_parent:true},now).kind,'hold');
   assert.equal(decideNudge({...rec,head_sha:'e'.repeat(40)},now).key,first.key);
 });
 
@@ -104,4 +107,92 @@ test('owner view calls stale cancellations superseded and planned overdue action
   assert.match(view,/superseded/);
   assert.match(view,/courier unconfirmed/);
   assert.doesNotMatch(view,/cancelled_stale_head/);
+});
+
+
+test('default branch maintenance verifies live parent merge before retarget, then requests update-branch in order',async()=>{
+  const merged='f'.repeat(40),head='a'.repeat(40);
+  const parent={pr_number:400,branch:'feat/parent',status:'merged',merge_sha:merged};
+  const child={pr_number:408,head_sha:head,github_state:'open'};
+  let updated=false;
+  const calls=[];
+  const github={request:async(path,options)=>{
+    calls.push([path,options?.method]);
+    if(path==='/pulls/400')return {merged_at:'2026-11-09T22:00:00Z',
+      merge_commit_sha:merged,head:{ref:'feat/parent'}};
+    if(path==='/pulls/408')return {state:'open',merged:false,head:{sha:head},
+      base:{ref:updated?'main':'feat/parent'}};
+    if(path==='/pulls/408/update-branch') return {message:'Update branch requested'};
+    if(path==='/pulls/408' && options?.method==='PATCH'){updated=true;return {};}
+    throw Error('Unexpected request '+path);
+  }};
+  const v=await updateChildAfterParentMerge({github,dependent:child,predecessor:parent});
+  assert.equal(v.status,'update_requested');
+  assert.deepEqual(calls.map(([p,m])=>p+' '+(m||'GET')),[
+    '/pulls/400 GET','/pulls/408 GET','/pulls/408 PATCH','/pulls/408 GET',
+    '/pulls/408/update-branch PUT'
+  ]);
+  const rejected=await updateChildAfterParentMerge({github,dependent:child,
+    predecessor:{...parent,merge_sha:'b'.repeat(40)}});
+  assert.equal(rejected.reason,'parent_merge_not_verified_live');
+  assert.equal(calls.filter(([p,m])=>m==='PATCH').length,1);
+});
+
+test('already-main child requests update without a second retarget; conflicts surface without release',async()=>{
+  const merged='f'.repeat(40),head='a'.repeat(40);
+  const calls=[];
+  const github={request:async(path,options)=>{
+    calls.push([path,options?.method]);
+    if(path==='/pulls/400')return{merged_at:'yes',merge_commit_sha:merged,head:{ref:'feat/parent'}};
+    if(path==='/pulls/408')return {state:'open',merged:false,head:{sha:head},base:{ref:'main'}};
+    if(path.endsWith('/update-branch'))throw new Error('Cannot update due to conflicts');
+    throw Error(path);
+  }};
+  const v=await updateChildAfterParentMerge({github,dependent:{pr_number:408,head_sha:head,
+    github_state:'open'},predecessor:{pr_number:400,branch:'feat/parent',
+      status:'merged',merge_sha:merged}});
+  assert.equal(v.status,'update_failed_needs_coder');
+  assert.ok(calls.some(([p,m])=>p.endsWith('/update-branch')&&m==='PUT'));
+  assert.equal(calls.some(([,m])=>m==='PATCH'),false);
+  const run=readFileSync(new URL('./run.mjs',import.meta.url),'utf8');
+  const workflow=readFileSync(new URL('../../.github/workflows/ai-cafe-dev-dispatcher.yml',
+    import.meta.url),'utf8');
+  assert.match(run,/if \(commit && ledger\) \{\s*const currentTasks/);
+  assert.match(run,/updateChildAfterParentMerge/);
+  assert.doesNotMatch(run,/process\.env\.DISPATCH_BRANCH_MAINTENANCE/);
+  assert.doesNotMatch(workflow,/DISPATCH_BRANCH_MAINTENANCE/);
+});
+
+test('all delivery steps stay under 2 KB and planning links concise Superpowers flow',()=>{
+  const t=task('child',[],Array.from({length:24},(_,i)=>'lib/shared'+i+'.mjs'));
+  for(const action of ['assign','pre_pr_reminder','codex_comments','ci_failed',
+    'parent_merged','owner_answered','idle_continue','plan','brainstorm']){
+    const d=createDelivery({task:t,record:active(),action,actionId:'compact:'+action});
+    assert.ok(Buffer.byteLength(d.prompt,'utf8')<=2048,action);
+    assert.match(d.prompt,/AGENTS\.md/);
+    assert.match(d.prompt,/PROGRESS\.md/);
+    assert.match(d.prompt,/SKILL\.md/);
+    assert.match(d.prompt,/Signed queue/);
+    assert.equal(d.prompt.includes('source text of AGENTS'),false);
+    if(['plan','brainstorm'].includes(action)){
+      assert.match(d.prompt,/one question at a time/);
+      assert.match(d.prompt,/Mermaid diagrams/);
+      assert.match(d.prompt,/merge order/);
+    }
+  }
+});
+
+test('ledger keeps text while planned but drops it after verified receipt, preserving hash',()=>{
+  const state={version:1,updated_at:null,tasks:{},actions:{
+    a:{status:'planned',delivery:{prompt:'pending',prompt_hash:'a'.repeat(64)}},
+    b:{status:'submitted',receipt:{courier:'muse'},delivery:{
+      prompt:'delivered private text',prompt_hash:'b'.repeat(64)}},
+    c:{status:'cancelled_stale_head',superseded_receipt:{submitted_at:old},delivery:{
+      prompt:'historically submitted',prompt_hash:'c'.repeat(64)}}
+  }};
+  sanitizeLedger(state);
+  assert.equal(state.actions.a.delivery.prompt,'pending');
+  assert.equal(state.actions.b.delivery.prompt,undefined);
+  assert.equal(state.actions.c.delivery.prompt,undefined);
+  assert.equal(state.actions.b.delivery.prompt_hash,'b'.repeat(64));
 });
