@@ -26,7 +26,7 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
    if(path.startsWith('/actions/runs/')) return path.includes('/jobs') ? {total_count:1,jobs:[{name:'AI CAFE PR baseline',conclusion:'success'}]} : {id:10,head_sha:'head',status:'completed',conclusion:'success',event:'pull_request'};
    if(path.startsWith('/contents/')) return {type:'file'};
    return pr;
- },one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',threads_resolved:true}),
+ },one:async()=>({ci_state:'success',codex_state:'clean',codex_reviewed_sha:'head',coder_done:true,threads_resolved:true}),
  acceptanceProof:async()=>({task_id:'6',run_id:11,head_sha:'head',base_sha:'base',acceptance_digest:acceptanceDigest(evidence.acceptance),acceptance:[{...evidence.acceptance[0]}]})};
  assert.equal((await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:false})).status,'disabled');
  const done=await mergeApprovedPr({github,record:rec,evidence,expectedAcceptance:['scenario'],enabled:true});
@@ -34,7 +34,7 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
  assert.equal(done.integration_dispatch,'requested');
  assert.deepEqual(calls.at(-2),['/pulls/100/merge','PUT']);
  assert.deepEqual(calls.at(-1),['/actions/workflows/ai-cafe-integration-proof.yml/dispatches','POST']);
- const draftPr={...pr,draft:true,node_id:'PR_100',labels:[],body:''};
+ const draftPr={...pr,draft:true,node_id:'PR_100',labels:[],body:'<!-- aicafe-coder-done -->'};
  const readyCalls=[];
  const readyGitHub={...github,request:async(path,options)=>{
    readyCalls.push([path,options?.method]);
@@ -44,13 +44,13 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
    return github.request(path,options);
  }};
  const prepared=await mergeApprovedPr({github:readyGitHub,
-   record:{...rec,draft:true},evidence,expectedAcceptance:['scenario'],
+   record:{...rec,draft:true,coder_done:true},evidence,expectedAcceptance:['scenario'],
    enabled:true,action:'ready'});
  assert.equal(prepared.status,'ready_for_review');
  assert.ok(readyCalls.some(([path,method])=>path==='https://api.github.com/graphql' && method==='POST'));
  assert.equal(readyCalls.some(([path])=>path==='/pulls/100/merge'),false);
  const disputed=await mergeApprovedPr({github:readyGitHub,
-   record:{...rec,draft:true,github_owner_question:'Approve scope expansion?'},
+   record:{...rec,draft:true,coder_done:true,github_owner_question:'Approve scope expansion?'},
    evidence,expectedAcceptance:['scenario'],enabled:true,action:'ready'});
  assert.deepEqual(disputed.reasons,['owner_decision_pending']);
  const staleLabel={...readyGitHub,request:async(path,options)=>
