@@ -171,7 +171,7 @@ describe("ask_owner tool",()=>{
  ])("blocks an unsourced numeric fact with the existing POS reader available: %s",async ownerText=>{
   const ctx={resolveState:newResolveState(ownerText),locale:"en",
    canonicalData:async()=>{throw new Error("must not read data during provenance validation");}
-  } as AgentToolContext;
+  } as unknown as AgentToolContext;
   const request={kind:"facts",question:"Please give me that number",options:[],allowOther:false,
    fields:[{key:"generic_count",label:"Count",inputType:"number",units:[],defaultUnit:""}]};
   const rejected=await askOwnerTools.ask_owner.execute(request,ctx);
@@ -211,7 +211,7 @@ describe("ask_owner tool",()=>{
    const ownerText="How many orders did we take at the pop-up?";
    const ctx={resolveState:newResolveState(ownerText),locale:"en",
     canonicalData:async()=>{throw new Error("owner context must be collected first");}
-   } as AgentToolContext;
+   } as unknown as AgentToolContext;
    const field={key:"popup_context",label:"Which pop-up?",inputType,
     units:[],defaultUnit:"",
     ...(inputType==="choice"?{choices:[{label:"Morning",value:"am"},
@@ -228,7 +228,7 @@ describe("ask_owner tool",()=>{
   const ctx={resolveState:newResolveState(ownerText),locale:"en",
    canonicalData:async()=>{throw new Error("not needed");},
    turnResults:()=>[{name:"owner_facts",result:{source:"owner_facts",period:null,missing:[key]}}]
-  } as AgentToolContext;
+  } as unknown as AgentToolContext;
   const card=await askOwnerTools.ask_owner.execute({kind:"facts",
    question:"What is the seating capacity?",options:[],allowOther:false,
    fields:[{key,label:"Seat count",inputType:"number",units:[],defaultUnit:""}]},ctx);
@@ -240,7 +240,7 @@ describe("ask_owner tool",()=>{
   const ctx={resolveState:newResolveState("Tell me the item count"),locale:"en",
    canonicalData:async()=>{throw new Error("not needed");},
    turnResults:()=>[{name:"query_data",result:{source:"canonical_data",period:null,missing:[key]}}]
-  } as AgentToolContext;
+  } as unknown as AgentToolContext;
   const card=await askOwnerTools.ask_owner.execute({kind:"facts",
    question:"Owner-only seat count?",options:[],allowOther:false,changeSaved:true,
    fields:[{key,label:"Owner-only number",inputType:"number",
