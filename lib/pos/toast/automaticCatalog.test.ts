@@ -15,7 +15,7 @@ const gid="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const op=(n:number)=>"eeeeeeee-eeee-4eee-8eee-"+String(n).padStart(12,"0");
 const adapter=createToastAdapter({db:{} as SupabaseClient,businessId:rg,restaurantGuid:rg});
 const publication={restaurantGuid:rg,lastUpdated:"2026-11-09T09:00:00Z"};
-const menu={restaurantGuid:rg,menus:[{name:"Drinks",menuGroups:[{
+const menu={restaurantGuid:rg,lastUpdated:publication.lastUpdated,menus:[{name:"Drinks",menuGroups:[{
  name:"Coffee",menuItems:[{
  guid:itemGuid,name:"Latte",description:"Espresso and milk",price:null,
  pricingStrategy:"SIZE_PRICE",pricingRules:{sizeSpecificPricingGuid:sizeGuid},
@@ -73,6 +73,38 @@ describe("Toast published catalog adapter",()=>{
    "/menus/v2/metadata","/menus/v2/menus"
   ]);
  });
+ it("rejects a lagging menu payload even when both metadata observations agree",async()=>{
+  request.mockResolvedValueOnce({...publication,lastUpdated:"2026-11-09T10:00:00Z"})
+    .mockResolvedValueOnce(menu)
+    .mockResolvedValueOnce({...publication,lastUpdated:"2026-11-09T10:00:00Z"});
+  await expect(adapter.fetchPublishedCatalogBundle())
+    .rejects.toMatchObject({category:"invalid_response"});
+  expect(request.mock.calls.map(call=>call[0])).toEqual([
+    "/menus/v2/metadata","/menus/v2/menus","/menus/v2/metadata"
+  ]);
+ });
+ it("refuses a missing payload publication version even if metadata is stable",async()=>{
+  const incomplete=structuredClone(menu) as Record<string,unknown>;
+  delete incomplete.lastUpdated;
+  request.mockResolvedValueOnce(publication).mockResolvedValueOnce(incomplete)
+    .mockResolvedValueOnce(publication);
+  await expect(adapter.fetchPublishedCatalogBundle())
+    .rejects.toMatchObject({category:"invalid_response"});
+ });
+ it.each(["missing","null"] as const)(
+  "rejects %s item modifier group references before any presence receipt",async(kind)=>{
+    const incomplete=structuredClone(menu);
+    const item=incomplete.menus[0].menuGroups[0].menuItems[0] as Record<string,unknown>;
+    if(kind==="missing")delete item.modifierGroupReferences;
+    else item.modifierGroupReferences=null;
+    request.mockResolvedValueOnce(publication).mockResolvedValueOnce(incomplete);
+    await expect(adapter.fetchPublishedCatalogBundle())
+      .rejects.toMatchObject({category:"invalid_response"});
+    expect(request.mock.calls.map(call=>call[0])).toEqual([
+      "/menus/v2/metadata","/menus/v2/menus"
+    ]);
+  }
+ );
  it("never returns a receipt if the provider publishes another version during the GET",async()=>{
   request.mockResolvedValueOnce(publication).mockResolvedValueOnce(menu)
     .mockResolvedValueOnce({...publication,lastUpdated:"2026-11-09T09:05:00Z"});
