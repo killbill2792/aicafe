@@ -174,8 +174,8 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
    add('wrong_repo',id,rec.pr_number,'Task '+id+' belongs to '+rec.repo_mismatch.expected+
      ' but PR #'+rec.pr_number+' is in '+rec.repo_mismatch.actual+'. Correct the task-to-repo dispatch; do not use PR body as authority.');
   if(rec.stall_escalate)
-   add('repeated_stall',id,rec.pr_number,'D7 referee: three identical no_push_after_prompt stalls for PR #'+rec.pr_number+
-     ' on '+rec.head_sha+'. Stop re-prompting this head.');
+   add('repeated_stall',id,rec.pr_number,'PR #'+rec.pr_number+' still stuck after one 20-minute Muse nudge on head '+rec.head_sha+
+     '. Owner intervention required; no repeated coding nudge.');
   if(rec.codex_referee_sha && rec.codex_referee_sha===rec.head_sha)
    add('codex_watchdog',id,rec.pr_number,
      'Referee: Codex gave no review or reaction after one request for PR #'+

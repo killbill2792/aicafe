@@ -20,6 +20,7 @@ import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs"
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
 import {dispatchReceiptWake} from './wake.mjs';
+import {noticeOperationalIssues} from './notifications.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
@@ -94,8 +95,8 @@ async function main() {
     const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
       minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
     const remaining=linkPullRequests(safety,observed.snapshot).unmapped;
-    const copy = queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
-      {unmappedPrs:remaining,openPrs:observed.snapshot,queue});
+    const copy = noticeOperationalIssues(queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
+      {unmappedPrs:remaining,openPrs:observed.snapshot,queue}),{snapshot:observed.snapshot,scan:receiptScan});
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
@@ -367,8 +368,9 @@ async function main() {
       // Dependency proof is recorded for reporting, not an unsolicited chat prompt.
       // Integration may become proven during this same pass: queue the owner
       // review with the actual saved chat URL without a second delayed cycle.
-      const withNotices = queueOwnerAlerts(next,{queue,
-        unmappedPrs:linkPullRequests(next,latest.snapshot).unmapped,openPrs:latest.snapshot});
+      const withNotices = noticeOperationalIssues(queueOwnerAlerts(next,{queue,
+        unmappedPrs:linkPullRequests(next,latest.snapshot).unmapped,openPrs:latest.snapshot}),
+        {snapshot:latest.snapshot,scan:receiptScan});
       return JSON.stringify(withNotices) === JSON.stringify(existing) ? null : withNotices;
     });
   }

@@ -2,6 +2,7 @@
 import {createHash} from 'node:crypto';
 import {GitHubLedger} from './ledger.mjs';
 import {settings} from './settings.mjs';
+import {queueOwnerIssue} from './alerts.mjs';
 const sha=s=>createHash('sha256').update(s).digest('hex'),dt=s=>Date.parse(s||'');
 export function nextWake(state,now=Date.now(),config=settings){
  const list=[];
@@ -51,7 +52,12 @@ export async function scheduleSelfWake({ledger,token,config=settings,now=Date.no
  const ok=response?.ok===true;
  await ledger.transaction(state=>{
   if(state.delayed_wake?.key!==reserved.key)return null;
-  state.delayed_wake.status=ok?'requested':'failed';return state;
+  state.delayed_wake.status=ok?'requested':'failed';
+  if(!ok)state.owner_alerts=queueOwnerIssue(state,{kind:'delayed_wake_failed',
+    identity:reserved.key,message:'Repository '+config.repo+
+    ' delayed self-wake failed for '+reserved.reason+' at '+reserved.due_at,
+    needs:'Repair workflow_dispatch permission or retry the wake'}).owner_alerts;
+  return state;
  });
  if(!ok)throw Error('Delayed wake dispatch failed: HTTP '+(response?.status||'network'));
  return {...reserved,status:'requested'};
