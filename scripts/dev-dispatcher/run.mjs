@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {settings} from './settings.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
@@ -17,21 +18,23 @@ import { queueOwnerAlerts,applyOwnerStartApprovals } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
+import {dispatchReceiptWake} from './wake.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
 async function main() {
-  const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
+  const queue = JSON.parse(readFileSync(new URL('../../'+settings.queue.path,import.meta.url),'utf8'));
   validateQueue(queue);
   const taskById = new Map(queue.tasks.map(task => [task.id, task]));
   const repo = process.env.GITHUB_REPOSITORY;
   const githubToken = process.env.GITHUB_TOKEN;
-  if (!repo || !githubToken) throw new Error("GITHUB_REPOSITORY/GITHUB_TOKEN required");
+  if (!repo || !githubToken || repo!==settings.repo) throw new Error('Dispatcher repository/settings mismatch');
   const commit = process.argv.includes("--commit");
-  const ledgerRepo = process.env.DISPATCH_LEDGER_REPO;
+  const ledgerRepo = process.env.DISPATCH_LEDGER_REPO || settings.ledger.repo;
+  if(ledgerRepo!==settings.ledger.repo)throw Error('Dispatcher ledger/settings mismatch');
   const ledgerToken = process.env.DISPATCH_LEDGER_TOKEN;
   if (commit && (!ledgerRepo || !ledgerToken)) throw new Error("Cannot persist without private ledger repo and token");
-  const ledger = ledgerRepo && ledgerToken ? new GitHubLedger({ repo: ledgerRepo, token: ledgerToken }) : null;
+  const ledger = ledgerRepo && ledgerToken ? new GitHubLedger({ repo: ledgerRepo, token: ledgerToken, path:settings.ledger.path }) : null;
   const gh = new GitHubFacts({ repo, token: githubToken });
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
   async function observe(state) {
@@ -55,7 +58,7 @@ async function main() {
       closedByPr[rec.pr_number]={merged:Boolean(closed.merged_at),
         merge_sha:mergeSha,landing_failure:landingFailure};
     }
-    const history=await gh.request('/actions/workflows/ai-cafe-dev-dispatcher.yml/runs?event=schedule&per_page=3').catch(()=>null);
+    const history=await gh.request('/actions/workflows/'+settings.workflows.dispatcher+'/runs?event=schedule&per_page=3').catch(()=>null);
     const previous=(history?.workflow_runs||[]).find(r=>r.created_at && r.id!==Number(process.env.GITHUB_RUN_ID));
     return {snapshot,closedByPr,mainSha,lastScheduleAt:previous?.created_at || null};
   }
@@ -139,7 +142,7 @@ async function main() {
       const key = assignmentActionKey(copy, assignment.task_id, queue);
       if (!key) continue;
       const record = { task_id: assignment.task_id, status: "assigned",
-        agent: assignment.agent, branch: `feat/aicafe-task-${assignment.task_id}`, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
+        agent: assignment.agent, branch: settings.naming.branch_prefix+assignment.task_id, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
         approval_hash: approvalSignature(taskById.get(assignment.task_id)),
         prompt_id: `task:${assignment.task_id}`, prompt_version: "v2" };
       let delivery;
@@ -309,9 +312,9 @@ async function main() {
     const pending=Object.entries(state.tasks).filter(([,r])=>
       r.status==='merged' && /^[a-f0-9]{40}$/.test(r.merge_sha||''));
     if(!pending.length)return;
-    const runs=await gh.workflowRuns('ai-cafe-integration-proof.yml','branch=main');
+    const runs=await gh.workflowRuns(settings.workflows.integration,'branch=main');
     for(const [id,rec] of pending) for(const run of runs) {
-      if(run.name!=='AI CAFE Integration Proof' || run.head_branch!=='main' ||
+      if(run.name!==settings.required_checks.integration_workflow || run.head_branch!=='main' ||
          !['push','workflow_dispatch'].includes(run.event) ||
          run.status!=='completed'||run.conclusion!=='success'||
          (run.event==='push'&&run.head_sha!==rec.merge_sha))continue;
@@ -321,13 +324,15 @@ async function main() {
       if(!job)continue;
       // Skipped acceptance cannot promote integration even if the job is green.
       const artifact=await gh.integrationProof(run.id).catch(()=>null);
-      const proof=verifiedMergedProof({run,job,artifact,taskId:id,mergeSha:rec.merge_sha});
+      const proof=verifiedMergedProof({run,job,artifact,taskId:id,mergeSha:rec.merge_sha,
+        legacyBefore:settings.legacy_proof_before});
       const task=taskById.get(id);
       if(task&&proof&&integrationStatus({merged_sha:rec.merge_sha,
         main_sha:rec.merge_sha,proof,expectedAcceptance:task.acceptance})==='integrated_proven') {
         rec.integration_proof=proof;rec.integration_dispatch='verified';
         rec.status='integrated_proven';
-        console.log('drift_fixed: integration PR #'+rec.pr_number+' proof run '+run.id);
+        console.log('drift_fixed: integration PR #'+rec.pr_number+' proof run '+run.id+
+          ' basis '+proof.proof_basis);
         break;
       }
     }
@@ -480,7 +485,7 @@ async function main() {
   }
   // Green drafts are made ready automatically. Auto-merge remains separately
   // controlled and still requires an exact-head clean Codex receipt.
-  const autoMerge = process.env.DISPATCH_AUTO_MERGE === "true" && commit;
+  const autoMerge = settings.auto_merge.coding && process.env.DISPATCH_AUTO_MERGE !== "false" && commit;
   if (commit && ledger) {
     for (const [id, rec] of Object.entries(persisted?.state?.tasks || proposed.state.tasks)) {
       if (!rec.pr_number || rec.github_state !== "open") continue;
@@ -493,6 +498,8 @@ async function main() {
       const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
         enabled: true, action: rec.draft ? "ready" : "merge" });
       if (outcome.status === "ready_for_review") {
+        await dispatchReceiptWake({token:githubToken,event:'dispatcher_delayed'}).catch(e=>
+          console.error('Ready transition self-wake failed: '+e.message));
         console.log(`Verified PR #${rec.pr_number} for task ${id} is ready for review; merge awaits fresh GitHub reconciliation`);
         continue;
       }
@@ -556,7 +563,7 @@ async function main() {
     !architectureFoundationReady(queue,effectiveState.tasks);
   const hasChatReceipt = !!foundationRecord?.conversation_ref;
   const summary = [
-    "## AI CAFE development dispatcher — coordination status",
+     '## '+settings.chatgpt.project_name+' development dispatcher — coordination status',
     `- Last persisted state: **${effectiveState.updated_at || "not yet saved"}** (an unchanged ledger alone is not a scheduler heartbeat)`,
     "- 10-minute code inactivity / 15-minute post-delivery checks are best-effort; GitHub scheduled runs may be delayed or dropped.",
     "",
@@ -599,7 +606,7 @@ async function main() {
   // Single owner-facing view in issue #411, updated by the same trusted-main
   // reconciliation. Dashboard publishing is never allowed to block the
   // private ledger or the opaque Muse wake-up signal.
-  const ownerIssue = Number(process.env.DISPATCH_OWNER_DASHBOARD_ISSUE);
+  const ownerIssue = Number(process.env.DISPATCH_OWNER_DASHBOARD_ISSUE || settings.owner.dashboard_issue);
   if (commit && ledger && persisted && Number.isSafeInteger(ownerIssue) && ownerIssue > 0) {
     const runUrl = process.env.GITHUB_RUN_ID
       ? `https://github.com/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}` : null;

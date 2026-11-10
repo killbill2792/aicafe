@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 // Pure receipt verification. The trusted GitHub-side writer must authenticate courier
 // receipts before calling this function; this module never accepts anonymous writes.
 import { createHash } from 'node:crypto';
@@ -22,7 +23,7 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
     action?.type === 'assign' && receipt.action_id === 'assign:' + task?.task_id &&
     action?.task_id === task?.task_id &&
     task?.github_state === 'open' && Number.isInteger(task?.pr_number) &&
-    task?.branch === 'feat/aicafe-task-' + task.task_id &&
+    task?.branch === settings.naming.branch_prefix + task.task_id &&
     !task?.conversation_ref;
   if (!action || !task ||
       (action.status !== 'planned' && !lateAssignment && !supersededContinuation) ||

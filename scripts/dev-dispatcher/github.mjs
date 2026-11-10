@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 import { validateRepo, reportedConnector403, failureInstruction } from './safety.mjs';
@@ -23,12 +24,12 @@ export function githubNetworkFailure(kind){
 }
 export function parseTaskMarker(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;
-  const marks = [...body.matchAll(/<!-- aicafe-task-id\s+([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\s*-->/g)];
+  const marks = [...body.matchAll(new RegExp('<!-- '+settings.naming.marker_prefix+'-task-id\\s+([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\\s*-->','g'))];
   return marks.length === 1 ? marks[0][1] : null;
 }
 export function parseChatMarker(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;
-  const matches = [...body.matchAll(/<!--\s*aicafe-chat-url\s+(\S+)\s*-->/g)];
+  const matches = [...body.matchAll(new RegExp('<!--\\s*'+settings.naming.marker_prefix+'-chat-url\\s+(\\S+)\\s*-->','g'))];
   if (matches.length !== 1) return null;
   try {
     const url = new URL(matches[0][1]);
@@ -44,11 +45,12 @@ export function dispatcherOnlyFiles(files) {
   return Array.isArray(files) && files.length > 0 &&
     files.every(f => typeof f?.filename === 'string' &&
       (/^scripts\/dev-dispatcher\//.test(f.filename) ||
+       /^\.dispatcher\//.test(f.filename) ||
        /^\.github\/workflows\//.test(f.filename)));
 }
 export function parseOwnerQuestion(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;
-  const matches = [...body.matchAll(/<!-- aicafe-owner-question\s+([\s\S]*?)\s*-->/g)];
+  const matches = [...body.matchAll(new RegExp('<!-- '+settings.naming.marker_prefix+'-owner-question\\s+([\\s\\S]*?)\\s*-->','g'))];
   if (matches.length !== 1 || matches[0][1].length > 1200) return null;
   return matches[0][1].trim() || null;
 }
@@ -73,7 +75,7 @@ export function parseCodexReviewState(body, sha) {
 }
 export function parseAcceptanceEvidence(body) {
   if (typeof body !== "string" || body.length > 100000) return null;
-  const match = body.match(/<!-- aicafe-acceptance-evidence\s*([\s\S]*?)\s*-->/);
+  const match = body.match(new RegExp('<!-- '+settings.naming.marker_prefix+'-acceptance-evidence\\s*([\\s\\S]*?)\\s*-->'));
   if (!match || match[1].length > 20000) return null;
   try { const value = JSON.parse(match[1]);
     return value && typeof value === "object" && Array.isArray(value.acceptance) ? value : null;
@@ -113,15 +115,18 @@ export function isDispatcherMaintenanceChange(files) {
   return Array.isArray(files) && files.length > 0 && files.every(file =>
     typeof file?.filename === 'string' && (
       file.filename === 'AGENTS.md' ||
-      file.filename === '.claude/skills/aicafe-pr-lifecycle/SKILL.md' ||
-      file.filename === '.github/workflows/ai-cafe-dev-dispatcher.yml' ||
-      /^scripts\/dev-dispatcher\//.test(file.filename)));
+      file.filename === '.claude/skills/'+settings.naming.task_prefix+'-pr-lifecycle/SKILL.md' ||
+      file.filename === '.github/workflows/'+settings.workflows.dispatcher ||
+      /^scripts\/dev-dispatcher\//.test(file.filename) ||
+      /^\.dispatcher\//.test(file.filename) ||
+      file.filename === '.github/workflows/'+settings.workflows.delayed_wake));
 }
 
 export class GitHubFacts {
-  constructor({ repo, token, fetchFn = fetch }) {
+  constructor({ repo, token, ownerLogin=settings.owner.login, fetchFn = fetch }) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) throw new Error("GitHub repo/token required");
     this.repo = repo; this.token = token; this.fetchFn = fetchFn;
+    this.ownerLogin=ownerLogin;
   }
   async request(url, options = {}) {
     const response = await this.fetchFn(url.startsWith("https:") ? url : `https://api.github.com/repos/${this.repo}${url}`, {
@@ -170,10 +175,10 @@ export class GitHubFacts {
     return decodeAcceptanceArchive(Buffer.from(await response.arrayBuffer()), filename);
   }
   async acceptanceProof(runId) {
-    return this.proofArtifact(runId, 'aicafe-acceptance-proof', 'acceptance-proof.json');
+    return this.proofArtifact(runId, settings.naming.task_prefix+'-acceptance-proof', 'acceptance-proof.json');
   }
   async integrationProof(runId) {
-    return this.proofArtifact(runId, 'aicafe-main-integration-proof', 'integration-proof.json');
+    return this.proofArtifact(runId, settings.naming.task_prefix+'-main-integration-proof', 'integration-proof.json');
   }
   async transientBaselineRun(headSha) {
     if (!/^[a-f0-9]{40}$/.test(headSha || '')) throw new Error('Invalid CI head SHA');
@@ -181,7 +186,7 @@ export class GitHubFacts {
       '&event=pull_request&per_page=100');
     if (result.total_count > 100) throw new Error('CI run pagination not verified');
     return (result.workflow_runs || []).filter(run =>
-      run.name === 'AI CAFE Pull Request Baseline' &&
+      run.name === settings.required_checks.baseline_workflow &&
       run.head_sha === headSha && run.event === 'pull_request' &&
       run.status === 'completed' && run.conclusion === 'startup_failure')
       .sort((a,b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] || null;
@@ -244,7 +249,7 @@ export class GitHubFacts {
         Date.parse(b.created_at || '') - Date.parse(a.created_at || ''))[0];
     const activeQuestion = inBody || parseOwnerQuestion(latestCommentQuestion?.body);
     const bound = String(latestApproval?.body || '').match(
-      /<!-- aicafe-owner-approved-question ([a-f0-9]{64}) -->/);
+      new RegExp('<!-- '+settings.naming.marker_prefix+'-owner-approved-question ([a-f0-9]{64}) -->'));
     const activeDigest = activeQuestion
       ? createHash('sha256').update(activeQuestion).digest('hex') : null;
     const identityMatches = !bound || bound[1] === activeDigest;
@@ -302,7 +307,7 @@ export class GitHubFacts {
       throw new Error('PR comments require verified pagination');
     const ownerDecision = await this.ownerDecision(pr, comments);
     if (checks.total_count > 100 || reviews.length >= 100) throw new Error("PR review/check pagination not verified");
-    const baseline = checks.check_runs.find(c => c.name === "AI CAFE PR baseline");
+    const baseline = checks.check_runs.find(c => c.name === settings.required_checks.baseline);
     const ci = !baseline || baseline.status !== "completed" ? "pending" :
       baseline.conclusion === "success" ? "success" : "failure";
     const failingJob = checks.check_runs.find(c => c.conclusion === 'failure' &&
@@ -341,7 +346,7 @@ export class GitHubFacts {
     const codexState = latestState;
     const unresolvedComments = unresolved > 0
       ? await this.unresolvedComments(pr.number).catch(()=>[]) : [];
-    const ownerLogin = this.repo.split('/')[0];
+    const ownerLogin = this.ownerLogin;
     const trustedOwner = comments.filter(c=>c.user?.login===ownerLogin)
       .sort((a,b)=>Date.parse(b.created_at||0)-Date.parse(a.created_at||0))[0];
     const instructionText = String(trustedOwner?.body||'').trim();
@@ -377,12 +382,12 @@ export class GitHubFacts {
       owner_direct_push: commit.author?.login === ownerLogin || commit.committer?.login === ownerLogin,
       github_owner_question_url: ownerDecision.url,
       coder_done: typeof pr.body === 'string' &&
-        pr.body.includes('<!-- aicafe-coder-done -->'),
+        pr.body.includes('<!-- '+settings.naming.marker_prefix+'-coder-done -->'),
       latest_owner_comment: trustedOwner ? String(trustedOwner.body||'').slice(0,350) : null,
       latest_owner_comment_at: trustedOwner?.created_at || null,
       connector_403: reportedConnector403(comments,pr.user?.login) || observed403,
       unresolved_codex_comments: unresolvedComments,
-      ci_failure_job: (ci === 'failure' || failureFix) ? (failingJob?.name || 'AI CAFE PR baseline') : null,
+      ci_failure_job: (ci === 'failure' || failureFix) ? (failingJob?.name || settings.required_checks.baseline) : null,
       ci_failure_url: (ci === 'failure' || failureFix) ? (failingJob?.html_url || pr.html_url) : null,
       ci_failure_fix:failureFix,
       field_check_failure:Boolean(failureFix),

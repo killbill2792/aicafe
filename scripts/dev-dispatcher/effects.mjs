@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 // Trusted-main GitHub effects. Never execute PR code with the private queue token.
 // Every irreversible action rechecks live GitHub facts; uncertainty blocks merging.
 import { mergeGate, readyGate } from './core.mjs';
@@ -99,14 +100,14 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
     // Preserve parent commits so stacked child branches retain their ancestry.
     // Squash rewrites that ancestry and can make an open child unmergeable.
     body: JSON.stringify({ merge_method: 'merge', sha: record.head_sha,
-      commit_title: `AI CAFE approved task ${record.task_id} (#${record.pr_number})` })
+      commit_title: `${settings.chatgpt.project_name} approved task ${record.task_id} (#${record.pr_number})` })
   });
   if (result.merged !== true || !result.sha) throw new Error('GitHub did not confirm merge');
   // GITHUB_TOKEN pushes do not trigger push workflows. workflow_dispatch does.
   // Keep merge distinct from integration proof, even when dispatch fails.
   let integration_dispatch = 'requested';
   try {
-    await github.request('/actions/workflows/ai-cafe-integration-proof.yml/dispatches', {
+    await github.request('/actions/workflows/'+settings.workflows.integration+'/dispatches', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ref:'main',inputs:{merged_sha:result.sha}}),
     });
@@ -145,7 +146,12 @@ export function integrationStatus({ merged_sha, main_sha, proof, expectedAccepta
       proof.merged_sha !== merged_sha || proof.conclusion !== 'success' ||
       !proof.workflow_run_id || !Array.isArray(proof.required_scenarios) ||
       !proof.required_scenarios.length || proof.required_scenarios.some(s => s.result !== 'passed') ||
-      (expectedAcceptance.length > 0 && (proof.required_scenarios.length !== expectedAcceptance.length ||
+      (expectedAcceptance.length > 0 &&
+       !(proof.proof_basis==='legacy_exact_sha_required_checks'&&
+         proof.legacy_cutoff===settings.legacy_proof_before&&
+         proof.required_scenarios.length===proof.required_checks?.length&&
+         proof.required_scenarios.every(s=>s.check&&s.result==='passed')) &&
+       (proof.required_scenarios.length !== expectedAcceptance.length ||
         !proof.required_scenarios.every((s,i) => s.id === String(i+1) && !!s.test_file && !!s.command))))
     return 'merged_unproven';
   return 'integrated_proven';
