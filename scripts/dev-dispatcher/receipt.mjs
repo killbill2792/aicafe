@@ -83,6 +83,8 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
   if (action.type === 'dependency_proven' && action.dependency_signature)
     task.last_dependency_proven_signature = action.dependency_signature;
   task.last_submission_at = action.submitted_at;
+  // Verified prompt receipt anchors the PR head; do not infer push progress from commit author timestamps.
+  task.last_prompt_head_sha = task.head_sha || action.head_sha || null;
   task.submission_state = 'submitted';
   return next;
 }
