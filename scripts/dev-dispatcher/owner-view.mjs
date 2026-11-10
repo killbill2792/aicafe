@@ -106,7 +106,7 @@ export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
     const receiptHold = Object.values(state.receipt_feedback||{})
       .find(f=>f.task_id===id&&f.status==='rejected');
     const muse = pending
-      ? `${clean(pending.type)}: ${overdue(pending) ? 'courier unconfirmed' :
+      ? `${clean(pending.type)}: ${overdue(pending) ? 'courier unconfirmed (queued; no receipt)' :
         pending.status === 'planned' ? 'queued (not sent)' : pending.status}`
       : receiptHold ? 'receipt rejected; Muse re-authenticates original (no resend)'
       : delivered ? `${clean(delivered.type)}: submitted (receipt recorded)` : 'no active delivery';
