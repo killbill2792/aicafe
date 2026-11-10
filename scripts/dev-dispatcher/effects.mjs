@@ -36,7 +36,7 @@ export function canMerge(record, predecessors) {
 // The owner-approved coding lifecycle has exactly six merge conditions:
 // current-head required checks, clean newest exact-head Codex receipt, no
 // unresolved threads, ready (not draft), GitHub mergeability, merge order.
-// Privileged paid/live/prod/secret labels remain an explicit owner hold.
+// Privileged work requires authenticated owner authorization, never label or PR-body inference.
 export async function mergeApprovedPr({ github, record, predecessors = [],
   enabled = false, action = 'merge' }) {
   if (!enabled) return {status:'disabled'};
@@ -78,10 +78,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
     return {status:'blocked',reasons:['adhoc_parent_base_not_main']};
   if (latest.state !== 'open' || latest.head?.sha !== record.head_sha ||
       latest.base?.sha !== record.base_sha || latest.draft !== prepareReady ||
-      (!prepareReady && latest.mergeable !== true) ||
-      (latest.labels || []).some(label =>
-        /(?:^|[-_])(paid|live|prod|production|secret|secrets)(?:$|[-_])/i.test(label.name || '') &&
-        !/^(?:approved|owner-approved)/i.test(label.name || '')))
+      (!prepareReady && latest.mergeable !== true))
     return {status:'blocked',reasons:['merge_conflict_or_stale_base']};
   if (prepareReady) {
     if (!latest.node_id) return {status:'blocked',reasons:['missing_github_pr_node_id']};
