@@ -15,6 +15,30 @@ const query={view:"cv_toast_records",columns:null,filters:[
  ...range,order_by:null,limit:20};
 
 describe("POS0e retained current-source dictionary and shared reader",()=>{
+ it("describes the correct Toast menu-item GUID lookup without confusing evidence refs",async()=>{
+  const described=await dataQueryTools.describe_data.execute({view:"cv_inventory"});
+  const cols=described.views?.[0]?.columns??[];
+  const menu=cols.find(c=>c.name==="menu_item_ref");
+  const evidence=cols.find(c=>c.name==="source_ref");
+  expect(menu?.meaning).toContain("menu-item GUID");
+  expect(menu?.meaning).toContain("menu_item_ref");
+  expect(evidence?.meaning).toContain("NOT the Toast menu-item GUID");
+
+  const stockGuid="d1d1d1d1-1111-4111-8111-111111111111";
+  const rpc=vi.fn(async()=>({data:{rows:[{quantity:4.5}],sourceCount:1,
+   sourceMix:{toast:1},truncated:false},error:null}));
+  const answer=await dataQueryTools.query_data.execute({
+   view:"cv_inventory",columns:["quantity"],
+   filters:[{column:"menu_item_ref",op:"=",value:stockGuid}],
+   group_by:null,metrics:null,date_from:"2026-10-26",date_to:"2026-10-26",
+   order_by:null,limit:10
+  },{db:{rpc} as never,businessId:cafeA});
+  expect(answer.rows).toEqual([{quantity:4.5}]);
+  expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+   p_business_id:cafeA,p_view:"cv_inventory",
+   p_filters:[{column:"menu_item_ref",op:"=",value:stockGuid}]
+  }));
+ });
  it("guides a single exact stored-GUID query for employee and customer names",async()=>{
   const described=await dataQueryTools.describe_data.execute({view:"cv_toast_records"});
   const cols=described.views?.[0]?.columns??[];
