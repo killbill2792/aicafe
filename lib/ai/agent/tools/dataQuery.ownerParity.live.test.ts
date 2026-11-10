@@ -409,18 +409,18 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    rpc:(name:string,p:Record<string,unknown>)=>{
     if(name==="toast_unverified_sales_dates")return isolatedRpc(async()=>{
      const q=await client.query(
-      `select distinct day::text business_date from (
-       select o.business_date day from public.orders o where o.business_id=$1
-        and o.business_date between $2::date and $3::date
-        and o.pos_order_id like 'toast:%'
+      `select distinct x.source_business_date::text as business_date from (
+       select o.business_date as source_business_date from public.orders o
+        where o.business_id=$1 and o.business_date between $2::date and $3::date
+         and o.pos_order_id like 'toast:%'
        union all
-       select e.event_business_date day from public.toast_payment_day_events e
+       select e.event_business_date from public.toast_payment_day_events e
         where e.business_id=$1 and e.event_business_date between $2::date and $3::date
        union all
-       select t.business_date day from public.toast_pilot_days t
+       select t.business_date from public.toast_pilot_days t
         where t.business_id=$1 and t.business_date between $2::date and $3::date
          and t.promoted_at is not null
-      ) x order by 1`,[p.p_business_id,p.p_from,p.p_to]);
+      ) as x order by business_date`,[p.p_business_id,p.p_from,p.p_to]);
      return q.rows;
     });
     if(name==="toast_attention_days")return {range:(start:number,end:number)=>
