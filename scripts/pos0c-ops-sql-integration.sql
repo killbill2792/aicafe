@@ -29,6 +29,12 @@ BEGIN
  (b,'POS0c disposable café',false),(b2,'POS0c second tenant',false);
  INSERT INTO public.locations(id,business_id,name)
  VALUES(l,b,'One'),(l2,b2,'Other');
+ -- Every verified mapping requires its café-scoped Toast credential parent.
+ -- These inert disposable values never make a provider request.
+ INSERT INTO public.toast_api_credentials
+  (business_id,api_origin,client_id,client_secret_enc) VALUES
+  (b,'https://synthetic.example','pos0c-fixture-a','not-a-secret'),
+  (b2,'https://synthetic.example','pos0c-fixture-b','not-a-secret');
  INSERT INTO public.toast_location_mappings(business_id,location_id,restaurant_guid,
   verified_at,toast_time_zone,closeout_hour,toast_start_date)
  VALUES(b,l,r,now(),'UTC',4,'2026-11-01'),
