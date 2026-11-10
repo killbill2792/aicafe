@@ -711,15 +711,25 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    }
   };
   let scalarIndex=0;
+  // Preserve the last real user/assistant exchange when two consecutive
+  // questions share a date span. "These two days" then has the preceding
+  // owner's "yesterday and today" reference, as in an actual conversation.
+  // No expected answer, SQL truth, or acceptance assertion is changed.
+  let previousSpanExchange:{question:string;reply:string}|null=null;
   for(const {question,truth,scope} of (smoke?scalarQuestions.slice(0,0):scalarQuestions)){
    await record("scalar-"+ ++scalarIndex,async capture=>{
    const expected=(await client.query<{n:number}>(truth,truthArgs(scope))).rows[0].n;
    // Standard owner-facing answer; the requested line keeps acceptance numeric
    // (without an extra reviewer model) and still permits the incomplete-day note.
    const receiptStart=providerReceipts.length;
+   const history=scope==="span"&&previousSpanExchange?[
+    {role:"user" as const,content:previousSpanExchange.question},
+    {role:"assistant" as const,content:previousSpanExchange.reply}
+   ]:undefined;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
-   provider:budgetedProvider,ownerText:
+   provider:budgetedProvider,history,ownerText:
     question+" Answer with 'Number: N' and a short source/coverage note."});
+   previousSpanExchange=scope==="span"?{question,reply:turn.text}:null;
    const number=turn.text.match(/\bNumber\s*[:=]\s*(\d+)\b/i);
    const caveat=/so far|partial|incomplete|provisional/i.test(turn.text);
    capture(turn,receiptStart,{hasNumberLabel:Boolean(number),
