@@ -161,7 +161,7 @@ test('event triggers keep reconciliation live when cron is dropped',()=>{
   const flow=readFileSync(new URL('../../.github/workflows/ai-cafe-dev-dispatcher.yml',import.meta.url),'utf8');
   for(const event of ['check_suite','check_run','pull_request_review','issue_comment','pull_request'])
     assert.match(flow,new RegExp('^  '+event+':','m'));
-  assert.match(flow,/types: \\[opened, synchronize, reopened/);
+  assert.match(flow,/types: \[opened, synchronize, reopened/);
   assert.match(flow,/github.event_name == 'check_run'/);
   assert.match(flow,/github.event_name == 'pull_request_review'/);
   assert.match(flow,/github.event_name == 'pull_request'/);
