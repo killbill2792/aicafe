@@ -277,6 +277,10 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
     return {kind:'hold',reason:'delivery_pending'};
   // A merged parent gets one stable rebase action regardless of intermediate child pushes.
   const parentSha = record.parent_merged_sha;
+  // The first merged-parent tick is reserved for verified trusted-main
+  // retarget/update-branch, not an incidental idle or CI nudge.
+  if (isPr && parentSha && record.branch_maintenance_merge_sha !== parentSha)
+    return {kind:'hold',reason:'awaiting_automatic_parent_branch_maintenance'};
   const rebaseDue = isPr && parentSha && record.base_branch === 'main' &&
     record.branch_maintenance_merge_sha === parentSha &&
     record.last_parent_rebase_sha !== parentSha;
