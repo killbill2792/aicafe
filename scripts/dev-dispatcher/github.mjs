@@ -310,8 +310,10 @@ export class GitHubFacts {
     const required = settings.required_checks.names || [settings.required_checks.baseline];
     const relevant = checks.check_runs.filter(c=>!/^codex\b/i.test(c.name||''));
     const missing = required.some(name=>!relevant.some(c=>c.name===name));
-    const failingJob = relevant.find(c=>['failure','cancelled','timed_out','action_required'].includes(c.conclusion) ||
-      (required.includes(c.name)&&c.status==='completed'&&c.conclusion!=='success'));
+    const isFailure=c=>['failure','cancelled','timed_out','action_required'].includes(c.conclusion) ||
+      (required.includes(c.name)&&c.status==='completed'&&c.conclusion!=='success');
+    const failingJob=relevant.find(c=>c.name!==settings.required_checks.baseline&&isFailure(c))||
+      relevant.find(isFailure);
     const pending = missing || relevant.some(c=>c.status!=='completed'||!c.conclusion);
     const ci = failingJob ? 'failure' : pending ? 'pending' : 'success';
     const baseline = relevant.find(c=>c.name===settings.required_checks.baseline);

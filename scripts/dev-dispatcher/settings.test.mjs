@@ -15,7 +15,7 @@ assert.throws(()=>targetSettings({...input,muse_space:source.muse.space}),/Share
 const files=[ {path:'scripts/dev-dispatcher/run.mjs',type:'blob',sha:'a'},
 {path:'scripts/dev-dispatcher/core.test.mjs',type:'blob',sha:'b'}, {path:'scripts/dev-dispatcher/wake.test.mjs',type:'blob',sha:'c'},
 {path:'docs/plans/universal-supervisor-queue.json',type:'blob',sha:'d'}, {path:'.github/workflows/'+source.workflows.dispatcher,type:'blob',sha:'e'}];
-assert.deepEqual(templatePaths(files).map(x=>x.sha),['a','c','e']); const yaml=renderDispatcherYaml('name: '+source.chatgpt.project_name+
+assert.deepEqual(templatePaths(files).map(x=>x.sha),['a','b','c','e']); const yaml=renderDispatcherYaml('name: '+source.chatgpt.project_name+
 '\nworkflow: '+source.required_checks.baseline_workflow,target); assert.ok(yaml.includes(target.chatgpt.project_name));assert.match(yaml,/Stylit CI/);
 }); function fakeApi(){
 const calls=[],api=async(repo,path,{method='GET',body}={})=>{ calls.push({repo,path,method,body});

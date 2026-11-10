@@ -17,19 +17,18 @@ test('20 minute default, override and no premature prompt',()=>{
  assert.equal(run(base,'2026-11-10T10:24:00Z').tasks.T.stall_count,0);
  assert.match(STALL_PROMPT,/Resource not accessible by integration/);
 });
-test('three authenticated same-head stalls escalate once and stop nudges',()=>{
+test('one nudge after 20 minutes then owner escalation without three prompts',()=>{
  let s=run(base);assert.equal(s.tasks.T.stall_count,1);assert.match(s.tasks.T.stall_pending,/stall:/);
  s=run(s);assert.equal(s.tasks.T.stall_count,1);
  s.tasks.T.last_submission_at='2026-11-10T10:27:00Z';s=run(s,'2026-11-10T10:48:00Z');
- assert.equal(s.tasks.T.stall_count,2);
- s.tasks.T.last_submission_at='2026-11-10T10:49:00Z';s=run(s,'2026-11-10T11:10:00Z');
- assert.equal(s.tasks.T.stall_count,3);assert.equal(s.tasks.T.stall_escalate,true);assert.equal(s.tasks.T.stall_pending,null);
- assert.equal(run(s,'2026-11-10T11:30:00Z').tasks.T.stall_count,3);
+ assert.equal(s.tasks.T.stall_count,1);
+ assert.equal(s.tasks.T.stall_escalate,true);assert.equal(s.tasks.T.stall_pending,null);
+ assert.equal(run(s,'2026-11-10T11:30:00Z').tasks.T.stall_count,1);
 });
-test('head movement and verified done suppress or reset stalls',()=>{
+test('head movement resets stall but coder-done marker does not suppress it',()=>{
  let s=run(base);s.tasks.T.head_sha='b'.repeat(40);
  assert.equal(run(s).tasks.T.stall_count,0);
- s=structuredClone(base);s.tasks.T.coder_done=true;assert.equal(run(s).tasks.T.stall_pending,null);
+ s=structuredClone(base);s.tasks.T.coder_done=true;assert.match(run(s).tasks.T.stall_pending,/stall:/);
  s=structuredClone(base);s.tasks.T.last_commit_at='2026-11-10T10:06:00Z';
  assert.equal(run(s).tasks.T.stall_pending,null);
 });
