@@ -14,6 +14,8 @@ DECLARE
   b uuid := 'b4b4b4b4-4444-4444-8444-444444444444';
   restaurant_a uuid := 'c3c3c3c3-3333-4333-8333-333333333333';
   restaurant_b uuid := 'd4d4d4d4-4444-4444-8444-444444444444';
+  employee_a uuid := 'e7e7e7e7-7777-4777-8777-777777777777';
+  forbidden_stage boolean := false;
   p record;
   result jsonb;
   bad_count integer;
@@ -79,6 +81,64 @@ BEGIN
   INSERT INTO public.businesses(id,name,is_demo)
     VALUES (a,'POS0f disposable café A',false),(b,'POS0f disposable café B',false);
 
+  -- Independent source-family writer proof: use the same authorized roster
+  -- staging RPC as operationalStaging.ts, not invented direct archive rows.
+  -- Restaurant B deliberately has no provider verification; its staged data
+  -- cannot become trusted current café evidence.
+  INSERT INTO public.locations(id,business_id,name) VALUES
+    ('a7a7a7a7-7777-4777-8777-777777777777',a,'POS0f source restaurant A'),
+    ('b8b8b8b8-8888-4888-8888-888888888888',b,'POS0f unverified restaurant B');
+  INSERT INTO public.toast_api_credentials
+    (business_id,api_origin,client_id,client_secret_enc) VALUES
+    (a,'https://synthetic.invalid','pos0f-a','synthetic-not-real'),
+    (b,'https://synthetic.invalid','pos0f-b','synthetic-not-real');
+  INSERT INTO public.toast_location_mappings
+    (business_id,location_id,restaurant_guid,verified_at,info_refreshed_at) VALUES
+    (a,'a7a7a7a7-7777-4777-8777-777777777777',restaurant_a,now(),now()),
+    (b,'b8b8b8b8-8888-4888-8888-888888888888',restaurant_b,null,null);
+  PERFORM pg_temp.pos0f_assert(
+    public.toast_stage_employee_roster(a,restaurant_a,jsonb_build_array(
+      jsonb_build_object('employee_guid',employee_a,'display_name','Nadia POS0f',
+        'deleted',false)))=1,
+    'Actual verified-source roster writer must stage one permitted employee');
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*)=1 FROM public.toast_employee_directory
+      WHERE business_id=a AND restaurant_guid=restaurant_a
+        AND employee_guid=employee_a AND display_name='Nadia POS0f'),
+    'Source writer must retain un-hashed staff name and immutable provider GUID');
+  PERFORM pg_temp.pos0f_assert(
+    (SELECT count(*)=1 FROM public.toast_raw_records
+      WHERE business_id=a AND restaurant_guid=restaurant_a AND entity='employee'
+        AND payload->>'display_name'='Nadia POS0f'),
+    'Actual roster writer/trigger must retain exactly one current object');
+  PERFORM pg_temp.pos0f_assert(
+    public.ai_toast_fields(a,'employee') @>
+      '[{"field":"data.display_name","type":"string"}]'::jsonb,
+    'Existing describe_data SQL field discovery exposes actual written staff name');
+  result := public.ai_query_view(a,'cv_toast_records',ARRAY['data.display_name']::text[],
+    jsonb_build_array(
+      jsonb_build_object('column','record_type','op','=','value','employee'),
+      jsonb_build_object('column','record_ref','op','=','value',employee_a::text)),
+    null::text[],null::jsonb,'2026-10-26','2026-10-26',null,10);
+  PERFORM pg_temp.pos0f_assert(
+    jsonb_array_length(result->'rows')=1
+      AND result->'rows'->0->>'data.display_name'='Nadia POS0f',
+    'Registered existing query_data SQL must return real roster writer name by GUID');
+  BEGIN
+    PERFORM public.toast_stage_employee_roster(b,restaurant_b,jsonb_build_array(
+      jsonb_build_object('employee_guid',employee_a,'display_name','Foreign unverified',
+        'deleted',false)));
+  EXCEPTION WHEN OTHERS THEN
+    forbidden_stage := sqlerrm='invalid Toast roster';
+  END;
+  PERFORM pg_temp.pos0f_assert(forbidden_stage,
+    'Unverified café must reject a forged source-roster staging attempt');
+  PERFORM pg_temp.pos0f_assert(
+    NOT EXISTS (SELECT 1 FROM public.toast_records_for(b,null,null)
+       WHERE record_type='employee')
+    AND public.ai_toast_fields(b,'employee')='[]'::jsonb,
+    'Other café has no provider-verified staff discovery or data');
+
   -- Same restaurant-scoped current writer/storage shape as POS0e. A deliberately
   -- contradictory diagnostic capture must never replace or add to these facts.
   INSERT INTO public.toast_raw_records
@@ -138,7 +198,7 @@ BEGIN
       WHERE dining_option_ref='dining-diagnostic-poison'),
     'Only current published dining configuration may reach screens');
   PERFORM pg_temp.pos0f_assert(
-    (SELECT count(*)=4 FROM public.toast_records_for(a,'2026-10-26','2026-10-26'))
+    (SELECT count(*)=5 FROM public.toast_records_for(a,'2026-10-26','2026-10-26'))
     AND (SELECT count(*)=0 FROM public.toast_records_for(b,'2026-10-26','2026-10-26'))
     AND NOT EXISTS (SELECT 1 FROM public.toast_records_for(a,null,null)
       WHERE data->>'guid' LIKE '%diagnostic-poison'),
@@ -151,6 +211,26 @@ BEGIN
     (result->'rows'->0->>'sum_amount_cents')::integer=1250
     AND (result->>'truncated')::boolean=false,
     'Existing query_data RPC must retrieve exactly the current cash screen cents');
+  -- Match another relevant screen (stock) and an undated configuration
+  -- through the *same* registered query function, preserving NULL as unknown.
+  result := public.ai_query_view(a,'cv_inventory',ARRAY['quantity','stock_status']::text[],
+    '[{"column":"source","op":"=","value":"toast"}]'::jsonb,
+    null::text[],null::jsonb,'2026-10-26','2026-10-26',null,10);
+  PERFORM pg_temp.pos0f_assert(
+    jsonb_array_length(result->'rows')=1
+    AND result->'rows'->0->>'quantity' IS NULL
+    AND result->'rows'->0->>'stock_status'='QUANTITY',
+    'query_data and stock screen must agree quantity is unknown, not zero');
+  result := public.ai_query_view(a,'cv_dining_options',
+    ARRAY['dining_option_name','business_date']::text[],
+    '[{"column":"dining_option_ref","op":"=","value":"dining-current-a"}]'::jsonb,
+    null::text[],null::jsonb,'2026-10-26','2026-10-26',null,10);
+  PERFORM pg_temp.pos0f_assert(
+    jsonb_array_length(result->'rows')=1
+    AND result->'rows'->0->>'dining_option_name'='Patio'
+    AND result->'rows'->0->>'business_date' IS NULL,
+    'Published undated dining option remains queryable without invented date');
+
   result := public.ai_query_view(b,'cv_cash',null::text[],'[]'::jsonb,
     null::text[],'[{"fn":"sum","column":"amount_cents"}]'::jsonb,
     '2026-10-26','2026-10-26',null,20);
