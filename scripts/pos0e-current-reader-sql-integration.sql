@@ -57,12 +57,12 @@ BEGIN
  INSERT INTO public.toast_raw_records(
   business_id,restaurant_guid,entity,entity_guid,business_date,payload,payload_sha256,capture_key)
  VALUES (a,rest_a,'employee',employee_a,d,
-  jsonb_build_object('guid',employee_a::text,'firstName','Nadia','lastName','Rao'),
+  jsonb_build_object('employee_guid',employee_a::text,'display_name','Nadia Rao','deleted',false),
   repeat('f',64),'pos0e:employee-a');
  PERFORM pg_temp.pos0e_assert(
   (SELECT count(*)=1 FROM public.toast_records_for(a,d,d)
    WHERE record_type='employee' AND record_ref=employee_a::text
-    AND data->>'firstName'='Nadia'),
+    AND data->>'display_name'='Nadia Rao' AND data->>'firstName' IS NULL),
   'current retained employee identity must be available by record_ref GUID');
   -- Retained provider identity is durable after config re-save; a mirrored
   -- staged row without a provider-identity GET is never operational evidence.
@@ -174,13 +174,13 @@ BEGIN
   'current Toast cash cents must be accessible through canonical query_data RPC');
  -- Exercise the exact GUID-filtered named JSON field that Luna needs:
  -- current employee uses record_type=employee, NOT labor/v1/employees.
- response:=public.ai_query_view(a,'cv_toast_records',ARRAY['data.firstName']::text[],
+ response:=public.ai_query_view(a,'cv_toast_records',ARRAY['data.display_name']::text[],
   jsonb_build_array(
    jsonb_build_object('column','record_type','op','=','value','employee'),
    jsonb_build_object('column','record_ref','op','=','value',employee_a::text)),
   null::text[],null::jsonb,d,d,null,10);
  PERFORM pg_temp.pos0e_assert(
-  response->'rows'->0->>'data.firstName'='Nadia'
+  response->'rows'->0->>'data.display_name'='Nadia Rao'
   AND jsonb_array_length(response->'rows')=1,
   'registered canonical query_data must return current employee by GUID and permitted named field');
 
