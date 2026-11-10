@@ -1,6 +1,6 @@
 // Trusted-main GitHub effects. Never execute PR code with the private queue token.
 // Every irreversible action rechecks live GitHub facts; uncertainty blocks merging.
-import { mergeGate } from './core.mjs';
+import { mergeGate, readyGate } from './core.mjs';
 import { acceptanceDigest } from './acceptance-runner.mjs';
 
 export function verifyEvidence(record, evidence) {
@@ -22,12 +22,15 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
   if (!enabled) return { status: 'disabled' };
   if (!['ready', 'merge'].includes(action)) return {status:'blocked',reasons:['invalid_lifecycle_action']};
   const prepareReady = action === 'ready';
-  // Draft-to-ready must prove EVERY merge prerequisite except the draft flag.
-  // This reuses the same artifact/CI/review/predecessor verifier; no shortcut.
+  // Draft-to-ready occurs after coder completion and green exact-head CI.
+  // Codex starts ONLY once the PR is ready, so it cannot be a ready prerequisite.
+  // Executed acceptance/owner/parent/base checks below remain mandatory; merge
+  // still requires the original exact-head Codex and integration proof gates.
   if (prepareReady && record?.draft !== true)
     return {status:'blocked',reasons:['not_a_draft']};
-  const gateRecord = prepareReady ? {...record,draft:false} : record;
-  const gate = canMerge(gateRecord, predecessors, evidence);
+  const gate = prepareReady
+    ? readyGate({...record,acceptance_proven:verifyEvidence(record,evidence)},predecessors)
+    : canMerge(record, predecessors, evidence);
   if (!gate.eligible) return {status:'blocked',reasons:gate.reasons};
   if (!expectedAcceptance.length || evidence.acceptance.length !== expectedAcceptance.length ||
       !expectedAcceptance.every((_, i) => evidence.acceptance[i]?.id === String(i + 1)))
@@ -81,9 +84,11 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
       (typeof pr.body === 'string' && pr.body.includes('<!-- aicafe-owner-question')))
     return {status:'blocked',reasons:['live_owner_question_pending']};
   const live = await github.one(pr);
-  if (live.ci_state !== 'success' || live.codex_state !== 'clean' ||
-      !live.codex_reviewed_sha || !live.threads_resolved ||
-      live.github_owner_question)
+  if (live.ci_state !== 'success' ||
+      (!prepareReady && (live.codex_state !== 'clean' ||
+        live.codex_reviewed_sha !== record.head_sha)) ||
+      (prepareReady && !live.coder_done) ||
+      !live.threads_resolved || live.github_owner_question)
     return { status: 'blocked', reasons: ['live_checks_changed'] };
   // Re-fetch base SHA immediately before merge to reject intervening main changes.
   const latest = await github.request(`/pulls/${record.pr_number}`);
@@ -92,7 +97,8 @@ export async function mergeApprovedPr({ github, record, predecessors = [], evide
     return {status:'blocked',reasons:['live_owner_question_pending']};
   if (latest.head.sha !== record.head_sha || latest.base.sha !== record.base_sha ||
       latest.base.ref !== 'main' || latest.mergeable !== true ||
-      latest.draft !== prepareReady)
+      latest.draft !== prepareReady ||
+      (prepareReady && !String(latest.body || '').includes('<!-- aicafe-coder-done -->')))
     return { status: 'blocked', reasons: ['merge_conflict_or_stale_base'] };
   if (prepareReady) {
     if (typeof latest.node_id !== 'string' || !latest.node_id.trim())
