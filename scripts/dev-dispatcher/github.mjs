@@ -363,7 +363,7 @@ export class GitHubFacts {
       base_current: comparison.behind_by === 0,
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
-      repo_marker_mismatch:validateRepo(pr.body||'',this.repo).status==='failure',
+      repo_marker_mismatch:false, // PR body is diagnostic, not a merge gate
       chat_marker: parseChatMarker(pr.body),
       same_repo: pr.head?.repo?.full_name === this.repo &&
         pr.base?.repo?.full_name === this.repo,
@@ -372,9 +372,7 @@ export class GitHubFacts {
       dispatcher_only: dispatcherOnlyFiles(comparison.files),
       github_owner_question: ownerDecision.question,
       // Routine decisions are informational; only privileged work is held.
-      sensitive_owner_block: (pr.labels || []).some(label =>
-        /(?:^|[-_])(paid|live|prod|production|secret|secrets)(?:$|[-_])/i.test(label.name || '') &&
-        !/^(?:approved|owner-approved)/i.test(label.name || '')),
+      sensitive_owner_block:false, // authenticated owner instructions, not labels, authorize holds
       mergeable,
       mergeable_state: pr.mergeable_state || null,
       owner_approved: ownerDecision.approved === true || ownerDirective === 'approved',

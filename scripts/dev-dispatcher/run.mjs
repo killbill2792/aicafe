@@ -86,13 +86,16 @@ async function main() {
       else if (rec.last_parent_rebase_sha === rec.parent_merged_sha)
         rec.last_parent_rebase_sha = null;
     }
-    const withFeedback = reconcileReceiptFeedback(applied.state,{
+    const afterReceipts=linkPullRequests(adoptAdhocPullRequests(
+      applied.state,observed.snapshot,[...taskById.keys()]).state,observed.snapshot);
+    const withFeedback = reconcileReceiptFeedback(afterReceipts.state,{
       ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
     },new Date().toISOString());
     const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
       minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
+    const remaining=linkPullRequests(safety,observed.snapshot).unmapped;
     const copy = queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
-      {unmappedPrs:linked.unmapped,openPrs:observed.snapshot,queue});
+      {unmappedPrs:remaining,openPrs:observed.snapshot,queue});
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
@@ -266,7 +269,7 @@ async function main() {
   proposed.state=recordDrift(trackScheduleGap(proposed.state,{
     eventName:process.env.GITHUB_EVENT_NAME,now:new Date().toISOString(),
     observedScheduleAt:observed.lastScheduleAt}),current,observed.snapshot);
-  const unmappedPrs = linkPullRequests(current, observed.snapshot).unmapped;
+  const unmappedPrs = linkPullRequests(proposed.state, observed.snapshot).unmapped;
   async function applyCodexProvenance(state, prior) {
     for (const [id,rec] of Object.entries(state.tasks)) {
       const before=prior.tasks?.[id];

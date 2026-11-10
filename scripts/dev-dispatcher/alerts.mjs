@@ -46,10 +46,33 @@ export function applyOwnerStartApprovals(state,queue){
  }
  return next;
 }
-export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date().toISOString()}={}){
+export function queueOwnerIssue(state,{kind,task_id=null,pr_number=null,identity='',message,needs='investigation'}){
+ const next=structuredClone(state);next.owner_alerts||={};
+ if(typeof message!=='string'||!message.trim())return next;
+ const hash=sha(JSON.stringify([kind,task_id,pr_number,identity]));
+ const key='notice:'+hash,now=new Date().toISOString();
+ const old=next.owner_alerts[key];
+ if(old&&old.status!=='resolved'&&old.status!=='cancelled_no_longer_needed')return next;
+ next.owner_alerts[key]={kind,task_id,pr_number,notice_hash:hash,
+  question:message.slice(0,1000)+' Needed: '+needs,recipient:'owner',
+  delivery_owner:'muse',status:'planned',created_at:now,
+  target_url:pr_number?'https://github.com/'+settings.repo+'/pull/'+pr_number:
+   'https://github.com/'+settings.repo,
+  owner_message:message.slice(0,1000)+' Needed: '+needs};
+ return next;
+}
+export function resolveOwnerIssue(state,kind,pr_number){
+ const next=structuredClone(state);
+ for(const n of Object.values(next.owner_alerts||{}))
+  if(n.kind===kind&&n.pr_number===pr_number&&n.status!=='resolved'){
+   n.status='resolved';n.resolved_at=new Date().toISOString();
+  }
+ return next;
+}
+export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,now=new Date().toISOString()}={}){
  const next=structuredClone(state);
  next.owner_alerts ||= {};
- const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start']);
+ const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start','missing_chat_link','dispatcher_issue']);
  const route=entry=>{
   entry.recipient=ownerKinds.has(entry.kind)?'owner':'referee';
   if(entry.recipient==='owner'){
@@ -198,8 +221,21 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
       !active.has(notice.pr_number))
     notice.status='cancelled_no_longer_needed';
   }
-  for(const pr of unmappedPrs)
-   add('unmapped_pr',null,pr,'Identify the approved task and existing coding conversation for PR #'+pr+'. Do not guess ownership.');
+  for(const n of unmappedPrs){
+    const pr=openPrs.find(x=>x.pr_number===n);
+    if(!pr){add('unmapped_pr',null,n,'Identify the approved task and existing coding conversation for PR #'+n+'. Do not guess ownership.');continue;}
+    const chat=next.branch_chat_links?.[pr.branch]?.conversation_url||pr.chat_marker||
+      next.pr_chat_links?.[String(n)]?.conversation_url;
+    if(!chat){
+      const changed=queueOwnerIssue(next,{kind:'missing_chat_link',pr_number:n,
+        identity:pr.branch,message:'PR #'+n+' on branch '+pr.branch+
+         ' titled '+pr.title+' has no chat. Paste its chat URL or tell Muse to register it.',
+        needs:'A verified ChatGPT conversation URL'});
+      next.owner_alerts=changed.owner_alerts;
+    }else{
+      const resolved=resolveOwnerIssue(next,'missing_chat_link',n);next.owner_alerts=resolved.owner_alerts;
+    }
+   }
  }
  return next;
 }
