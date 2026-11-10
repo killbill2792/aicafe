@@ -311,11 +311,12 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
    expect(expected,question).not.toBeNull();
    expect(expected,question).not.toBeUndefined();
+   const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:question});
    expect(turn.tools,question).toContain("query_data");
    const match=turn.text.match(new RegExp("\\b"+label+"\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)","i"));
-   expect(match,question+" => "+turn.text).not.toBeNull();
+   expect(match,question+" => "+turn.text+"; "+safeFailureDetails(turn,receiptStart)).not.toBeNull();
    expect(Number(match![1]),question+" => "+turn.text).toBeCloseTo(Number(expected),2);
   }
  }finally{
