@@ -176,12 +176,5 @@ test('Task 6 substantive approval recovers before frontier immediately once prio
  const h=harness({frontier:records=>records['6']?.approved &&
      records['6']?.status==='proposed' &&
      records['6']?.approval_hash==='signed'
-       ? [{task_id:'6',agent:'chatgpt',base_branch:'main'}] : []});
- const current={task_id:'6',status:'blocked_needs_owner',agent:'chatgpt',
-   approved:false,priority_deferred:true,approval_hash:'old-annotation-signature'};
- const result=h.run(initial({'6':current}));
- assert.equal(result.state.tasks['6'].status,'assigned');
- assert.equal(result.state.tasks['6'].approval_hash,'signed');
- assert.equal(result.state.actions['assign:6'].status,'planned');
- assert.deepEqual(Array.from(result.assigned,a=>a.task_id),['6']);
-});
+       ? [{task_id:'6',agent:'chatgpt',base_branch:'main'}] : []}); const current={task_id:'6',status:'blocked_needs_owner',agent:'chatgpt',
+   approved:false,priority_deferred:true,approval_hash:'old-annotation-signature'}; const result=h.run(initial({'6':current})); assert.equal(result.state.tasks['6'].status,'assigned'); assert.equal(result.state.tasks['6'].approval_hash,'signed'); assert.equal(result.state.actions['assign:6'].status,'planned'); assert.deepEqual(Array.from(result.assigned,a=>a.task_id),['6']); });

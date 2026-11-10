@@ -97,39 +97,8 @@ the optional API helper as another production courier.
 
 ## Muse atomic continuation and owner-reply protocol (Nov 10 owner-approved)
 
-The existing deployed Muse SSH/deploy-key receipt writer is the **only courier
-write path**. Its authenticated git actor writes one bounded JSON receipt into
-the **existing private** `killbill2792/dave-task-queue` repository,
-`dispatcher/receipts/<sha256(action_id + ':' + prompt_hash)>.json`, using the
-normal CAS git push. The next trusted-main dispatcher tick validates the
-receipt's actor, action ID, prompt hash, provider, project and exact originally
-approved destination. When Muse has verified that a saved chat is stale and
-created its continuation in the **same** ChatGPT Project, the receipt must
-include `conversation_url` (the exact new full URL),
-`continuation_of` (the old full signed URL), and
-`continuation_reason:'stale_chat'`. It must not report a guessed URL or
-claim provider confirmation before checking its browser address. The
-dispatcher processes the verified receipt in **one private ledger transaction**:
-`tasks[task_id].conversation_url`, `conversation_ref`,
-`pr_chat_links[pr_number]`, and the action receipt all move together.
-This works for merged PRs as well. The next tick reads the indexed latest
-verified link and does not restore a stale task link. A partial chat-ID prefix
-is not enough to backfill a URL.
+The existing deployed Muse SSH/deploy-key receipt writer is the **only courier write path**. Its authenticated git actor writes one bounded JSON receipt into the **existing private** `killbill2792/dave-task-queue` repository, `dispatcher/receipts/<sha256(action_id + ':' + prompt_hash)>.json`, using the normal CAS git push. The next trusted-main dispatcher tick validates the receipt's actor, action ID, prompt hash, provider, project and exact originally approved destination. When Muse has verified that a saved chat is stale and created its continuation in the **same** ChatGPT Project, the receipt must include `conversation_url` (the exact new full URL), `continuation_of` (the old full signed URL), and `continuation_reason:'stale_chat'`. It must not report a guessed URL or claim provider confirmation before checking its browser address. The dispatcher processes the verified receipt in **one private ledger transaction**: `tasks[task_id].conversation_url`, `conversation_ref`, `pr_chat_links[pr_number]`, and the action receipt all move together. This works for merged PRs as well. The next tick reads the indexed latest verified link and does not restore a stale task link. A partial chat-ID prefix is not enough to backfill a URL.
 
-The same inbox accepts targeted, idempotent `owner_reply` JSON from Muse with
-`kind:'owner_reply'`, bounded `text`, `event_id`, and
-`target:{task_id}` or `target:{pr_number}`. Its file name is the SHA-256 of
-`'owner_reply:' + event_id + ':' + JSON.stringify(target) + ':' + sha256(text)`.
-Only the configured authenticated Muse commit actor may send it. No bot or
-arbitrary browser content can approve a changed scope; substantive approval
-signatures are still independently checked against the signed task queue.
-Owner-level outbound notices use `recipient:'owner'` with one-line task/PR
-reason; operational referee notices use `recipient:'referee'`. Both reuse the
-existing Muse owner-notice channel, not a second chat queue, human step or
-scheduler.
+The same inbox accepts targeted, idempotent `owner_reply` JSON from Muse with `kind:'owner_reply'`, bounded `text`, `event_id`, and `target:{task_id}` or `target:{pr_number}`. Its file name is the SHA-256 of `'owner_reply:' + event_id + ':' + JSON.stringify(target) + ':' + sha256(text)`. Only the configured authenticated Muse commit actor may send it. No bot or arbitrary browser content can approve a changed scope; substantive approval signatures are still independently checked against the signed task queue. Owner-level outbound notices use `recipient:'owner'` with one-line task/PR reason; operational referee notices use `recipient:'referee'`. Both reuse the existing Muse owner-notice channel, not a second chat queue, human step or scheduler.
 
-The older checked-in OpenClaw bridge remains browser-only and read-only; it
-does **not** write GitHub itself. Deployed Muse must use its existing SSH
-receipt writer to produce these fields, and the authenticated dispatcher must
-be running the matching inbox changes for live promotion. These repository
-tests prove the contract, not deployment or delivery into any live browser.
+The older checked-in OpenClaw bridge remains browser-only and read-only; it does **not** write GitHub itself. Deployed Muse must use its existing SSH receipt writer to produce these fields, and the authenticated dispatcher must be running the matching inbox changes for live promotion. These repository tests prove the contract, not deployment or delivery into any live browser.

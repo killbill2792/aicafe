@@ -1,10 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GitHubFacts } from './github.mjs';
-const head='b'.repeat(40), base='a'.repeat(40), main='c'.repeat(40);
+import { GitHubFacts } from './github.mjs'; const head='b'.repeat(40), base='a'.repeat(40), main='c'.repeat(40);
 test('base-current uses live main tip, unresolved P2 threads and owner comments/push',async()=>{
- const calls=[];
- const pr={number:422,head:{sha:head,ref:'feat',repo:{full_name:'owner/aicafe'}},base:{sha:base,ref:'main',repo:{full_name:'owner/aicafe'}},
+ const calls=[]; const pr={number:422,head:{sha:head,ref:'feat',repo:{full_name:'owner/aicafe'}},base:{sha:base,ref:'main',repo:{full_name:'owner/aicafe'}},
  mergeable:true,mergeable_state:'clean',draft:false,labels:[],user:{login:'coder'},updated_at:'2026-11-10T18:00:00Z'};
  const gh=new GitHubFacts({repo:'owner/aicafe',token:'mock',fetchFn:async(url,options={})=>{
   const p=new URL(url).pathname;calls.push(p);let result;
@@ -19,12 +17,4 @@ test('base-current uses live main tip, unresolved P2 threads and owner comments/
   else if(p.endsWith('/issues/422/comments'))result=[{id:7,user:{login:'owner'},author_association:'OWNER',
     body:'approved',created_at:'2026-11-10T18:00:00Z'}];
   else throw Error('Unexpected '+url);
-  return {ok:true,status:200,json:async()=>result};
- }});
- const fact=await gh.one(pr,main);
- assert.equal(fact.base_current,false);assert.equal(fact.base_merge_sha,base);
- assert.ok(calls.some(p=>p.includes('/compare/'+main+'...'+head)));
- assert.equal(fact.unresolved_codex_comments[0].body,'P2 open');
- assert.equal(fact.owner_approved,true);assert.equal(fact.owner_direct_push,true);
- assert.equal(fact.owner_directive,'approved');
-});
+  return {ok:true,status:200,json:async()=>result}; }}); const fact=await gh.one(pr,main); assert.equal(fact.base_current,false);assert.equal(fact.base_merge_sha,base); assert.ok(calls.some(p=>p.includes('/compare/'+main+'...'+head))); assert.equal(fact.unresolved_codex_comments[0].body,'P2 open'); assert.equal(fact.owner_approved,true);assert.equal(fact.owner_direct_push,true); assert.equal(fact.owner_directive,'approved'); });

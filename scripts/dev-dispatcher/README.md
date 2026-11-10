@@ -42,14 +42,11 @@ Acceptance evidence remains available as optional operational proof, but the cod
 Branch maintenance may retarget/update child branches after verified parent merges without force-push. It does not send routine chat nudges. GitHub conflicts trigger a coder-work prompt. Every changed head must rerun exact-head required checks. Codex follows the owner policy below; a valid case B is the only exception to requesting fresh Codex.
 
 ### Codex review change classification — owner Nov 10, 11:35–11:40 AM PT
-
 After each new PR head, the trusted dispatcher records case letter, before/after `git patch-id --stable` values over the PR-only GitHub compare patches, intersecting changed filenames from intervening main commits, reviewed head/base and verified branch-update provenance in the **private ledger**:
-
 - **A — PR added its own commits or changed its own patch:** fresh Codex after stable-head CI green.
 - **B — GitHub accepted a conflict-free update onto main, the PR patch-id stayed identical, and intervening main commits touch none of the PR's changed files:** record `codex_carried_over` from the previously clean reviewed head; no additional request. This is checked again from live GitHub evidence before any merge.
 - **C — Same patch as B, but intervening main commits touch a PR file:** fresh Codex.
 - **D — Hand-resolved conflicts:** fresh Codex even if the final patch-id matches.
-
 If patch data, ancestry, or conflict-free update provenance cannot be verified, fail closed to a fresh review; never infer a B receipt. Automatic Codex is enabled on PR opening and ready transition; neither pushes nor branch updates trigger it. The five-minute grace prevents wasteful `@codex review` duplicates. No new gate, label, scheduler or human step is introduced.
 
 ## Release boundary
