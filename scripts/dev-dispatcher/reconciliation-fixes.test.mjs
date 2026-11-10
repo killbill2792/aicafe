@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GitHubFacts } from './github.mjs';
+import { GitHubLedger } from './ledger.mjs';
+import { decideNudge, reconcileGithub } from './core.mjs';
 import { approvalSignature, approvalMatches, createDelivery } from './delivery.mjs';
 import { readFileSync } from 'node:fs';
 
@@ -99,4 +101,73 @@ test('later PR-body owner question is not cleared by approval of an older commen
   ];
   assert.equal((await gh.ownerDecision(pr,comments)).approved,undefined);
   assert.match((await gh.ownerDecision(pr,comments)).question,/New question B/);
+});
+
+test('stale branch update failure cannot create conflict work on a clean PR',()=>{
+  const rec={task_id:'T',pr_number:405,github_state:'open',approved:true,
+    conversation_ref:'https://chatgpt.com/c/test',head_sha:'a'.repeat(40),
+    branch_maintenance_result:'update_failed_needs_coder',
+    mergeable:true,mergeable_state:'clean',ci_state:'success',codex_state:'clean'};
+  assert.equal(decideNudge(rec).reason,'no_coder_work');
+  const state={version:1,tasks:{T:rec},actions:{}};
+  const refreshed=reconcileGithub(state,[{...rec,pr_number:405,draft:false,
+    base_sha:'b'.repeat(40)}]);
+  assert.equal(refreshed.tasks.T.branch_maintenance_result,null);
+  assert.equal(decideNudge(refreshed.tasks.T).reason,'no_coder_work');
+  assert.equal(decideNudge({...rec,mergeable:false}).action,'repair_conflict');
+  assert.equal(decideNudge({...rec,mergeable_state:'dirty'}).action,'repair_conflict');
+});
+test('owner approval tied to earlier question identity never approves a replacement',async()=>{
+  const {createHash}=await import('node:crypto');
+  const gh=new GitHubFacts({repo:'owner/repo',token:'test'});
+  const digest=createHash('sha256').update('Question A').digest('hex');
+  const pr={number:25,labels:[{name:'needs-owner-decision'}],
+    body:'<!-- aicafe-owner-question Question B -->',
+    html_url:'https://github.com/owner/repo/pull/25',
+    updated_at:'2026-11-10T10:00:00Z'};
+  const comments=[{author_association:'OWNER',
+    body:'Owner approved\\n<!-- aicafe-owner-approved-question '+digest+' -->',
+    created_at:'2026-11-10T11:00:00Z'}];
+  assert.match((await gh.ownerDecision(pr,comments)).question,/Question B/);
+  const active=createHash('sha256').update('Question B').digest('hex');
+  const accepted=await gh.ownerDecision(pr,[{...comments[0],
+    body:'Owner approved\\n<!-- aicafe-owner-approved-question '+active+' -->'}]);
+  assert.equal(accepted.approved,true);
+});
+test('private ledger retries transient 500 reads and writes, not CAS collisions',async()=>{
+  let reads=0,writes=0,collisions=0;
+  const gh=new GitHubLedger({repo:'private/ledger',token:'test',fetchFn:async (_url,options)=>{
+    if(options.method==='PUT'){
+      writes++;
+      return {ok:writes>=3,status:writes>=3?200:503,
+        json:async()=>({content:{sha:'x'}})};
+    }
+    reads++;
+    return {ok:reads>=2,status:reads>=2?200:500,json:async()=>({private:true})};
+  }});
+  assert.equal((await gh.request('')).private,true);
+  await gh.request('/contents/dispatcher/state.json',{method:'PUT',body:'{}'});
+  assert.equal(reads,2);
+  assert.equal(writes,3);
+  const collided=new GitHubLedger({repo:'private/ledger',token:'test',fetchFn:async()=>{
+    collisions++;
+    return {ok:false,status:409};
+  }});
+  await assert.rejects(collided.request('/contents/dispatcher/state.json',{method:'PUT'}),
+    error=>error.code==='CONFLICT');
+  assert.equal(collisions,1);
+});
+test('event triggers keep reconciliation live when cron is dropped',()=>{
+  const flow=readFileSync(new URL('../../.github/workflows/ai-cafe-dev-dispatcher.yml',import.meta.url),'utf8');
+  for(const event of ['check_suite','check_run','pull_request_review','issue_comment','pull_request'])
+    assert.match(flow,new RegExp('^  '+event+':','m'));
+  assert.match(flow,/types: \\[opened, synchronize, reopened/);
+  assert.match(flow,/github.event_name == 'check_run'/);
+  assert.match(flow,/github.event_name == 'pull_request_review'/);
+  assert.match(flow,/github.event_name == 'pull_request'/);
+});
+test('merged parent retains ancestry rather than squashing stacked child commits',()=>{
+  const source=readFileSync(new URL('./effects.mjs',import.meta.url),'utf8');
+  assert.match(source,/merge_method: 'merge'/);
+  assert.doesNotMatch(source,/merge_method: 'squash'/);
 });
