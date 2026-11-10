@@ -51,12 +51,21 @@ const providerReceipts:Array<{event:string;status:string;reason:string|null;
 // Only approved static column identifiers and SQLSTATE are ever recorded.
 // Never log filter VALUES, SQL text, raw rows, model arguments or credentials.
 const diagnosticFields=new Set(["amount_cents","quantity","net_sales_cents",
- "business_date","record_type","record_ref","menu_item_ref",
- "data.firstName","data.customer.firstName"]);
+ "business_date","record_type","record_ref","menu_item_ref","source_ref",
+ "source","stock_status","status","data.guid","data.firstName",
+ "data.customer.firstName"]);
 const safeField=(value:unknown)=>typeof value==="string"&&diagnosticFields.has(value)?
  value:"other";
 const sqlFailures:Array<{sqlstate:string;view:string;columns:string[];
  filterColumns:string[];filterOperators:string[];metricFns:string[];metricColumns:string[]}>= [];
+// Only schema identifiers and DATE RELATION (never values or actual dates)
+// may be kept when a successful SQL query returned no rows. This identifies
+// a wrong model-selected stock filter without exposing any café/guest IDs.
+type SafeQueryShape={view:string;columns:string[];filterColumns:string[];
+ filterOperators:string[];groupColumns:string[];metricFns:string[];
+ metricColumns:string[];fromScope:string;toScope:string;
+ outcome:"attempted"|"rows"|"empty"|"error"|"unknown"};
+const queryShapes:SafeQueryShape[]=[];
 const budgetedProvider:AgentProvider=async function*(params,signal){
  if(params.model!==PRODUCTION_SUPERVISOR_OPENAI_MODEL)
   throw new Error("POS0e E2 requires owner-verified production Supervisor model "+PRODUCTION_SUPERVISOR_OPENAI_MODEL);
@@ -96,7 +105,8 @@ function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:
   tools:turn.tools,
   resultStatus:turn.results.map(result=>({source:result.source,
    missing:result.missing,error:result.error??null})),
-  providerReceipts:providerReceipts.slice(since),sqlFailures:sqlFailures.slice(-3)});
+  providerReceipts:providerReceipts.slice(since),sqlFailures:sqlFailures.slice(-3),
+  queryShapes:queryShapes.slice(-5)});
 }
 // Free deterministic regression: a bad or overlarge provider request must be
 // rejected BEFORE calling OpenAI, without mistaking the guard for Luna failure.
@@ -246,15 +256,41 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    }finally{release();}
   };
   const db={rpc:async(name:string,p:Record<string,unknown>)=>{
-   if(name==="ai_query_view")return isolatedRpc(async()=>{
-    const args=[p.p_business_id,p.p_view,p.p_columns,JSON.stringify(p.p_filters),
-     p.p_group_by,JSON.stringify(p.p_metrics),p.p_date_from,p.p_date_to,
-     p.p_order_by===null?null:JSON.stringify(p.p_order_by),p.p_limit];
-    const result=await client.query(
-     "select public.ai_query_view($1::uuid,$2::text,$3::text[],$4::jsonb,$5::text[],$6::jsonb,$7::date,$8::date,$9::jsonb,$10::integer) value",
-     args);
-    return result.rows[0].value;
-   });
+   if(name==="ai_query_view"){
+    const filters=Array.isArray(p.p_filters)?p.p_filters as Array<Record<string,unknown>>:[];
+    const metrics=Array.isArray(p.p_metrics)?p.p_metrics as Array<Record<string,unknown>>:[];
+    const knownViews=["cv_cash","cv_inventory","cv_sales_days","cv_toast_records"];
+    const scopes=(day:unknown)=>day===biz.today?"today":day===prior?"prior":"other";
+    const safeOp=(op:unknown)=>typeof op==="string"&&
+     ["=","!=","<","<=",">",">=","in","between","ilike","is_null","is_not_null"].includes(op)
+     ?op:"other";
+    const shape:SafeQueryShape={
+     view:typeof p.p_view==="string"&&knownViews.includes(p.p_view)?p.p_view:"other",
+     columns:Array.isArray(p.p_columns)?p.p_columns.map(safeField):[],
+     filterColumns:filters.map(f=>safeField(f.column)),
+     filterOperators:filters.map(f=>safeOp(f.op)),
+     groupColumns:Array.isArray(p.p_group_by)?p.p_group_by.map(safeField):[],
+     metricFns:metrics.map(m=>typeof m.fn==="string"&&
+      ["sum","count","count_distinct","avg","min","max"].includes(m.fn)?m.fn:"other"),
+     metricColumns:metrics.map(m=>safeField(m.column)),
+     fromScope:scopes(p.p_date_from),toScope:scopes(p.p_date_to),
+     outcome:"attempted"
+    };
+    queryShapes.push(shape);
+    const reply=await isolatedRpc(async()=>{
+     const args=[p.p_business_id,p.p_view,p.p_columns,JSON.stringify(p.p_filters),
+      p.p_group_by,JSON.stringify(p.p_metrics),p.p_date_from,p.p_date_to,
+      p.p_order_by===null?null:JSON.stringify(p.p_order_by),p.p_limit];
+     const result=await client.query(
+      "select public.ai_query_view($1::uuid,$2::text,$3::text[],$4::jsonb,$5::text[],$6::jsonb,$7::date,$8::date,$9::jsonb,$10::integer) value",
+      args);
+     return result.rows[0].value;
+    });
+    const payload=reply.data as {rows?:unknown[]}|null;
+    shape.outcome=reply.error?"error":!Array.isArray(payload?.rows)?"unknown":
+     payload.rows.length>0?"rows":"empty";
+    return reply;
+   }
    if(name==="ai_toast_fields")return isolatedRpc(async()=>{
     const result=await client.query("select public.ai_toast_fields($1::uuid,$2::text) value",
      [p.p_business_id,p.p_record_type]);
@@ -339,6 +375,10 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     expect(rows,spec.question).toHaveLength(1);
     expect(Number(rows?.[0]?.["sum_"+testCase.metric]),spec.question)
      .toBeCloseTo(Number(truthValue),2);
+    if(testCase.view==="cv_inventory")expect(queryShapes.at(-1)).toMatchObject({
+     view:"cv_inventory",filterColumns:["menu_item_ref"],
+     fromScope:"today",toScope:"today",outcome:"rows"
+    });
    }
    return;
   }
