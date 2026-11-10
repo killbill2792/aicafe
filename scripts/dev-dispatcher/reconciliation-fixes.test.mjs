@@ -14,7 +14,7 @@ const task = {
 };
 test('v2 approval excludes read-only uses but invalidates changed write scope', () => {
   const signed = approvalSignature(task);
-  assert.match(signed,/^v2:/);
+  assert.match(signed,/^[0-9a-f]{64}$/);
   assert.equal(approvalSignature({...task,uses:['scripts/other.mjs']}),signed);
   assert.equal(approvalMatches({...task,uses:['scripts/other.mjs']},signed),true);
   assert.equal(approvalMatches({...task,exclusive_files:['scripts/new.mjs']},signed),false);
