@@ -1,6 +1,6 @@
 'use strict';
 
-const REPO_MARKER = /<!--\s*repo:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s+task:\s*([^\s>]+)\s*-->/g;
+const REPO_MARKER = /^\s*<!--\s*repo:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s+task:\s*([^\s>]+)\s*-->\s*$/gm;
 const CHAT_MARKER = /<!--\s*aicafe-chat-url\s+(https:\/\/chatgpt\.com\/(?:c\/[A-Za-z0-9_-]+|g\/[A-Za-z0-9_-]+\/c\/[A-Za-z0-9_-]+))\s*-->/;
 
 function parseRepoMarker(body = '') {
