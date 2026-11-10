@@ -117,3 +117,30 @@ test('one live pending checklist per PR even if two task records reference it',(
   assert.equal(planned.length,1);
   assert.equal(planned[0].task_id,'bad');
 });
+
+
+test('current-head Codex finding keeps its planned coder prompt until a real push or receipt',()=>{
+  const current='f'.repeat(40);
+  const actionKey='work:POS0f:'+current+':codex_comments:review-1';
+  const prior=initial({POS0f:{...record('POS0f'),pr_number:422,
+    codex_state:'findings',head_sha:current,submission_state:'idle'}},{
+    [actionKey]:{task_id:'POS0f',type:'codex_comments',
+      head_sha:current,status:'planned',
+      delivery:{action_id:actionKey,conversation_url:'https://chatgpt.com/c/test-123'}}
+  });
+  const run=harness({proposals:{POS0f:{kind:'hold',reason:'already_delivered_for_state'}}}).run;
+  const next=run(prior).state;
+  assert.equal(next.actions[actionKey].status,'planned');
+  assert.equal(Object.values(next.actions).filter(a=>a.status==='planned').length,1);
+});
+test('merged PR chat index is retained and newest courier URL repairs stale task link',()=>{
+  const newUrl='https://chatgpt.com/c/verified-new';
+  const state=initial({POS0d:{...record('POS0d'),pr_number:407,
+    github_state:'merged',last_submission_at:'2026-11-10T11:00:00Z'}});
+  state.pr_chat_links={407:{task_id:'POS0d',conversation_url:newUrl,
+    updated_at:'2026-11-10T19:00:00Z',head_sha:'f'.repeat(40)}};
+  const out=harness().run(state).state;
+  assert.equal(out.tasks.POS0d.conversation_ref,newUrl);
+  assert.equal(out.tasks.POS0d.conversation_url,newUrl);
+  assert.equal(out.pr_chat_links[407].conversation_url,newUrl);
+});
