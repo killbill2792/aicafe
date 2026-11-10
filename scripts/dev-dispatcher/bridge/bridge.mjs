@@ -16,6 +16,7 @@ const ACTION_INTENTS = {
   // continuation intent, NOT new receipt types or a new courier.
   ci_failed: 'continue_existing_chat', codex_comments: 'continue_existing_chat',
   parent_merged: 'continue_existing_chat', owner_answered: 'continue_existing_chat',
+  dependency_proven: 'continue_existing_chat',
   idle_continue: 'continue_existing_chat',
   plan: 'continue_existing_chat', brainstorm: 'continue_existing_chat'
 };
@@ -37,7 +38,7 @@ export function validateHandoff(action, task) {
       !/^[a-f0-9]{64}$/.test(d.approval_hash || '') ||
       d.approval_hash !== task.approval_hash) return false;
   const prFollowup = ['repair_ci', 'repair_review', 'continue_pr',
-    'ci_failed', 'codex_comments', 'owner_answered', 'idle_continue'].includes(action.type);
+    'ci_failed', 'codex_comments', 'owner_answered', 'dependency_proven', 'idle_continue'].includes(action.type);
   if (prFollowup && (!Number.isInteger(task.pr_number) || task.github_state !== 'open' ||
       !task.head_sha || action.head_sha !== task.head_sha)) return false;
   // Parent-merged must carry a non-null exact child head: the courier
