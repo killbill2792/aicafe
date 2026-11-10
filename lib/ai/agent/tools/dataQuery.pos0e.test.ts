@@ -54,8 +54,8 @@ it("uses the actual Toast roster adapter's retained full-name projection",async(
  expect(facts[0]).not.toHaveProperty("firstName");
  expect(facts[0]).not.toHaveProperty("lastName");
  expect(rosterClient.request).toHaveBeenCalledWith(
-  "/labor/v1/employees",expect.anything(),
-  "e1e1e1e1-1111-4111-8111-111111111111",expect.anything());
+  "/labor/v1/employees","e1e1e1e1-1111-4111-8111-111111111111",
+  expect.anything(),expect.anything());
 });
 
 describe("POS0e retained current-source dictionary and shared reader",()=>{
