@@ -158,9 +158,12 @@ function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:
     // Model card prose, keys and answers are never logged. Only enum types.
     cardKind:["facts","choice","fill"].includes(String(result.kind))?
      result.kind:"unknown",
-    fieldTypes:(result.fields??[]).map(f=>
-     ["number","money","percent","date","text","choice"].includes(f.inputType)?
-      f.inputType:"other")
+    fieldTypes:(Array.isArray(result.fields)?result.fields:[]).map((f:unknown)=>{
+     const type=f&&typeof f==="object"&&"inputType" in f?f.inputType:null;
+     return typeof type==="string"&&
+      ["number","money","percent","date","text","choice"].includes(type)?
+      type:"other";
+    })
    }:{})})),
   providerReceipts:providerReceipts.slice(since),sqlFailures:sqlFailures.slice(-3),
   queryShapes:queryShapes.slice(-5)});
