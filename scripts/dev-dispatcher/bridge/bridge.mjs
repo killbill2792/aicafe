@@ -52,7 +52,7 @@ export function validateHandoff(action, task) {
         !/^[a-f0-9]{40}$/.test(merged || '') ||
         task.branch_maintenance_merge_sha !== merged ||
         task.last_parent_rebase_sha === merged ||
-        action.key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + merged)
+        action.key !== 'parent_merged:' + encodeURIComponent(action.task_id) + ':' + merged + ':' + task.head_sha)
       return false;
   }
   if (action.type === 'pre_pr_reminder' && Number.isInteger(task.pr_number)) return false;
