@@ -104,6 +104,15 @@ jobs:
         run: |
           psql -X -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -f scripts/pos0f-final-migrated-sql-integration.sql
+      - name: Execute zero-cost existing registered Supervisor tool and SQL-truth preflight
+        env:
+          POS0E_E2_SQL_ONLY: '1'
+          AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: |
+          # Existing ownerParity harness calls the registered Supervisor with
+          # a fake provider and independently checks SQL truth in SQL_ONLY.
+          # No model API key is passed; this is NOT a real-model acceptance.
+          timeout 4m npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
       - name: Upload exact-head field-level coverage gap matrix
         if: always()
         uses: actions/upload-artifact@v4
