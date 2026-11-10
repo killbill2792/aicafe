@@ -57,9 +57,9 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
    path==='/pulls/100'?{...draftPr,labels:[{name:'needs-owner-decision'}]}:
    readyGitHub.request(path,options)};
  assert.deepEqual((await mergeApprovedPr({github:staleLabel,
-   record:{...rec,draft:true},evidence,expectedAcceptance:['scenario'],
+   record:{...rec,draft:true,coder_done:true},evidence,expectedAcceptance:['scenario'],
    enabled:true,action:'ready'})).reasons,['live_owner_question_pending']);
- assert.equal((await mergeApprovedPr({github:readyGitHub,record:{...rec,draft:true},
+ assert.equal((await mergeApprovedPr({github:readyGitHub,record:{...rec,draft:true,coder_done:true},
    evidence,expectedAcceptance:['scenario'],enabled:false,action:'ready'})).status,'disabled');
  let readyReads=0;
  const lastMinuteReady={...readyGitHub,request:async(path,options)=>{
@@ -70,7 +70,7 @@ test('merge effect checks live SHA, base, CI, Codex and squash method',async()=>
    return readyGitHub.request(path,options);
  }};
  assert.deepEqual((await mergeApprovedPr({github:lastMinuteReady,
-   record:{...rec,draft:true},evidence,expectedAcceptance:['scenario'],
+   record:{...rec,draft:true,coder_done:true},evidence,expectedAcceptance:['scenario'],
    enabled:true,action:'ready'})).reasons,['live_owner_question_pending']);
  let mergeReads=0;
  const lastMinuteMerge={...github,request:async(path,options)=>{
