@@ -35,6 +35,7 @@ Where an older line in this file conflicts with these rules, these rules win.
    behavior on realistic data, and the PR states how each acceptance test proves it.
 6. **English only for now.** Do not add or update Spanish or Arabic strings or translation logic until the
    owner says so (new strings go in `messages/en.json` only). Do not break the existing ones.
+7a. **Chat marker.** Every coding chat must include `<!-- aicafe-chat-url https://chatgpt.com/c/<its-real-chat-id> -->` (or its real `/g/<project>/c/<id>` URL) in every new PR body.
 7. **Parallel and dependent PRs open now.** Once a task and its source/file scope are approved,
    open an EARLY DRAFT PR promptly, independent or dependent, even while implementation is incomplete.
    Never tell a chat "blocked until X merges" or "start only after X merges" as a reason to avoid
