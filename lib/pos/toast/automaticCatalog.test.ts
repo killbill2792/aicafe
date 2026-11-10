@@ -14,6 +14,7 @@ const sizeGuid="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const gid="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const op=(n:number)=>"eeeeeeee-eeee-4eee-8eee-"+String(n).padStart(12,"0");
 const adapter=createToastAdapter({db:{} as SupabaseClient,businessId:rg,restaurantGuid:rg});
+const publication={restaurantGuid:rg,lastUpdated:"2026-11-09T09:00:00Z"};
 const menu={restaurantGuid:rg,menus:[{name:"Drinks",menuGroups:[{
  name:"Coffee",menuItems:[{
  guid:itemGuid,name:"Latte",description:"Espresso and milk",price:null,
@@ -34,10 +35,15 @@ const menu={restaurantGuid:rg,menus:[{name:"Drinks",menuGroups:[{
 describe("Toast published catalog adapter",()=>{
  beforeEach(()=>request.mockReset());
  it("makes one full Menus V2 request for canonical items and staged facts together",async()=>{
-  request.mockResolvedValue(menu);
+  request.mockResolvedValueOnce(publication).mockResolvedValueOnce(menu)
+    .mockResolvedValueOnce(publication);
   const bundle=await adapter.fetchPublishedCatalogBundle();
-  expect(request).toHaveBeenCalledTimes(1);
-  expect(request.mock.calls[0][0]).toBe("/menus/v2/menus");
+  expect(request.mock.calls.map(call=>call[0])).toEqual([
+   "/menus/v2/metadata","/menus/v2/menus","/menus/v2/metadata"
+  ]);
+  expect(bundle.receipt).toMatchObject({restaurantGuid:rg,
+   publicationVersion:"2026-11-09T09:00:00.000Z"});
+  expect(Number.isFinite(Date.parse(bundle.receipt.observedAt))).toBe(true);
   expect(bundle.items).toHaveLength(4);
   expect(bundle.items.filter(i=>i.baseName==="Latte").map(i=>i.priceCents)).toEqual([300,400,500]);
   expect(bundle.facts.find(f=>f.kind==="item"&&f.provider_guid===itemGuid)).toMatchObject({
@@ -49,18 +55,45 @@ describe("Toast published catalog adapter",()=>{
   });
  });
  it("rejects other-restaurant snapshots before supplying either bundled projection",async()=>{
-  request.mockResolvedValue({...menu,restaurantGuid:op(99)});
+  request.mockResolvedValueOnce(publication)
+    .mockResolvedValueOnce({...menu,restaurantGuid:op(99)});
   await expect(adapter.fetchPublishedCatalogBundle())
    .rejects.toMatchObject({category:"unauthorized_location"});
-  expect(request).toHaveBeenCalledTimes(1);
+  expect(request.mock.calls.map(call=>call[0])).toEqual([
+   "/menus/v2/metadata","/menus/v2/menus"
+  ]);
  });
  it("rejects incomplete modifier references without supplying a partial bundle",async()=>{
   const partial=structuredClone(menu);
   delete (partial.modifierOptionReferences as Record<string,unknown>)["11"];
-  request.mockResolvedValue(partial);
+  request.mockResolvedValueOnce(publication).mockResolvedValueOnce(partial);
   await expect(adapter.fetchPublishedCatalogBundle())
    .rejects.toMatchObject({category:"invalid_response"});
-  expect(request).toHaveBeenCalledTimes(1);
+  expect(request.mock.calls.map(call=>call[0])).toEqual([
+   "/menus/v2/metadata","/menus/v2/menus"
+  ]);
+ });
+ it("never returns a receipt if the provider publishes another version during the GET",async()=>{
+  request.mockResolvedValueOnce(publication).mockResolvedValueOnce(menu)
+    .mockResolvedValueOnce({...publication,lastUpdated:"2026-11-09T09:05:00Z"});
+  await expect(adapter.fetchPublishedCatalogBundle())
+   .rejects.toMatchObject({category:"invalid_response"});
+  expect(request.mock.calls.map(call=>call[0])).toEqual([
+   "/menus/v2/metadata","/menus/v2/menus","/menus/v2/metadata"
+  ]);
+ });
+ it("rejects the wrong restaurant before downloading a full menu",async()=>{
+  request.mockResolvedValueOnce({...publication,restaurantGuid:op(99)});
+  await expect(adapter.fetchPublishedCatalogBundle())
+   .rejects.toMatchObject({category:"unauthorized_location"});
+  expect(request.mock.calls.map(call=>call[0])).toEqual(["/menus/v2/metadata"]);
+ });
+ it("rejects invalid or missing source publication timestamps instead of certifying unknown history",async()=>{
+  request.mockResolvedValueOnce({...publication,lastUpdated:"not-a-date"})
+    .mockResolvedValueOnce(menu)
+    .mockResolvedValueOnce({...publication,lastUpdated:"not-a-date"});
+  await expect(adapter.fetchPublishedCatalogBundle())
+   .rejects.toMatchObject({category:"invalid_response"});
  });
  it("keeps size GUID identities, cent prices, group paths and priced options",async()=>{
   request.mockResolvedValue(menu);
