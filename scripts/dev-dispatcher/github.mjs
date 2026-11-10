@@ -227,6 +227,12 @@ export class GitHubFacts {
   }
   async one(pr) {
     const sha = pr.head.sha;
+    // List-PR responses may omit GitHub's computed mergeability. Resolve the
+    // detail on the same head rather than treating a missing field as proof.
+    const detail = typeof pr.mergeable === 'boolean' ? pr :
+      await this.request(`/pulls/${pr.number}`).catch(() => null);
+    const mergeable = detail?.head?.sha === sha && detail?.base?.sha === pr.base.sha &&
+      detail.mergeable === true;
     const [checks, reviews, unresolved, commit, comparison, comments] = await Promise.all([
       this.request(`/commits/${sha}/check-runs?per_page=100`),
       this.request(`/pulls/${pr.number}/reviews?per_page=100`),
@@ -282,7 +288,7 @@ export class GitHubFacts {
       sensitive_owner_block: (pr.labels || []).some(label =>
         /(?:^|[-_])(paid|live|prod|production|secret|secrets)(?:$|[-_])/i.test(label.name || '') &&
         !/^(?:approved|owner-approved)/i.test(label.name || '')),
-      mergeable: pr.mergeable === true,
+      mergeable,
       mergeable_state: pr.mergeable_state || null,
       owner_approved: ownerDecision.approved === true,
       github_owner_question_url: ownerDecision.url,
