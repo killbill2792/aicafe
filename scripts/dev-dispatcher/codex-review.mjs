@@ -1,3 +1,4 @@
+import { parseCodexReviewState } from './github.mjs';
 // Request one exact-head Codex review after all ready-state gates are verified.
 // Never merge, create a draft, or infer review completion from a comment.
 
@@ -11,6 +12,7 @@ export async function requestCodexReview({github,record,task,records = {}}) {
   if (!task || !sha40(sha) || !Number.isInteger(record.pr_number) ||
       record.github_state !== 'open' || record.ci_state !== 'success' ||
       record.codex_review_requested_sha === sha ||
+      record.codex_in_progress_sha === sha ||
       record.codex_reviewed_sha === sha ||
       record.codex_state === 'clean' || record.codex_state === 'findings')
     return {status:'held'};
@@ -19,10 +21,17 @@ export async function requestCodexReview({github,record,task,records = {}}) {
     return {status:'stale'};
   const live=await github.one(pr);
   if (live.head_sha !== sha || live.ci_state !== 'success' ||
-      live.codex_reviewed_sha === sha || live.codex_state === 'clean' ||
+      live.codex_reviewed_sha === sha || live.codex_in_progress_sha === sha ||
+      live.codex_state === 'clean' ||
       live.codex_state === 'findings' || live.sensitive_owner_block)
     return {status:'held_live'};
   const comments=await github.paginated('/issues/' + record.pr_number + '/comments','');
+  // A running/queued authenticated Codex connector receipt is already a
+  // review request for the immutable head: never post a duplicate trigger.
+  const running=comments.some(c=>
+    c.user?.login === 'chatgpt-codex-connector[bot]' &&
+    parseCodexReviewState(String(c.body || ''),sha)?.state === 'pending');
+  if (running) return {status:'already_running',head_sha:sha};
   const existing=comments.some(c=>
     String(c.body || '').includes(marker(sha)) ||
     (/@codex\s+review\b/i.test(String(c.body || '')) &&
