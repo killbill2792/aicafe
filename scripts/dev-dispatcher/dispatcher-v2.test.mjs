@@ -93,6 +93,11 @@ test('ready is possible after green CI and coder-done, not before; merge Codex g
   assert.equal(readyGate({...base,coder_done:false}).eligible,false);
   assert.equal(readyGate({...base,ci_state:'failure'}).eligible,false);
   assert.equal(readyGate({...base,base_branch:'feat/parent'}).eligible,false);
+  assert.equal(readyGate({...base,draft:false}).eligible,false);
+  const unreviewed=active({draft:false,coder_done:true,ci_state:'success',codex_state:'pending',
+    review_requested_sha:'a'.repeat(40),last_commit_at:old});
+  assert.equal(decideNudge(unreviewed,now).action,'idle_continue',
+    'never mistake a prompt for an actual Codex request');
 });
 
 test('owner view calls stale cancellations superseded and planned overdue actions courier unconfirmed',()=>{
