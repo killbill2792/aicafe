@@ -144,22 +144,27 @@ async function main() {
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
       const proposal = decideNudge(rec, Date.now());
-      // A not-yet-claimed checklist becomes obsolete as soon as its actionable
-      // state changes. Never cancel claimed/uncertain sends or invent receipts.
-      for (const action of Object.values(copy.actions)) {
-        if (action.task_id !== id || action.status !== 'planned' ||
-            action.type === 'assign') continue;
-        if (rec.codex_state === 'findings' && action.type === 'codex_comments' &&
-            action.head_sha === rec.head_sha && rec.github_state === 'open') continue;
-        if (proposal.kind !== 'propose' || action.delivery?.action_id !== proposal.key)
-          action.status = 'cancelled_state_changed';
+      // Never cancel a current-head findings prompt unless the replacement is
+      // built successfully. Other obsolete undelivered prompts may be dropped.
+      const superseded=[];
+      for(const action of Object.values(copy.actions)) {
+        if(action.task_id!==id||action.status!=='planned'||action.type==='assign')continue;
+        if(action.delivery?.action_id===proposal.key)continue;
+        if(rec.codex_state==='findings'&&action.type==='codex_comments'&&
+           action.head_sha===rec.head_sha&&proposal.kind!=='propose')continue;
+        superseded.push(action);
       }
-      // Exactly one live prompt per PR, including any claimed/uncertain action.
-      if (Object.values(copy.actions).some(a =>
-          ["planned", "claimed", "uncertain"].includes(a.status) &&
-          (a.task_id === id || (Number.isInteger(rec.pr_number) &&
-            copy.tasks[a.task_id]?.pr_number === rec.pr_number)))) continue;
-      if (proposal.kind !== "propose") continue;
+      // Exactly one live prompt per PR. Superseded planned actions are counted
+      // only after a replacement was actually produced.
+      if(Object.values(copy.actions).some(a=>
+          ['planned','claimed','uncertain'].includes(a.status)&&
+          !superseded.includes(a)&&
+          (a.task_id===id||(Number.isInteger(rec.pr_number)&&
+            copy.tasks[a.task_id]?.pr_number===rec.pr_number))))continue;
+      if(proposal.kind!=='propose'){
+        for(const stale of superseded)stale.status='cancelled_state_changed';
+        continue;
+      }
       if (!copy.actions[proposal.key]) {
         const task = taskById.get(id);
         // Only approved, exactly owned tasks from the trusted queue can reach Dave.
@@ -184,6 +189,7 @@ async function main() {
           status: "planned", delivery_owner: "muse",
           head_sha: rec.head_sha || null,
           created_at: now, delivery };
+        for(const stale of superseded)stale.status='cancelled_state_changed';
         nudges.push({ task_id: id, action: proposal.action });
       }
     }

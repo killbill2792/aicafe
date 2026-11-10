@@ -144,3 +144,29 @@ test('merged PR chat index is retained and newest courier URL repairs stale task
   assert.equal(out.tasks.POS0d.conversation_url,newUrl);
   assert.equal(out.pr_chat_links[407].conversation_url,newUrl);
 });
+
+
+test('failed replacement Codex delivery cannot cancel current planned findings prompt',()=>{
+ const prev='old:review-1',next='work:bad:new-review';
+ const h=harness({proposals:{bad:{kind:'propose',action:'codex_comments',key:next}},fail:['bad']});
+ const rec={...record('bad'),head_sha:'f'.repeat(40),codex_state:'findings',
+  submission_state:'idle'};
+ const state=initial({bad:rec},{[prev]:{task_id:'bad',type:'codex_comments',
+  status:'planned',head_sha:rec.head_sha,delivery:{action_id:prev}}});
+ const out=h.run(state).state;
+ assert.equal(out.actions[prev].status,'planned');
+ assert.equal(out.actions[next],undefined);
+ assert.match(h.errors.join('\n'),/delivery creation failed/);
+});
+test('successful replacement Codex delivery supersedes old planned prompt atomically',()=>{
+ const prev='old:review-1',next='work:bad:new-review';
+ const h=harness({proposals:{bad:{kind:'propose',action:'codex_comments',key:next}}});
+ const rec={...record('bad'),head_sha:'f'.repeat(40),codex_state:'findings',
+  submission_state:'idle'};
+ const state=initial({bad:rec},{[prev]:{task_id:'bad',type:'codex_comments',
+  status:'planned',head_sha:rec.head_sha,delivery:{action_id:prev}}});
+ const out=h.run(state).state;
+ assert.equal(out.actions[prev].status,'cancelled_state_changed');
+ assert.equal(out.actions[next].status,'planned');
+ assert.equal(Object.values(out.actions).filter(x=>x.status==='planned').length,1);
+});
