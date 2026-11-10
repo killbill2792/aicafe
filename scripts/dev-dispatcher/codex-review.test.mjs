@@ -161,6 +161,7 @@ test('watchdog checks GitHub PR head, reviews and comment reactions, then sends 
     },
     paginated:async(path)=>{
       if(path==='/issues/423/comments')return comments;
+      if(path==='/issues/423/reactions')return [];
       if(path==='/pulls/423/reviews')return [];
       if(path==='/issues/comments/10/reactions')return replies;
       if(path==='/issues/comments/11/reactions')return [];
@@ -193,4 +194,26 @@ test('watchdog referee uses existing owner-alert queue without a new gate',async
   newHead.tasks.child.head_sha='f'.repeat(40);
   const refreshed=queueOwnerAlerts(newHead);
   assert.equal(Object.values(refreshed.owner_alerts).filter(n=>n.kind==='codex_watchdog'&&n.status==='planned').length,0);
+});
+
+
+test('two trustworthy manual exact-head requests count as the absolute maximum',()=>{
+  const manual={...firstRequest,id:12,body:'@codex review',
+    created_at:'2026-11-10T10:21:00Z'};
+  assert.equal(decision('2026-11-10T10:42:00Z',[firstRequest,manual]).status,'escalate');
+});
+test('PR-level Codex thumbs-up suppresses a duplicate watchdog request',async()=>{
+  const gh={
+    request:async()=>({state:'open',head:{sha:head}}),
+    paginated:async(path)=>{
+      if(path==='/issues/423/comments')return [firstRequest];
+      if(path==='/pulls/423/reviews')return [];
+      if(path==='/issues/423/reactions')return [{content:'+1',
+        user:{login:'chatgpt-codex-connector[bot]'},created_at:'2026-11-10T10:12:00Z'}];
+      if(path==='/issues/comments/10/reactions')return [];
+      throw Error('Unexpected path '+path);
+    }
+  };
+  assert.equal((await inspectCodexWatch({github:gh,record:watchdogRecord(),
+    now:Date.parse('2026-11-10T10:42:00Z')})).status,'receipt');
 });
