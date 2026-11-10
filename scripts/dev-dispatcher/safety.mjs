@@ -1,7 +1,19 @@
-// Post-delivery safety signals on the existing trusted-main dispatcher tick.
-// No new queue, poller, merge gate or browser sender.
 const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const sha=/^[a-f0-9]{40}$/;
+// PR markers diagnose; signed task facts own repository identity.
+const REPO_MARKER=/^\s*<!--\s*repo:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s+task:\s*([^\s>]+)\s*-->\s*$/gm;
+export function validateRepo(body='',actualRepo='') {
+  const matches=[...body.matchAll(REPO_MARKER)];
+  if(!matches.length)return {status:'warning',message:'No <!-- repo: owner/name task: id --> marker; warning only.'};
+  if(matches.some(m=>m[1]!==matches[0][1]))
+    return {status:'failure',message:'Conflicting repository markers in PR body.'};
+  if(matches[0][1].toLowerCase()!==actualRepo.toLowerCase())
+    return {status:'failure',message:'This PR says it belongs to '+matches[0][1]+' but is in '+actualRepo};
+  return {status:'success',message:'PR repository matches '+actualRepo+' (task '+matches[0][2]+').'};
+}
+export function parseChatUrl(body='') {
+  return body.match(/<!--\s*aicafe-chat-url\s+(https:\/\/chatgpt\.com\/(?:c\/[A-Za-z0-9_-]+|g\/[A-Za-z0-9_-]+\/c\/[A-Za-z0-9_-]+))\s*-->/)?.[1]||null;
+}
 export const STALL_PROMPT = "No new commit arrived. If GitHub returned 403 'Resource not accessible by integration', report it in one line.";
 export const stallMinutes = value => {
   if (value == null || value === '') return 20;
@@ -9,7 +21,6 @@ export const stallMinutes = value => {
   return Number.isInteger(n) && n>=1 && n<=1440 ? n : 20;
 };
 export function expectedTaskRepo(task,record,dispatcherRepo) {
-  // The approved task ledger and signed queue, never PR-body prose, own repo identity.
   const declared=task?.repository || task?.repo || record?.repository || record?.repo;
   return REPO.test(declared || '') ? declared : dispatcherRepo;
 }
@@ -35,7 +46,6 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
       rec.stall_pending=null;
       continue;
     }
-    // Authenticated courier receipt is the clock. Chat prose is not trusted state.
     const delivered=Date.parse(rec.last_submission_at||'');
     const committed=Date.parse(rec.last_commit_at||'');
     const advanced=sha.test(rec.last_prompt_head_sha||'')
@@ -75,7 +85,6 @@ export function reportedConnector403(comments, prAuthor) {
      c.user?.login==='chatgpt-codex-connector[bot]') &&
     /403.{0,80}Resource not accessible by integration|Resource not accessible by integration.{0,80}403/i.test(c.body||''));
 }
-// Action log messages are trusted CI annotations, not guesses from the model.
 export function failureInstruction(annotations=[]) {
   const line=annotations.map(x=>String(x.message||'')).find(x=>
     /aicafe-chat-url|vision.{0,30}version/i.test(x));

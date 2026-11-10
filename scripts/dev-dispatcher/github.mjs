@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
-import { createRequire } from 'node:module';
-const { validateRepo } = createRequire(import.meta.url)('../../.github/scripts/pr-markers.cjs');
-import { reportedConnector403, failureInstruction } from './safety.mjs';
+import { validateRepo, reportedConnector403, failureInstruction } from './safety.mjs';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
 export function parseTaskMarker(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;

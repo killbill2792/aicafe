@@ -53,7 +53,7 @@ jobs:
           GITHUB_SHA: ${{ inputs.merged_sha || github.sha }}
           LANDING_EXIT_CODE: ${{ steps.smoke.outputs.exit_code }}
           LANDING_LOG: ${{ runner.temp }}/landing.log
-        run: node .github/scripts/landing-receipt.cjs
+        run: node .github/scripts/landing-receipt.mjs
       - name: Show failed smoke in post-merge Actions status (never a PR gate)
         if: ${{ steps.smoke.outputs.exit_code != '0' }}
         run: exit 1

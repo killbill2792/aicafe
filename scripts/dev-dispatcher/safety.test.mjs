@@ -98,3 +98,14 @@ test('nonrequired existing check with exact field annotation still gets same-cha
  assert.equal(action.action,'ci_failed');
  assert.match(action.key,/Invalid%20vision/);
 });
+test('repository and chat markers pass, warn and reject explicit conflicts',async()=>{
+ const {validateRepo,parseChatUrl}=await import('./safety.mjs');
+ assert.equal(validateRepo('','owner/repo').status,'warning');
+ assert.equal(validateRepo('<!-- repo: owner/repo -->','owner/repo').status,'warning');
+ assert.equal(validateRepo('<!-- repo: owner/repo task: T -->','owner/repo').status,'success');
+ assert.deepEqual(validateRepo('<!-- repo: other/repo task: T -->','owner/repo'),{status:'failure',message:'This PR says it belongs to other/repo but is in owner/repo'});
+ assert.equal(validateRepo('<!-- repo: owner/repo task: T -->\n<!-- repo: other/repo task: T -->','owner/repo').status,'failure');
+ assert.equal(parseChatUrl('<!-- aicafe-chat-url https://chatgpt.com/c/abc-123 -->'),'https://chatgpt.com/c/abc-123');
+ assert.equal(parseChatUrl('<!-- aicafe-chat-url https://chatgpt.com/g/project/c/abc -->'),'https://chatgpt.com/g/project/c/abc');
+ assert.equal(parseChatUrl('<!-- aicafe-chat-url https://evil.example/x -->'),null);
+});

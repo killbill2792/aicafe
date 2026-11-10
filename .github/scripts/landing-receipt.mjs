@@ -1,6 +1,5 @@
-'use strict';
-const fs = require('node:fs');
-const { parseChatUrl } = require('./pr-markers.cjs');
+import fs from 'node:fs';
+import { parseChatUrl } from '../../scripts/dev-dispatcher/safety.mjs';
 
 async function github(path, options = {}) {
   const response = await fetch('https://api.github.com' + path, {

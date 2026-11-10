@@ -49,9 +49,6 @@ export async function requestCodexReview({github,record,task,records = {}}) {
   return {status:'requested',head_sha:sha};
 }
 
-
-// GitHub facts, not a coding-chat claim, determine whether the exact-head
-// Codex request has a review/reaction. The existing dispatcher runs this tick.
 const retryMarker = sha => '<!-- aicafe-dispatcher-codex-rerequest:' + sha + ' -->';
 const codexActor = login => /^(?:chatgpt-codex-connector(?:\[bot\])?|codex(?:\[bot\])?)$/i.test(login || '');
 const trustedRequester = c => ['OWNER','MEMBER','COLLABORATOR'].includes(c.author_association) ||
@@ -65,7 +62,6 @@ const isRequest = (c, head, lastCommitAt) => {
   const body = String(c.body || '');
   if (!trustedRequester(c)) return false;
   if (body.includes(marker(head)) || body.includes(retryMarker(head))) return true;
-  // Historical manual requests are equivalent to the first dispatcher request.
   return /@codex\s+review\b/i.test(body) &&
     Date.parse(c.created_at || '') >= Date.parse(lastCommitAt || '');
 };
@@ -82,8 +78,6 @@ export function codexWatchDecision({record, comments=[], reviews=[], reactions=[
       reactions.some(r=>codexActor(r.user?.login)))
     return {status:'receipt'};
   if (!requestComments.length) return {status:'no_verified_request'};
-  // Both the initial request and the one retry are tagged on GitHub, so
-  // losing a private ledger update cannot cause a third request.
   const count=requestComments.some(c=>(c.body||'').includes(retryMarker(head))) ||
     requestComments.length>=2 ? 2 : 1;
   const last=requestComments.at(-1), when=Date.parse(last.created_at||'');
@@ -105,7 +99,6 @@ export async function inspectCodexWatch({github,record,now=Date.now(),minutes=20
   const reactions=[];
   const firstRequestAt=Math.min(...comments.filter(c=>isRequest(c,record.head_sha,record.last_commit_at))
     .map(c=>Date.parse(c.created_at||'')).filter(Number.isFinite));
-  // The connector can react directly to the PR instead of to @codex's comment.
   if (Number.isFinite(firstRequestAt)) {
     const issueReactions=await github.paginated('/issues/'+record.pr_number+'/reactions','reactions');
     reactions.push(...issueReactions.filter(r=>Date.parse(r.created_at||'')>=firstRequestAt));

@@ -102,7 +102,6 @@ test('live current-head in-progress Codex signal holds without posting',async()=
   assert.equal(gh.posted.length,0);
 });
 
-
 const requestedAt='2026-11-10T10:00:00Z';
 const watchdogRecord=()=>({...rec(),codex_review_requested_sha:head,codex_state:'pending'});
 const firstRequest={id:10,created_at:requestedAt,author_association:'OWNER',
@@ -139,6 +138,8 @@ test('exact head and two request ceiling hold after retry, with no third request
   assert.deepEqual(decision('2026-11-10T10:41:00Z',[firstRequest,secondRequest]),
     {status:'escalate',head_sha:head,attempts:2});
   assert.equal(decision('2026-11-10T12:00:00Z',[firstRequest,secondRequest]).status,'escalate');
+  const manual={...firstRequest,id:12,body:'@codex review',created_at:'2026-11-10T10:21:00Z'};
+  assert.equal(decision('2026-11-10T10:42:00Z',[firstRequest,manual]).status,'escalate');
   assert.equal(codexWatchDecision({record:{...watchdogRecord(),head_sha:'f'.repeat(40)},
     comments:[firstRequest],now:Date.parse('2026-11-10T11:00:00Z')}).status,'held');
   assert.equal(codexWatchDecision({record:{...watchdogRecord(),codex_reviewed_sha:head},
@@ -149,7 +150,7 @@ test('exact head and two request ceiling hold after retry, with no third request
 });
 test('watchdog checks GitHub PR head, reviews and comment reactions, then sends one exact retry',async()=>{
   const posted=[], requests=[];
-  let replies=[],comments=[firstRequest];
+  let replies=[],comments=[firstRequest],prReactions=[];
   const github={
     request:async(path,opts)=>{
       requests.push(path);
@@ -161,7 +162,7 @@ test('watchdog checks GitHub PR head, reviews and comment reactions, then sends 
     },
     paginated:async(path)=>{
       if(path==='/issues/423/comments')return comments;
-      if(path==='/issues/423/reactions')return [];
+      if(path==='/issues/423/reactions')return prReactions;
       if(path==='/pulls/423/reviews')return [];
       if(path==='/issues/comments/10/reactions')return replies;
       if(path==='/issues/comments/11/reactions')return [];
@@ -182,6 +183,9 @@ test('watchdog checks GitHub PR head, reviews and comment reactions, then sends 
   assert.equal((await inspectCodexWatch({github,record:watchdogRecord(),
     now:Date.parse('2026-11-10T10:42:00Z')})).status,'receipt');
   assert.equal(posted.length,1);
+  replies=[];
+  prReactions=[{content:'+1',user:{login:'chatgpt-codex-connector[bot]'},created_at:'2026-11-10T10:12:00Z'}];
+  assert.equal((await inspectCodexWatch({github,record:watchdogRecord(),now:Date.parse('2026-11-10T10:42:00Z')})).status,'receipt');
 });
 test('watchdog referee uses existing owner-alert queue without a new gate',async()=>{
   const {queueOwnerAlerts}=await import('./alerts.mjs');
@@ -194,26 +198,4 @@ test('watchdog referee uses existing owner-alert queue without a new gate',async
   newHead.tasks.child.head_sha='f'.repeat(40);
   const refreshed=queueOwnerAlerts(newHead);
   assert.equal(Object.values(refreshed.owner_alerts).filter(n=>n.kind==='codex_watchdog'&&n.status==='planned').length,0);
-});
-
-
-test('two trustworthy manual exact-head requests count as the absolute maximum',()=>{
-  const manual={...firstRequest,id:12,body:'@codex review',
-    created_at:'2026-11-10T10:21:00Z'};
-  assert.equal(decision('2026-11-10T10:42:00Z',[firstRequest,manual]).status,'escalate');
-});
-test('PR-level Codex thumbs-up suppresses a duplicate watchdog request',async()=>{
-  const gh={
-    request:async()=>({state:'open',head:{sha:head}}),
-    paginated:async(path)=>{
-      if(path==='/issues/423/comments')return [firstRequest];
-      if(path==='/pulls/423/reviews')return [];
-      if(path==='/issues/423/reactions')return [{content:'+1',
-        user:{login:'chatgpt-codex-connector[bot]'},created_at:'2026-11-10T10:12:00Z'}];
-      if(path==='/issues/comments/10/reactions')return [];
-      throw Error('Unexpected path '+path);
-    }
-  };
-  assert.equal((await inspectCodexWatch({github:gh,record:watchdogRecord(),
-    now:Date.parse('2026-11-10T10:42:00Z')})).status,'receipt');
 });

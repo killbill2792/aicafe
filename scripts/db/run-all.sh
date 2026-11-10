@@ -205,6 +205,7 @@ supabase_lane() {
   sql_step data-health-sql-integration.sql "Daily data health check"
   sql_step toast-one-object-sql-integration.sql "One record per staged object"
   sql_step pos0c-ops-sql-integration.sql "POS0c current operations, deltas, reader and tenant isolation"
+  sql_step pos0b-staff-labor-sql-integration.sql "POS0b labor revisions, RLS and tenant isolation"
   sql_step toast-messy-import-sql-integration.sql "Messy days store one clean import"
   sql_step toast-organized-fields-sql-integration.sql "Item timing, payment server, service charges"
   sql_step ai-toast-records-sql-integration.sql "The AI can read every Toast field"

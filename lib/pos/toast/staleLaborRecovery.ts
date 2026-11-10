@@ -39,7 +39,9 @@ export async function queueStaleToastLaborRollups(
   const staged=await readAllPosRows((a,b)=>db.from("toast_labor_entries")
    .select("restaurant_guid,external_time_entry_id,clock_in,clock_out,hourly_wage_cents,provider_regular_hours,provider_overtime_hours,deleted")
    .eq("business_id",businessId).eq("deleted",false)
-   .lt("clock_in",end).gt("clock_out",start)
+   // An unfinished provider shift overlaps the day until it is truly closed.
+   // Filtering clock_out > start alone drops SQL NULL and can certify partial payroll.
+   .lt("clock_in",end).or(`clock_out.is.null,clock_out.gt.${start}`)
    .order("restaurant_guid").order("external_time_entry_id").range(a,b),
    "stored Toast labor repair");
   // No staged time entries is NOT proof of a legitimate zero-pay day.

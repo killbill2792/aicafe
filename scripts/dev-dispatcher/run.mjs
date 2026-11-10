@@ -342,8 +342,6 @@ async function main() {
         if (decision.status==='rerequest' && rec.codex_watchdog?.sha!==rec.head_sha) {
           const reservationAt=new Date().toISOString();
           const reservationId=String(process.env.GITHUB_RUN_ID||'local')+':'+id+':'+reservationAt;
-          // Reserve the sole retry in the existing CAS ledger BEFORE POST.
-          // An uncertain GitHub response cannot lead to blind replay.
           const reserved=await ledger.transaction(latest=>{
             const task=latest.tasks?.[id];
             if (!task || task.head_sha!==rec.head_sha ||
@@ -368,7 +366,6 @@ async function main() {
             });
             console.log('Codex re-requested once for task '+id+' on '+rec.head_sha);
           } else {
-            // The reserved slot remains consumed if a message races the retry.
             console.log('Codex retry suppressed for task '+id+': '+outcome.status);
           }
         } else if (decision.status==='escalate') {
@@ -472,8 +469,6 @@ async function main() {
       }
     }
   }
-  // Failed post-merge dispatch is retryable independently. Never reopen a
-  // merge, require a human, or deliver a guessed chat message.
   if (commit && ledger) {
     for (const [id, rec] of Object.entries(persisted?.state?.tasks || proposed.state.tasks)) {
       if (rec.landing_dispatch !== 'failed_needs_retry' || !rec.merge_sha ||
