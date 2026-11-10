@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 // Durable owner-attention notices in the SAME private dispatcher ledger.
 // Muse delivers these later; GitHub never sends owner messages directly.
 import {createHash} from 'node:crypto';
@@ -53,8 +54,8 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
   entry.recipient=ownerKinds.has(entry.kind)?'owner':'referee';
   if(entry.recipient==='owner'){
    entry.target_url=entry.pr_number
-    ?'https://github.com/killbill2792/aicafe/pull/'+entry.pr_number
-    :'https://github.com/killbill2792/aicafe/blob/main/docs/plans/universal-supervisor-queue.json';
+    ?'https://github.com/'+settings.repo+'/pull/'+entry.pr_number
+    :'https://github.com/'+settings.repo+'/blob/main/'+settings.queue.path;
    entry.owner_message=(entry.target_url+' — '+entry.question).slice(0,1200);
   }
   return entry;
@@ -121,10 +122,10 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
    for(const prior of previous)
      if(prior.status==='planned') prior.status='cancelled_no_longer_needed';
   }
-  const base='https://github.com/killbill2792/aicafe';
+  const base='https://github.com/'+settings.repo;
   const target=Number.isInteger(rec.pr_number)
     ? base+'/pull/'+rec.pr_number
-    : base+'/blob/main/docs/plans/universal-supervisor-queue.json';
+    : base+'/blob/main/'+settings.queue.path;
   if(rec.sensitive_owner_block===true || rec.owner_directive==='go_live' ||
       rec.owner_directive==='hold')
     add(rec.owner_directive==='go_live'?'go_live':'owner_sensitive_hold',

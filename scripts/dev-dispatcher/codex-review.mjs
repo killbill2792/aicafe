@@ -1,10 +1,11 @@
+import {settings} from './settings.mjs';
 import { parseCodexReviewState } from './github.mjs';
 // Request one exact-head Codex review after all ready-state gates are verified.
 // Never merge, create a draft, or infer review completion from a comment.
 
 const sha40 = value => /^[a-f0-9]{40}$/.test(value || '');
-const marker = sha => '<!-- aicafe-dispatcher-codex-review:' + sha + ' -->';
-const SETTLE_MS=5*60*1000;
+const marker = sha => '<!-- '+settings.naming.marker_prefix+'-dispatcher-codex-review:' + sha + ' -->';
+const SETTLE_MS=settings.codex.settle_seconds*1000;
 export const settled=(at,now=Date.now())=>Number.isFinite(Date.parse(at||'')) &&
   now-Date.parse(at)>=SETTLE_MS;
 

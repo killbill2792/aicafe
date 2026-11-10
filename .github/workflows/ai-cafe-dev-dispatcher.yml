@@ -27,6 +27,8 @@ on:
     types: [completed]
   pull_request_review:
     types: [submitted, dismissed]
+  repository_dispatch:
+    types: [dispatcher_receipt, dispatcher_owner_reply, dispatcher_delayed]
   workflow_dispatch:
     inputs:
       persist_private_ledger:
@@ -100,6 +102,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'workflow_run' ||
+      github.event_name == 'repository_dispatch' ||
       github.event_name == 'issue_comment' ||
       github.event_name == 'check_suite' ||
       github.event_name == 'check_run' ||
@@ -135,8 +138,8 @@ jobs:
           DISPATCH_STALL_MINUTES: ${{ vars.DISPATCH_STALL_MINUTES || '20' }}
           DISPATCH_CODEX_WATCH_MINUTES: ${{ vars.DISPATCH_CODEX_WATCH_MINUTES || '20' }}
           # Existing GitHub issue is the owner's public-safe live status surface.
-          DISPATCH_OWNER_DASHBOARD_ISSUE: '411'
-          PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
+          DISPATCH_OWNER_DASHBOARD_ISSUE: ${{ vars.DISPATCH_OWNER_DASHBOARD_ISSUE }}
+          PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'repository_dispatch' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
         run: |
           if [ "$PERSIST" = "true" ]; then
             node scripts/dev-dispatcher/run.mjs --commit
@@ -144,7 +147,7 @@ jobs:
             node scripts/dev-dispatcher/run.mjs
           fi
       - name: Publish opaque wake-up signal (only after private ledger persistence)
-        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
+        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'repository_dispatch' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -152,3 +155,10 @@ jobs:
           DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
           DISPATCH_SIGNAL_SECRET: ${{ secrets.DISPATCH_SIGNAL_SECRET }}
         run: node scripts/dev-dispatcher/signal.mjs
+      - name: Schedule Codex and Muse self-wake (no cron dependency)
+        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'repository_dispatch' || github.event_name == 'issue_comment' || github.event_name == 'check_suite' || github.event_name == 'check_run' || github.event_name == 'pull_request_review') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+          DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
+        run: node scripts/dev-dispatcher/wake.mjs

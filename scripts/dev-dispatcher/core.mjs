@@ -1,8 +1,9 @@
+import {settings} from './settings.mjs';
 // AI CAFE developer dispatcher: pure, deterministic decisions. No browser, LLM or merge effects.
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 export const taskKey = (id) => {
   if (!ID.test(id)) throw new Error("Invalid task id");
-  return `aicafe:${id}`;
+  return settings.naming.task_prefix+':'+id;
 };
 // New queues use edits (exclusive writes) and uses (read-only imports).
 // Retain signed exclusive_files for existing approved tasks until migrated.
