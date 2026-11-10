@@ -63,3 +63,24 @@ test('dispatcher cron and Integration Proof completion wake are configured',()=>
   assert.match(source,/cron: '2\/5 \* \* \* \*'/);
   assert.match(source,/workflows: \[[^\n]*'AI CAFE Integration Proof'/);
 });
+test('PR-list mergeability must be confirmed by matching live detail SHA/base',async()=>{
+  const head='a'.repeat(40),base='b'.repeat(40),calls=[];
+  const pr={number:42,head:{sha:head,ref:'feat/check'},base:{sha:base,ref:'main'},
+    draft:false,labels:[],body:'',updated_at:'2026-11-10T10:00:00Z'};
+  const gh=new GitHubFacts({repo:'o/r',token:'dummy',fetchFn:async url=>{
+    calls.push(url);
+    let data;
+    if(url.endsWith('/pulls/42'))data={...pr,mergeable:true};
+    else if(url.includes('/check-runs?'))data={total_count:0,check_runs:[]};
+    else if(url.includes('/reviews?'))data=[];
+    else if(url.includes('/issues/42/comments?'))data=[];
+    else if(url.includes('/commits/'+head))data={commit:{committer:{date:'2026-11-10T10:00:00Z'}}};
+    else if(url.includes('/compare/'))data={behind_by:0,files:[]};
+    else if(url.endsWith('/graphql'))data={data:{repository:{pullRequest:{
+      reviewThreads:{pageInfo:{hasNextPage:false},nodes:[]}}}}};
+    else throw Error('Unexpected '+url);
+    return {ok:true,json:async()=>data};
+  }});
+  assert.equal((await gh.one(pr)).mergeable,true);
+  assert.ok(calls.some(url=>url.endsWith('/pulls/42')));
+});
