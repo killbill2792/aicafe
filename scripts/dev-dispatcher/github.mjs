@@ -116,9 +116,8 @@ export class GitHubFacts {
   }
   async proofArtifact(runId, artifactName, filename) {
     if (!Number.isSafeInteger(runId) || runId < 1) throw new Error('Invalid proof run');
-    const list = await this.request('/actions/runs/' + runId + '/artifacts?per_page=100');
-    if (list.total_count > 100 || !Array.isArray(list.artifacts)) throw new Error('Unverified proof pagination');
-    const matches = list.artifacts.filter(a => a.name === artifactName && !a.expired);
+    const artifacts = await this.paginated('/actions/runs/' + runId + '/artifacts','artifacts');
+    const matches = artifacts.filter(a => a.name === artifactName && !a.expired);
     if (matches.length !== 1) return null;
     const response = await this.fetchFn('https://api.github.com/repos/' + this.repo +
       '/actions/artifacts/' + matches[0].id + '/zip', {headers:{
