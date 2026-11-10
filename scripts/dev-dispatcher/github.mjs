@@ -278,6 +278,12 @@ export class GitHubFacts {
       acceptance_evidence: parseAcceptanceEvidence(pr.body),
       task_marker: parseTaskMarker(pr.body),
       github_owner_question: ownerDecision.question,
+      // Routine decisions are informational; only privileged work is held.
+      sensitive_owner_block: (pr.labels || []).some(label =>
+        /(?:^|[-_])(paid|live|prod|production|secret|secrets)(?:$|[-_])/i.test(label.name || '') &&
+        !/^(?:approved|owner-approved)/i.test(label.name || '')),
+      mergeable: pr.mergeable === true,
+      mergeable_state: pr.mergeable_state || null,
       owner_approved: ownerDecision.approved === true,
       github_owner_question_url: ownerDecision.url,
       coder_done: typeof pr.body === 'string' &&
