@@ -114,9 +114,6 @@ async function main() {
         rec.last_action_key = proposal.key;
         if (proposal.action === 'parent_merged') rec.last_parent_rebase_sha = rec.parent_merged_sha;
         if (proposal.action === 'owner_answered') rec.last_owner_answer_key = rec.owner_answer_key;
-        if (proposal.action === 'idle_continue' && rec.draft === false &&
-            rec.ci_state === 'success' && rec.codex_state === 'pending' &&
-            rec.codex_reviewed_sha !== rec.head_sha) rec.review_requested_sha = rec.head_sha;
         copy.actions[proposal.key] = { task_id: id, type: proposal.action,
           status: "planned", delivery_owner: "muse",
           head_sha: proposal.action === 'parent_merged' ? null : rec.head_sha || null,
