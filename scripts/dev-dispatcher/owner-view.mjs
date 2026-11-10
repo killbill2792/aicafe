@@ -90,6 +90,12 @@ export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
   const tasks = Object.entries(state.tasks).filter(([,r]) => Number.isInteger(r.pr_number))
     .sort(([,a],[,b]) => a.pr_number-b.pr_number);
   const actions = Object.entries(state.actions).map(([id,a])=>({id,...a}));
+  const overdue = a => a.status==='planned' &&
+    a.delivery_owner==='muse' && Number.isFinite(Date.parse(a.created_at||'')) &&
+    Number.isFinite(Date.parse(now)) &&
+    Date.parse(now)-Date.parse(a.created_at)>20*60_000;
+  const actionStatus = a => a.status==='cancelled_stale_head' ? 'superseded' :
+    overdue(a) ? 'courier unconfirmed' : a.status;
   const ownerNotice = Object.values(state.owner_alerts || {});
   const rows = tasks.map(([id,r]) => {
     const pending = actions.filter(a=>a.task_id===id &&
@@ -100,7 +106,8 @@ export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
     const receiptHold = Object.values(state.receipt_feedback||{})
       .find(f=>f.task_id===id&&f.status==='rejected');
     const muse = pending
-      ? `${clean(pending.type)}: ${pending.status === 'planned' ? 'queued (not sent)' : pending.status}`
+      ? `${clean(pending.type)}: ${overdue(pending) ? 'courier unconfirmed' :
+        pending.status === 'planned' ? 'queued (not sent)' : pending.status}`
       : receiptHold ? 'receipt rejected; Muse re-authenticates original (no resend)'
       : delivered ? `${clean(delivered.type)}: submitted (receipt recorded)` : 'no active delivery';
     const owner = r.github_owner_question || r.owner_question;
@@ -128,7 +135,7 @@ export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
     });
   const history = actions.sort((a,b)=>String(b.submitted_at||b.created_at||'')
     .localeCompare(String(a.submitted_at||a.created_at||''))).slice(0,12)
-    .map(a=>`| ${clean(a.task_id)} | ${clean(a.type)} | ${clean(a.status)} | ${when(a.submitted_at || a.created_at)} |`);
+    .map(a=>`| ${clean(a.task_id)} | ${clean(a.type)} | ${clean(actionStatus(a))} | ${when(a.submitted_at || a.created_at)} |`);
   const planned = actions.filter(a=>a.status==='planned' && a.delivery_owner==='muse');
   const nextWake = planned.map(a=>Date.parse(a.last_wake_at||a.created_at||''))
     .filter(Number.isFinite).map(t=>t+900000);
