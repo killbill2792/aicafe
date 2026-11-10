@@ -84,3 +84,19 @@ test('PR-list mergeability must be confirmed by matching live detail SHA/base',a
   assert.equal((await gh.one(pr)).mergeable,true);
   assert.ok(calls.some(url=>url.endsWith('/pulls/42')));
 });
+
+test('later PR-body owner question is not cleared by approval of an older comment',async()=>{
+  const gh=new GitHubFacts({repo:'owner/repo',token:'test'});
+  const pr={number:20,labels:[{name:'needs-owner-decision'}],
+    body:'<!-- aicafe-owner-question New question B -->',
+    html_url:'https://github.com/owner/repo/pull/20',
+    updated_at:'2026-11-10T11:00:00Z'};
+  const comments=[
+    {author_association:'COLLABORATOR',body:'<!-- aicafe-owner-question Question A -->',
+      created_at:'2026-11-10T09:00:00Z'},
+    {author_association:'OWNER',body:'Owner approved',
+      created_at:'2026-11-10T10:00:00Z'}
+  ];
+  assert.equal((await gh.ownerDecision(pr,comments)).approved,undefined);
+  assert.match((await gh.ownerDecision(pr,comments)).question,/New question B/);
+});
