@@ -201,3 +201,16 @@ test('ledger keeps text while planned but drops it after verified receipt, prese
   assert.equal(state.actions.c.delivery.prompt,undefined);
   assert.equal(state.actions.b.delivery.prompt_hash,'b'.repeat(64));
 });
+
+
+test('a freshly merged parent cannot trigger an idle nudge before automatic retarget/update-branch',()=>{
+  const parentSha='f'.repeat(40);
+  const pending=active({base_branch:'feat/parent',parent_merged_sha:parentSha,
+    ci_state:'failure',ci_failure_job:'unit checks'});
+  const result=decideNudge(pending,now);
+  assert.deepEqual(result,{kind:'hold',reason:'awaiting_automatic_parent_branch_maintenance'});
+  const updated={...pending,branch_maintenance_merge_sha:parentSha,base_branch:'main'};
+  const next=decideNudge(updated,now);
+  assert.equal(next.action,'parent_merged');
+  assert.equal(next.key,decideNudge({...updated,head_sha:'c'.repeat(40)},now).key);
+});
