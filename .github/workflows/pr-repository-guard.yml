@@ -1,0 +1,31 @@
+name: PR repository marker
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+permissions:
+  contents: read
+jobs:
+  repository-marker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Check PR body without running PR code
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            const matches = [...body.matchAll(/<!--\s*repo:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s+task:\s*([^\s>]+)\s*-->/g)];
+            if (!matches.length) {
+              core.warning('No repository marker; warning only.');
+            } else if (matches.some(m => m[1] !== matches[0][1])) {
+              core.setFailed('Conflicting repository markers in PR body.');
+            } else if (matches[0][1].toLowerCase() !== context.repo.owner.toLowerCase() + '/' + context.repo.repo.toLowerCase()) {
+              core.setFailed('This PR says it belongs to ' + matches[0][1] + ' but is in ' + context.repo.owner + '/' + context.repo.repo);
+            } else {
+              core.info('PR repository marker matches.');
+            }
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Marker parser tests
+        run: node --test .github/scripts/pr-markers.test.cjs

@@ -1,0 +1,32 @@
+name: Post-merge landing check
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+jobs:
+  landing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run existing fast dispatcher smoke tests
+        id: smoke
+        shell: bash
+        run: |
+          set +e
+          node --test scripts/dev-dispatcher/*.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs > "$RUNNER_TEMP/landing.log" 2>&1
+          result=$?
+          cat "$RUNNER_TEMP/landing.log"
+          echo "exit_code=$result" >> "$GITHUB_OUTPUT"
+      - name: Write receipt and report only real failures
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LANDING_EXIT_CODE: ${{ steps.smoke.outputs.exit_code }}
+          LANDING_LOG: ${{ runner.temp }}/landing.log
+        run: node .github/scripts/landing-receipt.cjs
