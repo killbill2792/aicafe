@@ -61,7 +61,8 @@ test('parent merge results in exactly one rebase prompt keyed by merge SHA, not 
   assert.equal(first.action,'parent_merged');
   assert.match(first.key,/parent_merged/);
   assert.equal(decideNudge({...rec,last_parent_rebase_sha:sha,waiting_only_for_parent:true},now).kind,'hold');
-  assert.equal(decideNudge({...rec,head_sha:'e'.repeat(40)},now).key,first.key);
+  assert.notEqual(decideNudge({...rec,head_sha:'e'.repeat(40)},now).key,first.key,
+    'a stale undelivered parent notice can be replaced for the new exact child head');
 });
 
 test('each reason produces a single short explicit prompt with its actual evidence',()=>{
