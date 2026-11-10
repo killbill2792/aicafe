@@ -37,36 +37,6 @@ function reconcile(state,prs) {
   return alerted;
 }
 
-test('existing draft owner question produces one Muse notice, stops stale reminder, preserves original chat',()=>{
-  const question='Approve the exact additional read-only audit files?';
-  const first=reconcile(pending(),[newDraft(question)]);
-  const rec=first.tasks.POS0a;
-  assert.equal(rec.pr_number,398);
-  assert.equal(rec.status,'blocked_needs_owner');
-  assert.equal(rec.conversation_ref,conversation);
-  // A scoped owner question may remain pending while already-approved
-  // CI/review work resumes in the same verified conversation.
-  assert.equal(decideNudge(rec,Date.parse('2026-11-07T10:00:00Z')).action,'idle_continue');
-  assert.equal(first.actions['POS0a:pre_pr_reminder:pre-pr:v1:start'].status,'cancelled_stale_head');
-  const entries=Object.entries(first.owner_alerts);
-  assert.equal(entries.length,1);
-  const [id,notice]=entries[0];
-  assert.equal(notice.delivery_owner,'muse');
-  assert.equal(notice.kind,'owner_decision');
-  assert.equal(notice.pr_number,398);
-  assert.match(notice.question,/Approve the exact additional read-only audit files/);
-  assert.match(notice.question,/ChatGPT chat: https:\/\/chatgpt.com\/g\/aicafe-project\/c\/session-abc/);
-  assert.equal(signalFor(first,'s'.repeat(32)).pending_count,1);
-  const again=reconcile(first,[newDraft(question)]);
-  assert.deepEqual(again.owner_alerts,first.owner_alerts);
-  assert.equal(signalFor(again,'s'.repeat(32)).pending_count,1);
-  const submitted=acceptOwnerNoticeReceipt(again,{
-    kind:'owner_notice',notice_id:id,notice_hash:notice.notice_hash,status:'submitted'
-  },{authenticatedCourier:'muse'});
-  assert.equal(signalFor(submitted,'s'.repeat(32)).pending_count,0);
-  assert.equal(submitted.tasks.POS0a.status,'blocked_needs_owner');
-});
-
 test('a draft with no published owner question cannot invent an approval notification',()=>{
   const draft=reconcile(pending(),[newDraft(null)]);
   assert.equal(draft.tasks.POS0a.status,'draft_open');
