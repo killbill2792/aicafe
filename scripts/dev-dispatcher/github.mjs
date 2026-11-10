@@ -91,6 +91,29 @@ export class GitHubFacts {
     if (response.status === 204) return { ok:true };
     return response.json();
   }
+  // Collection pagination is mandatory for prompt proof transitions: stopping at
+  // page one delays integrated_proven indefinitely on busy repositories.
+  async paginated(path, key, maxPages = 20) {
+    const items = [];
+    for (let page = 1; page <= maxPages; page++) {
+      const separator = path.includes('?') ? '&' : '?';
+      const result = await this.request(path + separator + 'per_page=100&page=' + page);
+      const chunk = Array.isArray(result) ? result : result?.[key];
+      if (!Array.isArray(chunk)) throw new Error('Invalid GitHub pagination: ' + key);
+      items.push(...chunk);
+      if (chunk.length < 100) return items;
+    }
+    throw new Error('GitHub pagination limit reached: ' + key);
+  }
+  async workflowRuns(workflow, filters = '') {
+    if (!/^[a-z0-9-]+\.yml$/.test(workflow)) throw new Error('Invalid workflow');
+    return this.paginated('/actions/workflows/' + workflow + '/runs' +
+      (filters ? '?' + filters : ''), 'workflow_runs');
+  }
+  async workflowJobs(runId) {
+    if (!Number.isSafeInteger(runId) || runId < 1) throw new Error('Invalid workflow run');
+    return this.paginated('/actions/runs/' + runId + '/jobs', 'jobs');
+  }
   async proofArtifact(runId, artifactName, filename) {
     if (!Number.isSafeInteger(runId) || runId < 1) throw new Error('Invalid proof run');
     const list = await this.request('/actions/runs/' + runId + '/artifacts?per_page=100');
