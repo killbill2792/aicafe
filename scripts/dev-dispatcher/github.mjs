@@ -1,7 +1,7 @@
 import {settings} from './settings.mjs';
 import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
-import { validateRepo, reportedConnector403, failureInstruction } from './safety.mjs';
+import { validateRepo, reportedConnector403, failureInstruction, protectedChanges } from './safety.mjs';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
 export async function githubFailure(response,kind='GitHub',token=''){
  let message='unavailable';
@@ -372,6 +372,7 @@ export class GitHubFacts {
       bot_author: /(?:\[bot\]|bot$)/i.test(pr.user?.login || '') ||
         pr.user?.type === 'Bot',
       dispatcher_only: dispatcherOnlyFiles(comparison.files),
+      protected_file_violation:protectedChanges(comparison.files),
       github_owner_question: ownerDecision.question,
       // Routine decisions are informational; only privileged work is held.
       sensitive_owner_block:false, // authenticated owner instructions, not labels, authorize holds

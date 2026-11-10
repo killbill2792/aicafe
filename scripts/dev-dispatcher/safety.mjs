@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const sha=/^[a-f0-9]{40}$/;
 // PR markers diagnose; signed task facts own repository identity.
@@ -93,4 +94,15 @@ export function failureInstruction(annotations=[]) {
     ? 'Fix: use <!-- aicafe-chat-url https://chatgpt.com/c/<real-chat-id> --> with your actual chat URL, or the real /g/<project>/c/<id> path.'
     : 'Fix: update the vision version to the exact value the failing check expects, then rerun the check.';
   return exact+'\n'+fix;
+}
+
+export function protectedChanges(files,guards=settings.protected_files){
+ const matches=[];
+ for(const guard of guards||[])for(const path of guard.paths||[]){
+  const prefix=path.endsWith('/**')?path.slice(0,-2):path;
+  for(const f of files||[])if(typeof f.filename==='string'&&
+   (path.endsWith('/**')?f.filename.startsWith(prefix):f.filename===prefix))
+   matches.push({file:f.filename,owner:guard.owner,source_pr:guard.source_pr});
+ }
+ return matches;
 }

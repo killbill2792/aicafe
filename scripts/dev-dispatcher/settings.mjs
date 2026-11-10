@@ -26,7 +26,8 @@ export function validateSettings(s,{expectedRepo}={}){
    !pathOK(s.paths?.signal)||!pathOK(s.paths?.authority)||!pathOK(s.paths?.progress)||
    !pathOK(s.paths?.skills)||!pathOK(s.paths?.task_brief_root)||!s.naming?.task_prefix||!s.naming.branch_prefix||
    !/^[a-z0-9-]+$/.test(s.naming.marker_prefix)||
-   !pathOK(s.auto_test_branch)||!Array.isArray(s.protected_files)||
+   !pathOK(s.auto_test_branch)||!Array.isArray(s.protected_files)||s.protected_files.some(g=>
+    !g.owner||!Array.isArray(g.paths)||g.paths.some(p=>!pathOK(p)))||
    !Array.isArray(s.required_checks.names)||!s.required_checks.names.length||
    !Array.isArray(s.setup?.required_secrets)||!Array.isArray(s.setup?.required_vars))throw Error('Invalid or cross-repository dispatcher settings');
  return s;

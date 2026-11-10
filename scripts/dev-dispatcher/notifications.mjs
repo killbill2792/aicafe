@@ -30,6 +30,10 @@ export function noticeOperationalIssues(state,{snapshot=[],scan=null}={}){
    send('stall_owner_escalation',id,t.pr_number,t.head_sha||'missing_head',
     'PR #'+t.pr_number+' remains stuck after one Muse 20-minute nudge',
     'Owner: inspect the failed CI or assign the repair');
+  if(t.protected_file_violation?.length)
+   send('protected_file_blocked',id,t.pr_number,t.head_sha||'unknown_head',
+    'PR #'+t.pr_number+' touches protected files: '+t.protected_file_violation.map(x=>x.file).join(', '),
+    'Obtain verified protected-file owner approval without editing Lakshmi-owned paths');
   if(t.chat_recovery_blocker)
    send('chat_receipt_repair',id,t.pr_number,t.chat_recovery_blocker,
     'PR #'+t.pr_number+' chat receipt could not be verified: '+t.chat_recovery_blocker,

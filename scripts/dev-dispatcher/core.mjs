@@ -282,7 +282,8 @@ export function readyGate(record) {
   if (!record?.pr_number || !record?.head_sha) reasons.push('missing_pr_or_sha');
   if (record?.ci_state !== 'success') reasons.push('ci_not_green');
   if (ownerSensitiveHold(record)) reasons.push('sensitive_owner_approval_required');
-  if (record?.repo_mismatch || record?.repo_marker_mismatch) reasons.push('wrong_repository');
+  if (record?.repo_mismatch) reasons.push('wrong_repository');
+  if(record?.protected_file_violation?.length)reasons.push('protected_file_owner_hold');
   return {eligible:reasons.length===0,reasons};
 }
 
@@ -304,7 +305,8 @@ export function mergeGate(record, predecessors = []) {
   if (record?.threads_resolved !== true) reasons.push('unresolved_threads');
   if (record?.mergeable !== true) reasons.push('not_mergeable');
   if (ownerSensitiveHold(record)) reasons.push('sensitive_owner_approval_required');
-  if (record?.repo_mismatch || record?.repo_marker_mismatch) reasons.push('wrong_repository');
+  if (record?.repo_mismatch) reasons.push('wrong_repository');
+  if(record?.protected_file_violation?.length)reasons.push('protected_file_owner_hold');
   // Ordering is satisfied by a verified GitHub merge, not integrated_proven.
   if (predecessors.some(p => !['merged','integrated_proven','released_proven'].includes(p?.status) ||
       !p?.merge_sha)) reasons.push('predecessor_not_merged');
