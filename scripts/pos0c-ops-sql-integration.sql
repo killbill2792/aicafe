@@ -199,5 +199,9 @@ BEGIN
   FROM public.toast_raw_records WHERE business_id=b
    AND entity='ordermgmt-config/v1/published/orderingSchedule' LIMIT 1),
   'rejected schedule responses leave prior source fields and as-of intact');
+ PERFORM pg_temp.assert_true(not exists(
+  SELECT 1 FROM public.toast_raw_changes
+  WHERE business_id=b AND entity='ordermgmt-config/v1/published/orderingSchedule'),
+  'incomplete schedule rejection never creates false source deltas');
 END $pos0c$;
 ROLLBACK;
