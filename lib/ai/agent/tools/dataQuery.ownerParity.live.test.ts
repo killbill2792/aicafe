@@ -575,18 +575,20 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   // A failing answer is still a failure, but cannot conceal later failures.
   // Once provider usage is capped, later turns are recorded as unexecuted.
   const caseFailures:Array<{id:string;reason:string;detail:string}>=[];
+  // Log Boolean diagnostics only; never leak model prose or source numbers.
+  type AnswerSignals={hasNumberLabel:boolean;matchesSqlTruth:boolean|null;hasIncompleteCaveat:boolean|null};
   const record=async(id:string,work:(capture:(turn:Awaited<ReturnType<typeof runAgentTurn>>,
-   since:number)=>void)=>Promise<void>)=>{
+   since:number,signals?:AnswerSignals)=>void)=>Promise<void>)=>{
    if(budgetRejection){caseFailures.push({id,reason:"budget_not_executed",detail:"no_provider_call"});return;}
    let detail="no_agent_receipt";
    try{
-    await work((turn,since)=>{
+    await work((turn,since,signals)=>{
      const packet=JSON.parse(safeFailureDetails(turn,since)) as {
       endReason:string;tools:string[];resultStatus:unknown[];
       budgetRejection:unknown;queryShapes:SafeQueryShape[]};
      detail=JSON.stringify({endReason:packet.endReason,tools:packet.tools,
       resultStatus:packet.resultStatus,budgetRejection:packet.budgetRejection,
-      queryShapes:packet.queryShapes.slice(-4)});
+      queryShapes:packet.queryShapes.slice(-4),answerSignals:signals??null});
     });
    }catch{
     // Never log raw model prose, source rows, IDs, prompts or SQL errors.
@@ -603,9 +605,12 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:
     question+" Answer with 'Number: N' and a short source/coverage note."});
-   capture(turn,receiptStart);
-   expect(turn.tools,question).toContain("query_data");
    const number=turn.text.match(/\bNumber\s*[:=]\s*(\d+)\b/i);
+   const caveat=/so far|partial|incomplete|provisional/i.test(turn.text);
+   capture(turn,receiptStart,{hasNumberLabel:Boolean(number),
+    matchesSqlTruth:number?Number(number[1])===expected:null,
+    hasIncompleteCaveat:question.includes("today")?caveat:null});
+   expect(turn.tools,question).toContain("query_data");
    expect(number,question+" => "+turn.text).not.toBeNull();
    expect(Number(number![1]),question+" => "+turn.text).toBe(expected);
    if(question.includes("today"))
