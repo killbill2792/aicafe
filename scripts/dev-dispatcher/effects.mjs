@@ -65,7 +65,9 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
   }
   const result = await github.request(`/pulls/${record.pr_number}/merge`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ merge_method: 'squash', sha: record.head_sha,
+    // Preserve parent commits so stacked child branches retain their ancestry.
+    // Squash rewrites that ancestry and can make an open child unmergeable.
+    body: JSON.stringify({ merge_method: 'merge', sha: record.head_sha,
       commit_title: `AI CAFE approved task ${record.task_id} (#${record.pr_number})` })
   });
   if (result.merged !== true || !result.sha) throw new Error('GitHub did not confirm merge');
