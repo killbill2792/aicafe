@@ -243,6 +243,8 @@ export type ToastAdapter=PosAdapter&{
   fetchModifiedOrderStatesPage(range:Range,page:number):Promise<{facts:ToastOrderFact[];hasMore:boolean}>;
   fetchMenuMetadata():Promise<{restaurantGuid:string;lastUpdated:string}>;
   fetchCatalogFacts():Promise<ToastCatalogFact[]>;
+  /** One validated full Menus V2 response for both staging and canonical projections. */
+  fetchPublishedCatalogBundle():Promise<{items:PosCatalogItem[];facts:ToastCatalogFact[]}>;
   fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]>;
   fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]>;
   fetchLaborJobSources():Promise<ToastLaborJobSource[]>;
@@ -356,34 +358,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         .map(b=>({start:timestamp(b.inDate!),end:timestamp(b.outDate!),paid:b.paid===true}))
     }));
   }
-  const result:ToastAdapter={
-    provider:"toast",
-    fetchModifiedOrders:(range)=>allOrders(query(range)),
-    fetchModifiedOrderStates:(range)=>allStateOrders(query(range)),
-    fetchModifiedOrderStatesPage:statePage,
-    fetchBusinessDayOrders:(day)=>{
-      if(!/^\d{8}$/.test(day))throw new ToastApiError("invalid_response");
-      return allOrders("businessDate="+day);
-    },
-    async fetchOrderStateByGuid(orderGuid) {
-      if(!GUID.safeParse(orderGuid).success)throw new ToastApiError("invalid_response");
-      const row=await request("/orders/v2/orders/"+orderGuid,ordersSchema.element);
-      if(row.guid.toLowerCase()!==orderGuid.toLowerCase())throw new ToastApiError("invalid_response");
-      return classifyToastOrder(row,restaurantGuid);
-    },
-    async fetchOrderByGuid(orderGuid) {
-      return (await result.fetchOrderStateByGuid(orderGuid)).normalizedOrder;
-    },
-    // Incremental changes only, never verified-zero coverage.
-    fetchOrders:(range)=>allOrders(query(range)),
-    async fetchMenuMetadata(){
-      const metadata=await request("/menus/v2/metadata",metadataSchema);
-      if(metadata.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
-        throw new ToastApiError("unauthorized_location");
-      return metadata;
-    },
-    async fetchCatalogItems():Promise<PosCatalogItem[]> {
-      const data=await fetchValidatedPublishedMenu();
+  function catalogItemsFromSnapshot(data:z.infer<typeof menusSchema>):PosCatalogItem[] {
       const items=new Map<string,PosCatalogItem>();
       // One canonical item/size key cannot assert two different published prices.
       // Toast may repeat a GUID across menu contexts; retain a stable first
@@ -473,9 +448,9 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         visit(group,[menu.name??"Menu",group.name],menu.availability??null);
       if(items.size>5000)throw new ToastApiError("invalid_response");
       return [...items.values()];
-    },
-    async fetchCatalogFacts():Promise<ToastCatalogFact[]> {
-      const data=await fetchValidatedPublishedMenu();
+  }
+
+  function catalogFactsFromSnapshot(data:z.infer<typeof menusSchema>):ToastCatalogFact[] {
       const seen=new Map<string,ToastCatalogFact>();
       const groups=data.modifierGroupReferences;
       const options=data.modifierOptionReferences;
@@ -508,6 +483,41 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       }
       if(seen.size>5000)throw new ToastApiError("invalid_response");
       return [...seen.values()];
+  }
+
+  const result:ToastAdapter={
+    provider:"toast",
+    fetchModifiedOrders:(range)=>allOrders(query(range)),
+    fetchModifiedOrderStates:(range)=>allStateOrders(query(range)),
+    fetchModifiedOrderStatesPage:statePage,
+    fetchBusinessDayOrders:(day)=>{
+      if(!/^\d{8}$/.test(day))throw new ToastApiError("invalid_response");
+      return allOrders("businessDate="+day);
+    },
+    async fetchOrderStateByGuid(orderGuid) {
+      if(!GUID.safeParse(orderGuid).success)throw new ToastApiError("invalid_response");
+      const row=await request("/orders/v2/orders/"+orderGuid,ordersSchema.element);
+      if(row.guid.toLowerCase()!==orderGuid.toLowerCase())throw new ToastApiError("invalid_response");
+      return classifyToastOrder(row,restaurantGuid);
+    },
+    async fetchOrderByGuid(orderGuid) {
+      return (await result.fetchOrderStateByGuid(orderGuid)).normalizedOrder;
+    },
+    // Incremental changes only, never verified-zero coverage.
+    fetchOrders:(range)=>allOrders(query(range)),
+    async fetchMenuMetadata(){
+      const metadata=await request("/menus/v2/metadata",metadataSchema);
+      if(metadata.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
+        throw new ToastApiError("unauthorized_location");
+      return metadata;
+    },
+    fetchCatalogItems:async()=>catalogItemsFromSnapshot(await fetchValidatedPublishedMenu()),
+    fetchCatalogFacts:async()=>catalogFactsFromSnapshot(await fetchValidatedPublishedMenu()),
+    async fetchPublishedCatalogBundle(){
+      // The caller must stage and promote these views from the same verified
+      // restaurant response; no second full GET or conflicting catalog version.
+      const snapshot=await fetchValidatedPublishedMenu();
+      return {items:catalogItemsFromSnapshot(snapshot),facts:catalogFactsFromSnapshot(snapshot)};
     },
     async fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]> {
       const rows=await request("/labor/v1/employees",employeesSchema);
