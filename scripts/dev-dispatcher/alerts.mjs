@@ -13,14 +13,27 @@ export function noticeHash({kind,task_id,pr_number,question,source_sha}){
 export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date().toISOString()}={}){
  const next=structuredClone(state);
  next.owner_alerts ||= {};
+ const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash']);
+ const route=entry=>{
+  entry.recipient=ownerKinds.has(entry.kind)?'owner':'referee';
+  if(entry.recipient==='owner'){
+   entry.target_url=entry.pr_number
+    ?'https://github.com/killbill2792/aicafe/pull/'+entry.pr_number
+    :'https://github.com/killbill2792/aicafe/blob/main/docs/plans/universal-supervisor-queue.json';
+   entry.owner_message=(entry.target_url+' — '+entry.question).slice(0,1200);
+  }
+  return entry;
+ };
+ // Preserve historical notice identity and submitted status. Do not re-send.
+ for(const notice of Object.values(next.owner_alerts))route(notice);
  const add=(kind,task_id,pr_number,question,source_sha=null)=>{
   if(typeof question!=='string'||!question.trim()||question.length>1200)return;
   if(pr_number!=null&&(!Number.isInteger(pr_number)||pr_number<1))return;
-  const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash']);
   const entry={kind,task_id:task_id||null,pr_number:pr_number||null,
    question:question.trim(),recipient:ownerKinds.has(kind)?'owner':'referee',
    delivery_owner:'muse',status:'planned',created_at:now};
   if(kind==='architecture_approval')entry.source_sha=source_sha;
+  route(entry);
   entry.notice_hash=noticeHash(entry);
   const key='notice:'+entry.notice_hash;
   const prior=next.owner_alerts[key];

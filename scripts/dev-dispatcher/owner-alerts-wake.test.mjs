@@ -25,3 +25,17 @@ test('only owner-level decisions route via Muse to owner; referee receives other
  assert.equal(notices.find(n=>n.kind==='unmapped_pr').recipient,'referee');
  assert.ok(notices.every(n=>n.delivery_owner==='muse'));
 });
+
+
+test('previously submitted owner approval gains a link without a duplicate notice',()=>{
+ const previous={kind:'owner_decision',task_id:'x',pr_number:422,question:'Approve exact scope?',
+  notice_hash:'a'.repeat(64),status:'submitted',delivery_owner:'muse',receipt:{courier:'muse'}};
+ const id='notice:'+previous.notice_hash;
+ const before={tasks:{},actions:{},owner_alerts:{[id]:previous}};
+ const after=queueOwnerAlerts(before);
+ assert.equal(Object.keys(after.owner_alerts).length,1);
+ assert.equal(after.owner_alerts[id].recipient,'owner');
+ assert.match(after.owner_alerts[id].owner_message,/github.com\/killbill2792\/aicafe\/pull\/422/);
+ assert.equal(after.owner_alerts[id].status,'submitted');
+ assert.equal(before.owner_alerts[id].recipient,undefined);
+});
