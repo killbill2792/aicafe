@@ -248,98 +248,42 @@ export function wakePendingActions(state, nowMs, intervalMs = 900000) {
 }
 // Exactly one actionable reason for each quiet-PR continuation. All messages
 // are built by delivery.mjs; this pure selector never asks a courier to guess.
-export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 } = {}) {
-  if (!record || !record.approved || !record.conversation_ref)
+export function decideNudge(record, _nowMs) {
+  if (!record?.approved || !record.conversation_ref)
     return {kind:'hold',reason:'unapproved_or_missing_chat'};
   if (['uncertain','needs_login'].includes(record.submission_state))
     return {kind:'hold',reason:record.submission_state};
-  const isPr = Number.isInteger(record.pr_number);
-  if (record.agent === 'claude') return {kind:'hold',reason:'claude_no_routine_nudges'};
-  if (!isPr && record.browser_busy === true)
-    return {kind:'hold',reason:'browser_confirmed_busy'};
-  if ((record.owner_question || record.github_owner_question) && !isPr)
-    return {kind:'hold',reason:'owner_decision_required'};
-  if (isPr && !record.draft && (record.owner_question || record.github_owner_question) &&
-      record.ci_state !== 'failure' && record.codex_state !== 'findings' &&
-      !record.owner_answer_text) return {kind:'hold',reason:'owner_decision_required'};
-  // Parent-merge transition is an event, not an inactivity nudge. Wait for
-  // verified default branch maintenance, then schedule just one prompt by
-  // parent merge SHA even if the child has committed recently. Existing
-  // pending/uncertain delivery and authorization guards remain in run.mjs.
-  const parentSha = record.parent_merged_sha;
-  if (isPr && parentSha && record.branch_maintenance_merge_sha !== parentSha)
-    return {kind:'hold',reason:'awaiting_automatic_parent_branch_maintenance'};
-  if (isPr && parentSha && record.base_branch === 'main' &&
-      record.branch_maintenance_merge_sha === parentSha &&
-      record.last_parent_rebase_sha !== parentSha)
-    return {kind:'propose',action:'parent_merged',
-      key:'parent_merged:'+encodeURIComponent(record.task_id)+':'+parentSha+':'+record.head_sha};
-  const reviewAt = record.codex_state === 'findings' ? Date.parse(record.codex_review_at || '') : NaN;
-  const commitAt = Date.parse(isPr ? record.last_commit_at : record.last_submission_at);
-  const last = Number.isFinite(reviewAt) ? Math.max(commitAt,reviewAt) : commitAt;
-  const quietFor = nowMs - last;
-  if (isPr && !record.draft &&
-      (record.ci_state === 'pending' || record.ci_state === 'unknown' ||
-       record.codex_state === 'pending' || record.codex_state === 'unknown') &&
-      Number.isFinite(quietFor) && quietFor < 900000)
-    return {kind:'hold',reason:'checks_pending_or_unknown'};
-  if (!Number.isFinite(last) || quietFor < (isPr ? quietMs : prePrMs))
-    return {kind:'hold',reason:'not_quiet'};
-  const sentMs = Date.parse(record.last_submission_at || '');
-  if (record.submission_state === 'submitted' && Number.isFinite(sentMs) &&
-      nowMs - sentMs < 900000) return {kind:'hold',reason:'post_delivery_quiet'};
-  if (record.next_check_at && nowMs < Date.parse(record.next_check_at))
-    return {kind:'hold',reason:'cooldown'};
-  if (record.submission_state === 'pending')
-    return {kind:'hold',reason:'delivery_pending'};
-  if (isPr && record.parent_merged_sha &&
-      record.last_parent_rebase_sha === record.parent_merged_sha &&
-      record.base_branch !== 'main')
-    return {kind:'hold',reason:'parent_rebase_already_notified'};
-  if (isPr && record.waiting_only_for_parent && record.ci_state !== 'failure' &&
-      record.codex_state !== 'findings')
-    return {kind:'hold',reason:'parent_open_work_already_done'};
-  if (isPr && !record.draft && record.ci_state === 'success' &&
-      record.codex_state === 'clean' && record.codex_reviewed_sha === record.head_sha &&
-      record.acceptance_proven === true && Boolean(record.acceptance_evidence) &&
-      record.threads_resolved !== false &&
-      record.base_current !== false && record.review_base_current !== false)
-    return {kind:'hold',reason:'no_actionable_findings'};
-  const action = !isPr ? 'pre_pr_reminder' :
-    record.ci_state === 'failure' ? 'ci_failed' :
+  if (!Number.isInteger(record.pr_number) || record.github_state !== 'open')
+    return {kind:'hold',reason:'no_open_pr'};
+  // Never wake a clean PR for idle time, ordinary owner comments, parent merge,
+  // missing acceptance, or an otherwise completed stage. Only coder work.
+  const conflict = record.mergeable === false || record.mergeable_state === 'dirty' ||
+    record.branch_maintenance_result === 'update_failed_needs_coder';
+  const action = record.ci_state === 'failure' ? 'ci_failed' :
     record.codex_state === 'findings' ? 'codex_comments' :
-    record.owner_answer_text && (!record.owner_answer_key || record.last_owner_answer_key !== record.owner_answer_key)
-      ? 'owner_answered' : 'idle_continue';
-  let key = actionKey(record,action);
-  if (record.last_action_key === key && record.submission_state === 'submitted' &&
-      Number.isFinite(sentMs)) {
-    // A retry ID has ONE bounded suffix, never recursively grows after sends.
-    const committed = record.last_commit_at || record.last_github_activity || 'start';
-    const root = [record.task_id,action,record.head_sha || 'pre-pr',
-      record.prompt_version || 'v1',committed]
-      .map(value=>encodeURIComponent(String(value))).join(':');
-    key = root + ':retry:' + encodeURIComponent(record.last_submission_at);
-  }
-  if (record.last_action_key === key || record.attempts >= (record.max_attempts ?? 3))
-    return {kind:'hold',reason:'already_sent_or_capped'};
+    conflict ? 'repair_conflict' : null;
+  if (!action) return {kind:'hold',reason:'no_coder_work'};
+  const fingerprint = [record.head_sha,action,
+    action === 'ci_failed' ? record.ci_failure_job || record.ci_failure_url || '' :
+    action === 'codex_comments' ? record.codex_review_at || '' :
+    record.base_sha || ''].map(v=>encodeURIComponent(String(v||''))).join(':');
+  const key = 'work:' + encodeURIComponent(record.task_id) + ':' + fingerprint;
+  if (record.last_action_key === key && record.submission_state === 'submitted')
+    return {kind:'hold',reason:'already_delivered_for_state'};
   return {kind:'propose',action,key};
 }
-
-export function readyGate(record, predecessors = []) {
+export function ownerSensitiveHold(record) {
+  return record?.sensitive_owner_block === true;
+}
+export function readyGate(record) {
   const reasons=[];
-  if (!record?.approved) reasons.push('not_approved');
   if (record?.draft !== true) reasons.push('not_a_draft');
-  if (!record?.coder_done) reasons.push('coder_not_done');
+  if (!record?.pr_number || !record?.head_sha) reasons.push('missing_pr_or_sha');
   if (record?.ci_state !== 'success') reasons.push('ci_not_green');
-  if (record?.owner_question || record?.github_owner_question) reasons.push('owner_decision_pending');
-  if (record?.base_branch !== 'main') reasons.push('parent_not_merged_or_rebased');
-  if (!record?.base_current) reasons.push('stale_base');
-  if (record?.threads_resolved === false) reasons.push('unresolved_threads');
-  if (!record?.acceptance_proven) reasons.push('acceptance_not_proven');
-  if (predecessors.some(p => !['integrated_proven','released_proven'].includes(p.status)))
-    reasons.push('predecessor_not_proven');
+  if (ownerSensitiveHold(record)) reasons.push('sensitive_owner_approval_required');
   return {eligible:reasons.length===0,reasons};
 }
+
 export function invalidateOnHeadChange(record, newSha, at) {
   if (record.head_sha === newSha) return record;
   return { ...record, head_sha: newSha, last_github_activity: at,
@@ -349,21 +293,19 @@ export function invalidateOnHeadChange(record, newSha, at) {
 }
 export function mergeGate(record, predecessors = []) {
   const reasons = [];
-  if (!record?.approved) reasons.push("not_approved");
-  // A coding-scope approval never authorizes unresolved owner questions.
-  if (record?.owner_question || record?.github_owner_question)
-    reasons.push("owner_decision_pending");
-  if (record?.draft !== false) reasons.push("not_ready_for_review");
-  if (!record?.pr_number || !record?.head_sha) reasons.push("missing_pr_or_sha");
-  if (record?.ci_state !== "success") reasons.push("ci_not_green");
-  if (record?.codex_state !== "clean" || !record?.codex_reviewed_sha) reasons.push("codex_review_missing_or_findings");
-  if (!record?.threads_resolved) reasons.push("unresolved_threads");
-  if (record?.base_branch !== "main") reasons.push("non_main_destination");
-  if (!record?.base_current) reasons.push("stale_base");
-  if (record?.review_base_current === false) reasons.push("base_changed_review_required");
-  if (!record?.acceptance_proven) reasons.push("acceptance_not_proven");
-  if (predecessors.some(p => p.status !== "integrated_proven" && p.status !== "released_proven")) reasons.push("predecessor_not_proven");
-  return { eligible: reasons.length === 0, reasons };
+  if (record?.draft !== false) reasons.push('not_ready_for_review');
+  if (!record?.pr_number || !record?.head_sha) reasons.push('missing_pr_or_sha');
+  if (record?.ci_state !== 'success') reasons.push('ci_not_green');
+  if (record?.codex_state !== 'clean' ||
+      record?.codex_reviewed_sha !== record?.head_sha)
+    reasons.push('codex_review_missing_or_findings');
+  if (record?.threads_resolved !== true) reasons.push('unresolved_threads');
+  if (record?.mergeable !== true) reasons.push('not_mergeable');
+  if (ownerSensitiveHold(record)) reasons.push('sensitive_owner_approval_required');
+  // Ordering is satisfied by a verified GitHub merge, not integrated_proven.
+  if (predecessors.some(p => !['merged','integrated_proven','released_proven'].includes(p?.status) ||
+      !p?.merge_sha)) reasons.push('predecessor_not_merged');
+  return {eligible:reasons.length===0,reasons};
 }
 
 export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date().toISOString()) {
@@ -399,7 +341,7 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
       copy.tasks[id] = { ...updated, ...pr, task_id: id,
         base_changed_at: baseChangedAt || null, review_base_current: reviewBaseCurrent,
         owner_question: pr.owner_approved ? null : updated.owner_question,
-        status: (pr.github_owner_question || (!pr.owner_approved && updated.owner_question)) ? "blocked_needs_owner" :
+        status: pr.sensitive_owner_block ? "blocked_needs_owner" :
           pr.draft ? "draft_open" : "review_fixing", github_state: "open",
         submission_state: updated.submission_state };
     }
