@@ -673,7 +673,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_inventory": {
-    "meaning": "App pantry counts and retained current Toast inventory objects; unknown stock is not zero",
+    "meaning": "App pantry and retained current Toast inventory records. A Toast menu-item GUID identifies menu_item_ref, not source_ref; query the café-local business date. Unknown stock quantity stays missing, never zero.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -688,7 +688,7 @@ export const canonicalDictionary = {
         "example": "Where did this number come from?"
       },
       "source_ref": {
-        "meaning": "Stable reference for the underlying fact.",
+        "meaning": "Stable reference for this inventory evidence row. This is NOT the Toast menu-item GUID; use menu_item_ref for a specific Toast stock item.",
         "unit": "identifier",
         "source": "app",
         "example": "Which record supports it?"
@@ -712,7 +712,7 @@ export const canonicalDictionary = {
         "example": "Show the source detail."
       },
       "menu_item_ref": {
-        "meaning": "Toast menu-item reference from current retained provider stock; absent items are not zero.",
+        "meaning": "The Toast menu-item GUID used by retained stock records. Filter menu_item_ref = the supplied Toast item GUID for a specific item; source_ref is a different evidence-row reference. An absent item is not quantity zero.",
         "unit": "identifier",
         "source": "toast",
         "example": "What was recorded?"
