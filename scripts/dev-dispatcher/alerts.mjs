@@ -31,6 +31,15 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
   }
  };
  for(const [id,rec] of Object.entries(next.tasks||{})){
+  // Withdraw only UNSENT safety notices when actual facts changed. Submitted
+  // notices remain immutable audit records, never proof of a current defect.
+  for(const prior of Object.values(next.owner_alerts)) {
+    if(prior.task_id!==id || prior.status!=='planned') continue;
+    if((prior.kind==='wrong_repo' && !rec.repo_mismatch) ||
+       (prior.kind==='repeated_stall' && !rec.stall_escalate) ||
+       (prior.kind==='connector_403' && !rec.connector_403))
+      prior.status='cancelled_no_longer_needed';
+  }
   // One open PR may have only one active owner question. A revised or removed
   // question supersedes an UNSENT notice; an acknowledged notice remains audit
   // history but never authorizes an owner decision or downstream implementation.
@@ -67,8 +76,12 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
   if(rec.stall_escalate)
    add('repeated_stall',id,rec.pr_number,'D7 referee: three identical no_push_after_prompt stalls for PR #'+rec.pr_number+
      ' on '+rec.head_sha+'. Stop re-prompting this head.');
-  if(rec.connector_403)
-   add('connector_403',id,rec.pr_number,'ChatGPT Codex Connector likely missing repo '+(rec.repo || 'killbill2792/aicafe'));
+  if(rec.connector_403) {
+   const assigned=queue?.tasks?.find(t=>t.id===id);
+   const expected=rec.repo_mismatch?.expected || assigned?.repository || assigned?.repo ||
+     rec.repository || rec.repo || 'killbill2792/aicafe';
+   add('connector_403',id,rec.pr_number,'ChatGPT Codex Connector likely missing repo '+expected);
+  }
   if(rec.agent==='claude'&&rec.blocker?.confirmed===true &&
      ['usage_limit','confirmed_blocker'].includes(rec.blocker.kind))
    add('claude_blocker',id,rec.pr_number,
