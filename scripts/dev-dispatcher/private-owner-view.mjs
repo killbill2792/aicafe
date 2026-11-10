@@ -88,6 +88,29 @@ export function renderPrivateQueue(state, {repo='killbill2792/dave-task-queue'} 
     '|---|---|---|---|---|---:|---|---|---|',
     ...(pending.length ? pending.map(row) : ['| — | — | — | No active delivery | — | — | — | — | — |']),
     '',
+    '## Current authenticated chat link per PR (private only)',
+    '| PR | Task | Current verified chat | Receipt timestamp |',
+    '|---|---|---|---|',
+    ...((Object.entries(state.pr_chat_links || {}).map(([pr,link]) => {
+      const task=state.tasks[link.task_id];
+      const valid=task && task.pr_number===Number(pr) &&
+        task.conversation_ref===link.conversation_url &&
+        ['chatgpt','claude'].some(agent=>validTarget(agent,link.conversation_url));
+      return valid ? '| '+githubPr(Number(pr))+' | '+escapeCell(link.task_id)+
+        ' | [Open current chat]('+link.conversation_url+') | '+
+        time(link.updated_at)+' |' : null;
+    }).filter(Boolean)).length
+      ? Object.entries(state.pr_chat_links || {}).map(([pr,link]) => {
+        const task=state.tasks[link.task_id];
+        const valid=task && task.pr_number===Number(pr) &&
+          task.conversation_ref===link.conversation_url &&
+          ['chatgpt','claude'].some(agent=>validTarget(agent,link.conversation_url));
+        return valid ? '| '+githubPr(Number(pr))+' | '+escapeCell(link.task_id)+
+          ' | [Open current chat]('+link.conversation_url+') | '+
+          time(link.updated_at)+' |' : null;
+      }).filter(Boolean)
+      : ['| — | — | No authenticated chat receipts | — |']),
+    '',
     '## Outstanding owner notices (not approvals)',
     '| Task | PR | Notice kind | Delivery status | Created | Question excerpt |',
     '|---|---|---|---|---|---|',
