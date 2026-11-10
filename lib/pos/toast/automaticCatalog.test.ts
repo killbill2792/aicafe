@@ -33,6 +33,35 @@ const menu={restaurantGuid:rg,menus:[{name:"Drinks",menuGroups:[{
  }};
 describe("Toast published catalog adapter",()=>{
  beforeEach(()=>request.mockReset());
+ it("makes one full Menus V2 request for canonical items and staged facts together",async()=>{
+  request.mockResolvedValue(menu);
+  const bundle=await adapter.fetchPublishedCatalogBundle();
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(request.mock.calls[0][0]).toBe("/menus/v2/menus");
+  expect(bundle.items).toHaveLength(4);
+  expect(bundle.items.filter(i=>i.baseName==="Latte").map(i=>i.priceCents)).toEqual([300,400,500]);
+  expect(bundle.facts.find(f=>f.kind==="item"&&f.provider_guid===itemGuid)).toMatchObject({
+   name:"Latte",pricing_strategy:"SIZE_PRICE",price_cents:null,
+   modifier_group_guids:[sizeGuid,gid]
+  });
+  expect(bundle.facts.find(f=>f.kind==="modifier"&&f.provider_guid===op(13))).toMatchObject({
+   name:"Oat",price_cents:80
+  });
+ });
+ it("rejects other-restaurant snapshots before supplying either bundled projection",async()=>{
+  request.mockResolvedValue({...menu,restaurantGuid:op(99)});
+  await expect(adapter.fetchPublishedCatalogBundle())
+   .rejects.toMatchObject({category:"unauthorized_location"});
+  expect(request).toHaveBeenCalledTimes(1);
+ });
+ it("rejects incomplete modifier references without supplying a partial bundle",async()=>{
+  const partial=structuredClone(menu);
+  delete (partial.modifierOptionReferences as Record<string,unknown>)["11"];
+  request.mockResolvedValue(partial);
+  await expect(adapter.fetchPublishedCatalogBundle())
+   .rejects.toMatchObject({category:"invalid_response"});
+  expect(request).toHaveBeenCalledTimes(1);
+ });
  it("keeps size GUID identities, cent prices, group paths and priced options",async()=>{
   request.mockResolvedValue(menu);
   const rows=await adapter.fetchCatalogItems();
