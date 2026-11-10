@@ -4,7 +4,7 @@ import {applySafetySignals,expectedTaskRepo,stallMinutes,STALL_PROMPT} from './s
 const head='a'.repeat(40);
 const base={tasks:{T:{task_id:'T',repo:'owner/aicafe',approved:true,conversation_ref:'https://chatgpt.com/c/real',
   github_state:'open',pr_number:12,head_sha:head,last_commit_at:'2026-11-10T10:00:00Z',
-  last_submission_at:'2026-11-10T10:05:00Z'}},actions:{}};
+  last_submission_at:'2026-11-10T10:05:00Z',ci_state:'failure'}},actions:{}};
 const run=(s,now='2026-11-10T10:26:00Z')=>applySafetySignals(s,{repo:'owner/aicafe',now,queue:[],minutes:20});
 test('queue/ledger repository fact wins over a PR body',()=>{
  assert.equal(expectedTaskRepo({repo:'other/product'},{repo:'owner/aicafe'},'owner/aicafe'),'other/product');
@@ -108,4 +108,10 @@ test('repository and chat markers pass, warn and reject explicit conflicts',asyn
  assert.equal(parseChatUrl('<!-- aicafe-chat-url https://chatgpt.com/c/abc-123 -->'),'https://chatgpt.com/c/abc-123');
  assert.equal(parseChatUrl('<!-- aicafe-chat-url https://chatgpt.com/g/project/c/abc -->'),'https://chatgpt.com/g/project/c/abc');
  assert.equal(parseChatUrl('<!-- aicafe-chat-url https://evil.example/x -->'),null);
+});
+test('finished green CI cannot trigger an idle stall nudge and coder-done is ignored',()=>{
+ const green=structuredClone(base);green.tasks.T.ci_state='success';green.tasks.T.coder_done=false;
+ assert.equal(run(green).tasks.T.stall_pending,null);
+ const red=structuredClone(base);red.tasks.T.coder_done=true;
+ assert.match(run(red).tasks.T.stall_pending,/stall:/);
 });

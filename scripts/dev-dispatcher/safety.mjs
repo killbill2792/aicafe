@@ -43,8 +43,9 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
       rec.stall_escalate=false;
       rec.stall_nudged_at=null;
     }
+    const needsFix=rec.ci_state==='failure'||rec.codex_state==='findings'||rec.mergeable===false;
     if(headMoved || rec.github_state!=='open'||!sha.test(head||'')||
-        !rec.approved||!rec.conversation_ref||rec.repo_mismatch) {
+        !needsFix||!rec.approved||!rec.conversation_ref||rec.repo_mismatch) {
       rec.stall_pending=null;
       continue;
     }
