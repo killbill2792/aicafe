@@ -20,7 +20,7 @@ import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs"
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
 import {dispatchReceiptWake} from './wake.mjs';
-import {noticeOperationalIssues} from './notifications.mjs';
+import {noticeOperationalIssues,reportFatalDispatcherError} from './notifications.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
@@ -647,4 +647,17 @@ async function main() {
     }
   }
 }
-main().catch(error => { console.error(`Dispatcher failed: ${error.message}`); process.exitCode = 1; });
+main().catch(async error => {
+ const secrets=[process.env.GITHUB_TOKEN,process.env.DISPATCH_LEDGER_TOKEN].filter(Boolean);
+ const detail=secrets.reduce((s,t)=>s.split(t).join('[REDACTED]'),String(error.message||error)).slice(0,250);
+ console.error('Dispatcher failed: '+detail);
+ if(process.env.DISPATCH_LEDGER_TOKEN){
+  try{
+   const ledger=new GitHubLedger({repo:settings.ledger.repo,token:process.env.DISPATCH_LEDGER_TOKEN,
+    path:settings.ledger.path});
+   await reportFatalDispatcherError({ledger,sha:process.env.GITHUB_SHA||'unknown',
+    message:detail,wake:()=>dispatchReceiptWake({token:process.env.GITHUB_TOKEN})});
+  }catch(second){console.error('Owner alert persistence or wake failed: '+String(second.message).slice(0,160));}
+ }
+ process.exitCode=1;
+});

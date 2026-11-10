@@ -51,3 +51,13 @@ export function noticeOperationalIssues(state,{snapshot=[],scan=null}={}){
     'Review instruction in the private ledger; never execute free-form text automatically');
  return next;
 }
+
+// Best-effort fatal-path Muse alert: ledger CAS first, then immediate repository wake.
+export async function reportFatalDispatcherError({ledger,wake,sha='unknown',message}){
+ const receipt=await ledger.transaction(state=>queueOwnerIssue(state,{
+  kind:'dispatcher_uncaught',identity:sha+':'+message,
+  message:'Dispatcher could not finish reconciliation on '+sha+': '+message,
+  needs:'Owner: inspect the failed Actions job and repair the GitHub or ledger request'}));
+ if(receipt.committed)await wake();
+ return receipt;
+}

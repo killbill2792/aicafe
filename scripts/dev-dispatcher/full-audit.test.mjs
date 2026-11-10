@@ -120,3 +120,18 @@ test('studio merge_order serializes overlapping file ownership without granting 
  const wrong={...normalized,tasks:normalized.tasks.map(t=>({...t,depends_on:[]}))};
  assert.throws(()=>validateQueue(wrong),/Overlapping exclusive file ownership/);
 });
+
+test('fatal dispatcher request error is saved as one owner Muse alert before an immediate wake',async()=>{
+ const {reportFatalDispatcherError}=await import('./notifications.mjs');
+ let state={tasks:{},actions:{},owner_alerts:{}},wakes=0;
+ const ledger={transaction:async fn=>{const next=fn(state);
+  const committed=JSON.stringify(next)!==JSON.stringify(state);state=next;return {committed};}};
+ await reportFatalDispatcherError({ledger,sha:'a'.repeat(40),message:'403 request denied',
+  wake:async()=>{wakes++;}});
+ await reportFatalDispatcherError({ledger,sha:'a'.repeat(40),message:'403 request denied',
+  wake:async()=>{wakes++;}});
+ const issues=Object.values(state.owner_alerts);
+ assert.equal(issues.length,1);assert.equal(issues[0].kind,'dispatcher_uncaught');
+ assert.equal(issues[0].recipient,'owner');assert.equal(issues[0].delivery_owner,'muse');
+ assert.equal(wakes,1);
+});
