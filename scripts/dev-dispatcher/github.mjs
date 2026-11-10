@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
+import { reportedConnector403, failureInstruction } from './safety.mjs';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
 export function parseTaskMarker(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;
@@ -287,6 +288,11 @@ export class GitHubFacts {
       baseline.conclusion === "success" ? "success" : "failure";
     const failingJob = checks.check_runs.find(c => c.conclusion === 'failure' &&
       c.name !== baseline?.name) || (ci === 'failure' ? baseline : null);
+    let failureFix=null;
+    if (failingJob?.id && ci === 'failure') {
+      const annotations=await this.request('/check-runs/'+failingJob.id+'/annotations?per_page=100').catch(()=>[]);
+      failureFix=failureInstruction(annotations);
+    }
     const codexReviews = reviews.filter(r => /codex/i.test(r.user?.login || ""))
       .sort((a, b) => Date.parse(b.submitted_at) - Date.parse(a.submitted_at));
     // Preserve unresolved findings from an earlier revision for repair routing.
@@ -339,10 +345,11 @@ export class GitHubFacts {
         pr.body.includes('<!-- aicafe-coder-done -->'),
       latest_owner_comment: trustedOwner ? String(trustedOwner.body||'').slice(0,350) : null,
       latest_owner_comment_at: trustedOwner?.created_at || null,
-      connector_403: comments.some(c => (c.user?.login === pr.user?.login || c.author_association === 'OWNER') && /403.{0,80}Resource not accessible by integration|Resource not accessible by integration.{0,80}403/i.test(c.body || '')),
+      connector_403: reportedConnector403(comments,pr.user?.login),
       unresolved_codex_comments: unresolvedComments,
       ci_failure_job: ci === 'failure' ? (failingJob?.name || 'AI CAFE PR baseline') : null,
       ci_failure_url: ci === 'failure' ? (failingJob?.html_url || pr.html_url) : null,
+      ci_failure_fix:ci === 'failure' ? failureFix : null,
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
       codex_review_at: useFormal ? codex?.submitted_at : summary?.at || null,
       branch: pr.head.ref, draft: pr.draft, last_github_activity: pr.updated_at,

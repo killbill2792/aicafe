@@ -58,3 +58,27 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
   }
   return next;
 }
+
+export function landingFailureForMerge(comments, mergeSha) {
+  if (!sha.test(mergeSha||'') || !Array.isArray(comments)) return null;
+  const prefix='<!-- landing-check-failure sha:'+mergeSha+' -->';
+  const match=comments.find(c=>c.user?.login==='github-actions[bot]' &&
+    typeof c.body==='string' && c.body.startsWith(prefix));
+  return match ? match.body.slice(0,4500) : null;
+}
+export function reportedConnector403(comments, prAuthor) {
+  return Array.isArray(comments) && comments.some(c=>
+    (c.user?.login===prAuthor || c.author_association==='OWNER') &&
+    /403.{0,80}Resource not accessible by integration|Resource not accessible by integration.{0,80}403/i.test(c.body||''));
+}
+// Action log messages are trusted CI annotations, not guesses from the model.
+export function failureInstruction(annotations=[]) {
+  const line=annotations.map(x=>String(x.message||'')).find(x=>
+    /aicafe-chat-url|vision.{0,30}version/i.test(x));
+  if(!line)return null;
+  const exact=line.replace(/[\r\n]+/g,' ').slice(0,800);
+  const fix=/aicafe-chat-url/i.test(exact)
+    ? 'Fix: use <!-- aicafe-chat-url https://chatgpt.com/c/<real-chat-id> --> with your actual chat URL, or the real /g/<project>/c/<id> path.'
+    : 'Fix: update the vision version to the exact value the failing check expects, then rerun the check.';
+  return exact+'\n'+fix;
+}

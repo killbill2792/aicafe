@@ -14,7 +14,7 @@ import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterP
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
 import { queueOwnerAlerts } from "./alerts.mjs";
-import { applySafetySignals, stallMinutes } from "./safety.mjs";
+import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
@@ -44,9 +44,7 @@ async function main() {
       let landingFailure=null;
       if (mergeSha) {
         const issueComments=await gh.paginated('/issues/'+rec.pr_number+'/comments','comments');
-        const match=issueComments.find(c=>c.user?.login==='github-actions[bot]' &&
-          (c.body||'').startsWith('<!-- landing-check-failure sha:'+mergeSha+' -->'));
-        landingFailure=match ? String(match.body).slice(0,4500) : null;
+        landingFailure=landingFailureForMerge(issueComments,mergeSha);
       }
       closedByPr[rec.pr_number] = { merged:Boolean(closed.merged_at),
         merge_sha:mergeSha,landing_failure:landingFailure };
