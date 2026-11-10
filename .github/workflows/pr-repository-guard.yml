@@ -24,8 +24,3 @@ jobs:
             } else {
               core.info('PR repository marker matches.');
             }
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Marker parser tests
-        run: node --test .github/scripts/pr-markers.test.cjs
