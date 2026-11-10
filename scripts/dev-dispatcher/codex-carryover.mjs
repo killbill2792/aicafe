@@ -26,10 +26,11 @@ export async function classifyCodexChange({github,previous,current}) {
      !isSha(current?.base_sha)||anchor===current.head_sha)return evidence; const update=previous?.codex_branch_update; const verified=update?.old_head_sha===previous?.head_sha &&
     update?.new_base_sha===current.base_sha &&
     update?.status==='accepted_no_conflicts'; const conflict=previous?.codex_branch_conflict?.old_head_sha===previous?.head_sha; evidence.verified_gh_update_branch=Boolean(verified); evidence.hand_resolved_conflicts=Boolean(conflict); try {
-    const [before,after,baseDelta]=await Promise.all([
+    const [before,after,baseDelta,merge]=await Promise.all([
       github.request('/compare/'+oldBase+'...'+anchor),
       github.request('/compare/'+current.base_sha+'...'+current.head_sha),
-      github.request('/compare/'+oldBase+'...'+current.base_sha)
+      github.request('/compare/'+oldBase+'...'+current.base_sha),
+      github.request('/git/commits/'+current.head_sha)
     ]); evidence.old_patch_id=stablePatchId(before.files); evidence.new_patch_id=stablePatchId(after.files);
     const owned=new Set((before.files||[]).flatMap(f=>
       [f.filename,f.previous_filename].filter(Boolean))); evidence.overlapping_files=[...new Set((baseDelta.files||[]).flatMap(f=>
@@ -40,7 +41,11 @@ export async function classifyCodexChange({github,previous,current}) {
       !evidence.new_patch_id) {
       evidence.reason='insufficient_patch_or_ancestry_evidence';return evidence; }
     if(conflict){evidence.case='D';evidence.reason='hand_resolved_conflicts';return evidence;}
-    if(!verified){evidence.reason='no_verified_no_conflict_update';return evidence;}
+    const parents=(merge.parents||[]).map(p=>p.sha);
+    if(!verified || parents.length!==2 || !parents.includes(previous.head_sha) ||
+       !parents.includes(current.base_sha)){
+      evidence.reason='not_single_GitHub_update_merge';return evidence;
+    }
     if(evidence.old_patch_id!==evidence.new_patch_id){
       evidence.reason='PR_patch_modified';return evidence; }
     if(evidence.overlapping_files.length){

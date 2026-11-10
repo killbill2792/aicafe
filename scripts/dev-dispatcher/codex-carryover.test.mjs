@@ -6,16 +6,21 @@ const file=(path='src/a.js',after='new')=>({
 }); const prior={head_sha:b,codex_clean_head_sha:b,codex_clean_base_sha:a,
   codex_state:'clean',codex_reviewed_sha:b,
   codex_branch_update:{old_head_sha:b,new_base_sha:c,status:'accepted_no_conflicts'}}; const live={head_sha:d,base_sha:c};
-const fake=(before=[file()],after=[file()],main=[],status='ahead')=>({
+const fake=(before=[file()],after=[file()],main=[],status='ahead',parents=[b,c])=>({
   request:async path=>{
     if(path==='/compare/'+a+'...'+b)return {files:before};
     if(path==='/compare/'+c+'...'+d)return {files:after};
-    if(path==='/compare/'+a+'...'+c)return {files:main,status,behind_by:0}; throw Error('Unexpected compare '+path); } });
+    if(path==='/compare/'+a+'...'+c)return {files:main,status,behind_by:0};
+    if(path==='/git/commits/'+d)return {parents:parents.map(sha=>({sha}))}; throw Error('Unexpected compare '+path); } });
 test('git stable patch id ignores shifted hunk locations, but not changed lines',()=>{
   const x=file(),y={...x,patch:x.patch.replace('@@ -1 +1 @@','@@ -80 +109 @@')}; assert.equal(stablePatchId([x]),stablePatchId([y])); assert.notEqual(stablePatchId([x]),stablePatchId([file('src/a.js','different')])); assert.equal(stablePatchId([{filename:'binary.png',status:'modified'}]),null); });
 test('case A: PR changed its own patch -> fresh review',async()=>{
   const e=await classifyCodexChange({github:fake([file()],[file('src/a.js','different')]),
     previous:prior,current:live}); assert.equal(e.case,'A'); assert.notEqual(e.old_patch_id,e.new_patch_id); });
+test('case A: own commit after update cannot reuse unchanged patch evidence',async()=>{
+ const e=await classifyCodexChange({github:fake([file()],[file()],[],'ahead',[b,'e'.repeat(40)]),previous:prior,current:live});
+ assert.equal(e.case,'A');
+});
 test('case B: verified update, unchanged patch, no main overlap -> carried',async()=>{
   const gh=fake([file()],[file()],[file('docs/README.md')]); const e=await classifyCodexChange({github:gh,previous:prior,current:live}); assert.equal(e.case,'B'); assert.equal(e.old_patch_id,e.new_patch_id); assert.deepEqual(e.overlapping_files,[]); assert.equal(await verifyLiveCarryOver({github:gh,record:{...prior,codex_carried_over:e},live}),true); });
 test('case C: new main changed a PR file -> fresh review',async()=>{
