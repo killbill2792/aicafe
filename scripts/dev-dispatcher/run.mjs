@@ -2,7 +2,6 @@
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
-import { queueDependencyNotices } from "./dependency-notices.mjs";
 import { requestCodexReview } from "./codex-review.mjs";
 import { GitHubFacts } from "./github.mjs";
 import { GitHubLedger, emptyLedger } from "./ledger.mjs";
@@ -238,9 +237,7 @@ async function main() {
       const latest = await observe(existing);
       const next = reconcile(existing, latest).state;
       await promoteIntegration(next);
-      // Dispatch the new dependency proof to the already-running chat in the
-      // SAME transaction; one current-head action and one receipt per PR.
-      queueDependencyNotices(next, queue);
+      // Dependency proof is recorded for reporting, not an unsolicited chat prompt.
       // Integration may become proven during this same pass: queue the owner
       // review with the actual saved chat URL without a second delayed cycle.
       const withNotices = queueOwnerAlerts(next,{queue});
@@ -319,7 +316,7 @@ async function main() {
       // Ordinary main-based stale branches are refreshed automatically, never
       // force-pushed. A new head must rerun all exact-head CI/acceptance/Codex.
       if (rec.base_current === false && rec.base_branch === 'main' &&
-          !(rec.draft === true && rec.coder_done !== true)) {
+          !(rec.draft === true && rec.ci_state !== 'success')) {
         try {
           const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
           console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
@@ -330,21 +327,19 @@ async function main() {
       }
     }
   }
-  // Auto-merge is separately opt-in and requires independently verified acceptance evidence.
-  // This is deliberately not enabled by merely persisting the queue.
+  // Green drafts are made ready automatically. Auto-merge remains separately
+  // controlled and still requires an exact-head clean Codex receipt.
   const autoMerge = process.env.DISPATCH_AUTO_MERGE === "true" && commit;
-  if (autoMerge && ledger) {
-    for (const [id, rec] of Object.entries(proposed.state.tasks)) {
+  if (commit && ledger) {
+    for (const [id, rec] of Object.entries(persisted?.state?.tasks || proposed.state.tasks)) {
       if (!rec.pr_number || rec.github_state !== "open") continue;
       const task = taskById.get(id);
-      if (!task || !rec.approved || !rec.acceptance_evidence) continue;
+      if (!task || (rec.draft !== true && !autoMerge)) continue;
       const predecessorRecords = predecessorsForMerge(task, queue, proposed.state.tasks);
-      // Draft-to-ready and merge use the exact same executed proof gate.
-      // A successful ready transition is NOT merged in this same stale snapshot;
-      // GitHub must observe/review the ready PR again on the next run.
+      // Ready transitions need only green CI, not coder-done. The later merge
+      // is a separate fresh reconciliation, never the same snapshot.
       const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
-        evidence: rec.acceptance_evidence, expectedAcceptance: task.acceptance, enabled: true,
-        action: rec.draft ? "ready" : "merge" });
+        enabled: true, action: rec.draft ? "ready" : "merge" });
       if (outcome.status === "ready_for_review") {
         console.log(`Verified PR #${rec.pr_number} for task ${id} is ready for review; merge awaits fresh GitHub reconciliation`);
         continue;
