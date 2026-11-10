@@ -9,6 +9,7 @@ import {it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {runAgentTurn,openAIProvider} from "../loop.server";
 import {PRODUCTION_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
+import {estimateModelCallCostMicros,modelTokenUsage,standardModelTokenRates} from "@/lib/calc/supervisorTokenCost";
 import type {AgentProvider} from "../loop.server";
 import {executeAgentTool,type AgentToolContext} from "./index";
 const dbUrl=process.env.AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL;
@@ -33,15 +34,25 @@ const smoke=process.env.POS0E_E2_SMOKE==="1";
 // schemas on every paid turn. The full suite still uses the unrestricted
 // production Supervisor toolset; never claim smoke proves that whole surface.
 const smokeReaderTools=["describe_data","query_data"] as const;
-// The owner explicitly directed closure through real-agent proof and proper
-// merge. The five-turn smoke keeps its prior caps. The ONE signed full-18
-// acceptance run gets an independently bounded envelope; hitting any cap
-// fails closed before the next provider request, not a partial acceptance pass.
-// These are usage limits, NOT a hard currency cost guarantee.
+// Full acceptance needs room for all 18 independent turns. Keep the original
+// smoke unchanged; full-run accounting uses the EXISTING Luna standard-tier
+// token rates, actual provider usage receipts, and a worst-case *next-call*
+// reservation (one input token per UTF-8 byte, all allowed output tokens).
+// Estimated $0.18 leaves a small margin beneath the owner's ~$0.20 target.
+// This is not an invoice guarantee: unknown pricing/usage fails closed.
+// A budget stop is a FAIL, never a partial acceptance pass.
 const MAX_PAID_CALLS=smoke?16:64;
-const MAX_INPUT_REQUEST_BYTES=smoke?600_000:3_000_000;
+const MAX_INPUT_REQUEST_BYTES=smoke?600_000:7_000_000;
 const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
-let paidCalls=0,requestBytes=0,outputTokensReserved=0;
+const MAX_FULL_ESTIMATED_COST_MICROS=180_000;
+let paidCalls=0,requestBytes=0,outputTokensReserved=0,estimatedCostMicros=0;
+function nextCallUpperCostMicros(model:string,bytes:number,maxOutput:number):number|null{
+ const rates=standardModelTokenRates(model,"standard",0);
+ if(!rates)return null;
+ // Rates are USD per million tokens, so multiplying by tokens yields USD micros.
+ const amount=bytes*Number(rates.input)+maxOutput*Number(rates.output);
+ return Number.isFinite(amount)?Math.ceil(amount):null;
+}
 // A rejected transport budget is not an OpenAI/Luna failure. Never include
 // prompts, tool parameters, customer rows or secrets in this diagnostic.
 let budgetRejection:{reason:string;attemptBytes:number;priorBytes:number;
@@ -76,10 +87,14 @@ const budgetedProvider:AgentProvider=async function*(params,signal){
  const payloadBytes=Buffer.byteLength(JSON.stringify(params),"utf8");
  const outputCap=Math.min(Number(params.max_output_tokens)||MAX_OUTPUT_TOKENS_PER_CALL,
   MAX_OUTPUT_TOKENS_PER_CALL);
+ const upperMicros=nextCallUpperCostMicros(params.model,payloadBytes,outputCap);
  const reason=paidCalls+1>MAX_PAID_CALLS?"model_call_count":
   requestBytes+payloadBytes>MAX_INPUT_REQUEST_BYTES?"input_request_bytes":
   outputTokensReserved+outputCap>MAX_PAID_CALLS*MAX_OUTPUT_TOKENS_PER_CALL?
-   "output_token_reservation":null;
+   "output_token_reservation":
+  !smoke&&(upperMicros===null||
+   estimatedCostMicros+upperMicros>MAX_FULL_ESTIMATED_COST_MICROS)?
+   "estimated_usd_ceiling":null;
  if(reason){
   budgetRejection={reason,attemptBytes:payloadBytes,priorBytes:requestBytes,
    priorCalls:paidCalls,attemptOutputTokens:outputCap};
@@ -88,16 +103,45 @@ const budgetedProvider:AgentProvider=async function*(params,signal){
  paidCalls++;
  requestBytes+=payloadBytes;
  outputTokensReserved+=outputCap;
- for await(const event of openAIProvider({...params,max_output_tokens:outputCap},signal)){
-  if(["response.completed","response.incomplete","response.failed"].includes(event.type)){
-   const response=event.response as {status?:string;incomplete_details?:{reason?:string}|null;
-    usage?:{output_tokens?:number};output?:Array<{type?:string}>}|undefined;
-   providerReceipts.push({event:event.type,status:response?.status??"unknown",
-    reason:response?.incomplete_details?.reason??null,
-    outputTokens:response?.usage?.output_tokens??null,
-    outputTypes:(response?.output??[]).map(item=>item.type??"unknown")});
+ let accounted=false;
+ try{
+  for await(const event of openAIProvider({...params,max_output_tokens:outputCap},signal)){
+   if(["response.completed","response.incomplete","response.failed"].includes(event.type)){
+    const response=event.response as {status?:string;service_tier?:string;
+     incomplete_details?:{reason?:string}|null;
+     usage?:{input_tokens?:number;output_tokens?:number;
+      input_tokens_details?:{cached_tokens?:number}};
+     output?:Array<{type?:string}>}|undefined;
+    providerReceipts.push({event:event.type,status:response?.status??"unknown",
+     reason:response?.incomplete_details?.reason??null,
+     outputTokens:response?.usage?.output_tokens??null,
+     outputTypes:(response?.output??[]).map(item=>item.type??"unknown")});
+    if(!smoke){
+     const usage=modelTokenUsage(response?.usage);
+     const rates=usage?standardModelTokenRates(params.model,response?.service_tier,
+      usage.inputTokens):null;
+     const micros=usage&&rates?estimateModelCallCostMicros(usage,rates):null;
+     if(micros===null){
+      budgetRejection={reason:"unpriced_provider_usage",attemptBytes:payloadBytes,
+       priorBytes:requestBytes,priorCalls:paidCalls,attemptOutputTokens:outputCap};
+      throw Error("POS0e full E2 cannot price provider usage; stop before next call");
+     }
+     estimatedCostMicros+=micros;
+     if(estimatedCostMicros>MAX_FULL_ESTIMATED_COST_MICROS){
+      budgetRejection={reason:"estimated_usd_ceiling",attemptBytes:payloadBytes,
+       priorBytes:requestBytes,priorCalls:paidCalls,attemptOutputTokens:outputCap};
+      throw Error("POS0e full E2 estimated cost limit reached");
+     }
+    }
+    accounted=true;
+   }
+   yield event;
   }
-  yield event;
+ }finally{
+  // Never make a second paid attempt after an interrupted/unpriced response.
+  if(!smoke&&!accounted&&!budgetRejection)
+   budgetRejection={reason:"missing_provider_usage",attemptBytes:payloadBytes,
+    priorBytes:requestBytes,priorCalls:paidCalls,attemptOutputTokens:outputCap};
  }
 };
 function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:number):string{
@@ -105,7 +149,8 @@ function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:
   modelCalls:turn.usage.modelCalls,inputTokens:turn.usage.inputTokens,
   cachedTokens:turn.usage.cachedTokens,outputTokens:turn.usage.outputTokens,
   chargedTransportCalls:paidCalls,serializedRequestBytes:requestBytes,
-  outputTokensReserved,budgetRejection,
+  outputTokensReserved,estimatedCostMicros,maxEstimatedCostMicros:smoke?null:MAX_FULL_ESTIMATED_COST_MICROS,
+  budgetRejection,
   tools:turn.tools,
   resultStatus:turn.results.map(result=>({source:result.source,
    missing:result.missing,error:result.error??null})),
@@ -123,6 +168,13 @@ it("POS0e query-shape diagnostics redact unknown field names at zero cost",()=>{
 });
 // Free deterministic regression: a bad or overlarge provider request must be
 // rejected BEFORE calling OpenAI, without mistaking the guard for Luna failure.
+it("POS0e full Luna budget reserves a conservative next-call dollar envelope",()=>{
+ const rates=standardModelTokenRates(PRODUCTION_SUPERVISOR_OPENAI_MODEL,"standard",0);
+ expect(rates).toMatchObject({input:"0.10",cachedInput:"0.01",output:"0.50"});
+ expect(nextCallUpperCostMicros(PRODUCTION_SUPERVISOR_OPENAI_MODEL,100_000,1_000))
+  .toBe(10_500);
+ expect(MAX_FULL_ESTIMATED_COST_MICROS).toBeLessThan(200_000);
+});
 it("POS0e paid transport refuses an oversized request at zero model cost",async()=>{
  const beforeCalls=paidCalls,beforeBytes=requestBytes;
  const oversized={model:PRODUCTION_SUPERVISOR_OPENAI_MODEL,
