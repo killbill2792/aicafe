@@ -66,6 +66,17 @@ export function decodeAcceptanceArchive(input, expectedFilename = 'acceptance-pr
   return JSON.parse(decoded.toString('utf8'));
 }
 
+// Only GitHub-verified changed paths classify a dispatcher governance/implementation
+// PR as non-task maintenance. Titles, branches, PR markers and labels are NOT proof.
+export function isDispatcherMaintenanceChange(files) {
+  return Array.isArray(files) && files.length > 0 && files.every(file =>
+    typeof file?.filename === 'string' && (
+      file.filename === 'AGENTS.md' ||
+      file.filename === '.claude/skills/aicafe-pr-lifecycle/SKILL.md' ||
+      file.filename === '.github/workflows/ai-cafe-dev-dispatcher.yml' ||
+      /^scripts\/dev-dispatcher\//.test(file.filename)));
+}
+
 export class GitHubFacts {
   constructor({ repo, token, fetchFn = fetch }) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) throw new Error("GitHub repo/token required");
@@ -214,11 +225,9 @@ export class GitHubFacts {
       ci_state: ci, ci_failure_kind: baseline?.conclusion === 'startup_failure' ? 'startup_failure' : null,
       codex_state: codexState, codex_reviewed_sha: reviewed,
       threads_resolved: unresolved === 0,
-      // Explicitly known dispatcher-only PRs are not orphan coding tasks.
-      infrastructure_pr: Array.isArray(comparison.files) &&
-        comparison.files.length > 0 && comparison.files.every(file =>
-          /^scripts\/dev-dispatcher\//.test(file.filename) ||
-          file.filename === '.github/workflows/ai-cafe-dev-dispatcher.yml'),
+      // GitHub's verified compare paths (not a PR marker) distinguish
+      // dispatcher/AGENTS maintenance from unknown coding-task PRs.
+      infrastructure_pr: isDispatcherMaintenanceChange(comparison.files),
       merged: false };
   }
   async snapshot() {
