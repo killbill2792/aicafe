@@ -292,7 +292,7 @@ export class GitHubFacts {
       c.name !== baseline?.name) || (ci === 'failure' ? baseline : null);
     let failureFix=null;
     let observed403=false;
-    if (failingJob?.id && ci === 'failure') {
+    if (failingJob?.id) {
       const annotations=await this.request('/check-runs/'+failingJob.id+'/annotations?per_page=100').catch(()=>[]);
       failureFix=failureInstruction(annotations);
       observed403=annotations.some(a=>/403.{0,80}Resource not accessible by integration|Resource not accessible by integration.{0,80}403/i.test(a.message||''));
@@ -352,9 +352,10 @@ export class GitHubFacts {
       latest_owner_comment_at: trustedOwner?.created_at || null,
       connector_403: reportedConnector403(comments,pr.user?.login) || observed403,
       unresolved_codex_comments: unresolvedComments,
-      ci_failure_job: ci === 'failure' ? (failingJob?.name || 'AI CAFE PR baseline') : null,
-      ci_failure_url: ci === 'failure' ? (failingJob?.html_url || pr.html_url) : null,
-      ci_failure_fix:ci === 'failure' ? failureFix : null,
+      ci_failure_job: (ci === 'failure' || failureFix) ? (failingJob?.name || 'AI CAFE PR baseline') : null,
+      ci_failure_url: (ci === 'failure' || failureFix) ? (failingJob?.html_url || pr.html_url) : null,
+      ci_failure_fix:failureFix,
+      field_check_failure:Boolean(failureFix),
       repo_marker_failure:validateRepo(pr.body||'',this.repo).status==='failure' ?
         validateRepo(pr.body||'',this.repo).message+'\nFix: replace the marker with <!-- repo: '+this.repo+' task: <actual-task-id> -->, using the real task ID.' : null,
       last_commit_at: commit.commit?.committer?.date || commit.commit?.author?.date || pr.updated_at,
