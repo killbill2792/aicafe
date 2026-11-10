@@ -1,5 +1,5 @@
 import { editableFiles } from './core.mjs';
-import { approvalSignature } from './delivery.mjs';
+import { approvalMatches } from './delivery.mjs';
 import { architectureFoundationReady } from './core.mjs';
 
 // One authoritative check before the private document is written.
@@ -12,11 +12,10 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
   const foundationProven = architectureFoundationReady(queue, state.tasks);
   for (const [id, rec] of Object.entries(state.tasks)) {
     const task = taskById.get(id);
-    const currentSignature = task && task.architecture_approval?.approved === true &&
+    const stillApproved = task && task.architecture_approval?.approved === true &&
       ['architecture_approved', 'ready'].includes(task.state) &&
-      editableFiles(task).length > 0
-      ? approvalSignature(task) : null;
-    const revoked = !currentSignature || rec.approval_hash !== currentSignature;
+      editableFiles(task).length > 0;
+    const revoked = !stillApproved || !approvalMatches(task, rec.approval_hash);
     const prClosed = Number.isInteger(rec.pr_number) && rec.github_state !== 'open';
     // A persisted assignment from BEFORE a new priority gate is not approval to
     // send it after the gate is installed. Preserve already-started PR/chat work.
