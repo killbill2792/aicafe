@@ -67,3 +67,19 @@ test('overdue planned Muse delivery creates a private-ledger wake without resend
  assert.equal(superseded.actions['assign:6'].wake_round,2);
  assert.equal(signalFor(superseded,secret).pending_count,0);
 });
+
+
+test('receipt recovery wakes Muse on the same opaque public signal without another browser action',()=>{
+ const secret='secret'.repeat(8);
+ const s=structuredClone(state);
+ s.actions['assign:6'].status='cancelled_stale_head';
+ s.receipt_feedback={'assign:6':{task_id:'6',status:'rejected',
+  code:'unattributed_git_actor',wake_round:0}};
+ const first=signalFor(s,secret);
+ assert.equal(first.pending_count,1);
+ assert.doesNotMatch(JSON.stringify(first),/assign:6|unattributed|approved task|aicafe/);
+ s.receipt_feedback['assign:6'].wake_round=1;
+ assert.notEqual(signalFor(s,secret).fingerprint,first.fingerprint);
+ s.receipt_feedback['assign:6'].status='resolved';
+ assert.equal(signalFor(s,secret).pending_count,0);
+});
