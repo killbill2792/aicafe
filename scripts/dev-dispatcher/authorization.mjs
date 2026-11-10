@@ -11,6 +11,15 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
   const foundationDependents = new Set(queue?.dispatch_rules?.architecture_foundation_dependent_task_ids || []);
   const foundationProven = architectureFoundationReady(queue, state.tasks);
   for (const [id, rec] of Object.entries(state.tasks)) {
+    if (rec.adhoc === true) {
+      for (const action of Object.values(state.actions)) {
+        if (action.task_id === id && action.status === 'planned' &&
+            (rec.github_state !== 'open' ||
+             !['ci_failed','codex_comments','repair_conflict'].includes(action.type)))
+          action.status = 'cancelled_adhoc_invalid';
+      }
+      continue;
+    }
     const task = taskById.get(id);
     const stillApproved = task && task.architecture_approval?.approved === true &&
       ['architecture_approved', 'ready'].includes(task.state) &&
