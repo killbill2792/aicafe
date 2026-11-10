@@ -63,6 +63,28 @@ it("distinguishes safe invalid SQL query shapes from real outages",async()=>{
   expect(JSON.stringify(result)).not.toContain("private detail");
  }
 });
+it("rejects aggregate and sort shapes that the existing SQL RPC cannot execute",async()=>{
+ const f=testDb(),ctx={db:f.db,businessId:b};
+ const invalid=[
+  {...input(),group_by:null,columns:["net_sales_cents"]},
+  {...input(),group_by:["business_date"],columns:["net_sales_cents"]},
+  {...input(),order_by:{column:"discount_amount_cents",direction:"desc"}}
+ ];
+ for(const args of invalid){
+  const result=await dataQueryTools.query_data.execute(args,ctx);
+  expect(result.error).toBe("invalid_query");
+ }
+ expect(f.rpc).not.toHaveBeenCalled();
+ // Do not reject the already-supported grouped metric alias and precise
+ // plain-read projections; existing database aggregator handles them.
+ const alias=await dataQueryTools.query_data.execute({
+  ...input(),order_by:{column:"sum_net_sales_cents",direction:"desc"}},ctx);
+ expect(alias.error).toBeUndefined();
+ const plain=await dataQueryTools.query_data.execute({
+  ...input(),group_by:null,metrics:null},ctx);
+ expect(plain.error).toBeUndefined();
+ expect(f.rpc).toHaveBeenCalledTimes(2);
+});
 it("empty and failed queries are explicit, not invented zero totals",async()=>{
  const f=testDb();
  const result=await dataQueryTools.query_data.execute(input(),{db:f.db,businessId:b});
