@@ -398,8 +398,8 @@ async function main() {
         } else console.log('Child #'+rec.pr_number+': branch maintenance held ('+result.reason+')');
         continue;
       }
-      // Ordinary main-based stale branches are refreshed automatically, never
-      // force-pushed. A new head must rerun all exact-head CI/acceptance/Codex.
+      // Ordinary main-based stale branches are refreshed without force-push.
+      // A new head reruns CI; Codex carry-over is allowed only for verified case B.
       if (rec.base_current === false && rec.base_branch === 'main' &&
           !(rec.draft === true && rec.ci_state !== 'success')) {
         try {
