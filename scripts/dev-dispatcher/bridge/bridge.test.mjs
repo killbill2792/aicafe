@@ -178,7 +178,7 @@ test('parent_merged continuation is exact-head and requires verified main retarg
   const live={...record,pr_number:408,github_state:'open',head_sha:'a'.repeat(40),
     base_branch:'main',conversation_ref:url,parent_merged_sha:merged,
     branch_maintenance_merge_sha:merged,last_parent_rebase_sha:null};
-  const key='parent_merged:6:'+merged,prompt='Verified parent merged: rebase onto main and continue';
+  const key='parent_merged:6:'+merged+':'+live.head_sha,prompt='Verified parent merged: rebase onto main and continue';
   const item={...action,key,task_id:'6',type:'parent_merged',head_sha:live.head_sha,
     delivery:{...delivery,action_id:key,intent:'continue_existing_chat',
       conversation_url:url,base_branch:'main',prompt,
@@ -211,7 +211,7 @@ test('v2 dispatcher nudges pass bridge and opaque wake-up signal without changin
     conversation_ref:url,pr_number:390,github_state:'open',head_sha:head,base_branch:'main',
     parent_merged_sha:merged,branch_maintenance_merge_sha:merged,last_parent_rebase_sha:null};
   for(const type of ['codex_comments','ci_failed','parent_merged','owner_answered','idle_continue']){
-    const key=type==='parent_merged'?'parent_merged:6:'+merged:'nudge:'+type;
+    const key=type==='parent_merged'?'parent_merged:6:'+merged+':'+head:'nudge:'+type;
     const d=createDelivery({task,record:current,action:type,actionId:key});
     const pending={key,task_id:'6',type,status:'planned',delivery_owner:'muse',
       head_sha:head,delivery:d};
