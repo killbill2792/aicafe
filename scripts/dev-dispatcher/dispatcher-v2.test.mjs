@@ -215,7 +215,7 @@ test('a freshly merged parent cannot trigger an idle nudge before automatic reta
   const updated={...pending,branch_maintenance_merge_sha:parentSha,base_branch:'main'};
   const next=decideNudge(updated,now);
   assert.equal(next.action,'parent_merged');
-  assert.equal(next.key,decideNudge({...updated,head_sha:'c'.repeat(40)},now).key);
+  assert.notEqual(next.key,decideNudge({...updated,head_sha:'c'.repeat(40)},now).key);
 });
 
 
@@ -263,7 +263,7 @@ test('parent-merged prompt is immediate after automatic branch maintenance, not 
     ci_state:'pending',codex_state:'pending'});
   const prompt=decideNudge(fresh,now);
   assert.equal(prompt.action,'parent_merged');
-  assert.equal(prompt.key,'parent_merged:child:'+sha+':'+rec.head_sha);
+  assert.equal(prompt.key,'parent_merged:child:'+sha+':'+fresh.head_sha);
   assert.deepEqual(decideNudge({...fresh,branch_maintenance_merge_sha:null},now),
     {kind:'hold',reason:'awaiting_automatic_parent_branch_maintenance'});
   assert.equal(decideNudge({...fresh,last_parent_rebase_sha:sha},now).action,undefined);
