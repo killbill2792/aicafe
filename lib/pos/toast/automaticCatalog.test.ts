@@ -42,7 +42,7 @@ describe("Toast published catalog adapter",()=>{
    "/menus/v2/metadata","/menus/v2/menus","/menus/v2/metadata"
   ]);
   expect(bundle.receipt).toMatchObject({restaurantGuid:rg,
-   publicationVersion:"2026-11-09T09:00:00.000Z"});
+   publicationVersion:"2026-11-09T09:00:00Z"});
   expect(Number.isFinite(Date.parse(bundle.receipt.observedAt))).toBe(true);
   expect(bundle.items).toHaveLength(4);
   expect(bundle.items.filter(i=>i.baseName==="Latte").map(i=>i.priceCents)).toEqual([300,400,500]);
