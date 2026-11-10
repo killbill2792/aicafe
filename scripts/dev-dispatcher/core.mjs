@@ -263,6 +263,10 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
   const quietFor = nowMs - last;
   if (!Number.isFinite(last) || quietFor < (isPr ? quietMs : prePrMs))
     return {kind:'hold',reason:'not_quiet'};
+  if (isPr && !record.draft &&
+      (record.ci_state === 'pending' || record.ci_state === 'unknown' ||
+       record.codex_state === 'pending' || record.codex_state === 'unknown') &&
+      quietFor < 900000) return {kind:'hold',reason:'checks_pending_or_unknown'};
   const sentMs = Date.parse(record.last_submission_at || '');
   if (record.submission_state === 'submitted' && Number.isFinite(sentMs) &&
       nowMs - sentMs < 900000) return {kind:'hold',reason:'post_delivery_quiet'};
