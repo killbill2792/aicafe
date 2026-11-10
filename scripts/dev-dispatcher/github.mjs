@@ -72,6 +72,7 @@ export function isDispatcherMaintenanceChange(files) {
   return Array.isArray(files) && files.length > 0 && files.every(file =>
     typeof file?.filename === 'string' && (
       file.filename === 'AGENTS.md' ||
+      file.filename === '.claude/skills/aicafe-pr-lifecycle/SKILL.md' ||
       file.filename === '.github/workflows/ai-cafe-dev-dispatcher.yml' ||
       /^scripts\/dev-dispatcher\//.test(file.filename)));
 }

@@ -100,7 +100,8 @@ test('editing and withdrawing a question cancels only unsent owner notices',()=>
 
 
 test('AGENTS + dispatcher-only paths do not create a bogus coding-chat assignment alert',()=>{
- const files=[{filename:'AGENTS.md'},{filename:'scripts/dev-dispatcher/delivery.mjs'},
+ const files=[{filename:'AGENTS.md'},
+   {filename:'.claude/skills/aicafe-pr-lifecycle/SKILL.md'},{filename:'scripts/dev-dispatcher/delivery.mjs'},
    {filename:'scripts/dev-dispatcher/bridge/README.md'}];
  assert.equal(isDispatcherMaintenanceChange(files),true);
  assert.equal(isDispatcherMaintenanceChange([{filename:'AGENTS.md'}]),true);

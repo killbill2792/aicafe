@@ -263,3 +263,14 @@ test('one-review policy holds Codex on drafts/stacked children until eligible CI
  assert.match(authority,/A PR comment or body-only edit does NOT change the head/);
  assert.match(authority,/The exact reviewed-head merge gate stays mandatory/);
 });
+
+
+test('review lifecycle skill requests one eligible CI-green review, not every push',()=>{
+ const skill=readFileSync(new URL('../../.claude/skills/aicafe-pr-lifecycle/SKILL.md',import.meta.url),'utf8');
+ assert.match(skill,/Do NOT request Codex on each push/);
+ assert.match(skill,/full applicable CI GREEN/);
+ assert.match(skill,/parent has merged/);
+ assert.match(skill,/ONE final-head re-review/);
+ assert.match(skill,/Coding PRs NEVER edit shared PROGRESS.md/);
+ assert.doesNotMatch(skill,/mark addressed threads resolved.*request fresh Codex review/);
+});
