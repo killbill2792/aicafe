@@ -490,6 +490,26 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    canonicalData:async()=>({db:db as never,businessId:biz.id})
   } as AgentToolContext;
   if(sqlOnly){
+   // Prove the exact production coverage call shapes against the migrated
+   // synthetic database BEFORE paid provider transport. Report only fixed
+   // source names and scrubbed SQLSTATE, never source payload/owner data.
+   const coverageArgs={p_business_id:biz.id,p_from:prior,p_to:biz.today};
+   const statusRows=await db.from("toast_day_status")
+    .select("business_date,restaurant_guid,import_state,recon_state,last_error_category")
+    .eq("business_id",biz.id).gte("business_date",prior).lte("business_date",biz.today)
+    .order("business_date").order("restaurant_guid").range(0,199);
+   expect(statusRows.error,"toast_day_status coverage read").toBeNull();
+   const salesDays=await db.rpc("toast_unverified_sales_dates",coverageArgs) as unknown as
+    {error:{code?:string}|null;data:unknown};
+   expect(salesDays.error,"toast_unverified_sales_dates coverage read").toBeNull();
+   const attentionRpc=db.rpc("toast_attention_days",coverageArgs) as unknown as
+    {range:(start:number,end:number)=>Promise<{error:unknown;data:unknown}>};
+   const attentionDays=await attentionRpc.range(0,199);
+   expect(attentionDays.error,"toast_attention_days coverage read").toBeNull();
+   const orders=await db.from("orders").select("id,business_date")
+    .eq("business_id",biz.id).like("pos_order_id","toast:%")
+    .in("business_date",[prior,biz.today]).order("id").range(0,199);
+   expect(orders.error,"canonical Toast order coverage read").toBeNull();
    const expected=await client.query<{n:number}>(
     "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
     [biz.id,prior,biz.today]);
