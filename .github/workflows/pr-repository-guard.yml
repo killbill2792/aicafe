@@ -14,7 +14,7 @@ jobs:
         with:
           script: |
             const body = context.payload.pull_request.body || '';
-            const matches = [...body.matchAll(/<!--\s*repo:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s+task:\s*([^\s>]+)\s*-->/g)];
+            const matches = [...body.matchAll(/^\s*<!--\s*repo:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s+task:\s*([^\s>]+)\s*-->\s*$/gm)];
             if (!matches.length) {
               core.warning('No repository marker; warning only.');
             } else if (matches.some(m => m[1] !== matches[0][1])) {
