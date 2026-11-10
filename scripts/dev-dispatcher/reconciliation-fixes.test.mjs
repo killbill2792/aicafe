@@ -5,6 +5,8 @@ import { GitHubLedger } from './ledger.mjs';
 import { decideNudge, reconcileGithub } from './core.mjs';
 import { approvalSignature, approvalMatches, createDelivery } from './delivery.mjs';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import { mergeApprovedPr } from './effects.mjs';
 
 const task = {
   id:'6', title:'Task 6', goal:'Keep signed permissions',
@@ -157,17 +159,97 @@ test('private ledger retries transient 500 reads and writes, not CAS collisions'
     error=>error.code==='CONFLICT');
   assert.equal(collisions,1);
 });
-test('event triggers keep reconciliation live when cron is dropped',()=>{
-  const flow=readFileSync(new URL('../../.github/workflows/ai-cafe-dev-dispatcher.yml',import.meta.url),'utf8');
-  for(const event of ['check_suite','check_run','pull_request_review','issue_comment','pull_request'])
-    assert.match(flow,new RegExp('^  '+event+':','m'));
-  assert.match(flow,/types: \[opened, synchronize, reopened/);
-  assert.match(flow,/github.event_name == 'check_run'/);
-  assert.match(flow,/github.event_name == 'pull_request_review'/);
-  assert.match(flow,/github.event_name == 'pull_request'/);
+
+function workflowRouting(){
+ const lines=readFileSync(new URL('../../.github/workflows/ai-cafe-dev-dispatcher.yml',import.meta.url),'utf8').split(/\r?\n/);
+ const events=new Map();let inOn=false,event=null;
+ for(const line of lines){
+  if(line==='on:'){inOn=true;continue;}
+  if(inOn && /^[^\s#]/.test(line))inOn=false;
+  if(!inOn)continue;
+  const m=line.match(/^  ([a-z_]+):\s*$/);
+  if(m){event=m[1];events.set(event,null);continue;}
+  const types=line.match(/^    types:\s*\[(.*)\]\s*$/);
+  if(types&&event)events.set(event,types[1].split(',').map(x=>x.trim()));
+ }
+ const section=name=>{
+  const start=lines.indexOf('  '+name+':');
+  assert.ok(start>=0);
+  const end=lines.findIndex((x,i)=>i>start && /^  [a-z_-]+:\s*$/.test(x));
+  return lines.slice(start,end<0?lines.length:end);
+ };
+ const folded=(lines,key)=>{
+  const i=lines.findIndex(x=>x.trim()===key+': >-');
+  assert.ok(i>=0);
+  const indent=lines[i].length-lines[i].trimStart().length;
+  const parts=[];
+  for(const line of lines.slice(i+1)){
+   if(!line.trim())continue;
+   if(line.length-line.trimStart().length<=indent)break;
+   parts.push(line.trim());
+  }
+  return parts.join(' ');
+ };
+ const reconcileLines=section('reconcile');
+ const persist=reconcileLines.find(x=>x.trim().startsWith('PERSIST: '));
+ const ix=reconcileLines.findIndex(x=>x.includes('- name: Publish opaque wake-up signal'));
+ assert.ok(persist&&ix>=0);
+ const signal=reconcileLines.slice(ix+1).find(x=>x.trim().startsWith('if: '));
+ assert.ok(signal);
+ return {events,unit:folded(section('unit'),'if'),reconcile:folded(reconcileLines,'if'),
+  persist:persist.trim().slice('PERSIST: '.length).slice(3,-2).trim(),
+  signal:signal.trim().slice(4).trim()};
+}
+function evaluateWorkflow(expr,{event,enabled='true',manual=false,trusted=true,app='github-actions'}={}){
+ const github={event_name:event,ref:'refs/heads/main',repository:'owner/repo',repository_owner:'owner',
+  event:{workflow_run:{event:'pull_request',name:'AI CAFE Pull Request Baseline',head_repository:{full_name:'owner/repo'}},
+   check_run:{app:{slug:app}},check_suite:{app:{slug:app}},
+   pull_request:{head:{repo:{full_name:'owner/repo'}}},
+   review:{author_association:trusted?'COLLABORATOR':'NONE'},
+   issue:{pull_request:{},number:423},
+   comment:{author_association:trusted?'COLLABORATOR':'NONE',user:{login:'owner'}}}};
+ return !!runInNewContext(expr,{github,vars:{DISPATCH_LEDGER_AUTO_PERSIST:enabled},
+  inputs:{persist_private_ledger:manual},fromJSON:JSON.parse,contains:(a,b)=>a.includes(b)},{timeout:500});
+}
+test('supported events reconcile, persist and publish Muse wake signals',()=>{
+ const {events,unit,reconcile,persist,signal}=workflowRouting();
+ for(const [event,type] of [['check_suite','completed'],['check_run','completed'],
+  ['pull_request_review','submitted'],['issue_comment','created'],
+  ['pull_request','synchronize'],['workflow_run','completed']]){
+  assert.ok(events.has(event),event);
+  assert.ok(events.get(event)?.includes(type),event+' '+type);
+  assert.equal(evaluateWorkflow(unit,{event}),true,event+' unit');
+  assert.equal(evaluateWorkflow(reconcile,{event}),true,event+' reconcile');
+  assert.equal(evaluateWorkflow(persist,{event}),true,event+' persist');
+  assert.equal(evaluateWorkflow(signal,{event}),true,event+' signal');
+  assert.equal(evaluateWorkflow(persist,{event,enabled:'false'}),false,event+' disabled persist');
+  assert.equal(evaluateWorkflow(signal,{event,enabled:'false'}),false,event+' disabled signal');
+ }
+ assert.equal(evaluateWorkflow(unit,{event:'pull_request_review',trusted:false}),false);
+ assert.equal(evaluateWorkflow(unit,{event:'check_run',app:'untrusted-app'}),false);
+ assert.equal(evaluateWorkflow(signal,{event:'workflow_dispatch',manual:true}),true);
+ assert.equal(evaluateWorkflow(signal,{event:'workflow_dispatch',manual:false}),false);
 });
-test('merged parent retains ancestry rather than squashing stacked child commits',()=>{
-  const source=readFileSync(new URL('./effects.mjs',import.meta.url),'utf8');
-  assert.match(source,/merge_method: 'merge'/);
-  assert.doesNotMatch(source,/merge_method: 'squash'/);
+test('mergeApprovedPr emits ancestry-preserving merge commit API request',async()=>{
+ const sha='a'.repeat(40),base='b'.repeat(40),merged='c'.repeat(40);
+ const record={task_id:'POS0d',pr_number:407,head_sha:sha,base_sha:base,draft:false,
+  ci_state:'success',codex_state:'clean',codex_reviewed_sha:sha,threads_resolved:true,mergeable:true};
+ const pr={state:'open',merged:false,draft:false,mergeable:true,head:{sha},base:{sha:base,ref:'main'},labels:[]};
+ const calls=[];
+ const github={request:async(path,options={})=>{
+  calls.push({path,options});
+  if(path==='/pulls/407')return pr;
+  if(path==='/pulls/407/merge')return {merged:true,sha:merged};
+  if(path==='/actions/workflows/ai-cafe-integration-proof.yml/dispatches')return {ok:true};
+  throw Error('Unexpected '+path);
+ },one:async()=>({head_sha:sha,ci_state:'success',codex_state:'clean',
+  codex_reviewed_sha:sha,threads_resolved:true,sensitive_owner_block:false})};
+ const outcome=await mergeApprovedPr({github,record,enabled:true});
+ assert.equal(outcome.status,'merged_unproven');
+ const merges=calls.filter(x=>x.path==='/pulls/407/merge');
+ assert.equal(merges.length,1);
+ assert.equal(merges[0].options.method,'PUT');
+ assert.deepEqual(JSON.parse(merges[0].options.body),
+  {merge_method:'merge',sha,commit_title:'AI CAFE approved task POS0d (#407)'});
+ assert.equal(calls.some(x=>x.path==='/pulls/407/update-branch'),false);
 });
