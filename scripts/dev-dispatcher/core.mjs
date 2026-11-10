@@ -289,9 +289,6 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
   if (isPr && record.waiting_only_for_parent && record.ci_state !== 'failure' &&
       record.codex_state !== 'findings')
     return {kind:'hold',reason:'parent_open_work_already_done'};
-  if (isPr && record.review_requested_sha === record.head_sha &&
-      record.ci_state === 'success' && record.codex_state !== 'findings')
-    return {kind:'hold',reason:'review_already_requested_on_head'};
   if (isPr && !record.draft && record.ci_state === 'success' &&
       record.codex_state === 'clean' && record.codex_reviewed_sha === record.head_sha &&
       record.acceptance_proven === true && Boolean(record.acceptance_evidence) &&
