@@ -33,6 +33,28 @@ it("always supplies the authenticated café identity and grouped metrics",async(
  }));
  expect(result.rows).toEqual([{business_date:"2026-10-01",sum_net_sales_cents:1250}]);
 });
+it("distinguishes safe invalid SQL query shapes from real outages",async()=>{
+ const ctxBase={businessId:b};
+ const rejected=vi.fn(async()=>({data:null,error:{
+  code:"42703",message:"column wrong -- customer@example.test"}}));
+ const queryError=await dataQueryTools.query_data.execute(input(),{
+  ...ctxBase,db:{rpc:rejected} as never});
+ expect(queryError).toMatchObject({error:"invalid_query",empty:true,rows:[]});
+ expect(JSON.stringify(queryError)).not.toContain("customer@example.test");
+ const thrown=Object.assign(new Error("secret query text"),{code:"22P02"});
+ const typed=vi.fn(async()=>{throw thrown;});
+ const malformed=await dataQueryTools.query_data.execute(input(),{
+  ...ctxBase,db:{rpc:typed} as never});
+ expect(malformed.error).toBe("invalid_query");
+ expect(JSON.stringify(malformed)).not.toContain("secret query text");
+ for(const code of ["42501","PGRST202",undefined]){
+  const outage=vi.fn(async()=>({data:null,error:{code,message:"private detail"}}));
+  const result=await dataQueryTools.query_data.execute(input(),{
+   ...ctxBase,db:{rpc:outage} as never});
+  expect(result.error).toBe("source_read_failed");
+  expect(JSON.stringify(result)).not.toContain("private detail");
+ }
+});
 it("empty and failed queries are explicit, not invented zero totals",async()=>{
  const f=testDb();
  const result=await dataQueryTools.query_data.execute(input(),{db:f.db,businessId:b});
