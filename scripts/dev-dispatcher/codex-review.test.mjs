@@ -102,16 +102,14 @@ test('live current-head in-progress Codex signal holds without posting',async()=
   assert.equal(gh.posted.length,0);
 });
 
-test('five-minute push and ready settle windows suppress duplicate requests',async()=>{
- const gh=fakeGithub(),now=new Date().toISOString();
- assert.equal((await requestCodexReview({github:gh,record:{...rec(),last_commit_at:now},task})).status,'held');
- assert.equal((await requestCodexReview({github:gh,record:{...rec(),last_github_activity:now},task})).status,'held');
- assert.equal((await requestCodexReview({github:gh,record:{...rec(),ready_transition_at:now},task})).status,'held');
- gh.request=async(path)=>path==='/pulls/423'
-  ? {state:'open',draft:false,created_at:now,head:{sha:head},base:{sha:base}}
-  : Promise.reject(Error('Unexpected '+path));
- assert.equal((await requestCodexReview({github:gh,record:rec(),task})).status,'automatic_review_grace');
+test('red/pending CI never requests Codex; green final head requests once',async()=>{
+ const gh=fakeGithub(),record=rec();
+ assert.equal((await requestCodexReview({github:gh,record:{...record,ci_state:'failure'},task})).status,'held');
+ assert.equal((await requestCodexReview({github:gh,record:{...record,ci_state:'pending'},task})).status,'held');
  assert.equal(gh.posted.length,0);
+ assert.equal((await requestCodexReview({github:gh,record,task})).status,'requested');
+ assert.equal(gh.posted.length,1);
+ assert.equal((await requestCodexReview({github:gh,record:{...record,codex_review_requested_sha:head},task})).status,'held');
 });
 test('dispatcher-only owner-merge PR never requests Codex',async()=>{
  const gh=fakeGithub();

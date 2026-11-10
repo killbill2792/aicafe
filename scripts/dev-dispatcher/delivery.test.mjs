@@ -25,7 +25,7 @@ test('assignment is a linked step-specific early draft, not a full copied rulebo
   assert.match(d.prompt,/task-6/);
   assert.match(d.prompt,/acceptance tests from signed queue/);
   assert.match(d.prompt,/comment dispositions/);
-  assert.match(d.prompt,/<!-- aicafe-coder-done -->/);
+  assert.doesNotMatch(d.prompt,/aicafe-coder-done/);
   assert.match(d.prompt,/owner questions/);
   assert.match(d.prompt,/exact-head CI\/Codex/);
   assert.doesNotMatch(d.prompt,/Muse|courier receipts|whole rulebook/i);
@@ -41,7 +41,7 @@ test('independent and dependent authorized tasks open their draft immediately on
   assert.match(independent.prompt,/PR base main/);
   assert.match(stacked.prompt,/PR base feat\/parent \(parent PR #398\)/);
   assert.match(stacked.prompt,/Work\/commit\/test while parent is open/);
-  assert.match(independent.prompt,/one final-head Codex review/);
+  assert.match(independent.prompt,/Ready after green checks, triggering exact-head Codex review/);
   assert.match(stacked.prompt,/NO rebase or Codex until parent merged/);
   assert.doesNotMatch(stacked.prompt,/blocked until .* merges/i);
   assert.equal(stacked.base_branch,'feat/parent');
