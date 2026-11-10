@@ -75,3 +75,14 @@ test('a newer verified head beats misleading commit author timestamps',()=>{
  s.tasks.T.last_prompt_head_sha=head;
  assert.equal(run(s).tasks.T.stall_count,1);
 });
+
+test('existing owner notices flag wrong-repo, connector 403 and third stall',async()=>{
+ const {queueOwnerAlerts}=await import('./alerts.mjs');
+ const st={tasks:{T:{task_id:'T',pr_number:12,repo:'owner/product',repo_mismatch:{expected:'other/repo',actual:'owner/aicafe'},
+  connector_403:true,stall_escalate:true,head_sha:head}},actions:{}};
+ const next=queueOwnerAlerts(st,{now:'2026-11-10T11:00:00Z'});
+ const notes=Object.values(next.owner_alerts);
+ assert.deepEqual(notes.map(n=>n.kind).sort(),['connector_403','repeated_stall','wrong_repo']);
+ assert.ok(notes.some(n=>n.question==='ChatGPT Codex Connector likely missing repo owner/product'));
+ assert.ok(notes.some(n=>/D7 referee/.test(n.question)));
+});
