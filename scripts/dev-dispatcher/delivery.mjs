@@ -59,7 +59,8 @@ export function createAdhocDelivery({record,action,actionId}) {
   const reason = action === 'landing_failed'
     ? 'Post-merge landing check failed. Forward this exact error tail to the original PR chat and repair the merged-main regression:\n'+String(record.landing_failure||'').slice(0,3500)
     : action === 'no_push_after_prompt' ? STALL_PROMPT : action === 'ci_failed'
-    ? 'Diagnose current-head CI failure: ' + (record.ci_failure_url || pr)
+    ? 'Diagnose current-head CI failure: ' + (record.ci_failure_url || pr) +
+      (record.ci_failure_fix ? '\nExact check error and correction:\n'+record.ci_failure_fix : '')
     : action === 'codex_comments'
       ? 'Resolve current-head Codex findings and review threads on ' + pr
       : 'Resolve the GitHub merge conflict on ' + pr;
@@ -122,6 +123,7 @@ export function createDelivery({ task, record, action, actionId }) {
     landing_failed:'landing_failed: Post-merge smoke failure. Error tail from the merged PR:\n'+String(record.landing_failure||'').slice(0,3500),
     ci_failed:'ci_failed: ' + (record.ci_failure_job || 'Find failing CI job') + '\n' +
       (record.ci_failure_url || pr) +
+      (record.ci_failure_fix ? '\nExact check error and correction:\n'+record.ci_failure_fix : '') +
       '\nDiagnose and fix the actual failure; do not weaken tests; rerun CI.',
     parent_merged:'parent_merged: Verified parent merge ' + (record.parent_merged_sha || 'unknown') +
       '. Rebase onto main and continue in this SAME child PR/chat. Dispatcher already retargeted to main ' +
