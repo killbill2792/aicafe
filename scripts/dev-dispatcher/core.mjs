@@ -4,6 +4,26 @@ export const taskKey = (id) => {
   if (!ID.test(id)) throw new Error("Invalid task id");
   return `aicafe:${id}`;
 };
+// New queues use edits (exclusive writes) and uses (read-only imports).
+// Retain signed exclusive_files for existing approved tasks until migrated.
+export const editableFiles = task => task?.edits ?? task?.exclusive_files ?? [];
+export const usedFiles = task => task?.uses ?? [];
+const validPath = path => typeof path === 'string' && Boolean(path) &&
+  !path.startsWith('/') && !path.includes('*') && !path.includes('..');
+
+export function resolveTaskBase(task, records = {}) {
+  const deps = task?.depends_on || [];
+  if (!deps.length) return {base_branch:'main',prerequisite_pr:null,waiting_for_parent:false};
+  const unmerged = deps.filter(id => !['merged','integrated_proven','released_proven'].includes(records[id]?.status) &&
+    records[id]?.github_state !== 'merged');
+  if (!unmerged.length) return {base_branch:'main',prerequisite_pr:null,waiting_for_parent:false};
+  const selected = unmerged.length === 1 ? unmerged[0] : task.stack_base_task;
+  const parent = records[selected];
+  if (!selected || !parent?.branch || parent.github_state !== 'open' ||
+      !Number.isInteger(parent.pr_number)) return {blocked:true,reason:'unverified_parent_pr'};
+  return {base_branch:parent.branch,prerequisite_pr:parent.pr_number,waiting_for_parent:true};
+}
+
 export function validateQueue(queue) {
   if (!Array.isArray(queue?.tasks) || !Array.isArray(queue?.merged_code_only)) throw new Error("Invalid queue");
   const all = new Set(queue.merged_code_only.map(x => x.id));
@@ -17,19 +37,21 @@ export function validateQueue(queue) {
       throw new Error(`Invalid stack base for ${task.id}`);
     tasks.set(task.id, task);
   }
-  // Ownership is exclusive across the whole approved queue, not just
-  // currently-running tasks. Fail closed before spawning parallel coders.
+  // Read-only uses never reserve a path; only two writers conflict.
   const exclusiveOwners = new Map();
   for (const task of queue.tasks) {
-    if (!Array.isArray(task.exclusive_files)) continue;
-    for (const path of task.exclusive_files) {
-      if (typeof path !== "string" || !path || path.startsWith("/") ||
-          path.includes("*") || path.includes(".."))
-        throw new Error("Invalid exclusive file ownership for " + task.id);
+    const edits = editableFiles(task), uses = usedFiles(task);
+    if (!Array.isArray(edits) || !Array.isArray(uses) ||
+        !edits.length || edits.some(path => !validPath(path)) ||
+        new Set(edits).size !== edits.length)
+      throw new Error('Invalid exclusive file ownership for ' + task.id);
+    if (uses.some(path => !validPath(path)) || new Set(uses).size !== uses.length)
+      throw new Error('Invalid read-only file usage for ' + task.id);
+    for (const path of edits) {
       const owner = exclusiveOwners.get(path);
-      if (owner) throw new Error("Overlapping exclusive file ownership: " +
-        path + " (" + owner + " and " + task.id + ")");
-      exclusiveOwners.set(path, task.id);
+      if (owner) throw new Error('Overlapping exclusive file ownership: ' +
+        path + ' (' + owner + ' and ' + task.id + ')');
+      exclusiveOwners.set(path,task.id);
     }
   }
   const visiting = new Set(), visited = new Set();
@@ -123,7 +145,7 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
   const claimed = new Set();
   for (const [id, record] of Object.entries(records)) {
     if (occupiesSlot(record)) {
-      for (const path of tasks.get(id)?.exclusive_files || []) claimed.add(path);
+      for (const path of editableFiles(tasks.get(id))) claimed.add(path);
     }
   }
   const actions = [];
@@ -138,8 +160,7 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
     if (!gateProven && !gateAllowed.has(task.id)) continue;
     if (!foundationProven && foundationDependents.has(task.id)) continue;
     if (!approved(task) || records[task.id]?.conversation_ref || (records[task.id]?.status && records[task.id].status !== "proposed")) continue;
-    if (!Array.isArray(task.exclusive_files) || !task.exclusive_files.length ||
-      task.exclusive_files.some(path => typeof path !== "string" || !path || path.includes("*") || path.includes("..") || claimed.has(path))) continue;
+    if (!editableFiles(task).length || editableFiles(task).some(path => claimed.has(path))) continue;
     const openDeps = [];
     let blocked = false;
     for (const dep of task.depends_on) {
@@ -166,9 +187,12 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
     const agent = Object.keys(remaining).find(k => remaining[k] > 0 && (k !== "claude" || task.depends_on.length === 0));
     if (!agent) break;
     remaining[agent]--;
-    for (const path of task.exclusive_files) claimed.add(path);
-    actions.push({ type: "assign", task_id: task.id, agent, base_branch: base?.branch || "main",
-      prerequisite_pr: base?.pr_number ?? null });
+    for (const path of editableFiles(task)) claimed.add(path);
+    const resolved = resolveTaskBase(task,records);
+    if (resolved.blocked) { remaining[agent]++; continue; }
+    actions.push({ type: "assign", task_id: task.id, agent,
+      base_branch: base?.branch || resolved.base_branch,
+      prerequisite_pr: base?.pr_number ?? resolved.prerequisite_pr });
   }
   return actions;
 }
@@ -217,69 +241,74 @@ export function wakePendingActions(state, nowMs, intervalMs = 900000) {
   }
   return state;
 }
+// Exactly one actionable reason for each quiet-PR continuation. All messages
+// are built by delivery.mjs; this pure selector never asks a courier to guess.
 export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 } = {}) {
-  if (!record || !record.approved || !record.conversation_ref) return { kind: "hold", reason: "unapproved_or_missing_chat" };
-  if (record.submission_state === "uncertain" || record.submission_state === "needs_login") return { kind: "hold", reason: record.submission_state };
-  // An unanswered question blocks ONLY its unapproved portion, not already
-  // signed CI repairs, review fixes or the owner's response in this SAME chat.
-  // The coder must reconcile any actual owner answer in the PR, and must not
-  // widen file ownership or treat a courier notification as approval.
-  if ((record.owner_question || record.github_owner_question) &&
-      (!Number.isInteger(record.pr_number) || record.github_state !== "open"))
-    return {kind:"hold",reason:"owner_decision_required"};
+  if (!record || !record.approved || !record.conversation_ref)
+    return {kind:'hold',reason:'unapproved_or_missing_chat'};
+  if (['uncertain','needs_login'].includes(record.submission_state))
+    return {kind:'hold',reason:record.submission_state};
   const isPr = Number.isInteger(record.pr_number);
-  // Ready PRs need real check conclusions for targeted repair/merge routing.
-  // Draft PRs may legitimately have NO Codex review yet; pending/unknown is not
-  // proof that an agent is active. Do not leave those drafts silent forever.
-  // At the normal 10-minute quiet window, ask the SAME chat to inspect CI,
-  // obtain Codex and continue; the courier only checks the composer is idle.
-  // Pending/unknown CI or Codex results are not permission to merge, but an
-  // indefinitely pending review is still actionable work. After fifteen minutes
-  // without a code change, resume the same coder to inspect/request the checks.
-  const waitingForChecks = isPr && !record.draft &&
-    (!["success", "failure"].includes(record.ci_state) ||
-     !["clean", "findings"].includes(record.codex_state));
-  const lastCodeMs = Date.parse(record.last_commit_at || record.last_github_activity || "");
-  if (waitingForChecks && (!Number.isFinite(lastCodeMs) || nowMs - lastCodeMs < 900000))
-    return { kind: "hold", reason: "checks_pending_or_unknown" };
-  if (record.agent === "claude") return { kind: "hold", reason: "claude_no_routine_nudges" };
-  // GitHub cannot see the browser. The courier checks the idle composer before any reminder.
-  if (!isPr && record.browser_busy === true) return { kind: "hold", reason: "browser_confirmed_busy" };
-  const last = Date.parse(isPr ? (record.codex_state === "findings" && record.codex_review_at && Date.parse(record.codex_review_at) > Date.parse(record.last_commit_at || 0) ? record.codex_review_at : record.last_commit_at) : record.last_submission_at);
-  if (!Number.isFinite(last) || nowMs - last < (isPr ? quietMs : prePrMs)) return { kind: "hold", reason: "not_quiet" };
-  // A verified Muse submission starts its own quiet period. Without this,
-  // a PR that has not committed after the first reminder never resumes again.
-  const sentMs = Date.parse(record.last_submission_at || "");
-  if (isPr && record.submission_state === "submitted" &&
-      Number.isFinite(sentMs) && nowMs - sentMs < 900000)
-    return { kind: "hold", reason: "post_delivery_quiet" };
-  if (record.next_check_at && nowMs < Date.parse(record.next_check_at)) return { kind: "hold", reason: "cooldown" };
-  // No generic reminder for an already reviewed ready PR with captured proof.
-  // A draft must still be completed and marked ready; early Codex clean is not
-  // the final-head merge gate.
-  if (isPr && !record.draft && record.ci_state === "success" && record.codex_state === "clean" &&
-      record.acceptance_evidence && record.acceptance_proven === true &&
-      record.threads_resolved !== false &&
+  if (record.agent === 'claude') return {kind:'hold',reason:'claude_no_routine_nudges'};
+  if (!isPr && record.browser_busy === true)
+    return {kind:'hold',reason:'browser_confirmed_busy'};
+  if ((record.owner_question || record.github_owner_question) && !isPr)
+    return {kind:'hold',reason:'owner_decision_required'};
+  const last = Date.parse(isPr ? record.last_commit_at : record.last_submission_at);
+  const quietFor = nowMs - last;
+  if (!Number.isFinite(last) || quietFor < (isPr ? quietMs : prePrMs))
+    return {kind:'hold',reason:'not_quiet'};
+  const sentMs = Date.parse(record.last_submission_at || '');
+  if (record.submission_state === 'submitted' && Number.isFinite(sentMs) &&
+      nowMs - sentMs < 900000) return {kind:'hold',reason:'post_delivery_quiet'};
+  if (record.next_check_at && nowMs < Date.parse(record.next_check_at))
+    return {kind:'hold',reason:'cooldown'};
+  if (record.submission_state === 'pending')
+    return {kind:'hold',reason:'delivery_pending'};
+  // A merged parent gets one stable rebase action regardless of intermediate child pushes.
+  const parentSha = record.parent_merged_sha;
+  const rebaseDue = isPr && parentSha && record.last_parent_rebase_sha !== parentSha;
+  if (rebaseDue) return {kind:'propose',action:'parent_merged',
+    key:'parent_merged:'+encodeURIComponent(record.task_id)+':'+parentSha};
+  if (isPr && record.waiting_only_for_parent)
+    return {kind:'hold',reason:'parent_open_work_already_done'};
+  if (isPr && record.review_requested_sha === record.head_sha &&
+      record.ci_state === 'success' && record.codex_state !== 'findings')
+    return {kind:'hold',reason:'review_already_requested_on_head'};
+  if (isPr && !record.draft && record.ci_state === 'success' &&
+      record.codex_state === 'clean' && record.codex_reviewed_sha === record.head_sha &&
+      record.acceptance_proven === true && record.threads_resolved !== false &&
       record.base_current !== false && record.review_base_current !== false)
-    return { kind: "hold", reason: "no_actionable_findings" };
-  const action = isPr ? (record.ci_state === "failure" ? "repair_ci" :
-    record.codex_state === "findings" ? "repair_review" : "continue_pr") : "pre_pr_reminder";
-  let key = actionKey(record, action);
-  if (isPr && record.submission_state === "submitted" &&
-      record.last_action_key === key && Number.isFinite(sentMs)) {
-    // The previous prompt was genuinely delivered and the quiet period passed,
-    // yet no newer GitHub action changed its key. Create exactly ONE new
-    // task/head/receipt-scoped retry; do not grow an unbounded nested action ID.
-    const root = [record.task_id, action, record.head_sha || "pre-pr",
-      record.prompt_version || "v1",
-      record.last_commit_at || record.last_github_activity || "start"]
-      .map(v => encodeURIComponent(String(v))).join(":");
-    key = root + ":retry:" + encodeURIComponent(record.last_submission_at);
+    return {kind:'hold',reason:'no_actionable_findings'};
+  const action = !isPr ? 'pre_pr_reminder' :
+    record.ci_state === 'failure' ? 'ci_failed' :
+    record.codex_state === 'findings' ? 'codex_comments' :
+    record.owner_answer_text && record.last_owner_answer_key !== record.owner_answer_key
+      ? 'owner_answered' : 'idle_continue';
+  let key = actionKey(record,action);
+  if (record.last_action_key === key && record.submission_state === 'submitted' &&
+      Number.isFinite(sentMs)) {
+    key = key + ':retry:' + encodeURIComponent(record.last_submission_at);
   }
-  if (record.last_action_key === key || record.submission_state === "pending" ||
-      record.attempts >= (record.max_attempts ?? 3))
-    return { kind: "hold", reason: "already_sent_or_capped" };
-  return { kind: "propose", action, key };
+  if (record.last_action_key === key || record.attempts >= (record.max_attempts ?? 3))
+    return {kind:'hold',reason:'already_sent_or_capped'};
+  return {kind:'propose',action,key};
+}
+
+export function readyGate(record, predecessors = []) {
+  const reasons=[];
+  if (!record?.approved) reasons.push('not_approved');
+  if (record?.draft !== true) reasons.push('not_a_draft');
+  if (!record?.coder_done) reasons.push('coder_not_done');
+  if (record?.ci_state !== 'success') reasons.push('ci_not_green');
+  if (record?.owner_question || record?.github_owner_question) reasons.push('owner_decision_pending');
+  if (record?.base_branch !== 'main') reasons.push('parent_not_merged_or_rebased');
+  if (!record?.base_current) reasons.push('stale_base');
+  if (record?.threads_resolved === false) reasons.push('unresolved_threads');
+  if (!record?.acceptance_proven) reasons.push('acceptance_not_proven');
+  if (predecessors.some(p => !['integrated_proven','released_proven'].includes(p.status)))
+    reasons.push('predecessor_not_proven');
+  return {eligible:reasons.length===0,reasons};
 }
 export function invalidateOnHeadChange(record, newSha, at) {
   if (record.head_sha === newSha) return record;
@@ -326,7 +355,8 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
       if (rec.pr_number !== pr.pr_number) continue;
       if (rec.head_sha !== pr.head_sha) {
         for (const action of Object.values(copy.actions)) {
-          if (action.task_id === id && action.status === "planned" && action.head_sha !== pr.head_sha) {
+          if (action.task_id === id && action.status === "planned" &&
+              action.type !== 'parent_merged' && action.head_sha !== pr.head_sha) {
             action.status = "cancelled_stale_head";
           }
         }
