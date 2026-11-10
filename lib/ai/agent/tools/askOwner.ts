@@ -37,26 +37,23 @@ function withoutEmptyChoices(field:AskOwnerField,kind:string|undefined):AskOwner
 }
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 /**
- * An owner fact card ends the current Supervisor turn. It must not replace
- * looking up an observed POS transaction count from the same scoped reader.
+ * A numeric fact entered by an owner is not the same as a value already
+ * recorded by the POS. Ask the owner for numbers only when their provenance
+ * is an actual saved owner fact or an observed missing owner input returned
+ * by a trusted tool; never classify the owner's sentence by keywords.
  *
- * This guards unambiguous *recorded counts*, not owner plans, forecasts,
- * supplier procurement, or verified owner-choice/stock-fill cards. The intent
- * comes from the original authenticated owner utterance, not model card text
- * or untrusted POS data.
+ * The schema's other field types (date/text/choice/money/percent) are not
+ * blocked here: the owner may still need to identify a day, an event or a
+ * preference before any POS query can be made.
  */
-function asksRecordedPosCount(ownerText:unknown):boolean{
- // Some trusted internal callers do not carry an owner utterance; preserve
- // their existing clarification behavior rather than guessing user intent.
- if(typeof ownerText!=="string")return false;
- const q=ownerText.toLowerCase().replace(/\s+/g," ").trim();
- if(!/\b(?:how many|number of|count(?: of)?|total(?: number| amount)? of|how much)\b/.test(q))
-  return false;
- if(/\b(?:should|would|could|want|prefer|plan|planning|forecast|predict|goal|target|budget|estimate|expect|recommend|need to|will)\b/.test(q))
-  return false;
- if(/\b(?:supplier|wholesale|purchase orders?|restock|reorder|order supplies)\b/.test(q))
-  return false;
- return /\b(?:orders?|checks?|discounts?|refunds?|voids?|payments?|transactions?|sales?|selections?|quantit(?:y|ies)|guests?|tips?|clocked (?:hours|in|out)|hours worked|items? sold|units? sold)\b/.test(q);
+function verifiedOwnerNumber(key:string,ctx:AgentToolContext):boolean{
+ const entry=catalogForMissing(key);
+ if(entry.labelKey!=="generic"&&entry.type==="number")return true;
+ const saved=(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
+ if(saved.some(f=>f.fact_key===entry.factKey))return true;
+ return (ctx.turnResults?.()??[]).some(({result})=>
+  result.source!=="canonical_data"&&result.source!=="ask_owner"&&
+  result.missing?.includes(entry.factKey));
 }
 export const askOwnerTools={ask_owner:{
  agentId:"alex",schema:askOwnerSchema,
@@ -66,13 +63,16 @@ export const askOwnerTools={ask_owner:{
   const input={...parsed,fields:parsed.fields?.map(field=>withoutEmptyChoices(field,parsed.kind))};
   const state=ctx.resolveState;
   if(!state||state.asked)return {source:"ask_owner",period:null,missing:["alreadyAsked"],error:"askOwnerLimit"};
-  // The rejected card must not consume state.asked: the next model step can
-  // use the existing query_data tool instead of prompting the owner.
-  // changeSaved is model-authored and must not bypass POS fact protection.
-  if(input.kind==="facts"&&asksRecordedPosCount(ctx.ownerText??state.ownerText)){
-    return {source:"ask_owner",period:null,missing:["posFactRequiresReader"],
-     error:"posFactRequiresReader",nextTool:"query_data",
-     note:"This is a recorded POS fact, not an owner-entered input. Call query_data on the existing café-scoped records and aggregate the requested dates. Do not ask the owner."};
+  // Only when a café-scoped data reader is available: an unsourced numeric
+  // card must not end the turn instead of trying that existing reader first.
+  // The missing list is derived from trusted results/saved facts; a model
+  // cannot assert provenance with a field label, question, or changeSaved.
+  // Non-numeric clarifications (e.g. which date was the pop-up?) remain valid.
+  if(input.kind==="facts"&&ctx.canonicalData&&input.fields?.some(field=>
+     field.inputType==="number"&&!verifiedOwnerNumber(field.key,ctx))){
+    return {source:"ask_owner",period:null,missing:["numericOwnerInputUnverified"],
+     error:"numericOwnerInputUnverified",nextTool:"query_data",
+     note:"No trusted owner-input evidence supports this numeric card. For recorded POS numbers call query_data. If an owner-only date, place, event, or other context is needed, ask for that specific date/text/choice instead. Do not invent a number or create a numeric owner fact."};
   }
   if(input.kind==="facts"){
     if(!input.fields?.length||input.options.length||input.allowOther||input.fields.length>6||
