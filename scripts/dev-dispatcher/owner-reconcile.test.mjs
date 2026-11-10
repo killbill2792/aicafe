@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { linkPullRequests } from './dependencies.mjs';
+import {isDispatcherMaintenanceChange} from './github.mjs';
 import { reconcileGithub, decideNudge } from './core.mjs';
 import { queueOwnerAlerts, acceptOwnerNoticeReceipt } from './alerts.mjs';
 import { revalidateQueuedActions } from './authorization.mjs';
@@ -45,7 +46,7 @@ test('existing draft owner question produces one Muse notice, stops stale remind
   assert.equal(rec.conversation_ref,conversation);
   // A scoped owner question may remain pending while already-approved
   // CI/review work resumes in the same verified conversation.
-  assert.equal(decideNudge(rec,Date.parse('2026-11-07T10:00:00Z')).action,'continue_pr');
+  assert.equal(decideNudge(rec,Date.parse('2026-11-07T10:00:00Z')).action,'idle_continue');
   assert.equal(first.actions['POS0a:pre_pr_reminder:pre-pr:v1:start'].status,'cancelled_stale_head');
   const entries=Object.entries(first.owner_alerts);
   assert.equal(entries.length,1);
@@ -95,4 +96,26 @@ test('editing and withdrawing a question cancels only unsent owner notices',()=>
  assert.equal(signalFor(withdrawnAgain,'s'.repeat(32)).pending_count,0);
  const restored=reconcile(withdrawnAgain,[newDraft('Approve a new audit decision?')]);
  assert.equal(Object.values(restored.owner_alerts).filter(n=>n.status==='planned').length,1);
+});
+
+
+test('AGENTS + dispatcher-only paths do not create a bogus coding-chat assignment alert',()=>{
+ const files=[{filename:'AGENTS.md'},
+   {filename:'.claude/skills/aicafe-pr-lifecycle/SKILL.md'},{filename:'scripts/dev-dispatcher/delivery.mjs'},
+   {filename:'scripts/dev-dispatcher/bridge/README.md'}];
+ assert.equal(isDispatcherMaintenanceChange(files),true);
+ assert.equal(isDispatcherMaintenanceChange([{filename:'AGENTS.md'}]),true);
+ assert.equal(isDispatcherMaintenanceChange([{filename:'.github/workflows/ai-cafe-dev-dispatcher.yml'}]),true);
+ for(const path of ['lib/ai/supervisor/loop.ts','PROGRESS.md',
+   'supabase/migrations/20261110_fake.sql','docs/plans/unapproved-brief.md']){
+  assert.equal(isDispatcherMaintenanceChange([...files,{filename:path}]),false,path);
+ }
+ assert.equal(isDispatcherMaintenanceChange([]),false);
+ assert.equal(isDispatcherMaintenanceChange([{filename:null}]),false);
+ const maintenance={pr_number:419,branch:'docs/codex-review-once',base_branch:'main',
+   infrastructure_pr:isDispatcherMaintenanceChange(files)};
+ const unrelated={pr_number:420,branch:'feat/unapproved',base_branch:'main',
+   infrastructure_pr:isDispatcherMaintenanceChange([...files,{filename:'lib/ai/supervisor/loop.ts'}])};
+ const linked=linkPullRequests({version:1,tasks:{},actions:{}},[maintenance,unrelated]);
+ assert.deepEqual(linked.unmapped,[420]);
 });

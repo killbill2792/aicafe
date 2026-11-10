@@ -1,3 +1,4 @@
+import { editableFiles } from './core.mjs';
 import { approvalSignature } from './delivery.mjs';
 import { architectureFoundationReady } from './core.mjs';
 
@@ -13,7 +14,7 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
     const task = taskById.get(id);
     const currentSignature = task && task.architecture_approval?.approved === true &&
       ['architecture_approved', 'ready'].includes(task.state) &&
-      Array.isArray(task.exclusive_files) && task.exclusive_files.length > 0
+      editableFiles(task).length > 0
       ? approvalSignature(task) : null;
     const revoked = !currentSignature || rec.approval_hash !== currentSignature;
     const prClosed = Number.isInteger(rec.pr_number) && rec.github_state !== 'open';

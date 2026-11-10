@@ -1,10 +1,18 @@
 import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
+const rosterClient=vi.hoisted(()=>({request:vi.fn()}));
+vi.mock("@/lib/pos/toast/client",async importOriginal=>{
+ const source=await importOriginal<typeof import("@/lib/pos/toast/client")>();
+ return {...source,createToastClient:()=>rosterClient};
+});
 vi.mock("@/lib/data/toastDayTrust.server",()=>({
  readToastDayTrust:vi.fn(async()=>({blocked:new Set(),quality:[],notes:[]}))
 }));
 import {dataQueryTools,officialToastFields} from "./dataQuery";
+import {runAgentTurn,type AgentProvider} from "../loop.server";
+import {agentToolDefinitions,type AgentToolContext} from "./index";
 import {toastOfficialFieldCatalog} from "@/lib/data/canonical/dictionary";
+import {createToastAdapter} from "@/lib/pos/toast/adapter";
 
 const cafeA="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const cafeB="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -14,7 +22,94 @@ const query={view:"cv_toast_records",columns:null,filters:[
  group_by:["data.type"],metrics:[{fn:"sum",column:"data.amount"}],
  ...range,order_by:null,limit:20};
 
+it("builds the complete registered one-Supervisor tool request before any paid provider call",async()=>{
+ let seen=0;
+ const fake:AgentProvider=async function*(params){
+  seen++;
+  const encoded=JSON.stringify(params);
+  expect(encoded.length).toBeLessThan(3_000_000);
+  const names=(params.tools as Array<{name:string}>).map(tool=>tool.name);
+  expect(names).toContain("query_data");
+  expect(names).toContain("describe_data");
+  expect(names.length).toBeGreaterThan(2);
+  yield {type:"response.output_text.delta",delta:"Registered tool request built."};
+  yield {type:"response.completed",response:{status:"completed",output:[],
+   usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const ctx={asOf:"2026-11-09",timezone:"America/Los_Angeles",
+  locale:"en",tools:{}} as unknown as AgentToolContext;
+ await runAgentTurn({context:ctx,provider:fake,
+  ownerText:"Verify the registered tool request can be constructed."});
+ expect(seen).toBe(1);
+});
+
+it("uses the actual Toast roster adapter's retained full-name projection",async()=>{
+ const guid="d1d1d1d1-1111-4111-8111-111111111111";
+ rosterClient.request.mockResolvedValueOnce([{guid,firstName:"Nadia",
+  lastName:"Rao",chosenName:null,deleted:false}]);
+ const adapter=createToastAdapter({db:{} as never,businessId:cafeA,
+  restaurantGuid:"e1e1e1e1-1111-4111-8111-111111111111"});
+ const facts=await adapter.fetchEmployeeRosterFacts();
+ expect(facts).toEqual([{employee_guid:guid,display_name:"Nadia Rao",deleted:false}]);
+ expect(facts[0]).not.toHaveProperty("firstName");
+ expect(facts[0]).not.toHaveProperty("lastName");
+ expect(rosterClient.request).toHaveBeenCalledWith(
+  "/labor/v1/employees","e1e1e1e1-1111-4111-8111-111111111111",
+  expect.anything(),expect.anything());
+});
+
 describe("POS0e retained current-source dictionary and shared reader",()=>{
+ it("exposes retained discount, item-unit and guest query semantics in registered model tool metadata",()=>{
+  const registered=agentToolDefinitions.find(tool=>tool.name==="query_data");
+  const description=registered?.description??"";
+  expect(description).toContain("count_distinct order_ref");
+  expect(description).toContain("count_distinct check_ref");
+  expect(description).toContain("sum data.quantity");
+  expect(description).toContain("sum data.numberOfGuests");
+  expect(description).toContain("retained canonical records");
+  expect(description).toContain("Never ask the café owner");
+  // Six actual full-Luna failures: keep route selection and aggregate semantics
+  // specific, while all real answer assertions remain unchanged.
+  expect(description).toContain("count_distinct data.name with group_by:null");
+  expect(description).toContain("For ALL applied uses of ANY name");
+  expect(description).toContain("filter data.quantity >= 2");
+  expect(description).toContain("data.source=Online");
+  expect(description).toContain("count_distinct record_ref");
+  expect(description).toContain("the canonical source column is data provenance");
+  expect(description).toContain("avoid repeated schema discovery");
+  expect(description).toContain("call query_data directly");
+  expect(description).toContain("ALWAYS use query_data, NOT ask_owner");
+  expect(description).toContain("rows[0].count_source_ref");
+  expect(description).toContain("aggregate:{metric,value,status}");
+  expect(description).toContain("status=so_far");
+  const discovery=agentToolDefinitions.find(tool=>tool.name==="describe_data");
+  expect(discovery?.description).toContain("ONLY when the canonical view or field path is genuinely unknown");
+  expect(discovery?.description).toContain("call query_data directly without schema discovery");
+ });
+ it("describes the correct Toast menu-item GUID lookup without confusing evidence refs",async()=>{
+  const described=await dataQueryTools.describe_data.execute({view:"cv_inventory"});
+  const cols=described.views?.[0]?.columns??[];
+  const menu=cols.find(c=>c.name==="menu_item_ref");
+  const evidence=cols.find(c=>c.name==="source_ref");
+  expect(menu?.meaning).toContain("menu-item GUID");
+  expect(menu?.meaning).toContain("menu_item_ref");
+  expect(evidence?.meaning).toContain("NOT the Toast menu-item GUID");
+
+  const stockGuid="d1d1d1d1-1111-4111-8111-111111111111";
+  const rpc=vi.fn(async()=>({data:{rows:[{quantity:4.5}],sourceCount:1,
+   sourceMix:{toast:1},truncated:false},error:null}));
+  const answer=await dataQueryTools.query_data.execute({
+   view:"cv_inventory",columns:["quantity"],
+   filters:[{column:"menu_item_ref",op:"=",value:stockGuid}],
+   group_by:null,metrics:null,date_from:"2026-10-26",date_to:"2026-10-26",
+   order_by:null,limit:10
+  },{db:{rpc} as never,businessId:cafeA});
+  expect(answer.rows).toEqual([{quantity:4.5}]);
+  expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+   p_business_id:cafeA,p_view:"cv_inventory",
+   p_filters:[{column:"menu_item_ref",op:"=",value:stockGuid}]
+  }));
+ });
  it("guides a single exact stored-GUID query for employee and customer names",async()=>{
   const described=await dataQueryTools.describe_data.execute({view:"cv_toast_records"});
   const cols=described.views?.[0]?.columns??[];
@@ -23,10 +118,11 @@ describe("POS0e retained current-source dictionary and shared reader",()=>{
   const data=cols.find(col=>col.name==="data");
   expect(employeeType?.meaning).toContain("record_type=employee");
   expect(recordGuid?.meaning).toContain("record_ref");
-  expect(data?.meaning).toContain("data.firstName");
+  expect(data?.meaning).toContain("data.display_name");
+   expect(data?.meaning).toContain("data.firstName is not stored");
   expect(data?.meaning).toContain("data.customer.firstName");
   const cases=[
-   {type:"employee",ref:"d1d1d1d1-1111-4111-8111-111111111111",field:"data.firstName"},
+   {type:"employee",ref:"d1d1d1d1-1111-4111-8111-111111111111",field:"data.display_name"},
    {type:"order",ref:"d2d2d2d2-2222-4222-8222-222222222222",field:"data.customer.firstName"}
   ];
   for(const c of cases){

@@ -673,7 +673,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_inventory": {
-    "meaning": "App pantry counts and retained current Toast inventory objects; unknown stock is not zero",
+    "meaning": "App pantry and retained current Toast inventory records. A Toast menu-item GUID identifies menu_item_ref, not source_ref; query the café-local business date. Unknown stock quantity stays missing, never zero.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -688,7 +688,7 @@ export const canonicalDictionary = {
         "example": "Where did this number come from?"
       },
       "source_ref": {
-        "meaning": "Stable reference for the underlying fact.",
+        "meaning": "Stable reference for this inventory evidence row. This is NOT the Toast menu-item GUID; use menu_item_ref for a specific Toast stock item.",
         "unit": "identifier",
         "source": "app",
         "example": "Which record supports it?"
@@ -712,7 +712,7 @@ export const canonicalDictionary = {
         "example": "Show the source detail."
       },
       "menu_item_ref": {
-        "meaning": "Toast menu-item reference from current retained provider stock; absent items are not zero.",
+        "meaning": "The Toast menu-item GUID used by retained stock records. Filter menu_item_ref = the supplied Toast item GUID for a specific item; source_ref is a different evidence-row reference. An absent item is not quantity zero.",
         "unit": "identifier",
         "source": "toast",
         "example": "What was recorded?"
@@ -1033,7 +1033,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_dining_options": {
-    "meaning": "Retained current Toast dining-option configuration, not diagnostic captures; provider permissions and freshness may be incomplete.",
+    "meaning": "Retained current Toast dining-option configuration, not diagnostic captures; undated reference records are included regardless of the requested café date range, without inventing a business date. Provider permissions and freshness may be incomplete.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -1060,7 +1060,7 @@ export const canonicalDictionary = {
         "example": "Is this record complete?"
       },
       "business_date": {
-        "meaning": "Café local business date of the retained current Toast record, when supplied.",
+        "meaning": "Café business date supplied by Toast; NULL for undated dining-option configuration. Reference records remain queryable for any selected date range.",
         "unit": "local date",
         "source": "app",
         "example": "What happened on this date?"
@@ -1149,7 +1149,7 @@ export const canonicalDictionary = {
         "example": "Did this count?"
       },
       "data": {
-        "meaning": "Cleaned Toast fields: read named paths such as data.name, data.server.guid, data.price. For retained record_type=employee, permitted first name is data.firstName; for retained record_type=order, permitted customer first name is data.customer.firstName. Select only the required named path, filter record_ref for a known GUID, and respect field availability. Use describe_data with one record_type to discover unknown paths. Numeric JSON fields support comparisons, sum, min, max and averages; is_null/is_not_null find absent fields without treating them as zero. Group by business_date and any named field for unplanned per-day/per-item questions. Group by data.name for discount names; status VOID is excluded with counts_in_sales, not by summing amounts. Toast JSON money fields are dollar-valued. For the fixture-proven amounts, use price_cents for item prices and discount_amount_cents for item/check discounts; both are integer cents. Neither is the screen net-sales definition. Unproven JSON dollar fields remain unprojected.",
+        "meaning": "Cleaned Toast fields: read named paths such as data.name, data.server.guid, data.price. For retained record_type=employee from the current roster writer, the available un-hashed name is data.display_name (full display name); data.firstName is not stored by that projection and separate first-name components are unavailable unless independently retained. For retained record_type=order, permitted customer first name is data.customer.firstName. Select only the required named path, filter record_ref for a known GUID, and respect field availability. Use describe_data with one record_type to discover unknown paths. Numeric JSON fields support comparisons, sum, min, max and averages; is_null/is_not_null find absent fields without treating them as zero. Group by business_date and any named field for unplanned per-day/per-item questions. Group by data.name for discount names; status VOID is excluded with counts_in_sales, not by summing amounts. Toast JSON money fields are dollar-valued. For the fixture-proven amounts, use price_cents for item prices and discount_amount_cents for item/check discounts; both are integer cents. Neither is the screen net-sales definition. Unproven JSON dollar fields remain unprojected.",
         "unit": "JSON",
         "source": "toast",
         "example": "Sales by server? Average order time? Which table?"

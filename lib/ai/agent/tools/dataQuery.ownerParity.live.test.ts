@@ -9,6 +9,7 @@ import {it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {runAgentTurn,openAIProvider} from "../loop.server";
 import {PRODUCTION_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
+import {estimateModelCallCostMicros,modelTokenUsage,standardModelTokenRates} from "@/lib/calc/supervisorTokenCost";
 import type {AgentProvider} from "../loop.server";
 import {executeAgentTool,type AgentToolContext} from "./index";
 const dbUrl=process.env.AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL;
@@ -33,13 +34,25 @@ const smoke=process.env.POS0E_E2_SMOKE==="1";
 // schemas on every paid turn. The full suite still uses the unrestricted
 // production Supervisor toolset; never claim smoke proves that whole surface.
 const smokeReaderTools=["describe_data","query_data"] as const;
-// Owner explicitly approved ONE additional cost-capped five-question Luna smoke.
-// Full 18-question acceptance intentionally retains its earlier stricter cap;
-// a larger full run requires its own separate authorization.
-const MAX_PAID_CALLS=smoke?16:12;
-const MAX_INPUT_REQUEST_BYTES=smoke?600_000:200_000;
+// Full acceptance needs room for all 18 independent turns. Keep the original
+// smoke unchanged; full-run accounting uses the EXISTING Luna standard-tier
+// token rates, actual provider usage receipts, and a worst-case *next-call*
+// reservation (one input token per UTF-8 byte, all allowed output tokens).
+// Estimated $0.18 leaves a small margin beneath the owner's ~$0.20 target.
+// This is not an invoice guarantee: unknown pricing/usage fails closed.
+// A budget stop is a FAIL, never a partial acceptance pass.
+const MAX_PAID_CALLS=smoke?16:64;
+const MAX_INPUT_REQUEST_BYTES=smoke?600_000:7_000_000;
 const MAX_OUTPUT_TOKENS_PER_CALL=1_000;
-let paidCalls=0,requestBytes=0,outputTokensReserved=0;
+const MAX_FULL_ESTIMATED_COST_MICROS=180_000;
+let paidCalls=0,requestBytes=0,outputTokensReserved=0,estimatedCostMicros=0;
+function nextCallUpperCostMicros(model:string,bytes:number,maxOutput:number):number|null{
+ const rates=standardModelTokenRates(model,"standard",0);
+ if(!rates)return null;
+ // Rates are USD per million tokens, so multiplying by tokens yields USD micros.
+ const amount=bytes*Number(rates.input)+maxOutput*Number(rates.output);
+ return Number.isFinite(amount)?Math.ceil(amount):null;
+}
 // A rejected transport budget is not an OpenAI/Luna failure. Never include
 // prompts, tool parameters, customer rows or secrets in this diagnostic.
 let budgetRejection:{reason:string;attemptBytes:number;priorBytes:number;
@@ -51,22 +64,37 @@ const providerReceipts:Array<{event:string;status:string;reason:string|null;
 // Only approved static column identifiers and SQLSTATE are ever recorded.
 // Never log filter VALUES, SQL text, raw rows, model arguments or credentials.
 const diagnosticFields=new Set(["amount_cents","quantity","net_sales_cents",
- "business_date","record_type","record_ref","menu_item_ref",
- "data.firstName","data.customer.firstName"]);
+ "business_date","record_type","record_ref","menu_item_ref","source_ref",
+ "order_ref","check_ref","counts_in_sales","data.name","data.quantity",
+ "data.numberOfGuests","data.displayName","data.source","data.type",
+ "source","stock_status","status","data.guid","data.display_name","data.firstName",
+ "data.customer.firstName"]);
 const safeField=(value:unknown)=>typeof value==="string"&&diagnosticFields.has(value)?
  value:"other";
 const sqlFailures:Array<{sqlstate:string;view:string;columns:string[];
  filterColumns:string[];filterOperators:string[];metricFns:string[];metricColumns:string[]}>= [];
+// Only schema identifiers and DATE RELATION (never values or actual dates)
+// may be kept when a successful SQL query returned no rows. This identifies
+// a wrong model-selected stock filter without exposing any café/guest IDs.
+type SafeQueryShape={view:string;columns:string[];filterColumns:string[];
+ filterOperators:string[];groupColumns:string[];metricFns:string[];
+ metricColumns:string[];fromScope:string;toScope:string;
+ outcome:"attempted"|"rows"|"empty"|"error"|"unknown"};
+const queryShapes:SafeQueryShape[]=[];
 const budgetedProvider:AgentProvider=async function*(params,signal){
  if(params.model!==PRODUCTION_SUPERVISOR_OPENAI_MODEL)
   throw new Error("POS0e E2 requires owner-verified production Supervisor model "+PRODUCTION_SUPERVISOR_OPENAI_MODEL);
  const payloadBytes=Buffer.byteLength(JSON.stringify(params),"utf8");
  const outputCap=Math.min(Number(params.max_output_tokens)||MAX_OUTPUT_TOKENS_PER_CALL,
   MAX_OUTPUT_TOKENS_PER_CALL);
+ const upperMicros=nextCallUpperCostMicros(params.model,payloadBytes,outputCap);
  const reason=paidCalls+1>MAX_PAID_CALLS?"model_call_count":
   requestBytes+payloadBytes>MAX_INPUT_REQUEST_BYTES?"input_request_bytes":
   outputTokensReserved+outputCap>MAX_PAID_CALLS*MAX_OUTPUT_TOKENS_PER_CALL?
-   "output_token_reservation":null;
+   "output_token_reservation":
+  !smoke&&(upperMicros===null||
+   estimatedCostMicros+upperMicros>MAX_FULL_ESTIMATED_COST_MICROS)?
+   "estimated_usd_ceiling":null;
  if(reason){
   budgetRejection={reason,attemptBytes:payloadBytes,priorBytes:requestBytes,
    priorCalls:paidCalls,attemptOutputTokens:outputCap};
@@ -75,16 +103,45 @@ const budgetedProvider:AgentProvider=async function*(params,signal){
  paidCalls++;
  requestBytes+=payloadBytes;
  outputTokensReserved+=outputCap;
- for await(const event of openAIProvider({...params,max_output_tokens:outputCap},signal)){
-  if(["response.completed","response.incomplete","response.failed"].includes(event.type)){
-   const response=event.response as {status?:string;incomplete_details?:{reason?:string}|null;
-    usage?:{output_tokens?:number};output?:Array<{type?:string}>}|undefined;
-   providerReceipts.push({event:event.type,status:response?.status??"unknown",
-    reason:response?.incomplete_details?.reason??null,
-    outputTokens:response?.usage?.output_tokens??null,
-    outputTypes:(response?.output??[]).map(item=>item.type??"unknown")});
+ let accounted=false;
+ try{
+  for await(const event of openAIProvider({...params,max_output_tokens:outputCap},signal)){
+   if(["response.completed","response.incomplete","response.failed"].includes(event.type)){
+    const response=event.response as {status?:string;service_tier?:string;
+     incomplete_details?:{reason?:string}|null;
+     usage?:{input_tokens?:number;output_tokens?:number;
+      input_tokens_details?:{cached_tokens?:number}};
+     output?:Array<{type?:string}>}|undefined;
+    providerReceipts.push({event:event.type,status:response?.status??"unknown",
+     reason:response?.incomplete_details?.reason??null,
+     outputTokens:response?.usage?.output_tokens??null,
+     outputTypes:(response?.output??[]).map(item=>item.type??"unknown")});
+    if(!smoke){
+     const usage=modelTokenUsage(response?.usage);
+     const rates=usage?standardModelTokenRates(params.model,response?.service_tier,
+      usage.inputTokens):null;
+     const micros=usage&&rates?estimateModelCallCostMicros(usage,rates):null;
+     if(micros===null){
+      budgetRejection={reason:"unpriced_provider_usage",attemptBytes:payloadBytes,
+       priorBytes:requestBytes,priorCalls:paidCalls,attemptOutputTokens:outputCap};
+      throw Error("POS0e full E2 cannot price provider usage; stop before next call");
+     }
+     estimatedCostMicros+=micros;
+     if(estimatedCostMicros>MAX_FULL_ESTIMATED_COST_MICROS){
+      budgetRejection={reason:"estimated_usd_ceiling",attemptBytes:payloadBytes,
+       priorBytes:requestBytes,priorCalls:paidCalls,attemptOutputTokens:outputCap};
+      throw Error("POS0e full E2 estimated cost limit reached");
+     }
+    }
+    accounted=true;
+   }
+   yield event;
   }
-  yield event;
+ }finally{
+  // Never make a second paid attempt after an interrupted/unpriced response.
+  if(!smoke&&!accounted&&!budgetRejection)
+   budgetRejection={reason:"missing_provider_usage",attemptBytes:payloadBytes,
+    priorBytes:requestBytes,priorCalls:paidCalls,attemptOutputTokens:outputCap};
  }
 };
 function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:number):string{
@@ -92,14 +149,60 @@ function safeFailureDetails(turn:Awaited<ReturnType<typeof runAgentTurn>>,since:
   modelCalls:turn.usage.modelCalls,inputTokens:turn.usage.inputTokens,
   cachedTokens:turn.usage.cachedTokens,outputTokens:turn.usage.outputTokens,
   chargedTransportCalls:paidCalls,serializedRequestBytes:requestBytes,
-  outputTokensReserved,budgetRejection,
+  outputTokensReserved,estimatedCostMicros,maxEstimatedCostMicros:smoke?null:MAX_FULL_ESTIMATED_COST_MICROS,
+  budgetRejection,
   tools:turn.tools,
   resultStatus:turn.results.map(result=>({source:result.source,
-   missing:result.missing,error:result.error??null})),
-  providerReceipts:providerReceipts.slice(since),sqlFailures:sqlFailures.slice(-3)});
+   missing:result.missing,error:result.error??null,
+   ...(result.source==="ask_owner"?{
+    // Model card prose, keys and answers are never logged. Only enum types.
+    cardKind:["facts","choice","fill"].includes(String(result.kind))?
+     result.kind:"unknown",
+    fieldTypes:(Array.isArray(result.fields)?result.fields:[]).map((f:unknown)=>{
+     const type=f&&typeof f==="object"&&"inputType" in f?f.inputType:null;
+     return typeof type==="string"&&
+      ["number","money","percent","date","text","choice"].includes(type)?
+      type:"other";
+    })
+   }:{})})),
+  providerReceipts:providerReceipts.slice(since),sqlFailures:sqlFailures.slice(-3),
+  queryShapes:queryShapes.slice(-5)});
 }
+// Only static, reviewed schema identifiers may appear in failed-case
+// diagnostics. Never record provider filter values, café IDs or arbitrary paths.
+it("POS0e query-shape diagnostics redact unknown field names at zero cost",()=>{
+ for(const field of ["order_ref","check_ref","counts_in_sales","data.quantity",
+  "data.numberOfGuests","data.name"])
+  expect(safeField(field)).toBe(field);
+ for(const secret of ["data.privateNotes.secret","guid-value","random_email"])
+  expect(safeField(secret)).toBe("other");
+});
 // Free deterministic regression: a bad or overlarge provider request must be
 // rejected BEFORE calling OpenAI, without mistaking the guard for Luna failure.
+it("POS0e full Luna budget reserves a conservative next-call dollar envelope",()=>{
+ const rates=standardModelTokenRates(PRODUCTION_SUPERVISOR_OPENAI_MODEL,"standard",0);
+ expect(rates).toMatchObject({input:"0.10",cachedInput:"0.01",output:"0.50"});
+ expect(nextCallUpperCostMicros(PRODUCTION_SUPERVISOR_OPENAI_MODEL,100_000,1_000))
+  .toBe(10_500);
+ expect(MAX_FULL_ESTIMATED_COST_MICROS).toBeLessThan(200_000);
+});
+it("POS0e full Luna rejects an over-budget call before OpenAI transport",async()=>{
+ if(smoke)return;
+ const before=estimatedCostMicros,beforeCalls=paidCalls,beforeBytes=requestBytes;
+ estimatedCostMicros=MAX_FULL_ESTIMATED_COST_MICROS;
+ try{
+  const params={model:PRODUCTION_SUPERVISOR_OPENAI_MODEL,
+   max_output_tokens:MAX_OUTPUT_TOKENS_PER_CALL,input:"test"};
+  await expect(budgetedProvider(params,new AbortController().signal)[Symbol.asyncIterator]().next())
+   .rejects.toThrow("POS0e paid E2 budget exceeded (estimated_usd_ceiling)");
+  expect(paidCalls).toBe(beforeCalls);
+  expect(requestBytes).toBe(beforeBytes);
+  expect(budgetRejection).toMatchObject({reason:"estimated_usd_ceiling"});
+ }finally{
+  estimatedCostMicros=before;
+  budgetRejection=null;
+ }
+});
 it("POS0e paid transport refuses an oversized request at zero model cost",async()=>{
  const beforeCalls=paidCalls,beforeBytes=requestBytes;
  const oversized={model:PRODUCTION_SUPERVISOR_OPENAI_MODEL,
@@ -122,28 +225,28 @@ const allowedHost=(raw:string)=>{
 // hardcoded answer or a mocked tool result. These questions exercise genuinely
 // different paths: counts, distinct orders, mixed filters, time, items and gaps.
 const scalarQuestions=[
- {question:"How many applied student discount uses did we record today? The day is still incomplete.",
-  truth:`select count(*)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
- {question:"How many different orders received a student discount today? Do not count checks as orders.",
-  truth:`select count(distinct order_ref)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
- {question:"How many distinct checks had student discounts today?",
-  truth:`select count(distinct check_ref)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
- {question:"How many valid item and check discount uses of any name are recorded today?",
-  truth:`select count(*)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount')`},
- {question:"How many different applied discount names are there across yesterday and today?",
+ {scope:"today",question:"How many applied student discount uses did we record today? The day is still incomplete.",
+  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
+ {scope:"today",question:"How many different orders received a student discount today? Do not count checks as orders.",
+  truth:`select count(distinct order_ref)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
+ {scope:"today",question:"How many distinct checks had student discounts today?",
+  truth:`select count(distinct check_ref)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount') and data->>'name' ilike '%student%'`},
+ {scope:"today",question:"How many valid item and check discount uses of any name are recorded today?",
+  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount')`},
+ {scope:"span",question:"How many different applied discount names are there across yesterday and today?",
   truth:`select count(distinct data->>'name')::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type in ('item_discount','check_discount')`},
- {question:"How many individual item selections across these two days had quantity at least two?",
+ {scope:"span",question:"How many individual item selections across these two days had quantity at least two?",
   truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item' and (data->>'quantity')::numeric>=2`},
- {question:"How many units of items were sold yesterday? Count units, not selection lines.",
-  truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$2) where counts_in_sales=true and record_type='item'`},
- {question:"How many guests did Toast record yesterday, using the orders?",
-  truth:`select sum((data->>'numberOfGuests')::numeric)::integer n from public.toast_records_for($1,$2,$2) where counts_in_sales=true and record_type='order'`},
- {question:"How many item selection records yesterday are missing their displayName?",
-  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$2) where counts_in_sales=true and record_type='item' and data->>'displayName' is null`},
- {question:"How many Online orders were recorded across yesterday and today?",
+ {scope:"prior",question:"How many units of items were sold yesterday? Count units, not selection lines.",
+  truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item'`},
+ {scope:"prior",question:"How many guests did Toast record yesterday, using the orders?",
+  truth:`select sum((data->>'numberOfGuests')::numeric)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='order'`},
+ {scope:"prior",question:"How many item selection records yesterday are missing their displayName?",
+  truth:`select count(*)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item' and data->>'displayName' is null`},
+ {scope:"span",question:"How many Online orders were recorded across yesterday and today?",
   truth:`select count(distinct record_ref)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='order' and data->>'source'='Online'`},
- {question:"How many units are there today across all item selections, regardless of their number of lines?",
-  truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$3,$3) where counts_in_sales=true and record_type='item'`}
+ {scope:"today",question:"How many units are there today across all item selections, regardless of their number of lines?",
+  truth:`select sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$3) where counts_in_sales=true and record_type='item'`}
 ] as const;
 run("Supervisor proves current-source orders, staff, cash, stock, names and screen parity",async()=>{
  allowedHost(dbUrl!);
@@ -175,7 +278,7 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   await client.query("insert into public.businesses(id,name,is_demo) values($1,'Other synthetic café',false)",[otherCafe]);
   const modified=await client.query("update public.toast_raw_records set payload=payload ||\n jsonb_build_object('customer',jsonb_build_object('firstName','Maya','lastName','Shah','email','maya@example.test'))\n where business_id=$1 and entity='order' and payload->>'guid'=$2",[biz.id,firstOrderGuid]);
   expect(modified.rowCount).toBe(1);
-  await client.query("insert into public.toast_raw_records\n (business_id,restaurant_guid,entity,entity_guid,business_date,payload,payload_sha256,capture_key)\n values\n ($1,$2,'employee',$3,$4::date,\n  jsonb_build_object('guid',$3::uuid::text,'firstName','Nadia','lastName','Rao','email','nadia@example.test'),\n  repeat('a',64),'pos0e:e2:employee'),\n ($1,$2,'labor/v1/timeEntries',null,$4::date,\n  jsonb_build_object('guid','time-pos0e','employeeGuid',$3::uuid::text,'regularHours',5.5),\n  repeat('a',64),'pos0e:e2:time'),\n ($1,$2,'cashmgmt/v1/entries',null,$4::date,\n  jsonb_build_object('guid','cash-pos0e','type','CASH_IN','amount',18.75,\n   'employee',jsonb_build_object('guid',$3::uuid::text)),repeat('a',64),'pos0e:e2:cash'),\n ($1,$2,'stock/v1/inventory',$5,$4::date,\n  jsonb_build_object('guid',$5::uuid::text,'quantity',4.5,'status','QUANTITY'),\n  repeat('a',64),'pos0e:e2:stock'),\n ($6,$7,'cashmgmt/v1/entries',null,$4::date,\n  '{\"guid\":\"other-cafe-cash\",\"amount\":9999.99,\"type\":\"CASH_IN\"}'::jsonb,\n  repeat('a',64),'pos0e:e2:other-cafe')",
+  await client.query("insert into public.toast_raw_records\n (business_id,restaurant_guid,entity,entity_guid,business_date,payload,payload_sha256,capture_key)\n values\n ($1,$2,'employee',$3,$4::date,\n  jsonb_build_object('employee_guid',$3::uuid::text,'display_name','Nadia Rao','deleted',false),\n  repeat('a',64),'pos0e:e2:employee'),\n ($1,$2,'labor/v1/timeEntries',null,$4::date,\n  jsonb_build_object('guid','time-pos0e','employeeGuid',$3::uuid::text,'regularHours',5.5),\n  repeat('a',64),'pos0e:e2:time'),\n ($1,$2,'cashmgmt/v1/entries',null,$4::date,\n  jsonb_build_object('guid','cash-pos0e','type','CASH_IN','amount',18.75,\n   'employee',jsonb_build_object('guid',$3::uuid::text)),repeat('a',64),'pos0e:e2:cash'),\n ($1,$2,'stock/v1/inventory',$5,$4::date,\n  jsonb_build_object('guid',$5::uuid::text,'quantity',4.5,'status','QUANTITY'),\n  repeat('a',64),'pos0e:e2:stock'),\n ($6,$7,'cashmgmt/v1/entries',null,$4::date,\n  '{\"guid\":\"other-cafe-cash\",\"amount\":9999.99,\"type\":\"CASH_IN\"}'::jsonb,\n  repeat('a',64),'pos0e:e2:other-cafe')",
    [biz.id,restaurant,staffGuid,biz.today,stockGuid,otherCafe,otherRestaurant]);
   // The poison is purposefully newer-looking, but NEVER an operational value.
   await client.query("insert into public.toast_raw_samples\n (business_id,restaurant_guid,endpoint,business_date,http_status,item_count,sample,field_paths)\n values\n ($1,$2,'cashmgmt/v1/entries',$3::date,200,1,'[{\"guid\":\"poison-cash\",\"amount\":9999.99}]'::jsonb,ARRAY[]::text[]),\n ($1,$2,'stock/v1/inventory',$3::date,200,1,'[{\"guid\":\"poison-stock\",\"quantity\":9999}]'::jsonb,ARRAY[]::text[]),\n ($1,$2,'labor/v1/timeEntries',$3::date,200,1,'[{\"guid\":\"poison-time\",\"firstName\":\"PoisonEmployee\"}]'::jsonb,ARRAY[]::text[])",[biz.id,restaurant,biz.today]);
@@ -189,8 +292,8 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
      ", what is this customer's first name? Answer exactly Name: X.",
     truth:"select data->'customer'->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='order' and record_ref=$4",ref:firstOrderGuid},
    {question:"For current Toast employee GUID "+staffGuid+
-     ", what is this employee's first name? Answer exactly Name: X.",
-    truth:"select data->>'firstName' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
+     ", what full display name is stored for this employee? Answer exactly Name: X.",
+    truth:"select data->>'display_name' answer\n from public.toast_records_for($1,$2,$3)\n where record_type='employee' and record_ref=$4",ref:staffGuid}
   ];
   const familyQuestions=[
    {question:"What is this café's total current Toast cash entries today in integer cents? Answer Cents: N; no diagnostic or other-café amounts.",
@@ -200,6 +303,17 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     truth:"select sum(quantity)::numeric n from public.cv_inventory\n where business_id=$1 and business_date=$2 and menu_item_ref=$3",label:"Quantity",args:[biz.id,biz.today,stockGuid]},
    {question:"What is yesterday's canonical screen net sales for this café in integer cents? Use the daily sales rollup, not raw order guesses. Answer Cents: N.",
     truth:"select sum(net_sales_cents)::integer n from public.cv_sales_days\n where business_id=$1 and business_date=$2",label:"Cents",args:[biz.id,prior]}
+  ];
+  const breakdowns=[
+   {scope:"span",question:"Give applied discount USE counts for yesterday and today, one line per date as YYYY-MM-DD: N.",
+    truth:`select business_date::text k,count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('item_discount','check_discount') and counts_in_sales=true group by business_date order by business_date`},
+   {scope:"prior",question:"Give units sold yesterday by item display name. Call absent names 'Unnamed'. Use Name: N lines.",
+    truth:`select coalesce(data->>'displayName','Unnamed') k, sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$3) where record_type='item' and counts_in_sales=true group by coalesce(data->>'displayName','Unnamed') order by 1`}
+  ] as const;
+  // Share EXACTLY the same positional binds between free SQL verification
+  // and real Luna acceptance. Three contiguous parameters: café, from, to.
+  const truthArgs=(scope:"today"|"prior"|"span")=>[
+   biz.id,scope==="today"?biz.today:prior,scope==="prior"?prior:biz.today
   ];
   // Test the source/fixture contract at zero model cost. Paid acceptance must
   // still execute the registered Supervisor, and never sets SQL_ONLY.
@@ -245,33 +359,191 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     }
    }finally{release();}
   };
-  const db={rpc:async(name:string,p:Record<string,unknown>)=>{
-   if(name==="ai_query_view")return isolatedRpc(async()=>{
-    const args=[p.p_business_id,p.p_view,p.p_columns,JSON.stringify(p.p_filters),
-     p.p_group_by,JSON.stringify(p.p_metrics),p.p_date_from,p.p_date_to,
-     p.p_order_by===null?null:JSON.stringify(p.p_order_by),p.p_limit];
-    const result=await client.query(
-     "select public.ai_query_view($1::uuid,$2::text,$3::text[],$4::jsonb,$5::text[],$6::jsonb,$7::date,$8::date,$9::jsonb,$10::integer) value",
-     args);
-    return result.rows[0].value;
-   });
+  const baseRpc=async(name:string,p:Record<string,unknown>)=>{
+   if(name==="ai_query_view"){
+    const filters=Array.isArray(p.p_filters)?p.p_filters as Array<Record<string,unknown>>:[];
+    const metrics=Array.isArray(p.p_metrics)?p.p_metrics as Array<Record<string,unknown>>:[];
+    const knownViews=["cv_cash","cv_inventory","cv_sales_days","cv_toast_records"];
+    const scopes=(day:unknown)=>day===biz.today?"today":day===prior?"prior":"other";
+    const safeOp=(op:unknown)=>typeof op==="string"&&
+     ["=","!=","<","<=",">",">=","in","between","ilike","is_null","is_not_null"].includes(op)
+     ?op:"other";
+    const shape:SafeQueryShape={
+     view:typeof p.p_view==="string"&&knownViews.includes(p.p_view)?p.p_view:"other",
+     columns:Array.isArray(p.p_columns)?p.p_columns.map(safeField):[],
+     filterColumns:filters.map(f=>safeField(f.column)),
+     filterOperators:filters.map(f=>safeOp(f.op)),
+     groupColumns:Array.isArray(p.p_group_by)?p.p_group_by.map(safeField):[],
+     metricFns:metrics.map(m=>typeof m.fn==="string"&&
+      ["sum","count","count_distinct","avg","min","max"].includes(m.fn)?m.fn:"other"),
+     metricColumns:metrics.map(m=>safeField(m.column)),
+     fromScope:scopes(p.p_date_from),toScope:scopes(p.p_date_to),
+     outcome:"attempted"
+    };
+    queryShapes.push(shape);
+    const reply=await isolatedRpc(async()=>{
+     const args=[p.p_business_id,p.p_view,p.p_columns,JSON.stringify(p.p_filters),
+      p.p_group_by,JSON.stringify(p.p_metrics),p.p_date_from,p.p_date_to,
+      p.p_order_by===null?null:JSON.stringify(p.p_order_by),p.p_limit];
+     const result=await client.query(
+      "select public.ai_query_view($1::uuid,$2::text,$3::text[],$4::jsonb,$5::text[],$6::jsonb,$7::date,$8::date,$9::jsonb,$10::integer) value",
+      args);
+     return result.rows[0].value;
+    });
+    const payload=reply.data as {rows?:unknown[]}|null;
+    shape.outcome=reply.error?"error":!Array.isArray(payload?.rows)?"unknown":
+     payload.rows.length>0?"rows":"empty";
+    return reply;
+   }
    if(name==="ai_toast_fields")return isolatedRpc(async()=>{
     const result=await client.query("select public.ai_toast_fields($1::uuid,$2::text) value",
      [p.p_business_id,p.p_record_type]);
     return result.rows[0].value;
    });
    throw Error("Unexpected RPC: "+name);
-  }};
+  };
+  // The live harness must read ACTUAL disposable-DB Toast day coverage.
+  // Earlier this shim implemented neither .from nor coverage RPCs, causing
+  // every valid query_data result to misleadingly report toastDayStatusUnavailable.
+  const db={
+   rpc:(name:string,p:Record<string,unknown>)=>{
+    if(name==="toast_unverified_sales_dates")return isolatedRpc(async()=>{
+     const q=await client.query(
+      `select distinct x.source_business_date::text as business_date from (
+       select o.business_date as source_business_date from public.orders o
+        where o.business_id=$1 and o.business_date between $2::date and $3::date
+         and o.pos_order_id like 'toast:%'
+       union all
+       select e.event_business_date from public.toast_payment_day_events e
+        where e.business_id=$1 and e.event_business_date between $2::date and $3::date
+       union all
+       select t.business_date from public.toast_pilot_days t
+        where t.business_id=$1 and t.business_date between $2::date and $3::date
+         and t.promoted_at is not null
+      ) as x order by business_date`,[p.p_business_id,p.p_from,p.p_to]);
+     return q.rows;
+    });
+    if(name==="toast_attention_days")return {range:(start:number,end:number)=>
+     isolatedRpc(async()=>{
+      const q=await client.query(
+       `select business_date::text,restaurant_guid::text
+        from public.toast_owner_attention_days_v
+        where business_id=$1 and business_date between $2::date and $3::date
+        order by business_date,restaurant_guid offset $4 limit $5`,
+       [p.p_business_id,p.p_from,p.p_to,start,end-start+1]);
+      return q.rows;
+     })};
+    return baseRpc(name,p);
+   },
+   from:(table:string)=>{
+    if(table!=="toast_day_status"&&table!=="orders")
+     throw Error("Unexpected Toast coverage table");
+    const q:{businessId:string|null;from:string|null;to:string|null;
+     dates:string[]|null;pattern:string|null}={
+     businessId:null,from:null,to:null,dates:null,pattern:null};
+    const chain={
+     select:(columns:string)=>{const expected=table==="toast_day_status"?
+      "business_date,restaurant_guid,import_state,recon_state,last_error_category":
+      "id,business_date";
+      if(columns!==expected)throw Error("Unexpected coverage columns");
+      return chain;},
+     eq:(column:string,value:string)=>{if(column!=="business_id")throw Error("Unexpected eq");
+      q.businessId=value;return chain;},
+     gte:(column:string,value:string)=>{if(column!=="business_date")throw Error("Unexpected gte");
+      q.from=value;return chain;},
+     lte:(column:string,value:string)=>{if(column!=="business_date")throw Error("Unexpected lte");
+      q.to=value;return chain;},
+     like:(column:string,value:string)=>{if(column!=="pos_order_id")throw Error("Unexpected like");
+      q.pattern=value;return chain;},
+     in:(column:string,values:string[])=>{if(column!=="business_date")throw Error("Unexpected in");
+      q.dates=values;return chain;},
+     order:(column:string)=>{if(!["business_date","restaurant_guid","id"].includes(column))
+      throw Error("Unexpected coverage order");return chain;},
+     range:(start:number,end:number)=>isolatedRpc(async()=>{
+      if(!q.businessId)throw Error("Coverage business scope missing");
+      if(table==="toast_day_status"){
+       if(!q.from||!q.to)throw Error("Coverage date scope missing");
+       const rs=await client.query(
+        `select business_date::text,restaurant_guid::text,import_state,
+         recon_state,last_error_category from public.toast_day_status
+         where business_id=$1 and business_date between $2::date and $3::date
+         order by business_date,restaurant_guid offset $4 limit $5`,
+        [q.businessId,q.from,q.to,start,end-start+1]);
+       return rs.rows;
+      }
+      if(q.pattern!=="toast:%"||!q.dates)throw Error("Canonical Toast scope missing");
+      const rs=await client.query(
+       `select id,business_date::text from public.orders
+        where business_id=$1 and pos_order_id like 'toast:%'
+         and business_date=any($2::date[])
+        order by id offset $3 limit $4`,
+       [q.businessId,q.dates,start,end-start+1]);
+      return rs.rows;
+     })
+    };
+    return chain;
+   }
+  };
   const context={
    asOf:biz.today,timezone:biz.timezone,locale:"en",
    tools:{} as AgentToolContext["tools"],
    canonicalData:async()=>({db:db as never,businessId:biz.id})
   } as AgentToolContext;
   if(sqlOnly){
+   // Prove the exact production coverage call shapes against the migrated
+   // synthetic database BEFORE paid provider transport. Report only fixed
+   // source names and scrubbed SQLSTATE, never source payload/owner data.
+   const coverageArgs={p_business_id:biz.id,p_from:prior,p_to:biz.today};
+   const statusRows=await db.from("toast_day_status")
+    .select("business_date,restaurant_guid,import_state,recon_state,last_error_category")
+    .eq("business_id",biz.id).gte("business_date",prior).lte("business_date",biz.today)
+    .order("business_date").order("restaurant_guid").range(0,199);
+   expect(statusRows.error,"toast_day_status coverage read").toBeNull();
+   const salesDays=await db.rpc("toast_unverified_sales_dates",coverageArgs) as unknown as
+    {error:{code?:string}|null;data:unknown};
+   expect(salesDays.error,"toast_unverified_sales_dates coverage read").toBeNull();
+   const attentionRpc=db.rpc("toast_attention_days",coverageArgs) as unknown as
+    {range:(start:number,end:number)=>Promise<{error:unknown;data:unknown}>};
+   const attentionDays=await attentionRpc.range(0,199);
+   expect(attentionDays.error,"toast_attention_days coverage read").toBeNull();
+   const orders=await db.from("orders").select("id,business_date")
+    .eq("business_id",biz.id).like("pos_order_id","toast:%")
+    .in("business_date",[prior,biz.today]).order("id").range(0,199);
+   expect(orders.error,"canonical Toast order coverage read").toBeNull();
    const expected=await client.query<{n:number}>(
     "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
     [biz.id,prior,biz.today]);
    expect(expected.rows[0].n).toBeGreaterThanOrEqual(3);
+   // Validate all 11 scalar and 2 breakdown independent SQL truths BEFORE
+   // paid Luna can be called. Previously these were skipped in SQL_ONLY and
+   // positional parameter gaps aborted the shared rollback transaction.
+   for(const [index,item] of scalarQuestions.entries()){
+    const r=await client.query<{n:number|null}>(item.truth,truthArgs(item.scope));
+    expect(r.rows[0]?.n,"scalar SQL truth "+(index+1)).not.toBeNull();
+    expect(r.rows[0]?.n,"scalar SQL truth "+(index+1)).not.toBeUndefined();
+   }
+   for(const [index,item] of breakdowns.entries()){
+    const r=await client.query<{k:string;n:number}>(item.truth,truthArgs(item.scope));
+    expect(r.rows.length,"breakdown SQL truth "+(index+1)).toBeGreaterThan(0);
+    for(const row of r.rows)expect(Number.isFinite(Number(row.n))).toBe(true);
+   }
+   // Prove full tool-roster request construction with a fake provider using
+   // the same real question and seeded context, never the paid API.
+   let fakeCalls=0;
+   const fake:AgentProvider=async function*(request){
+    fakeCalls++;
+    const tools=request.tools as Array<{name:string}>;
+    expect(tools.map(x=>x.name)).toContain("query_data");
+    expect(tools.map(x=>x.name)).toContain("describe_data");
+    expect(tools.length).toBeGreaterThan(2);
+    yield {type:"response.output_text.delta",delta:"Preflight ready."};
+    yield {type:"response.completed",response:{status:"completed",output:[],
+     usage:{input_tokens:1,output_tokens:1}}};
+   };
+   const probe=await runAgentTurn({context,provider:fake,
+    ownerText:scalarQuestions[0].question});
+   expect(fakeCalls).toBe(1);
+   expect(probe.endReason).toBe("complete");
    // Exact same independently sourced truth SQL and bound argument arrays as
    // the real-agent test; no provider/model request in SQL-only mode.
    for(const {question,truth,ref} of namedQuestions){
@@ -288,11 +560,11 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    // the free preflight must catch a broken field path before spending tokens.
    const namedToolCases=[
     {recordType:"order",ref:firstOrderGuid,field:"data.customer.firstName"},
-    {recordType:"employee",ref:staffGuid,field:"data.firstName"}
+    {recordType:"employee",ref:staffGuid,field:"data.display_name"}
    ];
    for(const spec of namedToolCases){
     const expected=(await client.query<{answer:string}>(
-     "select case when $3='order' then data->'customer'->>'firstName' else data->>'firstName' end answer from public.toast_records_for($1,$4,$5) where record_type=$3 and record_ref=$2",
+     "select case when $3='order' then data->'customer'->>'firstName' else data->>'display_name' end answer from public.toast_records_for($1,$4,$5) where record_type=$3 and record_ref=$2",
      [biz.id,spec.ref,spec.recordType,prior,biz.today])).rows[0]?.answer;
     expect(expected,spec.recordType+" source truth").toBeTruthy();
     const result=await executeAgentTool("query_data",{
@@ -305,7 +577,7 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     expect(result.error,spec.recordType+" registered reader").toBeUndefined();
     const rows=result.rows as Array<Record<string,unknown>>|undefined;
     expect(rows,spec.recordType+" registered reader").toHaveLength(1);
-    expect(rows?.[0]?.[spec.field],spec.recordType+" permitted first name")
+    expect(rows?.[0]?.[spec.field],spec.recordType+" permitted recorded name")
      .toBe(expected);
    }
    // A schema-valid but SQL-invalid aggregate must not abort the shared
@@ -339,34 +611,145 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     expect(rows,spec.question).toHaveLength(1);
     expect(Number(rows?.[0]?.["sum_"+testCase.metric]),spec.question)
      .toBeCloseTo(Number(truthValue),2);
+    if(testCase.view==="cv_inventory")expect(queryShapes.at(-1)).toMatchObject({
+     view:"cv_inventory",filterColumns:["menu_item_ref"],
+     fromScope:"today",toScope:"today",outcome:"rows"
+    });
+   }
+   // Every previously failed full-Luna scalar case must first be executable through
+   // the ACTUAL registered query_data RPC on the existing disposable fixture.
+   // Compare each with independent source SQL before making another paid call.
+   const failedScalarReaderCases=[
+    {index:1,filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.name",op:"ilike",value:"%student%"}],
+     metric:{fn:"count_distinct",column:"order_ref"}},
+    {index:2,filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.name",op:"ilike",value:"%student%"}],
+     metric:{fn:"count_distinct",column:"check_ref"}},
+    // Compare every previously failed real Luna aggregate with independent SQL.
+    {index:3,filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"count",column:"source_ref"}},
+    {index:4,filters:[
+     {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"count_distinct",column:"data.name"}},
+    {index:5,filters:[
+     {column:"record_type",op:"=",value:"item"},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.quantity",op:">=",value:2}],
+     metric:{fn:"count",column:"source_ref"}},
+    {index:6,filters:[
+     {column:"record_type",op:"=",value:"item"},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"sum",column:"data.quantity"}},
+    {index:7,filters:[
+     {column:"record_type",op:"=",value:"order"},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"sum",column:"data.numberOfGuests"}},
+    {index:9,filters:[
+     {column:"record_type",op:"=",value:"order"},
+     {column:"counts_in_sales",op:"=",value:true},
+     {column:"data.source",op:"=",value:"Online"}],
+     metric:{fn:"count_distinct",column:"record_ref"}},
+    {index:10,filters:[
+     {column:"record_type",op:"=",value:"item"},
+     {column:"counts_in_sales",op:"=",value:true}],
+     metric:{fn:"sum",column:"data.quantity"}}
+   ] as const;
+   for(const spec of failedScalarReaderCases){
+    const question=scalarQuestions[spec.index];
+    const expected=(await client.query<{n:number}>(question.truth,
+     truthArgs(question.scope))).rows[0].n;
+    const [,from,to]=truthArgs(question.scope);
+    const actual=await executeAgentTool("query_data",{
+     view:"cv_toast_records",columns:null,filters:spec.filters,
+     group_by:null,metrics:[spec.metric],date_from:from,date_to:to,
+     order_by:null,limit:10
+    },context);
+    expect(actual.error,"scalar-"+(spec.index+1)+" registered reader")
+     .toBeUndefined();
+    expect(actual.missing,"registered reader must use actual coverage evidence")
+     .not.toContain("toastDayStatusUnavailable");
+    const rows=actual.rows as Array<Record<string,unknown>>|undefined;
+    expect(rows,"scalar-"+(spec.index+1)+" returned rows").toHaveLength(1);
+    const alias=spec.metric.fn+"_"+spec.metric.column;
+    expect(Number(rows?.[0]?.[alias]),
+     "scalar-"+(spec.index+1)+" registered reader vs source SQL")
+     .toBeCloseTo(Number(expected),2);
    }
    return;
   }
 
-  for(const {question,truth} of (smoke?scalarQuestions.slice(0,0):scalarQuestions)){
-   const expected=(await client.query<{n:number}>(truth,params)).rows[0].n;
+  // Run and score every independent question in one owner-budgeted test.
+  // A failing answer is still a failure, but cannot conceal later failures.
+  // Once provider usage is capped, later turns are recorded as unexecuted.
+  const caseFailures:Array<{id:string;reason:string;detail:string}>=[];
+  // Log Boolean diagnostics only; never leak model prose or source numbers.
+  type AnswerSignals={hasNumberLabel:boolean;matchesSqlTruth:boolean|null;hasIncompleteCaveat:boolean|null};
+  const record=async(id:string,work:(capture:(turn:Awaited<ReturnType<typeof runAgentTurn>>,
+   since:number,signals?:AnswerSignals)=>void)=>Promise<void>)=>{
+   if(budgetRejection){caseFailures.push({id,reason:"budget_not_executed",detail:"no_provider_call"});return;}
+   let detail="no_agent_receipt";
+   try{
+    await work((turn,since,signals)=>{
+     const packet=JSON.parse(safeFailureDetails(turn,since)) as {
+      endReason:string;tools:string[];resultStatus:unknown[];
+      budgetRejection:unknown;queryShapes:SafeQueryShape[]};
+     detail=JSON.stringify({endReason:packet.endReason,tools:packet.tools,
+      resultStatus:packet.resultStatus,budgetRejection:packet.budgetRejection,
+      queryShapes:packet.queryShapes.slice(-4),answerSignals:signals??null});
+    });
+   }catch{
+    // Never log raw model prose, source rows, IDs, prompts or SQL errors.
+    caseFailures.push({id,reason:budgetRejection?"transport_budget":"answer_or_reader_failure",detail});
+   }
+  };
+  let scalarIndex=0;
+  // Preserve the last real user/assistant exchange when two consecutive
+  // questions share a date span. "These two days" then has the preceding
+  // owner's "yesterday and today" reference, as in an actual conversation.
+  // No expected answer, SQL truth, or acceptance assertion is changed.
+  let previousSpanExchange:{question:string;reply:string}|null=null;
+  for(const {question,truth,scope} of (smoke?scalarQuestions.slice(0,0):scalarQuestions)){
+   await record("scalar-"+ ++scalarIndex,async capture=>{
+   const expected=(await client.query<{n:number}>(truth,truthArgs(scope))).rows[0].n;
    // Standard owner-facing answer; the requested line keeps acceptance numeric
    // (without an extra reviewer model) and still permits the incomplete-day note.
+   const receiptStart=providerReceipts.length;
+   const history=scope==="span"&&previousSpanExchange?[
+    {role:"user" as const,content:previousSpanExchange.question},
+    {role:"assistant" as const,content:previousSpanExchange.reply}
+   ]:undefined;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
-   provider:budgetedProvider,ownerText:
+   provider:budgetedProvider,history,ownerText:
     question+" Answer with 'Number: N' and a short source/coverage note."});
-   expect(turn.tools,question).toContain("query_data");
+   previousSpanExchange=scope==="span"?{question,reply:turn.text}:null;
    const number=turn.text.match(/\bNumber\s*[:=]\s*(\d+)\b/i);
+   const caveat=/so far|partial|incomplete|provisional/i.test(turn.text);
+   capture(turn,receiptStart,{hasNumberLabel:Boolean(number),
+    matchesSqlTruth:number?Number(number[1])===expected:null,
+    hasIncompleteCaveat:question.includes("today")?caveat:null});
+   expect(turn.tools,question).toContain("query_data");
    expect(number,question+" => "+turn.text).not.toBeNull();
    expect(Number(number![1]),question+" => "+turn.text).toBe(expected);
    if(question.includes("today"))
     expect(turn.text,question+" => "+turn.text).toMatch(/so far|partial|incomplete|provisional/i);
+   });
   }
-  const breakdowns=[
-   {question:"Give applied discount USE counts for yesterday and today, one line per date as YYYY-MM-DD: N.",
-    truth:`select business_date::text k,count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('item_discount','check_discount') and counts_in_sales=true group by business_date order by business_date`},
-   {question:"Give units sold yesterday by item display name. Call absent names 'Unnamed'. Use Name: N lines.",
-    truth:`select coalesce(data->>'displayName','Unnamed') k, sum((data->>'quantity')::numeric)::integer n from public.toast_records_for($1,$2,$2) where record_type='item' and counts_in_sales=true group by coalesce(data->>'displayName','Unnamed') order by 1`}
-  ] as const;
-  for(const {question,truth} of (smoke?breakdowns.slice(0,0):breakdowns)){
-   const expected=(await client.query<{k:string;n:number}>(truth,params)).rows;
+  let breakdownIndex=0;
+  for(const {question,truth,scope} of (smoke?breakdowns.slice(0,0):breakdowns)){
+   await record("breakdown-"+ ++breakdownIndex,async capture=>{
+   const expected=(await client.query<{k:string;n:number}>(truth,truthArgs(scope))).rows;
+   const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:question});
+   capture(turn,receiptStart);
    expect(turn.tools,question).toContain("query_data");
    for(const row of expected){
     const line=turn.text.split("\n").find(line=>line.includes(row.k));
@@ -374,34 +757,43 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     expect(line,question+" wrong "+row.k+": "+turn.text).toMatch(
      new RegExp("[:=]\\s*"+row.n+"\\b"));
    }
+   });
   }
-
   // These real turns close the signed POS0e gap not covered by the earlier
   // discount-only test. Expected facts come from the SAME disposable database
   // transaction, not the model, snapshots or copied fixture guesses.
+  let namedIndex=0;
   for(const {question,truth,ref} of namedQuestions){
+   await record("named-"+ ++namedIndex,async capture=>{
    const expected=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0]?.answer;
    expect(expected,question).toBeTruthy();
    const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:question+
     " Use retained current source facts, not diagnostic snapshots or another café."});
+   capture(turn,receiptStart);
    expect(turn.tools,question).toContain("query_data");
    expect(turn.text,question+"; "+safeFailureDetails(turn,receiptStart))
     .toMatch(new RegExp("\\bName\\s*[:=]\\s*"+expected+"\\b","i"));
+   });
   }
+  let familyIndex=0;
   for(const {question,truth,label,args} of familyQuestions){
+   await record("family-"+ ++familyIndex,async capture=>{
    const expected=(await client.query<{n:number|string|null}>(truth,args)).rows[0]?.n;
    expect(expected,question).not.toBeNull();
    expect(expected,question).not.toBeUndefined();
    const receiptStart=providerReceipts.length;
    const turn=await runAgentTurn({context,toolNames:smoke?smokeReaderTools:undefined,
    provider:budgetedProvider,ownerText:question});
+   capture(turn,receiptStart);
    expect(turn.tools,question).toContain("query_data");
    const match=turn.text.match(new RegExp("\\b"+label+"\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)","i"));
    expect(match,question+" => "+turn.text+"; "+safeFailureDetails(turn,receiptStart)).not.toBeNull();
    expect(Number(match![1]),question+" => "+turn.text).toBeCloseTo(Number(expected),2);
+   });
   }
+  expect(caseFailures,JSON.stringify(caseFailures)).toEqual([]);
  }finally{
   await client.query("ROLLBACK").catch(()=>{});
   await client.end();
