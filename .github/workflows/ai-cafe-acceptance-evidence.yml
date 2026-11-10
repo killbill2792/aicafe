@@ -22,6 +22,8 @@ jobs:
           && github.event.pull_request.user.login == 'killbill2792'
           && github.event.pull_request.head.repo.full_name == github.repository
           && github.event.pull_request.base.ref == 'main'
+          && github.event.changes.body.from != null
+          && !contains(github.event.changes.body.from, '<!-- aicafe-pos0e-e2-run ')
           && contains(github.event.pull_request.body, '<!-- aicafe-pos0e-e2-run '))
     name: AI CAFE acceptance evidence
     runs-on: ubuntu-latest
@@ -61,6 +63,13 @@ jobs:
           const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
           const pr=event.pull_request,sha=pr?.head?.sha;
           const marker='<!-- aicafe-pos0e-e2-run '+sha+' -->';
+          // Only an edit that ADDS a fresh marker may spend money. A later
+          // title/body edit with the old marker still present must never
+          // restart the paid test with a new process-local usage counter.
+          const previousBody=event.changes?.body?.from;
+          if(typeof previousBody!=='string'||
+             previousBody.includes('<!-- aicafe-pos0e-e2-run '))
+            throw Error('POS0e E2 activation must be a fresh owner body edit');
           if(event.action!=='edited'||event.sender?.login!=='killbill2792'||
              pr?.number!==404||pr.user?.login!=='killbill2792'||
              pr.base?.ref!=='main'||pr.head?.repo?.full_name!=='killbill2792/aicafe'||
@@ -92,31 +101,51 @@ jobs:
           supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
           supabase db reset --local --yes
           pg_isready -q -h 127.0.0.1 -p 54322 -U postgres
+      - name: Verify POS0e synthetic fixture without any API key or model calls
+        if: ${{ steps.pos0e_owner.outputs.approved == 'true' }}
+        working-directory: candidate
+        env:
+          POS0E_E2_SQL_ONLY: '1'
+          AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: |
+          set -euo pipefail
+          # SQL_ONLY returns before creating a model provider request.
+          timeout 4m npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
       - name: Run bounded real one-agent POS0e preflight (no acceptance claim)
         if: ${{ steps.pos0e_owner.outputs.approved == 'true' && !contains(github.event.pull_request.body, 'aicafe-acceptance-evidence') }}
         working-directory: candidate
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
           AGENT_LIVE_EVAL: '1'
+          SUPERVISOR_OPENAI_MODEL: gpt-6-luna
+          SUPERVISOR_OPENAI_FALLBACK_MODEL: gpt-4.1-mini
+          POS0E_E2_SMOKE: '1'
           AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
         run: |
           set -euo pipefail
           if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error::Existing authorized OPENAI_API_KEY GitHub secret unavailable. No paid E2 executed."
+            echo "::error::Existing authorized OPENAI_API_KEYS GitHub secret unavailable. No paid E2 executed."
             exit 1
           fi
-          timeout 22m npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
+          # Five substantive owner questions only; all other acceptance remains
+          # unproven. Test-level provider caps also stop any extra API calls.
+          timeout 8m npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
       - name: Run approved POS0e acceptance rows at exact head
         if: ${{ steps.pos0e_owner.outputs.approved == 'true' && contains(github.event.pull_request.body, 'aicafe-acceptance-evidence') }}
         working-directory: candidate
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
           AGENT_LIVE_EVAL: '1'
+          SUPERVISOR_OPENAI_MODEL: gpt-6-luna
+          SUPERVISOR_OPENAI_FALLBACK_MODEL: gpt-4.1-mini
+          # A full signed acceptance run must NEVER inherit the five-turn
+          # smoke skip: that would manufacture a false passing E2 receipt.
+          POS0E_E2_SMOKE: '0'
           AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
         run: |
           set -euo pipefail
           if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error::Existing authorized OPENAI_API_KEY GitHub secret unavailable. No acceptance proof produced."
+            echo "::error::Existing authorized OPENAI_API_KEYS GitHub secret unavailable. No acceptance proof produced."
             exit 1
           fi
           node ../coordinator/scripts/dev-dispatcher/acceptance-runner.mjs
