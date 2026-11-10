@@ -152,6 +152,29 @@ it("exposes one trustworthy POS count as a numeric aggregate with partial-day st
   p_filters:args.filters,p_metrics:args.metrics,p_group_by:[]
  }));
 });
+it("makes item-only and check-only discount subtotals explicit without altering SQL values",async()=>{
+ const rpc=vi.fn(async()=>({data:{rows:[{count_source_ref:2}],
+  sourceCount:2,sourceMix:{toast:2},truncated:false},error:null}));
+ const shared={...input("cv_toast_records"),columns:null,group_by:null,
+  metrics:[{fn:"count",column:"source_ref"}],limit:10};
+ for(const subtype of ["item_discount","check_discount"]){
+  const filters=[{column:"record_type",op:"=",value:subtype},
+   {column:"counts_in_sales",op:"=",value:true}];
+  const response=await dataQueryTools.query_data.execute({...shared,filters},
+   {db:{rpc} as never,businessId:b});
+  expect(response.aggregate).toMatchObject({metric:"count_source_ref",value:2});
+  expect(response.scopeWarning).toContain("only "+subtype);
+  expect(response.scopeWarning).toContain("both item_discount and check_discount");
+  expect(response.rows).toEqual([{count_source_ref:2}]);
+ }
+ const all=await dataQueryTools.query_data.execute({...shared,filters:[
+  {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+  {column:"counts_in_sales",op:"=",value:true}]},
+  {db:{rpc} as never,businessId:b});
+ expect(all.scopeWarning).toBeUndefined();
+ expect(all.aggregate).toMatchObject({metric:"count_source_ref",value:2});
+ expect(rpc).toHaveBeenCalledTimes(3);
+});
 it("never treats null, empty, grouped or truncated aggregates as known totals",async()=>{
  const args={...input("cv_toast_records"),columns:null,group_by:null,
   metrics:[{fn:"count",column:"source_ref"}]};
