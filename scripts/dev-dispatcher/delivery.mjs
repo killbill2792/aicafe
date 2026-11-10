@@ -163,7 +163,8 @@ export function createDelivery({ task, record, action, actionId }) {
   const promptBytes = Buffer.byteLength(prompt,'utf8');
   if (promptBytes > 4096)
     console.warn(`Task ${task.id} delivery prompt exceeds 4096 bytes (${promptBytes}); continuing`);
-  return {version:1,approval_signature_version:2,action_id:actionId,project,approval_hash:authorization,
+  return {version:1,approval_signature_version:record.approval_hash && record.approval_hash !== authorization ? 1 : 2,
+    action_id:actionId,project,approval_hash:record.approval_hash || authorization,
     provider:record.agent,intent:isNew?'start_new_chat':'continue_existing_chat',
     base_branch:record.base_branch || 'main',conversation_url:url,
     task_id:task.id,prompt,prompt_hash:promptHash(prompt)};
