@@ -15,6 +15,16 @@ const query={view:"cv_toast_records",columns:null,filters:[
  ...range,order_by:null,limit:20};
 
 describe("POS0e retained current-source dictionary and shared reader",()=>{
+ it("describes retained current cash and setup records, never old diagnostics",async()=>{
+  const cash=await dataQueryTools.describe_data.execute({view:"cv_cash"});
+  const dining=await dataQueryTools.describe_data.execute({view:"cv_dining_options"});
+  const allToast=await dataQueryTools.describe_data.execute({view:"cv_toast_records"});
+  expect(cash.views?.[0]?.meaning).toMatch(/Retained current Toast cash/i);
+  expect(dining.views?.[0]?.meaning).toMatch(/Retained current Toast dining-option/i);
+  expect(allToast.views?.[0]?.meaning).toContain("never diagnostic samples");
+  expect(JSON.stringify([cash.views,dining.views,allToast.views])).not.toContain(
+   "redacted Toast diagnostics");
+ });
  it("pins the 12 official Standard GET schema families without claiming café access",()=>{
   expect(Object.keys(toastOfficialFieldCatalog)).toHaveLength(12);
   expect(toastOfficialFieldCatalog.orders.fields.length).toBeGreaterThan(400);
