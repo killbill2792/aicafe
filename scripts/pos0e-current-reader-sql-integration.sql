@@ -69,6 +69,11 @@ BEGIN
   INSERT INTO public.locations(id,business_id,name) VALUES
    ('a1a1a1a1-1111-4111-8111-111111111111',a,'Verified Toast source'),
    ('b1b1b1b1-2222-4222-8222-222222222222',b,'Mirrored fixture');
+  -- Each mapping needs a credential FK parent; these are inert test values.
+  INSERT INTO public.toast_api_credentials
+   (business_id,api_origin,client_id,client_secret_enc) VALUES
+   (a,'https://synthetic.example','fixture-a','never-real'),
+   (b,'https://synthetic.example','fixture-b','never-real');
   INSERT INTO public.toast_location_mappings
    (business_id,location_id,restaurant_guid,verified_at,info_refreshed_at) VALUES
    (a,'a1a1a1a1-1111-4111-8111-111111111111',rest_a,now(),now()),
