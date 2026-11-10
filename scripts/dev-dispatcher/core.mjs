@@ -167,6 +167,11 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
       const previous = records[dep];
       if (dep === queue.dispatch_rules?.architecture_foundation_proof_task && foundationProven) continue;
       if (integrated(dep, tasks, records)) continue;
+      // A GitHub-verified merged parent permits downstream CODING on main.
+      // This does not satisfy the separate integration-proof MERGE gate.
+      if (previous?.github_state === 'merged' &&
+          ['merged','integrated_proven','released_proven'].includes(previous.status) &&
+          /^[a-f0-9]{40}$/.test(previous.merge_sha || '')) continue;
       // A verified open upstream PR can be draft OR ready-for-review.
       // Require a real PR number: an assigned branch name alone is not an open PR.
       if (["draft_open", "review_fixing"].includes(previous?.status) &&
