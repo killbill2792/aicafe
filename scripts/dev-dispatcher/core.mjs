@@ -257,6 +257,18 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
   if (isPr && !record.draft && (record.owner_question || record.github_owner_question) &&
       record.ci_state !== 'failure' && record.codex_state !== 'findings' &&
       !record.owner_answer_text) return {kind:'hold',reason:'owner_decision_required'};
+  // Parent-merge transition is an event, not an inactivity nudge. Wait for
+  // verified default branch maintenance, then schedule just one prompt by
+  // parent merge SHA even if the child has committed recently. Existing
+  // pending/uncertain delivery and authorization guards remain in run.mjs.
+  const parentSha = record.parent_merged_sha;
+  if (isPr && parentSha && record.branch_maintenance_merge_sha !== parentSha)
+    return {kind:'hold',reason:'awaiting_automatic_parent_branch_maintenance'};
+  if (isPr && parentSha && record.base_branch === 'main' &&
+      record.branch_maintenance_merge_sha === parentSha &&
+      record.last_parent_rebase_sha !== parentSha)
+    return {kind:'propose',action:'parent_merged',
+      key:'parent_merged:'+encodeURIComponent(record.task_id)+':'+parentSha};
   const reviewAt = record.codex_state === 'findings' ? Date.parse(record.codex_review_at || '') : NaN;
   const commitAt = Date.parse(isPr ? record.last_commit_at : record.last_submission_at);
   const last = Number.isFinite(reviewAt) ? Math.max(commitAt,reviewAt) : commitAt;
@@ -275,17 +287,6 @@ export function decideNudge(record, nowMs, { quietMs = 600000, prePrMs = 900000 
     return {kind:'hold',reason:'cooldown'};
   if (record.submission_state === 'pending')
     return {kind:'hold',reason:'delivery_pending'};
-  // A merged parent gets one stable rebase action regardless of intermediate child pushes.
-  const parentSha = record.parent_merged_sha;
-  // The first merged-parent tick is reserved for verified trusted-main
-  // retarget/update-branch, not an incidental idle or CI nudge.
-  if (isPr && parentSha && record.branch_maintenance_merge_sha !== parentSha)
-    return {kind:'hold',reason:'awaiting_automatic_parent_branch_maintenance'};
-  const rebaseDue = isPr && parentSha && record.base_branch === 'main' &&
-    record.branch_maintenance_merge_sha === parentSha &&
-    record.last_parent_rebase_sha !== parentSha;
-  if (rebaseDue) return {kind:'propose',action:'parent_merged',
-    key:'parent_merged:'+encodeURIComponent(record.task_id)+':'+parentSha};
   if (isPr && record.parent_merged_sha &&
       record.last_parent_rebase_sha === record.parent_merged_sha &&
       record.base_branch !== 'main')
