@@ -184,18 +184,10 @@ export async function safeUpdateBranch({ github, record, enabled = false }) {
   return {status:'updating',reason:'recheck_new_head_and_all_checks'};
 }
 
+// Compatibility entrypoint: one actual retarget/update path, never a lighter gate.
 export async function retargetAfterIntegration({github,dependent,predecessor,enabled=false}) {
-  if(!enabled)return {status:'disabled'};
-  if(!dependent?.pr_number || !predecessor?.branch ||
-      !['integrated_proven','released_proven'].includes(predecessor.status))
-    return {status:'blocked',reason:'predecessor_not_integrated'};
-  const pr=await github.request(`/pulls/${dependent.pr_number}`);
-  if(pr.state!=='open' || pr.base.ref!==predecessor.branch ||
-     pr.head.sha!==dependent.head_sha) return {status:'blocked',reason:'unexpected_pr'};
-  await github.request(`/pulls/${dependent.pr_number}`,{
-    method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({base:'main'})
-  });
-  return {status:'retargeted',reason:'all_ci_codex_and_evidence_must_be_rechecked'};
+  if (!enabled) return {status:'disabled'};
+  return updateChildAfterParentMerge({github,dependent,predecessor});
 }
 
 // Trusted-main branch maintenance is NOT a merge or integration proof gate.
