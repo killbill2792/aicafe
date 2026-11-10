@@ -93,7 +93,7 @@ it("POS0e paid transport refuses an oversized request at zero model cost",async(
  const oversized={model:PRODUCTION_SUPERVISOR_OPENAI_MODEL,
   max_output_tokens:MAX_OUTPUT_TOKENS_PER_CALL,
   input:"x".repeat(MAX_INPUT_REQUEST_BYTES)};
- await expect(budgetedProvider(oversized,new AbortController().signal).next())
+ await expect(budgetedProvider(oversized,new AbortController().signal)[Symbol.asyncIterator]().next())
   .rejects.toThrow("POS0e paid E2 budget exceeded (input_request_bytes)");
  expect(paidCalls).toBe(beforeCalls);
  expect(requestBytes).toBe(beforeBytes);
