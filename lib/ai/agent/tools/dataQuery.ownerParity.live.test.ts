@@ -10,7 +10,7 @@ vi.mock("server-only",()=>({}));
 import {runAgentTurn,openAIProvider} from "../loop.server";
 import {PRODUCTION_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import type {AgentProvider} from "../loop.server";
-import type {AgentToolContext} from "./index";
+import {executeAgentTool,type AgentToolContext} from "./index";
 const dbUrl=process.env.AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL;
 // A free, provider-independent dry run validates ALL fixture writes and
 // tenant/diagnostic isolation before any paid call. This is NOT agent proof.
@@ -194,25 +194,6 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
   ];
   // Test the source/fixture contract at zero model cost. Paid acceptance must
   // still execute the registered Supervisor, and never sets SQL_ONLY.
-  if(sqlOnly){
-   const expected=await client.query<{n:number}>(
-    "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
-    [biz.id,prior,biz.today]);
-   expect(expected.rows[0].n).toBeGreaterThanOrEqual(3);
-   // Exact same independently sourced truth SQL and bound argument arrays as
-   // the real-agent test; no provider/model request in SQL-only mode.
-   for(const {question,truth,ref} of namedQuestions){
-    const truthRow=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0];
-    expect(truthRow?.answer,question).toBeTruthy();
-   }
-   for(const {question,truth,args} of familyQuestions){
-    const truthRow=(await client.query<{n:number|string|null}>(truth,args)).rows[0];
-    expect(truthRow?.n,question).not.toBeNull();
-    expect(truthRow?.n,question).not.toBeUndefined();
-   }
-   return;
-  }
-
   // SupabaseClient.rpc-compatible adapter backed by the SAME transaction in which
   // the fixture and direct truth live. Query SQL is still solely the allowlisted RPC.
   const db={rpc:async(name:string,p:Record<string,unknown>)=>{
@@ -237,6 +218,48 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
    tools:{} as AgentToolContext["tools"],
    canonicalData:async()=>({db:db as never,businessId:biz.id})
   } as AgentToolContext;
+  if(sqlOnly){
+   const expected=await client.query<{n:number}>(
+    "select count(*)::integer n from public.toast_records_for($1,$2,$3) where record_type in ('employee','cashmgmt/v1/entries','stock/v1/inventory')",
+    [biz.id,prior,biz.today]);
+   expect(expected.rows[0].n).toBeGreaterThanOrEqual(3);
+   // Exact same independently sourced truth SQL and bound argument arrays as
+   // the real-agent test; no provider/model request in SQL-only mode.
+   for(const {question,truth,ref} of namedQuestions){
+    const truthRow=(await client.query<{answer:string}>(truth,[...params,ref])).rows[0];
+    expect(truthRow?.answer,question).toBeTruthy();
+   }
+   for(const {question,truth,args} of familyQuestions){
+    const truthRow=(await client.query<{n:number|string|null}>(truth,args)).rows[0];
+    expect(truthRow?.n,question).not.toBeNull();
+    expect(truthRow?.n,question).not.toBeUndefined();
+   }
+   // Prove the real registered query_data dispatch and SQL RPC, not just a
+   // direct SELECT of the source. This never reaches a model provider.
+   const familyToolCases=[
+    {view:"cv_cash" as const,metric:"amount_cents",day:biz.today,filters:null},
+    {view:"cv_inventory" as const,metric:"quantity",day:biz.today,
+     filters:[{column:"menu_item_ref",op:"=",value:stockGuid}]},
+    {view:"cv_sales_days" as const,metric:"net_sales_cents",day:prior,filters:null}
+   ];
+   for(const [index,testCase] of familyToolCases.entries()){
+    const spec=familyQuestions[index];
+    const truthValue=(await client.query<{n:number|string|null}>(spec.truth,spec.args)).rows[0]?.n;
+    const result=await executeAgentTool("query_data",{
+     view:testCase.view,columns:null,filters:testCase.filters,
+     group_by:null,metrics:[{fn:"sum",column:testCase.metric}],
+     date_from:testCase.day,date_to:testCase.day,order_by:null,limit:10
+    },context);
+    expect(result.error,spec.question+"; "+JSON.stringify(result.missing)).toBeUndefined();
+    expect(result.missing,spec.question).not.toContain("source_read_failed");
+    const rows=result.rows as Array<Record<string,unknown>>|undefined;
+    expect(rows,spec.question).toHaveLength(1);
+    expect(Number(rows?.[0]?.["sum_"+testCase.metric]),spec.question)
+     .toBeCloseTo(Number(truthValue),2);
+   }
+   return;
+  }
+
   for(const {question,truth} of (smoke?scalarQuestions.slice(0,0):scalarQuestions)){
    const expected=(await client.query<{n:number}>(truth,params)).rows[0].n;
    // Standard owner-facing answer; the requested line keeps acceptance numeric
