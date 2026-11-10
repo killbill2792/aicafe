@@ -185,4 +185,3 @@ test('CI-failed nudge names the actual failed GitHub check with its verified lin
   assert.match(delivery.prompt,/TypeScript, full ESLint and patch hygiene/);
   assert.match(delivery.prompt,/actions\/runs\/99\/job\/21/);
 });
-
