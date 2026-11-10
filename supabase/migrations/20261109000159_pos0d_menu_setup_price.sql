@@ -1,5 +1,8 @@
 -- POS0d additive provider-publication evidence. No hard deletes or automatic effects.
 -- Menu owner recipe/activity is separate from Toast publication state.
+-- Prevent DDL locks from waiting indefinitely during a future separately approved rollout.
+SET lock_timeout = '5s';
+SET statement_timeout = '120s';
 alter table public.menu_items
  add column if not exists toast_publication_state text not null default 'unknown'
    check (toast_publication_state in ('unknown','active','inactive')),
@@ -36,7 +39,7 @@ create or replace function public.toast_apply_verified_menu_presence(
 ) returns jsonb language plpgsql security definer set search_path=public as $$
 declare prefix text; ni integer;nm integer;ng integer;
 begin
- if auth.role()<>'service_role' or not exists(
+ if auth.role() IS DISTINCT FROM 'service_role' or not exists(
   select 1 from public.toast_location_mappings
   where business_id=p_business_id and restaurant_guid=p_restaurant_guid
    and verified_at is not null
@@ -154,7 +157,7 @@ create or replace function public.toast_verify_existing_price_history(
 ) returns boolean language plpgsql security definer set search_path=public as $$
 declare v_id uuid;h_id uuid;
 begin
- if auth.role()<>'service_role' then
+ if auth.role() IS DISTINCT FROM 'service_role' then
   raise exception 'Toast price unauthorized' using errcode='42501';end if;
  if p_price_cents is null or p_price_cents<=0 or p_observed_at is null
     or p_version is null then return false;end if;
@@ -185,3 +188,6 @@ revoke all on function public.toast_verify_existing_price_history(
  uuid,uuid,text,text,timestamptz,bigint) from public,anon,authenticated;
 grant execute on function public.toast_verify_existing_price_history(
  uuid,uuid,text,text,timestamptz,bigint) to service_role;
+
+RESET lock_timeout;
+RESET statement_timeout;
