@@ -40,7 +40,18 @@ try {
   await q("insert into locations(id, business_id, name) values ($1, $2, 'Main')", [ids.loc, S]);
   await q("insert into toast_api_credentials(business_id, api_origin, client_id, client_secret_enc) values ($1, 'x', 'x', 'x')", [S]);
   await q("insert into toast_location_mappings(business_id, location_id, restaurant_guid) values ($1, $2, $3)", [S, ids.loc, G]);
+  // Source café's Toast restaurant was actually verified for this synthetic
+  // CI exercise. The existing mirror ALWAYS resets the destination mapping
+  // verified_at to NULL, and inserts only an inert disconnected credential.
+  await q("update toast_location_mappings set verified_at=now() where business_id=$1 and restaurant_guid=$2", [S,G]);
   await q("insert into employees(id, business_id, display_name) values ($1, $2, 'Sam')", [ids.emp, S]);
+  // The real staging trigger produces current "employee" raw objects for both
+  // source and later Test Café mirror. Only the verified SOURCE row is eligible
+  // for cv_toast_records; fixture copies cannot become fresh provider facts.
+  await q(`insert into toast_employee_directory(
+    business_id,restaurant_guid,employee_guid,display_name,linked_employee_id,linked_at)
+    values ($1,$2,$3,'Verified source barista',$4,now())`,
+    [S,G,"c0ffee00-0000-4000-8000-0000000000b2",ids.emp]);
   await q("insert into menu_items(id, business_id, name, base_name) values ($1, $3, 'Latte', 'Latte'), ($2, $3, 'Mocha', 'Mocha')", [ids.m1, ids.m2, S]);
   await q(`insert into orders(id, business_id, location_id, pos_order_id, net_sales_cents, gross_sales_cents, business_date, closed_at)
     values ($1, $2, $3, 'toast:o1', 500, 500, $4, $4::date + interval '10 hours')`, [ids.order, S, ids.loc, day]);
@@ -206,11 +217,29 @@ try {
     "select record_type, count(*)::int n, count(*) filter (where counts_in_sales)::int counted from cv_toast_records where business_id = $1 group by 1 order by 1", [b])).rows
     .map((r) => [r.record_type, `${r.n}/${r.counted}`]));
   const [sourceView, destView] = [await viewCounts(S), await viewCounts(D)];
-  check(JSON.stringify(destView) === JSON.stringify(sourceView), `the AI's Toast records read the same in both cafés ${JSON.stringify(destView)}`);
-  check(destView.order === "1/1" && destView["config/v2/tables"] === "2/0" && destView["labor/v1/timeEntries"] === "1/0" && !destView["orders/v2/ordersBulk"],
-    "latest order version only, newest captures only, no second copy of orders");
-  check((await one("select count(*)::int n from toast_raw_records where business_id = $1", [D])).n === 1, "the test café archive holds one row: the latest order");
-  check((await one("select (payload->'checks'->0->'payments'->0->>'tipAmount')::int tip from toast_raw_records where business_id = $1", [D])).tip === 2, "the copied order is the latest version");
+  const ordersOnly = (types) => Object.fromEntries(
+    ["order","check","item","modifier","payment","item_discount","check_discount","service_charge"]
+     .filter(t => types[t] !== undefined).map(t => [t,types[t]]));
+  check(JSON.stringify(ordersOnly(destView)) === JSON.stringify(ordersOnly(sourceView)),
+    `the Test Café mirrors retained historical orders, not live provider source: ${JSON.stringify(destView)}`);
+  check(destView.order === "1/1" && destView.check === "1/1" && destView.item === "1/1" &&
+    destView.payment === "1/1" && !destView["config/v2/tables"] &&
+    !destView["labor/v1/timeEntries"] && !destView["orders/v2/ordersBulk"],
+    "exactly one historical order and no copied diagnostic Toast capture enters the reader");
+  check(sourceView.employee === "1/0" && !destView.employee,
+    "verified-source employee appears once, synthetic Test Café staged employee is not provider authority");
+  const mirroredStage=await one(`select count(*)::int n from toast_raw_records
+    where business_id=$1 and entity='employee' and capture_key like 'stage:%'`, [D]);
+  check(mirroredStage.n === 1,
+    "actual Test Café mirror trigger archived employee fixture, proving exclusion is in reader not missing data");
+  const neverVerified=await one(`select count(*)::int n from toast_location_mappings
+    where business_id=$1 and verified_at is not null`,[D]);
+  check(neverVerified.n === 0,
+    "Test Café mapping is not source-verified, including after copied employee staging");
+  check((await one("select count(*)::int n from toast_raw_records where business_id = $1 and entity='order'", [D])).n === 1,
+    "the historical Test Café order archive holds only its latest order version");
+  check((await one("select (payload->'checks'->0->'payments'->0->>'tipAmount')::int tip from toast_raw_records where business_id = $1 and entity='order'", [D])).tip === 2,
+    "the copied historical order retains the latest correct tip");
   check((await one("select count(*)::int n from toast_order_typed_facts where business_id = $1", [D])).n === 1, "typed order details are rebuilt in the test café");
   check((await one(`select count(*)::int n from toast_raw_records r join toast_day_status d on d.business_id = r.business_id and d.restaurant_guid = r.restaurant_guid
     and d.business_date = r.business_date and d.last_import_run_id = r.run_id where r.business_id = $1`, [D])).n === 1, "the copied order names its day's copied run");
@@ -225,7 +254,11 @@ try {
   await q("update toast_raw_records set run_id = $1, last_seen = now() + interval '1 minute' where business_id = $2 and run_id = $3", [runIds.next, S, runIds.cur]);
   const reimport = await run();
   check(reimport.toast_raw_records_days === 1, `a re-imported day is copied again ${JSON.stringify(replacedDays(reimport))}`);
-  check(JSON.stringify(await viewCounts(D)) === JSON.stringify(await viewCounts(S)), "after the re-import both cafés still read the same");
+  const [reimportedSource,reimportedTest]=[await viewCounts(S),await viewCounts(D)];
+  check(JSON.stringify(ordersOnly(reimportedTest)) === JSON.stringify(ordersOnly(reimportedSource)),
+    "re-import preserves historical order parity without turning staged Test Café fixtures into live Toast");
+  check(reimportedSource.employee === "1/0" && !reimportedTest.employee,
+    "re-import never promotes mirrored employee fixture into provider authority");
 } finally {
   await cleanup();
   await client.end();

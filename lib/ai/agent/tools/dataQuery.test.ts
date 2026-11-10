@@ -6,7 +6,7 @@ vi.mock("@/lib/data/toastDayTrust.server",()=>({
 import {dataQueryTools,fitRows} from "./dataQuery";
 import {readToastDayTrust} from "@/lib/data/toastDayTrust.server";
 const b="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-function input(view="cv_sales_days"){return {view,columns:["business_date","net_sales_cents"],
+function input(view="cv_sales_days"){return {view,columns:["business_date"],
  filters:null,group_by:["business_date"],metrics:[{fn:"sum",column:"net_sales_cents"}],
  date_from:"2026-10-01",date_to:"2026-10-10",order_by:null,limit:100};}
 function testDb(rows:unknown[]=[],error:unknown=null){
@@ -32,6 +32,68 @@ it("always supplies the authenticated café identity and grouped metrics",async(
   p_metrics:[{fn:"sum",column:"net_sales_cents"}],p_limit:100
  }));
  expect(result.rows).toEqual([{business_date:"2026-10-01",sum_net_sales_cents:1250}]);
+});
+it("distinguishes safe invalid SQL query shapes from real outages",async()=>{
+ const ctxBase={businessId:b};
+ const rejected=vi.fn(async()=>({data:null,error:{
+  code:"42703",message:"column wrong -- customer@example.test"}}));
+ const queryError=await dataQueryTools.query_data.execute(input(),{
+  ...ctxBase,db:{rpc:rejected} as never});
+ expect(queryError).toMatchObject({error:"invalid_query",empty:true,rows:[]});
+ expect(JSON.stringify(queryError)).not.toContain("customer@example.test");
+ const thrown=Object.assign(new Error("secret query text"),{code:"22P02"});
+ const typed=vi.fn(async()=>{throw thrown;});
+ const malformed=await dataQueryTools.query_data.execute(input(),{
+  ...ctxBase,db:{rpc:typed} as never});
+ expect(malformed.error).toBe("invalid_query");
+ expect(JSON.stringify(malformed)).not.toContain("secret query text");
+ for(const fixedMessage of ["invalid aggregate","columns require group by",
+  "invalid order by","invalid filter column"]){
+  const rejectedRpc=vi.fn(async()=>({data:null,error:{
+   code:"P0001",message:fixedMessage}}));
+  const result=await dataQueryTools.query_data.execute(input(),{
+   ...ctxBase,db:{rpc:rejectedRpc} as never});
+  expect(result.error,fixedMessage).toBe("invalid_query");
+ }
+ for(const code of ["42501","PGRST202","P0001",undefined]){
+  const outage=vi.fn(async()=>({data:null,error:{code,message:"private detail"}}));
+  const result=await dataQueryTools.query_data.execute(input(),{
+   ...ctxBase,db:{rpc:outage} as never});
+  expect(result.error).toBe("source_read_failed");
+  expect(JSON.stringify(result)).not.toContain("private detail");
+ }
+});
+it("rejects aggregate and sort shapes that the existing SQL RPC cannot execute",async()=>{
+ const f=testDb(),ctx={db:f.db,businessId:b};
+ const invalid=[
+  {...input(),group_by:null,columns:["net_sales_cents"]},
+  {...input(),group_by:["business_date"],columns:["net_sales_cents"]},
+  {...input(),order_by:{column:"discount_amount_cents",direction:"desc"}}
+ ];
+ for(const args of invalid){
+  const result=await dataQueryTools.query_data.execute(args,ctx);
+  expect(result.error).toBe("invalid_query");
+ }
+ expect(f.rpc).not.toHaveBeenCalled();
+ // Do not reject the already-supported grouped metric alias and precise
+ // plain-read projections; existing database aggregator handles them.
+ const alias=await dataQueryTools.query_data.execute({
+  ...input(),order_by:{column:"sum_net_sales_cents",direction:"desc"}},ctx);
+ expect(alias.error).toBeUndefined();
+ const plain=await dataQueryTools.query_data.execute({
+  ...input(),columns:["business_date","net_sales_cents"],group_by:null,metrics:null},ctx);
+ expect(plain.error).toBeUndefined();
+ // Omitted plain-read columns expand to canonical allowlisted columns, so
+ // sorting by one of those keys must remain valid.
+ const sorted=await dataQueryTools.query_data.execute({
+  ...input(),columns:null,group_by:null,metrics:null,
+  order_by:{column:"business_date",direction:"desc"}},ctx);
+ expect(sorted.error).toBeUndefined();
+ expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+  p_columns:expect.arrayContaining(["business_date","net_sales_cents"]),
+  p_order_by:{column:"business_date",direction:"desc"}
+ }));
+ expect(f.rpc).toHaveBeenCalledTimes(3);
 });
 it("empty and failed queries are explicit, not invented zero totals",async()=>{
  const f=testDb();
@@ -73,18 +135,81 @@ it("an aggregate null over no matching facts reports empty",async()=>{
  expect(x.empty).toBe(true);
  expect(x.missing).toContain("empty");
 });
+it("exposes one trustworthy POS count as a numeric aggregate with partial-day status",async()=>{
+ const rpc=vi.fn(async()=>({data:{
+  rows:[{count_source_ref:4}],sourceCount:4,hasIncomplete:true,
+  currentDayIncomplete:true,truncated:false,sourceMix:{toast:4}
+ },error:null}));
+ const args={...input("cv_toast_records"),columns:null,group_by:null,
+  filters:[{column:"record_type",op:"in",value:["item_discount","check_discount"]},
+   {column:"counts_in_sales",op:"=",value:true}],
+  metrics:[{fn:"count",column:"source_ref"}],limit:10};
+ const x=await dataQueryTools.query_data.execute(args,{db:{rpc} as never,businessId:b});
+ expect(x.aggregate).toEqual({metric:"count_source_ref",value:4,status:"so_far"});
+ expect(x.rows).toEqual([{count_source_ref:4}]);
+ expect(x.missing).toContain("currentDayIncomplete");
+ expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+  p_filters:args.filters,p_metrics:args.metrics,p_group_by:[]
+ }));
+});
+it("makes item-only and check-only discount subtotals explicit without altering SQL values",async()=>{
+ const rpc=vi.fn(async()=>({data:{rows:[{count_source_ref:2}],
+  sourceCount:2,sourceMix:{toast:2},truncated:false},error:null}));
+ const shared={...input("cv_toast_records"),columns:null,group_by:null,
+  metrics:[{fn:"count",column:"source_ref"}],limit:10};
+ for(const subtype of ["item_discount","check_discount"]){
+  const filters=[{column:"record_type",op:"=",value:subtype},
+   {column:"counts_in_sales",op:"=",value:true}];
+  const response=await dataQueryTools.query_data.execute({...shared,filters},
+   {db:{rpc} as never,businessId:b});
+  expect(response.aggregate).toMatchObject({metric:"count_source_ref",value:2});
+  expect(response.scopeWarning).toContain("only "+subtype);
+  expect(response.scopeWarning).toContain("both item_discount and check_discount");
+  expect(response.rows).toEqual([{count_source_ref:2}]);
+ }
+ const all=await dataQueryTools.query_data.execute({...shared,filters:[
+  {column:"record_type",op:"in",value:["item_discount","check_discount"]},
+  {column:"counts_in_sales",op:"=",value:true}]},
+  {db:{rpc} as never,businessId:b});
+ expect(all.scopeWarning).toBeUndefined();
+ expect(all.aggregate).toMatchObject({metric:"count_source_ref",value:2});
+ expect(rpc).toHaveBeenCalledTimes(3);
+});
+it("never treats null, empty, grouped or truncated aggregates as known totals",async()=>{
+ const args={...input("cv_toast_records"),columns:null,group_by:null,
+  metrics:[{fn:"count",column:"source_ref"}]};
+ for(const spec of [
+  {rows:[{count_source_ref:null}],sourceCount:1,truncated:false},
+  {rows:[{count_source_ref:0}],sourceCount:0,truncated:false},
+  {rows:[{count_source_ref:3}],sourceCount:1,truncated:true}
+ ]){
+  const rpc=vi.fn(async()=>({data:{...spec,sourceMix:{}},error:null}));
+  const x=await dataQueryTools.query_data.execute(args,{db:{rpc} as never,businessId:b});
+  expect(x.aggregate).toBeUndefined();
+ }
+ const grouped={...args,group_by:["business_date"],columns:["business_date"]};
+ const rpc=vi.fn(async()=>({data:{
+  rows:[{business_date:"2026-10-01",count_source_ref:3}],
+  sourceCount:3,truncated:false,sourceMix:{}},error:null}));
+ const x=await dataQueryTools.query_data.execute(grouped,{db:{rpc} as never,businessId:b});
+ expect(x.aggregate).toBeUndefined();
+});
 it("defaults to a compact 50-row result when the model gives no limit",async()=>{
  const f=testDb([{business_date:"2026-10-01",sum_net_sales_cents:1}]);
  await dataQueryTools.query_data.execute({...input(),limit:null},{db:f.db,businessId:b});
  expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({p_limit:50}));
 });
-it("marks cash, stock, kitchen and dining results as snapshots, not live data",async()=>{
- const f=testDb([{entry_type:"deposit",sum_amount_cents:5000}]);
+it("does not call current Toast cash and stock diagnostic snapshots, and reports unverified freshness",async()=>{
+ const rpc=vi.fn(async()=>({data:{rows:[{entry_type:"deposit",sum_amount_cents:5000}],
+  sourceCount:1,sourceMix:{toast:1},truncated:false},error:null}));
+ const ctx={db:{rpc} as never,businessId:b};
  const cash=await dataQueryTools.query_data.execute({...input("cv_cash"),columns:["entry_type"],group_by:["entry_type"],
-  metrics:[{fn:"sum",column:"amount_cents"}]},{db:f.db,businessId:b});
- expect(cash.missing).toContain("snapshotOnly");
- const sales=await dataQueryTools.query_data.execute(input(),{db:f.db,businessId:b});
- expect(sales.missing).not.toContain("snapshotOnly");
+  metrics:[{fn:"sum",column:"amount_cents"}]},ctx);
+ expect(cash.missing).toContain("source_freshness_unverified");
+ expect(cash.missing).not.toContain("snapshotOnly");
+ expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({p_view:"cv_cash",p_business_id:b}));
+ const sales=await dataQueryTools.query_data.execute(input(),ctx);
+ expect(sales.missing).not.toContain("source_freshness_unverified");
 });
 it("reads named Toast fields through the database, never whole records",async()=>{
  const f=testDb([{"data.server.guid":"s1","sum_data.price":12.5}]);
@@ -104,15 +229,16 @@ it("reads named Toast fields through the database, never whole records",async()=
 });
 it("accepts only plain field names inside data",async()=>{
  const f=testDb();
- for(const column of ["data","data.","data.a;drop","data.a b","data.a.b.c.d.e.f.g.h.i","meta.x"])
+ for(const column of ["data","data.","data.a;drop","data.a b","data."+Array(17).fill("deep").join("."),"meta.x"])
   expect((await dataQueryTools.query_data.execute({...input("cv_toast_records"),columns:null,
-   group_by:[column],metrics:null},{db:f.db,businessId:b})).error,column).toBe(column==="data"?undefined:"column_not_allowed");
+   group_by:[column],metrics:null},{db:f.db,businessId:b})).error,column).toBe("column_not_allowed");
 });
 it("lists the field names of a Toast record type for this café only",async()=>{
  const rpc=vi.fn(async()=>({data:[{field:"data.price",type:"number",example:"5.5"}],error:null}));
  const result=await dataQueryTools.describe_data.execute({record_type:"item"},{db:{rpc} as never,businessId:b});
  expect(rpc).toHaveBeenCalledWith("ai_toast_fields",{p_business_id:b,p_record_type:"item"});
- expect(result).toMatchObject({record_type:"item",fields:[{field:"data.price"}]});
+ expect(result).toMatchObject({record_type:"item"});
+ expect(result.fields).toEqual(expect.arrayContaining([expect.objectContaining({field:"data.price"})]));
  const all=await dataQueryTools.describe_data.execute({record_type:null});
  expect(all.views?.some(v=>v.name==="cv_toast_records")).toBe(true);
 });
@@ -142,7 +268,7 @@ it("keeps current-day incompleteness on ungrouped sales rows",async()=>{
   sourceCount:1,sourceMix:{app:1},hasIncomplete:false,currentDayIncomplete:true,truncated:false
  },error:null}));
  const value=await dataQueryTools.query_data.execute({
-  ...input(),group_by:null,metrics:null
+  ...input(),columns:["business_date","net_sales_cents"],group_by:null,metrics:null
  },{db:{rpc} as never,businessId:b});
  expect(value.missing).toContain("currentDayIncomplete");
  expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({p_view:"cv_sales_days"}));
@@ -182,6 +308,6 @@ it("the Toast plain-read projection includes the newly validated cent columns",a
  },{db:f.db,businessId:b});
  expect(f.rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
   p_view:"cv_toast_records",
-  p_columns:expect.arrayContaining(["record_type","data","price_cents","discount_amount_cents"])
+  p_columns:expect.arrayContaining(["record_type","price_cents","discount_amount_cents"])
  }));
 });

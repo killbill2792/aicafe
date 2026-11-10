@@ -36,6 +36,25 @@ function withoutEmptyChoices(field:AskOwnerField,kind:string|undefined):AskOwner
   ...(kind==="facts"&&remember==="this_question"?{remember}:{})};
 }
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+/**
+ * A numeric fact entered by an owner is not the same as a value already
+ * recorded by the POS. Ask the owner for numbers only when their provenance
+ * is an actual saved owner fact or an observed missing owner input returned
+ * by a trusted tool; never classify the owner's sentence by keywords.
+ *
+ * The schema's other field types (date/text/choice/money/percent) are not
+ * blocked here: the owner may still need to identify a day, an event or a
+ * preference before any POS query can be made.
+ */
+function verifiedOwnerNumber(key:string,ctx:AgentToolContext):boolean{
+ const entry=catalogForMissing(key);
+ if(entry.labelKey!=="generic"&&entry.type==="number")return true;
+ const saved=(ctx as AgentToolContext&{savedOwnerFacts?:readonly SavedFact[]}).savedOwnerFacts??[];
+ if(saved.some(f=>f.fact_key===entry.factKey))return true;
+ return (ctx.turnResults?.()??[]).some(({result})=>
+  result.source!=="canonical_data"&&result.source!=="ask_owner"&&
+  result.missing?.includes(entry.factKey));
+}
 export const askOwnerTools={ask_owner:{
  agentId:"alex",schema:askOwnerSchema,
  description:"Ask once each turn when a fact only the owner knows is missing, unknown, empty or failed; never for a figure the POS records. For arbitrary questions use kind=facts with 1–6 number, money, percent, text, date or choice fields; options=[] and allowOther=false. Use a generic text field when the key is unknown. For known ambiguity use verified kind=choice with 2–4 of the candidates (pick the likeliest, or ask a narrower question). Legacy pantry counts use verified kind=fill only. Never ask for a figure already returned or saved. Each facts field sets remember: lasting for stable café facts, this_question for anything about one day or period or a one-off answer. changeSaved=true only when the owner asks to change or forget saved facts, with their exact saved keys; otherwise false.",
@@ -44,6 +63,17 @@ export const askOwnerTools={ask_owner:{
   const input={...parsed,fields:parsed.fields?.map(field=>withoutEmptyChoices(field,parsed.kind))};
   const state=ctx.resolveState;
   if(!state||state.asked)return {source:"ask_owner",period:null,missing:["alreadyAsked"],error:"askOwnerLimit"};
+  // Only when a café-scoped data reader is available: an unsourced numeric
+  // card must not end the turn instead of trying that existing reader first.
+  // The missing list is derived from trusted results/saved facts; a model
+  // cannot assert provenance with a field label, question, or changeSaved.
+  // Non-numeric clarifications (e.g. which date was the pop-up?) remain valid.
+  if(input.kind==="facts"&&ctx.canonicalData&&input.fields?.some(field=>
+     field.inputType==="number"&&!verifiedOwnerNumber(field.key,ctx))){
+    return {source:"ask_owner",period:null,missing:["numericOwnerInputUnverified"],
+     error:"numericOwnerInputUnverified",nextTool:"query_data",
+     note:"No trusted owner-input evidence supports this numeric card. For recorded POS numbers call query_data. If an owner-only date, place, event, or other context is needed, ask for that specific date/text/choice instead. Do not invent a number or create a numeric owner fact."};
+  }
   if(input.kind==="facts"){
     if(!input.fields?.length||input.options.length||input.allowOther||input.fields.length>6||
       new Set(input.fields.map(f=>f.key)).size!==input.fields.length||

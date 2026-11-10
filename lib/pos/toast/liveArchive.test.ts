@@ -39,10 +39,22 @@ describe("which of today's orders are kept during the day",()=>{
   const kept=liveArchivePage(page);
   const asImport=stableToastOrderPage(redactToastRaw(page,0,"",undefined,"orders") as unknown[]);
   expect(kept).toEqual([asImport[0],asImport[2]]);
-  // Personal details are gone; the discount name (business data) stays.
-  expect(JSON.stringify(kept)).not.toContain("ana@example.com");
-  expect(JSON.stringify(kept)).not.toContain("Ana");
+  // POS0e owner-approved retention: permitted customer names and contacts
+  // survive the same live/day-import normalization; payment credentials do not.
+  expect(JSON.stringify(kept)).toContain("ana@example.com");
+  expect(JSON.stringify(kept)).toContain('"firstName":"Ana"');
   expect(JSON.stringify(kept)).toContain("Dental Students & Faculty");
+  const withSecrets=order(8,"CLOSED",{
+   cardInfo:{cardNumber:"4111111111111111",cvv:"123",trackData:"magstripe-secret"},
+   accessToken:"reusable-secret"
+  });
+  const sanitized=JSON.stringify(liveArchivePage([withSecrets]));
+  expect(sanitized).toContain("ana@example.com");
+  expect(sanitized).not.toContain("4111111111111111");
+  expect(sanitized).not.toContain("magstripe-secret");
+  expect(sanitized).not.toContain("reusable-secret");
+  expect(sanitized).not.toContain('"cardNumber"');
+  expect(sanitized).not.toContain('"cvv"');
   // The same order downloaded with its lists in another order is byte-identical.
   const shuffled={...order(1),checks:[{...order(1).checks[0],selections:[...order(1).checks[0].selections].reverse()}]};
   expect(JSON.stringify(liveArchivePage([shuffled]))).toBe(JSON.stringify(liveArchivePage([order(1)])));
