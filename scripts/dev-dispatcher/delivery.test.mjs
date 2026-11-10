@@ -49,7 +49,7 @@ test('both independent and dependent authorized tasks open a draft early',()=>{
  assert.match(independent.prompt,/INDEPENDENT TASK/);
  assert.match(independent.prompt,/OPEN A DRAFT PR PROMPTLY/);
  assert.doesNotMatch(independent.prompt,/before opening a READY FOR REVIEW/);
- assert.match(stacked.prompt,/Do not wait for that dependency to merge/);
+ assert.match(stacked.prompt,/Do not wait for the parent to merge before approved code\/tests/);
  assert.match(stacked.prompt,/Other dependencies remain merge blockers/);
 });
 
@@ -69,14 +69,14 @@ test('every coding agent receives exact current authority, three skill files, sh
    'Vercel preview deployments/builds'
   ]) assert.ok(prompt.toLowerCase().includes(required.toLowerCase()), required);
   assert.match(prompt,/Exact-head, threads and acceptance gates stay mandatory/);
-  assert.match(prompt,/resolved threads/);
+  assert.match(prompt,/threads and acceptance gates stay mandatory/);
   assert.match(prompt,/COMMENT ACCOUNTABILITY/);
   for (const phrase of ['ALL owner/agent PR conversation comments','Comment disposition checklist',
     'GitHub comment/thread IDs','fixed-awaiting-proof','commit+executed CI/test','before reporting done',
     'No parallel queue']) assert.ok(prompt.includes(phrase),phrase);
 
   assert.match(prompt,/request ONE final-head re-review/);
-  assert.match(prompt,/full CI is GREEN/);
+  assert.match(prompt,/full CI GREEN/);
   assert.match(prompt,/Draft\/stacked-parent-moving\/CI-pending means NO Codex request/);
   assert.match(prompt,/do not @codex again/);
   assert.match(prompt,/NEVER edit PROGRESS.md/);
@@ -253,7 +253,7 @@ test('one-review policy holds Codex on drafts/stacked children until eligible CI
  const child=createDelivery({task,record:{...record,base_branch:'feat/parent',prerequisite_pr:398},
    action:'assign',actionId:'assign:6-review-child'});
  assert.match(independ.prompt,/ONE ready-state Codex review/);
- assert.match(independ.prompt,/full CI is GREEN/);
+ assert.match(independ.prompt,/full CI GREEN/);
  assert.match(child.prompt,/never while parent moves/);
  assert.match(child.prompt,/final CI-green head/);
  assert.match(child.prompt,/stacked-parent-moving/);
