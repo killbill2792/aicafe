@@ -234,6 +234,31 @@ run("Supervisor proves current-source orders, staff, cash, stock, names and scre
     expect(truthRow?.n,question).not.toBeNull();
     expect(truthRow?.n,question).not.toBeUndefined();
    }
+   // A known Toast GUID should resolve without guessing a different family.
+   // Same registered query_data, scope, and real SQL used by the paid agent;
+   // the free preflight must catch a broken field path before spending tokens.
+   const namedToolCases=[
+    {recordType:"order",ref:firstOrderGuid,field:"data.customer.firstName"},
+    {recordType:"employee",ref:staffGuid,field:"data.firstName"}
+   ];
+   for(const spec of namedToolCases){
+    const expected=(await client.query<{answer:string}>(
+     "select case when $3='order' then data->'customer'->>'firstName' else data->>'firstName' end answer from public.toast_records_for($1,$4,$5) where record_type=$3 and record_ref=$2",
+     [biz.id,spec.ref,spec.recordType,prior,biz.today])).rows[0]?.answer;
+    expect(expected,spec.recordType+" source truth").toBeTruthy();
+    const result=await executeAgentTool("query_data",{
+     view:"cv_toast_records",columns:[spec.field],
+     filters:[{column:"record_type",op:"=",value:spec.recordType},
+      {column:"record_ref",op:"=",value:spec.ref}],
+     group_by:null,metrics:null,date_from:prior,date_to:biz.today,
+     order_by:null,limit:10
+    },context);
+    expect(result.error,spec.recordType+" registered reader").toBeUndefined();
+    const rows=result.rows as Array<Record<string,unknown>>|undefined;
+    expect(rows,spec.recordType+" registered reader").toHaveLength(1);
+    expect(rows?.[0]?.[spec.field],spec.recordType+" permitted first name")
+     .toBe(expected);
+   }
    // Prove the real registered query_data dispatch and SQL RPC, not just a
    // direct SELECT of the source. This never reaches a model provider.
    const familyToolCases=[
