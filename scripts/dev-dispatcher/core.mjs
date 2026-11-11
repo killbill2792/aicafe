@@ -151,7 +151,7 @@ export function predecessorsForMerge(task, queue, records = {}) {
   const prior=[...new Set([...explicit,...overlappingPredecessorIds(task,queue)])];
   return prior.map(dep => records[dep] || {status:"unknown"});
 }
-export function dispatchFrontier(queue, records = {}, capacity = null) {
+export function dispatchFrontier(queue, records = {}, capacity = null, controls = {}) {
   const tasks = validateQueue(queue);
   // The owner-approved capacity comes from the queue, not a stale hardcoded default.
   // No more than five ChatGPT chats or two Claude chats may be active.
@@ -174,7 +174,17 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
   // after the owner-reviewed source/field contract is proven on merged main.
   const foundationProven = architectureFoundationReady(queue, records);
   const foundationDependents = new Set(queue.dispatch_rules?.architecture_foundation_dependent_task_ids || []);
-  for (const task of queue.tasks) {
+  // Owner priorities affect only NEW dispatch selection. The signed queue
+  // remains in its original order for shared-file MERGE precedence.
+  const priority=controls.priority||{};
+  const paused=controls.paused instanceof Set?controls.paused:new Set();
+  const candidates=queue.tasks.map((task,index)=>({task,index})).sort((a,b)=>{
+    const ap=Number.isInteger(priority[a.task.id])?priority[a.task.id]:0;
+    const bp=Number.isInteger(priority[b.task.id])?priority[b.task.id]:0;
+    return bp-ap||a.index-b.index;
+  });
+  for (const {task} of candidates) {
+    if(paused.has(task.id))continue;
     if (!gateProven && !gateAllowed.has(task.id)) continue;
     if (!foundationProven && foundationDependents.has(task.id)) continue;
     if (!approved(task) ||
