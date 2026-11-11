@@ -8,6 +8,9 @@ import {applyReceipts} from './inbox.mjs';
 import {protectedChanges} from './safety.mjs';
 import {readyGate,mergeGate} from './core.mjs';
 import {combinedDashboard,renderDashboard} from './dashboard.mjs';
+import {dispatcherOnlyFiles} from './github.mjs';
+import {mergeApprovedPr} from './effects.mjs';
+import {signalFor} from './signal.mjs';
 
 test('external studio plan loads through its own configured repo without reading code repo queue',async()=>{
  const config=structuredClone(settings);config.repo='killbill2792/MVPStyli';
@@ -134,4 +137,50 @@ test('fatal dispatcher request error is saved as one owner Muse alert before an 
  assert.equal(issues.length,1);assert.equal(issues[0].kind,'dispatcher_uncaught');
  assert.equal(issues[0].recipient,'owner');assert.equal(issues[0].delivery_owner,'muse');
  assert.equal(wakes,1);
+});
+
+test('one dispatcher file among unrelated guard changes is always owner-merge-only',async()=>{
+ const changed=[
+  {filename:'scripts/dev-dispatcher/run.mjs'},
+  {filename:'scripts/guards/pr-size.mjs'},
+  {filename:'src/unrelated.ts'}
+ ];
+ assert.equal(dispatcherOnlyFiles(changed),true);
+ assert.equal(dispatcherOnlyFiles([{filename:'src/unrelated.ts'}]),false);
+ const sha='f'.repeat(40),base='e'.repeat(40);
+ const record={task_id:'ADHOC-427',adhoc:true,dispatcher_only:false,
+   pr_number:427,head_sha:sha,base_sha:base,base_branch:'main',
+   draft:false,ci_state:'success',codex_state:'clean',codex_reviewed_sha:sha,
+   threads_resolved:true,mergeable:true,github_state:'open'};
+ const gh={request:async path=>{
+   if(path==='/pulls/427')return {state:'open',draft:false,merged:false,
+     head:{sha},base:{sha:base,ref:'main'},mergeable:true};
+   throw Error('Unexpected mutating GitHub request '+path);
+ },one:async()=>({...record,dispatcher_only:dispatcherOnlyFiles(changed)})};
+ // Even a stale ledger classification is overridden by live exact GitHub paths.
+ const outcome=await mergeApprovedPr({github:gh,record,enabled:true,action:'merge'});
+ assert.deepEqual(outcome,{status:'blocked',reasons:['owner_merge_required']});
+ assert.deepEqual(await mergeApprovedPr({github:gh,record:{...record,dispatcher_only:true},
+   enabled:true,action:'merge'}),{status:'blocked',reasons:['owner_merge_required']});
+});
+
+test('operational failure stays owner-directed and wakes Muse through an opaque signal',()=>{
+ const original={version:1,tasks:{X:{task_id:'X',pr_number:427,
+   github_state:'open',head_sha:'a'.repeat(40),stall_escalate:true}},
+   actions:{},owner_alerts:{}};
+ const one=noticeOperationalIssues(original);
+ const routed=queueOwnerAlerts(one);
+ const alert=Object.values(routed.owner_alerts).find(n=>n.kind==='stall_owner_escalation');
+ assert.ok(alert);assert.equal(alert.recipient,'owner');
+ assert.equal(alert.delivery_owner,'muse');
+ const secret='secret'.repeat(8);
+ const wake=signalFor(routed,secret);
+ assert.ok(wake.pending_count>=1);
+ assert.doesNotMatch(JSON.stringify(wake),/stall_owner_escalation|task_id|pr_number/);
+ const legacy=structuredClone(routed);
+ for(const notice of Object.values(legacy.owner_alerts))delete notice.identity;
+ assert.equal(signalFor(legacy,secret).pending_count,wake.pending_count);
+ const again=queueOwnerAlerts(noticeOperationalIssues(routed));
+ const same=Object.values(again.owner_alerts).filter(n=>n.kind==='stall_owner_escalation');
+ assert.equal(same.length,1);assert.equal(same[0].recipient,'owner');
 });

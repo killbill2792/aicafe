@@ -81,9 +81,16 @@ export function codexWatchDecision({record,comments=[],reviews=[],reactions=[],n
   if(reviews.some(r=>r.commit_id===head&&codexActor(r.user?.login))||
      comments.some(c=>codexActor(c.user?.login)&&parseCodexReviewState(c.body||'',head))||
      reactions.some(r=>codexActor(r.user?.login)))return {status:'receipt'};
-  if(!requests.length)return {status:'no_verified_request'};
-  const first=Date.parse(requests[0].created_at||'');
-  if(!Number.isFinite(first)||!Number.isFinite(now)||now-first<minutes*60_000)
+  // GitHub's verified draft -> Ready transition automatically requests Codex.
+  // It has no @codex comment, so use its recorded current-head timestamp for
+  // the SAME missing-review watchdog, without requesting a second review.
+  const readyAt=record.draft===false&&record.codex_review_requested_sha===head
+    ? Date.parse(record.ready_transition_at||'') : NaN;
+  const first=Math.min(...[
+    ...requests.map(c=>Date.parse(c.created_at||'')),readyAt
+  ].filter(Number.isFinite));
+  if(!Number.isFinite(first))return {status:'no_verified_request'};
+  if(!Number.isFinite(now)||now-first<minutes*60_000)
     return {status:'pending'};
   return {status:'escalate',head_sha:head};
 }
@@ -92,12 +99,17 @@ export async function inspectCodexWatch({github,record,now=Date.now(),minutes=20
      record.codex_review_requested_sha!==record.head_sha)return {status:'held'};
   const pr=await github.request('/pulls/'+record.pr_number);
   if(pr.state!=='open'||pr.head?.sha!==record.head_sha)return {status:'stale'};
+  if(pr.draft===true)return {status:'held'};
   const [comments,reviews]=await Promise.all([
     github.paginated('/issues/'+record.pr_number+'/comments','comments'),
     github.paginated('/pulls/'+record.pr_number+'/reviews','reviews')
   ]);
-  const first=Math.min(...comments.filter(c=>isRequest(c,record.head_sha,record.last_commit_at))
-    .map(c=>Date.parse(c.created_at||'')).filter(Number.isFinite));
+  const readyAt=record.draft===false&&record.codex_review_requested_sha===record.head_sha
+    ? Date.parse(record.ready_transition_at||'') : NaN;
+  const first=Math.min(...[
+    ...comments.filter(c=>isRequest(c,record.head_sha,record.last_commit_at))
+      .map(c=>Date.parse(c.created_at||'')),readyAt
+  ].filter(Number.isFinite));
   const reactions=[];
   if(Number.isFinite(first)) {
     const issue=await github.paginated('/issues/'+record.pr_number+'/reactions','reactions');

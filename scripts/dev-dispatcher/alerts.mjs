@@ -6,7 +6,11 @@ import {architectureFoundationReady,approved} from './core.mjs';
 import {approvalSignature} from './delivery.mjs';
 import {validConversationUrl} from './delivery.mjs';
 const sha=s=>createHash('sha256').update(s).digest('hex');
-export function noticeHash({kind,task_id,pr_number,question,source_sha}){
+export function noticeHash({kind,task_id,pr_number,question,source_sha,identity:operationalIdentity}){
+ // Operational alerts are deduped by verified issue identity, not by a
+ // human-readable message. This must match queueOwnerIssue's hash.
+ if(operationalIdentity!==undefined)
+  return sha(JSON.stringify([kind,task_id||null,pr_number||null,operationalIdentity]));
  const identity=[kind,task_id||null,pr_number||null,question];
  // Version-bound owner review: an edited/newly merged architecture is a NEW notice.
  if(['architecture_approval','next_task_start'].includes(kind))identity.push(source_sha||null);
@@ -52,8 +56,12 @@ export function queueOwnerIssue(state,{kind,task_id=null,pr_number=null,identity
  const hash=sha(JSON.stringify([kind,task_id,pr_number,identity]));
  const key='notice:'+hash,now=new Date().toISOString();
  const old=next.owner_alerts[key];
- if(old&&old.status!=='resolved'&&old.status!=='cancelled_no_longer_needed')return next;
- next.owner_alerts[key]={kind,task_id,pr_number,notice_hash:hash,
+ if(old&&old.status!=='resolved'&&old.status!=='cancelled_no_longer_needed'){
+  // Backfill historic notices so the opaque Muse signal can wake for them.
+  if(!Object.hasOwn(old,'identity'))old.identity=identity;
+  return next;
+ }
+ next.owner_alerts[key]={kind,task_id,pr_number,identity,notice_hash:hash,
   question:message.slice(0,1000)+' Needed: '+needs,recipient:'owner',
   delivery_owner:'muse',status:'planned',created_at:now,
   target_url:pr_number?'https://github.com/'+settings.repo+'/pull/'+pr_number:
@@ -74,7 +82,10 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
  next.owner_alerts ||= {};
  const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start','missing_chat_link','dispatcher_issue']);
  const route=entry=>{
-  entry.recipient=ownerKinds.has(entry.kind)?'owner':'referee';
+  // An operational failure was explicitly addressed to the owner; do
+  // not downgrade it to a referee notice on the next reconciliation.
+  entry.recipient=['owner','referee'].includes(entry.recipient)
+    ? entry.recipient : ownerKinds.has(entry.kind)?'owner':'referee';
   if(entry.recipient==='owner'){
    entry.target_url=entry.pr_number
     ?'https://github.com/'+settings.repo+'/pull/'+entry.pr_number

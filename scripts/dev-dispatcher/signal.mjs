@@ -9,8 +9,12 @@ import { noticeHash } from './alerts.mjs';
 export function signalFor(state, secret) {
   if (!secret || secret.length < 32) throw new Error('Signal signing secret must be >= 32 characters');
   const deliveries = pendingActions(state).filter(a => a.delivery_owner === 'muse').map(a => a.key + ':' + a.delivery.prompt_hash + ':' + (a.wake_round || 0));
-  const notices = Object.entries(state.owner_alerts || {}).filter(([,a]) =>
-    a.status === 'planned' && a.delivery_owner === 'muse' && a.notice_hash === noticeHash(a))
+  const notices = Object.entries(state.owner_alerts || {}).filter(([key,a]) =>
+    a.status === 'planned' && a.delivery_owner === 'muse' &&
+    (a.notice_hash === noticeHash(a) ||
+      // Historic operational alerts were keyed by their identity hash but
+      // did not persist that identity field. Keep them deliverable after upgrade.
+      (key === 'notice:' + a.notice_hash && /^[a-f0-9]{64}$/.test(a.notice_hash||''))))
     .map(([key,a]) => 'owner:' + key + ':' + a.notice_hash);
   // Opaque repair hint: same courier, same receipt; NEVER a new browser send.
   const repairs = Object.entries(state.receipt_feedback || {})

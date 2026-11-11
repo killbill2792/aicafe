@@ -14,6 +14,17 @@ export function nextWake(state,now=Date.now(),config=settings){
    dt(r.last_github_activity||r.last_commit_at));
   if(Number.isFinite(at))list.push({at:at+config.codex.settle_seconds*1000,reason:'codex_settle',id});
  }
+ // Automatic Codex has no manual request comment. Guarantee an independent
+ // 20-minute watchdog run if the ready-triggered review never appears.
+ for(const [id,r] of Object.entries(state.tasks||{})){
+  const at=dt(r.ready_transition_at);
+  if(r.github_state==='open'&&r.draft===false&&r.ci_state==='success'&&
+     r.codex_review_requested_sha===r.head_sha&&
+     r.codex_reviewed_sha!==r.head_sha&&r.codex_referee_sha!==r.head_sha&&
+     r.codex_in_progress_sha!==r.head_sha&&
+     !['clean','findings'].includes(r.codex_state)&&Number.isFinite(at))
+   list.push({at:at+20*60*1000,reason:'codex_watchdog',id});
+ }
  for(const [id,a] of Object.entries(state.actions||{})){
   const at=dt(a.last_wake_at||a.created_at);
   if(a.status==='planned'&&a.delivery_owner==='muse'&&Number.isFinite(at))

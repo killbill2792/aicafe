@@ -43,9 +43,11 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
   if (!['ready','merge'].includes(action))
     return {status:'blocked',reasons:['invalid_lifecycle_action']};
   const prepareReady = action === 'ready';
+  // Never auto-merge a verified infrastructure change, even when a coding
+  // PR also contains other files or the ledger did not classify it as adhoc.
+  if (!prepareReady && record?.dispatcher_only)
+    return {status:'blocked',reasons:['owner_merge_required']};
   if (!prepareReady && record?.adhoc) {
-    if (record.dispatcher_only)
-      return {status:'blocked',reasons:['owner_merge_required']};
     if (record.base_branch !== 'main')
       return {status:'blocked',reasons:['adhoc_parent_base_not_main']};
   }
@@ -64,6 +66,8 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
       (pr.base?.ref !== 'main' || live.base_branch !== 'main' ||
        live.dispatcher_only))
     return {status:'blocked',reasons:['adhoc_base_or_owner_merge_changed']};
+  if (!prepareReady && live.dispatcher_only)
+    return {status:'blocked',reasons:['owner_merge_required']};
   const directClean=live.codex_state==='clean' && live.codex_reviewed_sha===record.head_sha;
   const carriedClean=!prepareReady && !directClean &&
     live.codex_state!=='findings' && live.codex_in_progress_sha!==live.head_sha &&

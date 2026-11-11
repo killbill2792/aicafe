@@ -41,13 +41,19 @@ export function parseChatMarker(body) {
   } catch { return null; }
 }
 
+// Owner-merge classification is conservative: ONE trusted infrastructure path
+// is enough to hold a mixed-scope PR. Never let a second changed file hide it.
 export function dispatcherOnlyFiles(files) {
-  return Array.isArray(files) && files.length > 0 &&
-    files.every(f => typeof f?.filename === 'string' &&
-      (/^scripts\/dev-dispatcher\//.test(f.filename) ||
-       /^\.dispatcher\//.test(f.filename) ||
-       /^\.github\/workflows\//.test(f.filename)));
+  return Array.isArray(files) && files.some(file => {
+    const p=file?.filename;
+    return typeof p==='string' && (
+      /^scripts\/dev-dispatcher\//.test(p) ||
+      /^scripts\/guards\/pr-size(?:-owner-exception)?(?:\.test)?\.mjs$/.test(p) ||
+      /^\.dispatcher\//.test(p) ||
+      /^\.github\/workflows\//.test(p));
+  });
 }
+
 export function parseOwnerQuestion(body) {
   if (typeof body !== 'string' || body.length > 100000) return null;
   const matches = [...body.matchAll(new RegExp('<!-- '+settings.naming.marker_prefix+'-owner-question\\s+([\\s\\S]*?)\\s*-->','g'))];

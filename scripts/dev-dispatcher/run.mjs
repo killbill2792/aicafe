@@ -509,7 +509,9 @@ async function main() {
       if (!rec.pr_number || rec.github_state !== "open") continue;
       const task = taskById.get(id);
       if ((!task && !rec.adhoc) || (rec.draft !== true && !autoMerge)) continue;
-      if (rec.adhoc && rec.dispatcher_only) continue; // owner-merge only
+      // Owner-merge-only infrastructure may become Ready after green CI so
+      // GitHub can start automatic Codex, but never enters the merge action.
+      if (rec.dispatcher_only && rec.draft === false) continue;
       const predecessorRecords = rec.adhoc ? [] : predecessorsForMerge(task, queue, proposed.state.tasks);
       // Ready transitions need only green CI, not coder-done. The later merge
       // is a separate fresh reconciliation, never the same snapshot.

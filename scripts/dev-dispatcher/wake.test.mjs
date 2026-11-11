@@ -43,3 +43,17 @@ test('authenticated Muse receipt and owner yes wake immediately without cron',as
  assert.deepEqual(payloads.map(x=>x.event_type),['dispatcher_receipt','dispatcher_owner_reply','dispatcher_owner_instruction','dispatcher_delayed']);
  await assert.rejects(dispatchReceiptWake({repo:two.repo,token:'mock',fetchFn}),/cross-project/);
 });
+
+test('automatic Ready-triggered Codex receives a durable 20-minute watchdog wake',()=>{
+ const s=structuredClone(state),r=s.tasks.X,sha=r.head_sha;
+ r.codex_review_requested_sha=sha;
+ const due=nextWake(s,at,one);
+ assert.equal(due.reason,'codex_watchdog');
+ assert.equal(due.due_at,new Date(at+20*60000).toISOString());
+ assert.equal(nextWake(s,at,one).key,due.key);
+ assert.equal(nextWake(s,at+20*60000+1,one),null);
+ r.codex_in_progress_sha=sha;
+ assert.equal(nextWake(s,at,one),null);
+ delete r.codex_in_progress_sha;r.codex_referee_sha=sha;
+ assert.equal(nextWake(s,at,one),null);
+});

@@ -170,3 +170,29 @@ test('GitHub watchdog inspects receipts and never POSTs another Codex request',a
  assert.equal((await inspectCodexWatch({github:gh,record:watchRecord(),now:at})).status,'receipt');
  assert.equal(posts,0);
 });
+
+test('automatic green Ready transition times out without a manual review comment',()=>{
+ const record={...watchRecord(),ready_transition_at:'2026-11-10T10:00:00Z'};
+ const check=at=>codexWatchDecision({record,comments:[],now:Date.parse(at)});
+ assert.equal(check('2026-11-10T10:19:59Z').status,'pending');
+ assert.deepEqual(check('2026-11-10T10:20:00Z'),{status:'escalate',head_sha:head});
+ assert.equal(codexWatchDecision({record,comments:[],reviews:[{
+  commit_id:head,user:{login:'chatgpt-codex-connector[bot]'}}],
+  now:Date.parse('2026-11-10T10:21:00Z')}).status,'receipt');
+ assert.equal(codexWatchDecision({record:{...record,ready_transition_at:null},
+  comments:[],now:Date.parse('2026-11-10T11:00:00Z')}).status,'no_verified_request');
+});
+test('watchdog observes exact GitHub Ready state and never posts a duplicate trigger',async()=>{
+ const record={...watchRecord(),ready_transition_at:'2026-11-10T10:00:00Z'};
+ let posted=0;
+ const gh={request:async(path,options)=>{
+  if(options?.method==='POST')posted++;
+  assert.equal(path,'/pulls/423');
+  return {state:'open',draft:false,head:{sha:head}};
+ },paginated:async path=>{
+  if(['/issues/423/comments','/pulls/423/reviews','/issues/423/reactions'].includes(path))return [];
+  throw Error('Unexpected receipt path '+path);
+ }};
+ const result=await inspectCodexWatch({github:gh,record,now:Date.parse('2026-11-10T10:21:00Z')});
+ assert.deepEqual(result,{status:'escalate',head_sha:head});assert.equal(posted,0);
+});

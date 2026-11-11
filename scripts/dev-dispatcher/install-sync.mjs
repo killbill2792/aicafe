@@ -5,7 +5,30 @@ import {readFileSync} from 'node:fs';
 import {settings as source,validateSettings} from './settings.mjs';
 const repoOK=s=>/^[\w.-]+\/[\w.-]+$/.test(s||'');
 const safePath=p=>typeof p==='string'&&p.length>0&&!p.startsWith('/')&&!p.split('/').includes('..');
-export function targetSettings(input){
+// Reject shared runtimes across ALL registered installations, not just AI CAFE.
+// The queue may live in the same studio repository, but not at the same path.
+export function assertRuntimeIsolation(copies){
+ const seen=[];
+ for(const copy of copies){
+  validateSettings(copy,{expectedRepo:copy.repo});
+  if(copy.ledger.repo.toLowerCase()===copy.repo.toLowerCase())
+   throw Error('Shared or unsafe target runtime: private ledger must be separate');
+  for(const other of seen){
+   const equal=(a,b)=>String(a).toLowerCase()===String(b).toLowerCase();
+   if(equal(copy.repo,other.repo)||
+      equal(copy.ledger.repo,other.ledger.repo)||
+      (equal(copy.queue.repo,other.queue.repo)&&copy.queue.path===other.queue.path)||
+      equal(copy.muse.space,other.muse.space)||
+      equal(copy.chatgpt.project_url,other.chatgpt.project_url)||
+      equal(copy.chatgpt.project_id,other.chatgpt.project_id)||
+      equal(copy.chatgpt.account_label,other.chatgpt.account_label))
+    throw Error('Shared or unsafe target runtime: '+other.repo+' and '+copy.repo);
+  }
+  seen.push(copy);
+ }
+ return true;
+}
+export function targetSettings(input,{peers=[]}={}){
  const mandatory=['repo','ledger_repo','queue_path','project_url','account_label',
   'project_id','project_name','muse_space','owner_login','baseline_check',
   'baseline_workflow','acceptance_workflow','integration_workflow','integration_file'];
@@ -43,6 +66,7 @@ export function targetSettings(input){
     t.chatgpt.account_label===source.chatgpt.account_label||
     t.muse.space===source.muse.space||!repoOK(t.queue.repo)||!safePath(t.queue.path))throw Error('Shared or unsafe target runtime');
  const configured=validateSettings(t);
+ assertRuntimeIsolation([source,...peers,configured]);
  console.log('Dispatcher target '+configured.repo+' | queue '+configured.queue.repo+'/'+configured.queue.path+
   ' | ledger '+configured.ledger.repo+' | Muse '+configured.muse.space+
   ' | ChatGPT '+configured.chatgpt.account_label+' '+configured.chatgpt.project_url+
@@ -94,8 +118,9 @@ async function readBlob(api,repo,sha){
  if(b.encoding!=='base64')throw Error('Unexpected template blob');
  return Buffer.from(b.content.replace(/\s/g,''),'base64').toString('utf8');
 }
-export async function openUpdatePr({api,sourceRepo=source.repo,target,mode='sync',sourceRef='main'}){
+export async function openUpdatePr({api,sourceRepo=source.repo,target,mode='sync',sourceRef='main',peers=[]}){
  validateSettings(target,{expectedRepo:target.repo});
+ assertRuntimeIsolation([source,...peers,target]);
  const sourceHead=await api(sourceRepo,'/git/ref/heads/'+sourceRef);
  const srcSha=sourceHead.object.sha;
  const srcCommit=await api(sourceRepo,'/git/commits/'+srcSha);
@@ -124,7 +149,23 @@ export async function openUpdatePr({api,sourceRepo=source.repo,target,mode='sync
  const built=await api(target.repo,'/git/commits',{method:'POST',body:{
   message:'chore(dispatcher): '+mode+' independent template',tree:tree.sha,parents:[base]}});
  const branch='dispatcher/template-'+mode+'-'+srcSha.slice(0,12);
- await api(target.repo,'/git/refs',{method:'POST',body:{ref:'refs/heads/'+branch,sha:built.sha}});
+ try {
+  await api(target.repo,'/git/refs',{method:'POST',body:{ref:'refs/heads/'+branch,sha:built.sha}});
+ } catch(error) {
+  // Retrying the same sync must reuse its existing draft PR, not fail on
+  // GitHub's 422 "reference already exists" or open a competing PR.
+  const existing=await api(target.repo,'/git/ref/heads/'+branch).catch(()=>null);
+  if(!existing?.object?.sha)throw error;
+  const owner=target.repo.split('/')[0];
+  const pulls=await api(target.repo,'/pulls?state=open&head='+
+    encodeURIComponent(owner+':'+branch)+'&base=main');
+  const matching=Array.isArray(pulls)?pulls.filter(pr=>
+    pr.state==='open'&&pr.head?.ref===branch&&pr.base?.ref==='main'&&
+    String(pr.body||'').includes('Template source '+sourceRepo+'@'+srcSha)):[];
+  if(matching.length!==1)throw Error('Existing template branch has no unique matching open PR');
+  return {repo:target.repo,status:'already_open',pr:matching[0].html_url,
+    head:existing.object.sha,source_sha:srcSha,files:entries.length};
+ }
  const pr=await api(target.repo,'/pulls',{method:'POST',body:{title:
   'chore(dispatcher): '+mode+' independent repo copy',head:branch,base:'main',draft:true,
   body:'Template source '+sourceRepo+'@'+srcSha+
@@ -156,27 +197,40 @@ export async function openLedgerWakePr({api,target,sourceRepo=source.repo}){
   '. Own ledger only, owner merge. Configure target-scoped DISPATCH_TARGET_WAKE_TOKEN secret.'}});
  return {repo,pr:pr.html_url,head:commit.sha};
 }
-export async function synchronize({api,manifest,sourceRepo=source.repo}){
+export async function installedSettings({api,manifest,sourceRepo=source.repo}){
  const names=manifest?.repositories;
- if(!Array.isArray(names)||new Set(names).size!==names.length||names.some(x=>!repoOK(x)||x===sourceRepo))
+ if(!Array.isArray(names)||new Set(names).size!==names.length||
+    names.some(x=>!repoOK(x)||x===sourceRepo))
   throw Error('Invalid installation manifest');
- const prs=[];
+ const copies=[];
  for(const repo of names){
   const file=await api(repo,'/contents/.dispatcher/settings.json?ref=main');
-  const target=validateSettings(JSON.parse(Buffer.from(file.content,'base64').toString('utf8')),
-   {expectedRepo:repo});
-  if(target.ledger.repo===source.ledger.repo||
-    target.chatgpt.project_url===source.chatgpt.project_url||
-    target.muse.space===source.muse.space)throw Error('Cross-repo runtime sharing');
-  prs.push(await openUpdatePr({api,sourceRepo,target,mode:'sync'}));
+  copies.push(validateSettings(JSON.parse(Buffer.from(file.content,'base64').toString('utf8')),
+   {expectedRepo:repo}));
  }
+ return copies;
+}
+export async function synchronize({api,manifest,sourceRepo=source.repo}){
+ // Validate the ENTIRE registered fleet before creating any target branch.
+ // No partial rollout if two installs point at one private ledger or queue.
+ const targets=await installedSettings({api,manifest,sourceRepo});
+ assertRuntimeIsolation([source,...targets]);
+ const prs=[];
+ for(const target of targets)
+  prs.push(await openUpdatePr({api,sourceRepo,target,mode:'sync',
+    peers:targets.filter(x=>x.repo!==target.repo)}));
  return prs;
 }
+
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
  const api=makeClient(process.env.DISPATCH_INSTALL_TOKEN);
  (async()=>process.argv.includes('--install')
-  ? (async()=>{const target=targetSettings(JSON.parse(process.env.DISPATCH_INSTALL_INPUTS||'{}'));
-    return [await openUpdatePr({api,target,mode:'install'}),await openLedgerWakePr({api,target})];})()
+  ? (async()=>{
+    const manifest=JSON.parse(readFileSync(new URL('../../.dispatcher/installations.json',import.meta.url)));
+    const peers=await installedSettings({api,manifest});
+    const target=targetSettings(JSON.parse(process.env.DISPATCH_INSTALL_INPUTS||'{}'),{peers});
+    return [await openUpdatePr({api,target,mode:'install',peers}),await openLedgerWakePr({api,target})];
+   })()
   : process.argv.includes('--sync')
   ? synchronize({api,manifest:JSON.parse(readFileSync(new URL('../../.dispatcher/installations.json',import.meta.url)))})
   : Promise.reject(Error('Specify --install or --sync')))()
