@@ -164,3 +164,19 @@ test('every lifecycle column group records evidence or explicit unknown, never f
  assert.equal(x.integration.proof_run_url,null);
  assert.equal(x.monitor.pending_recovery_count,0);
 });
+
+
+test('missing PR-write credentials are visible to Muse, never silent',()=>{
+ const chat='https://chatgpt.com/c/original-123';
+ const s={...basics,actions:{assign:{task_id:'CR-A',type:'assign',status:'submitted',
+   delivery_owner:'muse',delivery:{provider:'chatgpt',intent:'start_new_chat',
+     conversation_url:null,approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:chat}}}};
+ const x=project({approved:true,approval_hash:'a'.repeat(64),
+   conversation_ref:chat,github_effects:{CREATE_DRAFT_PR:{
+     status:'blocked',reason:'missing_pr_creator_install_token'}}},s);
+ assert.equal(x.milestones.delivered,'YES');
+ assert.equal(x.monitor.next_actor,'MUSE');
+ assert.equal(x.monitor.next_action,'ESCALATE_MISSING_GITHUB_PR_WRITER');
+ assert.equal(x.milestones.code_submitted,'UNKNOWN');
+});
