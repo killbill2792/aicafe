@@ -112,7 +112,7 @@ test('one failing follow-up does not block other tasks or write action or early 
 
 test('main maintenance excludes unfinished drafts without disabling parent maintenance', () => {
   assert.match(source, /rec\.base_current === false && rec\.base_branch === 'main' &&\s*!\(rec\.draft === true && rec\.ci_state !== 'success'\)/);
-  assert.match(source, /await updateChildAfterParentMerge\(\{github:gh,dependent:rec,predecessor:parent\}\)/);
+  assert.match(source, /await updateChildAfterParentMerge\(\{github:gh,dependent:rec,predecessor:parent,/);
 });
 
 test('one live pending checklist per PR even if two task records reference it',()=>{
