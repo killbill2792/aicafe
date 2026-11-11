@@ -6,7 +6,7 @@ import {receiptFilename} from './receipt-identity.mjs';
 import {inspectReceipts,applyReceipts} from './inbox.mjs';
 import {acceptDeliveryReceipt} from './receipt.mjs';
 import {reconcileReceiptFeedback} from './receipt-recovery.mjs';
-import {noticeOperationalIssues,reportFatalDispatcherError} from './notifications.mjs';
+import {noticeOperationalIssues,reportFatalDispatcherError,reportMuseSignalFailure,reportMuseSignalRestored} from './notifications.mjs';
 import {acceptOwnerNoticeReceipt} from './alerts.mjs';
 import {signalFor} from './signal.mjs';
 import {renderOwnerView} from './owner-view.mjs';
@@ -173,4 +173,31 @@ test('fatal dispatcher failure persists an owner notice and requests the existin
  assert.equal(woke,1);
  assert.equal(Object.values(saved.owner_alerts).filter(n=>n.kind==='dispatcher_uncaught').length,1);
  assert.equal(Object.values(saved.owner_alerts)[0].delivery_owner,'muse');
+});
+
+test('outbound Muse signal failure wakes once, stays visible, then announces verified restoration once',async()=>{
+ let state=original(),writes=0,wakes=0;
+ const ledger={transaction:async fn=>{
+  const updated=fn(state);
+  if(updated===null)return {committed:false,state};
+  state=updated;writes++;
+  return {committed:true,state};
+ }};
+ const args={ledger,repo:settings.repo,message:'Public signal write returned 503',
+  wake:async()=>{wakes++;}};
+ await reportMuseSignalFailure(args);
+ await reportMuseSignalFailure({...args,message:'Different transient API error'});
+ assert.equal(writes,1);
+ assert.equal(wakes,1);
+ assert.equal(Object.values(state.owner_alerts).filter(n=>n.kind==='muse_signal_failed').length,1);
+ assert.match(Object.values(state.owner_alerts)[0].question,/could not publish the Muse wake signal/i);
+ assert.equal(Object.values(state.owner_alerts)[0].status,'planned');
+ assert.ok(signalFor(state,'s'.repeat(32)).pending_count>=1);
+
+ await reportMuseSignalRestored({ledger,repo:settings.repo});
+ assert.equal(Object.values(state.owner_alerts).find(n=>n.kind==='muse_signal_failed').status,'resolved');
+ assert.equal(Object.values(state.owner_alerts).find(n=>n.kind==='muse_signal_restored').status,'planned');
+ const writesAfter= writes;
+ await reportMuseSignalRestored({ledger,repo:settings.repo});
+ assert.equal(writes,writesAfter); // a recovered signal cannot wake indefinitely
 });
