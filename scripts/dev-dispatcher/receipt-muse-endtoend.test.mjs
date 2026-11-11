@@ -6,7 +6,7 @@ import {receiptFilename} from './receipt-identity.mjs';
 import {inspectReceipts,applyReceipts} from './inbox.mjs';
 import {acceptDeliveryReceipt} from './receipt.mjs';
 import {reconcileReceiptFeedback} from './receipt-recovery.mjs';
-import {noticeOperationalIssues,reportFatalDispatcherError,reportMuseSignalFailure,reportMuseSignalRestored} from './notifications.mjs';
+import {noticeOperationalIssues,reportFatalDispatcherError,reportMuseSignalFailure,reportMuseSignalRestored,reportProjectionFailure,reportProjectionRestored} from './notifications.mjs';
 import {acceptOwnerNoticeReceipt} from './alerts.mjs';
 import {signalFor} from './signal.mjs';
 import {renderOwnerView} from './owner-view.mjs';
@@ -200,4 +200,34 @@ test('outbound Muse signal failure wakes once, stays visible, then announces ver
  const writesAfter= writes;
  await reportMuseSignalRestored({ledger,repo:settings.repo});
  assert.equal(writes,writesAfter); // a recovered signal cannot wake indefinitely
+});
+
+test('dashboard and private Muse queue publication failures notify once and close on recovery',async()=>{
+ let state=original(),writes=0;
+ const ledger={transaction:async fn=>{
+  const after=fn(state);
+  if(after===null)return {committed:false,state};
+  state=after;writes++;
+  return {committed:true,state};
+ }};
+ for(const [kind,identity] of [
+   ['owner_dashboard_publish_failed',String(settings.owner.dashboard_issue)],
+   ['private_queue_publish_failed',settings.ledger.owner_view_path]
+ ]){
+  await reportProjectionFailure({ledger,kind,identity});
+  const afterFirst=writes;
+  await reportProjectionFailure({ledger,kind,identity});
+  assert.equal(writes,afterFirst,'no repeated writes for the same error');
+  assert.equal(Object.values(state.owner_alerts).find(n=>n.kind===kind).status,'planned');
+  await reportProjectionRestored({ledger,kind,identity});
+  const afterRestore=writes;
+  await reportProjectionRestored({ledger,kind,identity});
+  assert.equal(writes,afterRestore,'no repeated recovery notice');
+  assert.equal(Object.values(state.owner_alerts).find(n=>n.kind===kind).status,'resolved');
+  assert.equal(Object.values(state.owner_alerts).find(n=>n.kind===kind+'_restored').status,'planned');
+ }
+ await assert.rejects(reportProjectionFailure({
+  ledger,kind:'new_unapproved_alert_kind',identity:'x'}),/Unrecognized/);
+ assert.equal(Object.values(state.owner_alerts).length,4);
+ assert.ok(signalFor(state,'s'.repeat(32)).pending_count>=2);
 });
