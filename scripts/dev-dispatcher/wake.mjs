@@ -4,6 +4,7 @@ import {GitHubLedger} from './ledger.mjs';
 import {settings} from './settings.mjs';
 import {stallMinutes} from './safety.mjs';
 import {queueOwnerIssue} from './alerts.mjs';
+import {verifiedCodingConversation} from './verified-chat-v3.mjs';
 const sha=s=>createHash('sha256').update(s).digest('hex'),dt=s=>Date.parse(s||'');
 export function nextWake(state,now=Date.now(),config=settings){
  const list=[];
@@ -47,11 +48,7 @@ export function nextWake(state,now=Date.now(),config=settings){
  for(const [id,r] of Object.entries(state.tasks||{})){
    if(r.status!=='assigned'||r.approved!==true||Number.isInteger(r.pr_number)||
       !r.conversation_ref||!r.approval_hash)continue;
-   const verified=Object.values(state.actions||{}).some(a=>
-     a.task_id===id&&['assign','begin_scoped_coding'].includes(a.type)&&
-     a.status==='submitted'&&a.receipt?.courier==='muse'&&
-     a.delivery?.approval_hash===r.approval_hash&&
-     a.receipt?.conversation_url===r.conversation_ref);
+   const verified=verifiedCodingConversation(state,id,r.approval_hash,r.conversation_ref);
    const already=Object.values(state.actions||{}).some(a=>
      a.task_id===id&&a.type==='pre_pr_reminder'&&
      a.delivery?.approval_hash===r.approval_hash);
