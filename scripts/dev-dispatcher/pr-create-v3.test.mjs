@@ -28,7 +28,7 @@ function setup({files=['scripts/e2e/smoke.mjs'],old=[],changedHead=false,writeFa
 }
 test('approved delivered branch with exact signed edits creates early draft PR',async()=>{
  const {github,writer,seen}=setup();
- const result=await ensureApprovedDraftPr({github,writer,task,record:rec});
+ const result=await ensureApprovedDraftPr({github,writer,task,record:rec,verifiedDelivery:true});
  assert.equal(result.status,'created');
  assert.equal(result.pr_number,450);
  assert.equal(seen.filter(x=>x==='/pulls').length,1);
@@ -37,31 +37,31 @@ test('unknown chat or modified approval never creates a PR',async()=>{
  const {github,writer,seen}=setup();
  for(const r of [{...rec,conversation_ref:null},{...rec,approval_hash:'f'.repeat(64)},
    {...rec,approved:false},{...rec,branch:'wrong-branch'}]){
-  const result=await ensureApprovedDraftPr({github,writer,task,record:r});
+  const result=await ensureApprovedDraftPr({github,writer,task,record:r,verifiedDelivery:true});
   assert.equal(result.status,'blocked');
  }
  assert.equal(seen.length,0);
 });
 test('never creates from unsigned edits or a changed head',async()=>{
  const a=setup({files:['scripts/e2e/smoke.mjs','lib/unauthorized.ts']});
- const result=await ensureApprovedDraftPr({github:a.github,writer:a.writer,task,record:rec});
+ const result=await ensureApprovedDraftPr({github:a.github,writer:a.writer,task,record:rec,verifiedDelivery:true});
  assert.equal(result.reason,'branch_contains_unsigned_edits');
  assert.ok(!a.seen.includes('/pulls'));
  const b=setup({changedHead:true});
- const other=await ensureApprovedDraftPr({github:b.github,writer:b.writer,task,record:rec});
+ const other=await ensureApprovedDraftPr({github:b.github,writer:b.writer,task,record:rec,verifiedDelivery:true});
  assert.equal(other.reason,'head_changed_during_preflight');
  assert.ok(!b.seen.includes('/pulls'));
 });
 test('existing PR is linked for reconciliation instead of a duplicate write',async()=>{
  const a=setup({old:[{number:440,state:'open',draft:true,head:{ref:branch,sha:head}}]});
- const result=await ensureApprovedDraftPr({github:a.github,writer:a.writer,task,record:rec});
+ const result=await ensureApprovedDraftPr({github:a.github,writer:a.writer,task,record:rec,verifiedDelivery:true});
  assert.equal(result.status,'existing_pr_needs_link');
  assert.equal(result.pr_number,440);
  assert.ok(!a.seen.includes('/pulls'));
 });
 test('uncertain create response never triggers blind retry',async()=>{
  const a=setup({writeFails:true});
- const result=await ensureApprovedDraftPr({github:a.github,writer:a.writer,task,record:rec});
+ const result=await ensureApprovedDraftPr({github:a.github,writer:a.writer,task,record:rec,verifiedDelivery:true});
  assert.equal(result.status,'uncertain');
  assert.equal(a.seen.filter(x=>x==='/pulls').length,1);
 });
@@ -70,7 +70,16 @@ test('wrong parent base cannot create an unauthorized PR',async()=>{
  const withDeps={...task,depends_on:['parent']};
  const signed={...rec,approval_hash:approvalSignature(withDeps)};
  const result=await ensureApprovedDraftPr({github:a.github,writer:a.writer,
-  task:withDeps,record:signed,records:{}});
+  task:withDeps,record:signed,verifiedDelivery:true,records:{}});
  assert.equal(result.reason,'wrong_or_unverified_parent_base');
+ assert.equal(a.seen.length,0);
+});
+
+
+test('no authenticated Muse coding-delivery receipt means no automatic PR',async()=>{
+ const a=setup();
+ const result=await ensureApprovedDraftPr({github:a.github,writer:a.writer,
+  task,record:rec,verifiedDelivery:false});
+ assert.equal(result.reason,'signed_scope_or_chat_unverified');
  assert.equal(a.seen.length,0);
 });
