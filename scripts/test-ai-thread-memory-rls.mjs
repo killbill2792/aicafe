@@ -30,13 +30,15 @@ const MESSAGE_A_2 = "88888888-8888-4888-8888-888888888888";
 const MESSAGE_A_3 = "99999999-9999-4999-8999-999999999999";
 const MESSAGE_OTHER_THREAD = "aaaaaaaa-0000-4000-8000-000000000001";
 const MESSAGE_CAFE_B = "cccccccc-0000-4000-8000-000000000001";
-const MESSAGE_A_4 = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+const MESSAGE_A_4 = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const MESSAGE_A_5 = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 const MESSAGE_FINANCIAL = "00000000-0000-4000-8000-000000000001";
 const AT_1 = "2026-11-11T12:00:00.000Z";
 const AT_2 = "2026-11-11T12:01:00.000Z";
 const AT_3 = "2026-11-11T12:02:00.000Z";
 const AT_4 = "2026-11-11T12:03:00.000Z";
 const AT_5 = "2026-11-11T12:04:00.000Z";
+const AT_6 = "2026-11-11T12:05:00.000Z";
 
 const conversationMigration = readFileSync(
   new URL("../supabase/migrations/20261010000033_ai_conversations.sql", import.meta.url), "utf8",
@@ -172,15 +174,18 @@ async function main() {
       id: MESSAGE_A_4, at: AT_4, text: "We prefer quiet music during prep.",
     });
     await insertOwnerMessage(db, {
-      id: MESSAGE_FINANCIAL, at: AT_5,
+      id: MESSAGE_A_5, at: AT_5, text: "We prefer paper cups for takeaway.",
+    });
+    await insertOwnerMessage(db, {
+      id: MESSAGE_FINANCIAL, at: AT_6,
       text: "We prefer oat milk at $5.",
     });
     await insertOwnerMessage(db, {
-      id: MESSAGE_OTHER_THREAD, thread: THREAD_A_OTHER, at: AT_4,
+      id: MESSAGE_OTHER_THREAD, thread: THREAD_A_OTHER, at: AT_5,
       text: "We prefer quiet morning music.",
     });
     await insertOwnerMessage(db, {
-      id: MESSAGE_CAFE_B, business: CAFE_B, thread: THREAD_CAFE_B, at: AT_4,
+      id: MESSAGE_CAFE_B, business: CAFE_B, thread: THREAD_CAFE_B, at: AT_5,
       text: "We prefer quiet morning music.",
     });
     const visible = await db.query(
@@ -224,7 +229,7 @@ async function main() {
     const restated = await save(db, {
       expected: 3,
       document: memoryDoc({
-        revision: 4, cursor: { createdAt: AT_4, id: MESSAGE_A_4 },
+        revision: 4, cursor: { createdAt: AT_5, id: MESSAGE_A_5 },
         entries: [entry(MESSAGE_A_3, AT_3, "We prefer soy milk for staff drinks.", 4)],
       }),
     });
@@ -254,16 +259,16 @@ async function main() {
     const crossThread = await save(db, {
       expected: 4,
       document: memoryDoc({
-        revision: 5, cursor: { createdAt: AT_4, id: MESSAGE_A_4 },
-        entries: [entry(MESSAGE_OTHER_THREAD, AT_4, "We prefer quiet morning music.", 5)],
+        revision: 5, cursor: { createdAt: AT_5, id: MESSAGE_A_5 },
+        entries: [entry(MESSAGE_OTHER_THREAD, AT_5, "We prefer quiet morning music.", 5)],
       }),
     });
     assert.equal(crossThread.reason, "invalid_summary");
     const crossCafe = await save(db, {
       business: CAFE_A, expected: 4,
       document: memoryDoc({
-        revision: 5, cursor: { createdAt: AT_4, id: MESSAGE_A_4 },
-        entries: [entry(MESSAGE_CAFE_B, AT_4, "We prefer quiet morning music.", 5)],
+        revision: 5, cursor: { createdAt: AT_5, id: MESSAGE_A_5 },
+        entries: [entry(MESSAGE_CAFE_B, AT_5, "We prefer quiet morning music.", 5)],
       }),
     });
     assert.equal(crossCafe.reason, "invalid_summary");
@@ -272,14 +277,14 @@ async function main() {
     const money = await save(db, {
       expected: 4,
       document: memoryDoc({
-        revision: 5, cursor: { createdAt: AT_5, id: MESSAGE_FINANCIAL },
-        entries: [entry(MESSAGE_FINANCIAL, AT_5, "We prefer oat milk at $5.", 5)],
+        revision: 5, cursor: { createdAt: AT_6, id: MESSAGE_FINANCIAL },
+        entries: [entry(MESSAGE_FINANCIAL, AT_6, "We prefer oat milk at $5.", 5)],
       }),
     });
     assert.equal(money.reason, "invalid_summary");
     const extra = await save(db, {
       expected: 4,
-      document: { ...memoryDoc({ revision: 5, cursor: { createdAt: AT_4, id: MESSAGE_A_4 } }), untrusted: true },
+      document: { ...memoryDoc({ revision: 5, cursor: { createdAt: AT_5, id: MESSAGE_A_5 } }), untrusted: true },
     });
     assert.equal(extra.reason, "invalid_summary");
 
@@ -294,7 +299,7 @@ async function main() {
     // Mismatched café identity cannot resolve the same thread.
     const wrongCafe = await save(db, {
       business: CAFE_B, expected: 4,
-      document: memoryDoc({ revision: 5, cursor: { createdAt: AT_4, id: MESSAGE_A_4 } }),
+      document: memoryDoc({ revision: 5, cursor: { createdAt: AT_5, id: MESSAGE_A_5 } }),
     });
     assert.equal(wrongCafe.reason, "unauthorized");
   });
@@ -369,7 +374,7 @@ async function main() {
     assert.equal((await db.query("select * from ai_threads where business_id=$1", [CAFE_A])).rowCount, 0);
     const denied = await save(db, {
       expected: 5,
-      document: memoryDoc({ revision: 6, cursor: { createdAt: AT_4, id: MESSAGE_A_4 } }),
+      document: memoryDoc({ revision: 6, cursor: { createdAt: AT_5, id: MESSAGE_A_5 } }),
     });
     assert.equal(denied.reason, "unauthorized");
   });
