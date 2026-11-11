@@ -73,7 +73,7 @@ test('real GitHub inbox actor + v1 filename recover a stale hash-bound assignmen
  assert.equal(resolved.receipt_feedback[actionId].status,'resolved'); assert.equal(resolved.receipt_feedback[actionId].resolution,'verified_receipt');
  const closed=noticeOperationalIssues(resolved,{scan:scanned});
  assert.equal(restoration(closed).length,1); assert.equal(restoration(closed)[0].status,'planned'); assert.match(restoration(closed)[0].question,/original Muse receipt is now authenticated/);
- assert.equal(incident(closed)[0].status,'submitted'); // historical record
+ assert.equal(incident(closed)[0].status,'resolved'); assert.equal(incident(closed)[0].receipt.courier,'muse'); // signed history retained
  assert.equal(Object.keys(noticeOperationalIssues(closed,{scan:scanned}).owner_alerts).length,
    Object.keys(closed.owner_alerts).length); // no alert storm
 });
