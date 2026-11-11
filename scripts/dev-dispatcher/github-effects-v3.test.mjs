@@ -69,3 +69,34 @@ test('unrelated PR-writer errors never fabricate an owner credential incident',(
     reason:'missing_pr_creator_install_token'}]);
  assert.equal(Object.values(s.owner_alerts).length,0);
 });
+
+
+test('uncertain PR creation hold is sticky across unrelated observations and exact-head updates',()=>{
+ const uncertain={task_id:'A',operation:'CREATE_DRAFT_PR',
+   status:'uncertain',reason:'PR_create_effect_unverified',head_sha:head};
+ const first=recordGithubEffects(state,[uncertain],now);
+ assert.equal(first.tasks.A.pr_creation_uncertain_hold.attempted_head_sha,head);
+ const newer=recordGithubEffects(first,[{task_id:'A',operation:'CREATE_DRAFT_PR',
+   status:'blocked',reason:'branch_missing',head_sha:head}],'2026-11-11T10:05:00Z');
+ assert.deepEqual(newer.tasks.A.pr_creation_uncertain_hold,
+   first.tasks.A.pr_creation_uncertain_hold);
+ assert.equal(recordGithubEffects(first,[uncertain],'2026-11-11T10:10:00Z'),null);
+});
+test('late uncertain PR result from older head still latches the task branch',()=>{
+ const rec={...state,tasks:{...state.tasks,A:{...state.tasks.A,head_sha:head}}};
+ const first=recordGithubEffects(rec,[{task_id:'A',operation:'CREATE_DRAFT_PR',
+   status:'uncertain',reason:'transport_unverified',head_sha:other}],now);
+ assert.equal(first.tasks.A.pr_creation_uncertain_hold.attempted_head_sha,other);
+});
+test('verified PR discovery clears uncertainty only after matching PR is durably linked',()=>{
+ const first=recordGithubEffects(state,[{task_id:'A',operation:'CREATE_DRAFT_PR',
+   status:'uncertain',reason:'transport_unverified',head_sha:head}],now);
+ const stale=recordGithubEffects(first,[{task_id:'A',operation:'CREATE_DRAFT_PR',
+   status:'existing_pr_needs_link',pr_number:451,head_sha:head}],'2026-11-11T10:01:00Z');
+ assert.ok(stale.tasks.A.pr_creation_uncertain_hold,
+   'PR number 451 was not verified in the task record yet');
+ const linked=structuredClone(stale);linked.tasks.A.pr_number=451;
+ const confirmed=recordGithubEffects(linked,[{task_id:'A',operation:'CREATE_DRAFT_PR',
+   status:'existing_pr_needs_link',pr_number:451,head_sha:head}],'2026-11-11T10:02:00Z');
+ assert.equal(confirmed.tasks.A.pr_creation_uncertain_hold,undefined);
+});
