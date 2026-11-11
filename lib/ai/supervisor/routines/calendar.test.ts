@@ -21,7 +21,7 @@ describe("café-local due-once routines",()=>{
     expect(isScheduledOn(weekly,"2026-11-10")).toBe(false);
     expect(isScheduledOn(weekly,"2026-02-30")).toBe(false);
     expect(dueScheduleOnDate(weekly,"UTC","2026-11-09",new Date("2026-11-09T08:59:00Z"))).toBeNull();
-    expect(dueScheduleOnDate(weekly,"UTC","2026-11-09",new Date("2026-11-09T09:01:00Z")))
+    expect(dueScheduleOnDate(weekly,"UTC","2026-11-09",new Date("2026-11-09T09:01:00Z"))
       ?.toISOString()).toBe("2026-11-09T09:00:00.000Z");
   });
   it("rejects nonexistent timezones and invalid input",()=>{
