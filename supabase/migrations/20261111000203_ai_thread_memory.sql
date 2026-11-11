@@ -235,7 +235,14 @@ begin
           and m.thread_id = p_thread_id
           and m.role = 'owner'
           and m.created_at = v_source_at
-          and position(v_text in regexp_replace(btrim(m.text_content), '[[:space:]]+', ' ', 'g')) > 0
+          and (
+            position(v_text in regexp_replace(btrim(m.text_content), '[[:space:]]+', ' ', 'g')) > 0
+            or (
+              m.owner_input_response->>'action' = 'supply'
+              and jsonb_typeof(m.owner_input_response->'value') = 'string'
+              and position(v_text in regexp_replace(btrim(m.owner_input_response->>'value'), '[[:space:]]+', ' ', 'g')) > 0
+            )
+          )
       ) then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
