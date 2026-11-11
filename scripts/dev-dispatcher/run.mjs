@@ -33,6 +33,7 @@ import {recordLifecycleTransitions,projectLifecycle} from "./lifecycle-v3.mjs";
 import {recordRecoveryEvent,settleRecoveryRequests} from "./recovery-v3.mjs";
 import {dispatchPreferences} from "./owner-controls-v3.mjs";
 import {ensureApprovedDraftPr} from "./pr-create-v3.mjs";
+import {recordGithubEffects} from "./github-effects-v3.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -491,6 +492,9 @@ async function main() {
   }
 
   let persisted = null;
+  // Collect technical effect results and persist them with the existing final
+  // reconciliation transaction, not a fresh API write for each PR.
+  const githubEffects=[];
   if (commit && ledger) {
     // Reconcile against fresh facts on every CAS attempt; do not write an
     // identical state every five minutes (avoids 288 empty commits per day).
@@ -540,6 +544,9 @@ async function main() {
         if(!verifiedDelivery)continue;
         const result=await ensureApprovedDraftPr({github:gh,writer,task,record:rec,
           records:persisted.state.tasks,verifiedDelivery,queueRepo:repo});
+        githubEffects.push({task_id:id,operation:'CREATE_DRAFT_PR',
+          head_sha:rec.head_sha||result.head_sha||null,status:result.status,
+          reason:result.reason||null,pr_number:result.pr_number||null});
         if(['created','existing_pr_needs_link'].includes(result.status)&&
           result.github_state!=='closed'){
           await ledger.transaction(state=>{
@@ -564,6 +571,9 @@ async function main() {
           }));
         }
       }catch(error){
+        githubEffects.push({task_id:id,operation:'CREATE_DRAFT_PR',
+          head_sha:rec.head_sha||null,status:'uncertain',
+          reason:'github_pr_create_unverified'});
         console.error('Early draft creation unavailable for '+id+': '+error.message);
         process.exitCode=1;
       }
@@ -753,8 +763,24 @@ async function main() {
       const predecessorRecords = rec.adhoc ? [] : predecessorsForMerge(task, queue, proposed.state.tasks);
       // Ready transitions need only green CI, not coder-done. The later merge
       // is a separate fresh reconciliation, never the same snapshot.
-      const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
-        enabled: true, action: rec.draft ? "ready" : "merge" });
+      let outcome;
+      const operation=rec.draft?'MARK_READY':'MERGE';
+      try{
+        outcome=await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
+          enabled: true, action: rec.draft ? "ready" : "merge" });
+      }catch(error){
+        // One unreachable PR or uncertain GitHub effect cannot stop other
+        // approved PRs. The next read must verify whether a write succeeded.
+        githubEffects.push({task_id:id,operation,head_sha:rec.head_sha,
+          status:'uncertain',reason:'github_effect_unverified',
+          pr_number:rec.pr_number});
+        console.error('PR #'+rec.pr_number+' '+operation+' needs verification: '+error.message);
+        process.exitCode=1;
+        continue;
+      }
+      githubEffects.push({task_id:id,operation,head_sha:rec.head_sha,
+        status:outcome.status,reason:outcome.reasons?.join(',')||outcome.reason||null,
+        pr_number:rec.pr_number});
       if (outcome.status === "ready_for_review") {
         await ledger.transaction(state=>{
           const r=state.tasks?.[id];
@@ -798,7 +824,8 @@ async function main() {
   // The projection is derived; it never authorizes a merge or delivery.
   if(commit&&ledger){
     const projection=await ledger.transaction(latest=>{
-      const projected=recordLifecycleTransitions(latest,queue);
+      const withEffects=recordGithubEffects(latest,githubEffects);
+      const projected=recordLifecycleTransitions(withEffects||latest,queue);
       const result=settleRecoveryRequests(projected,projectLifecycle(projected,queue));
       return JSON.stringify(result)===JSON.stringify(latest)?null:result;
     });
