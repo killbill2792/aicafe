@@ -21,7 +21,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
   return {from:(table:string)=>{
     const builder={
       select(){return builder},eq(){return builder},in(){return builder},
-      neq(){return builder},or(){return builder},order(){return builder},
+      neq(){return builder},not(){return builder},or(){return builder},order(){return builder},
       async limit(){return {data:rows[table],error:null}},
     };
     return builder;
