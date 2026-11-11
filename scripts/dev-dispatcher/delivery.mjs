@@ -157,7 +157,7 @@ export function createDelivery({ task, record, action, actionId }) {
       'Do not request Codex on intermediate pushes.',
     pre_pr_reminder:'pre_pr_reminder: Open the authorized early draft PR now on the correct base; ' +
       'continue implementation in this same conversation.',
-    begin_scoped_coding:'Owner approved the exact signed files after read-only planning. START coding in this SAME chat. Open the authorized early DRAFT PR on the correct dependency base; implement only signed edits, run tests, and preserve CI/Codex/merge gates. Do not open another chat.',
+    begin_scoped_coding:'Owner approved the exact signed files after read-only planning. START coding in this SAME chat. Open the authorized early DRAFT PR on branch '+(record.branch||settings.naming.branch_prefix+task.id)+' with base '+(record.base_branch||'main')+(record.prerequisite_pr?' (parent PR #'+record.prerequisite_pr+')':'')+'. Implement only signed edits, run exact-head CI/acceptance and one eligible Codex review, and preserve owner merge gates. Do not open another chat.',
     plan:'PLAN / SUPERPOWERS: Brainstorm one question at a time. Write the design; split it ' +
       'into tasks with explicit merge order; draw Mermaid diagrams. No implementation beyond approval.',
     brainstorm:'BRAINSTORM / SUPERPOWERS: Ask one question at a time. Write a design, split ' +
