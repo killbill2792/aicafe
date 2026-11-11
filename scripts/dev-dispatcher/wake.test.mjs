@@ -106,3 +106,35 @@ test('one stale Codex wake cannot starve an overdue owner approval notice',()=>{
  assert.notEqual(owner.key,codex.key);
  assert.equal(owner.due_at,new Date(now+6000).toISOString());
 });
+
+test('multiple overdue wake candidates cannot ping-pong into unlimited workflow runs',async()=>{
+ const now=at+25*60000;
+ let latest={tasks:{X:{github_state:'open',draft:false,ci_state:'success',
+   codex_state:'pending',head_sha:'a'.repeat(40),
+   ready_transition_at:new Date(at).toISOString(),
+   last_github_activity:new Date(at).toISOString()}},
+   actions:{delivery:{status:'planned',type:'assign',delivery_owner:'muse',
+     created_at:new Date(at+1000).toISOString()}},
+   owner_alerts:{notice:{status:'planned',delivery_owner:'muse',
+     created_at:new Date(at+2000).toISOString()}}};
+ const ledger={transaction:async fn=>{
+  const changed=await fn(structuredClone(latest));
+  if(changed===null)return {committed:false,state:latest};
+  latest=changed;return {committed:true,state:latest};
+ }};
+ const delivered=[];const fetchFn=async(_url,o)=>{
+  delivered.push(JSON.parse(o.body).inputs.wake_key);
+  return {ok:true,status:204};
+ };
+ for(let i=0;i<3;i++){
+  const outcome=await scheduleSelfWake({ledger,token:'mock',config:one,
+    now:now+i*1000,fetchFn});
+  assert.equal(outcome.status,'requested');
+ }
+ assert.equal(new Set(delivered).size,3);
+ assert.equal(Object.keys(latest.delayed_wake_history).length,3);
+ const fourth=await scheduleSelfWake({ledger,token:'mock',config:one,
+   now:now+3000,fetchFn});
+ assert.equal(fourth.status,'unchanged');
+ assert.equal(delivered.length,3);
+});
