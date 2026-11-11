@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {ensureApprovedDraftPr} from './pr-create-v3.mjs';
 import {approvalSignature} from './delivery.mjs';
 import {GitHubFacts,parseChatMarker,parseTaskMarker} from './github.mjs';
+import {recordGithubEffects} from './github-effects-v3.mjs';
 const head='a'.repeat(40),base='b'.repeat(40),branch='feat/aicafe-task-E2';
 const task={id:'E2',title:'Browser coverage',state:'ready',depends_on:[],
   architecture_approval:{approved:true},edits:['scripts/e2e/smoke.mjs'],
@@ -142,4 +143,37 @@ test('rename where both old and new file paths are signed may create a draft',as
    task:signedTask,record:signedRecord,verifiedDelivery:true});
  assert.equal(result.status,'created');
  assert.equal(mock.seen.filter(x=>x==='/pulls').length,1);
+});
+
+
+test('two successive uncertain PR creates never replay a write when PR discovery remains empty',async()=>{
+ const first=setup({writeFails:true});
+ const initial=await ensureApprovedDraftPr({github:first.github,writer:first.writer,
+   task,record:rec,verifiedDelivery:true});
+ assert.equal(initial.status,'uncertain');
+ assert.equal(first.seen.filter(x=>x==='/pulls').length,1);
+ const snapshot={version:1,actions:{},tasks:{E2:{...rec,head_sha:head}}};
+ const persisted=recordGithubEffects(snapshot,[{task_id:'E2',
+   operation:'CREATE_DRAFT_PR',status:initial.status,
+   reason:initial.reason,head_sha:head}],'2026-11-11T10:00:00Z');
+ assert.ok(persisted.tasks.E2.pr_creation_uncertain_hold);
+ const second=setup({writeFails:true});
+ const next=await ensureApprovedDraftPr({github:second.github,writer:second.writer,
+   task,record:persisted.tasks.E2,records:persisted.tasks,verifiedDelivery:true});
+ assert.equal(next.status,'uncertain');
+ assert.equal(next.reason,'previous_pr_creation_write_unverified');
+ assert.ok(second.seen.some(x=>x.startsWith('/pulls?')));
+ assert.ok(!second.seen.includes('/pulls'),'No second POST after uncertain effect');
+ assert.ok(!second.seen.some(x=>x.startsWith('/compare/')),
+   'No need to revalidate a write that remains forbidden');
+});
+test('a verified existing PR resolves an uncertain creation without another POST',async()=>{
+ const mock=setup({old:[{number:450,state:'open',draft:true,
+   head:{ref:branch,sha:head}}]});
+ const held={...rec,pr_creation_uncertain_hold:{attempted_head_sha:head}};
+ const result=await ensureApprovedDraftPr({github:mock.github,writer:mock.writer,
+   task,record:held,verifiedDelivery:true});
+ assert.equal(result.status,'existing_pr_needs_link');
+ assert.equal(result.pr_number,450);
+ assert.equal(mock.seen.filter(x=>x==='/pulls').length,0);
 });
