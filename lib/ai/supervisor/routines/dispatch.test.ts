@@ -12,7 +12,7 @@ import {choosePriorities} from "./priority";
 function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}[];
   threads?:{id:string;owner_user_id:string}[];alerts?:Record<string,unknown>[];
   tasks?:Record<string,unknown>[]}) {
-  const rows:Record<string,unknown[]>={
+  const rows:Record<string,Record<string,unknown>[]>={
     memberships:params?.owners??[{user_id:"owner"}],
     ai_threads:params?.threads??[{id:"thread",owner_user_id:"owner"}],
     supervisor_routines:params?.routines??[],
