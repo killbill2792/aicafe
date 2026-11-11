@@ -41,14 +41,39 @@ export function applyOwnerStartApprovals(state,queue){
   const hash=approvalSignature(task),id='notice:'+noticeHash({
     kind:'next_task_start',task_id:task.id,source_sha:hash});
   const notice=next.owner_alerts?.[id];
-  if(notice?.status!=='submitted'||notice.source_sha!==hash)continue;
-  if(!Object.values(next.tasks[task.id].owner_reply_events||{}).some(event=>
-    event.courier==='muse'&&event.target?.notice_id===id&&
-    /^yes(?: to start)?[.!]?$/i.test(event.text)))continue;
+  if(!notice||!['planned','submitted'].includes(notice.status)||
+     notice.source_sha!==hash)continue;
+  const replies=Object.values(next.tasks[task.id].owner_reply_events||{})
+    .filter(event=>event.courier==='muse'&&event.target?.notice_id===id)
+    .sort((a,b)=>(Date.parse(a.at||'')||0)-(Date.parse(b.at||'')||0));
+  // A newer authenticated "no" must not be overridden by an older "yes".
+  const reply=replies.at(-1);
+  if(!reply||!/^yes(?: to start)?[.!]?$/i.test(reply.text))continue;
+  // An authenticated, hash-bound owner answer proves the question was received.
+  // Never require a second courier acknowledgement to release the SAME decision.
+  // Retain an independently authenticated notice receipt when one already exists.
+  if(notice.status==='planned'){
+    notice.status='submitted';
+    notice.receipt={courier:'muse',notice_hash:notice.notice_hash,
+      submitted_at:reply.at||new Date().toISOString(),source:'authenticated_owner_reply'};
+  }
   Object.assign(next.tasks[task.id],{approved:true,status:'proposed',
     priority_deferred:false,approval_hash:hash,approval_signature_version:3});
  }
  return next;
+}
+// Re-publish an opaque Muse hint every retry interval until a valid notice
+// receipt or its authenticated owner answer is reconciled. No browser resend here.
+export function wakePendingOwnerNotices(state,nowMs,intervalMs=900000){
+  for(const [key,notice] of Object.entries(state.owner_alerts||{})){
+    if(notice.status!=='planned'||notice.delivery_owner!=='muse'||
+       key!=='notice:'+notice.notice_hash)continue;
+    const since=Date.parse(notice.last_wake_at||notice.created_at||'');
+    if(!Number.isFinite(since)||nowMs-since<intervalMs)continue;
+    notice.last_wake_at=new Date(nowMs).toISOString();
+    notice.wake_round=(notice.wake_round||0)+1;
+  }
+  return state;
 }
 export function queueOwnerIssue(state,{kind,task_id=null,pr_number=null,identity='',message,needs='investigation'}){
  const next=structuredClone(state);next.owner_alerts||={};

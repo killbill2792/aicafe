@@ -95,6 +95,33 @@ rejected→reattributed→acknowledged recovery cannot be claimed until it occur
 Keep the deployed SSH implementation as the active path; do not introduce
 the optional API helper as another production courier.
 
+## Durable handoff after an authenticated Muse reply
+
+**One receipt identity contract, v1:** Generate the private filename from the exact
+JSON payload using `node scripts/dev-dispatcher/receipt-identity.mjs < receipt.json`.
+Do not guess the hash from a notice ID. The same helper is imported by the trusted
+GitHub inbox; a wrong name fails closed. Existing v1 files remain valid.
+
+Muse's existing authorized SSH receipt writer commits the unchanged receipt, then
+issues the **existing** `dispatcher_owner_reply` repository-dispatch event on
+`killbill2792/aicafe` using an already authorized GitHub API identity. Check the
+API response: HTTP 204 means GitHub accepted the wake request, **not** that task
+approval or browser delivery finished. If the wake request fails, keep the receipt
+durable and report the problem; do not duplicate the owner reply or browser turn.
+The one existing trusted dispatcher independently schedules a bounded self-wake
+for each pending owner notice so it can reconcile even if that cross-repo event
+never arrives. Muse must read the saved ledger, and only send a browser prompt
+after the dispatcher issues a new signed `planned` assignment.
+
+An authenticated `owner_reply` whose `target.notice_id` matches the current
+hash-bound `next_task_start` notice is sufficient evidence that the owner saw
+and answered that question. The dispatcher records the notice as submitted and
+approves that exact signature together; a separately filed notice acknowledgement
+is compatible but no longer a second condition for proceeding. A stale, changed,
+or unmatched target cannot release work. Uncertain or claimed assignments are
+never replayed after a later approval. No extra scheduler, token, owner approval,
+or courier authority is introduced by this contract.
+
 ## Muse atomic continuation and owner-reply protocol (Nov 10 owner-approved)
 
 The existing deployed Muse SSH/deploy-key receipt writer is the **only courier write path**. Its authenticated git actor writes one bounded JSON receipt into the **existing private** `killbill2792/dave-task-queue` repository, `dispatcher/receipts/<sha256(action_id + ':' + prompt_hash)>.json`, using the normal CAS git push. The next trusted-main dispatcher tick validates the receipt's actor, action ID, prompt hash, provider, project and exact originally approved destination. When Muse has verified that a saved chat is stale and created its continuation in the **same** ChatGPT Project, the receipt must include `conversation_url` (the exact new full URL), `continuation_of` (the old full signed URL), and `continuation_reason:'stale_chat'`. It must not report a guessed URL or claim provider confirmation before checking its browser address. The dispatcher processes the verified receipt in **one private ledger transaction**: `tasks[task_id].conversation_url`, `conversation_ref`, `pr_chat_links[pr_number]`, and the action receipt all move together. This works for merged PRs as well. The next tick reads the indexed latest verified link and does not restore a stale task link. A partial chat-ID prefix is not enough to backfill a URL.
