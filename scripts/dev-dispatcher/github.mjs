@@ -152,19 +152,38 @@ export function isDispatcherMaintenanceChange(files) {
 }
 
 export class GitHubFacts {
-  constructor({ repo, token, ownerLogin=settings.owner.login, fetchFn = fetch }) {
-    if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) throw new Error("GitHub repo/token required");
+  constructor({ repo, token, ownerLogin=settings.owner.login, fetchFn = fetch,
+    sleepFn = ms => new Promise(resolve=>setTimeout(resolve,ms)) }) {
+    if (!/^[\\w.-]+\\/[\\w.-]+$/.test(repo) || !token) throw new Error("GitHub repo/token required");
     this.repo = repo; this.token = token; this.fetchFn = fetchFn;
+    this.sleepFn=sleepFn;
     this.ownerLogin=ownerLogin;
   }
   async request(url, options = {}) {
-    const response = await this.fetchFn(url.startsWith("https:") ? url : `https://api.github.com/repos/${this.repo}${url}`, {
-      ...options, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
-        "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
-    }).catch(()=>{throw githubNetworkFailure('GitHub');});
-    if (!response.ok) throw await githubFailure(response,'GitHub',this.token);
-    if (response.status === 204) return { ok:true };
-    return response.json();
+    const method=String(options.method||'GET').toUpperCase();
+    const canRetry=method==='GET'||method==='HEAD';
+    // Retry only safe reads after upstream/network faults. A write may have
+    // committed despite an HTTP 500; never replay an uncertain side effect.
+    // 429 and rate-limit failures remain explicit instead of retry storms.
+    for(let attempt=0;;attempt++){
+      let response=null;
+      try { response=await this.fetchFn(url.startsWith("https:") ? url :
+        `https://api.github.com/repos/${this.repo}${url}`, {
+          ...options, headers:{Accept:"application/vnd.github+json",
+           Authorization:`Bearer ${this.token}`,
+           "X-GitHub-Api-Version":"2022-11-28", ...options.headers},
+        });}catch{
+        if(canRetry&&attempt<2){await this.sleepFn(150*(attempt+1));continue;}
+        throw githubNetworkFailure('GitHub');
+      }
+      if(!response.ok&&canRetry&&attempt<2&&
+         [500,502,503,504].includes(response.status)){
+        await this.sleepFn(150*(attempt+1));continue;
+      }
+      if(!response.ok)throw await githubFailure(response,'GitHub',this.token);
+      if(response.status===204)return {ok:true};
+      return response.json();
+    }
   }
   // Collection pagination is mandatory for prompt proof transitions: stopping at
   // page one delays integrated_proven indefinitely on busy repositories.
