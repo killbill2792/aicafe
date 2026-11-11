@@ -1,3 +1,4 @@
+import {queueOwnerIssue,resolveOwnerIssueIdentity} from './alerts.mjs';
 // The trusted GitHub runner's own operation receipts, retained in the
 // authoritative private task ledger. A PR gate is evidence, not an effect.
 const OPERATIONS=new Set(['CREATE_DRAFT_PR','MARK_READY','MERGE']);
@@ -38,4 +39,32 @@ export function recordGithubEffects(state,observations=[],now=new Date().toISOSt
    task.github_effect_history=task.github_effect_history.slice(-30);
  }
  return result;
+}
+
+
+// Convert a verified GitHub capability failure into an existing Muse-delivered
+// owner notice, never a new approval or ChatGPT coding action. Stable incident
+// identity prevents each scheduled tick from creating another owner prompt.
+export function recordPrWriterOwnerNotices(state,observations=[]){
+  if(!state||state.version!==1||!state.tasks||!state.actions)
+    throw Error('Private ledger required for PR writer notice');
+  let next=state;
+  for(const item of observations){
+    if(item?.operation!=='CREATE_DRAFT_PR'||!next.tasks[item.task_id])continue;
+    const reasons=['missing_pr_creator_install_token','pr_creator_permission_denied'];
+    if(item.status==='blocked'&&reasons.includes(item.reason)){
+      const text=item.reason==='missing_pr_creator_install_token'
+        ?'GitHub cannot open the signed draft PR because its configured PR-writer capability is missing.'
+        :'GitHub rejected the signed draft-PR write due to insufficient permissions.';
+      next=queueOwnerIssue(next,{kind:'pr_writer_unavailable',task_id:item.task_id,
+        identity:item.task_id+':'+item.reason,
+        message:text,
+        needs:'Muse notify owner; verify the existing narrow GitHub installation permission outside chat. Do not send credentials or bypass the signed task.'});
+    }else if(['created','existing_pr_needs_link','already_linked'].includes(item.status)){
+      for(const reason of reasons)
+        next=resolveOwnerIssueIdentity(next,{kind:'pr_writer_unavailable',
+          task_id:item.task_id,identity:item.task_id+':'+reason});
+    }
+  }
+  return next;
 }
