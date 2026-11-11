@@ -336,7 +336,9 @@ test('verified Muse delivery stalled before PR sends one signed reminder to same
   last_submission_at:'2026-10-01T10:00:00Z'};
  const initialState=initial({good:original},{
   'assign:good':{task_id:'good',type:'assign',status:'submitted',
-   receipt:{courier:'muse',prompt_hash:'signed'}}});
+   delivery:{approval_hash:'signed'},
+   receipt:{courier:'muse',prompt_hash:'signed',
+    conversation_url:'https://chatgpt.com/c/existing'}}});
  const h=harness();
  const first=h.run(initialState).state;
  const pending=Object.entries(first.actions).filter(([,a])=>
@@ -354,5 +356,27 @@ test('pre-PR reminder requires real Muse coding receipt, not just a saved chat U
   approval_hash:'signed',conversation_ref:'https://chatgpt.com/c/existing',
   last_submission_at:'2026-10-01T10:00:00Z'};
  const out=harness().run(initial({good:r})).state;
+ assert.equal(Object.values(out.actions).filter(a=>a.type==='pre_pr_reminder').length,0);
+});
+
+
+test('wrong-scope historical Muse receipt cannot authorize a pre-PR reminder',()=>{
+ const r={task_id:'good',approved:true,status:'assigned',agent:'chatgpt',
+  approval_hash:'new-signed-plan',conversation_ref:'https://chatgpt.com/c/existing',
+  last_submission_at:'2026-10-01T10:00:00Z'};
+ const state=initial({good:r},{original:{task_id:'good',type:'assign',
+   status:'submitted',delivery:{approval_hash:'old-signed-plan'},
+   receipt:{courier:'muse',conversation_url:'https://chatgpt.com/c/existing'}}});
+ const out=harness().run(state).state;
+ assert.equal(Object.values(out.actions).filter(a=>a.type==='pre_pr_reminder').length,0);
+});
+test('verified historical delivery to another chat cannot redirect the pre-PR reminder',()=>{
+ const r={task_id:'good',approved:true,status:'assigned',agent:'chatgpt',
+  approval_hash:'signed',conversation_ref:'https://chatgpt.com/c/current-chat',
+  last_submission_at:'2026-10-01T10:00:00Z'};
+ const state=initial({good:r},{original:{task_id:'good',type:'assign',
+   status:'submitted',delivery:{approval_hash:'signed'},
+   receipt:{courier:'muse',conversation_url:'https://chatgpt.com/c/old-chat'}}});
+ const out=harness().run(state).state;
  assert.equal(Object.values(out.actions).filter(a=>a.type==='pre_pr_reminder').length,0);
 });
