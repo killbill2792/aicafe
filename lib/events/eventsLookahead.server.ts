@@ -11,14 +11,14 @@ import {readCanonicalCafeEvents,readSavedEventTimeline,readCityResearchCoverage,
 import {cafeToday} from "@/lib/metrics/core/clock";
 import {cafeCountry,holidaysBetween,addDays,weekdayOf} from "./holidays";
 import {eventIdentity,cityScanWindows,savedEventKind,dailyCafeScanOrder,
-  type EventScanState} from "./eventsLookahead";
+  closedEventObservationDays,type EventScanState} from "./eventsLookahead";
 import type {NearbyEventsSearch} from "./nearbyEvents";
 import {searchNearbyEvents} from "./nearbyEventsSearch.server";
 import {scanSharedResearch,newLdiBudget,type LdiBudget} from "./ldiIntegration.server";
 import {verifyUpcomingEventChanges} from "./eventVerification.server";
 import {stableMessageId,SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
-import {effectHash,proposeLoop,monitorLoop,utcDateOffset,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
+import {effectHash,proposeLoop,monitorLoop,type LoopProposal,type OwnerLoopScope} from "@/lib/ai/supervisor/loop/engine";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {authorizedScheduledEventScope,eventPlanFacts,selectedEventPlanFacts,eventReadinessCapabilityId,selectEventObservations,observedEventProposalIds}
   from "@/lib/ai/supervisor/loop/eventReadiness.server";
@@ -460,25 +460,23 @@ export async function reportSavedEventDays(db:Db,businessId:string,ownerId:strin
     revision:row.revision,locale:row.locale,
     monitoringStartDate:row.monitoring_start_date,createdAt:row.created_at,
   }));
-  const yesterday=utcDateOffset(today,-1);
-  const recent=utcDateOffset(today,-14);
   let checked=0,reported=0,failed=0;
   const repo=new SupabaseLoopRepository();
   const observedIds=await observedEventProposalIds(db,businessId,
     proposals.map(p=>p.id));
-  for(const p of selectEventObservations(proposals,observedIds).filter(p=>
-    p.monitoringStartDate!<=yesterday&&
-    utcDateOffset(p.monitoringStartDate!,p.monitorSpec.durationDays-1)>=recent).slice(0,6)){
+  const eligible=selectEventObservations(proposals,observedIds)
+    .map(proposal=>({proposal,days:closedEventObservationDays(
+      proposal.monitoringStartDate!,proposal.monitorSpec.durationDays,today)}))
+    .filter(item=>item.days.length>0).slice(0,6);
+  for(const {proposal:p,days} of eligible){
     checked++;
     try{
       const scope=await authorizedScheduledEventScope({
         businessId,ownerUserId:p.ownerUserId,threadId:p.threadId,locale:p.locale,
       });
-      const end=utcDateOffset(p.monitoringStartDate!,p.monitorSpec.durationDays-1);
       // The monitor itself certifies coverage. A missing Toast day remains
       // insufficient evidence, never a fabricated zero or implementation claim.
-      for(let day=p.monitoringStartDate!;day<=end&&day<=yesterday;
-        day=utcDateOffset(day,1)){
+      for(const day of days){
         const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,day);
         if(result)reported++;
       }
