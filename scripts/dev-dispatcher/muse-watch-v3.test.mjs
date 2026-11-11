@@ -204,3 +204,15 @@ test('Muse host monitor preserves recovery backlog atomically and privately',asy
   assert.ok(!(await fs.readdir(dir)).some(x=>x.includes('.tmp-')));
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+
+
+test('Muse detects an old pending CI head without claiming failure or completion',()=>{
+ const s={...state,tasks:{T1:{...state.tasks.T1,draft:false,ci_state:'pending',
+  head_first_seen_at:'2026-11-11T09:00:00Z',
+  last_commit_at:'2026-11-11T09:00:00Z'}},
+  schedule_health:{last_schedule_at:now},updated_at:now};
+ const health=inspectMuseHealth(s,{now});
+ assert.ok(health.incidents.some(i=>i.kind==='CI_PENDING_STALE'));
+ assert.ok(museRecoveryCandidates(health,s,identity).some(x=>x.intent==='RECONCILE'));
+ assert.ok(!JSON.stringify(health).includes('CI_FAILED'));
+});
