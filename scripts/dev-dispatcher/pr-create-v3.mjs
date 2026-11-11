@@ -66,7 +66,14 @@ export async function ensureApprovedDraftPr({github,writer,task,record,records={
   return {status:'created',pr_number:created.number,head_sha:head,
     base_branch:base.base_branch};
  }catch(error){
-  // A timed-out POST could have succeeded. Never blindly replay it.
+  // A confirmed credential rejection is a visible BLOCKER, not a timed-out
+  // write. GitHub 429 is throttling, not an owner approval or review failure.
+  if(error?.code==='RATE_LIMIT')
+    return {status:'blocked',reason:'github_rate_limited'};
+  if(/status=(?:401|403)\b/.test(String(error?.message||'')))
+    return {status:'blocked',reason:'pr_creator_permission_denied'};
+  // Transport, HTTP 5xx and ambiguous validation may have committed.
+  // Never blindly replay an uncertain PR creation side effect.
   return {status:'uncertain',reason:'PR_create_effect_unverified'};
  }
 }
