@@ -196,7 +196,7 @@ async function main() {
   // the actual authenticated roles and exercise the RLS policies.
   for (const [id, business, owner] of [
     [THREAD_A, CAFE_A, OWNER_A], [THREAD_A_OTHER, CAFE_A, OWNER_A],
-    [THREAD_CAFE_B, CAFE_B, OWNER_A],
+    [THREAD_CAFE_B, CAFE_B, OWNER_A], [THREAD_STRUCTURED, CAFE_A, OWNER_A],
   ]) {
     await client.query(
       "insert into ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",
