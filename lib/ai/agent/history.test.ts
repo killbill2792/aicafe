@@ -104,6 +104,19 @@ describe("rolling thread memory primitives",()=>{
    sourceMessageId:source.id,sourceAt:source.createdAt,revision:1,
   }]})).toBeNull();
  });
+ it("rejects extra persisted fields, duplicate keys and entries newer than the document revision",()=>{
+  const source=owner("We prefer oat milk for staff drinks.");
+  const entry={kind:"preference",key:"preference:staff_drinks",text:source.text,
+   sourceMessageId:source.id,sourceAt:source.createdAt,revision:1};
+  const base={...emptyThreadMemoryDocument(),revision:1,
+   cursor:{createdAt:source.createdAt,id:source.id},entries:[entry]};
+  expect(parseThreadMemoryDocument({...base,unexpected:true})).toBeNull();
+  expect(parseThreadMemoryDocument({...base,entries:[entry,{...entry}]})).toBeNull();
+  expect(parseThreadMemoryDocument({...base,entries:[{...entry,revision:2}]})).toBeNull();
+  expect(parseThreadMemoryDocument({...base,entries:[entry],tombstones:[{
+   key:"preference:staff_drinks",sourceMessageId:source.id,sourceAt:source.createdAt,revision:1,
+  }]})).toBeNull();
+ });
  it("formats only advisory nonfinancial entries and does not mutate the stored order",()=>{
   const first=owner("We prefer oat milk.");
   const second=owner("We prefer quiet morning music.");
