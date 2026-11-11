@@ -13,6 +13,26 @@ export function historyContent(message: Pick<ConversationMessage, "text" | "bloc
   return (message.blocks ?? []).flatMap(block => {
     if (!record(block)) return [];
     if ("text" in block) return [String(block.text)];
+    if (block.type === "owner_question" && record(block.title) && record(block.input)) {
+      const question = typeof block.title.en === "string" ? block.title.en :
+        typeof block.title.es === "string" ? block.title.es :
+          typeof block.title.ar === "string" ? block.title.ar : "";
+      if (!question) return [];
+      const options = Array.isArray(block.input.options) ? block.input.options.flatMap(option =>
+        record(option) && record(option.label)
+          ? [typeof option.label.en === "string" ? option.label.en :
+            typeof option.label.es === "string" ? option.label.es :
+              typeof option.label.ar === "string" ? option.label.ar : ""]
+          : []).filter(Boolean) : [];
+      const hint = record(block.input.hint)
+        ? (typeof block.input.hint.en === "string" ? block.input.hint.en :
+          typeof block.input.hint.es === "string" ? block.input.hint.es :
+            typeof block.input.hint.ar === "string" ? block.input.hint.ar : "")
+        : "";
+      return ["Owner question: " + question +
+        (options.length ? " Options: " + options.join("; ") : "") +
+        (hint ? " Hint: " + hint : "")];
+    }
     if (block.type !== "clarify" || typeof block.question !== "string") return [];
     if (Array.isArray(block.options))
       return ["Asked: " + block.question + " Options: " + block.options.map(o =>
