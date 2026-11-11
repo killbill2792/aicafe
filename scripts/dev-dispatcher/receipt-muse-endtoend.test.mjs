@@ -54,10 +54,8 @@ test('real GitHub inbox actor + v1 filename recover a stale hash-bound assignmen
  const blocked=reconcileReceiptFeedback(original(),scanned,'2026-11-11T04:36:00Z');
  assert.equal(blocked.receipt_feedback[actionId].code,'assignment_receipt_missing');
  const raised=noticeOperationalIssues(blocked,{scan:scanned});
- assert.equal(incident(raised).length,1); assert.equal(incident(raised)[0].recipient,'owner'); assert.equal(incident(raised)[0].pr_number,pr);
- assert.match(incident(raised)[0].owner_message,/no owner approval needed/i); assert.equal(incident(raised)[0].status,'planned');
- assert.match(renderOwnerView(raised,{repo:settings.repo}),/notification\(s\) awaiting authenticated Muse acknowledgement/);
- assert.match(renderPrivateQueue(raised),/Muse must still deliver every eligible/); assert.ok(signalFor(raised,'s'.repeat(32)).pending_count>=2);
+ assert.equal(incident(raised).length,1); assert.equal(incident(raised)[0].recipient,'owner'); assert.equal(incident(raised)[0].pr_number,pr); assert.match(incident(raised)[0].owner_message,/no owner approval needed/i); assert.equal(incident(raised)[0].status,'planned');
+ assert.match(renderOwnerView(raised,{repo:settings.repo}),/notification\(s\) awaiting authenticated Muse acknowledgement/); assert.match(renderPrivateQueue(raised),/Muse must still deliver every eligible/); assert.ok(signalFor(raised,'s'.repeat(32)).pending_count>=2);
  // Muse speaks to the owner, then its independently authenticated notice
  // receipt acknowledges the original message. Planned != delivered.
  const notice=incident(raised)[0];
@@ -67,8 +65,7 @@ test('real GitHub inbox actor + v1 filename recover a stale hash-bound assignmen
   {authenticatedCourier:'muse'});
  assert.equal(informed.owner_alerts[noticeId].status,'submitted');
  const recovered=applyReceipts(informed,scanned.accepted,{'trusted-muse':'muse'});
- assert.equal(recovered.actions[actionId].status,'submitted'); assert.equal(recovered.actions[actionId].recovered_original_chat_after_pr,true);
- assert.equal(recovered.tasks[taskId].conversation_ref,chat); assert.equal(recovered.branch_chat_links[branch].conversation_url,chat);
+ assert.equal(recovered.actions[actionId].status,'submitted'); assert.equal(recovered.actions[actionId].recovered_original_chat_after_pr,true); assert.equal(recovered.tasks[taskId].conversation_ref,chat); assert.equal(recovered.branch_chat_links[branch].conversation_url,chat);
  assert.equal(recovered.pr_chat_links[String(pr)].conversation_url,chat);
  assert.deepEqual(applyReceipts(recovered,scanned.accepted,
    {'trusted-muse':'muse'}),recovered);
@@ -161,11 +158,9 @@ test('outbound Muse signal failure wakes once, stays visible, then announces ver
  await reportMuseSignalFailure(args);
  await reportMuseSignalFailure({...args,message:'Different transient API error'});
  assert.equal(writes,1); assert.equal(wakes,1); assert.equal(Object.values(state.owner_alerts).filter(n=>n.kind==='muse_signal_failed').length,1);
- assert.match(Object.values(state.owner_alerts)[0].question,/could not publish the Muse wake signal/i); assert.equal(Object.values(state.owner_alerts)[0].status,'planned');
- assert.ok(signalFor(state,'s'.repeat(32)).pending_count>=1);
+ assert.match(Object.values(state.owner_alerts)[0].question,/could not publish the Muse wake signal/i); assert.equal(Object.values(state.owner_alerts)[0].status,'planned'); assert.ok(signalFor(state,'s'.repeat(32)).pending_count>=1);
  await reportMuseSignalRestored({ledger,repo:settings.repo});
- assert.equal(Object.values(state.owner_alerts).find(n=>n.kind==='muse_signal_failed').status,'resolved');
- assert.equal(Object.values(state.owner_alerts).find(n=>n.kind==='muse_signal_restored').status,'planned');
+ assert.equal(Object.values(state.owner_alerts).find(n=>n.kind==='muse_signal_failed').status,'resolved'); assert.equal(Object.values(state.owner_alerts).find(n=>n.kind==='muse_signal_restored').status,'planned');
  const writesAfter= writes;
  await reportMuseSignalRestored({ledger,repo:settings.repo});
  assert.equal(writes,writesAfter); // a recovered signal cannot wake indefinitely
@@ -189,8 +184,7 @@ test('dashboard and private Muse queue publication failures notify once and clos
   await reportProjectionRestored({ledger,kind,identity});
   const afterRestore=writes;
   await reportProjectionRestored({ledger,kind,identity});
-  assert.equal(writes,afterRestore,'no repeated recovery notice'); assert.equal(Object.values(state.owner_alerts).find(n=>n.kind===kind).status,'resolved');
-  assert.equal(Object.values(state.owner_alerts).find(n=>n.kind===kind+'_restored').status,'planned');
+  assert.equal(writes,afterRestore,'no repeated recovery notice'); assert.equal(Object.values(state.owner_alerts).find(n=>n.kind===kind).status,'resolved'); assert.equal(Object.values(state.owner_alerts).find(n=>n.kind===kind+'_restored').status,'planned');
  }
  await assert.rejects(reportProjectionFailure({
   ledger,kind:'new_unapproved_alert_kind',identity:'x'}),/Unrecognized/);
@@ -246,8 +240,7 @@ test('Codex review that arrives after the single fallback closes the incident an
  const closed=noticeOperationalIssues(incident,{scan:{complete:true,rejected:[]}});
  const missed=Object.values(closed.owner_alerts).filter(n=>n.kind==='codex_auto_review_missed');
  const restored=Object.values(closed.owner_alerts).filter(n=>n.kind==='codex_auto_review_received');
- assert.equal(missed.length,1); assert.equal(missed[0].status,'resolved'); assert.equal(restored.length,1); assert.equal(restored[0].delivery_owner,'muse');
- assert.equal(restored[0].recipient,'owner'); assert.match(restored[0].question,/verified head/);
+ assert.equal(missed.length,1); assert.equal(missed[0].status,'resolved'); assert.equal(restored.length,1); assert.equal(restored[0].delivery_owner,'muse'); assert.equal(restored[0].recipient,'owner'); assert.match(restored[0].question,/verified head/);
  const again=noticeOperationalIssues(closed,{scan:{complete:true,rejected:[]}});
  assert.deepEqual(Object.keys(again.owner_alerts),Object.keys(closed.owner_alerts));
 });
@@ -292,21 +285,14 @@ test('acknowledged Muse/publication incidents recover and recur without losing p
   state=acceptOwnerNoticeReceipt(state,{kind:'owner_notice',notice_id:firstId,
    notice_hash:first.notice_hash,status:'submitted'},{authenticatedCourier:'muse'});
   await restore();
-  assert.equal(state.owner_alerts[firstId].status,'resolved');
-  assert.equal(state.owner_alerts[firstId].receipt.courier,'muse');
-  assert.equal(Object.values(state.owner_alerts).filter(n=>n.kind===restoredKind).length,1);
+  assert.equal(state.owner_alerts[firstId].status,'resolved'); assert.equal(state.owner_alerts[firstId].receipt.courier,'muse'); assert.equal(Object.values(state.owner_alerts).filter(n=>n.kind===restoredKind).length,1);
   await fail();
   const notices=Object.entries(state.owner_alerts).filter(([,n])=>n.kind===kind);
-  assert.equal(notices.length,2);
-  assert.notEqual(notices[0][0],notices[1][0]);
-  assert.equal(notices[1][1].status,'planned');
-  assert.ok(signalFor(state,'s'.repeat(32)).pending_count>=1);
+  assert.equal(notices.length,2); assert.notEqual(notices[0][0],notices[1][0]); assert.equal(notices[1][1].status,'planned'); assert.ok(signalFor(state,'s'.repeat(32)).pending_count>=1);
   await fail();
   assert.equal(Object.values(state.owner_alerts).filter(n=>n.kind===kind).length,2);
   await restore();
-  assert.equal(state.owner_alerts[notices[1][0]].status,'resolved');
-  assert.equal(Object.values(state.owner_alerts).filter(n=>n.kind===restoredKind).length,2);
-  assert.equal(Object.values(state.owner_alerts).find(n=>n.kind===restoredKind).status,'resolved');
+  assert.equal(state.owner_alerts[notices[1][0]].status,'resolved'); assert.equal(Object.values(state.owner_alerts).filter(n=>n.kind===restoredKind).length,2); assert.equal(Object.values(state.owner_alerts).find(n=>n.kind===restoredKind).status,'resolved');
   assert.equal(state.owner_alerts[firstId].receipt.courier,'muse');
   if(channel==='signal')assert.equal(wakes,2);
  }
