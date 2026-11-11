@@ -255,7 +255,9 @@ async function main() {
       // from remaining silent. Never guess that coding is complete.
       const firstDelivery=Object.values(copy.actions).some(a=>
         a.task_id===id&&['assign','begin_scoped_coding'].includes(a.type)&&
-        a.status==='submitted'&&a.receipt?.courier==='muse');
+        a.status==='submitted'&&a.receipt?.courier==='muse'&&
+        a.delivery?.approval_hash===rec.approval_hash&&
+        a.receipt?.conversation_url===rec.conversation_ref);
       const lastDelivery=Date.parse(rec.last_submission_at||'');
       const noPrDue=firstDelivery&&rec.approved===true&&rec.status==='assigned'&&
         !Number.isInteger(rec.pr_number)&&Boolean(rec.conversation_ref)&&
@@ -263,8 +265,8 @@ async function main() {
         Number.isFinite(lastDelivery)&&Date.now()-lastDelivery>=15*60000;
       const prePrKey='pre_pr_reminder:'+encodeURIComponent(id)+':'+
         String(rec.approval_hash||'');
-      const prePrAlready=Object.values(copy.actions).some(a=>
-        a.task_id===id&&a.type==='pre_pr_reminder');
+      const prePrAlready=Object.entries(copy.actions).some(([key,a])=>
+        key===prePrKey&&a.task_id===id&&a.type==='pre_pr_reminder');
       const normal=noPrDue&&!prePrAlready?
         {kind:'propose',action:'pre_pr_reminder',key:prePrKey}:
         decideNudge(rec,Date.now());
