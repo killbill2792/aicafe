@@ -1,12 +1,12 @@
 import {settings} from './settings.mjs';
 // Courier receipts are deposited as private GitHub files, never as public signals.
 // GitHub verifies authenticated GitHub commit actor, exact action/hash/URL and CAS state.
-import { createHash } from 'node:crypto';
+import {receiptFilename} from './receipt-identity.mjs';
 import { acceptDeliveryReceipt } from './receipt.mjs';
 import { validConversationUrl } from './delivery.mjs';
 import { acceptOwnerNoticeReceipt } from './alerts.mjs';
 import { acceptMuseOwnerReply } from './self-heal.mjs';
-const sha = s => createHash('sha256').update(s).digest('hex');
+
 
 // The GitHub commit actor is the authentication boundary. A self-declared
 // receipt author, Git commit display name or valid hash is NOT an identity.
@@ -42,12 +42,10 @@ export async function inspectReceipts({ ledger, allowedActors }) {
       }catch{
         rejected.push({file:entry.name,code:'invalid_receipt_identity'});continue;
       }
-      const identity=receipt?.kind==='owner_notice'
-        ? 'owner:'+receipt.notice_id+':'+receipt.notice_hash
-        : ['owner_reply','owner_instruction'].includes(receipt?.kind)
-        ? receipt.kind+':'+receipt.event_id+':'+JSON.stringify(receipt.target)+':'+sha(receipt.text||'')
-        : receipt?.action_id+':'+receipt?.prompt_hash;
-      if(sha(identity)+'.json'!==entry.name){
+      let expected;
+      try{expected=receiptFilename(receipt);}
+      catch{rejected.push({file:entry.name,code:'invalid_receipt_identity'});continue;}
+      if(expected!==entry.name){
         rejected.push({file:entry.name,code:'invalid_receipt_identity'});continue;
       }
       accepted.push({receipt,actor,file:entry.name});
