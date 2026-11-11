@@ -22,21 +22,23 @@ export function recoveryEvent(event,{repo,actors={},owner,records={},now=new Dat
   const label=actors[actor];
   if(typeof actor!=='string'||!(label==='muse'||actor===owner))
     return {accepted:false,reason:'unauthenticated_muse_or_owner'};
+  const global=payload.intent==='RECONCILE'&&payload.task_id==null&&
+    payload.pr_number==null&&payload.expected_head_sha==null;
   if(payload.version!==1||!intents.has(payload.intent)||
-    !ID.test(payload.task_id||'')||!Number.isInteger(payload.pr_number)||
-    payload.pr_number<1||!SHA.test(payload.expected_head_sha||''))
+    (!global&&(!ID.test(payload.task_id||'')||!Number.isInteger(payload.pr_number)||
+      payload.pr_number<1||!SHA.test(payload.expected_head_sha||''))))
     return {accepted:false,reason:'malformed_recovery_request'};
   const requestedAt=Date.parse(payload.requested_at||''),clock=Date.parse(now);
   if(!Number.isFinite(requestedAt)||!Number.isFinite(clock)||
     requestedAt>clock+120000||clock-requestedAt>10*60000)
     return {accepted:false,reason:'stale_or_future_recovery_request'};
-  const current=records[payload.task_id];
-  if(!current||current.pr_number!==payload.pr_number)
+  const current=global?null:records[payload.task_id];
+  if(!global&&(!current||current.pr_number!==payload.pr_number))
     return {accepted:false,reason:'unmatched_task_pr'};
-  if(current.head_sha!==payload.expected_head_sha)
+  if(!global&&current.head_sha!==payload.expected_head_sha)
     return {accepted:false,reason:'stale_head'};
   const item={repo,actor,intent:payload.intent,task_id:payload.task_id,
-    pr_number:payload.pr_number,expected_head_sha:payload.expected_head_sha,
+    pr_number:payload.pr_number??null,expected_head_sha:payload.expected_head_sha??null,
     requested_at:payload.requested_at};
   const key=recoveryIdentity(item);
   if(payload.request_id!==key)
@@ -57,6 +59,8 @@ export function recordRecoveryEvent(state,event,options={}){
   return next;
 }
 function outcome(req,row){
+  if(req.intent==='RECONCILE'&&!req.task_id)
+    return {status:'OBSERVED',reason:'global_reconcile_wake_not_evidence_of_effect'};
   if(!row)return {status:'BLOCKED',reason:'missing_task_projection'};
   if(row.pr.head_sha!==req.expected_head_sha)
     return {status:'BLOCKED',reason:'head_changed_since_request'};
