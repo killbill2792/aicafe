@@ -55,9 +55,9 @@ const validTimestamp = (value: unknown): value is string =>
   typeof value === "string" && isoTimestamp.test(value) && Number.isFinite(Date.parse(value));
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
   Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
-const financialTerms = /\b(?:price|prices|sales|revenue|profit|profits|cost|costs|payroll|wages?|salaries|salary|rent|bills?|bank|cash|fees?|margin|tax|refunds?|tips?|expenses?|financial|money|invoices?|payments?|discounts?|break[- ]even)\b/iu;
+const financialTerms = /\b(?:price|prices|pricing|sales|revenue|income|profit|profits|cost|costs|payroll|wages?|salaries|salary|rent|bills?|bank|cash|fees?|margin|tax|refunds?|tips?|expenses?|financial|money|invoices?|payments?|discounts?|break[- ]even|budget|balance|transaction|metrics?|kpis?|unit sales)\b/iu;
 const sensitiveTerms = /\b(?:password|passcode|api[ _-]?key|secret|token|credential|authorization|permission|consent|approval|approved|authorize|mandate|execute|transfer|purchase|payout)\b/iu;
-const currencyToken = /[$€£]|\b(?:USD|EUR|GBP|CAD|AUD|SAR|AED)\b/iu;
+const currencyToken = /[$€£¥₹₽₩₺₫₪₦₱]|\b(?:USD|EUR|GBP|CAD|AUD|SAR|AED|INR|JPY|CNY|RMB|CHF|SEK|NOK|DKK|BHD|KWD|QAR|OMR|PKR|NZD|SGD|HKD)\b/iu;
 
 /** Conservative allowlist: memory is for durable nonfinancial owner context, never facts
  * that can be re-read from café systems or used to authorize an effect. */
