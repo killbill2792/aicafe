@@ -277,3 +277,17 @@ test('delayed self-wake retains Git-backed emergency notice after a failed wake'
  assert.match(workflow,/node scripts\/dev-dispatcher\/emergency-report\.mjs/);
  assert.match(workflow,/secrets\.DISPATCH_LEDGER_TOKEN/);
 });
+
+
+test('failed dispatcher run observer uses trusted main and existing Git-backed owner queue only',()=>{
+ const watcher=readFileSync(new URL('../../.github/workflows/dispatcher-failure-observer.yml',import.meta.url),'utf8');
+ assert.match(watcher,/workflow_run:/);
+ assert.match(watcher,/AI CAFE Development Dispatcher/);
+ assert.match(watcher,/Dispatcher delayed self-wake/);
+ assert.match(watcher,/head_branch == 'main'/);
+ assert.match(watcher,/ref: main/);
+ assert.match(watcher,/persist-credentials: false/);
+ assert.match(watcher,/DISPATCH_FAILED_RUN_ID:/);
+ assert.match(watcher,/node scripts\/dev-dispatcher\/emergency-report\.mjs/);
+ assert.doesNotMatch(watcher,/pull_request_target/);
+});
