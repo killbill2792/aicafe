@@ -405,3 +405,27 @@ test('v3 cancels only unsent old coder-done prompts, preserving uncertain histor
  assert.equal(out.actions.uncertain.status,'uncertain');
  assert.equal(out.actions.submitted.status,'submitted');
 });
+
+
+test('verified stale-chat continuation recovers the current chat without creating another',()=>{
+ const original='https://chatgpt.com/c/original-123';
+ const continued='https://chatgpt.com/c/continued-456';
+ const hash='a'.repeat(64);
+ const record={task_id:'good',approved:true,status:'assigned',agent:'chatgpt',
+   approval_hash:hash,conversation_ref:continued,
+   last_submission_at:'2026-10-01T10:00:00Z'};
+ const seed={task_id:'good',type:'assign',status:'submitted',delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+     approval_hash:hash,prompt_hash:'b'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:original}};
+ const moved={task_id:'good',type:'pre_pr_reminder',status:'submitted',delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'continue_existing_chat',
+     conversation_url:original,approval_hash:hash,prompt_hash:'c'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'c'.repeat(64),conversation_url:continued,
+     continuation_of:original}};
+ const state=initial({good:record},{seed,moved});
+ const out=harness().run(state).state;
+ assert.equal(out.tasks.good.conversation_ref,continued);
+ // A previously submitted reminder must not be resubmitted in another chat.
+ assert.equal(Object.values(out.actions).filter(a=>a.type==='pre_pr_reminder').length,1);
+});
