@@ -88,3 +88,21 @@ test('missing wake is reissued on same key only after bounded retry lease expire
  assert.equal(calls,2);
  assert.notEqual(seen[0].due_at,seen[1].due_at);
 });
+
+test('one stale Codex wake cannot starve an overdue owner approval notice',()=>{
+ const now=at+25*60000;
+ const s={tasks:{X:{github_state:'open',draft:false,ci_state:'success',
+  codex_state:'pending',head_sha:'a'.repeat(40),
+  ready_transition_at:new Date(at).toISOString(),
+  last_github_activity:new Date(at).toISOString()}},
+  actions:{},owner_alerts:{notice:{status:'planned',delivery_owner:'muse',
+    created_at:new Date(at+60000).toISOString()}}};
+ const codex=nextWake(s,now,one);
+ assert.equal(codex.reason,'codex_settle');
+ s.delayed_wake={key:codex.key,status:'requested',
+  requested_at:new Date(now).toISOString()};
+ const owner=nextWake(s,now+1000,one);
+ assert.equal(owner.reason,'owner_notice_retry');
+ assert.notEqual(owner.key,codex.key);
+ assert.equal(owner.due_at,new Date(now+6000).toISOString());
+});
