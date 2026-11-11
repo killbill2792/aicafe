@@ -305,3 +305,24 @@ test('new emergency observer remains owner-only infrastructure, while PR size gu
  assert.equal(hasBigOk('big-ok'),true);
  assert.equal(hasBigOk(JSON.stringify([{name:'big-ok'}])),true);
 });
+
+
+test('P1: real numeric failed-run IDs reach the Git-backed emergency reporter',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const cli=fileURLToPath(new URL('./emergency-report.mjs',import.meta.url));
+ const env={...process.env,GITHUB_RUN_ID:'43057323529',
+  DISPATCH_FAILED_RUN_ID:'43057323529',
+  GITHUB_REPOSITORY:'killbill2792/aicafe'};
+ delete env.DISPATCH_LEDGER_TOKEN;
+ const result=spawnSync(process.execPath,[cli],{env,encoding:'utf8'});
+ // No credentials: must stop at the existing trusted Git publication gate,
+ // rather than falsely rejecting the valid numeric workflow-run identity.
+ assert.equal(result.status,1);
+ assert.match(result.stderr,/EMERGENCY MUSE DELIVERY UNCONFIRMED/);
+ assert.doesNotMatch(result.stderr,/Invalid failed workflow run ID/);
+ const bad=spawnSync(process.execPath,[cli],{env:{
+  ...env,DISPATCH_FAILED_RUN_ID:'not-a-run'},encoding:'utf8'});
+ assert.equal(bad.status,1);
+ assert.match(bad.stderr,/Invalid failed workflow run ID/);
+});
