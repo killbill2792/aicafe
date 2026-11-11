@@ -177,6 +177,21 @@ describe("durable owner worker (uses Task 5 fenced repository)", () => {
       expect(db.errors).toHaveLength(1);
     }
   });
+  it("owner cancellation arriving mid-turn blocks its final report acknowledgement", async () => {
+    const db = new Ledger(), env = setup(db);
+    let cancelled = false;
+    env.deps.cancelled = async () => cancelled;
+    env.deps.executeTurn = async () => {
+      env.calls.execute++;
+      env.setReply({ ref: reportRef, endReason: "complete", usage });
+      cancelled = true;
+    };
+    await expect(executeDurableRun(run, budget, env.deps))
+      .rejects.toThrow("supervisor_worker_cancelled");
+    expect(db.status).toBe("blocked");
+    expect(db.rows[1].state).toBe("blocked");
+    expect(db.finalRef).toBeNull();
+  });
   it("revocation during a running owner turn blocks acknowledgement and report", async () => {
     const db = new Ledger(), env = setup(db);
     let ownerAuthorized = true;
