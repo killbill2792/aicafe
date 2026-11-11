@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {selectObservation,canReusePr} from './event-selection.mjs';
+import {selectObservation,canReusePr,shouldRecheckMergedLanding} from './event-selection.mjs';
 const head='a'.repeat(40),base='b'.repeat(40),main='c'.repeat(40);
 const prior={last_full_audit_at:'2026-11-11T10:00:00Z',
  tasks:{T:{pr_number:77,head_sha:head}}};
@@ -34,4 +34,24 @@ test('unchanged cached PR is reused only on exact head, base, and update timesta
  assert.equal(canReusePr(pr,old,'d'.repeat(40)),false);
  assert.equal(canReusePr({...pr,head:{sha:'d'.repeat(40)}},old,main),false);
  assert.equal(canReusePr({...pr,updated_at:'2026-11-11T10:05:00Z'},old,main),false);
+});
+
+test('recent merged PRs remain observed for late landing failures',()=>{
+ const now=Date.parse('2026-11-11T12:00:00Z');
+ const mergedAt='2026-11-11T11:30:00Z';
+ const rec={pr_number:407,github_state:'merged',status:'merged',
+   merge_sha:head,merged_at:mergedAt,last_landing_check_at:'2026-11-11T11:40:00Z'};
+ assert.equal(shouldRecheckMergedLanding(rec,{now}),true);
+ assert.equal(shouldRecheckMergedLanding({...rec,landing_failure:'bot verified failure'},{now}),false);
+});
+test('old merged/unproven PRs get bounded audit checks without losing verified merge',()=>{
+ const now=Date.parse('2026-11-11T12:00:00Z');
+ const rec={pr_number:407,github_state:'merged',status:'merged',merge_sha:head,
+   merged_at:'2026-11-10T07:00:00Z',last_landing_check_at:'2026-11-11T10:00:00Z'};
+ assert.equal(shouldRecheckMergedLanding(rec,{now}),false);
+ assert.equal(shouldRecheckMergedLanding(rec,{now,fullAudit:true}),true);
+ assert.equal(shouldRecheckMergedLanding({...rec,last_landing_check_at:'2026-11-11T11:30:00Z'},
+   {now,fullAudit:true}),false);
+ assert.equal(shouldRecheckMergedLanding({...rec,status:'integrated_proven'},{now,fullAudit:true}),false);
+ assert.equal(shouldRecheckMergedLanding({...rec,merged_at:null},{now}),true);
 });
