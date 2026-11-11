@@ -50,7 +50,8 @@ async function verifiedReply(run: WorkerRun): Promise<VerifiedReply | null> {
   const owner = await readOwnerMessage(run.scope, run.scope.threadId, run.requestKey);
   const reply = await getExistingSupervisorReply(run.scope, owner);
   const meta = reply?.grounding?.agentMetadata;
-  if (!reply || !meta || typeof meta !== "object") return null;
+  if (!reply || reply.grounding?.status !== "verified" ||
+    !meta || typeof meta !== "object") return null;
   const { endReason, usage } = meta as { endReason?: unknown; usage?: unknown };
   if (typeof endReason !== "string" || !usage || typeof usage !== "object") return null;
   const u = usage as Record<string, unknown>;
@@ -162,6 +163,23 @@ export async function executeDurableRun(
     });
 }
 
+/** A crashed worker is never replayed for an uncertain effect.
+ * Reconcile ONLY a PR5 lease-expiry with a verified scoped canonical receipt.
+ * Owner cancellation and other blocked statuses never become runnable here. */
+export async function reconcileVerifiedOwnerStep(
+  run: WorkerRun, repository: DurableRunRepository, reason: string | null,
+  authorize: () => Promise<void>, verified: () => Promise<VerifiedReply | null>,
+): Promise<boolean> {
+  if (reason !== "lease_expired") return false;
+  await authorize();
+  const receipt = await verified();
+  const { supervisorReplyIdFor } = await import("@/lib/ai/conversations/replyValidation");
+  if (!receipt || receipt.endReason !== "complete" ||
+    receipt.ref !== supervisorReplyIdFor(run.requestKey)) return false;
+  await repository.reconcile(run.scope, run.id, "owner_turn", receipt.ref);
+  return true;
+}
+
 function configuredBudget(): WorkerBudget {
   const limit = (value: string | undefined, fallback: number) => {
     if (value === undefined) return fallback;
@@ -188,11 +206,10 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
   if (error || !data) throw new Error("supervisor_run_unavailable");
   const row = rowSchema.parse(data);
   if (row.status === "completed") return "completed";
-  if (row.status === "blocked") return "blocked";
   const run: WorkerRun = { id: row.id,
     scope: { businessId: row.business_id, ownerUserId: row.owner_user_id, threadId: row.thread_id },
     requestKey: row.request_key };
-  const stored = await db.from("supervisor_run_steps").select("step_key,retry_mode,step_index")
+  const stored = await db.from("supervisor_run_steps").select("step_key,retry_mode,step_index,status,error_code")
     .eq("business_id", run.scope.businessId).eq("run_id", run.id)
     .order("step_index", { ascending: true });
   if (stored.error || JSON.stringify((stored.data ?? []).map(s => ({ key: s.step_key, retry: s.retry_mode }))) !== JSON.stringify(plan))
@@ -201,8 +218,17 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
     await authorizedExternalConversation(run.scope, run.scope.threadId);
     await readOwnerMessage(run.scope, run.scope.threadId, run.requestKey);
   };
+  const repository = new SupabaseDurableRunRepository();
+  if (row.status === "blocked") {
+    // Only an expired uncertain claim with an independently verified canonical
+    // reply may be reconciled. Cancellation/revocation/failed responses stay blocked.
+    const blocked = (stored.data ?? []).filter(step => step.status === "blocked");
+    if (blocked.length !== 1 || blocked[0].step_key !== "owner_turn" ||
+      !(await reconcileVerifiedOwnerStep(run, repository, blocked[0].error_code,
+        authorize, () => verifiedReply(run)))) return "blocked";
+  }
   return executeDurableRun(run, configuredBudget(), {
-    repository: new SupabaseDurableRunRepository(), authorize,
+    repository, authorize,
     verified: () => verifiedReply(run),
     cancelled: async () => {
       const check = await db.from("supervisor_runs").select("status")
