@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { executeDurableRun, reconcileVerifiedOwnerStep, type WorkerDependencies, type WorkerRun } from "./worker.server";
+import { describe, expect, it, vi } from "vitest";
+import { executeDurableRun, reconcileVerifiedOwnerStep, runDurableJobChain,
+  assertDurablePaidTurnAllowed, type WorkerDependencies, type WorkerRun } from "./worker.server";
 import type { DurableRun, DurableRunRepository, RunScope, StepClaim, StepSpec } from "./contracts";
 import type { WorkerBudget, WorkerUsage } from "./usage.server";
 import { supervisorReplyIdFor } from "@/lib/ai/conversations/replyValidation";
 import { runAgentTurn, type AgentProvider } from "@/lib/ai/agent/loop.server";
 import { withWorkerBudget } from "./usage.server";
 import type { AgentToolContext } from "@/lib/ai/agent/tools";
+import type { AgentJob } from "@/lib/ai/agent/jobState";
+import type { ConversationMessage, ConversationScope } from "@/lib/ai/conversations/contracts";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const scope: RunScope = { businessId: randomUUID(), ownerUserId: randomUUID(), threadId: randomUUID() };
 const run: WorkerRun = { id: randomUUID(), scope, requestKey: randomUUID() };
@@ -225,5 +229,136 @@ describe("durable owner worker (uses Task 5 fenced repository)", () => {
     env.setReply({ ref: randomUUID(), endReason: "complete", usage });
     await expect(executeDurableRun(run, budget, env.deps)).rejects.toThrow("supervisor_worker_turn_incomplete");
     expect(db.finalRef).toBeNull();
+  });
+});
+
+type FinishOutcome = Parameters<typeof import("@/lib/ai/agent/jobs.server").finishAgentJob>[1];
+const ownerMessage = (id = randomUUID()): ConversationMessage => ({
+  id, threadId: scope.threadId, role: "owner", contentType: "text",
+  text: "A verified owner question", blocks: null, grounding: null,
+  clientMessageId: randomUUID(), createdAt: new Date().toISOString(),
+});
+const runningJob = (owner: ConversationMessage): AgentJob => ({
+  id: randomUUID(), threadId: scope.threadId, ownerMessageId: owner.id,
+  status: "running", attempt: 1, errorCode: null, replyMessageId: null,
+  progress: [], inbox: [], consumed: [], heartbeatAt: new Date().toISOString(),
+  createdAt: new Date().toISOString(),
+});
+function continuationFixture() {
+  const originalOwner = ownerMessage(), followUp = ownerMessage();
+  const initial = runningJob(originalOwner), next = runningJob(followUp);
+  const finishes: Array<{ id: string; outcome: FinishOutcome }> = [];
+  const jobs = {
+    finishAgentJob: vi.fn(async (id: string, outcome: FinishOutcome) => {
+      finishes.push({ id, outcome });
+      return { continuation: id === initial.id && outcome.status === "done" ? next : null };
+    }),
+    readOwnerMessage: vi.fn(async (_scope: ConversationScope, _threadId: string, _id: string) => followUp),
+  };
+  const calls: string[] = [];
+  const runTurn = vi.fn(async (owner: ConversationMessage, job: AgentJob) => {
+    calls.push("model:" + owner.id);
+    return { replyId: randomUUID(), replyText: "Answer", absorbedOwnerMessageIds: [] };
+  });
+  const assertPaidAllowed = vi.fn(async () => { calls.push("gate"); });
+  return { originalOwner, followUp, initial, next, jobs, finishes, calls, runTurn, assertPaidAllowed };
+}
+
+describe("Codex P1: continuation jobs and delayed paid-access gates", () => {
+  it("runs the existing agent pipeline for a returned continuation and completes both jobs", async () => {
+    const x = continuationFixture();
+    await runDurableJobChain({
+      scope, owner: x.originalOwner, initialJob: x.initial,
+      jobs: x.jobs, runTurn: x.runTurn, assertPaidAllowed: x.assertPaidAllowed,
+    });
+    expect(x.runTurn).toHaveBeenCalledTimes(2);
+    expect(x.runTurn.mock.calls.map(([owner, job]) => [owner.id, job.id])).toEqual([
+      [x.originalOwner.id, x.initial.id], [x.followUp.id, x.next.id],
+    ]);
+    expect(x.jobs.readOwnerMessage).toHaveBeenCalledWith(scope, scope.threadId, x.followUp.id);
+    expect(x.finishes.map(f => [f.id, f.outcome.status])).toEqual([
+      [x.initial.id, "done"], [x.next.id, "done"],
+    ]);
+    expect(x.calls).toEqual(["gate", "model:" + x.originalOwner.id,
+      "gate", "model:" + x.followUp.id]);
+  });
+
+  it("fails the already-created continuation if the owner becomes over quota", async () => {
+    const x = continuationFixture();
+    x.assertPaidAllowed.mockImplementationOnce(async () => {
+      x.calls.push("gate");
+    }).mockImplementationOnce(async () => {
+      x.calls.push("quota-denied");
+      throw new Error("owner_usage_limit_reached");
+    });
+    await runDurableJobChain({
+      scope, owner: x.originalOwner, initialJob: x.initial, jobs: x.jobs,
+      runTurn: x.runTurn, assertPaidAllowed: x.assertPaidAllowed,
+    });
+    expect(x.runTurn).toHaveBeenCalledTimes(1);
+    expect(x.finishes.map(f => [f.id, f.outcome.status])).toEqual([
+      [x.initial.id, "done"], [x.next.id, "failed"],
+    ]);
+    expect(x.finishes[1].outcome).toHaveProperty("errorCode");
+    expect(x.calls).toEqual(["gate", "model:" + x.originalOwner.id, "quota-denied"]);
+  });
+
+  it("fails a late continuation explicitly instead of leaking a running job", async () => {
+    const x = continuationFixture();
+    let timestamp = 0;
+    x.runTurn.mockImplementation(async () => {
+      timestamp = 80_000;
+      return { replyId: randomUUID(), replyText: "Answer", absorbedOwnerMessageIds: [] };
+    });
+    await runDurableJobChain({
+      scope, owner: x.originalOwner, initialJob: x.initial,
+      jobs: x.jobs, runTurn: x.runTurn, assertPaidAllowed: x.assertPaidAllowed,
+      now: () => timestamp,
+    });
+    expect(x.runTurn).toHaveBeenCalledOnce();
+    expect(x.jobs.readOwnerMessage).not.toHaveBeenCalled();
+    expect(x.finishes[1]).toEqual({
+      id: x.next.id, outcome: { status: "failed", errorCode: "timeout" },
+    });
+  });
+
+  it("fails a continuation whose owner message cannot be recovered", async () => {
+    const x = continuationFixture();
+    x.jobs.readOwnerMessage.mockRejectedValueOnce(new Error("unavailable"));
+    await runDurableJobChain({
+      scope, owner: x.originalOwner, initialJob: x.initial, jobs: x.jobs,
+      runTurn: x.runTurn, assertPaidAllowed: x.assertPaidAllowed,
+    });
+    expect(x.runTurn).toHaveBeenCalledOnce();
+    expect(x.finishes[1].id).toBe(x.next.id);
+    expect(x.finishes[1].outcome.status).toBe("failed");
+  });
+
+  it("does not charge for a first turn when its access check fails", async () => {
+    const x = continuationFixture();
+    x.assertPaidAllowed.mockRejectedValueOnce(new Error("access_expired"));
+    await expect(runDurableJobChain({
+      scope, owner: x.originalOwner, initialJob: x.initial, jobs: x.jobs,
+      runTurn: x.runTurn, assertPaidAllowed: x.assertPaidAllowed,
+    })).rejects.toThrow("access_expired");
+    expect(x.runTurn).not.toHaveBeenCalled();
+    expect(x.finishes).toHaveLength(1);
+    expect(x.finishes[0].outcome.status).toBe("failed");
+  });
+
+  it("enforces café access first, then owner quota using the same scoped server client", async () => {
+    const client = {} as SupabaseClient;
+    const access = vi.fn(async (_id: string) => {});
+    const quota = vi.fn(async (_s: ConversationScope, _client: SupabaseClient) => {});
+    await assertDurablePaidTurnAllowed(scope, client, { access, quota });
+    expect(access).toHaveBeenCalledExactlyOnceWith(scope.businessId);
+    expect(quota).toHaveBeenCalledExactlyOnceWith(scope, client);
+    access.mockRejectedValueOnce(new Error("access_expired"));
+    await expect(assertDurablePaidTurnAllowed(scope, client, { access, quota }))
+      .rejects.toThrow("access_expired");
+    expect(quota).toHaveBeenCalledTimes(1);
+    quota.mockRejectedValueOnce(new Error("owner_usage_limit_reached"));
+    await expect(assertDurablePaidTurnAllowed(scope, client, { access, quota }))
+      .rejects.toThrow("owner_usage_limit_reached");
   });
 });
