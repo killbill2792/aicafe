@@ -6,8 +6,14 @@ import {promptHash} from './delivery.mjs';
 
 const hash=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const yes=text=>/^yes(?:[.!]|(?:\s+to\s+(?:start|proceed))[.!]?)?$/i.test(String(text||'').trim());
-export const proposalSourceHash=task=>hash([task.id,task.goal,task.scope_hint,
-  task.exclusive_files,task.acceptance,task.depends_on,task.brief]);
+export const proposalSourceHash=task=>{
+  const fields=[task.id,task.goal,task.scope_hint,task.exclusive_files,
+    task.acceptance,task.depends_on,task.brief];
+  // Backward compatible with original live Muse proposal yeses, while newer
+  // Studio plans that specify `edits` bind that exact write-scope proposal.
+  if(Object.hasOwn(task,'edits'))fields.push(task.edits);
+  return hash(fields);
+};
 const proposalApprovalHash=(task,notice)=>hash(['scope-plan-v1',task.id,
   notice.notice_hash,notice.source_sha]);
 
