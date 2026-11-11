@@ -1,6 +1,6 @@
 -- Migration 148 on a disposable database (never production).
 -- Two cafés, three owners, café-local dates, one owner/day outbox identity,
--- retriable 429, terminal 4xx, uncertain 5xx/lease expiry and durable run ledger.
+-- retriable 429, five-attempt cap, terminal 4xx, lease-expiry uncertainty and durable run ledger.
 -- Run after replaying every migration: psql -v ON_ERROR_STOP=1 -f this-file.
 begin;
 set local request.jwt.claim.role='service_role';
@@ -63,7 +63,7 @@ declare
   la_day date := (now() at time zone 'America/Los_Angeles')::date;
   ny_day date := (now() at time zone 'America/New_York')::date;
   la_id uuid; la_retry jsonb; la_expired jsonb; ny_id uuid; ny_lease jsonb; west_two_id uuid; west_two jsonb;
-  st text; code text; tries integer;
+  st text; code text; tries integer; attempt_no integer;
 begin
   if not public.whatsapp_brief_send_window_ready() then raise exception 'marker missing'; end if;
   if (select timezone from public.businesses where id='b0000000-0000-4000-8000-000000000001')
@@ -98,17 +98,22 @@ begin
   if st<>'uncertain' or code<>'lease_expired' or tries<>2 then
     raise exception 'expired lease was not held as uncertain: % % %',st,code,tries; end if;
 
-  -- Second west owner: a transport timeout/5xx is uncertain and never requeued.
+  -- Second west owner: 429 retries stop at the database's five-attempt cap.
   west_two_id:=public.whatsapp_enqueue_outbound('e0000000-0000-4000-8000-000000000002',
     'daily-brief:b0000000-0000-4000-8000-000000000001:a0000000-0000-4000-8000-000000000002:'||la_day,
     'daily_brief','{"fields":["west-two"]}'::jsonb,'{"source":"test","period":"yesterday"}'::jsonb,
     'd0000000-0000-4000-8000-000000000002',null,la_day,now()+interval '20 minutes');
-  west_two:=public.whatsapp_claim_outbound('daily_brief');
-  if west_two is null or (west_two->>'id')::uuid<>west_two_id then raise exception 'second west owner was not isolated'; end if;
-  if not public.whatsapp_finish_outbound(west_two_id,(west_two->>'lease_token')::uuid,
-    'uncertain',null,'provider_ambiguous') then raise exception 'uncertain lease was not finished'; end if;
-  select state,failure_code into st,code from public.whatsapp_outbox where id=west_two_id;
-  if st<>'uncertain' or code<>'provider_ambiguous' then raise exception 'ambiguous response was requeued'; end if;
+  for attempt_no in 1..5 loop
+    west_two:=public.whatsapp_claim_outbound('daily_brief');
+    if west_two is null or (west_two->>'id')::uuid<>west_two_id then
+      raise exception 'second west owner retry % was not isolated',attempt_no; end if;
+    if not public.whatsapp_finish_outbound(west_two_id,(west_two->>'lease_token')::uuid,
+      'retry',null,'rate_limited') then raise exception 'rate-limit retry % was not finished',attempt_no; end if;
+    select state,attempts into st,tries from public.whatsapp_outbox where id=west_two_id;
+    if attempt_no<5 and st<>'queued' then raise exception 'retry stopped before the cap at %: %',attempt_no,st; end if;
+    if attempt_no=5 and (st<>'failed' or tries<>5) then
+      raise exception 'retry attempt cap was not terminal: % %',st,tries; end if;
+  end loop;
 
   -- East café has its own owner and local date; a definitive 4xx is terminal and visible.
   ny_id:=public.whatsapp_enqueue_outbound('e0000000-0000-4000-8000-000000000003',

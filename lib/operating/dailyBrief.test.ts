@@ -212,6 +212,14 @@ describe("sending the daily brief at each café's own time",()=>{
     await sendDailyBriefs(missed.db,new Date("2026-11-03T20:05:00Z"));
     expect(missed.runUpserts).toBe(writes);
   });
+  it("records a missed deadline even when the source evidence is empty",async()=>{
+    useEvidence(evidence({netSalesCents:null,sold:{available:false,linked:[],unlinked:[]},
+      menu:[],events:{available:false,items:[],coverage:null}}),false);
+    const missed=fakeDb();
+    const result=await sendDailyBriefs(missed.db,new Date("2026-11-03T20:00:00Z"));
+    expect(result.failureReasons).toContain("missed_send_window");
+    expect(reasons(missed.runs)).toContainEqual(["u1","in_app","skipped","schedule","missed_send_window"]);
+  });
   it("blocks a missing café timezone instead of scheduling in UTC",async()=>{
     const missing=fakeDb({timezone:null});
     const result=await sendDailyBriefs(missing.db,at("05:00"));

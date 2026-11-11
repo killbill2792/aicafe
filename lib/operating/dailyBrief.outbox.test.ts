@@ -94,20 +94,23 @@ describe("morning brief to WhatsApp",()=>{
   it("retries an outbox opportunity without duplicating the web message or inbox",async()=>{
     const {db,mutations}=dbFactory(true);
     const hook=vi.fn(async (_input:Parameters<BriefOutboxHook>[0])=>{});
-    expect(await sendDailyBriefs(db,morning,hook)).toEqual({checked:1,sent:0,skipped:1,failed:0});
+    expect(await sendDailyBriefs(db,morning,hook)).toEqual({checked:1,sent:0,skipped:1,failed:0,failureReasons:[]});
     expect(mutations).toEqual([]);
     expect(hook).toHaveBeenCalledTimes(1);
     // The saved web text differs from today's template text: never send a different text.
     expect(hook.mock.calls[0][0]).toMatchObject({ownerUserId:"owner-original",threadId:"thread-original",
       websiteText:"Previously persisted website brief.",eligible:null});
   });
-  it("after the café opens, an already posted brief is not re-offered and its records are left alone",async()=>{
+  it("repairs missing run records for an already posted brief after opening without re-offering it",async()=>{
     const {db,mutations,runs}=dbFactory(true);
     const hook=vi.fn(async()=>({outcome:"queued" as const}));
     await sendDailyBriefs(db,new Date("2026-11-03T14:40:00Z"),hook); // 06:40, opened at 06:30
     expect(hook).not.toHaveBeenCalled();
     expect(mutations).toEqual([]);
-    expect(runs).toEqual([]);
+    expect(runs).toMatchObject([
+      {channel:"in_app",outcome:"sent",reason:"already_sent"},
+      {channel:"whatsapp",outcome:"skipped",reason:"already_handled"},
+    ]);
   });
   it("repairs a missing inbox record after a saved Supervisor message without duplicating chat",async()=>{
     const {db,mutations}=dbFactory(true,{taskMissing:true});
