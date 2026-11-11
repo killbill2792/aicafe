@@ -3,6 +3,7 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {verifyBearer} from "@/lib/security/bearer";
 import {refreshDerivedForBusiness} from "@/lib/alerts/refreshDerived.server";
 import {deliverPendingCommitments} from "@/lib/operating/commitments.server";
+import {dispatchRoutinesForBusiness} from "@/lib/ai/supervisor/routines/dispatch.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=300;
@@ -15,6 +16,7 @@ export async function GET(request:Request){
     return respond(401,{error:"unauthorized"});
   const db=createAdminSupabaseClient();
   let checked=0,refreshed=0,failed=0;
+  const routines={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0};
   const now=new Date();
   // Separate task capability, same authorized cron. Failures remain visible and
   // the database keeps unfinished commitments pending for the next invocation.
@@ -39,9 +41,18 @@ export async function GET(request:Request){
           // Isolate one café; no identifiers or sensitive error messages in response.
           failed++;
         }
+        // Independent source-change triage follows the authoritative alert refresh.
+        try{
+          const outcome=await dispatchRoutinesForBusiness(db,business.id,business.timezone,now);
+          routines.routinesChecked+=outcome.routinesChecked;
+          routines.runs+=outcome.runs;
+          routines.notices+=outcome.notices;
+          routines.failed+=outcome.failed;
+          routines.evidenceChecks+=outcome.evidenceChecks;
+        }catch{routines.failed++;}
       }));
     }
     if(rows.length<pageSize)break;
   }
-  return respond(failed||commitments.failed?207:200,{checked,refreshed,failed,commitments});
+  return respond(failed||commitments.failed||routines.failed?207:200,{checked,refreshed,failed,commitments,routines});
 }

@@ -65,7 +65,7 @@ function scopedTranslations(locale:"en"|"es"|"ar"){
 /** Home and chat must call this same owner-scoped source. A failed optional read is
  * reported as its own action, never silently replaced with no work. */
 function operatingTaskHref(task: OperatingTask): string {
-  if((task.kind==="commitment"||task.kind==="event_plan"||task.kind==="event_change") && typeof task.payload.threadId==="string")
+  if((task.kind==="commitment"||isPriorityNoticeTask(task)||task.kind==="event_plan"||task.kind==="event_change") && typeof task.payload.threadId==="string")
     return "/?thread="+encodeURIComponent(task.payload.threadId);
   if(task.kind==="price_experiment_report"){
     const thread=task.payload.threadId,proposal=task.payload.proposalId;
@@ -91,6 +91,10 @@ function operatingTaskHref(task: OperatingTask): string {
   return "/operations";
 }
 
+
+/** Priority notice is persisted in SQL but displayed through the already
+ * shared attention item surface, not Operations' exhaustive TaskCard kind UI. */
+const isPriorityNoticeTask=(task:OperatingTask)=>String(task.kind)==="priority_notice";
 
 /** Home's Needs-you list. The count on Home, in chat and on every Operations tab is this list. */
 export async function getAttentionItems(args:AttentionArgs={}):Promise<AttentionItem[]>{
@@ -143,13 +147,18 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
   const derived=[...derivedTeam.needsYou,...derivedTeam.handled,...derivedTeam.watching];
   const today=snapshot.todayDateStr;
   // Same plan the old page-load sync wrote, applied in memory, plus collapse/expiry rules.
-  const team=projectOperatingTasks(settleInboxTasks(stored,derived,new Date(),today));
+  // A priority_notice is an immutable delivery receipt, not an independently
+  // actionable source. The authoritative alert/task lifecycle owns Needs you.
+  // Rendering the original also preserves its specific repair link and details,
+  // and prevents a resolved source leaving a generic orphan notice on Home.
+  const team=projectOperatingTasks(settleInboxTasks(
+    stored.filter(task=>!isPriorityNoticeTask(task)),derived,new Date(),today));
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
     let title: string;
 
-    if(task.kind==="commitment"){
+    if(task.kind==="commitment"||isPriorityNoticeTask(task)){
       title=String(task.payload.title??"");
     }else if(task.kind==="price_experiment_report"){
       title=tExperiment("reportTask",{item:itemName});
@@ -203,7 +212,9 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
       subjectDate: taskSubjectDate(task), createdAt: task.createdAt };
   };
 
-  const alertItems: DatedAttentionItem[] = (alerts ?? []).filter(alert => showAlertInHome(alert.kind)).map(alert => {
+  const alertItems: DatedAttentionItem[] = (alerts ?? [])
+    .filter(alert=>showAlertInHome(alert.kind))
+    .map(alert => {
     const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
     // The legacy manage-staff redirect opens Team, not Schedule. Link directly
     // to Schedule so the meal-break fix is reachable before Step 13 merges.
@@ -283,8 +294,8 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
     let params:Record<string,string|number>={};
     if(task){
       const itemName=String(task.payload.itemName??"").replace(" · "," ");
-      if(task.kind==="commitment"){
-        // Owner-authored task text is the provenance, not a stock translation.
+      if(task.kind==="commitment"||isPriorityNoticeTask(task)){
+        // Owner-authored reminders or verified source notices carry durable provenance.
         key="operating_tasks.title";params={title:String(task.payload.title??"")};
       }else if(task.kind==="price_experiment_report"){key=task.payload.midRun===true?"SupervisorExperiment.midRunTask":
         "SupervisorExperiment.reportTask";params={item:itemName};}
