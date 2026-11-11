@@ -62,7 +62,7 @@ export function createAdhocDelivery({record,action,actionId}) {
   const pr = REPO + '/pull/' + record.pr_number;
   const reason = action === 'landing_failed'
     ? 'Post-merge landing check failed. Forward this exact error tail to the original PR chat and repair the merged-main regression:\n'+String(record.landing_failure||'').slice(0,3500)
-    : action === 'closeout_evidence' ? 'Close-out check on this SAME current-head PR: verify exact-head CI, Codex and review threads; attach real executed acceptance evidence, close outstanding review and state coder done only when supported. If proof is unavailable, record the precise blocker/question. Never declare acceptance or merge automatically.'
+    : action === 'closeout_evidence' ? 'Close-out check on this SAME current-head PR: verify exact-head CI, Codex and review threads; attach real executed acceptance evidence, close outstanding review and provide executed acceptance links without self-certifying completion. If proof is unavailable, record the precise blocker/question. Never declare acceptance or merge automatically.'
     : action === 'no_push_after_prompt' ? STALL_PROMPT : action === 'ci_failed'
     ? 'Diagnose current-head CI failure: ' + (record.ci_failure_url || pr) +
       (record.repo_marker_failure ? '\n'+record.repo_marker_failure : '') +
@@ -188,8 +188,7 @@ export function createDelivery({ task, record, action, actionId }) {
       '; exact-head receipt ' + (record.codex_reviewed_sha || 'none') +
       '; resolve outstanding review threads without using old-head findings as current state',
     'Privileged owner hold: ' + (record.sensitive_owner_block ? 'paid/live/prod/secret approval needed' : 'none') +
-      '; acceptance: ' + (record.acceptance_proven === true ? 'proven' : 'not yet proven') +
-      ',
+      '; acceptance: ' + (record.acceptance_proven === true ? 'proven' : 'not yet proven'),
     ...(record.dependency_proven_text ? ['Proven dependencies: ' + record.dependency_proven_text] : []),
     'Do all applicable fixes together; keep this same PR/chat and do not open competing prompts.'
   ] : [];
