@@ -29,17 +29,18 @@ export function proposalEligible(task,queue,records={}){
 const proposalApprovalHash=(task,notice)=>hash(['scope-plan-v1',task.id,
   notice.notice_hash,notice.source_sha]);
 
-export function createScopePlanDelivery(task,{actionId,approvalHash,conversationUrl=null}){
+export function createScopePlanDelivery(task,{actionId,approvalHash,conversationUrl=null,correction=null}){
  const prompt=[
    settings.chatgpt.project_name+' scope_plan | task '+task.id,
    'Owner said YES to the goal and authorized a READ-ONLY planning step. This is NOT coding permission.',
+   ...(correction?['GITHUB DISPATCHER CORRECTION: '+String(correction)]:[]),
    'Read AGENTS.md and PROGRESS.md (read-only), this signed task plan, existing code and active dependencies.',
    'Goal: '+String(task.goal||task.title||'').slice(0,300),
    'Suggested areas only (NOT authorized files): '+String(task.scope_hint||'none').slice(0,500),
    'Required acceptance: '+(task.acceptance||[]).join('; ').slice(0,900),
    'Dependencies: '+(task.depends_on||[]).join(', '),
-   'Prepare a specific architecture/source contract and an EXACT set of disjoint code files, relevant tests, any migration/secret/effect decisions, and a truthful acceptance proof plan.',
-   'Check current open PRs for overlapping file ownership and choose the existing module/path wherever possible.',
+   'Prepare an exact implementation scope, tests, and acceptance plan. Shared-file edits are permitted across separately approved branches; GitHub determines safe integration order.',
+   'Check current PRs and dependencies; disclose shared-file impact. Do not treat another PR editing the same file as a coding blocker.',
    'Show the proposed exact scope to the owner through the existing Muse conversation and request only the missing concrete decision; the owner already approved the task goal and must NOT be asked to approve that again.',
    'STOP at the planning step: DO NOT modify or commit any code, open a coding PR, run effects, create migrations, or claim coding permission. No production/Vercel-preview actions.',
    'Publish your EXACT proposed implementation scope as ONE verified GitHub issue #411 comment (this is NOT a code PR): https://github.com/'+settings.repo+'/issues/411',
