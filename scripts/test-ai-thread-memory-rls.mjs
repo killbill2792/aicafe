@@ -186,43 +186,46 @@ async function main() {
   `);
   await client.query(memoryMigration);
 
+  // Seed immutable source rows as the disposable database owner so test
+  // timestamps are deterministic; all reads and memory writes below run as
+  // the actual authenticated roles and exercise the RLS policies.
+  for (const [id, business, owner] of [
+    [THREAD_A, CAFE_A, OWNER_A], [THREAD_A_OTHER, CAFE_A, OWNER_A],
+    [THREAD_CAFE_B, CAFE_B, OWNER_A],
+  ]) {
+    await client.query(
+      "insert into ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",
+      [id, business, owner, crypto.randomUUID()],
+    );
+  }
+  await insertOwnerMessage(client, {
+    id: MESSAGE_A, at: AT_1, text: "We prefer oat milk for staff drinks.",
+  });
+  await insertOwnerMessage(client, {
+    id: MESSAGE_A_2, at: AT_2, text: "Forget that I prefer oat milk for staff drinks.",
+  });
+  await insertOwnerMessage(client, {
+    id: MESSAGE_A_3, at: AT_3, text: "We prefer soy milk for staff drinks.",
+  });
+  await insertOwnerMessage(client, {
+    id: MESSAGE_A_4, at: AT_4, text: "We prefer quiet music during prep.",
+  });
+  await insertOwnerMessage(client, {
+    id: MESSAGE_A_5, at: AT_5, text: "We prefer paper cups for takeaway.",
+  });
+  await insertOwnerMessage(client, {
+    id: MESSAGE_FINANCIAL, at: AT_6, text: "We prefer oat milk at $5.",
+  });
+  await insertOwnerMessage(client, {
+    id: MESSAGE_OTHER_THREAD, thread: THREAD_A_OTHER, at: AT_5,
+    text: "We prefer quiet morning music.",
+  });
+  await insertOwnerMessage(client, {
+    id: MESSAGE_CAFE_B, business: CAFE_B, thread: THREAD_CAFE_B, at: AT_5,
+    text: "We prefer quiet morning music.",
+  });
+
   await asActor(OWNER_A, async db => {
-    for (const [id, business, owner] of [
-      [THREAD_A, CAFE_A, OWNER_A], [THREAD_A_OTHER, CAFE_A, OWNER_A],
-      [THREAD_CAFE_B, CAFE_B, OWNER_A],
-    ]) {
-      await db.query(
-        "insert into ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",
-        [id, business, owner, crypto.randomUUID()],
-      );
-    }
-    await insertOwnerMessage(db, {
-      id: MESSAGE_A, at: AT_1, text: "We prefer oat milk for staff drinks.",
-    });
-    await insertOwnerMessage(db, {
-      id: MESSAGE_A_2, at: AT_2, text: "Forget that I prefer oat milk for staff drinks.",
-    });
-    await insertOwnerMessage(db, {
-      id: MESSAGE_A_3, at: AT_3, text: "We prefer soy milk for staff drinks.",
-    });
-    await insertOwnerMessage(db, {
-      id: MESSAGE_A_4, at: AT_4, text: "We prefer quiet music during prep.",
-    });
-    await insertOwnerMessage(db, {
-      id: MESSAGE_A_5, at: AT_5, text: "We prefer paper cups for takeaway.",
-    });
-    await insertOwnerMessage(db, {
-      id: MESSAGE_FINANCIAL, at: AT_6,
-      text: "We prefer oat milk at $5.",
-    });
-    await insertOwnerMessage(db, {
-      id: MESSAGE_OTHER_THREAD, thread: THREAD_A_OTHER, at: AT_5,
-      text: "We prefer quiet morning music.",
-    });
-    await insertOwnerMessage(db, {
-      id: MESSAGE_CAFE_B, business: CAFE_B, thread: THREAD_CAFE_B, at: AT_5,
-      text: "We prefer quiet morning music.",
-    });
     const visible = await db.query(
       "select id,memory_summary from ai_threads where id=$1", [THREAD_A],
     );
