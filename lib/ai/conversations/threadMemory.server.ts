@@ -4,7 +4,7 @@ import { z } from "zod";
 import { DEFAULT_SUPERVISOR_OPENAI_MODEL } from "./modelConfig";
 import type { ConversationScope } from "./contracts";
 import {
-  applyThreadMemoryOperations, emptyThreadMemoryDocument, formatThreadMemory, historyContent,
+  applyThreadMemoryOperations, formatThreadMemory, historyContent,
   parseThreadMemoryDocument, threadMemorySource, type ThreadMemoryDocument,
   type ThreadMemoryOperation, type ThreadMemorySource,
 } from "@/lib/ai/agent/history";
@@ -237,16 +237,16 @@ async function saveDocument(
 
 async function recordRetry(
   client: SupabaseClient, scope: ThreadMemoryScope, document: ThreadMemoryDocument,
-  code: "provider_error" | "invalid_summary" | "storage_error",
+  code: "provider_error" | "invalid_summary" | "storage_error", processed = 0,
 ): Promise<ThreadMemoryCompaction> {
   const retryDocument: ThreadMemoryDocument = {
     ...document, revision: document.revision + 1, retry: { code, at: new Date().toISOString() },
   };
   const saved = await saveDocument(client, scope, document.revision, retryDocument);
-  if (saved === "unauthorized") return { status: "unauthorized", ready: false, processed: 0, document };
-  if (saved === "stale") return { status: "stale", ready: false, processed: 0, document };
+  if (saved === "unauthorized") return { status: "unauthorized", ready: false, processed, document };
+  if (saved === "stale") return { status: "stale", ready: false, processed, document };
   return {
-    status: "retry", ready: false, processed: 0,
+    status: "retry", ready: false, processed,
     document: saved === "saved" ? retryDocument : document,
   };
 }
@@ -273,7 +273,7 @@ export async function compactThreadMemory(
         const code = error instanceof ThreadMemoryError && error.code === "invalid_memory"
           ? "invalid_summary" : "provider_error";
         console.error("thread_memory_compaction_failed", { code });
-        return recordRetry(client, scope, document, code);
+        return recordRetry(client, scope, document, code, processed);
       }
       const sourceRows: ThreadMemorySource[] = sources.map(({ id, createdAt, text }) => ({ id, createdAt, text }));
       next = applyThreadMemoryOperations(document, operations, sourceRows);
