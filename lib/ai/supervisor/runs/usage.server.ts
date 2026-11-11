@@ -34,21 +34,48 @@ export function usageStopReason(usage: WorkerUsage, cap: WorkerBudget): UsageSto
   return null;
 }
 
-/** Context is confined to one async worker turn and never affects normal
- * interactive web or WhatsApp turns. */
-const workerBudgets = new AsyncLocalStorage<WorkerBudget>();
+/** One async-local meter spans every sequential continuation in a durable
+ * run. Ordinary browser/WhatsApp conversations never see this meter. */
+type WorkerMeter = { cap: WorkerBudget; started: number; used: WorkerUsage };
+const workerBudgets = new AsyncLocalStorage<WorkerMeter>();
+const FINISH_RESERVE_MS = 3000; // keep time for canonical finish/lease acknowledgement
+const empty: WorkerUsage = { elapsedMs: 0, modelCalls: 0, toolCalls: 0, inputTokens: 0, outputTokens: 0 };
 
 export function currentWorkerBudget(): WorkerBudget | undefined {
-  return workerBudgets.getStore();
+  const meter = workerBudgets.getStore();
+  if (!meter) return undefined;
+  return {
+    maxElapsedMs: Math.max(0, meter.cap.maxElapsedMs -
+      Math.max(0, Date.now() - meter.started) - FINISH_RESERVE_MS),
+    maxModelCalls: Math.max(0, meter.cap.maxModelCalls - meter.used.modelCalls),
+    maxToolCalls: Math.max(0, meter.cap.maxToolCalls - meter.used.toolCalls),
+    maxInputTokens: Math.max(0, meter.cap.maxInputTokens - meter.used.inputTokens),
+    maxOutputTokens: Math.max(0, meter.cap.maxOutputTokens - meter.used.outputTokens),
+  };
 }
 
-export async function withWorkerBudget<T>(
-  budget: WorkerBudget, work: () => Promise<T>,
-): Promise<T> {
-  // Validate the full server-only cap before any paid call or effect.
-  const zeroUsage = { elapsedMs: 0, modelCalls: 0, toolCalls: 0,
-    inputTokens: 0, outputTokens: 0 };
-  if (usageStopReason(zeroUsage, budget))
-    throw new Error("supervisor_worker_budget_exhausted");
-  return workerBudgets.run(budget, work);
+/** Count each finished one-agent turn before another one may start. Usage is
+ * captured even when a provider returns an incomplete/budget-limited answer. */
+export function recordWorkerTurnUsage(used: WorkerUsage): void {
+  const meter = workerBudgets.getStore();
+  if (!meter) return;
+  usageStopReason(used, meter.cap); // validate nonnegative safe integers
+  for (const key of ["modelCalls", "toolCalls", "inputTokens", "outputTokens"] as const) {
+    const next = meter.used[key] + used[key];
+    if (!Number.isSafeInteger(next)) throw new Error("invalid_supervisor_worker_usage");
+    meter.used = { ...meter.used, [key]: next };
+  }
+}
+
+export function currentWorkerUsage(): WorkerUsage | undefined {
+  const meter = workerBudgets.getStore();
+  return meter ? { ...meter.used, elapsedMs: Math.max(0, Date.now() - meter.started) } : undefined;
+}
+export function workerBudgetExhausted(): UsageStopReason {
+  const remaining = currentWorkerBudget();
+  return remaining ? usageStopReason(empty, remaining) : null;
+}
+export async function withWorkerBudget<T>(budget: WorkerBudget, work: () => Promise<T>): Promise<T> {
+  if (usageStopReason(empty, budget)) throw new Error("supervisor_worker_budget_exhausted");
+  return workerBudgets.run({ cap: budget, started: Date.now(), used: empty }, work);
 }
