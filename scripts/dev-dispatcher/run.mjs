@@ -189,6 +189,13 @@ async function main() {
         {unmappedPrs:remaining,openPrs:observed.snapshot,queue}),
         {snapshot:observed.snapshot,scan:receiptScan}),queue);
     revalidateQueuedActions(copy, taskById, queue);
+    // v3 does not require ChatGPT to declare itself finished. Retain
+    // submitted/claimed/uncertain legacy receipts for audit and dedup, but
+    // cancel old UNSENT coder-done requests before the browser courier sees them.
+    for(const action of Object.values(copy.actions)){
+      if(action.type==='closeout_evidence'&&action.status==='planned')
+        action.status='cancelled_v3_no_coder_done_gate';
+    }
     wakePendingActions(copy, Date.now());
     wakePendingOwnerNotices(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
