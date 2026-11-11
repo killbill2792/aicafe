@@ -12,6 +12,11 @@ describe("proactive priority ranking and source revision",()=>{
       ...base,status:"seen",evidence:{lastCheckedAt:"after",quality:"partial"},
     }));
   });
+  it("distinguishes material task action changes but not alert seen status",()=>{
+    const task={...base,sourceType:"operating_task" as const,
+      status:"needs_response",kind:"supply_check"};
+    expect(priorityRevision(task)).not.toBe(priorityRevision({...task,status:"needs_owner"}));
+  });
   it("does regenerate for meaningful evidence correction",()=>{
     expect(priorityRevision(base)).not.toBe(priorityRevision({
       ...base,evidence:{quality:"verified"},

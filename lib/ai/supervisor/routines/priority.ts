@@ -22,6 +22,9 @@ function digest(s:string):string{
 export function priorityRevision(source:PrioritySource):string{
   return digest(JSON.stringify(canonical({
     type:source.sourceType,id:source.sourceId,kind:source.kind,
+    // Seen-only alert acknowledgement is not new evidence; an actionable task
+    // changing from needs_response to needs_owner materially changes duty.
+    status:source.sourceType==="alert"?"open":source.status,
     dueAt:source.dueAt??null,confidence:source.confidence??null,
     severity:source.severity??null,dedupeKey:source.dedupeKey??null,
     evidence:source.evidence??null,
