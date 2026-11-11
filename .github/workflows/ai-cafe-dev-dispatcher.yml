@@ -121,6 +121,8 @@ jobs:
 
   reconcile:
     name: GitHub state reconciliation (no effects)
+    env:
+      DISPATCH_LEDGER_GIT_WRITES: 'true'
     # Never read secrets or execute PR code. All effects remain opt-in and
     # all invocations use the same trusted-main coordinator and CAS ledger.
     if: >-
