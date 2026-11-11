@@ -29,7 +29,7 @@ const reply={kind:'owner_reply',event_id:'owner-yes-task6-179d36da',
   target:{task_id:'6',notice_id:noticeId},text:'yes',submitted_at:at};
 const actorMap={'muse-app[bot]':'muse'};
 test('real task-6 state moves from authenticated yes to one newly signed unsent assignment',()=>{
- const s=queueOwnerAlerts(incident(),{queue});
+ const s=queueOwnerAlerts(incident(),{queue,now:at});
  assert.equal(s.owner_alerts[noticeId].status,'planned');
  const inb=applyReceiptsSafely(s,[{receipt:reply,actor:'muse-app[bot]'}],actorMap);
  assert.deepEqual(inb.rejected,[]);
@@ -70,7 +70,7 @@ test('reissued task cannot duplicate claimed, uncertain, submitted or received b
  }
 });
 test('new signature, outdated notice, wrong target and withdrawn scope never approve',()=>{
- const s=queueOwnerAlerts(incident(),{queue});
+ const s=queueOwnerAlerts(incident(),{queue,now:at});
  const other={...task,goal:'changed owner scope'};
  const changed={...queue,tasks:queue.tasks.map(t=>t.id==='6'?other:t)};
  const yes=applyReceiptsSafely(s,[{receipt:reply,actor:'muse-app[bot]'}],actorMap).state;
@@ -103,7 +103,7 @@ test('receipt v1 filename is identical for Muse CLI and GitHub inbox',async()=>{
  assert.deepEqual(scan.rejected,[{file:bad,code:'invalid_receipt_identity'}]);
 });
 test('owner-notice retry changes opaque signal and overdue wake stays recoverable',()=>{
- const s=queueOwnerAlerts(incident(),{queue}),secret='a'.repeat(64);
+ const s=queueOwnerAlerts(incident(),{queue,now:at}),secret='a'.repeat(64);
  const first=signalFor(s,secret),before=nextWake(s,now,{...queue,repo:'killbill2792/aicafe',muse:{retry_seconds:900}});
  assert.equal(before.reason,'owner_notice_retry');
  assert.equal(before.due_at,new Date(now+900000).toISOString());
