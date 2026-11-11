@@ -18,8 +18,18 @@ export async function GET(request:Request){
     const result=await sendDailyBriefs(db,now,briefOutboxHook(db,now));
     // Each queued brief carries its own café deadline (migration 148).
     const dispatched=await dispatchDueMorningBriefs(db);
-    if(dispatched.reason&&dispatched.reason!=="whatsapp_setting_off")
-      console.warn("morning_brief_dispatch_blocked",{reason:dispatched.reason});
-    return reply(200,result);
-  }catch{return reply(503,{error:"brief_unavailable"});}
+    const deliveryDegraded=(dispatched.retryResponses??0)>0||(dispatched.failed??0)>0||
+      (dispatched.uncertain??0)>0||Boolean(dispatched.reason&&dispatched.reason!=="whatsapp_setting_off");
+    if(deliveryDegraded)console.warn("morning_brief_dispatch_incomplete",{
+      reason:dispatched.reason??null,retryResponses:dispatched.retryResponses??0,
+      failed:dispatched.failed??0,uncertain:dispatched.uncertain??0,
+    });
+    const partial=result.failed>0||deliveryDegraded;
+    return reply(partial?207:200,{...result,whatsapp:dispatched});
+  }catch(error){
+    const reason=error instanceof Error&&error.message==="businesses_unavailable"
+      ?"businesses_unavailable":"brief_unavailable";
+    console.error("daily_brief_cron_failed",{reason});
+    return reply(503,{error:reason});
+  }
 }

@@ -244,6 +244,14 @@ describe("sending the daily brief at each café's own time",()=>{
       ["cafe-ny","owner-ny","2026-11-03","late","08:30"],
     ]);
   });
+  it("coalesces concurrent cron invocations to one owner/day message and inbox task",async()=>{
+    const {db,writes}=fakeDb();
+    const results=await Promise.all([sendDailyBriefs(db,at("05:50")),sendDailyBriefs(db,at("05:50"))]);
+    expect(writes.filter(r=>r.table==="ai_messages")).toHaveLength(1);
+    expect(writes.filter(r=>r.table==="operating_tasks"&&typeof r.id==="string"&&
+      r.id.startsWith("daily-brief:"))).toHaveLength(1);
+    expect(results.map(r=>r.sent).sort()).toEqual([0,1]);
+  });
   it("an unreadable attention count never becomes 'nothing needs you'",async()=>{
     const {db,writes}=fakeDb({countFails:true});
     expect(await sendDailyBriefs(db,at("05:00"))).toMatchObject({sent:1});
