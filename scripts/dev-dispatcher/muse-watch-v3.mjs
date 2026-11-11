@@ -114,7 +114,7 @@ export function planMuseBacklog(backlog,requests,now=new Date().toISOString()){
     const old=next.items[key];
     // Backoff and acknowledged wakes are durable: a 60-second poll must not
     // discard a 30-minute rate-limit cooldown or resend a successful wake.
-    if(old&&['QUEUED','SENT_UNVERIFIED','GITHUB_ACKNOWLEDGED'].includes(old.status)&&
+    if(old&&['QUEUED','SENT_UNVERIFIED','GITHUB_ACKNOWLEDGED','GITHUB_REJECTED'].includes(old.status)&&
       time(now)-(time(old.acknowledged_at||old.first_seen_at)||0)<15*60000)continue;
     if(old?.status==='RETRYABLE'&&time(old.next_retry_at)>time(now))continue;
     // The GitHub receiver rejects commands older than 10 minutes. Rebind a
@@ -197,6 +197,12 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
 export function reconcileMuseBacklog(backlog,state){
   const next=structuredClone(backlog);
   for(const [key,item] of Object.entries(next.items||{})){
+    const rejected=state.recovery_rejections?.[item.request.request_id];
+    if(rejected){
+      item.status='GITHUB_REJECTED';item.acknowledged_at=rejected.at||null;
+      item.verified_outcome='REJECTED';item.verified_reason=rejected.reason;
+      continue;
+    }
     const proof=state.recovery_requests?.[item.request.request_id];
     if(proof&&['OBSERVED','SATISFIED','BLOCKED'].includes(proof.status)){
       item.status='GITHUB_ACKNOWLEDGED';item.acknowledged_at=proof.checked_at||null;
