@@ -1,4 +1,4 @@
-import {queueOwnerIssue,resolveOwnerIssueIdentity} from './alerts.mjs';
+import {queueOwnerIssue,resolveOwnerIssueIdentity,noticeHash} from './alerts.mjs';
 import {receiptFileForAction} from './receipt-recovery.mjs';
 export function noticeOperationalIssues(state,{snapshot=[],scan=null}={}){
  let next=state;
@@ -89,11 +89,38 @@ export function noticeOperationalIssues(state,{snapshot=[],scan=null}={}){
 }
 
 // Best-effort fatal-path Muse alert: ledger CAS first, then immediate repository wake.
+// Commit an incident once; a wake caused by the incident must not loop back
+// into an identical ledger write and infinitely re-dispatch itself.
+const onlyChange=(before,after)=>JSON.stringify(before)===JSON.stringify(after)?null:after;
 export async function reportFatalDispatcherError({ledger,wake,sha='unknown',message}){
- const receipt=await ledger.transaction(state=>queueOwnerIssue(state,{
+ const receipt=await ledger.transaction(state=>onlyChange(state,queueOwnerIssue(state,{
   kind:'dispatcher_uncaught',identity:sha+':'+message,
   message:'Dispatcher could not finish reconciliation on '+sha+': '+message,
-  needs:'Owner: inspect the failed Actions job and repair the GitHub or ledger request'}));
+  needs:'Owner: inspect the failed Actions job and repair the GitHub or ledger request'})));
  if(receipt.committed)await wake();
  return receipt;
+}
+
+// Outbound communication failures use the SAME private notice and existing
+// repository_dispatch. One stable identity per repository prevents a wake storm
+// while the signal is down. A later successful publish reports restoration.
+export async function reportMuseSignalFailure({ledger,wake,repo,message}){
+ const receipt=await ledger.transaction(state=>onlyChange(state,queueOwnerIssue(state,{
+  kind:'muse_signal_failed',identity:repo,
+  message:'GitHub could not publish the Muse wake signal for '+repo+': '+String(message).slice(0,180),
+  needs:'GitHub fixes the outbound signal; private notices remain queued and unacknowledged'})));
+ if(receipt.committed)await wake();
+ return receipt;
+}
+export async function reportMuseSignalRestored({ledger,repo}){
+ return ledger.transaction(state=>{
+  const key='notice:'+noticeHash({kind:'muse_signal_failed',identity:repo});
+  const failure=state.owner_alerts?.[key];
+  if(!failure)return null;
+  const cleared=resolveOwnerIssueIdentity(state,{kind:'muse_signal_failed',identity:repo});
+  return onlyChange(state,queueOwnerIssue(cleared,{
+   kind:'muse_signal_restored',identity:repo,
+   message:'GitHub restored the Muse wake signal for '+repo+'; queued notices can be picked up automatically.',
+   needs:'No owner action; Muse confirms actual owner-message delivery with authenticated receipts'}));
+ });
 }
