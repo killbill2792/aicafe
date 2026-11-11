@@ -60,6 +60,14 @@ export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGa
         head_sha:r.head_sha,age_minutes:idle,action:'CHECK_STALL'});
       tasks.push(id);
     }
+    // CI can remain queued indefinitely without reporting a failure.
+    // Record a suspected stalled check, never invent a red or green status.
+    const pendingAt=r.ci_started_at||r.head_first_seen_at||
+      r.last_commit_at||r.last_github_activity;
+    const pendingAge=ago(pendingAt,clock);
+    if(r.ci_state==='pending'&&pendingAge!==null&&pendingAge>30)
+      incidents.push({kind:'CI_PENDING_STALE',task_id:id,pr_number:r.pr_number,
+        head_sha:r.head_sha,age_minutes:pendingAge,action:'RECONCILE'});
     const codexAge=ago(r.ready_transition_at,clock);
     if(r.draft===false&&r.ci_state==='success'&&
       r.codex_state!=='clean'&&r.codex_state!=='findings'&&
@@ -92,7 +100,7 @@ export function museRecoveryCandidates(health,state,{repo,actor,now=health?.obse
   // PR requests are hints; the GitHub engine still validates every gate.
   const intents=new Map();
   if(health.incidents.some(i=>['GITHUB_SCHEDULE_STALE','LEDGER_STALE',
-      'UNASSIGNED_APPROVED_TASKS','DELIVERED_TASK_NO_PR'].includes(i.kind)))
+      'UNASSIGNED_APPROVED_TASKS','DELIVERED_TASK_NO_PR','CI_PENDING_STALE'].includes(i.kind)))
     intents.set('global',{intent:'RECONCILE',task_id:null,pr_number:null,expected_head_sha:null});
   for(const i of health.incidents){
     if(!['SUSPECTED_CODING_STALL','CODEX_NOT_RECEIVED'].includes(i.kind))continue;
