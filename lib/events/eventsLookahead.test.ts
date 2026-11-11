@@ -1,10 +1,25 @@
 import {describe,it,expect} from "vitest";
-import {eventScanWindows,cityScanWindows,eventIdentity,savedEventKind,dailyCafeScanOrder} from "./eventsLookahead";
+import {eventScanWindows,cityScanWindows,eventIdentity,savedEventKind,dailyCafeScanOrder,closedEventObservationDays} from "./eventsLookahead";
 
 const state=(scannedThroughDate:string,weeklyResearchedOn:string|null=null)=>({
   locationHash:"location-a",scannedThroughDate,weeklyResearchedOn,
 });
 describe("scheduled event discovery",()=>{
+ it("reconciles only closed local dates across daylight-saving transitions",()=>{
+   // Spring and autumn changes have 23/25 elapsed hours but one café date.
+   expect(closedEventObservationDays("2026-03-07",3,"2026-03-10")).toEqual([
+     "2026-03-07","2026-03-08","2026-03-09",
+   ]);
+   expect(closedEventObservationDays("2026-10-31",3,"2026-11-02")).toEqual([
+     "2026-10-31","2026-11-01",
+   ]);
+   expect(closedEventObservationDays("2026-11-03",1,"2026-11-03")).toEqual([]);
+   expect(closedEventObservationDays("2026-10-01",14,"2026-10-20")).toEqual([
+     "2026-10-06","2026-10-07","2026-10-08","2026-10-09","2026-10-10",
+     "2026-10-11","2026-10-12","2026-10-13","2026-10-14",
+   ]);
+ });
+
  it("rotates the shared six-task budget fairly across cafés and pages",()=>{
    const cafes=Array.from({length:205},(_,i)=>({id:"cafe-"+i}));
    const firsts=new Set<string>();
