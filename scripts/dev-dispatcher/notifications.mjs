@@ -50,6 +50,15 @@ export function noticeOperationalIssues(state,{snapshot=[],scan=null}={}){
   'Backup cron gap exceeded 15 minutes ('+missed.gap_minutes+' minutes)',
   'Check Actions scheduling; repository_dispatch and delayed self-wake must continue operating');
  for(const [id,t] of Object.entries(next.tasks||{})){
+  if(t.codex_fallback_requested_sha===t.head_sha&&
+     t.codex_reviewed_sha===t.head_sha&&
+     ['clean','findings'].includes(t.codex_state)){
+   next=resolveOwnerIssueIdentity(next,{kind:'codex_auto_review_missed',
+     task_id:id,pr_number:t.pr_number,identity:t.head_sha});
+   send('codex_auto_review_received',id,t.pr_number,t.head_sha,
+     'PR #'+t.pr_number+' Codex review was received on its verified head ('+t.codex_state+'). GitHub continues the existing merge and review gates.',
+     'No owner action unless review findings require an owner decision');
+  }
   if(t.github_state==='open' && t.ci_state!=='success' && t.ci_state!=='failure')
    send('ci_unavailable',id,t.pr_number,t.head_sha||'no_head',
     'PR #'+(t.pr_number||'?')+' CI results are missing or still running on '+(t.head_sha||'unknown head'),
