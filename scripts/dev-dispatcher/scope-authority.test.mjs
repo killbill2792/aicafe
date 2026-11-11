@@ -85,7 +85,7 @@ test('real authenticated yes -> planning receipt -> GitHub plan -> Muse exact-sc
  assert.deepEqual(acceptScopePlanDecisions(authorized,queue,plans),authorized);
  assert.deepEqual(queueScopePlanReviews(offered,queue,plans),offered);
 });
-test('untrusted, stale, malformed and overlapping planning comments never authorize code',()=>{
+test('untrusted, stale and malformed planning comments never authorize code',()=>{
  const {submitted,comment}=fixture();
  const variants=[
   {...comment,user:{login:'stranger'}},
@@ -282,4 +282,40 @@ test('Codex P1: yes after no re-enters exact signed transition without repeating
    type:'begin_scoped_coding',task_id:taskId,status:'submitted',
    submitted_at:'2026-11-11T09:18:00Z',receipt:{courier:'muse'}};
  assert.equal(assignmentActionKey(alreadySent,taskId,effective),null);
+});
+
+
+test('GitHub scope parser accepts long structured comments, 26 files and real dynamic routes',()=>{
+ const {submitted,comment}=fixture();
+ const match=comment.body.match(/<!-- aicafe-scope-plan:v1 (.*) -->/);
+ const data=JSON.parse(match[1]);
+ data.edits=Array.from({length:26},(_,i)=>
+   'app/[locale]/cafe/[threadId]/component-'+i+'.tsx');
+ data.architecture='Actual source, ownership and tenant data: '+('All source changes remain linked to real code. '.repeat(130));
+ data.acceptance_plan='Executable checks: '+('verify current-head behavior '.repeat(70));
+ const multi={...comment,body:'Published and verified.\\n<!-- aicafe-scope-plan:v1\\n'+
+   JSON.stringify(data,null,2)+'\\n-->\\nAwaiting signed authorization.'};
+ const parsed=parseScopePlanComment(multi,queue,submitted);
+ assert.ok(parsed);
+ assert.equal(parsed.edits.length,26);
+ assert.match(parsed.edits[0],/\\[threadId\\]/);
+ const notes=queueScopePlanReviews(submitted,queue,{[taskId]:parsed});
+ assert.equal(Object.values(notes.owner_alerts).some(n=>n.kind==='scope_plan_review'&&
+  n.task_id===taskId),true);
+});
+
+test('shared implementation scope gets an integration notice rather than a rejection',()=>{
+ const {submitted,comment}=fixture();
+ const data=JSON.parse(comment.body.match(/<!-- aicafe-scope-plan:v1 (.*) -->/)[1]);
+ data.edits=['lib/ai/agent/loop.server.ts'];
+ const draft={...comment,body:'<!-- aicafe-scope-plan:v1 '+JSON.stringify(data)+' -->'};
+ const parsed=parseScopePlanComment(draft,queue,submitted);
+ const overlapQueue={...queue,tasks:queue.tasks.map(t=>t.id===taskId?t:{...t,
+  ...(t.id==='9'?{exclusive_files:['lib/ai/agent/loop.server.ts'],
+     architecture_approval:{approved:true},state:'architecture_approved'}:{})})};
+ const notice=Object.values(queueScopePlanReviews(submitted,overlapQueue,
+  {[taskId]:parsed}).owner_alerts).find(n=>n.kind==='scope_plan_review');
+ assert.ok(notice);
+ assert.match(notice.question,/Shared edit paths/);
+ assert.equal(notice.scope_conflicts,undefined);
 });
