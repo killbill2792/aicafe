@@ -9,8 +9,13 @@ export const taskKey = (id) => {
 // Retain signed exclusive_files for existing approved tasks until migrated.
 export const editableFiles = task => task?.edits ?? task?.exclusive_files ?? [];
 export const usedFiles = task => task?.uses ?? [];
-const validPath = path => typeof path === 'string' && Boolean(path) &&
-  !path.startsWith('/') && !path.includes('*') && !path.includes('..');
+// Exact relative GitHub paths, including Next.js dynamic routes and Unicode.
+// Reject traversal, globs and control characters, never arbitrary text lengths.
+export const validEditPath = path => typeof path === 'string' && Boolean(path) &&
+  !path.startsWith('/') && !path.includes('\\') &&
+  !/[\x00-\x1f\x7f]/.test(path) && !/[?*]/.test(path) &&
+  path.split('/').every(part=>part&&part!=='.'&&part!=='..'&&part!=='.git');
+const validPath=validEditPath;
 
 export function resolveTaskBase(task, records = {}) {
   const deps = task?.depends_on || [];
