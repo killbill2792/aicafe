@@ -48,7 +48,7 @@ jobs:
       - name: Report delayed-wake failure through existing private Muse queue
         if: failure()
         env:
-          DISPATCH_LEDGER_TOKEN: {{ secrets.DISPATCH_LEDGER_TOKEN }}
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
         run: |
           git --version
           node scripts/dev-dispatcher/emergency-report.mjs
