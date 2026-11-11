@@ -16,7 +16,7 @@ test("backend and docs are not delayed by unrelated browser jobs", () => {
   assert.equal(decision.required, false);
   assert.deepEqual(decision.scenarios, []);
   assert.deepEqual(decision.unmapped, []);
-  assert.equal(classifyPaths(["package.json", "package-lock.json"]).required, false);
+  assert.equal(classifyPaths(["package.json", "package-lock.json", "lib/ai/worker.spec.ts"]).required, false);
 });
 
 test("unknown browser UI cannot silently skip required proof", () => {
@@ -25,6 +25,15 @@ test("unknown browser UI cannot silently skip required proof", () => {
   assert.deepEqual(decision.unmapped,
     ["app/[locale]/pricing/page.tsx", "components/UnknownWidget.tsx"]);
   assert.deepEqual(decision.scenarios, []);
+  const unexercised = classifyPaths([
+    "app/[locale]/staff/rules/page.tsx",
+    "app/[locale]/menu/new/page.tsx",
+    "components/money/ProfitCostsView.tsx",
+    "app/[locale]/onboarding/page.tsx",
+  ]);
+  assert.equal(unexercised.required, true);
+  assert.deepEqual(unexercised.scenarios, []);
+  assert.equal(unexercised.unmapped.length, 4);
 });
 
 test("rename tracks both old and new UI/browser paths", () => {
