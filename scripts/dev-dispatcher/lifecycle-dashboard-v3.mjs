@@ -68,7 +68,7 @@ export function renderLifecycleDashboard(state,{repo='killbill2792/aicafe',now=s
     ...detail('Required CI checks',r.ci),
     ...detail('Codex trigger and review',r.codex),
     ...detail('Acceptance evidence',r.acceptance),
-    ...detail('Dependencies', {depends_on:r.dependencies,pending:r.remaining_dependencies}),
+    ...detail('Dependencies and branch maintenance',r.dependency_state),
     ...detail('Merge evidence',r.merge),
     ...detail('Merged-main integration proof',r.integration),
     ...detail('Monitoring and next action',r.monitor)
