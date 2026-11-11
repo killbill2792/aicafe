@@ -26,24 +26,6 @@ export function nextWake(state,now=Date.now(),config=settings){
      !['clean','findings'].includes(r.codex_state)&&Number.isFinite(at))
    list.push({at:at+20*60*1000,reason:'codex_watchdog',id});
  }
- // Green code and Codex do not prove acceptance/close-out. Guarantee the
- // same-chat completion check is not dependent on best-effort GitHub cron.
- for(const [id,r] of Object.entries(state.tasks||{})){
-  if(r.github_state!=='open'||r.draft!==false||r.approved!==true||
-     !r.conversation_ref||r.ci_state!=='success'||r.codex_state!=='clean'||
-     r.codex_reviewed_sha!==r.head_sha||r.threads_resolved!==true||
-     !/^[a-f0-9]{40}$/.test(r.head_sha||'')||
-     r.repo_mismatch||r.sensitive_owner_block||
-     (r.acceptance_proven===true&&r.coder_done===true))continue;
-  const existing=Object.values(state.actions||{}).some(a=>a.task_id===id&&
-     a.type==='closeout_evidence'&&a.head_sha===r.head_sha&&
-     ['planned','claimed','uncertain','submitted','needs_login'].includes(a.status));
-  if(existing)continue;
-  const times=[r.codex_review_at,r.last_github_activity,
-     r.last_submission_at,r.head_first_seen_at].map(dt).filter(Number.isFinite);
-  if(times.length)list.push({at:Math.max(...times)+20*60000,
-     reason:'closeout_status_check',id});
- }
  // A completed planning prompt needs a check even if no PR exists. A
  // published accepted plan or an outstanding recovery action suppresses it.
  for(const [id,r] of Object.entries(state.tasks||{})){
