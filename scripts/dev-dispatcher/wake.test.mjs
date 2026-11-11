@@ -164,18 +164,14 @@ test('dozens of overdue notices share one retry wake and do not drain API quota'
 });
 
 
-test('clean but unclosed PR receives a delayed self-wake and never a duplicate closeout',()=>{
+test('clean PR does not schedule pointless coder-done self-wake',()=>{
  const s={tasks:{E2:{task_id:'E2',approved:true,github_state:'open',
   draft:false,ci_state:'success',codex_state:'clean',codex_reviewed_sha:'a'.repeat(40),
   head_sha:'a'.repeat(40),threads_resolved:true,
   conversation_ref:'https://chatgpt.com/c/verified',acceptance_proven:false,
   coder_done:false,codex_review_at:new Date(at).toISOString(),
   last_github_activity:new Date(at).toISOString()}},actions:{}};
- const due=nextWake(s,at,one);
- assert.equal(due.reason,'closeout_status_check');
- assert.equal(due.due_at,new Date(at+20*60000).toISOString());
- s.actions.closeout={task_id:'E2',type:'closeout_evidence',head_sha:'a'.repeat(40),
-  status:'submitted'};
+ assert.equal(nextWake(s,at,one),null);
  assert.equal(nextWake(s,at+30*60000,one),null);
 });
 
