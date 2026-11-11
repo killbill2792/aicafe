@@ -234,3 +234,23 @@ test('v2 dispatcher nudges pass bridge and opaque wake-up signal without changin
   const unknown={...action,type:'unapproved_action'};
   assert.equal(validateHandoff(unknown,record),false);
 });
+
+
+test('authenticated planning progress recovery uses same chat but never permits coding',()=>{
+ const prompt='Check only the existing planning chat progress.';
+ const url='https://chatgpt.com/c/verified-planner-7';
+ const sha=createHash('sha256').update(prompt).digest('hex');
+ const key='scope_plan_update:7:check-1';
+ const action={key,task_id:'7',type:'scope_plan_update',
+  scope_recovery:true,status:'planned',delivery_owner:'muse',
+  proposal_source_sha:'b'.repeat(64),
+  delivery:{...delivery,action_id:key,task_id:'7',prompt,prompt_hash:sha,
+   conversation_url:url,intent:'continue_existing_chat',approval_hash:sig}};
+ const planning={agent:'chatgpt',approved:false,planning_approved:true,
+  planning_eligible:true,status:'scope_plan_sent',scope_plan_completed:true,
+  proposal_source_sha:'b'.repeat(64),conversation_ref:url,approval_hash:sig};
+ assert.equal(validateHandoff(action,planning),true);
+ assert.equal(validateHandoff({...action,scope_recovery:false},planning),false);
+ assert.equal(validateHandoff(action,{...planning,approved:true}),false);
+ assert.equal(validateHandoff(action,{...planning,status:'blocked_needs_owner'}),false);
+});
