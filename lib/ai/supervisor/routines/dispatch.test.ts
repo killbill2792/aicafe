@@ -19,10 +19,22 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
     operating_tasks:params?.tasks??[],
   };
   return {from:(table:string)=>{
+    let selected=rows[table];
     const builder={
       select(){return builder},eq(){return builder},in(){return builder},
-      neq(){return builder},not(){return builder},or(){return builder},order(){return builder},
-      async limit(){return {data:rows[table],error:null}},
+      neq(){return builder},
+      // Mirror the PostgREST negated IN predicate used by the production
+      // scanner. A no-op mock returned commitments and falsely failed CI.
+      not(field:string,operator:string,value:string){
+        if(table!=="operating_tasks"||field!=="kind"||operator!=="in"||
+          value!=="(priority_notice,commitment,event_plan,event_change,event_report)")
+          throw new Error("Unexpected priority task exclusion");
+        const forbidden=new Set(value.slice(1,-1).split(","));
+        selected=selected.filter(row=>!forbidden.has(String((row as Record<string,unknown>)[field])));
+        return builder;
+      },
+      or(){return builder},order(){return builder},
+      async limit(){return {data:selected,error:null}},
     };
     return builder;
   }} as never;
@@ -56,13 +68,23 @@ describe("bounded independent routine dispatch",()=>{
     }),"cafe","America/Los_Angeles",new Date("2026-11-11T18:00:00Z"));
     expect(result.failed).toBe(1);
   });
-  it("does not produce a second reminder for a due commitment",async()=>{
+  it("excludes already-delivered commitments and generated notices, keeping independent work",async()=>{
     const decisions=await readActionablePriorities(db({tasks:[
       {id:"commitment:existing",kind:"commitment",status:"needs_owner",
         created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
+      {id:"priority:existing",kind:"priority_notice",status:"needs_owner",
+        created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
+      {id:"events:planned",kind:"event_plan",status:"needs_owner",
+        created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
+      {id:"events:changed",kind:"event_change",status:"needs_owner",
+        created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
+      {id:"events:report",kind:"event_report",status:"needs_owner",
+        created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
+      {id:"needs-review",kind:"data_quality",status:"needs_owner",
+        created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
     ]}),{businessId:"cafe",ownerUserId:"owner",threadId:"thread",localDate:"2026-11-11"},
       new Date("2026-11-11T00:00:00Z"));
-    expect(decisions).toEqual([]);
+    expect(decisions.map(d=>d.source.sourceId)).toEqual(["needs-review"]);
   });
   it("does not mix private tasks across owners",async()=>{
     const decisions=await readActionablePriorities(db({tasks:[

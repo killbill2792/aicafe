@@ -12,6 +12,11 @@ describe("proactive priority ranking and source revision",()=>{
       ...base,status:"seen",evidence:{lastCheckedAt:"after",quality:"partial"},
     }));
   });
+  it("distinguishes material task action changes but not alert seen status",()=>{
+    const task={...base,sourceType:"operating_task" as const,
+      status:"needs_response",kind:"supply_check"};
+    expect(priorityRevision(task)).not.toBe(priorityRevision({...task,status:"needs_owner"}));
+  });
   it("does regenerate for meaningful evidence correction",()=>{
     expect(priorityRevision(base)).not.toBe(priorityRevision({
       ...base,evidence:{quality:"verified"},
@@ -30,6 +35,19 @@ describe("proactive priority ranking and source revision",()=>{
       new Date("2026-11-11T00:00:00Z"));
     expect(decision.reason).toBe("Actionable café alert needs review");
     expect(JSON.stringify(decision)).not.toContain("dollars");
+  });
+  it("does not re-notify Events, reminders, or notices already delivered by their writer",()=>{
+    const now=new Date("2026-11-11T00:00:00Z");
+    const duplicateKinds=["event_plan","event_change","event_report",
+      "commitment","priority_notice"];
+    const rows=duplicateKinds.map((kind,index)=>({
+      ...base,sourceType:"operating_task" as const,kind,status:"needs_owner",
+      sourceId:"prior-delivery-"+index,
+    }));
+    expect(choosePriorities(rows,now,10)).toEqual([]);
+    expect(choosePriorities([...rows,{...base,sourceType:"operating_task",
+      sourceId:"unrelated-review",kind:"data_quality",status:"needs_owner"}],now,10)
+      .map(x=>x.source.sourceId)).toEqual(["unrelated-review"]);
   });
   it("ignores closed tasks and differs by owner/café",()=>{
     const now=new Date("2026-11-11T00:00:00Z");

@@ -1,6 +1,10 @@
 -- Task 7: one owner-scoped routine occurrence per café-local day, and one
 -- private priority notice via the existing operating_tasks + ai_messages inbox.
 -- This migration is additive: it never changes the Task 6 durable run/worker path.
+-- Bound locking and DDL duration even when an existing café is busy.
+set lock_timeout = '10s';
+set statement_timeout = '5min';
+
 create table public.supervisor_routines (
   business_id uuid not null references public.businesses(id) on delete cascade,
   id uuid not null default gen_random_uuid(),
@@ -8,11 +12,11 @@ create table public.supervisor_routines (
   thread_id uuid not null,
   title text not null check (length(btrim(title)) between 1 and 240),
   cadence text not null check (cadence in ('daily','weekly')),
-  weekdays integer[] not null default '{}',
+  weekdays bigint[] not null default '{}',
   local_time time without time zone not null,
   timezone text not null,
   status text not null default 'active' check (status in ('active','paused','revoked')),
-  revision integer not null default 1 check (revision>0),
+  revision bigint not null default 1 check (revision>0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (business_id,id),
@@ -20,7 +24,7 @@ create table public.supervisor_routines (
     references public.ai_threads(business_id,id,owner_user_id) on delete cascade,
   check ((cadence='daily' and cardinality(weekdays)=0) or
     (cadence='weekly' and cardinality(weekdays) between 1 and 7)),
-  check (weekdays <@ array[1,2,3,4,5,6,7]::integer[])
+  check (weekdays <@ array[1,2,3,4,5,6,7]::bigint[])
 );
 create index supervisor_routines_due_idx on public.supervisor_routines
   (business_id,status,owner_user_id) where status='active';
@@ -30,11 +34,11 @@ create table public.supervisor_routine_occurrences (
   routine_id uuid not null,
   local_date date not null,
   run_id uuid not null default gen_random_uuid(),
-  revision integer not null check (revision>0),
+  revision bigint not null check (revision>0),
   scheduled_for_utc timestamptz not null,
   state text not null default 'pending'
     check (state in ('pending','running','completed','failed')),
-  attempts integer not null default 0 check (attempts between 0 and 5),
+  attempts bigint not null default 0 check (attempts between 0 and 5),
   lease_token uuid,
   lease_until timestamptz,
   next_retry_at timestamptz,
@@ -52,7 +56,11 @@ create table public.supervisor_routine_occurrences (
 create index supervisor_occurrences_retry_idx on public.supervisor_routine_occurrences
   (next_retry_at,lease_until) where state in ('pending','running');
 
+-- Reason: This table is new in this transaction; secure it before any client grant.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_routines enable row level security;
+-- Reason: Occurrences are new in this transaction and have no prior client grants.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_routine_occurrences enable row level security;
 create policy supervisor_routines_owner_select on public.supervisor_routines
   for select to authenticated using (
@@ -115,14 +123,14 @@ begin
   insert into public.supervisor_routines
     (business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone)
   values(p_business_id,coalesce(p_routine_id,gen_random_uuid()),p_owner_user_id,
-    p_thread_id,btrim(p_title),p_cadence,p_weekdays,p_local_time,v_zone)
+    p_thread_id,btrim(p_title),p_cadence,p_weekdays::bigint[],p_local_time,v_zone)
   on conflict (business_id,id) do nothing returning * into v_row;
   if v_row.id is null then
     select * into v_row from public.supervisor_routines
       where business_id=p_business_id and id=p_routine_id
         and owner_user_id=p_owner_user_id and thread_id=p_thread_id
         and title=btrim(p_title) and cadence=p_cadence
-        and weekdays=p_weekdays and local_time=p_local_time;
+        and weekdays=p_weekdays::bigint[] and local_time=p_local_time;
   end if;
   if v_row.id is null then raise exception 'Routine creation conflicted' using errcode='23505'; end if;
   return v_row;
@@ -134,11 +142,11 @@ grant execute on function public.create_supervisor_routine(uuid,uuid,uuid,text,t
 
 create function public.change_supervisor_routine(
   p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
-  p_routine_id uuid,p_revision integer,p_patch jsonb
+  p_routine_id uuid,p_revision bigint,p_patch jsonb
 ) returns public.supervisor_routines
 language plpgsql security definer set search_path=public as $$
 declare v_row public.supervisor_routines;v_title text;v_cadence text;
-        v_weekdays integer[];v_local_time time;v_status text;
+        v_weekdays bigint[];v_local_time time;v_status text;
 begin
   if not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
   then raise exception 'Routine owner or thread not authorized' using errcode='42501'; end if;
@@ -159,7 +167,7 @@ begin
   v_title:=coalesce(p_patch->>'title',v_row.title);
   v_cadence:=coalesce(p_patch->>'cadence',v_row.cadence);
   v_weekdays:=case when p_patch?'weekdays'
-    then array(select jsonb_array_elements_text(p_patch->'weekdays')::integer)
+    then array(select jsonb_array_elements_text(p_patch->'weekdays')::bigint)
     else v_row.weekdays end;
   v_local_time:=coalesce((p_patch->>'localTime')::time,v_row.local_time);
   v_status:=coalesce(p_patch->>'status',v_row.status);
@@ -176,9 +184,9 @@ begin
   where business_id=p_business_id and id=p_routine_id returning * into v_row;
   return v_row;
 end $$;
-revoke all on function public.change_supervisor_routine(uuid,uuid,uuid,uuid,integer,jsonb)
+revoke all on function public.change_supervisor_routine(uuid,uuid,uuid,uuid,bigint,jsonb)
   from public,anon;
-grant execute on function public.change_supervisor_routine(uuid,uuid,uuid,uuid,integer,jsonb)
+grant execute on function public.change_supervisor_routine(uuid,uuid,uuid,uuid,bigint,jsonb)
   to authenticated,service_role;
 
 -- Only the server scheduler can lease an occurrence. A retry retains run_id;
@@ -322,7 +330,7 @@ create function public.post_supervisor_priority_notice(
 ) returns boolean
 language plpgsql security definer set search_path=public as $$
 declare v_task_id text;v_msg_id uuid;v_hash text;v_found boolean;
-        v_existing boolean;v_o public.supervisor_routine_occurrences;
+        v_inserted_task_id text;v_o public.supervisor_routine_occurrences;
         v_r public.supervisor_routines;
 begin
   if coalesce(auth.role(),'')<>'service_role'
@@ -355,15 +363,13 @@ begin
       and a.id::text=p_source_id and a.status in ('new','seen')) into v_found;
   else
     select exists(select 1 from public.operating_tasks t where t.business_id=p_business_id
-      and t.id=p_source_id and t.kind not in ('priority_notice','commitment')
+      and t.id=p_source_id and t.kind not in
+        ('priority_notice','commitment','event_plan','event_change','event_report')
       and t.status in ('needs_owner','needs_response')
       and (t.owner_user_id is null or t.owner_user_id=p_owner_user_id)) into v_found;
   end if;
   if not v_found then return false; end if;
   v_task_id:='priority:'||p_stable_key;
-  select exists(select 1 from public.operating_tasks t where t.business_id=p_business_id
-    and t.id=v_task_id and t.owner_user_id=p_owner_user_id and t.kind='priority_notice')
-    into v_existing;
   insert into public.operating_tasks
     (business_id,id,owner_user_id,agent_id,kind,status,payload,confidence,evidence,
       entity_type,dedupe_key)
@@ -375,7 +381,7 @@ begin
       'facts',jsonb_build_object('sourceId',p_source_id,
         'revisionHash',p_revision_hash,'asOf',p_as_of::text))),
     'priority_source',p_stable_key)
-  on conflict do nothing;
+  on conflict do nothing returning id into v_inserted_task_id;
   v_hash:=md5('priority-notice:'||p_business_id::text||':'||p_owner_user_id::text||':'||v_task_id);
   v_msg_id:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
     substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
@@ -387,7 +393,7 @@ begin
       'evidence',jsonb_build_array(jsonb_build_object('source',p_source_type,
         'identifier',p_source_id,'asOf',p_as_of::text))))
   on conflict(id) do nothing;
-  return not v_existing;
+  return v_inserted_task_id is not null;
 end $$;
 revoke all on function public.post_supervisor_priority_notice(uuid,uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,uuid)
   from public,anon,authenticated;

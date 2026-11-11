@@ -30,7 +30,7 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
       .select("id,kind,status,due_at,confidence,evidence,created_at,owner_user_id")
       .eq("business_id",scope.businessId)
       .in("status",["needs_owner","needs_response"])
-      .not("kind","in","(priority_notice,commitment)")
+      .not("kind","in","(priority_notice,commitment,event_plan,event_change,event_report)")
       .or("owner_user_id.is.null,owner_user_id.eq."+scope.ownerUserId)
       .order("created_at",{ascending:false}).limit(batchLimit),
   ]);
@@ -48,6 +48,9 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
     });
   }
   for(const raw of (tasks.data??[]) as DbRow[]){
+    // Defense in depth if a custom/mock adapter fails to apply the DB filter:
+    // never re-notify commitments or a previously generated priority notice.
+    if(["commitment","priority_notice","event_plan","event_change","event_report"].includes(String(raw.kind)))continue;
     if(raw.owner_user_id&&raw.owner_user_id!==scope.ownerUserId)continue;
     sources.push({
       businessId:scope.businessId,ownerUserId:scope.ownerUserId,
