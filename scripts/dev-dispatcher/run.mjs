@@ -412,9 +412,38 @@ async function main() {
     for(const [id,rec] of Object.entries(tasks)) {
       if((!taskById.has(id) && !rec.adhoc) || !rec.pr_number ||
          rec.github_state!=='open' || rec.codex_review_requested_sha!==rec.head_sha ||
-         rec.codex_referee_sha===rec.head_sha)continue;
+         (rec.codex_referee_sha===rec.head_sha &&
+          rec.codex_fallback_requested_sha===rec.head_sha))continue;
       try {
         const decision=await inspectCodexWatch({github:gh,record:rec,minutes});
+        if(decision.status==='auto_review_missing'){
+          // A trusted Actions-bot Ready event did not produce any real Codex
+          // reaction/review. After the quiet watchdog interval, one explicit
+          // GitHub comment is the FIRST confirmed request, not a blind resend.
+          // requestCodexReview independently rechecks the exact live green head
+          // and dedupes existing signed comments. No repeat on the same SHA.
+          const fallback=await requestCodexReview({github:gh,record:rec,
+            task:taskById.get(id),records:tasks,autoMissFallback:true});
+          if(['requested','already_requested'].includes(fallback.status))
+            await ledger.transaction(latest=>{
+              const task=latest.tasks?.[id];
+              if(!task||task.head_sha!==rec.head_sha||
+                 task.codex_fallback_requested_sha===rec.head_sha)return null;
+              task.codex_fallback_requested_sha=rec.head_sha;
+              task.codex_referee_sha=null;
+              task.codex_watchdog={sha:rec.head_sha,attempts:1,
+                status:fallback.status==='requested'?'fallback_requested':'request_present',
+                event:'codex_auto_trigger_missing',at:new Date().toISOString()};
+              return queueOwnerIssue(latest,{
+                kind:'codex_auto_review_missed',task_id:id,pr_number:rec.pr_number,
+                identity:rec.head_sha,
+                message:'PR #'+rec.pr_number+' automatic Codex review did not acknowledge the green Ready head. GitHub verified no review activity and '+(fallback.status==='requested'?'posted one @codex review request.':'found the existing explicit review request.')+
+                  ' No owner approval is needed.',
+                needs:'GitHub checks the signed review receipt; if it remains missing after the watchdog, Muse escalates once'
+              });
+            });
+          continue;
+        }
         if(decision.status!=='escalate')continue;
         await ledger.transaction(latest=>{
           const task=latest.tasks?.[id];
