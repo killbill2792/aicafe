@@ -43,10 +43,12 @@ export function applyOwnerStartApprovals(state,queue){
   const notice=next.owner_alerts?.[id];
   if(!notice||!['planned','submitted'].includes(notice.status)||
      notice.source_sha!==hash)continue;
-  const reply=Object.values(next.tasks[task.id].owner_reply_events||{}).find(event=>
-    event.courier==='muse'&&event.target?.notice_id===id&&
-    /^yes(?: to start)?[.!]?$/i.test(event.text));
-  if(!reply)continue;
+  const replies=Object.values(next.tasks[task.id].owner_reply_events||{})
+    .filter(event=>event.courier==='muse'&&event.target?.notice_id===id)
+    .sort((a,b)=>(Date.parse(a.at||'')||0)-(Date.parse(b.at||'')||0));
+  // A newer authenticated "no" must not be overridden by an older "yes".
+  const reply=replies.at(-1);
+  if(!reply||!/^yes(?: to start)?[.!]?$/i.test(reply.text))continue;
   // An authenticated, hash-bound owner answer proves the question was received.
   // Never require a second courier acknowledgement to release the SAME decision.
   // Retain an independently authenticated notice receipt when one already exists.
