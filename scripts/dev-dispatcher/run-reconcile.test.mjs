@@ -61,6 +61,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     effectiveSignedQueue: queue => queue,
     sourceQueue,
     scopeComments:[],
+    scopeFetchError:null,
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},
     wakePendingOwnerNotices: () => {},
