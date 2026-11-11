@@ -190,14 +190,6 @@ async function main() {
     wakePendingActions(copy, Date.now());
     wakePendingOwnerNotices(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
-    // Replace only still-planned legacy child follow-ups. Never cancel a
-    // claimed/submitted/uncertain delivery or an owner-facing action.
-    for (const action of Object.values(copy.actions)) {
-      if (action.status === 'planned' &&
-          ['repair_ci', 'repair_review', 'continue_pr'].includes(action.type) &&
-          ['POS0b', 'POS0c', 'POS0d'].includes(action.task_id))
-        action.status = 'cancelled_superseded_template';
-    }
     for (const [id, rec] of Object.entries(copy.tasks)) {
       const task = taskById.get(id);
       if (!task || rec.github_state !== 'open') continue;
