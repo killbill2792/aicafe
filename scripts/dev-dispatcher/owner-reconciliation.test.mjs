@@ -4,7 +4,7 @@ import { GitHubFacts } from './github.mjs'; const head='b'.repeat(40), base='a'.
 test('base-current uses live main tip, unresolved P2 threads and owner comments/push',async()=>{
  const calls=[]; const pr={number:422,head:{sha:head,ref:'feat',repo:{full_name:'owner/aicafe'}},base:{sha:base,ref:'main',repo:{full_name:'owner/aicafe'}},
  mergeable:true,mergeable_state:'clean',draft:false,labels:[],user:{login:'coder'},updated_at:'2026-11-10T18:00:00Z'};
- const gh=new GitHubFacts({repo:'owner/aicafe',token:'mock',fetchFn:async(url,options={})=>{
+ const gh=new GitHubFacts({repo:'owner/aicafe',token:'mock',ownerLogin:'owner',fetchFn:async(url,options={})=>{
   const p=new URL(url).pathname;calls.push(p);let result;
   if(p==='/graphql')result=JSON.parse(options.body).query.includes('comments(first:10)')
     ?{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false},nodes:[{isResolved:false,comments:{nodes:[{body:'P2 open',url:'https://github.com/comment'}]}}]}}}}}

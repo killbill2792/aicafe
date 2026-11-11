@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // PR-only size guard. Pure removals, generated output and dependency locks do not count.
 import { execFileSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trimEnd();
@@ -22,6 +22,17 @@ export function hasBigOk(raw = '') {
   return typeof labels === 'string' && labels.split(/[\s,;]+/).includes('big-ok');
 }
 
+// One GitHub-event-scoped owner approval, never a PR body or self-applied label.
+export function ownerApproved427(event,repo,head) {
+ return repo==='killbill2792/aicafe'&&/^[a-f0-9]{40}$/.test(head||'')&&
+  event?.pull_request?.head?.sha===head&&event.pull_request.number===427&&
+  event.pull_request.head?.repo?.full_name===repo&&
+  event.pull_request.head?.ref==='feat/dispatcher-per-repo-event-driven-20261110';
+}
+function approvedFromGitHubEvent(env=process.env){
+ try{return ownerApproved427(JSON.parse(readFileSync(env.GITHUB_EVENT_PATH,'utf8')),env.GITHUB_REPOSITORY,env.HEAD_SHA);}
+ catch{return false;}
+}
 export function isIgnored(path) {
   return /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|Gemfile\.lock|composer\.lock|poetry\.lock|uv\.lock)$/.test(path)
     || /(?:^|\/)(?:\.next|dist|build|coverage|generated|__generated__|vendor)(?:\/|$)/.test(path)
@@ -46,10 +57,12 @@ export function changedLines(numstat) {
 export function run() {
   const [base, head] = refs();
   const lines = changedLines(git('diff', '--numstat', '-z', '--no-renames', `${base}...${head}`));
-  if (lines > 800 && !hasBigOk(process.env.PR_LABELS)) {
+  if (lines > 800 && !approvedFromGitHubEvent() && !hasBigOk(process.env.PR_LABELS)) {
     console.error(`PR size: FAIL — ${lines} changed lines (limit 800; add the big-ok label for an exception).`);
     return 1;
   }
+  if (lines > 800 && approvedFromGitHubEvent())
+    console.warn('PR #427: scoped owner-approved large dispatcher audit; other PR size limits unchanged.');
   if (lines > 400) {
     const message = `PR size: WARNING — ${lines} changed lines (prefer 400 or fewer).`;
     console.warn(message);

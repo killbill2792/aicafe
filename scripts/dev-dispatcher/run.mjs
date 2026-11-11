@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import {settings} from './settings.mjs';
+import {loadQueue} from './queue-source.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
@@ -13,26 +15,30 @@ import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure, dispatchLandingCheck } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
-import { queueOwnerAlerts,applyOwnerStartApprovals } from "./alerts.mjs";
+import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
+import {dispatchReceiptWake} from './wake.mjs';
+import {noticeOperationalIssues,reportFatalDispatcherError} from './notifications.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
 async function main() {
-  const queue = JSON.parse(readFileSync(new URL("../../docs/plans/universal-supervisor-queue.json", import.meta.url), "utf8"));
-  validateQueue(queue);
-  const taskById = new Map(queue.tasks.map(task => [task.id, task]));
+  // The checked-in queue or an external studio queue is read after GitHub auth.
   const repo = process.env.GITHUB_REPOSITORY;
   const githubToken = process.env.GITHUB_TOKEN;
-  if (!repo || !githubToken) throw new Error("GITHUB_REPOSITORY/GITHUB_TOKEN required");
+  if (!repo || !githubToken || repo!==settings.repo) throw new Error('Dispatcher repository/settings mismatch');
   const commit = process.argv.includes("--commit");
-  const ledgerRepo = process.env.DISPATCH_LEDGER_REPO;
+  const ledgerRepo = process.env.DISPATCH_LEDGER_REPO || settings.ledger.repo;
+  if(ledgerRepo!==settings.ledger.repo)throw Error('Dispatcher ledger/settings mismatch');
   const ledgerToken = process.env.DISPATCH_LEDGER_TOKEN;
   if (commit && (!ledgerRepo || !ledgerToken)) throw new Error("Cannot persist without private ledger repo and token");
-  const ledger = ledgerRepo && ledgerToken ? new GitHubLedger({ repo: ledgerRepo, token: ledgerToken }) : null;
+  const ledger = ledgerRepo && ledgerToken ? new GitHubLedger({ repo: ledgerRepo, token: ledgerToken, path:settings.ledger.path }) : null;
   const gh = new GitHubFacts({ repo, token: githubToken });
+  const queue = await loadQueue({github:gh,config:settings});
+  validateQueue(queue);
+  const taskById = new Map(queue.tasks.map(task => [task.id, task]));
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
   async function observe(state) {
     const mainRef = await gh.request("/git/ref/heads/main");
@@ -55,7 +61,7 @@ async function main() {
       closedByPr[rec.pr_number]={merged:Boolean(closed.merged_at),
         merge_sha:mergeSha,landing_failure:landingFailure};
     }
-    const history=await gh.request('/actions/workflows/ai-cafe-dev-dispatcher.yml/runs?event=schedule&per_page=3').catch(()=>null);
+    const history=await gh.request('/actions/workflows/'+settings.workflows.dispatcher+'/runs?event=schedule&per_page=3').catch(()=>null);
     const previous=(history?.workflow_runs||[]).find(r=>r.created_at && r.id!==Number(process.env.GITHUB_RUN_ID));
     return {snapshot,closedByPr,mainSha,lastScheduleAt:previous?.created_at || null};
   }
@@ -63,14 +69,7 @@ async function main() {
     const initiallyLinked = linkPullRequests(state, observed.snapshot);
     const adopted = adoptAdhocPullRequests(initiallyLinked.state, observed.snapshot, [...taskById.keys()]);
     const linked = linkPullRequests(adopted.state, observed.snapshot);
-    linked.unmapped = linked.unmapped.filter(n => !adopted.skipped.includes(n));
-    linked.state.adhoc_unlinked_logged ||= {};
-    for (const n of adopted.skipped) {
-      if (!linked.state.adhoc_unlinked_logged[n]) {
-        console.log('Open PR #' + n + ' not adopted: no valid chat marker');
-        linked.state.adhoc_unlinked_logged[n] = true;
-      }
-    }
+    // Never latch unlinked PRs: re-evaluate branch receipts and optional markers on every wake.
     // First invalidate old-head actions, THEN process Muse receipts. A receipt
     // arriving during the same GitHub reconciliation must not revive old work.
     const live = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
@@ -88,13 +87,16 @@ async function main() {
       else if (rec.last_parent_rebase_sha === rec.parent_merged_sha)
         rec.last_parent_rebase_sha = null;
     }
-    const withFeedback = reconcileReceiptFeedback(applied.state,{
+    const afterReceipts=linkPullRequests(adoptAdhocPullRequests(
+      applied.state,observed.snapshot,[...taskById.keys()]).state,observed.snapshot);
+    const withFeedback = reconcileReceiptFeedback(afterReceipts.state,{
       ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
     },new Date().toISOString());
     const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
       minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
-    const copy = queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
-      {unmappedPrs:linked.unmapped,queue});
+    const remaining=linkPullRequests(safety,observed.snapshot).unmapped;
+    const copy = noticeOperationalIssues(queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
+      {unmappedPrs:remaining,openPrs:observed.snapshot,queue}),{snapshot:observed.snapshot,scan:receiptScan});
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
@@ -114,8 +116,8 @@ async function main() {
         .find(p => p && p.pr_number === rec.prerequisite_pr);
       if (parent?.github_state === 'open') {
         rec.parent_open = true;
-        rec.waiting_only_for_parent = rec.coder_done && rec.ci_state === 'success' &&
-          Boolean(rec.acceptance_evidence);
+        rec.waiting_only_for_parent = rec.ci_state === 'success' &&
+          rec.github_state === 'open';
       } else {
         rec.parent_open = false;
         rec.waiting_only_for_parent = false;
@@ -139,7 +141,7 @@ async function main() {
       const key = assignmentActionKey(copy, assignment.task_id, queue);
       if (!key) continue;
       const record = { task_id: assignment.task_id, status: "assigned",
-        agent: assignment.agent, branch: `feat/aicafe-task-${assignment.task_id}`, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
+        agent: assignment.agent, branch: settings.naming.branch_prefix+assignment.task_id, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
         approval_hash: approvalSignature(taskById.get(assignment.task_id)),
         prompt_id: `task:${assignment.task_id}`, prompt_version: "v2" };
       let delivery;
@@ -259,15 +261,16 @@ async function main() {
     if (!actor || !["muse", "dave"].includes(courier)) throw new Error("Invalid courier actor mapping");
     return [actor, courier];
   }));
+  actorMap[settings.owner.login] ||= 'owner';
   const receiptScan = ledger
-    ? await inspectReceipts({ledger,allowedActors:Object.keys(actorMap)})
+    ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])]})
     : {accepted:[],rejected:[],complete:false,scan_error:'private_ledger_unavailable'};
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
   proposed.state=recordDrift(trackScheduleGap(proposed.state,{
     eventName:process.env.GITHUB_EVENT_NAME,now:new Date().toISOString(),
     observedScheduleAt:observed.lastScheduleAt}),current,observed.snapshot);
-  const unmappedPrs = linkPullRequests(current, observed.snapshot).unmapped;
+  const unmappedPrs = linkPullRequests(proposed.state, observed.snapshot).unmapped;
   async function applyCodexProvenance(state, prior) {
     for (const [id,rec] of Object.entries(state.tasks)) {
       const before=prior.tasks?.[id];
@@ -309,9 +312,9 @@ async function main() {
     const pending=Object.entries(state.tasks).filter(([,r])=>
       r.status==='merged' && /^[a-f0-9]{40}$/.test(r.merge_sha||''));
     if(!pending.length)return;
-    const runs=await gh.workflowRuns('ai-cafe-integration-proof.yml','branch=main');
+    const runs=await gh.workflowRuns(settings.workflows.integration,'branch=main');
     for(const [id,rec] of pending) for(const run of runs) {
-      if(run.name!=='AI CAFE Integration Proof' || run.head_branch!=='main' ||
+      if(run.name!==settings.required_checks.integration_workflow || run.head_branch!=='main' ||
          !['push','workflow_dispatch'].includes(run.event) ||
          run.status!=='completed'||run.conclusion!=='success'||
          (run.event==='push'&&run.head_sha!==rec.merge_sha))continue;
@@ -320,16 +323,34 @@ async function main() {
         j.status==='completed'&&j.conclusion==='success');
       if(!job)continue;
       // Skipped acceptance cannot promote integration even if the job is green.
-      const artifact=await gh.integrationProof(run.id).catch(()=>null);
-      const proof=verifiedMergedProof({run,job,artifact,taskId:id,mergeSha:rec.merge_sha});
+      let artifact;
+      try{artifact=await gh.integrationProof(run.id);}
+      catch(error){
+        const notice=queueOwnerIssue(state,{kind:'integration_proof_fetch_failed',task_id:id,
+          pr_number:rec.pr_number,identity:rec.merge_sha,
+          message:'PR #'+rec.pr_number+' integration artifact could not be read: '+error.message,
+          needs:'Restore proof API access or verify a successful exact-merge-SHA run'});
+        state.owner_alerts=notice.owner_alerts;continue;
+      }
+      const proof=verifiedMergedProof({run,job,artifact,taskId:id,mergeSha:rec.merge_sha,
+        legacyBefore:settings.legacy_proof_before});
       const task=taskById.get(id);
       if(task&&proof&&integrationStatus({merged_sha:rec.merge_sha,
         main_sha:rec.merge_sha,proof,expectedAcceptance:task.acceptance})==='integrated_proven') {
         rec.integration_proof=proof;rec.integration_dispatch='verified';
         rec.status='integrated_proven';
-        console.log('drift_fixed: integration PR #'+rec.pr_number+' proof run '+run.id);
+        state.owner_alerts=resolveOwnerIssue(state,'integration_pending',rec.pr_number).owner_alerts;
+        console.log('drift_fixed: integration PR #'+rec.pr_number+' proof run '+run.id+
+          ' basis '+proof.proof_basis);
         break;
       }
+    }
+    for(const [id,rec] of pending){
+      if(rec.status==='integrated_proven')continue;
+      state.owner_alerts=queueOwnerIssue(state,{kind:'integration_pending',task_id:id,
+        pr_number:rec.pr_number,identity:rec.merge_sha,
+        message:'PR #'+rec.pr_number+' remains merged but integration cannot be promoted for '+rec.merge_sha,
+        needs:'A completed exact-SHA Integration Proof job with all required green steps'}).owner_alerts;
     }
   }
 
@@ -347,7 +368,9 @@ async function main() {
       // Dependency proof is recorded for reporting, not an unsolicited chat prompt.
       // Integration may become proven during this same pass: queue the owner
       // review with the actual saved chat URL without a second delayed cycle.
-      const withNotices = queueOwnerAlerts(next,{queue});
+      const withNotices = noticeOperationalIssues(queueOwnerAlerts(next,{queue,
+        unmappedPrs:linkPullRequests(next,latest.snapshot).unmapped,openPrs:latest.snapshot}),
+        {snapshot:latest.snapshot,scan:receiptScan});
       return JSON.stringify(withNotices) === JSON.stringify(existing) ? null : withNotices;
     });
   }
@@ -480,20 +503,32 @@ async function main() {
   }
   // Green drafts are made ready automatically. Auto-merge remains separately
   // controlled and still requires an exact-head clean Codex receipt.
-  const autoMerge = process.env.DISPATCH_AUTO_MERGE === "true" && commit;
+  const autoMerge = settings.auto_merge.coding && process.env.DISPATCH_AUTO_MERGE !== "false" && commit;
   if (commit && ledger) {
     for (const [id, rec] of Object.entries(persisted?.state?.tasks || proposed.state.tasks)) {
       if (!rec.pr_number || rec.github_state !== "open") continue;
       const task = taskById.get(id);
       if ((!task && !rec.adhoc) || (rec.draft !== true && !autoMerge)) continue;
-      if (rec.adhoc && rec.dispatcher_only) continue; // owner-merge only
+      // Owner-merge-only infrastructure may become Ready after green CI so
+      // GitHub can start automatic Codex, but never enters the merge action.
+      if (rec.dispatcher_only && rec.draft === false) continue;
       const predecessorRecords = rec.adhoc ? [] : predecessorsForMerge(task, queue, proposed.state.tasks);
       // Ready transitions need only green CI, not coder-done. The later merge
       // is a separate fresh reconciliation, never the same snapshot.
       const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
         enabled: true, action: rec.draft ? "ready" : "merge" });
       if (outcome.status === "ready_for_review") {
-        console.log(`Verified PR #${rec.pr_number} for task ${id} is ready for review; merge awaits fresh GitHub reconciliation`);
+        await ledger.transaction(state=>{
+          const r=state.tasks?.[id];
+          if(!r||r.head_sha!==rec.head_sha)return null;
+          // Ready itself invokes GitHub's automatic Codex review. Never duplicate.
+          r.codex_review_requested_sha=rec.head_sha;
+          r.ready_transition_at=new Date().toISOString();
+          return state;
+        });
+        await dispatchReceiptWake({token:githubToken,event:'dispatcher_delayed'}).catch(e=>
+          console.error('Ready transition self-wake failed: '+e.message));
+        console.log(`Verified PR #${rec.pr_number} ready on green exact head; automatic Codex follows`);
         continue;
       }
       if (outcome.status === "merged_unproven") {
@@ -556,7 +591,7 @@ async function main() {
     !architectureFoundationReady(queue,effectiveState.tasks);
   const hasChatReceipt = !!foundationRecord?.conversation_ref;
   const summary = [
-    "## AI CAFE development dispatcher — coordination status",
+     '## '+settings.chatgpt.project_name+' development dispatcher — coordination status',
     `- Last persisted state: **${effectiveState.updated_at || "not yet saved"}** (an unchanged ledger alone is not a scheduler heartbeat)`,
     "- 10-minute code inactivity / 15-minute post-delivery checks are best-effort; GitHub scheduled runs may be delayed or dropped.",
     "",
@@ -599,7 +634,7 @@ async function main() {
   // Single owner-facing view in issue #411, updated by the same trusted-main
   // reconciliation. Dashboard publishing is never allowed to block the
   // private ledger or the opaque Muse wake-up signal.
-  const ownerIssue = Number(process.env.DISPATCH_OWNER_DASHBOARD_ISSUE);
+  const ownerIssue = Number(process.env.DISPATCH_OWNER_DASHBOARD_ISSUE || settings.owner.dashboard_issue);
   if (commit && ledger && persisted && Number.isSafeInteger(ownerIssue) && ownerIssue > 0) {
     const runUrl = process.env.GITHUB_RUN_ID
       ? `https://github.com/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}` : null;
@@ -614,4 +649,17 @@ async function main() {
     }
   }
 }
-main().catch(error => { console.error(`Dispatcher failed: ${error.message}`); process.exitCode = 1; });
+main().catch(async error => {
+ const secrets=[process.env.GITHUB_TOKEN,process.env.DISPATCH_LEDGER_TOKEN].filter(Boolean);
+ const detail=secrets.reduce((s,t)=>s.split(t).join('[REDACTED]'),String(error.message||error)).slice(0,250);
+ console.error('Dispatcher failed: '+detail);
+ if(process.env.DISPATCH_LEDGER_TOKEN){
+  try{
+   const ledger=new GitHubLedger({repo:settings.ledger.repo,token:process.env.DISPATCH_LEDGER_TOKEN,
+    path:settings.ledger.path});
+   await reportFatalDispatcherError({ledger,sha:process.env.GITHUB_SHA||'unknown',
+    message:detail,wake:()=>dispatchReceiptWake({token:process.env.GITHUB_TOKEN})});
+  }catch(second){console.error('Owner alert persistence or wake failed: '+String(second.message).slice(0,160));}
+ }
+ process.exitCode=1;
+});

@@ -1,7 +1,8 @@
+import {settings} from './settings.mjs';
 import {githubFailure,githubNetworkFailure} from './github.mjs';
 // Durable dispatcher ledger in a SEPARATE PRIVATE GitHub repository.
 // GitHub Contents API gives compare-and-swap writes via blob SHA.
-const PATH = "dispatcher/state.json";
+const PATH = settings.ledger.path;
 const empty = () => ({ version: 1, updated_at: null, tasks: {}, actions: {} });
 export function assertLedgerShape(value) {
   if (!value || value.version !== 1 || !value.tasks || typeof value.tasks !== "object" ||
@@ -23,9 +24,10 @@ export function sanitizeLedger(value) {
   return assertLedgerShape(value);
 }
 export class GitHubLedger {
-  constructor({ repo, token, fetchFn = fetch }) {
+  constructor({ repo, token, path=PATH, fetchFn = fetch }) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo || "") || !token) throw new Error("Private ledger repo/token required");
     this.repo = repo;
+    this.path = path;
     this.token = token;
     this.fetchFn = fetchFn;
   }
@@ -56,7 +58,7 @@ export class GitHubLedger {
     if (data.absent || data.private !== true) throw new Error("Ledger must be a private repository");
   }
   async load() {
-    const data = await this.request(`/contents/${PATH}?ref=main`);
+    const data = await this.request(`/contents/${this.path}?ref=main`);
     if (data.absent) return { sha: null, state: empty() };
     if (!data.content || !data.sha) throw new Error("Unexpected GitHub ledger response");
     const decoded = Buffer.from(data.content.replace(/\s/g, ""), "base64").toString("utf8");
@@ -66,7 +68,7 @@ export class GitHubLedger {
     sanitizeLedger(state);
     const body = { message, content: Buffer.from(JSON.stringify(state, null, 2) + "\n").toString("base64"), branch: "main" };
     if (sha) body.sha = sha;
-    return this.request(`/contents/${PATH}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return this.request(`/contents/${this.path}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   }
   // GitHub Actions' concurrency group serializes normal execution; SHA is a second safety check.
   async transaction(transform, maxRetries = 3) {

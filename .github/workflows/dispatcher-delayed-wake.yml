@@ -1,0 +1,42 @@
+name: Dispatcher delayed self-wake
+on:
+  workflow_dispatch:
+    inputs:
+      due_at:
+        type: string
+        required: true
+      wake_key:
+        type: string
+        required: true
+permissions:
+  contents: write
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Wait only until requested UTC deadline
+        env:
+          DUE_AT: ${{ inputs.due_at }}
+          WAKE_KEY: ${{ inputs.wake_key }}
+        run: |
+          python3 - <<'PY'
+          import os,re,time,datetime
+          if not re.fullmatch(r'[a-f0-9]{64}',os.environ['WAKE_KEY']):
+            raise ValueError('Invalid wake key')
+          due=datetime.datetime.fromisoformat(os.environ['DUE_AT'].replace('Z','+00:00'))
+          seconds=(due-datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+          if not -1200<=seconds<=1200: raise ValueError('Wake deadline outside 20-minute bound')
+          time.sleep(max(0,seconds))
+          PY
+      - name: Wake this repository dispatcher without cron
+        env:
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/dispatches" \
+            -d '{"event_type":"dispatcher_delayed","client_payload":{"version":1}}'

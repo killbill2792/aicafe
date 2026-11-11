@@ -4,7 +4,7 @@ import {applySafetySignals,expectedTaskRepo,stallMinutes,STALL_PROMPT} from './s
 const head='a'.repeat(40);
 const base={tasks:{T:{task_id:'T',repo:'owner/aicafe',approved:true,conversation_ref:'https://chatgpt.com/c/real',
   github_state:'open',pr_number:12,head_sha:head,last_commit_at:'2026-11-10T10:00:00Z',
-  last_submission_at:'2026-11-10T10:05:00Z'}},actions:{}};
+  last_submission_at:'2026-11-10T10:05:00Z',ci_state:'failure'}},actions:{}};
 const run=(s,now='2026-11-10T10:26:00Z')=>applySafetySignals(s,{repo:'owner/aicafe',now,queue:[],minutes:20});
 test('queue/ledger repository fact wins over a PR body',()=>{
  assert.equal(expectedTaskRepo({repo:'other/product'},{repo:'owner/aicafe'},'owner/aicafe'),'other/product');
@@ -17,19 +17,18 @@ test('20 minute default, override and no premature prompt',()=>{
  assert.equal(run(base,'2026-11-10T10:24:00Z').tasks.T.stall_count,0);
  assert.match(STALL_PROMPT,/Resource not accessible by integration/);
 });
-test('three authenticated same-head stalls escalate once and stop nudges',()=>{
+test('one nudge after 20 minutes then owner escalation without three prompts',()=>{
  let s=run(base);assert.equal(s.tasks.T.stall_count,1);assert.match(s.tasks.T.stall_pending,/stall:/);
  s=run(s);assert.equal(s.tasks.T.stall_count,1);
  s.tasks.T.last_submission_at='2026-11-10T10:27:00Z';s=run(s,'2026-11-10T10:48:00Z');
- assert.equal(s.tasks.T.stall_count,2);
- s.tasks.T.last_submission_at='2026-11-10T10:49:00Z';s=run(s,'2026-11-10T11:10:00Z');
- assert.equal(s.tasks.T.stall_count,3);assert.equal(s.tasks.T.stall_escalate,true);assert.equal(s.tasks.T.stall_pending,null);
- assert.equal(run(s,'2026-11-10T11:30:00Z').tasks.T.stall_count,3);
+ assert.equal(s.tasks.T.stall_count,1);
+ assert.equal(s.tasks.T.stall_escalate,true);assert.equal(s.tasks.T.stall_pending,null);
+ assert.equal(run(s,'2026-11-10T11:30:00Z').tasks.T.stall_count,1);
 });
-test('head movement and verified done suppress or reset stalls',()=>{
+test('head movement resets stall but coder-done marker does not suppress it',()=>{
  let s=run(base);s.tasks.T.head_sha='b'.repeat(40);
  assert.equal(run(s).tasks.T.stall_count,0);
- s=structuredClone(base);s.tasks.T.coder_done=true;assert.equal(run(s).tasks.T.stall_pending,null);
+ s=structuredClone(base);s.tasks.T.coder_done=true;assert.match(run(s).tasks.T.stall_pending,/stall:/);
  s=structuredClone(base);s.tasks.T.last_commit_at='2026-11-10T10:06:00Z';
  assert.equal(run(s).tasks.T.stall_pending,null);
 });
@@ -57,16 +56,17 @@ test('chat-written field failures retain exact annotation and fix text',async()=
  assert.equal(failureInstruction([{message:'TypeScript error'}]),null);
 });
 
-test('only an actual repo marker mismatch blocks the existing merge decision',async()=>{
+test('GitHub repo mismatch and protected files block; PR-body markers do not',async()=>{
  const {mergeGate,readyGate,decideNudge}=await import('./core.mjs');
  const good={draft:false,pr_number:17,head_sha:'a'.repeat(40),ci_state:'success',
    codex_state:'clean',codex_reviewed_sha:'a'.repeat(40),threads_resolved:true,
    mergeable:true,approved:true,conversation_ref:'https://chatgpt.com/c/test',
    github_state:'open',task_id:'T'};
  assert.equal(mergeGate(good).eligible,true);
- assert.equal(mergeGate({...good,repo_marker_mismatch:true}).reasons.includes('wrong_repository'),true);
+ assert.equal(mergeGate({...good,repo_marker_mismatch:true}).reasons.includes('wrong_repository'),false);
+ assert.equal(mergeGate({...good,protected_file_violation:[{file:'src/locked.ts'}]}).reasons.includes('protected_file_owner_hold'),true);
  assert.equal(readyGate({...good,draft:true,repo_mismatch:{expected:'x/y',actual:'a/b'}}).eligible,false);
- assert.equal(decideNudge({...good,repo_marker_mismatch:true,repo_marker_failure:'wrong repo'}).action,'ci_failed');
+ assert.equal(decideNudge({...good,repo_marker_mismatch:true,repo_marker_failure:'wrong repo'}).action,undefined);
 });
 
 test('a newer verified head beats misleading commit author timestamps',()=>{
@@ -85,7 +85,7 @@ test('existing owner notices flag wrong-repo, connector 403 and third stall',asy
  const notes=Object.values(next.owner_alerts);
  assert.deepEqual(notes.map(n=>n.kind).sort(),['connector_403','repeated_stall','wrong_repo']);
  assert.ok(notes.some(n=>n.question==='ChatGPT Codex Connector likely missing repo other/repo'));
- assert.ok(notes.some(n=>/D7 referee/.test(n.question)));
+ assert.ok(notes.some(n=>/20-minute Muse nudge/.test(n.question)));
 });
 
 test('nonrequired existing check with exact field annotation still gets same-chat repair',async()=>{
@@ -108,4 +108,10 @@ test('repository and chat markers pass, warn and reject explicit conflicts',asyn
  assert.equal(parseChatUrl('<!-- aicafe-chat-url https://chatgpt.com/c/abc-123 -->'),'https://chatgpt.com/c/abc-123');
  assert.equal(parseChatUrl('<!-- aicafe-chat-url https://chatgpt.com/g/project/c/abc -->'),'https://chatgpt.com/g/project/c/abc');
  assert.equal(parseChatUrl('<!-- aicafe-chat-url https://evil.example/x -->'),null);
+});
+test('finished green CI cannot trigger an idle stall nudge and coder-done is ignored',()=>{
+ const green=structuredClone(base);green.tasks.T.ci_state='success';green.tasks.T.coder_done=false;
+ assert.equal(run(green).tasks.T.stall_pending,null);
+ const red=structuredClone(base);red.tasks.T.coder_done=true;
+ assert.match(run(red).tasks.T.stall_pending,/stall:/);
 });

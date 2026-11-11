@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 // Pure receipt verification. The trusted GitHub-side writer must authenticate courier
 // receipts before calling this function; this module never accepts anonymous writes.
 import { createHash } from 'node:crypto';
@@ -22,7 +23,7 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
     action?.type === 'assign' && receipt.action_id === 'assign:' + task?.task_id &&
     action?.task_id === task?.task_id &&
     task?.github_state === 'open' && Number.isInteger(task?.pr_number) &&
-    task?.branch === 'feat/aicafe-task-' + task.task_id &&
+    task?.branch === settings.naming.branch_prefix + task.task_id &&
     !task?.conversation_ref;
   if (!action || !task ||
       (action.status !== 'planned' && !lateAssignment && !supersededContinuation) ||
@@ -48,6 +49,8 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
       receipt.continuation_of === d.conversation_url &&
       receipt.continuation_reason === 'stale_chat'))
     throw new Error('Follow-up destination changed');
+  if (receipt.task_id!=null&&receipt.task_id!==task.task_id)throw Error('Receipt task mismatch');
+  if (receipt.branch!=null&&receipt.branch!==task.branch)throw Error('Receipt branch mismatch');
   if (d.intent === 'start_new_chat' && task.conversation_ref)
     throw new Error('Task already has a conversation');
   // Existing courier records used {project:{id:'aicafe',name:'AI CAFE'}};
@@ -84,6 +87,11 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
     ...(continuation ? {continuation_of:d.conversation_url} : {}) };
   task.conversation_ref = receipt.conversation_url;
   task.conversation_url = receipt.conversation_url;
+  if(task.branch){
+    next.branch_chat_links||={};
+    next.branch_chat_links[task.branch]={task_id:task.task_id,branch:task.branch,
+      conversation_url:receipt.conversation_url,updated_at:action.submitted_at};
+  }
   if (d.effort) task.effort = d.effort;
   if (Number.isInteger(task.pr_number)) {
     next.pr_chat_links ||= {};

@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -28,7 +29,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
   const taskById = new Map(['bad', 'good', 'POS0b', 'POS0c', 'POS0d', 'POS0e', '6']
     .map(id => [id, task(id)]));
   const deps = {
-    queue: { tasks: [...taskById.values()] }, taskById,
+    queue: { tasks: [...taskById.values()] }, taskById, settings,
     receiptScan: { accepted: receipts, rejected: [], complete: true },
     actorMap: {}, console: { error: message => errors.push(message), log: () => {} },
     linkPullRequests: state => ({ state: structuredClone(state), unmapped: [] }),
@@ -41,6 +42,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     },
     reconcileReceiptFeedback: state => state,
     queueOwnerAlerts: state => state,
+    noticeOperationalIssues: state => state,
     applySafetySignals: state => state,
     stallMinutes: () => 20,
     repo: 'killbill2792/aicafe',

@@ -102,16 +102,14 @@ test('live current-head in-progress Codex signal holds without posting',async()=
   assert.equal(gh.posted.length,0);
 });
 
-test('five-minute push and ready settle windows suppress duplicate requests',async()=>{
- const gh=fakeGithub(),now=new Date().toISOString();
- assert.equal((await requestCodexReview({github:gh,record:{...rec(),last_commit_at:now},task})).status,'held');
- assert.equal((await requestCodexReview({github:gh,record:{...rec(),last_github_activity:now},task})).status,'held');
- assert.equal((await requestCodexReview({github:gh,record:{...rec(),ready_transition_at:now},task})).status,'held');
- gh.request=async(path)=>path==='/pulls/423'
-  ? {state:'open',draft:false,created_at:now,head:{sha:head},base:{sha:base}}
-  : Promise.reject(Error('Unexpected '+path));
- assert.equal((await requestCodexReview({github:gh,record:rec(),task})).status,'automatic_review_grace');
+test('red/pending CI never requests Codex; green final head requests once',async()=>{
+ const gh=fakeGithub(),record=rec();
+ assert.equal((await requestCodexReview({github:gh,record:{...record,ci_state:'failure'},task})).status,'held');
+ assert.equal((await requestCodexReview({github:gh,record:{...record,ci_state:'pending'},task})).status,'held');
  assert.equal(gh.posted.length,0);
+ assert.equal((await requestCodexReview({github:gh,record,task})).status,'requested');
+ assert.equal(gh.posted.length,1);
+ assert.equal((await requestCodexReview({github:gh,record:{...record,codex_review_requested_sha:head},task})).status,'held');
 });
 test('dispatcher-only owner-merge PR never requests Codex',async()=>{
  const gh=fakeGithub();
@@ -171,4 +169,30 @@ test('GitHub watchdog inspects receipts and never POSTs another Codex request',a
   created_at:'2026-11-10T10:21:00Z'}];
  assert.equal((await inspectCodexWatch({github:gh,record:watchRecord(),now:at})).status,'receipt');
  assert.equal(posts,0);
+});
+
+test('automatic green Ready transition times out without a manual review comment',()=>{
+ const record={...watchRecord(),ready_transition_at:'2026-11-10T10:00:00Z'};
+ const check=at=>codexWatchDecision({record,comments:[],now:Date.parse(at)});
+ assert.equal(check('2026-11-10T10:19:59Z').status,'pending');
+ assert.deepEqual(check('2026-11-10T10:20:00Z'),{status:'escalate',head_sha:head});
+ assert.equal(codexWatchDecision({record,comments:[],reviews:[{
+  commit_id:head,user:{login:'chatgpt-codex-connector[bot]'}}],
+  now:Date.parse('2026-11-10T10:21:00Z')}).status,'receipt');
+ assert.equal(codexWatchDecision({record:{...record,ready_transition_at:null},
+  comments:[],now:Date.parse('2026-11-10T11:00:00Z')}).status,'no_verified_request');
+});
+test('watchdog observes exact GitHub Ready state and never posts a duplicate trigger',async()=>{
+ const record={...watchRecord(),ready_transition_at:'2026-11-10T10:00:00Z'};
+ let posted=0;
+ const gh={request:async(path,options)=>{
+  if(options?.method==='POST')posted++;
+  assert.equal(path,'/pulls/423');
+  return {state:'open',draft:false,head:{sha:head}};
+ },paginated:async path=>{
+  if(['/issues/423/comments','/pulls/423/reviews','/issues/423/reactions'].includes(path))return [];
+  throw Error('Unexpected receipt path '+path);
+ }};
+ const result=await inspectCodexWatch({github:gh,record,now:Date.parse('2026-11-10T10:21:00Z')});
+ assert.deepEqual(result,{status:'escalate',head_sha:head});assert.equal(posted,0);
 });

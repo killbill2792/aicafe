@@ -1,8 +1,9 @@
+import {settings} from './settings.mjs';
 // AI CAFE developer dispatcher: pure, deterministic decisions. No browser, LLM or merge effects.
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 export const taskKey = (id) => {
   if (!ID.test(id)) throw new Error("Invalid task id");
-  return `aicafe:${id}`;
+  return settings.naming.task_prefix+':'+id;
 };
 // New queues use edits (exclusive writes) and uses (read-only imports).
 // Retain signed exclusive_files for existing approved tasks until migrated.
@@ -38,6 +39,12 @@ export function validateQueue(queue) {
     tasks.set(task.id, task);
   }
   // Read-only uses never reserve a path; only two writers conflict.
+  const ancestor=(later,earlier,seen=new Set())=>{
+    if(later===earlier)return true;
+    if(seen.has(later))return false;
+    seen.add(later);
+    return (tasks.get(later)?.depends_on||[]).some(dep=>ancestor(dep,earlier,seen));
+  };
   const exclusiveOwners = new Map();
   for (const task of queue.tasks) {
     const edits = editableFiles(task), uses = usedFiles(task);
@@ -49,8 +56,9 @@ export function validateQueue(queue) {
       throw new Error('Invalid read-only file usage for ' + task.id);
     for (const path of edits) {
       const owner = exclusiveOwners.get(path);
-      if (owner) throw new Error('Overlapping exclusive file ownership: ' +
-        path + ' (' + owner + ' and ' + task.id + ')');
+      if (owner && !(queue.sequential_edit_overlap===true&&ancestor(task.id,owner)))
+        throw new Error('Overlapping exclusive file ownership: ' +
+          path + ' (' + owner + ' and ' + task.id + ')');
       exclusiveOwners.set(path,task.id);
     }
   }
@@ -258,7 +266,7 @@ export function decideNudge(record, _nowMs) {
   // Never wake a clean PR for idle time, ordinary owner comments, parent merge,
   // missing acceptance, or an otherwise completed stage. Only coder work.
   const conflict = record.mergeable === false || record.mergeable_state === 'dirty';
-  const action = record.repo_marker_mismatch || record.field_check_failure ? 'ci_failed' :
+  const action = record.field_check_failure ? 'ci_failed' :
     record.ci_state === 'failure' ? 'ci_failed' :
     record.codex_state === 'findings' ? 'codex_comments' :
     conflict ? 'repair_conflict' : null;
@@ -281,7 +289,8 @@ export function readyGate(record) {
   if (!record?.pr_number || !record?.head_sha) reasons.push('missing_pr_or_sha');
   if (record?.ci_state !== 'success') reasons.push('ci_not_green');
   if (ownerSensitiveHold(record)) reasons.push('sensitive_owner_approval_required');
-  if (record?.repo_mismatch || record?.repo_marker_mismatch) reasons.push('wrong_repository');
+  if (record?.repo_mismatch) reasons.push('wrong_repository');
+  if(record?.protected_file_violation?.length)reasons.push('protected_file_owner_hold');
   return {eligible:reasons.length===0,reasons};
 }
 
@@ -303,7 +312,8 @@ export function mergeGate(record, predecessors = []) {
   if (record?.threads_resolved !== true) reasons.push('unresolved_threads');
   if (record?.mergeable !== true) reasons.push('not_mergeable');
   if (ownerSensitiveHold(record)) reasons.push('sensitive_owner_approval_required');
-  if (record?.repo_mismatch || record?.repo_marker_mismatch) reasons.push('wrong_repository');
+  if (record?.repo_mismatch) reasons.push('wrong_repository');
+  if(record?.protected_file_violation?.length)reasons.push('protected_file_owner_hold');
   // Ordering is satisfied by a verified GitHub merge, not integrated_proven.
   if (predecessors.some(p => !['merged','integrated_proven','released_proven'].includes(p?.status) ||
       !p?.merge_sha)) reasons.push('predecessor_not_merged');

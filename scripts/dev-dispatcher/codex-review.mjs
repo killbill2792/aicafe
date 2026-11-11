@@ -1,20 +1,19 @@
+import {settings} from './settings.mjs';
 import { parseCodexReviewState } from './github.mjs';
 // Request one exact-head Codex review after all ready-state gates are verified.
 // Never merge, create a draft, or infer review completion from a comment.
 
 const sha40 = value => /^[a-f0-9]{40}$/.test(value || '');
-const marker = sha => '<!-- aicafe-dispatcher-codex-review:' + sha + ' -->';
-const SETTLE_MS=5*60*1000;
-export const settled=(at,now=Date.now())=>Number.isFinite(Date.parse(at||'')) &&
-  now-Date.parse(at)>=SETTLE_MS;
+const marker = sha => '<!-- '+settings.naming.marker_prefix+'-dispatcher-codex-review:' + sha + ' -->';
+// New commits may trigger Codex only after all required CI checks finish green.
+// The ready transition already triggers automatic review; no CI-parallel timer.
 
 export async function requestCodexReview({github,record,task,records = {}}) {
   const sha=record?.head_sha;
   // Green current head is enough to start Codex. No coder-done,
   // acceptance artifact, integrated dependency or routine owner hold.
   if ((!task && !record?.adhoc) || (record?.adhoc && record?.dispatcher_only) ||
-      record?.draft===true || !settled(record?.last_github_activity || record?.last_commit_at) ||
-      !settled(record?.ready_transition_at || '2000-01-01T00:00:00Z') || !sha40(sha) || !Number.isInteger(record.pr_number) ||
+      record?.draft===true || !sha40(sha) || !Number.isInteger(record.pr_number) ||
       record.github_state !== 'open' || record.ci_state !== 'success' ||
       record.codex_review_requested_sha === sha ||
       record.codex_in_progress_sha === sha ||
@@ -24,11 +23,9 @@ export async function requestCodexReview({github,record,task,records = {}}) {
   const pr=await github.request('/pulls/' + record.pr_number);
   if (pr.state !== 'open' || pr.head?.sha !== sha)
     return {status:'stale'};
-  if(pr.draft || !settled(pr.created_at || '2000-01-01T00:00:00Z'))
-    return {status:'automatic_review_grace'};
+  if(pr.draft)return {status:'draft_not_ready'};
   const live=await github.one(pr);
   if (live.head_sha !== sha || live.ci_state !== 'success' ||
-      !settled(live.last_github_activity || live.last_commit_at || record.last_github_activity || record.last_commit_at) ||
       live.codex_reviewed_sha === sha || live.codex_in_progress_sha === sha ||
       live.codex_state === 'clean' ||
       live.codex_state === 'findings' || live.sensitive_owner_block)
@@ -84,9 +81,16 @@ export function codexWatchDecision({record,comments=[],reviews=[],reactions=[],n
   if(reviews.some(r=>r.commit_id===head&&codexActor(r.user?.login))||
      comments.some(c=>codexActor(c.user?.login)&&parseCodexReviewState(c.body||'',head))||
      reactions.some(r=>codexActor(r.user?.login)))return {status:'receipt'};
-  if(!requests.length)return {status:'no_verified_request'};
-  const first=Date.parse(requests[0].created_at||'');
-  if(!Number.isFinite(first)||!Number.isFinite(now)||now-first<minutes*60_000)
+  // GitHub's verified draft -> Ready transition automatically requests Codex.
+  // It has no @codex comment, so use its recorded current-head timestamp for
+  // the SAME missing-review watchdog, without requesting a second review.
+  const readyAt=record.draft===false&&record.codex_review_requested_sha===head
+    ? Date.parse(record.ready_transition_at||'') : NaN;
+  const first=Math.min(...[
+    ...requests.map(c=>Date.parse(c.created_at||'')),readyAt
+  ].filter(Number.isFinite));
+  if(!Number.isFinite(first))return {status:'no_verified_request'};
+  if(!Number.isFinite(now)||now-first<minutes*60_000)
     return {status:'pending'};
   return {status:'escalate',head_sha:head};
 }
@@ -95,12 +99,17 @@ export async function inspectCodexWatch({github,record,now=Date.now(),minutes=20
      record.codex_review_requested_sha!==record.head_sha)return {status:'held'};
   const pr=await github.request('/pulls/'+record.pr_number);
   if(pr.state!=='open'||pr.head?.sha!==record.head_sha)return {status:'stale'};
+  if(pr.draft===true)return {status:'held'};
   const [comments,reviews]=await Promise.all([
     github.paginated('/issues/'+record.pr_number+'/comments','comments'),
     github.paginated('/pulls/'+record.pr_number+'/reviews','reviews')
   ]);
-  const first=Math.min(...comments.filter(c=>isRequest(c,record.head_sha,record.last_commit_at))
-    .map(c=>Date.parse(c.created_at||'')).filter(Number.isFinite));
+  const readyAt=record.draft===false&&record.codex_review_requested_sha===record.head_sha
+    ? Date.parse(record.ready_transition_at||'') : NaN;
+  const first=Math.min(...[
+    ...comments.filter(c=>isRequest(c,record.head_sha,record.last_commit_at))
+      .map(c=>Date.parse(c.created_at||'')),readyAt
+  ].filter(Number.isFinite));
   const reactions=[];
   if(Number.isFinite(first)) {
     const issue=await github.paginated('/issues/'+record.pr_number+'/reactions','reactions');

@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "repo": "killbill2792/aicafe",
+  "queue": {
+    "repo": "killbill2792/aicafe",
+    "path": "docs/plans/universal-supervisor-queue.json",
+    "ref": "main"
+  },
+  "ledger": {
+    "repo": "killbill2792/dave-task-queue",
+    "path": "dispatcher/state.json",
+    "receipts_path": "dispatcher/receipts",
+    "owner_view_path": "dispatcher/owner-queue.md"
+  },
+  "chatgpt": {
+    "project_url": "https://chatgpt.com/g/g-p-6ac13dbb53c8819197786f9f64e7d1c9-ai-cafe",
+    "account_label": "AI CAFE",
+    "project_id": "aicafe",
+    "project_name": "AI CAFE"
+  },
+  "muse": {
+    "space": "AI CAFE",
+    "delivery_owner": "muse",
+    "retry_seconds": 900
+  },
+  "effort_default": "high",
+  "codex": {
+    "policy": "A-D",
+    "settle_seconds": 300
+  },
+  "auto_merge": {
+    "coding": true,
+    "infrastructure": false
+  },
+  "required_checks": {
+    "baseline": "AI CAFE PR baseline",
+    "baseline_workflow": "AI CAFE Pull Request Baseline",
+    "acceptance_workflow": "AI CAFE Acceptance Evidence",
+    "integration_workflow": "AI CAFE Integration Proof",
+    "names": [
+      "AI CAFE PR baseline"
+    ]
+  },
+  "workflows": {
+    "dispatcher": "ai-cafe-dev-dispatcher.yml",
+    "integration": "ai-cafe-integration-proof.yml",
+    "delayed_wake": "dispatcher-delayed-wake.yml"
+  },
+  "owner": {
+    "login": "killbill2792",
+    "dashboard_issue": 411
+  },
+  "paths": {
+    "signal": "signal.json",
+    "authority": "AGENTS.md",
+    "progress": "PROGRESS.md",
+    "skills": "docs/rules/skills.md",
+    "task_brief_root": "docs/plans",
+    "pos_preflight": "docs/rules/pos-data.md"
+  },
+  "naming": {
+    "task_prefix": "aicafe",
+    "branch_prefix": "feat/aicafe-task-",
+    "marker_prefix": "aicafe"
+  },
+  "legacy_proof_before": "2026-11-10T21:47:03Z",
+  "task_order": {
+    "strategy": "dependencies_then_priority",
+    "source": "signed_queue"
+  },
+  "auto_test_branch": "dispatcher/auto-test",
+  "protected_files": [],
+  "setup": {
+    "required_secrets": [
+      "DISPATCH_LEDGER_TOKEN",
+      "DISPATCH_SIGNAL_SECRET",
+      "DISPATCH_TARGET_WAKE_TOKEN",
+      "DISPATCH_INSTALL_TOKEN"
+    ],
+    "required_vars": [
+      "DISPATCH_COURIER_ACTORS",
+      "DISPATCH_LEDGER_AUTO_PERSIST",
+      "DISPATCH_TARGET_REPO"
+    ]
+  }
+}

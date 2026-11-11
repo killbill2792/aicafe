@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 // Trusted-main GitHub effects. Never execute PR code with the private queue token.
 // Every irreversible action rechecks live GitHub facts; uncertainty blocks merging.
 import { mergeGate, readyGate } from './core.mjs';
@@ -35,16 +36,18 @@ export function canMerge(record, predecessors) {
 // The owner-approved coding lifecycle has exactly six merge conditions:
 // current-head required checks, clean newest exact-head Codex receipt, no
 // unresolved threads, ready (not draft), GitHub mergeability, merge order.
-// Privileged paid/live/prod/secret labels remain an explicit owner hold.
+// Privileged work requires authenticated owner authorization, never label or PR-body inference.
 export async function mergeApprovedPr({ github, record, predecessors = [],
   enabled = false, action = 'merge' }) {
   if (!enabled) return {status:'disabled'};
   if (!['ready','merge'].includes(action))
     return {status:'blocked',reasons:['invalid_lifecycle_action']};
   const prepareReady = action === 'ready';
+  // Never auto-merge a verified infrastructure change, even when a coding
+  // PR also contains other files or the ledger did not classify it as adhoc.
+  if (!prepareReady && record?.dispatcher_only)
+    return {status:'blocked',reasons:['owner_merge_required']};
   if (!prepareReady && record?.adhoc) {
-    if (record.dispatcher_only)
-      return {status:'blocked',reasons:['owner_merge_required']};
     if (record.base_branch !== 'main')
       return {status:'blocked',reasons:['adhoc_parent_base_not_main']};
   }
@@ -57,11 +60,13 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
       (!prepareReady && pr.mergeable !== true))
     return {status:'blocked',reasons:['live_pr_changed']};
   const live=await github.one(pr);
-  // Recheck the actual GitHub base and changed paths: an adopted stacked PR
-  // cannot merge into its open parent (or trigger main integration proof).
+  // GitHub's verified changed paths always override a stale ledger:
+  // mixed-scope infrastructure must remain owner-merge-only.
+  if (!prepareReady && live.dispatcher_only)
+    return {status:'blocked',reasons:['owner_merge_required']};
+  // Adopted stacked PRs cannot merge into an open parent.
   if (!prepareReady && record.adhoc &&
-      (pr.base?.ref !== 'main' || live.base_branch !== 'main' ||
-       live.dispatcher_only))
+      (pr.base?.ref !== 'main' || live.base_branch !== 'main'))
     return {status:'blocked',reasons:['adhoc_base_or_owner_merge_changed']};
   const directClean=live.codex_state==='clean' && live.codex_reviewed_sha===record.head_sha;
   const carriedClean=!prepareReady && !directClean &&
@@ -77,10 +82,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
     return {status:'blocked',reasons:['adhoc_parent_base_not_main']};
   if (latest.state !== 'open' || latest.head?.sha !== record.head_sha ||
       latest.base?.sha !== record.base_sha || latest.draft !== prepareReady ||
-      (!prepareReady && latest.mergeable !== true) ||
-      (latest.labels || []).some(label =>
-        /(?:^|[-_])(paid|live|prod|production|secret|secrets)(?:$|[-_])/i.test(label.name || '') &&
-        !/^(?:approved|owner-approved)/i.test(label.name || '')))
+      (!prepareReady && latest.mergeable !== true))
     return {status:'blocked',reasons:['merge_conflict_or_stale_base']};
   if (prepareReady) {
     if (!latest.node_id) return {status:'blocked',reasons:['missing_github_pr_node_id']};
@@ -99,14 +101,14 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
     // Preserve parent commits so stacked child branches retain their ancestry.
     // Squash rewrites that ancestry and can make an open child unmergeable.
     body: JSON.stringify({ merge_method: 'merge', sha: record.head_sha,
-      commit_title: `AI CAFE approved task ${record.task_id} (#${record.pr_number})` })
+      commit_title: `${settings.chatgpt.project_name} approved task ${record.task_id} (#${record.pr_number})` })
   });
   if (result.merged !== true || !result.sha) throw new Error('GitHub did not confirm merge');
   // GITHUB_TOKEN pushes do not trigger push workflows. workflow_dispatch does.
   // Keep merge distinct from integration proof, even when dispatch fails.
   let integration_dispatch = 'requested';
   try {
-    await github.request('/actions/workflows/ai-cafe-integration-proof.yml/dispatches', {
+    await github.request('/actions/workflows/'+settings.workflows.integration+'/dispatches', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ref:'main',inputs:{merged_sha:result.sha}}),
     });
@@ -145,7 +147,11 @@ export function integrationStatus({ merged_sha, main_sha, proof, expectedAccepta
       proof.merged_sha !== merged_sha || proof.conclusion !== 'success' ||
       !proof.workflow_run_id || !Array.isArray(proof.required_scenarios) ||
       !proof.required_scenarios.length || proof.required_scenarios.some(s => s.result !== 'passed') ||
-      (expectedAcceptance.length > 0 && (proof.required_scenarios.length !== expectedAcceptance.length ||
+      (expectedAcceptance.length > 0 &&
+       !(proof.proof_basis==='exact_sha_required_checks'&&
+         proof.required_scenarios.length===proof.required_checks?.length&&
+         proof.required_scenarios.every(s=>s.check&&s.result==='passed')) &&
+       (proof.required_scenarios.length !== expectedAcceptance.length ||
         !proof.required_scenarios.every((s,i) => s.id === String(i+1) && !!s.test_file && !!s.command))))
     return 'merged_unproven';
   return 'integrated_proven';

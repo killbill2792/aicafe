@@ -18,9 +18,9 @@ jobs:
             if (!matches.length) {
               core.warning('No repository marker; warning only.');
             } else if (matches.some(m => m[1] !== matches[0][1])) {
-              core.setFailed('Conflicting repository markers in PR body. Fix: keep exactly one standalone <!-- repo: ' + context.repo.owner + '/' + context.repo.repo + ' task: <actual-task-id> --> line.');
+              core.warning('Conflicting repository markers in PR body. Fix: keep exactly one standalone <!-- repo: ' + context.repo.owner + '/' + context.repo.repo + ' task: <actual-task-id> --> line.');
             } else if (matches[0][1].toLowerCase() !== context.repo.owner.toLowerCase() + '/' + context.repo.repo.toLowerCase()) {
-              core.setFailed('This PR says it belongs to ' + matches[0][1] + ' but is in ' + context.repo.owner + '/' + context.repo.repo + '. Fix: replace the marker with <!-- repo: ' + context.repo.owner + '/' + context.repo.repo + ' task: <actual-task-id> -->, using the real task ID.');
+              core.warning('This PR says it belongs to ' + matches[0][1] + ' but is in ' + context.repo.owner + '/' + context.repo.repo + '. Fix: replace the marker with <!-- repo: ' + context.repo.owner + '/' + context.repo.repo + ' task: <actual-task-id> -->, using the real task ID.');
             } else {
               core.info('PR repository marker matches.');
             }

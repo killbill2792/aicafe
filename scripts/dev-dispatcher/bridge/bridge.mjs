@@ -85,7 +85,7 @@ export function agentInstruction(action) {
     ? `Find the Project named ${JSON.stringify(d.project.name)} in the existing ${d.provider} Chrome tab and create a new chat INSIDE that project.`
     : `Open EXACTLY this existing ${d.provider} conversation: ${d.conversation_url}. If and only if it is verified stale or inaccessible, Muse may open one continuation in the same project. Capture the real NEW URL and return continuation_of=${d.conversation_url}, continuation_reason=stale_chat in the signed receipt; never fabricate a URL.`;
   return [
-    `You are the browser-only project coordinator. This is approved queue action ${JSON.stringify(action.key)} for project ${JSON.stringify(d.project.id)}.`,
+    `You are the browser-only coordinator for Muse space ${JSON.stringify(d.muse_space||d.project.name)} and ChatGPT account ${JSON.stringify(d.chatgpt_account||d.project.name)}; verified project URL ${d.project_url||'project URL not supplied'}. This is action ${JSON.stringify(action.key)} for project ${JSON.stringify(d.project.id)}.`,
     'Use the existing authenticated OpenClaw Chrome extension profile (chrome). Never use the isolated browser.',
     'Navigate adaptively by observing relevant navigation and composer controls; no fixed coordinates.',
     ...(d.effort === 'high' ? ['Set the ChatGPT conversation thinking effort to High before submitting; record effort=high in the receipt.'] : []),
@@ -103,12 +103,14 @@ export function agentInstruction(action) {
   ].join('\n');
 }
 
-export async function fetchLedger({ repo, token, fetchImpl = fetch }) {
+export async function fetchLedger({ repo, token, ledgerPath=process.env.DISPATCH_LEDGER_PATH, fetchImpl = fetch }) {
+  const path=ledgerPath || (await import('../settings.mjs').catch(()=>null))?.settings?.ledger?.path;
+  if(!path||path.startsWith('/')||path.includes('..'))throw Error('Local ledger path required');
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo || '') || !token) throw new Error('Private ledger repository and read token required');
   const headers = { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' };
   const meta = await fetchImpl(`https://api.github.com/repos/${repo}`, { headers });
   if (!meta.ok || (await meta.json()).private !== true) throw new Error('Ledger repository must be private and accessible');
-  const response = await fetchImpl(`https://api.github.com/repos/${repo}/contents/dispatcher/state.json?ref=main`, { headers });
+  const response = await fetchImpl(`https://api.github.com/repos/${repo}/contents/${path}?ref=main`, { headers });
   if (!response.ok) throw new Error(`Cannot read private ledger: HTTP ${response.status}`);
   const data = await response.json();
   if (!data.content) throw new Error('Ledger missing content');

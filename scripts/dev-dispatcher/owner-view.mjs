@@ -1,6 +1,7 @@
+import {settings} from './settings.mjs';
 // One public-safe view of the EXISTING private dispatcher ledger.
 // GitHub remains the sole decision-maker; this is not an approval or task queue.
-export const OWNER_VIEW_MARKER = '<!-- aicafe-dispatcher-owner-view:v1 -->';
+export const OWNER_VIEW_MARKER = '<!-- '+settings.naming.marker_prefix+'-dispatcher-owner-view:v1 -->';
 
 const clean = value => String(value ?? '').replace(/https?:\/\/\S+/g, '[URL in GitHub source]')
   .replace(/[<>|\r\n]/g, ' ').replace(/@/g, '@ ').slice(0, 500).trim();
@@ -35,7 +36,7 @@ export function renderApprovedTaskMap(state, queue, repo) {
   if (nodes.length > 20) return [
     '### Approved work and dependencies',
     'More than 20 approved/dependent tasks are active; use the [canonical task queue](https://github.com/' +
-       repo + '/blob/main/docs/plans/universal-supervisor-queue.json) and the live task table below.',
+       repo + '/blob/main/'+settings.queue.path + ') and the live task table below.',
     ''
   ];
   const ids = new Set(nodes.map(t => t.id));
@@ -141,7 +142,7 @@ export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
     .filter(Number.isFinite).map(t=>t+900000);
   return [
     OWNER_VIEW_MARKER,
-    '## AI CAFE — live owner control center',
+    '## '+settings.chatgpt.project_name+' — live owner control center',
     `**Last successful GitHub reconciliation shown:** ${now} (UTC)`,
     `**Private ledger as-of:** ${when(state.updated_at)}`,
     runUrl && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d+$/.test(runUrl)
@@ -159,7 +160,7 @@ export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
     '### Muse delivery and retries',
     `**${Object.values(state.receipt_feedback||{}).filter(f=>f.status==='rejected').length}** receipt-authentication hold(s): Muse must repair original evidence, never resend an unverified browser prompt.`,
     state.receipt_scan?.complete===false ? '**Courier receipt scan incomplete:** keep previous delivery holds until verified.' : '',
-    '[Open authenticated private Muse queue](https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/owner-queue.md) — requires access to the private repository.',
+    `[Open authenticated private Muse queue](https://github.com/${settings.ledger.repo}/blob/main/${settings.ledger.owner_view_path}) — requires access to the private repository.`,
     `**${planned.length}** planned Muse instruction(s); planned is not delivered.`,
     nextWake.length ? `Earliest planned-action recheck: **${new Date(Math.min(...nextWake)).toISOString()} UTC** (only when the existing GitHub workflow runs).`
       : 'No planned-action recheck.',
@@ -171,7 +172,7 @@ export function renderOwnerView(state, {repo, asOf, runUrl, queue} = {}) {
     '',
     '### How to act',
     'Reply to the **specific linked PR** with a precise owner decision. A ChatGPT or Muse message alone does not grant GitHub approval.',
-    'The owner may comment **refresh status** on issue #411 to request another trusted-main check; this does not change approvals or send prompts.',
+    'The owner may comment **refresh status** on issue #'+settings.owner.dashboard_issue+' to request another trusted-main check; this does not change approvals or send prompts.',
     'GitHub schedules are best-effort: an unchanged timestamp indicates there has been no subsequently successful reconciliation shown here.',
     '_Public-safe status only. Full prompts, private conversation URLs, hashes, credentials and receipts remain in the private ledger._',
   ].filter(Boolean).join('\n');

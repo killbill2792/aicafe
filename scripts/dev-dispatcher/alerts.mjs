@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 // Durable owner-attention notices in the SAME private dispatcher ledger.
 // Muse delivers these later; GitHub never sends owner messages directly.
 import {createHash} from 'node:crypto';
@@ -5,7 +6,11 @@ import {architectureFoundationReady,approved} from './core.mjs';
 import {approvalSignature} from './delivery.mjs';
 import {validConversationUrl} from './delivery.mjs';
 const sha=s=>createHash('sha256').update(s).digest('hex');
-export function noticeHash({kind,task_id,pr_number,question,source_sha}){
+export function noticeHash({kind,task_id,pr_number,question,source_sha,identity:operationalIdentity}){
+ // Operational alerts are deduped by verified issue identity, not by a
+ // human-readable message. This must match queueOwnerIssue's hash.
+ if(operationalIdentity!==undefined)
+  return sha(JSON.stringify([kind,task_id||null,pr_number||null,operationalIdentity]));
  const identity=[kind,task_id||null,pr_number||null,question];
  // Version-bound owner review: an edited/newly merged architecture is a NEW notice.
  if(['architecture_approval','next_task_start'].includes(kind))identity.push(source_sha||null);
@@ -45,16 +50,46 @@ export function applyOwnerStartApprovals(state,queue){
  }
  return next;
 }
-export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date().toISOString()}={}){
+export function queueOwnerIssue(state,{kind,task_id=null,pr_number=null,identity='',message,needs='investigation'}){
+ const next=structuredClone(state);next.owner_alerts||={};
+ if(typeof message!=='string'||!message.trim())return next;
+ const hash=sha(JSON.stringify([kind,task_id,pr_number,identity]));
+ const key='notice:'+hash,now=new Date().toISOString();
+ const old=next.owner_alerts[key];
+ if(old&&old.status!=='resolved'&&old.status!=='cancelled_no_longer_needed'){
+  // Backfill historic notices so the opaque Muse signal can wake for them.
+  if(!Object.hasOwn(old,'identity'))old.identity=identity;
+  return next;
+ }
+ next.owner_alerts[key]={kind,task_id,pr_number,identity,notice_hash:hash,
+  question:message.slice(0,1000)+' Needed: '+needs,recipient:'owner',
+  delivery_owner:'muse',status:'planned',created_at:now,
+  target_url:pr_number?'https://github.com/'+settings.repo+'/pull/'+pr_number:
+   'https://github.com/'+settings.repo,
+  owner_message:message.slice(0,1000)+' Needed: '+needs};
+ return next;
+}
+export function resolveOwnerIssue(state,kind,pr_number){
+ const next=structuredClone(state);
+ for(const n of Object.values(next.owner_alerts||{}))
+  if(n.kind===kind&&n.pr_number===pr_number&&n.status!=='resolved'){
+   n.status='resolved';n.resolved_at=new Date().toISOString();
+  }
+ return next;
+}
+export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,now=new Date().toISOString()}={}){
  const next=structuredClone(state);
  next.owner_alerts ||= {};
- const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start']);
+ const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start','missing_chat_link','dispatcher_issue']);
  const route=entry=>{
-  entry.recipient=ownerKinds.has(entry.kind)?'owner':'referee';
+  // An operational failure was explicitly addressed to the owner; do
+  // not downgrade it to a referee notice on the next reconciliation.
+  entry.recipient=['owner','referee'].includes(entry.recipient)
+    ? entry.recipient : ownerKinds.has(entry.kind)?'owner':'referee';
   if(entry.recipient==='owner'){
    entry.target_url=entry.pr_number
-    ?'https://github.com/killbill2792/aicafe/pull/'+entry.pr_number
-    :'https://github.com/killbill2792/aicafe/blob/main/docs/plans/universal-supervisor-queue.json';
+    ?'https://github.com/'+settings.repo+'/pull/'+entry.pr_number
+    :'https://github.com/'+settings.repo+'/blob/main/'+settings.queue.path;
    entry.owner_message=(entry.target_url+' — '+entry.question).slice(0,1200);
   }
   return entry;
@@ -121,10 +156,10 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
    for(const prior of previous)
      if(prior.status==='planned') prior.status='cancelled_no_longer_needed';
   }
-  const base='https://github.com/killbill2792/aicafe';
+  const base='https://github.com/'+settings.repo;
   const target=Number.isInteger(rec.pr_number)
     ? base+'/pull/'+rec.pr_number
-    : base+'/blob/main/docs/plans/universal-supervisor-queue.json';
+    : base+'/blob/main/'+settings.queue.path;
   if(rec.sensitive_owner_block===true || rec.owner_directive==='go_live' ||
       rec.owner_directive==='hold')
     add(rec.owner_directive==='go_live'?'go_live':'owner_sensitive_hold',
@@ -150,8 +185,8 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
    add('wrong_repo',id,rec.pr_number,'Task '+id+' belongs to '+rec.repo_mismatch.expected+
      ' but PR #'+rec.pr_number+' is in '+rec.repo_mismatch.actual+'. Correct the task-to-repo dispatch; do not use PR body as authority.');
   if(rec.stall_escalate)
-   add('repeated_stall',id,rec.pr_number,'D7 referee: three identical no_push_after_prompt stalls for PR #'+rec.pr_number+
-     ' on '+rec.head_sha+'. Stop re-prompting this head.');
+   add('repeated_stall',id,rec.pr_number,'PR #'+rec.pr_number+' still stuck after one 20-minute Muse nudge on head '+rec.head_sha+
+     '. Owner intervention required; no repeated coding nudge.');
   if(rec.codex_referee_sha && rec.codex_referee_sha===rec.head_sha)
    add('codex_watchdog',id,rec.pr_number,
      'Referee: Codex gave no review or reaction after one request for PR #'+
@@ -197,8 +232,21 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,queue=null,now=new Date
       !active.has(notice.pr_number))
     notice.status='cancelled_no_longer_needed';
   }
-  for(const pr of unmappedPrs)
-   add('unmapped_pr',null,pr,'Identify the approved task and existing coding conversation for PR #'+pr+'. Do not guess ownership.');
+  for(const n of unmappedPrs){
+    const pr=openPrs.find(x=>x.pr_number===n);
+    if(!pr){add('unmapped_pr',null,n,'Identify the approved task and existing coding conversation for PR #'+n+'. Do not guess ownership.');continue;}
+    const chat=next.branch_chat_links?.[pr.branch]?.conversation_url||pr.chat_marker||
+      next.pr_chat_links?.[String(n)]?.conversation_url;
+    if(!chat){
+      const changed=queueOwnerIssue(next,{kind:'missing_chat_link',pr_number:n,
+        identity:pr.branch,message:'PR #'+n+' on branch '+pr.branch+
+         ' titled '+pr.title+' has no chat. Paste its chat URL or tell Muse to register it.',
+        needs:'A verified ChatGPT conversation URL'});
+      next.owner_alerts=changed.owner_alerts;
+    }else{
+      const resolved=resolveOwnerIssue(next,'missing_chat_link',n);next.owner_alerts=resolved.owner_alerts;
+    }
+   }
  }
  return next;
 }

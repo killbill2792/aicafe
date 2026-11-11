@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 import { createHash } from 'node:crypto';
 import { editableFiles, usedFiles } from './core.mjs';
 import { STALL_PROMPT } from './safety.mjs';
@@ -7,7 +8,7 @@ export const promptHash = prompt => createHash('sha256').update(prompt).digest('
 const PROVIDERS = new Set(['chatgpt', 'claude']);
 const ACTIONS = new Set(['assign', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder',
   'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'dependency_proven', 'repair_conflict', 'idle_continue', 'no_push_after_prompt', 'landing_failed', 'plan', 'brainstorm']);
-const REPO = 'https://github.com/killbill2792/aicafe';
+const REPO = 'https://github.com/'+settings.repo;
 
 // POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING is mandatory and remains
 // linked from the compact step prompt to AGENTS.md, docs/rules/pos-data.md,
@@ -69,16 +70,18 @@ export function createAdhocDelivery({record,action,actionId}) {
       ? 'Resolve current-head Codex findings and review threads on ' + pr
       : 'Resolve the GitHub merge conflict on ' + pr;
   const prompt = [
-    'AI CAFE ' + action + ' | task ' + record.task_id + ' | PR ' + pr,
+    settings.chatgpt.project_name+' '+ action + ' | task ' + record.task_id + ' | PR ' + pr,
     reason,
     'Continue this SAME PR/chat; inspect exact head ' + record.head_sha +
       ', fix only relevant files, rerun checks and obtain clean exact-head Codex review.',
     'Authority: ' + REPO + '/blob/main/AGENTS.md',
-    'ChatGPT thinking effort: High. If acting on an owner instruction directly, note "Owner instruction: <one line>" in the PR.',
+    'ChatGPT thinking effort: '+settings.effort_default.replace(/^./,x=>x.toUpperCase())+'. If acting on an owner instruction directly, note "Owner instruction: <one line>" in the PR.',
     'Do not merge dispatcher/workflow-only PRs; owner must merge those.'
   ].join('\n');
-  return {version:1,approval_signature_version:3,effort:'high',action_id:actionId,
-    project:{id:'aicafe',name:'AI CAFE'},approval_hash:record.approval_hash,
+  return {version:1,approval_signature_version:3,effort:settings.effort_default,action_id:actionId,
+    project:{id:settings.chatgpt.project_id,name:settings.chatgpt.project_name},muse_space:settings.muse.space,
+    chatgpt_account:settings.chatgpt.account_label,project_url:settings.chatgpt.project_url,
+    approval_hash:record.approval_hash,
     provider:'chatgpt',intent:'continue_existing_chat',base_branch:record.base_branch || 'main',
     conversation_url:record.conversation_ref,task_id:record.task_id,prompt,prompt_hash:promptHash(prompt)};
 }
@@ -102,18 +105,21 @@ export function createDelivery({ task, record, action, actionId }) {
   if (url && !validConversationUrl(record.agent,url))
     throw new Error('Invalid destination URL');
   const taskBrief = task.brief?.split('#')[0];
-  if (!/^docs\/plans\/[a-zA-Z0-9_./-]+\.md$/.test(taskBrief || '') ||
-      taskBrief.includes('..')) throw new Error('Invalid task brief');
-  const project = {id:'aicafe',name:'AI CAFE'};
+  const external='https://github.com/'+settings.queue.repo+'/blob/'+settings.queue.ref+'/'+settings.queue.path;
+  const externalBrief=settings.queue.repo!==settings.repo&&taskBrief===external;
+  if(!externalBrief&&(!taskBrief?.startsWith(settings.paths.task_brief_root+'/') ||
+      !/^[a-zA-Z0-9_./-]+\.md$/.test(taskBrief)||taskBrief.includes('..')))
+    throw new Error('Invalid task brief');
+  const project = {id:settings.chatgpt.project_id,name:settings.chatgpt.project_name};
   const links = [
     'Authority: ' + REPO + '/blob/main/AGENTS.md',
     'Progress (read-only): ' + REPO + '/blob/main/PROGRESS.md',
     'Skills: ' + REPO + '/blob/main/docs/rules/skills.md',
-    'PR lifecycle: ' + REPO + '/blob/main/.claude/skills/aicafe-pr-lifecycle/SKILL.md',
-    'Dependency/proof skills: ' + REPO + '/blob/main/.claude/skills/aicafe-dependency-check/SKILL.md and ' +
-      REPO + '/blob/main/.claude/skills/aicafe-proof-gate/SKILL.md',
-    'Signed queue: ' + REPO + '/blob/main/docs/plans/universal-supervisor-queue.json',
-    'Task brief: ' + REPO + '/blob/main/' + task.brief
+    'PR lifecycle: ' + REPO + '/blob/main/.claude/skills/'+settings.naming.task_prefix+'-pr-lifecycle/SKILL.md',
+    'Dependency/proof skills: ' + REPO + '/blob/main/.claude/skills/'+settings.naming.task_prefix+'-dependency-check/SKILL.md and ' +
+      REPO + '/blob/main/.claude/skills/'+settings.naming.task_prefix+'-proof-gate/SKILL.md',
+    'Signed queue: https://github.com/'+settings.queue.repo+'/blob/'+settings.queue.ref+'/'+settings.queue.path,
+    'Task brief: ' + (externalBrief?task.brief:REPO + '/blob/main/' + task.brief)
   ];
   const pr = record.pr_number ? REPO + '/pull/' + record.pr_number : 'not opened';
   const comments = (record.unresolved_codex_comments || []).slice(0,3)
@@ -142,7 +148,7 @@ export function createDelivery({ task, record, action, actionId }) {
       String(record.owner_answer_text || 'Read PR decision').replace(/\s+/g,' ').slice(0,240) +
       '\nApply only within signed edits; reconcile the original PR comment ID and tests.',
     idle_continue:'idle_continue: Continue this SAME PR/chat. Finish scoped edits and tests; inspect ' +
-      'latest CI/owner comments. When complete, put <!-- aicafe-coder-done --> in the PR body. ' +
+      'latest CI/owner comments. Keep PR draft while coding; dispatcher marks Ready only after all CI checks pass. ' +
       'Do not request Codex before CI green or on intermediate pushes.',
     repair_ci:'ci_failed: Diagnose the failing job on ' + pr + '; fix and rerun actual CI.',
     repair_review:'codex_comments: Read unresolved review threads on ' + pr +
@@ -161,13 +167,13 @@ export function createDelivery({ task, record, action, actionId }) {
     edits.join(', ');
   const uses = usedFiles(task);
   const step = isNew
-    ? 'assign: Open EARLY DRAFT now; branch ' + (record.branch || 'feat/aicafe-task-'+task.id) +
+    ? 'assign: Open EARLY DRAFT now; branch ' + (record.branch || settings.naming.branch_prefix+task.id) +
       '; PR base ' + (record.base_branch || 'main') +
       (record.prerequisite_pr ? ' (parent PR #' + record.prerequisite_pr + ')' : '') +
       (stacked ? '. Work/commit/test while parent is open; NO rebase or Codex until parent merged.' :
-        '. Finish CI/evidence first; after coder-done/ready, one final-head Codex review.') +
+        ' . Finish all CI/evidence first; dispatcher marks Ready after green checks, triggering exact-head Codex review.') +
       ' Use acceptance tests from signed queue; include exact execution links, ' +
-      'PR comment dispositions and <!-- aicafe-coder-done --> only when actually complete.'
+      'PR comment dispositions and confirmed head-specific CI receipts; no done marker is required.'
     : reason[action];
   const isPr = Number.isInteger(record.pr_number);
   const checklist = isPr ? [
@@ -185,7 +191,7 @@ export function createDelivery({ task, record, action, actionId }) {
     'Do all applicable fixes together; keep this same PR/chat and do not open competing prompts.'
   ] : [];
   const lines = [
-    'AI CAFE ' + action + ' | task ' + task.id + ' | PR ' + pr,
+    settings.chatgpt.project_name+' '+ action + ' | task ' + task.id + ' | PR ' + pr,
     step,
     ...checklist,
     'Edits ONLY: ' + scope + '. Uses READ-ONLY: ' +
@@ -195,11 +201,11 @@ export function createDelivery({ task, record, action, actionId }) {
     'Same approved task, same chat/PR. Respect owner questions, required acceptance, ' +
       'exact-head CI/Codex and existing merge/integration proof; no production/Vercel preview changes.',
     ...links,
-    record.agent === 'chatgpt' ? 'ChatGPT thinking effort: High. For owner-direct changes, record "Owner instruction: <one line>" in the PR.' : ''
+    record.agent === 'chatgpt' ? 'ChatGPT thinking effort: '+settings.effort_default.replace(/^./,x=>x.toUpperCase())+'. For owner-direct changes, record "Owner instruction: <one line>" in the PR.' : ''
   ];
-  if (/^POS0[a-f]$/.test(task.id)) lines.push(
+  if (settings.paths.pos_preflight && /^POS0[a-f]$/.test(task.id)) lines.push(
     'POS0 preflight: follow AGENTS.md source-authority order; read ' +
-    REPO + '/blob/main/docs/rules/pos-data.md and #398 handoff before coding. ' +
+    REPO + '/blob/main/'+settings.paths.pos_preflight+' and #398 handoff before coding. ' +
     'POS0a docs approval is NOT runtime proof; task-specific signed coding scope required.'
   );
   const prompt = lines.filter(Boolean).join('\n');
@@ -207,8 +213,10 @@ export function createDelivery({ task, record, action, actionId }) {
   if (promptBytes > 4096)
     console.warn(`Task ${task.id} delivery prompt exceeds 4096 bytes (${promptBytes}); continuing`);
   return {version:1,approval_signature_version:record.approval_hash && record.approval_hash !== authorization ? 2 : 3,
-    ...(record.agent === 'chatgpt' ? {effort:'high'} : {}),
-    action_id:actionId,project,approval_hash:record.approval_hash || authorization,
+    ...(record.agent === 'chatgpt' ? {effort:settings.effort_default} : {}),
+    action_id:actionId,project,muse_space:settings.muse.space,
+    chatgpt_account:settings.chatgpt.account_label,project_url:settings.chatgpt.project_url,
+    approval_hash:record.approval_hash || authorization,
     provider:record.agent,intent:isNew?'start_new_chat':'continue_existing_chat',
     base_branch:record.base_branch || 'main',conversation_url:url,
     task_id:task.id,prompt,prompt_hash:promptHash(prompt)};

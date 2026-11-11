@@ -146,3 +146,19 @@ test('same-cycle PR head change is reconciled before accepting an old repair rec
  assert.ok(delivered.actions['fix:6'].superseded_receipt);
  assert.equal(delivered.tasks['6'].submission_state,'idle');
 });
+
+test('verified Muse assignment receipt binds branch, task and conversation into durable branch index',async()=>{
+ const s=structuredClone(state);
+ s.tasks['6']={...s.tasks['6'],task_id:'6',branch:'feat/aicafe-task-6'};
+ const signed={...receipt,task_id:'6',branch:'feat/aicafe-task-6'};
+ const next=acceptDeliveryReceipt(s,signed,{authenticatedCourier:'muse'});
+ assert.equal(next.branch_chat_links['feat/aicafe-task-6'].conversation_url,signed.conversation_url);
+ const {conversation_url,branch,task_id}=next.branch_chat_links['feat/aicafe-task-6'];
+ assert.equal(branch,'feat/aicafe-task-6');assert.equal(task_id,'6');
+ const {linkPullRequests}=await import('./dependencies.mjs');
+ const mapped=linkPullRequests({...next,pr_chat_links:{}},[{
+  pr_number:42,branch,base_branch:'main',head_sha:'a'.repeat(40),draft:true}]);
+ assert.equal(mapped.state.pr_chat_links['42'].conversation_url,conversation_url);
+ assert.throws(()=>acceptDeliveryReceipt(s,{...signed,branch:'feat/wrong'},{authenticatedCourier:'muse'}),/branch mismatch/);
+ assert.throws(()=>acceptDeliveryReceipt(s,{...signed,task_id:'other'},{authenticatedCourier:'muse'}),/task mismatch/);
+});

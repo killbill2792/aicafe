@@ -1,3 +1,4 @@
+import {settings} from './settings.mjs';
 const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const sha=/^[a-f0-9]{40}$/;
 // PR markers diagnose; signed task facts own repository identity.
@@ -40,9 +41,11 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
       rec.stall_seen=null;
       rec.stall_pending=null;
       rec.stall_escalate=false;
+      rec.stall_nudged_at=null;
     }
-    if(headMoved || rec.github_state!=='open'||!sha.test(head||'')||rec.coder_done ||
-        !rec.approved||!rec.conversation_ref||rec.repo_mismatch) {
+    const needsFix=rec.ci_state==='failure'||rec.codex_state==='findings'||rec.mergeable===false;
+    if(headMoved || rec.github_state!=='open'||!sha.test(head||'')||
+        !needsFix||!rec.approved||!rec.conversation_ref||rec.repo_mismatch) {
       rec.stall_pending=null;
       continue;
     }
@@ -57,17 +60,15 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
       continue;
     }
     const identity=head+':'+rec.last_submission_at;
-    if(rec.stall_seen===identity) continue;
-    rec.stall_seen=identity;
-    rec.stall_count=Math.min(3,(rec.stall_count||0)+1);
-    rec.safety_event={kind:'no_push_after_prompt',head_sha:head,pr_number:rec.pr_number,
-      count:rec.stall_count,at:now};
-    if(rec.stall_count>=3) {
-      rec.stall_pending=null;
-      rec.stall_escalate=true;
-    } else {
-      rec.stall_pending='stall:'+encodeURIComponent(id)+':'+head+':'+rec.stall_count;
+    if(rec.stall_count>=1) {
+      if(clock-Date.parse(rec.stall_nudged_at||rec.last_submission_at||'')>=minutes*60000){
+        rec.stall_pending=null;rec.stall_escalate=true;
+      }
+      continue;
     }
+    rec.stall_seen=identity;rec.stall_count=1;rec.stall_nudged_at=now;
+    rec.safety_event={kind:'no_push_after_prompt',head_sha:head,pr_number:rec.pr_number,count:1,at:now};
+    rec.stall_pending='stall:'+encodeURIComponent(id)+':'+head+':1';
   }
   return next;
 }
@@ -94,4 +95,15 @@ export function failureInstruction(annotations=[]) {
     ? 'Fix: use <!-- aicafe-chat-url https://chatgpt.com/c/<real-chat-id> --> with your actual chat URL, or the real /g/<project>/c/<id> path.'
     : 'Fix: update the vision version to the exact value the failing check expects, then rerun the check.';
   return exact+'\n'+fix;
+}
+
+export function protectedChanges(files,guards=settings.protected_files){
+ const matches=[];
+ for(const guard of guards||[])for(const path of guard.paths||[]){
+  const prefix=path.endsWith('/**')?path.slice(0,-2):path;
+  for(const f of files||[])if(typeof f.filename==='string'&&
+   (path.endsWith('/**')?f.filename.startsWith(prefix):f.filename===prefix))
+   matches.push({file:f.filename,owner:guard.owner,source_pr:guard.source_pr});
+ }
+ return matches;
 }
