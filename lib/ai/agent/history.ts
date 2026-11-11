@@ -138,7 +138,7 @@ export function applyThreadMemoryOperations(
     const existing = entries.find(entry => entry.key === operation.key);
     const tombstone = tombstones.find(item => item.key === operation.key);
     if (operation.action === "forget") {
-      if (!existing || compareSourceOrder(source, existing) <= 0) continue;
+      if (!existing || compareSourceOrder(source, { createdAt: existing.sourceAt, id: existing.sourceMessageId }) <= 0) continue;
       entries = entries.filter(entry => entry.key !== operation.key);
       tombstones = [{ key: operation.key, sourceMessageId: source.id, sourceAt: source.createdAt, revision },
         ...tombstones.filter(item => item.key !== operation.key)].slice(0, THREAD_MEMORY_MAX_TOMBSTONES);
@@ -146,7 +146,7 @@ export function applyThreadMemoryOperations(
     }
     if (operation.action !== "remember" ||
       (existing && compareSourceOrder(source, existing) <= 0) ||
-      (tombstone && compareSourceOrder(source, tombstone) <= 0) ||
+      (tombstone && compareSourceOrder(source, { createdAt: tombstone.sourceAt, id: tombstone.sourceMessageId }) <= 0) ||
       !operation.quote || !source.text.includes(operation.quote) ||
       safeThreadMemoryText(operation.quote) !== operation.quote) continue;
     entries = [...entries.filter(entry => entry.key !== operation.key), {
