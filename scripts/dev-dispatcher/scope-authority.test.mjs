@@ -115,3 +115,59 @@ test('untrusted, stale, malformed and overlapping planning comments never author
    {...t,goal:t.goal+' revised'}:t)};
  assert.deepEqual(selectScopePlans([comment],changedQueue,submitted),{});
 });
+
+test('exact owner-signed scope remains authorized after old issue comments leave the fetch window',()=>{
+ const {submitted,comment}=fixture();
+ const plans=selectScopePlans([comment],queue,submitted);
+ const notices=queueScopePlanReviews(submitted,queue,plans);
+ const [noticeId]=Object.entries(notices.owner_alerts).find(([_,n])=>
+   n.kind==='scope_plan_review'&&n.task_id===taskId);
+ const replied=acceptMuseOwnerReply(notices,{kind:'owner_reply',
+   event_id:'persist-yes',text:'yes',
+   target:{task_id:taskId,notice_id:noticeId},
+   submitted_at:'2026-11-11T09:20:00Z'},{authenticatedCourier:'muse'});
+ const authorized=acceptScopePlanDecisions(replied,queue,plans);
+ assert.ok(authorized.scope_authorizations[taskId]);
+ const fromLedger=selectScopePlans([],queue,authorized);
+ assert.equal(fromLedger[taskId].plan_hash,plans[taskId].plan_hash);
+ assert.equal(effectiveSignedQueue(queue,authorized,fromLedger).tasks.find(t=>
+   t.id===taskId).architecture_approval.approved,true);
+ const shifted=Array.from({length:99},(_,i)=>({id:i+1,user:{login:'other'},
+   author_association:'NONE',body:'not a scope proposal'}));
+ assert.equal(selectScopePlans([...shifted,comment],queue,submitted)[taskId].comment_id,
+   comment.id);
+});
+
+test('latest authenticated Muse no revokes an exact scope before code merge',()=>{
+ const {submitted,comment}=fixture();
+ const plans=selectScopePlans([comment],queue,submitted);
+ const noticed=queueScopePlanReviews(submitted,queue,plans);
+ const [noticeId,notice]=Object.entries(noticed.owner_alerts).find(([_,n])=>
+   n.kind==='scope_plan_review'&&n.task_id===taskId);
+ assert.match(notice.question,/Full plan: https:\/\/github.com/);
+ const first=acceptMuseOwnerReply(noticed,{kind:'owner_reply',
+   event_id:'yes-scoped',text:'yes',
+   target:{task_id:taskId,notice_id:noticeId},
+   submitted_at:'2026-11-11T09:20:00Z'},{authenticatedCourier:'muse'});
+ const signed=acceptScopePlanDecisions(first,queue,plans);
+ const next=acceptMuseOwnerReply(signed,{kind:'owner_reply',
+   event_id:'later-no-scoped',text:'no',
+   target:{task_id:taskId,notice_id:noticeId},
+   submitted_at:'2026-11-11T09:22:00Z'},{authenticatedCourier:'muse'});
+ const revoked=acceptScopePlanDecisions(next,queue,plans);
+ assert.equal(revoked.scope_authorizations[taskId],undefined);
+ assert.equal(revoked.tasks[taskId].approved,false);
+ assert.equal(effectiveSignedQueue(queue,revoked,plans).tasks.find(t=>t.id===taskId).state,
+   'proposed');
+ assert.equal(revoked.tasks[taskId].scope_revoked_event_id,'later-no-scoped');
+ const rerun=acceptScopePlanDecisions(revoked,queue,plans);
+ assert.deepEqual(rerun,revoked);
+});
+
+test('an uncertain scope-planning courier attempt cannot become a signed plan',()=>{
+ const {submitted,comment,actionId}=fixture();
+ const attempted=structuredClone(submitted);
+ attempted.actions[actionId].status='uncertain';
+ assert.equal(parseScopePlanComment(comment,queue,attempted),null);
+ assert.deepEqual(selectScopePlans([comment],queue,attempted),{});
+});
