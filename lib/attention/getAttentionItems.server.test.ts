@@ -87,6 +87,9 @@ describe("Home and chat attention reads",()=>{
     }));
     const items=await getAttentionItems({snapshot:snapshot as never,menu:menu as never,locale:"en"});
     expect(items).toHaveLength(1);
+    expect(mocks.project).toHaveBeenCalledWith({
+      needsYou:[],watching:[],handled:[],
+    });
     expect(items[0]).toMatchObject({
       id:"priority:stable",kind:"priority_notice",
       displayTitle:"Actionable café alert needs review",href:"/?thread=owner-thread",

@@ -65,7 +65,7 @@ function scopedTranslations(locale:"en"|"es"|"ar"){
 /** Home and chat must call this same owner-scoped source. A failed optional read is
  * reported as its own action, never silently replaced with no work. */
 function operatingTaskHref(task: OperatingTask): string {
-  if((task.kind==="commitment"||task.kind==="priority_notice"||task.kind==="event_plan"||task.kind==="event_change") && typeof task.payload.threadId==="string")
+  if((task.kind==="commitment"||isPriorityNoticeTask(task)||task.kind==="event_plan"||task.kind==="event_change") && typeof task.payload.threadId==="string")
     return "/?thread="+encodeURIComponent(task.payload.threadId);
   if(task.kind==="price_experiment_report"){
     const thread=task.payload.threadId,proposal=task.payload.proposalId;
@@ -91,6 +91,10 @@ function operatingTaskHref(task: OperatingTask): string {
   return "/operations";
 }
 
+
+/** Priority notice is persisted in SQL but displayed through the already
+ * shared attention item surface, not Operations' exhaustive TaskCard kind UI. */
+const isPriorityNoticeTask=(task:OperatingTask)=>String(task.kind)==="priority_notice";
 
 /** Home's Needs-you list. The count on Home, in chat and on every Operations tab is this list. */
 export async function getAttentionItems(args:AttentionArgs={}):Promise<AttentionItem[]>{
@@ -143,13 +147,16 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
   const derived=[...derivedTeam.needsYou,...derivedTeam.handled,...derivedTeam.watching];
   const today=snapshot.todayDateStr;
   // Same plan the old page-load sync wrote, applied in memory, plus collapse/expiry rules.
-  const team=projectOperatingTasks(settleInboxTasks(stored,derived,new Date(),today));
+  const priorityRows=stored.filter(isPriorityNoticeTask);
+  const priorityNeeds=priorityRows.filter(task=>task.status==="needs_owner");
+  const team=projectOperatingTasks(settleInboxTasks(
+    stored.filter(task=>!isPriorityNoticeTask(task)),derived,new Date(),today));
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
     let title: string;
 
-    if(task.kind==="commitment"||task.kind==="priority_notice"){
+    if(task.kind==="commitment"||isPriorityNoticeTask(task)){
       title=String(task.payload.title??"");
     }else if(task.kind==="price_experiment_report"){
       title=tExperiment("reportTask",{item:itemName});
@@ -204,8 +211,7 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
   };
 
   // Do not count a raw alert twice if a private notice already covers its source.
-  const prioritySourceIds=new Set(stored.filter(task=>task.kind==="priority_notice"&&
-    task.status==="needs_owner"&&task.payload.sourceType==="alert")
+  const prioritySourceIds=new Set(priorityNeeds.filter(task=>task.payload.sourceType==="alert")
     .map(task=>String(task.payload.sourceId??"")));
   const alertItems: DatedAttentionItem[] = (alerts ?? [])
     .filter(alert=>showAlertInHome(alert.kind)&&!prioritySourceIds.has(alert.id))
@@ -263,15 +269,17 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
       href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
     }]:[]),
     ...alertItems,
+    ...priorityNeeds.map(task=>({...taskPreview(task),
+      actionLabel:tOperations("openEventThread"),impactCents:null})),
     ...team.needsYou.filter(task=>!(task.kind==="data_quality" && coveredBills.has(String(task.payload.categoryCode))) &&
       !(task.kind==="data_quality" && vm.missingCategories.some(line=>line.categoryCode===task.payload.categoryCode)))
-      .map(task=>({...taskPreview(task),actionLabel:task.kind==="commitment"||task.kind==="priority_notice"?tOperations("openEventThread"):
+      .map(task=>({...taskPreview(task),actionLabel:task.kind==="commitment"?tOperations("openEventThread"):
          task.kind==="event_change"?tOperations("eventChangeReviewAction"):t("attentionFix"),impactCents:
         typeof task.payload.impactCents==="number" ? task.payload.impactCents :
         typeof task.payload.estimatedAmountCents==="number" ? task.payload.estimatedAmountCents : null})),
   ];
 
-  const taskMap=new Map(team.needsYou.map(task=>[task.id,task]));
+  const taskMap=new Map([...team.needsYou,...priorityNeeds].map(task=>[task.id,task]));
   const alertMap=new Map((alerts??[]).map(alert=>["alert:"+alert.id,alert]));
   const parsed=z.array(attentionItemSchema).parse(items.map(item=>{
     const task=taskMap.get(item.id),alert=alertMap.get(item.id);
@@ -289,7 +297,7 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
     let params:Record<string,string|number>={};
     if(task){
       const itemName=String(task.payload.itemName??"").replace(" · "," ");
-      if(task.kind==="commitment"||task.kind==="priority_notice"){
+      if(task.kind==="commitment"||isPriorityNoticeTask(task)){
         // Owner-authored reminders or verified source notices carry durable provenance.
         key="operating_tasks.title";params={title:String(task.payload.title??"")};
       }else if(task.kind==="price_experiment_report"){key=task.payload.midRun===true?"SupervisorExperiment.midRunTask":
