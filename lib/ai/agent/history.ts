@@ -185,10 +185,18 @@ export function applyThreadMemoryOperations(
       (tombstone && compareSourceOrder(source, { createdAt: tombstone.sourceAt, id: tombstone.sourceMessageId }) <= 0) ||
       !operation.quote || !source.text.includes(operation.quote) ||
       safeThreadMemoryText(operation.quote) !== operation.quote) continue;
-    entries = [...entries.filter(entry => entry.key !== operation.key), {
+    const nextEntries = [...entries.filter(entry => entry.key !== operation.key), {
       kind: operation.kind, key: operation.key, text: operation.quote,
       sourceMessageId: source.id, sourceAt: source.createdAt, revision,
-    }].slice(-THREAD_MEMORY_MAX_ENTRIES);
+    }];
+    if (nextEntries.length > THREAD_MEMORY_MAX_ENTRIES) {
+      const evicted = nextEntries.shift()!;
+      tombstones = [{
+        key: evicted.key, sourceMessageId: source.id, sourceAt: source.createdAt, revision,
+      }, ...tombstones.filter(item => item.key !== operation.key && item.key !== evicted.key)]
+        .slice(0, THREAD_MEMORY_MAX_TOMBSTONES);
+    }
+    entries = nextEntries;
     tombstones = tombstones.filter(item => item.key !== operation.key);
   }
   return { ...current, revision, entries, tombstones, retry: null };
