@@ -89,3 +89,21 @@ test('authorized global reconcile needs no PR or commit head',()=>{
  assert.equal(item.status,'OBSERVED');
  assert.equal(item.reason,'global_reconcile_wake_not_evidence_of_effect');
 });
+
+
+test('authenticated stale-head recovery gets an explicit negative receipt',()=>{
+ const event=signed('MERGE_IF_ELIGIBLE',{expected_head_sha:'c'.repeat(40)});
+ const next=recordRecoveryEvent(state,event,options);
+ const rejection=next.recovery_rejections[event.client_payload.request_id];
+ assert.equal(rejection.reason,'stale_head');
+ assert.equal(rejection.requested_by,actor);
+ assert.equal(next.recovery_requests,undefined);
+ const again=recordRecoveryEvent(next,event,options);
+ assert.deepEqual(again.recovery_rejections,next.recovery_rejections);
+});
+test('unauthenticated forged recovery request is not recorded or acted upon',()=>{
+ const event=signed();event.sender.login='external-user';
+ const result=recordRecoveryEvent(state,event,options);
+ assert.equal(result.recovery_requests,undefined);
+ assert.equal(result.recovery_rejections,undefined);
+});
