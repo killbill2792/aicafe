@@ -136,3 +136,16 @@ The existing deployed Muse SSH/deploy-key receipt writer is the **only courier w
 The same inbox accepts targeted, idempotent `owner_reply` JSON from Muse with `kind:'owner_reply'`, bounded `text`, `event_id`, and `target:{task_id}` or `target:{pr_number}`. Its file name is the SHA-256 of `'owner_reply:' + event_id + ':' + JSON.stringify(target) + ':' + sha256(text)`. Only the configured authenticated Muse commit actor may send it. No bot or arbitrary browser content can approve a changed scope; substantive approval signatures are still independently checked against the signed task queue. Owner-level outbound notices use `recipient:'owner'` with one-line task/PR reason; operational referee notices use `recipient:'referee'`. Both reuse the existing Muse owner-notice channel, not a second chat queue, human step or scheduler.
 
 The older checked-in OpenClaw bridge remains browser-only and read-only; it does **not** write GitHub itself. Deployed Muse must use its existing SSH receipt writer to produce these fields, and the authenticated dispatcher must be running the matching inbox changes for live promotion. These repository tests prove the contract, not deployment or delivery into any live browser.
+
+## Muse Git transport during a GitHub REST outage
+
+The existing Muse SSH deploy key may read the private ledger without any REST quota.
+Configure `DISPATCH_LEDGER_GIT_READ=true` on the existing Muse bridge process to
+use `git clone --depth 1` over SSH for ordinary ledger reads. No new token,
+scheduler, browser agent, or source-repository permission is required. When REST
+reading is enabled, a verified GitHub primary-limit response also falls back to
+SSH Git automatically. This is transport-only: all signed actions, original
+receipt IDs, owner-notice acknowledgements and safe browser holds remain unchanged.
+Do not enable unless Muse's existing ledger SSH key has been verified on that
+machine. The checked-in bridge is not proof the deployed Muse process has been
+updated; confirm an authenticated live owner-notice delivery receipt separately.
