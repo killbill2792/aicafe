@@ -59,6 +59,32 @@ If the queue reader and OpenClaw run under the **same Ubuntu user**, text instru
 node --test scripts/dev-dispatcher/delivery.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs
 ```
 
+## GitHub brain → Muse mouth: owner incident channel
+
+The existing trusted-main dispatcher owns failures and recovery decisions. Muse
+must read **both** `actions` (coding browser prompts) and `owner_alerts`
+(owner/referee notifications) from the same private ledger, even when there are
+zero coding actions. An owner-notice contains `notice_id` (the private ledger
+key), `notice_hash`, `recipient`, `owner_message` / `question`, and a
+PR link when known. Muse relays the message without deciding scope, inspecting
+coding chats or silently clearing it. A normal repair incident says no owner
+approval is needed; only an actual owner-decision notice asks for approval.
+After actual delivery Muse commits the existing `kind:'owner_notice'`,
+`status:'submitted'`, `notice_id`, `notice_hash` receipt with the canonical
+v1 filename and wakes the existing GitHub dispatcher via `repository_dispatch`.
+GitHub considers a notice delivered only after the authenticated receipt, not
+when it is merely planned or signaled.
+
+For receipt incidents, Muse must **never** resend an uncertain coding prompt:
+validate/re-attribute the SAME original receipt and await GitHub acknowledgement.
+Once GitHub verifies it, a separate, deduplicated recovery notice tells the owner
+the issue is resolved. If Muse cannot deliver or GitHub cannot reach the private
+ledger, the notice remains pending with retries and the last-success timestamp /
+undelivered count remains visible on the existing owner dashboard. There is
+no second alerting channel, token, scheduler or approval authority. The existing
+deployed Muse SSH worker must implement/confirm this owner-notice behavior;
+repository tests do not prove a live Muse browser notification.
+
 ## Muse receipt recovery — existing SSH deploy key; no new token
 
 **Deployed courier reality (owner/Muse verified, November 9):** the existing Muse
