@@ -61,6 +61,7 @@ export function renderLifecycleDashboard(state,{repo='killbill2792/aicafe',now=s
       '[Open saved coding conversation]('+r.dispatch.verified_chat_url+')':'not verified'),
     '**Blockers:** '+cell(r.merge.blockers.join(', ')||'none'),
     ...detail('Task milestone columns',r.milestones),
+    ...detail('Signed approval and owner controls',r.approval),
     ...detail('Dispatch and chat delivery',r.dispatch),
     ...detail('Coding and Git commits',r.coding),
     ...detail('GitHub pull request',r.pr),
