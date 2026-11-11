@@ -10,7 +10,7 @@ import {acceptDeliveryReceipt} from './receipt.mjs';
 import {acceptMuseOwnerReply} from './self-heal.mjs';
 import {signalFor} from './signal.mjs';
 import {dispatchFrontier} from './core.mjs';
-import {revalidateQueuedActions} from './authorization.mjs';
+import {revalidateQueuedActions,assignmentActionKey} from './authorization.mjs';
 import {approvalSignature,createDelivery} from './delivery.mjs';
 const queue=JSON.parse(readFileSync(new URL('../../docs/plans/universal-supervisor-queue.json',import.meta.url),'utf8'));
 const taskId='7',source=queue.tasks.find(t=>t.id===taskId);
@@ -188,4 +188,98 @@ test('a pending Muse scope-review decision survives GitHub issue comment rollove
  const result=acceptScopePlanDecisions(yes,queue,selectScopePlans([],queue,yes));
  assert.equal(effectiveSignedQueue(queue,result,selectScopePlans([],queue,result))
    .tasks.find(t=>t.id===taskId).architecture_approval.approved,true);
+});
+
+test('Codex P1: latest corrected signed scope survives after two stored owner notices roll off issue page',()=>{
+ const {submitted,comment}=fixture();
+ const old=selectScopePlans([comment],queue,submitted);
+ const firstNotices=queueScopePlanReviews(submitted,queue,old);
+ const [firstId]=Object.entries(firstNotices.owner_alerts).find(([_,n])=>
+   n.kind==='scope_plan_review'&&n.task_id===taskId);
+ const firstYes=acceptMuseOwnerReply(firstNotices,{kind:'owner_reply',
+   event_id:'old-yes',text:'yes',target:{task_id:taskId,notice_id:firstId},
+   submitted_at:'2026-11-11T09:16:00Z'},{authenticatedCourier:'muse'});
+ const oldSigned=acceptScopePlanDecisions(firstYes,queue,old);
+ assert.equal(oldSigned.owner_alerts[firstId].status,'submitted');
+ const revisedData=JSON.parse(comment.body.match(/aicafe-scope-plan:v1 (\{.*\}) -->/)[1]);
+ revisedData.edits=['lib/ai/supervisor/routines/revised.server.ts',
+   'lib/ai/supervisor/routines/revised.test.ts'];
+ revisedData.architecture+=' A revised, owner-visible scope replaces the previous candidate.';
+ const newComment={...comment,id:comment.id+1,
+   created_at:'2026-11-11T09:18:00Z',
+   html_url:'https://github.com/'+settings.repo+'/issues/411#issuecomment-'+(comment.id+1),
+   body:'<!-- aicafe-scope-plan:v1 '+JSON.stringify(revisedData)+' -->'};
+ const revised=selectScopePlans([newComment],queue,oldSigned);
+ assert.notEqual(revised[taskId].plan_hash,old[taskId].plan_hash);
+ const changedNotices=queueScopePlanReviews(oldSigned,queue,revised);
+ const [newNoticeId]=Object.entries(changedNotices.owner_alerts).find(([id,n])=>
+   n.kind==='scope_plan_review'&&n.task_id===taskId&&id!==firstId);
+ const secondYes=acceptMuseOwnerReply(changedNotices,{kind:'owner_reply',
+   event_id:'corrected-yes',text:'yes',
+   target:{task_id:taskId,notice_id:newNoticeId},
+   submitted_at:'2026-11-11T09:20:00Z'},{authenticatedCourier:'muse'});
+ const correctedSigned=acceptScopePlanDecisions(secondYes,queue,revised);
+ assert.equal(correctedSigned.owner_alerts[firstId].status,'submitted');
+ assert.equal(correctedSigned.owner_alerts[newNoticeId].status,'submitted');
+ assert.equal(correctedSigned.scope_authorizations[taskId].plan_hash,
+   revised[taskId].plan_hash);
+ // Neither plan is on GitHub's last page now. Ledger insertion order is OLD,
+ // NEW, so selecting the first notice would revoke the corrected authorization.
+ const restored=selectScopePlans([],queue,correctedSigned);
+ assert.equal(restored[taskId].plan_hash,revised[taskId].plan_hash);
+ const mixed=selectScopePlans([comment],queue,correctedSigned);
+ assert.equal(mixed[taskId].plan_hash,revised[taskId].plan_hash);
+ const task=effectiveSignedQueue(queue,correctedSigned,restored)
+   .tasks.find(t=>t.id===taskId);
+ assert.equal(task.architecture_approval.approved,true);
+ assert.deepEqual(task.edits,revisedData.edits);
+});
+
+test('Codex P1: yes after no re-enters exact signed transition without repeating submitted coding',()=>{
+ const {submitted,comment}=fixture();
+ const plans=selectScopePlans([comment],queue,submitted);
+ const notices=queueScopePlanReviews(submitted,queue,plans);
+ const [noticeId]=Object.entries(notices.owner_alerts).find(([_,n])=>
+   n.kind==='scope_plan_review'&&n.task_id===taskId);
+ const firstYes=acceptMuseOwnerReply(notices,{kind:'owner_reply',
+   event_id:'initial-exact-yes',text:'yes',
+   target:{task_id:taskId,notice_id:noticeId},
+   submitted_at:'2026-11-11T09:16:00Z'},{authenticatedCourier:'muse'});
+ const initialScope=acceptScopePlanDecisions(firstYes,queue,plans);
+ const signed=effectiveSignedQueue(queue,initialScope,plans);
+ revalidateQueuedActions(initialScope,new Map(signed.tasks.map(t=>[t.id,t])),signed);
+ assert.equal(initialScope.tasks[taskId].status,'proposed');
+ assert.equal(initialScope.tasks[taskId].approved,true);
+ const noReply=acceptMuseOwnerReply(initialScope,{kind:'owner_reply',
+   event_id:'revocation',text:'no',
+   target:{task_id:taskId,notice_id:noticeId},
+   submitted_at:'2026-11-11T09:20:00Z'},{authenticatedCourier:'muse'});
+ const revoked=acceptScopePlanDecisions(noReply,queue,plans);
+ const unsigned=effectiveSignedQueue(queue,revoked,plans);
+ revalidateQueuedActions(revoked,new Map(unsigned.tasks.map(t=>[t.id,t])),unsigned);
+ assert.equal(revoked.tasks[taskId].status,'blocked_needs_owner');
+ assert.equal(revoked.tasks[taskId].approved,false);
+ const renewedReply=acceptMuseOwnerReply(revoked,{kind:'owner_reply',
+   event_id:'renewed-exact-yes',text:'yes',
+   target:{task_id:taskId,notice_id:noticeId},
+   submitted_at:'2026-11-11T09:23:00Z'},{authenticatedCourier:'muse'});
+ const renewed=acceptScopePlanDecisions(renewedReply,queue,plans);
+ assert.equal(renewed.tasks[taskId].status,'scope_plan_sent');
+ assert.equal(renewed.tasks[taskId].planning_approved,true);
+ assert.equal(renewed.tasks[taskId].approved,false);
+ const effective=effectiveSignedQueue(queue,renewed,plans);
+ revalidateQueuedActions(renewed,new Map(effective.tasks.map(t=>[t.id,t])),effective);
+ assert.equal(renewed.tasks[taskId].status,'proposed');
+ assert.equal(renewed.tasks[taskId].approved,true);
+ assert.equal(renewed.tasks[taskId].scope_plan_completed,true);
+ assert.equal(renewed.tasks[taskId].conversation_ref,
+   submitted.tasks[taskId].conversation_ref);
+ assert.equal(dispatchFrontier(effective,renewed.tasks).some(a=>a.task_id===taskId),true);
+ // A submitted coding action is historical proof of a browser send: never
+ // issue that same coding prompt again just because a later YES was recorded.
+ const alreadySent=structuredClone(renewed);
+ alreadySent.actions['assign:'+taskId]={
+   type:'begin_scoped_coding',task_id:taskId,status:'submitted',
+   submitted_at:'2026-11-11T09:18:00Z',receipt:{courier:'muse'}};
+ assert.equal(assignmentActionKey(alreadySent,taskId,effective),null);
 });
