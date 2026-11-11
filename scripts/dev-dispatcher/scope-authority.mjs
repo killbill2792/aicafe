@@ -60,7 +60,7 @@ export function parseScopePlanComment(comment,queue,state){
 }
 export function selectScopePlans(comments,queue,state){
  const latest={};
- if(!Array.isArray(comments)||comments.length>=100)throw Error('Unbounded GitHub scope plans');
+ if(!Array.isArray(comments)||comments.length>100)throw Error('Unbounded GitHub scope plans');
  for(const c of comments){
    const x=parseScopePlanComment(c,queue,state);
    if(!x)continue;
@@ -68,6 +68,25 @@ export function selectScopePlans(comments,queue,state){
    if(!prev||x.comment_created_at>prev.comment_created_at||
       (x.comment_created_at===prev.comment_created_at&&x.comment_id>prev.comment_id))
      latest[x.task_id]=x;
+ }
+ // An already signed exact scope is durable even when issue #411 grows.
+ // New plans still require a real verified comment; this fallback applies
+ // only to the original immutable owner-notice + owner-reply proof chain.
+ for(const [id,scope] of Object.entries(state.scope_authorizations||{})){
+   if(latest[id])continue;
+   const task=queue.tasks.find(t=>t.id===id),rec=state.tasks?.[id];
+   const notice=state.owner_alerts?.[scope.notice_id];
+   const answer=rec?.owner_reply_events?.[scope.owner_event_id];
+   if(task?.state!=='proposed'||!rec||scope.task_id!==id||
+      scope.proposal_source_sha!==proposalSourceHash(task)||
+      notice?.kind!=='scope_plan_review'||notice.task_id!==id||
+      notice.source_sha!==scope.plan_hash||
+      !['planned','submitted'].includes(notice.status)||
+      answer?.courier!=='muse'||answer.target?.notice_id!==scope.notice_id||
+      !yes(answer.text)||rec.scope_approval_hash!==digest(scope))continue;
+   latest[id]={...scope,comment_id:scope.plan_comment_id,
+     comment_url:scope.plan_comment_url,comment_created_at:scope.owner_approved_at,
+     plan_hash:scope.plan_hash};
  }
  return latest;
 }
@@ -100,7 +119,7 @@ export function queueScopePlanReviews(state,queue,plans,{now=new Date().toISOStr
     ? 'Scope proposal for Task '+task.id+' has OWNERSHIP CONFLICTS ('+
        conflicts.join(', ')+'). Return to the planner; do not approve or edit overlapping files.'
     : 'Exact implementation scope for Task '+task.id+' is ready for your separate file/architecture decision. Files: '+
-      plan.edits.join(', ')+'. Architecture: '+plan.architecture.slice(0,220)+
+      'Full plan: '+plan.comment_url+'. Files: '+plan.edits.join(', ')+'. Architecture: '+plan.architecture.slice(0,220)+
       '. Acceptance plan: '+plan.acceptance_plan.slice(0,160)+
       '. Reply YES to approve THESE exact files via Muse, or request changes. Your original task-goal yes remains valid.';
   const question=message.slice(0,1100);
@@ -140,9 +159,22 @@ export function acceptScopePlanDecisions(state,queue,plans,{now=new Date().toISO
      .sort((a,b)=>(Date.parse(a[1].at||'')||0)-(Date.parse(b[1].at||'')||0)||
        a[0].localeCompare(b[0]));
    const [id,response]=responses.at(-1)||[];
-   if(!response||!yes(response.text))continue;
-   if(approvedScopeOverlap(plan,queue,next).length)continue;
+   if(!response)continue;
    const prior=next.scope_authorizations[task.id];
+   if(!yes(response.text)){
+     // Later authenticated NO revokes an exact code scope before a verified
+     // merge. Do not rewrite merged or integrated-proof history.
+     if(prior?.notice_id===noticeId&&
+        !['merged','integrated_proven','released_proven'].includes(rec.status)){
+       delete next.scope_authorizations[task.id];
+       rec.scope_approval_hash=null;
+       rec.scope_revoked_event_id=id;
+       rec.planning_approved=true;rec.approved=false;
+       rec.status='blocked_needs_owner';
+     }
+     continue;
+   }
+   if(approvedScopeOverlap(plan,queue,next).length)continue;
    if(prior?.plan_hash===plan.plan_hash)continue;
    const scope={task_id:task.id,proposal_source_sha:plan.proposal_source_sha,
      plan_hash:plan.plan_hash,plan_comment_id:plan.comment_id,
