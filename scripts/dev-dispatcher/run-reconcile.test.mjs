@@ -292,3 +292,16 @@ test('failed dispatcher run observer uses trusted main and existing Git-backed o
  assert.match(watcher,/node scripts\/dev-dispatcher\/emergency-report\.mjs/);
  assert.doesNotMatch(watcher,/pull_request_target/);
 });
+
+
+test('new emergency observer remains owner-only infrastructure, while PR size guard stays intact',async()=>{
+ const {isDispatcherMaintenanceChange,dispatcherOnlyFiles}=await import('./github.mjs');
+ const {hasBigOk}=await import('../guards/pr-size.mjs');
+ const paths=[{filename:'.github/workflows/dispatcher-failure-observer.yml'},
+  {filename:'scripts/dev-dispatcher/heartbeat-probe.mjs'}];
+ assert.equal(isDispatcherMaintenanceChange(paths),true);
+ assert.equal(dispatcherOnlyFiles(paths),true);
+ assert.equal(hasBigOk(''),false);
+ assert.equal(hasBigOk('big-ok'),true);
+ assert.equal(hasBigOk(JSON.stringify([{name:'big-ok'}])),true);
+});
