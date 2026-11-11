@@ -20,7 +20,7 @@ import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs"
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
 import {dispatchReceiptWake} from './wake.mjs';
-import {noticeOperationalIssues,reportFatalDispatcherError} from './notifications.mjs';
+import {noticeOperationalIssues,reportFatalDispatcherError,reportProjectionFailure,reportProjectionRestored} from './notifications.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 
@@ -625,8 +625,14 @@ async function main() {
     try {
       const privateView = await publishPrivateQueue({ledger});
       console.log(`Private Muse owner queue ${privateView.status}`);
+      try{await reportProjectionRestored({ledger,kind:'private_queue_publish_failed',
+        identity:settings.ledger.owner_view_path});}
+      catch(health){console.error('Private queue recovery notice failed: '+health.message);}
     } catch (error) {
       console.error(`Private Muse owner queue publication failed: ${error.message}`);
+      try{await reportProjectionFailure({ledger,kind:'private_queue_publish_failed',
+        identity:settings.ledger.owner_view_path});}
+      catch(health){console.error('Private queue failure notice unavailable: '+health.message);}
       if (process.env.GITHUB_STEP_SUMMARY)
         appendFileSync(process.env.GITHUB_STEP_SUMMARY,
           '\\n**Private queue view update failed** — see runner log; authoritative ledger is unchanged.\\n');
@@ -643,8 +649,14 @@ async function main() {
       const body = renderOwnerView(effectiveState,{repo,asOf:new Date().toISOString(),runUrl,queue});
       const published = await publishOwnerView({github:gh,issue:ownerIssue,body});
       console.log(`Owner control center ${published.status}: issue #${ownerIssue}, comment ${published.id}`);
+      try{await reportProjectionRestored({ledger,kind:'owner_dashboard_publish_failed',
+        identity:String(ownerIssue)});}
+      catch(health){console.error('Dashboard recovery notice failed: '+health.message);}
     } catch (error) {
       console.error(`Owner control center publication failed: ${error.message}`);
+      try{await reportProjectionFailure({ledger,kind:'owner_dashboard_publish_failed',
+        identity:String(ownerIssue)});}
+      catch(health){console.error('Dashboard failure notice unavailable: '+health.message);}
       if (process.env.GITHUB_STEP_SUMMARY)
         appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\n**Owner dashboard update failed** — see the reconciliation log. Private ledger and courier signal remain independent.\n');
     }
