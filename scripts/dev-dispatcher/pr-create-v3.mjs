@@ -38,6 +38,14 @@ export async function ensureApprovedDraftPr({github,writer,task,record,records={
  const match=Array.isArray(existing)?existing.find(p=>p.head?.ref===branch):null;
  if(match)return {status:'existing_pr_needs_link',pr_number:match.number,
    github_state:match.merged_at?'merged':match.state,draft:match.draft,head_sha:match.head?.sha};
+ // A POST may have committed despite a transport timeout or GitHub HTTP 5xx.
+ // Re-observe the branch/PR on every tick, but NEVER replay the POST merely
+ // because discovery is empty. A sticky ledger hold survives later non-write
+ // observations and stays in force until GitHub verifies a PR or an explicit
+ // owner-authorized manual recovery creates one.
+ if(record.pr_creation_uncertain_hold||
+    record.github_effects?.CREATE_DRAFT_PR?.status==='uncertain')
+   return {status:'uncertain',reason:'previous_pr_creation_write_unverified'};
  const comparison=await github.request('/compare/'+encodeURIComponent(base.base_branch)+'...'+head);
  if(!(comparison?.ahead_by>0)||!Array.isArray(comparison.files)||
    comparison.files.length===0||comparison.files.length>=300)
