@@ -133,7 +133,8 @@ export async function reportFatalDispatcherError({ledger,wake,sha='unknown',mess
 // repository_dispatch. One stable identity per repository prevents a wake storm
 // while the signal is down. A later successful publish reports restoration.
 export async function reportMuseSignalFailure({ledger,wake,repo,message}){
- const receipt=await ledger.transaction(state=>onlyChange(state,queueOwnerIssue(state,{
+ const receipt=await ledger.transaction(state=>onlyChange(state,queueOwnerIssue(
+  resolveOwnerIssueIdentity(state,{kind:'muse_signal_restored',identity:repo}),{
   kind:'muse_signal_failed',identity:repo,
   message:'GitHub could not publish the Muse wake signal for '+repo+': '+String(message).slice(0,180),
   needs:'GitHub fixes the outbound signal; private notices remain queued and unacknowledged'})));
@@ -161,7 +162,8 @@ const projectionKinds=new Set(['owner_dashboard_publish_failed','private_queue_p
 export async function reportProjectionFailure({ledger,kind,identity}){
  if(!projectionKinds.has(kind)||typeof identity!=='string'||!identity)
   throw Error('Unrecognized owner communication publication');
- return ledger.transaction(state=>onlyChange(state,queueOwnerIssue(state,{
+ return ledger.transaction(state=>onlyChange(state,queueOwnerIssue(
+  resolveOwnerIssueIdentity(state,{kind:kind+'_restored',identity}),{
   kind,identity,
   message:'GitHub could not publish '+(kind==='private_queue_publish_failed'
    ?'the private Muse owner queue':'the public-safe owner dashboard')+'.',
