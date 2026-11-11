@@ -56,18 +56,23 @@ if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1]).
     secret:process.env.DISPATCH_SIGNAL_SECRET};
   const ledger=()=>new GitHubLedger({repo:ledgerRepo,token:args.ledgerToken,
     path:settings.ledger.path});
+  let phase='publish';
   (async()=>{
     const changed=await publishSignal(args);
-    // A successful signal publish is independently verified. Close only an
-    // existing signal-failure incident and publish its closure notice once.
+    // Do not misreport a later ledger read failure as an outbound signal
+    // failure. The first signal has already been independently published.
+    phase='recovery_record';
     if(args.ledgerToken){
       const recovered=await reportMuseSignalRestored({ledger:ledger(),repo});
-      if(recovered.committed)await publishSignal(args);
+      if(recovered.committed){
+        phase='closure_publish';
+        await publishSignal(args);
+      }
     }
     console.log(changed ? 'Wake-up signal updated' : 'Wake-up signal unchanged');
   })().catch(async e=>{
-    console.error('Muse signal publication failed: '+String(e.message).slice(0,180));
-    if(args.ledgerToken)try{
+    console.error('Muse '+phase+' failed: '+String(e.message).slice(0,180));
+    if(phase!=='recovery_record'&&args.ledgerToken)try{
       await reportMuseSignalFailure({ledger:ledger(),repo,
         message:String(e.message),wake:()=>dispatchReceiptWake({token:args.publicToken})});
     }catch(second){
