@@ -96,10 +96,6 @@ export function queueScopePlanReviews(state,queue,plans,{now=new Date().toISOStr
    if(n.kind==='scope_plan_review'&&n.task_id===task.id&&
       n.status==='planned'&&(!plan||n.source_sha!==plan.plan_hash))
       n.status='cancelled_no_longer_needed';
-  const hash=noticeHash({kind:'scope_plan_review',task_id:task.id,
-    source_sha:plan.plan_hash,question:''});
-  const key='notice:'+hash;
-  if(next.owner_alerts[key])continue;
   const message=conflicts.length
     ? 'Scope proposal for Task '+task.id+' has OWNERSHIP CONFLICTS ('+
        conflicts.join(', ')+'). Return to the planner; do not approve or edit overlapping files.'
@@ -107,10 +103,15 @@ export function queueScopePlanReviews(state,queue,plans,{now=new Date().toISOStr
       plan.edits.join(', ')+'. Architecture: '+plan.architecture.slice(0,220)+
       '. Acceptance plan: '+plan.acceptance_plan.slice(0,160)+
       '. Reply YES to approve THESE exact files via Muse, or request changes. Your original task-goal yes remains valid.';
+  const question=message.slice(0,1100);
+  const hash=noticeHash({kind:'scope_plan_review',task_id:task.id,
+    source_sha:plan.plan_hash,question});
+  const key='notice:'+hash;
+  if(next.owner_alerts[key])continue;
   next.owner_alerts[key]={kind:'scope_plan_review',task_id:task.id,
    plan_hash:plan.plan_hash,plan_comment_id:plan.comment_id,
    source_sha:plan.plan_hash,notice_hash:hash,
-   question:message.slice(0,1100),owner_message:message.slice(0,1100),
+   question,owner_message:question,
    recipient:'owner',delivery_owner:'muse',
    status:'planned',created_at:now,
    target_url:plan.comment_url||'https://github.com/'+settings.repo+'/issues/411',
