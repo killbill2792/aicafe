@@ -14,7 +14,10 @@ describe("scheduled event discovery",()=>{
      "2026-10-31","2026-11-01",
    ]);
    expect(closedEventObservationDays("2026-11-03",1,"2026-11-03")).toEqual([]);
+   // Full source days must be revisited when this window ends recently:
+   // clamping the START to the 14-day lookback would leave old sales stale.
    expect(closedEventObservationDays("2026-10-01",14,"2026-10-20")).toEqual([
+     "2026-10-01","2026-10-02","2026-10-03","2026-10-04","2026-10-05",
      "2026-10-06","2026-10-07","2026-10-08","2026-10-09","2026-10-10",
      "2026-10-11","2026-10-12","2026-10-13","2026-10-14",
    ]);
