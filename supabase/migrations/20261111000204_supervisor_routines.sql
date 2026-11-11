@@ -1,6 +1,12 @@
 -- Task 7: one owner-scoped routine occurrence per café-local day, and one
 -- private priority notice via the existing operating_tasks + ai_messages inbox.
 -- This migration is additive: it never changes the Task 6 durable run/worker path.
+-- Bound locking and DDL duration even when an existing café is busy.
+set lock_timeout = '10s';
+set statement_timeout = '5min';
+
+-- Reason: Weekdays are 1-7 and per-routine revision cannot grow into a row-ID counter.
+-- squawk-ignore prefer-bigint-over-int
 create table public.supervisor_routines (
   business_id uuid not null references public.businesses(id) on delete cascade,
   id uuid not null default gen_random_uuid(),
@@ -25,6 +31,8 @@ create table public.supervisor_routines (
 create index supervisor_routines_due_idx on public.supervisor_routines
   (business_id,status,owner_user_id) where status='active';
 
+-- Reason: A routine revision is per owner schedule, while attempts are capped at five.
+-- squawk-ignore prefer-bigint-over-int
 create table public.supervisor_routine_occurrences (
   business_id uuid not null,
   routine_id uuid not null,
@@ -52,7 +60,11 @@ create table public.supervisor_routine_occurrences (
 create index supervisor_occurrences_retry_idx on public.supervisor_routine_occurrences
   (next_retry_at,lease_until) where state in ('pending','running');
 
+-- Reason: This table is new in this transaction; secure it before any client grant.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_routines enable row level security;
+-- Reason: Occurrences are new in this transaction and have no prior client grants.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_routine_occurrences enable row level security;
 create policy supervisor_routines_owner_select on public.supervisor_routines
   for select to authenticated using (
