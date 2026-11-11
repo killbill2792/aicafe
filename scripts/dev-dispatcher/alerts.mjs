@@ -117,12 +117,16 @@ export function resolveOwnerIssue(state,kind,pr_number){
 export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,now=new Date().toISOString()}={}){
  const next=structuredClone(state);
  next.owner_alerts ||= {};
- const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start','missing_chat_link','dispatcher_issue']);
+ const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start','missing_chat_link','dispatcher_issue','codex_watchdog']);
  const route=entry=>{
   // An operational failure was explicitly addressed to the owner; do
   // not downgrade it to a referee notice on the next reconciliation.
-  entry.recipient=['owner','referee'].includes(entry.recipient)
-    ? entry.recipient : ownerKinds.has(entry.kind)?'owner':'referee';
+  // Existing Codex watchdog notices were addressed to a non-owner referee
+  // even though Muse is the owner's ONLY mouth. Upgrade the unsent notice
+  // without changing its identity, authority, or delivery receipt.
+  entry.recipient=entry.kind==='codex_watchdog'&&entry.status==='planned'
+    ? 'owner' : ['owner','referee'].includes(entry.recipient)
+      ? entry.recipient : ownerKinds.has(entry.kind)?'owner':'referee';
   if(entry.recipient==='owner'){
    entry.target_url=entry.pr_number
     ?'https://github.com/'+settings.repo+'/pull/'+entry.pr_number
@@ -226,8 +230,12 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
      '. Owner intervention required; no repeated coding nudge.');
   if(rec.codex_referee_sha && rec.codex_referee_sha===rec.head_sha)
    add('codex_watchdog',id,rec.pr_number,
-     'Referee: Codex gave no review or reaction after one request for PR #'+
-     rec.pr_number+' on head '+rec.head_sha+'. Do not re-request unchanged code.');
+     'Codex did not acknowledge the ready-for-review transition for PR #'+
+     rec.pr_number+' on head '+rec.head_sha+
+     '. GitHub verified green CI and raised this alert after the watchdog window. '+
+     'The PR stays blocked; no duplicate review was requested. '+
+     'Check Codex GitHub repository access and automatic-review trigger settings; '+
+     'the next verified review receipt will unblock it.');
   if(rec.connector_403) {
    const assigned=queue?.tasks?.find(t=>t.id===id);
    const expected=rec.repo_mismatch?.expected || assigned?.repository || assigned?.repo ||
