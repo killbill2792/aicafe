@@ -50,3 +50,13 @@ export const routineTools={
     },
   },
 } as const;
+
+const {$schema:_routineToolSchema,...routineParameters}=z.toJSONSchema(manageRoutineSchema,{target:"draft-07"});
+void _routineToolSchema;
+/** Advertised only on a server-verified owner thread via extraTools; unlike
+ * global definitions, it cannot be offered by a caller without the owner port. */
+export const routineToolDefinition={
+  type:"function" as const,name:"manage_routine",
+  description:routineTools.manage_routine.description,strict:true as const,
+  parameters:{...routineParameters,required:Object.keys(routineParameters.properties??{})},
+};

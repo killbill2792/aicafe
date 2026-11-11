@@ -177,7 +177,10 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
     strict: true as const, parameters:{...requireEveryProperty(parameters) as typeof parameters,required} };
 });
 /** Function names stay plain strings: memory and capability gating add or filter by name. */
-export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=[...baseToolDefinitions];
+// Routine management is a verified-owner-only additional function, rather
+// than a global public tool. Keep the existing baseline tool contract stable.
+export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
+  baseToolDefinitions.filter(tool=>tool.name!=="manage_routine");
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
