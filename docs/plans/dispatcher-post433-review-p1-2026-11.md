@@ -1,0 +1,9 @@
+# Post-merge Codex P1 repair: scope-revision ordering and approval recovery
+
+The deployed dispatcher correctly advanced the four existing approvals to `scope_planning`, but two newly posted Codex P1 findings on merged PR #433 identified future dead ends. This follow-up changes **only** the existing scope authority and its tests; no new queue, browser agent, webhook, task permission, or secret.
+
+1. **Latest plan selection:** When scope-review comments have rolled off GitHub issue #411's last page, read the immutable cached authenticated plans on existing private owner notices. Select the newest valid verified plan by GitHub comment timestamp and ID, not the first ledger insertion. Prefer the latest across fetched and stored comments. Keep a signed scope intact only for its matching approved plan hash and verified notice/reply; never give an old scope new authority.
+2. **Yes after revocation:** An authenticated later YES bound to the original exact plan/notice advances a previously blocked task back to the signed scope transition in the existing revalidator. Keep `scope_plan_completed`/the verified planning chat; preserve the submitted/cancelled coding-action receipt history and dedupe. Never send code without validated exact authorized files, dependencies, and availability.
+3. **Proof:** Regression test submitted old plan then later corrected/owner-approved plan after comment rollover; ensure latest corrected hash is chosen and coding remains authorized. Test YES→NO→YES, exact-scope authorization recovery through the real `revalidateQueuedActions` and `dispatchFrontier`; also test no duplicate coding action when delivery had already been submitted.
+
+**Owner merge only**. Stay Draft during fixes, run exact-head deterministic dispatcher suite and full baseline, then Codex after green. No change to production/merge permissions.

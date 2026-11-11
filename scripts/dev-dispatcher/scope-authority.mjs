@@ -58,16 +58,22 @@ export function parseScopePlanComment(comment,queue,state){
    proposal_source_sha:draft.proposal_source_sha,action_id:draft.action_id};
  return {...normalized,plan_hash:digest(normalized)};
 }
+// Compare authenticated issue comments and verified cached notices by their
+// original GitHub chronology. Ledger insertion order is not scope precedence.
+const newerPlan=(candidate,previous)=>{
+ if(!previous)return true;
+ const a=Date.parse(candidate.comment_created_at||'');
+ const b=Date.parse(previous.comment_created_at||'');
+ if(Number.isFinite(a)&&Number.isFinite(b)&&a!==b)return a>b;
+ return candidate.comment_id>previous.comment_id;
+};
 export function selectScopePlans(comments,queue,state){
  const latest={};
  if(!Array.isArray(comments)||comments.length>100)throw Error('Unbounded GitHub scope plans');
  for(const c of comments){
    const x=parseScopePlanComment(c,queue,state);
    if(!x)continue;
-   const prev=latest[x.task_id];
-   if(!prev||x.comment_created_at>prev.comment_created_at||
-      (x.comment_created_at===prev.comment_created_at&&x.comment_id>prev.comment_id))
-     latest[x.task_id]=x;
+   if(newerPlan(x,latest[x.task_id]))latest[x.task_id]=x;
  }
  // Even a PENDING owner decision is durable once the trusted dispatcher
  // verified and saved the source comment in the existing private owner notice.
@@ -76,7 +82,7 @@ export function selectScopePlans(comments,queue,state){
    const plan=notice.scope_plan;
    if(notice.kind!=='scope_plan_review'||!plan||
       !['planned','submitted'].includes(notice.status)||
-      latest[notice.task_id]||plan.task_id!==notice.task_id||
+      plan.task_id!==notice.task_id||
       plan.plan_hash!==notice.source_sha||
       key!=='notice:'+noticeHash({kind:'scope_plan_review',
         task_id:notice.task_id,question:notice.question,
@@ -89,7 +95,8 @@ export function selectScopePlans(comments,queue,state){
         .some(a=>a.task_id===plan.task_id&&a.type?.startsWith('scope_plan')&&
           a.status==='submitted'&&a.proposal_source_sha===plan.proposal_source_sha))
      continue;
-   latest[plan.task_id]=structuredClone(plan);
+   if(newerPlan(plan,latest[plan.task_id]))
+     latest[plan.task_id]=structuredClone(plan);
  }
  // An already signed exact scope is durable even when issue #411 grows.
  // New plans still require a real verified comment; this fallback applies
@@ -206,6 +213,15 @@ export function acceptScopePlanDecisions(state,queue,plans,{now=new Date().toISO
      notice_id:noticeId,notice_hash:notice.notice_hash,
      owner_event_id:id,owner_approved_at:response.at||now};
    next.scope_authorizations[task.id]=scope;
+   // Owner may approve, revoke, then approve the same exact scope again.
+   // Re-enter the existing signed-scope transition from the verified plan chat;
+   // a stored YES must not remain blocked as an inert record.
+   if(!['assigned','draft_open','review_fixing','merged',
+         'integrated_proven','released_proven'].includes(rec.status)){
+     rec.planning_approved=true;
+     rec.approved=false;
+     rec.status='scope_plan_sent';
+   }
    rec.scope_approval_hash=digest(scope);
    rec.scope_approval_event_id=id;
    rec.scope_approved_at=response.at||now;
