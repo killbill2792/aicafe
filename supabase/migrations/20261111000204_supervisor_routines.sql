@@ -385,7 +385,7 @@ begin
         'identifier',p_source_id,'asOf',p_as_of::text))))
   on conflict(id) do nothing;
   return v_inserted_task_id is not null;
-end $;
+end $$;
 revoke all on function public.post_supervisor_priority_notice(uuid,uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,uuid)
   from public,anon,authenticated;
 grant execute on function public.post_supervisor_priority_notice(uuid,uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,uuid)

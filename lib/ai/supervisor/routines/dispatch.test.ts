@@ -30,7 +30,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
           value!=="(priority_notice,commitment)")
           throw new Error("Unexpected priority task exclusion");
         const forbidden=new Set(value.slice(1,-1).split(","));
-        selected=selected.filter(row=>!forbidden.has(String(row[field])));
+        selected=selected.filter(row=>!forbidden.has(String((row as Record<string,unknown>)[field])));
         return builder;
       },
       or(){return builder},order(){return builder},
