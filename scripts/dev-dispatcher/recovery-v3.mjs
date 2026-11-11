@@ -52,7 +52,26 @@ export function recordRecoveryEvent(state,event,options={}){
   const next=structuredClone(state);
   const parsed=recoveryEvent(event,{...options,records:next.tasks});
   if(!parsed)return next;
-  if(!parsed.accepted)return next; // Invalid requests never authorize effects.
+  if(!parsed.accepted){
+    // Authenticated Muse/owner requests rejected by a changed head or scope
+    // must get a visible negative receipt, not disappear into a retry loop.
+    // Never persist arbitrary unauthenticated traffic or authorize effects.
+    const login=event?.sender?.login;
+    const allowed=login===options.owner||options.actors?.[login]==='muse';
+    const id=event?.client_payload?.request_id;
+    if(allowed&&typeof id==='string'&&/^[a-f0-9]{64}$/.test(id)){
+      next.recovery_rejections||={};
+      if(!next.recovery_rejections[id])
+        next.recovery_rejections[id]={request_id:id,reason:parsed.reason,
+          requested_by:login,at:options.now||new Date().toISOString()};
+      const entries=Object.entries(next.recovery_rejections);
+      if(entries.length>200){
+        entries.sort((a,b)=>String(b[1].at).localeCompare(String(a[1].at)));
+        next.recovery_rejections=Object.fromEntries(entries.slice(0,200));
+      }
+    }
+    return next;
+  }
   next.recovery_requests||={};
   if(!next.recovery_requests[parsed.request.request_id])
     next.recovery_requests[parsed.request.request_id]=parsed.request;
