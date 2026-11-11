@@ -119,3 +119,24 @@ test('dispatcher heartbeat reports stale separate from ledger update',()=>{
   assert.equal(view.health.schedule_status,'STALE');
   assert.equal(view.health.schedule_age_minutes,60);
 });
+
+
+test('infrastructure PR is never advertised as eligible for automatic merge',()=>{
+  const x=project({...rec,draft:false,codex_state:'clean',codex_reviewed_sha:a,
+    dispatcher_only:true});
+  assert.equal(x.merge.eligible,false);
+  assert.ok(x.merge.blockers.includes('owner_merge_required'));
+  assert.equal(x.monitor.next_action,'OWNER_MERGE_REQUIRED');
+});
+test('review from outdated base cannot be presented as merge-ready',()=>{
+  const x=project({...rec,draft:false,codex_state:'clean',codex_reviewed_sha:a,
+    review_base_current:false});
+  assert.equal(x.merge.eligible,false);
+  assert.ok(x.merge.blockers.includes('review_base_outdated'));
+});
+test('signed ad hoc stacked PR never advertised as eligible to merge into open parent',()=>{
+  const x=project({...rec,draft:false,codex_state:'clean',codex_reviewed_sha:a,
+    adhoc:true,base_branch:'feat/parent'});
+  assert.equal(x.merge.eligible,false);
+  assert.ok(x.merge.blockers.includes('adhoc_parent_base_not_main'));
+});
