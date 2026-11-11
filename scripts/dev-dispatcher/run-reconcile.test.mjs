@@ -28,8 +28,9 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
   const errors = [];
   const taskById = new Map(['bad', 'good', 'POS0b', 'POS0c', 'POS0d', 'POS0e', '6']
     .map(id => [id, task(id)]));
+  const sourceQueue={tasks:[...taskById.values()]};
   const deps = {
-    queue: { tasks: [...taskById.values()] }, taskById, settings,
+    queue: sourceQueue, taskById, settings,
     receiptScan: { accepted: receipts, rejected: [], complete: true },
     actorMap: {}, console: { error: message => errors.push(message), log: () => {} },
     linkPullRequests: state => ({ state: structuredClone(state), unmapped: [] }),
@@ -57,7 +58,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     queueScopePlanReviews: state => state,
     acceptScopePlanDecisions: state => state,
     effectiveSignedQueue: queue => queue,
-    sourceQueue:{tasks:[]},
+    sourceQueue,
     scopeComments:[],
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},

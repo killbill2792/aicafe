@@ -106,11 +106,11 @@ test('untrusted, stale, malformed and overlapping planning comments never author
   const replied=acceptMuseOwnerReply(offered,{kind:'owner_reply',
     event_id:'e-'+response.replace(' ','-'),text:response,
     target:{task_id:taskId,notice_id:noticeId}},{authenticatedCourier:'muse'});
-  assert.equal(acceptScopePlanDecisions(replied,queue,valid).scope_authorizations,undefined);
+  assert.equal(Object.keys(acceptScopePlanDecisions(replied,queue,valid).scope_authorizations||{}).length,0);
  }
  const wrong=acceptMuseOwnerReply(offered,{kind:'owner_reply',event_id:'wrong-notice',
    text:'yes',target:{task_id:taskId,notice_id:'notice:bad'}},{authenticatedCourier:'muse'});
- assert.equal(acceptScopePlanDecisions(wrong,queue,valid).scope_authorizations,undefined);
+ assert.equal(Object.keys(acceptScopePlanDecisions(wrong,queue,valid).scope_authorizations||{}).length,0);
  const changedQueue={...queue,tasks:queue.tasks.map(t=>t.id===taskId?
    {...t,goal:t.goal+' revised'}:t)};
  assert.deepEqual(selectScopePlans([comment],changedQueue,submitted),{});
