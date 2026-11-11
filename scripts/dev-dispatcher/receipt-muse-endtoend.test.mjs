@@ -227,6 +227,14 @@ test('GitHub primary quota exhaustion is an explicit terminal error, not a crede
  assert.equal(calls,2);
  const nonQuota=await githubFailure(new Response(JSON.stringify({message:'Resource not accessible by integration'}),{status:403}),'GitHub','fake-secret');
  assert.notEqual(nonQuota.code,'RATE_LIMIT');
+ const secondary=await githubFailure(new Response(JSON.stringify({
+   message:'You have exceeded a secondary rate limit'
+ }),{status:403,headers:{'x-ratelimit-remaining':'4500','retry-after':'120'}}),'GitHub','fake-secret');
+ assert.equal(secondary.code,'RATE_LIMIT');
+ assert.ok(Date.parse(secondary.reset_at)>Date.now()+60000);
+ const tooMany=await githubFailure(new Response(JSON.stringify({message:'Too many requests'}),
+   {status:429,headers:{'retry-after':'60'}}),'GitHub','fake-secret');
+ assert.equal(tooMany.code,'RATE_LIMIT');
 });
 test('Codex review that arrives after the single fallback closes the incident and tells Muse once',()=>{
  const state=original();
