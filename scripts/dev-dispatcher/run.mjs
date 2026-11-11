@@ -33,6 +33,7 @@ import {recordLifecycleTransitions,projectLifecycle} from "./lifecycle-v3.mjs";
 import {recordRecoveryEvent,settleRecoveryRequests} from "./recovery-v3.mjs";
 import {dispatchPreferences} from "./owner-controls-v3.mjs";
 import {ensureApprovedDraftPr} from "./pr-create-v3.mjs";
+import {verifiedCodingConversation} from "./verified-chat-v3.mjs";
 import {recordGithubEffects} from "./github-effects-v3.mjs";
 
 async function main() {
@@ -260,11 +261,8 @@ async function main() {
       // A verified Muse coding receipt can precede the first PR. One
       // head-independent, idempotent same-chat reminder prevents a lost PR
       // from remaining silent. Never guess that coding is complete.
-      const firstDelivery=Object.values(copy.actions).some(a=>
-        a.task_id===id&&['assign','begin_scoped_coding'].includes(a.type)&&
-        a.status==='submitted'&&a.receipt?.courier==='muse'&&
-        a.delivery?.approval_hash===rec.approval_hash&&
-        a.receipt?.conversation_url===rec.conversation_ref);
+      const firstDelivery=verifiedCodingConversation(copy,id,
+        rec.approval_hash,rec.conversation_ref);
       const lastDelivery=Date.parse(rec.last_submission_at||'');
       const noPrDue=firstDelivery&&rec.approved===true&&rec.status==='assigned'&&
         !Number.isInteger(rec.pr_number)&&Boolean(rec.conversation_ref)&&
@@ -546,11 +544,8 @@ async function main() {
       if(!task||rec.pr_number||rec.github_state==='merged'||!rec.conversation_ref||
         !rec.approved||!rec.branch)continue;
       try{
-        const verifiedDelivery=Object.values(persisted.state.actions||{}).some(a=>
-          a.task_id===id&&['assign','begin_scoped_coding'].includes(a.type)&&
-          a.status==='submitted'&&a.receipt?.courier==='muse'&&
-          a.delivery?.approval_hash===rec.approval_hash&&
-          a.receipt?.conversation_url===rec.conversation_ref);
+        const verifiedDelivery=verifiedCodingConversation(persisted.state,id,
+          rec.approval_hash,rec.conversation_ref);
         if(!verifiedDelivery)continue;
         const result=await ensureApprovedDraftPr({github:gh,writer,task,record:rec,
           records:persisted.state.tasks,verifiedDelivery,queueRepo:repo});
