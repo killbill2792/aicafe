@@ -147,7 +147,8 @@ export function isDispatcherMaintenanceChange(files) {
       file.filename === '.github/workflows/'+settings.workflows.dispatcher ||
       /^scripts\/dev-dispatcher\//.test(file.filename) ||
       /^\.dispatcher\//.test(file.filename) ||
-      file.filename === '.github/workflows/'+settings.workflows.delayed_wake));
+      file.filename === '.github/workflows/'+settings.workflows.delayed_wake ||
+      file.filename === '.github/workflows/dispatcher-failure-observer.yml'));
 }
 
 export class GitHubFacts {
