@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {settings} from './settings.mjs';
-import {gitAuthEnvironment,publishEmergencyViaGit,updateBranchViaGit} from './git-operations.mjs';
+import {gitAuthEnvironment,publishEmergencyViaGit,updateBranchViaGit,transactLedgerViaGit,publishOwnerQueueViaGit} from './git-operations.mjs';
 
 const sha='a'.repeat(40);
 const run=(args,cwd)=>{const r=spawnSync('git',args,{cwd,encoding:'utf8'});
@@ -103,4 +103,38 @@ test('a genuine Git merge conflict is classified separately from transport error
   assert.equal(result.status,'conflict_needs_coder');
   assert.equal(run(['rev-parse','refs/heads/feat/conflict'],f.work),original);
  } finally {f.cleanup();}
+});
+
+test('Git-backed ledger transaction preserves concurrent writes with fresh retry',async()=>{
+ const f=fixture();
+ try{
+  run(['branch','-M','main'],f.work);
+  mkdirSync(dirname(join(f.work,settings.ledger.path)),{recursive:true});
+  writeFileSync(join(f.work,settings.ledger.path),JSON.stringify({
+   version:1,tasks:{T:{approved:true}},actions:{},owner_alerts:{}
+  }));
+  run(['add','.'],f.work);run(['commit','-qm','seed'],f.work);
+  run(['push','-q','origin','main'],f.work);
+  let injectOnce=true,attempts=0;
+  const result=await transactLedgerViaGit({repo:settings.ledger.repo,token:'local-only',
+    remoteUrl:f.bare,transform:next=>{
+      attempts++;
+      if(injectOnce){
+        injectOnce=false;
+        writeFileSync(join(f.work,'concurrent.txt'),'outside update\n');
+        run(['add','.'],f.work);run(['commit','-qm','concurrent owner update'],f.work);
+        run(['push','-q','origin','main'],f.work);
+      }
+      next.actions['verified']={status:'planned'};return next;
+    }});
+  assert.equal(result.committed,true);
+  assert.equal(attempts,2);
+  run(['pull','-q','origin','main'],f.work);
+  assert.equal(readFileSync(join(f.work,'concurrent.txt'),'utf8'),'outside update\n');
+  const state=JSON.parse(readFileSync(join(f.work,settings.ledger.path),'utf8'));
+  assert.equal(state.actions.verified.status,'planned');
+  assert.match(readFileSync(join(f.work,settings.ledger.owner_view_path),'utf8'),/private Muse delivery queue/);
+  assert.equal(publishOwnerQueueViaGit({repo:settings.ledger.repo,token:'local-only',
+    remoteUrl:f.bare}).status,'unchanged');
+ }finally{f.cleanup();}
 });
