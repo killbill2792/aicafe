@@ -43,10 +43,11 @@ export function cityScanWindows(today:string,state:EventScanState|null,locationH
     return [{from:today,to:addDays(today,13),reason:"new_day"},...windows];
   return windows;
 }
-/** Reconcile only recently closed café *calendar* days. UTC instants
- * are converted to a café-local ISO day before this function is called; adding
- * elapsed milliseconds across DST would skip or double a café day. The daily
- * and 15-minute triggers continue using the same monitorLoop writer. */
+/** Replay every date of a recently ended event window, preserving the
+ * existing late/corrected-Toast parity contract. An event is eligible if its
+ * END falls in the last 14 local days; all of its prior days remain subject to
+ * correction, even if the START is older than that cutoff. Date-only arithmetic
+ * avoids a skipped/duplicated day at DST. Both crons still share monitorLoop. */
 export function closedEventObservationDays(
   startDate:string,durationDays:number,today:string,lookbackDays=14
 ):string[]{
@@ -55,10 +56,10 @@ export function closedEventObservationDays(
   const first=addDays(today,-lookbackDays);
   const last=addDays(today,-1);
   const end=addDays(startDate,durationDays-1);
-  const from=startDate>first?startDate:first;
+  if(startDate>last||end<first)return [];
   const until=end<last?end:last;
   const days:string[]=[];
-  for(let day=from;day<=until;day=addDays(day,1))days.push(day);
+  for(let day=startDate;day<=until;day=addDays(day,1))days.push(day);
   return days;
 }
 /** Fair selection for one shared daily research budget. Stable UTC-day
