@@ -671,3 +671,15 @@ test('green exact-head Codex PR gets exactly one bounded same-chat closeout acti
  assert.equal(decideNudge({...r,ci_state:'failure'},now).action,'ci_failed');
  assert.equal(decideNudge({...r,codex_state:'findings'},now).action,'codex_comments');
 });
+
+
+test('owner priority sorts new dispatch without changing signed shared-file merge order',()=>{
+  const a=task('a'),b=task('b'),c=task('c');
+  a.exclusive_files=['lib/shared.ts'];b.exclusive_files=['lib/shared.ts'];
+  const q={...queue([a,b,c]),capacity:{chatgpt:3,claude:0}};
+  const prefs={priority:{c:80,b:60},paused:new Set(['a'])};
+  const selected=dispatchFrontier(q,{},null,prefs);
+  assert.deepEqual(selected.map(x=>x.task_id),['c','b']);
+  assert.deepEqual(q.tasks.map(x=>x.id),['a','b','c']);
+  assert.deepEqual(overlappingPredecessorIds(b,q),['a']);
+});
