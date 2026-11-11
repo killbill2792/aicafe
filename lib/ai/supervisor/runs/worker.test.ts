@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { executeDurableRun, type WorkerDependencies, type WorkerRun } from "./worker.server";
+import { executeDurableRun, reconcileVerifiedOwnerStep, type WorkerDependencies, type WorkerRun } from "./worker.server";
 import type { DurableRun, DurableRunRepository, RunScope, StepClaim, StepSpec } from "./contracts";
 import type { WorkerBudget, WorkerUsage } from "./usage.server";
 import { supervisorReplyIdFor } from "@/lib/ai/conversations/replyValidation";
@@ -123,6 +123,23 @@ describe("durable owner worker (uses Task 5 fenced repository)", () => {
     expect(await executeDurableRun(run, budget, env.deps)).toBe("blocked");
     expect(env.calls.execute).toBe(0);
     expect(db.status).toBe("blocked");
+  });
+  it("lease-expiry receipt reconciliation resumes without replay; cancellation cannot reconcile", async () => {
+    const db = new Ledger();
+    db.rows[0] = { ...db.rows[0], state: "completed" };
+    db.rows[1] = { ...db.rows[1], state: "leased", token: randomUUID(), expired: true };
+    db.status = "running";
+    expect((await db.claim(scope, run.id, randomUUID(), 90)).kind).toBe("blocked");
+    const env = setup(db);
+    env.setReply({ ref: reportRef, endReason: "complete", usage });
+    expect(await reconcileVerifiedOwnerStep(run, db, "cancelled",
+      env.deps.authorize, env.deps.verified)).toBe(false);
+    expect(db.status).toBe("blocked");
+    expect(await reconcileVerifiedOwnerStep(run, db, "lease_expired",
+      env.deps.authorize, env.deps.verified)).toBe(true);
+    expect(db.rows[1].state).toBe("completed");
+    expect(await executeDurableRun(run, budget, env.deps)).toBe("completed");
+    expect(env.calls.execute).toBe(0);
   });
   it("timeout, budget, and cancellation remain blocked rather than falsely finished", async () => {
     for (const reason of ["timeout", "budget", "cancel"] as const) {
