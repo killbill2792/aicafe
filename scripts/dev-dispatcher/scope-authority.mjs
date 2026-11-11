@@ -9,15 +9,20 @@ import {approvalSignature} from './delivery.mjs';
 
 const digest=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const taskId=id=>typeof id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id);
-const pathOK=p=>typeof p==='string'&&p.length>0&&p.length<240&&
- !p.startsWith('/')&&!p.includes('*')&&!p.split('/').includes('..')&&
- /^[a-zA-Z0-9_./-]+$/.test(p);
+// File names are repository facts, not an ASCII allowlist. Next.js dynamic
+// routes and other valid paths may contain brackets, spaces or Unicode.
+// Keep only security/exact-path checks: no glob, absolute path or traversal.
+const pathOK=p=>typeof p==='string'&&p.length>0&&
+ !p.startsWith('/')&&!p.includes('\\')&&!/[\\x00-\\x1f\\x7f]/.test(p)&&
+ !/[?*]/.test(p)&&p.split('/').every(part=>part&&part!=='.'&&part!=='..'&&part!=='.git');
 const yes=s=>/^yes(?:[.!]|(?:\s+to\s+(?:start|proceed))[.!]?)?$/i.test(String(s||'').trim());
 
 // Plans go on the existing owner-control issue #411, not a new PR, queue, job
 // or comment channel. The ChatGPT planning agent must post this one-line marker:
 // <!-- aicafe-scope-plan:v1 {"task_id":"...","action_id":"...","proposal_source_sha":"...","edits":["..."],"uses":["..."],"architecture":"source fields / keys / readers / what changes / gaps / multi-cafe","acceptance_plan":"..."} -->
-const pattern=/<!-- aicafe-scope-plan:v1 (\{[^\r\n]{1,6000}\}) -->/g;
+// GitHub already bounds comment payloads. Do not impose a second arbitrary
+// 6-KB ceiling or require the authenticated JSON to fit on one line.
+const pattern=/<!--\\s*aicafe-scope-plan:v1\\s+([\\s\\S]*?)\\s*-->/g;
 export function parseScopePlanComment(comment,queue,state){
  if(comment?.user?.login!==settings.owner.login ||
     comment?.author_association!=='OWNER'||!Number.isSafeInteger(comment.id)||
@@ -27,13 +32,12 @@ export function parseScopePlanComment(comment,queue,state){
  if(matches.length!==1)return null;
  let draft;try{draft=JSON.parse(matches[0][1]);}catch{return null;}
  if(!taskId(draft.task_id)||typeof draft.action_id!=='string'||
-    !Array.isArray(draft.edits)||!draft.edits.length||draft.edits.length>25||
+    !Array.isArray(draft.edits)||!draft.edits.length||
     !draft.edits.every(pathOK)||new Set(draft.edits).size!==draft.edits.length||
     !Array.isArray(draft.uses||[])||!(draft.uses||[]).every(pathOK)||
     new Set(draft.uses||[]).size!==(draft.uses||[]).length||
-    typeof draft.architecture!=='string'||draft.architecture.trim().length<80||
-    draft.architecture.length>1800||typeof draft.acceptance_plan!=='string'||
-    draft.acceptance_plan.trim().length<30||draft.acceptance_plan.length>1300)
+    typeof draft.architecture!=='string'||!draft.architecture.trim()||
+    typeof draft.acceptance_plan!=='string'||!draft.acceptance_plan.trim())
    return null;
  const task=queue.tasks.find(t=>t.id===draft.task_id);
  const rec=state.tasks?.[draft.task_id], action=state.actions?.[draft.action_id];
@@ -144,13 +148,13 @@ export function queueScopePlanReviews(state,queue,plans,{now=new Date().toISOStr
    if(n.kind==='scope_plan_review'&&n.task_id===task.id&&
       n.status==='planned'&&(!plan||n.source_sha!==plan.plan_hash))
       n.status='cancelled_no_longer_needed';
-  const message=conflicts.length
-    ? 'Scope proposal for Task '+task.id+' has OWNERSHIP CONFLICTS ('+
-       conflicts.join(', ')+'). Return to the planner; do not approve or edit overlapping files.'
-    : 'Exact implementation scope for Task '+task.id+' is ready for your separate file/architecture decision. Files: '+
-      'Full plan: '+plan.comment_url+'. Files: '+plan.edits.join(', ')+'. Architecture: '+plan.architecture.slice(0,220)+
-      '. Acceptance plan: '+plan.acceptance_plan.slice(0,160)+
-      '. Reply YES to approve THESE exact files via Muse, or request changes. Your original task-goal yes remains valid.';
+  const message='Exact implementation scope for Task '+task.id+
+    ' is ready for your separate file/architecture decision. Full plan: '+plan.comment_url+
+    '. Proposed edit paths: '+plan.edits.length+'. '+
+    (conflicts.length?'Shared edit paths: '+conflicts.join(', ')+
+      '. These are allowed for parallel coding and require ordered integration, not a new scope. ':'')+
+    'Reply YES to approve the linked exact scope via Muse, or request material changes. '+
+    'Your original task-goal approval remains valid.';
   const question=message.slice(0,1100);
   const hash=noticeHash({kind:'scope_plan_review',task_id:task.id,
     source_sha:plan.plan_hash,question});
@@ -164,7 +168,7 @@ export function queueScopePlanReviews(state,queue,plans,{now=new Date().toISOStr
    status:'planned',created_at:now,
    target_url:plan.comment_url||'https://github.com/'+settings.repo+'/issues/411',
    scope_plan:structuredClone(plan),
-   ...(conflicts.length?{scope_conflicts:conflicts}:{}),
+   ...(conflicts.length?{scope_overlaps:conflicts}:{}),
   };
  }
  return next;
@@ -204,7 +208,6 @@ export function acceptScopePlanDecisions(state,queue,plans,{now=new Date().toISO
      }
      continue;
    }
-   if(approvedScopeOverlap(plan,queue,next).length)continue;
    if(prior?.plan_hash===plan.plan_hash)continue;
    const scope={task_id:task.id,proposal_source_sha:plan.proposal_source_sha,
      plan_hash:plan.plan_hash,plan_comment_id:plan.comment_id,
@@ -256,6 +259,6 @@ export function effectiveSignedQueue(queue,state,plans={}){
      plan_hash:signed.plan_hash}};
  });
  const result={...queue,tasks};
- validateQueue(result); // hard fail on two exclusive path owners
+ validateQueue(result); // validate signed paths and DAG; overlap is merge-gated
  return result;
 }
