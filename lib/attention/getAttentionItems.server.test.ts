@@ -71,6 +71,28 @@ describe("Home and chat attention reads",()=>{
     expect(await pending).toEqual([]);
   });
 
+  it("shows a persisted priority once and links the original owner thread",async()=>{
+    const task={
+      id:"priority:stable",businessId:"business-a",agentId:"leo",kind:"priority_notice",
+      status:"needs_owner",payload:{title:"Actionable café alert needs review",
+        sourceType:"alert",sourceId:"source-id",threadId:"owner-thread"},
+      confidence:"high",evidence:[],createdAt:"2026-10-29T08:00:00Z",
+    };
+    mocks.pos.mockResolvedValue({status:"active",provider:"toast"});
+    mocks.stored.mockResolvedValue([task]);
+    mocks.alerts.mockResolvedValue([]);
+    mocks.match.mockResolvedValue([]);
+    mocks.project.mockImplementation((input:unknown[])=>({
+      needsYou:input,handled:[],watching:[],
+    }));
+    const items=await getAttentionItems({snapshot:snapshot as never,menu:menu as never,locale:"en"});
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id:"priority:stable",kind:"priority_notice",
+      displayTitle:"Actionable café alert needs review",href:"/?thread=owner-thread",
+      source:"operating_tasks",
+    });
+  });
   it("preserves independent failure notices without waiting for usage data",async()=>{
     mocks.pos.mockResolvedValue({status:"active",provider:"toast"});
     mocks.stored.mockResolvedValue([]);

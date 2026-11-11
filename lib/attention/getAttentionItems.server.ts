@@ -65,7 +65,7 @@ function scopedTranslations(locale:"en"|"es"|"ar"){
 /** Home and chat must call this same owner-scoped source. A failed optional read is
  * reported as its own action, never silently replaced with no work. */
 function operatingTaskHref(task: OperatingTask): string {
-  if((task.kind==="commitment"||task.kind==="event_plan"||task.kind==="event_change") && typeof task.payload.threadId==="string")
+  if((task.kind==="commitment"||task.kind==="priority_notice"||task.kind==="event_plan"||task.kind==="event_change") && typeof task.payload.threadId==="string")
     return "/?thread="+encodeURIComponent(task.payload.threadId);
   if(task.kind==="price_experiment_report"){
     const thread=task.payload.threadId,proposal=task.payload.proposalId;
@@ -149,7 +149,7 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
     let title: string;
 
-    if(task.kind==="commitment"){
+    if(task.kind==="commitment"||task.kind==="priority_notice"){
       title=String(task.payload.title??"");
     }else if(task.kind==="price_experiment_report"){
       title=tExperiment("reportTask",{item:itemName});
@@ -203,7 +203,13 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
       subjectDate: taskSubjectDate(task), createdAt: task.createdAt };
   };
 
-  const alertItems: DatedAttentionItem[] = (alerts ?? []).filter(alert => showAlertInHome(alert.kind)).map(alert => {
+  // Do not count a raw alert twice if a private notice already covers its source.
+  const prioritySourceIds=new Set(stored.filter(task=>task.kind==="priority_notice"&&
+    task.status==="needs_owner"&&task.payload.sourceType==="alert")
+    .map(task=>String(task.payload.sourceId??"")));
+  const alertItems: DatedAttentionItem[] = (alerts ?? [])
+    .filter(alert=>showAlertInHome(alert.kind)&&!prioritySourceIds.has(alert.id))
+    .map(alert => {
     const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
     // The legacy manage-staff redirect opens Team, not Schedule. Link directly
     // to Schedule so the meal-break fix is reachable before Step 13 merges.
@@ -259,7 +265,7 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
     ...alertItems,
     ...team.needsYou.filter(task=>!(task.kind==="data_quality" && coveredBills.has(String(task.payload.categoryCode))) &&
       !(task.kind==="data_quality" && vm.missingCategories.some(line=>line.categoryCode===task.payload.categoryCode)))
-      .map(task=>({...taskPreview(task),actionLabel:task.kind==="commitment"?tOperations("openEventThread"):
+      .map(task=>({...taskPreview(task),actionLabel:task.kind==="commitment"||task.kind==="priority_notice"?tOperations("openEventThread"):
          task.kind==="event_change"?tOperations("eventChangeReviewAction"):t("attentionFix"),impactCents:
         typeof task.payload.impactCents==="number" ? task.payload.impactCents :
         typeof task.payload.estimatedAmountCents==="number" ? task.payload.estimatedAmountCents : null})),
@@ -283,8 +289,8 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
     let params:Record<string,string|number>={};
     if(task){
       const itemName=String(task.payload.itemName??"").replace(" · "," ");
-      if(task.kind==="commitment"){
-        // Owner-authored task text is the provenance, not a stock translation.
+      if(task.kind==="commitment"||task.kind==="priority_notice"){
+        // Owner-authored reminders or verified source notices carry durable provenance.
         key="operating_tasks.title";params={title:String(task.payload.title??"")};
       }else if(task.kind==="price_experiment_report"){key=task.payload.midRun===true?"SupervisorExperiment.midRunTask":
         "SupervisorExperiment.reportTask";params={item:itemName};}
