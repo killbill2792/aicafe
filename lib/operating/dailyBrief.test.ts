@@ -79,10 +79,10 @@ function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:st
       return {error:null,data:
         table==="locations"?{open_hours:hours(cafe.open)}:
         table==="ai_messages"?(cafe.already?{id:briefMessageId(cafe.id,"2026-11-03",owner),
-          business_id:cafe.id,owner_user_id:owner,thread_id:"t-"+cafe.id+"-"+owner,
+          business_id:cafe.id,owner_user_id:owner,thread_id:cafe.id==="b1"?"t1":"t-"+cafe.id+"-"+owner,
           structured_content:[{type:"text",text:"Saved brief."}]}:null):
         table==="memberships"?(cafe.owners.includes(owner)?{user_id:owner}:null):
-        table==="ai_threads"?(cafe.thread===false?null:{id:"t-"+cafe.id+"-"+owner}):
+        table==="ai_threads"?(cafe.thread===false?null:{id:cafe.id==="b1"?"t1":"t-"+cafe.id+"-"+owner}):
         table==="supervisor_proposals"?(cafe.locale?{locale:cafe.locale}:null):
         table==="operating_tasks"&&cafe.already&&cafe.taskExists!==false?{id:"task"}:null};
     };

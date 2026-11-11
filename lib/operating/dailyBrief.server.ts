@@ -46,7 +46,7 @@ const states=(db:SupabaseClient)=>new SnapshotCafeStateService(
 
 /** Cron: every café, every 5 minutes; each café decides whether it is due. */
 const BLOCKED_IN_APP_REASONS=new Set(["missed_send_window","no_timezone","invalid_timezone",
-  "no_owner","no_chat_thread","not_an_owner","saved_brief_scope_mismatch"]);
+  "no_owner","no_chat_thread","saved_brief_scope_mismatch"]);
 
 export async function sendDailyBriefs(db:SupabaseClient,now=new Date(),outbox?:BriefOutboxHook):Promise<BriefRun>{
   const run:BriefRun={checked:0,sent:0,skipped:0,failed:0,failureReasons:[]};
