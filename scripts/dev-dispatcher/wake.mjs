@@ -51,7 +51,8 @@ export function nextWake(state,now=Date.now(),config=settings){
    const verified=verifiedCodingConversation(state,id,r.approval_hash,r.conversation_ref);
    const already=Object.values(state.actions||{}).some(a=>
      a.task_id===id&&a.type==='pre_pr_reminder'&&
-     a.delivery?.approval_hash===r.approval_hash);
+     a.delivery?.approval_hash===r.approval_hash&&
+     ['planned','claimed','uncertain','needs_login','submitted'].includes(a.status));
    const sent=dt(r.last_submission_at);
    if(verified&&!already&&Number.isFinite(sent))
      list.push({at:sent+15*60000,reason:'pre_pr_status_check',id});
