@@ -231,3 +231,50 @@ test('dashboard and private Muse queue publication failures notify once and clos
  assert.equal(Object.values(state.owner_alerts).length,4);
  assert.ok(signalFor(state,'s'.repeat(32)).pending_count>=2);
 });
+
+
+test('unacknowledged Codex Ready transition becomes one OWNER Muse notice, not a duplicate Codex request',async()=>{
+ const {queueOwnerAlerts}=await import('./alerts.mjs');
+ const s=original();
+ const head=s.tasks[taskId].head_sha;
+ Object.assign(s.tasks[taskId],{
+  codex_referee_sha:head,codex_review_requested_sha:head,
+  codex_reviewed_sha:null,codex_state:'pending',draft:false,
+  ready_transition_at:'2026-11-11T05:07:59Z'
+ });
+ // Legacy referee-only notices must be promoted without creating a second
+ // notice or claiming that Muse actually delivered it.
+ const once=queueOwnerAlerts(s);
+ const a=Object.values(once.owner_alerts).find(n=>n.kind==='codex_watchdog');
+ assert.equal(a.status,'planned');
+ assert.equal(a.recipient,'owner');
+ assert.match(a.owner_message,/Codex did not acknowledge/);
+ assert.match(a.owner_message,/automatic-review trigger settings/);
+ a.recipient='referee';
+ const twice=queueOwnerAlerts(once);
+ const notices=Object.values(twice.owner_alerts).filter(n=>n.kind==='codex_watchdog');
+ assert.equal(notices.length,1);
+ assert.equal(notices[0].recipient,'owner');
+ assert.equal(notices[0].status,'planned');
+ assert.equal(twice.actions[actionId].status,'cancelled_stale_head');
+});
+
+test('GitHub primary quota exhaustion is an explicit terminal error, not a credential retry storm',async()=>{
+ const {GitHubFacts,githubFailure}=await import('./github.mjs');
+ const {GitHubLedger}=await import('./ledger.mjs');
+ const make=()=>new Response(JSON.stringify({message:'API rate limit exceeded'}),{
+   status:403,headers:{'x-ratelimit-remaining':'0',
+    'x-ratelimit-reset':'1794376577','x-github-request-id':'quota-123'}});
+ let calls=0;
+ const gh=new GitHubFacts({repo:settings.repo,token:'fake-secret',fetchFn:async()=>{calls++;return make();}});
+ await assert.rejects(gh.request('/pulls'),e=>e.code==='RATE_LIMIT'&&
+   typeof e.reset_at==='string'&&e.message.includes('x-ratelimit-remaining=0'));
+ assert.equal(calls,1);
+ const ledger=new GitHubLedger({repo:settings.ledger.repo,token:'fake-secret',
+  fetchFn:async()=>{calls++;return make();}});
+ await assert.rejects(ledger.load(),e=>e.code==='RATE_LIMIT'&&
+   typeof e.reset_at==='string');
+ assert.equal(calls,2);
+ const nonQuota=await githubFailure(new Response(JSON.stringify({message:'Resource not accessible by integration'}),{status:403}),'GitHub','fake-secret');
+ assert.notEqual(nonQuota.code,'RATE_LIMIT');
+});
