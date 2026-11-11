@@ -29,6 +29,10 @@ jobs:
           if not -1200<=seconds<=1200: raise ValueError('Wake deadline outside 20-minute bound')
           time.sleep(max(0,seconds))
           PY
+      - name: Checkout trusted main for emergency reporting
+        uses: actions/checkout@v4
+        with:
+          ref: main
       - name: Wake this repository dispatcher without cron
         env:
           REPO: ${{ github.repository }}
@@ -40,3 +44,11 @@ jobs:
             -H "Content-Type: application/json" \
             "https://api.github.com/repos/$REPO/dispatches" \
             -d '{"event_type":"dispatcher_delayed","client_payload":{"version":1}}'
+
+      - name: Report delayed-wake failure through existing private Muse queue
+        if: failure()
+        env:
+          DISPATCH_LEDGER_TOKEN: {{ secrets.DISPATCH_LEDGER_TOKEN }}
+        run: |
+          git --version
+          node scripts/dev-dispatcher/emergency-report.mjs
