@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {inspectMuseHealth,museRecoveryCandidates,planMuseBacklog,
+import {inspectMuseHealth,inspectMuseEligibleTasks,museRecoveryCandidates,planMuseBacklog,
  deliverMuseRecovery,reconcileMuseBacklog} from './muse-watch-v3.mjs';
 const now='2026-11-11T10:00:00Z',sha='a'.repeat(40);
 const state={version:1,updated_at:'2026-11-11T09:00:00Z',
@@ -85,4 +85,20 @@ test('no wake credential means safe queued action, not imaginary delivery',async
   fetchImpl:async()=>{throw Error('not called');}});
  assert.equal(out.results[0].status,'WAITING_FOR_AUTHORIZED_WAKE_TOKEN');
  assert.equal(Object.values(out.backlog.items)[0].status,'QUEUED');
+});
+
+
+test('Muse independently reads signed queue and requests GitHub validation for newly eligible tasks',()=>{
+ const queue={tasks:[{id:'new',depends_on:[],acceptance:['evidence'],
+  brief:'docs/plans/brief.md',edits:['lib/new.ts'],state:'ready',
+  architecture_approval:{approved:true}}],merged_code_only:[],
+  capacity:{chatgpt:1,claude:0}};
+ const s={...state,tasks:{},actions:{},owner_alerts:{},
+  schedule_health:{last_schedule_at:now},updated_at:now};
+ assert.deepEqual(inspectMuseEligibleTasks(queue,s).map(x=>x.task_id),['new']);
+ const health=inspectMuseHealth(s,{now,queue});
+ assert.equal(health.incidents[0].kind,'UNASSIGNED_APPROVED_TASKS');
+ assert.equal(museRecoveryCandidates(health,s,identity)[0].intent,'RECONCILE');
+ const held={...s,owner_controls:{revision:1,per_task:{new:{pause_new_dispatch:true}}}};
+ assert.deepEqual(inspectMuseEligibleTasks(queue,held),[]);
 });
