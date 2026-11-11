@@ -76,6 +76,28 @@ describe("automatic café-local final event observation",()=>{
     expect(monitorLoop).toHaveBeenCalledTimes(1);
     expect(vi.mocked(monitorLoop).mock.calls[0][4]).toBe("2026-10-31");
   });
+  it("replays only the recent closed days in a multi-day monitoring window",async()=>{
+    const draft=row("2026-10-01");
+    const plan={...draft.canonical_effect_payload,endDate:"2026-10-14"};
+    draft.canonical_effect_payload=plan;
+    draft.effect_hash=effectHash(plan);
+    draft.monitor_spec.durationDays=14;
+    const result=await reportSavedEventDays(fake([draft]),businessId,ownerId,
+      "2026-10-20");
+    expect(result).toEqual({checked:1,reported:9,failed:0});
+    expect(vi.mocked(monitorLoop).mock.calls.map(args=>args[4])).toEqual([
+      "2026-10-06","2026-10-07","2026-10-08","2026-10-09",
+      "2026-10-10","2026-10-11","2026-10-12","2026-10-13","2026-10-14",
+    ]);
+    expect(vi.mocked(monitorLoop).mock.calls.every(args=>
+      args[3].id===draft.id&&args[3].status==="committed")).toBe(true);
+  });
+  it("does not resurrect an event whose final date predates the correction horizon",async()=>{
+    const draft=row("2026-10-01");
+    expect(await reportSavedEventDays(fake([draft]),businessId,ownerId,
+      "2026-11-01")).toEqual({checked:0,reported:0,failed:0});
+    expect(monitorLoop).not.toHaveBeenCalled();
+  });
   it("does not watch rejected proposals or create a report from them",async()=>{
     expect(await reportSavedEventDays(fake([row("2026-10-31","rejected")]),
       businessId,ownerId,"2026-11-01")).toEqual({checked:0,reported:0,failed:0});
