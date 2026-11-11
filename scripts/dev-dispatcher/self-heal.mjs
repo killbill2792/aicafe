@@ -24,7 +24,21 @@ const before=previous.tasks?.[id]; if (!before) continue; for (const field of fi
 updates.push({task_id:id,field:'chat_link',from:now.conversation_ref||null, to:link.conversation_url}); } if (updates.length) { next.drift_fixed ||= []; next.drift_fixed.push({at,changes:updates.slice(0,30)}); next.drift_fixed = next.drift_fixed.slice(-20); }
 return next; } export function acceptMuseOwnerReply(state, receipt, {authenticatedCourier}={}) { if (authenticatedCourier !== 'muse' || receipt?.kind !== 'owner_reply' ||
 typeof receipt.text !== 'string' || !receipt.text.trim() || receipt.text.length > 400 || !receipt.target || typeof receipt.event_id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(receipt.event_id))
-throw new Error('Invalid authenticated owner reply'); const next=structuredClone(state); const target=receipt.target; const task=typeof target.task_id==='string' ? next.tasks?.[target.task_id] : Object.values(next.tasks||{}).find(t=>t.pr_number===target.pr_number); if (!task) throw new Error('Owner reply target not found'); task.owner_reply_events ||= {}; if (task.owner_reply_events[receipt.event_id]) return next; task.owner_reply_events[receipt.event_id] = { text:receipt.text.trim(),target,at:receipt.submitted_at||new Date().toISOString(),
+throw new Error('Invalid authenticated owner reply'); const next=structuredClone(state); const target=receipt.target; const task=typeof target.task_id==='string' ? next.tasks?.[target.task_id] : Object.values(next.tasks||{}).find(t=>t.pr_number===target.pr_number); if(!task){
+  const notice=next.owner_alerts?.[target.notice_id];
+  if(typeof target.task_id!=='string'||!notice||
+     notice.kind!=='next_task_proposal'||notice.task_id!==target.task_id||
+     !['planned','submitted'].includes(notice.status))
+    throw new Error('Owner reply target not found');
+  next.owner_proposal_replies||={};
+  next.owner_proposal_replies[target.task_id]||={};
+  next.owner_proposal_replies[target.task_id][receipt.event_id]??={
+    text:receipt.text.trim(),notice_id:target.notice_id,
+    source_sha:notice.source_sha,courier:'muse',
+    at:receipt.submitted_at||new Date().toISOString()};
+  // A proposal response is an owner decision record, not coding authorization.
+  return next;
+ } task.owner_reply_events ||= {}; if (task.owner_reply_events[receipt.event_id]) return next; task.owner_reply_events[receipt.event_id] = { text:receipt.text.trim(),target,at:receipt.submitted_at||new Date().toISOString(),
 courier:'muse' }; task.owner_answer_text=receipt.text.trim(); task.owner_answer_key='muse:'+receipt.event_id; return next; }
 export function dispatchWakeEvent({name,actor,runName,runCompleted,pr=false,relation=null}={}){ const trusted=['OWNER','MEMBER','COLLABORATOR'].includes(relation); const codex=/^(?:chatgpt-codex-connector|codex)\[bot\]$/.test(actor||''); if(name==='schedule'||name==='workflow_dispatch'||name==='push'||name==='pull_request')return true;
 if(name==='workflow_run')return runCompleted && [settings.required_checks.baseline_workflow,settings.required_checks.acceptance_workflow,settings.required_checks.integration_workflow].includes(runName); if(name==='issue_comment')return pr&&(trusted||codex);

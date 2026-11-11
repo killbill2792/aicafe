@@ -122,3 +122,44 @@ test('owner question gains a chat link without a duplicate pending or submitted 
  assert.equal(Object.keys(afterChat.owner_alerts).length,1);
  assert.equal(Object.values(afterChat.owner_alerts)[0].status,'submitted');
 });
+
+test('Task 6 proven proposes Task 7 through Muse without a ledger task record',()=>{
+ const queue={tasks:[
+  {id:'7',title:'Routines',state:'proposed',depends_on:['6'],goal:'Prioritize work',
+   scope_hint:'lib/ai/supervisor/routines/*',exclusive_files:[],
+   acceptance:['Exactly once across retries'],can_start_stacked:true},
+  {id:'8a',title:'Experiments',state:'proposed',depends_on:['7'],goal:'Parity',
+   scope_hint:'experiment adapters',exclusive_files:[],acceptance:['No duplicates'],
+   can_start_stacked:true}]};
+ const base={version:1,tasks:{'6':{status:'integrated_proven'}},actions:{},owner_alerts:{}};
+ const first=queueOwnerAlerts(base,{queue,now:'2026-11-11T09:00:00Z'});
+ const found=Object.values(first.owner_alerts);
+ assert.equal(found.length,1);
+ assert.equal(found[0].kind,'next_task_proposal');
+ assert.equal(found[0].task_id,'7');
+ assert.equal(found[0].recipient,'owner');
+ assert.equal(found[0].delivery_owner,'muse');
+ assert.match(found[0].question,/Reply via Muse/);
+ assert.equal(first.tasks['7'],undefined);
+ assert.deepEqual(queueOwnerAlerts(first,{queue}).owner_alerts,first.owner_alerts);
+ const opened={...first,tasks:{...first.tasks,'7':{status:'draft_open',
+   github_state:'open',pr_number:512}}};
+ const after=queueOwnerAlerts(opened,{queue});
+ assert.equal(Object.values(after.owner_alerts).some(n=>
+  n.kind==='next_task_proposal'&&n.task_id==='8a'),true);
+});
+test('proposed task scope revisions cancel unsent notices, preserve sent receipts',()=>{
+ const task={id:'7',title:'Routines',state:'proposed',depends_on:['6'],
+  goal:'Plan',scope_hint:'routines/*',exclusive_files:[],acceptance:['Once']};
+ const state={version:1,tasks:{'6':{status:'integrated_proven'}},actions:{},owner_alerts:{}};
+ const first=queueOwnerAlerts(state,{queue:{tasks:[task]}});
+ const updated=queueOwnerAlerts(first,{queue:{tasks:[{...task,goal:'Revised plan'}]}});
+ assert.equal(Object.values(updated.owner_alerts).filter(n=>n.status==='planned').length,1);
+ assert.equal(Object.values(updated.owner_alerts).filter(n=>n.status==='cancelled_no_longer_needed').length,1);
+ const [id,notice]=Object.entries(first.owner_alerts)[0];
+ const acknowledged=acceptOwnerNoticeReceipt(first,{kind:'owner_notice',notice_id:id,
+  notice_hash:notice.notice_hash,status:'submitted'},{authenticatedCourier:'muse'});
+ const retained=queueOwnerAlerts(acknowledged,{queue:{tasks:[{...task,goal:'Revised plan'}]}});
+ assert.equal(Object.values(retained.owner_alerts).filter(n=>n.status==='submitted').length,1);
+ assert.equal(Object.values(retained.owner_alerts).filter(n=>n.status==='planned').length,1);
+});

@@ -33,3 +33,20 @@ test('historical exact-SHA POS0f success backfills and queues Task 6 owner ask o
  assert.equal(Object.values(twice.owner_alerts).filter(n=>n.kind==='next_task_start').length,1);
  assert.equal(Object.values(twice.owner_alerts)[0].delivery_owner,'muse');
 });
+
+test('authenticated Muse owner reply for a task not yet in ledger records is saved, never authorizes code',()=>{
+ const noticeId='notice:'+'c'.repeat(64);
+ const state={version:1,tasks:{'6':{status:'integrated_proven'}},actions:{},
+  owner_alerts:{[noticeId]:{kind:'next_task_proposal',task_id:'7',
+   status:'submitted',source_sha:'d'.repeat(64)}}};
+ const receipt={kind:'owner_reply',event_id:'r7-yes',text:'yes',
+  target:{task_id:'7',notice_id:noticeId}};
+ assert.throws(()=>acceptMuseOwnerReply(state,receipt),/authenticated/);
+ const accepted=acceptMuseOwnerReply(state,receipt,{authenticatedCourier:'muse'});
+ assert.equal(accepted.owner_proposal_replies['7']['r7-yes'].text,'yes');
+ assert.equal(accepted.tasks['7'],undefined);
+ assert.deepEqual(acceptMuseOwnerReply(accepted,receipt,{authenticatedCourier:'muse'}),accepted);
+ assert.throws(()=>acceptMuseOwnerReply(state,
+  {...receipt,target:{task_id:'8a',notice_id:noticeId}},{authenticatedCourier:'muse'}),
+  /target not found/);
+});
