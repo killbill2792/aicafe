@@ -139,7 +139,7 @@ export function taskLifecycle(task,record={},state={},queue={},now=new Date().to
     dispatch:{eligible:approved,delivered:milestones.delivered,last_prompt_at:r.last_submission_at||null,
       pending_actions:awaiting.map(a=>({id:a.key,type:a.type,status:a.status,created_at:a.created_at||null})),
       verified_chat_url:deliveryVerified?r.conversation_ref:null,
-      latest_delivery_receipt_at:delivered[0]?.submitted_at||null,
+      latest_delivery_receipt_at:deliveryVerified?(r.last_submission_at||null):null,
       last_delivery_attempt_at:r.last_submission_at||null,
       last_delivery_error:r.delivery_error||null,
       action_count:actions.length,pending_action_count:awaiting.length},
