@@ -10,7 +10,7 @@ const plan={repo:'killbill2792/aicafe',tasks:[
 ]};
 const task=plan.tasks[0];
 const basics={version:1,updated_at:'2026-11-11T10:00:00Z',tasks:{},actions:{},owner_alerts:{}};
-const rec={task_id:'CR-A',approved:true,github_state:'open',pr_number:123,draft:true,
+const rec={task_id:'CR-A',approved:true,approval_hash:'a'.repeat(64),github_state:'open',pr_number:123,draft:true,
   branch:'feat/aicafe-task-CR-A',head_sha:a,base_sha:b,base_current:true,
   ci_state:'success',mergeable:true,threads_resolved:true,last_commit_at:'2026-11-11T09:58:00Z'};
 const now='2026-11-11T10:00:00Z';
@@ -32,8 +32,13 @@ test('missing PR remains unverified; no unsupported inference from time without 
 });
 test('a real verified Muse receipt progresses the delivery milestone',()=>{
   const s={...basics,actions:{'assign:CR-A':{task_id:'CR-A',status:'submitted',type:'assign',
-    submitted_at:now,receipt:{courier:'muse',prompt_hash:'x'}}}};
-  const x=project({approved:true,conversation_ref:'https://chatgpt.com/c/abc'},s);
+    delivery_owner:'muse',submitted_at:now,
+    delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+      approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+    receipt:{courier:'muse',prompt_hash:'b'.repeat(64),
+      conversation_url:'https://chatgpt.com/c/abc'}}}};
+  const x=project({approved:true,approval_hash:'a'.repeat(64),
+    conversation_ref:'https://chatgpt.com/c/abc'},s);
   assert.equal(x.current_stage,'DELIVERED');
   assert.equal(x.milestones.delivered,'YES');
   assert.equal(x.monitor.next_action,'VERIFY_BRANCH_AND_PR');
