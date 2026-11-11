@@ -140,3 +140,22 @@ test('signed ad hoc stacked PR never advertised as eligible to merge into open p
   assert.equal(x.merge.eligible,false);
   assert.ok(x.merge.blockers.includes('adhoc_parent_base_not_main'));
 });
+
+
+test('every lifecycle column group records evidence or explicit unknown, never fabricated checks',()=>{
+ const x=project({...rec,ci_state:'unknown',codex_state:'unknown',
+   codex_review_requested_sha:null,acceptance_proven:false,
+   last_commit_actor:'killbill2792'});
+ assert.equal(x.approval.status,'APPROVED');
+ assert.deepEqual(x.approval.authorized_files,['lib/shared.ts']);
+ assert.equal(x.coding.last_commit_actor,'killbill2792');
+ assert.equal(x.ci.started_at,null);
+ assert.equal(x.ci.finished_at,null);
+ assert.equal(x.codex.requested_at,null);
+ assert.equal(x.codex.status,'UNKNOWN');
+ assert.equal(x.acceptance.status,'MISSING');
+ assert.equal(x.dependency_state.branch_conflict,null);
+ assert.equal(x.merge.attempted_at,null);
+ assert.equal(x.integration.proof_run_url,null);
+ assert.equal(x.monitor.pending_recovery_count,0);
+});
