@@ -34,7 +34,7 @@ import {recordRecoveryEvent,settleRecoveryRequests} from "./recovery-v3.mjs";
 import {dispatchPreferences} from "./owner-controls-v3.mjs";
 import {ensureApprovedDraftPr} from "./pr-create-v3.mjs";
 import {verifiedCodingConversation} from "./verified-chat-v3.mjs";
-import {recordGithubEffects} from "./github-effects-v3.mjs";
+import {recordGithubEffects,recordPrWriterOwnerNotices} from "./github-effects-v3.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -843,7 +843,8 @@ async function main() {
   if(commit&&ledger){
     const projection=await ledger.transaction(latest=>{
       const withEffects=recordGithubEffects(latest,githubEffects);
-      const projected=recordLifecycleTransitions(withEffects||latest,queue);
+      const withOwnerNotices=recordPrWriterOwnerNotices(withEffects||latest,githubEffects);
+      const projected=recordLifecycleTransitions(withOwnerNotices,queue);
       const result=settleRecoveryRequests(projected,projectLifecycle(projected,queue));
       return JSON.stringify(result)===JSON.stringify(latest)?null:result;
     });
