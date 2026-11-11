@@ -60,7 +60,7 @@ function fixture(options: {
         let rows = [...state.messages];
         if (queryState.limit === 8) rows = rows.sort((a,b) =>
           String(a.created_at).localeCompare(String(b.created_at)) ||
-          String(a.id).localeCompare(String(b.id))).slice(-8);
+          String(a.id).localeCompare(String(b.id))).slice(-8).reverse();
         else rows = rows.sort((a,b) =>
           String(a.created_at).localeCompare(String(b.created_at)) ||
           String(a.id).localeCompare(String(b.id)));
