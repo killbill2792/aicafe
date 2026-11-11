@@ -179,6 +179,10 @@ async function main() {
     create unique index ai_messages_one_owner_answer_per_prompt
       on public.ai_messages(thread_id,owner_input_prompt_message_id)
       where owner_input_prompt_message_id is not null;
+    revoke insert on public.ai_messages from authenticated;
+    grant insert (business_id,thread_id,owner_user_id,author_user_id,role,
+      content_type,text_content,structured_content,grounding,client_message_id)
+      on public.ai_messages to authenticated;
   `);
   await client.query(memoryMigration);
 
@@ -319,6 +323,13 @@ async function main() {
     });
     assert.equal(extra.reason, "invalid_summary");
 
+    // Authenticated clients cannot forge the structured owner-input source column.
+    await rejectQuery(db,
+      "insert into ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,owner_input_prompt_message_id,owner_input_response) values($1,$2,$3,$3,'owner','text',$4,$5,$6,$7::jsonb)",
+      [CAFE_A, THREAD_A, OWNER_A, "We prefer oat milk.", crypto.randomUUID(), SUPERVISOR_MESSAGE,
+        JSON.stringify({ questionId: "55555555-5555-4555-8555-555555555555", action: "supply", value: "We prefer oat milk." })],
+      "42501",
+    );
     // Authenticated PostgREST cannot update the append-only thread row directly.
     await rejectQuery(db, "update ai_threads set memory_summary='{}'::jsonb where id=$1", [THREAD_A], "42501");
     // A member cannot call the CAS for another owner's private thread.
