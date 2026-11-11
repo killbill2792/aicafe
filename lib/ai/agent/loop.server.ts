@@ -1,5 +1,5 @@
 import { ZodError } from "zod";
-import { currentWorkerBudget, usageStopReason } from "@/lib/ai/supervisor/runs/usage.server";
+import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason } from "@/lib/ai/supervisor/runs/usage.server";
 import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
@@ -498,6 +498,11 @@ export async function runAgentTurn(args: {
     }
   } finally { controller.abort(); }
   usage.latencyMs = now() - started;
+  // Charge this turn's actual provider/tool usage to the async-local durable
+  // run before the next continuation receives its remaining budget.
+  recordWorkerTurnUsage({ elapsedMs: Math.max(0, usage.latencyMs),
+    modelCalls: usage.modelCalls, toolCalls: usage.toolCalls,
+    inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
   const status = statusFromResults(results);
   const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),
     args.ownerText,...absorbed.map(m=>m.text)].join("\n");
