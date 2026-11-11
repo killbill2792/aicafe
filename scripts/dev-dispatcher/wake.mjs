@@ -40,9 +40,19 @@ export function nextWake(state,now=Date.now(),config=settings){
   if(r.status==='rejected'&&Number.isFinite(at))
    list.push({at:at+(config.muse.retry_seconds||900)*1000,reason:'receipt_repair',id});
  }
+ // The same reconciliation checks ALL overdue Muse actions/notices/repairs.
+ // A burst of owner alerts must schedule one retry per KIND, not one Actions
+ // run per notice. Codex waits stay exact-head/per-task and remain separate.
+ const batchKinds=new Set(['muse_retry','owner_notice_retry','receipt_repair']);
+ const batches=new Map(),singles=[];
+ for(const item of list.filter(x=>Number.isFinite(x.at))){
+   if(!batchKinds.has(item.reason)){singles.push(item);continue;}
+   const prior=batches.get(item.reason);
+   if(!prior||item.at<prior.at)batches.set(item.reason,{...item,id:'batch'});
+ }
  // An overdue wake is due NOW, not silently dropped. Keep the identity
  // tied to its original deadline so repeated ticks cannot generate a storm.
- const candidates=list.filter(x=>Number.isFinite(x.at)).map(x=>({
+ const candidates=[...singles,...batches.values()].map(x=>({
    ...x,key:sha(JSON.stringify([config.repo,x.reason,x.id,new Date(x.at).toISOString()]))
  })).filter(x=>{
    // Multiple overdue candidates must not bounce the single delayed_wake

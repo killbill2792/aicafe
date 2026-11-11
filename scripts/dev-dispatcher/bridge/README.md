@@ -59,6 +59,13 @@ If the queue reader and OpenClaw run under the **same Ubuntu user**, text instru
 node --test scripts/dev-dispatcher/delivery.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs
 ```
 
+## GitHub brain → Muse mouth: owner incident channel
+
+The trusted-main dispatcher decides; Muse reads BOTH private `actions` and `owner_alerts` even with zero coding actions. A notice carries `notice_id`, `notice_hash`, `recipient`, `owner_message` / `question` and the source PR. Muse relays, never decides, inspects coding chats or clears an unsent notice.
+After actual delivery Muse writes the canonical v1 signed `owner_notice` receipt (`status:'submitted'`, `notice_id`, `notice_hash`) using its existing SSH writer and fires the existing `repository_dispatch` wake. Planned/signal does NOT mean delivered; only GitHub's authenticated receipt does. Ordinary repair notices are informational, not approval.
+On a receipt failure Muse re-verifies the SAME original evidence; never resend an uncertain coding prompt. Each verified fix gets a deduped closure notice. Repeated outages have unique incident-cycle hashes and preserve earlier authenticated receipt history.
+If Muse is down, notices remain pending with retries; the owner dashboard shows stale timestamps and unacknowledged count. If GitHub's ledger API is exhausted, the failed Actions run is visible but no Muse delivery can be claimed. No second scheduler, alert channel, token or approval authority; live browser delivery still requires post-merge verification.
+
 ## Muse receipt recovery — existing SSH deploy key; no new token
 
 **Deployed courier reality (owner/Muse verified, November 9):** the existing Muse

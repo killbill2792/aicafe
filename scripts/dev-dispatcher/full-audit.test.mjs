@@ -61,7 +61,7 @@ test('authenticated Muse instruction links a branch but never executes unrelated
 
 test('every supported missing-data, skip and error class produces one deduped owner Muse notice',()=>{
  const state={tasks:{
-  ci:{task_id:'ci',pr_number:1,github_state:'open',head_sha:'a'.repeat(40),ci_state:'pending'},
+  ci:{task_id:'ci',pr_number:1,github_state:'open',head_sha:'a'.repeat(40),ci_state:'pending',last_commit_at:'2026-11-10T10:00:00Z'},
   red:{task_id:'red',pr_number:2,github_state:'open',head_sha:'b'.repeat(40),ci_state:'failure'},
   proof:{task_id:'proof',pr_number:3,status:'merged',merge_sha:'c'.repeat(40)},
   stall:{task_id:'stall',pr_number:4,stall_escalate:true,head_sha:'d'.repeat(40)},
@@ -128,7 +128,9 @@ test('fatal dispatcher request error is saved as one owner Muse alert before an 
  const {reportFatalDispatcherError}=await import('./notifications.mjs');
  let state={tasks:{},actions:{},owner_alerts:{}},wakes=0;
  const ledger={transaction:async fn=>{const next=fn(state);
-  const committed=JSON.stringify(next)!==JSON.stringify(state);state=next;return {committed};}};
+  if(next===null)return {committed:false,state}; // real CAS no-op contract
+  const committed=JSON.stringify(next)!==JSON.stringify(state);
+  if(committed)state=next;return {committed,state};}};
  await reportFatalDispatcherError({ledger,sha:'a'.repeat(40),message:'403 request denied',
   wake:async()=>{wakes++;}});
  await reportFatalDispatcherError({ledger,sha:'a'.repeat(40),message:'403 request denied',

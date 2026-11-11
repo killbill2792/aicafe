@@ -8,14 +8,17 @@ const marker = sha => '<!-- '+settings.naming.marker_prefix+'-dispatcher-codex-r
 // New commits may trigger Codex only after all required CI checks finish green.
 // The ready transition already triggers automatic review; no CI-parallel timer.
 
-export async function requestCodexReview({github,record,task,records = {}}) {
+export async function requestCodexReview({github,record,task,records = {},autoMissFallback=false}) {
   const sha=record?.head_sha;
   // Green current head is enough to start Codex. No coder-done,
   // acceptance artifact, integrated dependency or routine owner hold.
   if ((!task && !record?.adhoc) || (record?.adhoc && record?.dispatcher_only) ||
       record?.draft===true || !sha40(sha) || !Number.isInteger(record.pr_number) ||
       record.github_state !== 'open' || record.ci_state !== 'success' ||
-      record.codex_review_requested_sha === sha ||
+      (record.codex_review_requested_sha === sha && !autoMissFallback) ||
+      (autoMissFallback && (record.codex_review_requested_sha !== sha ||
+        record.codex_fallback_requested_sha === sha ||
+        !Number.isFinite(Date.parse(record.ready_transition_at||'')))) ||
       record.codex_in_progress_sha === sha ||
       record.codex_reviewed_sha === sha ||
       record.codex_state === 'clean' || record.codex_state === 'findings')
@@ -86,13 +89,18 @@ export function codexWatchDecision({record,comments=[],reviews=[],reactions=[],n
   // the SAME missing-review watchdog, without requesting a second review.
   const readyAt=record.draft===false&&record.codex_review_requested_sha===head
     ? Date.parse(record.ready_transition_at||'') : NaN;
-  const first=Math.min(...[
-    ...requests.map(c=>Date.parse(c.created_at||'')),readyAt
-  ].filter(Number.isFinite));
+  // Once there is a real @codex request, restart the watchdog from that
+  // authenticated GitHub comment rather than the earlier Ready transition.
+  const first=requests.length
+    ? Math.min(...requests.map(c=>Date.parse(c.created_at||'')).filter(Number.isFinite))
+    : readyAt;
   if(!Number.isFinite(first))return {status:'no_verified_request'};
   if(!Number.isFinite(now)||now-first<minutes*60_000)
     return {status:'pending'};
-  return {status:'escalate',head_sha:head};
+  // An Actions-bot Ready transition is not evidence that Codex received a
+  // request. Permit one explicit fallback only when no actual request exists.
+  // A second missed manual request is escalated, never repeated.
+  return {status:requests.length?'escalate':'auto_review_missing',head_sha:head};
 }
 export async function inspectCodexWatch({github,record,now=Date.now(),minutes=20}) {
   if(!sha40(record?.head_sha)||record?.github_state!=='open'||

@@ -19,8 +19,16 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
   const supersededContinuation = action?.status === 'cancelled_stale_head' &&
     action?.type !== 'assign' && !action?.superseded_receipt &&
     action?.delivery?.intent === 'continue_existing_chat';
+  // An early draft PR can supersede either the legacy initial assignment or
+  // its hash-bound reissued form. Both are the SAME approved browser send;
+  // never accept arbitrary action keys or an old approval signature.
+  const originalAssignment = task && (
+    receipt.action_id === 'assign:' + task.task_id ||
+    receipt.action_id === 'assign:' + task.task_id + ':approval-' + task.approval_hash);
   const lateAssignment = action?.status === 'cancelled_stale_head' &&
-    action?.type === 'assign' && receipt.action_id === 'assign:' + task?.task_id &&
+    action?.type === 'assign' && originalAssignment &&
+    action?.delivery?.action_id === receipt.action_id &&
+    action?.delivery?.approval_hash === task?.approval_hash &&
     action?.task_id === task?.task_id &&
     task?.github_state === 'open' && Number.isInteger(task?.pr_number) &&
     task?.branch === settings.naming.branch_prefix + task.task_id &&

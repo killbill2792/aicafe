@@ -5,6 +5,8 @@ import { createHmac } from 'node:crypto';
 import { GitHubLedger } from './ledger.mjs';
 import { pendingActions } from './bridge/bridge.mjs';
 import { noticeHash } from './alerts.mjs';
+import {reportMuseSignalFailure,reportMuseSignalRestored} from './notifications.mjs';
+import {dispatchReceiptWake} from './wake.mjs';
 
 export function signalFor(state, secret) {
   if (!secret || secret.length < 32) throw new Error('Signal signing secret must be >= 32 characters');
@@ -47,9 +49,35 @@ export async function publishSignal({ ledgerRepo, ledgerToken, publicRepo, publi
 }
 
 if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1]).href) {
-  publishSignal({ ledgerRepo: process.env.DISPATCH_LEDGER_REPO || settings.ledger.repo,
-    ledgerToken: process.env.DISPATCH_LEDGER_TOKEN, publicRepo: process.env.GITHUB_REPOSITORY || settings.repo,
-    publicToken: process.env.GITHUB_TOKEN, secret: process.env.DISPATCH_SIGNAL_SECRET })
-    .then(changed => console.log(changed ? 'Wake-up signal updated' : 'Wake-up signal unchanged'))
-    .catch(e => { console.error(e.message); process.exitCode = 1; });
+  const repo=process.env.GITHUB_REPOSITORY || settings.repo;
+  const ledgerRepo=process.env.DISPATCH_LEDGER_REPO || settings.ledger.repo;
+  const args={ledgerRepo,ledgerToken:process.env.DISPATCH_LEDGER_TOKEN,
+    publicRepo:repo,publicToken:process.env.GITHUB_TOKEN,
+    secret:process.env.DISPATCH_SIGNAL_SECRET};
+  const ledger=()=>new GitHubLedger({repo:ledgerRepo,token:args.ledgerToken,
+    path:settings.ledger.path});
+  let phase='publish';
+  (async()=>{
+    const changed=await publishSignal(args);
+    // Do not misreport a later ledger read failure as an outbound signal
+    // failure. The first signal has already been independently published.
+    phase='recovery_record';
+    if(args.ledgerToken){
+      const recovered=await reportMuseSignalRestored({ledger:ledger(),repo});
+      if(recovered.committed){
+        phase='closure_publish';
+        await publishSignal(args);
+      }
+    }
+    console.log(changed ? 'Wake-up signal updated' : 'Wake-up signal unchanged');
+  })().catch(async e=>{
+    console.error('Muse '+phase+' failed: '+String(e.message).slice(0,180));
+    if(phase!=='recovery_record'&&args.ledgerToken)try{
+      await reportMuseSignalFailure({ledger:ledger(),repo,
+        message:String(e.message),wake:()=>dispatchReceiptWake({token:args.publicToken})});
+    }catch(second){
+      console.error('Muse signal failure alert unavailable: '+String(second.message).slice(0,120));
+    }
+    process.exitCode=1;
+  });
 }
