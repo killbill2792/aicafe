@@ -50,6 +50,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     applyOwnerStartApprovals: startApproval,
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},
+    wakePendingOwnerNotices: () => {},
     wakeReceiptFeedback: () => {},
     dispatchFrontier: (_queue, records) => frontier ? frontier(records) : assignments,
     assignmentActionKey: (_state, id) => 'assign:' + id,
