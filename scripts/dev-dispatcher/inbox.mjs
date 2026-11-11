@@ -130,7 +130,9 @@ export function applyReceipts(state, inbox, actorMap) {
       // approval changed, chat was already registered, or ownership diverged.
       if (!task || !task.approved || task.github_state !== 'open' ||
           !Number.isInteger(task.pr_number) || task.conversation_ref ||
-          receipt.action_id !== 'assign:' + task.task_id ||
+          (receipt.action_id !== 'assign:' + task.task_id &&
+           receipt.action_id !== 'assign:' + task.task_id + ':approval-' + task.approval_hash) ||
+          action.delivery?.action_id !== receipt.action_id ||
           action.task_id !== task.task_id ||
           task.branch !== settings.naming.branch_prefix + task.task_id)
         continue;

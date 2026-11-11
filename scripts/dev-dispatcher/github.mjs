@@ -14,7 +14,16 @@ export async function githubFailure(response,kind='GitHub',token=''){
   ' x-ratelimit-reset='+h('x-ratelimit-reset')+
   ' retry-after='+h('retry-after');
  const safe=token?detail.split(token).join('[REDACTED]'):detail;
- console.error(safe);return new Error(safe);
+ const error=new Error(safe);
+ // Explicit GitHub primary-rate-limit telemetry is not an authorization
+ // failure. Callers must fail closed without a futile second ledger write.
+ if([403,429].includes(response.status) &&
+    response.headers?.get?.('x-ratelimit-remaining')==='0'){
+   error.code='RATE_LIMIT';
+   const reset=Number(response.headers?.get?.('x-ratelimit-reset'));
+   if(Number.isSafeInteger(reset)&&reset>0)error.reset_at=new Date(reset*1000).toISOString();
+ }
+ console.error(safe);return error;
 }
 export function githubNetworkFailure(kind){
  const detail=kind+' request failed: status=network message=transport_error'+

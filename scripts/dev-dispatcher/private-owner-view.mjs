@@ -83,6 +83,7 @@ export function renderPrivateQueue(state, {repo=settings.ledger.repo} = {}) {
     `**Pending/uncertain deliveries:** ${pending.length}  ·  **Open owner notices:** ${openNotices.length}`,
     '',
     '**Important:** `planned` means *not sent*. A signed/current-head action is still subject to Muse checking the correct idle browser chat and its own submission dedupe. A pending owner question does not by itself revoke an already-signed in-scope repair; it never authorizes the disputed scope.',
+    '**Muse communication rule:** OWNER NOTICES ARE A SEPARATE KIND OF WORK FROM CODING ACTIONS. When coding actions = 0, Muse must still deliver every eligible `planned` owner notice to its intended recipient; acknowledge it with the signed `owner_notice` receipt. Report repair incidents and verified recovery to the owner as information, not as new approvals. A notification remains unconfirmed until GitHub accepts its receipt.',
     '',
     '## Current Muse actions (delivery order)',
     '| Task | PR | Action | Status | Eligibility under GitHub handoff contract | Wake round | Last wake / queued | Receipt | Chat |',

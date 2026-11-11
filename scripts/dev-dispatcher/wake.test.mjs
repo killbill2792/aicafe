@@ -138,3 +138,27 @@ test('multiple overdue wake candidates cannot ping-pong into unlimited workflow 
  assert.equal(fourth.status,'unchanged');
  assert.equal(delivered.length,3);
 });
+
+
+test('dozens of overdue notices share one retry wake and do not drain API quota',async()=>{
+ const now=at+25*60000;
+ let latest={tasks:{},actions:{},owner_alerts:Object.fromEntries(
+  Array.from({length:30},(_,i)=>['notice:'+i,{
+   status:'planned',delivery_owner:'muse',
+   created_at:new Date(at+1000+i*1000).toISOString()
+  }]))};
+ const ledger={transaction:async fn=>{
+  const next=await fn(structuredClone(latest));
+  if(next===null)return {committed:false,state:latest};
+  latest=next;return {committed:true,state:latest};
+ }};
+ let calls=0;
+ const fetchFn=async()=>{calls++;return {ok:true,status:204};};
+ const first=await scheduleSelfWake({ledger,token:'mock',config:one,now,fetchFn});
+ assert.equal(first.reason,'owner_notice_retry');
+ assert.equal(first.status,'requested');
+ const repeat=await scheduleSelfWake({ledger,token:'mock',config:one,now:now+1000,fetchFn});
+ assert.equal(repeat.status,'unchanged');
+ assert.equal(calls,1);
+ assert.equal(Object.keys(latest.delayed_wake_history).length,1);
+});
