@@ -356,3 +356,57 @@ test('missing scope is a periodic Muse progress check, never a completion deadli
  assert.equal(Object.values(queueScopePlanRecovery(due,queue,[],{},{
   now:'2026-11-11T10:20:00Z'}).actions).filter(a=>a.scope_recovery).length,1);
 });
+
+
+test('P1 regression: scope recovery receipt is authenticated before corrected plan and owner scope YES',()=>{
+ const {submitted,comment}=fixture();
+ const invalid={...comment,body:comment.body.replace('trigger.test.ts','trigger.test.*')};
+ const pending=queueScopePlanRecovery(submitted,queue,[invalid],{},{
+  now:'2026-11-11T09:16:00Z'});
+ const [actionId,action]=Object.entries(pending.actions).find(([_,a])=>a.scope_recovery);
+ assert.ok(actionId);
+ assert.equal(action.type,'scope_plan_update');
+ const received=acceptDeliveryReceipt(pending,{
+  action_id:actionId,task_id:taskId,
+  prompt_hash:action.delivery.prompt_hash,
+  approval_hash:action.delivery.approval_hash,
+  project_id:action.delivery.project.id,provider:'chatgpt',
+  conversation_url:submitted.tasks[taskId].conversation_ref,
+  status:'submitted',submitted_at:'2026-11-11T09:18:00Z'
+ },{authenticatedCourier:'muse'});
+ assert.equal(received.actions[actionId].status,'submitted');
+ assert.equal(received.tasks[taskId].status,'scope_plan_sent');
+ assert.equal(received.tasks[taskId].scope_plan_completed,true);
+ assert.equal(received.tasks[taskId].approved,false);
+ const corrected=JSON.parse(comment.body.match(/<!-- aicafe-scope-plan:v1 (.*) -->/)[1]);
+ corrected.action_id=actionId;
+ const resubmission={...comment,id:comment.id+1,
+  created_at:'2026-11-11T09:19:00Z',
+  html_url:comment.html_url.replace('12345678','12345679'),
+  body:'<!-- aicafe-scope-plan:v1 '+JSON.stringify(corrected)+' -->'};
+ const plans=selectScopePlans([invalid,resubmission],queue,received);
+ assert.equal(plans[taskId].action_id,actionId);
+ assert.equal(plans[taskId].comment_id,resubmission.id);
+ const offered=queueScopePlanReviews(received,queue,plans);
+ assert.ok(Object.values(offered.owner_alerts).find(n=>
+  n.kind==='scope_plan_review'&&n.task_id===taskId));
+ assert.equal(offered.scope_authorizations,undefined);
+ assert.equal(effectiveSignedQueue(queue,offered,plans)
+  .tasks.find(t=>t.id===taskId).state,'proposed');
+ const wrong=structuredClone(pending);
+ wrong.tasks[taskId].planning_approved=false;
+ assert.throws(()=>acceptDeliveryReceipt(wrong,{
+  action_id:actionId,prompt_hash:action.delivery.prompt_hash,
+  approval_hash:action.delivery.approval_hash,
+  project_id:action.delivery.project.id,provider:'chatgpt',
+  conversation_url:submitted.tasks[taskId].conversation_ref
+ },{authenticatedCourier:'muse'}),/not currently/);
+ const modified=structuredClone(pending);
+ modified.actions[actionId].scope_recovery=false;
+ assert.throws(()=>acceptDeliveryReceipt(modified,{
+  action_id:actionId,prompt_hash:action.delivery.prompt_hash,
+  approval_hash:action.delivery.approval_hash,
+  project_id:action.delivery.project.id,provider:'chatgpt',
+  conversation_url:submitted.tasks[taskId].conversation_ref
+ },{authenticatedCourier:'muse'}),/not currently/);
+});
