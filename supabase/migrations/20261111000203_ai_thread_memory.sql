@@ -7,7 +7,7 @@ alter table public.ai_threads
 alter table public.ai_threads
   add constraint ai_threads_memory_summary_shape check (
     case when jsonb_typeof(memory_summary) = 'object' then
-      jsonb_object_length(memory_summary) = 6
+      (memory_summary - array['version','revision','cursor','entries','tombstones','retry']) = '{}'::jsonb
       and memory_summary ?& array['version','revision','cursor','entries','tombstones','retry']
       and memory_summary->>'version' = '1'
       and coalesce(memory_summary->>'revision','') ~ '^(0|[1-9][0-9]{0,8})$'
@@ -17,12 +17,12 @@ alter table public.ai_threads
         then jsonb_array_length(memory_summary->'tombstones') <= 40 else false end
       and case when memory_summary->'cursor' = 'null'::jsonb then true
         when jsonb_typeof(memory_summary->'cursor') = 'object' then
-          jsonb_object_length(memory_summary->'cursor') = 2
+          (memory_summary->'cursor' - array['createdAt','id']) = '{}'::jsonb
           and memory_summary->'cursor' ?& array['createdAt','id']
         else false end
       and case when memory_summary->'retry' = 'null'::jsonb then true
         when jsonb_typeof(memory_summary->'retry') = 'object' then
-          jsonb_object_length(memory_summary->'retry') = 2
+          (memory_summary->'retry' - array['code','at']) = '{}'::jsonb
           and memory_summary->'retry' ?& array['code','at']
         else false end
     else false end
@@ -88,22 +88,22 @@ begin
   end if;
 
   if p_memory_summary is null or jsonb_typeof(p_memory_summary) <> 'object'
-    or jsonb_object_length(p_memory_summary) <> 6
+    or case when jsonb_typeof(p_memory_summary) = 'object' then (p_memory_summary - array['version','revision','cursor','entries','tombstones','retry']) <> '{}'::jsonb else true end
     or not (p_memory_summary ?& array['version','revision','cursor','entries','tombstones','retry'])
     or p_memory_summary->>'version' <> '1'
     or coalesce(p_memory_summary->>'revision','') !~ '^[1-9][0-9]{0,8}$'
     or (p_memory_summary->>'revision')::bigint <> p_expected_revision + 1
     or jsonb_typeof(p_memory_summary->'entries') <> 'array'
-    or jsonb_array_length(p_memory_summary->'entries') > 20
+    or case when jsonb_typeof(p_memory_summary->'entries') = 'array' then jsonb_array_length(p_memory_summary->'entries') > 20 else true end
     or jsonb_typeof(p_memory_summary->'tombstones') <> 'array'
-    or jsonb_array_length(p_memory_summary->'tombstones') > 40 then
+    or case when jsonb_typeof(p_memory_summary->'tombstones') = 'array' then jsonb_array_length(p_memory_summary->'tombstones') > 40 else true end then
     return jsonb_build_object('ok',false,'reason','invalid_summary');
   end if;
 
   v_cursor := p_memory_summary->'cursor';
   if v_cursor <> 'null'::jsonb then
     if jsonb_typeof(v_cursor) <> 'object'
-      or jsonb_object_length(v_cursor) <> 2
+      or case when jsonb_typeof(v_cursor) = 'object' then (v_cursor - array['createdAt','id']) <> '{}'::jsonb else true end
       or not (v_cursor ?& array['createdAt','id'])
       or coalesce(v_cursor->>'id','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
       or coalesce(v_cursor->>'createdAt','') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
@@ -120,7 +120,7 @@ begin
   end if;
 
   for v_entry in select value from jsonb_array_elements(p_memory_summary->'entries') loop
-    if jsonb_typeof(v_entry) <> 'object' or jsonb_object_length(v_entry) <> 6
+    if jsonb_typeof(v_entry) <> 'object' or case when jsonb_typeof(v_entry) = 'object' then (v_entry - array['kind','key','text','sourceMessageId','sourceAt','revision']) <> '{}'::jsonb else true end
       or not (v_entry ?& array['kind','key','text','sourceMessageId','sourceAt','revision']) then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
@@ -161,7 +161,7 @@ begin
   end loop;
 
   for v_tombstone in select value from jsonb_array_elements(p_memory_summary->'tombstones') loop
-    if jsonb_typeof(v_tombstone) <> 'object' or jsonb_object_length(v_tombstone) <> 4
+    if jsonb_typeof(v_tombstone) <> 'object' or case when jsonb_typeof(v_tombstone) = 'object' then (v_tombstone - array['key','sourceMessageId','sourceAt','revision']) <> '{}'::jsonb else true end
       or not (v_tombstone ?& array['key','sourceMessageId','sourceAt','revision']) then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
@@ -207,7 +207,7 @@ begin
 
   if p_memory_summary->'retry' <> 'null'::jsonb then
     if jsonb_typeof(p_memory_summary->'retry') <> 'object'
-      or jsonb_object_length(p_memory_summary->'retry') <> 2
+      or case when jsonb_typeof(p_memory_summary->'retry') = 'object' then (p_memory_summary->'retry' - array['code','at']) <> '{}'::jsonb else true end
       or not (p_memory_summary->'retry' ?& array['code','at'])
       or p_memory_summary->'retry'->>'code' not in ('provider_error','invalid_summary','storage_error')
       or coalesce(p_memory_summary->'retry'->>'at','') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$' then
