@@ -81,7 +81,6 @@ function fixture(options: {
 function installModel(operations: unknown[]) {
   const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
     const request = JSON.parse(String(init?.body)) as { input: string };
-    const input = JSON.parse(request.input) as { ownerMessages: Array<Record<string, unknown>> };
     return new Response(JSON.stringify({
       output_text: JSON.stringify({ operations }),
     }), { status: 200, headers: { "content-type": "application/json" } });
