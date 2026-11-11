@@ -20,17 +20,35 @@ export function recordGithubEffects(state,observations=[],now=new Date().toISOSt
    const head=item.head_sha;
    // Do not attach a late outcome to a new PR head, even when both share
    // the same task ID. Missing SHA is permitted for missing-branch checks.
-   if(head!=null&&(!SHA.test(head)||rec.head_sha&&rec.head_sha!==head))continue;
+   // An uncertain PR POST is branch-scoped. Even if ChatGPT pushed a newer
+   // head before our outcome was committed, the old POST may have opened
+   // a PR; the uncertainty must be latched against the task, not dropped.
+   if(head!=null&&(!SHA.test(head)||rec.head_sha&&rec.head_sha!==head)&&
+      !(item.operation==='CREATE_DRAFT_PR'&&item.status==='uncertain'&&SHA.test(head)))
+      continue;
    const proof={
      operation:item.operation,head_sha:head||null,status:item.status,
      reason:typeof item.reason==='string'?item.reason.slice(0,140):null,
      pr_number:Number.isInteger(item.pr_number)?item.pr_number:rec.pr_number||null
    };
    const prior=rec.github_effects?.[item.operation];
-   if(prior&&JSON.stringify({...prior,observed_at:undefined})===
-       JSON.stringify({...proof,observed_at:undefined}))continue;
+   const uncertain=item.operation==='CREATE_DRAFT_PR'&&item.status==='uncertain';
+   const confirmed=item.operation==='CREATE_DRAFT_PR'&&
+     ['created','existing_pr_needs_link','already_linked'].includes(item.status)&&
+     Number.isInteger(rec.pr_number)&&
+     (!Number.isInteger(item.pr_number)||item.pr_number===rec.pr_number);
+   const latch=uncertain&&!rec.pr_creation_uncertain_hold;
+   const clear=confirmed&&Boolean(rec.pr_creation_uncertain_hold);
+   const unchanged=prior&&JSON.stringify({...prior,observed_at:undefined})===
+       JSON.stringify({...proof,observed_at:undefined});
+   if(unchanged&&!latch&&!clear)continue;
    if(!result)result=structuredClone(state);
    const task=result.tasks[item.task_id];
+   if(latch)task.pr_creation_uncertain_hold={
+     first_observed_at:now,attempted_head_sha:head||rec.head_sha||null,
+     reason:proof.reason||'unverified_pr_write'};
+   if(clear)delete task.pr_creation_uncertain_hold;
+   if(unchanged)continue;
    task.github_effects||={};
    task.github_effects[item.operation]={...proof,observed_at:now};
    task.github_effect_history||=[];
