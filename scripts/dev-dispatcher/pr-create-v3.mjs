@@ -43,7 +43,19 @@ export async function ensureApprovedDraftPr({github,writer,task,record,records={
    comparison.files.length===0||comparison.files.length>=300)
    return {status:'blocked',reason:'no_verified_complete_changed_file_list'};
  const allowed=new Set(changed);
- const unauthorized=comparison.files.map(f=>f.filename).filter(path=>!allowed.has(path));
+ // GitHub rename records expose both the created destination and removed
+ // source. An unsigned removal is not authorized by an approved destination.
+ const touched=[];
+ for(const file of comparison.files){
+   if(typeof file?.filename!=='string'||!file.filename)
+     return {status:'blocked',reason:'no_verified_complete_changed_file_list'};
+   touched.push(file.filename);
+   if(file.status==='renamed'&&
+       (typeof file.previous_filename!=='string'||!file.previous_filename))
+     return {status:'blocked',reason:'no_verified_complete_changed_file_list'};
+   if(file.previous_filename)touched.push(file.previous_filename);
+ }
+ const unauthorized=[...new Set(touched.filter(path=>!allowed.has(path)))];
  if(unauthorized.length)return {status:'blocked',reason:'branch_contains_unsigned_edits',
    files:unauthorized.slice(0,10)};
  // A branch may change during the read. Never open against an unverified head.
@@ -56,6 +68,7 @@ export async function ensureApprovedDraftPr({github,writer,task,record,records={
     title:task.title||'Approved task '+id,
     head:branch,base:base.base_branch,draft:true,
     body:'<!-- '+settings.naming.marker_prefix+'-task-id '+id+' -->\n'+
+      '<!-- '+settings.naming.marker_prefix+'-chat-url '+record.conversation_ref+' -->\n'+
       'Approved signed development task '+id+'. Draft opened automatically after authenticated Muse chat delivery. '+
       'No coding completion is claimed. See the approved task queue and current-head checks.'
    })
