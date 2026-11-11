@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:reset": "node scripts/db-reset.mjs",
-    "eval:supervisor": "node evals/supervisor/verify-truth.mjs && node evals/supervisor/run.mjs && node evals/supervisor/wording-grader.mjs"
+    "eval:supervisor": "node evals/supervisor/verify-truth.mjs && node evals/supervisor/run.mjs && node evals/supervisor/wording-grader.mjs",
+    "test:e2e:targeted": "node scripts/e2e/targeted.mjs run"
   },
   "dependencies": {
     "@sentry/nextjs": "^11.0.0",
@@ -31,6 +32,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "1.58.2",
     "@types/node": "^22",
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.23.1",
@@ -41,10 +43,10 @@
     "eslint-config-next": "16.3.6",
     "pg": "^8.23.0",
     "postcss": "^8.5.28",
+    "promptfoo": "0.125.1",
+    "squawk-cli": "2.70.0",
     "tailwindcss": "^3.4.19",
     "typescript": "^5",
-    "vitest": "^5.0.2",
-    "promptfoo": "0.125.1",
-    "squawk-cli": "2.70.0"
+    "vitest": "^5.0.2"
   }
 }

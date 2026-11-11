@@ -399,3 +399,40 @@ revoke all on function public.post_supervisor_priority_notice(uuid,uuid,uuid,tex
   from public,anon,authenticated;
 grant execute on function public.post_supervisor_priority_notice(uuid,uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,uuid)
   to service_role;
+
+-- Source status is the lifecycle authority. Close the delivery receipt when an
+-- alert is resolved/dismissed or an operating task stops requiring an owner,
+-- including changes made outside the 15-minute scheduler. The owner cannot
+-- independently dismiss a receipt (see guard above).
+create function public.settle_supervisor_priority_notices() returns trigger
+language plpgsql security definer set search_path=public as $$
+declare v_source_type text;
+begin
+  if tg_table_name='operating_tasks' then
+    if new.kind='priority_notice' or new.status in ('needs_owner','needs_response')
+    then return new; end if;
+    v_source_type:='operating_task';
+  else
+    if new.status in ('new','seen') then return new; end if;
+    v_source_type:='alert';
+  end if;
+
+  update public.operating_tasks
+    set status='handled',resolved_at=now()
+    where business_id=new.business_id and kind='priority_notice'
+      and status='needs_owner'
+      and payload->>'sourceType'=v_source_type
+      and payload->>'sourceId'=new.id::text;
+  return new;
+end $$;
+revoke all on function public.settle_supervisor_priority_notices()
+  from public,anon,authenticated;
+
+create trigger settle_priority_notice_on_alert_status
+  after update of status on public.alerts
+  for each row when (old.status is distinct from new.status)
+  execute function public.settle_supervisor_priority_notices();
+create trigger settle_priority_notice_on_task_status
+  after update of status on public.operating_tasks
+  for each row when (old.status is distinct from new.status)
+  execute function public.settle_supervisor_priority_notices();
