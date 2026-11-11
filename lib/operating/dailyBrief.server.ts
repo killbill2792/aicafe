@@ -141,7 +141,7 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
     return cafeStep(schedule.today,{step:"pos_sync",outcome:"waiting",
       reason:"yesterday_pos_data_not_complete",details:{...scheduleDetails,missing}},
       {schedule:scheduleInfo,missing});
-  if(!evidence.content.hasSomethingToSay)
+  if(!evidence.content.hasSomethingToSay&&schedule.phase!=="missed")
     return cafeStep(schedule.today,{step:"content",outcome:"skipped",reason:"nothing_to_say",
       details:{missing}},{schedule:scheduleInfo,missing});
 
