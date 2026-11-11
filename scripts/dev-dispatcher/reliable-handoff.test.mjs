@@ -52,7 +52,11 @@ test('real task-6 state moves from authenticated yes to one newly signed unsent 
  approved.tasks['6']=record;
  assert.equal(assignmentActionKey(approved,'6',queue),null);
  assert.equal(Object.values(approved.actions).filter(a=>a.status==='planned'&&a.task_id==='6').length,1);
- assert.equal(signalFor(approved,'s'.repeat(64)).pending_count,1);
+ // Opaque signal covers the one coding action PLUS any independent owner
+ // notices; a notice does not represent a duplicate coding instruction.
+ const pendingNotices=Object.values(approved.owner_alerts)
+   .filter(n=>n.status==='planned'&&n.delivery_owner==='muse').length;
+ assert.equal(signalFor(approved,'s'.repeat(64)).pending_count,1+pendingNotices);
  const again=applyOwnerStartApprovals(approved,queue);
  assert.equal(again.owner_alerts[noticeId].status,'submitted');
  assert.equal(Object.keys(again.actions).length,2);
