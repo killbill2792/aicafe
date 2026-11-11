@@ -62,7 +62,9 @@ export function ownerDashboardHandler({readState,editState,ownerPassword,musePas
        ['planned','claimed','uncertain'].includes(n.status)).length,
      recovery_requests:Object.values(state.recovery_requests||{}).slice(-100)
        .map(r=>({request_id:r.request_id,task_id:r.task_id,
-         intent:r.intent,status:r.status,reason:r.reason}))
+         intent:r.intent,status:r.status,reason:r.reason})),
+     recovery_rejections:Object.values(state.recovery_rejections||{}).slice(-100)
+       .map(r=>({request_id:r.request_id,reason:r.reason,at:r.at}))
     }));
    }
    if(req.method==='POST'&&req.url==='/api/control'){
