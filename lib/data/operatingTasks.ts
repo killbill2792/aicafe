@@ -65,11 +65,11 @@ export async function readPersistedOperatingTasks(businessId: string, explicit?:
     .eq("business_id", businessId);
   // An explicit service-role reader is only permitted to include private tasks
   // when the trusted caller also supplied the verified owner. Never fetch other
-  // owners' private commitments and filter them only after the database read.
+  // owners' private commitments/priority notices and filter them only after the database read.
   if(explicit?.ownerUserId){
     if(!/^[0-9a-f-]{36}$/i.test(explicit.ownerUserId))throw new Error("Invalid owner scope");
-    query=query.or("kind.neq.commitment,owner_user_id.eq."+explicit.ownerUserId);
-  }else if(explicit)query=query.neq("kind","commitment");
+    query=query.or("kind.not.in.(commitment,priority_notice),owner_user_id.eq."+explicit.ownerUserId);
+  }else if(explicit)query=query.not("kind","in","(commitment,priority_notice)");
   const {data,error}=await query.order("created_at",{ascending:false});
   if (error) throw error;
   return (data as TaskRow[]).map(fromRow);

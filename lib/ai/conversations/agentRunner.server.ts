@@ -33,6 +33,8 @@ import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
+import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
+import {routineToolDefinition} from "@/lib/ai/agent/tools/routines";
 import { persistAgentReply, recordAgentTurnUsage, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
 import { styleReport } from "@/lib/ai/agent/style";
 import type { AgentToolContext } from "@/lib/ai/agent/tools";
@@ -164,6 +166,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         list:async()=>listOwnerCommitments({scope,threadId:id,client:await getDb()}),
         close:async taskId=>closeOwnerCommitment(taskId,{scope,threadId:id,client:await getDb()}),
       },
+      routines:{
+        create:async schedule=>createOwnerRoutine(schedule,{
+          scope,threadId:id,ownerMessageId:owner.id,client:await getDb(),
+        }),
+        list:async()=>listOwnerRoutines({scope,threadId:id,client:await getDb()}),
+        change:async input=>changeOwnerRoutine(input,{scope,threadId:id,client:await getDb()}),
+      },
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       eventPlans:{propose:async(input)=>{
@@ -293,7 +302,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       },
       onDelta: delta => emit("delta", { text: delta }),
       onReset: discardChars => emit("reset", { discardChars }),
-      ...(memory ? { memoryFacts: memory.facts, extraTools: [memory.tool] } : {}),
+      ...(memory ? { memoryFacts: memory.facts } : {}),
+      // Both the routine tool and optional café memory are offered only after
+      // the authenticated owner/thread context has been established.
+      extraTools:[routineToolDefinition,...(memory?[memory.tool]:[])],
       ...(job && jobs ? {
         takeFollowUps: async(max: number):Promise<OwnerFollowUp[]> => {
            // A second question always receives its own serialized turn, on

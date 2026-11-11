@@ -71,6 +71,65 @@ describe("Home and chat attention reads",()=>{
     expect(await pending).toEqual([]);
   });
 
+  it("keeps an alert's specific repair action after a notice and removes it when resolved",async()=>{
+    const notice={
+      id:"priority:stable",businessId:"business-a",agentId:"leo",kind:"priority_notice",
+      status:"needs_owner",payload:{title:"Actionable café alert needs review",
+        sourceType:"alert",sourceId:"source-id",threadId:"owner-thread"},
+      confidence:"high",evidence:[],createdAt:"2026-10-29T08:00:00Z",
+    };
+    mocks.pos.mockResolvedValue({status:"active",provider:"toast"});
+    mocks.stored.mockResolvedValue([notice]);
+    mocks.alerts.mockResolvedValue([{
+      id:"source-id",kind:"meal_break",status:"new",impactCents:null,
+      payload:{employeeId:"employee-a",employeeName:"Ava",date:"2026-10-29"},
+      createdAt:"2026-10-29T07:00:00Z",
+    }]);
+    mocks.match.mockResolvedValue([]);
+    mocks.project.mockImplementation((input:unknown[])=>({
+      needsYou:input,handled:[],watching:[],
+    }));
+    const active=await getAttentionItems({snapshot:snapshot as never,menu:menu as never,locale:"en"});
+    expect(active).toHaveLength(1);
+    expect(mocks.project).toHaveBeenCalledWith([]);
+    expect(active[0]).toMatchObject({
+      id:"alert:source-id",kind:"meal_break",source:"alerts",
+      displayTitle:"mealBreakTitle",actionLabel:"mealBreakAction",
+    });
+    expect(active[0].href).toContain("/staff?tab=schedule");
+    expect(active[0].href).toContain("employee=employee-a");
+    expect(active.some(item=>item.id==="priority:stable")).toBe(false);
+
+    mocks.alerts.mockResolvedValue([]);
+    const resolved=await getAttentionItems({snapshot:snapshot as never,menu:menu as never,locale:"en"});
+    expect(resolved).toEqual([]);
+  });
+  it("keeps the original owner task action rather than a generic notice",async()=>{
+    mocks.pos.mockResolvedValue({status:"active",provider:"toast"});
+    mocks.match.mockResolvedValue([]);
+    mocks.alerts.mockResolvedValue([]);
+    mocks.stored.mockResolvedValue([{
+      id:"priority:coverage",businessId:"business-a",agentId:"leo",kind:"priority_notice",
+      status:"needs_owner",payload:{title:"Owner task needs review",
+        sourceType:"operating_task",sourceId:"coverage",threadId:"owner-thread"},
+      confidence:"high",evidence:[],createdAt:"2026-10-29T09:00:00Z",
+    },{
+      id:"coverage",businessId:"business-a",agentId:"olivia",kind:"staff_coverage",
+      status:"needs_owner",entityId:"employee-a",
+      payload:{issue:"Unfilled shift",shiftDate:"2026-10-29"},
+      confidence:"high",evidence:[],createdAt:"2026-10-29T08:00:00Z",
+    }]);
+    mocks.project.mockImplementation((input:unknown[])=>({
+      needsYou:input,handled:[],watching:[],
+    }));
+    const items=await getAttentionItems({snapshot:snapshot as never,menu:menu as never,locale:"en"});
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id:"coverage",kind:"staff_coverage",source:"operating_tasks",
+      displayTitle:"staffTaskNamed",agentId:"olivia",
+    });
+    expect(items[0].href).toContain("employee=employee-a");
+  });
   it("preserves independent failure notices without waiting for usage data",async()=>{
     mocks.pos.mockResolvedValue({status:"active",provider:"toast"});
     mocks.stored.mockResolvedValue([]);
