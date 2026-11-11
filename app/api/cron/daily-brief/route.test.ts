@@ -41,7 +41,7 @@ describe("daily brief cron",()=>{
       failureReasons:["brief_processing_failed"]});
     mocks.dispatch.mockResolvedValue({accepted:0,retryResponses:1,failed:1,uncertain:0});
     const res=await GET(req("Bearer the-private-cron-secret"));
-    expect(res.status).toBe(207);
+    expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({checked:2,failed:1,
       failureReasons:["brief_processing_failed"],whatsapp:{retryResponses:1,failed:1}});
   });

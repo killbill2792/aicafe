@@ -25,7 +25,7 @@ export async function GET(request:Request){
       failed:dispatched.failed??0,uncertain:dispatched.uncertain??0,
     });
     const partial=result.failed>0||deliveryDegraded;
-    return reply(partial?207:200,{...result,whatsapp:dispatched});
+    return reply(partial?503:200,{...result,whatsapp:dispatched});
   }catch(error){
     const reason=error instanceof Error&&error.message==="businesses_unavailable"
       ?"businesses_unavailable":"brief_unavailable";

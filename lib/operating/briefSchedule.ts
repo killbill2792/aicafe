@@ -32,7 +32,7 @@ export type BriefPhase=
   /** Past the latest send time but before opening: send now, marked late. */
   "late"|
   /** The café has opened: today's brief was missed. */
-  "missed"|
+  "missed";
 
 export type BriefSchedule={
   today:string;yesterday:string;timezone:string;nowMinute:number;
