@@ -69,6 +69,28 @@ export function selectScopePlans(comments,queue,state){
       (x.comment_created_at===prev.comment_created_at&&x.comment_id>prev.comment_id))
      latest[x.task_id]=x;
  }
+ // Even a PENDING owner decision is durable once the trusted dispatcher
+ // verified and saved the source comment in the existing private owner notice.
+ // Do not depend on the source issue comment remaining in the last page.
+ for(const [key,notice] of Object.entries(state.owner_alerts||{})){
+   const plan=notice.scope_plan;
+   if(notice.kind!=='scope_plan_review'||!plan||
+      !['planned','submitted'].includes(notice.status)||
+      latest[notice.task_id]||plan.task_id!==notice.task_id||
+      plan.plan_hash!==notice.source_sha||
+      key!=='notice:'+noticeHash({kind:'scope_plan_review',
+        task_id:notice.task_id,question:notice.question,
+        source_sha:notice.source_sha}))continue;
+   const task=queue.tasks.find(t=>t.id===plan.task_id);
+   const rec=state.tasks?.[plan.task_id];
+   if(task?.state!=='proposed'||!rec||
+      plan.proposal_source_sha!==proposalSourceHash(task)||
+      plan.action_id!==rec.proposal_action_id && !Object.values(state.actions||{})
+        .some(a=>a.task_id===plan.task_id&&a.type?.startsWith('scope_plan')&&
+          a.status==='submitted'&&a.proposal_source_sha===plan.proposal_source_sha))
+     continue;
+   latest[plan.task_id]=structuredClone(plan);
+ }
  // An already signed exact scope is durable even when issue #411 grows.
  // New plans still require a real verified comment; this fallback applies
  // only to the original immutable owner-notice + owner-reply proof chain.
@@ -134,6 +156,7 @@ export function queueScopePlanReviews(state,queue,plans,{now=new Date().toISOStr
    recipient:'owner',delivery_owner:'muse',
    status:'planned',created_at:now,
    target_url:plan.comment_url||'https://github.com/'+settings.repo+'/issues/411',
+   scope_plan:structuredClone(plan),
    ...(conflicts.length?{scope_conflicts:conflicts}:{}),
   };
  }
