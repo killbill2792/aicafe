@@ -15,7 +15,7 @@ const detail=(name,obj)=>{
       typeof v==='object'&&v!==null?JSON.stringify(v):v)+' |');
   return ['','#### '+cell(name),'| Field | Recorded value |','|---|---|',...rows];
 };
-export function renderLifecycleDashboard(state,{repo='killbill2792/aicafe',now=new Date().toISOString()}={}){
+export function renderLifecycleDashboard(state,{repo='killbill2792/aicafe',now=state?.updated_at||'1970-01-01T00:00:00.000Z'}={}){
   if(!state||state.version!==1)throw Error('Private ledger required');
   if(!/^[-A-Za-z0-9_.]+\/[-A-Za-z0-9_.]+$/.test(repo))throw Error('Invalid repository');
   const rows=Object.values(state.lifecycle_v3?.rows||{}).sort((a,b)=>
@@ -29,7 +29,7 @@ export function renderLifecycleDashboard(state,{repo='killbill2792/aicafe',now=n
     '',
     '**Last private-ledger write:** '+stamp(state.updated_at)+
       ' · **Last GitHub schedule:** '+stamp(state.schedule_health?.last_schedule_at)+
-      ' ('+age(state.schedule_health?.last_schedule_at,now)+' ago).',
+      ' ('+age(state.schedule_health?.last_schedule_at,now)+' at snapshot).',
     '',
     '**Tasks:** '+rows.length+
       ' · **Coding / verification:** '+count(rows,r=>['CODE_SUBMITTED','VERIFYING'].includes(r.current_stage))+
@@ -38,7 +38,7 @@ export function renderLifecycleDashboard(state,{repo='killbill2792/aicafe',now=n
       ' · **Proven:** '+count(rows,r=>r.current_stage==='TASK_COMPLETE'),
     '',
     '### One task per row: all lifecycle gates',
-    '| Product / Task | Stage | Muse delivered | PR | Last commit / age | CI | Codex trigger | Codex result | Acceptance | Parents pending | Merge eligible | Integration | Next responsible action |',
+    '| Product / Task | Stage | Muse delivered | PR | Last commit / snapshot age | CI | Codex trigger | Codex result | Acceptance | Parents pending | Merge eligible | Integration | Next responsible action |',
     '|---|---|---|---|---|---|---|---|---|---|---|---|---|'
   ];
   const tab=rows.map(r=>{
