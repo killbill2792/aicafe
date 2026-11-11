@@ -361,8 +361,21 @@ async function main() {
   // The GitHub login and submitted scope-plan action verify provenance.
   const needsScopeRead=Object.values(current.tasks||{}).some(t=>
     t.planning_approved||t.scope_approval_hash);
-  const scopeComments=needsScopeRead
-    ? await gh.request('/issues/411/comments?per_page=100'):[];
+  let scopeComments=[];
+  if(needsScopeRead){
+    // GitHub returns oldest comments first. Fetch the current LAST bounded
+    // page, not the first 100: later plans would otherwise be invisible.
+    // Previous exact owner-approved scopes are retained in the private ledger.
+    const issue=await gh.request('/issues/'+settings.owner.dashboard_issue);
+    const count=Number(issue.comments);
+    if(!Number.isSafeInteger(count)||count<0)
+      throw Error('Cannot verify owner-control issue comment count');
+    const page=Math.max(1,Math.ceil(count/100));
+    scopeComments=await gh.request('/issues/'+settings.owner.dashboard_issue+
+      '/comments?per_page=100&page='+page);
+    if(!Array.isArray(scopeComments)||scopeComments.length>100)
+      throw Error('Invalid bounded scope plan comment batch');
+  }
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
   proposed.state=recordDrift(trackScheduleGap(proposed.state,{
