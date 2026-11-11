@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import {verifiedCodingConversation} from './verified-chat-v3.mjs';
 
 // Evaluate the actual nested reconcile function without starting its GitHub
 // runner or changing the private ledger. Every dependency is explicitly faked.
@@ -52,6 +53,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     applySafetySignals: state => state,
     stallMinutes: () => 20,
     dispatchPreferences: () => ({priority:{},paused:new Set(),stall_minutes:null}),
+    verifiedCodingConversation,
     repo: 'killbill2792/aicafe',
     process: {env:{}},
     applyOwnerStartApprovals: startApproval,
