@@ -42,6 +42,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
       return { state: copy, rejected: [] };
     },
     reconcileReceiptFeedback: state => state,
+    resolveOwnerIssueIdentity: state => state,
     queueOwnerIssue: (state,incident) => ({owner_alerts:{
       ...state.owner_alerts,
       ['notice:'+incident.kind+':'+incident.identity]:{...incident,status:'planned',recipient:'owner'}
