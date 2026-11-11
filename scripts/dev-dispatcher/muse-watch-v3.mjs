@@ -3,7 +3,7 @@
 // approval, and no direct merge. Can run from cron/systemd OUTSIDE GitHub.
 // It reads a Git-synced private ledger, keeps a local backlog, and wakes the
 // existing trusted-main GitHub dispatcher only if independently warranted.
-import {readFileSync,writeFileSync,mkdirSync,existsSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,existsSync,renameSync,unlinkSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {createHash} from 'node:crypto';
 import {recoveryIdentity} from './recovery-v3.mjs';
@@ -225,7 +225,17 @@ export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,a
   const delivered=await deliverMuseRecovery(planned,{token,now,fetchImpl,
     apiPauseUntil:health.github_api_pause_until});
   mkdirSync(dirname(backlogPath),{recursive:true,mode:0o700});
-  writeFileSync(backlogPath,JSON.stringify(delivered.backlog,null,2)+'\n',{mode:0o600});
+  // A crash while rewriting the only Muse recovery backlog must not leave
+  // truncated JSON and permanently disable the independent watchdog.
+  const temporary=backlogPath+'.tmp-'+process.pid;
+  try{
+    writeFileSync(temporary,JSON.stringify(delivered.backlog,null,2)+'\n',
+      {mode:0o600,flag:'wx'});
+    renameSync(temporary,backlogPath);
+  }catch(error){
+    try{unlinkSync(temporary);}catch{}
+    throw error;
+  }
   return {health,delivery:delivered.results,backlog_path:backlogPath};
 }
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
