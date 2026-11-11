@@ -43,6 +43,14 @@ export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGa
     incidents.push({kind:'LEDGER_STALE',age_minutes:ledgerAge,source:'state.updated_at',
       action:'RECONCILE',task_id:null});
   for(const [id,r] of Object.entries(state.tasks)){
+    // A verified Muse prompt can be stranded before an early draft PR exists.
+    // GitHub must attempt its signed-branch recovery; Muse checks the ORIGINAL
+    // ChatGPT conversation if the branch/PR never materializes.
+    const sinceDelivery=ago(r.last_submission_at,clock);
+    if(r.approved===true&&!r.pr_number&&r.conversation_ref&&
+      sinceDelivery!==null&&sinceDelivery>deliveryGapMinutes)
+      incidents.push({kind:'DELIVERED_TASK_NO_PR',task_id:id,
+        age_minutes:sinceDelivery,action:'MUSE_INSPECT_CHAT_AND_RECONCILE'});
     if(r.github_state!=='open'||!r.pr_number||!r.head_sha)continue;
     const last=Math.max(time(r.last_commit_at)||0,time(r.last_github_activity)||0,
       time(r.last_submission_at)||0);
@@ -84,7 +92,7 @@ export function museRecoveryCandidates(health,state,{repo,actor,now=health?.obse
   // PR requests are hints; the GitHub engine still validates every gate.
   const intents=new Map();
   if(health.incidents.some(i=>['GITHUB_SCHEDULE_STALE','LEDGER_STALE',
-      'UNASSIGNED_APPROVED_TASKS'].includes(i.kind)))
+      'UNASSIGNED_APPROVED_TASKS','DELIVERED_TASK_NO_PR'].includes(i.kind)))
     intents.set('global',{intent:'RECONCILE',task_id:null,pr_number:null,expected_head_sha:null});
   for(const i of health.incidents){
     if(!['SUSPECTED_CODING_STALL','CODEX_NOT_RECEIVED'].includes(i.kind))continue;
