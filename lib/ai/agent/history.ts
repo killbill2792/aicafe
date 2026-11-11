@@ -176,7 +176,7 @@ export function applyThreadMemoryOperations(
       continue;
     }
     if (operation.action !== "remember" ||
-      (existing && compareSourceOrder(source, existing) <= 0) ||
+      (existing && compareSourceOrder(source, { createdAt: existing.sourceAt, id: existing.sourceMessageId }) <= 0) ||
       (tombstone && compareSourceOrder(source, { createdAt: tombstone.sourceAt, id: tombstone.sourceMessageId }) <= 0) ||
       !operation.quote || !source.text.includes(operation.quote) ||
       safeThreadMemoryText(operation.quote) !== operation.quote) continue;
