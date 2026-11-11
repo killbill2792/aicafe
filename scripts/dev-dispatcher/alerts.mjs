@@ -6,11 +6,11 @@ import {architectureFoundationReady,approved} from './core.mjs';
 import {approvalSignature} from './delivery.mjs';
 import {validConversationUrl} from './delivery.mjs';
 const sha=s=>createHash('sha256').update(s).digest('hex');
-export function noticeHash({kind,task_id,pr_number,question,source_sha,identity:operationalIdentity}){
+export function noticeHash({kind,task_id,pr_number,question,source_sha,identity:operationalIdentity,incident_cycle=0}){
  // Operational alerts are deduped by verified issue identity, not by a
  // human-readable message. This must match queueOwnerIssue's hash.
  if(operationalIdentity!==undefined)
-  return sha(JSON.stringify([kind,task_id||null,pr_number||null,operationalIdentity]));
+  return sha(JSON.stringify([kind,task_id||null,pr_number||null,operationalIdentity,...(incident_cycle?[incident_cycle]:[])]));
  const identity=[kind,task_id||null,pr_number||null,question];
  // Version-bound owner review: an edited/newly merged architecture is a NEW notice.
  if(['architecture_approval','next_task_start'].includes(kind))identity.push(source_sha||null);
@@ -78,15 +78,16 @@ export function wakePendingOwnerNotices(state,nowMs,intervalMs=900000){
 export function queueOwnerIssue(state,{kind,task_id=null,pr_number=null,identity='',message,needs='investigation'}){
  const next=structuredClone(state);next.owner_alerts||={};
  if(typeof message!=='string'||!message.trim())return next;
- const hash=sha(JSON.stringify([kind,task_id,pr_number,identity]));
+ // Retain every authenticated notice receipt as history. A resolved outage
+ // may recur, but must get a fresh notice hash instead of overwriting an ACK.
+ const old=Object.values(next.owner_alerts).filter(n=>n.kind===kind&&
+  n.task_id===task_id&&n.pr_number===pr_number&&n.identity===identity)
+  .sort((a,b)=>(b.incident_cycle||0)-(a.incident_cycle||0))[0];
+ if(old&&!['resolved','cancelled_no_longer_needed'].includes(old.status))return next;
+ const incident_cycle=old?(old.incident_cycle||0)+1:0;
+ const hash=noticeHash({kind,task_id,pr_number,identity,incident_cycle});
  const key='notice:'+hash,now=new Date().toISOString();
- const old=next.owner_alerts[key];
- if(old&&old.status!=='resolved'&&old.status!=='cancelled_no_longer_needed'){
-  // Backfill historic notices so the opaque Muse signal can wake for them.
-  if(!Object.hasOwn(old,'identity'))old.identity=identity;
-  return next;
- }
- next.owner_alerts[key]={kind,task_id,pr_number,identity,notice_hash:hash,
+ next.owner_alerts[key]={kind,task_id,pr_number,identity,incident_cycle,notice_hash:hash,
   question:message.slice(0,1000)+' Needed: '+needs,recipient:'owner',
   delivery_owner:'muse',status:'planned',created_at:now,
   target_url:pr_number?'https://github.com/'+settings.repo+'/pull/'+pr_number:
@@ -98,12 +99,13 @@ export function queueOwnerIssue(state,{kind,task_id=null,pr_number=null,identity
 // share a PR; a receipt recovery must never close their unrelated notices.
 export function resolveOwnerIssueIdentity(state,{kind,task_id=null,pr_number=null,identity}){
  const next=structuredClone(state);
- const key='notice:'+noticeHash({kind,task_id,pr_number,identity});
- const notice=next.owner_alerts?.[key];
- if(notice?.status==='planned'){
-  notice.status='resolved';
-  notice.resolved_at=new Date().toISOString();
- }
+ for(const notice of Object.values(next.owner_alerts||{}))
+  if(notice.kind===kind&&notice.task_id===task_id&&
+     notice.pr_number===pr_number&&notice.identity===identity&&
+     ['planned','submitted','claimed','uncertain'].includes(notice.status)){
+   notice.status='resolved';notice.resolved_at=new Date().toISOString();
+   // Keep the authenticated receipt and original incident cycle for audit.
+  }
  return next;
 }
 export function resolveOwnerIssue(state,kind,pr_number){
