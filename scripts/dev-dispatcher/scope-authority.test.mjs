@@ -5,7 +5,7 @@ import {settings} from './settings.mjs';
 import {queueOwnerAlerts} from './alerts.mjs';
 import {advanceApprovedProposals} from './proposal-stage.mjs';
 import {parseScopePlanComment,selectScopePlans,queueScopePlanReviews,
- acceptScopePlanDecisions,effectiveSignedQueue} from './scope-authority.mjs';
+ acceptScopePlanDecisions,effectiveSignedQueue,queueScopePlanRecovery} from './scope-authority.mjs';
 import {acceptDeliveryReceipt} from './receipt.mjs';
 import {acceptMuseOwnerReply} from './self-heal.mjs';
 import {signalFor} from './signal.mjs';
@@ -318,4 +318,41 @@ test('shared implementation scope gets an integration notice rather than a rejec
  assert.ok(notice);
  assert.match(notice.question,/Shared edit paths/);
  assert.equal(notice.scope_conflicts,undefined);
+});
+
+
+test('invalid published plan gets one signed correction in the original planning chat',()=>{
+ const {submitted,comment}=fixture();
+ const bad={...comment,body:comment.body.replace('trigger.test.ts','trigger.test.*')};
+ const out=queueScopePlanRecovery(submitted,queue,[bad],{},{
+  now:'2026-11-11T09:16:00Z'});
+ const corrections=Object.values(out.actions).filter(a=>a.scope_recovery);
+ assert.equal(corrections.length,1);
+ assert.equal(corrections[0].type,'scope_plan_update');
+ assert.match(corrections[0].delivery.prompt,/unsafe or a wildcard/);
+ assert.equal(corrections[0].delivery.conversation_url,
+  submitted.tasks[taskId].conversation_ref);
+ assert.equal(corrections[0].delivery.approval_hash,submitted.tasks[taskId].approval_hash);
+ assert.deepEqual(queueScopePlanRecovery(out,queue,[bad],{},{
+  now:'2026-11-11T09:18:00Z'}),out);
+ const valid=selectScopePlans([comment],queue,submitted);
+ const recovered=queueScopePlanRecovery(out,queue,[comment],valid,{
+  now:'2026-11-11T09:19:00Z'});
+ assert.equal(Object.values(recovered.actions).find(a=>a.scope_recovery).status,
+  'cancelled_no_longer_needed');
+});
+
+test('missing scope is a periodic Muse progress check, never a completion deadline',()=>{
+ const {submitted}=fixture();
+ const tooEarly=queueScopePlanRecovery(submitted,queue,[],{},{
+  now:'2026-11-11T09:20:00Z'});
+ assert.equal(Object.values(tooEarly.actions).filter(a=>a.scope_recovery).length,0);
+ const due=queueScopePlanRecovery(tooEarly,queue,[],{},{
+  now:'2026-11-11T09:50:00Z'});
+ const check=Object.values(due.actions).find(a=>a.scope_recovery);
+ assert.ok(check);
+ assert.match(check.delivery.prompt,/Muse must inspect whether the existing chat is still generating/);
+ assert.equal(check.status,'planned');
+ assert.equal(Object.values(queueScopePlanRecovery(due,queue,[],{},{
+  now:'2026-11-11T10:20:00Z'}).actions).filter(a=>a.scope_recovery).length,1);
 });
