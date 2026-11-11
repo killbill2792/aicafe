@@ -58,7 +58,10 @@ describe("scheduled event discovery",()=>{
    expect(cityScanWindows("2026-11-03",cursor,"location-a","unavailable")).toEqual([]);
    // Older local-day catch-up is preserved, not overwritten by the retry.
    expect(cityScanWindows("2026-11-03",state("2026-10-31"),"location-a","partial"))
-     .toEqual([{from:"2026-11-01",to:"2026-11-16",reason:"new_day"}]);
+     .toEqual([
+       {from:"2026-11-01",to:"2026-11-14",reason:"new_day"},
+       {from:"2026-11-15",to:"2026-11-16",reason:"new_day"},
+     ]);
  });
  it("daily search adds exactly one new day and avoids repeat work",()=>{
    expect(eventScanWindows("2026-11-04",state("2026-11-16"),"location-a")).toEqual([
