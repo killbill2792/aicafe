@@ -37,7 +37,9 @@ export function validateHandoff(action, task) {
     (action.type==='scope_plan'?(!task.conversation_ref):
       (Boolean(task.conversation_ref)&&d?.conversation_url===task.conversation_ref));
   if (action?.status !== 'planned' || !['muse', 'dave'].includes(action.delivery_owner) ||
-      (task?.approved!==true&&!planning) || !d || d.version !== 1 ||
+      (task?.approved!==true&&!planning) ||
+      (['scope_plan','scope_plan_update'].includes(action?.type)&&!planning) ||
+      !d || d.version !== 1 ||
       !safeName(d.task_id) || !safeName(d.project?.id) || !safeName(d.provider) ||
       !['chatgpt', 'claude'].includes(d.provider) ||
       !['start_new_chat', 'continue_existing_chat'].includes(d.intent) ||
