@@ -112,3 +112,86 @@ export function publishEmergencyViaGit({repo=settings.ledger.repo,
   }
   throw Error('Emergency delivery unconfirmed');
 }
+
+
+// Durable private-ledger compare-and-swap over ordinary Git. Concurrent
+// writers are rejected by the non-force main push and retried from fresh main.
+// Muse reads the exact same state.json and projection as before.
+export async function transactLedgerViaGit({repo=settings.ledger.repo,token,
+  transform,maxRetries=3,remoteUrl=null,run=spawnSync}={}) {
+ if(repo!==settings.ledger.repo||!token||typeof transform!=='function'||
+    !Number.isInteger(maxRetries)||maxRetries<1||maxRetries>5)
+   throw Error('Invalid Git ledger transaction');
+ const env=gitAuthEnvironment(token);
+ for(let attempt=0;attempt<maxRetries;attempt++){
+  const root=mkdtempSync(join(tmpdir(),'dispatcher-ledger-txn-'));
+  try{
+   git(['clone','-q','--depth','1','--branch','main',
+     remoteUrl||gitUrl(repo),root],{env,run});
+   const file=join(root,settings.ledger.path);
+   const state=assertLedgerShape(JSON.parse(readFileSync(file,'utf8')));
+   const updated=await transform(structuredClone(state));
+   if(updated===null)return {committed:false,state};
+   updated.updated_at=new Date().toISOString();
+   updated.owner_alerts||={};
+   sanitizeLedger(updated);
+   writeFileSync(file,JSON.stringify(updated,null,2)+'\n');
+   const view=join(root,settings.ledger.owner_view_path);
+   mkdirSync(dirname(view),{recursive:true});
+   writeFileSync(view,renderPrivateQueue(updated,{repo})+'\n');
+   git(['add','--',settings.ledger.path,settings.ledger.owner_view_path],{cwd:root,env,run});
+   if(!git(['status','--porcelain'],{cwd:root,env,run}))
+     return {committed:false,state};
+   const old=git(['rev-parse','HEAD'],{cwd:root,env,run});
+   git(identity(['commit','-q','-m','chore(dispatcher): reconcile private task ledger']),
+     {cwd:root,env,run});
+   try{
+    git(['push','origin','HEAD:refs/heads/main'],{cwd:root,env,run});
+    return {committed:true,state:updated};
+   }catch{
+    const remote=git(['ls-remote','origin','refs/heads/main'],{cwd:root,env,run})
+      .split(/\s+/)[0];
+    if(remote===old)throw Error('Git ledger push unavailable, not a CAS conflict');
+    if(attempt===maxRetries-1)throw Error('Git ledger CAS retry limit reached');
+   }
+  }finally{rmSync(root,{recursive:true,force:true});}
+ }
+ throw Error('Git ledger retry limit reached');
+}
+
+export function publishOwnerQueueViaGit({repo=settings.ledger.repo,token,
+  remoteUrl=null,run=spawnSync,maxRetries=3}={}) {
+ if(repo!==settings.ledger.repo||!token)throw Error('Invalid private queue Git transport');
+ const env=gitAuthEnvironment(token);
+ for(let i=0;i<maxRetries;i++){
+  const root=mkdtempSync(join(tmpdir(),'dispatcher-private-queue-'));
+  try{
+   git(['clone','-q','--depth','1','--branch','main',
+     remoteUrl||gitUrl(repo),root],{env,run});
+   const state=assertLedgerShape(JSON.parse(
+     readFileSync(join(root,settings.ledger.path),'utf8')));
+   state.owner_alerts||={};
+   const view=renderPrivateQueue(state,{repo})+'\n';
+   const file=join(root,settings.ledger.owner_view_path);
+   mkdirSync(dirname(file),{recursive:true});
+   let prior='';
+   try{prior=readFileSync(file,'utf8');}catch{}
+   if(prior===view)return {status:'unchanged'};
+   writeFileSync(file,view);
+   git(['add','--',settings.ledger.owner_view_path],{cwd:root,env,run});
+   const old=git(['rev-parse','HEAD'],{cwd:root,env,run});
+   git(identity(['commit','-q','-m','chore(dispatcher): refresh private Muse queue']),
+     {cwd:root,env,run});
+   try{
+    git(['push','origin','HEAD:refs/heads/main'],{cwd:root,env,run});
+    return {status:'updated'};
+   }catch{
+    const remote=git(['ls-remote','origin','refs/heads/main'],{cwd:root,env,run})
+      .split(/\s+/)[0];
+    if(remote===old)throw Error('Private owner queue Git push unavailable');
+    if(i===maxRetries-1)throw Error('Private owner queue CAS retries exhausted');
+   }
+  }finally{rmSync(root,{recursive:true,force:true});}
+ }
+ throw Error('Private owner queue Git retries exhausted');
+}
