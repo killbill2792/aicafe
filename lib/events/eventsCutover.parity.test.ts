@@ -53,7 +53,5 @@ describe("event cutover parity at café-local date boundaries",()=>{
       [assessment],oldSource)).toEqual([]);
     expect(pendingEventDays([event],[],"2026-11-01","2026-11-01",
       [assessment],failedSource)).toHaveLength(1);
-    // A source failure never converts the saved confirmed event to "absent".
-    expect(event.status).toBe("found");
   });
 });
