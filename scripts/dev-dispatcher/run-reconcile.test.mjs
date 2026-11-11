@@ -28,8 +28,9 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
   const errors = [];
   const taskById = new Map(['bad', 'good', 'POS0b', 'POS0c', 'POS0d', 'POS0e', '6']
     .map(id => [id, task(id)]));
+  const sourceQueue={tasks:[...taskById.values()]};
   const deps = {
-    queue: { tasks: [...taskById.values()] }, taskById, settings,
+    queue: sourceQueue, taskById, settings,
     receiptScan: { accepted: receipts, rejected: [], complete: true },
     actorMap: {}, console: { error: message => errors.push(message), log: () => {} },
     linkPullRequests: state => ({ state: structuredClone(state), unmapped: [] }),
@@ -52,6 +53,13 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     repo: 'killbill2792/aicafe',
     process: {env:{}},
     applyOwnerStartApprovals: startApproval,
+    advanceApprovedProposals: state => state,
+    selectScopePlans: () => ({}),
+    queueScopePlanReviews: state => state,
+    acceptScopePlanDecisions: state => state,
+    effectiveSignedQueue: queue => queue,
+    sourceQueue,
+    scopeComments:[],
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},
     wakePendingOwnerNotices: () => {},
@@ -242,4 +250,20 @@ test('a cached merged PR never downgrades or cancels its existing landing repair
  assert.equal(fromGitHub.tasks.T.merged_at,at);
  assert.equal(fromGitHub.tasks.T.last_landing_check_at,last);
  assert.equal(fromGitHub.actions[id].status,'planned');
+});
+
+test('actual reconciler preserves unsigned scope handoff and signed coding continuation',()=>{
+ const {run}=harness();
+ const state=initial({'7':{task_id:'7',agent:'chatgpt',approved:false,
+   planning_approved:true,status:'scope_planning',
+   approval_hash:'a'.repeat(64)}},{
+   'scope_plan:7:notice':{type:'scope_plan',task_id:'7',status:'planned',delivery_owner:'muse'}
+ });
+ const next=run(state).state;
+ assert.equal(next.actions['scope_plan:7:notice'].status,'planned');
+ const coding=initial({'7':{task_id:'7',agent:'chatgpt',approved:true,status:'assigned',
+   approval_hash:'b'.repeat(64)}},{
+   'assign:7':{type:'begin_scoped_coding',task_id:'7',status:'planned',delivery_owner:'muse'}
+ });
+ assert.equal(run(coding).state.actions['assign:7'].status,'planned');
 });

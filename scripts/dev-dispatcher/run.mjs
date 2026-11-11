@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import {settings} from './settings.mjs';
 import {loadQueue} from './queue-source.mjs';
+import {advanceApprovedProposals} from './proposal-stage.mjs';
+import {selectScopePlans,queueScopePlanReviews,acceptScopePlanDecisions,
+  effectiveSignedQueue} from './scope-authority.mjs';
 import {selectObservation,shouldRecheckMergedLanding} from './event-selection.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
@@ -46,9 +49,10 @@ async function main() {
   }
   const ledger = ledgerRepo && ledgerToken ? new GitHubLedger({ repo: ledgerRepo, token: ledgerToken, path:settings.ledger.path }) : null;
   const gh = new GitHubFacts({ repo, token: githubToken });
-  const queue = await loadQueue({github:gh,config:settings});
-  validateQueue(queue);
-  const taskById = new Map(queue.tasks.map(task => [task.id, task]));
+  const sourceQueue = await loadQueue({github:gh,config:settings});
+  validateQueue(sourceQueue);
+  let queue=sourceQueue;
+  let taskById = new Map(queue.tasks.map(task => [task.id, task]));
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
   async function observe(state) {
     let eventPayload={};
@@ -122,6 +126,8 @@ async function main() {
           ? applied.state.tasks?.[rc.target.task_id]
           : Object.values(applied.state.tasks||{}).find(t=>t.pr_number===rc.target?.pr_number);
         recognized=Boolean(task?.owner_reply_events?.[rc.event_id])||
+          Boolean(rc.target?.task_id &&
+            applied.state.owner_proposal_replies?.[rc.target.task_id]?.[rc.event_id])||
           Boolean(rc.target?.branch&&applied.state.branch_chat_links?.[rc.target.branch]?.conversation_url===rc.text?.trim());
       }else{
         const action=applied.state.actions?.[rc.action_id];
@@ -153,9 +159,18 @@ async function main() {
     },new Date().toISOString());
     const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
       minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
-    const remaining=linkPullRequests(safety,observed.snapshot).unmapped;
-    const copy = noticeOperationalIssues(queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
-      {unmappedPrs:remaining,openPrs:observed.snapshot,queue}),{snapshot:observed.snapshot,scan:receiptScan});
+    // A GitHub planning comment is evidence, NOT approval. It is bound to
+    // a submitted scope-plan action and source-version, then proposed to Muse.
+    const plans=selectScopePlans(scopeComments,sourceQueue,safety);
+    const scopeNotices=queueScopePlanReviews(safety,sourceQueue,plans);
+    const scopeApproved=acceptScopePlanDecisions(scopeNotices,sourceQueue,plans);
+    queue=effectiveSignedQueue(sourceQueue,scopeApproved,plans);
+    taskById=new Map(queue.tasks.map(t=>[t.id,t]));
+    const remaining=linkPullRequests(scopeApproved,observed.snapshot).unmapped;
+    const copy = advanceApprovedProposals(
+      noticeOperationalIssues(queueOwnerAlerts(applyOwnerStartApprovals(scopeApproved,queue),
+        {unmappedPrs:remaining,openPrs:observed.snapshot,queue}),
+        {snapshot:observed.snapshot,scan:receiptScan}),queue);
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakePendingOwnerNotices(copy, Date.now());
@@ -200,14 +215,19 @@ async function main() {
     for (const assignment of assignments) {
       const key = assignmentActionKey(copy, assignment.task_id, queue);
       if (!key) continue;
-      const record = { task_id: assignment.task_id, status: "assigned",
-        agent: assignment.agent, branch: settings.naming.branch_prefix+assignment.task_id, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
-        approval_hash: approvalSignature(taskById.get(assignment.task_id)),
-        prompt_id: `task:${assignment.task_id}`, prompt_version: "v2" };
+      const prior=copy.tasks[assignment.task_id]||{};
+      const reusePlan=prior.scope_plan_completed===true&&Boolean(prior.conversation_ref);
+      const actionType=reusePlan?'begin_scoped_coding':'assign';
+      const record = {...prior,task_id:assignment.task_id,status:'assigned',
+        agent:reusePlan?'chatgpt':assignment.agent,
+        branch:settings.naming.branch_prefix+assignment.task_id,
+        base_branch:assignment.base_branch,prerequisite_pr:assignment.prerequisite_pr,
+        approved:true,approval_hash:approvalSignature(taskById.get(assignment.task_id)),
+        prompt_id:`task:${assignment.task_id}`,prompt_version:'v2'};
       let delivery;
       try {
         delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
-          action: "assign", actionId: key });
+          action: actionType, actionId: key });
       } catch (error) {
         console.error(`Task ${assignment.task_id} delivery creation failed: ${error.message}`);
         copy.owner_alerts=queueOwnerIssue(copy,{kind:'assignment_build_failed',
@@ -217,7 +237,7 @@ async function main() {
       }
       assigned.push(assignment);
       copy.actions[key] = { ...assignment, task_id: assignment.task_id,
-        type: "assign", status: "planned", delivery_owner: "muse", created_at: now, delivery };
+        type: actionType, status: "planned", delivery_owner: "muse", created_at: now, delivery };
       copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
@@ -229,7 +249,7 @@ async function main() {
       // built successfully. Other obsolete undelivered prompts may be dropped.
       const superseded=[];
       for(const action of Object.values(copy.actions)) {
-        if(action.task_id!==id||action.status!=='planned'||['assign','landing_failed'].includes(action.type))continue;
+        if(action.task_id!==id||action.status!=='planned'||['assign','scope_plan','scope_plan_update','begin_scoped_coding','landing_failed'].includes(action.type))continue;
         if(action.delivery?.action_id===proposal.key)continue;
         if(rec.codex_state==='findings'&&action.type==='codex_comments'&&
            action.head_sha===rec.head_sha&&proposal.kind!=='propose')continue;
@@ -337,6 +357,25 @@ async function main() {
     ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])],
        processed:current.receipt_processed_files||{}})
     : {accepted:[],rejected:[],complete:false,scan_error:'private_ledger_unavailable'};
+  // Read only the existing owner-control issue; no new PR/queue/scheduler.
+  // The GitHub login and submitted scope-plan action verify provenance.
+  const needsScopeRead=Object.values(current.tasks||{}).some(t=>
+    t.planning_approved||t.scope_approval_hash);
+  let scopeComments=[];
+  if(needsScopeRead){
+    // GitHub returns oldest comments first. Fetch the current LAST bounded
+    // page, not the first 100: later plans would otherwise be invisible.
+    // Previous exact owner-approved scopes are retained in the private ledger.
+    const issue=await gh.request('/issues/'+settings.owner.dashboard_issue);
+    const count=Number(issue.comments);
+    if(!Number.isSafeInteger(count)||count<0)
+      throw Error('Cannot verify owner-control issue comment count');
+    const page=Math.max(1,Math.ceil(count/100));
+    scopeComments=await gh.request('/issues/'+settings.owner.dashboard_issue+
+      '/comments?per_page=100&page='+page);
+    if(!Array.isArray(scopeComments)||scopeComments.length>100)
+      throw Error('Invalid bounded scope plan comment batch');
+  }
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
   proposed.state=recordDrift(trackScheduleGap(proposed.state,{

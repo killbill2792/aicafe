@@ -204,3 +204,47 @@ test('closed-PR landing authorization is exact merge-SHA scoped for queued and a
   assert.notEqual(stale.actions.landing.status,'planned',id);
  }
 });
+
+
+test('revoking an unshipped signed coding continuation cancels it; later Muse yes resumes same verified planning chat',()=>{
+ const rec={task_id:'6',agent:'chatgpt',approved:true,planning_approved:true,
+   scope_plan_completed:true,conversation_ref:'https://chatgpt.com/c/planning-6',
+   scope_approval_event_id:'first-yes',approval_hash:signed,status:'assigned',
+   pr_number:null};
+ const pending={version:1,tasks:{'6':rec},
+   actions:{'assign:6':{type:'begin_scoped_coding',task_id:'6',
+     status:'planned',delivery_owner:'muse'}}};
+ const unsigned={...task,state:'proposed',architecture_approval:null,exclusive_files:[]};
+ revalidateQueuedActions(pending,new Map([['6',unsigned]]));
+ assert.equal(pending.tasks['6'].status,'blocked_needs_owner');
+ assert.equal(pending.tasks['6'].approved,false);
+ assert.equal(pending.actions['assign:6'].status,'cancelled_approval_changed');
+ assert.equal(pending.tasks['6'].conversation_ref,'https://chatgpt.com/c/planning-6');
+
+ // A later independent, exact scope YES has a NEW authenticated receipt ID.
+ pending.tasks['6'].planning_approved=true;
+ pending.tasks['6'].scope_approval_event_id='second-yes';
+ revalidateQueuedActions(pending,tasks());
+ assert.equal(pending.tasks['6'].status,'proposed');
+ assert.equal(pending.tasks['6'].approved,true);
+ assert.equal(pending.tasks['6'].scope_plan_completed,true);
+ assert.equal(pending.tasks['6'].conversation_ref,'https://chatgpt.com/c/planning-6');
+ const key=assignmentActionKey(pending,'6');
+ assert.match(key,/^assign:6:scope-[a-f0-9]{64}$/);
+ pending.actions[key]={task_id:'6',type:'begin_scoped_coding',status:'planned'};
+ assert.equal(assignmentActionKey(pending,'6'),null);
+ assert.equal(pending.actions['assign:6'].status,'cancelled_approval_changed');
+});
+
+test('reissue after revoked scoped coding is forbidden after a claim or uncertain browser send',()=>{
+ for(const field of [{claimed_at:'2026-11-11T10:15:00Z'},{status:'uncertain'},
+                     {receipt:{courier:'muse'}},{delivery_claim:{owner:'muse'}}]){
+  const rec={task_id:'6',status:'proposed',agent:'chatgpt',approved:true,
+   approval_hash:signed,conversation_ref:'https://chatgpt.com/c/planning-6',
+   scope_plan_completed:true,scope_approval_event_id:'new-yes'};
+  const state={version:1,tasks:{'6':rec},actions:{'assign:6':{
+   task_id:'6',type:'begin_scoped_coding',
+   status:'cancelled_approval_changed',...field}}};
+  assert.equal(assignmentActionKey(state,'6'),null);
+ }
+});
