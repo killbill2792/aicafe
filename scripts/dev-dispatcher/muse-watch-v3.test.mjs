@@ -141,7 +141,7 @@ test('429 cooldown survives repeated polls and stops GitHub wake storm',async()=
  const refreshed=museRecoveryCandidates(inspectMuseHealth(state,{now:due}),state,{...identity,now:due});
  const newer=planMuseBacklog(after,refreshed,due);
  const item=Object.values(newer.items).find(x=>x.request.intent==='RECONCILE');
- assert.equal(item.request.requested_at,due);
+ assert.equal(item.request.requested_at,new Date(due).toISOString());
  assert.notEqual(item.request.request_id,old.request.request_id);
 });
 test('GitHub acknowledged wake is not resent on the next minute',()=>{
