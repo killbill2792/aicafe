@@ -128,7 +128,9 @@ test('fatal dispatcher request error is saved as one owner Muse alert before an 
  const {reportFatalDispatcherError}=await import('./notifications.mjs');
  let state={tasks:{},actions:{},owner_alerts:{}},wakes=0;
  const ledger={transaction:async fn=>{const next=fn(state);
-  const committed=JSON.stringify(next)!==JSON.stringify(state);state=next;return {committed};}};
+  if(next===null)return {committed:false,state}; // real CAS no-op contract
+  const committed=JSON.stringify(next)!==JSON.stringify(state);
+  if(committed)state=next;return {committed,state};}};
  await reportFatalDispatcherError({ledger,sha:'a'.repeat(40),message:'403 request denied',
   wake:async()=>{wakes++;}});
  await reportFatalDispatcherError({ledger,sha:'a'.repeat(40),message:'403 request denied',
