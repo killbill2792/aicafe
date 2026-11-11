@@ -224,3 +224,30 @@ test('Muse detects an old pending CI head without claiming failure or completion
  assert.ok(museRecoveryCandidates(health,s,identity).some(x=>x.intent==='RECONCILE'));
  assert.ok(!JSON.stringify(health).includes('CI_FAILED'));
 });
+
+
+test('missing PR writer becomes a precise Muse owner incident, not repeated impossible POSTs',()=>{
+ const chat='https://chatgpt.com/c/approved-chat';
+ const root={task_id:'T2',status:'assigned',approved:true,
+   approval_hash:'a'.repeat(64),conversation_ref:chat,
+   last_submission_at:'2026-11-11T09:00:00Z'};
+ const delivered={task_id:'T2',type:'assign',status:'submitted',delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'start_new_chat',
+     conversation_url:null,approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:chat}};
+ for(const reason of ['missing_pr_creator_install_token','pr_creator_permission_denied']){
+   const s={...state,updated_at:now,schedule_health:{last_schedule_at:now},
+     tasks:{T2:{...root,github_effects:{CREATE_DRAFT_PR:{
+       operation:'CREATE_DRAFT_PR',status:'blocked',reason}}}},
+     actions:{initial:delivered},owner_alerts:{}};
+   const health=inspectMuseHealth(s,{now});
+   assert.deepEqual(health.incidents.map(x=>x.kind),['GITHUB_PR_WRITE_UNAVAILABLE']);
+   assert.equal(health.incidents[0].action,'MUSE_NOTIFY_OWNER');
+   assert.equal(health.incidents[0].reason,reason);
+   assert.deepEqual(museRecoveryCandidates(health,s,identity),[],
+     'No repeated GitHub create action while writer permission is unavailable');
+   const unsigned={...s,actions:{}};
+   assert.equal(inspectMuseHealth(unsigned,{now}).incidents.length,0,
+     'Unsigned chat URLs must not generate owner credential incidents');
+ }
+});
