@@ -4,6 +4,7 @@ import {loadQueue} from './queue-source.mjs';
 import {advanceApprovedProposals} from './proposal-stage.mjs';
 import {selectScopePlans,queueScopePlanReviews,acceptScopePlanDecisions,
   effectiveSignedQueue,queueScopePlanRecovery} from './scope-authority.mjs';
+import {fetchScopeComments} from './scope-comments.mjs';
 import {selectObservation,shouldRecheckMergedLanding} from './event-selection.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
@@ -162,8 +163,16 @@ async function main() {
     // A GitHub planning comment is evidence, NOT approval. It is bound to
     // a submitted scope-plan action and source-version, then proposed to Muse.
     const plans=selectScopePlans(scopeComments,sourceQueue,safety);
-    const recovered=queueScopePlanRecovery(safety,sourceQueue,scopeComments,plans,{
-      checkMinutes:Number(process.env.DISPATCH_PLANNING_STATUS_CHECK_MINUTES)||30});
+    // An incomplete GitHub read is an outage, not proof that a plan vanished.
+    // Existing authenticated notices/scopes remain durable in the ledger.
+    const recovered=scopeFetchError ? queueOwnerIssue(safety,{
+      kind:'scope_issue_read_failed',identity:String(settings.owner.dashboard_issue),
+      message:'Could not read all GitHub scope comments: '+scopeFetchError,
+      needs:'GitHub retries this read on the next reconciliation; Muse can inspect the private queue'
+    }) : resolveOwnerIssueIdentity(queueScopePlanRecovery(
+      safety,sourceQueue,scopeComments,plans,{
+        checkMinutes:Number(process.env.DISPATCH_PLANNING_STATUS_CHECK_MINUTES)||30}),
+      {kind:'scope_issue_read_failed',identity:String(settings.owner.dashboard_issue)});
     const scopeNotices=queueScopePlanReviews(recovered,sourceQueue,plans);
     const scopeApproved=acceptScopePlanDecisions(scopeNotices,sourceQueue,plans);
     queue=effectiveSignedQueue(sourceQueue,scopeApproved,plans);
@@ -363,20 +372,13 @@ async function main() {
   // The GitHub login and submitted scope-plan action verify provenance.
   const needsScopeRead=Object.values(current.tasks||{}).some(t=>
     t.planning_approved||t.scope_approval_hash);
-  let scopeComments=[];
+  let scopeComments=[],scopeFetchError=null;
   if(needsScopeRead){
-    // GitHub returns oldest comments first. Fetch the current LAST bounded
-    // page, not the first 100: later plans would otherwise be invisible.
-    // Previous exact owner-approved scopes are retained in the private ledger.
-    const issue=await gh.request('/issues/'+settings.owner.dashboard_issue);
-    const count=Number(issue.comments);
-    if(!Number.isSafeInteger(count)||count<0)
-      throw Error('Cannot verify owner-control issue comment count');
-    const page=Math.max(1,Math.ceil(count/100));
-    scopeComments=await gh.request('/issues/'+settings.owner.dashboard_issue+
-      '/comments?per_page=100&page='+page);
-    if(!Array.isArray(scopeComments)||scopeComments.length>100)
-      throw Error('Invalid bounded scope plan comment batch');
+    try {scopeComments=await fetchScopeComments(gh,settings.owner.dashboard_issue);}
+    catch(error){
+      scopeFetchError=String(error?.message||error).slice(0,160);
+      console.error('Scope issue comment snapshot incomplete: '+scopeFetchError);
+    }
   }
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
