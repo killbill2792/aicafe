@@ -1,4 +1,5 @@
 import { ZodError } from "zod";
+import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason } from "@/lib/ai/supervisor/runs/usage.server";
 import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
@@ -96,8 +97,13 @@ export async function runAgentTurn(args: {
   onAuditStep?: (step: AgentAuditStep) => void;
 }): Promise<AgentTurn> {
   if(!args.context.timezone)throw new Error("cafe_timezone_required");
-  const now = args.now ?? Date.now, started = now(), deadline = started + 60000;
-  const workDeadline = deadline - 12000; // reserve time for the final no-tool answer
+  const now = args.now ?? Date.now, started = now();
+  // Only the durable cron worker supplies a stricter per-run cap. Ordinary
+  // interactive turns retain their existing 60-second limits unchanged.
+  const workerBudget = currentWorkerBudget();
+  const turnMs = Math.min(60000, workerBudget?.maxElapsedMs ?? 60000);
+  const deadline = started + turnMs;
+  const workDeadline = deadline - Math.min(12000, Math.floor(turnMs / 5)); // final-answer reserve
   const controller = new AbortController();
   const provider = args.provider ?? openAIProvider;
   const localDay=new Date(args.context.asOf+"T12:00:00Z");
@@ -150,6 +156,11 @@ export async function runAgentTurn(args: {
     result:{source:'owner_facts',period:null,missing:['ownerFactsReadFailed'],error:'owner_facts_read_failed'}});
   const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0, model: undefined as string|undefined };
+  const budgetStop = () => workerBudget ? usageStopReason({
+    elapsedMs: Math.max(0, now() - started), modelCalls: usage.modelCalls,
+    toolCalls: usage.toolCalls, inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+  }, workerBudget) : null;
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
   let askedQuestion:string|null=null;
   const model = configuredSupervisorModel();
@@ -168,7 +179,7 @@ export async function runAgentTurn(args: {
       try{
         const result=await underlyingWebSearch(query,{
           reserveModelCall:()=>{
-            if(usage.modelCalls>=5||now()>=workDeadline)return false;
+            if(usage.modelCalls>=5||now()>=workDeadline||budgetStop())return false;
             usage.modelCalls++;
             reserved=true;
             return true;
@@ -193,7 +204,7 @@ export async function runAgentTurn(args: {
     tools: [...agentToolDefinitions.filter(t=>!args.toolNames||args.toolNames.includes(t.name as AgentToolName)),
       ...(args.toolNames?[]:args.extraTools??[])],
     tool_choice: final ? "none" : "auto", stream: true,
-    max_output_tokens: 1200, prompt_cache_key: agentPromptCacheKey(), input,
+    max_output_tokens: Math.max(1,Math.min(1200,workerBudget ? workerBudget.maxOutputTokens - usage.outputTokens : 1200)), prompt_cache_key: agentPromptCacheKey(), input,
   });
   const call = async (final: boolean) => {
     const calls: ToolCall[] = [], output: unknown[] = [];
@@ -203,6 +214,7 @@ export async function runAgentTurn(args: {
     let completed = false;
     const remaining = (final ? deadline : workDeadline) - now();
     if (remaining <= 0) throw new Error("deadline");
+    if (budgetStop()) throw new Error("worker_budget");
     const timeout = setTimeout(() => controller.abort(), remaining);
     try {
       usage.modelCalls++;
@@ -253,12 +265,16 @@ export async function runAgentTurn(args: {
   try {
     for (let round = 0; round < 5; round++) {
       if (now() >= workDeadline) { endReason = "timeout"; break; }
+      const cap = budgetStop();
+      if (cap) { endReason = cap; break; }
       if (round > 0) await readFollowUps();
       if(usage.modelCalls>=5){endReason="budget";break;}
       let calls: ToolCall[];
       try { calls = await call(false); }
       catch { endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
       if (!calls.length) {
+        const cap = budgetStop();
+        if (cap) { endReason = cap; break; }
         // The owner added something while this answer streamed: answer it in the
         // same reply (one extra bounded call) instead of silently dropping it.
         if (round < 4 && usage.modelCalls < 5 && await readFollowUps()) {
@@ -270,8 +286,8 @@ export async function runAgentTurn(args: {
       }
       for (let index = 0; index < calls.length; index++) {
         const tool = calls[index];
-        if (usage.toolCalls >= 8 || now() >= workDeadline || failures >= 2) {
-          endReason = now() >= workDeadline ? "timeout" : failures >= 2 ? "tool_errors" : "budget";
+        if (usage.toolCalls >= 8 || now() >= workDeadline || failures >= 2 || budgetStop()) {
+          endReason = now() >= workDeadline || budgetStop() === "timeout" ? "timeout" : failures >= 2 ? "tool_errors" : "budget";
           for (const skipped of calls.slice(index)) {
             const error = endReason === "timeout" ? "deadline_exceeded" : endReason === "tool_errors" ? "tool_errors" : "budget_exceeded";
             input.push({ type: "function_call_output", call_id: skipped.call_id, output: JSON.stringify({ error }) });
@@ -412,8 +428,8 @@ export async function runAgentTurn(args: {
           for(const skipped of calls.slice(index+1))input.push({type:"function_call_output",call_id:skipped.call_id,output:JSON.stringify({error:"ask_owner_ends_turn"})});
           break;
         }
-        if (now() >= workDeadline || failures >= 2) {
-          endReason = now() >= workDeadline ? "timeout" : "tool_errors";
+        if (now() >= workDeadline || failures >= 2 || budgetStop()) {
+          endReason = now() >= workDeadline || budgetStop() === "timeout" ? "timeout" : budgetStop() === "budget" ? "budget" : "tool_errors";
           // Respond to all calls already returned in this response before the next request.
           for (const skipped of calls.slice(index + 1)) {
             input.push({ type: "function_call_output", call_id: skipped.call_id,
@@ -427,10 +443,10 @@ export async function runAgentTurn(args: {
       if(askedQuestion){if(!text.trim()){text=askedQuestion; // allowed: empty-reply fill
        }break;}
       if (endReason !== "complete") break;
-      if (round === 4 || usage.modelCalls>=5 || usage.toolCalls >= 8) { endReason = "budget"; break; }
+      if (round === 4 || usage.modelCalls>=5 || usage.toolCalls >= 8 || budgetStop()) { endReason = budgetStop() ?? "budget"; break; }
     }
     if (!finished && endReason === "complete") endReason = "budget";
-    if (!finished && usage.modelCalls < 6 && now() < deadline) {
+    if (!finished && usage.modelCalls < 6 && now() < deadline && !budgetStop()) {
       await readFollowUps();
       // Exactly one final no-tool request; never allow another model tool call.
       // Recovery is bounded even after provider disconnect/incomplete response.
@@ -482,6 +498,11 @@ export async function runAgentTurn(args: {
     }
   } finally { controller.abort(); }
   usage.latencyMs = now() - started;
+  // Charge this turn's actual provider/tool usage to the async-local durable
+  // run before the next continuation receives its remaining budget.
+  recordWorkerTurnUsage({ elapsedMs: Math.max(0, usage.latencyMs),
+    modelCalls: usage.modelCalls, toolCalls: usage.toolCalls,
+    inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
   const status = statusFromResults(results);
   const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),
     args.ownerText,...absorbed.map(m=>m.text)].join("\n");
