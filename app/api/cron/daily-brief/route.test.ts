@@ -9,8 +9,8 @@ const old={secret:process.env.CRON_SECRET,flag:process.env.DAILY_BRIEF_ENABLED};
 beforeEach(()=>{
   process.env.CRON_SECRET="the-private-cron-secret";delete process.env.DAILY_BRIEF_ENABLED;
   mocks.db.mockReset().mockReturnValue({});
-  mocks.send.mockReset().mockResolvedValue({checked:1,sent:1,skipped:0,failed:0});
-  mocks.dispatch.mockReset().mockResolvedValue({accepted:0});
+  mocks.send.mockReset().mockResolvedValue({checked:1,sent:1,skipped:0,failed:0,failureReasons:[]});
+  mocks.dispatch.mockReset().mockResolvedValue({accepted:0,retryResponses:0,failed:0,uncertain:0});
   mocks.enqueue.mockReset().mockResolvedValue(undefined);
 });
 afterEach(()=>{
@@ -30,9 +30,20 @@ describe("daily brief cron",()=>{
     process.env.DAILY_BRIEF_ENABLED="true";
     const on=await GET(req("Bearer the-private-cron-secret"));
     expect(on.status).toBe(200);
-    expect(await on.json()).toEqual({checked:1,sent:1,skipped:0,failed:0});
+    expect(await on.json()).toEqual({checked:1,sent:1,skipped:0,failed:0,failureReasons:[],
+      whatsapp:{accepted:0,retryResponses:0,failed:0,uncertain:0}});
     expect(mocks.send).toHaveBeenCalledWith({},expect.any(Date),expect.any(Function));
     expect(mocks.dispatch).toHaveBeenCalledWith({});
+  });
+  it("returns a non-2xx partial status when a café or provider outcome fails",async()=>{
+    process.env.DAILY_BRIEF_ENABLED="true";
+    mocks.send.mockResolvedValue({checked:2,sent:1,skipped:0,failed:1,
+      failureReasons:["brief_processing_failed"]});
+    mocks.dispatch.mockResolvedValue({accepted:0,retryResponses:1,failed:1,uncertain:0});
+    const res=await GET(req("Bearer the-private-cron-secret"));
+    expect(res.status).toBe(207);
+    expect(await res.json()).toMatchObject({checked:2,failed:1,
+      failureReasons:["brief_processing_failed"],whatsapp:{retryResponses:1,failed:1}});
   });
   it("hides error details",async()=>{
     process.env.DAILY_BRIEF_ENABLED="true";

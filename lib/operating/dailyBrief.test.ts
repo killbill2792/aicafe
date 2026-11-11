@@ -35,38 +35,78 @@ function useEvidence(e:MorningBriefEvidence,posComplete=true){
 }
 
 type Row=Record<string,unknown>;
+type FakeCafe={id:string;name:string;timezone:string|null;currency:string;is_demo:boolean;
+  open:string|null;owners:string[];thread?:boolean;locale?:string;already?:boolean;taskExists?:boolean};
 function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:string[];timezone?:string|null;
-  countFails?:boolean;locale?:string}={}){
+  countFails?:boolean;locale?:string;taskMissing?:boolean;cafes?:FakeCafe[]}={}){
   const writes:Row[]=[],runs:Row[]=[];
+  let runUpserts=0;
   inboxCount.fails=Boolean(o.countFails);
+  const cafes=o.cafes??[
+    {id:"b1",name:"Shop A",timezone:o.timezone===undefined?zone:o.timezone,currency:"USD",is_demo:false,
+      open:o.open===undefined?"06:30":o.open,owners:o.owners??["u1"],thread:o.thread,locale:o.locale,
+      already:o.already,taskExists:o.taskMissing?false:undefined},
+    {id:"demo",name:"Demo",timezone:zone,currency:"USD",is_demo:true,open:"06:30",owners:[]},
+  ];
   const q=(table:string)=>{
     const self:Record<string,unknown>={};
-    let scopedOwner:string|null=null,countQuery=false;
+    let scopedOwner:string|null=null,scopedBusiness:string|null=null,countQuery=false;
+    const filters:Record<string,string>={};
     for(const m of ["select","order","limit","in","neq","gte"])self[m]=()=>self;
     self.select=(_columns:string,options?:{head?:boolean})=>{countQuery=Boolean(options?.head);return self;};
     self.eq=(column:string,value:unknown)=>{
+      if(typeof value==="string")filters[column]=value;
+      if(column==="business_id"&&typeof value==="string")scopedBusiness=value;
       if((column==="user_id"||column==="owner_user_id")&&typeof value==="string")scopedOwner=value;
       return self;
     };
-    self.range=async()=>({data:table==="businesses"?[
-      {id:"b1",name:"Shop A",timezone:o.timezone===undefined?zone:o.timezone,currency:"USD",is_demo:false},
-      {id:"demo",name:"Demo",timezone:zone,currency:"USD",is_demo:true}]:
-      table==="memberships"?(o.owners??["u1"]).map(user_id=>({user_id})):[],error:null});
-    self.maybeSingle=async()=>({error:null,data:
-      table==="locations"?{open_hours:hours(o.open===undefined?"06:30":o.open)}:
-      table==="ai_messages"?(o.already?{id:"x",business_id:"b1",owner_user_id:scopedOwner??"u1",thread_id:"t1",
-        structured_content:[{type:"text",text:"Saved brief."}]}:null):
-      table==="memberships"?{user_id:scopedOwner??"u1"}:
-      table==="ai_threads"?(o.thread===false?null:{id:"t1"}):
-      table==="supervisor_proposals"?(o.locale?{locale:o.locale}:null):
-      table==="operating_tasks"&&o.already?{id:"task"}:null});
-    self.then=(r:(v:unknown)=>void)=>r(o.countFails&&countQuery?{count:null,error:{message:"down"}}:{count:2,error:null});
-    self.upsert=async(row:Row)=>{(table==="morning_brief_runs"?runs:writes).push({table,...row});return {error:null};};
+    self.range=async()=>{
+      if(table==="businesses")return {data:cafes.map(({id,name,timezone,currency,is_demo})=>({id,name,timezone,currency,is_demo})),error:null};
+      if(table==="memberships"){
+        const cafe=cafes.find(c=>c.id===scopedBusiness);
+        return {data:(cafe?.owners??[]).map(user_id=>({user_id})),error:null};
+      }
+      return {data:[],error:null};
+    };
+    self.maybeSingle=async()=>{
+      const cafe=cafes.find(c=>c.id===scopedBusiness)??cafes[0];
+      const owner=scopedOwner??cafe.owners[0]??"u1";
+      if(table==="morning_brief_runs"){
+        const row=runs.find(r=>r.business_id===filters.business_id&&r.local_date===filters.local_date&&
+          r.owner_key===filters.owner_key&&r.channel===filters.channel&&r.run_kind===filters.run_kind);
+        return {error:null,data:row?{outcome:row.outcome,reason:row.reason}:null};
+      }
+      return {error:null,data:
+        table==="locations"?{open_hours:hours(cafe.open)}:
+        table==="ai_messages"?(cafe.already?{id:briefMessageId(cafe.id,"2026-11-03",owner),
+          business_id:cafe.id,owner_user_id:owner,thread_id:"t-"+cafe.id+"-"+owner,
+          structured_content:[{type:"text",text:"Saved brief."}]}:null):
+        table==="memberships"?(cafe.owners.includes(owner)?{user_id:owner}:null):
+        table==="ai_threads"?(cafe.thread===false?null:{id:"t-"+cafe.id+"-"+owner}):
+        table==="supervisor_proposals"?(cafe.locale?{locale:cafe.locale}:null):
+        table==="operating_tasks"&&cafe.already&&cafe.taskExists!==false?{id:"task"}:null};
+    };
+    self.then=(resolve:(v:unknown)=>void)=>resolve(o.countFails&&countQuery?
+      {count:null,error:{message:"down"}}:{count:2,error:null});
+    self.upsert=async(row:Row,options?:{ignoreDuplicates?:boolean})=>{
+      if(table==="morning_brief_runs"){
+        runUpserts++;
+        const index=runs.findIndex(r=>r.business_id===row.business_id&&r.local_date===row.local_date&&
+          r.owner_key===row.owner_key&&r.channel===row.channel&&r.run_kind===row.run_kind);
+        if(index<0)runs.push({table,...row});
+        else if(!options?.ignoreDuplicates)runs[index]={...runs[index],...row};
+      }else writes.push({table,...row});
+      return {error:null};
+    };
     self.update=(row:Row)=>{writes.push({table,op:"update",...row});return self;};
-    self.insert=async(row:Row)=>{writes.push({table,...row});return {error:null};};
+    self.insert=async(row:Row)=>{
+      if(table==="ai_messages"&&writes.some(w=>w.table==="ai_messages"&&w.id===row.id))
+        return {error:{code:"23505"}};
+      writes.push({table,...row});return {error:null};
+    };
     return self;
   };
-  return {db:{from:q} as unknown as SupabaseClient,writes,runs};
+  return {db:{from:q} as unknown as SupabaseClient,writes,runs,get runUpserts(){return runUpserts;}};
 }
 const reasons=(runs:Row[])=>runs.map(r=>[r.owner_key,r.channel,r.outcome,r.step,r.reason]);
 
@@ -94,7 +134,7 @@ describe("sending the daily brief at each café's own time",()=>{
   beforeEach(()=>{vi.clearAllMocks();useEvidence(evidence());});
   it("posts one supervisor message in the owner's latest thread as soon as data is in, never for demo cafés",async()=>{
     const {db,writes,runs}=fakeDb();
-    expect(await sendDailyBriefs(db,at("05:00"))).toEqual({checked:1,sent:1,skipped:0,failed:0});
+    expect(await sendDailyBriefs(db,at("05:00"))).toEqual({checked:1,sent:1,skipped:0,failed:0,failureReasons:[]});
     expect(writes.map(r=>r.table)).toEqual(["ai_messages","operating_tasks","operating_tasks"]);
     expect(writes[0]).toMatchObject({id:briefMessageId("b1","2026-11-03","u1"),thread_id:"t1",owner_user_id:"u1",
       role:"supervisor"});
@@ -123,7 +163,7 @@ describe("sending the daily brief at each café's own time",()=>{
       expect([open,time,writes.some(w=>w.table==="ai_messages")]).toEqual([open,time,sends]);
     }
     // 9:00 café is not even checked at 05:00.
-    expect(await sendDailyBriefs(fakeDb({open:"09:00"}).db,at("05:00"))).toEqual({checked:0,sent:0,skipped:0,failed:0});
+    expect(await sendDailyBriefs(fakeDb({open:"09:00"}).db,at("05:00"))).toEqual({checked:0,sent:0,skipped:0,failed:0,failureReasons:[]});
   });
   it("late sync: waits with a recorded reason, then sends by the latest send time with what it has",async()=>{
     useEvidence(evidence({netSalesCents:null,sold:{available:false,linked:[],unlinked:[]}}),false);
@@ -161,6 +201,48 @@ describe("sending the daily brief at each café's own time",()=>{
     expect(nothing.writes).toHaveLength(0);
     expect(nothing.runs[0]).toMatchObject({step:"content",outcome:"skipped",reason:"nothing_to_say",
       details:{missing:["sales_not_in","items_not_in","events_unavailable"]}});
+  });
+  it("records a missed owner/day after the grace window and only once",async()=>{
+    const missed=fakeDb();
+    const afterOpen=new Date("2026-11-03T20:00:00Z"); // 12:00 café time, long after opening
+    expect(await sendDailyBriefs(missed.db,afterOpen)).toMatchObject({checked:1,skipped:1,failed:0});
+    expect(reasons(missed.runs)).toContainEqual(["u1","in_app","skipped","schedule","missed_send_window"]);
+    const writes=missed.runUpserts;
+    await sendDailyBriefs(missed.db,new Date("2026-11-03T20:05:00Z"));
+    expect(missed.runUpserts).toBe(writes);
+  });
+  it("isolates two owners in cafés with different timezones and opening times",async()=>{
+    const cafes:FakeCafe[]=[
+      {id:"cafe-la",name:"Shop LA",timezone:"America/Los_Angeles",currency:"USD",is_demo:false,
+        open:"06:30",owners:["owner-la"]},
+      {id:"cafe-ny",name:"Shop NY",timezone:"America/New_York",currency:"USD",is_demo:false,
+        open:"09:00",owners:["owner-ny"]},
+    ];
+    const {db,writes,runs}=fakeDb({cafes});
+    evidenceMock.read.mockImplementation(async(_db:unknown,cafe:{businessName:string;currency:string|null},
+      schedule:{today:string;yesterday:string},now:Date)=>{
+      const e=evidence({businessName:cafe.businessName,currency:cafe.currency,
+        today:schedule.today,yesterday:schedule.yesterday});
+      return {evidence:e,content:buildBriefContent(e,now),posComplete:true};
+    });
+    const result=await sendDailyBriefs(db,new Date("2026-11-03T13:50:00Z"));
+    expect(result).toMatchObject({checked:2,sent:2,failed:0});
+    const messages=writes.filter(r=>r.table==="ai_messages");
+    expect(messages.map(r=>r.id)).toEqual([
+      briefMessageId("cafe-la","2026-11-03","owner-la"),
+      briefMessageId("cafe-ny","2026-11-03","owner-ny"),
+    ]);
+    expect(writes.filter(r=>r.table==="operating_tasks"&&typeof r.id==="string"&&
+      r.id.startsWith("daily-brief:")).map(r=>[r.business_id,r.id])).toEqual([
+      ["cafe-la","daily-brief:2026-11-03:owner-la"],
+      ["cafe-ny","daily-brief:2026-11-03:owner-ny"],
+    ]);
+    expect(runs.filter(r=>r.channel==="in_app").map(r=>[
+      r.business_id,r.owner_key,r.local_date,(r.details as Row).phase,(r.details as Row).latestSend,
+    ])).toEqual([
+      ["cafe-la","owner-la","2026-11-03","fallback","06:00"],
+      ["cafe-ny","owner-ny","2026-11-03","late","08:30"],
+    ]);
   });
   it("an unreadable attention count never becomes 'nothing needs you'",async()=>{
     const {db,writes}=fakeDb({countFails:true});

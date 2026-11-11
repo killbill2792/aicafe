@@ -130,7 +130,7 @@ describe("morning brief to WhatsApp",()=>{
   it("a failed outbox never loses the web record and is recorded as a WhatsApp failure",async()=>{
     const {db,mutations,runs}=dbFactory();
     expect(await sendDailyBriefs(db,morning,async()=>{throw new Error("queue_offline");}))
-      .toEqual({checked:1,sent:1,skipped:0,failed:0});
+      .toEqual({checked:1,sent:1,skipped:0,failed:1,failureReasons:["whatsapp_enqueue_error"]});
     expect(mutations.map(m=>m.table)).toEqual(["ai_messages","operating_tasks","operating_tasks"]);
     expect(runs.find(r=>r.channel==="whatsapp")).toMatchObject({outcome:"failed",reason:"whatsapp_enqueue_error"});
   });
