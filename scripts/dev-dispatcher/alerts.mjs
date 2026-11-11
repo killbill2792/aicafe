@@ -78,6 +78,9 @@ export function wakePendingOwnerNotices(state,nowMs,intervalMs=900000){
 export function queueOwnerIssue(state,{kind,task_id=null,pr_number=null,identity='',message,needs='investigation'}){
  const next=structuredClone(state);next.owner_alerts||={};
  if(typeof message!=='string'||!message.trim())return next;
+ // Historic operational notices had only a hashed key; preserve their ACK.
+ const legacy=next.owner_alerts['notice:'+noticeHash({kind,task_id,pr_number,identity})];
+ if(legacy&&!Object.hasOwn(legacy,'identity'))legacy.identity=identity;
  // Retain every authenticated notice receipt as history. A resolved outage
  // may recur, but must get a fresh notice hash instead of overwriting an ACK.
  const old=Object.values(next.owner_alerts).filter(n=>n.kind===kind&&
