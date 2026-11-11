@@ -7,17 +7,32 @@ import {readFileSync,writeFileSync,mkdirSync,existsSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {createHash} from 'node:crypto';
 import {recoveryIdentity} from './recovery-v3.mjs';
+import {dispatchFrontier} from './core.mjs';
+import {dispatchPreferences} from './owner-controls-v3.mjs';
 const time=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?Date.parse(v):null;
 const ago=(stamp,clock)=>time(stamp)===null?null:Math.floor((clock-time(stamp))/60000);
 const sha=s=>createHash('sha256').update(JSON.stringify(s)).digest('hex');
 const asIso=clock=>new Date(clock).toISOString();
+export function inspectMuseEligibleTasks(queue,state){
+  if(!queue)return [];
+  // Muse reads the SAME signed DAG and owner preferences as GitHub. This is
+  // an advisory eligibility check, never a second approval or task mutation.
+  return dispatchFrontier(queue,state.tasks,null,dispatchPreferences(state))
+    .map(a=>({task_id:a.task_id,agent:a.agent,base_branch:a.base_branch,
+      prerequisite_pr:a.prerequisite_pr||null}));
+}
 export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGapMinutes=15,
-  codingIdleMinutes=20,deliveryGapMinutes=15}={}){
+  codingIdleMinutes=20,deliveryGapMinutes=15,queue=null}={}){
   if(state?.version!==1||!state.tasks||!state.actions)throw Error('Invalid private ledger');
   const clock=time(now);
   if(clock===null||[scheduleGapMinutes,codingIdleMinutes,deliveryGapMinutes].some(v=>
     !Number.isFinite(v)||v<1))throw Error('Invalid watchdog configuration');
   const incidents=[],tasks=[];
+  const eligible=inspectMuseEligibleTasks(queue,state);
+  if(eligible.length)
+    incidents.push({kind:'UNASSIGNED_APPROVED_TASKS',action:'RECONCILE',
+      task_id:null,tasks:eligible.map(x=>x.task_id),
+      note:'Muse suggests eligible tasks; GitHub alone revalidates assignment'});
   const scheduleAge=ago(state.schedule_health?.last_schedule_at,clock);
   if(scheduleAge===null||scheduleAge>scheduleGapMinutes)
     incidents.push({kind:'GITHUB_SCHEDULE_STALE',
@@ -58,7 +73,8 @@ export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGa
   const reset=time(state.api_pause?.until);
   return {observed_at:now,schedule_age_minutes:scheduleAge,ledger_age_minutes:ledgerAge,
     github_api_pause_until:reset&&reset>clock?state.api_pause.until:null,
-    incidents,tasks_suspected_stalled:tasks,healthy:incidents.length===0};
+    incidents,eligible_tasks:eligible,
+    tasks_suspected_stalled:tasks,healthy:incidents.length===0};
 }
 export function museRecoveryCandidates(health,state,{repo,actor,now=health?.observed_at}={}){
   if(!/^[\w.-]+\/[\w.-]+$/.test(repo||'')||!actor)throw Error('Invalid Muse identity');
@@ -67,7 +83,8 @@ export function museRecoveryCandidates(health,state,{repo,actor,now=health?.obse
   // One global reconciliation covers all infrastructure incidents. Specific
   // PR requests are hints; the GitHub engine still validates every gate.
   const intents=new Map();
-  if(health.incidents.some(i=>['GITHUB_SCHEDULE_STALE','LEDGER_STALE'].includes(i.kind)))
+  if(health.incidents.some(i=>['GITHUB_SCHEDULE_STALE','LEDGER_STALE',
+      'UNASSIGNED_APPROVED_TASKS'].includes(i.kind)))
     intents.set('global',{intent:'RECONCILE',task_id:null,pr_number:null,expected_head_sha:null});
   for(const i of health.incidents){
     if(!['SUSPECTED_CODING_STALL','CODEX_NOT_RECEIVED'].includes(i.kind))continue;
@@ -156,12 +173,13 @@ export function reconcileMuseBacklog(backlog,state){
   }
   return next;
 }
-export async function runMuseWatch({ledgerPath,backlogPath,repo,actor,token,now=new Date().toISOString(),
-  fetchImpl=fetch}={}){
+export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,actor,token,
+  now=new Date().toISOString(),fetchImpl=fetch}={}){
   if(!ledgerPath||!backlogPath)throw Error('Ledger snapshot and local backlog paths required');
   const state=JSON.parse(readFileSync(ledgerPath,'utf8'));
   const backlog=existsSync(backlogPath)?JSON.parse(readFileSync(backlogPath,'utf8')):null;
-  const health=inspectMuseHealth(state,{now});
+  const queue=queuePath?JSON.parse(readFileSync(queuePath,'utf8')):null;
+  const health=inspectMuseHealth(state,{now,queue});
   const candidates=museRecoveryCandidates(health,state,{repo,actor,now});
   const planned=planMuseBacklog(reconcileMuseBacklog(backlog||{version:1,items:{}},state),candidates,now);
   const delivered=await deliverMuseRecovery(planned,{token,now,fetchImpl,
@@ -171,8 +189,8 @@ export async function runMuseWatch({ledgerPath,backlogPath,repo,actor,token,now=
   return {health,delivery:delivered.results,backlog_path:backlogPath};
 }
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
-  const [ledgerPath,backlogPath]=process.argv.slice(2);
-  runMuseWatch({ledgerPath,backlogPath,repo:process.env.GITHUB_REPOSITORY,
+  const [ledgerPath,backlogPath,queuePath]=process.argv.slice(2);
+  runMuseWatch({ledgerPath,backlogPath,queuePath,repo:process.env.GITHUB_REPOSITORY,
     actor:process.env.MUSE_GITHUB_ACTOR,token:process.env.MUSE_GITHUB_WAKE_TOKEN})
     .then(r=>{console.log(JSON.stringify(r));if(!r.health.healthy)process.exitCode=2;})
     .catch(e=>{console.error('Muse watchdog unavailable: '+String(e.message));process.exitCode=1;});
