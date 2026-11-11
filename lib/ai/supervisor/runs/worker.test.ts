@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { executeDurableRun, reconcileVerifiedOwnerStep, type WorkerDependencies, type WorkerRun } from "./worker.server";
 import type { DurableRun, DurableRunRepository, RunScope, StepClaim, StepSpec } from "./contracts";
 import type { WorkerBudget, WorkerUsage } from "./usage.server";
