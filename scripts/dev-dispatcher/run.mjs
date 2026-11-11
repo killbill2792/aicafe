@@ -16,7 +16,7 @@ import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure, dispatchLandingCheck } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
-import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue,wakePendingOwnerNotices } from "./alerts.mjs";
+import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue,resolveOwnerIssueIdentity,wakePendingOwnerNotices } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
@@ -24,7 +24,7 @@ import {dispatchReceiptWake} from './wake.mjs';
 import {noticeOperationalIssues,reportFatalDispatcherError,reportProjectionFailure,reportProjectionRestored} from './notifications.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
-import {publishEmergencyViaGit} from "./git-operations.mjs";
+import {publishEmergencyViaGit,readApiPauseViaGit} from "./git-operations.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -36,6 +36,14 @@ async function main() {
   if(ledgerRepo!==settings.ledger.repo)throw Error('Dispatcher ledger/settings mismatch');
   const ledgerToken = process.env.DISPATCH_LEDGER_TOKEN;
   if (commit && (!ledgerRepo || !ledgerToken)) throw new Error("Cannot persist without private ledger repo and token");
+  if(commit){
+    const pause=readApiPauseViaGit({repo:ledgerRepo,token:ledgerToken});
+    if(pause&&Date.now()<Date.parse(pause.until)){
+      console.warn('Dispatcher GitHub API requests paused until '+pause.until+
+        ' following confirmed rate limit; Muse already has the owner incident.');
+      return;
+    }
+  }
   const ledger = ledgerRepo && ledgerToken ? new GitHubLedger({ repo: ledgerRepo, token: ledgerToken, path:settings.ledger.path }) : null;
   const gh = new GitHubFacts({ repo, token: githubToken });
   const queue = await loadQueue({github:gh,config:settings});
@@ -413,6 +421,14 @@ async function main() {
       const latest = JSON.stringify(existing)===JSON.stringify(current)
         ? observed : await observe(existing);
       let next = await applyCodexProvenance(reconcile(existing, latest).state,existing);
+      if(next.api_pause&&Date.now()>=Date.parse(next.api_pause.until||'')){
+        const identity=next.api_pause.identity;
+        next=resolveOwnerIssueIdentity(next,{kind:'dispatcher_emergency',identity});
+        delete next.api_pause;
+        next=queueOwnerIssue(next,{kind:'dispatcher_api_restored',identity,
+          message:'GitHub API reconciliation resumed after a recorded quota reset.',
+          needs:'Muse tell owner that dispatcher processing has resumed'});
+      }
       if(latest.audited)next.last_full_audit_at=new Date().toISOString();
        next=trackScheduleGap(next,{eventName:process.env.GITHUB_EVENT_NAME,
         now:new Date().toISOString(),observedScheduleAt:latest.lastScheduleAt});
@@ -779,7 +795,10 @@ main().catch(async error => {
  try{
     const queued=publishEmergencyViaGit({
       token:process.env.DISPATCH_LEDGER_TOKEN,
-      identity:'run:'+String(process.env.GITHUB_RUN_ID||'unknown')+':failure',
+      identity:error.code==='RATE_LIMIT'
+        ?'github_api_rate_limit:'+String(error.reset_at||'unknown')
+        :'run:'+String(process.env.GITHUB_RUN_ID||'unknown')+':failure',
+      resetAt:error.code==='RATE_LIMIT'?error.reset_at:null,
       message:detail,needs:'Muse notify owner; inspect failed dispatcher workflow'
     });
     console.error('Emergency Muse queue '+queued.status+'; delivery unconfirmed');
