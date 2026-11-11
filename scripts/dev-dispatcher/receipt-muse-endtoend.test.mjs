@@ -32,7 +32,7 @@ const original=()=>({version:1,updated_at:'2026-11-11T04:35:00Z',
     status:'draft_open',ci_state:'success',github_state:'open',pr_number:pr,
     branch,head_sha:'a'.repeat(40),conversation_ref:null}},
   actions:{[actionId]:{type:'assign',task_id:taskId,
-    status:'cancelled_stale_head',delivery_owner:'muse',delivery}},
+    status:'cancelled_stale_head',delivery_owner:'muse',delivery:structuredClone(delivery)}},
   owner_alerts:{},receipt_feedback:{},pr_chat_links:{}});
 const scanFor=(rec=receipt,{actor='trusted-muse',name=receiptFilename(rec)}={})=>{
  const path=settings.ledger.receipts_path+'/'+name;
