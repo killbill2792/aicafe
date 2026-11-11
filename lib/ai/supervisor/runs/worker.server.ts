@@ -150,6 +150,9 @@ export async function executeDurableRun(
           return stop("turn_incomplete", claim.claimToken, claim.key);
         const reason = usageStopReason(receipt.usage, budget);
         if (reason) await stop(reason === "timeout" ? "time_exceeded" : "budget_exceeded", claim.claimToken, claim.key);
+        // Owner access/cancellation may change while the model or tool runs.
+        // Recheck before acknowledging the outcome in durable storage.
+        await check(claim.claimToken, claim.key);
         if (!(await renew())) throw new Error("supervisor_worker_lease_lost");
         return receipt.ref;
       }
