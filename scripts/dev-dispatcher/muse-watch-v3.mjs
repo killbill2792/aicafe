@@ -9,6 +9,7 @@ import {createHash} from 'node:crypto';
 import {recoveryIdentity} from './recovery-v3.mjs';
 import {dispatchFrontier} from './core.mjs';
 import {dispatchPreferences} from './owner-controls-v3.mjs';
+import {verifiedCodingConversation} from './verified-chat-v3.mjs';
 const time=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?Date.parse(v):null;
 const ago=(stamp,clock)=>time(stamp)===null?null:Math.floor((clock-time(stamp))/60000);
 const sha=s=>createHash('sha256').update(JSON.stringify(s)).digest('hex');
@@ -47,7 +48,8 @@ export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGa
     // GitHub must attempt its signed-branch recovery; Muse checks the ORIGINAL
     // ChatGPT conversation if the branch/PR never materializes.
     const sinceDelivery=ago(r.last_submission_at,clock);
-    if(r.approved===true&&!r.pr_number&&r.conversation_ref&&
+    if(r.approved===true&&!r.pr_number&&
+      verifiedCodingConversation(state,id,r.approval_hash,r.conversation_ref)&&
       sinceDelivery!==null&&sinceDelivery>deliveryGapMinutes)
       incidents.push({kind:'DELIVERED_TASK_NO_PR',task_id:id,
         age_minutes:sinceDelivery,action:'MUSE_INSPECT_CHAT_AND_RECONCILE'});
