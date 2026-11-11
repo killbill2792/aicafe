@@ -327,3 +327,32 @@ test('P1: real numeric failed-run IDs reach the Git-backed emergency reporter',a
  assert.equal(bad.status,1);
  assert.match(bad.stderr,/Invalid failed workflow run ID/);
 });
+
+
+test('verified Muse delivery stalled before PR sends one signed reminder to same chat',()=>{
+ const original={task_id:'good',status:'assigned',approved:true,
+  agent:'chatgpt',approval_hash:'signed',branch:'feat/aicafe-task-good',
+  conversation_ref:'https://chatgpt.com/c/existing',
+  last_submission_at:'2026-10-01T10:00:00Z'};
+ const initialState=initial({good:original},{
+  'assign:good':{task_id:'good',type:'assign',status:'submitted',
+   receipt:{courier:'muse',prompt_hash:'signed'}}});
+ const h=harness();
+ const first=h.run(initialState).state;
+ const pending=Object.entries(first.actions).filter(([,a])=>
+   a.type==='pre_pr_reminder'&&a.status==='planned');
+ assert.equal(pending.length,1);
+ assert.equal(pending[0][1].delivery_owner,'muse');
+ assert.equal(pending[0][1].delivery.action,'pre_pr_reminder');
+ assert.equal(first.tasks.good.pr_number,undefined);
+ const second=h.run(first).state;
+ assert.equal(Object.values(second.actions).filter(a=>
+   a.type==='pre_pr_reminder'&&a.status==='planned').length,1);
+});
+test('pre-PR reminder requires real Muse coding receipt, not just a saved chat URL',()=>{
+ const r={task_id:'good',approved:true,status:'assigned',agent:'chatgpt',
+  approval_hash:'signed',conversation_ref:'https://chatgpt.com/c/existing',
+  last_submission_at:'2026-10-01T10:00:00Z'};
+ const out=harness().run(initial({good:r})).state;
+ assert.equal(Object.values(out.actions).filter(a=>a.type==='pre_pr_reminder').length,0);
+});
