@@ -122,7 +122,7 @@ begin
     if v_cursor = 'null'::jsonb
       or (v_cursor->>'createdAt')::timestamptz < (v_current->'cursor'->>'createdAt')::timestamptz
       or ((v_cursor->>'createdAt')::timestamptz = (v_current->'cursor'->>'createdAt')::timestamptz
-        and (v_cursor->>'id')::uuid <= (v_current->'cursor'->>'id')::uuid) then
+        and (v_cursor->>'id')::uuid < (v_current->'cursor'->>'id')::uuid) then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
   end if;
