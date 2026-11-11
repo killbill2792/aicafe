@@ -82,3 +82,25 @@ test('branch updater rejects stale heads and updates only verified child branch'
   assert.equal(updateBranchViaGit(args).status,'stale_head');
  }finally{f.cleanup();}
 });
+
+test('a genuine Git merge conflict is classified separately from transport errors',()=>{
+ const f=fixture();
+ try{
+  writeFileSync(join(f.work,'shared.txt'),'base\n');
+  run(['add','.'],f.work);run(['commit','-qm','base'],f.work);
+  run(['branch','-M','main'],f.work);run(['push','-q','origin','main'],f.work);
+  run(['checkout','-qb','feat/conflict'],f.work);
+  writeFileSync(join(f.work,'shared.txt'),'child change\n');
+  run(['commit','-qam','child'],f.work);
+  const original=run(['rev-parse','HEAD'],f.work);
+  run(['push','-q','origin','feat/conflict'],f.work);
+  run(['checkout','-q','main'],f.work);
+  writeFileSync(join(f.work,'shared.txt'),'main change\n');
+  run(['commit','-qam','main'],f.work);
+  run(['push','-q','origin','main'],f.work);
+  const result=updateBranchViaGit({repo:settings.repo,branch:'feat/conflict',
+    expectedHeadSha:original,token:'local-test-only',remoteUrl:f.bare});
+  assert.equal(result.status,'conflict_needs_coder');
+  assert.equal(run(['rev-parse','refs/heads/feat/conflict'],f.work),original);
+ } finally {f.cleanup();}
+});
