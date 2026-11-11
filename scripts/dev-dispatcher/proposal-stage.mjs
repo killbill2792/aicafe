@@ -14,6 +14,18 @@ export const proposalSourceHash=task=>{
   if(Object.hasOwn(task,'edits'))fields.push(task.edits);
   return hash(fields);
 };
+export function proposalEligible(task,queue,records={}){
+ const gate=queue?.dispatch_rules?.priority_gate_task;
+ if(gate&&!['integrated_proven','released_proven'].includes(records?.[gate]?.status))
+   return false;
+ return (task.depends_on||[]).every(id=>{
+   const rec=records?.[id];
+   return ['integrated_proven','released_proven'].includes(rec?.status)||
+     (task.can_start_stacked===true&&rec?.github_state==='open'&&
+      Number.isInteger(rec.pr_number)&&
+      ['draft_open','review_fixing'].includes(rec.status));
+ });
+}
 const proposalApprovalHash=(task,notice)=>hash(['scope-plan-v1',task.id,
   notice.notice_hash,notice.source_sha]);
 
@@ -74,6 +86,18 @@ export function advanceApprovedProposals(state,queue,{now=new Date().toISOString
    if(previous?.pr_number || (previous?.conversation_ref&&!previous.proposal_notice_id) ||
       ['assigned','draft_open','review_fixing','merged','integrated_proven','released_proven'].includes(previous?.status))
      continue;
+   const eligible=proposalEligible(task,queue,next.tasks);
+   if(!eligible){
+     if(previous?.planning_approved&&previous.status==='scope_planning'){
+       previous.planning_eligible=false;
+       for(const action of Object.values(next.actions))
+         if(action.task_id===task.id&&
+            ['scope_plan','scope_plan_update'].includes(action.type)&&
+            action.status==='planned')
+           action.status='cancelled_dependency_changed';
+     }
+     continue;
+   }
    if(!decision) {
      if(previous?.planning_approved && previous.proposal_source_sha!==signature){
        for(const action of Object.values(next.actions))
@@ -94,7 +118,18 @@ export function advanceApprovedProposals(state,queue,{now=new Date().toISOString
      }
      continue;
    }
-   if(previous?.planning_approved && previous.proposal_source_sha===signature)continue;
+   if(previous?.planning_approved && previous.proposal_source_sha===signature){
+     if(previous.planning_eligible===false){
+       for(const action of Object.values(next.actions))
+         if(action.task_id===task.id&&
+           ['scope_plan','scope_plan_update'].includes(action.type)&&
+           action.proposal_source_sha===signature&&
+           action.status==='cancelled_dependency_changed'&&!action.receipt)
+           action.status='planned';
+       previous.planning_eligible=true;
+     }
+     continue;
+   }
    // A previously delivered/planned/claimed scope chat is not replayed.
    if(Object.values(next.actions).some(a=>a.task_id===task.id&&
      ['scope_plan','scope_plan_update'].includes(a.type)&&a.proposal_source_sha===signature&&
@@ -108,7 +143,7 @@ export function advanceApprovedProposals(state,queue,{now=new Date().toISOString
    const key=actionType+':'+encodeURIComponent(task.id)+':'+notice.notice_hash;
    if(next.actions[key])continue;
    const record={...previous,task_id:task.id,agent:'chatgpt',
-     status:'scope_planning',planning_approved:true,approved:false,
+     status:'scope_planning',planning_approved:true,planning_eligible:true,approved:false,
      proposal_source_sha:signature,approval_hash:approvalHash,
      proposal_notice_id:decision.notice_id,proposal_owner_event_id:decision.id,
      planning_approved_at:decision.at||now,

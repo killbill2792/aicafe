@@ -28,7 +28,7 @@ export function validateHandoff(action, task) {
   const d = action?.delivery;
   const planning=['scope_plan','scope_plan_update'].includes(action?.type) &&
     task?.approved!==true&&task?.planning_approved===true&&
-    task?.status==='scope_planning'&&
+    task?.status==='scope_planning'&&task.planning_eligible!==false&&
     action.proposal_source_sha===task.proposal_source_sha &&
     !Number.isInteger(task.pr_number) &&
     (action.type==='scope_plan'?(!task.conversation_ref):

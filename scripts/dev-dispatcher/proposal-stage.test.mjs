@@ -170,3 +170,26 @@ test('revised future proposal requires a NEW yes and resumes the verified old pl
  assert.equal(Object.values(sent.actions).filter(a=>a.status==='submitted').length,2);
  assert.deepEqual(advanceApprovedProposals(sent,revised),sent);
 });
+
+test('stale prerequisite blocks unsigned planning and recovers the same unsubmitted action',()=>{
+ const blocked=withMuseYes(['7']);
+ blocked.tasks['6'].status='merged';
+ assert.equal(advanceApprovedProposals(blocked,queue).tasks['7'],undefined);
+ const started=advanceApprovedProposals(withMuseYes(['7']),queue);
+ const [key,action]=Object.entries(started.actions).find(([_,a])=>a.task_id==='7');
+ assert.equal(action.status,'planned');
+ const stale=structuredClone(started);
+ stale.tasks['6'].status='merged';
+ const stopped=advanceApprovedProposals(stale,queue);
+ assert.equal(stopped.tasks['7'].planning_eligible,false);
+ assert.equal(stopped.actions[key].status,'cancelled_dependency_changed');
+ assert.equal(pendingActions(stopped).filter(a=>a.task_id==='7').length,0);
+ const recovery=structuredClone(stopped);
+ recovery.tasks['6'].status='integrated_proven';
+ const resumed=advanceApprovedProposals(recovery,queue);
+ assert.equal(resumed.actions[key].status,'planned');
+ assert.equal(resumed.tasks['7'].planning_eligible,true);
+ assert.equal(Object.values(resumed.actions).filter(a=>a.task_id==='7').length,1);
+ assert.equal(pendingActions(resumed).filter(a=>a.task_id==='7').length,1);
+ assert.deepEqual(advanceApprovedProposals(resumed,queue),resumed);
+});

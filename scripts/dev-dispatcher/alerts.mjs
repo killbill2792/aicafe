@@ -4,7 +4,7 @@ import {settings} from './settings.mjs';
 import {createHash} from 'node:crypto';
 import {architectureFoundationReady,approved} from './core.mjs';
 import {approvalSignature} from './delivery.mjs';
-import {proposalSourceHash} from './proposal-stage.mjs';
+import {proposalSourceHash,proposalEligible} from './proposal-stage.mjs';
 import {validConversationUrl} from './delivery.mjs';
 const sha=s=>createHash('sha256').update(s).digest('hex');
 export function noticeHash({kind,task_id,pr_number,question,source_sha,identity:operationalIdentity,incident_cycle=0}){
@@ -256,9 +256,6 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
    // Unapproved proposed tasks have no ledger record. Find them in the signed
   // plan and present the NEXT eligible decision through the existing Muse queue.
   if(Array.isArray(queue?.tasks)){
-    const priority=queue.dispatch_rules?.priority_gate_task;
-    const prioritySatisfied=!priority||
-      ['integrated_proven','released_proven'].includes(next.tasks?.[priority]?.status);
     for(const task of queue.tasks){
       if(task.state!=='proposed'||approved(task))continue;
       const existing=next.tasks?.[task.id];
@@ -266,14 +263,7 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
           (existing?.conversation_ref&&!['scope_planning','scope_plan_sent','blocked_needs_owner'].includes(existing.status))||
          ['assigned','draft_open','review_fixing','merged','integrated_proven','released_proven'].includes(existing?.status))
         continue;
-      const deps=(task.depends_on||[]).every(id=>{
-        const rec=next.tasks?.[id];
-        return ['integrated_proven','released_proven'].includes(rec?.status)||
-          (task.can_start_stacked===true&&rec?.github_state==='open'&&
-           Number.isInteger(rec.pr_number)&&
-           ['draft_open','review_fixing'].includes(rec.status));
-      });
-      const eligible=prioritySatisfied&&deps;
+      const eligible=proposalEligible(task,queue,next.tasks);
       const signature=proposalSourceHash(task);
       for(const old of Object.values(next.owner_alerts))
         if(old.kind==='next_task_proposal'&&old.task_id===task.id&&
