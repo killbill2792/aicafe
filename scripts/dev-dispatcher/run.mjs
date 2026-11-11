@@ -249,7 +249,24 @@ async function main() {
       copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
-      const normal=decideNudge(rec, Date.now());
+      // A verified Muse coding receipt can precede the first PR. One
+      // head-independent, idempotent same-chat reminder prevents a lost PR
+      // from remaining silent. Never guess that coding is complete.
+      const firstDelivery=Object.values(copy.actions).some(a=>
+        a.task_id===id&&['assign','begin_scoped_coding'].includes(a.type)&&
+        a.status==='submitted'&&a.receipt?.courier==='muse');
+      const lastDelivery=Date.parse(rec.last_submission_at||'');
+      const noPrDue=firstDelivery&&rec.approved===true&&rec.status==='assigned'&&
+        !Number.isInteger(rec.pr_number)&&Boolean(rec.conversation_ref)&&
+        !rec.sensitive_owner_block&&!rec.repo_mismatch&&
+        Number.isFinite(lastDelivery)&&Date.now()-lastDelivery>=15*60000;
+      const prePrKey='pre_pr_reminder:'+encodeURIComponent(id)+':'+
+        String(rec.approval_hash||'');
+      const prePrAlready=Object.values(copy.actions).some(a=>
+        a.task_id===id&&a.type==='pre_pr_reminder');
+      const normal=noPrDue&&!prePrAlready?
+        {kind:'propose',action:'pre_pr_reminder',key:prePrKey}:
+        decideNudge(rec,Date.now());
       const proposal=normal.kind==='propose' ? normal :
         rec.stall_pending && !rec.stall_escalate
           ? {kind:'propose',action:'no_push_after_prompt',key:rec.stall_pending} : normal;
