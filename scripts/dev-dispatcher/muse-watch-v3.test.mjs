@@ -106,14 +106,22 @@ test('Muse independently reads signed queue and requests GitHub validation for n
 
 test('Muse detects a delivered pre-PR task without inventing ChatGPT completion',()=>{
  const s={...state,tasks:{T2:{task_id:'T2',approved:true,
+   approval_hash:'a'.repeat(64),
    conversation_ref:'https://chatgpt.com/c/existing',
    last_submission_at:'2026-11-11T09:00:00Z',status:'assigned'}},
-   actions:{},owner_alerts:{},updated_at:now,
+   actions:{original:{task_id:'T2',type:'assign',status:'submitted',delivery_owner:'muse',
+     delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+       approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+     receipt:{courier:'muse',prompt_hash:'b'.repeat(64),
+       conversation_url:'https://chatgpt.com/c/existing'}}},
+   owner_alerts:{},updated_at:now,
    schedule_health:{last_schedule_at:now}};
  const health=inspectMuseHealth(s,{now});
  assert.equal(health.incidents[0].kind,'DELIVERED_TASK_NO_PR');
  assert.equal(health.incidents[0].action,'MUSE_INSPECT_CHAT_AND_RECONCILE');
  assert.equal(museRecoveryCandidates(health,s,identity)[0].intent,'RECONCILE');
+ const forged={...s,actions:{}};
+ assert.equal(inspectMuseHealth(forged,{now}).incidents.some(x=>x.kind==='DELIVERED_TASK_NO_PR'),false);
 });
 
 
