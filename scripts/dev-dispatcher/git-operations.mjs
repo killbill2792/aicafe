@@ -80,7 +80,7 @@ export function publishEmergencyViaGit({repo=settings.ledger.repo,
   resetAt=null,targetRepo=settings.repo,remoteUrl=null,run=spawnSync,
   retry=3}={}) {
   if(!validRepo(repo)||repo!==settings.ledger.repo||!validRepo(targetRepo)||
-    !/^[a-z0-9_:-]{1,128}$/i.test(incidentId||'') ||
+    !/^[a-z0-9_.:-]{1,128}$/i.test(incidentId||'') ||
     typeof message!=='string'||!message.trim()||!token)
     throw Error('Invalid emergency notification inputs');
   if(!Number.isInteger(retry)||retry<1||retry>4)throw Error('Unsafe Git retry count');
