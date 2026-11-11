@@ -76,7 +76,7 @@ describe("automatic café-local final event observation",()=>{
     expect(monitorLoop).toHaveBeenCalledTimes(1);
     expect(vi.mocked(monitorLoop).mock.calls[0][4]).toBe("2026-10-31");
   });
-  it("replays only the recent closed days in a multi-day monitoring window",async()=>{
+  it("replays all closed days of an eligible recently ended monitoring window",async()=>{
     const draft=row("2026-10-01");
     const plan={...draft.canonical_effect_payload,endDate:"2026-10-14"};
     draft.canonical_effect_payload=plan;
@@ -89,6 +89,7 @@ describe("automatic café-local final event observation",()=>{
       "2026-10-20");
     expect(result).toEqual({checked:1,reported:1,failed:0});
     expect(vi.mocked(monitorLoop).mock.calls.map(args=>args[4])).toEqual([
+      "2026-10-01","2026-10-02","2026-10-03","2026-10-04","2026-10-05",
       "2026-10-06","2026-10-07","2026-10-08","2026-10-09",
       "2026-10-10","2026-10-11","2026-10-12","2026-10-13","2026-10-14",
     ]);
