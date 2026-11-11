@@ -56,6 +56,14 @@ describe("bounded independent routine dispatch",()=>{
     }),"cafe","America/Los_Angeles",new Date("2026-11-11T18:00:00Z"));
     expect(result.failed).toBe(1);
   });
+  it("does not produce a second reminder for a due commitment",async()=>{
+    const decisions=await readActionablePriorities(db({tasks:[
+      {id:"commitment:existing",kind:"commitment",status:"needs_owner",
+        created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
+    ]}),{businessId:"cafe",ownerUserId:"owner",threadId:"thread",localDate:"2026-11-11"},
+      new Date("2026-11-11T00:00:00Z"));
+    expect(decisions).toEqual([]);
+  });
   it("does not mix private tasks across owners",async()=>{
     const decisions=await readActionablePriorities(db({tasks:[
       {id:"private",kind:"commitment",status:"needs_owner",

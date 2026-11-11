@@ -30,7 +30,7 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
       .select("id,kind,status,due_at,confidence,evidence,created_at,owner_user_id")
       .eq("business_id",scope.businessId)
       .in("status",["needs_owner","needs_response"])
-      .neq("kind","priority_notice")
+      .not("kind","in","(priority_notice,commitment)")
       .or("owner_user_id.is.null,owner_user_id.eq."+scope.ownerUserId)
       .order("created_at",{ascending:false}).limit(batchLimit),
   ]);
