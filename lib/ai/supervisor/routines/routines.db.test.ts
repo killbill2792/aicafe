@@ -104,6 +104,15 @@ describe("routine SQL security contract",()=>{
       expect(await call(workerB,"claim_supervisor_routine_occurrence",claimArgs)).toBeNull();
       const proof=await admin.query("select count(*)::int as n from public.operating_tasks where business_id=$1 and kind='priority_notice'",[business]);
       expect(proof.rows[0].n).toBe(1);
+      // A handled source closes its notice in the same database transaction;
+      // the private receipt must never remain a second independent Needs-you.
+      await admin.query("update public.operating_tasks set status='handled' where business_id=$1 and id=$2",
+        [business,sourceId]);
+      const settled=await admin.query("select status,resolved_at from public.operating_tasks where business_id=$1 and kind='priority_notice'",
+        [business]);
+      expect(settled.rows).toHaveLength(1);
+      expect(settled.rows[0].status).toBe("handled");
+      expect(settled.rows[0].resolved_at).not.toBeNull();
       const updated=await call(owner,"change_supervisor_routine",
         [business,ownerId,threadId,secondRoutine,1,JSON.stringify({status:"paused"})]);
       expect(updated.status).toBe("paused");
