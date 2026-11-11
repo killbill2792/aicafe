@@ -104,10 +104,15 @@ export function planMuseBacklog(backlog,requests,now=new Date().toISOString()){
   for(const request of requests){
     const key=sha([request.repo,request.intent,request.task_id,request.expected_head_sha]);
     const old=next.items[key];
-    if(old&&['QUEUED','SENT_UNVERIFIED'].includes(old.status)&&
-      time(now)-(time(old.first_seen_at)||0)<15*60000)continue;
-    next.items[key]={key,status:'QUEUED',request,first_seen_at:now,attempts:0,
-      last_error:null,next_retry_at:null};
+    // Backoff and acknowledged wakes are durable: a 60-second poll must not
+    // discard a 30-minute rate-limit cooldown or resend a successful wake.
+    if(old&&['QUEUED','SENT_UNVERIFIED','GITHUB_ACKNOWLEDGED'].includes(old.status)&&
+      time(now)-(time(old.acknowledged_at||old.first_seen_at)||0)<15*60000)continue;
+    if(old?.status==='RETRYABLE'&&time(old.next_retry_at)>time(now))continue;
+    // The GitHub receiver rejects commands older than 10 minutes. Rebind a
+    // retry to a fresh timestamp only AFTER its cooldown expires.
+    next.items[key]={key,status:'QUEUED',request,first_seen_at:now,
+      attempts:old?.attempts||0,last_error:old?.last_error||null,next_retry_at:null};
   }
   // A bounded local backlog, no indefinite unbounded spool growth.
   const ordered=Object.values(next.items).sort((a,b)=>
@@ -120,7 +125,10 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
   const next=structuredClone(backlog);
   const clock=time(now);
   if(clock===null)throw Error('Invalid delivery clock');
-  if(apiPauseUntil&&time(apiPauseUntil)>clock)return {backlog:next,results:[{status:'API_PAUSED',until:apiPauseUntil}]};
+  const pause=[time(apiPauseUntil),time(next.api_pause_until)]
+    .filter(Number.isFinite).sort((a,b)=>b-a)[0];
+  if(pause>clock)return {backlog:next,results:[{status:'API_PAUSED',until:asIso(pause)}]};
+  if(pause&&pause<=clock)delete next.api_pause_until;
   const results=[];
   for(const item of Object.values(next.items||{})){
     if(!['QUEUED','RETRYABLE'].includes(item.status)||time(item.next_retry_at)>clock)continue;
@@ -145,13 +153,30 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
         results.push({id:item.key,status:item.status});
       }else{
         item.status='RETRYABLE';
-        item.last_error='GitHub dispatch HTTP '+response.status;
-        // Honor Retry-After on 429/403, do not hammer the shared API budget.
-        const delay=Number(response.headers?.get?.('retry-after'));
-        const mins=[403,429].includes(response.status)?Math.max(15,Number.isFinite(delay)?Math.ceil(delay/60):15):
-          Math.min(30,2**Math.min(4,item.attempts));
+        const remaining=response.headers?.get?.('x-ratelimit-remaining');
+        const retryHeader=response.headers?.get?.('retry-after');
+        const rateLimited=response.status===429||
+          (response.status===403&&(remaining==='0'||retryHeader!==null&&retryHeader!==undefined));
+        const forbidden=response.status===401||
+          (response.status===403&&!rateLimited);
+        const seconds=retryHeader==null?NaN:Number(retryHeader);
+        const reset=response.headers?.get?.('x-ratelimit-reset');
+        const resetAt=reset==null?NaN:Number(reset)*1000;
+        const backoff=Math.min(30,2**Math.min(4,item.attempts));
+        const mins=rateLimited?Math.max(15,
+          Number.isFinite(seconds)?Math.ceil(seconds/60):15,
+          Number.isFinite(resetAt)?Math.ceil((resetAt-clock)/60000):0):
+          forbidden?60:backoff;
+        item.last_error=forbidden?'GitHub wake credential denied HTTP '+response.status:
+          rateLimited?'GitHub API rate limit HTTP '+response.status:
+          'GitHub dispatch HTTP '+response.status;
         item.next_retry_at=asIso(clock+mins*60000);
         results.push({id:item.key,status:item.status,reason:item.last_error});
+        if(rateLimited||forbidden||[500,502,503,504].includes(response.status)){
+          next.api_pause_until=item.next_retry_at;
+          // One API outage must not fan out into many failed wake attempts.
+          break;
+        }
       }
     }catch{
       item.attempts++;item.status='RETRYABLE';item.last_error='transport_unverified';
