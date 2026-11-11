@@ -12,8 +12,8 @@ test('queue/ledger repository fact wins over a PR body',()=>{
  assert.deepEqual(s.tasks.T.repo_mismatch,{expected:'owner/aicafe',actual:'other/product',pr_number:12});
  assert.equal(s.tasks.T.stall_pending,null);
 });
-test('20 minute default, override and no premature prompt',()=>{
- assert.equal(stallMinutes(),20);assert.equal(stallMinutes('7'),7);assert.equal(stallMinutes('oops'),20);
+test('ten-minute default, override and no premature prompt',()=>{
+ assert.equal(stallMinutes(),10);assert.equal(stallMinutes('7'),7);assert.equal(stallMinutes('oops'),10);
  assert.equal(run(base,'2026-11-10T10:24:00Z').tasks.T.stall_count,0);
  assert.match(STALL_PROMPT,/Resource not accessible by integration/);
 });
@@ -114,4 +114,16 @@ test('finished green CI cannot trigger an idle stall nudge and coder-done is ign
  assert.equal(run(green).tasks.T.stall_pending,null);
  const red=structuredClone(base);red.tasks.T.coder_done=true;
  assert.match(run(red).tasks.T.stall_pending,/stall:/);
+});
+
+test('unfinished draft gets a ten-minute nudge but running CI does not',()=>{
+ const draft=structuredClone(base);
+ draft.tasks.T.draft=true;
+ draft.tasks.T.ci_state='pending';
+ const evaluate=now=>applySafetySignals(draft,{repo:'owner/aicafe',now,queue:[],minutes:10}).tasks.T;
+ assert.equal(evaluate('2026-11-10T10:16:00Z').stall_count,0);
+ draft.tasks.T.ci_state='success';
+ assert.equal(evaluate('2026-11-10T10:16:00Z').stall_count,1);
+ draft.tasks.T.last_commit_at='2026-11-10T10:13:00Z';
+ assert.equal(evaluate('2026-11-10T10:16:00Z').stall_count,0);
 });
