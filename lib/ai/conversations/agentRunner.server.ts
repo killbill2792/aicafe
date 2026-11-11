@@ -33,6 +33,7 @@ import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
+import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
 import { persistAgentReply, recordAgentTurnUsage, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
 import { styleReport } from "@/lib/ai/agent/style";
 import type { AgentToolContext } from "@/lib/ai/agent/tools";
@@ -163,6 +164,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           {scope,threadId:id,client:await getDb()}),
         list:async()=>listOwnerCommitments({scope,threadId:id,client:await getDb()}),
         close:async taskId=>closeOwnerCommitment(taskId,{scope,threadId:id,client:await getDb()}),
+      },
+      routines:{
+        create:async schedule=>createOwnerRoutine(schedule,{
+          scope,threadId:id,ownerMessageId:owner.id,client:await getDb(),
+        }),
+        list:async()=>listOwnerRoutines({scope,threadId:id,client:await getDb()}),
+        change:async input=>changeOwnerRoutine(input,{scope,threadId:id,client:await getDb()}),
       },
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),

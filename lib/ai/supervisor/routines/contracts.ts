@@ -6,6 +6,8 @@ import type {ConversationScope} from "@/lib/ai/conversations/contracts";
 export type VerifiedRoutineTurn={
   scope:ConversationScope;
   threadId:string;
+  /** Verified current owner message, for retry-idempotent create. */
+  ownerMessageId?:string;
   client:SupabaseClient;
 };
 export const routineScheduleSchema=z.strictObject({

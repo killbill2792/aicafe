@@ -1,5 +1,6 @@
 import "server-only";
 import {z} from "zod";
+import {createHash} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {routineIdSchema,routineScheduleSchema,routineStatusSchema,
   type RoutineRecord,type RoutineSchedule,type VerifiedRoutineTurn} from "./contracts";
@@ -26,10 +27,16 @@ export async function createOwnerRoutine(schedule:RoutineSchedule,turn:VerifiedR
   Promise<RoutineRecord>{
   checkedTurn(turn);
   const parsed=routineScheduleSchema.parse(schedule);
+  // A retry of the same verified owner turn + schedule must not double-create.
+  const hash=turn.ownerMessageId?createHash("sha256").update(
+    turn.scope.businessId+":"+turn.scope.ownerUserId+":"+turn.threadId+":"+
+    turn.ownerMessageId+":"+JSON.stringify(parsed)).digest("hex"):null;
+  const stableId=hash?(hash.slice(0,8)+"-"+hash.slice(8,12)+"-4"+
+    hash.slice(13,16)+"-a"+hash.slice(17,20)+"-"+hash.slice(20,32)):null;
   const {data,error}=await turn.client.rpc("create_supervisor_routine",{
     p_business_id:turn.scope.businessId,p_owner_user_id:turn.scope.ownerUserId,
     p_thread_id:turn.threadId,p_title:parsed.title,p_cadence:parsed.cadence,
-    p_weekdays:parsed.weekdays,p_local_time:parsed.localTime,
+    p_weekdays:parsed.weekdays,p_local_time:parsed.localTime,p_routine_id:stableId,
   });
   if(error||!data)throw error??new Error("Routine not saved");
   return asRoutine(data as RoutineRow);
