@@ -82,9 +82,12 @@ describe("automatic café-local final event observation",()=>{
     draft.canonical_effect_payload=plan;
     draft.effect_hash=effectHash(plan);
     draft.monitor_spec.durationDays=14;
+    vi.mocked(monitorLoop).mockImplementation(async(_scope,_registry,_repo,_proposal,day)=>
+      day==="2026-10-14"?{status:"complete",result:{},
+        recommendation:"adjust",source:"toast"} as never:null);
     const result=await reportSavedEventDays(fake([draft]),businessId,ownerId,
       "2026-10-20");
-    expect(result).toEqual({checked:1,reported:9,failed:0});
+    expect(result).toEqual({checked:1,reported:1,failed:0});
     expect(vi.mocked(monitorLoop).mock.calls.map(args=>args[4])).toEqual([
       "2026-10-06","2026-10-07","2026-10-08","2026-10-09",
       "2026-10-10","2026-10-11","2026-10-12","2026-10-13","2026-10-14",
