@@ -34,6 +34,7 @@ const MESSAGE_CAFE_B = "cccccccc-0000-4000-8000-000000000001";
 const MESSAGE_CLIENT = "dddddddd-0000-4000-8000-000000000001";
 const MESSAGE_CLIENT_2 = "eeeeeeee-0000-4000-8000-000000000001";
 const MESSAGE_CLIENT_3 = "ffffffff-0000-4000-8000-000000000001";
+const MESSAGE_FINANCIAL = "00000000-0000-4000-8000-000000000001";
 const AT_1 = "2026-11-11T12:00:00.000Z";
 const AT_2 = "2026-11-11T12:01:00.000Z";
 const AT_3 = "2026-11-11T12:02:00.000Z";
@@ -169,11 +170,15 @@ async function main() {
       id: MESSAGE_A_3, at: AT_3, text: "We prefer soy milk for staff drinks.",
     });
     await insertOwnerMessage(db, {
-      id: MESSAGE_OTHER_THREAD, thread: THREAD_A_OTHER, at: AT_1,
+      id: MESSAGE_FINANCIAL, at: "2026-11-11T12:03:00.000Z",
+      text: "We prefer oat milk at $5.",
+    });
+    await insertOwnerMessage(db, {
+      id: MESSAGE_OTHER_THREAD, thread: THREAD_A_OTHER, at: AT_3,
       text: "We prefer quiet morning music.",
     });
     await insertOwnerMessage(db, {
-      id: MESSAGE_CAFE_B, business: CAFE_B, thread: THREAD_CAFE_B, at: AT_1,
+      id: MESSAGE_CAFE_B, business: CAFE_B, thread: THREAD_CAFE_B, at: AT_3,
       text: "We prefer quiet morning music.",
     });
     const visible = await db.query(
@@ -265,8 +270,8 @@ async function main() {
     const money = await save(db, {
       expected: 4,
       document: memoryDoc({
-        revision: 5, cursor: { createdAt: AT_3, id: MESSAGE_A_3 },
-        entries: [entry(MESSAGE_A_3, AT_3, "We prefer oat milk at $5.", 5)],
+        revision: 5, cursor: { createdAt: "2026-11-11T12:03:00.000Z", id: MESSAGE_FINANCIAL },
+        entries: [entry(MESSAGE_FINANCIAL, "2026-11-11T12:03:00.000Z", "We prefer oat milk at $5.", 5)],
       }),
     });
     assert.equal(money.reason, "invalid_summary");
