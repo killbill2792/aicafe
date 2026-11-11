@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {settings} from './settings.mjs';
 import {loadQueue} from './queue-source.mjs';
+import {selectObservation} from './event-selection.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
@@ -23,7 +24,6 @@ import {dispatchReceiptWake} from './wake.mjs';
 import {noticeOperationalIssues,reportFatalDispatcherError,reportProjectionFailure,reportProjectionRestored} from './notifications.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
-import {publishEmergencyViaGit} from "./git-operations.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -42,14 +42,21 @@ async function main() {
   const taskById = new Map(queue.tasks.map(task => [task.id, task]));
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
   async function observe(state) {
+    let eventPayload={};
+    if(process.env.GITHUB_EVENT_PATH)try{
+      eventPayload=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
+    }catch{eventPayload={};}
+    const selection=selectObservation({eventName:process.env.GITHUB_EVENT_NAME,
+      payload:eventPayload,state});
     const mainRef = await gh.request("/git/ref/heads/main");
     const mainSha=mainRef.object?.sha || null;
-    const snapshot = await gh.snapshot(mainSha);
+    const snapshot = await gh.snapshot(mainSha,{state,...selection});
     const closedByPr = {};
     const openNumbers = new Set(snapshot.map(x => x.pr_number));
     // Check actual merge metadata; disappearing from the open list is not proof of merge.
     for (const rec of Object.values(state.tasks)) {
-      if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number)) continue;
+      if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number) ||
+          (rec.github_state!=='open' && ['merged','integrated_proven','released_proven'].includes(rec.status))) continue;
       const closed = await gh.request(`/pulls/${rec.pr_number}`);
       const mergeSha=closed.merged_at ? closed.merge_commit_sha || null : null;
       // Trust only the verified Actions bot marker for this exact merge SHA.
@@ -64,7 +71,8 @@ async function main() {
     }
     const history=await gh.request('/actions/workflows/'+settings.workflows.dispatcher+'/runs?event=schedule&per_page=3').catch(()=>null);
     const previous=(history?.workflow_runs||[]).find(r=>r.created_at && r.id!==Number(process.env.GITHUB_RUN_ID));
-    return {snapshot,closedByPr,mainSha,lastScheduleAt:previous?.created_at || null};
+    return {snapshot,closedByPr,mainSha,audited:selection.fullAudit,
+      lastScheduleAt:previous?.created_at || null};
   }
   function reconcile(state, observed) {
     const initiallyLinked = linkPullRequests(state, observed.snapshot);
@@ -361,9 +369,11 @@ async function main() {
     // Reconcile against fresh facts on every CAS attempt; do not write an
     // identical state every five minutes (avoids 288 empty commits per day).
     persisted = await ledger.transaction(async existing => {
-      const latest = await observe(existing);
+      const latest = JSON.stringify(existing)===JSON.stringify(current)
+        ? observed : await observe(existing);
       let next = await applyCodexProvenance(reconcile(existing, latest).state,existing);
-      next=trackScheduleGap(next,{eventName:process.env.GITHUB_EVENT_NAME,
+      if(latest.audited)next.last_full_audit_at=new Date().toISOString();
+       next=trackScheduleGap(next,{eventName:process.env.GITHUB_EVENT_NAME,
         now:new Date().toISOString(),observedScheduleAt:latest.lastScheduleAt});
       await promoteIntegration(next);
       next=recordDrift(next,existing,latest.snapshot);
@@ -481,13 +491,12 @@ async function main() {
           rec.branch_maintenance_merge_sha !== parent.merge_sha) {
         let result;
         try {
-          result = await updateChildAfterParentMerge({github:gh,dependent:rec,predecessor:parent,
-             gitToken:process.env.DISPATCH_INSTALL_TOKEN});
+          result = await updateChildAfterParentMerge({github:gh,dependent:rec,predecessor:parent});
         } catch (error) {
           console.error('Child #'+rec.pr_number+' automatic branch update needs retry: '+error.message);
           continue;
         }
-        if (['updating','already_current','conflict_needs_coder','update_failed_needs_coder'].includes(result.status)) {
+        if (['update_requested','update_failed_needs_coder'].includes(result.status)) {
           await ledger.transaction(latest=>{
             const child=latest.tasks[id];
             if (!child || child.pr_number!==rec.pr_number ||
@@ -497,11 +506,7 @@ async function main() {
             return latest;
           });
           console.log('Child #'+rec.pr_number+': parent merged; branch maintenance '+result.status);
-        } else {
-          console.error('Child #'+rec.pr_number+' branch maintenance held: '+(result.status||result.reason));
-          if(['missing_git_credential','push_failed_needs_retry'].includes(result.status))
-            process.exitCode=1;
-        }
+        } else console.log('Child #'+rec.pr_number+': branch maintenance held ('+result.reason+')');
         continue;
       }
       // Ordinary main-based stale branches are refreshed without force-push.
@@ -509,19 +514,14 @@ async function main() {
       if (rec.base_current === false && rec.base_branch === 'main' &&
           !(rec.draft === true && rec.ci_state !== 'success')) {
         try {
-          const result = await safeUpdateBranch({github:gh,record:rec,enabled:true,
-             gitToken:process.env.DISPATCH_INSTALL_TOKEN});
+          const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
           console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
-           if(['missing_git_credential','push_failed_needs_retry'].includes(result.status)){
-             process.exitCode=1;
-             console.error('PR #'+rec.pr_number+' Git branch update failed: '+result.status);
-           }
           if(result.status==='updating') {
             await ledger.transaction(state=>{
               const saved=state.tasks[id];
               if(!saved || saved.head_sha!==rec.head_sha)return null;
               saved.codex_branch_update={old_head_sha:rec.head_sha,
-                new_base_sha:result.new_base_sha,status:'accepted_no_conflicts',
+                new_base_sha:rec.base_sha,status:'accepted_no_conflicts',
                 at:new Date().toISOString()};
               saved.codex_branch_conflict=null;
               return state;
@@ -719,13 +719,5 @@ main().catch(async error => {
     message:detail,wake:()=>dispatchReceiptWake({token:process.env.GITHUB_TOKEN})});
   }catch(second){console.error('Owner alert persistence or wake failed: '+String(second.message).slice(0,160));}
  }
- try{
-    const queued=publishEmergencyViaGit({
-      token:process.env.DISPATCH_LEDGER_TOKEN,
-      identity:'run:'+String(process.env.GITHUB_RUN_ID||'unknown')+':failure',
-      message:detail,needs:'Muse notify owner; inspect failed dispatcher workflow'
-    });
-    console.error('Emergency Muse queue '+queued.status+'; delivery unconfirmed');
-  }catch(fallback){console.error('EMERGENCY MUSE DELIVERY UNCONFIRMED: '+String(fallback.message).slice(0,160));}
  process.exitCode=1;
 });

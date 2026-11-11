@@ -1,5 +1,6 @@
 import {settings} from './settings.mjs';
 import { createHash } from 'node:crypto';
+import {canReusePr} from './event-selection.mjs';
 import { inflateRawSync } from 'node:zlib';
 import { validateRepo, reportedConnector403, failureInstruction, protectedChanges } from './safety.mjs';
 // Read-only GitHub facts. Never checks out or runs untrusted PR code.
@@ -424,12 +425,17 @@ export class GitHubFacts {
       infrastructure_pr: isDispatcherMaintenanceChange(comparison.files),
       merged: false };
   }
-  async snapshot(mainSha = null) {
-    const prs = await this.openPulls();
-    // Read bounded batches to avoid hitting GitHub burst limits on busy public repositories.
-    const output = [];
-    for (let i = 0; i < prs.length; i += 4) {
-      output.push(...await Promise.all(prs.slice(i, i + 4).map(pr => this.one(pr, mainSha || pr.base.sha))));
+  async snapshot(mainSha = null,{state=null,focusNumbers=[],fullAudit=true}={}) {
+    const prs=await this.openPulls();
+    const prior=Object.values(state?.tasks||{});
+    const output=[];
+    for(let i=0;i<prs.length;i+=4){
+      output.push(...await Promise.all(prs.slice(i,i+4).map(pr=>{
+        const old=prior.find(r=>r.pr_number===pr.number);
+        if(canReusePr(pr,old,mainSha||pr.base.sha,focusNumbers,fullAudit))
+          return {...old}; // verified prior GitHub snapshot; never an approval source
+        return this.one(pr,mainSha||pr.base.sha);
+      })));
     }
     return output;
   }
