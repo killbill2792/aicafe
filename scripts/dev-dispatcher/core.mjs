@@ -301,8 +301,12 @@ export function decideNudge(record, _nowMs) {
 export function ownerSensitiveHold(record) {
   return record?.sensitive_owner_block === true;
 }
-export function readyGate(record) {
+export function readyGate(record, predecessors = []) {
   const reasons=[];
+  // Coding is parallel; final review starts only after shared-write and
+  // explicit predecessors have a verified GitHub merge identity.
+  if(predecessors.some(p=>!['merged','integrated_proven','released_proven'].includes(p?.status)||
+      !p?.merge_sha))reasons.push('predecessor_not_merged');
   if (record?.draft !== true) reasons.push('not_a_draft');
   if (!record?.pr_number || !record?.head_sha) reasons.push('missing_pr_or_sha');
   if (record?.ci_state !== 'success') reasons.push('ci_not_green');
