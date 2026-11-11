@@ -168,7 +168,7 @@ export function projectLifecycle(state,queue={},now=new Date().toISOString()){
   for(const id of taskIds)
     tasks[id]=taskLifecycle(planById.get(id)||{id},state.tasks[id]||{},state,queue,now);
   const scheduleAt=state.schedule_health?.last_schedule_at||null;
-  const scheduleAge=age(scheduleAt,now);
+  const scheduleAge=age(scheduleAt,time(now));
   const scheduleStatus=scheduleAge===null?'UNKNOWN':scheduleAge>15?'STALE':'OBSERVED';
   return {schema_version:V3_VERSION,generated_at:now,source_ledger_updated_at:state.updated_at||null,
     health:{schedule_status:scheduleStatus,last_schedule_at:scheduleAt,
