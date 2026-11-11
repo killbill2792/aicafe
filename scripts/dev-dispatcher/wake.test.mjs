@@ -162,3 +162,66 @@ test('dozens of overdue notices share one retry wake and do not drain API quota'
  assert.equal(calls,1);
  assert.equal(Object.keys(latest.delayed_wake_history).length,1);
 });
+
+
+test('clean PR does not schedule pointless coder-done self-wake',()=>{
+ const s={tasks:{E2:{task_id:'E2',approved:true,github_state:'open',
+  draft:false,ci_state:'success',codex_state:'clean',codex_reviewed_sha:'a'.repeat(40),
+  head_sha:'a'.repeat(40),threads_resolved:true,
+  conversation_ref:'https://chatgpt.com/c/verified',acceptance_proven:false,
+  coder_done:false,codex_review_at:new Date(at).toISOString(),
+  last_github_activity:new Date(at).toISOString()}},actions:{}};
+ assert.equal(nextWake(s,at,one),null);
+ assert.equal(nextWake(s,at+30*60000,one),null);
+});
+
+test('scope status check uses existing delayed wake, not a guessed planning deadline',()=>{
+ const s={tasks:{'9':{task_id:'9',planning_approved:true,
+  status:'scope_plan_sent',scope_plan_completed:true,
+  conversation_ref:'https://chatgpt.com/c/scope-9',
+  last_submission_at:new Date(at).toISOString()}},actions:{},owner_alerts:{}};
+ const due=nextWake(s,at,one);
+ assert.equal(due.reason,'scope_plan_status_check');
+ assert.equal(due.due_at,new Date(at+30*60000).toISOString());
+ s.owner_alerts['review']={task_id:'9',kind:'scope_plan_review',status:'planned'};
+ assert.equal(nextWake(s,at,one),null);
+});
+
+
+test('verified Muse delivery without a PR schedules exactly one original-chat status check',()=>{
+ const conversation='https://chatgpt.com/c/original-123';
+ const s={tasks:{T:{task_id:'T',status:'assigned',approved:true,
+   approval_hash:'a'.repeat(64),conversation_ref:conversation,
+   last_submission_at:new Date(at).toISOString()}},
+   actions:{assign:{task_id:'T',type:'assign',status:'submitted',
+    delivery_owner:'muse',
+    delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+      approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+    receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:conversation}}}};
+ const due=nextWake(s,at,one);
+ assert.equal(due.reason,'pre_pr_status_check');
+ assert.equal(due.due_at,new Date(at+15*60000).toISOString());
+ assert.equal(nextWake(s,at+900001,one).key,due.key);
+ s.actions.reminder={task_id:'T',type:'pre_pr_reminder',status:'submitted',
+  delivery:{approval_hash:'a'.repeat(64)}};
+ assert.equal(nextWake(s,at+900001,one),null);
+});
+test('pre-PR delayed wake never uses forged, old-scope or wrong-chat receipts',()=>{
+ const conversation='https://chatgpt.com/c/original-123';
+ const rec={task_id:'T',status:'assigned',approved:true,approval_hash:'a'.repeat(64),
+   conversation_ref:conversation,last_submission_at:new Date(at).toISOString()};
+ const original={task_id:'T',type:'assign',status:'submitted',
+   delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+     approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:conversation}};
+ const state={tasks:{T:rec},actions:{original}};
+ for(const item of [
+   {...original,delivery:{...original.delivery,approval_hash:'c'.repeat(64)}},
+   {...original,receipt:{courier:'muse',conversation_url:'https://chatgpt.com/c/other'}},
+   {...original,receipt:{courier:'unknown',conversation_url:conversation}}
+ ]){
+   state.actions.original=item;
+   assert.equal(nextWake(state,at,one),null);
+ }
+});

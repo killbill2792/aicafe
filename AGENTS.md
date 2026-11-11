@@ -87,10 +87,15 @@ Where an older line in this file conflicts with these rules, these rules win.
     lists each PR, the files and tables it owns, and the shared pieces it uses or adds (connectors,
     settings, views, tools). Shared pieces are built once in a small foundation PR that merges first;
     dependent PRs open now against that foundation branch, reuse its work, and keep their own CI green.
-    If two PRs need the same file, assign the overlap to one owner or the foundation PR; do not hold
-    the other PR unopened. Open it against the owning PR's branch instead. Independent PRs use latest
-    `main`. After each prerequisite merges, update the dependent PR onto latest `main`, switch to
-    merged shared pieces, take the next free migration number, and re-run CI.
+    Approved tasks may edit the same file on separate PR branches. A shared filename is an
+    integration-order concern, not a reason to prevent authorized parallel coding. If the tasks
+    have an explicit source dependency, stack the child on its verified open parent's branch.
+    Otherwise independent drafts may branch from latest `main`; the dispatcher uses the signed
+    queue's deterministic topological order to serialize shared-write merges. Never expand a
+    task's authorized write scope merely because an overlapping file is needed. After a verified
+    predecessor merge, update the affected child against current `main`, resolve actual conflicts
+    in the existing chat/PR, take the next free migration number and rerun exact-head CI.
+    Final merge still requires every existing owner, dependency, CI, Codex and proof gate.
     Request Codex once on the final eligible head after its prerequisites are on
     `main` and CI is green, not while a parent is changing. Only merge when all
     existing gates pass under the auto-merge rule.
@@ -129,6 +134,14 @@ Where an older line in this file conflicts with these rules, these rules win.
     cost. Never enable automatic or manual Vercel preview builds for PRs, E2, or UI acceptance.
     When browser proof is needed, run the app in GitHub Actions with disposable test data and
     targeted Playwright; save execution proof there, without a Vercel deployment.
+
+## Universal dispatcher failure/recovery invariant
+
+GitHub's signed queue and private CAS ledger remain the one source of truth. Scope plans may use full GitHub-size multiline JSON and legitimate exact repository paths; **do not add artificial length, count or ASCII filename cutoffs**. Preserve authenticated owner, signed action/source/receipt, exact path safety, and separate approval of each proposed edit scope. Scan all pages of the existing owner issue, persist specific rejection reason codes, and send any correctable rejection to the SAME planning chat. An incomplete GitHub read must never be treated as absence of a plan.
+
+**Owner-approved dispatcher v3 supersession (November 11, 2026):** ChatGPT's assertion that coding is done is never authoritative. GitHub records PR, CI, Codex, acceptance, merge and integration as separate evidence-derived fields; missing executed acceptance remains explicitly unverified rather than assumed complete. Do not create a self-reported `coder_done` gate or wake a clean PR merely to ask ChatGPT to say it is finished. Submitted or uncertain old delivery receipts remain immutable audit history; only unsent obsolete completion prompts may be cancelled. A browser receipt proves delivery, not implementation or acceptance. Muse independently reads the signed task queue and private ledger, detects a missing dispatcher heartbeat, can ask GitHub for a validated reconciliation through the existing trusted-main workflow, and delivers one signed same-chat repair if needed. GitHub must retain exact outcome/reason for draft creation, Ready and merge attempts. Shared-file coding may proceed in parallel on approved branches; final Codex readiness and merging obey signed dependency/overlap order, exact-head tests and owner holds. PR #440 is DRAFT and its independent Muse host scheduler and private dashboard are NOT deployed until separately verified.
+
+Failed completed GitHub dispatcher/delayed-wake runs may be reported by the trusted main failure observer through the **existing private Git-backed Muse queue**; no second scheduler or approval channel is created. Transient 5xx GETs may be retried, but an uncertain GitHub write is never replayed automatically. **A workflow that never starts cannot report its own failure**: Muse's external host must check the verified schedule heartbeat from outside GitHub with `scripts/dev-dispatcher/heartbeat-probe.mjs` (read-only private-ledger snapshot, not `updated_at`). The probe is not an active external monitor until the Muse host runs it periodically. Stale/unknown heartbeat requires owner notification through an independently functioning channel, without guessing that a coding chat completed. Owner must merge any dispatcher/workflow infrastructure PR; production effects remain separately authorized.
 
 ## POS0 architecture merged; scoped coding approvals and strict proof gates
 

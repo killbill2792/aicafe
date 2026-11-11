@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, readyGate, reconcileGithub, progressUpdatePolicy, predecessorsForMerge } from "./core.mjs";
+import { validateQueue, dispatchFrontier, decideNudge, invalidateOnHeadChange, actionKey, mergeGate, readyGate, reconcileGithub, progressUpdatePolicy, predecessorsForMerge, overlappingPredecessorIds } from "./core.mjs";
 import { emptyLedger, sanitizeLedger, GitHubLedger } from "./ledger.mjs";
 import { GitHubFacts, parseAcceptanceEvidence, parseCodexReviewState } from "./github.mjs";
 import { linkPullRequests } from "./dependencies.mjs";
@@ -240,9 +240,10 @@ test("the actual Supervisor queue holds PR6 and other roots until POS0f proven",
     }
   }
   assert.ok(owners.has("supabase/migrations/20261109000156_pos0e_shared_current_reader.sql"));
-  assert.throws(()=>validateQueue({...actual,tasks:actual.tasks.map(t=>t.id==="POS0c"
-    ?{...t,exclusive_files:[...t.exclusive_files,"lib/pos/toast/redact.ts"]}:t)}),
-    /Overlapping exclusive file ownership/);
+  // Shared source edits are legal in separate PR branches. Their verified
+  // integration order, not early coding eligibility, protects main.
+  assert.ok(validateQueue({...actual,tasks:actual.tasks.map(t=>t.id==="POS0c"
+    ?{...t,exclusive_files:[...t.exclusive_files,"lib/pos/toast/redact.ts"]}:t)}));
   const docsMerged={POS0a:{status:"merged",merge_sha:"90e06ca57809ef0c29084d459d82a1be266b503a"}};
   assert.deepEqual(dispatchFrontier(actual,docsMerged).map(x=>x.task_id),["POS0e"]);
   const eOpen={...docsMerged,POS0e:{status:"draft_open",github_state:"open",
@@ -360,11 +361,12 @@ test("disappearing PR is not automatically merged; verified merge remains distin
   assert.equal(reconcileGithub(ledger, [], { 101: false }).tasks.a.status, "draft_open");
 });
 
-test("owner approval and exact nonoverlapping files are mandatory for dispatch", () => {
+test("owner approval and exact authorized files remain mandatory while shared writes are parallel", () => {
   const a = task("a"), b = task("b"), c = task("c");
   b.exclusive_files = [...a.exclusive_files];
   c.architecture_approval = { approved: false };
-  assert.throws(()=>dispatchFrontier(queue([a,b,c]),{}),/Overlapping exclusive file ownership/);
+  assert.deepEqual(dispatchFrontier(queue([a,b,c]),{}).map(x=>x.task_id),["a","b"]);
+  assert.deepEqual(overlappingPredecessorIds(b,queue([a,b,c])),["a"]);
   b.exclusive_files = ["scripts/owned-b.mjs"];
   assert.deepEqual(dispatchFrontier(queue([a,b,c]),{}).map(x=>x.task_id),["a","b"]);
   assert.deepEqual(dispatchFrontier(queue([b]),{a:{status:"draft_open",agent:"chatgpt"}}).map(x=>x.task_id),["b"]);
@@ -605,4 +607,72 @@ test('only actionable failures, findings and conflicts generate state-keyed code
   assert.equal(decideNudge({...base,ci_state:'failure',last_action_key:failed.key,
     submission_state:'submitted',ci_failure_job:'lint'},Date.now()).kind,'hold');
   assert.equal(decideNudge({...base,ci_state:'failure',submission_state:'uncertain'},Date.now()).kind,'hold');
+});
+
+
+test('independent shared-file tasks code in parallel but cannot merge out of order',()=>{
+ const a={...task('a'),exclusive_files:['lib/shared.ts']};
+ const b={...task('b'),exclusive_files:['lib/shared.ts']};
+ const c={...task('c'),exclusive_files:['lib/unrelated.ts']};
+ const q=queue([a,b,c]);
+ assert.equal(validateQueue(q).size,3);
+ assert.deepEqual(dispatchFrontier(q,{}, {chatgpt:3,claude:0}).map(x=>x.task_id),['a','b','c']);
+ assert.deepEqual(overlappingPredecessorIds(b,q),['a']);
+ assert.deepEqual(overlappingPredecessorIds(c,q),[]);
+ const prior=predecessorsForMerge(b,q,{a:{status:'draft_open',merge_sha:null}});
+ assert.deepEqual(mergeGate(pr({head_sha:'abc',codex_reviewed_sha:'abc',mergeable:true,
+  threads_resolved:true}),prior).reasons,['predecessor_not_merged']);
+ const verified=predecessorsForMerge(b,q,{a:{status:'merged',merge_sha:'f'.repeat(40)}});
+ assert.equal(mergeGate(pr({head_sha:'abc',codex_reviewed_sha:'abc',mergeable:true,
+  threads_resolved:true}),verified).eligible,true);
+});
+
+test('explicit dependency order takes precedence over queue order for shared files',()=>{
+ const parent={...task('a',['b']),exclusive_files:['lib/shared.ts']};
+ const child={...task('b'),exclusive_files:['lib/shared.ts']};
+ const q=queue([parent,child]);
+ assert.deepEqual(overlappingPredecessorIds(parent,q),['b']);
+ assert.deepEqual(overlappingPredecessorIds(child,q),[]);
+});
+
+
+test('final Codex readiness is held on shared-file merge order, not coding eligibility',()=>{
+ const a={...task('a'),exclusive_files:['lib/shared.ts']};
+ const b={...task('b'),exclusive_files:['lib/shared.ts']};
+ const q=queue([a,b]);
+ const ready={draft:true,pr_number:51,head_sha:'a'.repeat(40),ci_state:'success'};
+ assert.deepEqual(readyGate(ready,predecessorsForMerge(b,q,{
+  a:{status:'draft_open'}})).reasons,['predecessor_not_merged']);
+ assert.equal(readyGate(ready,predecessorsForMerge(b,q,{
+  a:{status:'merged',merge_sha:'b'.repeat(40)}})).eligible,true);
+ assert.deepEqual(dispatchFrontier(q,{}, {chatgpt:2,claude:0}).map(x=>x.task_id),['a','b']);
+});
+
+
+test('clean GitHub PR never asks ChatGPT to self-declare coder done',()=>{
+ const head='e'.repeat(40),at='2026-11-11T09:00:00Z',now=Date.parse('2026-11-11T09:21:00Z');
+ const r={task_id:'E2',approved:true,pr_number:436,github_state:'open',
+  conversation_ref:'https://chatgpt.com/c/existing-123',
+  head_sha:head,draft:false,ci_state:'success',codex_state:'clean',
+  codex_reviewed_sha:head,threads_resolved:true,mergeable:true,
+  codex_review_at:at,last_github_activity:at,last_submission_at:at,
+  acceptance_proven:false,coder_done:false};
+ assert.deepEqual(decideNudge(r,now),{kind:'hold',reason:'no_coder_work'});
+ assert.equal(decideNudge({...r,acceptance_proven:true,coder_done:true},now).kind,'hold');
+ assert.equal(decideNudge({...r,submission_state:'uncertain'},now).kind,'hold');
+ assert.equal(decideNudge({...r,ci_state:'failure'},now).action,'ci_failed');
+ assert.equal(decideNudge({...r,codex_state:'findings'},now).action,'codex_comments');
+ assert.equal(decideNudge({...r,mergeable:false},now).action,'repair_conflict');
+});
+
+
+test('owner priority sorts new dispatch without changing signed shared-file merge order',()=>{
+  const a=task('a'),b=task('b'),c=task('c');
+  a.exclusive_files=['lib/shared.ts'];b.exclusive_files=['lib/shared.ts'];
+  const q={...queue([a,b,c]),capacity:{chatgpt:3,claude:0}};
+  const prefs={priority:{c:80,b:60},paused:new Set(['a'])};
+  const selected=dispatchFrontier(q,{},null,prefs);
+  assert.deepEqual(selected.map(x=>x.task_id),['c','b']);
+  assert.deepEqual(q.tasks.map(x=>x.id),['a','b','c']);
+  assert.deepEqual(overlappingPredecessorIds(b,q),['a']);
 });

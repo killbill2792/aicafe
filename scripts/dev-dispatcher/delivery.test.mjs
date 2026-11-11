@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createDelivery,validConversationUrl,approvalSignature,promptHash} from './delivery.mjs';
+import {validateHandoff} from './bridge/bridge.mjs';
 
 const task={id:'6',title:'Durable worker',goal:'resume safely',
   brief:'docs/plans/universal-supervisor-task-briefs.md#task-6',
@@ -213,4 +214,24 @@ test('oversize prompts warn past 4096 bytes but still return without leaking pro
   } finally {
     console.warn = original;
   }
+});
+
+
+test('signed no-PR reminder targets original approved ChatGPT conversation, not new chat',()=>{
+ const signed=approvalSignature(task);
+ const r={task_id:task.id,status:'assigned',approved:true,
+   agent:'chatgpt',approval_hash:signed,
+   branch:'feat/aicafe-task-'+task.id,base_branch:'main',
+   conversation_ref:url};
+ const actionId='pre_pr_reminder:'+task.id+':'+signed;
+ const delivery=createDelivery({task,record:r,action:'pre_pr_reminder',actionId});
+ assert.equal(delivery.intent,'continue_existing_chat');
+ assert.equal(delivery.conversation_url,url);
+ assert.match(delivery.prompt,/Open the authorized early draft PR now/);
+ assert.doesNotMatch(delivery.prompt,/coder done|required to say.*complete/i);
+ assert.equal(validateHandoff({key:actionId,task_id:task.id,type:'pre_pr_reminder',
+   status:'planned',delivery_owner:'muse',head_sha:null,delivery},r),true);
+ assert.equal(validateHandoff({key:actionId,task_id:task.id,type:'pre_pr_reminder',
+   status:'planned',delivery_owner:'muse',head_sha:null,
+   delivery:{...delivery,conversation_url:'https://chatgpt.com/c/wrong-chat'}},r),false);
 });

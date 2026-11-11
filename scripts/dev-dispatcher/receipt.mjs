@@ -35,11 +35,14 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
     !task?.conversation_ref;
   const planning=['scope_plan','scope_plan_update'].includes(action?.type)&&
     task?.planning_approved===true&&task?.approved!==true&&
-    task?.status==='scope_planning'&&
+    (task?.status==='scope_planning'||
+      (action.type==='scope_plan_update'&&action.scope_recovery===true&&
+       task.status==='scope_plan_sent'&&task.scope_plan_completed===true))&&
     action.proposal_source_sha===task.proposal_source_sha;
   if (!action || !task ||
       (action.status !== 'planned' && !lateAssignment && !supersededContinuation) ||
-      (!supersededContinuation && task.approved !== true && !planning))
+      (!supersededContinuation && task.approved !== true && !planning) ||
+      (['scope_plan','scope_plan_update'].includes(action?.type)&&!planning))
     throw new Error('Action is not currently approved and planned');
   // Courier receipts may only be acknowledged by the action's assigned owner.
   if (action.delivery_owner !== authenticatedCourier)

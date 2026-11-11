@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI CAFE — Private Development Control Center</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#1c2330;background:#f5f6f7}
+body{margin:auto;max-width:1500px;padding:24px}h1{font-size:1.7rem;margin:0}
+header{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:20px 0}
+.card,section{background:#fff;border:1px solid #dadde0;border-radius:10px;padding:14px}
+.card strong{display:block;font-size:1.5rem}
+.tablewrap{overflow:auto;max-height:65vh;background:white}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+td,th{border-bottom:1px solid #ddd;padding:9px;white-space:nowrap;text-align:left}
+th{background:#e9ecf0;position:sticky;top:0}
+button,input,select{font:inherit;padding:8px;border:1px solid #aeb5bb;border-radius:7px}
+button{cursor:pointer}label{display:inline-flex;flex-direction:column;margin:8px;gap:3px}
+.green{color:#137047}.red{color:#a52222}
+pre{white-space:pre-wrap;word-break:break-word;max-height:42vh;overflow:auto}
+section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
+#freshness{font-size:.82rem;color:#656d76}
+</style>
+</head>
+<body>
+<header><div><h1>AI CAFE · Development Control Center</h1>
+<p>Private lifecycle ledger · GitHub evidence and Muse delivery. UNKNOWN never means GREEN.</p></div>
+<div><button id="refresh">Refresh</button><p id="freshness"></p></div></header>
+<div id="cards" class="cards"></div>
+<input id="search" placeholder="Search tasks, PRs and actions" style="width:360px;max-width:85%">
+<div class="tablewrap"><table>
+<thead><tr><th>Task</th><th>Stage</th><th>Muse</th><th>PR</th><th>Last commit</th><th>CI</th><th>Codex requested</th><th>Codex result</th><th>Acceptance</th><th>Dependencies</th><th>Merge</th><th>Integration</th><th>Next action</th></tr></thead>
+<tbody id="rows"></tbody></table></div>
+<section id="detail"><b>Select a task to inspect every field and its evidence.</b></section>
+<section>
+<h2>Owner controls</h2><p>Editable: task notes, new-dispatch priority/pause and monitoring thresholds. Signed task scope, CI, Codex and merge proof are read-only.</p>
+<label>Task ID<input id="task" placeholder="7"></label>
+<label>Field<select id="field"><option value="note">Note</option><option value="dispatch_priority">Priority (0–100)</option><option value="pause_new_dispatch">Pause new dispatch</option><option value="stall_minutes">Global stall minutes</option><option value="escalation_minutes">Global escalation minutes</option></select></label>
+<label>Value<input id="value" placeholder="Enter value"></label>
+<button id="save">Save</button><span id="saved"></span>
+</section>
+<p id="footer">Private, authenticated, loopback-only. Use a trusted SSH tunnel from your browser. No direct code edit or merge is performed here.</p>
+<script>
+const el=id=>document.getElementById(id),esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const age=t=>{let n=Math.floor((Date.now()-Date.parse(t))/60000);return Number.isFinite(n)?Math.max(0,n)+'m ago':'unknown';};
+let snapshot=null;
+async function refresh(){
+ const response=await fetch('/api/state',{cache:'no-store'});
+ if(!response.ok)throw Error('State HTTP '+response.status);
+ snapshot=await response.json();
+ el('freshness').textContent='Ledger '+(snapshot.updated_at||'unknown')+' · Schedule '+(snapshot.schedule_health?.last_schedule_at||'unknown');
+ const rows=Object.values(snapshot.lifecycle||{}),stages=['APPROVED','DELIVERED','CODE_SUBMITTED','VERIFYING','MERGE_READY','INTEGRATION_PENDING','TASK_COMPLETE'];
+ el('cards').innerHTML=stages.map(stage=>'<div class="card">'+esc(stage.replaceAll('_',' '))+'<strong>'+rows.filter(x=>x.current_stage===stage).length+'</strong></div>').join('')+
+ '<div class="card">Open owner notices<strong>'+esc(snapshot.open_owner_notices||0)+'</strong></div>';
+ redraw();
+}
+function redraw(){
+ const query=el('search').value.toLowerCase();
+ el('rows').innerHTML=Object.values(snapshot.lifecycle||{}).filter(x=>JSON.stringify([x.task_id,x.title,x.pr.number,x.monitor.next_action]).toLowerCase().includes(query)).map(x=>
+ '<tr><td><button data-task="'+esc(x.task_id)+'">'+esc(x.product_id)+' / '+esc(x.task_id)+'</button></td>'+
+ '<td>'+esc(x.current_stage)+'</td><td>'+esc(x.milestones.delivered)+'</td>'+
+ '<td>'+(x.pr.url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(x.pr.url)+'">#'+esc(x.pr.number)+'</a> ':'')+esc(x.pr.state)+'</td>'+
+ '<td>'+esc(x.coding.last_commit_sha?.slice(0,8))+' · '+age(x.coding.last_commit_at)+'</td>'+
+ '<td>'+esc(x.ci.status)+'</td><td>'+esc(x.codex.request_status)+'</td><td>'+esc(x.codex.status)+'</td>'+
+ '<td>'+esc(x.acceptance.status)+'</td><td>'+esc(x.remaining_dependencies.join(', ')||'none')+'</td>'+
+ '<td>'+esc(x.merge.eligible?'READY':'BLOCKED')+'</td><td>'+esc(x.integration.status)+'</td>'+
+ '<td>'+esc(x.monitor.next_actor)+' · '+esc(x.monitor.next_action)+'</td></tr>').join('');
+ for(const button of document.querySelectorAll('[data-task]'))button.onclick=()=>detail(button.dataset.task);
+}
+function detail(id){
+ const x=snapshot.lifecycle[id];if(!x)return;
+ const names=['milestones','approval','dispatch','coding','pr','ci','codex','acceptance','dependency_state','merge','integration','monitor'];
+ el('detail').innerHTML='<h2>'+esc(x.title)+' ('+esc(id)+')</h2><p><b>Next:</b> '+esc(x.monitor.next_actor)+' · '+esc(x.monitor.next_action)+'</p>'+
+ (x.dispatch.verified_chat_url?'<p><a target="_blank" rel="noopener noreferrer" href="'+esc(x.dispatch.verified_chat_url)+'">Verified ChatGPT conversation</a></p>':'')+
+ names.map(n=>'<details><summary>'+esc(n)+'</summary><pre>'+esc(JSON.stringify(x[n],null,2))+'</pre></details>').join('');
+ el('task').value=id;
+}
+el('search').oninput=()=>snapshot&&redraw();
+el('refresh').onclick=()=>refresh().catch(e=>alert(e.message));
+el('save').onclick=async()=>{
+ const field=el('field').value,task_id=['stall_minutes','escalation_minutes'].includes(field)?'__global__':el('task').value.trim();
+ const raw=el('value').value;let value=raw;
+ if(['dispatch_priority','stall_minutes','escalation_minutes'].includes(field))value=Number(raw);
+ if(field==='pause_new_dispatch')value=raw==='true'?true:raw==='false'?false:raw;
+ el('saved').textContent='Saving…';
+ try{
+  const response=await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({task_id,field,value,expected_revision:snapshot.owner_controls?.revision||0})});
+  if(!response.ok)throw Error((await response.json()).error||'HTTP '+response.status);
+  el('saved').textContent='Saved';await refresh();
+ }catch(e){el('saved').textContent='Not saved: '+e.message;}
+};
+refresh().catch(e=>el('freshness').textContent='Unavailable: '+e.message);
+setInterval(()=>refresh().catch(()=>{}),60000);
+</script>
+</body></html>

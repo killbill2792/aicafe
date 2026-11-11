@@ -34,13 +34,14 @@ test('base resolves to main with no dependency, open parent head branch while op
   assert.equal(assigned[0].base_branch,'feat/a');
 });
 
-test('edits are exclusive; uses can import open sibling edits with no owner question',()=>{
+test('shared files do not block approved parallel coding; uses remain read-only',()=>{
   const a=task('a',[],['lib/shared.mjs']);
   const b=task('b',[],['lib/b.mjs'],['lib/shared.mjs']);
   assert.equal(validateQueue(queue([a,b])).size,2);
   assert.equal(dispatchFrontier(queue([a,b]),{}).length,2);
-  assert.throws(()=>validateQueue(queue([a,task('c',[],['lib/shared.mjs'])])),
-    /Overlapping exclusive file ownership/);
+  const overlap=queue([a,task('c',[],['lib/shared.mjs'])]);
+  assert.equal(validateQueue(overlap).size,2);
+  assert.deepEqual(dispatchFrontier(overlap,{}).map(x=>x.task_id),['a','c']);
   assert.throws(()=>validateQueue(queue([a,task('c',[],['lib/c.mjs'],['../bad'])])),
     /Invalid read-only file usage/);
 });
