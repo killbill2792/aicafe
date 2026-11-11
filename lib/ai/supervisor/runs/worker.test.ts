@@ -177,6 +177,23 @@ describe("durable owner worker (uses Task 5 fenced repository)", () => {
       expect(db.errors).toHaveLength(1);
     }
   });
+  it("revocation during a running owner turn blocks acknowledgement and report", async () => {
+    const db = new Ledger(), env = setup(db);
+    let ownerAuthorized = true;
+    env.deps.authorize = async () => {
+      if (!ownerAuthorized) throw new Error("owner_revoked");
+    };
+    env.deps.executeTurn = async () => {
+      env.calls.execute++;
+      env.setReply({ ref: reportRef, endReason: "complete", usage });
+      ownerAuthorized = false;
+    };
+    await expect(executeDurableRun(run, budget, env.deps))
+      .rejects.toThrow("supervisor_worker_authorization_revoked");
+    expect(db.status).toBe("blocked");
+    expect(db.rows[1].state).toBe("blocked");
+    expect(db.finalRef).toBeNull();
+  });
   it("incomplete model response is blocked; its text is not proof of success", async () => {
     const db = new Ledger(), env = setup(db);
     env.deps.executeTurn = async () => {
