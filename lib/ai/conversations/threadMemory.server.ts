@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { DEFAULT_SUPERVISOR_OPENAI_MODEL } from "./modelConfig";
-import type { ConversationScope } from "./contracts";
+import { ownerInputResponseSchema, type ConversationScope } from "./contracts";
 import {
   applyThreadMemoryOperations, formatThreadMemory, historyContent,
   parseThreadMemoryDocument, threadMemorySource, type ThreadMemoryDocument,
@@ -21,9 +21,9 @@ export type ThreadMemoryCompaction = {
 
 type MessageRow = {
   id: string; role: "owner" | "supervisor"; text_content: string | null;
-  structured_content: unknown[] | null; created_at: string;
+  structured_content: unknown[] | null; owner_input_response: unknown; created_at: string;
 };
-type SourceWithCard = ThreadMemorySource & { cardContext: string | null };
+type SourceWithCard = ThreadMemorySource & { cardContext: string | null; ownerInputResponse: { questionId: string; value: string } | null };
 type SaveOutcome = "saved" | "stale" | "unauthorized" | "retry";
 const MAX_SCAN_MESSAGES = 40;
 const MAX_BATCHES_PER_CALL = 5;
@@ -108,7 +108,7 @@ async function readThread(client: SupabaseClient, scope: ThreadMemoryScope): Pro
 }
 
 function queryMessages(client: SupabaseClient, scope: ThreadMemoryScope) {
-  return client.from("ai_messages").select("id,role,text_content,structured_content,created_at")
+  return client.from("ai_messages").select("id,role,text_content,structured_content,owner_input_response,created_at")
     .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
     .eq("thread_id", scope.threadId);
 }
@@ -136,10 +136,28 @@ async function readRecentMessages(client: SupabaseClient, scope: ThreadMemorySco
 
 function cardContext(row: MessageRow): string | null {
   if (!Array.isArray(row.structured_content)) return null;
-  const cards = row.structured_content.filter(block =>
-    isRecord(block) && block.type === "clarify");
-  const content = historyContent({ text: null, blocks: cards });
-  return content || null;
+  const parts = row.structured_content.flatMap(block => {
+    if (!isRecord(block)) return [];
+    if (block.type === "clarify") {
+      const content = historyContent({ text: null, blocks: [block] });
+      return content ? [content] : [];
+    }
+    if (block.type !== "owner_question" || !isRecord(block.title)) return [];
+    const title = typeof block.title.en === "string" ? block.title.en : "";
+    const input = isRecord(block.input) ? block.input : null;
+    if (!title || !input) return [];
+    const options = Array.isArray(input.options) ? input.options.flatMap(option =>
+      isRecord(option) && isRecord(option.label) && typeof option.label.en === "string"
+        ? [option.label.en] : []) : [];
+    return ["Owner question: " + title + (options.length ? " Options: " + options.join("; ") : "")];
+  });
+  return parts.length ? parts.join(" ") : null;
+}
+
+function ownerInputAnswer(row: MessageRow): SourceWithCard["ownerInputResponse"] {
+  const parsed = ownerInputResponseSchema.safeParse(row.owner_input_response);
+  if (!parsed.success || parsed.data.action !== "supply" || !parsed.data.value) return null;
+  return { questionId: parsed.data.questionId, value: parsed.data.value };
 }
 
 function ownerSources(rows: readonly MessageRow[]): SourceWithCard[] {
@@ -153,7 +171,7 @@ function ownerSources(rows: readonly MessageRow[]): SourceWithCard[] {
     const source = threadMemorySource({
       id: row.id, role: row.role, text: row.text_content, createdAt: row.created_at,
     });
-    if (source) sources.push({ ...source, cardContext: pendingCard });
+    if (source) sources.push({ ...source, cardContext: pendingCard, ownerInputResponse: ownerInputAnswer(row) });
     pendingCard = null;
   }
   return sources;
@@ -182,8 +200,9 @@ async function summarize(
     process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim() || DEFAULT_SUPERVISOR_OPENAI_MODEL;
   const input = {
     existing: existing.entries.map(({ kind, key, text }) => ({ kind, key, text })),
-    ownerMessages: sources.map(({ id, createdAt, text, cardContext }) => ({
+    ownerMessages: sources.map(({ id, createdAt, text, cardContext, ownerInputResponse }) => ({
       id, createdAt, text: text.slice(0, 1200), clarificationCardContext: cardContext,
+      structuredOwnerResponse: ownerInputResponse,
     })),
   };
   const response = await fetch("https://api.openai.com/v1/responses", {
