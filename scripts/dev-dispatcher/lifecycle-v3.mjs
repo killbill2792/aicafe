@@ -2,6 +2,7 @@
 // This is a PROJECTION of the original private ledger, never a second authority.
 // No model output, inactivity guess, or self-reported coder_done proves completion.
 import {overlappingPredecessorIds,mergeGate} from './core.mjs';
+import {verifiedCodingConversation} from './verified-chat-v3.mjs';
 
 export const V3_VERSION = 3;
 export const TRI = Object.freeze({YES:'YES',NO:'NO',PENDING:'PENDING',FAILED:'FAILED',UNKNOWN:'UNKNOWN',STALE:'STALE'});
@@ -30,8 +31,6 @@ export function taskLifecycle(task,record={},state={},queue={},now=new Date().to
   const tasks=state.tasks||{},actions=Object.entries(state.actions||{})
     .filter(([,a])=>a.task_id===id).map(([key,a])=>({key,...a}));
   const notices=Object.values(state.owner_alerts||{}).filter(n=>n.task_id===id);
-  const delivered=actions.filter(a=>a.status==='submitted'&&a.receipt)
-    .sort((a,b)=>(time(b.submitted_at)||0)-(time(a.submitted_at)||0));
   const awaiting=actions.filter(a=>['planned','claimed','uncertain','needs_login'].includes(a.status));
   const approved=typeof r.approved==='boolean'?r.approved:task?.architecture_approval?.approved===true;
   const head=knownSha(r.head_sha)?r.head_sha:null;
@@ -76,7 +75,7 @@ export function taskLifecycle(task,record={},state={},queue={},now=new Date().to
   const mergeEligible=prOpen(r)&&authorized&&coreGate.eligible&&mergeBlockers.length===0;
   const integrated=proofGood(r);
   const codeSubmitted=prOpen(r)||isMerged(r);
-  const deliveryVerified=!!r.conversation_ref&&delivered.length>0;
+  const deliveryVerified=verifiedCodingConversation(state,id,r.approval_hash,r.conversation_ref);
   const suspectIdle=prOpen(r)&&r.draft===true&&ci!=='PENDING'&&
     age(r.last_commit_at||r.last_github_activity,clock)>=10&&
     r.stall_count>0&&!isMerged(r);
