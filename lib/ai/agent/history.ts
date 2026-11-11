@@ -56,19 +56,24 @@ const currencyToken = /[$€£]|\b(?:USD|EUR|GBP|CAD|AUD|SAR|AED)\b/iu;
 
 /** Conservative allowlist: memory is for durable nonfinancial owner context, never facts
  * that can be re-read from café systems or used to authorize an effect. */
-export function safeThreadMemoryText(value: string): string | null {
+function safeThreadMemorySourceText(value: string): string | null {
   const text = value.normalize("NFKC").replace(/\s+/gu, " ").trim();
-  if (text.length < 3 || text.length > THREAD_MEMORY_MAX_TEXT ||
+  if (text.length < 3 || text.length > 4000 ||
     financialTerms.test(text) || sensitiveTerms.test(text) || currencyToken.test(text) ||
     /\p{Nd}/u.test(text)) return null;
   return text;
+}
+
+export function safeThreadMemoryText(value: string): string | null {
+  const text = safeThreadMemorySourceText(value);
+  return text && text.length <= THREAD_MEMORY_MAX_TEXT ? text : null;
 }
 
 /** Only immutable owner-authored text can become a source. Supervisor prose and tool
  * results are context at most; they are never promoted into owner memory. */
 export function threadMemorySource(message: Pick<ConversationMessage, "id" | "role" | "text" | "createdAt">): ThreadMemorySource | null {
   if (message.role !== "owner" || !message.text) return null;
-  const text = safeThreadMemoryText(message.text);
+  const text = safeThreadMemorySourceText(message.text);
   if (!text || !uuid.test(message.id) || !Number.isFinite(Date.parse(message.createdAt))) return null;
   return { id: message.id, createdAt: message.createdAt, text };
 }
