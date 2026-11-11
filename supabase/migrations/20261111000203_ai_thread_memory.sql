@@ -238,8 +238,17 @@ begin
           and (
             position(v_text in regexp_replace(btrim(m.text_content), '[[:space:]]+', ' ', 'g')) > 0
             or (
-              m.owner_input_response->>'action' = 'supply'
+              m.owner_input_prompt_message_id is not null
+              and m.owner_input_response->>'action' = 'supply'
               and jsonb_typeof(m.owner_input_response->'value') = 'string'
+              and exists (
+                select 1 from public.ai_messages prompt
+                where prompt.id = m.owner_input_prompt_message_id
+                  and prompt.business_id = p_business_id
+                  and prompt.owner_user_id = p_owner_user_id
+                  and prompt.thread_id = p_thread_id
+                  and prompt.role = 'supervisor'
+              )
               and position(v_text in regexp_replace(btrim(m.owner_input_response->>'value'), '[[:space:]]+', ' ', 'g')) > 0
             )
           )
