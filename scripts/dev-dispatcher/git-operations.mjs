@@ -57,8 +57,12 @@ export function updateBranchViaGit({repo=settings.repo,branch,expectedHeadSha,
     git(['checkout','-q','--detach',actual],{cwd:root,env,run});
     try {
       git(identity(['merge','-q','--no-ff','--no-edit',base]),{cwd:root,env,run});
-    }catch {
-      return {status:'conflict_needs_coder'};
+    }catch(error) {
+      // Only an actual unmerged file is a coder conflict. Infrastructure,
+      // authentication and Git transport errors use the generic failure path.
+      const unresolved=git(['diff','--name-only','--diff-filter=U'],{cwd:root,env,run});
+      if(unresolved)return {status:'conflict_needs_coder'};
+      throw error;
     }
     const merged=git(['rev-parse','HEAD'],{cwd:root,env,run});
     if(merged===actual)return {status:'already_current'};
