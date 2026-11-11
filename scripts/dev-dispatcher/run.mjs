@@ -29,6 +29,7 @@ import {noticeOperationalIssues,reportFatalDispatcherError,reportProjectionFailu
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 import {publishEmergencyViaGit,readApiPauseViaGit} from "./git-operations.mjs";
+import {recordLifecycleTransitions,projectLifecycle} from "./lifecycle-v3.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -496,7 +497,8 @@ async function main() {
       const withNotices = noticeOperationalIssues(queueOwnerAlerts(next,{queue,
         unmappedPrs:linkPullRequests(next,latest.snapshot).unmapped,openPrs:latest.snapshot}),
         {snapshot:latest.snapshot,scan:receiptScan});
-      return JSON.stringify(withNotices) === JSON.stringify(existing) ? null : withNotices;
+      const projected=recordLifecycleTransitions(withNotices,queue);
+      return JSON.stringify(projected) === JSON.stringify(existing) ? null : projected;
     });
   }
   // The dispatcher, not a coder chat, requests the final-head review.
@@ -724,12 +726,22 @@ async function main() {
       });
     }
   }
+  // Final v3 status is also reconciled after any successful GitHub effects.
+  // The projection is derived; it never authorizes a merge or delivery.
+  if(commit&&ledger){
+    const projection=await ledger.transaction(latest=>{
+      const projected=recordLifecycleTransitions(latest,queue);
+      return JSON.stringify(projected)===JSON.stringify(latest)?null:projected;
+    });
+    if(projection.committed)persisted=projection;
+  }
   const gateCounts = { ready: 0, blocked: 0 };
   for (const rec of Object.values(proposed.state.tasks)) {
     const gate = mergeGate(rec);
     gateCounts[gate.eligible ? "ready" : "blocked"]++;
   }
   const effectiveState = persisted?.state || proposed.state;
+  const v3=projectLifecycle(effectiveState,queue);
   // The existing GitHub Actions summary is the owner-readable control surface.
   // Never expose private courier prompts or conversation URLs in public logs.
   const active = Object.entries(effectiveState.tasks).filter(([,rec])=>
@@ -760,6 +772,8 @@ async function main() {
   const hasChatReceipt = !!foundationRecord?.conversation_ref;
   const summary = [
      '## '+settings.chatgpt.project_name+' development dispatcher — coordination status',
+     '- Lifecycle v3: **'+Object.keys(v3.tasks).length+' task rows**, GitHub schedule '+v3.health.schedule_status+
+       ' (last verified '+(v3.health.last_schedule_at||'unknown')+').',
     `- Last persisted state: **${effectiveState.updated_at || "not yet saved"}** (an unchanged ledger alone is not a scheduler heartbeat)`,
     "- 10-minute code inactivity / 15-minute post-delivery checks are best-effort; GitHub scheduled runs may be delayed or dropped.",
     "",
