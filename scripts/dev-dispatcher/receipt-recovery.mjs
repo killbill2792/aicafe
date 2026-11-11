@@ -58,8 +58,13 @@ export function reconcileReceiptFeedback(state, scan, now=new Date().toISOString
   for(const [id,feedback] of Object.entries(next.receipt_feedback)){
     if(problems.has(id)||feedback.status!=='rejected')continue;
     const action=next.actions[id],task=next.tasks[action?.task_id];
-    if(action?.status==='submitted'||!live(action,task)){
+    if(action?.status==='submitted' && action.receipt?.courier==='muse'){
       feedback.status='resolved';feedback.resolved_at=now;
+      feedback.resolution='verified_receipt';
+    }else if(!live(action,task)){
+      // A closed task or revoked approval is NOT a verified Muse delivery.
+      feedback.status='resolved';feedback.resolved_at=now;
+      feedback.resolution='no_longer_active';
     }else if(scan?.complete===true){
       // The bad file vanished or was rewritten but no verified receipt was
       // accepted. Preserve a visible hold; don't mark repair successful.
