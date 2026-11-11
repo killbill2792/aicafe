@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {inspectMuseHealth,inspectMuseEligibleTasks,museRecoveryCandidates,planMuseBacklog,
- deliverMuseRecovery,reconcileMuseBacklog} from './muse-watch-v3.mjs';
+ deliverMuseRecovery,reconcileMuseBacklog,runMuseWatch} from './muse-watch-v3.mjs';
 const now='2026-11-11T10:00:00Z',sha='a'.repeat(40);
 const state={version:1,updated_at:'2026-11-11T09:00:00Z',
  schedule_health:{last_schedule_at:'2026-11-11T09:00:00Z'},
@@ -181,4 +181,26 @@ test('Muse sees precise GitHub stale-head rejection and does not flood replays',
    {...identity,now:later})[0];
  const next=planMuseBacklog(acknowledged,[fresh],later);
  assert.equal(Object.values(next.items)[0].request.request_id,request.request_id);
+});
+
+test('Muse host monitor preserves recovery backlog atomically and privately',async()=>{
+ const fs=await import('node:fs/promises');
+ const path=await import('node:path');
+ const os=await import('node:os');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'muse-watch-v3-'));
+ const ledgerPath=path.join(dir,'ledger.json'),backlogPath=path.join(dir,'backlog.json');
+ try{
+  await fs.writeFile(ledgerPath,JSON.stringify(state));
+  const input={ledgerPath,backlogPath,repo:identity.repo,actor:identity.actor,
+    token:null,now};
+  const one=await runMuseWatch(input);
+  assert.equal(one.backlog_path,backlogPath);
+  const file=JSON.parse(await fs.readFile(backlogPath,'utf8'));
+  assert.ok(Object.keys(file.items).length>0);
+  assert.ok(Object.values(file.items).every(x=>x.status==='QUEUED'));
+  const two=await runMuseWatch(input);
+  assert.deepEqual(JSON.parse(await fs.readFile(backlogPath,'utf8')),file);
+  assert.equal((await fs.stat(backlogPath)).mode&0o777,0o600);
+  assert.ok(!(await fs.readdir(dir)).some(x=>x.includes('.tmp-')));
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
