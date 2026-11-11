@@ -20,7 +20,7 @@ const scope: ThreadMemoryScope = { businessId: CAFE, ownerUserId: OWNER, threadI
 
 const ownerMessage = {
   id: OWNER_MESSAGE, role: "owner", text_content: "We prefer oat milk for staff drinks.",
-  structured_content: null, created_at: createdAt,
+  structured_content: null, owner_input_response: { questionId: "55555555-5555-4555-8555-555555555555", action: "supply", value: "We prefer oat milk for staff drinks." }, created_at: createdAt,
 };
 const supervisorMessage = {
   id: SUPERVISOR_MESSAGE, role: "supervisor", text_content: null,
@@ -128,6 +128,10 @@ describe("thread memory server boundary", () => {
     expect(modelInput.ownerMessages).toHaveLength(1);
     expect(modelInput.ownerMessages[0].clarificationCardContext).toContain("Which milk?");
     expect(modelInput.ownerMessages[0].text).toBe(ownerMessage.text_content);
+    expect(modelInput.ownerMessages[0].structuredOwnerResponse).toEqual({
+      questionId: "55555555-5555-4555-8555-555555555555",
+      value: "We prefer oat milk for staff drinks.",
+    });
     expect(state.queries.some(q => q.table === "ai_messages" &&
       q.filters.business_id === CAFE && q.filters.owner_user_id === OWNER &&
       q.filters.thread_id === THREAD)).toBe(true);
