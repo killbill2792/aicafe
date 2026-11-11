@@ -18,11 +18,23 @@ export async function githubFailure(response,kind='GitHub',token=''){
  const error=new Error(safe);
  // Explicit GitHub primary-rate-limit telemetry is not an authorization
  // failure. Callers must fail closed without a futile second ledger write.
- if([403,429].includes(response.status) &&
-    response.headers?.get?.('x-ratelimit-remaining')==='0'){
+ const primary=response.headers?.get?.('x-ratelimit-remaining')==='0';
+ const secondary=response.status===429||
+   /secondary rate limit|abuse detection|abuse rate limit/i.test(message);
+ if([403,429].includes(response.status)&&(primary||secondary)){
    error.code='RATE_LIMIT';
+   // Secondary limits can leave primary quota remaining. Prefer Retry-After.
+   const retryAfter=response.headers?.get?.('retry-after');
+   const retrySeconds=Number(retryAfter);
+   const retryDate=Date.parse(retryAfter||'');
    const reset=Number(response.headers?.get?.('x-ratelimit-reset'));
-   if(Number.isSafeInteger(reset)&&reset>0)error.reset_at=new Date(reset*1000).toISOString();
+   const target=secondary&&retryAfter&&Number.isFinite(retrySeconds)&&retrySeconds>=0
+     ?Date.now()+Math.max(retrySeconds,60)*1000
+     :secondary&&Number.isFinite(retryDate)
+     ?Math.max(retryDate,Date.now()+60000)
+     :primary&&Number.isSafeInteger(reset)&&reset>0
+     ?reset*1000:Date.now()+60000;
+   error.reset_at=new Date(target).toISOString();
  }
  console.error(safe);return error;
 }
