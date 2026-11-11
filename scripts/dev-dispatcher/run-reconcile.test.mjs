@@ -55,6 +55,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     applyOwnerStartApprovals: startApproval,
     advanceApprovedProposals: state => state,
     selectScopePlans: () => ({}),
+    queueScopePlanRecovery: state => state,
     queueScopePlanReviews: state => state,
     acceptScopePlanDecisions: state => state,
     effectiveSignedQueue: queue => queue,
