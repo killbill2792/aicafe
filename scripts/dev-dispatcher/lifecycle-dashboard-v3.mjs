@@ -77,12 +77,20 @@ export function renderLifecycleDashboard(state,{repo='killbill2792/aicafe',now=s
   const commandRows=requests.map(x=>'| '+cell(x.request_id?.slice(0,12))+' | '+cell(x.task_id)+
     ' | '+cell(x.intent)+' | '+cell(x.status)+' | '+cell(x.reason)+
     ' | '+stamp(x.requested_at)+' |');
-  return [...header,...(tab.length?tab:['| — | No tasks | — | — | — | — | — | — | — | — | — | — | — |']),
+  const rejected=Object.values(state.recovery_rejections||{}).slice(-100);
+  const rejectedRows=rejected.map(x=>'| '+cell(x.request_id?.slice(0,12))+
+    ' | REJECTED | '+cell(x.reason)+' | '+stamp(x.at)+' |');
+  return [...header,...(tab.length?tab:['| — | No tasks | — | — | — | — | — | — | — | — | — | — | — | — |']),
     '',
     '### Muse → GitHub recovery request backlog',
     '| Request | Task | Requested action | Status | Last verified outcome | Asked at |',
     '|---|---|---|---|---|---|',
     ...(commandRows.length?commandRows:['| — | — | No requests | — | — | — |']),
+    '',
+    '### GitHub rejected recovery commands (authenticated sender only)',
+    '| Request | Outcome | Exact reason | Observed at |',
+    '|---|---|---|---|',
+    ...(rejectedRows.length?rejectedRows:['| — | No rejected commands | — | — |']),
     '',
     '> Recovery requests cause fresh GitHub reconciliation only. They cannot approve scope,',
     '> fake a Codex review, bypass CI or directly force a merge.',
