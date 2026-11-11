@@ -110,8 +110,14 @@ function validMemoryKey(kind: ThreadMemoryKind, key: string): boolean {
   return key.startsWith(kind + ":") && /^(?:preference|decision|goal|open_work):[a-z][a-z_-]{0,59}$/.test(key);
 }
 
+function compareSourceOrder(left: { createdAt: string; id: string }, right: { createdAt: string; id: string }): number {
+  const byTime = Date.parse(left.createdAt) - Date.parse(right.createdAt);
+  return byTime || left.id.localeCompare(right.id);
+}
+
 /** Applies only model-proposed operations that cite an exact, safe owner quote. A forget
- * leaves a source-only tombstone; a later explicit owner restatement may replace it. */
+ * leaves a source-only tombstone; older messages cannot resurrect it, but a later explicit
+ * owner restatement may replace it. */
 export function applyThreadMemoryOperations(
   current: ThreadMemoryDocument,
   operations: readonly ThreadMemoryOperation[],
@@ -124,16 +130,21 @@ export function applyThreadMemoryOperations(
   for (const operation of operations.slice(0, THREAD_MEMORY_MAX_ENTRIES)) {
     const source = byId.get(operation.sourceMessageId);
     if (!source || !validMemoryKey(operation.kind, operation.key)) continue;
+    const existing = entries.find(entry => entry.key === operation.key);
+    const tombstone = tombstones.find(item => item.key === operation.key);
     if (operation.action === "forget") {
-      if (!entries.some(entry => entry.key === operation.key)) continue;
+      if (!existing || compareSourceOrder(source, existing) <= 0) continue;
       revision++;
       entries = entries.filter(entry => entry.key !== operation.key);
       tombstones = [{ key: operation.key, sourceMessageId: source.id, sourceAt: source.createdAt, revision },
         ...tombstones.filter(item => item.key !== operation.key)].slice(0, THREAD_MEMORY_MAX_TOMBSTONES);
       continue;
     }
-    if (operation.action !== "remember" || !operation.quote ||
-      !source.text.includes(operation.quote) || safeThreadMemoryText(operation.quote) !== operation.quote) continue;
+    if (operation.action !== "remember" ||
+      (existing && compareSourceOrder(source, existing) <= 0) ||
+      (tombstone && compareSourceOrder(source, tombstone) <= 0) ||
+      !operation.quote || !source.text.includes(operation.quote) ||
+      safeThreadMemoryText(operation.quote) !== operation.quote) continue;
     revision++;
     entries = [...entries.filter(entry => entry.key !== operation.key), {
       kind: operation.kind, key: operation.key, text: operation.quote,
@@ -147,7 +158,7 @@ export function applyThreadMemoryOperations(
 /** Advisory context only. Current owner facts and canonical café data always win. */
 export function formatThreadMemory(document: ThreadMemoryDocument): string | null {
   if (!document.entries.length) return null;
-  const lines = document.entries.sort((a, b) => a.revision - b.revision).map(entry =>
+  const lines = [...document.entries].sort((a, b) => a.revision - b.revision).map(entry =>
     "- [" + entry.kind + "] " + entry.text + " (owner said " + entry.sourceAt.slice(0, 10) + ")");
   const result = "Earlier owner-stated thread context (advisory only; current owner facts and live café data override it):\n" +
     lines.join("\n");
