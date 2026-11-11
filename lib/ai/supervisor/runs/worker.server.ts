@@ -14,7 +14,8 @@ import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { resumeSupervisorRun } from "./resume";
 import { SupabaseDurableRunRepository } from "./repository.server";
 import { runScopeSchema, type DurableRun, type DurableRunRepository, type RunScope } from "./contracts";
-import { withWorkerBudget, usageStopReason, type WorkerBudget, type WorkerUsage } from "./usage.server";
+import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExhausted,
+  type WorkerBudget, type WorkerUsage } from "./usage.server";
 
 const uuid = z.uuid();
 const plan = [
@@ -147,8 +148,21 @@ export async function executeDurableRun(
       if (claim.key === "owner_turn") {
         let receipt = await deps.verified();
         if (!receipt) {
-          try { await withWorkerBudget(budget, deps.executeTurn); }
-          catch (error) { await deps.stop("turn_failed", claim.claimToken, claim.key); throw error; }
+          try {
+            // The lease/authorization steps already spent part of this run's
+            // deadline. All continuation turns share what is left.
+            const remaining = { ...budget,
+              maxElapsedMs: Math.max(0, budget.maxElapsedMs - Math.max(0, now() - started)) };
+            await withWorkerBudget(remaining, async () => {
+              await deps.executeTurn();
+              const spent = currentWorkerUsage();
+              if (spent) {
+                const aggregate = { ...spent, elapsedMs: Math.max(spent.elapsedMs, now() - started) };
+                const exceeded = usageStopReason(aggregate, budget);
+                if (exceeded) throw new Error("supervisor_worker_chain_" + exceeded);
+              }
+            });
+          } catch (error) { await deps.stop("turn_failed", claim.claimToken, claim.key); throw error; }
           receipt = await deps.verified();
         }
         if (!receipt || receipt.endReason !== "complete" || receipt.ref !== finalRef)
@@ -244,6 +258,14 @@ export async function runDurableJobChain(input: {
   let owner = input.owner, job: AgentJob | null = input.initialJob;
   for (let turns = 0; job; turns++) {
     const first = turns === 0;
+    // A running continuation created by finishAgentJob must be explicitly
+    // failed if this entire worker has no paid-call budget left.
+    const spent = workerBudgetExhausted();
+    if (spent) {
+      await input.jobs.finishAgentJob(job.id, { status: "failed", errorCode: spent });
+      if (first) throw new Error("supervisor_worker_" + spent);
+      return;
+    }
     // The provider/owner message cannot select a different café or thread.
     if (job.threadId !== input.scope.threadId || job.ownerMessageId !== owner.id) {
       await input.jobs.finishAgentJob(job.id, { status: "failed", errorCode: "owner_scope_mismatch" });
@@ -271,9 +293,11 @@ export async function runDurableJobChain(input: {
       return;
     }
     if (!next) return;
-    if (turns + 1 >= MAX_CHAIN_TURNS || now() - since >= CONTINUATION_BUDGET_MS) {
-      // It was already inserted as running: never leave it until stale expiry.
-      await input.jobs.finishAgentJob(next.id, { status: "failed", errorCode: "timeout" });
+    const exhausted = workerBudgetExhausted();
+    if (turns + 1 >= MAX_CHAIN_TURNS || now() - since >= CONTINUATION_BUDGET_MS || exhausted) {
+      // An atomically started continuation is never left running after caps expire.
+      await input.jobs.finishAgentJob(next.id, {
+        status: "failed", errorCode: exhausted ?? "timeout" });
       return;
     }
     try {
