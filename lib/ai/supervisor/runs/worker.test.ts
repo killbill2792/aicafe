@@ -6,7 +6,7 @@ import type { DurableRun, DurableRunRepository, RunScope, StepClaim, StepSpec } 
 import type { WorkerBudget, WorkerUsage } from "./usage.server";
 import { supervisorReplyIdFor } from "@/lib/ai/conversations/replyValidation";
 import { runAgentTurn, type AgentProvider } from "@/lib/ai/agent/loop.server";
-import { withWorkerBudget } from "./usage.server";
+import { withWorkerBudget, currentWorkerBudget, recordWorkerTurnUsage } from "./usage.server";
 import type { AgentToolContext } from "@/lib/ai/agent/tools";
 import type { AgentJob } from "@/lib/ai/agent/jobState";
 import type { ConversationMessage, ConversationScope } from "@/lib/ai/conversations/contracts";
@@ -176,3 +176,71 @@ describe("Codex P1: continuation jobs and delayed paid-access gates", () => {
     await expect(assertDurablePaidTurnAllowed(scope, client, { access, quota })) .rejects.toThrow("access_expired");
     expect(quota).toHaveBeenCalledTimes(1); quota.mockRejectedValueOnce(new Error("owner_usage_limit_reached"));
     await expect(assertDurablePaidTurnAllowed(scope, client, { access, quota })) .rejects.toThrow("owner_usage_limit_reached"); }); });
+
+describe("Codex P1: aggregate budget across bounded agent continuations", () => {
+  const runChain = (x: ReturnType<typeof continuationFixture>) => runDurableJobChain({
+    scope, owner: x.originalOwner, initialJob: x.initial, jobs: x.jobs,
+    runTurn: x.runTurn, assertPaidAllowed: x.assertPaidAllowed,
+  });
+  const reply = () => ({ replyId: randomUUID(), replyText: "Answer", absorbedOwnerMessageIds: [] });
+  it("passes remaining model/tool/input/output caps to the same existing continuation runner", async () => {
+    const x = continuationFixture(); const observed: Array<WorkerBudget | undefined> = [];
+    x.runTurn.mockImplementation(async () => {
+      observed.push(currentWorkerBudget());
+      recordWorkerTurnUsage({ elapsedMs: 1, modelCalls: 1, toolCalls: 2, inputTokens: 150, outputTokens: 30 });
+      return reply();
+    });
+    await withWorkerBudget({ ...budget, maxModelCalls: 3, maxToolCalls: 5,
+      maxInputTokens: 330, maxOutputTokens: 80 }, () => runChain(x));
+    expect(x.runTurn).toHaveBeenCalledTimes(2);
+    expect(observed[0]).toMatchObject({ maxModelCalls: 3, maxToolCalls: 5, maxInputTokens: 330, maxOutputTokens: 80 });
+    expect(observed[1]).toMatchObject({ maxModelCalls: 2, maxToolCalls: 3, maxInputTokens: 180, maxOutputTokens: 50 });
+    expect(x.finishes.map(f => f.outcome.status)).toEqual(["done", "done"]);
+  });
+  it("explicitly fails the atomically running next job for each exhausted paid-call cap", async () => {
+    for (const name of ["maxModelCalls", "maxToolCalls", "maxInputTokens", "maxOutputTokens"] as const) {
+      const x = continuationFixture(), cap = { ...budget, [name]: 1 };
+      x.runTurn.mockImplementation(async () => {
+        recordWorkerTurnUsage({ elapsedMs: 0, modelCalls: name === "maxModelCalls" ? 1 : 0,
+          toolCalls: name === "maxToolCalls" ? 1 : 0,
+          inputTokens: name === "maxInputTokens" ? 1 : 0,
+          outputTokens: name === "maxOutputTokens" ? 1 : 0 });
+        return reply();
+      });
+      await withWorkerBudget(cap, () => runChain(x));
+      expect(x.runTurn, name).toHaveBeenCalledOnce();
+      expect(x.finishes[1], name).toEqual({ id: x.next.id, outcome: { status: "failed", errorCode: "budget" } });
+    }
+  });
+  it("uses only the remaining time after a 35-second first turn, reserving time to finish the run", async () => {
+    const x = continuationFixture(); let tick = 1000000, available = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => tick);
+    try {
+      x.runTurn.mockImplementationOnce(async () => { tick += 35000; return reply(); })
+        .mockImplementationOnce(async () => { available = currentWorkerBudget()?.maxElapsedMs ?? 0; return reply(); });
+      await withWorkerBudget({ ...budget, maxElapsedMs: 60000 }, () => runChain(x));
+      expect(available).toBe(22000); // 60s total - 35s consumed - 3s for finish
+      expect(x.finishes.map(f => f.outcome.status)).toEqual(["done", "done"]);
+    } finally { clock.mockRestore(); }
+  });
+  it("fails an unrun continuation before paid work when the shared time allowance expires", async () => {
+    const x = continuationFixture(); let tick = 1000000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => tick);
+    try {
+      x.runTurn.mockImplementationOnce(async () => { tick += 58000; return reply(); });
+      await withWorkerBudget({ ...budget, maxElapsedMs: 60000 }, () => runChain(x));
+      expect(x.runTurn).toHaveBeenCalledOnce();
+      expect(x.finishes[1]).toEqual({ id: x.next.id, outcome: { status: "failed", errorCode: "timeout" } });
+    } finally { clock.mockRestore(); }
+  });
+  it("checks cumulative charged usage before fenced completion, not only the initiating reply", async () => {
+    const db = new Ledger(), env = setup(db);
+    env.deps.executeTurn = async () => {
+      recordWorkerTurnUsage({ ...usage, modelCalls: 5 });
+      env.setReply({ ref: reportRef, endReason: "complete", usage: { ...usage, modelCalls: 1 } });
+    };
+    await expect(executeDurableRun(run, { ...budget, maxModelCalls: 5 }, env.deps))
+      .rejects.toThrow("supervisor_worker_chain_budget");
+    expect(db.status).toBe("blocked"); expect(db.finalRef).toBeNull();
+  });
+});
