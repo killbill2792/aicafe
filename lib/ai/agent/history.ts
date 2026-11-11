@@ -57,7 +57,7 @@ const currencyToken = /[$€£]|\b(?:USD|EUR|GBP|CAD|AUD|SAR|AED)\b/iu;
 /** Conservative allowlist: memory is for durable nonfinancial owner context, never facts
  * that can be re-read from café systems or used to authorize an effect. */
 function safeThreadMemorySourceText(value: string): string | null {
-  const text = value.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  const text = value.replace(/\s+/gu, " ").trim();
   if (text.length < 3 || text.length > 4000 ||
     financialTerms.test(text) || sensitiveTerms.test(text) || currencyToken.test(text) ||
     /\p{Nd}/u.test(text)) return null;
