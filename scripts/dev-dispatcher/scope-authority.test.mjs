@@ -410,3 +410,24 @@ test('P1 regression: scope recovery receipt is authenticated before corrected pl
   conversation_url:submitted.tasks[taskId].conversation_ref
  },{authenticatedCourier:'muse'}),/not currently/);
 });
+
+
+test('P1 regression: non-object JSON scope comments never crash all-task reconciliation',()=>{
+ const {submitted,comment,actionId}=fixture();
+ for(const value of ['null','42','true','[]','"not a plan"']){
+  const malformed={...comment,body:'<!-- aicafe-scope-plan:v1 '+value+' -->'};
+  assert.equal(parseScopePlanComment(malformed,queue,submitted),null);
+  assert.deepEqual(selectScopePlans([malformed],queue,submitted),{});
+ }
+ const task=JSON.parse(comment.body.match(/<!-- aicafe-scope-plan:v1 (.*) -->/)[1]);
+ const attributed={...comment,body:'Published identifiers: '+
+  JSON.stringify({task_id:taskId,action_id:actionId,
+   proposal_source_sha:task.proposal_source_sha})+
+  '\n<!-- aicafe-scope-plan:v1 null -->'};
+ const next=queueScopePlanRecovery(submitted,queue,[attributed],{},{
+  now:'2026-11-11T09:16:00Z'});
+ const correction=Object.values(next.actions).find(a=>a.scope_recovery);
+ assert.ok(correction);
+ assert.match(correction.delivery.prompt,/must contain a JSON object/);
+ assert.equal(next.scope_authorizations,undefined);
+});
