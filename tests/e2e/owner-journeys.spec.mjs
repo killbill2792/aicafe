@@ -9,7 +9,7 @@ test.beforeEach(() => {
 test("@home real password sign-in isolates two cafés and ignores an unauthorized café cookie", async ({browser}) => {
   const first = seededCafe(0), second = seededCafe(1);
   for (const [own, other] of [[first, second], [second, first]]) {
-    const context = await browser.newContext();
+    const context = await browser.newContext({baseURL: "http://127.0.0.1:3000", serviceWorkers: "block"});
     try {
       const page = await context.newPage();
       await page.goto("/en/");
