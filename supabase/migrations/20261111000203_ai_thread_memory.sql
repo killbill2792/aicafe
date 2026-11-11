@@ -154,7 +154,7 @@ begin
           and m.thread_id = p_thread_id
           and m.role = 'owner'
           and m.created_at = v_source_at::timestamptz
-          and position(v_text in m.text_content) > 0
+          and position(v_text in regexp_replace(btrim(m.text_content), '[[:space:]]+', ' ', 'g')) > 0
       ) then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
