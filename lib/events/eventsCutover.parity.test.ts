@@ -3,6 +3,8 @@ import {cafeToday} from "@/lib/metrics/core/clock";
 import {pendingEventDays,eventAssessmentSourceHash} from "./eventsLookahead.server";
 import {eventPlanFacts} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {effectHash} from "@/lib/ai/supervisor/loop/engine";
+import {choosePriorities} from "@/lib/ai/supervisor/routines/priority";
+import type {PrioritySource} from "@/lib/ai/supervisor/routines/contracts";
 import {cityScanWindows} from "./eventsLookahead";
 import type {CafeEvent} from "@/lib/data/cafeEvents.server";
 
@@ -53,5 +55,30 @@ describe("event cutover parity at café-local date boundaries",()=>{
       [assessment],oldSource)).toEqual([]);
     expect(pendingEventDays([event],[],"2026-11-01","2026-11-01",
       [assessment],failedSource)).toHaveLength(1);
+  it("reuses the Events notice writer without a second generic priority notice",()=>{
+    // Event plan/change/report notices are already written by Events via
+    // notifyOwner. The independent Task 7 prioritizer must not send a new
+    // notification for those same owner-facing Operations records.
+    const base:PrioritySource={
+      businessId:"11111111-1111-4111-8111-111111111111",
+      ownerUserId:"22222222-2222-4222-8222-222222222222",
+      sourceType:"operating_task",sourceId:"event-plan:2026-11-01",
+      kind:"event_plan",status:"needs_owner",
+      createdAt:"2026-11-01T09:00:00Z",
+    };
+    const delivered=["event_plan","event_change","event_report",
+      "commitment","priority_notice"].map((kind,index)=>({
+      ...base,sourceId:"already-delivered-"+index,kind,
+    }));
+    const independent={...base,sourceId:"data-quality:missing-upload",
+      kind:"data_quality"};
+    const now=new Date("2026-11-01T12:00:00Z");
+    expect(choosePriorities(delivered,now,10)).toEqual([]);
+    expect(choosePriorities([...delivered,independent],now,10)
+      .map(x=>x.source.sourceId)).toEqual([independent.sourceId]);
+    expect(choosePriorities([{...base,ownerUserId:"different-owner",
+      sourceId:independent.sourceId,kind:independent.kind}],now)[0].stableKey)
+      .not.toBe(choosePriorities([independent],now)[0].stableKey);
+  });
   });
 });
