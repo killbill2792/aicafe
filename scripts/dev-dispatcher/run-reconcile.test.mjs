@@ -52,6 +52,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     repo: 'killbill2792/aicafe',
     process: {env:{}},
     applyOwnerStartApprovals: startApproval,
+    advanceApprovedProposals: state => state,
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},
     wakePendingOwnerNotices: () => {},

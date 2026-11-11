@@ -199,7 +199,14 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
       : openDeps[0];
     if (openDeps.length > 1 && !base) continue;
     // Claude is reserved for completely independent tasks; no stacked or historic prerequisites.
-    const agent = Object.keys(remaining).find(k => remaining[k] > 0 && (k !== "claude" || task.depends_on.length === 0));
+    // A verified scope-planning conversation belongs to ChatGPT. Resume it
+    // within ChatGPT capacity; never switch the same chat to Claude.
+    const existingPlan=records[task.id]?.scope_plan_completed===true &&
+      Boolean(records[task.id]?.conversation_ref);
+    const agent=existingPlan
+      ? (remaining.chatgpt>0?'chatgpt':null)
+      : Object.keys(remaining).find(k => remaining[k] > 0 &&
+          (k !== 'claude' || task.depends_on.length === 0));
     if (!agent) break;
     remaining[agent]--;
     for (const path of editableFiles(task)) claimed.add(path);

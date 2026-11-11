@@ -31,7 +31,11 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
         task.architecture_approval?.approved!==true &&
         rec.proposal_source_sha===proposalSourceHash(task);
       if(current&&['scope_planning','scope_plan_sent'].includes(rec.status)){
-        rec.approved=false;continue;
+        rec.approved=false;
+        for(const a of Object.values(state.actions))
+          if(a.task_id===id&&a.type!=='scope_plan'&&a.status==='planned')
+            a.status='cancelled_approval_changed';
+        continue;
       }
       if(task?.architecture_approval?.approved===true &&
          ['architecture_approved','ready'].includes(task.state) &&

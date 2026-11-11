@@ -59,6 +59,10 @@ export function advanceApprovedProposals(state,queue,{now=new Date().toISOString
      String(a.id).localeCompare(String(b.id)));
    const decision=replies.at(-1);
    const previous=next.tasks[task.id];
+   // Never rewrite an ongoing or proven coding task from a stale proposal.
+   if(previous?.pr_number || (previous?.conversation_ref&&!previous.planning_approved) ||
+      ['assigned','draft_open','review_fixing','merged','integrated_proven','released_proven'].includes(previous?.status))
+     continue;
    if(!decision) {
      if(previous?.planning_approved && previous.proposal_source_sha!==signature){
        for(const action of Object.values(next.actions))
