@@ -1,7 +1,7 @@
 // Dispatcher v3: one deterministic, read-only interpretation of existing signed facts.
 // This is a PROJECTION of the original private ledger, never a second authority.
 // No model output, inactivity guess, or self-reported coder_done proves completion.
-import {overlappingPredecessorIds} from './core.mjs';
+import {overlappingPredecessorIds,mergeGate} from './core.mjs';
 
 export const V3_VERSION = 3;
 export const TRI = Object.freeze({YES:'YES',NO:'NO',PENDING:'PENDING',FAILED:'FAILED',UNKNOWN:'UNKNOWN',STALE:'STALE'});
@@ -59,20 +59,21 @@ export function taskLifecycle(task,record={},state={},queue={},now=new Date().to
   const acceptance= r.acceptance_proven===true&&r.acceptance_evidence?.head_sha===head
     ?'VERIFIED':r.acceptance_evidence?'SUBMITTED_UNVERIFIED':
     task?.acceptance?.length?'MISSING':'NOT_REQUIRED';
+  // Reuse the same six-condition gate as the actual GitHub merge effect.
+  // Additional infrastructure/owner and branch holds can only narrow it.
+  // Never advertise owner-only infrastructure work as auto-merge-ready.
   const ownerHold=!!(r.sensitive_owner_block||r.protected_file_violation?.length);
-  const blocked=[];
-  if(!authorized)blocked.push(!approved?'task_not_approved':r.repo_mismatch?'wrong_repository':
-    ownerHold?'privileged_owner_hold':'scope_mismatch');
-  if(prOpen(r)){
-    if(r.draft!==false)blocked.push('draft_pr');
-    if(!green(r))blocked.push('ci_not_green');
-    if(!cleaned(r))blocked.push('codex_not_clean_on_head');
-    if(r.threads_resolved!==true)blocked.push('unresolved_review_threads');
-    if(r.mergeable!==true)blocked.push('not_verified_mergeable');
-    if(remainingParents.length)blocked.push('predecessor_not_merged');
-    if(r.base_current===false)blocked.push('branch_base_outdated');
-  }
-  const mergeEligible=prOpen(r)&&authorized&&blocked.length===0;
+  const coreGate=mergeGate(r,parents.map(p=>tasks[p]||{status:'unknown'}));
+  const blocked=[...coreGate.reasons];
+  if(!approved)blocked.push('task_not_approved');
+  if(!authorized&&!ownerHold&&!r.repo_mismatch)blocked.push('scope_mismatch');
+  if(r.dispatcher_only)blocked.push('owner_merge_required');
+  if(r.adhoc&&r.base_branch!=='main')blocked.push('adhoc_parent_base_not_main');
+  if(!prOpen(r))blocked.push('pr_not_open');
+  if(r.base_current===false)blocked.push('branch_base_outdated');
+  if(r.review_base_current===false)blocked.push('review_base_outdated');
+  const mergeBlockers=[...new Set(blocked)];
+  const mergeEligible=prOpen(r)&&authorized&&coreGate.eligible&&mergeBlockers.length===0;
   const integrated=proofGood(r);
   const codeSubmitted=prOpen(r)||isMerged(r);
   const deliveryVerified=!!r.conversation_ref&&delivered.length>0;
@@ -115,6 +116,8 @@ export function taskLifecycle(task,record={},state={},queue={},now=new Date().to
   }else if(codex==='FINDINGS')planAction('FIX_CODEX_FINDINGS_IN_CHAT','MUSE','authenticated_review_findings');
   else if(codex!=='CLEAN')planAction('VERIFY_OR_REQUEST_CODEX','GITHUB','review_not_clean_or_unverified');
   else if(r.threads_resolved!==true)planAction('RESOLVE_REVIEW_THREADS','MUSE','review_threads_open');
+  else if(r.dispatcher_only)planAction('OWNER_MERGE_REQUIRED','OWNER','privileged_dispatcher_pr');
+  else if(r.review_base_current===false)planAction('VERIFY_REVIEW_ON_CURRENT_BASE','GITHUB','review_base_outdated');
   else if(remainingParents.length)planAction('WAIT_FOR_PARENT_MERGE','GITHUB','dependency_merge_order');
   else if(r.mergeable!==true)planAction(r.mergeable===false?'REPAIR_MERGE_CONFLICT':'VERIFY_MERGEABILITY',
     r.mergeable===false?'MUSE':'GITHUB','mergeability_not_verified');
@@ -146,7 +149,7 @@ export function taskLifecycle(task,record={},state={},queue={},now=new Date().to
       watchdog:r.codex_watchdog||null},
     acceptance:{status:acceptance,required_count:task?.acceptance?.length||0,
       evidence_head_sha:r.acceptance_evidence?.head_sha||null,reported_coder_done_ignored:true},
-    merge:{eligible:mergeEligible,blockers:blocked,merge_sha:r.merge_sha||null,
+    merge:{eligible:mergeEligible,blockers:mergeBlockers,merge_sha:r.merge_sha||null,
       merge_at:r.merged_at||null,branch_maintenance:r.branch_maintenance_result||null},
     integration:{status:integrated?'PROVEN':isMerged(r)?'PENDING':'NOT_APPLICABLE',
       merge_sha:r.merge_sha||null,proof_run_id:r.integration_proof?.workflow_run_id||null},
