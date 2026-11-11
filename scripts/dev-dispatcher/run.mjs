@@ -239,7 +239,7 @@ async function main() {
       // built successfully. Other obsolete undelivered prompts may be dropped.
       const superseded=[];
       for(const action of Object.values(copy.actions)) {
-        if(action.task_id!==id||action.status!=='planned'||['assign','landing_failed'].includes(action.type))continue;
+        if(action.task_id!==id||action.status!=='planned'||['assign','scope_plan','scope_plan_update','begin_scoped_coding','landing_failed'].includes(action.type))continue;
         if(action.delivery?.action_id===proposal.key)continue;
         if(rec.codex_state==='findings'&&action.type==='codex_comments'&&
            action.head_sha===rec.head_sha&&proposal.kind!=='propose')continue;

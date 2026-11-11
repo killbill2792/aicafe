@@ -244,3 +244,19 @@ test('a cached merged PR never downgrades or cancels its existing landing repair
  assert.equal(fromGitHub.tasks.T.last_landing_check_at,last);
  assert.equal(fromGitHub.actions[id].status,'planned');
 });
+
+test('actual reconciler preserves unsigned scope handoff and signed coding continuation',()=>{
+ const {run}=harness();
+ const state=initial({'7':{task_id:'7',agent:'chatgpt',approved:false,
+   planning_approved:true,status:'scope_planning',
+   approval_hash:'a'.repeat(64)}},{
+   'scope_plan:7:notice':{type:'scope_plan',task_id:'7',status:'planned',delivery_owner:'muse'}
+ });
+ const next=run(state).state;
+ assert.equal(next.actions['scope_plan:7:notice'].status,'planned');
+ const coding=initial({'7':{task_id:'7',agent:'chatgpt',approved:true,status:'assigned',
+   approval_hash:'b'.repeat(64)}},{
+   'assign:7':{type:'begin_scoped_coding',task_id:'7',status:'planned',delivery_owner:'muse'}
+ });
+ assert.equal(run(coding).state.actions['assign:7'].status,'planned');
+});
