@@ -56,8 +56,10 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
     const observed=Date.parse(rec.head_first_seen_at||'');
     const unknownHeadTime=sha.test(rec.last_prompt_head_sha||'')&&
       rec.last_prompt_head_sha!==head&&!Number.isFinite(observed);
-    const progressAt=Math.max(delivered,Number.isFinite(committed)?committed:0,
-      Number.isFinite(observed)?observed:0);
+    // Commit timestamps can be stale or future-dated; a verified new head
+    // uses the time GitHub reconciliation first observed it.
+    const progressAt=Math.max(delivered,
+      Number.isFinite(observed)?observed:(Number.isFinite(committed)?committed:0));
     if(!Number.isFinite(delivered)||!Number.isFinite(clock) ||
        clock-progressAt < minutes*60000 || unknownHeadTime) {
       rec.stall_pending=null;
