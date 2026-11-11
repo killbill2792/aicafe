@@ -69,7 +69,8 @@ export function nextWake(state,now=Date.now(),config=settings){
       !(r.last_prompt_head_sha&&r.last_prompt_head_sha!==r.head_sha&&!Number.isFinite(observed)))
    list.push({at:Math.max(delivered,Number.isFinite(committed)?committed:0,
       Number.isFinite(observed)?observed:0)+
-     stallMinutes(process.env.DISPATCH_STALL_MINUTES)*60000,reason:'coding_idle',id});
+     stallMinutes(state.owner_controls?.monitoring?.stall_minutes||
+        process.env.DISPATCH_STALL_MINUTES)*60000,reason:'coding_idle',id});
  }
  for(const [id,a] of Object.entries(state.actions||{})){
   const at=dt(a.last_wake_at||a.created_at);
