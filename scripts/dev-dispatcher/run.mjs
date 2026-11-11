@@ -580,7 +580,7 @@ async function main() {
               saved.codex_branch_conflict=null;
               return state;
             });
-          } else if(result.reason==='conflict_needs_coder') {
+          } else if(result.status==='conflict_needs_coder') {
             await ledger.transaction(state=>{
               const saved=state.tasks[id];
               if(!saved || saved.head_sha!==rec.head_sha)return null;
