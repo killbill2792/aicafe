@@ -80,13 +80,22 @@ async function blockRun(run: WorkerRun, reason: string, token?: string, stepKey?
       .eq("owner_user_id", run.scope.ownerUserId).eq("thread_id", run.scope.threadId).maybeSingle();
     if (check.error || check.data?.status !== "blocked") throw new Error("worker_stop_conflict");
   }
-  if (token && stepKey) {
-    const step = await db.from("supervisor_run_steps").update({
+  // Persist a reason even when cancellation/budget denial precedes a claim.
+  // The run is already blocked; no later claim or completion may succeed.
+  const first = token && stepKey ? { step_key: stepKey } :
+    (await db.from("supervisor_run_steps").select("step_key").eq("business_id", run.scope.businessId)
+      .eq("run_id", run.id).neq("status", "completed")
+      .order("step_index", { ascending: true }).limit(1)).data?.[0];
+  if (first) {
+    let step = db.from("supervisor_run_steps").update({
       status: "blocked", error_code: reason, worker_id: null, claim_token: null,
       lease_until: null, updated_at: new Date().toISOString(),
     }).eq("business_id", run.scope.businessId).eq("run_id", run.id)
-      .eq("step_key", stepKey).eq("claim_token", token).eq("status", "leased");
-    if (step.error) throw new Error("worker_stop_step_unavailable", { cause: step.error });
+      .eq("step_key", first.step_key);
+    step = token ? step.eq("claim_token", token).eq("status", "leased") :
+      step.eq("status", "pending");
+    const { error: stepError } = await step;
+    if (stepError) throw new Error("worker_stop_step_unavailable", { cause: stepError });
   }
 }
 
@@ -112,7 +121,8 @@ export async function executeDurableRun(
     throw new Error("supervisor_worker_" + reason);
   };
   const check = async (token?: string, key?: string) => {
-    await deps.authorize();
+    try { await deps.authorize(); }
+    catch { await stop("authorization_revoked", token, key); }
     if (await deps.cancelled()) await stop("cancelled", token, key);
     const u = (await deps.verified())?.usage ?? {
       elapsedMs: 0, modelCalls: 0, toolCalls: 0, inputTokens: 0, outputTokens: 0,
