@@ -56,7 +56,7 @@ test('real authenticated yes -> planning receipt -> GitHub plan -> Muse exact-sc
    n.kind==='scope_plan_review'&&n.task_id===taskId);
  assert.ok(reviewEntry);
  const [noticeId,n]=reviewEntry;
- assert.match(n.question,/Reply YES to approve THESE exact files/);
+ assert.match(n.question,/Reply YES to approve the linked exact scope/);
  assert.equal(signalFor(offered,'s'.repeat(64)).pending_count>0,true);
  assert.equal(offered.scope_authorizations,undefined);
  assert.equal(effectiveSignedQueue(queue,offered,plans).tasks.find(t=>t.id===taskId).state,'proposed');
@@ -293,12 +293,12 @@ test('GitHub scope parser accepts long structured comments, 26 files and real dy
    'app/[locale]/cafe/[threadId]/component-'+i+'.tsx');
  data.architecture='Actual source, ownership and tenant data: '+('All source changes remain linked to real code. '.repeat(130));
  data.acceptance_plan='Executable checks: '+('verify current-head behavior '.repeat(70));
- const multi={...comment,body:'Published and verified.\\n<!-- aicafe-scope-plan:v1\\n'+
-   JSON.stringify(data,null,2)+'\\n-->\\nAwaiting signed authorization.'};
+ const multi={...comment,body:'Published and verified.\n<!-- aicafe-scope-plan:v1\n'+
+   JSON.stringify(data,null,2)+'\n-->\nAwaiting signed authorization.'};
  const parsed=parseScopePlanComment(multi,queue,submitted);
  assert.ok(parsed);
  assert.equal(parsed.edits.length,26);
- assert.match(parsed.edits[0],/\\[threadId\\]/);
+ assert.match(parsed.edits[0],/\[threadId\]/);
  const notes=queueScopePlanReviews(submitted,queue,{[taskId]:parsed});
  assert.equal(Object.values(notes.owner_alerts).some(n=>n.kind==='scope_plan_review'&&
   n.task_id===taskId),true);
