@@ -137,7 +137,13 @@ export async function fetchLedger({ repo, token, ledgerPath=process.env.DISPATCH
   if(!token)throw Error('Private ledger read token required');
   const headers = { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' };
   const meta = await fetchImpl(`https://api.github.com/repos/${repo}`, { headers });
-  if (!meta.ok || (await meta.json()).private !== true) throw new Error('Ledger repository must be private and accessible');
+  if(!meta.ok){
+    if([403,429].includes(meta.status)&&
+       meta.headers?.get?.('x-ratelimit-remaining')==='0')
+      return gitFetch({repo,ledgerPath:path});
+    throw Error('Ledger repository must be private and accessible');
+  }
+  if((await meta.json()).private!==true)throw Error('Ledger repository must be private and accessible');
   const response = await fetchImpl(`https://api.github.com/repos/${repo}/contents/${path}?ref=main`, { headers });
   if(!response.ok){
     if([403,429].includes(response.status)&&
