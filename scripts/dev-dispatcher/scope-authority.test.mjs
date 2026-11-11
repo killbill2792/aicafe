@@ -5,7 +5,8 @@ import {settings} from './settings.mjs';
 import {queueOwnerAlerts} from './alerts.mjs';
 import {advanceApprovedProposals} from './proposal-stage.mjs';
 import {parseScopePlanComment,selectScopePlans,queueScopePlanReviews,
- acceptScopePlanDecisions,effectiveSignedQueue,queueScopePlanRecovery} from './scope-authority.mjs';
+ acceptScopePlanDecisions,effectiveSignedQueue,queueScopePlanRecovery,
+ inspectScopePlanComment} from './scope-authority.mjs';
 import {acceptDeliveryReceipt} from './receipt.mjs';
 import {acceptMuseOwnerReply} from './self-heal.mjs';
 import {signalFor} from './signal.mjs';
@@ -329,7 +330,7 @@ test('invalid published plan gets one signed correction in the original planning
  const corrections=Object.values(out.actions).filter(a=>a.scope_recovery);
  assert.equal(corrections.length,1);
  assert.equal(corrections[0].type,'scope_plan_update');
- assert.match(corrections[0].delivery.prompt,/unsafe or a wildcard/);
+ assert.match(corrections[0].delivery.prompt,/invalid_exact_edit_path/);
  assert.equal(corrections[0].delivery.conversation_url,
   submitted.tasks[taskId].conversation_ref);
  assert.equal(corrections[0].delivery.approval_hash,submitted.tasks[taskId].approval_hash);
@@ -428,6 +429,57 @@ test('P1 regression: non-object JSON scope comments never crash all-task reconci
   now:'2026-11-11T09:16:00Z'});
  const correction=Object.values(next.actions).find(a=>a.scope_recovery);
  assert.ok(correction);
- assert.match(correction.delivery.prompt,/must contain a JSON object/);
+ assert.match(correction.delivery.prompt,/scope_must_be_object/);
  assert.equal(next.scope_authorizations,undefined);
+});
+
+
+test('full scope snapshots select an authenticated plan from page one of a long issue',()=>{
+ const {submitted,comment}=fixture();
+ const comments=Array.from({length:250},(_,i)=>({
+  id:comment.id+100+i,user:{login:'other'},
+  author_association:'NONE',body:'unrelated',created_at:comment.created_at}));
+ comments[12]=comment;
+ assert.equal(selectScopePlans(comments,queue,submitted)[taskId].comment_id,comment.id);
+});
+
+test('source/receipt/chronology rejection is diagnosed, durable, and owner-visible',()=>{
+ const {submitted,comment}=fixture();
+ const variants=[
+  {comment:{...comment,body:'<!-- aicafe-scope-plan:v1 null -->'},
+   code:'scope_must_be_object'},
+  {comment:{...comment,created_at:'2026-11-11T09:11:00Z'},
+   code:'comment_before_authenticated_delivery'},
+  {comment:{...comment,body:comment.body.replace('trigger.test.ts','trigger.test.*')},
+   code:'invalid_exact_edit_path'},
+ ];
+ for(const {comment:bad,code} of variants){
+  assert.equal(inspectScopePlanComment(bad,queue,submitted).code,code);
+  const out=queueScopePlanRecovery(submitted,queue,[bad],{},{
+   now:'2026-11-11T09:16:00Z'});
+  const item=out.scope_rejections[String(bad.id)];
+  assert.equal(item.code,code);
+  assert.equal(item.status,'open');
+  assert.equal(Object.values(out.owner_alerts).some(n=>n.kind==='scope_plan_rejected'&&
+   n.identity===bad.id+':'+code&&n.status==='planned'),true);
+ }
+ const accepted=selectScopePlans([comment],queue,submitted);
+ const snapshot=queueScopePlanRecovery(submitted,queue,[comment],accepted);
+ assert.equal(snapshot.scope_rejections[String(comment.id)],undefined);
+});
+
+test('superseded rejection resolves old Muse notice and preserves audit trail',()=>{
+ const {submitted,comment}=fixture();
+ const bad={...comment,body:comment.body.replace('trigger.test.ts','trigger.test.*')};
+ const initial=queueScopePlanRecovery(submitted,queue,[bad],{},{
+  now:'2026-11-11T09:16:00Z'});
+ const later={...comment,id:comment.id+1,created_at:'2026-11-11T09:17:00Z'};
+ const plans=selectScopePlans([bad,later],queue,submitted);
+ const clean=queueScopePlanRecovery(initial,queue,[bad,later],plans,{
+  now:'2026-11-11T09:18:00Z'});
+ assert.equal(clean.scope_rejections[String(bad.id)].status,'resolved');
+ assert.equal(Object.values(clean.owner_alerts).some(n=>
+  n.kind==='scope_plan_rejected'&&n.status==='resolved'),true);
+ assert.equal(Object.values(clean.actions).filter(a=>a.scope_recovery&&
+  a.status==='planned').length,0);
 });
