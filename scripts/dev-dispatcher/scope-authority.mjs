@@ -4,17 +4,13 @@ import {createHash} from 'node:crypto';
 import {settings} from './settings.mjs';
 import {noticeHash} from './alerts.mjs';
 import {proposalSourceHash,createScopePlanDelivery} from './proposal-stage.mjs';
-import {validateQueue,editableFiles} from './core.mjs';
+import {validateQueue,editableFiles,validEditPath} from './core.mjs';
 import {approvalSignature} from './delivery.mjs';
 
 const digest=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const taskId=id=>typeof id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id);
-// File names are repository facts, not an ASCII allowlist. Next.js dynamic
-// routes and other valid paths may contain brackets, spaces or Unicode.
-// Keep only security/exact-path checks: no glob, absolute path or traversal.
-const pathOK=p=>typeof p==='string'&&p.length>0&&
- !p.startsWith('/')&&!p.includes('\\')&&!/[\x00-\x1f\x7f]/.test(p)&&
- !/[?*]/.test(p)&&p.split('/').every(part=>part&&part!=='.'&&part!=='..'&&part!=='.git');
+// Use the same repository-path validator at proposal and signed-queue time.
+const pathOK=validEditPath;
 const yes=s=>/^yes(?:[.!]|(?:\s+to\s+(?:start|proceed))[.!]?)?$/i.test(String(s||'').trim());
 
 // Plans go on the existing owner-control issue #411, not a new PR, queue, job
