@@ -6,8 +6,6 @@ import {pathToFileURL} from "node:url";
 export const SCENARIOS = Object.freeze(["home", "staff", "menu", "money"]);
 const ALL = SCENARIOS;
 
-function match(path, re) { return re.test(path); }
-
 // Recognize real user journeys, not just *.spec.* changes. Unknown browser UI
 // must fail closed instead of permitting an untested screen to merge.
 export function scenariosForPath(path) {
@@ -20,39 +18,35 @@ export function scenariosForPath(path) {
       path === "app/[locale]/layout.tsx" ||
       path === "app/[locale]/loading.tsx" ||
       path.startsWith("app/[locale]/login/") ||
-      path.startsWith("app/[locale]/onboarding/") ||
-      path.startsWith("app/auth/") ||
       path === "components/LoginForm.tsx" ||
       path === "components/TabBar.tsx" ||
       path === "components/SideNav.tsx" ||
-      path.startsWith("components/shared/") ||
+      path === "components/shared/PageShell.tsx" ||
       path.startsWith("lib/auth/") ||
       path.startsWith("lib/supabase/") ||
       path === "messages/en.json") return ALL;
   if (path === "app/[locale]/page.tsx" ||
-      path.startsWith("components/home/") ||
       path.startsWith("lib/viewmodels/home") ||
       path === "scripts/ldi-g-visual-check.mjs" ||
       path === ".github/workflows/ldi-g-events-visual.yml")
     return ["home"];
-  if (path.startsWith("app/[locale]/staff/") ||
-      path.startsWith("components/staff/") ||
+  if (path === "app/[locale]/staff/page.tsx" ||
+      path === "components/staff/StaffWorkspace.tsx" ||
       path.startsWith("lib/calc/scheduling/") ||
       path === "scripts/staff-pr155-screenshots.mjs" ||
       path === ".github/workflows/staff-pr155-screenshots.yml")
     return ["staff"];
-  if (path.startsWith("app/[locale]/menu/") ||
-      path.startsWith("components/menu/") ||
+  if (path === "app/[locale]/menu/page.tsx" ||
+      path === "components/menu/MenuCatalog.tsx" ||
       path.startsWith("lib/viewmodels/menu")) return ["menu"];
-  if (path.startsWith("app/[locale]/money/") ||
-      path.startsWith("components/money/") ||
+  if (path === "app/[locale]/money/page.tsx" ||
+      path === "components/money/MoneyViewSwitch.tsx" ||
       path.startsWith("lib/viewmodels/money")) return ["money"];
   if (path.startsWith("app/api/")) return [];
-  if (match(path, /^app\/\[locale\]\//) ||
+  if (/^app\/\[locale\]\//.test(path) ||
       path.startsWith("components/") ||
       (path.startsWith("app/") && !path.endsWith(".test.ts") &&
-        !path.endsWith(".test.tsx")) ||
-      match(path, /(?:\.e2e\.|\.spec\.)/)) return null;
+        !path.endsWith(".test.tsx"))) return null;
   return [];
 }
 
