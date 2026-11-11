@@ -113,6 +113,22 @@ describe("routine SQL security contract",()=>{
       expect(settled.rows).toHaveLength(1);
       expect(settled.rows[0].status).toBe("handled");
       expect(settled.rows[0].resolved_at).not.toBeNull();
+      const alertId=randomUUID();
+      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'meal_break','new','{}')",
+        [alertId,business]);
+      const alertKey="4".repeat(64);
+      expect(await call(workerA,"post_supervisor_priority_notice",[
+        business,ownerId,threadId,"alert",alertId,"3".repeat(64),
+        alertKey,"Actionable café alert needs review","2026-11-01T16:04:00Z",
+        null,null,null,
+      ])).toBe(true);
+      await admin.query("update public.alerts set status='dismissed' where business_id=$1 and id=$2",
+        [business,alertId]);
+      const alertReceipt=await admin.query(
+        "select status,resolved_at from public.operating_tasks where business_id=$1 and id=$2",
+        [business,"priority:"+alertKey]);
+      expect(alertReceipt.rows[0].status).toBe("handled");
+      expect(alertReceipt.rows[0].resolved_at).not.toBeNull();
       const updated=await call(owner,"change_supervisor_routine",
         [business,ownerId,threadId,secondRoutine,1,JSON.stringify({status:"paused"})]);
       expect(updated.status).toBe("paused");
