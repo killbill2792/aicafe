@@ -48,9 +48,17 @@ export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGa
     // GitHub must attempt its signed-branch recovery; Muse checks the ORIGINAL
     // ChatGPT conversation if the branch/PR never materializes.
     const sinceDelivery=ago(r.last_submission_at,clock);
-    if(r.approved===true&&!r.pr_number&&
-      verifiedCodingConversation(state,id,r.approval_hash,r.conversation_ref)&&
-      sinceDelivery!==null&&sinceDelivery>deliveryGapMinutes)
+    const authorizedChat=r.approved===true&&!r.pr_number&&
+      verifiedCodingConversation(state,id,r.approval_hash,r.conversation_ref);
+    const writerReason=r.github_effects?.CREATE_DRAFT_PR?.reason;
+    const missingWriter=authorizedChat&&
+      ['missing_pr_creator_install_token','pr_creator_permission_denied'].includes(writerReason);
+    if(missingWriter)
+      incidents.push({kind:'GITHUB_PR_WRITE_UNAVAILABLE',task_id:id,
+        reason:writerReason,age_minutes:sinceDelivery,
+        action:'MUSE_NOTIFY_OWNER',
+        note:'GitHub cannot create the signed draft PR until its existing authorized writer credential or permission is repaired'});
+    else if(authorizedChat&&sinceDelivery!==null&&sinceDelivery>deliveryGapMinutes)
       incidents.push({kind:'DELIVERED_TASK_NO_PR',task_id:id,
         age_minutes:sinceDelivery,action:'MUSE_INSPECT_CHAT_AND_RECONCILE'});
     if(r.github_state!=='open'||!r.pr_number||!r.head_sha)continue;
