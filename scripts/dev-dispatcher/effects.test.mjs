@@ -44,12 +44,13 @@ test('safe update branch requires live SHA and blocks conflicts',async()=>{
  let writes=0;
  const gh={request:async(path,opts)=>{
   if(opts?.method==='PUT'){writes++;return {message:'updating'};}
-  return {state:'open',merged:false,mergeable:true,head:{sha:'head'},base:{ref:'main'}};
+  return {state:'open',merged:false,mergeable:true,head:{sha:'head',ref:'feat/worker'},base:{ref:'main'}};
  }};
- assert.equal((await safeUpdateBranch({github:gh,record:{...rec,github_state:'open'},enabled:true})).status,'updating');
- assert.equal(writes,1);
+ assert.equal((await safeUpdateBranch({github:gh,record:{...rec,github_state:'open'},enabled:true,
+   gitToken:'existing',gitUpdate:()=>({status:'updating'})})).status,'updating');
+ assert.equal(writes,0);
  assert.equal((await safeUpdateBranch({github:gh,record:{...rec,head_sha:'stale',github_state:'open'},enabled:true})).status,'blocked');
- assert.equal(writes,1);
+ assert.equal(writes,0);
 });
 test('legacy retarget entrypoint reuses live-verified merged parent plus branch update',async()=>{
  let patches=0, updates=0, base='feat/parent';
@@ -59,8 +60,8 @@ test('legacy retarget entrypoint reuses live-verified merged parent plus branch 
      merge_commit_sha:sha,head:{ref:'feat/parent'}};
    if(path==='/pulls/100'&&opts?.method==='PATCH'){patches++;base='main';return{};}
    if(path==='/pulls/100')return{state:'open',merged:false,
-     head:{sha:'head'},base:{ref:base}};
-   if(path==='/pulls/100/update-branch'){updates++;return{};}
+     head:{sha:'head',ref:'feat/child'},base:{ref:base}};
+   if(path==='/pulls/100/update-branch')throw Error('API update-branch forbidden');
    throw Error(path);
  }};
  const child={pr_number:100,head_sha:'head',github_state:'open'};
@@ -69,8 +70,9 @@ test('legacy retarget entrypoint reuses live-verified merged parent plus branch 
    predecessor:{...parent,merge_sha:null},enabled:true})).status,'blocked');
  assert.equal(patches,0);
  const updated=await retargetAfterIntegration({github:gh,dependent:child,
-   predecessor:parent,enabled:true});
- assert.equal(updated.status,'update_requested');
+   predecessor:parent,enabled:true,gitToken:'existing',
+   gitUpdate:()=>{updates++;return {status:'updating'};}});
+ assert.equal(updated.status,'updating');
  assert.equal(patches,1);
  assert.equal(updates,1);
 });
