@@ -191,28 +191,33 @@ test('scope status check uses existing delayed wake, not a guessed planning dead
 test('verified Muse delivery without a PR schedules exactly one original-chat status check',()=>{
  const conversation='https://chatgpt.com/c/original-123';
  const s={tasks:{T:{task_id:'T',status:'assigned',approved:true,
-   approval_hash:'signed',conversation_ref:conversation,
+   approval_hash:'a'.repeat(64),conversation_ref:conversation,
    last_submission_at:new Date(at).toISOString()}},
    actions:{assign:{task_id:'T',type:'assign',status:'submitted',
-    delivery:{approval_hash:'signed'},
-    receipt:{courier:'muse',conversation_url:conversation}}}};
+    delivery_owner:'muse',
+    delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+      approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+    receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:conversation}}}};
  const due=nextWake(s,at,one);
  assert.equal(due.reason,'pre_pr_status_check');
  assert.equal(due.due_at,new Date(at+15*60000).toISOString());
  assert.equal(nextWake(s,at+900001,one).key,due.key);
  s.actions.reminder={task_id:'T',type:'pre_pr_reminder',status:'submitted',
-  delivery:{approval_hash:'signed'}};
+  delivery:{approval_hash:'a'.repeat(64)}};
  assert.equal(nextWake(s,at+900001,one),null);
 });
 test('pre-PR delayed wake never uses forged, old-scope or wrong-chat receipts',()=>{
  const conversation='https://chatgpt.com/c/original-123';
- const rec={task_id:'T',status:'assigned',approved:true,approval_hash:'current',
+ const rec={task_id:'T',status:'assigned',approved:true,approval_hash:'a'.repeat(64),
    conversation_ref:conversation,last_submission_at:new Date(at).toISOString()};
  const original={task_id:'T',type:'assign',status:'submitted',
-   delivery:{approval_hash:'current'},receipt:{courier:'muse',conversation_url:conversation}};
+   delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+     approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:conversation}};
  const state={tasks:{T:rec},actions:{original}};
  for(const item of [
-   {...original,delivery:{approval_hash:'previous'}},
+   {...original,delivery:{...original.delivery,approval_hash:'c'.repeat(64)}},
    {...original,receipt:{courier:'muse',conversation_url:'https://chatgpt.com/c/other'}},
    {...original,receipt:{courier:'unknown',conversation_url:conversation}}
  ]){
