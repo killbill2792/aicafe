@@ -41,6 +41,10 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
       return { state: copy, rejected: [] };
     },
     reconcileReceiptFeedback: state => state,
+    queueOwnerIssue: (state,incident) => ({owner_alerts:{
+      ...state.owner_alerts,
+      ['notice:'+incident.kind+':'+incident.identity]:{...incident,status:'planned',recipient:'owner'}
+    }}),
     queueOwnerAlerts: state => state,
     noticeOperationalIssues: state => state,
     applySafetySignals: state => state,
@@ -85,6 +89,7 @@ test('one failing assignment does not prevent another and never writes a failed 
   assert.equal(result.state.tasks.bad, undefined);
   assert.equal(result.state.actions['assign:bad'], undefined);
   assert.equal(result.state.actions['assign:good'].status, 'planned');
+  assert.equal(result.state.owner_alerts['notice:assignment_build_failed:assign:bad'].status,'planned');
   assert.match(h.errors.join('\n'), /Task bad delivery creation failed: synthetic delivery failure/);
 });
 
@@ -106,13 +111,14 @@ test('one failing follow-up does not block other tasks or write action or early 
   assert.equal(result.state.tasks.bad.last_parent_rebase_sha, undefined);
   assert.equal(result.state.actions['idle_continue:good:new'].status, 'planned');
   assert.equal(result.state.tasks.good.last_action_key, 'idle_continue:good:new');
+  assert.equal(result.state.owner_alerts['notice:courier_prompt_build_failed:parent_merged:bad:'+sha].status,'planned');
   assert.deepEqual(Array.from(result.nudges, x => x.task_id), ['good']);
   assert.match(h.errors.join('\n'), /Task bad delivery creation failed: synthetic delivery failure/);
 });
 
 test('main maintenance excludes unfinished drafts without disabling parent maintenance', () => {
   assert.match(source, /rec\.base_current === false && rec\.base_branch === 'main' &&\s*!\(rec\.draft === true && rec\.ci_state !== 'success'\)/);
-  assert.match(source, /await updateChildAfterParentMerge\(\{github:gh,dependent:rec,predecessor:parent\}\)/);
+  assert.match(source, /await updateChildAfterParentMerge\(\{github:gh,dependent:rec,predecessor:parent,/);
 });
 
 test('one live pending checklist per PR even if two task records reference it',()=>{
@@ -216,4 +222,24 @@ test('hash-bound Muse yes resumes the same-tick frontier with one assignment',as
  const out=h.run(s).state;assert.equal(out.tasks['6'].status,'assigned');
  assert.equal(out.actions['assign:6'].status,'planned');
  assert.equal(out.actions['assign:6'].delivery_owner,'muse');
+});
+
+test('a cached merged PR never downgrades or cancels its existing landing repair',async()=>{
+ const {reconcileGithub}=await import('./core.mjs');
+ const merged='a'.repeat(40),at='2026-11-11T11:30:00Z';
+ const id='landing_failed:T:'+merged;
+ const state={tasks:{T:{task_id:'T',pr_number:407,github_state:'merged',
+    status:'merged',merge_sha:merged,merged_at:at,landing_failure:'bot landing failure'}},
+   actions:{[id]:{task_id:'T',type:'landing_failed',status:'planned',head_sha:merged}}};
+ const noRefetch=reconcileGithub(state,[],{});
+ assert.equal(noRefetch.tasks.T.github_state,'merged');
+ assert.equal(noRefetch.tasks.T.merge_sha,merged);
+ assert.equal(noRefetch.actions[id].status,'planned');
+ const last='2026-11-11T12:00:00Z';
+ const fromGitHub=reconcileGithub(state,[],{407:{merged:true,merge_sha:merged,
+   merged_at:at,last_landing_check_at:last,landing_failure:'bot landing failure'}});
+ assert.equal(fromGitHub.tasks.T.github_state,'merged');
+ assert.equal(fromGitHub.tasks.T.merged_at,at);
+ assert.equal(fromGitHub.tasks.T.last_landing_check_at,last);
+ assert.equal(fromGitHub.actions[id].status,'planned');
 });

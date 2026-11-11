@@ -17,9 +17,9 @@ export function parseChatUrl(body='') {
 }
 export const STALL_PROMPT = "No new commit arrived. If GitHub returned 403 'Resource not accessible by integration', report it in one line.";
 export const stallMinutes = value => {
-  if (value == null || value === '') return 20;
+  if (value == null || value === '') return 10;
   const n=Number(value);
-  return Number.isInteger(n) && n>=1 && n<=1440 ? n : 20;
+  return Number.isInteger(n) && n>=1 && n<=1440 ? n : 10;
 };
 export function expectedTaskRepo(task,record,dispatcherRepo) {
   const declared=task?.repository || task?.repo || record?.repository || record?.repo;
@@ -43,7 +43,8 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
       rec.stall_escalate=false;
       rec.stall_nudged_at=null;
     }
-    const needsFix=rec.ci_state==='failure'||rec.codex_state==='findings'||rec.mergeable===false;
+    const needsFix=rec.ci_state==='failure'||rec.codex_state==='findings'||rec.mergeable===false||
+       (rec.draft===true&&rec.ci_state==='success');
     if(headMoved || rec.github_state!=='open'||!sha.test(head||'')||
         !needsFix||!rec.approved||!rec.conversation_ref||rec.repo_mismatch) {
       rec.stall_pending=null;
@@ -51,11 +52,16 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
     }
     const delivered=Date.parse(rec.last_submission_at||'');
     const committed=Date.parse(rec.last_commit_at||'');
-    const advanced=sha.test(rec.last_prompt_head_sha||'')
-      ? rec.last_prompt_head_sha!==head
-      : Number.isFinite(committed)&&committed>delivered;
+    // The latest confirmed commit OR delivered prompt resets the idle clock.
+    const observed=Date.parse(rec.head_first_seen_at||'');
+    const unknownHeadTime=sha.test(rec.last_prompt_head_sha||'')&&
+      rec.last_prompt_head_sha!==head&&!Number.isFinite(observed);
+    // Commit timestamps can be stale or future-dated; a verified new head
+    // uses the time GitHub reconciliation first observed it.
+    const progressAt=Math.max(delivered,
+      Number.isFinite(observed)?observed:(Number.isFinite(committed)?committed:0));
     if(!Number.isFinite(delivered)||!Number.isFinite(clock) ||
-       clock-delivered < minutes*60000 || advanced) {
+       clock-progressAt < minutes*60000 || unknownHeadTime) {
       rec.stall_pending=null;
       continue;
     }

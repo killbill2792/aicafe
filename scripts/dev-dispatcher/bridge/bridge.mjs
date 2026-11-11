@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const safeName = s => typeof s === 'string' && /^[a-zA-Z0-9_.-]{1,80}$/.test(s);
 const sha = s => createHash('sha256').update(s).digest('hex');
@@ -103,15 +103,54 @@ export function agentInstruction(action) {
   ].join('\n');
 }
 
-export async function fetchLedger({ repo, token, ledgerPath=process.env.DISPATCH_LEDGER_PATH, fetchImpl = fetch }) {
+// Muse can read the SAME private ledger over Git/SSH during a REST outage.
+// Requires its existing authorized ledger deploy key; no GitHub API token.
+// This is only transport; Muse never decides PR state or owner approval.
+export async function fetchLedgerViaGit({repo,ledgerPath,
+  remoteUrl,run=spawnSync}={}) {
+ if(!/^[\w.-]+\/[\w.-]+$/.test(repo||'')||
+    typeof ledgerPath!=='string'||!ledgerPath||ledgerPath.startsWith('/')||
+    ledgerPath.includes('..'))throw Error('Invalid Muse Git ledger target');
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'muse-git-ledger-'));
+ try{
+  const remote=remoteUrl||'git@github.com:'+repo+'.git';
+  const result=run('git',['clone','-q','--depth','1','--branch','main','--',
+    remote,root],{encoding:'utf8',timeout:30000,maxBuffer:200000,
+    stdio:['ignore','pipe','pipe'],env:{...process.env,GIT_TERMINAL_PROMPT:'0',
+      GIT_SSH_COMMAND:process.env.GIT_SSH_COMMAND||'ssh -oBatchMode=yes'}});
+  if(result.status!==0||result.error)throw Error('Muse Git ledger fetch unavailable');
+  const raw=await fs.readFile(path.join(root,ledgerPath),'utf8');
+  if(raw.length>1_000_000)throw Error('Muse ledger too large');
+  const state=JSON.parse(raw);
+  if(state.version!==1||!state.tasks||!state.actions)throw Error('Invalid Muse ledger');
+  return state;
+ }finally{await fs.rm(root,{recursive:true,force:true});}
+}
+
+export async function fetchLedger({ repo, token, ledgerPath=process.env.DISPATCH_LEDGER_PATH,
+  fetchImpl = fetch,gitRead=process.env.DISPATCH_LEDGER_GIT_READ==='true',
+  gitFetch=fetchLedgerViaGit } = {}) {
   const path=ledgerPath || (await import('../settings.mjs').catch(()=>null))?.settings?.ledger?.path;
   if(!path||path.startsWith('/')||path.includes('..'))throw Error('Local ledger path required');
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo || '') || !token) throw new Error('Private ledger repository and read token required');
+  if(!/^[\w.-]+\/[\w.-]+$/.test(repo||''))throw Error('Private ledger repository required');
+  if(gitRead)return gitFetch({repo,ledgerPath:path});
+  if(!token)throw Error('Private ledger read token required');
   const headers = { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' };
   const meta = await fetchImpl(`https://api.github.com/repos/${repo}`, { headers });
-  if (!meta.ok || (await meta.json()).private !== true) throw new Error('Ledger repository must be private and accessible');
+  if(!meta.ok){
+    if([403,429].includes(meta.status)&&
+       meta.headers?.get?.('x-ratelimit-remaining')==='0')
+      return gitFetch({repo,ledgerPath:path});
+    throw Error('Ledger repository must be private and accessible');
+  }
+  if((await meta.json()).private!==true)throw Error('Ledger repository must be private and accessible');
   const response = await fetchImpl(`https://api.github.com/repos/${repo}/contents/${path}?ref=main`, { headers });
-  if (!response.ok) throw new Error(`Cannot read private ledger: HTTP ${response.status}`);
+  if(!response.ok){
+    if([403,429].includes(response.status)&&
+       response.headers?.get?.('x-ratelimit-remaining')==='0')
+      return gitFetch({repo,ledgerPath:path});
+    throw new Error(`Cannot read private ledger: HTTP ${response.status}`);
+  }
   const data = await response.json();
   if (!data.content) throw new Error('Ledger missing content');
   const decoded = Buffer.from(data.content.replace(/\s/g, ''), 'base64').toString('utf8');

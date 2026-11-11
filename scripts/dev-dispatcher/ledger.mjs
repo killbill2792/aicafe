@@ -30,6 +30,7 @@ export class GitHubLedger {
     this.path = path;
     this.token = token;
     this.fetchFn = fetchFn;
+    this.privateVerified = false;
   }
   async request(path, options = {}) {
     // Bounded retries for transient GitHub/API infrastructure failures only.
@@ -54,8 +55,10 @@ export class GitHubLedger {
     return response.json();
   }
   async verifyPrivate() {
+    if(this.privateVerified)return;
     const data = await this.request("");
     if (data.absent || data.private !== true) throw new Error("Ledger must be a private repository");
+    this.privateVerified = true;
   }
   async load() {
     const data = await this.request(`/contents/${this.path}?ref=main`);
@@ -73,6 +76,10 @@ export class GitHubLedger {
   // GitHub Actions' concurrency group serializes normal execution; SHA is a second safety check.
   async transaction(transform, maxRetries = 3) {
     await this.verifyPrivate();
+    if(process.env.DISPATCH_LEDGER_GIT_WRITES==='true'){
+      const {transactLedgerViaGit}=await import('./git-operations.mjs');
+      return transactLedgerViaGit({repo:this.repo,token:this.token,transform,maxRetries});
+    }
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const { sha, state } = await this.load();
       const updated = await transform(structuredClone(state));

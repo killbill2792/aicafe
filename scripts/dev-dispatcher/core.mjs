@@ -327,7 +327,10 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
     if (!Number.isInteger(rec.pr_number)) continue;
     if (!open.has(rec.pr_number)) {
       const closed = closedByPr[rec.pr_number];
-      const merged = closed === true || closed?.merged === true;
+      // A verified merge cannot be downgraded by an incremental cache miss.
+      const merged = closed === true || closed?.merged === true ||
+        (!closed && rec.github_state==='merged' &&
+         /^[a-f0-9]{40}$/.test(rec.merge_sha||''));
       // Owner-initiated merges/closures immediately supersede undelivered coder
       // prompts; a vanished PR is not a reason to re-open work.
       if (closed)
@@ -342,6 +345,9 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
         github_state: merged ? "merged" : "not_open_unverified",
         merge_sha: merged ? (closed?.merge_sha || rec.merge_sha || null) : rec.merge_sha,
         landing_failure: merged ? (closed?.landing_failure || rec.landing_failure || null) : rec.landing_failure,
+        merged_at: merged ? (closed?.merged_at || rec.merged_at || null) : rec.merged_at,
+        last_landing_check_at: merged ? (closed?.last_landing_check_at || rec.last_landing_check_at || null)
+          : rec.last_landing_check_at,
         status: merged && !["integrated_proven", "released_proven"].includes(rec.status) ? "merged" : rec.status };
     }
   }
@@ -363,6 +369,7 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
         }
       }
       const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_commit_at || pr.last_github_activity);
+       if(rec.head_sha!==pr.head_sha)updated.head_first_seen_at=now;
       const baseChanged = Boolean(rec.base_sha && pr.base_sha && rec.base_sha !== pr.base_sha);
       const baseChangedAt = baseChanged ? now : rec.base_changed_at;
       const reviewBaseCurrent = !baseChangedAt || Boolean(pr.codex_review_at &&

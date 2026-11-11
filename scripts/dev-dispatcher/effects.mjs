@@ -2,6 +2,7 @@ import {settings} from './settings.mjs';
 // Trusted-main GitHub effects. Never execute PR code with the private queue token.
 // Every irreversible action rechecks live GitHub facts; uncertainty blocks merging.
 import { mergeGate, readyGate } from './core.mjs';
+import {updateBranchViaGit} from './git-operations.mjs';
 import { acceptanceDigest } from './acceptance-runner.mjs';
 import {verifyLiveCarryOver} from './codex-carryover.mjs';
 
@@ -157,31 +158,34 @@ export function integrationStatus({ merged_sha, main_sha, proof, expectedAccepta
   return 'integrated_proven';
 }
 
-export async function safeUpdateBranch({ github, record, enabled = false }) {
-  if (!enabled) return { status:'disabled' };
-  if (!record?.pr_number || !record?.head_sha || record.github_state !== 'open')
-    return { status:'blocked', reason:'unverified_pr' };
-  const pr=await github.request(`/pulls/${record.pr_number}`);
-  if (pr.state!=='open' || pr.head.sha!==record.head_sha ||
-      pr.base.ref!==record.base_branch || pr.merged) return {status:'blocked',reason:'live_pr_changed'};
-  if (pr.mergeable===false) return {status:'blocked',reason:'conflict_needs_coder'};
-  await github.request(`/pulls/${record.pr_number}/update-branch`, {
-    method:'PUT',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({expected_head_sha:record.head_sha})
-  });
-  return {status:'updating',reason:'recheck_new_head_and_all_checks'};
+export async function safeUpdateBranch({github,record,enabled=false,gitToken,
+  gitUpdate=updateBranchViaGit}) {
+  if(!enabled)return {status:'disabled'};
+  if(!record?.pr_number||!record?.head_sha||record.github_state!=='open')
+    return {status:'blocked',reason:'unverified_pr'};
+  const pr=await github.request('/pulls/'+record.pr_number);
+  if(pr.state!=='open'||pr.merged||pr.head?.sha!==record.head_sha||
+     pr.base?.ref!==record.base_branch)
+    return {status:'blocked',reason:'live_pr_changed'};
+  if(pr.mergeable===false)return {status:'blocked',reason:'conflict_needs_coder'};
+  if(pr.head?.repo?.full_name&&pr.head.repo.full_name!==(github.repo||settings.repo))
+    return {status:'blocked',reason:'wrong_head_repository'};
+  return gitUpdate({repo:github.repo||settings.repo,
+    branch:pr.head?.ref||record.branch,expectedHeadSha:record.head_sha,
+    token:gitToken});
 }
 
 // Compatibility entrypoint: one actual retarget/update path, never a lighter gate.
-export async function retargetAfterIntegration({github,dependent,predecessor,enabled=false}) {
+export async function retargetAfterIntegration({github,dependent,predecessor,enabled=false,gitToken,gitUpdate}) {
   if (!enabled) return {status:'disabled'};
-  return updateChildAfterParentMerge({github,dependent,predecessor});
+  return updateChildAfterParentMerge({github,dependent,predecessor,gitToken,gitUpdate});
 }
 
 // Trusted-main branch maintenance is NOT a merge or integration proof gate.
 // Verify actual parent merge before changing a child, then request update-branch.
 // A conflict is reported to the same child chat rather than force-pushed.
-export async function updateChildAfterParentMerge({github,dependent,predecessor}) {
+export async function updateChildAfterParentMerge({github,dependent,predecessor,gitToken,
+  gitUpdate=updateBranchViaGit}) {
   if (!dependent?.pr_number || !dependent?.head_sha ||
       dependent.github_state !== 'open' ||
       !predecessor?.pr_number || !predecessor?.merge_sha ||
@@ -205,15 +209,11 @@ export async function updateChildAfterParentMerge({github,dependent,predecessor}
         child.base.ref !== 'main')
       return {status:'blocked',reason:'retarget_not_verified'};
   }
-  // Don't force-push or override a fresh branch head. Any 422/conflict is
-  // surfaced and the existing same-chat nudge tells the coder to resolve it.
-  try {
-    await github.request('/pulls/' + dependent.pr_number + '/update-branch',{
-      method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({expected_head_sha:dependent.head_sha})
-    });
-    return {status:'update_requested',parent_merge_sha:predecessor.merge_sha};
-  } catch {
-    return {status:'update_failed_needs_coder',parent_merge_sha:predecessor.merge_sha};
-  }
+  // No update-branch REST write. Never force-push over a concurrent coder commit.
+  try{
+    const result=gitUpdate({repo:github.repo||settings.repo,
+      branch:child.head.ref||dependent.branch,
+      expectedHeadSha:dependent.head_sha,token:gitToken});
+    return {...result,parent_merge_sha:predecessor.merge_sha};
+  }catch{return {status:'update_failed_needs_coder',parent_merge_sha:predecessor.merge_sha};}
 }

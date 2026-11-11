@@ -2,6 +2,7 @@
 import {createHash} from 'node:crypto';
 import {GitHubLedger} from './ledger.mjs';
 import {settings} from './settings.mjs';
+import {stallMinutes} from './safety.mjs';
 import {queueOwnerIssue} from './alerts.mjs';
 const sha=s=>createHash('sha256').update(s).digest('hex'),dt=s=>Date.parse(s||'');
 export function nextWake(state,now=Date.now(),config=settings){
@@ -24,6 +25,18 @@ export function nextWake(state,now=Date.now(),config=settings){
      r.codex_in_progress_sha!==r.head_sha&&
      !['clean','findings'].includes(r.codex_state)&&Number.isFinite(at))
    list.push({at:at+20*60*1000,reason:'codex_watchdog',id});
+ }
+ // One scheduled deadline for unfinished coding; no blanket PR poll.
+ for(const [id,r] of Object.entries(state.tasks||{})){
+  if(r.github_state!=='open'||r.draft!==true||!r.approved||
+     !r.conversation_ref||r.ci_state==='pending'||r.stall_count>=1)continue;
+  const delivered=dt(r.last_submission_at),committed=dt(r.last_commit_at),
+    observed=dt(r.head_first_seen_at);
+  if(Number.isFinite(delivered)&&r.head_sha&&
+      !(r.last_prompt_head_sha&&r.last_prompt_head_sha!==r.head_sha&&!Number.isFinite(observed)))
+   list.push({at:Math.max(delivered,Number.isFinite(committed)?committed:0,
+      Number.isFinite(observed)?observed:0)+
+     stallMinutes(process.env.DISPATCH_STALL_MINUTES)*60000,reason:'coding_idle',id});
  }
  for(const [id,a] of Object.entries(state.actions||{})){
   const at=dt(a.last_wake_at||a.created_at);

@@ -142,6 +142,10 @@ export function renderPrivateQueue(state, {repo=settings.ledger.repo} = {}) {
 }
 
 export async function publishPrivateQueue({ledger}) {
+  if(process.env.DISPATCH_LEDGER_GIT_WRITES==='true'){
+    const {publishOwnerQueueViaGit}=await import('./git-operations.mjs');
+    return publishOwnerQueueViaGit({repo:ledger.repo,token:ledger.token});
+  }
   if(!ledger || typeof ledger.load!=='function' || typeof ledger.request!=='function')
     throw new Error('Private ledger client required');
   // Always derive from the newest remote ledger, never from an older public view.

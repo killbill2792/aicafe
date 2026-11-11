@@ -60,7 +60,7 @@ test('owner view calls stale cancellations superseded and planned overdue action
 });
 
 
-test('default branch maintenance verifies live parent merge before retarget, then requests update-branch in order',async()=>{
+test('default branch maintenance verifies parent merge, then Git-merges in order',async()=>{
   const merged='f'.repeat(40),head='a'.repeat(40);
   const parent={pr_number:400,branch:'feat/parent',status:'merged',merge_sha:merged};
   const child={pr_number:408,head_sha:head,github_state:'open'};
@@ -71,16 +71,18 @@ test('default branch maintenance verifies live parent merge before retarget, the
     if(path==='/pulls/400')return {merged_at:'2026-11-09T22:00:00Z',
       merge_commit_sha:merged,head:{ref:'feat/parent'}};
     if(path==='/pulls/408' && options?.method==='PATCH'){updated=true;return {};}
-    if(path==='/pulls/408')return {state:'open',merged:false,head:{sha:head},
+    if(path==='/pulls/408')return {state:'open',merged:false,head:{sha:head,ref:'feat/child'},
       base:{ref:updated?'main':'feat/parent'}};
-    if(path==='/pulls/408/update-branch') return {message:'Update branch requested'};
+    if(path==='/pulls/408/update-branch')throw Error('REST branch update forbidden');
     throw Error('Unexpected request '+path);
   }};
-  const v=await updateChildAfterParentMerge({github,dependent:child,predecessor:parent});
-  assert.equal(v.status,'update_requested');
+  let pushes=0;
+  const v=await updateChildAfterParentMerge({github,dependent:child,predecessor:parent,
+    gitToken:'existing',gitUpdate:()=>{pushes++;return {status:'updating'};}});
+  assert.equal(v.status,'updating');
+  assert.equal(pushes,1);
   assert.deepEqual(calls.map(([p,m])=>p+' '+(m||'GET')),[
-    '/pulls/400 GET','/pulls/408 GET','/pulls/408 PATCH','/pulls/408 GET',
-    '/pulls/408/update-branch PUT'
+    '/pulls/400 GET','/pulls/408 GET','/pulls/408 PATCH','/pulls/408 GET'
   ]);
   const rejected=await updateChildAfterParentMerge({github,dependent:child,
     predecessor:{...parent,merge_sha:'b'.repeat(40)}});
@@ -94,15 +96,16 @@ test('already-main child requests update without a second retarget; conflicts su
   const github={request:async(path,options)=>{
     calls.push([path,options?.method]);
     if(path==='/pulls/400')return{merged_at:'yes',merge_commit_sha:merged,head:{ref:'feat/parent'}};
-    if(path==='/pulls/408')return {state:'open',merged:false,head:{sha:head},base:{ref:'main'}};
+    if(path==='/pulls/408')return {state:'open',merged:false,head:{sha:head,ref:'feat/child'},base:{ref:'main'}};
     if(path.endsWith('/update-branch'))throw new Error('Cannot update due to conflicts');
     throw Error(path);
   }};
   const v=await updateChildAfterParentMerge({github,dependent:{pr_number:408,head_sha:head,
     github_state:'open'},predecessor:{pr_number:400,branch:'feat/parent',
-      status:'merged',merge_sha:merged}});
+      status:'merged',merge_sha:merged},gitToken:'existing',
+     gitUpdate:()=>{throw Error('conflict');}});
   assert.equal(v.status,'update_failed_needs_coder');
-  assert.ok(calls.some(([p,m])=>p.endsWith('/update-branch')&&m==='PUT'));
+  assert.equal(calls.some(([p,m])=>p.endsWith('/update-branch')&&m==='PUT'),false);
   assert.equal(calls.some(([,m])=>m==='PATCH'),false);
   const run=readFileSync(new URL('./run.mjs',import.meta.url),'utf8');
   const workflow=readFileSync(new URL('../../.github/workflows/ai-cafe-dev-dispatcher.yml',

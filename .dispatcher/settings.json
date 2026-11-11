@@ -82,5 +82,8 @@
       "DISPATCH_LEDGER_AUTO_PERSIST",
       "DISPATCH_TARGET_REPO"
     ]
+  },
+  "dispatcher": {
+    "full_audit_minutes": 30
   }
 }

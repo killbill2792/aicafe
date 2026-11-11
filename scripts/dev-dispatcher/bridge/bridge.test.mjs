@@ -127,7 +127,7 @@ test('actual CLI entry point accepts --dry-run and rejects bad arguments correct
   const env={...process.env};delete env.DISPATCH_LEDGER_REPO;delete env.DISPATCH_LEDGER_READ_TOKEN;
   const dry=spawnSync(process.execPath,[cli,'--dry-run'],{env,encoding:'utf8'});
   assert.equal(dry.status,1);
-  assert.match(dry.stderr,/Private ledger repository and read token required/);
+  assert.match(dry.stderr,/Private ledger repository required/);
   assert.doesNotMatch(dry.stderr,/Usage:/);
   const bad=spawnSync(process.execPath,[cli,'--unexpected'],{env,encoding:'utf8'});
   assert.equal(bad.status,2);assert.match(bad.stderr,/Usage:/);

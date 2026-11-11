@@ -88,10 +88,41 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test scripts/dev-dispatcher/*.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs
+      - run: node --test scripts/dev-dispatcher/*.test.mjs scripts/dev-dispatcher/bridge/*.test.mjs
+
+  # This is not a second dispatcher: it sends ONE existing Muse owner notice
+  # only if trusted-main preflight failed before reconcile could run.
+  notify_preflight_failure:
+    name: Notify Muse if trusted dispatcher preflight failed
+    needs: unit
+    if: >-
+      always() &&
+      needs.unit.result == 'failure' &&
+      github.event_name != 'pull_request' &&
+      github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Queue existing Muse owner incident through Git (no REST)
+        env:
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: node scripts/dev-dispatcher/emergency-report.mjs
 
   reconcile:
     name: GitHub state reconciliation (no effects)
+    env:
+      DISPATCH_LEDGER_GIT_WRITES: 'true'
     # Never read secrets or execute PR code. All effects remain opt-in and
     # all invocations use the same trusted-main coordinator and CAS ledger.
     if: >-
@@ -125,12 +156,13 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
           DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+          DISPATCH_INSTALL_TOKEN: ${{ secrets.DISPATCH_INSTALL_TOKEN }}
           DISPATCH_COURIER_ACTORS: ${{ vars.DISPATCH_COURIER_ACTORS }}
           # Owner opt-in Nov 9: only exact-head CI/Codex/actual-acceptance-proven PRs;
           # an explicit repository variable 'false' overrides this default.
           DISPATCH_AUTO_MERGE: ${{ vars.DISPATCH_AUTO_MERGE || 'true' }}
           DISPATCH_TRANSIENT_CI_RETRY: ${{ vars.DISPATCH_TRANSIENT_CI_RETRY }}
-          DISPATCH_STALL_MINUTES: ${{ vars.DISPATCH_STALL_MINUTES || '20' }}
+          DISPATCH_STALL_MINUTES: ${{ vars.DISPATCH_STALL_MINUTES || '10' }}
           DISPATCH_CODEX_WATCH_MINUTES: ${{ vars.DISPATCH_CODEX_WATCH_MINUTES || '20' }}
           # Existing GitHub issue is the owner's public-safe live status surface.
           DISPATCH_OWNER_DASHBOARD_ISSUE: ${{ vars.DISPATCH_OWNER_DASHBOARD_ISSUE }}
@@ -157,3 +189,11 @@ jobs:
           DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
           DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
         run: node scripts/dev-dispatcher/wake.mjs
+
+      - name: Emergency Muse queue fallback on dispatcher failure
+        if: ${{ failure() }}
+        env:
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: node scripts/dev-dispatcher/emergency-report.mjs

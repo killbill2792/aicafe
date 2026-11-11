@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {settings} from './settings.mjs';
 import {loadQueue} from './queue-source.mjs';
+import {selectObservation,shouldRecheckMergedLanding} from './event-selection.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
@@ -15,7 +16,7 @@ import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure, dispatchLandingCheck } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
-import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue,wakePendingOwnerNotices } from "./alerts.mjs";
+import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue,resolveOwnerIssueIdentity,wakePendingOwnerNotices } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
@@ -23,6 +24,7 @@ import {dispatchReceiptWake} from './wake.mjs';
 import {noticeOperationalIssues,reportFatalDispatcherError,reportProjectionFailure,reportProjectionRestored} from './notifications.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
+import {publishEmergencyViaGit,readApiPauseViaGit} from "./git-operations.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -34,6 +36,14 @@ async function main() {
   if(ledgerRepo!==settings.ledger.repo)throw Error('Dispatcher ledger/settings mismatch');
   const ledgerToken = process.env.DISPATCH_LEDGER_TOKEN;
   if (commit && (!ledgerRepo || !ledgerToken)) throw new Error("Cannot persist without private ledger repo and token");
+  if(commit){
+    const pause=readApiPauseViaGit({repo:ledgerRepo,token:ledgerToken});
+    if(pause&&Date.now()<Date.parse(pause.until)){
+      console.warn('Dispatcher GitHub API requests paused until '+pause.until+
+        ' following confirmed rate limit; Muse already has the owner incident.');
+      return;
+    }
+  }
   const ledger = ledgerRepo && ledgerToken ? new GitHubLedger({ repo: ledgerRepo, token: ledgerToken, path:settings.ledger.path }) : null;
   const gh = new GitHubFacts({ repo, token: githubToken });
   const queue = await loadQueue({github:gh,config:settings});
@@ -41,29 +51,50 @@ async function main() {
   const taskById = new Map(queue.tasks.map(task => [task.id, task]));
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
   async function observe(state) {
+    let eventPayload={};
+    if(process.env.GITHUB_EVENT_PATH)try{
+      eventPayload=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
+    }catch{eventPayload={};}
+    const selection=selectObservation({eventName:process.env.GITHUB_EVENT_NAME,
+      payload:eventPayload,state});
     const mainRef = await gh.request("/git/ref/heads/main");
     const mainSha=mainRef.object?.sha || null;
-    const snapshot = await gh.snapshot(mainSha);
+    const snapshot = await gh.snapshot(mainSha,{state,...selection});
     const closedByPr = {};
     const openNumbers = new Set(snapshot.map(x => x.pr_number));
-    // Check actual merge metadata; disappearing from the open list is not proof of merge.
-    for (const rec of Object.values(state.tasks)) {
-      if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number)) continue;
-      const closed = await gh.request(`/pulls/${rec.pr_number}`);
-      const mergeSha=closed.merged_at ? closed.merge_commit_sha || null : null;
-      // Trust only the verified Actions bot marker for this exact merge SHA.
-      let landingFailure=null;
-      const recent=closed.merged_at && Date.now()-Date.parse(closed.merged_at)<2*60*60*1000;
-      if(mergeSha && recent && !rec.landing_failure) {
-        const issueComments=await gh.paginated('/issues/'+rec.pr_number+'/comments','comments');
-        landingFailure=landingFailureForMerge(issueComments,mergeSha);
+    // Never downgrade a previously verified merge just because it is not in
+    // GitHub's open-PR list. Cached merged facts remain a closedByPr receipt.
+    // Recent merges are still checked for landing failures that arrive later.
+    for(const rec of Object.values(state.tasks)){
+      const n=rec.pr_number;
+      if(!Number.isInteger(n)||openNumbers.has(n))continue;
+      const cached=rec.github_state==='merged'&&/^[a-f0-9]{40}$/.test(rec.merge_sha||'');
+      if(cached){
+        closedByPr[n]={merged:true,merge_sha:rec.merge_sha,
+          landing_failure:rec.landing_failure||null,merged_at:rec.merged_at||null,
+          last_landing_check_at:rec.last_landing_check_at||null};
+        if(!shouldRecheckMergedLanding(rec,{fullAudit:selection.fullAudit,
+          focused:selection.focusNumbers.includes(n)}))continue;
       }
-      closedByPr[rec.pr_number]={merged:Boolean(closed.merged_at),
-        merge_sha:mergeSha,landing_failure:landingFailure};
+      const closed=await gh.request('/pulls/'+n);
+      const mergeSha=closed.merged_at?closed.merge_commit_sha||null:null;
+      let landingFailure=rec.landing_failure||null;
+      let checkedAt=rec.last_landing_check_at||null;
+      // A successful merge is not proof that its later landing check passed.
+      // Check the authenticated bot comment on new/recent or due merged PRs.
+      if(mergeSha&&!landingFailure){
+        const comments=await gh.paginated('/issues/'+n+'/comments','comments');
+        landingFailure=landingFailureForMerge(comments,mergeSha);
+        checkedAt=new Date().toISOString();
+      }
+      closedByPr[n]={merged:Boolean(closed.merged_at),merge_sha:mergeSha,
+        landing_failure:landingFailure||null,merged_at:closed.merged_at||null,
+        last_landing_check_at:checkedAt};
     }
     const history=await gh.request('/actions/workflows/'+settings.workflows.dispatcher+'/runs?event=schedule&per_page=3').catch(()=>null);
     const previous=(history?.workflow_runs||[]).find(r=>r.created_at && r.id!==Number(process.env.GITHUB_RUN_ID));
-    return {snapshot,closedByPr,mainSha,lastScheduleAt:previous?.created_at || null};
+    return {snapshot,closedByPr,mainSha,audited:selection.fullAudit,
+      lastScheduleAt:previous?.created_at || null};
   }
   function reconcile(state, observed) {
     const initiallyLinked = linkPullRequests(state, observed.snapshot);
@@ -74,6 +105,34 @@ async function main() {
     // arriving during the same GitHub reconciliation must not revive old work.
     const live = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
     const applied = applyReceiptsSafely(live,receiptScan.accepted,actorMap);
+    // Persist only authenticated, successfully reconciled identities. An early
+    // valid receipt with no corresponding action stays unread/eligible for a
+    // future reconciliation; an invalid receipt stays on the repair path.
+    const rejectedFiles=new Set(applied.rejected.map(r=>r.file));
+    for(const item of receiptScan.accepted){
+      if(rejectedFiles.has(item.file)||!/^[a-f0-9]{40}$/.test(item.sha||''))continue;
+      const rc=item.receipt;
+      let recognized=false;
+      if(rc.kind==='owner_notice')
+        recognized=applied.state.owner_alerts?.[rc.notice_id]?.status==='submitted';
+      else if(rc.kind==='owner_instruction')
+        recognized=Boolean(applied.state.owner_instruction_events?.[rc.event_id]);
+      else if(rc.kind==='owner_reply') {
+        const task=rc.target?.task_id
+          ? applied.state.tasks?.[rc.target.task_id]
+          : Object.values(applied.state.tasks||{}).find(t=>t.pr_number===rc.target?.pr_number);
+        recognized=Boolean(task?.owner_reply_events?.[rc.event_id])||
+          Boolean(rc.target?.branch&&applied.state.branch_chat_links?.[rc.target.branch]?.conversation_url===rc.text?.trim());
+      }else{
+        const action=applied.state.actions?.[rc.action_id];
+        recognized=action?.status==='submitted'||
+          Boolean(action?.superseded_receipt);
+      }
+      if(recognized){
+        applied.state.receipt_processed_files||={};
+        applied.state.receipt_processed_files[item.file]=item.sha;
+      }
+    }
     // A planned parent-merge prompt is not a delivered instruction. Repair
     // pre-v2 early markers and advance only after an authenticated receipt.
     for (const [key, action] of Object.entries(applied.state.actions)) {
@@ -151,6 +210,9 @@ async function main() {
           action: "assign", actionId: key });
       } catch (error) {
         console.error(`Task ${assignment.task_id} delivery creation failed: ${error.message}`);
+        copy.owner_alerts=queueOwnerIssue(copy,{kind:'assignment_build_failed',
+          task_id:assignment.task_id,identity:key,message:'Dispatcher could not build approved assignment for '+assignment.task_id,
+          needs:'Repair existing task handoff: '+String(error.message).slice(0,160)}).owner_alerts;
         continue;
       }
       assigned.push(assignment);
@@ -200,6 +262,10 @@ async function main() {
                 action: proposal.action, actionId: proposal.key });
         } catch (error) {
           console.error(`Task ${id} delivery creation failed: ${error.message}`);
+          copy.owner_alerts=queueOwnerIssue(copy,{kind:'courier_prompt_build_failed',task_id:id,
+            pr_number:rec.pr_number||null,identity:proposal.key,
+            message:'Dispatcher could not construct Muse continuation for task '+id,
+            needs:'Repair prompt generation: '+String(error.message).slice(0,160)}).owner_alerts;
           continue;
         }
         rec.last_action_key = proposal.key;
@@ -231,6 +297,10 @@ async function main() {
         nudges.push({task_id:id,action:'landing_failed'});
       } catch (error) {
         console.error('Landing failure routing for '+id+': '+error.message);
+        copy.owner_alerts=queueOwnerIssue(copy,{kind:'landing_handoff_failed',task_id:id,
+          pr_number:rec.pr_number||null,identity:rec.merge_sha,
+          message:'Dispatcher failed to prepare post-merge repair for '+id,
+          needs:String(error.message).slice(0,180)}).owner_alerts;
       }
     }
     // Chat destinations are authenticated courier receipts, not owner-supplied
@@ -264,7 +334,8 @@ async function main() {
   }));
   actorMap[settings.owner.login] ||= 'owner';
   const receiptScan = ledger
-    ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])]})
+    ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])],
+       processed:current.receipt_processed_files||{}})
     : {accepted:[],rejected:[],complete:false,scan_error:'private_ledger_unavailable'};
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
@@ -360,9 +431,19 @@ async function main() {
     // Reconcile against fresh facts on every CAS attempt; do not write an
     // identical state every five minutes (avoids 288 empty commits per day).
     persisted = await ledger.transaction(async existing => {
-      const latest = await observe(existing);
+      const latest = JSON.stringify(existing)===JSON.stringify(current)
+        ? observed : await observe(existing);
       let next = await applyCodexProvenance(reconcile(existing, latest).state,existing);
-      next=trackScheduleGap(next,{eventName:process.env.GITHUB_EVENT_NAME,
+      if(next.api_pause&&Date.now()>=Date.parse(next.api_pause.until||'')){
+        const identity=next.api_pause.identity;
+        next=resolveOwnerIssueIdentity(next,{kind:'dispatcher_emergency',identity});
+        delete next.api_pause;
+        next=queueOwnerIssue(next,{kind:'dispatcher_api_restored',identity,
+          message:'GitHub API reconciliation resumed after a recorded quota reset.',
+          needs:'Muse tell owner that dispatcher processing has resumed'});
+      }
+      if(latest.audited)next.last_full_audit_at=new Date().toISOString();
+       next=trackScheduleGap(next,{eventName:process.env.GITHUB_EVENT_NAME,
         now:new Date().toISOString(),observedScheduleAt:latest.lastScheduleAt});
       await promoteIntegration(next);
       next=recordDrift(next,existing,latest.snapshot);
@@ -401,6 +482,7 @@ async function main() {
         }
       } catch (error) {
         console.error('Codex review preflight failed for task '+id+': '+error.message);
+        process.exitCode=1; // Generic Git-backed Muse incident after other tasks finish.
       }
     }
   }
@@ -455,7 +537,8 @@ async function main() {
             event:'codex_first_miss',at:new Date().toISOString()};
           return queueOwnerAlerts(latest,{queue});
         });
-      } catch(error) { console.error('Codex watchdog task '+id+': '+error.message); }
+      } catch(error) { console.error('Codex watchdog task '+id+': '+error.message);
+        process.exitCode=1; }
     }
   }
   // Only independently classified runner startup errors may be retried, once.
@@ -480,12 +563,14 @@ async function main() {
           rec.branch_maintenance_merge_sha !== parent.merge_sha) {
         let result;
         try {
-          result = await updateChildAfterParentMerge({github:gh,dependent:rec,predecessor:parent});
+          result = await updateChildAfterParentMerge({github:gh,dependent:rec,predecessor:parent,
+             gitToken:process.env.DISPATCH_INSTALL_TOKEN});
         } catch (error) {
           console.error('Child #'+rec.pr_number+' automatic branch update needs retry: '+error.message);
+          process.exitCode=1;
           continue;
         }
-        if (['update_requested','update_failed_needs_coder'].includes(result.status)) {
+        if (['updating','already_current','conflict_needs_coder','update_failed_needs_coder'].includes(result.status)) {
           await ledger.transaction(latest=>{
             const child=latest.tasks[id];
             if (!child || child.pr_number!==rec.pr_number ||
@@ -495,7 +580,11 @@ async function main() {
             return latest;
           });
           console.log('Child #'+rec.pr_number+': parent merged; branch maintenance '+result.status);
-        } else console.log('Child #'+rec.pr_number+': branch maintenance held ('+result.reason+')');
+        } else {
+          console.error('Child #'+rec.pr_number+' branch maintenance held: '+(result.status||result.reason));
+          if(['missing_git_credential','push_failed_needs_retry'].includes(result.status))
+            process.exitCode=1;
+        }
         continue;
       }
       // Ordinary main-based stale branches are refreshed without force-push.
@@ -503,19 +592,24 @@ async function main() {
       if (rec.base_current === false && rec.base_branch === 'main' &&
           !(rec.draft === true && rec.ci_state !== 'success')) {
         try {
-          const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
+          const result = await safeUpdateBranch({github:gh,record:rec,enabled:true,
+             gitToken:process.env.DISPATCH_INSTALL_TOKEN});
           console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
+           if(['missing_git_credential','push_failed_needs_retry'].includes(result.status)){
+             process.exitCode=1;
+             console.error('PR #'+rec.pr_number+' Git branch update failed: '+result.status);
+           }
           if(result.status==='updating') {
             await ledger.transaction(state=>{
               const saved=state.tasks[id];
               if(!saved || saved.head_sha!==rec.head_sha)return null;
               saved.codex_branch_update={old_head_sha:rec.head_sha,
-                new_base_sha:rec.base_sha,status:'accepted_no_conflicts',
+                new_base_sha:result.new_base_sha,status:'accepted_no_conflicts',
                 at:new Date().toISOString()};
               saved.codex_branch_conflict=null;
               return state;
             });
-          } else if(result.reason==='conflict_needs_coder') {
+          } else if(result.status==='conflict_needs_coder') {
             await ledger.transaction(state=>{
               const saved=state.tasks[id];
               if(!saved || saved.head_sha!==rec.head_sha)return null;
@@ -527,6 +621,7 @@ async function main() {
         } catch (error) {
           // A temporarily conflicting update must not stall other approved PRs.
           console.error('PR #'+rec.pr_number+' main branch update will retry: '+error.message);
+          process.exitCode=1;
         }
       }
     }
@@ -557,7 +652,7 @@ async function main() {
           return state;
         });
         await dispatchReceiptWake({token:githubToken,event:'dispatcher_delayed'}).catch(e=>
-          console.error('Ready transition self-wake failed: '+e.message));
+          (console.error('Ready transition self-wake failed: '+e.message),process.exitCode=1));
         console.log(`Verified PR #${rec.pr_number} ready on green exact head; automatic Codex follows`);
         continue;
       }
@@ -661,7 +756,8 @@ async function main() {
       console.error(`Private Muse owner queue publication failed: ${error.message}`);
       try{await reportProjectionFailure({ledger,kind:'private_queue_publish_failed',
         identity:settings.ledger.owner_view_path});}
-      catch(health){console.error('Private queue failure notice unavailable: '+health.message);}
+      catch(health){console.error('Private queue failure notice unavailable: '+health.message);
+        process.exitCode=1;}
       if (process.env.GITHUB_STEP_SUMMARY)
         appendFileSync(process.env.GITHUB_STEP_SUMMARY,
           '\\n**Private queue view update failed** — see runner log; authoritative ledger is unchanged.\\n');
@@ -685,7 +781,8 @@ async function main() {
       console.error(`Owner control center publication failed: ${error.message}`);
       try{await reportProjectionFailure({ledger,kind:'owner_dashboard_publish_failed',
         identity:String(ownerIssue)});}
-      catch(health){console.error('Dashboard failure notice unavailable: '+health.message);}
+      catch(health){console.error('Dashboard failure notice unavailable: '+health.message);
+        process.exitCode=1;}
       if (process.env.GITHUB_STEP_SUMMARY)
         appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\n**Owner dashboard update failed** — see the reconciliation log. Private ledger and courier signal remain independent.\n');
     }
@@ -708,5 +805,16 @@ main().catch(async error => {
     message:detail,wake:()=>dispatchReceiptWake({token:process.env.GITHUB_TOKEN})});
   }catch(second){console.error('Owner alert persistence or wake failed: '+String(second.message).slice(0,160));}
  }
+ try{
+    const queued=publishEmergencyViaGit({
+      token:process.env.DISPATCH_LEDGER_TOKEN,
+      identity:error.code==='RATE_LIMIT'
+        ?'github_api_rate_limit:'+String(error.reset_at||'unknown')
+        :'run:'+String(process.env.GITHUB_RUN_ID||'unknown')+':failure',
+      resetAt:error.code==='RATE_LIMIT'?error.reset_at:null,
+      message:detail,needs:'Muse notify owner; inspect failed dispatcher workflow'
+    });
+    console.error('Emergency Muse queue '+queued.status+'; delivery unconfirmed');
+  }catch(fallback){console.error('EMERGENCY MUSE DELIVERY UNCONFIRMED: '+String(fallback.message).slice(0,160));}
  process.exitCode=1;
 });

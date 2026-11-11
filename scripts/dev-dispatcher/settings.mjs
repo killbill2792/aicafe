@@ -26,6 +26,8 @@ export function validateSettings(s,{expectedRepo}={}){
    !pathOK(s.paths?.signal)||!pathOK(s.paths?.authority)||!pathOK(s.paths?.progress)||
    !pathOK(s.paths?.skills)||!pathOK(s.paths?.task_brief_root)||!s.naming?.task_prefix||!s.naming.branch_prefix||
    !/^[a-z0-9-]+$/.test(s.naming.marker_prefix)||
+   (s.dispatcher?.full_audit_minutes!=null && (!Number.isInteger(s.dispatcher.full_audit_minutes)||
+     s.dispatcher.full_audit_minutes<5||s.dispatcher.full_audit_minutes>1440))||
    !pathOK(s.auto_test_branch)||!Array.isArray(s.protected_files)||s.protected_files.some(g=>
     !g.owner||!Array.isArray(g.paths)||g.paths.some(p=>!pathOK(p)))||
    !Array.isArray(s.required_checks.names)||!s.required_checks.names.length||
