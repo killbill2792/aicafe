@@ -136,22 +136,12 @@ async function readRecentMessages(client: SupabaseClient, scope: ThreadMemorySco
 
 function cardContext(row: MessageRow): string | null {
   if (!Array.isArray(row.structured_content)) return null;
-  const parts = row.structured_content.flatMap(block => {
-    if (!isRecord(block)) return [];
-    if (block.type === "clarify") {
-      const content = historyContent({ text: null, blocks: [block] });
-      return content ? [content] : [];
-    }
-    if (block.type !== "owner_question" || !isRecord(block.title)) return [];
-    const title = typeof block.title.en === "string" ? block.title.en : "";
-    const input = isRecord(block.input) ? block.input : null;
-    if (!title || !input) return [];
-    const options = Array.isArray(input.options) ? input.options.flatMap(option =>
-      isRecord(option) && isRecord(option.label) && typeof option.label.en === "string"
-        ? [option.label.en] : []) : [];
-    return ["Owner question: " + title + (options.length ? " Options: " + options.join("; ") : "")];
+  const content = historyContent({
+    text: null,
+    blocks: row.structured_content.filter(block =>
+      isRecord(block) && (block.type === "clarify" || block.type === "owner_question")),
   });
-  return parts.length ? parts.join(" ") : null;
+  return content || null;
 }
 
 function ownerInputAnswer(row: MessageRow): SourceWithCard["ownerInputResponse"] {
