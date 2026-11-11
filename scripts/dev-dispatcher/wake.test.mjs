@@ -162,3 +162,31 @@ test('dozens of overdue notices share one retry wake and do not drain API quota'
  assert.equal(calls,1);
  assert.equal(Object.keys(latest.delayed_wake_history).length,1);
 });
+
+
+test('clean but unclosed PR receives a delayed self-wake and never a duplicate closeout',()=>{
+ const s={tasks:{E2:{task_id:'E2',approved:true,github_state:'open',
+  draft:false,ci_state:'success',codex_state:'clean',codex_reviewed_sha:'a'.repeat(40),
+  head_sha:'a'.repeat(40),threads_resolved:true,
+  conversation_ref:'https://chatgpt.com/c/verified',acceptance_proven:false,
+  coder_done:false,codex_review_at:new Date(at).toISOString(),
+  last_github_activity:new Date(at).toISOString()}},actions:{}};
+ const due=nextWake(s,at,one);
+ assert.equal(due.reason,'closeout_status_check');
+ assert.equal(due.due_at,new Date(at+20*60000).toISOString());
+ s.actions.closeout={task_id:'E2',type:'closeout_evidence',head_sha:'a'.repeat(40),
+  status:'submitted'};
+ assert.equal(nextWake(s,at+30*60000,one),null);
+});
+
+test('scope status check uses existing delayed wake, not a guessed planning deadline',()=>{
+ const s={tasks:{'9':{task_id:'9',planning_approved:true,
+  status:'scope_plan_sent',scope_plan_completed:true,
+  conversation_ref:'https://chatgpt.com/c/scope-9',
+  last_submission_at:new Date(at).toISOString()}},actions:{},owner_alerts:{}};
+ const due=nextWake(s,at,one);
+ assert.equal(due.reason,'scope_plan_status_check');
+ assert.equal(due.due_at,new Date(at+30*60000).toISOString());
+ s.owner_alerts['review']={task_id:'9',kind:'scope_plan_review',status:'planned'};
+ assert.equal(nextWake(s,at,one),null);
+});
