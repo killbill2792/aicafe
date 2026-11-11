@@ -1,7 +1,25 @@
 import {queueOwnerIssue,resolveOwnerIssueIdentity,noticeHash} from './alerts.mjs';
 import {receiptFileForAction} from './receipt-recovery.mjs';
-export function noticeOperationalIssues(state,{snapshot=[],scan=null}={}){
+export function noticeOperationalIssues(state,{snapshot=[],scan=null,now=new Date().toISOString()}={}){
  let next=state;
+ // CI-in-progress is expected after a new commit, not an owner incident.
+ // Retire every unsent previous-head warning as soon as fresh GitHub facts
+ // establish a replacement head, green checks, a linked chat, or a closed PR.
+ const isLate=t=>Number.isFinite(Date.parse(t?.last_commit_at||''))&&
+  Date.parse(now)-Date.parse(t.last_commit_at)>=20*60_000;
+ for(const notice of Object.values(next.owner_alerts||{})){
+  if(notice.status!=='planned'||!['ci_unavailable','ci_no_chat'].includes(notice.kind))continue;
+  const t=next.tasks?.[notice.task_id];
+  const same=t?.head_sha===notice.identity&&t?.pr_number===notice.pr_number;
+  const stillBlocked=notice.kind==='ci_unavailable'
+   ? t?.github_state==='open'&&same&&
+     !['success','failure'].includes(t.ci_state)&&isLate(t)
+   : t?.github_state==='open'&&same&&t.ci_state==='failure'&&!t.conversation_ref;
+  if(!stillBlocked){
+   notice.status='cancelled_no_longer_needed';
+   notice.resolved_at=now;
+  }
+ }
  const send=(kind,task_id,pr_number,identity,message,needs)=>{next=queueOwnerIssue(next,
   {kind,task_id,pr_number,identity,message,needs});};
  if(scan?.complete===false)send('receipt_scan_incomplete',null,null,scan.scan_error||'incomplete',
@@ -59,7 +77,8 @@ export function noticeOperationalIssues(state,{snapshot=[],scan=null}={}){
      'PR #'+t.pr_number+' Codex review was received on its verified head ('+t.codex_state+'). GitHub continues the existing merge and review gates.',
      'No owner action unless review findings require an owner decision');
   }
-  if(t.github_state==='open' && t.ci_state!=='success' && t.ci_state!=='failure')
+  if(t.github_state==='open' && t.ci_state!=='success' && t.ci_state!=='failure'&&
+     isLate(t))
    send('ci_unavailable',id,t.pr_number,t.head_sha||'no_head',
     'PR #'+(t.pr_number||'?')+' CI results are missing or still running on '+(t.head_sha||'unknown head'),
     'Wait for all required checks or repair the missing check integration');
