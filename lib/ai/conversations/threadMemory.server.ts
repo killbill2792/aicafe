@@ -156,7 +156,8 @@ function cardContext(row: MessageRow): string | null {
 
 function ownerInputAnswer(row: MessageRow): SourceWithCard["ownerInputResponse"] {
   const parsed = ownerInputResponseSchema.safeParse(row.owner_input_response);
-  if (!parsed.success || parsed.data.action !== "supply" || !parsed.data.value ||\n    safeThreadMemoryText(parsed.data.value) !== parsed.data.value) return null;
+  if (!parsed.success || parsed.data.action !== "supply" || !parsed.data.value ||
+    safeThreadMemoryText(parsed.data.value) !== parsed.data.value) return null;
   return { questionId: parsed.data.questionId, value: parsed.data.value };
 }
 
