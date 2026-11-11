@@ -19,7 +19,7 @@ test('private ledger shows requested lifecycle columns and exact next actor',()=
  assert.match(text,/Last commit/);
  assert.match(text,/Merge eligible/);
  assert.match(text,/GitHub pull request/);
- assert.match(text,/Accepted/ig);
+ assert.match(text,/Acceptance evidence/);
  assert.match(text,/MERGE_IF_AUTHORIZED/);
  assert.match(text,/CR-A/);
 });
