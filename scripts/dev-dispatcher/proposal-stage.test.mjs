@@ -129,3 +129,44 @@ test('stale changed source, bad sender, wrong notice, no and duplicate yes fail 
  assert.equal(proposalSourceHash(queue.tasks.find(t=>t.id==='7')),
    original.owner_alerts[noticeId].source_sha);
 });
+
+test('revised future proposal requires a NEW yes and resumes the verified old planning chat',()=>{
+ const approved=advanceApprovedProposals(withMuseYes(['7']),queue);
+ const [firstKey,first]=Object.entries(approved.actions).find(([_,a])=>a.task_id==='7');
+ const receipt={action_id:firstKey,task_id:'7',prompt_hash:first.delivery.prompt_hash,
+  project_id:first.delivery.project.id,provider:'chatgpt',
+  conversation_url:'https://chatgpt.com/c/verified-existing-scope-chat'};
+ const completed=acceptDeliveryReceipt(approved,receipt,{authenticatedCourier:'muse'});
+ const revised={...queue,tasks:queue.tasks.map(t=>t.id==='7'?
+  {...t,goal:t.goal+' with owner-requested refinement'}:t)};
+ const withNotice=queueOwnerAlerts(completed,{queue:revised});
+ const [newId,newNotice]=Object.entries(withNotice.owner_alerts).find(([id,n])=>
+  n.kind==='next_task_proposal'&&n.task_id==='7'&&id!==
+   completed.tasks['7'].proposal_notice_id);
+ assert.ok(newId);
+ assert.equal(newNotice.status,'planned');
+ const held=advanceApprovedProposals(withNotice,revised);
+ assert.equal(held.tasks['7'].status,'blocked_needs_owner');
+ assert.equal(held.actions[firstKey].status,'submitted');
+ assert.equal(Object.values(held.actions).filter(a=>a.status==='planned').length,0);
+ const yes=structuredClone(held);
+ yes.owner_alerts[newId].status='submitted';
+ yes.owner_proposal_replies['7']['later-yes']={
+  text:'yes',courier:'muse',notice_id:newId,source_sha:newNotice.source_sha,
+  at:'2026-11-11T09:22:00Z'};
+ const resumed=advanceApprovedProposals(yes,revised);
+ const [key,action]=Object.entries(resumed.actions).find(([_,a])=>a.type==='scope_plan_update');
+ assert.equal(action.type,'scope_plan_update');
+ assert.equal(action.delivery.intent,'continue_existing_chat');
+ assert.equal(action.delivery.conversation_url,receipt.conversation_url);
+ assert.equal(validateHandoff({...action,key},resumed.tasks['7']),true);
+ const sent=acceptDeliveryReceipt(resumed,{
+  action_id:key,task_id:'7',prompt_hash:action.delivery.prompt_hash,
+  project_id:action.delivery.project.id,provider:'chatgpt',
+  conversation_url:receipt.conversation_url},
+  {authenticatedCourier:'muse'});
+ assert.equal(sent.tasks['7'].status,'scope_plan_sent');
+ assert.equal(sent.tasks['7'].conversation_ref,receipt.conversation_url);
+ assert.equal(Object.values(sent.actions).filter(a=>a.status==='submitted').length,2);
+ assert.deepEqual(advanceApprovedProposals(sent,revised),sent);
+});
