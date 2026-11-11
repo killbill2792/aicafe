@@ -270,8 +270,10 @@ async function main() {
         Number.isFinite(lastDelivery)&&Date.now()-lastDelivery>=15*60000;
       const prePrKey='pre_pr_reminder:'+encodeURIComponent(id)+':'+
         String(rec.approval_hash||'');
-      const prePrAlready=Object.entries(copy.actions).some(([key,a])=>
-        key===prePrKey&&a.task_id===id&&a.type==='pre_pr_reminder');
+      const prePrAlready=Object.values(copy.actions).some(a=>
+        a.task_id===id&&a.type==='pre_pr_reminder'&&
+        a.delivery?.approval_hash===rec.approval_hash&&
+        ['planned','claimed','uncertain','needs_login','submitted'].includes(a.status));
       const normal=noPrDue&&!prePrAlready?
         {kind:'propose',action:'pre_pr_reminder',key:prePrKey}:
         decideNudge(rec,Date.now());
