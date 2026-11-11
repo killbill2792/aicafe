@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {settings} from './settings.mjs';
-import {gitAuthEnvironment,publishEmergencyViaGit,updateBranchViaGit,transactLedgerViaGit,publishOwnerQueueViaGit} from './git-operations.mjs';
+import {gitAuthEnvironment,publishEmergencyViaGit,updateBranchViaGit,transactLedgerViaGit,publishOwnerQueueViaGit,readApiPauseViaGit} from './git-operations.mjs';
 
 const sha='a'.repeat(40);
 const run=(args,cwd)=>{const r=spawnSync('git',args,{cwd,encoding:'utf8'});
@@ -137,4 +137,30 @@ test('Git-backed ledger transaction preserves concurrent writes with fresh retry
   assert.equal(publishOwnerQueueViaGit({repo:settings.ledger.repo,token:'local-only',
     remoteUrl:f.bare}).status,'unchanged');
  }finally{f.cleanup();}
+});
+
+test('API outage has one durable Muse incident and suppresses repeated run alerts',()=>{
+ const f=fixture();
+ try {
+  run(['branch','-M','main'],f.work);
+  mkdirSync(dirname(join(f.work,settings.ledger.path)),{recursive:true});
+  writeFileSync(join(f.work,settings.ledger.path),JSON.stringify({
+    version:1,tasks:{},actions:{},owner_alerts:{}
+  }));
+  run(['add','.'],f.work);run(['commit','-qm','seed'],f.work);
+  run(['push','-q','origin','main'],f.work);
+  const resetAt=new Date(Date.now()+30*60000).toISOString();
+  const identity='github_api_rate_limit:'+resetAt;
+  const args={repo:settings.ledger.repo,token:'local-test-only',remoteUrl:f.bare,
+    identity,resetAt,message:'GitHub API quota reached',needs:'Notify owner'};
+  assert.equal(publishEmergencyViaGit(args).status,'queued');
+  assert.equal(publishEmergencyViaGit({...args,identity:'run:982:failure'}).status,'already_queued');
+  const pause=readApiPauseViaGit({repo:settings.ledger.repo,token:'local-test-only',remoteUrl:f.bare});
+  assert.equal(pause.until,resetAt);
+  assert.equal(pause.identity,identity);
+  run(['pull','-q','origin','main'],f.work);
+  const ledger=JSON.parse(readFileSync(join(f.work,settings.ledger.path),'utf8'));
+  assert.equal(Object.values(ledger.owner_alerts).length,1);
+  assert.equal(Object.values(ledger.owner_alerts)[0].delivery_owner,'muse');
+ } finally {f.cleanup();}
 });
