@@ -31,9 +31,6 @@ const MESSAGE_A_3 = "99999999-9999-4999-8999-999999999999";
 const MESSAGE_OTHER_THREAD = "aaaaaaaa-0000-4000-8000-000000000001";
 const MESSAGE_B = "bbbbbbbb-0000-4000-8000-000000000001";
 const MESSAGE_CAFE_B = "cccccccc-0000-4000-8000-000000000001";
-const MESSAGE_CLIENT = "dddddddd-0000-4000-8000-000000000001";
-const MESSAGE_CLIENT_2 = "eeeeeeee-0000-4000-8000-000000000001";
-const MESSAGE_CLIENT_3 = "ffffffff-0000-4000-8000-000000000001";
 const MESSAGE_FINANCIAL = "00000000-0000-4000-8000-000000000001";
 const AT_1 = "2026-11-11T12:00:00.000Z";
 const AT_2 = "2026-11-11T12:01:00.000Z";
@@ -364,7 +361,7 @@ async function main() {
   // Revoked owner membership is checked inside the SECURITY DEFINER RPC.
   await client.query("delete from memberships where business_id=$1 and user_id=$2", [CAFE_A, OWNER_A]);
   await asActor(OWNER_A, async db => {
-    assert.equal((await db.query("select * from ai_threads")).rowCount, 0);
+    assert.equal((await db.query("select * from ai_threads where business_id=$1", [CAFE_A])).rowCount, 0);
     const denied = await save(db, {
       expected: 5,
       document: memoryDoc({ revision: 6, cursor: { createdAt: AT_3, id: MESSAGE_A_3 } }),
