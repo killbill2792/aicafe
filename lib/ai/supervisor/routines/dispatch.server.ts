@@ -61,7 +61,19 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
       createdAt:String(raw.created_at),evidence:raw.evidence??null,
     });
   }
-  return choosePriorities(sources,now,3);
+  // Rank the whole bounded source batch before applying the fresh-notice cap.
+  // An existing notice is a receipt for that exact revision, not a reason to
+  // starve later actionable sources while the first three stay open.
+  const ranked=choosePriorities(sources,now,batchLimit*2);
+  if(ranked.length===0)return [];
+  const {data:receipts,error:receiptError}=await db.from("operating_tasks")
+    .select("dedupe_key").eq("business_id",scope.businessId)
+    .eq("owner_user_id",scope.ownerUserId).eq("kind","priority_notice")
+    .in("dedupe_key",ranked.map(decision=>decision.stableKey))
+    .limit(ranked.length);
+  if(receiptError)throw receiptError;
+  const notified=new Set((receipts??[]).map(row=>String(row.dedupe_key)));
+  return ranked.filter(decision=>!notified.has(decision.stableKey)).slice(0,3);
 }
 async function postForOwner(db:SupabaseClient,scope:Scope,now:Date,
   opts?:{routine:{id:string;runId:string;leaseToken:string}},
