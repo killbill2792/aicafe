@@ -148,7 +148,10 @@ function validMemoryKey(kind: ThreadMemoryKind, key: string): boolean {
 
 function compareSourceOrder(left: { createdAt: string; id: string }, right: { createdAt: string; id: string }): number {
   const byTime = Date.parse(left.createdAt) - Date.parse(right.createdAt);
-  if (byTime) return byTime;\n  const leftId = left.id.toLowerCase();\n  const rightId = right.id.toLowerCase();\n  return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+  if (byTime) return byTime;
+  const leftId = left.id.toLowerCase();
+  const rightId = right.id.toLowerCase();
+  return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
 }
 
 /** Applies only model-proposed operations that cite an exact, safe owner quote. A forget
@@ -165,11 +168,13 @@ export function applyThreadMemoryOperations(
   const byId = new Map(sources.map(source => [source.id, source]));
   for (const operation of operations.slice(0, THREAD_MEMORY_MAX_ENTRIES)) {
     const source = byId.get(operation.sourceMessageId);
-    if (!source || !uuid.test(source.id) || !validTimestamp(source.createdAt) ||\n      safeThreadMemorySourceText(source.text) !== source.text || !validMemoryKey(operation.kind, operation.key)) continue;
+    if (!source || !uuid.test(source.id) || !validTimestamp(source.createdAt) ||
+      safeThreadMemorySourceText(source.text) !== source.text || !validMemoryKey(operation.kind, operation.key)) continue;
     const existing = entries.find(entry => entry.key === operation.key);
     const tombstone = tombstones.find(item => item.key === operation.key);
     if (operation.action === "forget") {
-      if (!existing || operation.quote !== "" ||\n        compareSourceOrder(source, { createdAt: existing.sourceAt, id: existing.sourceMessageId }) <= 0) continue;
+      if (!existing || operation.quote !== "" ||
+        compareSourceOrder(source, { createdAt: existing.sourceAt, id: existing.sourceMessageId }) <= 0) continue;
       entries = entries.filter(entry => entry.key !== operation.key);
       tombstones = [{ key: operation.key, sourceMessageId: source.id, sourceAt: source.createdAt, revision },
         ...tombstones.filter(item => item.key !== operation.key)].slice(0, THREAD_MEMORY_MAX_TOMBSTONES);
