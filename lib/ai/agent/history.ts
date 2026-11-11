@@ -63,7 +63,7 @@ export type ThreadMemoryOperation = {
   sourceMessageId: string; quote: string;
 };
 export type ThreadMemorySource = {
-  id: string; createdAt: string; text: string;
+  id: string; createdAt: string; text: string; structuredText?: string;
 };
 
 export const THREAD_MEMORY_MAX_ENTRIES = 20;
@@ -96,11 +96,15 @@ export function safeThreadMemoryText(value: string): string | null {
 
 /** Only immutable owner-authored text can become a source. Supervisor prose and tool
  * results are context at most; they are never promoted into owner memory. */
-export function threadMemorySource(message: Pick<ConversationMessage, "id" | "role" | "text" | "createdAt">): ThreadMemorySource | null {
+export function threadMemorySource(
+  message: Pick<ConversationMessage, "id" | "role" | "text" | "createdAt">,
+  structuredResponseText?: string,
+): ThreadMemorySource | null {
   if (message.role !== "owner" || !message.text) return null;
   const text = safeThreadMemorySourceText(message.text);
   if (!text || !uuid.test(message.id) || !Number.isFinite(Date.parse(message.createdAt))) return null;
-  return { id: message.id, createdAt: message.createdAt, text };
+  const structuredText = structuredResponseText ? safeThreadMemorySourceText(structuredResponseText) : null;
+  return { id: message.id, createdAt: message.createdAt, text, ...(structuredText ? { structuredText } : {}) };
 }
 
 export function emptyThreadMemoryDocument(): ThreadMemoryDocument {
@@ -189,7 +193,7 @@ export function applyThreadMemoryOperations(
   for (const operation of operations.slice(0, THREAD_MEMORY_MAX_ENTRIES)) {
     const source = byId.get(operation.sourceMessageId);
     if (!source || !uuid.test(source.id) || !validTimestamp(source.createdAt) ||
-      safeThreadMemorySourceText(source.text) !== source.text || !validMemoryKey(operation.kind, operation.key)) continue;
+      safeThreadMemorySourceText(source.text) !== source.text ||\n      (source.structuredText !== undefined && safeThreadMemorySourceText(source.structuredText) !== source.structuredText) ||\n      !validMemoryKey(operation.kind, operation.key)) continue;
     const existing = entries.find(entry => entry.key === operation.key);
     const tombstone = tombstones.find(item => item.key === operation.key);
     if (operation.action === "forget") {
@@ -203,7 +207,7 @@ export function applyThreadMemoryOperations(
     if (operation.action !== "remember" ||
       (existing && compareSourceOrder(source, { createdAt: existing.sourceAt, id: existing.sourceMessageId }) <= 0) ||
       (tombstone && compareSourceOrder(source, { createdAt: tombstone.sourceAt, id: tombstone.sourceMessageId }) <= 0) ||
-      !operation.quote || !source.text.includes(operation.quote) ||
+      !operation.quote || (!source.text.includes(operation.quote) && !source.structuredText?.includes(operation.quote)) ||
       safeThreadMemoryText(operation.quote) !== operation.quote) continue;
     const nextEntries = [...entries.filter(entry => entry.key !== operation.key), {
       kind: operation.kind, key: operation.key, text: operation.quote,
