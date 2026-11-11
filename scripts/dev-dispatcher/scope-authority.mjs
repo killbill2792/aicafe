@@ -3,7 +3,7 @@
 import {createHash} from 'node:crypto';
 import {settings} from './settings.mjs';
 import {noticeHash} from './alerts.mjs';
-import {proposalSourceHash} from './proposal-stage.mjs';
+import {proposalSourceHash,createScopePlanDelivery} from './proposal-stage.mjs';
 import {validateQueue,editableFiles} from './core.mjs';
 import {approvalSignature} from './delivery.mjs';
 
@@ -260,4 +260,107 @@ export function effectiveSignedQueue(queue,state,plans={}){
  const result={...queue,tasks};
  validateQueue(result); // validate signed paths and DAG; overlap is merge-gated
  return result;
+}
+
+
+// Progress is checked, never time-limited: an agent may still be writing.
+// GitHub's authenticated comment is the source of truth; only when it is
+// missing or invalid does the existing Muse courier check the SAME chat.
+// A correction remains a signed planning action, not coding permission.
+export function queueScopePlanRecovery(state,queue,comments,plans,{
+ now=new Date().toISOString(),checkMinutes=30
+}={}) {
+ const next=structuredClone(state);next.actions||={};
+ const latest=new Map();
+ for(const c of comments||[]) {
+  if(c?.user?.login!==settings.owner.login||
+     c.author_association!=='OWNER'||!Number.isSafeInteger(c.id)||
+     typeof c.body!=='string'||!c.body.includes('aicafe-scope-plan:v1'))
+    continue;
+  // Even malformed JSON can be associated with its previously authenticated
+  // submitted planning action; do not treat an arbitrary comment as a prompt.
+  const id=c.body.match(/"task_id"\s*:\s*"([a-zA-Z0-9_-]+)"/)?.[1];
+  const actionId=c.body.match(/"action_id"\s*:\s*"([^"]+)"/)?.[1];
+  const source=c.body.match(/"proposal_source_sha"\s*:\s*"([a-f0-9]{64})"/)?.[1];
+  if(!id||!actionId||!source)continue;
+  const prior=latest.get(id);
+  if(!prior||c.id>prior.comment.id)latest.set(id,{comment:c,actionId,source});
+ }
+ const ms=Math.max(1,Number(checkMinutes)||30)*60000;
+ for(const task of queue.tasks||[]) {
+  const rec=next.tasks?.[task.id];
+  if(!rec?.planning_approved||rec.approved===true||
+     !['scope_planning','scope_plan_sent'].includes(rec.status)||
+     !rec.conversation_ref||Number.isInteger(rec.pr_number)||
+     rec.proposal_source_sha!==proposalSourceHash(task))continue;
+  const submitted=Object.entries(next.actions).filter(([,a])=>
+    a.task_id===task.id&&['scope_plan','scope_plan_update'].includes(a.type)&&
+    a.status==='submitted'&&a.proposal_source_sha===rec.proposal_source_sha&&
+    a.receipt);
+  if(!submitted.length)continue; // uncertain courier send stays held
+  const published=plans?.[task.id];
+  // A validated latest scope (including a durable, page-shifted approval)
+  // supersedes all undelivered pre-PR reminders.
+  const raw=latest.get(task.id);
+  if(published&&(!raw||published.comment_id>=raw.comment.id)) {
+   for(const a of Object.values(next.actions))
+    if(a.task_id===task.id&&a.scope_recovery===true&&a.status==='planned')
+     a.status='cancelled_no_longer_needed';
+   continue;
+  }
+  const active=Object.values(next.actions).some(a=>a.task_id===task.id&&
+    a.scope_recovery===true&&
+    ['planned','claimed','uncertain','needs_login'].includes(a.status));
+  if(active)continue;
+  let reason=null,key=null;
+  if(raw&&(!published||raw.comment.id>published.comment_id)) {
+   const action=next.actions[raw.actionId];
+   if(!action||action.task_id!==task.id||action.status!=='submitted'||
+      !['scope_plan','scope_plan_update'].includes(action.type)||
+      raw.source!==rec.proposal_source_sha)continue;
+   if(parseScopePlanComment(raw.comment,queue,next))continue;
+   const marker=[...raw.comment.body.matchAll(pattern)];
+   if(marker.length!==1)reason='Expected exactly one complete aicafe-scope-plan:v1 JSON marker.';
+   else {
+    try {
+     const draft=JSON.parse(marker[0][1]);
+     if(!Array.isArray(draft.edits)||!draft.edits.length)
+      reason='Supply a nonempty edits array of exact repository paths.';
+     else if(!draft.edits.every(pathOK))
+      reason='An edit path is unsafe or a wildcard. Use an exact relative repository file path.';
+     else if(new Set(draft.edits).size!==draft.edits.length)
+      reason='Remove duplicate edit paths.';
+     else if(!Array.isArray(draft.uses||[])||!(draft.uses||[]).every(pathOK))
+      reason='The uses list must contain exact relative read-only paths.';
+     else if(typeof draft.architecture!=='string'||!draft.architecture.trim()||
+             typeof draft.acceptance_plan!=='string'||!draft.acceptance_plan.trim())
+      reason='Supply nonempty architecture and acceptance_plan fields.';
+     else reason='Plan identity, source version, or submitted-action binding failed. Recheck the signed planning action and source hash.';
+    }catch {reason='Scope marker is not valid JSON. Correct the JSON and republish it.';}
+   }
+   key='scope_plan_update:'+encodeURIComponent(task.id)+':comment-'+raw.comment.id;
+   reason='Published GitHub scope '+(raw.comment.html_url||'#'+raw.comment.id)+
+     ' was NOT accepted. '+reason+' Continue in this existing planning chat; republish a corrected GitHub comment, without another goal approval.';
+  } else if(!published) {
+   const newest=[...submitted].sort((a,b)=>
+     Date.parse(b[1].submitted_at||b[1].receipt?.submitted_at||b[1].created_at||'')-
+     Date.parse(a[1].submitted_at||a[1].receipt?.submitted_at||a[1].created_at||''))[0];
+   const history=Object.values(next.actions).filter(a=>
+     a.task_id===task.id&&a.scope_recovery===true);
+   const last=history.at(-1)||newest[1];
+   const observed=Date.parse(last.submitted_at||last.receipt?.submitted_at||
+      last.created_at||rec.planning_approved_at||'');
+   if(!Number.isFinite(observed)||Date.parse(now)-observed<ms)continue;
+   key='scope_plan_update:'+encodeURIComponent(task.id)+':check-'+(history.length+1);
+   reason='Progress check only: GitHub has no verified scope-plan comment for this task. Muse must inspect whether the existing chat is still generating; do not interrupt an active chat. If idle, ask the planner to publish the plan or provide its actual GitHub comment URL. Do not open a second chat or claim the plan is missing if it is already published.';
+  }
+  if(!key||next.actions[key])continue;
+  const delivery=createScopePlanDelivery(task,{actionId:key,
+   approvalHash:rec.approval_hash,conversationUrl:rec.conversation_ref,
+   correction:reason});
+  next.actions[key]={task_id:task.id,type:'scope_plan_update',
+   status:'planned',delivery_owner:'muse',scope_recovery:true,
+   proposal_source_sha:rec.proposal_source_sha,created_at:now,delivery};
+ }
+ return next;
 }
