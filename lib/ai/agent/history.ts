@@ -50,6 +50,11 @@ export const THREAD_MEMORY_MAX_ENTRIES = 20;
 export const THREAD_MEMORY_MAX_TOMBSTONES = 40;
 export const THREAD_MEMORY_MAX_TEXT = 240;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isoTimestamp = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/;
+const validTimestamp = (value: unknown): value is string =>
+  typeof value === "string" && isoTimestamp.test(value) && Number.isFinite(Date.parse(value));
+const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
+  Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const financialTerms = /\b(?:price|prices|sales|revenue|profit|profits|cost|costs|payroll|wages?|salaries|salary|rent|bills?|bank|cash|fees?|margin|tax|refunds?|tips?|expenses?|financial|money|invoices?|payments?|discounts?|break[- ]even)\b/iu;
 const sensitiveTerms = /\b(?:password|passcode|api[ _-]?key|secret|token|credential|authorization|permission|consent|approval|approved|authorize|mandate|execute|transfer|purchase|payout)\b/iu;
 const currencyToken = /[$€£]|\b(?:USD|EUR|GBP|CAD|AUD|SAR|AED)\b/iu;
@@ -83,31 +88,57 @@ export function emptyThreadMemoryDocument(): ThreadMemoryDocument {
 }
 
 export function parseThreadMemoryDocument(value: unknown): ThreadMemoryDocument | null {
-  if (!record(value) || value.version !== 1 || !Number.isSafeInteger(value.revision) ||
-    (value.revision as number) < 0 || !Array.isArray(value.entries) ||
-    !Array.isArray(value.tombstones) || value.entries.length > THREAD_MEMORY_MAX_ENTRIES ||
+  if (!record(value) || !exactKeys(value, ["version", "revision", "cursor", "entries", "tombstones", "retry"]) ||
+    value.version !== 1 || !Number.isSafeInteger(value.revision) ||
+    (value.revision as number) < 0 || (value.revision as number) > 999_999_999 ||
+    !Array.isArray(value.entries) || !Array.isArray(value.tombstones) ||
+    value.entries.length > THREAD_MEMORY_MAX_ENTRIES ||
     value.tombstones.length > THREAD_MEMORY_MAX_TOMBSTONES) return null;
+
   const cursor = value.cursor;
-  if (cursor !== null && (!record(cursor) || typeof cursor.createdAt !== "string" ||
-    !Number.isFinite(Date.parse(cursor.createdAt)) || typeof cursor.id !== "string" || !uuid.test(cursor.id))) return null;
+  if (cursor !== null && (!record(cursor) || !exactKeys(cursor, ["createdAt", "id"]) ||
+    !validTimestamp(cursor.createdAt) || typeof cursor.id !== "string" || !uuid.test(cursor.id))) return null;
+  if (cursor === null && (value.entries.length > 0 || value.tombstones.length > 0)) return null;
+
   const entries = value.entries;
   if (!entries.every(entry => record(entry) &&
+    exactKeys(entry, ["kind", "key", "text", "sourceMessageId", "sourceAt", "revision"]) &&
     ["preference", "decision", "goal", "open_work"].includes(String(entry.kind)) &&
     typeof entry.key === "string" && validMemoryKey(entry.kind as ThreadMemoryKind, entry.key) &&
     typeof entry.text === "string" && safeThreadMemoryText(entry.text) === entry.text &&
     typeof entry.sourceMessageId === "string" && uuid.test(entry.sourceMessageId) &&
-    typeof entry.sourceAt === "string" && Number.isFinite(Date.parse(entry.sourceAt)) &&
-    Number.isSafeInteger(entry.revision) && (entry.revision as number) > 0)) return null;
+    validTimestamp(entry.sourceAt) &&
+    Number.isSafeInteger(entry.revision) && (entry.revision as number) > 0 &&
+    (entry.revision as number) <= (value.revision as number) &&
+    cursor !== null && compareSourceOrder(
+      { createdAt: entry.sourceAt, id: entry.sourceMessageId },
+      cursor as ThreadMemoryCursor,
+    ) <= 0)) return null;
+
   const tombstones = value.tombstones;
-  if (!tombstones.every(item => record(item) && typeof item.key === "string" &&
+  if (!tombstones.every(item => record(item) &&
+    exactKeys(item, ["key", "sourceMessageId", "sourceAt", "revision"]) &&
+    typeof item.key === "string" &&
     /^(?:preference|decision|goal|open_work):[a-z][a-z_-]{0,59}$/.test(item.key) &&
     typeof item.sourceMessageId === "string" && uuid.test(item.sourceMessageId) &&
-    typeof item.sourceAt === "string" && Number.isFinite(Date.parse(item.sourceAt)) &&
-    Number.isSafeInteger(item.revision) && (item.revision as number) > 0)) return null;
+    validTimestamp(item.sourceAt) &&
+    Number.isSafeInteger(item.revision) && (item.revision as number) > 0 &&
+    (item.revision as number) <= (value.revision as number) &&
+    cursor !== null && compareSourceOrder(
+      { createdAt: item.sourceAt, id: item.sourceMessageId },
+      cursor as ThreadMemoryCursor,
+    ) <= 0)) return null;
+
+  const entryKeys = entries.map(entry => (entry as ThreadMemoryEntry).key);
+  const tombstoneKeys = tombstones.map(item => (item as ThreadMemoryTombstone).key);
+  if (new Set(entryKeys).size !== entryKeys.length ||
+    new Set(tombstoneKeys).size !== tombstoneKeys.length ||
+    entryKeys.some(key => tombstoneKeys.includes(key))) return null;
+
   const retry = value.retry;
-  if (retry !== null && (!record(retry) ||
+  if (retry !== null && (!record(retry) || !exactKeys(retry, ["code", "at"]) ||
     !["provider_error", "invalid_summary", "storage_error"].includes(String(retry.code)) ||
-    typeof retry.at !== "string" || !Number.isFinite(Date.parse(retry.at)))) return null;
+    !validTimestamp(retry.at))) return null;
   return value as unknown as ThreadMemoryDocument;
 }
 
@@ -117,7 +148,7 @@ function validMemoryKey(kind: ThreadMemoryKind, key: string): boolean {
 
 function compareSourceOrder(left: { createdAt: string; id: string }, right: { createdAt: string; id: string }): number {
   const byTime = Date.parse(left.createdAt) - Date.parse(right.createdAt);
-  return byTime || left.id.localeCompare(right.id);
+  if (byTime) return byTime;\n  const leftId = left.id.toLowerCase();\n  const rightId = right.id.toLowerCase();\n  return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
 }
 
 /** Applies only model-proposed operations that cite an exact, safe owner quote. A forget
@@ -134,11 +165,11 @@ export function applyThreadMemoryOperations(
   const byId = new Map(sources.map(source => [source.id, source]));
   for (const operation of operations.slice(0, THREAD_MEMORY_MAX_ENTRIES)) {
     const source = byId.get(operation.sourceMessageId);
-    if (!source || !validMemoryKey(operation.kind, operation.key)) continue;
+    if (!source || !uuid.test(source.id) || !validTimestamp(source.createdAt) ||\n      safeThreadMemorySourceText(source.text) !== source.text || !validMemoryKey(operation.kind, operation.key)) continue;
     const existing = entries.find(entry => entry.key === operation.key);
     const tombstone = tombstones.find(item => item.key === operation.key);
     if (operation.action === "forget") {
-      if (!existing || compareSourceOrder(source, { createdAt: existing.sourceAt, id: existing.sourceMessageId }) <= 0) continue;
+      if (!existing || operation.quote !== "" ||\n        compareSourceOrder(source, { createdAt: existing.sourceAt, id: existing.sourceMessageId }) <= 0) continue;
       entries = entries.filter(entry => entry.key !== operation.key);
       tombstones = [{ key: operation.key, sourceMessageId: source.id, sourceAt: source.createdAt, revision },
         ...tombstones.filter(item => item.key !== operation.key)].slice(0, THREAD_MEMORY_MAX_TOMBSTONES);
