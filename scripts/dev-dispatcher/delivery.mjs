@@ -148,7 +148,7 @@ export function createDelivery({ task, record, action, actionId }) {
     owner_answered:'owner_answered: Authenticated GitHub owner answer: ' +
       String(record.owner_answer_text || 'Read PR decision').replace(/\s+/g,' ').slice(0,240) +
       '\nApply only within signed edits; reconcile the original PR comment ID and tests.',
-    closeout_evidence:'closeout_evidence: Current-head CI is green and Codex clean, but the PR is missing verified acceptance or an authenticated close-out. Complete the SAME PR rather than opening a new chat. Attach executed acceptance evidence for each signed requirement; resolve all review threads; verify the exact head and current base, then report coder done with a truthful linked receipt. If acceptance requires live owner/provider access, record the blocker and owner question; do NOT fabricate evidence, bypass approval, request duplicate Codex reviews, or merge.',
+    closeout_evidence:'closeout_evidence: Current-head CI is green and Codex clean, but the PR is missing verified acceptance or an authenticated close-out. Complete the SAME PR rather than opening a new chat. Attach executed acceptance evidence for each signed requirement; resolve all review threads; verify the exact head and current base, then include the exact executed test and evidence links. A self-reported done message is not proof. If acceptance requires live owner/provider access, record the blocker and owner question; do NOT fabricate evidence, bypass approval, request duplicate Codex reviews, or merge.',
     idle_continue:'idle_continue: Continue this SAME PR/chat. Finish scoped edits and tests; inspect ' +
       'latest CI/owner comments. Keep PR draft while coding; dispatcher marks Ready only after all CI checks pass. ' +
       'Do not request Codex before CI green or on intermediate pushes.',
@@ -189,7 +189,7 @@ export function createDelivery({ task, record, action, actionId }) {
       '; resolve outstanding review threads without using old-head findings as current state',
     'Privileged owner hold: ' + (record.sensitive_owner_block ? 'paid/live/prod/secret approval needed' : 'none') +
       '; acceptance: ' + (record.acceptance_proven === true ? 'proven' : 'not yet proven') +
-      '; coder done: ' + (record.coder_done === true ? 'yes' : 'no'),
+      ',
     ...(record.dependency_proven_text ? ['Proven dependencies: ' + record.dependency_proven_text] : []),
     'Do all applicable fixes together; keep this same PR/chat and do not open competing prompts.'
   ] : [];
