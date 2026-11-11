@@ -49,11 +49,6 @@ export function validateQueue(queue) {
       throw new Error('Invalid exclusive file ownership for ' + task.id);
     if (uses.some(path => !validPath(path)) || new Set(uses).size !== uses.length)
       throw new Error('Invalid read-only file usage for ' + task.id);
-    for (const path of edits) {
-      const owner = exclusiveOwners.get(path);
-      // Valid paths are already checked above. An overlap is a merge-order
-      // dependency, not permission to modify a file outside this task's scope.
-    }
   }
   const visiting = new Set(), visited = new Set();
   function visit(id) {
