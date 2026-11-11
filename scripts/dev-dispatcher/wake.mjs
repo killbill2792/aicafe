@@ -42,12 +42,17 @@ export function nextWake(state,now=Date.now(),config=settings){
  }
  // An overdue wake is due NOW, not silently dropped. Keep the identity
  // tied to its original deadline so repeated ticks cannot generate a storm.
- const first=list.filter(x=>Number.isFinite(x.at)).sort((a,b)=>a.at-b.at)[0];
+ const pending=state.delayed_wake;
+ const candidates=list.filter(x=>Number.isFinite(x.at)).map(x=>({
+   ...x,key:sha(JSON.stringify([config.repo,x.reason,x.id,new Date(x.at).toISOString()]))
+ })).filter(x=>pending?.key!==x.key||
+   !((pending.status==='requested'&&now-dt(pending.requested_at||pending.reserved_at)<15*60000)||
+     (pending.status==='reserved'&&now-dt(pending.reserved_at)<60000)));
+ // A previously requested overdue candidate cannot starve newer owner notices.
+ const first=candidates.sort((a,b)=>a.at-b.at)[0];
  if(!first)return null;
- const scheduledAt=new Date(first.at).toISOString();
  const due_at=new Date(Math.max(first.at,now+5000)).toISOString();
- return {due_at,reason:first.reason,
-   key:sha(JSON.stringify([config.repo,first.reason,first.id,scheduledAt]))};
+ return {due_at,reason:first.reason,key:first.key};
 }
 export async function scheduleSelfWake({ledger,token,config=settings,now=Date.now(),fetchFn=fetch}){
  if(!token)throw Error('Repository workflow token required');
