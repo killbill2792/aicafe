@@ -12,7 +12,8 @@ alter table public.ai_threads
       and jsonb_typeof(memory_summary->'version') = 'number'
       and memory_summary->>'version' = '1'
       and jsonb_typeof(memory_summary->'revision') = 'number'
-      and coalesce(memory_summary->>'revision','') ~ '^(0|[1-9][0-9]{0,8})      and case when jsonb_typeof(memory_summary->'entries') = 'array'
+      and coalesce(memory_summary->>'revision','') ~ '^(0|[1-9][0-9]{0,8})$'
+      and case when jsonb_typeof(memory_summary->'entries') = 'array'
         then jsonb_array_length(memory_summary->'entries') <= 20 else false end
       and case when jsonb_typeof(memory_summary->'tombstones') = 'array'
         then jsonb_array_length(memory_summary->'tombstones') <= 40 else false end
@@ -22,6 +23,8 @@ alter table public.ai_threads
           and memory_summary->'cursor' ?& array['createdAt','id']
           and jsonb_typeof(memory_summary->'cursor'->'createdAt') = 'string'
           and jsonb_typeof(memory_summary->'cursor'->'id') = 'string'
+          and coalesce(memory_summary->'cursor'->>'id','') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+          and coalesce(memory_summary->'cursor'->>'createdAt','') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
         else false end
       and case when memory_summary->'retry' = 'null'::jsonb then true
         when jsonb_typeof(memory_summary->'retry') = 'object' then
@@ -29,6 +32,8 @@ alter table public.ai_threads
           and memory_summary->'retry' ?& array['code','at']
           and jsonb_typeof(memory_summary->'retry'->'code') = 'string'
           and jsonb_typeof(memory_summary->'retry'->'at') = 'string'
+          and memory_summary->'retry'->>'code' in ('provider_error','invalid_summary','storage_error')
+          and coalesce(memory_summary->'retry'->>'at','') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
         else false end
     else false end
   );
