@@ -189,6 +189,9 @@ async function main() {
           action: "assign", actionId: key });
       } catch (error) {
         console.error(`Task ${assignment.task_id} delivery creation failed: ${error.message}`);
+        copy.owner_alerts=queueOwnerIssue(copy,{kind:'assignment_build_failed',
+          task_id:assignment.task_id,identity:key,message:'Dispatcher could not build approved assignment for '+assignment.task_id,
+          needs:'Repair existing task handoff: '+String(error.message).slice(0,160)}).owner_alerts;
         continue;
       }
       assigned.push(assignment);
@@ -238,6 +241,10 @@ async function main() {
                 action: proposal.action, actionId: proposal.key });
         } catch (error) {
           console.error(`Task ${id} delivery creation failed: ${error.message}`);
+          copy.owner_alerts=queueOwnerIssue(copy,{kind:'courier_prompt_build_failed',task_id:id,
+            pr_number:rec.pr_number||null,identity:proposal.key,
+            message:'Dispatcher could not construct Muse continuation for task '+id,
+            needs:'Repair prompt generation: '+String(error.message).slice(0,160)}).owner_alerts;
           continue;
         }
         rec.last_action_key = proposal.key;
@@ -269,6 +276,10 @@ async function main() {
         nudges.push({task_id:id,action:'landing_failed'});
       } catch (error) {
         console.error('Landing failure routing for '+id+': '+error.message);
+        copy.owner_alerts=queueOwnerIssue(copy,{kind:'landing_handoff_failed',task_id:id,
+          pr_number:rec.pr_number||null,identity:rec.merge_sha,
+          message:'Dispatcher failed to prepare post-merge repair for '+id,
+          needs:String(error.message).slice(0,180)}).owner_alerts;
       }
     }
     // Chat destinations are authenticated courier receipts, not owner-supplied
@@ -442,6 +453,7 @@ async function main() {
         }
       } catch (error) {
         console.error('Codex review preflight failed for task '+id+': '+error.message);
+        process.exitCode=1; // Generic Git-backed Muse incident after other tasks finish.
       }
     }
   }
@@ -496,7 +508,8 @@ async function main() {
             event:'codex_first_miss',at:new Date().toISOString()};
           return queueOwnerAlerts(latest,{queue});
         });
-      } catch(error) { console.error('Codex watchdog task '+id+': '+error.message); }
+      } catch(error) { console.error('Codex watchdog task '+id+': '+error.message);
+        process.exitCode=1; }
     }
   }
   // Only independently classified runner startup errors may be retried, once.
@@ -525,6 +538,7 @@ async function main() {
              gitToken:process.env.DISPATCH_INSTALL_TOKEN});
         } catch (error) {
           console.error('Child #'+rec.pr_number+' automatic branch update needs retry: '+error.message);
+          process.exitCode=1;
           continue;
         }
         if (['updating','already_current','conflict_needs_coder','update_failed_needs_coder'].includes(result.status)) {
@@ -578,6 +592,7 @@ async function main() {
         } catch (error) {
           // A temporarily conflicting update must not stall other approved PRs.
           console.error('PR #'+rec.pr_number+' main branch update will retry: '+error.message);
+          process.exitCode=1;
         }
       }
     }
@@ -608,7 +623,7 @@ async function main() {
           return state;
         });
         await dispatchReceiptWake({token:githubToken,event:'dispatcher_delayed'}).catch(e=>
-          console.error('Ready transition self-wake failed: '+e.message));
+          (console.error('Ready transition self-wake failed: '+e.message),process.exitCode=1));
         console.log(`Verified PR #${rec.pr_number} ready on green exact head; automatic Codex follows`);
         continue;
       }
@@ -712,7 +727,8 @@ async function main() {
       console.error(`Private Muse owner queue publication failed: ${error.message}`);
       try{await reportProjectionFailure({ledger,kind:'private_queue_publish_failed',
         identity:settings.ledger.owner_view_path});}
-      catch(health){console.error('Private queue failure notice unavailable: '+health.message);}
+      catch(health){console.error('Private queue failure notice unavailable: '+health.message);
+        process.exitCode=1;}
       if (process.env.GITHUB_STEP_SUMMARY)
         appendFileSync(process.env.GITHUB_STEP_SUMMARY,
           '\\n**Private queue view update failed** — see runner log; authoritative ledger is unchanged.\\n');
@@ -736,7 +752,8 @@ async function main() {
       console.error(`Owner control center publication failed: ${error.message}`);
       try{await reportProjectionFailure({ledger,kind:'owner_dashboard_publish_failed',
         identity:String(ownerIssue)});}
-      catch(health){console.error('Dashboard failure notice unavailable: '+health.message);}
+      catch(health){console.error('Dashboard failure notice unavailable: '+health.message);
+        process.exitCode=1;}
       if (process.env.GITHUB_STEP_SUMMARY)
         appendFileSync(process.env.GITHUB_STEP_SUMMARY, '\n**Owner dashboard update failed** — see the reconciliation log. Private ledger and courier signal remain independent.\n');
     }
