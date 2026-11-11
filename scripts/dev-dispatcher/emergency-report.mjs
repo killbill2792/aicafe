@@ -7,7 +7,7 @@ const url='https://github.com/'+(process.env.GITHUB_REPOSITORY||settings.repo)+
 try{
  const r=publishEmergencyViaGit({
    token:process.env.DISPATCH_LEDGER_TOKEN,identity:id,
-   message:'Dispatcher workflow failed; GitHub API may be unavailable. '+url,
+   message:String(process.env.GITHUB_WORKFLOW||'Dispatcher workflow')+' failed; GitHub API may be unavailable. '+url,
    needs:'Muse deliver owner notice; inspect original workflow failure'});
  console.log('Emergency Muse notice '+r.status+'; delivery unconfirmed until Muse receipt');
 }catch(error){
