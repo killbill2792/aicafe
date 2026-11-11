@@ -16,6 +16,7 @@ test("backend and docs are not delayed by unrelated browser jobs", () => {
   assert.equal(decision.required, false);
   assert.deepEqual(decision.scenarios, []);
   assert.deepEqual(decision.unmapped, []);
+  assert.equal(classifyPaths(["package.json", "package-lock.json"]).required, false);
 });
 
 test("unknown browser UI cannot silently skip required proof", () => {
