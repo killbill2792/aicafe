@@ -76,7 +76,7 @@ jobs:
         id: browser_select
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node scripts/e2e/targeted.mjs select
 
   quality:
@@ -260,7 +260,7 @@ jobs:
     # Only material UI/browser changes pay the local Supabase + Chromium cost.
     # The unchanged required baseline aggregate rejects a missing/skipped job.
     needs: changes
-    if: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.browser_required == 'true' }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.browser_required == 'true')) }}
     name: Targeted seeded Playwright (local Next.js + Supabase)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -270,7 +270,7 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
       OPENAI_API_KEY: ''
       VERCEL_URL: ''
-      BROWSER_SCENARIOS: ${{ needs.changes.outputs.browser_scenarios }}
+      BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money' || needs.changes.outputs.browser_scenarios }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -403,7 +403,9 @@ jobs:
             test "$BUILD_RESULT" = skipped
             test "$DB_RESULT" = skipped
           fi
-          if [ "$EVENT_NAME" = pull_request ] && [ "$BROWSER_REQUIRED" = true ]; then
+          if [ "$EVENT_NAME" = workflow_dispatch ] || { [ "$EVENT_NAME" = pull_request ] && [ "$BROWSER_REQUIRED" = true ]; }; then
+            # Manual full-baseline runs must not launder a skipped browser
+            # check into a passing PR-head required status.
             test "$BROWSER_RESULT" = success
           else
             test "$BROWSER_RESULT" = skipped
