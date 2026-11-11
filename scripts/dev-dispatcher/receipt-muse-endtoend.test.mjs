@@ -300,3 +300,24 @@ test('Codex review that arrives after the single fallback closes the incident an
  const again=noticeOperationalIssues(closed,{scan:{complete:true,rejected:[]}});
  assert.deepEqual(Object.keys(again.owner_alerts),Object.keys(closed.owner_alerts));
 });
+
+
+test('new commits do not flood Muse with CI-in-progress alerts; obsolete notifications retire',()=>{
+ const time='2026-11-11T05:40:00Z';
+ const originalState=original();
+ originalState.tasks[taskId].ci_state='pending';
+ originalState.tasks[taskId].last_commit_at='2026-11-11T05:39:00Z';
+ let fresh=noticeOperationalIssues(originalState,{now:time});
+ assert.equal(Object.values(fresh.owner_alerts).filter(n=>n.kind==='ci_unavailable').length,0);
+ fresh=noticeOperationalIssues(fresh,{now:'2026-11-11T06:01:00Z'});
+ let ci=Object.values(fresh.owner_alerts).filter(n=>n.kind==='ci_unavailable');
+ assert.equal(ci.length,1);assert.equal(ci[0].status,'planned');
+ const older=structuredClone(fresh);older.tasks[taskId].head_sha='b'.repeat(40);
+ older.tasks[taskId].last_commit_at='2026-11-11T06:01:00Z';
+ const changed=noticeOperationalIssues(older,{now:'2026-11-11T06:02:00Z'});
+ ci=Object.values(changed.owner_alerts).filter(n=>n.kind==='ci_unavailable');
+ assert.equal(ci.length,1);assert.equal(ci[0].status,'cancelled_no_longer_needed');
+ changed.tasks[taskId].ci_state='success';
+ const green=noticeOperationalIssues(changed,{now:'2026-11-11T06:25:00Z'});
+ assert.equal(Object.values(green.owner_alerts).filter(n=>n.kind==='ci_unavailable'&&n.status==='planned').length,0);
+});
