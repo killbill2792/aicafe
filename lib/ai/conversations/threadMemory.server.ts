@@ -4,7 +4,7 @@ import { z } from "zod";
 import { DEFAULT_SUPERVISOR_OPENAI_MODEL } from "./modelConfig";
 import { ownerInputResponseSchema, type ConversationScope } from "./contracts";
 import {
-  applyThreadMemoryOperations, formatThreadMemory, historyContent,
+  applyThreadMemoryOperations, formatThreadMemory, historyContent, safeThreadMemoryText,
   parseThreadMemoryDocument, threadMemorySource, type ThreadMemoryDocument,
   type ThreadMemoryOperation, type ThreadMemorySource,
 } from "@/lib/ai/agent/history";
@@ -156,7 +156,7 @@ function cardContext(row: MessageRow): string | null {
 
 function ownerInputAnswer(row: MessageRow): SourceWithCard["ownerInputResponse"] {
   const parsed = ownerInputResponseSchema.safeParse(row.owner_input_response);
-  if (!parsed.success || parsed.data.action !== "supply" || !parsed.data.value) return null;
+  if (!parsed.success || parsed.data.action !== "supply" || !parsed.data.value ||\n    safeThreadMemoryText(parsed.data.value) !== parsed.data.value) return null;
   return { questionId: parsed.data.questionId, value: parsed.data.value };
 }
 
