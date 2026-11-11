@@ -208,6 +208,7 @@ export function taskLifecycle(task,record={},state={},queue={},now=new Date().to
       failure:r.landing_failure||r.integration_failure||null,
       landing_status:r.landing_dispatch||null},
     monitor:{last_observed_at:r.last_github_activity||null,
+      github_effects:r.github_effects||{},github_effect_history:(r.github_effect_history||[]).slice(-30),
       status_age_minutes:age(r.last_github_activity,clock),
       last_dispatcher_state_at:state.updated_at||null,
       incidents:notices.filter(n=>['planned','claimed','uncertain'].includes(n.status))
