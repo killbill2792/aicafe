@@ -536,6 +536,17 @@ async function main() {
       return JSON.stringify(projected) === JSON.stringify(existing) ? null : projected;
     });
   }
+  // The GitHub App writer is optional infrastructure, but its absence must
+  // never be silent: Muse and the owner need an explicit private-ledger status.
+  if(commit&&ledger&&!process.env.DISPATCH_INSTALL_TOKEN){
+    for(const [id,rec] of Object.entries(persisted?.state?.tasks||{})){
+      if(rec.approved===true&&!Number.isInteger(rec.pr_number)&&rec.branch&&
+        verifiedCodingConversation(persisted.state,id,rec.approval_hash,rec.conversation_ref))
+        githubEffects.push({task_id:id,operation:'CREATE_DRAFT_PR',
+          head_sha:rec.head_sha||null,status:'blocked',
+          reason:'missing_pr_creator_install_token'});
+    }
+  }
   // Verified early-draft PR recovery. An authorized branch can exist after
   // ChatGPT pushed code but before the PR was opened. Do not require a
   // self-reported coder_done. Use installation credentials so PR CI fires.
