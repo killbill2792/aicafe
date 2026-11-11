@@ -65,6 +65,7 @@ declare
   v_source_at timestamptz;
   v_entry_revision_text text;
   v_entry_revision bigint;
+  v_retry_at timestamptz;
 begin
   if auth.uid() is null or auth.uid() is distinct from p_owner_user_id
     or p_expected_revision is null or p_expected_revision < 0
@@ -380,6 +381,11 @@ begin
       or coalesce(p_memory_summary->'retry'->>'at','') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$' then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
+    begin
+      v_retry_at := (p_memory_summary->'retry'->>'at')::timestamptz;
+    exception when others then
+      return jsonb_build_object('ok',false,'reason','invalid_summary');
+    end;
     if v_cursor is distinct from v_current->'cursor' then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
