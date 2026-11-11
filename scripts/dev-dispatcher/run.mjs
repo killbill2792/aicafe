@@ -30,6 +30,7 @@ import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 import {publishEmergencyViaGit,readApiPauseViaGit} from "./git-operations.mjs";
 import {recordLifecycleTransitions,projectLifecycle} from "./lifecycle-v3.mjs";
+import {recordRecoveryEvent,settleRecoveryRequests} from "./recovery-v3.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -365,6 +366,13 @@ async function main() {
     return [actor, courier];
   }));
   actorMap[settings.owner.login] ||= 'owner';
+  // Repository-dispatch is a WAKE, not an effect or authorization. GitHub's
+  // authenticated sender and the current signed ledger are rechecked on main.
+  let recoveryPayload=null;
+  if(process.env.GITHUB_EVENT_NAME==='repository_dispatch'&&process.env.GITHUB_EVENT_PATH){
+    try{recoveryPayload=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));}
+    catch{recoveryPayload=null;}
+  }
   const receiptScan = ledger
     ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])],
        processed:current.receipt_processed_files||{}})
@@ -497,7 +505,9 @@ async function main() {
       const withNotices = noticeOperationalIssues(queueOwnerAlerts(next,{queue,
         unmappedPrs:linkPullRequests(next,latest.snapshot).unmapped,openPrs:latest.snapshot}),
         {snapshot:latest.snapshot,scan:receiptScan});
-      const projected=recordLifecycleTransitions(withNotices,queue);
+      const recovered=recordRecoveryEvent(withNotices,recoveryPayload,{
+        repo,actors:actorMap,owner:settings.owner.login,now:new Date().toISOString()});
+      const projected=recordLifecycleTransitions(recovered,queue);
       return JSON.stringify(projected) === JSON.stringify(existing) ? null : projected;
     });
   }
@@ -731,7 +741,8 @@ async function main() {
   if(commit&&ledger){
     const projection=await ledger.transaction(latest=>{
       const projected=recordLifecycleTransitions(latest,queue);
-      return JSON.stringify(projected)===JSON.stringify(latest)?null:projected;
+      const result=settleRecoveryRequests(projected,projectLifecycle(projected,queue));
+      return JSON.stringify(result)===JSON.stringify(latest)?null:result;
     });
     if(projection.committed)persisted=projection;
   }
