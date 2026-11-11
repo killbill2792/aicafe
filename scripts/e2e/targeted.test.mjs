@@ -37,9 +37,11 @@ test("unknown browser UI cannot silently skip required proof", () => {
 });
 
 test("rename tracks both old and new UI/browser paths", () => {
-  const paths = parseNameStatus("R100\0app/[locale]/staff/old.tsx\0app/api/new.ts\0M\0docs/README.md\0");
-  assert.deepEqual(paths, ["app/[locale]/staff/old.tsx", "app/api/new.ts", "docs/README.md"]);
+  const paths = parseNameStatus("R100\0app/[locale]/staff/page.tsx\0app/api/new.ts\0M\0docs/README.md\0");
+  assert.deepEqual(paths, ["app/[locale]/staff/page.tsx", "app/api/new.ts", "docs/README.md"]);
   assert.deepEqual(classifyPaths(paths).scenarios, ["staff"]);
+  assert.deepEqual(classifyPaths(["app/[locale]/staff/old.tsx"]).unmapped,
+    ["app/[locale]/staff/old.tsx"]);
   assert.throws(() => parseNameStatus("R100\0one.ts\0"), /Truncated/);
 });
 
