@@ -179,6 +179,22 @@ describe("thread memory server boundary", () => {
     expect(state.rpcCalls).toHaveLength(1);
   });
 
+  it("does not expose an older recap while a failed compaction retry is pending", async () => {
+    const { client, state } = fixture();
+    state.document = {
+      version: 1, revision: 2, cursor: { createdAt, id: OWNER_MESSAGE },
+      entries: [{
+        kind: "preference", key: "preference:staff_drinks",
+        text: "We prefer oat milk for staff drinks.", sourceMessageId: OWNER_MESSAGE,
+        sourceAt: createdAt, revision: 1,
+      }],
+      tombstones: [], retry: { code: "provider_error", at: createdAt },
+    };
+    const context = await loadThreadMemoryContext(client, scope);
+    expect(context.memoryText).toBeNull();
+    expect(context.history).toHaveLength(2);
+  });
+
   it("loads only the latest bounded history and labels saved memory advisory", async () => {
     const { client, state } = fixture();
     state.document = {
