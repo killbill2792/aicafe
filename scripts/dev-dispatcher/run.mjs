@@ -516,8 +516,13 @@ async function main() {
       if(!task||rec.pr_number||rec.github_state==='merged'||!rec.conversation_ref||
         !rec.approved||!rec.branch)continue;
       try{
+        const verifiedDelivery=Object.values(persisted.state.actions||{}).some(a=>
+          a.task_id===id&&['assign','begin_scoped_coding'].includes(a.type)&&
+          a.status==='submitted'&&a.receipt?.courier==='muse'&&
+          a.delivery?.approval_hash===rec.approval_hash);
+        if(!verifiedDelivery)continue;
         const result=await ensureApprovedDraftPr({github:gh,writer,task,record:rec,
-          records:persisted.state.tasks,queueRepo:repo});
+          records:persisted.state.tasks,verifiedDelivery,queueRepo:repo});
         if(['created','existing_pr_needs_link'].includes(result.status)&&
           result.github_state!=='closed'){
           await ledger.transaction(state=>{
