@@ -27,6 +27,9 @@ export function parseScopePlanComment(comment,queue,state){
  const matches=[...comment.body.matchAll(pattern)];
  if(matches.length!==1)return null;
  let draft;try{draft=JSON.parse(matches[0][1]);}catch{return null;}
+ // Valid JSON may be null, an array or a scalar. None is a scope object;
+ // rejecting it must not crash reconciliation for unrelated tasks.
+ if(!draft||typeof draft!=='object'||Array.isArray(draft))return null;
  if(!taskId(draft.task_id)||typeof draft.action_id!=='string'||
     !Array.isArray(draft.edits)||!draft.edits.length||
     !draft.edits.every(pathOK)||new Set(draft.edits).size!==draft.edits.length||
@@ -321,7 +324,9 @@ export function queueScopePlanRecovery(state,queue,comments,plans,{
    else {
     try {
      const draft=JSON.parse(marker[0][1]);
-     if(!Array.isArray(draft.edits)||!draft.edits.length)
+     if(!draft||typeof draft!=='object'||Array.isArray(draft))
+      reason='Scope marker must contain a JSON object, not a null, scalar or array.';
+     else if(!Array.isArray(draft.edits)||!draft.edits.length)
       reason='Supply a nonempty edits array of exact repository paths.';
      else if(!draft.edits.every(pathOK))
       reason='An edit path is unsafe or a wildcard. Use an exact relative repository file path.';
