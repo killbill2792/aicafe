@@ -134,6 +134,20 @@ export function publishEmergencyViaGit({repo=settings.ledger.repo,
 }
 
 
+// Read the owner dashboard and Muse status through Git transport, avoiding
+// GitHub REST quota use on every refresh. This is a read, never an approval.
+export function readLedgerViaGit({repo=settings.ledger.repo,token,
+  remoteUrl=null,run=spawnSync}={}) {
+ if(repo!==settings.ledger.repo||!token)throw Error('Private ledger Git read not authorized');
+ const root=mkdtempSync(join(tmpdir(),'dispatcher-ledger-read-'));
+ try{
+  git(['clone','-q','--depth','1','--branch','main',
+    remoteUrl||gitUrl(repo),root],{env:gitAuthEnvironment(token),run});
+  const file=join(root,settings.ledger.path);
+  return assertLedgerShape(JSON.parse(readFileSync(file,'utf8')));
+ }finally{rmSync(root,{recursive:true,force:true});}
+}
+
 // Durable private-ledger compare-and-swap over ordinary Git. Concurrent
 // writers are rejected by the non-force main push and retried from fresh main.
 // Muse reads the exact same state.json and projection as before.
