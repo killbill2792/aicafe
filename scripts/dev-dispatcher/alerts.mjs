@@ -94,6 +94,18 @@ export function queueOwnerIssue(state,{kind,task_id=null,pr_number=null,identity
   owner_message:message.slice(0,1000)+' Needed: '+needs};
  return next;
 }
+// Retire only the precise operational incident. Multiple tasks/actions can
+// share a PR; a receipt recovery must never close their unrelated notices.
+export function resolveOwnerIssueIdentity(state,{kind,task_id=null,pr_number=null,identity}){
+ const next=structuredClone(state);
+ const key='notice:'+noticeHash({kind,task_id,pr_number,identity});
+ const notice=next.owner_alerts?.[key];
+ if(notice?.status==='planned'){
+  notice.status='resolved';
+  notice.resolved_at=new Date().toISOString();
+ }
+ return next;
+}
 export function resolveOwnerIssue(state,kind,pr_number){
  const next=structuredClone(state);
  for(const n of Object.values(next.owner_alerts||{}))
