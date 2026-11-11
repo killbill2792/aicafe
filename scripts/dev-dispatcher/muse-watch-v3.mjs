@@ -9,7 +9,7 @@ import {createHash} from 'node:crypto';
 import {recoveryIdentity} from './recovery-v3.mjs';
 const time=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?Date.parse(v):null;
 const ago=(stamp,clock)=>time(stamp)===null?null:Math.floor((clock-time(stamp))/60000);
-const sha=s=>createHash('sha256').update(s).digest('hex');
+const sha=s=>createHash('sha256').update(JSON.stringify(s)).digest('hex');
 const asIso=clock=>new Date(clock).toISOString();
 export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGapMinutes=15,
   codingIdleMinutes=20,deliveryGapMinutes=15}={}){
