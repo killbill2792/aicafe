@@ -67,7 +67,7 @@ export function advanceApprovedProposals(state,queue,{now=new Date().toISOString
    const decision=replies.at(-1);
    const previous=next.tasks[task.id];
    // Never rewrite an ongoing or proven coding task from a stale proposal.
-   if(previous?.pr_number || (previous?.conversation_ref&&!previous.scope_plan_completed) ||
+   if(previous?.pr_number || (previous?.conversation_ref&&!previous.proposal_notice_id) ||
       ['assigned','draft_open','review_fixing','merged','integrated_proven','released_proven'].includes(previous?.status))
      continue;
    if(!decision) {
@@ -98,7 +98,7 @@ export function advanceApprovedProposals(state,queue,{now=new Date().toISOString
      continue;
    const notice=next.owner_alerts[decision.notice_id];
    const approvalHash=proposalApprovalHash(task,notice);
-   const conversationUrl=previous?.scope_plan_completed===true
+   const conversationUrl=previous?.proposal_notice_id
      ? previous.conversation_ref||null:null;
    const actionType=conversationUrl?'scope_plan_update':'scope_plan';
    const key=actionType+':'+encodeURIComponent(task.id)+':'+notice.notice_hash;
