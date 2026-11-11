@@ -193,7 +193,9 @@ export function applyThreadMemoryOperations(
   for (const operation of operations.slice(0, THREAD_MEMORY_MAX_ENTRIES)) {
     const source = byId.get(operation.sourceMessageId);
     if (!source || !uuid.test(source.id) || !validTimestamp(source.createdAt) ||
-      safeThreadMemorySourceText(source.text) !== source.text ||\n      (source.structuredText !== undefined && safeThreadMemorySourceText(source.structuredText) !== source.structuredText) ||\n      !validMemoryKey(operation.kind, operation.key)) continue;
+      safeThreadMemorySourceText(source.text) !== source.text ||
+      (source.structuredText !== undefined && safeThreadMemorySourceText(source.structuredText) !== source.structuredText) ||
+      !validMemoryKey(operation.kind, operation.key)) continue;
     const existing = entries.find(entry => entry.key === operation.key);
     const tombstone = tombstones.find(item => item.key === operation.key);
     if (operation.action === "forget") {
