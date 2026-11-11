@@ -23,6 +23,7 @@ import {dispatchReceiptWake} from './wake.mjs';
 import {noticeOperationalIssues,reportFatalDispatcherError,reportProjectionFailure,reportProjectionRestored} from './notifications.mjs';
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
+import {publishEmergencyViaGit} from "./git-operations.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -480,12 +481,13 @@ async function main() {
           rec.branch_maintenance_merge_sha !== parent.merge_sha) {
         let result;
         try {
-          result = await updateChildAfterParentMerge({github:gh,dependent:rec,predecessor:parent});
+          result = await updateChildAfterParentMerge({github:gh,dependent:rec,predecessor:parent,
+             gitToken:process.env.DISPATCH_INSTALL_TOKEN});
         } catch (error) {
           console.error('Child #'+rec.pr_number+' automatic branch update needs retry: '+error.message);
           continue;
         }
-        if (['update_requested','update_failed_needs_coder'].includes(result.status)) {
+        if (['updating','already_current','conflict_needs_coder','update_failed_needs_coder'].includes(result.status)) {
           await ledger.transaction(latest=>{
             const child=latest.tasks[id];
             if (!child || child.pr_number!==rec.pr_number ||
@@ -495,7 +497,11 @@ async function main() {
             return latest;
           });
           console.log('Child #'+rec.pr_number+': parent merged; branch maintenance '+result.status);
-        } else console.log('Child #'+rec.pr_number+': branch maintenance held ('+result.reason+')');
+        } else {
+          console.error('Child #'+rec.pr_number+' branch maintenance held: '+(result.status||result.reason));
+          if(['missing_git_credential','push_failed_needs_retry'].includes(result.status))
+            process.exitCode=1;
+        }
         continue;
       }
       // Ordinary main-based stale branches are refreshed without force-push.
@@ -503,14 +509,19 @@ async function main() {
       if (rec.base_current === false && rec.base_branch === 'main' &&
           !(rec.draft === true && rec.ci_state !== 'success')) {
         try {
-          const result = await safeUpdateBranch({github:gh,record:rec,enabled:true});
+          const result = await safeUpdateBranch({github:gh,record:rec,enabled:true,
+             gitToken:process.env.DISPATCH_INSTALL_TOKEN});
           console.log('PR #'+rec.pr_number+' main branch maintenance: '+result.status);
+           if(['missing_git_credential','push_failed_needs_retry'].includes(result.status)){
+             process.exitCode=1;
+             console.error('PR #'+rec.pr_number+' Git branch update failed: '+result.status);
+           }
           if(result.status==='updating') {
             await ledger.transaction(state=>{
               const saved=state.tasks[id];
               if(!saved || saved.head_sha!==rec.head_sha)return null;
               saved.codex_branch_update={old_head_sha:rec.head_sha,
-                new_base_sha:rec.base_sha,status:'accepted_no_conflicts',
+                new_base_sha:result.new_base_sha,status:'accepted_no_conflicts',
                 at:new Date().toISOString()};
               saved.codex_branch_conflict=null;
               return state;
@@ -708,5 +719,13 @@ main().catch(async error => {
     message:detail,wake:()=>dispatchReceiptWake({token:process.env.GITHUB_TOKEN})});
   }catch(second){console.error('Owner alert persistence or wake failed: '+String(second.message).slice(0,160));}
  }
+ try{
+    const queued=publishEmergencyViaGit({
+      token:process.env.DISPATCH_LEDGER_TOKEN,
+      identity:'run:'+String(process.env.GITHUB_RUN_ID||'unknown')+':failure',
+      message:detail,needs:'Muse notify owner; inspect failed dispatcher workflow'
+    });
+    console.error('Emergency Muse queue '+queued.status+'; delivery unconfirmed');
+  }catch(fallback){console.error('EMERGENCY MUSE DELIVERY UNCONFIRMED: '+String(fallback.message).slice(0,160));}
  process.exitCode=1;
 });
