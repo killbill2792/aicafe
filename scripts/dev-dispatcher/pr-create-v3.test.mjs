@@ -83,3 +83,19 @@ test('no authenticated Muse coding-delivery receipt means no automatic PR',async
  assert.equal(result.reason,'signed_scope_or_chat_unverified');
  assert.equal(a.seen.length,0);
 });
+
+
+test('GitHub PR-create 403 is a visible permission blocker, not an uncertain POST',async()=>{
+ const a=setup();
+ const writer={request:async()=>{throw Error('GitHub request failed: status=403 message=Resource not accessible by integration');}};
+ const result=await ensureApprovedDraftPr({github:a.github,writer,task,record:rec,verifiedDelivery:true});
+ assert.equal(result.status,'blocked');
+ assert.equal(result.reason,'pr_creator_permission_denied');
+});
+test('GitHub PR-create API rate limit is separately classified',async()=>{
+ const a=setup();
+ const writer={request:async()=>{const e=Error('GitHub request failed: status=429');e.code='RATE_LIMIT';throw e;}};
+ const result=await ensureApprovedDraftPr({github:a.github,writer,task,record:rec,verifiedDelivery:true});
+ assert.equal(result.status,'blocked');
+ assert.equal(result.reason,'github_rate_limited');
+});
