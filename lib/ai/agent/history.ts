@@ -125,7 +125,7 @@ export function applyThreadMemoryOperations(
 ): ThreadMemoryDocument {
   let entries = [...current.entries];
   let tombstones = [...current.tombstones];
-  let revision = current.revision;
+  const revision = current.revision + 1;
   const byId = new Map(sources.map(source => [source.id, source]));
   for (const operation of operations.slice(0, THREAD_MEMORY_MAX_ENTRIES)) {
     const source = byId.get(operation.sourceMessageId);
@@ -134,7 +134,6 @@ export function applyThreadMemoryOperations(
     const tombstone = tombstones.find(item => item.key === operation.key);
     if (operation.action === "forget") {
       if (!existing || compareSourceOrder(source, existing) <= 0) continue;
-      revision++;
       entries = entries.filter(entry => entry.key !== operation.key);
       tombstones = [{ key: operation.key, sourceMessageId: source.id, sourceAt: source.createdAt, revision },
         ...tombstones.filter(item => item.key !== operation.key)].slice(0, THREAD_MEMORY_MAX_TOMBSTONES);
@@ -145,7 +144,6 @@ export function applyThreadMemoryOperations(
       (tombstone && compareSourceOrder(source, tombstone) <= 0) ||
       !operation.quote || !source.text.includes(operation.quote) ||
       safeThreadMemoryText(operation.quote) !== operation.quote) continue;
-    revision++;
     entries = [...entries.filter(entry => entry.key !== operation.key), {
       kind: operation.kind, key: operation.key, text: operation.quote,
       sourceMessageId: source.id, sourceAt: source.createdAt, revision,
