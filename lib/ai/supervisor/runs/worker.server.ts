@@ -261,7 +261,7 @@ export async function runDurableJobChain(input: {
       if (first) throw error;
       return; // continuation failure cannot revoke the original persisted reply
     }
-    const next = (await input.jobs.finishAgentJob(job.id,
+    const next: AgentJob | null = (await input.jobs.finishAgentJob(job.id,
       "replyId" in result
         ? { status: "done", replyMessageId: result.replyId,
           absorbedOwnerMessageIds: result.absorbedOwnerMessageIds }
