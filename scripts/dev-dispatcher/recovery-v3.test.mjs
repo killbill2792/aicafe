@@ -75,3 +75,17 @@ test('reconcile observation is not an invented completed merge',()=>{
  assert.equal(item.status,'OBSERVED');
  assert.match(item.reason,/not_action_authorized/);
 });
+
+test('authorized global reconcile needs no PR or commit head',()=>{
+ const input={repo,actor,intent:'RECONCILE',task_id:null,pr_number:null,
+   expected_head_sha:null,requested_at:now};
+ const ev={action:'dispatcher_recovery',sender:{login:actor},
+   client_payload:{version:1,...input,request_id:recoveryIdentity(input)}};
+ const parsed=recoveryEvent(ev,options);
+ assert.equal(parsed.accepted,true);
+ const one=recordRecoveryEvent(state,ev,options);
+ const view=projectLifecycle(one,{tasks:[]},now);
+ const item=Object.values(settleRecoveryRequests(one,view,now).recovery_requests)[0];
+ assert.equal(item.status,'OBSERVED');
+ assert.equal(item.reason,'global_reconcile_wake_not_evidence_of_effect');
+});
