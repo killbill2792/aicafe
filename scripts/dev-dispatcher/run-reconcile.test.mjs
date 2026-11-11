@@ -41,6 +41,10 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
       return { state: copy, rejected: [] };
     },
     reconcileReceiptFeedback: state => state,
+    queueOwnerIssue: (state,incident) => ({owner_alerts:{
+      ...state.owner_alerts,
+      ['notice:'+incident.kind+':'+incident.identity]:{...incident,status:'planned',recipient:'owner'}
+    }}),
     queueOwnerAlerts: state => state,
     noticeOperationalIssues: state => state,
     applySafetySignals: state => state,
@@ -85,6 +89,7 @@ test('one failing assignment does not prevent another and never writes a failed 
   assert.equal(result.state.tasks.bad, undefined);
   assert.equal(result.state.actions['assign:bad'], undefined);
   assert.equal(result.state.actions['assign:good'].status, 'planned');
+  assert.equal(result.state.owner_alerts['notice:assignment_build_failed:assign:bad'].status,'planned');
   assert.match(h.errors.join('\n'), /Task bad delivery creation failed: synthetic delivery failure/);
 });
 
@@ -106,6 +111,7 @@ test('one failing follow-up does not block other tasks or write action or early 
   assert.equal(result.state.tasks.bad.last_parent_rebase_sha, undefined);
   assert.equal(result.state.actions['idle_continue:good:new'].status, 'planned');
   assert.equal(result.state.tasks.good.last_action_key, 'idle_continue:good:new');
+  assert.equal(result.state.owner_alerts['notice:courier_prompt_build_failed:parent_merged:bad:'+sha].status,'planned');
   assert.deepEqual(Array.from(result.nudges, x => x.task_id), ['good']);
   assert.match(h.errors.join('\n'), /Task bad delivery creation failed: synthetic delivery failure/);
 });
