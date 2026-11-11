@@ -116,6 +116,7 @@ async function main() {
   await client.query(`
     create extension if not exists pgcrypto;
     create schema if not exists auth;
+    create role anon nologin;
     create role authenticated nologin;
     create table auth.users (id uuid primary key);
     create table businesses (id uuid primary key);
