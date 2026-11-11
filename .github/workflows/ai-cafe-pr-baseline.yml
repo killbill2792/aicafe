@@ -30,9 +30,14 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      browser_required: ${{ steps.browser_select.outputs.browser_required }}
+      browser_scenarios: ${{ steps.browser_select.outputs.browser_scenarios }}
       supervisor: ${{ steps.filter.outputs.supervisor }}
       docs_only: ${{ steps.filter.outputs['docs-only'] == 'true' && steps.filter.outputs['non-docs'] == 'false' && steps.filter.outputs.e2e == 'false' && steps.filter.outputs.supervisor == 'false' }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Classify changed paths
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -67,6 +72,12 @@ jobs:
               - '!docs/**'
               - '!**/*.md'
               - '!.github/ISSUE_TEMPLATE/**'
+      - name: Select real browser journeys from the PR diff (fail closed)
+        id: browser_select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/e2e/targeted.mjs select
 
   quality:
     needs: changes
@@ -245,11 +256,103 @@ jobs:
         if: always()
         run: supabase stop --no-backup
 
+  browser:
+    # Only material UI/browser changes pay the local Supabase + Chromium cost.
+    # The unchanged required baseline aggregate rejects a missing/skipped job.
+    needs: changes
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.browser_required == 'true')) }}
+    name: Targeted seeded Playwright (local Next.js + Supabase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      OPENAI_API_KEY: ''
+      VERCEL_URL: ''
+      BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money' || needs.changes.outputs.browser_scenarios }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Install locked browser + app dependencies
+        run: npm ci
+      - name: Generate two-cafe synthetic seed and start disposable Supabase Auth/API
+        run: |
+          set -euo pipefail
+          node scripts/seed/generateSeedSql.mjs
+          supabase start -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase db reset --local --yes
+          supabase status -o json > "$RUNNER_TEMP/e2e-supabase-status.json"
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from "node:fs";
+          const data = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/e2e-supabase-status.json","utf8"));
+          const anon = data.ANON_KEY ?? data.anon_key;
+          const service = data.SERVICE_ROLE_KEY ?? data.service_role_key;
+          if (!anon || !service) throw Error("Disposable Supabase auth credentials missing");
+          for (const key of [anon,service]) console.log("::add-mask::" + key);
+          appendFileSync(process.env.GITHUB_ENV,
+            "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\n" +
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY=" + anon + "\n" +
+            "SUPABASE_SERVICE_ROLE_KEY=" + service + "\n");
+          NODE
+      - name: Start locally bound Next.js and verify login route readiness
+        run: |
+          set -euo pipefail
+          npm run dev -- --webpack --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/e2e-next.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/e2e-next.pid"
+          ready=0
+          for attempt in $(seq 1 90); do
+            if curl -fsSL 'http://127.0.0.1:3000/en/login' -o /dev/null; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+      - name: Verify selector and required-proof negative cases
+        run: node --test scripts/e2e/targeted.test.mjs
+      - name: Run selected real authenticated Playwright cases
+        run: node scripts/e2e/targeted.mjs run
+      - name: Verify exact-head executed case counts; never accept skipped/missing proof
+        if: always()
+        run: node scripts/e2e/targeted.mjs verify
+      - name: Upload required redacted execution receipt (no cookies/traces/screenshots)
+        id: browser_artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-e2-targeted-browser-proof
+          path: test-results/e2e/proof.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Link executed browser job and artifact
+        if: steps.browser_artifact.outcome == 'success'
+        env:
+          ARTIFACT_URL: ${{ steps.browser_artifact.outputs.artifact-url }}
+        run: |
+          echo "### Targeted seeded Playwright acceptance" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run/job: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID — Targeted seeded Playwright" >> "$GITHUB_STEP_SUMMARY"
+          echo "Proof artifact: $ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+      - name: Local Next.js diagnostics on failure
+        if: failure()
+        run: tail -80 "$RUNNER_TEMP/e2e-next.log" 2>/dev/null || true
+      - name: Tear down local test processes and database
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/e2e-next.pid" ]; then kill "$(cat "$RUNNER_TEMP/e2e-next.pid")" || true; fi
+          supabase stop --no-backup || true
+
   baseline:
     # Preserve the branch-protection check, even for docs-only pull requests.
     name: AI CAFE PR baseline
     if: ${{ always() && github.event_name != 'push' }}
-    needs: [changes, quality, regressions, production-build, supervisor-evals, guards, db]
+    needs: [changes, quality, regressions, production-build, supervisor-evals, guards, db, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -267,10 +370,12 @@ jobs:
           EVAL_RESULT: ${{ needs.supervisor-evals.result }}
           GUARDS_RESULT: ${{ needs.guards.result }}
           DB_RESULT: ${{ needs.db.result }}
+          BROWSER_REQUIRED: ${{ needs.changes.outputs.browser_required }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
         shell: bash
         run: |
           echo "Changes: $CHANGES_RESULT; code=$CODE_CHANGED; e2e=$E2E_CHANGED; supervisor=$SUPERVISOR_CHANGED; docs-only=$DOCS_ONLY"
-          echo "Quality: $QUALITY_RESULT; Vitest: $TEST_RESULT; build: $BUILD_RESULT; database: $DB_RESULT; Supervisor: $EVAL_RESULT; guards: $GUARDS_RESULT"
+          echo "Quality: $QUALITY_RESULT; Vitest: $TEST_RESULT; build: $BUILD_RESULT; database: $DB_RESULT; Supervisor: $EVAL_RESULT; guards: $GUARDS_RESULT; browser-required: $BROWSER_REQUIRED; browser: $BROWSER_RESULT"
           test "$GUARDS_RESULT" = success
           if [ "$EVENT_NAME" = pull_request ]; then
             test "$CHANGES_RESULT" = success
@@ -297,6 +402,13 @@ jobs:
             test "$TEST_RESULT" = skipped
             test "$BUILD_RESULT" = skipped
             test "$DB_RESULT" = skipped
+          fi
+          if [ "$EVENT_NAME" = workflow_dispatch ] || { [ "$EVENT_NAME" = pull_request ] && [ "$BROWSER_REQUIRED" = true ]; }; then
+            # Manual full-baseline runs must not launder a skipped browser
+            # check into a passing PR-head required status.
+            test "$BROWSER_RESULT" = success
+          else
+            test "$BROWSER_RESULT" = skipped
           fi
           if [ "$SUPERVISOR_CHANGED" = true ] || [ "$EVENT_NAME" = workflow_dispatch ]; then
             test "$EVAL_RESULT" = success
