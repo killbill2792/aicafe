@@ -39,3 +39,18 @@ export function canReusePr(pr,old,mainSha,focusNumbers=[],fullAudit=false){
    old.last_github_activity===pr.updated_at &&
    old.same_repo===true;
 }
+
+// A verified merge never vanishes from the ledger when we skip a remote read.
+// Keep inspecting recent merges until landing is accounted for, and retry
+// older merged/unproven work on periodic audits so late failure comments survive.
+export function shouldRecheckMergedLanding(rec,{now=Date.now(),fullAudit=false,focused=false}={}){
+ if(rec?.github_state!=='merged'||!/^[a-f0-9]{40}$/.test(rec.merge_sha||'')||
+    !Number.isFinite(Date.parse(rec.merged_at||'')))return true;
+ if(rec.landing_failure)return false;
+ const sinceMerge=now-Date.parse(rec.merged_at);
+ if(sinceMerge<2*60*60*1000)return true;
+ if(['integrated_proven','released_proven'].includes(rec.status))return false;
+ const last=Date.parse(rec.last_landing_check_at||'');
+ return Boolean(focused || (fullAudit &&
+   (!Number.isFinite(last)||now-last>=60*60*1000)));
+}
