@@ -159,10 +159,11 @@ function ownerSources(rows: readonly MessageRow[]): SourceWithCard[] {
       pendingCard = cardContext(row);
       continue;
     }
+    const ownerInputResponse = ownerInputAnswer(row);
     const source = threadMemorySource({
       id: row.id, role: row.role, text: row.text_content, createdAt: row.created_at,
-    });
-    if (source) sources.push({ ...source, cardContext: pendingCard, ownerInputResponse: ownerInputAnswer(row) });
+    }, ownerInputResponse?.value);
+    if (source) sources.push({ ...source, cardContext: pendingCard, ownerInputResponse });
     pendingCard = null;
   }
   return sources;
@@ -285,7 +286,7 @@ export async function compactThreadMemory(
         console.error("thread_memory_compaction_failed", { code });
         return recordRetry(client, scope, document, code, processed);
       }
-      const sourceRows: ThreadMemorySource[] = sources.map(({ id, createdAt, text }) => ({ id, createdAt, text }));
+      const sourceRows: ThreadMemorySource[] = sources.map(({ id, createdAt, text, structuredText }) => ({\n        id, createdAt, text, ...(structuredText ? { structuredText } : {}),\n      }));
       next = applyThreadMemoryOperations(document, operations, sourceRows);
     } else {
       next = { ...document, revision: document.revision + 1, retry: null };
