@@ -32,7 +32,7 @@ import {publishEmergencyViaGit,readApiPauseViaGit} from "./git-operations.mjs";
 import {recordLifecycleTransitions,projectLifecycle} from "./lifecycle-v3.mjs";
 import {recordRecoveryEvent,settleRecoveryRequests} from "./recovery-v3.mjs";
 import {dispatchPreferences} from "./owner-controls-v3.mjs";
-import {ensureApprovedDraftPr} from "./pr-create-v3.mjs";
+import {ensureApprovedDraftPr,classifyPrCreatePreflightError} from "./pr-create-v3.mjs";
 import {verifiedCodingConversation} from "./verified-chat-v3.mjs";
 import {recordGithubEffects,recordPrWriterOwnerNotices} from "./github-effects-v3.mjs";
 
@@ -560,8 +560,20 @@ async function main() {
         const verifiedDelivery=verifiedCodingConversation(persisted.state,id,
           rec.approval_hash,rec.conversation_ref);
         if(!verifiedDelivery)continue;
-        const result=await ensureApprovedDraftPr({github:gh,writer,task,record:rec,
-          records:persisted.state.tasks,verifiedDelivery,queueRepo:repo});
+        let result;
+        try{
+          result=await ensureApprovedDraftPr({github:gh,writer,task,record:rec,
+            records:persisted.state.tasks,verifiedDelivery,queueRepo:repo});
+        }catch(error){
+          // ensureApprovedDraftPr catches its own POST errors. Anything thrown
+          // here is a preflight READ failure: no write has been attempted.
+          // Keep other tasks moving and do not create a sticky PR-write hold.
+          const classified=classifyPrCreatePreflightError(error);
+          githubEffects.push({task_id:id,operation:'CREATE_DRAFT_PR',
+            head_sha:rec.head_sha||null,status:classified.status,reason:classified.reason});
+          console.error('Early draft preflight unavailable for '+id+': '+error.message);
+          continue;
+        }
         githubEffects.push({task_id:id,operation:'CREATE_DRAFT_PR',
           head_sha:rec.head_sha||result.head_sha||null,status:result.status,
           reason:result.reason||null,pr_number:result.pr_number||null});
