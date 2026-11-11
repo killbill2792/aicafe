@@ -15,7 +15,7 @@ export function signalFor(state, secret) {
       // Historic operational alerts were keyed by their identity hash but
       // did not persist that identity field. Keep them deliverable after upgrade.
       (key === 'notice:' + a.notice_hash && /^[a-f0-9]{64}$/.test(a.notice_hash||''))))
-    .map(([key,a]) => 'owner:' + key + ':' + a.notice_hash);
+    .map(([key,a]) => 'owner:' + key + ':' + a.notice_hash + ':' + (a.wake_round || 0));
   // Opaque repair hint: same courier, same receipt; NEVER a new browser send.
   const repairs = Object.entries(state.receipt_feedback || {})
     .filter(([,f]) => f.status === 'rejected')
