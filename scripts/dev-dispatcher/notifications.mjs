@@ -1,4 +1,5 @@
-import {queueOwnerIssue} from './alerts.mjs';
+import {queueOwnerIssue,resolveOwnerIssueIdentity} from './alerts.mjs';
+import {receiptFileForAction} from './receipt-recovery.mjs';
 export function noticeOperationalIssues(state,{snapshot=[],scan=null}={}){
  let next=state;
  const send=(kind,task_id,pr_number,identity,message,needs)=>{next=queueOwnerIssue(next,
@@ -6,9 +7,44 @@ export function noticeOperationalIssues(state,{snapshot=[],scan=null}={}){
  if(scan?.complete===false)send('receipt_scan_incomplete',null,null,scan.scan_error||'incomplete',
   'Authenticated Muse receipt scan was incomplete: '+(scan.scan_error||'unknown error'),
   'Repair the private ledger receipt reader or courier permissions');
- for(const r of scan?.rejected||[])send('receipt_rejected',null,null,r.file||r.code,
-  'Muse receipt '+(r.file||'unknown')+' was rejected: '+r.code,
-  'Correct receipt GitHub actor, signature or action target');
+ // Current signed actions get a task/PR-specific notice instead of an
+ // unhelpful duplicate generic file alert. Unknown files remain visible.
+ const signedFiles=new Set(Object.entries(next.actions||{})
+  .map(([id,a])=>receiptFileForAction(id,a)).filter(Boolean));
+ const rejectedFiles=new Set((scan?.rejected||[]).map(r=>r.file||r.code));
+ if(scan?.complete===true)for(const n of Object.values(next.owner_alerts||{})){
+  if(n.kind==='receipt_rejected'&&n.status==='planned'&&
+     (!rejectedFiles.has(n.identity)||signedFiles.has(n.identity)))
+   next=resolveOwnerIssueIdentity(next,{kind:n.kind,task_id:n.task_id,
+    pr_number:n.pr_number,identity:n.identity});
+ }
+ for(const r of scan?.rejected||[]){
+  if(signedFiles.has(r.file))continue;
+  send('receipt_rejected',null,null,r.file||r.code,
+   'Muse receipt '+(r.file||'unknown')+' was rejected: '+r.code,
+   'Muse: verify the same authenticated file identity; no new browser send');
+ }
+ // One owner-facing incident per ORIGINAL action, not per GitHub tick or PR
+ // head. An accepted receipt is the only reason to announce restoration.
+ for(const [actionId,feedback] of Object.entries(next.receipt_feedback||{})){
+  const task=next.tasks?.[feedback.task_id];
+  const pr=Number.isInteger(task?.pr_number)?task.pr_number:null;
+  const subject=pr?'PR #'+pr:'Task '+feedback.task_id;
+  if(feedback.status==='rejected'){
+   send('handoff_receipt_blocked',feedback.task_id,pr,actionId,
+    subject+' original Muse handoff is unverified ('+feedback.code+
+    '). GitHub is holding further courier prompts to avoid duplicate work. No owner approval needed.',
+    'Muse verifies the existing signed receipt and original chat without resending; GitHub automatically rechecks and reports recovery');
+  }else if(feedback.status==='resolved'){
+   next=resolveOwnerIssueIdentity(next,{kind:'handoff_receipt_blocked',
+    task_id:feedback.task_id,pr_number:pr,identity:actionId});
+   if(feedback.resolution==='verified_receipt'){
+    send('handoff_receipt_restored',feedback.task_id,pr,actionId,
+     subject+' original Muse receipt is now authenticated and the existing coding chat is registered. No duplicate browser send; work can continue automatically.',
+     'No owner action is needed; GitHub continues normal CI/Codex/merge checks');
+   }
+  }
+ }
  const missed=next.schedule_health?.missed_schedule;
  if(missed)send('missed_schedule',null,null,missed.last_schedule_at,
   'Backup cron gap exceeded 15 minutes ('+missed.gap_minutes+' minutes)',
