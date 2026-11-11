@@ -326,7 +326,7 @@ async function main() {
     // Authenticated clients cannot forge the structured owner-input source column.
     await rejectQuery(db,
       "insert into ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,owner_input_prompt_message_id,owner_input_response) values($1,$2,$3,$3,'owner','text',$4,$5,$6,$7::jsonb)",
-      [CAFE_A, THREAD_A, OWNER_A, "We prefer oat milk.", crypto.randomUUID(), SUPERVISOR_MESSAGE,
+      [CAFE_A, THREAD_A, OWNER_A, "We prefer oat milk.", crypto.randomUUID(), MESSAGE_A,
         JSON.stringify({ questionId: "55555555-5555-4555-8555-555555555555", action: "supply", value: "We prefer oat milk." })],
       "42501",
     );
