@@ -166,3 +166,19 @@ test('403 not proven rate-limited is an authorization failure with safe cooldown
  assert.equal(item.next_retry_at,'2026-11-11T11:00:00.000Z');
  assert.equal(r.backlog.api_pause_until,item.next_retry_at);
 });
+
+
+test('Muse sees precise GitHub stale-head rejection and does not flood replays',()=>{
+ const request=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity)[0];
+ const pending=planMuseBacklog(null,[request],now);
+ const acknowledged=reconcileMuseBacklog(pending,{...state,recovery_rejections:{
+   [request.request_id]:{reason:'stale_head',at:now}}});
+ const one=Object.values(acknowledged.items)[0];
+ assert.equal(one.status,'GITHUB_REJECTED');
+ assert.equal(one.verified_reason,'stale_head');
+ const later='2026-11-11T10:02:00Z';
+ const fresh=museRecoveryCandidates(inspectMuseHealth(state,{now:later}),state,
+   {...identity,now:later})[0];
+ const next=planMuseBacklog(acknowledged,[fresh],later);
+ assert.equal(Object.values(next.items)[0].request.request_id,request.request_id);
+});
