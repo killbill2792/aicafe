@@ -28,7 +28,10 @@ export function validateHandoff(action, task) {
   const d = action?.delivery;
   const planning=['scope_plan','scope_plan_update'].includes(action?.type) &&
     task?.approved!==true&&task?.planning_approved===true&&
-    task?.status==='scope_planning'&&task.planning_eligible!==false&&
+    (task?.status==='scope_planning'||
+      (action.type==='scope_plan_update'&&action.scope_recovery===true&&
+       task.status==='scope_plan_sent'&&task.scope_plan_completed===true))&&
+    task.planning_eligible!==false&&
     action.proposal_source_sha===task.proposal_source_sha &&
     !Number.isInteger(task.pr_number) &&
     (action.type==='scope_plan'?(!task.conversation_ref):
@@ -105,7 +108,7 @@ export function agentInstruction(action) {
     'Do not use shell, filesystem, GitHub, code-editing tools, external APIs, or elevated permissions.',
     'Do not read, summarize, collect, or quote assistant responses or conversation transcripts.',
     'Reuse the existing persistent browser tab for this conversation when available; verify the provider, project and exact conversation URL before sending. Never assume a tab number remains valid after restart.',
-    'For idle reminders only, inspect the bottom of the existing conversation to determine whether the coding assistant is still generating; do not read or summarize its messages. If active or uncertain, do not submit.',
+    'For idle reminders and scope progress checks, inspect only the existing conversation activity indicator and composer; do not read or summarize messages. If active or uncertain, do not submit and record the blocked/uncertain status.',
     'Check that the destination is correct and the composer is idle; submit the following instruction ONCE only.',
     '--- BEGIN APPROVED INSTRUCTION ---',
     d.prompt,
