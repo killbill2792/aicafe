@@ -72,7 +72,7 @@ const newerPlan=(candidate,previous)=>{
 };
 export function selectScopePlans(comments,queue,state){
  const latest={};
- if(!Array.isArray(comments)||comments.length>100)throw Error('Unbounded GitHub scope plans');
+ if(!Array.isArray(comments))throw Error('Invalid GitHub scope comment snapshot');
  for(const c of comments){
    const x=parseScopePlanComment(c,queue,state);
    if(!x)continue;
