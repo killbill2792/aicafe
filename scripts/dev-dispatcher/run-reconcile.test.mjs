@@ -380,3 +380,20 @@ test('verified historical delivery to another chat cannot redirect the pre-PR re
  const out=harness().run(state).state;
  assert.equal(Object.values(out.actions).filter(a=>a.type==='pre_pr_reminder').length,0);
 });
+
+
+test('v3 cancels only unsent old coder-done prompts, preserving uncertain history',()=>{
+ const r=record('good');
+ const state=initial({good:r},{
+  planned:{task_id:'good',type:'closeout_evidence',status:'planned',
+   delivery:{action_id:'planned'}},
+  uncertain:{task_id:'good',type:'closeout_evidence',status:'uncertain',
+   delivery:{action_id:'uncertain'}},
+  submitted:{task_id:'good',type:'closeout_evidence',status:'submitted',
+   receipt:{courier:'muse'}}
+ });
+ const out=harness().run(state).state;
+ assert.equal(out.actions.planned.status,'cancelled_v3_no_coder_done_gate');
+ assert.equal(out.actions.uncertain.status,'uncertain');
+ assert.equal(out.actions.submitted.status,'submitted');
+});
