@@ -9,8 +9,10 @@ alter table public.ai_threads
     case when jsonb_typeof(memory_summary) = 'object' then
       (memory_summary - array['version','revision','cursor','entries','tombstones','retry']) = '{}'::jsonb
       and memory_summary ?& array['version','revision','cursor','entries','tombstones','retry']
-      and jsonb_typeof(memory_summary->'version') = 'number'\n      and memory_summary->>'version' = '1'
-      and jsonb_typeof(memory_summary->'revision') = 'number'\n      and coalesce(memory_summary->>'revision','') ~ '^(0|[1-9][0-9]{0,8})
+      and jsonb_typeof(memory_summary->'version') = 'number'
+      and memory_summary->>'version' = '1'
+      and jsonb_typeof(memory_summary->'revision') = 'number'
+      and coalesce(memory_summary->>'revision','') ~ '^(0|[1-9][0-9]{0,8})
       and case when jsonb_typeof(memory_summary->'entries') = 'array'
         then jsonb_array_length(memory_summary->'entries') <= 20 else false end
       and case when jsonb_typeof(memory_summary->'tombstones') = 'array'
@@ -99,7 +101,9 @@ begin
   end if;
   if (p_memory_summary - array['version','revision','cursor','entries','tombstones','retry']) <> '{}'::jsonb
     or not (p_memory_summary ?& array['version','revision','cursor','entries','tombstones','retry'])
-    or jsonb_typeof(p_memory_summary->'version') is distinct from 'number'\n    or p_memory_summary->>'version' is distinct from '1'\n    or jsonb_typeof(p_memory_summary->'revision') is distinct from 'number'
+    or jsonb_typeof(p_memory_summary->'version') is distinct from 'number'
+    or p_memory_summary->>'version' is distinct from '1'
+    or jsonb_typeof(p_memory_summary->'revision') is distinct from 'number'
     or coalesce(p_memory_summary->>'revision','') !~ '^[1-9][0-9]{0,8}$'
     or jsonb_typeof(p_memory_summary->'entries') is distinct from 'array'
     or jsonb_typeof(p_memory_summary->'tombstones') is distinct from 'array' then
@@ -116,7 +120,9 @@ begin
   if v_cursor <> 'null'::jsonb then
     if jsonb_typeof(v_cursor) is distinct from 'object'
       or (v_cursor - array['createdAt','id']) <> '{}'::jsonb
-      or not (v_cursor ?& array['createdAt','id'])\n      or jsonb_typeof(v_cursor->'createdAt') is distinct from 'string'\n      or jsonb_typeof(v_cursor->'id') is distinct from 'string'
+      or not (v_cursor ?& array['createdAt','id'])
+      or jsonb_typeof(v_cursor->'createdAt') is distinct from 'string'
+      or jsonb_typeof(v_cursor->'id') is distinct from 'string'
       or coalesce(v_cursor->>'id','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
       or coalesce(v_cursor->>'createdAt','') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$' then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
@@ -167,7 +173,13 @@ begin
   for v_entry in select value from jsonb_array_elements(p_memory_summary->'entries') loop
     if jsonb_typeof(v_entry) is distinct from 'object'
       or (v_entry - array['kind','key','text','sourceMessageId','sourceAt','revision']) <> '{}'::jsonb
-      or not (v_entry ?& array['kind','key','text','sourceMessageId','sourceAt','revision'])\n      or jsonb_typeof(v_entry->'kind') is distinct from 'string'\n      or jsonb_typeof(v_entry->'key') is distinct from 'string'\n      or jsonb_typeof(v_entry->'text') is distinct from 'string'\n      or jsonb_typeof(v_entry->'sourceMessageId') is distinct from 'string'\n      or jsonb_typeof(v_entry->'sourceAt') is distinct from 'string'\n      or jsonb_typeof(v_entry->'revision') is distinct from 'number' then
+      or not (v_entry ?& array['kind','key','text','sourceMessageId','sourceAt','revision'])
+      or jsonb_typeof(v_entry->'kind') is distinct from 'string'
+      or jsonb_typeof(v_entry->'key') is distinct from 'string'
+      or jsonb_typeof(v_entry->'text') is distinct from 'string'
+      or jsonb_typeof(v_entry->'sourceMessageId') is distinct from 'string'
+      or jsonb_typeof(v_entry->'sourceAt') is distinct from 'string'
+      or jsonb_typeof(v_entry->'revision') is distinct from 'number' then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
     v_kind := v_entry->>'kind';
@@ -254,7 +266,11 @@ begin
   for v_tombstone in select value from jsonb_array_elements(p_memory_summary->'tombstones') loop
     if jsonb_typeof(v_tombstone) is distinct from 'object'
       or (v_tombstone - array['key','sourceMessageId','sourceAt','revision']) <> '{}'::jsonb
-      or not (v_tombstone ?& array['key','sourceMessageId','sourceAt','revision'])\n      or jsonb_typeof(v_tombstone->'key') is distinct from 'string'\n      or jsonb_typeof(v_tombstone->'sourceMessageId') is distinct from 'string'\n      or jsonb_typeof(v_tombstone->'sourceAt') is distinct from 'string'\n      or jsonb_typeof(v_tombstone->'revision') is distinct from 'number' then
+      or not (v_tombstone ?& array['key','sourceMessageId','sourceAt','revision'])
+      or jsonb_typeof(v_tombstone->'key') is distinct from 'string'
+      or jsonb_typeof(v_tombstone->'sourceMessageId') is distinct from 'string'
+      or jsonb_typeof(v_tombstone->'sourceAt') is distinct from 'string'
+      or jsonb_typeof(v_tombstone->'revision') is distinct from 'number' then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
     v_key := v_tombstone->>'key';
@@ -376,7 +392,9 @@ begin
   if p_memory_summary->'retry' <> 'null'::jsonb then
     if jsonb_typeof(p_memory_summary->'retry') is distinct from 'object'
       or (p_memory_summary->'retry' - array['code','at']) <> '{}'::jsonb
-      or not (p_memory_summary->'retry' ?& array['code','at'])\n      or jsonb_typeof(p_memory_summary->'retry'->'code') is distinct from 'string'\n      or jsonb_typeof(p_memory_summary->'retry'->'at') is distinct from 'string'
+      or not (p_memory_summary->'retry' ?& array['code','at'])
+      or jsonb_typeof(p_memory_summary->'retry'->'code') is distinct from 'string'
+      or jsonb_typeof(p_memory_summary->'retry'->'at') is distinct from 'string'
       or p_memory_summary->'retry'->>'code' not in ('provider_error','invalid_summary','storage_error')
       or coalesce(p_memory_summary->'retry'->>'at','') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$' then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
