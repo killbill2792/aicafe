@@ -10,6 +10,8 @@ const safeName = s => typeof s === 'string' && /^[a-zA-Z0-9_.-]{1,80}$/.test(s);
 const sha = s => createHash('sha256').update(s).digest('hex');
 const ACTION_INTENTS = {
   assign: 'start_new_chat',
+  scope_plan: 'start_new_chat',
+  begin_scoped_coding: 'continue_existing_chat',
   repair_ci: 'continue_existing_chat', repair_review: 'continue_existing_chat',
   continue_pr: 'continue_existing_chat', pre_pr_reminder: 'continue_existing_chat',
   // Dispatcher v2 uses reason-specific names; these are the same saved-chat
@@ -23,7 +25,13 @@ const ACTION_INTENTS = {
 
 export function validateHandoff(action, task) {
   const d = action?.delivery;
-  if (action?.status !== 'planned' || !['muse', 'dave'].includes(action.delivery_owner) || task?.approved !== true || !d || d.version !== 1 ||
+  const planning=action?.type==='scope_plan' &&
+    task?.approved!==true&&task?.planning_approved===true&&
+    task?.status==='scope_planning'&&
+    action.proposal_source_sha===task.proposal_source_sha &&
+    !task.conversation_ref&&!Number.isInteger(task.pr_number);
+  if (action?.status !== 'planned' || !['muse', 'dave'].includes(action.delivery_owner) ||
+      (task?.approved!==true&&!planning) || !d || d.version !== 1 ||
       !safeName(d.task_id) || !safeName(d.project?.id) || !safeName(d.provider) ||
       !['chatgpt', 'claude'].includes(d.provider) ||
       !['start_new_chat', 'continue_existing_chat'].includes(d.intent) ||

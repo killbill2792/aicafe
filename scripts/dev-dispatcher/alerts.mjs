@@ -4,6 +4,7 @@ import {settings} from './settings.mjs';
 import {createHash} from 'node:crypto';
 import {architectureFoundationReady,approved} from './core.mjs';
 import {approvalSignature} from './delivery.mjs';
+import {proposalSourceHash} from './proposal-stage.mjs';
 import {validConversationUrl} from './delivery.mjs';
 const sha=s=>createHash('sha256').update(s).digest('hex');
 export function noticeHash({kind,task_id,pr_number,question,source_sha,identity:operationalIdentity,incident_cycle=0}){
@@ -272,8 +273,7 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
            ['draft_open','review_fixing'].includes(rec.status));
       });
       const eligible=prioritySatisfied&&deps;
-      const signature=sha(JSON.stringify([task.id,task.goal,task.scope_hint,
-        task.exclusive_files,task.acceptance,task.depends_on,task.brief]));
+      const signature=proposalSourceHash(task);
       for(const old of Object.values(next.owner_alerts))
         if(old.kind==='next_task_proposal'&&old.task_id===task.id&&
            old.status==='planned'&&(!eligible||old.source_sha!==signature))

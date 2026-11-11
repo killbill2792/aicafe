@@ -33,9 +33,13 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
     task?.github_state === 'open' && Number.isInteger(task?.pr_number) &&
     task?.branch === settings.naming.branch_prefix + task.task_id &&
     !task?.conversation_ref;
+  const planning=action?.type==='scope_plan'&&
+    task?.planning_approved===true&&task?.approved!==true&&
+    task?.status==='scope_planning'&&
+    action.proposal_source_sha===task.proposal_source_sha;
   if (!action || !task ||
       (action.status !== 'planned' && !lateAssignment && !supersededContinuation) ||
-      (!supersededContinuation && task.approved !== true))
+      (!supersededContinuation && task.approved !== true && !planning))
     throw new Error('Action is not currently approved and planned');
   // Courier receipts may only be acknowledged by the action's assigned owner.
   if (action.delivery_owner !== authenticatedCourier)
@@ -87,6 +91,7 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
     return next;
   }
   action.status = 'submitted';
+  if (planning) {task.status='scope_plan_sent';task.scope_plan_completed=true;}
   if (lateAssignment) action.recovered_original_chat_after_pr = true;
   action.submitted_at = receipt.submitted_at || new Date().toISOString();
   action.receipt = { courier: authenticatedCourier, prompt_hash: d.prompt_hash,

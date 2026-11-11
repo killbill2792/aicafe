@@ -1,5 +1,6 @@
 import { editableFiles } from './core.mjs';
-import { approvalMatches } from './delivery.mjs';
+import { approvalMatches, approvalSignature } from './delivery.mjs';
+import { proposalSourceHash } from './proposal-stage.mjs';
 import { architectureFoundationReady } from './core.mjs';
 
 // One authoritative check before the private document is written.
@@ -24,6 +25,33 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
       continue;
     }
     const task = taskById.get(id);
+    // A signed YES to an unscoped proposal permits planning but never writes.
+    if(rec.planning_approved){
+      const current=task?.state==='proposed' &&
+        task.architecture_approval?.approved!==true &&
+        rec.proposal_source_sha===proposalSourceHash(task);
+      if(current&&['scope_planning','scope_plan_sent'].includes(rec.status)){
+        rec.approved=false;continue;
+      }
+      if(task?.architecture_approval?.approved===true &&
+         ['architecture_approved','ready'].includes(task.state) &&
+         editableFiles(task).length>0){
+        for(const a of Object.values(state.actions))
+          if(a.task_id===id&&a.type==='scope_plan'&&a.status==='planned')
+            a.status='cancelled_approval_changed';
+        rec.scope_plan_completed=rec.status==='scope_plan_sent'&&Boolean(rec.conversation_ref);
+        rec.planning_approved=false;
+        rec.approved=true;rec.approval_hash=approvalSignature(task);
+        rec.status='proposed';
+        continue;
+      }
+      for(const a of Object.values(state.actions))
+        if(a.task_id===id&&a.type==='scope_plan'&&a.status==='planned')
+          a.status='cancelled_approval_changed';
+      rec.planning_approved=false;rec.approved=false;
+      rec.status='blocked_needs_owner';
+      continue;
+    }
     const stillApproved = task && task.architecture_approval?.approved === true &&
       ['architecture_approved', 'ready'].includes(task.state) &&
       editableFiles(task).length > 0;
