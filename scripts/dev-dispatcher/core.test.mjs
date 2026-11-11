@@ -647,3 +647,27 @@ test('final Codex readiness is held on shared-file merge order, not coding eligi
   a:{status:'merged',merge_sha:'b'.repeat(40)}})).eligible,true);
  assert.deepEqual(dispatchFrontier(q,{}, {chatgpt:2,claude:0}).map(x=>x.task_id),['a','b']);
 });
+
+
+test('green exact-head Codex PR gets exactly one bounded same-chat closeout action',()=>{
+ const head='e'.repeat(40),at='2026-11-11T09:00:00Z',now=Date.parse('2026-11-11T09:21:00Z');
+ const r={task_id:'E2',approved:true,pr_number:436,github_state:'open',
+  conversation_ref:'https://chatgpt.com/c/existing-123',
+  head_sha:head,draft:false,ci_state:'success',codex_state:'clean',
+  codex_reviewed_sha:head,threads_resolved:true,mergeable:true,
+  codex_review_at:at,last_github_activity:at,last_submission_at:at,
+  acceptance_proven:false,coder_done:false};
+ assert.equal(decideNudge(r,Date.parse('2026-11-11T09:19:00Z')).kind,'hold');
+ const proposal=decideNudge(r,now);
+ assert.equal(proposal.action,'closeout_evidence');
+ assert.match(proposal.key,/closeout_evidence/);
+ assert.deepEqual(decideNudge({...r,last_action_key:proposal.key,
+  submission_state:'submitted'},now),{
+  kind:'hold',reason:'already_delivered_for_state'});
+ assert.equal(decideNudge({...r,submission_state:'uncertain'},now).kind,'hold');
+ assert.equal(decideNudge({...r,codex_reviewed_sha:'d'.repeat(40)},now).kind,'hold');
+ assert.equal(decideNudge({...r,threads_resolved:false},now).kind,'hold');
+ assert.equal(decideNudge({...r,acceptance_proven:true,coder_done:true},now).kind,'hold');
+ assert.equal(decideNudge({...r,ci_state:'failure'},now).action,'ci_failed');
+ assert.equal(decideNudge({...r,codex_state:'findings'},now).action,'codex_comments');
+});
