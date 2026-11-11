@@ -33,7 +33,7 @@ export function taskLifecycle(task,record={},state={},queue={},now=new Date().to
   const delivered=actions.filter(a=>a.status==='submitted'&&a.receipt)
     .sort((a,b)=>(time(b.submitted_at)||0)-(time(a.submitted_at)||0));
   const awaiting=actions.filter(a=>['planned','claimed','uncertain','needs_login'].includes(a.status));
-  const approved=r.approved===true||task?.architecture_approval?.approved===true;
+  const approved=typeof r.approved==='boolean'?r.approved:task?.architecture_approval?.approved===true;
   const head=knownSha(r.head_sha)?r.head_sha:null;
   const parents=[...new Set([...(task?.depends_on||[]),...overlappingPredecessorIds(task,queue)])];
   const remainingParents=parents.filter(p=>!isMerged(tasks[p]));
@@ -168,7 +168,7 @@ export function projectLifecycle(state,queue={},now=new Date().toISOString()){
   for(const id of taskIds)
     tasks[id]=taskLifecycle(planById.get(id)||{id},state.tasks[id]||{},state,queue,now);
   const scheduleAt=state.schedule_health?.last_schedule_at||null;
-  const scheduleAge=age(scheduleAt,time(now));
+  const scheduleAge=age(scheduleAt,now);
   const scheduleStatus=scheduleAge===null?'UNKNOWN':scheduleAge>15?'STALE':'OBSERVED';
   return {schema_version:V3_VERSION,generated_at:now,source_ledger_updated_at:state.updated_at||null,
     health:{schedule_status:scheduleStatus,last_schedule_at:scheduleAt,
@@ -194,6 +194,16 @@ export function recordLifecycleTransitions(state,queue,now=new Date().toISOStrin
       log.latest[id]=latest;
     }
   }
+  // Full dashboard columns are cached as a derived projection only. All
+  // time-relative ages come from timestamps when the view is opened; never
+  // produce a Git commit simply because another minute elapsed.
+  const rows=structuredClone(view.tasks);
+  for(const row of Object.values(rows)){
+    delete row.coding.minutes_since_commit;
+    delete row.monitor.status_age_minutes;
+    delete row.monitor.last_dispatcher_state_at;
+  }
+  if(JSON.stringify(log.rows)!==JSON.stringify(rows))log.rows=rows;
   // Retain the latest 1000 transitions; complete Git commit history is immutable.
   if(log.transitions.length>1000)log.transitions=log.transitions.slice(-1000);
   return next;
