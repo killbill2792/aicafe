@@ -13,16 +13,15 @@ const taskId=id=>typeof id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(i
 // routes and other valid paths may contain brackets, spaces or Unicode.
 // Keep only security/exact-path checks: no glob, absolute path or traversal.
 const pathOK=p=>typeof p==='string'&&p.length>0&&
- !p.startsWith('/')&&!p.includes('\\')&&!/[\\x00-\\x1f\\x7f]/.test(p)&&
+ !p.startsWith('/')&&!p.includes('\\')&&!/[\x00-\x1f\x7f]/.test(p)&&
  !/[?*]/.test(p)&&p.split('/').every(part=>part&&part!=='.'&&part!=='..'&&part!=='.git');
-const yes=s=>/^yes(?:[.!]|(?:\s+to\s+(?:start|proceed))[.!]?)?$/i.test(String(s||'').trim());
 
 // Plans go on the existing owner-control issue #411, not a new PR, queue, job
 // or comment channel. The ChatGPT planning agent must post this one-line marker:
 // <!-- aicafe-scope-plan:v1 {"task_id":"...","action_id":"...","proposal_source_sha":"...","edits":["..."],"uses":["..."],"architecture":"source fields / keys / readers / what changes / gaps / multi-cafe","acceptance_plan":"..."} -->
 // GitHub already bounds comment payloads. Do not impose a second arbitrary
 // 6-KB ceiling or require the authenticated JSON to fit on one line.
-const pattern=/<!--\\s*aicafe-scope-plan:v1\\s+([\\s\\S]*?)\\s*-->/g;
+const pattern=/<!--\s*aicafe-scope-plan:v1\s+([\s\S]*?)\s*-->/g;
 export function parseScopePlanComment(comment,queue,state){
  if(comment?.user?.login!==settings.owner.login ||
     comment?.author_association!=='OWNER'||!Number.isSafeInteger(comment.id)||
