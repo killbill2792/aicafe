@@ -147,7 +147,7 @@ export async function executeDurableRun(
           receipt = await deps.verified();
         }
         if (!receipt || receipt.endReason !== "complete" || receipt.ref !== finalRef)
-          await stop("turn_incomplete", claim.claimToken, claim.key);
+          return stop("turn_incomplete", claim.claimToken, claim.key);
         const reason = usageStopReason(receipt.usage, budget);
         if (reason) await stop(reason === "timeout" ? "time_exceeded" : "budget_exceeded", claim.claimToken, claim.key);
         if (!(await renew())) throw new Error("supervisor_worker_lease_lost");
@@ -156,10 +156,10 @@ export async function executeDurableRun(
       if (claim.key === "verify_report") {
         const receipt = await deps.verified();
         if (!receipt || receipt.ref !== finalRef || receipt.endReason !== "complete")
-          await stop("report_unverified", claim.claimToken, claim.key);
+          return stop("report_unverified", claim.claimToken, claim.key);
         return receipt.ref;
       }
-      await stop("unknown_step", claim.claimToken, claim.key);
+      return stop("unknown_step", claim.claimToken, claim.key);
     });
 }
 
