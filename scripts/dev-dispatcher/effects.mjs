@@ -52,7 +52,7 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
     if (record.base_branch !== 'main')
       return {status:'blocked',reasons:['adhoc_parent_base_not_main']};
   }
-  const gate = prepareReady ? readyGate(record) : canMerge(record,predecessors);
+  const gate = prepareReady ? readyGate(record,predecessors) : canMerge(record,predecessors);
   if (!gate.eligible) return {status:'blocked',reasons:gate.reasons};
   // Never trust stale ledger state for irreversible effects.
   const pr=await github.request(`/pulls/${record.pr_number}`);
