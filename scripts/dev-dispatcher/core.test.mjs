@@ -634,3 +634,16 @@ test('explicit dependency order takes precedence over queue order for shared fil
  assert.deepEqual(overlappingPredecessorIds(parent,q),['b']);
  assert.deepEqual(overlappingPredecessorIds(child,q),[]);
 });
+
+
+test('final Codex readiness is held on shared-file merge order, not coding eligibility',()=>{
+ const a={...task('a'),exclusive_files:['lib/shared.ts']};
+ const b={...task('b'),exclusive_files:['lib/shared.ts']};
+ const q=queue([a,b]);
+ const ready={draft:true,pr_number:51,head_sha:'a'.repeat(40),ci_state:'success'};
+ assert.deepEqual(readyGate(ready,predecessorsForMerge(b,q,{
+  a:{status:'draft_open'}})).reasons,['predecessor_not_merged']);
+ assert.equal(readyGate(ready,predecessorsForMerge(b,q,{
+  a:{status:'merged',merge_sha:'b'.repeat(40)}})).eligible,true);
+ assert.deepEqual(dispatchFrontier(q,{}, {chatgpt:2,claude:0}).map(x=>x.task_id),['a','b']);
+});
