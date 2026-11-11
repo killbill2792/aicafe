@@ -20,7 +20,8 @@ export function verifiedCodingConversation(state,taskId,approvalHash,currentUrl)
   const reached=new Set(actions.filter(a=>CODING_START_TYPES.has(a.type)&&
     (a.delivery.intent==='start_new_chat'&&a.delivery.conversation_url==null||
      a.delivery.intent==='continue_existing_chat'&&
-      a.delivery.conversation_url===a.receipt.conversation_url))
+      (a.delivery.conversation_url===a.receipt.conversation_url||
+       a.receipt.continuation_of===a.delivery.conversation_url)))
     .map(a=>a.receipt.conversation_url));
   if(!reached.size)return false;
   let changed=true;
