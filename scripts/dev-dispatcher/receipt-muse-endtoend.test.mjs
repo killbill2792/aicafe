@@ -7,7 +7,7 @@ import {inspectReceipts,applyReceipts} from './inbox.mjs';
 import {acceptDeliveryReceipt} from './receipt.mjs';
 import {reconcileReceiptFeedback} from './receipt-recovery.mjs';
 import {noticeOperationalIssues,reportFatalDispatcherError,reportMuseSignalFailure,reportMuseSignalRestored,reportProjectionFailure,reportProjectionRestored} from './notifications.mjs';
-import {acceptOwnerNoticeReceipt} from './alerts.mjs';
+import {acceptOwnerNoticeReceipt,queueOwnerIssue} from './alerts.mjs';
 import {signalFor} from './signal.mjs';
 import {renderOwnerView} from './owner-view.mjs';
 import {renderPrivateQueue} from './private-owner-view.mjs';
@@ -277,4 +277,26 @@ test('GitHub primary quota exhaustion is an explicit terminal error, not a crede
  assert.equal(calls,2);
  const nonQuota=await githubFailure(new Response(JSON.stringify({message:'Resource not accessible by integration'}),{status:403}),'GitHub','fake-secret');
  assert.notEqual(nonQuota.code,'RATE_LIMIT');
+});
+
+test('Codex review that arrives after the single fallback closes the incident and tells Muse once',()=>{
+ const state=original();
+ const t=state.tasks[taskId];
+ t.codex_fallback_requested_sha=t.head_sha;
+ t.codex_reviewed_sha=t.head_sha;
+ t.codex_state='clean';
+ const incident=queueOwnerIssue(state,{kind:'codex_auto_review_missed',
+   task_id:taskId,pr_number:pr,identity:t.head_sha,
+   message:'Automatic Codex review was missing',needs:'GitHub requested once'});
+ const closed=noticeOperationalIssues(incident,{scan:{complete:true,rejected:[]}});
+ const missed=Object.values(closed.owner_alerts).filter(n=>n.kind==='codex_auto_review_missed');
+ const restored=Object.values(closed.owner_alerts).filter(n=>n.kind==='codex_auto_review_received');
+ assert.equal(missed.length,1);
+ assert.equal(missed[0].status,'resolved');
+ assert.equal(restored.length,1);
+ assert.equal(restored[0].delivery_owner,'muse');
+ assert.equal(restored[0].recipient,'owner');
+ assert.match(restored[0].question,/verified head/);
+ const again=noticeOperationalIssues(closed,{scan:{complete:true,rejected:[]}});
+ assert.deepEqual(Object.keys(again.owner_alerts),Object.keys(closed.owner_alerts));
 });
