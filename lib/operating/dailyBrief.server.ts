@@ -45,6 +45,9 @@ const states=(db:SupabaseClient)=>new SnapshotCafeStateService(
   async(id,period)=>getBusinessSnapshotFromDb(db,id,period??"month"));
 
 /** Cron: every café, every 5 minutes; each café decides whether it is due. */
+const BLOCKED_IN_APP_REASONS=new Set(["missed_send_window","no_timezone","invalid_timezone",
+  "no_owner","no_chat_thread","not_an_owner","saved_brief_scope_mismatch"]);
+
 export async function sendDailyBriefs(db:SupabaseClient,now=new Date(),outbox?:BriefOutboxHook):Promise<BriefRun>{
   const run:BriefRun={checked:0,sent:0,skipped:0,failed:0,failureReasons:[]};
   const failures=new Set<string>();
@@ -76,13 +79,15 @@ export async function sendDailyBriefs(db:SupabaseClient,now=new Date(),outbox?:B
       if(result.reason==="not_due")continue;
       run.checked++;
       if(!result.owners.length){
-        if(result.outcome==="failed"){run.failed++;failures.add(result.reason);}
-        else run.skipped++;
+        if(result.outcome==="failed"||BLOCKED_IN_APP_REASONS.has(result.reason)){
+          run.failed++;failures.add(result.reason);
+        }else run.skipped++;
         continue;
       }
       for(const owner of result.owners){
         if(owner.inApp.outcome==="sent"&&owner.inApp.reason==="posted")run.sent++;
-        else if(owner.inApp.outcome==="failed"){
+        else if(owner.inApp.outcome==="failed"||
+          (owner.inApp.outcome==="skipped"&&BLOCKED_IN_APP_REASONS.has(owner.inApp.reason))){
           run.failed++;failures.add(owner.inApp.reason);
         }else run.skipped++;
         if(owner.whatsapp.outcome==="failed"){
@@ -117,7 +122,7 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
   let schedule:BriefSchedule;
   try{schedule=briefSchedule(now,timezone,normalizeOpenHours(location?.open_hours));}
   catch{return cafeStep(utcDay,{step:"schedule",outcome:"skipped",reason:"invalid_timezone"});}
-  const openHoursRead=locationReadFailed?"failed":location?"available":"not_found";
+  const openHoursRead:"available"|"not_found"|"failed"=locationReadFailed?"failed":location?"available":"not_found";
   const scheduleInfo={phase:schedule.phase,hoursSource:schedule.hoursSource,
     latestSendLocal:schedule.latestSendLocal,sendBefore:schedule.sendBefore,openHoursRead};
   const scheduleDetails={latestSend:schedule.latestSendLocal,hours:schedule.hoursSource,openHoursRead};

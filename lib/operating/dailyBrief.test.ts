@@ -205,11 +205,26 @@ describe("sending the daily brief at each café's own time",()=>{
   it("records a missed owner/day after the grace window and only once",async()=>{
     const missed=fakeDb();
     const afterOpen=new Date("2026-11-03T20:00:00Z"); // 12:00 café time, long after opening
-    expect(await sendDailyBriefs(missed.db,afterOpen)).toMatchObject({checked:1,skipped:1,failed:0});
+    expect(await sendDailyBriefs(missed.db,afterOpen)).toMatchObject({checked:1,skipped:0,failed:1,
+      failureReasons:["missed_send_window"]});
     expect(reasons(missed.runs)).toContainEqual(["u1","in_app","skipped","schedule","missed_send_window"]);
     const writes=missed.runUpserts;
     await sendDailyBriefs(missed.db,new Date("2026-11-03T20:05:00Z"));
     expect(missed.runUpserts).toBe(writes);
+  });
+  it("blocks a missing café timezone instead of scheduling in UTC",async()=>{
+    const missing=fakeDb({timezone:null});
+    const result=await sendDailyBriefs(missing.db,at("05:00"));
+    expect(result).toMatchObject({checked:1,failed:1,skipped:0,failureReasons:["no_timezone"]});
+    expect(reasons(missing.runs)).toContainEqual(["cafe","in_app","skipped","schedule","no_timezone"]);
+    expect(missing.writes.filter(r=>r.table==="ai_messages")).toHaveLength(0);
+  });
+  it("blocks an invalid IANA timezone and reports the reason",async()=>{
+    const invalid=fakeDb({timezone:"Not/A_Zone"});
+    const result=await sendDailyBriefs(invalid.db,at("05:00"));
+    expect(result).toMatchObject({checked:1,failed:1,skipped:0,failureReasons:["invalid_timezone"]});
+    expect(reasons(invalid.runs)).toContainEqual(["cafe","in_app","skipped","schedule","invalid_timezone"]);
+    expect(invalid.writes.filter(r=>r.table==="ai_messages")).toHaveLength(0);
   });
   it("isolates two owners in cafés with different timezones and opening times",async()=>{
     const cafes:FakeCafe[]=[

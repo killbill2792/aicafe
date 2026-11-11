@@ -29,19 +29,24 @@ export async function recordBriefRun(db:SupabaseClient,r:BriefRunRecord,now=new 
     reason:r.reason.slice(0,200),details:r.details??{},updated_at:now.toISOString()};
   const conflict="business_id,local_date,owner_key,channel,run_kind";
   try{
-    if(options.finalMissed){
+    if(options.finalMissed||options.preserveExisting){
       const existing=await db.from("morning_brief_runs").select("outcome,reason")
         .eq("business_id",r.businessId).eq("local_date",r.localDate)
         .eq("owner_key",r.ownerKey).eq("channel",r.channel).eq("run_kind",r.runKind)
         .maybeSingle();
       if(existing.error)throw existing.error;
-      // A successful/queued delivery is never overwritten by a later cron tick.
-      // The final missed outcome itself is also immutable once recorded.
-      if(existing.data&&(existing.data.outcome==="sent"||existing.data.outcome==="queued"||
-        existing.data.reason==="missed_send_window"))return;
+      if(options.finalMissed&&existing.data&&
+        (existing.data.outcome==="sent"||existing.data.outcome==="queued"||
+          existing.data.reason==="missed_send_window"))return;
+      if(options.preserveExisting&&existing.data){
+        // Keep a successful in-app post and any durable WhatsApp terminal/queued
+        // outcome; replace a failed in-app write after its partial commit is repaired.
+        const preserve=r.channel==="in_app"?existing.data.outcome==="sent":
+          existing.data.outcome==="sent"||existing.data.outcome==="queued"||existing.data.outcome==="failed";
+        if(preserve)return;
+      }
     }
-    const writeOptions:{onConflict:string;ignoreDuplicates?:boolean}={onConflict:conflict};
-    if(options.preserveExisting)writeOptions.ignoreDuplicates=true;
+    const writeOptions={onConflict:conflict};
     const {error}=await db.from("morning_brief_runs").upsert(row,writeOptions);
     if(error)throw error;
   }catch(error){

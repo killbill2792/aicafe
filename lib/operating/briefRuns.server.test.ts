@@ -38,20 +38,40 @@ describe("morning brief run ledger",()=>{
     await recordBriefRun(db,missed,new Date(now.getTime()+5*60_000),{finalMissed:true});
     expect(upsert).toHaveBeenCalledTimes(1);
   });
-  it("repairs a missing run row for an already-sent brief without overwriting an existing posted row",async()=>{
-    let current:Record<string,unknown>={outcome:"sent",reason:"posted"};
-    const upsert=vi.fn(async(next:Record<string,unknown>,options?:{ignoreDuplicates?:boolean})=>{
-      if(!options?.ignoreDuplicates)current=next;
-      return {error:null};
-    });
+  it("preserves an existing posted run when a retry observes the same durable message",async()=>{
+    const current:Record<string,unknown>={outcome:"sent",reason:"posted"};
+    const upsert=vi.fn(async()=>({error:null}));
     const query:Record<string,unknown>={};
     query.select=()=>query;query.eq=()=>query;
     query.maybeSingle=vi.fn(async()=>({data:current,error:null}));
     query.upsert=upsert;
     const db={from:vi.fn(()=>query)} as unknown as SupabaseClient;
     await recordBriefRun(db,{...record,reason:"already_sent"},now,{preserveExisting:true});
-    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({reason:"already_sent"}),
-      {onConflict:"business_id,local_date,owner_key,channel,run_kind",ignoreDuplicates:true});
+    expect(upsert).not.toHaveBeenCalled();
     expect(current.reason).toBe("posted");
+  });
+  it("repairs a failed in-app run record after the persisted message is recovered",async()=>{
+    let current:Record<string,unknown>={outcome:"failed",reason:"brief_write_failed"};
+    const upsert=vi.fn(async(next:Record<string,unknown>)=>{current=next;return {error:null};});
+    const query:Record<string,unknown>={};
+    query.select=()=>query;query.eq=()=>query;
+    query.maybeSingle=vi.fn(async()=>({data:current,error:null}));
+    query.upsert=upsert;
+    const db={from:vi.fn(()=>query)} as unknown as SupabaseClient;
+    await recordBriefRun(db,{...record,reason:"already_sent"},now,{preserveExisting:true});
+    expect(current).toMatchObject({outcome:"sent",reason:"already_sent"});
+  });
+  it("preserves a durable WhatsApp provider failure when the in-app message is already present",async()=>{
+    const current:Record<string,unknown>={outcome:"failed",reason:"provider_rejected:http400"};
+    const upsert=vi.fn(async()=>({error:null}));
+    const query:Record<string,unknown>={};
+    query.select=()=>query;query.eq=()=>query;
+    query.maybeSingle=vi.fn(async()=>({data:current,error:null}));
+    query.upsert=upsert;
+    const db={from:vi.fn(()=>query)} as unknown as SupabaseClient;
+    await recordBriefRun(db,{...record,channel:"whatsapp",outcome:"skipped",reason:"already_handled"},
+      now,{preserveExisting:true});
+    expect(upsert).not.toHaveBeenCalled();
+    expect(current.reason).toBe("provider_rejected:http400");
   });
 });
