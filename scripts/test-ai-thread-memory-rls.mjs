@@ -7,10 +7,15 @@ import { readFileSync } from "node:fs";
 import pg from "pg";
 
 const { Client } = pg;
+const database = process.env.PGDATABASE || "cafe_rls_test";
+const host = process.env.PGHOST || "127.0.0.1";
+if (!["127.0.0.1", "localhost", "::1"].includes(host) || !database.endsWith("_test")) {
+  throw new Error("Refusing to run destructive RLS fixtures outside a loopback *_test database");
+}
 const client = new Client({
-  host: process.env.PGHOST || "127.0.0.1",
+  host,
   port: Number(process.env.PGPORT || 5432),
-  database: process.env.PGDATABASE || "cafe_rls_test",
+  database,
   user: process.env.PGUSER || "postgres",
   password: process.env.PGPASSWORD || "postgres",
 });
@@ -113,6 +118,15 @@ async function insertOwnerMessage(db, {
 
 async function main() {
   await client.connect();
+  const existing = await client.query(`
+    select to_regclass('public.ai_threads') as threads,
+      to_regclass('public.ai_messages') as messages,
+      to_regclass('public.businesses') as businesses,
+      to_regclass('public.memberships') as memberships,
+      to_regclass('auth.users') as users
+  `);
+  assert.ok(existing.rows.every(row => Object.values(row).every(value => value === null)),
+    "RLS fixture requires a fresh disposable database; refusing to overwrite existing tables");
   await client.query(`
     create extension if not exists pgcrypto;
     create schema if not exists auth;
@@ -349,9 +363,9 @@ async function main() {
   // Two concurrent authenticated owner writers: the row lock serializes CAS;
   // the second writer must observe the first revision and fail as stale.
   const contender = new Client({
-    host: process.env.PGHOST || "127.0.0.1",
+    host,
     port: Number(process.env.PGPORT || 5432),
-    database: process.env.PGDATABASE || "cafe_rls_test",
+    database,
     user: process.env.PGUSER || "postgres",
     password: process.env.PGPASSWORD || "postgres",
   });
