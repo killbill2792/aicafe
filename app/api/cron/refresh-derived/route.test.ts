@@ -4,7 +4,7 @@ const mocks=vi.hoisted(()=>({
   refresh:vi.fn(async(..._args:unknown[])=>({businessDate:"2026-10-28",alertsCreated:0})),
   calls:0,
   due:vi.fn(async()=>({scopes:1,delivered:1,failed:0})),
-  routines:vi.fn(async()=>({routinesChecked:1,runs:1,notices:1,failed:0,evidenceChecks:1})),
+  routines:vi.fn(async(_db:unknown,_businessId:string,_timezone:string,_now:Date)=>({routinesChecked:1,runs:1,notices:1,failed:0,evidenceChecks:1})),
 }));
 vi.mock("@/lib/security/bearer",()=>({verifyBearer:(req:Request,secret:string)=>
   req.headers.get("authorization")==="Bearer "+secret}));
