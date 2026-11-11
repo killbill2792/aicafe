@@ -150,6 +150,22 @@ async function main() {
   }
 
   await client.query(conversationMigration);
+  // The Task 9 source query uses the existing structured owner-input response
+  // added by the owner-question migration. Reproduce only those two columns in
+  // this isolated disposable schema; no live Supabase project is contacted.
+  await client.query(`
+    alter table public.ai_messages
+      add column owner_input_prompt_message_id uuid references public.ai_messages(id) on delete cascade,
+      add column owner_input_response jsonb;
+    alter table public.ai_messages add constraint ai_messages_owner_input_columns check (
+      (owner_input_prompt_message_id is null and owner_input_response is null)
+      or (role='owner' and owner_input_prompt_message_id is not null
+        and owner_input_response is not null and jsonb_typeof(owner_input_response)='object')
+    );
+    create unique index ai_messages_one_owner_answer_per_prompt
+      on public.ai_messages(thread_id,owner_input_prompt_message_id)
+      where owner_input_prompt_message_id is not null;
+  `);
   await client.query(memoryMigration);
 
   await asActor(OWNER_A, async db => {
