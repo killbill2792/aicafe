@@ -549,7 +549,8 @@ async function main() {
         const verifiedDelivery=Object.values(persisted.state.actions||{}).some(a=>
           a.task_id===id&&['assign','begin_scoped_coding'].includes(a.type)&&
           a.status==='submitted'&&a.receipt?.courier==='muse'&&
-          a.delivery?.approval_hash===rec.approval_hash);
+          a.delivery?.approval_hash===rec.approval_hash&&
+          a.receipt?.conversation_url===rec.conversation_ref);
         if(!verifiedDelivery)continue;
         const result=await ensureApprovedDraftPr({github:gh,writer,task,record:rec,
           records:persisted.state.tasks,verifiedDelivery,queueRepo:repo});
