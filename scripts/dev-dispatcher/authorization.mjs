@@ -66,17 +66,29 @@ export function assignmentActionKey(state, taskId, queue) {
   const original = 'assign:' + taskId;
   const action = state.actions?.[original];
   if (!action) return original;
-  const architectureCancelled = action.status === 'cancelled_architecture_gate';
-  const gate = architectureCancelled
-    ? queue?.dispatch_rules?.architecture_foundation_proof_task
-    : action.status === 'cancelled_priority_gate'
-      ? queue?.dispatch_rules?.priority_gate_task : null;
-  if (!gate || (architectureCancelled
-      ? !architectureFoundationReady(queue, state.tasks)
-      : !['integrated_proven','released_proven'].includes(state.tasks?.[gate]?.status)) ||
-      action.receipt || action.claimed_at || action.submitted_at ||
-      action.delivery_claim || state.tasks?.[taskId]?.conversation_ref ||
-      Number.isInteger(state.tasks?.[taskId]?.pr_number)) return null;
-  const key = original + ':after-' + gate;
-  return state.actions[key] ? null : key;
+  const rec=state.tasks?.[taskId];
+  if(!rec?.approved||rec.status!=='proposed'||rec.conversation_ref||
+     Number.isInteger(rec.pr_number)||!/^([a-f0-9]{64})$/.test(rec.approval_hash||''))return null;
+  // A previous claim, uncertain submission or receipt is never replay-safe,
+  // even when a later action ID exists or a new approval signature is signed.
+  const history=Object.values(state.actions||{}).filter(a=>
+    a.task_id===taskId&&a.type==='assign');
+  if(history.some(a=>a.receipt||a.claimed_at||a.submitted_at||
+    a.delivery_claim||['planned','claimed','uncertain','submitted','needs_login'].includes(a.status)))
+    return null;
+  const architectureCancelled=action.status==='cancelled_architecture_gate';
+  const priorityCancelled=action.status==='cancelled_priority_gate';
+  const approvalCancelled=action.status==='cancelled_approval_changed';
+  if(!architectureCancelled&&!priorityCancelled&&!approvalCancelled)return null;
+  const gate=architectureCancelled?queue?.dispatch_rules?.architecture_foundation_proof_task:
+    priorityCancelled?queue?.dispatch_rules?.priority_gate_task:null;
+  if(gate&&(architectureCancelled
+    ? !architectureFoundationReady(queue,state.tasks)
+    : !['integrated_proven','released_proven'].includes(state.tasks?.[gate]?.status)))return null;
+  // Existing post-gate action IDs are retained for compatibility. A changed
+  // approval gets a deterministic new key, never overwriting cancelled history.
+  const key=approvalCancelled
+    ? original+':approval-'+rec.approval_hash
+    : original+':after-'+gate;
+  return Object.hasOwn(state.actions,key)?null:key;
 }
