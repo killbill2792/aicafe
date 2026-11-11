@@ -102,3 +102,16 @@ test('Muse independently reads signed queue and requests GitHub validation for n
  const held={...s,owner_controls:{revision:1,per_task:{new:{pause_new_dispatch:true}}}};
  assert.deepEqual(inspectMuseEligibleTasks(queue,held),[]);
 });
+
+
+test('Muse detects a delivered pre-PR task without inventing ChatGPT completion',()=>{
+ const s={...state,tasks:{T2:{task_id:'T2',approved:true,
+   conversation_ref:'https://chatgpt.com/c/existing',
+   last_submission_at:'2026-11-11T09:00:00Z',status:'assigned'}},
+   actions:{},owner_alerts:{},updated_at:now,
+   schedule_health:{last_schedule_at:now}};
+ const health=inspectMuseHealth(s,{now});
+ assert.equal(health.incidents[0].kind,'DELIVERED_TASK_NO_PR');
+ assert.equal(health.incidents[0].action,'MUSE_INSPECT_CHAT_AND_RECONCILE');
+ assert.equal(museRecoveryCandidates(health,s,identity)[0].intent,'RECONCILE');
+});
