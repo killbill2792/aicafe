@@ -10,7 +10,7 @@ import {acceptDeliveryReceipt} from './receipt.mjs';
 import {acceptMuseOwnerReply} from './self-heal.mjs';
 import {signalFor} from './signal.mjs';
 import {dispatchFrontier} from './core.mjs';
-import {revalidateQueuedActions} from './authorization.mjs';
+import {revalidateQueuedActions,assignmentActionKey} from './authorization.mjs';
 import {approvalSignature,createDelivery} from './delivery.mjs';
 const queue=JSON.parse(readFileSync(new URL('../../docs/plans/universal-supervisor-queue.json',import.meta.url),'utf8'));
 const taskId='7',source=queue.tasks.find(t=>t.id===taskId);
@@ -188,4 +188,91 @@ test('a pending Muse scope-review decision survives GitHub issue comment rollove
  const result=acceptScopePlanDecisions(yes,queue,selectScopePlans([],queue,yes));
  assert.equal(effectiveSignedQueue(queue,result,selectScopePlans([],queue,result))
    .tasks.find(t=>t.id===taskId).architecture_approval.approved,true);
+});
+
+
+test('Codex P1: newest submitted corrected scope survives GitHub issue comment rollover',()=>{
+ const {submitted,comment}=fixture();
+ const original=selectScopePlans([comment],queue,submitted);
+ const oldReview=queueScopePlanReviews(submitted,queue,original);
+ const [oldId]=Object.entries(oldReview.owner_alerts).find(([_,n])=>
+   n.kind==='scope_plan_review'&&n.task_id===taskId);
+ oldReview.owner_alerts[oldId].status='submitted';
+ const revised={...comment,id:comment.id+1,
+   created_at:'2026-11-11T09:17:00Z',
+   html_url:comment.html_url.replace('12345678','12345679'),
+   body:comment.body.replace('trigger.test.ts','trigger.revised.test.ts')};
+ const changed=selectScopePlans([revised],queue,oldReview);
+ assert.equal(changed[taskId].comment_id,revised.id);
+ const newReview=queueScopePlanReviews(oldReview,queue,changed);
+ const [newId]=Object.entries(newReview.owner_alerts).find(([id,n])=>
+   n.kind==='scope_plan_review'&&n.task_id===taskId&&id!==oldId);
+ assert.ok(newId);
+ const replied=acceptMuseOwnerReply(newReview,{kind:'owner_reply',
+   event_id:'approved-corrected-scope',text:'yes',
+   target:{task_id:taskId,notice_id:newId},
+   submitted_at:'2026-11-11T09:19:00Z'},{authenticatedCourier:'muse'});
+ const signed=acceptScopePlanDecisions(replied,queue,changed);
+ const afterRollover=selectScopePlans([],queue,signed);
+ assert.equal(afterRollover[taskId].comment_id,revised.id);
+ assert.equal(afterRollover[taskId].plan_hash,changed[taskId].plan_hash);
+ assert.notEqual(afterRollover[taskId].plan_hash,original[taskId].plan_hash);
+ assert.equal(signed.scope_authorizations[taskId].plan_hash,afterRollover[taskId].plan_hash);
+ assert.deepEqual(effectiveSignedQueue(queue,signed,afterRollover).tasks.find(t=>t.id===taskId).edits,
+   ['lib/ai/supervisor/routines/trigger.server.ts',
+    'lib/ai/supervisor/routines/trigger.revised.test.ts']);
+ assert.deepEqual(selectScopePlans([],queue,signed),afterRollover);
+});
+
+test('Codex P1: revoke then reapprove exact scope automatically resumes eligible same-chat coding',()=>{
+ const {submitted,comment}=fixture();
+ const plans=selectScopePlans([comment],queue,submitted);
+ const offered=queueScopePlanReviews(submitted,queue,plans);
+ const [noticeId]=Object.entries(offered.owner_alerts).find(([_,n])=>
+   n.kind==='scope_plan_review'&&n.task_id===taskId);
+ const yes1=acceptMuseOwnerReply(offered,{kind:'owner_reply',
+   event_id:'scope-yes-1',text:'yes',
+   target:{task_id:taskId,notice_id:noticeId},
+   submitted_at:'2026-11-11T09:20:00Z'},{authenticatedCourier:'muse'});
+ const signed=acceptScopePlanDecisions(yes1,queue,plans);
+ const initialQueue=effectiveSignedQueue(queue,signed,plans);
+ revalidateQueuedActions(signed,new Map(initialQueue.tasks.map(t=>[t.id,t])),initialQueue);
+ assert.equal(signed.tasks[taskId].status,'proposed');
+ signed.tasks[taskId].status='assigned';
+ signed.actions['assign:'+taskId]={task_id:taskId,type:'begin_scoped_coding',
+   status:'planned',delivery_owner:'muse'}; // unclaimed, not sent
+ const no=acceptMuseOwnerReply(signed,{kind:'owner_reply',
+   event_id:'scope-no',text:'no',
+   target:{task_id:taskId,notice_id:noticeId},
+   submitted_at:'2026-11-11T09:21:00Z'},{authenticatedCourier:'muse'});
+ const revoked=acceptScopePlanDecisions(no,queue,plans);
+ const unsigned=effectiveSignedQueue(queue,revoked,plans);
+ revalidateQueuedActions(revoked,new Map(unsigned.tasks.map(t=>[t.id,t])),unsigned);
+ assert.equal(revoked.tasks[taskId].status,'blocked_needs_owner');
+ assert.equal(revoked.tasks[taskId].planning_approved,false);
+ assert.equal(revoked.actions['assign:'+taskId].status,'cancelled_approval_changed');
+ const yes2=acceptMuseOwnerReply(revoked,{kind:'owner_reply',
+   event_id:'scope-yes-2',text:'yes',
+   target:{task_id:taskId,notice_id:noticeId},
+   submitted_at:'2026-11-11T09:22:00Z'},{authenticatedCourier:'muse'});
+ const resumed=acceptScopePlanDecisions(yes2,queue,plans);
+ assert.equal(resumed.tasks[taskId].planning_approved,true);
+ assert.equal(resumed.tasks[taskId].status,'scope_plan_sent');
+ assert.equal(resumed.tasks[taskId].approved,false);
+ const freshQueue=effectiveSignedQueue(queue,resumed,plans);
+ revalidateQueuedActions(resumed,new Map(freshQueue.tasks.map(t=>[t.id,t])),freshQueue);
+ assert.equal(resumed.tasks[taskId].status,'proposed');
+ assert.equal(resumed.tasks[taskId].approved,true);
+ assert.equal(resumed.tasks[taskId].scope_plan_completed,true);
+ assert.equal(resumed.tasks[taskId].conversation_ref,
+   'https://chatgpt.com/c/verified-planner-7');
+ assert.ok(dispatchFrontier(freshQueue,resumed.tasks).some(a=>a.task_id===taskId));
+ const key=assignmentActionKey(resumed,taskId,freshQueue);
+ assert.match(key,/^assign:7:scope-[a-f0-9]{64}$/);
+ resumed.actions[key]={task_id:taskId,type:'begin_scoped_coding',status:'planned'};
+ assert.equal(assignmentActionKey(resumed,taskId,freshQueue),null);
+ assert.equal(resumed.actions['assign:'+taskId].status,'cancelled_approval_changed');
+ const claimed=structuredClone(resumed);
+ claimed.actions[key].status='uncertain';
+ assert.equal(assignmentActionKey(claimed,taskId,freshQueue),null);
 });
