@@ -83,6 +83,20 @@ test('new signature, outdated notice, wrong target and withdrawn scope never app
  assert.equal(old.tasks['6'].approved,false);
  assert.equal(assignmentActionKey(old,'6',queue),null);
 });
+test('latest authenticated owner answer controls release for the same notice',()=>{
+ const s=queueOwnerAlerts(incident(),{queue,now:at});
+ const rejected={...reply,event_id:'owner-no-task6',
+   text:'no',submitted_at:new Date(now+1000).toISOString()};
+ const ordered=applyReceiptsSafely(s,[
+   {receipt:reply,actor:'muse-app[bot]'},
+   {receipt:rejected,actor:'muse-app[bot]'}],actorMap);
+ assert.deepEqual(ordered.rejected,[]);
+ assert.equal(applyOwnerStartApprovals(ordered.state,queue).tasks['6'].approved,false);
+ const later={...reply,event_id:'owner-yes-later',
+   submitted_at:new Date(now+2000).toISOString()};
+ const approved=applyReceiptsSafely(ordered.state,[{receipt:later,actor:'muse-app[bot]'}],actorMap);
+ assert.equal(applyOwnerStartApprovals(approved.state,queue).tasks['6'].approved,true);
+});
 test('receipt v1 filename is identical for Muse CLI and GitHub inbox',async()=>{
  const acknowledgement={kind:'owner_notice',notice_id:noticeId,
   notice_hash:noticeId.slice('notice:'.length),status:'submitted',submitted_at:at};
