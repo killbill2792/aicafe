@@ -6,7 +6,7 @@ export const promptHash = prompt => createHash('sha256').update(prompt).digest('
 // Approved plan metadata -> bounded, provider-neutral browser handoff.
 // Generated ONLY on trusted main by the existing deterministic dispatcher.
 const PROVIDERS = new Set(['chatgpt', 'claude']);
-const ACTIONS = new Set(['assign', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder',
+const ACTIONS = new Set(['assign','begin_scoped_coding', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder',
   'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'dependency_proven', 'repair_conflict', 'idle_continue', 'no_push_after_prompt', 'landing_failed', 'plan', 'brainstorm']);
 const REPO = 'https://github.com/'+settings.repo;
 
@@ -157,6 +157,7 @@ export function createDelivery({ task, record, action, actionId }) {
       'Do not request Codex on intermediate pushes.',
     pre_pr_reminder:'pre_pr_reminder: Open the authorized early draft PR now on the correct base; ' +
       'continue implementation in this same conversation.',
+    begin_scoped_coding:'Owner approved the exact signed files after read-only planning. START coding in this SAME chat. Open the authorized early DRAFT PR on the correct dependency base; implement only signed edits, run tests, and preserve CI/Codex/merge gates. Do not open another chat.',
     plan:'PLAN / SUPERPOWERS: Brainstorm one question at a time. Write the design; split it ' +
       'into tasks with explicit merge order; draw Mermaid diagrams. No implementation beyond approval.',
     brainstorm:'BRAINSTORM / SUPERPOWERS: Ask one question at a time. Write a design, split ' +

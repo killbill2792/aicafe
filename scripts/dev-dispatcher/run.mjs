@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {settings} from './settings.mjs';
 import {loadQueue} from './queue-source.mjs';
+import {advanceApprovedProposals} from './proposal-stage.mjs';
 import {selectObservation,shouldRecheckMergedLanding} from './event-selection.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
@@ -122,6 +123,8 @@ async function main() {
           ? applied.state.tasks?.[rc.target.task_id]
           : Object.values(applied.state.tasks||{}).find(t=>t.pr_number===rc.target?.pr_number);
         recognized=Boolean(task?.owner_reply_events?.[rc.event_id])||
+          Boolean(rc.target?.task_id &&
+            applied.state.owner_proposal_replies?.[rc.target.task_id]?.[rc.event_id])||
           Boolean(rc.target?.branch&&applied.state.branch_chat_links?.[rc.target.branch]?.conversation_url===rc.text?.trim());
       }else{
         const action=applied.state.actions?.[rc.action_id];
@@ -154,8 +157,10 @@ async function main() {
     const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
       minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
     const remaining=linkPullRequests(safety,observed.snapshot).unmapped;
-    const copy = noticeOperationalIssues(queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
-      {unmappedPrs:remaining,openPrs:observed.snapshot,queue}),{snapshot:observed.snapshot,scan:receiptScan});
+    const copy = advanceApprovedProposals(
+      noticeOperationalIssues(queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
+        {unmappedPrs:remaining,openPrs:observed.snapshot,queue}),
+        {snapshot:observed.snapshot,scan:receiptScan}),queue);
     revalidateQueuedActions(copy, taskById, queue);
     wakePendingActions(copy, Date.now());
     wakePendingOwnerNotices(copy, Date.now());
@@ -200,14 +205,19 @@ async function main() {
     for (const assignment of assignments) {
       const key = assignmentActionKey(copy, assignment.task_id, queue);
       if (!key) continue;
-      const record = { task_id: assignment.task_id, status: "assigned",
-        agent: assignment.agent, branch: settings.naming.branch_prefix+assignment.task_id, base_branch: assignment.base_branch, prerequisite_pr: assignment.prerequisite_pr, approved: true,
-        approval_hash: approvalSignature(taskById.get(assignment.task_id)),
-        prompt_id: `task:${assignment.task_id}`, prompt_version: "v2" };
+      const prior=copy.tasks[assignment.task_id]||{};
+      const reusePlan=prior.scope_plan_completed===true&&Boolean(prior.conversation_ref);
+      const actionType=reusePlan?'begin_scoped_coding':'assign';
+      const record = {...prior,task_id:assignment.task_id,status:'assigned',
+        agent:reusePlan?'chatgpt':assignment.agent,
+        branch:settings.naming.branch_prefix+assignment.task_id,
+        base_branch:assignment.base_branch,prerequisite_pr:assignment.prerequisite_pr,
+        approved:true,approval_hash:approvalSignature(taskById.get(assignment.task_id)),
+        prompt_id:`task:${assignment.task_id}`,prompt_version:'v2'};
       let delivery;
       try {
         delivery = createDelivery({ task: taskById.get(assignment.task_id), record,
-          action: "assign", actionId: key });
+          action: actionType, actionId: key });
       } catch (error) {
         console.error(`Task ${assignment.task_id} delivery creation failed: ${error.message}`);
         copy.owner_alerts=queueOwnerIssue(copy,{kind:'assignment_build_failed',
@@ -217,7 +227,7 @@ async function main() {
       }
       assigned.push(assignment);
       copy.actions[key] = { ...assignment, task_id: assignment.task_id,
-        type: "assign", status: "planned", delivery_owner: "muse", created_at: now, delivery };
+        type: actionType, status: "planned", delivery_owner: "muse", created_at: now, delivery };
       copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {

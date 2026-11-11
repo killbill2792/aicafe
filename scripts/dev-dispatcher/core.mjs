@@ -167,7 +167,9 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
   for (const task of queue.tasks) {
     if (!gateProven && !gateAllowed.has(task.id)) continue;
     if (!foundationProven && foundationDependents.has(task.id)) continue;
-    if (!approved(task) || records[task.id]?.conversation_ref || (records[task.id]?.status && records[task.id].status !== "proposed")) continue;
+    if (!approved(task) ||
+        (records[task.id]?.conversation_ref && !records[task.id]?.scope_plan_completed) ||
+        (records[task.id]?.status && records[task.id].status !== 'proposed')) continue;
     if (!editableFiles(task).length || editableFiles(task).some(path => claimed.has(path))) continue;
     const openDeps = [];
     let blocked = false;
