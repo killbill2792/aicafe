@@ -32,6 +32,7 @@ import {publishEmergencyViaGit,readApiPauseViaGit} from "./git-operations.mjs";
 import {recordLifecycleTransitions,projectLifecycle} from "./lifecycle-v3.mjs";
 import {recordRecoveryEvent,settleRecoveryRequests} from "./recovery-v3.mjs";
 import {dispatchPreferences} from "./owner-controls-v3.mjs";
+import {ensureApprovedDraftPr} from "./pr-create-v3.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -504,6 +505,47 @@ async function main() {
       const projected=recordLifecycleTransitions(recovered,queue);
       return JSON.stringify(projected) === JSON.stringify(existing) ? null : projected;
     });
+  }
+  // Verified early-draft PR recovery. An authorized branch can exist after
+  // ChatGPT pushed code but before the PR was opened. Do not require a
+  // self-reported coder_done. Use installation credentials so PR CI fires.
+  if(commit&&ledger&&process.env.DISPATCH_INSTALL_TOKEN){
+    const writer=new GitHubFacts({repo,token:process.env.DISPATCH_INSTALL_TOKEN});
+    for(const [id,rec] of Object.entries(persisted?.state?.tasks||{})){
+      const task=taskById.get(id);
+      if(!task||rec.pr_number||rec.github_state==='merged'||!rec.conversation_ref||
+        !rec.approved||!rec.branch)continue;
+      try{
+        const result=await ensureApprovedDraftPr({github:gh,writer,task,record:rec,
+          records:persisted.state.tasks,queueRepo:repo});
+        if(['created','existing_pr_needs_link'].includes(result.status)&&
+          result.github_state!=='closed'){
+          await ledger.transaction(state=>{
+            const current=state.tasks?.[id];
+            if(!current||current.pr_number||current.approval_hash!==rec.approval_hash||
+              current.branch!==rec.branch||current.github_state==='merged')return null;
+            current.pr_number=result.pr_number;
+            current.github_state='open';current.draft=result.draft??true;
+            current.head_sha=result.head_sha;
+            current.status='draft_open';current.ci_state='pending';current.codex_state='pending';
+            current.pr_creation_status=result.status;current.pr_created_observed_at=new Date().toISOString();
+            return state;
+          });
+          console.log('Early draft PR for '+id+': #'+result.pr_number+' '+result.status);
+        }else if(result.status==='uncertain'){
+          await ledger.transaction(state=>queueOwnerIssue(state,{
+            kind:'pr_creation_uncertain',task_id:id,
+            identity:id+':'+rec.branch,
+            message:'A draft PR creation attempt may have succeeded for '+id+
+              ' but GitHub did not confirm it.',
+            needs:'Muse ask GitHub to re-observe the branch and PR; never duplicate the POST'
+          }));
+        }
+      }catch(error){
+        console.error('Early draft creation unavailable for '+id+': '+error.message);
+        process.exitCode=1;
+      }
+    }
   }
   // The dispatcher, not a coder chat, requests the final-head review.
   // Revalidate live GitHub CI, acceptance artifacts, PR base and owner state
