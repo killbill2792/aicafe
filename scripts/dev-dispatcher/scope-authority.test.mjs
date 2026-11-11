@@ -171,3 +171,21 @@ test('an uncertain scope-planning courier attempt cannot become a signed plan',(
  assert.equal(parseScopePlanComment(comment,queue,attempted),null);
  assert.deepEqual(selectScopePlans([comment],queue,attempted),{});
 });
+
+test('a pending Muse scope-review decision survives GitHub issue comment rollover',()=>{
+ const {submitted,comment}=fixture();
+ const plan=selectScopePlans([comment],queue,submitted);
+ const noticed=queueScopePlanReviews(submitted,queue,plan);
+ const [noticeId,n]=Object.entries(noticed.owner_alerts).find(([_,x])=>
+  x.kind==='scope_plan_review'&&x.task_id===taskId);
+ assert.deepEqual(n.scope_plan,plan[taskId]);
+ const pageShifted=selectScopePlans([],queue,noticed);
+ assert.equal(pageShifted[taskId].plan_hash,plan[taskId].plan_hash);
+ const yes=acceptMuseOwnerReply(noticed,{kind:'owner_reply',
+   event_id:'yes-after-issue-rollover',text:'yes',
+   target:{task_id:taskId,notice_id:noticeId},
+   submitted_at:'2026-11-11T09:24:00Z'},{authenticatedCourier:'muse'});
+ const result=acceptScopePlanDecisions(yes,queue,selectScopePlans([],queue,yes));
+ assert.equal(effectiveSignedQueue(queue,result,selectScopePlans([],queue,result))
+   .tasks.find(t=>t.id===taskId).architecture_approval.approved,true);
+});
