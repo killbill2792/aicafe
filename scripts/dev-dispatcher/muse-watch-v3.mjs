@@ -165,8 +165,8 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
         const retryHeader=response.headers?.get?.('retry-after');
         const rateLimited=response.status===429||
           (response.status===403&&(remaining==='0'||retryHeader!==null&&retryHeader!==undefined));
-        const forbidden=response.status===401||
-          (response.status===403&&!rateLimited);
+        const forbidden=response.status===401;
+        const ambiguous403=response.status===403&&!rateLimited;
         const seconds=retryHeader==null?NaN:Number(retryHeader);
         const reset=response.headers?.get?.('x-ratelimit-reset');
         const resetAt=reset==null?NaN:Number(reset)*1000;
@@ -174,13 +174,14 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
         const mins=rateLimited?Math.max(15,
           Number.isFinite(seconds)?Math.ceil(seconds/60):15,
           Number.isFinite(resetAt)?Math.ceil((resetAt-clock)/60000):0):
-          forbidden?60:backoff;
-        item.last_error=forbidden?'GitHub wake credential denied HTTP '+response.status:
+          forbidden||ambiguous403?60:backoff;
+        item.last_error=forbidden?'GitHub wake credential unauthorized HTTP 401':
+          ambiguous403?'GitHub HTTP 403: rate limit or authorization unverified':
           rateLimited?'GitHub API rate limit HTTP '+response.status:
           'GitHub dispatch HTTP '+response.status;
         item.next_retry_at=asIso(clock+mins*60000);
         results.push({id:item.key,status:item.status,reason:item.last_error});
-        if(rateLimited||forbidden||[500,502,503,504].includes(response.status)){
+        if(rateLimited||forbidden||ambiguous403||[500,502,503,504].includes(response.status)){
           next.api_pause_until=item.next_retry_at;
           // One API outage must not fan out into many failed wake attempts.
           break;
