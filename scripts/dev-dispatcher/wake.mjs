@@ -30,15 +30,24 @@ export function nextWake(state,now=Date.now(),config=settings){
   if(a.status==='planned'&&a.delivery_owner==='muse'&&Number.isFinite(at))
    list.push({at:at+(config.muse.retry_seconds||900)*1000,reason:'muse_retry',id});
  }
+ for(const [id,a] of Object.entries(state.owner_alerts||{})){
+  const at=dt(a.last_wake_at||a.created_at);
+  if(a.status==='planned'&&a.delivery_owner==='muse'&&Number.isFinite(at))
+   list.push({at:at+(config.muse.retry_seconds||900)*1000,reason:'owner_notice_retry',id});
+ }
  for(const [id,r] of Object.entries(state.receipt_feedback||{})){
   const at=dt(r.last_wake_at||r.first_seen_at);
   if(r.status==='rejected'&&Number.isFinite(at))
    list.push({at:at+(config.muse.retry_seconds||900)*1000,reason:'receipt_repair',id});
  }
- const first=list.filter(x=>x.at>now+1000).sort((a,b)=>a.at-b.at)[0];
+ // An overdue wake is due NOW, not silently dropped. Keep the identity
+ // tied to its original deadline so repeated ticks cannot generate a storm.
+ const first=list.filter(x=>Number.isFinite(x.at)).sort((a,b)=>a.at-b.at)[0];
  if(!first)return null;
- const due_at=new Date(first.at).toISOString();
- return {due_at,reason:first.reason,key:sha(JSON.stringify([config.repo,first.reason,first.id,due_at]))};
+ const scheduledAt=new Date(first.at).toISOString();
+ const due_at=new Date(Math.max(first.at,now+5000)).toISOString();
+ return {due_at,reason:first.reason,
+   key:sha(JSON.stringify([config.repo,first.reason,first.id,scheduledAt]))};
 }
 export async function scheduleSelfWake({ledger,token,config=settings,now=Date.now(),fetchFn=fetch}){
  if(!token)throw Error('Repository workflow token required');
@@ -47,8 +56,9 @@ export async function scheduleSelfWake({ledger,token,config=settings,now=Date.no
   const due=nextWake(state,now,config);
   if(!due)return null;
   const old=state.delayed_wake;
-  if(old?.key===due.key&&
-    (old.status==='requested'||old.status==='reserved'&&now-dt(old.reserved_at)<60000))return null;
+  if(old?.key===due.key&&(
+    (old.status==='requested'&&now-dt(old.requested_at||old.reserved_at)<15*60000)||
+    (old.status==='reserved'&&now-dt(old.reserved_at)<60000)))return null;
   reserved={...due,status:'reserved',reserved_at:new Date(now).toISOString()};
   state.delayed_wake=reserved;return state;
  });
@@ -64,6 +74,7 @@ export async function scheduleSelfWake({ledger,token,config=settings,now=Date.no
  await ledger.transaction(state=>{
   if(state.delayed_wake?.key!==reserved.key)return null;
   state.delayed_wake.status=ok?'requested':'failed';
+  if(ok)state.delayed_wake.requested_at=new Date(now).toISOString();
   if(!ok)state.owner_alerts=queueOwnerIssue(state,{kind:'delayed_wake_failed',
     identity:reserved.key,message:'Repository '+config.repo+
     ' delayed self-wake failed for '+reserved.reason+' at '+reserved.due_at,
