@@ -25,7 +25,7 @@ type MessageRow = {
 };
 type SourceWithCard = ThreadMemorySource & { cardContext: string | null };
 type SaveOutcome = "saved" | "stale" | "unauthorized" | "retry";
-const MAX_SCAN_MESSAGES = 200;
+const MAX_SCAN_MESSAGES = 40;
 const MAX_BATCHES_PER_CALL = 5;
 const HISTORY_MESSAGES = 8;
 
@@ -183,7 +183,7 @@ async function summarize(
   const input = {
     existing: existing.entries.map(({ kind, key, text }) => ({ kind, key, text })),
     ownerMessages: sources.map(({ id, createdAt, text, cardContext }) => ({
-      id, createdAt, text, clarificationCardContext: cardContext,
+      id, createdAt, text: text.slice(0, 1200), clarificationCardContext: cardContext,
     })),
   };
   const response = await fetch("https://api.openai.com/v1/responses", {
