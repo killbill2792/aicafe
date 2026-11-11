@@ -286,7 +286,9 @@ export async function compactThreadMemory(
         console.error("thread_memory_compaction_failed", { code });
         return recordRetry(client, scope, document, code, processed);
       }
-      const sourceRows: ThreadMemorySource[] = sources.map(({ id, createdAt, text, structuredText }) => ({\n        id, createdAt, text, ...(structuredText ? { structuredText } : {}),\n      }));
+      const sourceRows: ThreadMemorySource[] = sources.map(({ id, createdAt, text, structuredText }) => ({
+        id, createdAt, text, ...(structuredText ? { structuredText } : {}),
+      }));
       next = applyThreadMemoryOperations(document, operations, sourceRows);
     } else {
       next = { ...document, revision: document.revision + 1, retry: null };
