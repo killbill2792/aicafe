@@ -60,14 +60,14 @@ export async function mergeApprovedPr({ github, record, predecessors = [],
       (!prepareReady && pr.mergeable !== true))
     return {status:'blocked',reasons:['live_pr_changed']};
   const live=await github.one(pr);
-  // Recheck the actual GitHub base and changed paths: an adopted stacked PR
-  // cannot merge into its open parent (or trigger main integration proof).
-  if (!prepareReady && record.adhoc &&
-      (pr.base?.ref !== 'main' || live.base_branch !== 'main' ||
-       live.dispatcher_only))
-    return {status:'blocked',reasons:['adhoc_base_or_owner_merge_changed']};
+  // GitHub's verified changed paths always override a stale ledger:
+  // mixed-scope infrastructure must remain owner-merge-only.
   if (!prepareReady && live.dispatcher_only)
     return {status:'blocked',reasons:['owner_merge_required']};
+  // Adopted stacked PRs cannot merge into an open parent.
+  if (!prepareReady && record.adhoc &&
+      (pr.base?.ref !== 'main' || live.base_branch !== 'main'))
+    return {status:'blocked',reasons:['adhoc_base_or_owner_merge_changed']};
   const directClean=live.codex_state==='clean' && live.codex_reviewed_sha===record.head_sha;
   const carriedClean=!prepareReady && !directClean &&
     live.codex_state!=='findings' && live.codex_in_progress_sha!==live.head_sha &&
