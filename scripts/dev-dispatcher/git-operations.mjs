@@ -77,7 +77,7 @@ export function updateBranchViaGit({repo=settings.repo,branch,expectedHeadSha,
 // Existing Muse owner_notice delivery + authenticated receipts remain unchanged.
 export function publishEmergencyViaGit({repo=settings.ledger.repo,
   token,kind='dispatcher_emergency',identity:incidentId,message,needs,
-  targetRepo=settings.repo,remoteUrl=null,run=spawnSync,
+  resetAt=null,targetRepo=settings.repo,remoteUrl=null,run=spawnSync,
   retry=3}={}) {
   if(!validRepo(repo)||repo!==settings.ledger.repo||!validRepo(targetRepo)||
     !/^[a-z0-9_:-]{1,128}$/i.test(incidentId||'') ||
@@ -91,6 +91,17 @@ export function publishEmergencyViaGit({repo=settings.ledger.repo,
       git(['clone','-q','--depth','1','--branch','main',remoteUrl||gitUrl(repo),root],{env,run});
       const statePath=join(root,settings.ledger.path);
       const state=assertLedgerShape(JSON.parse(readFileSync(statePath,'utf8')));
+      // A failed workflow may reach this generic fallback after a primary
+      // rate-limit incident was already queued. Do not spam per-run duplicates.
+      const pauseUntil=Date.parse(state.api_pause?.until||'');
+      if(incidentId.startsWith('run:')&&Number.isFinite(pauseUntil)&&
+         Date.now()<pauseUntil){
+        const prior=Object.values(state.owner_alerts||{}).find(n=>
+          n.kind==='dispatcher_emergency'&&
+          n.identity===state.api_pause.identity&&
+          ['planned','submitted','claimed','uncertain'].includes(n.status));
+        if(prior)return {status:'already_queued',notice_hash:prior.notice_hash};
+      }
       const existing=Object.values(state.owner_alerts||{}).find(n=>
         n.kind===kind&&n.identity===incidentId&&['planned','submitted'].includes(n.status));
       if(existing)return {status:'already_queued',notice_hash:existing.notice_hash};
@@ -98,6 +109,11 @@ export function publishEmergencyViaGit({repo=settings.ledger.repo,
         message:'Dispatcher '+targetRepo+': '+message.slice(0,500),
         needs:needs||'Muse notify owner; dispatcher will retry safely'});
       next.updated_at=new Date().toISOString();
+      const reset=Date.parse(resetAt||'');
+      if(Number.isFinite(reset)&&reset>Date.now()&&reset-Date.now()<24*60*60*1000){
+        next.api_pause={until:new Date(reset).toISOString(),
+          identity:incidentId,reason:'github_api_rate_limit'};
+      }
       sanitizeLedger(next);
       writeFileSync(statePath,JSON.stringify(next,null,2)+'\n');
       const viewPath=join(root,settings.ledger.owner_view_path);
@@ -198,4 +214,19 @@ export function publishOwnerQueueViaGit({repo=settings.ledger.repo,token,
   }finally{rmSync(root,{recursive:true,force:true});}
  }
  throw Error('Private owner queue Git retries exhausted');
+}
+
+export function readApiPauseViaGit({repo=settings.ledger.repo,token,
+  remoteUrl=null,run=spawnSync}={}) {
+ if(repo!==settings.ledger.repo||!token)throw Error('Private queue credential required');
+ const root=mkdtempSync(join(tmpdir(),'dispatcher-api-pause-'));
+ try{
+  git(['clone','-q','--depth','1','--branch','main',
+    remoteUrl||gitUrl(repo),root],{env:gitAuthEnvironment(token),run});
+  const state=assertLedgerShape(JSON.parse(readFileSync(join(root,settings.ledger.path),'utf8')));
+  const until=Date.parse(state.api_pause?.until||'');
+  return Number.isFinite(until)&&state.api_pause?.reason==='github_api_rate_limit'
+    ?{until:new Date(until).toISOString(),identity:state.api_pause.identity}
+    :null;
+ }finally{rmSync(root,{recursive:true,force:true});}
 }
