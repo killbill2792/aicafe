@@ -38,14 +38,9 @@ export function validateQueue(queue) {
       throw new Error(`Invalid stack base for ${task.id}`);
     tasks.set(task.id, task);
   }
-  // Read-only uses never reserve a path; only two writers conflict.
-  const ancestor=(later,earlier,seen=new Set())=>{
-    if(later===earlier)return true;
-    if(seen.has(later))return false;
-    seen.add(later);
-    return (tasks.get(later)?.depends_on||[]).some(dep=>ancestor(dep,earlier,seen));
-  };
-  const exclusiveOwners = new Map();
+  // Shared-file edits are permitted on separate branches. Integration order is
+  // enforced by predecessorsForMerge, not by rejecting parallel coding.
+  // Paths remain exact, authorized writes; read-only uses reserve nothing.
   for (const task of queue.tasks) {
     const edits = editableFiles(task), uses = usedFiles(task);
     if (!Array.isArray(edits) || !Array.isArray(uses) ||
@@ -56,10 +51,8 @@ export function validateQueue(queue) {
       throw new Error('Invalid read-only file usage for ' + task.id);
     for (const path of edits) {
       const owner = exclusiveOwners.get(path);
-      if (owner && !(queue.sequential_edit_overlap===true&&ancestor(task.id,owner)))
-        throw new Error('Overlapping exclusive file ownership: ' +
-          path + ' (' + owner + ' and ' + task.id + ')');
-      exclusiveOwners.set(path,task.id);
+      // Valid paths are already checked above. An overlap is a merge-order
+      // dependency, not permission to modify a file outside this task's scope.
     }
   }
   const visiting = new Set(), visited = new Set();
@@ -124,16 +117,39 @@ export function architectureFoundationReady(queue, records = {}) {
     /^[a-f0-9]{40}$/.test(signoff.merged_sha || "") &&
     /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+#issuecomment-\d+$/.test(signoff.owner_review_url || "");
 }
-// Merge gate receives only operational predecessors. The owner-accepted POS0a
-// document may satisfy a dependency without pretending it ran production proof.
+// Stable topological ordering: explicit task dependencies win, and otherwise
+// queue order defines integration precedence for two approved shared-file PRs.
+// This does NOT change either task's signed files or authorization.
+export function overlappingPredecessorIds(task, queue) {
+  const byId=new Map((queue?.tasks||[]).map(t=>[t.id,t]));
+  const visited=new Set(),ordered=[];
+  const visit=id=>{
+    if(visited.has(id))return;
+    visited.add(id);
+    const item=byId.get(id);
+    if(!item)return;
+    for(const dep of item.depends_on||[])visit(dep);
+    ordered.push(item);
+  };
+  for(const item of queue?.tasks||[])visit(item.id);
+  const index=ordered.findIndex(item=>item.id===task?.id);
+  if(index<0)return [];
+  const paths=new Set(editableFiles(task));
+  return ordered.slice(0,index)
+    .filter(item=>approved(item)&&editableFiles(item).some(path=>paths.has(path)))
+    .map(item=>item.id);
+}
+// Merge gate receives explicit predecessors AND approved shared-write
+// predecessors. Historic read-only architecture signoff stays unchanged.
 export function predecessorsForMerge(task, queue, records = {}) {
   const foundationId = queue?.dispatch_rules?.architecture_foundation_proof_task;
   const documentationAccepted = foundationId === "POS0a" &&
     queue?.tasks?.some(item => item.id === foundationId && item.test_kinds?.includes("read_only_audit")) &&
     architectureFoundationReady(queue, records);
-  return (task.depends_on || [])
-    .filter(dep => !(dep === foundationId && documentationAccepted))
-    .map(dep => records[dep] || {status:"unknown"});
+  const explicit=(task.depends_on || [])
+    .filter(dep => !(dep === foundationId && documentationAccepted));
+  const prior=[...new Set([...explicit,...overlappingPredecessorIds(task,queue)])];
+  return prior.map(dep => records[dep] || {status:"unknown"});
 }
 export function dispatchFrontier(queue, records = {}, capacity = null) {
   const tasks = validateQueue(queue);
@@ -150,12 +166,6 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
     if (occupiesSlot(r) && r.agent in remaining)
       remaining[r.agent] = Math.max(0, remaining[r.agent] - 1);
   }
-  const claimed = new Set();
-  for (const [id, record] of Object.entries(records)) {
-    if (occupiesSlot(record)) {
-      for (const path of editableFiles(tasks.get(id))) claimed.add(path);
-    }
-  }
   const actions = [];
   const gate = queue.dispatch_rules?.priority_gate_task;
   const gateProven = !gate || integrated(gate, tasks, records);
@@ -170,7 +180,7 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
     if (!approved(task) ||
         (records[task.id]?.conversation_ref && !records[task.id]?.scope_plan_completed) ||
         (records[task.id]?.status && records[task.id].status !== 'proposed')) continue;
-    if (!editableFiles(task).length || editableFiles(task).some(path => claimed.has(path))) continue;
+    if (!editableFiles(task).length) continue;
     const openDeps = [];
     let blocked = false;
     for (const dep of task.depends_on) {
@@ -209,7 +219,6 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
           (k !== 'claude' || task.depends_on.length === 0));
     if (!agent) break;
     remaining[agent]--;
-    for (const path of editableFiles(task)) claimed.add(path);
     const resolved = resolveTaskBase(task,records);
     if (resolved.blocked) { remaining[agent]++; continue; }
     actions.push({ type: "assign", task_id: task.id, agent,
