@@ -292,30 +292,17 @@ export function decideNudge(record, nowMs=Date.now(),{closeoutMinutes=20}={}) {
   if (!Number.isInteger(record.pr_number) || record.github_state !== 'open')
     return {kind:'hold',reason:'no_open_pr'};
   const conflict = record.mergeable === false || record.mergeable_state === 'dirty';
-  // A green exact-head PR is not necessarily accepted or closed out. Check only
-  // after a verifiable idle period; never treat this nudge as evidence itself.
-  const head=/^[a-f0-9]{40}$/.test(record.head_sha||'');
-  const clean=head&&record.draft===false&&record.ci_state==='success'&&
-    record.codex_state==='clean'&&record.codex_reviewed_sha===record.head_sha&&
-    record.threads_resolved===true&&!record.repo_mismatch&&!record.sensitive_owner_block;
-  const progress=[record.codex_review_at,record.last_github_activity,
-    record.last_submission_at,record.head_first_seen_at].map(x=>Date.parse(x||''))
-    .filter(Number.isFinite);
-  const delay=Number.isFinite(Number(closeoutMinutes))&&Number(closeoutMinutes)>0
-    ? Number(closeoutMinutes)*60000:20*60000;
-  const due=clean&&progress.length>0&&Number.isFinite(nowMs)&&
-    nowMs-Math.max(...progress)>=delay;
-  const incomplete=record.acceptance_proven!==true||record.coder_done!==true;
+  // A clean PR is not a coder-completion claim. Code review and merging
+  // belong to GitHub. Request Muse only for actual code/CI/conflict repair.
+  // v3 accepts no ChatGPT self-reported done as a workflow gate.
   const action = record.field_check_failure ? 'ci_failed' :
     record.ci_state === 'failure' ? 'ci_failed' :
     record.codex_state === 'findings' ? 'codex_comments' :
-    conflict ? 'repair_conflict' :
-    due&&incomplete ? 'closeout_evidence' : null;
-  if (!action) return {kind:'hold',reason:clean&&incomplete?'closeout_not_due_or_unverified':'no_coder_work'};
+    conflict ? 'repair_conflict' : null;
+  if(!action)return {kind:'hold',reason:'no_coder_work'};
   const fingerprint = [record.head_sha,action,
     action === 'ci_failed' ? record.repo_marker_failure || record.ci_failure_fix || record.ci_failure_job || record.ci_failure_url || '' :
     action === 'codex_comments' ? record.codex_review_at || '' :
-    action === 'closeout_evidence' ? String(record.acceptance_proven===true)+':'+String(record.coder_done===true) :
     record.base_sha || ''].map(v=>encodeURIComponent(String(v||''))).join(':');
   const key = 'work:' + encodeURIComponent(record.task_id) + ':' + fingerprint;
   if (record.last_action_key === key && record.submission_state === 'submitted')
