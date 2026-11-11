@@ -229,7 +229,7 @@ async function main() {
     const restated = await save(db, {
       expected: 3,
       document: memoryDoc({
-        revision: 4, cursor: { createdAt: AT_5, id: MESSAGE_A_5 },
+        revision: 4, cursor: { createdAt: AT_3, id: MESSAGE_A_3 },
         entries: [entry(MESSAGE_A_3, AT_3, "We prefer soy milk for staff drinks.", 4)],
       }),
     });
