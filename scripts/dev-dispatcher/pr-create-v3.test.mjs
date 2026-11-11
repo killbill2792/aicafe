@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ensureApprovedDraftPr} from './pr-create-v3.mjs';
+import {ensureApprovedDraftPr,classifyPrCreatePreflightError} from './pr-create-v3.mjs';
 import {approvalSignature} from './delivery.mjs';
 import {GitHubFacts,parseChatMarker,parseTaskMarker} from './github.mjs';
 import {recordGithubEffects} from './github-effects-v3.mjs';
@@ -176,4 +176,37 @@ test('a verified existing PR resolves an uncertain creation without another POST
  assert.equal(result.status,'existing_pr_needs_link');
  assert.equal(result.pr_number,450);
  assert.equal(mock.seen.filter(x=>x==='/pulls').length,0);
+});
+
+
+test('temporary preflight 503 never latches a PR write and recovers after reads return',async()=>{
+ let reads=0,writes=0;
+ const unavailable=new GitHubFacts({repo:'killbill2792/aicafe',token:'test',
+   fetchFn:async()=>{reads++;return {ok:false,status:503,
+     headers:{get:()=>null},json:async()=>({message:'Service Unavailable'})};},
+   sleepFn:async()=>{}});
+ const writer={request:async()=>{writes++;throw Error('POST must not run on failed preflight');}};
+ let failure;
+ try{await ensureApprovedDraftPr({github:unavailable,writer,task,record:rec,
+   verifiedDelivery:true});}catch(error){failure=error;}
+ assert.equal(failure?.status,503);
+ assert.equal(reads,3,'bounded GET retries only');
+ assert.equal(writes,0);
+ const classified=classifyPrCreatePreflightError(failure);
+ assert.deepEqual(classified,{status:'blocked',reason:'github_pr_preflight_read_unavailable'});
+ const state={version:1,actions:{},tasks:{E2:{...rec,head_sha:head}}};
+ const observed=recordGithubEffects(state,[{task_id:'E2',operation:'CREATE_DRAFT_PR',
+   head_sha:head,...classified}],'2026-11-11T10:00:00Z');
+ assert.equal(observed.tasks.E2.pr_creation_uncertain_hold,undefined);
+ const healthy=setup();
+ const result=await ensureApprovedDraftPr({github:healthy.github,writer:healthy.writer,
+   task,record:observed.tasks.E2,records:observed.tasks,verifiedDelivery:true});
+ assert.equal(result.status,'created');
+ assert.equal(healthy.seen.filter(x=>x==='/pulls').length,1);
+});
+test('preflight permission and rate-limit failures are blocked reads, not uncertain writes',()=>{
+ assert.deepEqual(classifyPrCreatePreflightError({status:403}),{
+   status:'blocked',reason:'github_pr_preflight_read_permission_denied'});
+ assert.deepEqual(classifyPrCreatePreflightError({code:'RATE_LIMIT',status:429}),{
+   status:'blocked',reason:'github_rate_limited'});
 });
