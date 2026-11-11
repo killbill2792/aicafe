@@ -4,6 +4,9 @@ import { executeDurableRun, reconcileVerifiedOwnerStep, type WorkerDependencies,
 import type { DurableRun, DurableRunRepository, RunScope, StepClaim, StepSpec } from "./contracts";
 import type { WorkerBudget, WorkerUsage } from "./usage.server";
 import { supervisorReplyIdFor } from "@/lib/ai/conversations/replyValidation";
+import { runAgentTurn, type AgentProvider } from "@/lib/ai/agent/loop.server";
+import { withWorkerBudget } from "./usage.server";
+import type { AgentToolContext } from "@/lib/ai/agent/tools";
 
 const scope: RunScope = { businessId: randomUUID(), ownerUserId: randomUUID(), threadId: randomUUID() };
 const run: WorkerRun = { id: randomUUID(), scope, requestKey: randomUUID() };
@@ -82,6 +85,22 @@ function setup(db: Ledger, extra: Partial<WorkerDependencies> = {}) {
   return { deps, calls, setReply: (next: typeof reply) => { reply = next; } };
 }
 describe("durable owner worker (uses Task 5 fenced repository)", () => {
+  it("isolates worker token limits inside the existing registered agent loop", async () => {
+    const provider: AgentProvider = async function* () {
+      yield { type: "response.output_text.delta", delta: "Verified plain reply" };
+      yield { type: "response.completed", response: { usage: {
+        input_tokens: 30, output_tokens: 4, input_tokens_details: { cached_tokens: 0 },
+      } } };
+    };
+    const context = { timezone: "America/Los_Angeles", asOf: "2026-11-10",
+      locale: "en", tools: {} } as AgentToolContext;
+    const normal = await runAgentTurn({ ownerText: "Hello", context, provider });
+    const capped = await withWorkerBudget({ ...budget, maxInputTokens: 20 },
+      () => runAgentTurn({ ownerText: "Hello", context, provider }));
+    expect(normal.endReason).toBe("complete");
+    expect(capped.endReason).toBe("budget");
+    expect(capped.usage.inputTokens).toBe(30);
+  });
   it("only one worker executes a leased owner-turn step, never a second effect", async () => {
     const db = new Ledger(), first = setup(db);
     let unblock!: () => void;
