@@ -29,7 +29,7 @@ test('head movement resets stall but coder-done marker does not suppress it',()=
  let s=run(base);s.tasks.T.head_sha='b'.repeat(40);
  assert.equal(run(s).tasks.T.stall_count,0);
  s=structuredClone(base);s.tasks.T.coder_done=true;assert.match(run(s).tasks.T.stall_pending,/stall:/);
- s=structuredClone(base);s.tasks.T.last_commit_at='2026-11-10T10:06:00Z';
+ s=structuredClone(base);s.tasks.T.last_commit_at='2026-11-10T10:20:00Z';
  assert.equal(run(s).tasks.T.stall_pending,null);
 });
 

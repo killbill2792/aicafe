@@ -363,6 +363,7 @@ export function reconcileGithub(state, openPrs, closedByPr = {}, now = new Date(
         }
       }
       const updated = invalidateOnHeadChange(rec, pr.head_sha, pr.last_commit_at || pr.last_github_activity);
+       if(rec.head_sha!==pr.head_sha)updated.head_first_seen_at=now;
       const baseChanged = Boolean(rec.base_sha && pr.base_sha && rec.base_sha !== pr.base_sha);
       const baseChangedAt = baseChanged ? now : rec.base_changed_at;
       const reviewBaseCurrent = !baseChangedAt || Boolean(pr.codex_review_at &&

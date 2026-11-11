@@ -53,9 +53,13 @@ export function applySafetySignals(state,{queue=[],repo,now=new Date().toISOStri
     const delivered=Date.parse(rec.last_submission_at||'');
     const committed=Date.parse(rec.last_commit_at||'');
     // The latest confirmed commit OR delivered prompt resets the idle clock.
-    const progressAt=Math.max(delivered,Number.isFinite(committed)?committed:0);
+    const observed=Date.parse(rec.head_first_seen_at||'');
+    const unknownHeadTime=sha.test(rec.last_prompt_head_sha||'')&&
+      rec.last_prompt_head_sha!==head&&!Number.isFinite(observed);
+    const progressAt=Math.max(delivered,Number.isFinite(committed)?committed:0,
+      Number.isFinite(observed)?observed:0);
     if(!Number.isFinite(delivered)||!Number.isFinite(clock) ||
-       clock-progressAt < minutes*60000) {
+       clock-progressAt < minutes*60000 || unknownHeadTime) {
       rec.stall_pending=null;
       continue;
     }
