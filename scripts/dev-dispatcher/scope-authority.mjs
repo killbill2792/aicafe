@@ -58,6 +58,14 @@ export function parseScopePlanComment(comment,queue,state){
    proposal_source_sha:draft.proposal_source_sha,action_id:draft.action_id};
  return {...normalized,plan_hash:digest(normalized)};
 }
+// GitHub issue comment IDs are monotonic. The private-ledger insertion order
+// is not evidence of recency after an issue-comment page rolls over.
+const newerPlan=(a,b)=>!b||
+  (Number.isSafeInteger(a.comment_id)&&Number.isSafeInteger(b.comment_id)
+    ? a.comment_id>b.comment_id||
+      (a.comment_id===b.comment_id&&
+       String(a.comment_created_at||'')>String(b.comment_created_at||''))
+    : String(a.comment_created_at||'')>String(b.comment_created_at||''));
 export function selectScopePlans(comments,queue,state){
  const latest={};
  if(!Array.isArray(comments)||comments.length>100)throw Error('Unbounded GitHub scope plans');
@@ -65,9 +73,7 @@ export function selectScopePlans(comments,queue,state){
    const x=parseScopePlanComment(c,queue,state);
    if(!x)continue;
    const prev=latest[x.task_id];
-   if(!prev||x.comment_created_at>prev.comment_created_at||
-      (x.comment_created_at===prev.comment_created_at&&x.comment_id>prev.comment_id))
-     latest[x.task_id]=x;
+   if(newerPlan(x,prev))latest[x.task_id]=x;
  }
  // Even a PENDING owner decision is durable once the trusted dispatcher
  // verified and saved the source comment in the existing private owner notice.
@@ -76,7 +82,7 @@ export function selectScopePlans(comments,queue,state){
    const plan=notice.scope_plan;
    if(notice.kind!=='scope_plan_review'||!plan||
       !['planned','submitted'].includes(notice.status)||
-      latest[notice.task_id]||plan.task_id!==notice.task_id||
+      plan.task_id!==notice.task_id||
       plan.plan_hash!==notice.source_sha||
       key!=='notice:'+noticeHash({kind:'scope_plan_review',
         task_id:notice.task_id,question:notice.question,
@@ -89,13 +95,14 @@ export function selectScopePlans(comments,queue,state){
         .some(a=>a.task_id===plan.task_id&&a.type?.startsWith('scope_plan')&&
           a.status==='submitted'&&a.proposal_source_sha===plan.proposal_source_sha))
      continue;
-   latest[plan.task_id]=structuredClone(plan);
+   // A prior submitted notice does not shadow a newer corrected version.
+   if(newerPlan(plan,latest[plan.task_id]))
+     latest[plan.task_id]=structuredClone(plan);
  }
  // An already signed exact scope is durable even when issue #411 grows.
  // New plans still require a real verified comment; this fallback applies
  // only to the original immutable owner-notice + owner-reply proof chain.
  for(const [id,scope] of Object.entries(state.scope_authorizations||{})){
-   if(latest[id])continue;
    const task=queue.tasks.find(t=>t.id===id),rec=state.tasks?.[id];
    const notice=state.owner_alerts?.[scope.notice_id];
    const answer=rec?.owner_reply_events?.[scope.owner_event_id];
@@ -106,9 +113,10 @@ export function selectScopePlans(comments,queue,state){
       !['planned','submitted'].includes(notice.status)||
       answer?.courier!=='muse'||answer.target?.notice_id!==scope.notice_id||
       !yes(answer.text)||rec.scope_approval_hash!==digest(scope))continue;
-   latest[id]={...scope,comment_id:scope.plan_comment_id,
+   const signed={...scope,comment_id:scope.plan_comment_id,
      comment_url:scope.plan_comment_url,comment_created_at:scope.owner_approved_at,
      plan_hash:scope.plan_hash};
+   if(newerPlan(signed,latest[id]))latest[id]=signed;
  }
  return latest;
 }
@@ -209,6 +217,14 @@ export function acceptScopePlanDecisions(state,queue,plans,{now=new Date().toISO
    rec.scope_approval_hash=digest(scope);
    rec.scope_approval_event_id=id;
    rec.scope_approved_at=response.at||now;
+   // Reapproval after a prior NO must reenter the existing signed revalidation
+   // stage; storing a YES alone leaves blocked_needs_owner indefinitely.
+   if(rec.scope_plan_completed===true&&rec.conversation_ref&&!rec.pr_number&&
+      ['blocked_needs_owner','scope_plan_sent','scope_planning','proposed'].includes(rec.status)){
+     rec.planning_approved=true;
+     rec.approved=false;
+     rec.status='scope_plan_sent';
+   }
    if(notice.status==='planned'){
      notice.status='submitted';notice.receipt={courier:'muse',
        notice_hash:notice.notice_hash,submitted_at:response.at||now,
