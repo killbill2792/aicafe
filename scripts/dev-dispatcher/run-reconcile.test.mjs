@@ -51,6 +51,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     noticeOperationalIssues: state => state,
     applySafetySignals: state => state,
     stallMinutes: () => 20,
+    dispatchPreferences: () => ({priority:{},paused:new Set(),stall_minutes:null}),
     repo: 'killbill2792/aicafe',
     process: {env:{}},
     applyOwnerStartApprovals: startApproval,
