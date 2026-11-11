@@ -136,6 +136,22 @@ describe("thread memory server boundary", () => {
       q.filters.thread_id === THREAD)).toBe(true);
   });
 
+  it("does not pass a structured numeric or financial owner answer to the memory model", async () => {
+    const { client } = fixture({ messages: [supervisorMessage, {
+      ...ownerMessage,
+      owner_input_response: {
+        questionId: "55555555-5555-4555-8555-555555555555",
+        action: "supply", value: "$250",
+      },
+    }] });
+    const fetchMock = installModel([]);
+    const result = await compactThreadMemory(client, scope);
+    expect(result.ready).toBe(true);
+    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as { input: string };
+    const modelInput = JSON.parse(request.input);
+    expect(modelInput.ownerMessages[0].structuredOwnerResponse).toBeNull();
+  });
+
   it("never calls the model or reads a thread for a different authenticated user", async () => {
     const { client } = fixture({ actor: OTHER });
     const fetchMock = vi.fn();
