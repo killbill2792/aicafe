@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {settings} from './settings.mjs';
 import {loadQueue} from './queue-source.mjs';
-import {selectObservation} from './event-selection.mjs';
+import {selectObservation,shouldRecheckMergedLanding} from './event-selection.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
 import { readFileSync, appendFileSync } from "node:fs";
@@ -62,21 +62,34 @@ async function main() {
     const snapshot = await gh.snapshot(mainSha,{state,...selection});
     const closedByPr = {};
     const openNumbers = new Set(snapshot.map(x => x.pr_number));
-    // Check actual merge metadata; disappearing from the open list is not proof of merge.
-    for (const rec of Object.values(state.tasks)) {
-      if (!Number.isInteger(rec.pr_number) || openNumbers.has(rec.pr_number) ||
-          (rec.github_state!=='open' && ['merged','integrated_proven','released_proven'].includes(rec.status))) continue;
-      const closed = await gh.request(`/pulls/${rec.pr_number}`);
-      const mergeSha=closed.merged_at ? closed.merge_commit_sha || null : null;
-      // Trust only the verified Actions bot marker for this exact merge SHA.
-      let landingFailure=null;
-      const recent=closed.merged_at && Date.now()-Date.parse(closed.merged_at)<2*60*60*1000;
-      if(mergeSha && recent && !rec.landing_failure) {
-        const issueComments=await gh.paginated('/issues/'+rec.pr_number+'/comments','comments');
-        landingFailure=landingFailureForMerge(issueComments,mergeSha);
+    // Never downgrade a previously verified merge just because it is not in
+    // GitHub's open-PR list. Cached merged facts remain a closedByPr receipt.
+    // Recent merges are still checked for landing failures that arrive later.
+    for(const rec of Object.values(state.tasks)){
+      const n=rec.pr_number;
+      if(!Number.isInteger(n)||openNumbers.has(n))continue;
+      const cached=rec.github_state==='merged'&&/^[a-f0-9]{40}$/.test(rec.merge_sha||'');
+      if(cached){
+        closedByPr[n]={merged:true,merge_sha:rec.merge_sha,
+          landing_failure:rec.landing_failure||null,merged_at:rec.merged_at||null,
+          last_landing_check_at:rec.last_landing_check_at||null};
+        if(!shouldRecheckMergedLanding(rec,{fullAudit:selection.fullAudit,
+          focused:selection.focusNumbers.includes(n)}))continue;
       }
-      closedByPr[rec.pr_number]={merged:Boolean(closed.merged_at),
-        merge_sha:mergeSha,landing_failure:landingFailure};
+      const closed=await gh.request('/pulls/'+n);
+      const mergeSha=closed.merged_at?closed.merge_commit_sha||null:null;
+      let landingFailure=rec.landing_failure||null;
+      let checkedAt=rec.last_landing_check_at||null;
+      // A successful merge is not proof that its later landing check passed.
+      // Check the authenticated bot comment on new/recent or due merged PRs.
+      if(mergeSha&&!landingFailure){
+        const comments=await gh.paginated('/issues/'+n+'/comments','comments');
+        landingFailure=landingFailureForMerge(comments,mergeSha);
+        checkedAt=new Date().toISOString();
+      }
+      closedByPr[n]={merged:Boolean(closed.merged_at),merge_sha:mergeSha,
+        landing_failure:landingFailure||null,merged_at:closed.merged_at||null,
+        last_landing_check_at:checkedAt};
     }
     const history=await gh.request('/actions/workflows/'+settings.workflows.dispatcher+'/runs?event=schedule&per_page=3').catch(()=>null);
     const previous=(history?.workflow_runs||[]).find(r=>r.created_at && r.id!==Number(process.env.GITHUB_RUN_ID));
