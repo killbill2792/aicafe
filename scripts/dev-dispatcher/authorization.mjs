@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import { editableFiles } from './core.mjs';
 import { approvalMatches, approvalSignature } from './delivery.mjs';
 import { proposalSourceHash } from './proposal-stage.mjs';
@@ -43,14 +44,15 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
         for(const a of Object.values(state.actions))
           if(a.task_id===id&&['scope_plan','scope_plan_update'].includes(a.type)&&a.status==='planned')
             a.status='cancelled_approval_changed';
-        rec.scope_plan_completed=rec.status==='scope_plan_sent'&&Boolean(rec.conversation_ref);
+        rec.scope_plan_completed=Boolean(rec.conversation_ref)&&
+          (rec.scope_plan_completed===true||rec.status==='scope_plan_sent');
         rec.planning_approved=false;
         rec.approved=true;rec.approval_hash=approvalSignature(task);
         rec.status='proposed';
         continue;
       }
       for(const a of Object.values(state.actions))
-        if(a.task_id===id&&['scope_plan','scope_plan_update'].includes(a.type)&&a.status==='planned')
+        if(a.task_id===id&&a.status==='planned')
           a.status='cancelled_approval_changed';
       rec.planning_approved=false;rec.approved=false;
       rec.status='blocked_needs_owner';
@@ -99,12 +101,14 @@ export function assignmentActionKey(state, taskId, queue) {
   const action = state.actions?.[original];
   if (!action) return original;
   const rec=state.tasks?.[taskId];
-  if(!rec?.approved||rec.status!=='proposed'||rec.conversation_ref||
+  const existingPlanChat=rec?.scope_plan_completed===true&&Boolean(rec.conversation_ref);
+  if(!rec?.approved||rec.status!=='proposed'||
+     (rec.conversation_ref&&!existingPlanChat)||
      Number.isInteger(rec.pr_number)||!/^([a-f0-9]{64})$/.test(rec.approval_hash||''))return null;
   // A previous claim, uncertain submission or receipt is never replay-safe,
   // even when a later action ID exists or a new approval signature is signed.
   const history=Object.values(state.actions||{}).filter(a=>
-    a.task_id===taskId&&a.type==='assign');
+    a.task_id===taskId&&['assign','begin_scoped_coding'].includes(a.type));
   if(history.some(a=>a.receipt||a.claimed_at||a.submitted_at||
     a.delivery_claim||['planned','claimed','uncertain','submitted','needs_login'].includes(a.status)))
     return null;
@@ -119,8 +123,12 @@ export function assignmentActionKey(state, taskId, queue) {
     : !['integrated_proven','released_proven'].includes(state.tasks?.[gate]?.status)))return null;
   // Existing post-gate action IDs are retained for compatibility. A changed
   // approval gets a deterministic new key, never overwriting cancelled history.
-  const key=approvalCancelled
-    ? original+':approval-'+rec.approval_hash
-    : original+':after-'+gate;
+  const key=approvalCancelled&&existingPlanChat&&
+    typeof rec.scope_approval_event_id==='string'&&rec.scope_approval_event_id
+      ? original+':scope-'+createHash('sha256').update(
+          rec.scope_approval_event_id+':'+rec.approval_hash).digest('hex')
+      : approvalCancelled
+      ? original+':approval-'+rec.approval_hash
+      : original+':after-'+gate;
   return Object.hasOwn(state.actions,key)?null:key;
 }
