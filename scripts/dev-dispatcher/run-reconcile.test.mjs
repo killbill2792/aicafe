@@ -268,3 +268,11 @@ test('actual reconciler preserves unsigned scope handoff and signed coding conti
  });
  assert.equal(run(coding).state.actions['assign:7'].status,'planned');
 });
+
+
+test('delayed self-wake retains Git-backed emergency notice after a failed wake',()=>{
+ const workflow=readFileSync(new URL('../../.github/workflows/dispatcher-delayed-wake.yml',import.meta.url),'utf8');
+ assert.match(workflow,/if: failure\(\)/);
+ assert.match(workflow,/node scripts\/dev-dispatcher\/emergency-report\.mjs/);
+ assert.match(workflow,/secrets\.DISPATCH_LEDGER_TOKEN/);
+});
