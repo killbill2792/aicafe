@@ -115,3 +115,54 @@ test('Muse detects a delivered pre-PR task without inventing ChatGPT completion'
  assert.equal(health.incidents[0].action,'MUSE_INSPECT_CHAT_AND_RECONCILE');
  assert.equal(museRecoveryCandidates(health,s,identity)[0].intent,'RECONCILE');
 });
+
+
+test('429 cooldown survives repeated polls and stops GitHub wake storm',async()=>{
+ const req=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity);
+ const start=planMuseBacklog(null,req,now);
+ let count=0;
+ const limited=await deliverMuseRecovery(start,{token:'test',now,fetchImpl:async()=>{
+  count++;return {status:429,headers:{get:k=>k==='retry-after'?'1800':null}};
+ }});
+ assert.equal(count,1);
+ assert.equal(limited.backlog.api_pause_until,'2026-11-11T10:30:00.000Z');
+ const later='2026-11-11T10:05:00Z';
+ const candidates=museRecoveryCandidates(inspectMuseHealth(state,{now:later}),state,{...identity,now:later});
+ const after=planMuseBacklog(limited.backlog,candidates,later);
+ const old=Object.values(after.items).find(x=>x.request.intent==='RECONCILE');
+ assert.equal(old.next_retry_at,'2026-11-11T10:30:00.000Z');
+ let retried=0;
+ const paused=await deliverMuseRecovery(after,{token:'test',now:later,fetchImpl:async()=>{
+  retried++;return {status:204};
+ }});
+ assert.equal(retried,0);
+ assert.equal(paused.results[0].status,'API_PAUSED');
+ const due='2026-11-11T10:31:00Z';
+ const refreshed=museRecoveryCandidates(inspectMuseHealth(state,{now:due}),state,{...identity,now:due});
+ const newer=planMuseBacklog(after,refreshed,due);
+ const item=Object.values(newer.items).find(x=>x.request.intent==='RECONCILE');
+ assert.equal(item.request.requested_at,due);
+ assert.notEqual(item.request.request_id,old.request.request_id);
+});
+test('GitHub acknowledged wake is not resent on the next minute',()=>{
+ const request=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity)[0];
+ const first=planMuseBacklog(null,[request],now);
+ const ack=reconcileMuseBacklog(first,{...state,recovery_requests:{
+  [request.request_id]:{status:'OBSERVED',checked_at:now,reason:'reconciled'}}});
+ const later='2026-11-11T10:03:00Z';
+ const refreshed=museRecoveryCandidates(inspectMuseHealth(state,{now:later}),state,{...identity,now:later});
+ const after=planMuseBacklog(ack,refreshed,later);
+ const row=Object.values(after.items).find(x=>x.request.intent==='RECONCILE');
+ assert.equal(row.status,'GITHUB_ACKNOWLEDGED');
+ assert.equal(row.request.request_id,request.request_id);
+});
+test('403 not proven rate-limited is an authorization failure with safe cooldown',async()=>{
+ const request=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity)[0];
+ const input=planMuseBacklog(null,[request],now);
+ const r=await deliverMuseRecovery(input,{token:'test',now,
+  fetchImpl:async()=>({status:403,headers:{get:()=>null}})});
+ const item=Object.values(r.backlog.items)[0];
+ assert.match(item.last_error,/credential denied/);
+ assert.equal(item.next_retry_at,'2026-11-11T11:00:00.000Z');
+ assert.equal(r.backlog.api_pause_until,item.next_retry_at);
+});
