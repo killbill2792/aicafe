@@ -69,7 +69,7 @@ function redraw(){
 }
 function detail(id){
  const x=snapshot.lifecycle[id];if(!x)return;
- const names=['milestones','dispatch','coding','pr','ci','codex','acceptance','merge','integration','monitor'];
+ const names=['milestones','approval','dispatch','coding','pr','ci','codex','acceptance','dependency_state','merge','integration','monitor'];
  el('detail').innerHTML='<h2>'+esc(x.title)+' ('+esc(id)+')</h2><p><b>Next:</b> '+esc(x.monitor.next_actor)+' · '+esc(x.monitor.next_action)+'</p>'+
  (x.dispatch.verified_chat_url?'<p><a target="_blank" rel="noopener noreferrer" href="'+esc(x.dispatch.verified_chat_url)+'">Verified ChatGPT conversation</a></p>':'')+
  names.map(n=>'<details><summary>'+esc(n)+'</summary><pre>'+esc(JSON.stringify(x[n],null,2))+'</pre></details>').join('');
