@@ -355,7 +355,8 @@ begin
       and a.id::text=p_source_id and a.status in ('new','seen')) into v_found;
   else
     select exists(select 1 from public.operating_tasks t where t.business_id=p_business_id
-      and t.id=p_source_id and t.kind not in ('priority_notice','commitment')
+      and t.id=p_source_id and t.kind not in
+        ('priority_notice','commitment','event_plan','event_change','event_report')
       and t.status in ('needs_owner','needs_response')
       and (t.owner_user_id is null or t.owner_user_id=p_owner_user_id)) into v_found;
   end if;

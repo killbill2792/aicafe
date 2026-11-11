@@ -36,6 +36,19 @@ describe("proactive priority ranking and source revision",()=>{
     expect(decision.reason).toBe("Actionable café alert needs review");
     expect(JSON.stringify(decision)).not.toContain("dollars");
   });
+  it("does not re-notify Events, reminders, or notices already delivered by their writer",()=>{
+    const now=new Date("2026-11-11T00:00:00Z");
+    const duplicateKinds=["event_plan","event_change","event_report",
+      "commitment","priority_notice"];
+    const rows=duplicateKinds.map((kind,index)=>({
+      ...base,sourceType:"operating_task" as const,kind,status:"needs_owner",
+      sourceId:"prior-delivery-"+index,
+    }));
+    expect(choosePriorities(rows,now,10)).toEqual([]);
+    expect(choosePriorities([...rows,{...base,sourceType:"operating_task",
+      sourceId:"unrelated-review",kind:"data_quality",status:"needs_owner"}],now,10)
+      .map(x=>x.source.sourceId)).toEqual(["unrelated-review"]);
+  });
   it("ignores closed tasks and differs by owner/café",()=>{
     const now=new Date("2026-11-11T00:00:00Z");
     expect(choosePriorities([{...base,status:"resolved"}],now)).toEqual([]);

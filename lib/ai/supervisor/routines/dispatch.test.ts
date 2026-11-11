@@ -27,7 +27,7 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
       // scanner. A no-op mock returned commitments and falsely failed CI.
       not(field:string,operator:string,value:string){
         if(table!=="operating_tasks"||field!=="kind"||operator!=="in"||
-          value!=="(priority_notice,commitment)")
+          value!=="(priority_notice,commitment,event_plan,event_change,event_report)")
           throw new Error("Unexpected priority task exclusion");
         const forbidden=new Set(value.slice(1,-1).split(","));
         selected=selected.filter(row=>!forbidden.has(String((row as Record<string,unknown>)[field])));
@@ -73,6 +73,12 @@ describe("bounded independent routine dispatch",()=>{
       {id:"commitment:existing",kind:"commitment",status:"needs_owner",
         created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
       {id:"priority:existing",kind:"priority_notice",status:"needs_owner",
+        created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
+      {id:"events:planned",kind:"event_plan",status:"needs_owner",
+        created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
+      {id:"events:changed",kind:"event_change",status:"needs_owner",
+        created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
+      {id:"events:report",kind:"event_report",status:"needs_owner",
         created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},
       {id:"needs-review",kind:"data_quality",status:"needs_owner",
         created_at:"2026-11-10T00:00:00Z",owner_user_id:"owner"},

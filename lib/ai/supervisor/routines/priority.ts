@@ -1,6 +1,12 @@
 import {createHash} from "node:crypto";
 import type {PriorityDecision,PrioritySource} from "./contracts";
 
+/** Tasks already published by their authoritative notice writer are not fresh
+ * priority evidence. Retain them in their original inbox; never duplicate
+ * their owner notification through Task 7. */
+export const alreadyNotifiedTaskKinds=new Set([
+  "priority_notice","commitment","event_plan","event_change","event_report",
+]);
 const volatile=new Set(["lastCheckedAt","last_checked_at","polledAt","polled_at",
   "seenAt","seen_at","updatedAt","updated_at","reconciledAt","reconciled_at"]);
 /** Normalize JSON input deterministically before fingerprinting; no raw café
@@ -54,7 +60,8 @@ export function choosePriorities(sources:readonly PrioritySource[],now:Date,limi
   PriorityDecision[]{
   const candidates=sources.filter(s=>
     (s.sourceType==="alert"&&(s.status==="new"||s.status==="seen"))||
-    (s.sourceType==="operating_task"&&(s.status==="needs_owner"||s.status==="needs_response")))
+    (s.sourceType==="operating_task"&&!alreadyNotifiedTaskKinds.has(s.kind)&&
+      (s.status==="needs_owner"||s.status==="needs_response")))
     .map(s=>rankPriority(s,now));
   return candidates.sort((a,b)=>b.priority-a.priority||
     a.source.createdAt.localeCompare(b.source.createdAt)||
