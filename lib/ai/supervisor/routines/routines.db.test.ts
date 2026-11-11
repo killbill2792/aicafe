@@ -94,6 +94,10 @@ describe("routine SQL security contract",()=>{
         "2026-11-01T16:03:00Z",routineId,claimed.run_id,claimed.lease_token];
       expect(await call(workerA,"post_supervisor_priority_notice",noticeArgs)).toBe(true);
       expect(await call(workerB,"post_supervisor_priority_notice",noticeArgs)).toBe(false);
+      // A concurrent retry may wait on the same unique key; only the actual
+      // transaction that inserted the notice may claim a fresh delivery.
+      expect((await admin.query("select count(*)::int n from public.operating_tasks where business_id=$1 and kind='priority_notice'",
+        [business])).rows[0].n).toBe(1);
       const complete=[business,routineId,claimed.run_id,claimed.lease_token,
         true,"priority-check:1","2026-11-01T16:03:00Z"];
       expect(await call(workerA,"finish_supervisor_routine_occurrence",complete)).toBe(true);

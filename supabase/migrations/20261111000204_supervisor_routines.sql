@@ -322,7 +322,7 @@ create function public.post_supervisor_priority_notice(
 ) returns boolean
 language plpgsql security definer set search_path=public as $$
 declare v_task_id text;v_msg_id uuid;v_hash text;v_found boolean;
-        v_existing boolean;v_o public.supervisor_routine_occurrences;
+        v_inserted_task_id text;v_o public.supervisor_routine_occurrences;
         v_r public.supervisor_routines;
 begin
   if coalesce(auth.role(),'')<>'service_role'
@@ -361,9 +361,6 @@ begin
   end if;
   if not v_found then return false; end if;
   v_task_id:='priority:'||p_stable_key;
-  select exists(select 1 from public.operating_tasks t where t.business_id=p_business_id
-    and t.id=v_task_id and t.owner_user_id=p_owner_user_id and t.kind='priority_notice')
-    into v_existing;
   insert into public.operating_tasks
     (business_id,id,owner_user_id,agent_id,kind,status,payload,confidence,evidence,
       entity_type,dedupe_key)
@@ -375,7 +372,7 @@ begin
       'facts',jsonb_build_object('sourceId',p_source_id,
         'revisionHash',p_revision_hash,'asOf',p_as_of::text))),
     'priority_source',p_stable_key)
-  on conflict do nothing;
+  on conflict do nothing returning id into v_inserted_task_id;
   v_hash:=md5('priority-notice:'||p_business_id::text||':'||p_owner_user_id::text||':'||v_task_id);
   v_msg_id:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
     substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
@@ -387,8 +384,8 @@ begin
       'evidence',jsonb_build_array(jsonb_build_object('source',p_source_type,
         'identifier',p_source_id,'asOf',p_as_of::text))))
   on conflict(id) do nothing;
-  return not v_existing;
-end $$;
+  return v_inserted_task_id is not null;
+end $;
 revoke all on function public.post_supervisor_priority_notice(uuid,uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,uuid)
   from public,anon,authenticated;
 grant execute on function public.post_supervisor_priority_notice(uuid,uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,uuid)
