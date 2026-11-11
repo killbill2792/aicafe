@@ -57,7 +57,7 @@ test('request is only a wake: neither approvals nor merge rules change',()=>{
  const checked=settleRecoveryRequests(one,view,now);
  const item=Object.values(checked.recovery_requests)[0];
  assert.equal(item.status,'PENDING');
- assert.match(item.reason,/draft_pr/);
+ assert.match(item.reason,/not_ready_for_review/);
  assert.equal(checked.tasks.C1.draft,true);
 });
 test('a verified subsequent PR state satisfies a pending request',()=>{
