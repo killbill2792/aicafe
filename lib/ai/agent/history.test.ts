@@ -29,6 +29,17 @@ describe("chat history the AI sees",()=>{
   expect(historyContent(facts)).toBe("Question card (owner answers in its form): What is your monthly rent? Fields: Monthly rent");
   expect(historyContent(fill)).toBe("Question card (owner answers in its form): How much oat milk is left? Fields: Oat milk");
  });
+ it("keeps owner-question cards in history without treating them as choice picks",()=>{
+  const card={type:"owner_question",questionId, title:{
+   en:"Which milk do staff prefer?",es:"¿Qué leche prefiere el personal?",ar:"ما الحليب المفضل؟",
+  },input:{kind:"options",options:[
+   {id:"oat",label:{en:"Oat",es:"Avena",ar:"شوفان"}},
+   {id:"soy",label:{en:"Soy",es:"Soja",ar:"صويا"}},
+  ]}};
+  const content=historyContent({text:null,blocks:[card]});
+  expect(content).toBe("Owner question: Which milk do staff prefer? Options: Oat; Soy");
+  expect(content).not.toContain("Asked:");
+ });
  it("keeps the exact choice-card form the pick memory reads",()=>{
   expect(historyContent(choice)).toBe("Asked: Which latte? Options: Latte — Hot ("+hot+"); Latte — Iced ("+iced+")");
   const state=newResolveState("Latte — Iced",[{role:"assistant",content:historyContent(choice)}]);
