@@ -330,5 +330,5 @@ export async function loadThreadMemoryContext(
     });
     return content ? [{ role: row.role === "owner" ? "user" as const : "assistant" as const, content }] : [];
   });
-  return { memoryText: formatThreadMemory(document), history, revision: document.revision };
+  return { memoryText: document.retry ? null : formatThreadMemory(document), history, revision: document.revision };
 }
