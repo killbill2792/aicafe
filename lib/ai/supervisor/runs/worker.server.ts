@@ -171,7 +171,8 @@ export async function reconcileVerifiedOwnerStep(
   authorize: () => Promise<void>, verified: () => Promise<VerifiedReply | null>,
 ): Promise<boolean> {
   if (reason !== "lease_expired") return false;
-  await authorize();
+  try { await authorize(); }
+  catch { return false; } // revoked or unverifiable owners never resume an effect
   const receipt = await verified();
   const { supervisorReplyIdFor } = await import("@/lib/ai/conversations/replyValidation");
   if (!receipt || receipt.endReason !== "complete" ||
@@ -267,14 +268,35 @@ export async function processOldestDurableRun(): Promise<{ processed: number; st
     .in("status", ["pending", "running"]).order("updated_at", { ascending: true })
     .order("id", { ascending: true }).limit(1);
   if (error) throw new Error("supervisor_worker_queue_unavailable");
-  if (!data?.length) return { processed: 0, state: null };
-  const state = await processDurableRun(data[0].id);
-  // Busy lease must not starve later cafés in this bounded oldest-first pass.
-  if (state === "busy") {
+  let runId: string | undefined = data?.[0]?.id;
+  let recovery = false;
+  if (!runId) {
+    // Sweep only the explicitly reconcilable lease-expiry queue when normal
+    // work is idle. Never retry cancelled or budget-blocked owner turns.
+    const pending = await db.from("supervisor_run_steps").select("run_id")
+      .eq("status", "blocked").eq("step_key", "owner_turn")
+      .eq("error_code", "lease_expired")
+      .order("updated_at", { ascending: true }).limit(1);
+    if (pending.error) throw new Error("supervisor_worker_recovery_unavailable");
+    runId = pending.data?.[0]?.run_id;
+    recovery = Boolean(runId);
+  }
+  if (!runId) return { processed: 0, state: null };
+  const state = await processDurableRun(runId);
+  // Rotate held leases and uncertain receipts; neither may monopolize a café
+  // queue. Only canonical SQL reconciliation can unblock expired effects.
+  if (state === "busy" && !recovery) {
     const moved = await db.from("supervisor_runs")
       .update({ updated_at: new Date().toISOString() })
-      .eq("id", data[0].id).in("status", ["pending", "running"]);
+      .eq("id", runId).in("status", ["pending", "running"]);
     if (moved.error) throw new Error("supervisor_worker_queue_rotate_failed");
+  }
+  if (recovery && state === "blocked") {
+    const moved = await db.from("supervisor_run_steps")
+      .update({ updated_at: new Date().toISOString() }).eq("run_id", runId)
+      .eq("step_key", "owner_turn").eq("status", "blocked")
+      .eq("error_code", "lease_expired");
+    if (moved.error) throw new Error("supervisor_worker_recovery_rotate_failed");
   }
   return { processed: 1, state };
 }
