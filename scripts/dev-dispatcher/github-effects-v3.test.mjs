@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {recordGithubEffects} from './github-effects-v3.mjs';
+import {recordGithubEffects,recordPrWriterOwnerNotices} from './github-effects-v3.mjs';
 const head='a'.repeat(40),other='b'.repeat(40),now='2026-11-11T10:00:00Z';
 const state={version:1,tasks:{A:{task_id:'A',pr_number:440,head_sha:head},
  B:{task_id:'B',pr_number:441,head_sha:other}},actions:{}};
@@ -33,4 +33,39 @@ test('record changes and bounded history on later verified effect',()=>{
  assert.equal(next.tasks.A.github_effects.MARK_READY.status,'ready_for_review');
  assert.equal(next.tasks.A.github_effect_history.length,2);
  assert.equal(next.tasks.A.github_effect_history[1].previous_status,'blocked');
+});
+
+
+test('missing PR-writer credential queues one authenticated Muse owner notice, never a coding send',()=>{
+ const base={...state,owner_alerts:{}};
+ const failure={task_id:'A',operation:'CREATE_DRAFT_PR',status:'blocked',
+   reason:'missing_pr_creator_install_token',head_sha:head};
+ const once=recordPrWriterOwnerNotices(base,[failure]);
+ const alerts=Object.values(once.owner_alerts);
+ assert.equal(alerts.length,1);
+ assert.equal(alerts[0].kind,'pr_writer_unavailable');
+ assert.equal(alerts[0].delivery_owner,'muse');
+ assert.equal(alerts[0].recipient,'owner');
+ assert.equal(alerts[0].status,'planned');
+ assert.equal(Object.keys(once.actions).length,0);
+ assert.equal(once.tasks.A.pr_number,440);
+ const again=recordPrWriterOwnerNotices(once,[failure]);
+ assert.deepEqual(again.owner_alerts,once.owner_alerts);
+});
+test('PR writer permission denial gets distinct notice; verified PR appearance resolves both',()=>{
+ let s={...state,owner_alerts:{}};
+ const blocked=['missing_pr_creator_install_token','pr_creator_permission_denied']
+   .map(reason=>({task_id:'A',operation:'CREATE_DRAFT_PR',status:'blocked',reason}));
+ s=recordPrWriterOwnerNotices(s,blocked);
+ assert.equal(Object.values(s.owner_alerts).length,2);
+ s=recordPrWriterOwnerNotices(s,[{task_id:'A',operation:'CREATE_DRAFT_PR',
+   status:'existing_pr_needs_link',pr_number:440}]);
+ assert.ok(Object.values(s.owner_alerts).every(n=>n.status==='resolved'));
+});
+test('unrelated PR-writer errors never fabricate an owner credential incident',()=>{
+ const s=recordPrWriterOwnerNotices({...state,owner_alerts:{}},[
+  {task_id:'A',operation:'CREATE_DRAFT_PR',status:'blocked',reason:'branch_missing'},
+  {task_id:'X',operation:'CREATE_DRAFT_PR',status:'blocked',
+    reason:'missing_pr_creator_install_token'}]);
+ assert.equal(Object.values(s.owner_alerts).length,0);
 });
