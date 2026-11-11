@@ -19,7 +19,7 @@ const createdAt = "2026-11-11T12:00:00.000Z";
 const scope: ThreadMemoryScope = { businessId: CAFE, ownerUserId: OWNER, threadId: THREAD };
 
 const ownerMessage = {
-  id: OWNER_MESSAGE, role: "owner", text_content: "We prefer oat milk for staff drinks.",
+  id: OWNER_MESSAGE, role: "owner", text_content: "I submitted the selected drink.",
   structured_content: null, owner_input_response: { questionId: "55555555-5555-4555-8555-555555555555", action: "supply", value: "We prefer oat milk for staff drinks." }, created_at: createdAt,
 };
 const supervisorMessage = {
