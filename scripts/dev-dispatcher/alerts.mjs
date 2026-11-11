@@ -14,7 +14,7 @@ export function noticeHash({kind,task_id,pr_number,question,source_sha,identity:
   return sha(JSON.stringify([kind,task_id||null,pr_number||null,operationalIdentity,...(incident_cycle?[incident_cycle]:[])]));
  const identity=[kind,task_id||null,pr_number||null,question];
  // Version-bound owner review: an edited/newly merged architecture is a NEW notice.
- if(['architecture_approval','next_task_start','next_task_proposal'].includes(kind))identity.push(source_sha||null);
+ if(['architecture_approval','next_task_start','next_task_proposal','scope_plan_review'].includes(kind))identity.push(source_sha||null);
  if(kind==='next_task_start')return sha(JSON.stringify([kind,task_id,source_sha]));
  return sha(JSON.stringify(identity));
 }
@@ -123,7 +123,7 @@ export function resolveOwnerIssue(state,kind,pr_number){
 export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,now=new Date().toISOString()}={}){
  const next=structuredClone(state);
  next.owner_alerts ||= {};
- const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start','next_task_proposal','missing_chat_link','dispatcher_issue','codex_watchdog']);
+ const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start','next_task_proposal','scope_plan_review','missing_chat_link','dispatcher_issue','codex_watchdog']);
  const route=entry=>{
   // An operational failure was explicitly addressed to the owner; do
   // not downgrade it to a referee notice on the next reconciliation.
@@ -149,7 +149,7 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
   const entry={kind,task_id:task_id||null,pr_number:pr_number||null,
    question:question.trim(),recipient:ownerKinds.has(kind)?'owner':'referee',
    delivery_owner:'muse',status:'planned',created_at:now};
-  if(['architecture_approval','next_task_start','next_task_proposal'].includes(kind))entry.source_sha=source_sha;
+  if(['architecture_approval','next_task_start','next_task_proposal','scope_plan_review'].includes(kind))entry.source_sha=source_sha;
   route(entry);
   entry.notice_hash=noticeHash(entry);
   const key='notice:'+entry.notice_hash;

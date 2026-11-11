@@ -2,6 +2,8 @@
 import {settings} from './settings.mjs';
 import {loadQueue} from './queue-source.mjs';
 import {advanceApprovedProposals} from './proposal-stage.mjs';
+import {selectScopePlans,queueScopePlanReviews,acceptScopePlanDecisions,
+  effectiveSignedQueue} from './scope-authority.mjs';
 import {selectObservation,shouldRecheckMergedLanding} from './event-selection.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
@@ -47,9 +49,10 @@ async function main() {
   }
   const ledger = ledgerRepo && ledgerToken ? new GitHubLedger({ repo: ledgerRepo, token: ledgerToken, path:settings.ledger.path }) : null;
   const gh = new GitHubFacts({ repo, token: githubToken });
-  const queue = await loadQueue({github:gh,config:settings});
-  validateQueue(queue);
-  const taskById = new Map(queue.tasks.map(task => [task.id, task]));
+  const sourceQueue = await loadQueue({github:gh,config:settings});
+  validateQueue(sourceQueue);
+  let queue=sourceQueue;
+  let taskById = new Map(queue.tasks.map(task => [task.id, task]));
   const current = ledger ? (await ledger.verifyPrivate(), (await ledger.load()).state) : emptyLedger();
   async function observe(state) {
     let eventPayload={};
@@ -156,9 +159,16 @@ async function main() {
     },new Date().toISOString());
     const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
       minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
-    const remaining=linkPullRequests(safety,observed.snapshot).unmapped;
+    // A GitHub planning comment is evidence, NOT approval. It is bound to
+    // a submitted scope-plan action and source-version, then proposed to Muse.
+    const plans=selectScopePlans(scopeComments,sourceQueue,safety);
+    const scopeNotices=queueScopePlanReviews(safety,sourceQueue,plans);
+    const scopeApproved=acceptScopePlanDecisions(scopeNotices,sourceQueue,plans);
+    queue=effectiveSignedQueue(sourceQueue,scopeApproved,plans);
+    taskById=new Map(queue.tasks.map(t=>[t.id,t]));
+    const remaining=linkPullRequests(scopeApproved,observed.snapshot).unmapped;
     const copy = advanceApprovedProposals(
-      noticeOperationalIssues(queueOwnerAlerts(applyOwnerStartApprovals(safety,queue),
+      noticeOperationalIssues(queueOwnerAlerts(applyOwnerStartApprovals(scopeApproved,queue),
         {unmappedPrs:remaining,openPrs:observed.snapshot,queue}),
         {snapshot:observed.snapshot,scan:receiptScan}),queue);
     revalidateQueuedActions(copy, taskById, queue);
@@ -347,6 +357,12 @@ async function main() {
     ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])],
        processed:current.receipt_processed_files||{}})
     : {accepted:[],rejected:[],complete:false,scan_error:'private_ledger_unavailable'};
+  // Read only the existing owner-control issue; no new PR/queue/scheduler.
+  // The GitHub login and submitted scope-plan action verify provenance.
+  const needsScopeRead=Object.values(current.tasks||{}).some(t=>
+    t.planning_approved||t.scope_approval_hash);
+  const scopeComments=needsScopeRead
+    ? await gh.request('/issues/411/comments?per_page=100'):[];
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
   proposed.state=recordDrift(trackScheduleGap(proposed.state,{
