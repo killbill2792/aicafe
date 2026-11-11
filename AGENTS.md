@@ -87,10 +87,15 @@ Where an older line in this file conflicts with these rules, these rules win.
     lists each PR, the files and tables it owns, and the shared pieces it uses or adds (connectors,
     settings, views, tools). Shared pieces are built once in a small foundation PR that merges first;
     dependent PRs open now against that foundation branch, reuse its work, and keep their own CI green.
-    If two PRs need the same file, assign the overlap to one owner or the foundation PR; do not hold
-    the other PR unopened. Open it against the owning PR's branch instead. Independent PRs use latest
-    `main`. After each prerequisite merges, update the dependent PR onto latest `main`, switch to
-    merged shared pieces, take the next free migration number, and re-run CI.
+    Approved tasks may edit the same file on separate PR branches. A shared filename is an
+    integration-order concern, not a reason to prevent authorized parallel coding. If the tasks
+    have an explicit source dependency, stack the child on its verified open parent's branch.
+    Otherwise independent drafts may branch from latest `main`; the dispatcher uses the signed
+    queue's deterministic topological order to serialize shared-write merges. Never expand a
+    task's authorized write scope merely because an overlapping file is needed. After a verified
+    predecessor merge, update the affected child against current `main`, resolve actual conflicts
+    in the existing chat/PR, take the next free migration number and rerun exact-head CI.
+    Final merge still requires every existing owner, dependency, CI, Codex and proof gate.
     Request Codex once on the final eligible head after its prerequisites are on
     `main` and CI is green, not while a parent is changing. Only merge when all
     existing gates pass under the auto-merge rule.
