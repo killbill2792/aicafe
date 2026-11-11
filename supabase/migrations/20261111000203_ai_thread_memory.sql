@@ -330,6 +330,30 @@ begin
     end if;
   end loop;
 
+  -- Existing keys cannot silently disappear: every removal leaves a
+  -- tombstone, and a forgotten key can return only as a newer explicit entry.
+  if exists (
+    select 1 from jsonb_array_elements(v_current->'entries') old(value)
+    where not exists (
+      select 1 from jsonb_array_elements(p_memory_summary->'entries') fresh(value)
+      where fresh.value->>'key' = old.value->>'key'
+    ) and not exists (
+      select 1 from jsonb_array_elements(p_memory_summary->'tombstones') fresh(value)
+      where fresh.value->>'key' = old.value->>'key'
+    )
+  ) or exists (
+    select 1 from jsonb_array_elements(v_current->'tombstones') old(value)
+    where not exists (
+      select 1 from jsonb_array_elements(p_memory_summary->'tombstones') fresh(value)
+      where fresh.value->>'key' = old.value->>'key'
+    ) and not exists (
+      select 1 from jsonb_array_elements(p_memory_summary->'entries') fresh(value)
+      where fresh.value->>'key' = old.value->>'key'
+    )
+  ) then
+    return jsonb_build_object('ok',false,'reason','invalid_summary');
+  end if;
+
   if exists (
     select 1
     from jsonb_array_elements(p_memory_summary->'entries') e(value)
