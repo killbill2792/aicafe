@@ -163,3 +163,61 @@ test('proposed task scope revisions cancel unsent notices, preserve sent receipt
  assert.equal(Object.values(retained.owner_alerts).filter(n=>n.status==='submitted').length,1);
  assert.equal(Object.values(retained.owner_alerts).filter(n=>n.status==='planned').length,1);
 });
+
+test('Muse proposal yes automatically becomes a one-time missing scope notice, never a coding assignment',()=>{
+ const plan={tasks:['E2','7','9','10'].map(id=>({id,title:'Planned '+id,goal:'Implement '+id,
+   state:'proposed',architecture_approval:null,exclusive_files:[],
+   depends_on:['6'],brief:'docs/plans/brief.md#task-'+id,
+   scope_hint:'lib/ai/supervisor/'+id+'/*',
+   acceptance:['No unsafe effects','Correct tenant and retry behavior']}))};
+ let state={version:1,tasks:{'6':{status:'integrated_proven'}},
+   actions:{},owner_alerts:{}};
+ state=queueOwnerAlerts(state,{queue:plan,now:'2026-11-11T09:11:00Z'});
+ assert.equal(Object.values(state.owner_alerts).filter(n=>n.kind==='next_task_proposal').length,4);
+ state.owner_proposal_replies={};
+ for(const [key,notice] of Object.entries(state.owner_alerts)){
+   state.owner_proposal_replies[notice.task_id]={
+     ['yes-'+notice.task_id]:{courier:'muse',source_sha:notice.source_sha,
+       notice_id:key,text:'yes',at:'2026-11-11T09:12:09Z'}
+   };
+ }
+ const scoped=queueOwnerAlerts(state,{queue:plan,now:'2026-11-11T09:13:00Z'});
+ const notices=Object.values(scoped.owner_alerts).filter(n=>n.kind==='next_task_scope');
+ assert.equal(notices.length,4);
+ assert.deepEqual(notices.map(n=>n.task_id).sort(),['10','7','9','E2'].sort());
+ for(const n of notices){
+   assert.equal(n.recipient,'owner');
+   assert.equal(n.delivery_owner,'muse');
+   assert.equal(n.status,'planned');
+   assert.match(n.question,/ALREADY said yes/);
+   assert.match(n.question,/write-file list is EMPTY/);
+   assert.match(n.question,/THROUGH MUSE/);
+ }
+ assert.deepEqual(queueOwnerAlerts(scoped,{queue:plan}).owner_alerts,scoped.owner_alerts);
+ assert.deepEqual(Object.keys(scoped.actions),[]);
+ assert.equal(Object.keys(scoped.tasks).length,1);
+});
+test('stale or rejected Muse proposal answers never authorize a new scope',()=>{
+ const task={id:'7',title:'Routines',state:'proposed',goal:'Build routines',
+   scope_hint:'routines/*',exclusive_files:[],brief:'docs/plans/tasks.md#task-7',
+   depends_on:[],acceptance:['One routine run']};
+ const plan={tasks:[task]},base={version:1,tasks:{},actions:{},owner_alerts:{}};
+ const issued=queueOwnerAlerts(base,{queue:plan});
+ const [id,notice]=Object.entries(issued.owner_alerts)[0];
+ issued.owner_proposal_replies={'7':{recent:{text:'no',courier:'muse',
+   source_sha:notice.source_sha,notice_id:id,at:'2026-11-11T09:13:00Z'},
+    early:{text:'yes',courier:'muse',source_sha:notice.source_sha,
+      notice_id:id,at:'2026-11-11T09:12:00Z'}}};
+ assert.equal(Object.values(queueOwnerAlerts(issued,{queue:plan}).owner_alerts)
+   .filter(n=>n.kind==='next_task_scope').length,0);
+ issued.owner_proposal_replies['7'].recent.text='yes';
+ const changed=queueOwnerAlerts(issued,{queue:{tasks:[{...task,goal:'Revised plan'}]}});
+ assert.equal(Object.values(changed.owner_alerts).filter(n=>n.kind==='next_task_scope').length,0);
+ assert.equal(Object.values(changed.owner_alerts).filter(n=>n.kind==='next_task_proposal'&&n.status==='planned').length,1);
+ const scope=queueOwnerAlerts(issued,{queue:plan});
+ assert.equal(Object.values(scope.owner_alerts).filter(n=>n.kind==='next_task_scope'&&n.status==='planned').length,1);
+ const approved={...task,state:'architecture_approved',architecture_approval:{approved:true},
+   exclusive_files:['lib/ai/supervisor/routines/routines.server.ts']};
+ const signed=queueOwnerAlerts(scope,{queue:{tasks:[approved]}});
+ assert.equal(Object.values(signed.owner_alerts).filter(n=>n.kind==='next_task_scope'&&n.status==='planned').length,0);
+});

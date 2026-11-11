@@ -13,7 +13,7 @@ export function noticeHash({kind,task_id,pr_number,question,source_sha,identity:
   return sha(JSON.stringify([kind,task_id||null,pr_number||null,operationalIdentity,...(incident_cycle?[incident_cycle]:[])]));
  const identity=[kind,task_id||null,pr_number||null,question];
  // Version-bound owner review: an edited/newly merged architecture is a NEW notice.
- if(['architecture_approval','next_task_start','next_task_proposal'].includes(kind))identity.push(source_sha||null);
+ if(['architecture_approval','next_task_start','next_task_proposal','next_task_scope'].includes(kind))identity.push(source_sha||null);
  if(kind==='next_task_start')return sha(JSON.stringify([kind,task_id,source_sha]));
  return sha(JSON.stringify(identity));
 }
@@ -122,7 +122,7 @@ export function resolveOwnerIssue(state,kind,pr_number){
 export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,now=new Date().toISOString()}={}){
  const next=structuredClone(state);
  next.owner_alerts ||= {};
- const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start','next_task_proposal','missing_chat_link','dispatcher_issue','codex_watchdog']);
+ const ownerKinds=new Set(['owner_decision','architecture_approval','owner_sensitive_hold','go_live','approval_hash','next_task_start','next_task_proposal','next_task_scope','missing_chat_link','dispatcher_issue','codex_watchdog']);
  const route=entry=>{
   // An operational failure was explicitly addressed to the owner; do
   // not downgrade it to a referee notice on the next reconciliation.
@@ -148,7 +148,7 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
   const entry={kind,task_id:task_id||null,pr_number:pr_number||null,
    question:question.trim(),recipient:ownerKinds.has(kind)?'owner':'referee',
    delivery_owner:'muse',status:'planned',created_at:now};
-  if(['architecture_approval','next_task_start','next_task_proposal'].includes(kind))entry.source_sha=source_sha;
+  if(['architecture_approval','next_task_start','next_task_proposal','next_task_scope'].includes(kind))entry.source_sha=source_sha;
   route(entry);
   entry.notice_hash=noticeHash(entry);
   const key='notice:'+entry.notice_hash;
@@ -252,7 +252,27 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
    add('claude_blocker',id,rec.pr_number,
     'Claude task '+id+' blocked ('+rec.blocker.kind+'): '+String(rec.blocker.detail||'Confirmed blocker'));
  }
-   // Unapproved proposed tasks have no ledger record. Find them in the signed
+   // An authenticated, version-bound yes accepts the task concept. It does
+  // NOT approve unknown code paths or invent a signing authority.
+  const latestProposalReply=(taskId,sourceHash)=>{
+    const events=Object.values(next.owner_proposal_replies?.[taskId]||{})
+      .filter(e=>e.courier==='muse'&&e.source_sha===sourceHash&&
+        typeof e.notice_id==='string')
+      .sort((x,y)=>(Date.parse(x.at||'')||0)-(Date.parse(y.at||'')||0));
+    const answer=events.at(-1);
+    if(!answer||!/^yes(?: to start)?[.!]?$/i.test(answer.text||''))return null;
+    const notice=next.owner_alerts[answer.notice_id];
+    if(notice?.kind!=='next_task_proposal'||notice.task_id!==taskId||
+       notice.source_sha!==sourceHash||
+       !['planned','submitted'].includes(notice.status))return null;
+    if(notice.status==='planned'){
+      notice.status='submitted';
+      notice.receipt={courier:'muse',notice_hash:notice.notice_hash,
+        submitted_at:answer.at||now,source:'authenticated_owner_reply'};
+    }
+    return answer;
+  };
+  // Unapproved proposed tasks have no ledger record. Find them in the signed
   // plan and present the NEXT eligible decision through the existing Muse queue.
   if(Array.isArray(queue?.tasks)){
     const priority=queue.dispatch_rules?.priority_gate_task;
@@ -279,6 +299,35 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
            old.status==='planned'&&(!eligible||old.source_sha!==signature))
           old.status='cancelled_no_longer_needed';
       if(!eligible)continue;
+      const answer=latestProposalReply(task.id,signature);
+      if(answer){
+        const files=Array.isArray(task.exclusive_files)?task.exclusive_files:[];
+        const missing=files.length===0||
+          task.architecture_approval?.approved!==true||
+          task.state!=='architecture_approved';
+        // Retire stale UNSENT prompts when the plan or eligibility changes.
+        for(const n of Object.values(next.owner_alerts))
+          if(n.kind==='next_task_scope'&&n.task_id===task.id&&
+             n.status==='planned'&&(!missing||n.source_sha!==signature))
+            n.status='cancelled_no_longer_needed';
+        if(missing){
+          const detail=files.length
+            ? 'Exact file candidates already listed: '+files.join(', ').slice(0,380)
+            : 'Signed write-file list is EMPTY. Existing suggested area: '+
+              String(task.scope_hint||'not supplied').slice(0,360);
+          const requirements=(task.acceptance||[]).map(x=>
+            String(x).replace(/\s+/g,' ').slice(0,150)).join('; ').slice(0,360);
+          add('next_task_scope',task.id,null,
+            'Muse: the owner ALREADY said yes to task '+task.id+' / '+task.title+
+            '. Do not ask for the same proposal yes again. '+detail+
+            '. Prepare a concrete exact-file implementation scope based on the task brief '+
+            String(task.brief||'')+'. Required acceptance: '+requirements+
+            '. Bring only the missing exact-scope/architecture decision to the owner THROUGH MUSE.'+
+            ' Do not start coding or mark the task signed until the exact files and scope are approved.',
+            signature);
+        }
+        continue;
+      }
       const files=Array.isArray(task.exclusive_files)?task.exclusive_files:[];
       const scope=files.length
         ? 'Proposed exact write files: '+files.join(', ').slice(0,280)
@@ -290,6 +339,14 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
         'Coding remains blocked until the exact signed task authorization exists.';
       add('next_task_proposal',task.id,null,question.slice(0,1120),signature);
     }
+  }
+  // Do not leave an UNSENT scoping question active after its signed task
+  // was removed, superseded, or independently authorized in the queue.
+  for(const notice of Object.values(next.owner_alerts)){
+    if(notice.kind!=='next_task_scope'||notice.status!=='planned')continue;
+    const task=queue?.tasks?.find(t=>t.id===notice.task_id);
+    if(!task||approved(task))
+      notice.status='cancelled_no_longer_needed';
   }
 // Architecture acceptance is a separate owner decision after the audit is
  // merged and integration-proven. Do not invent a ChatGPT URL from branch/PR.
