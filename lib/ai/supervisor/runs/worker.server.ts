@@ -5,7 +5,12 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getExistingSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
 import { authorizedExternalConversation } from "@/lib/ai/conversations/authorizedTurn.server";
 import { readOwnerMessage } from "@/lib/ai/agent/jobs.server";
-import { runOneTurn } from "@/lib/ai/conversations/agentRunner.server";
+import { runOneTurn, errorCode as agentTurnErrorCode } from "@/lib/ai/conversations/agentRunner.server";
+import { assertCafeAiAccess } from "@/lib/access/access.server";
+import { assertOwnerAgentTurnAvailable } from "@/lib/ai/conversations/usage.server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AgentJob } from "@/lib/ai/agent/jobState";
+import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { resumeSupervisorRun } from "./resume";
 import { SupabaseDurableRunRepository } from "./repository.server";
 import { runScopeSchema, type DurableRun, type DurableRunRepository, type RunScope } from "./contracts";
@@ -200,6 +205,89 @@ function configuredBudget(): WorkerBudget {
   };
 }
 
+/** Match the browser/WhatsApp paid-turn gates with an explicit scoped
+ * service-role client. A delayed durable turn must not bypass current café
+ * entitlement or the owner's UTC daily model-call quota. */
+export async function assertDurablePaidTurnAllowed(
+  scope: RunScope, client: SupabaseClient,
+  checks: {
+    access: (businessId: string) => Promise<void>;
+    quota: (scope: RunScope, client: SupabaseClient) => Promise<void>;
+  } = { access: assertCafeAiAccess, quota: assertOwnerAgentTurnAvailable },
+): Promise<void> {
+  await checks.access(scope.businessId);
+  await checks.quota(scope, client);
+}
+
+const CONTINUATION_BUDGET_MS = 75_000; // reuse the existing bounded chat continuation window
+const MAX_CHAIN_TURNS = 3; // hard bound even if a test clock never advances
+type AgentJobServices = Pick<typeof import("@/lib/ai/agent/jobs.server"),
+  "finishAgentJob" | "readOwnerMessage">;
+type TurnOutcome = Awaited<ReturnType<typeof runOneTurn>>;
+
+/** ai_agent_job_finish creates a running follow-up job atomically. The caller
+ * MUST consume or explicitly fail it. Continue through the existing one-agent
+ * turn runner, never a second model/effect pipeline.
+ *
+ * A failed continuation is marked failed, but does not erase the initiating
+ * owner's already verified canonical report. */
+export async function runDurableJobChain(input: {
+  scope: RunScope;
+  owner: ConversationMessage;
+  initialJob: AgentJob;
+  jobs: AgentJobServices;
+  assertPaidAllowed: () => Promise<void>;
+  runTurn: (owner: ConversationMessage, job: AgentJob) => Promise<TurnOutcome>;
+  now?: () => number;
+}): Promise<void> {
+  const now = input.now ?? Date.now, since = now();
+  let owner = input.owner, job: AgentJob | null = input.initialJob;
+  for (let turns = 0; job; turns++) {
+    const first = turns === 0;
+    // The provider/owner message cannot select a different café or thread.
+    if (job.threadId !== input.scope.threadId || job.ownerMessageId !== owner.id) {
+      await input.jobs.finishAgentJob(job.id, { status: "failed", errorCode: "owner_scope_mismatch" });
+      if (first) throw new Error("supervisor_owner_job_scope_mismatch");
+      return;
+    }
+    let result: TurnOutcome;
+    try {
+      await input.assertPaidAllowed(); // again, immediately before every paid call
+      result = await input.runTurn(owner, job);
+    } catch (error) {
+      await input.jobs.finishAgentJob(job.id, {
+        status: "failed", errorCode: agentTurnErrorCode(error),
+      });
+      if (first) throw error;
+      return; // continuation failure cannot revoke the original persisted reply
+    }
+    const next = (await input.jobs.finishAgentJob(job.id,
+      "replyId" in result
+        ? { status: "done", replyMessageId: result.replyId,
+          absorbedOwnerMessageIds: result.absorbedOwnerMessageIds }
+        : { status: "failed", errorCode: result.errorCode })).continuation;
+    if ("errorCode" in result) {
+      if (first) throw new Error("supervisor_agent_turn_failed");
+      return;
+    }
+    if (!next) return;
+    if (turns + 1 >= MAX_CHAIN_TURNS || now() - since >= CONTINUATION_BUDGET_MS) {
+      // It was already inserted as running: never leave it until stale expiry.
+      await input.jobs.finishAgentJob(next.id, { status: "failed", errorCode: "timeout" });
+      return;
+    }
+    try {
+      owner = await input.jobs.readOwnerMessage(input.scope, input.scope.threadId, next.ownerMessageId);
+    } catch (error) {
+      await input.jobs.finishAgentJob(next.id, {
+        status: "failed", errorCode: agentTurnErrorCode(error),
+      });
+      return;
+    }
+    job = next;
+  }
+}
+
 /** Reads identities from durable storage. Only the fixed approved three-step
  * plan may drive the existing chat loop; arbitrary plans fail closed. */
 export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
@@ -244,22 +332,27 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
     executeTurn: async () => {
       const scope = run.scope, service = await authorizedExternalConversation(scope, scope.threadId);
       const owner = await readOwnerMessage(scope, scope.threadId, run.requestKey);
+      const client = createAdminSupabaseClient();
+      const assertPaidAllowed = async () => {
+        // Membership and the exact thread are revalidated independently of the
+        // paid entitlement and quota, for every resumed/continuation turn.
+        await authorizedExternalConversation(scope, scope.threadId);
+        await assertDurablePaidTurnAllowed(scope, client);
+      };
+      // Check before even creating a running agent job. Recheck immediately
+      // before each paid model call through the shared runner below.
+      await assertPaidAllowed();
       const jobs = await import("@/lib/ai/agent/jobs.server");
       const started = await jobs.startAgentJob(scope, scope.threadId, owner.id);
       if (started.mode === "done") return; // canonical reply verified independently
       if (started.mode !== "started") throw new Error("supervisor_existing_job_unfinished");
-      const outcome = await runOneTurn({
-        scope, threadId: scope.threadId, owner, ownerText: owner.text ?? "",
-        locale: "en", service, emit: () => {}, job: started.job, jobs,
-        externalClient: createAdminSupabaseClient(),
-      });
-      if ("errorCode" in outcome) {
-        await jobs.finishAgentJob(started.job.id, { status: "failed", errorCode: outcome.errorCode });
-        throw new Error("supervisor_agent_turn_failed");
-      }
-      await jobs.finishAgentJob(started.job.id, {
-        status: "done", replyMessageId: outcome.replyId,
-        absorbedOwnerMessageIds: outcome.absorbedOwnerMessageIds,
+      await runDurableJobChain({
+        scope, owner, initialJob: started.job, jobs, assertPaidAllowed,
+        runTurn: (nextOwner, job) => runOneTurn({
+          scope, threadId: scope.threadId, owner: nextOwner,
+          ownerText: nextOwner.text ?? "", locale: "en", service,
+          emit: () => {}, job, jobs, externalClient: client,
+        }),
       });
     },
   });
