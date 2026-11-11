@@ -15,6 +15,7 @@ const taskId=id=>typeof id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(i
 const pathOK=p=>typeof p==='string'&&p.length>0&&
  !p.startsWith('/')&&!p.includes('\\')&&!/[\x00-\x1f\x7f]/.test(p)&&
  !/[?*]/.test(p)&&p.split('/').every(part=>part&&part!=='.'&&part!=='..'&&part!=='.git');
+const yes=s=>/^yes(?:[.!]|(?:\s+to\s+(?:start|proceed))[.!]?)?$/i.test(String(s||'').trim());
 
 // Plans go on the existing owner-control issue #411, not a new PR, queue, job
 // or comment channel. The ChatGPT planning agent must post this one-line marker:
