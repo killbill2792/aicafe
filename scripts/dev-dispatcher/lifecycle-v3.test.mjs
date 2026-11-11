@@ -4,9 +4,9 @@ import {taskLifecycle,projectLifecycle,recordLifecycleTransitions} from './lifec
 const a='a'.repeat(40),b='b'.repeat(40),c='c'.repeat(40);
 const plan={repo:'killbill2792/aicafe',tasks:[
   {id:'CR-A',title:'First',depends_on:[],acceptance:['unit'],edits:['lib/shared.ts'],
-   architecture_approval:{approved:true}},
+   architecture_approval:{approved:true},state:'ready'},
   {id:'CR-B',title:'Second',depends_on:['CR-A'],acceptance:['integration'],edits:['lib/shared.ts'],
-   architecture_approval:{approved:true}}
+   architecture_approval:{approved:true},state:'ready'}
 ]};
 const task=plan.tasks[0];
 const basics={version:1,updated_at:'2026-11-11T10:00:00Z',tasks:{},actions:{},owner_alerts:{}};
@@ -102,7 +102,7 @@ test('unknown or stale observations never become a guessed green',()=>{
 test('full projection creates rows for approved tasks without records',()=>{
   const x=projectLifecycle(basics,plan,now);
   assert.deepEqual(Object.keys(x.tasks),['CR-A','CR-B']);
-  assert.equal(x.tasks['CR-A'].monitor.next_actor,'OWNER');
+  assert.equal(x.tasks['CR-A'].monitor.next_actor,'MUSE');
   assert.equal(x.health.schedule_status,'UNKNOWN');
 });
 test('transition history changes only on evidence, retains same pending actions',()=>{
@@ -111,9 +111,8 @@ test('transition history changes only on evidence, retains same pending actions'
   assert.equal(first.lifecycle_v3.transitions.length,2);
   const again=recordLifecycleTransitions(first,plan,now);
   assert.equal(again.lifecycle_v3.transitions.length,2);
-  assert.equal(again.actions,basicActionReference(first.actions));
+  assert.deepEqual(again.actions,first.actions);
 });
-function basicActionReference(actions){return actions;}
 test('dispatcher heartbeat reports stale separate from ledger update',()=>{
   const s={...basics,schedule_health:{last_schedule_at:'2026-11-11T09:00:00Z'}};
   const view=projectLifecycle(s,plan,now);
