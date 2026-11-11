@@ -154,7 +154,7 @@ export function isDispatcherMaintenanceChange(files) {
 export class GitHubFacts {
   constructor({ repo, token, ownerLogin=settings.owner.login, fetchFn = fetch,
     sleepFn = ms => new Promise(resolve=>setTimeout(resolve,ms)) }) {
-    if (!/^[\\w.-]+\\/[\\w.-]+$/.test(repo) || !token) throw new Error("GitHub repo/token required");
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) throw new Error("GitHub repo/token required");
     this.repo = repo; this.token = token; this.fetchFn = fetchFn;
     this.sleepFn=sleepFn;
     this.ownerLogin=ownerLogin;
