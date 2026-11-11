@@ -33,7 +33,7 @@ export function acceptDeliveryReceipt(state, receipt, { authenticatedCourier } =
     task?.github_state === 'open' && Number.isInteger(task?.pr_number) &&
     task?.branch === settings.naming.branch_prefix + task.task_id &&
     !task?.conversation_ref;
-  const planning=action?.type==='scope_plan'&&
+  const planning=['scope_plan','scope_plan_update'].includes(action?.type)&&
     task?.planning_approved===true&&task?.approved!==true&&
     task?.status==='scope_planning'&&
     action.proposal_source_sha===task.proposal_source_sha;

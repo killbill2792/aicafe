@@ -11,7 +11,7 @@ export const proposalSourceHash=task=>hash([task.id,task.goal,task.scope_hint,
 const proposalApprovalHash=(task,notice)=>hash(['scope-plan-v1',task.id,
   notice.notice_hash,notice.source_sha]);
 
-export function createScopePlanDelivery(task,{actionId,approvalHash}){
+export function createScopePlanDelivery(task,{actionId,approvalHash,conversationUrl=null}){
  const prompt=[
    settings.chatgpt.project_name+' scope_plan | task '+task.id,
    'Owner said YES to the goal and authorized a READ-ONLY planning step. This is NOT coding permission.',
@@ -33,7 +33,8 @@ export function createScopePlanDelivery(task,{actionId,approvalHash}){
    project:{id:settings.chatgpt.project_id,name:settings.chatgpt.project_name},
    muse_space:settings.muse.space,chatgpt_account:settings.chatgpt.account_label,
    project_url:settings.chatgpt.project_url,effort:settings.effort_default,
-   provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+   provider:'chatgpt',intent:conversationUrl?'continue_existing_chat':'start_new_chat',
+   conversation_url:conversationUrl,
    task_id:task.id,base_branch:'main',prompt,prompt_hash:promptHash(prompt)};
 }
 
@@ -60,13 +61,13 @@ export function advanceApprovedProposals(state,queue,{now=new Date().toISOString
    const decision=replies.at(-1);
    const previous=next.tasks[task.id];
    // Never rewrite an ongoing or proven coding task from a stale proposal.
-   if(previous?.pr_number || (previous?.conversation_ref&&!previous.planning_approved) ||
+   if(previous?.pr_number || (previous?.conversation_ref&&!previous.scope_plan_completed) ||
       ['assigned','draft_open','review_fixing','merged','integrated_proven','released_proven'].includes(previous?.status))
      continue;
    if(!decision) {
      if(previous?.planning_approved && previous.proposal_source_sha!==signature){
        for(const action of Object.values(next.actions))
-         if(action.task_id===task.id&&action.type==='scope_plan'&&action.status==='planned')
+         if(action.task_id===task.id&&['scope_plan','scope_plan_update'].includes(action.type)&&action.status==='planned')
            action.status='cancelled_approval_changed';
        next.tasks[task.id]={...previous,planning_approved:false,approved:false,
          status:'blocked_needs_owner',scope_change_pending:true};
@@ -76,7 +77,7 @@ export function advanceApprovedProposals(state,queue,{now=new Date().toISOString
    if(!yes(decision.text)){
      if(previous?.planning_approved){
        for(const action of Object.values(next.actions))
-         if(action.task_id===task.id&&action.type==='scope_plan'&&action.status==='planned')
+         if(action.task_id===task.id&&['scope_plan','scope_plan_update'].includes(action.type)&&action.status==='planned')
            action.status='cancelled_owner_state_changed';
        next.tasks[task.id]={...previous,planning_approved:false,approved:false,
          status:'blocked_needs_owner',owner_answer_text:decision.text};
@@ -86,11 +87,15 @@ export function advanceApprovedProposals(state,queue,{now=new Date().toISOString
    if(previous?.planning_approved && previous.proposal_source_sha===signature)continue;
    // A previously delivered/planned/claimed scope chat is not replayed.
    if(Object.values(next.actions).some(a=>a.task_id===task.id&&
-     a.type==='scope_plan'&&['planned','claimed','uncertain','submitted','needs_login'].includes(a.status)))
+     ['scope_plan','scope_plan_update'].includes(a.type)&&a.proposal_source_sha===signature&&
+      ['planned','claimed','uncertain','submitted','needs_login'].includes(a.status)))
      continue;
    const notice=next.owner_alerts[decision.notice_id];
    const approvalHash=proposalApprovalHash(task,notice);
-   const key='scope_plan:'+encodeURIComponent(task.id)+':'+notice.notice_hash;
+   const conversationUrl=previous?.scope_plan_completed===true
+     ? previous.conversation_ref||null:null;
+   const actionType=conversationUrl?'scope_plan_update':'scope_plan';
+   const key=actionType+':'+encodeURIComponent(task.id)+':'+notice.notice_hash;
    if(next.actions[key])continue;
    const record={...previous,task_id:task.id,agent:'chatgpt',
      status:'scope_planning',planning_approved:true,approved:false,
@@ -98,10 +103,11 @@ export function advanceApprovedProposals(state,queue,{now=new Date().toISOString
      proposal_notice_id:decision.notice_id,proposal_owner_event_id:decision.id,
      planning_approved_at:decision.at||now,
      // Scope planning has no repository branch or code permission.
-     branch:null,pr_number:null,conversation_ref:null,conversation_url:null};
-   const delivery=createScopePlanDelivery(task,{actionId:key,approvalHash});
+     branch:null,pr_number:null,scope_plan_completed:false,
+     conversation_ref:conversationUrl,conversation_url:conversationUrl};
+   const delivery=createScopePlanDelivery(task,{actionId:key,approvalHash,conversationUrl});
    next.tasks[task.id]=record;
-   next.actions[key]={task_id:task.id,type:'scope_plan',status:'planned',
+   next.actions[key]={task_id:task.id,type:actionType,status:'planned',
      delivery_owner:'muse',proposal_source_sha:signature,
      created_at:now,delivery};
  }

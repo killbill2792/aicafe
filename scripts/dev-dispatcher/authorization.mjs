@@ -33,7 +33,7 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
       if(current&&['scope_planning','scope_plan_sent'].includes(rec.status)){
         rec.approved=false;
         for(const a of Object.values(state.actions))
-          if(a.task_id===id&&a.type!=='scope_plan'&&a.status==='planned')
+          if(a.task_id===id&&!['scope_plan','scope_plan_update'].includes(a.type)&&a.status==='planned')
             a.status='cancelled_approval_changed';
         continue;
       }
@@ -41,7 +41,7 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
          ['architecture_approved','ready'].includes(task.state) &&
          editableFiles(task).length>0){
         for(const a of Object.values(state.actions))
-          if(a.task_id===id&&a.type==='scope_plan'&&a.status==='planned')
+          if(a.task_id===id&&['scope_plan','scope_plan_update'].includes(a.type)&&a.status==='planned')
             a.status='cancelled_approval_changed';
         rec.scope_plan_completed=rec.status==='scope_plan_sent'&&Boolean(rec.conversation_ref);
         rec.planning_approved=false;
@@ -50,7 +50,7 @@ export function revalidateQueuedActions(state, taskById, queue = null) {
         continue;
       }
       for(const a of Object.values(state.actions))
-        if(a.task_id===id&&a.type==='scope_plan'&&a.status==='planned')
+        if(a.task_id===id&&['scope_plan','scope_plan_update'].includes(a.type)&&a.status==='planned')
           a.status='cancelled_approval_changed';
       rec.planning_approved=false;rec.approved=false;
       rec.status='blocked_needs_owner';

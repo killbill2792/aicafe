@@ -262,7 +262,8 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
     for(const task of queue.tasks){
       if(task.state!=='proposed'||approved(task))continue;
       const existing=next.tasks?.[task.id];
-      if(existing?.pr_number||existing?.conversation_ref||
+      if(existing?.pr_number||
+          (existing?.conversation_ref&&!['scope_planning','scope_plan_sent','blocked_needs_owner'].includes(existing.status))||
          ['assigned','draft_open','review_fixing','merged','integrated_proven','released_proven'].includes(existing?.status))
         continue;
       const deps=(task.depends_on||[]).every(id=>{
