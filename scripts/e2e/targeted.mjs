@@ -12,7 +12,6 @@ function match(path, re) { return re.test(path); }
 // must fail closed instead of permitting an untested screen to merge.
 export function scenariosForPath(path) {
   if (path === ".github/workflows/ai-cafe-pr-baseline.yml" ||
-      path === "package.json" || path === "package-lock.json" ||
       path === "playwright.config.mjs" || path.startsWith("scripts/e2e/") ||
       path.startsWith("tests/e2e/") ||
       path === "app/globals.css" || path.startsWith("app/fonts/") ||
