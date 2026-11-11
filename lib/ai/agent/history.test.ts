@@ -76,6 +76,18 @@ describe("rolling thread memory primitives",()=>{
   expect(safeThreadMemoryText("We open at 7")).toBeNull();
   expect(safeThreadMemoryText("We prefer oat milk")).toBe("We prefer oat milk");
  });
+ it("accepts only safe structured owner-supplied values as exact provenance sources",()=>{
+  const source=owner("I submitted the selected drink.");
+  const structured=threadMemorySource(source,"We prefer oat milk for staff drinks.")!;
+  expect(structured.structuredText).toBe("We prefer oat milk for staff drinks.");
+  const document=applyThreadMemoryOperations(emptyThreadMemoryDocument(),[{
+   action:"remember",kind:"preference",key:"preference:staff_drinks",
+   sourceMessageId:source.id,quote:"We prefer oat milk for staff drinks.",
+  }],[structured]);
+  expect(document.entries[0].text).toBe("We prefer oat milk for staff drinks.");
+  expect(threadMemorySource(source,"$250")).toMatchObject({text:source.text});
+  expect(threadMemorySource(source,"$250")?.structuredText).toBeUndefined();
+ });
  it("replaces a corrected key and forgets it without allowing old history to resurrect it",()=>{
   const first=owner("I prefer oat milk for staff drinks.",new Date(Date.now()-3000).toISOString());
   const correction=owner("I prefer almond milk for staff drinks.",new Date(Date.now()-2000).toISOString());
