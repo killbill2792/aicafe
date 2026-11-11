@@ -90,6 +90,35 @@ jobs:
           node-version: '22'
       - run: node --test scripts/dev-dispatcher/*.test.mjs scripts/dev-dispatcher/bridge/bridge.test.mjs
 
+  # This is not a second dispatcher: it sends ONE existing Muse owner notice
+  # only if trusted-main preflight failed before reconcile could run.
+  notify_preflight_failure:
+    name: Notify Muse if trusted dispatcher preflight failed
+    needs: unit
+    if: >-
+      always() &&
+      needs.unit.result == 'failure' &&
+      github.event_name != 'pull_request' &&
+      github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Queue existing Muse owner incident through Git (no REST)
+        env:
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: node scripts/dev-dispatcher/emergency-report.mjs
+
   reconcile:
     name: GitHub state reconciliation (no effects)
     # Never read secrets or execute PR code. All effects remain opt-in and
