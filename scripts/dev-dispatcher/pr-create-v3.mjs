@@ -6,10 +6,10 @@ import {approvalMatches,validConversationUrl} from './delivery.mjs';
 import {editableFiles,resolveTaskBase,approved} from './core.mjs';
 const SHA=/^[a-f0-9]{40}$/;
 export async function ensureApprovedDraftPr({github,writer,task,record,records={},
-  queueRepo=settings.repo,branchPrefix=settings.naming.branch_prefix}={}){
+  verifiedDelivery=false,queueRepo=settings.repo,branchPrefix=settings.naming.branch_prefix}={}){
  if(!github||!writer||!task||!record)return {status:'blocked',reason:'missing_evidence'};
  const id=task.id,branch=branchPrefix+id;
- if(!approved(task)||record.approved!==true||record.task_id!==id||
+ if(!verifiedDelivery||!approved(task)||record.approved!==true||record.task_id!==id||
    !approvalMatches(task,record.approval_hash)||
    !record.conversation_ref||!validConversationUrl('chatgpt',record.conversation_ref)||
    record.branch!==branch||record.repo_mismatch||record.sensitive_owner_block||
