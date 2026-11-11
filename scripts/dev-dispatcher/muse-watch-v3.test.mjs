@@ -156,13 +156,13 @@ test('GitHub acknowledged wake is not resent on the next minute',()=>{
  assert.equal(row.status,'GITHUB_ACKNOWLEDGED');
  assert.equal(row.request.request_id,request.request_id);
 });
-test('403 not proven rate-limited is an authorization failure with safe cooldown',async()=>{
+test('403 without rate-limit evidence remains unclassified with safe cooldown',async()=>{
  const request=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity)[0];
  const input=planMuseBacklog(null,[request],now);
  const r=await deliverMuseRecovery(input,{token:'test',now,
   fetchImpl:async()=>({status:403,headers:{get:()=>null}})});
  const item=Object.values(r.backlog.items)[0];
- assert.match(item.last_error,/credential denied/);
+ assert.match(item.last_error,/rate limit or authorization unverified/);
  assert.equal(item.next_retry_at,'2026-11-11T11:00:00.000Z');
  assert.equal(r.backlog.api_pause_until,item.next_retry_at);
 });
