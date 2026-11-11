@@ -48,6 +48,9 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
     });
   }
   for(const raw of (tasks.data??[]) as DbRow[]){
+    // Defense in depth if a custom/mock adapter fails to apply the DB filter:
+    // never re-notify commitments or a previously generated priority notice.
+    if(raw.kind==="commitment"||raw.kind==="priority_notice")continue;
     if(raw.owner_user_id&&raw.owner_user_id!==scope.ownerUserId)continue;
     sources.push({
       businessId:scope.businessId,ownerUserId:scope.ownerUserId,
