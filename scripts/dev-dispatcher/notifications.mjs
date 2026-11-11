@@ -142,12 +142,14 @@ export async function reportMuseSignalFailure({ledger,wake,repo,message}){
 }
 export async function reportMuseSignalRestored({ledger,repo}){
  return ledger.transaction(state=>{
-  const key='notice:'+noticeHash({kind:'muse_signal_failed',identity:repo});
-  const failure=state.owner_alerts?.[key];
+  const failure=Object.values(state.owner_alerts||{}).find(n=>
+   n.kind==='muse_signal_failed'&&n.identity===repo&&
+   ['planned','submitted'].includes(n.status));
   if(!failure)return null;
   const cleared=resolveOwnerIssueIdentity(state,{kind:'muse_signal_failed',identity:repo});
   return onlyChange(state,queueOwnerIssue(cleared,{
-   kind:'muse_signal_restored',identity:repo,
+   kind:'muse_signal_restored',identity:failure.incident_cycle?
+    repo+':round:'+failure.incident_cycle:repo,
    message:'GitHub restored the Muse wake signal for '+repo+'; queued notices can be picked up automatically.',
    needs:'No owner action; Muse confirms actual owner-message delivery with authenticated receipts'}));
  });
@@ -169,11 +171,14 @@ export async function reportProjectionRestored({ledger,kind,identity}){
  if(!projectionKinds.has(kind)||typeof identity!=='string'||!identity)
   throw Error('Unrecognized owner communication publication');
  return ledger.transaction(state=>{
-  const key='notice:'+noticeHash({kind,identity});
-  if(!state.owner_alerts?.[key])return null;
+  const failure=Object.values(state.owner_alerts||{}).find(n=>
+   n.kind===kind&&n.identity===identity&&
+   ['planned','submitted'].includes(n.status));
+  if(!failure)return null;
   const cleared=resolveOwnerIssueIdentity(state,{kind,identity});
   return onlyChange(state,queueOwnerIssue(cleared,{
-   kind:kind+'_restored',identity,
+   kind:kind+'_restored',identity:failure.incident_cycle?
+    identity+':round:'+failure.incident_cycle:identity,
    message:'GitHub restored the '+(kind==='private_queue_publish_failed'
      ?'private Muse owner queue':'public-safe owner dashboard')+' publication.',
    needs:'No owner action; outstanding Muse messages still require authenticated delivery receipts'}));
