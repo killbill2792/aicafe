@@ -74,7 +74,12 @@ describe("event cutover parity at café-local date boundaries",()=>{
     const independent={...base,sourceId:"data-quality:missing-upload",
       kind:"data_quality"};
     const now=new Date("2026-11-01T12:00:00Z");
-    expect(choosePriorities(delivered,now,10)).toEqual([]);
+    // Both owner-action statuses are already delivered by Events; a change
+    // from needs_response to needs_owner must not create a second writer.
+    for(const status of ["needs_owner","needs_response"] as const){
+      expect(choosePriorities(delivered.map(s=>({...s,status})),now,10))
+        .toEqual([]);
+    }
     expect(choosePriorities([...delivered,independent],now,10)
       .map(x=>x.source.sourceId)).toEqual([independent.sourceId]);
     expect(choosePriorities([{...base,ownerUserId:"different-owner",
