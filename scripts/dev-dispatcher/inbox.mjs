@@ -10,7 +10,7 @@ import { acceptMuseOwnerReply } from './self-heal.mjs';
 
 // The GitHub commit actor is the authentication boundary. A self-declared
 // receipt author, Git commit display name or valid hash is NOT an identity.
-export async function inspectReceipts({ ledger, allowedActors }) {
+export async function inspectReceipts({ ledger, allowedActors, processed = {} }) {
   const accepted=[], rejected=[];
   if(!allowedActors?.length)return {accepted,rejected,complete:false,scan_error:'courier_actor_configuration_missing'};
   let list;
@@ -25,6 +25,9 @@ export async function inspectReceipts({ ledger, allowedActors }) {
   let complete=true;
   for(const entry of list) {
     if(entry.type!=='file'||!/^[a-f0-9]{64}\.json$/.test(entry.name))continue;
+    // The directory listing supplies Git's exact blob identity. Skip only
+    // previously validated AND reconciled receipts at that unchanged blob.
+    if(/^[a-f0-9]{40}$/.test(entry.sha||'') && processed[entry.name]===entry.sha)continue;
     try {
       const meta=await ledger.request('/commits?path='+encodeURIComponent(entry.path)+'&per_page=1');
       const actor=meta?.[0]?.author?.login;
@@ -48,7 +51,7 @@ export async function inspectReceipts({ ledger, allowedActors }) {
       if(expected!==entry.name){
         rejected.push({file:entry.name,code:'invalid_receipt_identity'});continue;
       }
-      accepted.push({receipt,actor,file:entry.name});
+      accepted.push({receipt,actor,file:entry.name,sha:entry.sha||null});
     }catch{
       complete=false;
       rejected.push({file:entry.name,code:'github_receipt_read_failed'});

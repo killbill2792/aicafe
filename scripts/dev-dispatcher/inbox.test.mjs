@@ -110,3 +110,44 @@ test('directory failure never claims a complete receipt scan',async()=>{
  assert.equal(scan.scan_error,'receipt_directory_unavailable');
  assert.deepEqual(scan.accepted,[]);
 });
+
+test('previously reconciled Git blob receipts skip repeat attribution and content reads',async()=>{
+ const name=path.split('/').at(-1),sha='f'.repeat(40);
+ let reads=0;
+ const ledger={request:async key=>{
+  reads++;
+  if(key==='/contents/dispatcher/receipts?ref=main')
+    return [{type:'file',name,path,sha}];
+  if(key.startsWith('/commits?'))return [{author:{login:'muse-app[bot]'}}];
+  if(key==='/contents/'+path+'?ref=main')
+    return {content:Buffer.from(JSON.stringify(receipt)).toString('base64')};
+  throw Error(key);
+ }};
+ const first=await inspectReceipts({ledger,allowedActors:['muse-app[bot]']});
+ assert.equal(first.accepted.length,1);
+ assert.equal(first.accepted[0].sha,sha);
+ assert.equal(reads,3);
+ const repeat=await inspectReceipts({ledger,allowedActors:['muse-app[bot]'],
+   processed:{[name]:sha}});
+ assert.equal(repeat.accepted.length,0);
+ assert.equal(repeat.complete,true);
+ assert.equal(reads,4); // directory listing only
+ const replaced=await inspectReceipts({ledger,allowedActors:['muse-app[bot]'],
+   processed:{[name]:'a'.repeat(40)}});
+ assert.equal(replaced.accepted.length,1);
+ assert.equal(reads,7);
+});
+test('invalid receipt is never checkpointed merely because it has a timestamp',async()=>{
+ const name=path.split('/').at(-1),sha='f'.repeat(40);
+ let reads=0;
+ const ledger={request:async key=>{
+  reads++;
+  if(key==='/contents/dispatcher/receipts?ref=main')
+    return [{type:'file',name,path,sha}];
+  if(key.startsWith('/commits?'))return [{author:{login:'stranger'}}];
+  throw Error('Unauthorized receipt content read');
+ }};
+ const result=await inspectReceipts({ledger,allowedActors:['muse-app[bot]']});
+ assert.deepEqual(result.rejected,[{file:name,code:'unapproved_git_actor'}]);
+ assert.equal(reads,2);
+});

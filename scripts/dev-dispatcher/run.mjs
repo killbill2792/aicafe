@@ -84,6 +84,34 @@ async function main() {
     // arriving during the same GitHub reconciliation must not revive old work.
     const live = reconcileGithub(linked.state, observed.snapshot, observed.closedByPr);
     const applied = applyReceiptsSafely(live,receiptScan.accepted,actorMap);
+    // Persist only authenticated, successfully reconciled identities. An early
+    // valid receipt with no corresponding action stays unread/eligible for a
+    // future reconciliation; an invalid receipt stays on the repair path.
+    const rejectedFiles=new Set(applied.rejected.map(r=>r.file));
+    for(const item of receiptScan.accepted){
+      if(rejectedFiles.has(item.file)||!/^[a-f0-9]{40}$/.test(item.sha||''))continue;
+      const rc=item.receipt;
+      let recognized=false;
+      if(rc.kind==='owner_notice')
+        recognized=applied.state.owner_alerts?.[rc.notice_id]?.status==='submitted';
+      else if(rc.kind==='owner_instruction')
+        recognized=Boolean(applied.state.owner_instruction_events?.[rc.event_id]);
+      else if(rc.kind==='owner_reply') {
+        const task=rc.target?.task_id
+          ? applied.state.tasks?.[rc.target.task_id]
+          : Object.values(applied.state.tasks||{}).find(t=>t.pr_number===rc.target?.pr_number);
+        recognized=Boolean(task?.owner_reply_events?.[rc.event_id])||
+          Boolean(rc.target?.branch&&applied.state.branch_chat_links?.[rc.target.branch]?.conversation_url===rc.text?.trim());
+      }else{
+        const action=applied.state.actions?.[rc.action_id];
+        recognized=action?.status==='submitted'||
+          Boolean(action?.superseded_receipt);
+      }
+      if(recognized){
+        applied.state.receipt_processed_files||={};
+        applied.state.receipt_processed_files[item.file]=item.sha;
+      }
+    }
     // A planned parent-merge prompt is not a delivered instruction. Repair
     // pre-v2 early markers and advance only after an authenticated receipt.
     for (const [key, action] of Object.entries(applied.state.actions)) {
@@ -274,7 +302,8 @@ async function main() {
   }));
   actorMap[settings.owner.login] ||= 'owner';
   const receiptScan = ledger
-    ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])]})
+    ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])],
+       processed:current.receipt_processed_files||{}})
     : {accepted:[],rejected:[],complete:false,scan_error:'private_ledger_unavailable'};
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
