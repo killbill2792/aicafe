@@ -147,8 +147,10 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
   const derived=[...derivedTeam.needsYou,...derivedTeam.handled,...derivedTeam.watching];
   const today=snapshot.todayDateStr;
   // Same plan the old page-load sync wrote, applied in memory, plus collapse/expiry rules.
-  const priorityRows=stored.filter(isPriorityNoticeTask);
-  const priorityNeeds=priorityRows.filter(task=>task.status==="needs_owner");
+  // A priority_notice is an immutable delivery receipt, not an independently
+  // actionable source. The authoritative alert/task lifecycle owns Needs you.
+  // Rendering the original also preserves its specific repair link and details,
+  // and prevents a resolved source leaving a generic orphan notice on Home.
   const team=projectOperatingTasks(settleInboxTasks(
     stored.filter(task=>!isPriorityNoticeTask(task)),derived,new Date(),today));
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
@@ -210,11 +212,8 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
       subjectDate: taskSubjectDate(task), createdAt: task.createdAt };
   };
 
-  // Do not count a raw alert twice if a private notice already covers its source.
-  const prioritySourceIds=new Set(priorityNeeds.filter(task=>task.payload.sourceType==="alert")
-    .map(task=>String(task.payload.sourceId??"")));
   const alertItems: DatedAttentionItem[] = (alerts ?? [])
-    .filter(alert=>showAlertInHome(alert.kind)&&!prioritySourceIds.has(alert.id))
+    .filter(alert=>showAlertInHome(alert.kind))
     .map(alert => {
     const description = describeAlert(alert, tAlerts, code => tCategories(code as ExpenseCategoryCode));
     // The legacy manage-staff redirect opens Team, not Schedule. Link directly
@@ -269,8 +268,6 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
       href:homeAttentionHref({kind:"unmatched" as const}),impactCents:null
     }]:[]),
     ...alertItems,
-    ...priorityNeeds.map(task=>({...taskPreview(task),
-      actionLabel:tOperations("openEventThread"),impactCents:null})),
     ...team.needsYou.filter(task=>!(task.kind==="data_quality" && coveredBills.has(String(task.payload.categoryCode))) &&
       !(task.kind==="data_quality" && vm.missingCategories.some(line=>line.categoryCode===task.payload.categoryCode)))
       .map(task=>({...taskPreview(task),actionLabel:task.kind==="commitment"?tOperations("openEventThread"):
@@ -279,7 +276,7 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
         typeof task.payload.estimatedAmountCents==="number" ? task.payload.estimatedAmountCents : null})),
   ];
 
-  const taskMap=new Map([...team.needsYou,...priorityNeeds].map(task=>[task.id,task]));
+  const taskMap=new Map(team.needsYou.map(task=>[task.id,task]));
   const alertMap=new Map((alerts??[]).map(alert=>["alert:"+alert.id,alert]));
   const parsed=z.array(attentionItemSchema).parse(items.map(item=>{
     const task=taskMap.get(item.id),alert=alertMap.get(item.id);
