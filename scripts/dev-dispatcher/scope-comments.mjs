@@ -11,7 +11,7 @@ export async function fetchScopeComments(github,issue) {
    throw Error('Invalid GitHub scope comment page '+page);
   let advanced=false;
   for(const comment of chunk) {
-   if(!Number.isSafeInteger(comment?.id)||seen.has(comment.id))
+   if(!Number.isSafeInteger(comment?.id)||comment.id<=0||seen.has(comment.id))
     throw Error('Repeated or invalid scope comment ID on page '+page);
    seen.add(comment.id);
    rows.push(comment);
