@@ -118,6 +118,14 @@ begin
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
   end if;
+  if v_current->'cursor' <> 'null'::jsonb then
+    if v_cursor = 'null'::jsonb
+      or (v_cursor->>'createdAt')::timestamptz < (v_current->'cursor'->>'createdAt')::timestamptz
+      or ((v_cursor->>'createdAt')::timestamptz = (v_current->'cursor'->>'createdAt')::timestamptz
+        and (v_cursor->>'id')::uuid <= (v_current->'cursor'->>'id')::uuid) then
+      return jsonb_build_object('ok',false,'reason','invalid_summary');
+    end if;
+  end if;
 
   for v_entry in select value from jsonb_array_elements(p_memory_summary->'entries') loop
     if jsonb_typeof(v_entry) <> 'object' or case when jsonb_typeof(v_entry) = 'object' then (v_entry - array['kind','key','text','sourceMessageId','sourceAt','revision']) <> '{}'::jsonb else true end
@@ -158,6 +166,20 @@ begin
       ) then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
+    if v_current->'cursor' <> 'null'::jsonb and not exists (
+      select 1 from jsonb_array_elements(v_current->'entries') old(value)
+      where old.value->>'key' = v_key
+        and old.value->>'kind' = v_kind
+        and old.value->>'text' = v_text
+        and old.value->>'sourceMessageId' = v_source_id
+        and old.value->>'sourceAt' = v_source_at
+    ) and (
+      v_source_at::timestamptz < (v_current->'cursor'->>'createdAt')::timestamptz
+      or (v_source_at::timestamptz = (v_current->'cursor'->>'createdAt')::timestamptz
+        and v_source_id::uuid <= (v_current->'cursor'->>'id')::uuid)
+    ) then
+      return jsonb_build_object('ok',false,'reason','invalid_summary');
+    end if;
   end loop;
 
   for v_tombstone in select value from jsonb_array_elements(p_memory_summary->'tombstones') loop
@@ -183,6 +205,18 @@ begin
           and m.role = 'owner'
           and m.created_at = v_source_at::timestamptz
       ) then
+      return jsonb_build_object('ok',false,'reason','invalid_summary');
+    end if;
+    if v_current->'cursor' <> 'null'::jsonb and not exists (
+      select 1 from jsonb_array_elements(v_current->'tombstones') old(value)
+      where old.value->>'key' = v_key
+        and old.value->>'sourceMessageId' = v_source_id
+        and old.value->>'sourceAt' = v_source_at
+    ) and (
+      v_source_at::timestamptz < (v_current->'cursor'->>'createdAt')::timestamptz
+      or (v_source_at::timestamptz = (v_current->'cursor'->>'createdAt')::timestamptz
+        and v_source_id::uuid <= (v_current->'cursor'->>'id')::uuid)
+    ) then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
   end loop;
