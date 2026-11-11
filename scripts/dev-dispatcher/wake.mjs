@@ -41,6 +41,24 @@ export function nextWake(state,now=Date.now(),config=settings){
   if(Number.isFinite(sent))list.push({at:sent+30*60000,
    reason:'scope_plan_status_check',id});
  }
+ // A verified coding delivery may still have no PR and no later GitHub event.
+ // Schedule one explicit check, independent of dropped cron ticks. The signed
+ // current-plan Muse receipt is essential: a chat URL alone is not authority.
+ for(const [id,r] of Object.entries(state.tasks||{})){
+   if(r.status!=='assigned'||r.approved!==true||Number.isInteger(r.pr_number)||
+      !r.conversation_ref||!r.approval_hash)continue;
+   const verified=Object.values(state.actions||{}).some(a=>
+     a.task_id===id&&['assign','begin_scoped_coding'].includes(a.type)&&
+     a.status==='submitted'&&a.receipt?.courier==='muse'&&
+     a.delivery?.approval_hash===r.approval_hash&&
+     a.receipt?.conversation_url===r.conversation_ref);
+   const already=Object.values(state.actions||{}).some(a=>
+     a.task_id===id&&a.type==='pre_pr_reminder'&&
+     a.delivery?.approval_hash===r.approval_hash);
+   const sent=dt(r.last_submission_at);
+   if(verified&&!already&&Number.isFinite(sent))
+     list.push({at:sent+15*60000,reason:'pre_pr_status_check',id});
+ }
  // One scheduled deadline for unfinished coding; no blanket PR poll.
  for(const [id,r] of Object.entries(state.tasks||{})){
   if(r.github_state!=='open'||r.draft!==true||!r.approved||
