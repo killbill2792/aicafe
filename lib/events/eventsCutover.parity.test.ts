@@ -55,6 +55,7 @@ describe("event cutover parity at café-local date boundaries",()=>{
       [assessment],oldSource)).toEqual([]);
     expect(pendingEventDays([event],[],"2026-11-01","2026-11-01",
       [assessment],failedSource)).toHaveLength(1);
+  });
   it("reuses the Events notice writer without a second generic priority notice",()=>{
     // Event plan/change/report notices are already written by Events via
     // notifyOwner. The independent Task 7 prioritizer must not send a new
@@ -79,6 +80,5 @@ describe("event cutover parity at café-local date boundaries",()=>{
     expect(choosePriorities([{...base,ownerUserId:"different-owner",
       sourceId:independent.sourceId,kind:independent.kind}],now)[0].stableKey)
       .not.toBe(choosePriorities([independent],now)[0].stableKey);
-  });
   });
 });
