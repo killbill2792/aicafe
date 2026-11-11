@@ -184,8 +184,8 @@ begin
       )
       or v_text is null or char_length(v_text) not between 3 and 240
       or btrim(v_text) <> v_text
-      or v_text ~ '[0-9٠-٩۰-۹$€£]'
-      or v_text ~* '\m(price|prices|sales|revenue|profit|profits|cost|costs|payroll|wages?|salaries|salary|rent|bills?|bank|cash|fees?|margin|tax|refunds?|tips?|expenses?|financial|money|invoices?|payments?|discounts?|break[- ]even)\M'
+      or v_text ~ '[[:digit:]٠-٩۰-۹$€£¥₹₽₩₺₫₪₦₱]'
+      or v_text ~* '\m(price|prices|pricing|sales|revenue|income|profit|profits|cost|costs|payroll|wages?|salaries|salary|rent|bills?|bank|cash|fees?|margin|tax|refunds?|tips?|expenses?|financial|money|invoices?|payments?|discounts?|break[- ]even|budget|balance|transaction|metrics?|kpis?|unit sales)\M'
       or v_text ~* '\m(password|passcode|api[ _-]?key|secret|token|credential|authorization|permission|consent|approval|approved|authorize|mandate|execute|transfer|purchase|payout)\M'
       or coalesce(v_source_id,'') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
       or coalesce(v_source_at_text,'') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
