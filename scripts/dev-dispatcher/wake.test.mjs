@@ -14,7 +14,10 @@ const state={tasks:{X:{github_state:'open',draft:false,ci_state:'success',codex_
 test('isolated second repository settings generate distinct wake and no shared target',()=>{
  const a=nextWake(state,at,one),b=nextWake(state,at,two);
  assert.equal(a.due_at,new Date(at+300000).toISOString());assert.notEqual(a.key,b.key);
- assert.equal(nextWake(state,at+300001,one),null);
+ const overdue=nextWake(state,at+300001,one);
+ assert.equal(overdue.reason,'codex_settle');
+ assert.equal(overdue.due_at,new Date(at+305001).toISOString());
+ assert.equal(overdue.key,a.key);
 });
 test('Muse retries schedule 15-minute self-wake independent of cron',()=>{
  const s={tasks:{},actions:{x:{status:'planned',delivery_owner:'muse',
@@ -51,9 +54,37 @@ test('automatic Ready-triggered Codex receives a durable 20-minute watchdog wake
  assert.equal(due.reason,'codex_watchdog');
  assert.equal(due.due_at,new Date(at+20*60000).toISOString());
  assert.equal(nextWake(s,at,one).key,due.key);
- assert.equal(nextWake(s,at+20*60000+1,one),null);
+ const overdue=nextWake(s,at+20*60000+1,one);
+ assert.equal(overdue.reason,'codex_watchdog');
+ assert.equal(overdue.due_at,new Date(at+20*60000+5001).toISOString());
+ assert.equal(overdue.key,due.key);
  r.codex_in_progress_sha=sha;
  assert.equal(nextWake(s,at,one),null);
  delete r.codex_in_progress_sha;r.codex_referee_sha=sha;
  assert.equal(nextWake(s,at,one),null);
+});
+
+test('missing wake is reissued on same key only after bounded retry lease expires',async()=>{
+ const starting={tasks:{},actions:{one:{type:'assign',task_id:'6',status:'planned',
+  delivery_owner:'muse',created_at:new Date(at).toISOString()}}};
+ let latest=structuredClone(starting),calls=0;
+ const ledger={transaction:async fn=>{
+  const changed=await fn(structuredClone(latest));
+  if(changed===null)return {committed:false,state:latest};
+  latest=changed;return {committed:true,state:latest};
+ }};
+ const seen=[];const fetchFn=async(url,o)=>{
+  assert.ok(url.endsWith('/dispatches'));
+  seen.push(JSON.parse(o.body).inputs);
+  calls++;return {ok:true,status:204};
+ };
+ const first=await scheduleSelfWake({ledger,token:'mock',config:one,now:at,fetchFn});
+ assert.equal(first.status,'requested');
+ assert.equal((await scheduleSelfWake({ledger,token:'mock',config:one,now:at+5000,fetchFn})).status,'unchanged');
+ const late=await scheduleSelfWake({ledger,token:'mock',config:one,now:at+15*60000+1,fetchFn});
+ assert.equal(late.status,'requested');
+ assert.equal(late.key,first.key);
+ assert.equal(late.due_at,new Date(at+15*60000+5001).toISOString());
+ assert.equal(calls,2);
+ assert.notEqual(seen[0].due_at,seen[1].due_at);
 });
