@@ -3,7 +3,7 @@ import {settings} from './settings.mjs';
 import {loadQueue} from './queue-source.mjs';
 import {advanceApprovedProposals} from './proposal-stage.mjs';
 import {selectScopePlans,queueScopePlanReviews,acceptScopePlanDecisions,
-  effectiveSignedQueue} from './scope-authority.mjs';
+  effectiveSignedQueue,queueScopePlanRecovery} from './scope-authority.mjs';
 import {selectObservation,shouldRecheckMergedLanding} from './event-selection.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
@@ -162,7 +162,9 @@ async function main() {
     // A GitHub planning comment is evidence, NOT approval. It is bound to
     // a submitted scope-plan action and source-version, then proposed to Muse.
     const plans=selectScopePlans(scopeComments,sourceQueue,safety);
-    const scopeNotices=queueScopePlanReviews(safety,sourceQueue,plans);
+    const recovered=queueScopePlanRecovery(safety,sourceQueue,scopeComments,plans,{
+      checkMinutes:Number(process.env.DISPATCH_PLANNING_STATUS_CHECK_MINUTES)||30});
+    const scopeNotices=queueScopePlanReviews(recovered,sourceQueue,plans);
     const scopeApproved=acceptScopePlanDecisions(scopeNotices,sourceQueue,plans);
     queue=effectiveSignedQueue(sourceQueue,scopeApproved,plans);
     taskById=new Map(queue.tasks.map(t=>[t.id,t]));
