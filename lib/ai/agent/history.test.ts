@@ -104,6 +104,32 @@ describe("rolling thread memory primitives",()=>{
    sourceMessageId:source.id,sourceAt:source.createdAt,revision:1,
   }]})).toBeNull();
  });
+ it("tombstones entries evicted by the bounded memory cap",()=>{
+  let document=emptyThreadMemoryDocument();
+  const sources=Array.from({length:20},(_,index)=>owner(
+   "We prefer oat milk for staff drinks.",new Date(Date.now()+index*1000).toISOString()));
+  for(let index=0;index<sources.length;index++){
+   const suffix=String.fromCharCode(97+index);
+   document=applyThreadMemoryOperations(document,[remember(
+    sources[index],"preference:option_"+suffix,sources[index].text,
+   )],[threadMemorySource(sources[index])!]);
+  }
+  expect(document.entries).toHaveLength(20);
+  const next=owner("We prefer quiet morning music.",new Date(Date.now()+30_000).toISOString());
+  document=applyThreadMemoryOperations(document,[remember(
+   next,"preference:option_u",next.text,
+  )],[threadMemorySource(next)!]);
+  expect(document.entries).toHaveLength(20);
+  expect(document.entries.some(entry=>entry.key==="preference:option_a")).toBe(false);
+  expect(document.tombstones).toHaveLength(1);
+  expect(document.tombstones[0]).toMatchObject({
+   key:"preference:option_a",sourceMessageId:next.id,sourceAt:next.createdAt,
+  });
+  document=applyThreadMemoryOperations(document,[remember(
+   sources[0],"preference:option_a",sources[0].text,
+  )],[threadMemorySource(sources[0])!]);
+  expect(document.entries.some(entry=>entry.key==="preference:option_a")).toBe(false);
+ });
  it("rejects extra persisted fields, duplicate keys and entries newer than the document revision",()=>{
   const source=owner("We prefer oat milk for staff drinks.");
   const entry={kind:"preference",key:"preference:staff_drinks",text:source.text,
