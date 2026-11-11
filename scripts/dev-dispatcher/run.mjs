@@ -31,6 +31,7 @@ import { publishPrivateQueue } from "./private-owner-view.mjs";
 import {publishEmergencyViaGit,readApiPauseViaGit} from "./git-operations.mjs";
 import {recordLifecycleTransitions,projectLifecycle} from "./lifecycle-v3.mjs";
 import {recordRecoveryEvent,settleRecoveryRequests} from "./recovery-v3.mjs";
+import {dispatchPreferences} from "./owner-controls-v3.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -161,7 +162,8 @@ async function main() {
       ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
     },new Date().toISOString());
     const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
-      minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
+      minutes:dispatchPreferences(withFeedback).stall_minutes||
+        stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
     // A GitHub planning comment is evidence, NOT approval. It is bound to
     // a submitted scope-plan action and source-version, then proposed to Muse.
     const plans=selectScopePlans(scopeComments,sourceQueue,safety);
@@ -221,7 +223,7 @@ async function main() {
       }
     }
 
-    const assignments = dispatchFrontier(queue, copy.tasks);
+    const assignments = dispatchFrontier(queue, copy.tasks,null,dispatchPreferences(copy));
     const assigned = [];
     const nudges = [];
     const now = new Date().toISOString();
