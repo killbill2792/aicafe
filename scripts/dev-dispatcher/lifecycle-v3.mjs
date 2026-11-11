@@ -103,6 +103,10 @@ export function taskLifecycle(task,record={},state={},queue={},now=new Date().to
   else if(isMerged(r))planAction('VERIFY_INTEGRATION','GITHUB','merged_not_integrated');
   else if(!codeSubmitted){
     if(!deliveryVerified)planAction('DELIVER_OR_RECOVER_PROMPT','MUSE','no_verified_submission');
+    else if(r.github_effects?.CREATE_DRAFT_PR?.reason==='missing_pr_creator_install_token')
+      planAction('ESCALATE_MISSING_GITHUB_PR_WRITER','MUSE','verified_delivery_but_pr_writer_unavailable');
+    else if(r.github_effects?.CREATE_DRAFT_PR?.reason==='pr_creator_permission_denied')
+      planAction('ESCALATE_GITHUB_PR_WRITE_PERMISSION','MUSE','signed_pr_write_denied');
     else planAction('VERIFY_BRANCH_AND_PR','GITHUB','no_pr_evidence');
   }else if(ci==='FAILED'){
     if(r.ci_failure_kind==='startup_failure')planAction('RETRY_VERIFIED_CI_STARTUP','GITHUB','runner_startup_failure');
