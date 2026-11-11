@@ -61,7 +61,7 @@ test('authenticated Muse instruction links a branch but never executes unrelated
 
 test('every supported missing-data, skip and error class produces one deduped owner Muse notice',()=>{
  const state={tasks:{
-  ci:{task_id:'ci',pr_number:1,github_state:'open',head_sha:'a'.repeat(40),ci_state:'pending'},
+  ci:{task_id:'ci',pr_number:1,github_state:'open',head_sha:'a'.repeat(40),ci_state:'pending',last_commit_at:'2026-11-10T10:00:00Z'},
   red:{task_id:'red',pr_number:2,github_state:'open',head_sha:'b'.repeat(40),ci_state:'failure'},
   proof:{task_id:'proof',pr_number:3,status:'merged',merge_sha:'c'.repeat(40)},
   stall:{task_id:'stall',pr_number:4,stall_escalate:true,head_sha:'d'.repeat(40)},
