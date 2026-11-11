@@ -175,7 +175,7 @@ test('automatic green Ready transition times out without a manual review comment
  const record={...watchRecord(),ready_transition_at:'2026-11-10T10:00:00Z'};
  const check=at=>codexWatchDecision({record,comments:[],now:Date.parse(at)});
  assert.equal(check('2026-11-10T10:19:59Z').status,'pending');
- assert.deepEqual(check('2026-11-10T10:20:00Z'),{status:'escalate',head_sha:head});
+ assert.deepEqual(check('2026-11-10T10:20:00Z'),{status:'auto_review_missing',head_sha:head});
  assert.equal(codexWatchDecision({record,comments:[],reviews:[{
   commit_id:head,user:{login:'chatgpt-codex-connector[bot]'}}],
   now:Date.parse('2026-11-10T10:21:00Z')}).status,'receipt');
@@ -194,5 +194,44 @@ test('watchdog observes exact GitHub Ready state and never posts a duplicate tri
   throw Error('Unexpected receipt path '+path);
  }};
  const result=await inspectCodexWatch({github:gh,record,now:Date.parse('2026-11-10T10:21:00Z')});
- assert.deepEqual(result,{status:'escalate',head_sha:head});assert.equal(posted,0);
+ assert.deepEqual(result,{status:'auto_review_missing',head_sha:head});assert.equal(posted,0);
+});
+
+test('a missed automatic Ready event permits ONE verified explicit fallback on the same green head',async()=>{
+ const github=fakeGithub();
+ const record={...rec(),ready_transition_at:'2026-11-10T10:00:00Z',
+   codex_review_requested_sha:head,codex_state:'pending'};
+ assert.equal((await requestCodexReview({github,record,task})).status,'held');
+ assert.deepEqual(await requestCodexReview({github,record,task,autoMissFallback:true}),
+   {status:'requested',head_sha:head});
+ assert.equal(github.posted.length,1);
+ assert.match(github.posted[0],/@codex review/);
+ const repeated=await requestCodexReview({github,record:{...record,
+   codex_fallback_requested_sha:head},task,autoMissFallback:true});
+ assert.equal(repeated.status,'held');
+ assert.equal(github.posted.length,1);
+});
+test('Codex fallback fails closed on red/pending CI, stale SHA, draft and already running review',async()=>{
+ for(const changes of [{ci_state:'failure'},{ci_state:'pending'},
+   {draft:true},{ready_transition_at:null},
+   {codex_reviewed_sha:head},{codex_in_progress_sha:head}]){
+  const gh=fakeGithub();
+  const record={...rec(),ready_transition_at:'2026-11-10T10:00:00Z',
+    codex_review_requested_sha:head,...changes};
+  const outcome=await requestCodexReview({github:gh,record,task,autoMissFallback:true});
+  assert.equal(outcome.status,'held');
+  assert.equal(gh.posted.length,0);
+ }
+ const stale=fakeGithub();
+ stale.request=async path=>({state:'open',draft:false,head:{sha:'f'.repeat(40)}});
+ assert.equal((await requestCodexReview({github:stale,
+   record:{...rec(),ready_transition_at:'2026-11-10T10:00:00Z',
+     codex_review_requested_sha:head},task,autoMissFallback:true})).status,'stale');
+});
+test('a late explicit request restarts the 20-minute Codex watchdog instead of escalating immediately',()=>{
+ const record={...watchRecord(),ready_transition_at:'2026-11-10T10:00:00Z',
+   codex_fallback_requested_sha:head};
+ const c={...firstRequest,created_at:'2026-11-10T10:20:00Z'};
+ assert.equal(codexWatchDecision({record,comments:[c],now:Date.parse('2026-11-10T10:25:00Z')}).status,'pending');
+ assert.equal(codexWatchDecision({record,comments:[c],now:Date.parse('2026-11-10T10:40:00Z')}).status,'escalate');
 });
