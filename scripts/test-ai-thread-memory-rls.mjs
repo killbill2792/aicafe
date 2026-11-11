@@ -250,8 +250,8 @@ async function main() {
     const forged = await save(db, {
       expected: 4,
       document: memoryDoc({
-        revision: 5, cursor: { createdAt: AT_3, id: MESSAGE_A_3 },
-        entries: [entry(MESSAGE_A_3, AT_3, "We prefer almond milk for staff drinks.", 5)],
+        revision: 5, cursor: { createdAt: AT_4, id: MESSAGE_A_4 },
+        entries: [entry(MESSAGE_A_4, AT_4, "We prefer jazz music during prep.", 5)],
       }),
     });
     assert.equal(forged.reason, "invalid_summary");
@@ -347,7 +347,7 @@ async function main() {
     const first = await save(client, {
       expected: 4,
       document: memoryDoc({
-        revision: 5, cursor: { createdAt: AT_3, id: MESSAGE_A_3 },
+        revision: 5, cursor: { createdAt: AT_5, id: MESSAGE_A_5 },
         entries: [entry(MESSAGE_A_3, AT_3, "We prefer soy milk for staff drinks.", 4)],
       }),
     });
