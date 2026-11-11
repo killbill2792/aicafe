@@ -30,6 +30,7 @@ const THREAD_A = "33333333-3333-4333-8333-333333333333";
 const THREAD_A_OTHER = "55555555-5555-4555-8555-555555555555";
 const THREAD_B = "66666666-6666-4666-8666-666666666666";
 const THREAD_CAFE_B = "77777777-7777-4777-8777-777777777777";
+const THREAD_STRUCTURED = "88888888-8888-4888-8888-888888888888";
 const MESSAGE_A = "44444444-4444-4444-8444-444444444444";
 const MESSAGE_A_2 = "88888888-8888-4888-8888-888888888888";
 const MESSAGE_A_3 = "99999999-9999-4999-8999-999999999999";
@@ -37,6 +38,8 @@ const MESSAGE_OTHER_THREAD = "aaaaaaaa-0000-4000-8000-000000000001";
 const MESSAGE_CAFE_B = "cccccccc-0000-4000-8000-000000000001";
 const MESSAGE_A_4 = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const MESSAGE_A_5 = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+const MESSAGE_STRUCTURED_PROMPT = "12121212-1212-4121-8121-121212121212";
+const MESSAGE_STRUCTURED = "13131313-1313-4131-8131-131313131313";
 const MESSAGE_FINANCIAL = "00000000-0000-4000-8000-000000000001";
 const AT_1 = "2026-11-11T12:00:00.000Z";
 const AT_2 = "2026-11-11T12:01:00.000Z";
@@ -109,10 +112,12 @@ async function save(db, {
 
 async function insertOwnerMessage(db, {
   id, business = CAFE_A, thread = THREAD_A, owner = OWNER_A, at, text,
+  promptMessageId = null, response = null,
 }) {
   await db.query(
-    "insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,created_at) values($1,$2,$3,$4,$4,'owner','text',$5,$6,$7::timestamptz)",
-    [id, business, thread, owner, text, crypto.randomUUID(), at],
+    "insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,owner_input_prompt_message_id,owner_input_response,created_at) values($1,$2,$3,$4,$4,'owner','text',$5,$6,$7,$8::jsonb,$9::timestamptz)",
+    [id, business, thread, owner, text, crypto.randomUUID(), promptMessageId,
+      response ? JSON.stringify(response) : null, at],
   );
 }
 
@@ -224,6 +229,23 @@ async function main() {
     id: MESSAGE_CAFE_B, business: CAFE_B, thread: THREAD_CAFE_B, at: AT_5,
     text: "We prefer quiet morning music.",
   });
+  await client.query(
+    "insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content,client_message_id,created_at) values($1,$2,$3,$4,$4,'supervisor','text',$5::jsonb,$6,$7::timestamptz)",
+    [MESSAGE_STRUCTURED_PROMPT, CAFE_A, THREAD_STRUCTURED, OWNER_A,
+      JSON.stringify([{ type: "owner_question", questionId: "14141414-1414-4141-8141-141414141414",
+        title: { en: "Which drink should staff use?", es: "¿Qué bebida debe usar el personal?", ar: "ما المشروب الذي ينبغي استخدامه؟" },
+        input: { kind: "free_text", hint: { en: "Drink preference", es: "Preferencia", ar: "التفضيل" } } }]),
+      crypto.randomUUID(), AT_1],
+  );
+  await insertOwnerMessage(client, {
+    id: MESSAGE_STRUCTURED, thread: THREAD_STRUCTURED, at: AT_2,
+    text: "I submitted the selected drink.",
+    promptMessageId: MESSAGE_STRUCTURED_PROMPT,
+    response: {
+      questionId: "14141414-1414-4141-8141-141414141414",
+      action: "supply", value: "We prefer oat milk for staff drinks.",
+    },
+  });
 
   await asActor(OWNER_A, async db => {
     const visible = await db.query(
@@ -233,6 +255,15 @@ async function main() {
     assert.deepEqual(visible.rows[0].memory_summary, {
       version: 1, revision: 0, cursor: null, entries: [], tombstones: [], retry: null,
     });
+
+    const structuredSaved = await save(db, {
+      thread: THREAD_STRUCTURED, expected: 0,
+      document: memoryDoc({
+        revision: 1, cursor: { createdAt: AT_2, id: MESSAGE_STRUCTURED },
+        entries: [entry(MESSAGE_STRUCTURED, AT_2, "We prefer oat milk for staff drinks.", 1)],
+      }),
+    });
+    assert.deepEqual(structuredSaved, { ok: true, revision: 1 });
 
     const saved = await save(db, {
       expected: 0,
