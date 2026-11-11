@@ -223,3 +223,23 @@ test('hash-bound Muse yes resumes the same-tick frontier with one assignment',as
  assert.equal(out.actions['assign:6'].status,'planned');
  assert.equal(out.actions['assign:6'].delivery_owner,'muse');
 });
+
+test('a cached merged PR never downgrades or cancels its existing landing repair',async()=>{
+ const {reconcileGithub}=await import('./core.mjs');
+ const merged='a'.repeat(40),at='2026-11-11T11:30:00Z';
+ const id='landing_failed:T:'+merged;
+ const state={tasks:{T:{task_id:'T',pr_number:407,github_state:'merged',
+    status:'merged',merge_sha:merged,merged_at:at,landing_failure:'bot landing failure'}},
+   actions:{[id]:{task_id:'T',type:'landing_failed',status:'planned',head_sha:merged}}};
+ const noRefetch=reconcileGithub(state,[],{});
+ assert.equal(noRefetch.tasks.T.github_state,'merged');
+ assert.equal(noRefetch.tasks.T.merge_sha,merged);
+ assert.equal(noRefetch.actions[id].status,'planned');
+ const last='2026-11-11T12:00:00Z';
+ const fromGitHub=reconcileGithub(state,[],{407:{merged:true,merge_sha:merged,
+   merged_at:at,last_landing_check_at:last,landing_failure:'bot landing failure'}});
+ assert.equal(fromGitHub.tasks.T.github_state,'merged');
+ assert.equal(fromGitHub.tasks.T.merged_at,at);
+ assert.equal(fromGitHub.tasks.T.last_landing_check_at,last);
+ assert.equal(fromGitHub.actions[id].status,'planned');
+});
