@@ -5,6 +5,14 @@ import {settings} from './settings.mjs';
 import {approvalMatches,validConversationUrl} from './delivery.mjs';
 import {editableFiles,resolveTaskBase,approved} from './core.mjs';
 const SHA=/^[a-f0-9]{40}$/;
+// The caller invokes this ONLY for a rejected preflight read. The POST is
+// caught inside ensureApprovedDraftPr and must never pass through this path.
+export function classifyPrCreatePreflightError(error){
+ if(error?.code==='RATE_LIMIT')return {status:'blocked',reason:'github_rate_limited'};
+ if(error?.status===401||error?.status===403)
+   return {status:'blocked',reason:'github_pr_preflight_read_permission_denied'};
+ return {status:'blocked',reason:'github_pr_preflight_read_unavailable'};
+}
 export async function ensureApprovedDraftPr({github,writer,task,record,records={},
   verifiedDelivery=false,queueRepo=settings.repo,branchPrefix=settings.naming.branch_prefix}={}){
  if(!github||!writer||!task||!record)return {status:'blocked',reason:'missing_evidence'};
