@@ -22,7 +22,7 @@ Source version changes invalidate pending read-only planning handoffs. Invalid/u
 
 ## What isn't automatically signed
 
-The existing four proposals contain only suggestive file areas and **zero** exact approved files. The already given "yes" authorizes the next planning step, **not** arbitrary code edits, protected SQL, deployments or merge. This is why read-only planning is safe and directly executable while code assignment is not. Proposals that already contain a final owner-approved scope continue using the original coding assignment path. 
+The existing four proposals contain only suggestive file areas and **zero** exact approved files. The already given "yes" authorizes the next planning step, **not** arbitrary code edits, protected SQL, deployments or merge. This is why read-only planning is safe and directly executable while code assignment is not. Proposals that already contain a final owner-approved scope continue using the original coding assignment path.
 
 ## Acceptance and verification
 
