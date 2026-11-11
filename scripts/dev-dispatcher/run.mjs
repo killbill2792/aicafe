@@ -666,7 +666,12 @@ main().catch(async error => {
  const secrets=[process.env.GITHUB_TOKEN,process.env.DISPATCH_LEDGER_TOKEN].filter(Boolean);
  const detail=secrets.reduce((s,t)=>s.split(t).join('[REDACTED]'),String(error.message||error)).slice(0,250);
  console.error('Dispatcher failed: '+detail);
- if(process.env.DISPATCH_LEDGER_TOKEN){
+ if(error.code==='RATE_LIMIT'){
+  // The private ledger token already reports 0 remaining. Repeated writes
+  // would only extend a GitHub outage or further exhaust the shared budget.
+  // This failed Actions run is an explicit status; no notice is claimed sent.
+  console.error('Private ledger API budget exhausted; skip futile Muse alert write; retry only after GitHub reset '+(error.reset_at||'unknown')+'.');
+ }else if(process.env.DISPATCH_LEDGER_TOKEN){
   try{
    const ledger=new GitHubLedger({repo:settings.ledger.repo,token:process.env.DISPATCH_LEDGER_TOKEN,
     path:settings.ledger.path});
