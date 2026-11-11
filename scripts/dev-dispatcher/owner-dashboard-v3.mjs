@@ -8,6 +8,7 @@ import {timingSafeEqual} from 'node:crypto';
 import {GitHubLedger} from './ledger.mjs';
 import {settings} from './settings.mjs';
 import {applyOwnerDashboardEdit} from './owner-controls-v3.mjs';
+import {readLedgerViaGit} from './git-operations.mjs';
 
 const safeEqual=(a,b)=>{
  const x=Buffer.from(String(a||'')),y=Buffer.from(String(b||''));
@@ -92,10 +93,13 @@ export function ownerDashboardHandler({readState,editState,ownerPassword,musePas
   }
  };
 }
-export function startOwnerDashboard({ownerPassword,musePassword,ledger,port=7359}={}){
+export function startOwnerDashboard({ownerPassword,musePassword,ledger,port=7359,
+   readTransport='git'}={}){
  if(!ledger)throw Error('Private ledger client required');
  const handler=ownerDashboardHandler({
-  readState:async()=>{await ledger.verifyPrivate();return (await ledger.load()).state;},
+  readState:async()=>readTransport==='git'
+    ?readLedgerViaGit({repo:ledger.repo,token:ledger.token})
+    :(await ledger.verifyPrivate(),(await ledger.load()).state),
   editState:async(edit,opts)=>{
    const result=await ledger.transaction(state=>{
     const updated=applyOwnerDashboardEdit(state,edit,opts);
@@ -122,7 +126,8 @@ if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
   const ledger=new GitHubLedger({repo:settings.ledger.repo,token,path:settings.ledger.path});
   startOwnerDashboard({ledger,ownerPassword,
    musePassword:process.env.DASHBOARD_MUSE_PASSWORD,
-   port:Number(process.env.DASHBOARD_PORT)||7359});
+   port:Number(process.env.DASHBOARD_PORT)||7359,
+   readTransport:process.env.DASHBOARD_READ_TRANSPORT==='api'?'api':'git'});
   console.log('Private dashboard bound to 127.0.0.1 only');
  }
 }
