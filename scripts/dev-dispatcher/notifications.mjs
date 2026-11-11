@@ -124,3 +124,30 @@ export async function reportMuseSignalRestored({ledger,repo}){
    needs:'No owner action; Muse confirms actual owner-message delivery with authenticated receipts'}));
  });
 }
+
+// Dashboard and private queue are projections of the ONE ledger, not sources
+// of truth. A failed write must still become a Muse-readable owner incident.
+const projectionKinds=new Set(['owner_dashboard_publish_failed','private_queue_publish_failed']);
+export async function reportProjectionFailure({ledger,kind,identity}){
+ if(!projectionKinds.has(kind)||typeof identity!=='string'||!identity)
+  throw Error('Unrecognized owner communication publication');
+ return ledger.transaction(state=>onlyChange(state,queueOwnerIssue(state,{
+  kind,identity,
+  message:'GitHub could not publish '+(kind==='private_queue_publish_failed'
+   ?'the private Muse owner queue':'the public-safe owner dashboard')+'.',
+  needs:'GitHub retries on the next trusted reconciliation; the private ledger remains authoritative and the existing Muse notice stays pending'})));
+}
+export async function reportProjectionRestored({ledger,kind,identity}){
+ if(!projectionKinds.has(kind)||typeof identity!=='string'||!identity)
+  throw Error('Unrecognized owner communication publication');
+ return ledger.transaction(state=>{
+  const key='notice:'+noticeHash({kind,identity});
+  if(!state.owner_alerts?.[key])return null;
+  const cleared=resolveOwnerIssueIdentity(state,{kind,identity});
+  return onlyChange(state,queueOwnerIssue(cleared,{
+   kind:kind+'_restored',identity,
+   message:'GitHub restored the '+(kind==='private_queue_publish_failed'
+     ?'private Muse owner queue':'public-safe owner dashboard')+' publication.',
+   needs:'No owner action; outstanding Muse messages still require authenticated delivery receipts'}));
+ });
+}
