@@ -30,6 +30,7 @@ jobs:
           time.sleep(max(0,seconds))
           PY
       - name: Checkout trusted main for emergency reporting
+        if: always()
         uses: actions/checkout@v4
         with:
           ref: main
