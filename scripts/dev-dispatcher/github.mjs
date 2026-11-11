@@ -16,6 +16,9 @@ export async function githubFailure(response,kind='GitHub',token=''){
   ' retry-after='+h('retry-after');
  const safe=token?detail.split(token).join('[REDACTED]'):detail;
  const error=new Error(safe);
+ // Preserve a typed HTTP status for expected conditions such as a branch
+ // legitimately absent before ChatGPT's first push. Do not parse log text.
+ if(Number.isInteger(response.status))error.status=response.status;
  // Explicit GitHub primary-rate-limit telemetry is not an authorization
  // failure. Callers must fail closed without a futile second ledger write.
  const primary=response.headers?.get?.('x-ratelimit-remaining')==='0';
