@@ -1,6 +1,8 @@
 import {describe,expect,it} from "vitest";
 import {cafeToday} from "@/lib/metrics/core/clock";
-import {pendingEventDays} from "./eventsLookahead.server";
+import {pendingEventDays,eventAssessmentSourceHash} from "./eventsLookahead.server";
+import {eventPlanFacts} from "@/lib/ai/supervisor/loop/eventReadiness.server";
+import {effectHash} from "@/lib/ai/supervisor/loop/engine";
 import {cityScanWindows} from "./eventsLookahead";
 import type {CafeEvent} from "@/lib/data/cafeEvents.server";
 
@@ -35,5 +37,23 @@ describe("event cutover parity at café-local date boundaries",()=>{
     };
     expect(cityScanWindows("2026-11-01",previous,"city-location","unsearched"))
       .toEqual([{from:"2026-11-01",to:"2026-11-14",reason:"initial"}]);
+  });
+  it("reassesses saved events after a source-coverage failure or correction",()=>{
+    const complete={status:"complete" as const,researchedSourceWindows:2,
+      successfulSourceWindows:2,failedSourceWindows:0,partialSourceWindows:0,
+      unsearchedSourceWindows:0,lastCompletedAt:"2026-10-31T12:00:00Z"};
+    const incomplete={...complete,status:"partial" as const,
+      successfulSourceWindows:1,failedSourceWindows:1};
+    const oldSource=eventAssessmentSourceHash({cityCoverage:complete});
+    const failedSource=eventAssessmentSourceHash({cityCoverage:incomplete});
+    expect(failedSource).not.toBe(oldSource);
+    const assessment={startDate:"2026-11-01",
+      factsHash:effectHash(eventPlanFacts([event])),sourceHash:oldSource};
+    expect(pendingEventDays([event],[],"2026-11-01","2026-11-01",
+      [assessment],oldSource)).toEqual([]);
+    expect(pendingEventDays([event],[],"2026-11-01","2026-11-01",
+      [assessment],failedSource)).toHaveLength(1);
+    // A source failure never converts the saved confirmed event to "absent".
+    expect(event.status).toBe("found");
   });
 });
