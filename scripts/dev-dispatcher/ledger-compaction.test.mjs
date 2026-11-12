@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {compactPrivateLedger} from './ledger-compaction.mjs';
+import {queueOwnerAlerts} from './alerts.mjs';
 
 const now='2026-11-12T00:50:00.000Z';
 const old='2026-11-11T20:00:00.000Z';
@@ -70,4 +71,30 @@ test('reject unsafe compaction config, preserve unknown history',()=>{
    unknown:{status:'reserved',reserved_at:'invalid'}}};
  const r=compactPrivateLedger(s,{now,targetBytes:100_000});
  assert.equal(r.state.delayed_wake_history.unknown.status,'reserved');
+});
+
+test('withdrawn owner question safely reactivates after private history compaction',()=>{
+ const initial={version:1,tasks:{T:{task_id:'T',pr_number:444,
+   owner_question:'Please review exact signed question'}},
+   actions:{large:{status:'submitted',metadata:'x'.repeat(102_000)}},owner_alerts:{}};
+ const queue={tasks:[]};
+ const queued=queueOwnerAlerts(initial,{queue,openPrs:[]});
+ const key=Object.keys(queued.owner_alerts).find(k=>queued.owner_alerts[k].kind==='owner_decision');
+ assert.ok(key);
+ const withdrawn=queueOwnerAlerts({...queued,tasks:{T:{...queued.tasks.T,owner_question:null}}},
+   {queue,openPrs:[]});
+ assert.equal(withdrawn.owner_alerts[key].status,'cancelled_no_longer_needed');
+ const compacted=compactPrivateLedger(withdrawn,{now,targetBytes:100_000});
+ assert.ok(compacted.archive);
+ assert.equal(compacted.state.owner_alerts[key].question,undefined);
+ const restored=queueOwnerAlerts({...compacted.state,
+   tasks:{T:{...queued.tasks.T,owner_question:'Please review exact signed question'}}},
+   {queue,openPrs:[]});
+ const notice=restored.owner_alerts[key];
+ assert.equal(notice.status,'planned');
+ assert.equal(notice.delivery_owner,'muse');
+ assert.equal(notice.recipient,'owner');
+ assert.match(notice.question,/Please review exact signed question/);
+ assert.match(notice.owner_message,/Please review exact signed question/);
+ assert.equal(notice.notice_hash,queued.owner_alerts[key].notice_hash);
 });
