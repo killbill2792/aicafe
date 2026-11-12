@@ -10,6 +10,7 @@ import {recoveryIdentity} from './recovery-v3.mjs';
 import {dispatchFrontier} from './core.mjs';
 import {dispatchPreferences} from './owner-controls-v3.mjs';
 import {verifiedCodingConversation} from './verified-chat-v3.mjs';
+import {settings} from './settings.mjs';
 const time=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?Date.parse(v):null;
 const ago=(stamp,clock)=>time(stamp)===null?null:Math.floor((clock-time(stamp))/60000);
 const sha=s=>createHash('sha256').update(JSON.stringify(s)).digest('hex');
@@ -23,11 +24,13 @@ export function inspectMuseEligibleTasks(queue,state){
       prerequisite_pr:a.prerequisite_pr||null}));
 }
 export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGapMinutes=15,
-  codingIdleMinutes=20,deliveryGapMinutes=15,queue=null}={}){
+  codingIdleMinutes=20,deliveryGapMinutes=15,codexWarnMinutes=5,
+  codexEscalateMinutes=10,queue=null}={}){
   if(state?.version!==1||!state.tasks||!state.actions)throw Error('Invalid private ledger');
   const clock=time(now);
-  if(clock===null||[scheduleGapMinutes,codingIdleMinutes,deliveryGapMinutes].some(v=>
-    !Number.isFinite(v)||v<1))throw Error('Invalid watchdog configuration');
+  if(clock===null||[scheduleGapMinutes,codingIdleMinutes,deliveryGapMinutes,codexWarnMinutes,
+    codexEscalateMinutes].some(v=>!Number.isFinite(v)||v<1)||
+   codexEscalateMinutes<codexWarnMinutes)throw Error('Invalid watchdog configuration');
   const incidents=[],tasks=[];
   const eligible=inspectMuseEligibleTasks(queue,state);
   if(eligible.length)
@@ -81,9 +84,13 @@ export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGa
     const codexAge=ago(r.ready_transition_at,clock);
     if(r.draft===false&&r.ci_state==='success'&&
       r.codex_state!=='clean'&&r.codex_state!=='findings'&&
-      r.codex_reviewed_sha!==r.head_sha&&codexAge!==null&&codexAge>20)
+      r.codex_reviewed_sha!==r.head_sha&&codexAge!==null&&
+      codexAge>=codexWarnMinutes)
       incidents.push({kind:'CODEX_NOT_RECEIVED',task_id:id,pr_number:r.pr_number,
-        head_sha:r.head_sha,age_minutes:codexAge,action:'REQUEST_CODEX_IF_ELIGIBLE'});
+        head_sha:r.head_sha,age_minutes:codexAge,
+        action:codexAge>=codexEscalateMinutes?
+          'REQUEST_CODEX_IF_ELIGIBLE':'MUSE_NOTIFY_OWNER',
+        note:'Check current-head request and review evidence; never post duplicate @codex review'});
   }
   for(const [id,a] of Object.entries(state.actions)){
     const delay=ago(a.created_at,clock);
@@ -91,6 +98,17 @@ export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGa
       delay!==null&&delay>deliveryGapMinutes)
       incidents.push({kind:'MUSE_DELIVERY_PENDING',task_id:a.task_id||null,
         action_id:id,age_minutes:delay,action:'MUSE_INSPECT_ORIGINAL_CHAT'});
+  }
+  // After dependencies are INTEGRATED and proved, proposed work needs an
+  // owner scope conversation, not an automatic start or fabricated approval.
+  for(const item of queue?.tasks||[]){
+    if(item?.state!=='proposed'||!item.id||!Array.isArray(item.depends_on))continue;
+    if(item.depends_on.every(parent=>{
+      const p=state.tasks[parent];
+      return p&&['integrated_proven','released_proven'].includes(p.status)&&
+        p.integration_proof?.conclusion==='success';
+    }))incidents.push({kind:'SCOPE_PROPOSAL_READY',task_id:item.id,
+      action:'MUSE_NOTIFY_OWNER',note:'Ask owner to review a proposed plan/scope; no auto-approval'});
   }
   const ownerPending=Object.values(state.owner_alerts||{}).filter(a=>
     a.delivery_owner==='muse'&&['planned','claimed','uncertain'].includes(a.status));
@@ -113,7 +131,8 @@ export function museRecoveryCandidates(health,state,{repo,actor,now=health?.obse
       'UNASSIGNED_APPROVED_TASKS','DELIVERED_TASK_NO_PR','CI_PENDING_STALE'].includes(i.kind)))
     intents.set('global',{intent:'RECONCILE',task_id:null,pr_number:null,expected_head_sha:null});
   for(const i of health.incidents){
-    if(!['SUSPECTED_CODING_STALL','CODEX_NOT_RECEIVED'].includes(i.kind))continue;
+    if(!['SUSPECTED_CODING_STALL','CODEX_NOT_RECEIVED'].includes(i.kind)||
+      i.action==='MUSE_NOTIFY_OWNER')continue;
     if(!state.tasks[i.task_id]||state.tasks[i.task_id].head_sha!==i.head_sha)continue;
     intents.set(i.task_id+':'+i.action,{intent:i.action,task_id:i.task_id,
       pr_number:i.pr_number,expected_head_sha:i.head_sha});
@@ -237,7 +256,13 @@ export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,a
   const state=JSON.parse(readFileSync(ledgerPath,'utf8'));
   const backlog=existsSync(backlogPath)?JSON.parse(readFileSync(backlogPath,'utf8')):null;
   const queue=queuePath?JSON.parse(readFileSync(queuePath,'utf8')):null;
-  const health=inspectMuseHealth(state,{now,queue});
+  const policy=settings.muse_watch||{};
+  const health=inspectMuseHealth(state,{now,queue,
+    scheduleGapMinutes:policy.schedule_gap_minutes??15,
+    codingIdleMinutes:policy.coding_idle_minutes??20,
+    deliveryGapMinutes:policy.delivery_gap_minutes??15,
+    codexWarnMinutes:policy.codex_warn_minutes??5,
+    codexEscalateMinutes:policy.codex_escalate_minutes??10});
   const candidates=museRecoveryCandidates(health,state,{repo,actor,now});
   const planned=planMuseBacklog(reconcileMuseBacklog(backlog||{version:1,items:{}},state),candidates,now);
   const delivered=await deliverMuseRecovery(planned,{token,now,fetchImpl,
