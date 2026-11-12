@@ -31,7 +31,6 @@ function mockDB(){
  const now={...previous};
  const writes:Record<string,unknown>[]=[];
  const storedObservations=new Map<string,{version:string;observedAt:string}>();
- const failRestore={value:false};
  // SQL keeps the first observation for an already-active same-version item.
  m.apply.mockImplementation(async (_db:unknown,_business:unknown,published:typeof bundle)=>{
   for(const item of published.items){
@@ -65,8 +64,6 @@ function mockDB(){
     update(input:Record<string,unknown>){
      const query={eq(_k:string,_v:unknown){return query;},
       then(resolve:(v:{error:unknown})=>unknown){
-       if(failRestore.value&&input.menu_checked_local_day===null)
-        return Promise.resolve({error:{message:"db unavailable"}}).then(resolve);
        Object.assign(now,input);writes.push({...input});
        return Promise.resolve({error:null}).then(resolve);
       }};
@@ -75,7 +72,7 @@ function mockDB(){
    return q;
   },rpc
  };
- return {db:db as unknown as SupabaseClient,rpc,writes,now,storedObservations,failRestore};
+ return {db:db as unknown as SupabaseClient,rpc,writes,now,storedObservations};
 }
 beforeEach(()=>{
  for(const fn of Object.values(m))fn.mockReset();
@@ -113,24 +110,44 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(m.canonical).not.toHaveBeenCalled();
   expect(f.writes).toHaveLength(0);
  });
- it("restores the old checkpoint and forces retry when publication promotion fails",async()=>{
+ it("persists the first receipt as pending when promotion fails after price import",async()=>{
   m.apply.mockRejectedValueOnce(new Error("incomplete provider relationships"));
   const f=mockDB();
   await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow(
    "incomplete provider relationships");
-  expect(f.now.menu_last_updated).toBe("2026-11-09T15:00:00Z");
+  expect(m.canonical).toHaveBeenCalledOnce();
+  expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
+  expect(f.now.menu_copied_at).toBe(bundle.receipt.observedAt);
   expect(f.now.menu_checked_local_day).toBeNull();
   expect(f.rpc).not.toHaveBeenCalled();
  });
- it("keeps an interrupted publication eligible even when checkpoint restore fails",async()=>{
+ it("keeps receipt pending when a canonical writer fails",async()=>{
+  m.canonical.mockRejectedValueOnce(new Error("database unavailable"));
   const f=mockDB();
-  f.failRestore.value=true;
-  m.apply.mockRejectedValueOnce(new Error("database unavailable"));
-  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toMatchObject({
-   category:"unavailable"});
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow("database unavailable");
   expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
-  expect(f.now.menu_copied_at).toEqual(expect.any(String));
+  expect(f.now.menu_copied_at).toBe(bundle.receipt.observedAt);
   expect(f.now.menu_checked_local_day).toBeNull();
+  expect(m.apply).not.toHaveBeenCalled();
+ });
+ it("reconciles a delayed pre-presence interruption with the first receipt",async()=>{
+  const later={...bundle,receipt:{...bundle.receipt,observedAt:"2026-11-10T16:45:00Z"}};
+  m.bundle.mockResolvedValueOnce(bundle).mockResolvedValueOnce(later);
+  m.apply.mockRejectedValueOnce(new Error("presence SQL temporarily offline"));
+  const f=mockDB();
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow("presence SQL temporarily offline");
+  expect(f.now.menu_copied_at).toBe(bundle.receipt.observedAt);
+  expect(f.now.menu_checked_local_day).toBeNull();
+  m.canonical.mockResolvedValueOnce({imported:1,matched:1,needsReview:0,created:0,changed:0});
+  const result=await copyToastPublishedMenu(f.db,scope);
+  expect(m.bundle).toHaveBeenCalledTimes(2);
+  expect(m.apply).toHaveBeenLastCalledWith(f.db,business,expect.objectContaining({
+   receipt:expect.objectContaining({observedAt:bundle.receipt.observedAt})}));
+  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history",
+   expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
+  expect(result.changed).toBe(0);
+  expect(result.verifiedPriceChanges).toBe(1);
+  expect(f.now.menu_checked_local_day).not.toBeNull();
  });
  it("reuses the committed observation for price proof after a partial RPC outage",async()=>{
   const firstObserved=bundle.receipt.observedAt;
