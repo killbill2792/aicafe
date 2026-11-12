@@ -93,18 +93,26 @@ export async function discoverMergedPrEvidence({github,state,mainSha,
    if(!Number.isInteger(total)||total<1||total>300){
     blocked.push({...item,reason:'merged_pr_diff_count_unbounded'});continue;
    }
-   const files=[];
+   const entries=[];
    for(let page=1;page<=Math.ceil(total/100);page++){
     const part=await github.request('/pulls/'+item.pr_number+
       '/files?per_page=100&page='+page);
     if(!Array.isArray(part))throw Error('Incomplete PR changed-file page');
-    files.push(...part.map(f=>f.filename));
+    entries.push(...part);
    }
-   if(files.length!==total||new Set(files).size!==total){
+   // Count GitHub file entries separately from their effective edit paths:
+   // a rename changes BOTH the old source and the new destination.
+   if(entries.length!==total||new Set(entries.map(f=>f.filename)).size!==total||
+      entries.some(f=>typeof f.filename!=='string'||
+        !f.filename.length||
+        (f.status==='renamed'&&
+         (typeof f.previous_filename!=='string'||!f.previous_filename.length)))){
     blocked.push({...item,reason:'merged_pr_changed_files_incomplete'});continue;
    }
+   const paths=[...new Set(entries.flatMap(f=>
+     f.status==='renamed'?[f.previous_filename,f.filename]:[f.filename]))];
    const approved=state.scope_authorizations?.[item.task_id];
-   const unsigned=files.filter(path=>!approved?.edits?.includes(path));
+   const unsigned=paths.filter(path=>!approved?.edits?.includes(path));
    candidates.push({...item,head_sha:pr.head.sha,branch:pr.head.ref,
      base_branch:pr.base.ref,merged_at:pr.merged_at,
      conversation_url:parseChatMarker(pr.body),
