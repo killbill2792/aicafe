@@ -64,7 +64,9 @@ test('merged #443 is linked from trusted merge title + owner + task marker, not 
  assert.equal(next.tasks['10'].approval_hash,s.tasks['10'].approval_hash);
  assert.equal(next.tasks['10'].scope_approval_hash,s.tasks['10'].scope_approval_hash);
  assert.deepEqual(next.tasks['9'],s.tasks['9']);
- assert.deepEqual(next.actions,s.actions);
+ assert.equal(next.actions['assign:10'].status,'cancelled_merged_pr_recovered');
+ assert.equal(s.actions['assign:10'].status,'planned',
+   'the original read-only task state remains untouched');
  assert.equal(next.tasks['10'].integration_proof,undefined);
 });
 test('additional merged PR file is shown as owner scope audit, never silently approved',async()=>{
@@ -115,4 +117,18 @@ test('historic Git candidate scan is limited to one per hour after previous audi
   mainSha:main,now:'2026-11-12T06:10:00Z',
   gitHistory:()=>{throw Error('No historic read allowed yet')}});
  assert.equal(result.checked,false);assert.deepEqual(calls,[]);
+});
+
+
+test('historical merge never cancels uncertain/submitted receipts or other task actions',()=>{
+ const s=state();
+ s.actions['assign:10'].status='uncertain';
+ s.actions['assign:9']={task_id:'9',type:'assign',status:'planned'};
+ const next=applyMergedPrEvidence(s,{candidates:[{
+   task_id:'10',pr_number:443,merge_sha:merge,head_sha:head,
+   branch:'feat/aicafe-task-10-effect-gateway',base_branch:'main',
+   merged_at:'2026-11-12T04:35:07Z',unsigned_files:[]}],checked:true});
+ assert.equal(next.actions['assign:10'].status,'uncertain');
+ assert.deepEqual(next.actions['assign:9'],s.actions['assign:9']);
+ assert.deepEqual(next.tasks['9'],s.tasks['9']);
 });
