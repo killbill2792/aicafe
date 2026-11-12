@@ -61,7 +61,10 @@ export async function GET(request:Request){
    if(member.error||member.data?.role!=="owner"){failed++;continue;}
    const cafe=await db.from("businesses").select("timezone").eq("id",row.business_id).single();
    if(cafe.error||!cafe.data){failed++;continue;}
-   const today=formatInTimeZone(new Date(),cafe.data.timezone||"America/Los_Angeles","yyyy-MM-dd");
+   // A missing café setting must not silently select another timezone.
+   const timezone=typeof cafe.data.timezone==="string"&&cafe.data.timezone.trim()?cafe.data.timezone:null;
+   if(!timezone){failed++;continue;}
+   const today=formatInTimeZone(new Date(),timezone,"yyyy-MM-dd");
    const yesterday=utcDateOffset(today,-1);
    const p:LoopProposal={
      id:row.id,businessId:row.business_id,ownerUserId:row.owner_user_id,
@@ -78,7 +81,7 @@ export async function GET(request:Request){
     // The new path owns ALL price windows/notices for this proposal; never
     // also invoke the legacy calendar-day monitor on this cron tick.
     const result=await runVerifiedToastPriceTick(db,repo,row,scope,
-     new Date().toISOString(),cafe.data.timezone||"America/Los_Angeles",p);
+     new Date().toISOString(),timezone,p);
     if(result==="reported")reported++;
     if(result!=="not_price")continue;
    }
@@ -86,7 +89,7 @@ export async function GET(request:Request){
    // never runs the new verified-window writer until release gates hold.
    if(row.status==="manual_pending" && isPendingPriceCapability(row.capability_id)){
     await remindPendingToastPrice(db,row,new Date().toISOString(),
-     cafe.data.timezone||"America/Los_Angeles");
+     timezone);
     continue;
    }
    // Shadow performs no new-path writes; the old monitor remains sole writer.
