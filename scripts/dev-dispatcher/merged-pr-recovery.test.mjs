@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {recentMergeTitles,eligibleMissingTaskIds,discoverMergedPrEvidence,
- applyMergedPrEvidence} from './merged-pr-recovery.mjs';
+ applyMergedPrEvidence,recoveredMergeIntegrationAllowed} from './merged-pr-recovery.mjs';
 const merge='3'.repeat(40),head='a'.repeat(40),main='b'.repeat(40);
 const task10={task_id:'10',status:'assigned',approved:true,
  approval_hash:'f'.repeat(64),scope_approval_hash:'c'.repeat(64),
@@ -131,4 +131,15 @@ test('historical merge never cancels uncertain/submitted receipts or other task 
  assert.equal(next.actions['assign:10'].status,'uncertain');
  assert.deepEqual(next.actions['assign:9'],s.actions['assign:9']);
  assert.deepEqual(next.tasks['9'],s.tasks['9']);
+});
+
+
+test('historically recovered unsigned merged PR cannot be labelled integrated-proven',()=>{
+ assert.equal(recoveredMergeIntegrationAllowed({
+   pr_link_recovery:'verified_git_merge_and_owner_pr_marker',
+   recovered_pr_unsigned_files:['lib/unapproved.ts']}),false);
+ assert.equal(recoveredMergeIntegrationAllowed({
+   pr_link_recovery:'verified_git_merge_and_owner_pr_marker',
+   recovered_pr_unsigned_files:[]}),true);
+ assert.equal(recoveredMergeIntegrationAllowed({status:'merged'}),true);
 });
