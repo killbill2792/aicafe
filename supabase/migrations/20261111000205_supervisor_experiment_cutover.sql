@@ -200,6 +200,9 @@ begin
     and h.old_price_cents=v_before::bigint and h.new_price_cents=v_target::bigint
     and h.old_price_cents is distinct from h.new_price_cents
     and h.toast_observed_at is not null and h.toast_restaurant_guid is not null
+    and old.approved_at is not null
+    and h.toast_observed_at >= old.approved_at
+    and (h.toast_effective_at is null or h.toast_effective_at >= old.approved_at)
     and l.verified_at is not null
     and s.menu_copied_at>=h.toast_observed_at-interval '20 minutes'
     and s.menu_last_updated=h.toast_publication_version
