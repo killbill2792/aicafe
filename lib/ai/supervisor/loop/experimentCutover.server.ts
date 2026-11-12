@@ -304,6 +304,8 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
  const firstContextChange=(contextChanges.data??[])
   .find(entry=>contextChangeBreaksApprovedPrice(entry,receipt));
  const storedAt=initial.data?.source_reference?.interruptedAt;
+ const priorInterruption=typeof storedAt==="string"&&
+  Number.isFinite(Date.parse(storedAt))?storedAt:null;
  const continuity=trialSourceInterruption({
   receipt,finalEndAt,asOf:now,current:current.data,
   firstPriceChangeAt:changes.data?.[0]?.toast_observed_at??null,
