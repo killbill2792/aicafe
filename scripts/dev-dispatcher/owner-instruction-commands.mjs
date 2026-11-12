@@ -80,8 +80,8 @@ const sameCommand=(a,b)=>{
 };
 const validTarget=(target,kind,parsed)=>{
  if(!target||typeof target!=='object'||Array.isArray(target))return false;
- if(target.task_id!=null&&target.task_id!=='__global__'&&
-    parsed.task_id&&target.task_id!==parsed.task_id)return false;
+ if(target.task_id!=null&&parsed.task_id&&
+    target.task_id!==parsed.task_id)return false;
  if(target.pr_number!=null&&parsed.pr_number!=null&&target.pr_number!==parsed.pr_number)return false;
  if(kind==='control'&&target.pr_number!=null)return false;
  return true;
@@ -153,6 +153,11 @@ export function applyMuseOwnerInstruction(state,receipt,{actor,now=new Date().to
    }
    const task=next.tasks?.[taskId];
    if(!task){event.reason='unknown_task';return next;}
+   if(['REQUEST_CODEX_IF_ELIGIBLE','RETRY_CI_IF_SAFE',
+        'MARK_READY_IF_ELIGIBLE','REFRESH_BRANCH_IF_SAFE','MERGE_IF_ELIGIBLE']
+       .includes(parsed.intent)&&task.github_state!=='open'){
+     event.reason='pr_not_open';return next;
+   }
    if(task.pr_number!==prNumber&&prNumber!==null){
      event.reason='task_pr_mismatch';return next;
    }
