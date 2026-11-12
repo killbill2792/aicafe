@@ -856,7 +856,12 @@ async function main() {
     const projection=await ledger.transaction(latest=>{
       const withEffects=recordGithubEffects(latest,githubEffects);
       const withOwnerNotices=recordPrWriterOwnerNotices(withEffects||latest,githubEffects);
-      const projected=recordLifecycleTransitions(withOwnerNotices,queue);
+      // A completed trusted reconciliation closes the last generic emergency.
+      // A subsequent outage must create a fresh incident cycle, not be hidden
+      // by a permanently submitted/queued stable failure identity.
+      const restored=resolveOwnerIssueIdentity(withOwnerNotices,{
+        kind:'dispatcher_emergency',identity:'trusted-dispatcher:failure'});
+      const projected=recordLifecycleTransitions(restored,queue);
       const result=settleRecoveryRequests(projected,projectLifecycle(projected,queue));
       return JSON.stringify(result)===JSON.stringify(latest)?null:result;
     });
