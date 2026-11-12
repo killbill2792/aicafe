@@ -24,7 +24,7 @@ function mockDB(){
  const now={...previous};
  const writes:Record<string,unknown>[]=[];
  const storedObservations=new Map<string,{version:string;observedAt:string}>();
- const failVerifyOnce={value:false},failRecord={value:false};
+ const failVerifyOnce={value:false},failRecord={value:false},failSuperseded={value:false};
  const verifyReceipt={value:null as string|null};
  const verifiedResult={value:true};
  // SQL preserves first active same-version item's observation on replay.
@@ -46,6 +46,8 @@ function mockDB(){
     now.menu_pending_observations.push(observed);
    return {error:null,data:[...now.menu_pending_observations]};
   }
+  if(name==="toast_reconcile_superseded_menu_history")
+   return {error:failSuperseded.value?{message:"historic proof unavailable"}:null,data:!failSuperseded.value};
   if(name==="toast_verify_existing_price_history"){
    if(failVerifyOnce.value){failVerifyOnce.value=false;
     return {error:{message:"temporary SQL outage"},data:null};}
@@ -78,7 +80,7 @@ function mockDB(){
    return q;
   },rpc
  };
- return {db:db as unknown as SupabaseClient,rpc,writes,now,storedObservations, failVerifyOnce,failRecord,verifyReceipt,verifiedResult};
+ return {db:db as unknown as SupabaseClient,rpc,writes,now,storedObservations, failVerifyOnce,failRecord,failSuperseded,verifyReceipt,verifiedResult};
 }
 beforeEach(()=>{
  for(const fn of Object.values(m))fn.mockReset();
@@ -224,6 +226,30 @@ describe("POS0 verified single-bundle source handoff",()=>{
   m.bundle.mockResolvedValueOnce(next);
   await copyToastPublishedMenu(f.db,scope);
   expect(f.now.menu_pending_observations).toEqual([next.receipt.observedAt]);
+ });
+ it("reconciles unfinished V1 price evidence before advancing to V2",async()=>{
+  const f=mockDB();m.apply.mockRejectedValueOnce(new Error("V1 promotion failed"));
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow("V1 promotion failed");
+  const next={...bundle,receipt:{...bundle.receipt,
+   publicationVersion:"2026-11-11T15:00:00Z",observedAt:"2026-11-11T16:00:00Z"}};
+  m.bundle.mockResolvedValueOnce(next);
+  await copyToastPublishedMenu(f.db,scope);
+  expect(f.rpc).toHaveBeenCalledWith("toast_reconcile_superseded_menu_history",
+   expect.objectContaining({p_version:bundle.receipt.publicationVersion,
+    p_first_observed_at:bundle.receipt.observedAt}));
+  expect(f.now.menu_pending_observations).toEqual([next.receipt.observedAt]);
+  expect(f.now.menu_last_updated).toBe(next.receipt.publicationVersion);
+ });
+ it("retains unfinished V1 state if historical price proof fails",async()=>{
+  const f=mockDB();m.apply.mockRejectedValueOnce(new Error("V1 promotion failed"));
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow("V1 promotion failed");
+  const writes=f.writes.length;f.failSuperseded.value=true;
+  m.bundle.mockResolvedValueOnce({...bundle,receipt:{...bundle.receipt,
+   publicationVersion:"2026-11-11T15:00:00Z",observedAt:"2026-11-11T16:00:00Z"}});
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toMatchObject({category:"unavailable"});
+  expect(f.writes).toHaveLength(writes);
+  expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
+  expect(f.now.menu_pending_observations).toEqual([bundle.receipt.observedAt]);
  });
  it("reuses the committed observation for price proof after a partial RPC outage",async()=>{
   const firstObserved=bundle.receipt.observedAt;
