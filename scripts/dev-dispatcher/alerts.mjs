@@ -142,7 +142,14 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
   return entry;
  };
  // Preserve historical notice identity and submitted status. Do not re-send.
- for(const notice of Object.values(next.owner_alerts))route(notice);
+ for(const notice of Object.values(next.owner_alerts))
+   // These terminal notice tombstones were archived with their full content.
+   // Do not recreate optional message/routing fields on every ordinary tick:
+   // it causes new archive files for the same old notices indefinitely.
+   // When a withdrawn question genuinely returns, add() below constructs a
+   // complete CURRENT owner notice, restoring delivery fields and identity.
+   if(!['resolved','cancelled_no_longer_needed'].includes(notice.status))
+     route(notice);
  const add=(kind,task_id,pr_number,question,source_sha=null)=>{
   if(typeof question!=='string'||!question.trim()||question.length>1200)return;
   if(pr_number!=null&&(!Number.isInteger(pr_number)||pr_number<1))return;

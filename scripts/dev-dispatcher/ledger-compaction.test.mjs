@@ -98,3 +98,22 @@ test('withdrawn owner question safely reactivates after private history compacti
  assert.match(notice.owner_message,/Please review exact signed question/);
  assert.equal(notice.notice_hash,queued.owner_alerts[key].notice_hash);
 });
+
+
+test('already-archived terminal notices stay compact across ordinary reconciliations',()=>{
+ // A real merged-main ledger repeatedly re-archived 71 terminal tombstones
+ // because ordinary queue routing re-added fields that compaction removed.
+ const terminal={kind:'owner_decision',task_id:'T',pr_number:440,
+   notice_hash:'same-signed-identity',status:'cancelled_no_longer_needed',
+   created_at:old};
+ const state={version:1,tasks:{},actions:{pending:{status:'planned',
+   private_metadata:'x'.repeat(105_000)}},
+   owner_alerts:{'notice:same-signed-identity':terminal}};
+ const proposed=queueOwnerAlerts(state,{queue:{tasks:[]},openPrs:[],now});
+ assert.deepEqual(proposed.owner_alerts['notice:same-signed-identity'],terminal,
+   'terminal tombstone must not be re-enriched during unrelated reconciliations');
+ const after=compactPrivateLedger(proposed,{now,targetBytes:100_000});
+ assert.equal(after.archive,null,'no duplicate archive of already compacted tombstone');
+ assert.equal(after.state.owner_alerts['notice:same-signed-identity'].status,
+   'cancelled_no_longer_needed');
+});
