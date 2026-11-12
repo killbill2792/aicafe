@@ -11,6 +11,7 @@ set statement_timeout = '30s';
 -- Replace it with owner-only INSERT while retaining the existing member read
 -- policy and service-role canonical POS/sync access; compatibility is part of
 -- the mandatory production-schema staging rehearsal.
+-- Reason: Remove the broad member-write policy because it permits receipt forgery; owner-only append replaces it.
 -- squawk-ignore ban-drop-policy
 drop policy if exists "members write price history" on public.menu_price_history;
 create policy "owner append canonical price history" on public.menu_price_history
