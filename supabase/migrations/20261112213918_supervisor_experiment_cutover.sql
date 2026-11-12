@@ -72,6 +72,86 @@ create policy supervisor_8a_windows_owner_read
   where m.business_id=supervisor_monitor_windows.business_id
    and m.user_id=(select auth.uid()) and m.role='owner'));
 
+-- Task 10 permits authenticated owner history writes and older menu RLS
+-- permits member edits. Neither is authority to stamp a Toast publication.
+-- Gate the ORIGINAL write (not only the later read): authenticated menu edits
+-- cannot fabricate provider context, and member import receipts remain non-Toast.
+-- SECURITY INVOKER makes current_user the actual PostgreSQL request role.
+create function public.supervisor_8a_protect_toast_menu_source()
+ returns trigger language plpgsql security invoker set search_path='' as $
+begin
+ if current_user not in ('anon','authenticated') then return new;end if;
+ if tg_op='INSERT' then
+  if new.catalog_source='toast' or
+     new.pos_item_id ~* '^toast:' or
+     new.toast_publication_state is distinct from 'unknown' or
+     new.toast_publication_version is not null or
+     new.toast_publication_observed_at is not null then
+   raise exception 'toast_menu_source_service_role_only' using errcode='42501';
+  end if;
+ elsif new.toast_publication_state is distinct from old.toast_publication_state or
+       new.toast_publication_version is distinct from old.toast_publication_version or
+       new.toast_publication_observed_at is distinct from old.toast_publication_observed_at or
+       ((old.catalog_source='toast' or new.catalog_source='toast' or
+          old.pos_item_id ~* '^toast:' or new.pos_item_id ~* '^toast:')
+        and (new.price_cents is distinct from old.price_cents or
+             new.pos_item_id is distinct from old.pos_item_id or
+             new.catalog_source is distinct from old.catalog_source or
+             new.pos_pricing_strategy is distinct from old.pos_pricing_strategy)) then
+  raise exception 'toast_menu_source_service_role_only' using errcode='42501';
+ end if;
+ return new;
+end;$;
+revoke all on function public.supervisor_8a_protect_toast_menu_source()
+ from public,anon,authenticated;
+create trigger supervisor_8a_protect_toast_menu_source
+ before insert or update on public.menu_items
+ for each row execute function public.supervisor_8a_protect_toast_menu_source();
+
+-- The Task 10 legacy authenticated import route may append non-Toast
+-- connected_pos rows, but must never forge Toast-stamped history or later
+-- tamper with an existing server-verified receipt.
+create function public.supervisor_8a_protect_toast_price_history()
+ returns trigger language plpgsql security invoker set search_path='' as $
+declare protected_source boolean;
+begin
+ if current_user not in ('anon','authenticated') then
+  if tg_op='DELETE' then return old;end if;
+  return new;
+ end if;
+ if tg_op='DELETE' then
+  protected_source:=old.source_provider='toast' or
+   old.toast_restaurant_guid is not null or
+   old.toast_publication_version is not null or
+   old.toast_observed_at is not null or
+   old.toast_effective_at is not null;
+ else
+  protected_source:=new.source_provider='toast' or
+   new.toast_restaurant_guid is not null or
+   new.toast_publication_version is not null or
+   new.toast_observed_at is not null or
+   new.toast_effective_at is not null;
+  if tg_op='UPDATE' then
+   protected_source:=coalesce(protected_source,false) or
+    old.source_provider='toast' or
+    old.toast_restaurant_guid is not null or
+    old.toast_publication_version is not null or
+    old.toast_observed_at is not null or
+    old.toast_effective_at is not null;
+  end if;
+ end if;
+ if coalesce(protected_source,false) then
+  raise exception 'toast_history_source_service_role_only' using errcode='42501';
+ end if;
+ if tg_op='DELETE' then return old;end if;
+ return new;
+end;$;
+revoke all on function public.supervisor_8a_protect_toast_price_history()
+ from public,anon,authenticated;
+create trigger supervisor_8a_protect_toast_price_history
+ before insert or update or delete on public.menu_price_history
+ for each row execute function public.supervisor_8a_protect_toast_price_history();
+
 -- Capture every actual canonical Toast price-context mutation at database time.
 -- The latest menu publication stamp is NOT when a strategy first changed.
 -- A later unrelated menu publication must never erase an in-window change.
