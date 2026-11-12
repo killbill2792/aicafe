@@ -70,7 +70,7 @@ export const THREAD_MEMORY_MAX_ENTRIES = 20;
 export const THREAD_MEMORY_MAX_TOMBSTONES = 40;
 export const THREAD_MEMORY_MAX_TEXT = 240;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const isoTimestamp = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/;
+const isoTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const validTimestamp = (value: unknown): value is string =>
   typeof value === "string" && isoTimestamp.test(value) && Number.isFinite(Date.parse(value));
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
