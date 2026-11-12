@@ -22,7 +22,7 @@ const location="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const scope={business_id:business,restaurant_guid:restaurant,location_id:location,
  toast_time_zone:"America/Los_Angeles",closeout_hour:4};
 const now=new Date("2026-10-23T19:00:00-07:00");
-function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,legacyChecked=false){
+function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,legacyChecked=false,pending=false){
  let lastMenu=legacyChecked?"2026-10-23T00:00:00Z":
   alreadyCopied?"2026-10-22T00:00:00Z":null;
  const writes:Array<Record<string,unknown>>=[];
@@ -40,7 +40,7 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
      ?{scopes_available:scopes}:table==="toast_optional_sync_state"
       ?{menu_last_updated:lastMenu,menu_copied_at:copyAt,
         roster_copied_at:rosterAt,attendance_copied_at:attendanceAt,
-        menu_checked_local_day:stale?"2026-10-23":null,
+        menu_checked_local_day:pending?null:stale?"2026-10-23":alreadyCopied?"2026-10-22":null,
         roster_local_day:stale?"2026-10-23":null,
         labor_local_day:stale?"2026-10-23":null,
         operational_sources:operationalSources}:null,error:null};},
@@ -94,6 +94,12 @@ describe("first-time Toast catalog before sales",()=>{
    expect(await ensureToastFirstCatalog(denied.db,scope,now,Date.now()+20000)).toBe(false);
    expect(m.catalog).not.toHaveBeenCalled();
  });
+ it("retries an interrupted first catalog even when copied-at was stamped",async()=>{
+  const f=mockDB({menus:true},true,false,false,true);
+  expect(await ensureToastFirstCatalog(f.db,scope,now,Date.now()+20000)).toBe(true);
+  expect(m.catalog).toHaveBeenCalledOnce();
+  expect(f.writes.some(w=>w.menu_checked_local_day==="2026-10-23")).toBe(true);
+ });
  it("copies when a legacy menu timestamp exists but no canonical copy stamp",async()=>{
    const f=mockDB({menus:true},false,true,true);
    await ensureToastFirstCatalog(f.db,scope,now,Date.now()+20000);
@@ -119,6 +125,14 @@ describe("independent optional Toast source phases",()=>{
   });
   await syncToastOptionalSources(f.db,scope,now,Date.now()+20000);
   expect(m.catalog).not.toHaveBeenCalled();
+  expect(f.writes.some(w=>w.menu_checked_local_day==="2026-10-23")).toBe(true);
+ });
+ it("retries unchanged Toast metadata when a prior publication is pending",async()=>{
+  const f=mockDB({menus:true},true,false,false,true);
+  m.request.mockImplementation(async(path:string)=>path==="/menus/v2/metadata"?
+   {restaurantGuid:restaurant,lastUpdated:"2026-10-22T00:00:00Z"}:[]);
+  await syncToastOptionalSources(f.db,scope,now,Date.now()+20000);
+  expect(m.catalog).toHaveBeenCalledOnce();
   expect(f.writes.some(w=>w.menu_checked_local_day==="2026-10-23")).toBe(true);
  });
  it("copies the trusted bundle version, not a stale preflight metadata version",async()=>{
