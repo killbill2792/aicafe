@@ -249,6 +249,9 @@ BEGIN
  EXCEPTION WHEN sqlstate '22023' THEN failed:=true;END;
  PERFORM pg_temp.pos0d_assert(failed,
    'completed publication cannot reopen old receipt exception');
+ PERFORM pg_temp.pos0d_assert(NOT public.toast_verify_existing_price_history(
+   b,r,item_b,'2026-11-09T12:00:00Z',now(),675),
+   'completed version cannot mint another fresh retry price receipt');
  UPDATE public.toast_optional_sync_state SET menu_checked_local_day=NULL
  WHERE business_id=b AND restaurant_guid=r;
  failed:=false;
