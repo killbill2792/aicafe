@@ -1,5 +1,8 @@
 -- One bounded, provenance-checked recap on the existing private thread row.
 -- No separate memory table, recurring job, or live-turn integration is introduced.
+-- Bound schema locking and full-table constraint verification on populated threads.
+set lock_timeout = '5s';
+set statement_timeout = '45s';
 alter table public.ai_threads
   add column memory_summary jsonb not null default
     '{"version":1,"revision":0,"cursor":null,"entries":[],"tombstones":[],"retry":null}'::jsonb;
@@ -36,7 +39,10 @@ alter table public.ai_threads
           and coalesce(memory_summary->'retry'->>'at','') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
         else false end
     else false end
-  );
+  ) not valid;
+
+-- Verify existing rows with a weaker table lock than an immediate CHECK scan.
+alter table public.ai_threads validate constraint ai_threads_memory_summary_shape;
 
 comment on column public.ai_threads.memory_summary is
   'Bounded nonfinancial owner-authored thread context; provenance and revision are validated by save_ai_thread_memory.';
