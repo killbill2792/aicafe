@@ -117,7 +117,7 @@ export function resolveObsoleteLedgerOverflowNotices(state,{
    const createdAt=Date.parse(notice?.created_at||'');
    if(notice?.kind!=='dispatcher_emergency'||notice.status!=='planned'||
      notice.receipt||!Number.isFinite(createdAt)||createdAt>resolvedAt||
-     !/^run:\\d+:failure$/.test(notice.identity||'')||
+     !/^run:\d+:failure$/.test(notice.identity||'')||
      typeof notice.question!=='string'||!notice.question.startsWith(prefix))
        continue;
    if(!next)next=structuredClone(state);
