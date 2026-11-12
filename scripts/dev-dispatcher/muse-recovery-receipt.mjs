@@ -41,13 +41,13 @@ export function museRecoveryReceipt(request,{repo=settings.repo,actor}={}){
  const request_id=recoveryIdentity(identity);
  if(r.request_id!=null&&r.request_id!==request_id)
    throw Error('Recovery request identity mismatch');
- return {kind:'muse_recovery',version:1,project_id:'aicafe',
+ return {kind:'muse_recovery',version:1,project_id:settings.naming.task_prefix,
    ...identity,request_id,event_id:request_id,submitted_at:requested_at};
 }
 export function validateMuseRecoveryReceipt(receipt,{
  actor,actors={},now=new Date().toISOString()}={}){
  if(!receipt||receipt.kind!=='muse_recovery'||receipt.version!==1||
-    receipt.project_id!=='aicafe'||receipt.repo!==settings.repo||
+    receipt.project_id!==settings.naming.task_prefix||receipt.repo!==settings.repo||
     !actor||actors[actor]!=='muse'||receipt.actor!==actor||
     !HEX64.test(receipt.request_id||'')||
     receipt.event_id!==receipt.request_id||
