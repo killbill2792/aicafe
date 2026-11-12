@@ -44,6 +44,14 @@ async function expectSqlState(task,expected){
  assert.equal(actual,expected,"expected SQLSTATE "+expected);
  assertions++;
 }
+async function expectSourceBoundary(task,reason){
+ let failure=null;
+ try{await task();}catch(error){failure=error;}
+ assert.equal(failure?.code,"42501",reason+" must fail with access denied");
+ assert.match(failure.message,/toast_(menu|history)_source_service_role_only/,
+  reason+" must be blocked by the source-provenance guard");
+ assertions++;
+}
 async function proposal(capability,product,target=500,cafe=ids.business,owner=ids.owner,
  thread=ids.thread){
  const id=randomUUID();proposalIds.push(id);
@@ -122,6 +130,49 @@ async function run(){
   "authenticated cannot forge monitoring windows");
  check(!(await one(admin,"select has_function_privilege('authenticated','public.supervisor_8a_claim_notice(uuid,uuid,uuid,text,date,smallint)','EXECUTE') as allowed")).allowed,
   "authenticated cannot claim notices");
+ // Reproduce Codex P1 #4556916767 at the REAL database write boundary:
+ // RLS may permit a cafe member to UPDATE menu_items and INSERT imported
+ // price history, but cannot grant authority to invent a Toast publication.
+ const writeAsOwner=(sql,params)=>role(workerA,"authenticated",ids.owner,
+  async c=>c.query(sql,params));
+ const attackHistory="insert into public.menu_price_history (business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,changed_at,toast_restaurant_guid,toast_publication_version,toast_observed_at) values($1,$2,450,500,'connected_pos','toast',$3,$4,$5,$3)";
+ await expectSourceBoundary(()=>writeAsOwner(attackHistory,
+  [ids.business,ids.item,observed,ids.restaurant,version]),
+  "member-inserted forged Toast price-history publication");
+ await expectSourceBoundary(()=>writeAsOwner(
+  "insert into public.menu_price_history (business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,toast_restaurant_guid,toast_publication_version,toast_observed_at) values($1,$2,450,500,'imported','csv',$3,$4,$5)",
+  [ids.business,ids.item,ids.restaurant,version,observed]),
+  "member-imported row with forged Toast provenance fields");
+ await expectSourceBoundary(()=>writeAsOwner(
+  "update public.menu_items set price_cents=500 where id=$1",[ids.item]),
+  "member-mutated Toast price");
+ await expectSourceBoundary(()=>writeAsOwner(
+  "update public.menu_items set pos_pricing_strategy='TIME_SPECIFIC_PRICE' where id=$1",
+  [ids.item]),"member-mutated Toast strategy");
+ await expectSourceBoundary(()=>writeAsOwner(
+  "update public.menu_items set toast_publication_version='fake-menu-version' where id=$1",
+  [ids.item]),"member-forged Toast publication version");
+ await expectSourceBoundary(()=>writeAsOwner(
+  "insert into public.menu_items (id,business_id,name,base_name,price_cents,catalog_source,pos_item_id,toast_publication_state) values($1,$2,'Fake Toast item','Fake Toast item',500,'toast',$3,'active')",
+  [randomUUID(),ids.business,pos]),"member-inserted fake Toast item");
+ const original=await one(admin,
+  "select price_cents,pos_pricing_strategy,toast_publication_version from public.menu_items where id=$1",
+  [ids.item]);
+ check(Number(original.price_cents)===500&&original.pos_pricing_strategy==="BASE_PRICE"&&
+  original.toast_publication_version===version,
+  "attacks did not change the authoritative Toast menu state");
+ // Existing legitimate owner editing and non-Toast CSV imports must survive.
+ await writeAsOwner("update public.menu_items set price_cents=451 where id=$1",
+  [ids.manualItem]);
+ check(Number((await one(admin,"select price_cents from public.menu_items where id=$1",
+  [ids.manualItem])).price_cents)===451,"manual menu price edit is still allowed");
+ await writeAsOwner(
+  "insert into public.menu_price_history (business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider) values($1,$2,450,451,'connected_pos','other_import')",
+  [ids.business,ids.manualItem]);
+ check(Number((await one(admin,
+  "select count(*)::integer as n from public.menu_price_history where business_id=$1 and menu_item_id=$2 and source_provider='other_import'",
+  [ids.business,ids.manualItem])).n)===1,
+  "authenticated non-Toast connected_pos import is still permitted");
  // Both price capabilities must reject an owner Done without exact matching
  // source publication; no source-history claim from local/cross-café money.
  for(const cap of ["alex.menu_price_change.v1","alex.drink_price_experiment.v1"]){
