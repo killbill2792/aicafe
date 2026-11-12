@@ -105,8 +105,16 @@ export const priceExperimentCapability=registerLoopCapability({
       return r.success?r.data:null;
     }));
     // Fewer customers overall outweighs a better item number: never "keep" then.
-    const measured=guard.status==="broken"&&evaluated.recommendation==="keep"
+    // A seven-day baseline cannot be compared as if it covered ten or ninety
+    // days. Preserve actual N-day sales but never manufacture a comparable
+    // historical sales lift or a keep/revert decision from unequal periods.
+    const horizonComparable=durationDays===7;
+    const guardAdjusted=guard.status==="broken"&&evaluated.recommendation==="keep"
       ?{...evaluated,recommendation:"adjust" as const}:evaluated;
+    const measured=horizonComparable?guardAdjusted:{...guardAdjusted,
+      recommendation:"adjust" as const,
+      revenueChangeVsBaselineCents:null,
+      ingredientContributionChangeVsBaselineCents:null};
     // A terminal, partially covered window is insufficient evidence, not
     // an ongoing trial. Use the SAME finalized status in every domain-owned
     // delivery surface (Operations payload, source facts, and thread report).

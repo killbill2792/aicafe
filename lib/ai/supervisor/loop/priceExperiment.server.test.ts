@@ -39,6 +39,20 @@ describe("owner-agreed N-day price experiment duration",()=>{
   expect(result.monitorSpec.durationDays).toBe(7);
   expect(result.effect).toMatchObject({durationDays:7});
  });
+ it("does not present unequal seven-day baseline comparisons as N-day measured lift",async()=>{
+  const {effect}=await priceExperimentCapability.simulate(scope,{
+   productId,increaseCents:10,days:10});
+  const samples=Array.from({length:10},(_,i)=>({
+   businessDate:new Date(Date.UTC(2026,10,1+i)).toISOString().slice(0,10),
+   observation:{units:20,netSalesCents:10200,coverage:"actual"},source:"order_lines",
+  }));
+  const report=await priceExperimentCapability.report(scope,effect,samples,true);
+  expect(report.status).toBe("complete");
+  expect(report.recommendation).toBe("adjust");
+  expect(report.result).toMatchObject({trialDurationDays:10,
+   revenueChangeVsBaselineCents:null,
+   ingredientContributionChangeVsBaselineCents:null});
+ });
  it("rejects invalid, overlong and fractional durations rather than silently substituting seven",async()=>{
   for(const days of [0,91,1.5,-1]){
    await expect(priceExperimentCapability.simulate(scope,{productId,increaseCents:10,days}))
