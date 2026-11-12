@@ -157,7 +157,7 @@ test('verified Muse owner instruction applies exactly once through the existing 
  const initial={version:1,tasks:{'9':{approved:true}},actions:{}};
  const command={kind:'owner_instruction',event_id:'owner_speech_1',
    target:{task_id:'9'},text:'Set Task 9 priority to 90',
-   submitted_at:'2026-11-12T05:01:00Z'};
+   submitted_at:new Date().toISOString()};
  const input={receipt:command,actor:'known-muse'};
  const first=applyReceipts(initial,[input],{'known-muse':'muse'});
  assert.equal(first.owner_controls.per_task['9'].dispatch_priority,90);
@@ -171,7 +171,7 @@ test('owner words in an untrusted Git commit never grant owner edit authority',(
  const initial={version:1,tasks:{'9':{approved:true}},actions:{}};
  const command={kind:'owner_instruction',event_id:'owner_speech_2',
    target:{task_id:'9'},text:'Owner said set Task 9 priority to 95',
-   submitted_at:'2026-11-12T05:01:00Z'};
+   submitted_at:new Date().toISOString()};
  const other=applyReceipts(initial,[{receipt:command,actor:'stranger'}],
    {'known-muse':'muse'});
  assert.equal(other.owner_controls,undefined);
@@ -197,7 +197,7 @@ test('unsupported Muse command records an explicit blocking outcome, never a fal
 test('full private Git receipt scan to owner control uses actor, filename and original words',async()=>{
  const utterance={kind:'owner_instruction',event_id:'owner_muse_full_1',
    target:{task_id:'9'},text:'Set Task 9 priority to 90',
-   submitted_at:'2026-11-12T05:01:00Z'};
+   submitted_at:new Date().toISOString()};
  const name=receiptFilename(utterance),file='dispatcher/receipts/'+name;
  const ledger={request:async key=>{
    if(key==='/contents/dispatcher/receipts?ref=main')
