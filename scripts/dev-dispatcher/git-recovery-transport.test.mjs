@@ -134,7 +134,8 @@ test('trusted ledger Git-CAS atomically consumes acknowledged command, preservin
   git(['clone','-q',bare,reader],root);
   const saved=JSON.parse(readFileSync(join(reader,'dispatcher','state.json'),'utf8'));
   assert.equal(saved.recovery_requests[request.request_id].status,'OBSERVED');
-  assert.equal(saved.git_recovery_processed_files[filename],env.signature);
+  assert.equal(saved.git_recovery_processed_files,undefined,
+    'consumed file tombstones are compacted from active private ledger');
   const read=scanMuseGitRecoveryDirectory(reader,{secret,actors,now});
   assert.equal(read.accepted.length,0,'consumed signed Git file not left in active inbox');
   assert.equal(pushMuseGitRecovery(args).status,'already_acknowledged');
