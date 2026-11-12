@@ -1,5 +1,6 @@
 // Git transport only. Never authorize a GitHub action with a prompt/receipt.
-import {mkdtempSync,rmSync,readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {mkdtempSync,rmSync,readFileSync,writeFileSync,mkdirSync,
+  existsSync,unlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -8,6 +9,7 @@ import {assertLedgerShape,sanitizeLedger} from './ledger.mjs';
 import {compactPrivateLedger} from './ledger-compaction.mjs';
 import {renderPrivateQueue} from './private-owner-view.mjs';
 import {settings} from './settings.mjs';
+import {museOperationsContract} from './muse-operations-contract.mjs';
 
 const validRepo = value => typeof value==='string' && /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(value);
 const validBranch = value => typeof value==='string' &&
@@ -192,12 +194,48 @@ export async function transactLedgerViaGit({repo=settings.ledger.repo,token,
    updated.owner_alerts||={};
    sanitizeLedger(updated);
    const compacted=compactPrivateLedger(updated);
-   writeFileSync(file,JSON.stringify(compacted.state,null,2)+'\n');
    const archived=saveCompactionArchive(root,compacted);
+   // Once a signed recovery request has a durable ledger acceptance/rejection,
+   // its file is no longer needed for processing. Delete it in the SAME
+   // non-force Git CAS commit while retaining its full Git history and the
+   // authoritative recovery_requests/recovery_rejections audit record.
+   // Do not delete a file changed after intake: compare the exact HMAC.
+   const consumed=[];
+   for(const [name,signature] of Object.entries(
+     compacted.state.git_recovery_processed_files||{})){
+     if(!/^[a-f0-9]{64}\.json$/.test(name)||
+       !/^[a-f0-9]{64}$/.test(signature||''))continue;
+     const relative='dispatcher/recovery-requests/'+name;
+     const cmdPath=join(root,relative);
+     if(!existsSync(cmdPath))continue;
+     let envelope;
+     try{envelope=JSON.parse(readFileSync(cmdPath,'utf8'));}catch{continue;}
+     if(envelope?.request?.request_id!==name.slice(0,-5)||
+        envelope.signature!==signature)continue;
+     unlinkSync(cmdPath);
+     consumed.push(relative);
+   }
+   // The request/rejection record is durable; consumed inbox filenames do
+   // not need permanent retention in the active state. Their Git history is
+   // immutable audit evidence. Keep tombstones only for still-present files.
+   for(const name of Object.keys(compacted.state.git_recovery_processed_files||{}))
+     if(!existsSync(join(root,'dispatcher/recovery-requests',name)))
+       delete compacted.state.git_recovery_processed_files[name];
+   if(!Object.keys(compacted.state.git_recovery_processed_files||{}).length)
+     delete compacted.state.git_recovery_processed_files;
+   writeFileSync(file,JSON.stringify(compacted.state,null,2)+'\n');
    const view=join(root,settings.ledger.owner_view_path);
    mkdirSync(dirname(view),{recursive:true});
    writeFileSync(view,renderPrivateQueue(compacted.state,{repo})+'\n');
-   git(['add','--',settings.ledger.path,settings.ledger.owner_view_path,...archived],{cwd:root,env,run});
+   // Publish the current courier API as a versioned private Git artifact.
+   // Muse reads this matrix, never source code. A standard CAS transaction
+   // makes the contract available after any trusted-main reconciliation.
+   const operationsPath='dispatcher/muse-operations.json';
+   const operations=join(root,operationsPath);
+   mkdirSync(dirname(operations),{recursive:true});
+   writeFileSync(operations,JSON.stringify(museOperationsContract(),null,2)+'\n');
+   git(['add','-A','--',settings.ledger.path,settings.ledger.owner_view_path,
+     operationsPath,...archived,...consumed],{cwd:root,env,run});
    if(!git(['status','--porcelain'],{cwd:root,env,run}))
      return {committed:false,state};
    const old=git(['rev-parse','HEAD'],{cwd:root,env,run});

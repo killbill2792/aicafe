@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {inspectMuseHealth,inspectMuseEligibleTasks,museRecoveryCandidates,planMuseBacklog,
- deliverMuseRecovery,reconcileMuseBacklog,runMuseWatch} from './muse-watch-v3.mjs';
+ deliverMuseRecovery,deliverMuseGitRecovery,reconcileMuseBacklog,runMuseWatch} from './muse-watch-v3.mjs';
 const now='2026-11-11T10:00:00Z',sha='a'.repeat(40);
 const state={version:1,updated_at:'2026-11-11T09:00:00Z',
  schedule_health:{last_schedule_at:'2026-11-11T09:00:00Z'},
@@ -345,4 +345,103 @@ test('merge watchdog refuses a stale lifecycle head',()=>{
    lifecycle_v3:{rows:{T1:{merge:{eligible:true,current_head_sha:'b'.repeat(40)}}}}};
  assert.ok(!inspectMuseHealth(r,{now}).incidents
    .some(x=>x.kind==='MERGE_ELIGIBLE_NOT_MOVING'));
+});
+
+
+test('Muse persists every recovery by Git while sending at most one REST wake per batch',async()=>{
+ const req=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity);
+ const input=planMuseBacklog(null,req,now);
+ const gitWritten=[];
+ const durable=deliverMuseGitRecovery(input,{token:'test-git',secret:'private-secret',
+  now,push:({request})=>{
+    gitWritten.push(request.request_id);
+    return {status:'queued',file:'dispatcher/recovery-requests/'+request.request_id+'.json',
+      request_id:request.request_id};
+  }});
+ assert.equal(gitWritten.length,req.length);
+ assert.ok(Object.values(durable.backlog.items).every(x=>x.status==='GIT_QUEUED'));
+ let apiCalls=0;
+ const first=await deliverMuseRecovery(durable.backlog,{token:'test-api',now,
+   maxRequests:1,fetchImpl:async(_url,options)=>{
+     apiCalls++;
+     const event=JSON.parse(options.body);
+     assert.equal(event.event_type,'dispatcher_git_wake');
+     assert.deepEqual(event.client_payload,{version:1});
+     return {status:204};
+   }});
+ assert.equal(apiCalls,1);
+ assert.equal(first.backlog.last_rest_wake_at,now);
+ assert.ok(Object.values(first.backlog.items).some(x=>x.status==='GIT_QUEUED'));
+ const next='2026-11-11T10:01:00Z';
+ const replanned=planMuseBacklog(first.backlog,req,next);
+ assert.equal(Object.values(replanned.items).length,req.length);
+ let moreGit=0;
+ const again=deliverMuseGitRecovery(replanned,{token:'test-git',secret:'private-secret',
+  now:next,push:()=>{moreGit++;throw Error('Duplicate Git write')}});
+ assert.equal(moreGit,0);
+ const paused=await deliverMuseRecovery(again.backlog,{token:'test-api',
+  now:next,maxRequests:1,fetchImpl:async()=>{apiCalls++;return {status:204}}});
+ assert.equal(paused.results[0].status,'REST_WAKE_COOLDOWN');
+ assert.equal(apiCalls,1);
+ // The first accepted wake may have been cancelled before starting. Fifteen
+ // minutes later re-wake the same durable signed Git files, not new requests.
+ const delayed='2026-11-11T10:16:00Z';
+ const later=await deliverMuseRecovery(paused.backlog,{token:'test-api',
+  now:delayed,maxRequests:1,fetchImpl:async(_url,options)=>{
+    apiCalls++;assert.equal(JSON.parse(options.body).event_type,'dispatcher_git_wake');
+    return {status:204};
+  }});
+ assert.equal(apiCalls,2);
+ assert.deepEqual(Object.values(later.backlog.items).map(x=>x.request.request_id),
+   Object.values(first.backlog.items).map(x=>x.request.request_id));
+});
+test('Git survives confirmed REST API rate limit without losing any queued command',async()=>{
+ const req=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity);
+ const durable=deliverMuseGitRecovery(planMuseBacklog(null,req,now),{
+  token:'test-git',secret:'private-secret',now,
+  push:({request})=>({status:'queued',request_id:request.request_id,
+    file:'dispatcher/recovery-requests/'+request.request_id+'.json'})});
+ let apiCalls=0;
+ const result=await deliverMuseRecovery(durable.backlog,{token:'test-api',now,
+  maxRequests:1,fetchImpl:async()=>{apiCalls++;return {status:429,
+   headers:{get:key=>key==='retry-after'?'1800':null}}}});
+ assert.equal(apiCalls,1);
+ assert.equal(result.backlog.api_pause_until,'2026-11-11T10:30:00.000Z');
+ assert.equal(Object.values(result.backlog.items).filter(x=>x.git_file).length,req.length);
+ assert.ok(Object.values(result.backlog.items).every(x=>
+   ['RETRYABLE','GIT_QUEUED'].includes(x.status)));
+});
+
+test('Git durable recovery remains identical during a multi-hour GitHub Actions outage',async()=>{
+ const req=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity);
+ const saved=deliverMuseGitRecovery(planMuseBacklog(null,req,now),{
+   token:'private-git',secret:'test',now,push:({request})=>({
+     status:'queued',request_id:request.request_id,
+     file:'dispatcher/recovery-requests/'+request.request_id+'.json'})
+ });
+ const later='2026-11-11T14:30:00Z';
+ const newRequests=museRecoveryCandidates(inspectMuseHealth(state,{now:later}),state,
+   {...identity,now:later});
+ const planned=planMuseBacklog(saved.backlog,newRequests,later);
+ assert.deepEqual(Object.keys(planned.items),Object.keys(saved.backlog.items));
+ assert.deepEqual(Object.values(planned.items).map(x=>x.request.request_id),
+   Object.values(saved.backlog.items).map(x=>x.request.request_id));
+ let pushes=0;
+ const noRepeat=deliverMuseGitRecovery(planned,{token:'private-git',secret:'test',
+   now:later,push:()=>{pushes++;throw Error('should not re-send')}});
+ assert.equal(pushes,0);
+ assert.ok(Object.values(noRepeat.backlog.items).every(x=>x.status==='GIT_QUEUED'));
+});
+test('failed Git transport does not fall through to an API-only wake',async()=>{
+ const req=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity);
+ const input=planMuseBacklog(null,req,now);
+ const result=deliverMuseGitRecovery(input,{token:'bad-git-token',secret:'test',
+   now,push:()=>{throw Error('private repository unreachable')}});
+ assert.ok(Object.values(result.backlog.items).every(x=>x.status==='RETRYABLE'));
+ assert.ok(Object.values(result.backlog.items).every(x=>!x.git_file));
+ let apiCalls=0;
+ const wake=await deliverMuseRecovery(result.backlog,{token:'api-token',now,
+   maxRequests:1,fetchImpl:async()=>{apiCalls++;return {status:204}}});
+ assert.equal(apiCalls,0);
+ assert.ok(Object.values(wake.backlog.items).every(x=>x.status==='RETRYABLE'));
 });
