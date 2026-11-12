@@ -207,36 +207,8 @@ begin
     and v_item.toast_publication_observed_at=h.toast_observed_at
     and v_item.pos_item_id like 'toast:'||h.toast_restaurant_guid::text||':%'
     and (case when v_item.pos_pricing_strategy='SIZE_PRICE'
-      then v_item.pos_item_id ~* ':[0-9a-f-]{36}:size:[0-9a-f-]{36}
-  ) then
-   raise exception 'toast_price_not_source_verified' using errcode='23514';
- end if;
- return new;
-end;$$;
-drop trigger if exists supervisor_8a_toast_price_confirmation_guard
- on public.supervisor_proposals;
-create trigger supervisor_8a_toast_price_confirmation_guard
- before update on public.supervisor_proposals
- for each row execute function public.supervisor_8a_guard_toast_manual_confirmation();
-
-reset lock_timeout;
-reset statement_timeout;
-
-      else v_item.pos_item_id ~* ':[0-9a-f-]{36}:[0-9a-f-]{36}
-  ) then
-   raise exception 'toast_price_not_source_verified' using errcode='23514';
- end if;
- return new;
-end;$$;
-drop trigger if exists supervisor_8a_toast_price_confirmation_guard
- on public.supervisor_proposals;
-create trigger supervisor_8a_toast_price_confirmation_guard
- before update on public.supervisor_proposals
- for each row execute function public.supervisor_8a_guard_toast_manual_confirmation();
-
-reset lock_timeout;
-reset statement_timeout;
-
+      then v_item.pos_item_id ~* ':[0-9a-f-]{36}:size:[0-9a-f-]{36}$'
+      else v_item.pos_item_id ~* ':[0-9a-f-]{36}:[0-9a-f-]{36}$'
      end)
   ) then
    raise exception 'toast_price_not_source_verified' using errcode='23514';
