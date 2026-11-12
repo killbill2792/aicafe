@@ -64,6 +64,7 @@ try{
   "create table public.ai_threads(id uuid primary key,business_id uuid not null references businesses(id),owner_user_id uuid not null references auth.users(id),unique(business_id,id,owner_user_id))",
   "create table public.locations(id uuid primary key,business_id uuid not null references businesses(id))",
   "create table public.pantry_stock_purchases(id uuid primary key default gen_random_uuid(),business_id uuid not null,ingredient_id uuid not null,line_id uuid not null,purchase_date date not null,entered_quantity numeric not null,entered_unit text not null,cost_cents bigint,source text not null,voided_at timestamptz,unique(business_id,line_id))",
+  "create table public.menu_price_history(id uuid primary key default gen_random_uuid(),business_id uuid not null,menu_item_id uuid not null,old_price_cents bigint not null,new_price_cents bigint not null,source_type text not null,source_provider text,changed_at timestamptz not null default now())",
   "grant usage on schema auth,public to service_role",
   "grant execute on function auth.uid() to service_role","grant execute on function auth.role() to service_role",
   "grant select on public.memberships to service_role",
@@ -217,13 +218,26 @@ try{
  // An unresolved price write has no proposal-scoped authoritative receipt:
  // even a matching current menu price MUST NOT manufacture verification.
  const priceId="90000000-0000-4000-8000-000000000014";
+ const menuId="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
  await seedProposal(B,OWNER,THREAD,priceId,"alex.menu_price_change.v1");
+ await db.query("update supervisor_proposals set canonical_effect_payload=$2::jsonb where id=$1",[
+   priceId,JSON.stringify({productId:menuId,oldPriceCents:450,newPriceCents:500,currency:"USD"})]);
  await withService(db,c=>c.query(rpcTransition,[B,OWNER,priceId,1,"approve",null]));
  const priceClaim=await claim(B,OWNER,THREAD,priceId,2,"click");
  await finish(B,OWNER,THREAD,priceId,priceClaim,"uncertain");
  const priceRecovery=await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,priceId,3])).rows[0].value);
  assert.equal(priceRecovery.status,"executing");
  assert.equal((await db.query("select state from supervisor_effect_attempts where proposal_id=$1",[priceId])).rows[0].state,"uncertain");
+ // Matching price is not evidence. A false provider or foreign café must not verify.
+ const historyId=randomUUID();
+ await db.query("insert into menu_price_history(id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider) values($1,$2,$3,450,500,'owner_manual','Alex (owner approved)')",[historyId,B,menuId]);
+ assert.equal((await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,priceId,3])).rows[0].value)).status,"executing");
+ await db.query("update menu_price_history set source_provider=$2 where id=$1",[
+   historyId,"Alex (owner approved; proposal "+priceId+")"]);
+ const recoveredPrice=await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,priceId,3])).rows[0].value);
+ assert.equal(recoveredPrice.status,"committed");
+ const priceReceipt=(await db.query("select state,receipt_ref from supervisor_effect_attempts where proposal_id=$1",[priceId])).rows[0];
+ assert.deepEqual(priceReceipt,{state:"verified",receipt_ref:"menu_price_history:"+historyId});
 
  const columns=await db.query("select column_name from information_schema.columns where table_schema='public' and table_name='supervisor_mandate_challenges' and (column_name ilike '%code%' or column_name ilike '%otp%')");
  assert.equal(columns.rowCount,0,"No OTP plaintext/code column may be stored");
