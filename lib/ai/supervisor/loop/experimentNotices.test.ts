@@ -1,6 +1,12 @@
 import {describe,expect,it,vi} from "vitest";
+import type {SupabaseClient} from "@supabase/supabase-js";
 vi.mock("server-only",()=>({}));
-import {nextOwnerPriceReminder,toastObservationNoticeKey} from "./experimentNotices.server";
+import {nextOwnerPriceReminder,toastObservationNoticeKey,postVerifiedSourceReminder} from "./experimentNotices.server";
+vi.mock("@/lib/operating/notifyOwner.server",()=>({notifyOwner:async(
+ _db:unknown,notice:{kind:string},write:()=>Promise<unknown>)=>{
+  if(notice.kind!=="price_review")throw Error("Unsupported notice type");
+  return {decision:"posted",result:await write()};
+ }}));
 const base={businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
  ownerUserId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
  proposalId:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
@@ -40,5 +46,46 @@ describe("Task 8a owner notice exact source/day/slot identity",()=>{
   expect(toastObservationNoticeKey({...event,windowIndex:7,final:true})).toMatchObject({
    kind:"toast_price_final"});
   expect(()=>toastObservationNoticeKey({...event,windowIndex:8})).toThrow();
+ });
+});
+
+describe("Task 8a actual notice write and durable delivery",()=>{
+ it("writes a supported Operations kind and marks posted only after the inbox + chat",async()=>{
+  const effects:string[]=[];
+  const calls:{kind?:string}[]=[];
+  const receipts={state:"claimed"};
+  const query=(answer:unknown)=>({eq:()=>query(answer),select:()=>query(answer),
+    maybeSingle:async()=>({data:answer,error:null})});
+  const db={
+   rpc:async(name:string)=>{effects.push("claim:"+name);
+    return {data:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",error:null};},
+   from:(table:string)=>{
+    if(table==="supervisor_experiment_notice_receipts")return {
+     select:()=>({eq:()=>({eq:()=>({eq:()=>({eq:async()=>({
+      data:[],error:null})})})})}),
+     update:(value:{state:string})=>{effects.push("receipt:"+value.state);
+      receipts.state=value.state;
+      return {eq:()=>({eq:()=>({eq:()=>({select:()=>query({id:"receipt"})})})})};
+     },
+    };
+    if(table==="operating_tasks")return {upsert:async(value:{kind:string})=>{
+     effects.push("task:"+value.kind);calls.push(value);return {error:null};}};
+    if(table==="ai_messages")return {insert:async()=>{effects.push("message");return {error:null};}};
+    throw Error("Unexpected table "+table);
+   },
+  };
+  const posted=await postVerifiedSourceReminder(db as unknown as SupabaseClient,{
+   businessId:base.businessId,ownerUserId:base.ownerUserId,proposalId:base.proposalId,
+   threadId:"ffffffff-ffff-4fff-8fff-ffffffffffff",
+   productId:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+   productName:"Latte",targetPriceCents:550,currency:"USD",
+   approvedAt:base.approvedAt,now:"2026-03-08T11:00:00Z",
+   timezone:base.timezone,sourceVerified:false,cancelled:false,
+  });
+  expect(posted).toBe("posted");
+  expect(calls).toEqual([{kind:"price_review"}]);
+  expect(effects).toEqual(["claim:supervisor_8a_claim_notice","task:price_review",
+   "message","receipt:posted"]);
+  expect(receipts.state).toBe("posted");
  });
 });

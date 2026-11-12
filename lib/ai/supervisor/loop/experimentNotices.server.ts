@@ -46,7 +46,7 @@ export async function postVerifiedSourceReminder(db:SupabaseClient,input:{
   },async()=>{
    const task=await db.from("operating_tasks").upsert({
     business_id:input.businessId,id,agent_id:"alex",
-    kind:"price_experiment_reminder",status:"needs_owner",confidence:"low",
+    kind:"price_review",status:"needs_owner",confidence:"low",
     entity_type:"menu_item",entity_id:input.productId,
     payload:{proposalId:input.proposalId,threadId:input.threadId,
      targetPriceCents:input.targetPriceCents,currency:input.currency,
