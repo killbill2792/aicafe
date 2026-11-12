@@ -218,3 +218,49 @@ test('full private Git receipt scan to owner control uses actor, filename and or
  assert.equal(denied.accepted.length,0);
  assert.equal(denied.rejected[0].code,'unapproved_git_actor');
 });
+
+test('P1: newer pause wins over older resume irrespective of hashed receipt order',()=>{
+ const now=new Date().toISOString();
+ const before=new Date(Date.now()-60_000).toISOString();
+ const older={kind:'owner_instruction',event_id:'resume_older',
+   target:{task_id:'9'},text:'Resume Task 9',submitted_at:before};
+ const newer={kind:'owner_instruction',event_id:'pause_newer',
+   target:{task_id:'9'},text:'Pause Task 9',submitted_at:now};
+ const initial={version:1,tasks:{'9':{approved:true}},actions:{}};
+ const reversed=[{receipt:newer,actor:'known-muse'},
+   {receipt:older,actor:'known-muse'}];
+ const ordered=applyReceiptsSafely(initial,reversed,{'known-muse':'muse'});
+ assert.equal(ordered.rejected.length,0);
+ assert.equal(ordered.state.owner_controls.per_task['9'].pause_new_dispatch,true);
+ assert.equal(ordered.state.owner_controls.muse_watermarks['9:pause_new_dispatch'].event_id,
+   'pause_newer');
+ const delayed=applyReceiptsSafely(ordered.state,[{
+   receipt:{...older,event_id:'resend_old_new_id'},actor:'known-muse'
+ }],{'known-muse':'muse'});
+ assert.equal(delayed.state.owner_controls.per_task['9'].pause_new_dispatch,true);
+ assert.equal(delayed.state.owner_instruction_events.resend_old_new_id.reason,
+   'superseded_by_newer_owner_instruction');
+ assert.equal(delayed.state.owner_controls.revision,2);
+ const direct=applyReceipts(initial,reversed,{'known-muse':'muse'});
+ assert.equal(direct.owner_controls.per_task['9'].pause_new_dispatch,true);
+});
+test('P1: owner priority uses per-field watermark, not global last instruction age',()=>{
+ const now=new Date().toISOString();
+ const earlier=new Date(Date.now()-120_000).toISOString();
+ const start={version:1,tasks:{'9':{approved:true}},actions:{}};
+ const inbox=[
+  {receipt:{kind:'owner_instruction',event_id:'new_priority',
+    target:{task_id:'9'},text:'Set Task 9 priority to 90',submitted_at:now},actor:'muse'},
+  {receipt:{kind:'owner_instruction',event_id:'old_priority',
+    target:{task_id:'9'},text:'Set Task 9 priority to 10',submitted_at:earlier},actor:'muse'}
+ ];
+ const state=applyReceipts(start,inbox,{muse:'muse'});
+ assert.equal(state.owner_controls.per_task['9'].dispatch_priority,90);
+ assert.equal(state.owner_instruction_events.old_priority.status,'APPLIED');
+ assert.equal(state.owner_instruction_events.new_priority.status,'APPLIED');
+ const replay=applyReceipts(state,[{receipt:{...inbox[1].receipt,event_id:'old_late'},
+   actor:'muse'}],{muse:'muse'});
+ assert.equal(replay.owner_controls.per_task['9'].dispatch_priority,90);
+ assert.equal(replay.owner_instruction_events.old_late.reason,
+   'superseded_by_newer_owner_instruction');
+});
