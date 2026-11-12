@@ -184,11 +184,14 @@ test('only pre-fix, unsubmitted, run-bound ledger overflow notices retire after 
      owner_question:{kind:'owner_decision',status:'planned',question:fixed},
      forged:make('run:bad:failure',fixed),
      not_my_repo:make('run:43123864942:failure','Dispatcher another/repo: Unexpected GitHub ledger response Needed: inspect'),
-     historical:make('run:43123864943:failure',fixed,'resolved')
+     historical:make('run:43123864943:failure',fixed,'resolved'),
+     newAfterRecovery:make('run:43199999999:failure',fixed,'planned',{
+       created_at:'2026-11-12T01:35:00Z'})
    }};
  const saved=JSON.stringify(source);
  const done=resolveObsoleteLedgerOverflowNotices(source,{at});
  assert.equal(JSON.stringify(source),saved,'never mutate caller or signed ledger in place');
+ assert.equal(done.legacy_ledger_overflow_cleanup_at,at);
  assert.equal(done.owner_alerts.affected.status,'resolved');
  assert.equal(done.owner_alerts.affected.resolved_at,at);
  assert.equal(done.owner_alerts.affected.resolution_reason,'verified_github_ledger_blob_reader_recovered');
@@ -200,6 +203,8 @@ test('only pre-fix, unsubmitted, run-bound ledger overflow notices retire after 
  assert.deepEqual(done.tasks,source.tasks);
  assert.deepEqual(done.actions,source.actions);
  assert.equal(resolveObsoleteLedgerOverflowNotices(done,{at}),done,'idempotent');
+ assert.equal(resolveObsoleteLedgerOverflowNotices(done,{
+   at:'2026-11-12T01:45:00Z'}),done,'future reintroduced overflow remains visible');
 });
 test('legacy overflow resolution fails closed for invalid timestamp and missing notices',()=>{
  assert.throws(()=>resolveObsoleteLedgerOverflowNotices({owner_alerts:{}},{at:'bad'}),/timestamp/);
