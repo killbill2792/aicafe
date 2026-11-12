@@ -38,7 +38,8 @@ type Row=Record<string,unknown>;
 type FakeCafe={id:string;name:string;timezone:string|null;currency:string;is_demo:boolean;
   open:string|null;owners:string[];thread?:boolean;locale?:string;already?:boolean;taskExists?:boolean};
 function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:string[];timezone?:string|null;
-  countFails?:boolean;locale?:string;taskMissing?:boolean;cafes?:FakeCafe[]}={}){
+  countFails?:boolean;locale?:string;taskMissing?:boolean;cafes?:FakeCafe[];
+  failRunFor?:{owner:string;channel:"in_app"|"whatsapp"}}={}){
   const writes:Row[]=[],runs:Row[]=[];
   let runUpserts=0;
   inboxCount.fails=Boolean(o.countFails);
@@ -79,10 +80,10 @@ function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:st
       return {error:null,data:
         table==="locations"?{open_hours:hours(cafe.open)}:
         table==="ai_messages"?(cafe.already?{id:briefMessageId(cafe.id,"2026-11-03",owner),
-          business_id:cafe.id,owner_user_id:owner,thread_id:cafe.id==="b1"?"t1":"t-"+cafe.id+"-"+owner,
+          business_id:cafe.id,owner_user_id:owner,thread_id:cafe.id==="b1"&&owner==="u1"?"t1":"t-"+cafe.id+"-"+owner,
           structured_content:[{type:"text",text:"Saved brief."}]}:null):
         table==="memberships"?(cafe.owners.includes(owner)?{user_id:owner}:null):
-        table==="ai_threads"?(cafe.thread===false?null:{id:cafe.id==="b1"?"t1":"t-"+cafe.id+"-"+owner}):
+        table==="ai_threads"?(cafe.thread===false?null:{id:cafe.id==="b1"&&owner==="u1"?"t1":"t-"+cafe.id+"-"+owner}):
         table==="supervisor_proposals"?(cafe.locale?{locale:cafe.locale}:null):
         table==="operating_tasks"&&cafe.already&&cafe.taskExists!==false?{id:"task"}:null};
     };
@@ -91,6 +92,8 @@ function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:st
     self.upsert=async(row:Row,options?:{ignoreDuplicates?:boolean})=>{
       if(table==="morning_brief_runs"){
         runUpserts++;
+        if(row.owner_key===o.failRunFor?.owner&&row.channel===o.failRunFor.channel)
+          return {error:{code:"XX000"} as {code:string}|null};
         const index=runs.findIndex(r=>r.business_id===row.business_id&&r.local_date===row.local_date&&
           r.owner_key===row.owner_key&&r.channel===row.channel&&r.run_kind===row.run_kind);
         if(index<0)runs.push({table,...row});
@@ -275,6 +278,30 @@ describe("sending the daily brief at each café's own time",()=>{
       r.id.startsWith("daily-brief:"))).toHaveLength(1);
     expect(results.map(r=>r.sent).sort()).toEqual([0,1]);
   });
+  it.each(["in_app","whatsapp"] as const)(
+    "continues the next owner when the first owner's %s ledger write fails at the deadline",
+    async(channel)=>{
+      const {db,writes,runs}=fakeDb({owners:["owner-one","owner-two"],
+        failRunFor:{owner:"owner-one",channel}});
+      const result=await sendDailyBriefs(db,at("06:25"));
+      // These are actual posted messages; the failed ledger is separately
+      // counted and makes the cron unhealthy (HTTP 503), never a silent success.
+      expect(result).toEqual({checked:1,sent:2,skipped:0,failed:1,
+        failureReasons:["run_record_persistence_failed"]});
+      expect(writes.filter(r=>r.table==="ai_messages").map(r=>[r.owner_user_id,r.id,r.thread_id]))
+        .toEqual([
+          ["owner-one",briefMessageId("b1","2026-11-03","owner-one"),"t-b1-owner-one"],
+          ["owner-two",briefMessageId("b1","2026-11-03","owner-two"),"t-b1-owner-two"],
+        ]);
+      expect(writes.filter(r=>r.table==="operating_tasks"&&
+        typeof r.id==="string"&&r.id.startsWith("daily-brief:")).map(r=>r.id))
+        .toEqual(["daily-brief:2026-11-03:owner-one","daily-brief:2026-11-03:owner-two"]);
+      expect(runs.filter(r=>r.owner_key==="owner-two").map(r=>r.channel))
+        .toEqual(["in_app","whatsapp"]);
+      expect(runs.some(r=>r.owner_key==="owner-one"&&r.channel===channel)).toBe(false);
+      expect(runs.some(r=>r.owner_key==="owner-one"&&r.channel!==channel)).toBe(true);
+    },
+  );
   it("an unreadable attention count never becomes 'nothing needs you'",async()=>{
     const {db,writes}=fakeDb({countFails:true});
     expect(await sendDailyBriefs(db,at("05:00"))).toMatchObject({sent:1});

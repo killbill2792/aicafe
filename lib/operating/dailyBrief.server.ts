@@ -27,7 +27,9 @@ export type BriefOutboxHook=(input:{
   websiteText:string;eligible:EligibleBrief|null;sendBefore:string;
 })=>Promise<OutboxResult|void>;
 export type StepResult={step:string;outcome:BriefRunOutcome;reason:string;details?:Record<string,unknown>};
-export type OwnerBriefResult={ownerUserId:string;inApp:StepResult;whatsapp:StepResult};
+export type OwnerBriefResult={ownerUserId:string;inApp:StepResult;whatsapp:StepResult;
+  /** Failed durable outcome writes; delivery itself may already have succeeded. */
+  runRecordFailures?:Array<"in_app"|"whatsapp">};
 export type CafeBriefResult=StepResult&{businessId:string;localDate:string|null;
   schedule?:(Pick<BriefSchedule,"phase"|"hoursSource"|"latestSendLocal"|"sendBefore">&
     {openHoursRead:"available"|"not_found"|"failed"});
@@ -85,6 +87,10 @@ export async function sendDailyBriefs(db:SupabaseClient,now=new Date(),outbox?:B
         continue;
       }
       for(const owner of result.owners){
+        if(owner.runRecordFailures?.length){
+          run.failed+=owner.runRecordFailures.length;
+          failures.add("run_record_persistence_failed");
+        }
         if(owner.inApp.outcome==="sent"&&owner.inApp.reason==="posted")run.sent++;
         else if(owner.inApp.outcome==="failed"||
           (owner.inApp.outcome==="skipped"&&BLOCKED_IN_APP_REASONS.has(owner.inApp.reason))){
@@ -181,20 +187,32 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
       result={ownerUserId:ownerId,inApp:{step:"in_app",outcome:"failed",reason},
         whatsapp:{step:"whatsapp",outcome:"skipped",reason:"in_app_brief_failed"}};
     }
+    const runRecordFailures:Array<"in_app"|"whatsapp">=[];
     for(const channel of ["in_app","whatsapp"] as const){
       const r=channel==="in_app"?result.inApp:result.whatsapp;
       // Repair a missing run row without replacing an earlier successful record.
       // The final missed outcome replaces non-terminal waiting/failure rows once.
       const writeOptions=r.reason==="already_sent"||r.reason==="already_handled"
         ?{preserveExisting:true}:r.reason==="missed_send_window"?{finalMissed:true}:undefined;
-      await recordBriefRun(db,{businessId:b.id,localDate:schedule.today,ownerKey:ownerId,channel,
-        runKind:opts.kind,...r,details:{...scheduleDetails,phase:schedule.phase,missing,...r.details}},now,writeOptions);
+      try{
+        await recordBriefRun(db,{businessId:b.id,localDate:schedule.today,ownerKey:ownerId,channel,
+          runKind:opts.kind,...r,details:{...scheduleDetails,phase:schedule.phase,missing,...r.details}},now,writeOptions);
+      }catch{
+        // An outcome-write failure must not prevent another channel or owner from
+        // receiving the brief, but the caller must still observe a failed run.
+        runRecordFailures.push(channel);
+        console.error("daily_brief_owner_run_record_failed",{
+          businessId:b.id,ownerKey:ownerId,channel,reason:"run_record_persistence_failed"});
+      }
     }
-    results.push(result);
+    results.push(runRecordFailures.length?{...result,runRecordFailures}:result);
   }
+  const ledgerFailed=results.some(r=>r.runRecordFailures?.length);
   const sent=results.some(r=>r.inApp.outcome==="sent");
-  return {step:"brief",outcome:sent?"sent":results.every(r=>r.inApp.outcome==="failed")?"failed":"skipped",
-    reason:sent?"done":"see_owners",businessId:b.id,localDate:schedule.today,
+  return {step:"brief",outcome:ledgerFailed?"failed":sent?"sent":
+      results.every(r=>r.inApp.outcome==="failed")?"failed":"skipped",
+    reason:ledgerFailed?"run_record_persistence_failed":sent?"done":"see_owners",
+    businessId:b.id,localDate:schedule.today,
     schedule:scheduleInfo,missing,owners:results};
 }
 
