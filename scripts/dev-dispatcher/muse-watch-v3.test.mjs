@@ -362,8 +362,12 @@ test('Muse persists every recovery by Git while sending at most one REST wake pe
  assert.ok(Object.values(durable.backlog.items).every(x=>x.status==='GIT_QUEUED'));
  let apiCalls=0;
  const first=await deliverMuseRecovery(durable.backlog,{token:'test-api',now,
-   maxRequests:1,fetchImpl:async()=>{
-     apiCalls++;return {status:204};
+   maxRequests:1,fetchImpl:async(_url,options)=>{
+     apiCalls++;
+     const event=JSON.parse(options.body);
+     assert.equal(event.event_type,'dispatcher_git_wake');
+     assert.deepEqual(event.client_payload,{version:1});
+     return {status:204};
    }});
  assert.equal(apiCalls,1);
  assert.equal(first.backlog.last_rest_wake_at,now);
@@ -379,6 +383,17 @@ test('Muse persists every recovery by Git while sending at most one REST wake pe
   now:next,maxRequests:1,fetchImpl:async()=>{apiCalls++;return {status:204}}});
  assert.equal(paused.results[0].status,'REST_WAKE_COOLDOWN');
  assert.equal(apiCalls,1);
+ // The first accepted wake may have been cancelled before starting. Fifteen
+ // minutes later re-wake the same durable signed Git files, not new requests.
+ const delayed='2026-11-11T10:16:00Z';
+ const later=await deliverMuseRecovery(paused.backlog,{token:'test-api',
+  now:delayed,maxRequests:1,fetchImpl:async(_url,options)=>{
+    apiCalls++;assert.equal(JSON.parse(options.body).event_type,'dispatcher_git_wake');
+    return {status:204};
+  }});
+ assert.equal(apiCalls,2);
+ assert.deepEqual(Object.values(later.backlog.items).map(x=>x.request.request_id),
+   Object.values(first.backlog.items).map(x=>x.request.request_id));
 });
 test('Git survives confirmed REST API rate limit without losing any queued command',async()=>{
  const req=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity);
