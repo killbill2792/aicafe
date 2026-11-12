@@ -3,8 +3,6 @@ import { renderPublicExtras, loadVerifiedMerges, MERGE_REFRESH_INTERVAL_MS } fro
 // Never request private GitHub data or accept a browser token on this public site.
 export const PUBLIC_COMMENT_URL =
   'https://api.github.com/repos/killbill2792/aicafe/issues/comments/6752417190';
-export const PRIVATE_QUEUE_URL =
-  'https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/owner-queue.md';
 export const REFRESH_INTERVAL_MS = 120000;
 export const PUBLIC_SNAPSHOT_URL = './owner-operations-snapshot.json';
 
@@ -62,7 +60,7 @@ export function parseOwnerSnapshot(markdown) {
 }
 export function statusLevel(value) {
   const s=clean(value).toLowerCase();
-  if (/failed|failure|findings|blocked|pending|queued|owner decision|not sent|not yet/.test(s)) return 'warn';
+  if (/failed|failure|findings|blocked|pending|queued|owner decision|not sent|not yet|missing|unknown|unverified|stale|not_run|not_received|not_confirmed/.test(s)) return 'warn';
   if (/success|clean|merged|integrated|submitted/.test(s)) return 'good';
   return 'neutral';
 }
