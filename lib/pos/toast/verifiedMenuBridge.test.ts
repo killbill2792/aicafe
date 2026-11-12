@@ -27,11 +27,15 @@ const bundle={items:[{posItemId,name:"Latte",baseName:"Latte",
  observedAt:"2026-11-10T16:00:00Z"}};
 function mockDB(){
  const previous={menu_last_updated:"2026-11-09T15:00:00Z",
-  menu_copied_at:"2026-11-09T16:00:00Z",menu_checked_local_day:"2026-11-09"};
+  menu_copied_at:"2026-11-09T16:00:00Z",menu_checked_local_day:"2026-11-09",
+  menu_pending_observations:[] as string[]};
  const now={...previous};
  const writes:Record<string,unknown>[]=[];
  const storedObservations=new Map<string,{version:string;observedAt:string}>();
- // SQL keeps the first observation for an already-active same-version item.
+ const failVerifyOnce={value:false},failRecord={value:false};
+ const verifyReceipt={value:null as string|null};
+ const verifiedResult={value:true};
+ // SQL preserves first active same-version item's observation on replay.
  m.apply.mockImplementation(async (_db:unknown,_business:unknown,published:typeof bundle)=>{
   for(const item of published.items){
    const old=storedObservations.get(item.posItemId);
@@ -41,8 +45,23 @@ function mockDB(){
   }
   return {inactiveItems:0,inactiveModifiers:0,inactiveGroups:0};
  });
- const rpc=vi.fn(async(name:string,_args?:Record<string,unknown>):Promise<{error:{message:string}|null;data:boolean|null}>=>({
-  error:null,data:name==="toast_verify_existing_price_history"?true:null}));
+ const rpc=vi.fn(async(name:string,args?:Record<string,unknown>):Promise<{
+  error:{message:string}|null;data:boolean|string[]|null}>=>{
+  if(name==="toast_record_pending_menu_observation"){
+   if(failRecord.value)return {error:{message:"cannot persist receipt"},data:null};
+   const observed=String(args?.p_observed_at);
+   if(!now.menu_pending_observations.includes(observed))
+    now.menu_pending_observations.push(observed);
+   return {error:null,data:[...now.menu_pending_observations]};
+  }
+  if(name==="toast_verify_existing_price_history"){
+   if(failVerifyOnce.value){failVerifyOnce.value=false;
+    return {error:{message:"temporary SQL outage"},data:null};}
+   return {error:null,data:verifyReceipt.value!==null
+    ?now.menu_pending_observations.includes(verifyReceipt.value):verifiedResult.value};
+  }
+  return {error:null,data:null};
+ });
  const db={
   from(table:string){
    if(table==="menu_items"){
@@ -72,7 +91,8 @@ function mockDB(){
    return q;
   },rpc
  };
- return {db:db as unknown as SupabaseClient,rpc,writes,now,storedObservations};
+ return {db:db as unknown as SupabaseClient,rpc,writes,now,storedObservations,
+  failVerifyOnce,failRecord,verifyReceipt,verifiedResult};
 }
 beforeEach(()=>{
  for(const fn of Object.values(m))fn.mockReset();
@@ -104,6 +124,10 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(f.writes[1]).toEqual(expect.objectContaining({
    menu_last_updated:bundle.receipt.publicationVersion,
    menu_checked_local_day:null,menu_copied_at:bundle.receipt.observedAt}));
+  expect(f.now.menu_pending_observations).toEqual([bundle.receipt.observedAt]);
+  expect(f.rpc).toHaveBeenCalledWith("toast_record_pending_menu_observation",
+   expect.objectContaining({p_first_observed_at:bundle.receipt.observedAt,
+    p_observed_at:bundle.receipt.observedAt}));
   expect(result.verifiedPriceChanges).toBe(1);
  });
  it("refuses a wrong-restaurant receipt before any writer runs",async()=>{
@@ -125,7 +149,7 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
   expect(f.now.menu_copied_at).toBe(bundle.receipt.observedAt);
   expect(f.now.menu_checked_local_day).toBeNull();
-  expect(f.rpc).not.toHaveBeenCalled();
+  expect(f.rpc.mock.calls.some(([name])=>name==="toast_verify_existing_price_history")).toBe(false);
  });
  it("keeps receipt pending when a canonical writer fails",async()=>{
   m.canonical.mockRejectedValueOnce(new Error("database unavailable"));
@@ -135,6 +159,7 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(f.now.menu_copied_at).toBe(bundle.receipt.observedAt);
   expect(f.now.menu_checked_local_day).toBeNull();
   expect(f.writes).toHaveLength(1);
+  expect(f.now.menu_pending_observations).toEqual([bundle.receipt.observedAt]);
   expect(m.apply).not.toHaveBeenCalled();
  });
  it("reconciles a delayed pre-presence interruption with the first receipt",async()=>{
@@ -156,10 +181,10 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(result.verifiedPriceChanges).toBe(1);
   expect(f.now.menu_checked_local_day).not.toBeNull();
  });
- it("verifies a price first written on a delayed retry using the new source observation",async()=>{
+ it("verifies a late first-write using the durably registered second receipt",async()=>{
   const retryObservedAt="2026-11-10T19:45:00Z";
-  const later={...bundle,receipt:{...bundle.receipt,observedAt:retryObservedAt}};
-  m.bundle.mockResolvedValueOnce(bundle).mockResolvedValueOnce(later);
+  m.bundle.mockResolvedValueOnce(bundle).mockResolvedValueOnce({
+   ...bundle,receipt:{...bundle.receipt,observedAt:retryObservedAt}});
   m.stage.mockRejectedValueOnce(new Error("staging interrupted before any price write"));
   const f=mockDB();
   await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow(
@@ -167,21 +192,64 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(m.canonical).not.toHaveBeenCalled();
   expect(f.now.menu_last_updated).toBe("pending:"+bundle.receipt.publicationVersion);
   expect(f.now.menu_copied_at).toBe(bundle.receipt.observedAt);
-  expect(f.now.menu_checked_local_day).toBeNull();
-  f.rpc.mockImplementation(async(_name:string,args?:Record<string,unknown>)=>({
-   error:null,data:args?.p_observed_at===retryObservedAt
-  }));
+  expect(f.now.menu_pending_observations).toEqual([bundle.receipt.observedAt]);
+  f.verifyReceipt.value=retryObservedAt;
   const result=await copyToastPublishedMenu(f.db,scope);
   expect(m.canonical).toHaveBeenCalledOnce();
   expect(m.apply).toHaveBeenCalledWith(f.db,business,expect.objectContaining({
    receipt:expect.objectContaining({observedAt:bundle.receipt.observedAt})}));
-  expect(f.rpc).toHaveBeenCalledTimes(2);
-  expect(f.rpc.mock.calls[0][1]).toEqual(expect.objectContaining({
-   p_observed_at:bundle.receipt.observedAt}));
-  expect(f.rpc.mock.calls[1][1]).toEqual(expect.objectContaining({
-   p_observed_at:retryObservedAt}));
+  expect(f.now.menu_pending_observations).toEqual([
+   bundle.receipt.observedAt,retryObservedAt]);
+  expect(f.rpc.mock.calls.filter(([name])=>name==="toast_verify_existing_price_history"))
+   .toHaveLength(1);
+  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history",
+   expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
   expect(result.verifiedPriceChanges).toBe(1);
   expect(f.now.menu_checked_local_day).not.toBeNull();
+ });
+ it("keeps a second-attempt price receipt across a third delayed retry",async()=>{
+  const secondAt="2026-11-10T19:45:00Z",thirdAt="2026-11-10T21:45:00Z";
+  m.bundle.mockResolvedValueOnce(bundle)
+   .mockResolvedValueOnce({...bundle,receipt:{...bundle.receipt,observedAt:secondAt}})
+   .mockResolvedValueOnce({...bundle,receipt:{...bundle.receipt,observedAt:thirdAt}});
+  m.stage.mockRejectedValueOnce(new Error("staging temporarily unavailable"));
+  const f=mockDB();
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow(
+   "staging temporarily unavailable");
+  m.apply.mockRejectedValueOnce(new Error("presence unavailable after price write"));
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow(
+   "presence unavailable after price write");
+  expect(m.canonical).toHaveBeenCalledOnce();
+  expect(f.now.menu_pending_observations).toEqual([bundle.receipt.observedAt,secondAt]);
+  expect(f.now.menu_checked_local_day).toBeNull();
+  f.verifyReceipt.value=secondAt;
+  const result=await copyToastPublishedMenu(f.db,scope);
+  expect(m.canonical).toHaveBeenCalledTimes(2);
+  expect(m.bundle).toHaveBeenCalledTimes(3);
+  expect(f.now.menu_pending_observations).toEqual([
+   bundle.receipt.observedAt,secondAt,thirdAt]);
+  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history",
+   expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
+  expect(result.verifiedPriceChanges).toBe(1);
+  expect(f.now.menu_checked_local_day).not.toBeNull();
+ });
+ it("aborts before staging if source receipt registration is not durable",async()=>{
+  const f=mockDB();
+  f.failRecord.value=true;
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toMatchObject({
+   category:"unavailable"});
+  expect(m.stage).not.toHaveBeenCalled();
+  expect(m.canonical).not.toHaveBeenCalled();
+  expect(f.now.menu_pending_observations).toEqual([]);
+ });
+ it("clears old-version observations when a new published version arrives",async()=>{
+  const f=mockDB();
+  await copyToastPublishedMenu(f.db,scope);
+  const next={...bundle,receipt:{...bundle.receipt,
+   publicationVersion:"2026-11-11T15:00:00Z",observedAt:"2026-11-11T16:00:00Z"}};
+  m.bundle.mockResolvedValueOnce(next);
+  await copyToastPublishedMenu(f.db,scope);
+  expect(f.now.menu_pending_observations).toEqual([next.receipt.observedAt]);
  });
  it("reuses the committed observation for price proof after a partial RPC outage",async()=>{
   const firstObserved=bundle.receipt.observedAt;
@@ -189,7 +257,7 @@ describe("POS0 verified single-bundle source handoff",()=>{
   m.bundle.mockResolvedValueOnce(bundle).mockResolvedValueOnce({
    ...bundle,receipt:{...bundle.receipt,observedAt:laterObserved}});
   const f=mockDB();
-  f.rpc.mockResolvedValueOnce({error:{message:"temporary SQL outage"},data:null});
+  f.failVerifyOnce.value=true;
   await expect(copyToastPublishedMenu(f.db,scope)).rejects.toMatchObject({
    category:"unavailable"});
   expect(f.storedObservations.get(posItemId)?.observedAt).toBe(firstObserved);
@@ -202,7 +270,7 @@ describe("POS0 verified single-bundle source handoff",()=>{
  });
  it("does not count an unverified price-history RPC as a source-verified change",async()=>{
   const f=mockDB();
-  f.rpc.mockImplementation(async()=>({error:null,data:false}));
+  f.verifiedResult.value=false;
   const result=await copyToastPublishedMenu(f.db,scope);
   expect(result.verifiedPriceChanges).toBe(0);
   expect(f.rpc).toHaveBeenCalledWith("toast_verify_existing_price_history",expect.anything());
@@ -213,6 +281,6 @@ describe("POS0 verified single-bundle source handoff",()=>{
   const f=mockDB();
   const result=await copyToastPublishedMenu(f.db,scope);
   expect(result.verifiedPriceChanges).toBe(0);
-  expect(f.rpc).not.toHaveBeenCalled();
+  expect(f.rpc.mock.calls.some(([name])=>name==="toast_verify_existing_price_history")).toBe(false);
  });
 });
