@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {recoveryIdentity} from './recovery-v3.mjs';
+import {transactLedgerViaGit} from './git-operations.mjs';
 import {signMuseGitRecovery,verifyMuseGitRecovery,
   scanMuseGitRecoveryDirectory,fetchMuseGitRecoveries,pushMuseGitRecovery}
   from './git-recovery-transport.mjs';
@@ -100,4 +101,44 @@ test('Git-only Muse push/read persists command idempotently without GitHub REST'
   const stored=JSON.parse(readFileSync(join(reader,first.file),'utf8'));
   assert.equal(stored.request.request_id,args.request.request_id);
  });
+});
+
+test('trusted ledger Git-CAS atomically consumes acknowledged command, preserving Git audit',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'aicafe-git-cas-'));
+ try{
+  const bare=join(root,'bare.git'),seed=join(root,'seed'),reader=join(root,'reader');
+  git(['init','-q','--bare','-b','main',bare],root);
+  git(['clone','-q',bare,seed],root);
+  git(['config','user.email','test@example.com'],seed);
+  git(['config','user.name','Offline CI Fixture'],seed);
+  mkdirSync(join(seed,'dispatcher'),{recursive:true});
+  writeFileSync(join(seed,'dispatcher','state.json'),
+   '{"version":1,"tasks":{},"actions":{},"owner_alerts":{}}\n');
+  git(['add','.'],seed);git(['commit','-qm','seed private fixture'],seed);
+  git(['push','-q','origin','HEAD:main'],seed);
+  const request=signed();
+  const env=signMuseGitRecovery(request,secret);
+  const args={request,secret,token:'git-only-test-token',remoteUrl:bare};
+  assert.equal(pushMuseGitRecovery(args).status,'queued');
+  const filename=request.request_id+'.json';
+  const result=await transactLedgerViaGit({
+   token:'git-only-test-token',remoteUrl:bare,
+   transform:state=>{
+    state.git_recovery_processed_files={[filename]:env.signature};
+    state.recovery_requests={[request.request_id]:{
+      ...request,status:'OBSERVED',reason:'global_reconcile_wake_not_evidence_of_effect'}};
+    return state;
+   }
+  });
+  assert.equal(result.committed,true);
+  git(['clone','-q',bare,reader],root);
+  const saved=JSON.parse(readFileSync(join(reader,'dispatcher','state.json'),'utf8'));
+  assert.equal(saved.recovery_requests[request.request_id].status,'OBSERVED');
+  assert.equal(saved.git_recovery_processed_files[filename],env.signature);
+  const read=scanMuseGitRecoveryDirectory(reader,{secret,actors,now});
+  assert.equal(read.accepted.length,0,'consumed signed Git file not left in active inbox');
+  assert.equal(pushMuseGitRecovery(args).status,'already_acknowledged');
+  assert.ok(Number(git(['rev-list','--count','HEAD'],reader))>=3,
+    'Git commit history retains signed command and its consumption');
+ }finally{rmSync(root,{recursive:true,force:true});}
 });
