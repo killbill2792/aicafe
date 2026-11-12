@@ -99,7 +99,7 @@ grant select on public.supervisor_toast_price_context_changes to service_role;
 -- The client cannot forge observation dates: only an actual menu_items
 -- UPDATE can insert a row. This trigger is callable only by PostgreSQL.
 create function public.supervisor_8a_record_toast_price_context()
- returns trigger language plpgsql security definer set search_path='' as $
+ returns trigger language plpgsql security definer set search_path='' as $$
 begin
  if tg_op<>'UPDATE' or
     (old.catalog_source is distinct from 'toast'
@@ -124,7 +124,7 @@ begin
    clock_timestamp());
  end if;
  return new;
-end;$;
+end;$$;
 revoke all on function public.supervisor_8a_record_toast_price_context()
  from public,anon,authenticated;
 grant execute on function public.supervisor_8a_record_toast_price_context()
