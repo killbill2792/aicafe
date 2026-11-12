@@ -350,7 +350,47 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   if(written.error)throw new Error("verified_window_write_failed");
   complete.push(measured);
  }
- if(complete.length!==days)return "monitoring";
+ // The new-mode midpoint uses the SAME idempotent report+notifyOwner
+ // delivery path as legacy. The skipped calendar-day monitor must never
+ // become a second writer; a stable midRunKey deduplicates cron retries.
+ if(complete.length!==days){
+  const half=Math.ceil(days/2);
+  if(days>1&&complete.length>=half&&Date.parse(now)<Date.parse(finalEndAt)){
+   const actualCount=complete.filter(c=>c.status==="actual").length;
+   const firstHalfEnd=windows[half-1].endAt;
+   const interim:LoopReport={
+    status:"in_progress",recommendation:"adjust",
+    source:"order_lines.ordered_at+orders.closed_at",
+    midRunKey:"verified-source-half",
+    midRunText:"Toast verified the price for "+effect.productName+
+     ". Midpoint update: "+actualCount+" of "+complete.length+
+     " elapsed 24-hour windows have actual sales coverage. "+
+     (interruptionAt?"A later price or source-context change interrupted this trial. ":
+      "Any missing timestamps or late imports remain unverified. ")+
+     "These observations do not prove that the price caused sales changes.",
+    result:{productId:effect.productId,productName:effect.productName,
+     oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
+     coveredWindows:actualCount,elapsedWindows:complete.length,totalWindows:days,
+     windowStartAt:receipt.startAt,windowEndAt:firstHalfEnd,
+     sourceContinuity:interruptionAt?"interrupted":"verified",
+     nonCausal:true,status:"in_progress"},
+    delivery:{agentId:"alex",taskKind:"price_experiment_report",
+     entityType:"menu_item",entityId:effect.productId,
+     confidence:"low",payload:{productId:effect.productId,
+      productName:effect.productName,itemName:effect.productName,
+      outcomeStatus:"in_progress",recommendation:"adjust",
+      oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
+      coveredWindows:actualCount,totalWindows:days,
+      windowStartAt:receipt.startAt,windowEndAt:firstHalfEnd,
+      sourceCoverage:"in_progress",nonCausal:true},
+     evidence:[{source:"order_lines",facts:{actualWindowCount:actualCount,
+      elapsedWindowCount:complete.length,totalWindowCount:days,nonCausal:true}}],
+     threadText:""},
+   };
+   await repo.saveReport(scope,proposal,interim,{midRun:true});
+  }
+  return "monitoring";
+ }
  const actual=!interruptionAt&&complete.every(c=>c.status==="actual");
  const units=actual?complete.reduce((a,b)=>a+(b.units??0),0):null;
  const revenue=actual?complete.reduce((a,b)=>a+(b.revenueCents??0),0):null;
