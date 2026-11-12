@@ -856,7 +856,12 @@ async function main() {
     const projection=await ledger.transaction(latest=>{
       const withEffects=recordGithubEffects(latest,githubEffects);
       const withOwnerNotices=recordPrWriterOwnerNotices(withEffects||latest,githubEffects);
-      const projected=recordLifecycleTransitions(withOwnerNotices,queue);
+      // A completed trusted reconciliation closes the last generic emergency.
+      // A subsequent outage must create a fresh incident cycle, not be hidden
+      // by a permanently submitted/queued stable failure identity.
+      const restored=resolveOwnerIssueIdentity(withOwnerNotices,{
+        kind:'dispatcher_emergency',identity:'trusted-dispatcher:failure'});
+      const projected=recordLifecycleTransitions(restored,queue);
       const result=settleRecoveryRequests(projected,projectLifecycle(projected,queue));
       return JSON.stringify(result)===JSON.stringify(latest)?null:result;
     });
@@ -994,7 +999,7 @@ main().catch(async error => {
       token:process.env.DISPATCH_LEDGER_TOKEN,
       identity:error.code==='RATE_LIMIT'
         ?'github_api_rate_limit:'+String(error.reset_at||'unknown')
-        :'run:'+String(process.env.GITHUB_RUN_ID||'unknown')+':failure',
+        :'trusted-dispatcher:failure',
       resetAt:error.code==='RATE_LIMIT'?error.reset_at:null,
       message:detail,needs:'Muse notify owner; inspect failed dispatcher workflow'
     });
