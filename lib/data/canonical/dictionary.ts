@@ -1181,11 +1181,18 @@ export function isCanonicalColumn(view:CanonicalView,column:string):boolean {
 // Never make payment credentials queryable just because an old retained
 // source object contains an unexpected field. Person/staff/loyalty identity
 // and ordinary provider GUIDs are allowed; these are reusable secrets only.
-const FORBIDDEN_TOAST_FIELD=/^(?:pan|primaryAccountNumber|cardNumber|paymentCardNumber|cvv|cvc|cvv2|cvc2|cardVerificationValue|securityCode|magstripe|track|track1|track2|trackData|track1Data|track2Data|cardLast4|last4Digits|first5|first6|expiration|expiry|expireDate|cardExpiry|cardExpiration|password|passcode|pin|apiKey|secret|clientSecret|privateKey|accessToken|refreshToken|sessionToken|authToken|authorization|authorizationToken|paymentToken|cardToken|token|tokenId|fingerprint|networkTransactionIdentifier|routingNumber|bankAccountNumber|accountNumber|signature)$/i;
+const FORBIDDEN_TOAST_FIELD=/^(?:pan|primaryAccountNumber|cardNumber|paymentCardNumber|cvv|cvc|cvv2|cvc2|cardVerificationValue|securityCode|magstripe|track|track1|track2|trackData|track1Data|track2Data|cardLast4|last4Digits|first5|first6|expiration|expiry|expireDate|cardExpiry|cardExpiration|password|passcode|pin|apiKey|secret|clientSecret|privateKey|accessToken|refreshToken|sessionToken|authToken|authorization|authorizationToken|paymentToken|cardToken|oauthToken|bearerToken|apiSecret|token|tokenId|fingerprint|networkTransactionIdentifier|routingNumber|bankAccountNumber|accountNumber|signature)$/i;
+const FORBIDDEN_TOAST_SUFFIX=/(?:Password|Secret|ApiKey|PrivateKey|AccessToken|RefreshToken|SessionToken|AuthToken|AuthorizationToken|OAuthToken|BearerToken|PaymentToken|CardToken|CardNumber|TrackData|SecurityCode|VerificationValue|Magstripe)$/i;
 export function isDataField(column:string):boolean {
  return /^data(\.([A-Za-z_][A-Za-z0-9_]{0,100}|[0-9]{1,3})){1,16}$/.test(column) &&
-  !column.slice(5).split(".").some(segment=>FORBIDDEN_TOAST_FIELD.test(segment)||
-   /^(?:card|cardInfo|cardDetails|cardData|creditCard|paymentCard|giftCard|giftCardInfo|paymentMethod)$/i.test(segment));
+  !column.slice(5).split(".").some(segment=>{
+   // SQL ai_query_path uses the same normalization. A nested access_token is
+   // still a reusable credential even when historical data kept that key.
+   const normalized=segment.replace(/_/g,"");
+   return FORBIDDEN_TOAST_FIELD.test(normalized)||
+    FORBIDDEN_TOAST_SUFFIX.test(normalized)||
+    /^(?:card|cardInfo|cardDetails|cardData|creditCard|paymentCard|giftCard|giftCardInfo|paymentMethod)$/i.test(normalized);
+  });
 }
 
 // POS0e: Generated from the pinned official Toast Standard GET/2xx schema snapshot
