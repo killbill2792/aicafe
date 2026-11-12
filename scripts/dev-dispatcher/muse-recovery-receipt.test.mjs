@@ -59,7 +59,8 @@ test('unverified actor, forged owner and tampered command all fail closed',()=>{
     actor:item.actor,actors:item.actors}));
  for(const bad of [{receipt:good,actor:'attacker'},
    {receipt:good,actor:'someone-else'}])
-   assert.throws(()=>applyReceipts(baseState(),[bad],actors));
+   assert.deepEqual(applyReceipts(baseState(),[bad],actors),baseState(),
+    'unknown Git commit actor must be ignored with no ledger effect');
 });
 test('scoped request needs exact verified task PR and SHA and cannot add merge evidence',()=>{
  const original=request({intent:'REQUEST_CODEX_IF_ELIGIBLE',
