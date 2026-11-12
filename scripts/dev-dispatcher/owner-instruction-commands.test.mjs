@@ -173,3 +173,15 @@ test('closed PR and misleading global target cannot trigger an unintended owner 
    'target_does_not_match_owner_words');
  assert.equal(wrong.owner_controls,undefined);
 });
+
+test('old command receipts and future-dated commands cannot execute retroactively',()=>{
+ const tooOld=receipt('Set Task 9 priority to 90');tooOld.submitted_at='2026-11-10T05:01:00Z';
+ const old=apply(fixture(),tooOld);
+ assert.equal(old.owner_instruction_events.owner_instruction_1.reason,
+   'stale_or_invalid_owner_instruction');
+ assert.equal(old.owner_controls,undefined);
+ const fromFuture=receipt('Pause Task 9');fromFuture.submitted_at='2026-11-12T06:00:00Z';
+ const future=apply(fixture(),fromFuture);
+ assert.equal(future.owner_instruction_events.owner_instruction_1.status,'BLOCKED');
+ assert.equal(future.owner_controls,undefined);
+});
