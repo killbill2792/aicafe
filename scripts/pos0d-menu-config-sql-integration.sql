@@ -265,5 +265,56 @@ BEGIN
  PERFORM set_config('request.jwt.claim.role','service_role',true);
  PERFORM pg_temp.pos0d_assert((SELECT toast_publication_state='unknown' FROM public.menu_items WHERE id=other_item),
    'late recovery never changes another café');
+ -- A verified V1 price write must not vanish when an unrelated V2 is
+ -- published before V1 presence or price verification completes.
+ observed:=now()-interval '1 minute';
+ UPDATE public.toast_optional_sync_state SET
+  menu_last_updated='pending:2026-11-09T13:00:00Z',
+  menu_copied_at=observed,menu_checked_local_day=NULL,
+  menu_pending_observations=to_jsonb(ARRAY[observed::text])
+ WHERE business_id=b AND restaurant_guid=r;
+ UPDATE public.menu_items SET price_cents=725 WHERE id=a;
+ INSERT INTO public.menu_price_history(business_id,menu_item_id,
+  old_price_cents,new_price_cents,source_type,source_provider,changed_at)
+ VALUES(b,a,575,725,'connected_pos','toast',now());
+ PERFORM pg_temp.pos0d_assert(public.toast_reconcile_superseded_menu_history(
+  b,r,'2026-11-09T13:00:00Z',observed),'V1 price source proven before V2 reset');
+ PERFORM pg_temp.pos0d_assert((SELECT toast_publication_version='2026-11-09T13:00:00Z'
+  AND toast_observed_at=observed AND toast_effective_at IS NULL FROM public.menu_price_history
+  WHERE menu_item_id=a AND new_price_cents=725),
+  'V1 history retained with original observed-at, never invented effective-at');
+ UPDATE public.toast_optional_sync_state SET
+  menu_last_updated='pending:2026-11-09T14:00:00Z',menu_copied_at=now(),
+  menu_pending_observations='[]'::jsonb
+ WHERE business_id=b AND restaurant_guid=r;
+ PERFORM pg_temp.pos0d_assert((SELECT toast_publication_version='2026-11-09T13:00:00Z'
+  FROM public.menu_price_history WHERE menu_item_id=a AND new_price_cents=725),
+  'V2 receipt reset never removes already verified V1 price evidence');
+ -- Refuse to erase an unverified V1 price write that cannot be tied to the
+ -- current canonical price, even though the source family is still pending.
+ UPDATE public.toast_optional_sync_state SET
+  menu_last_updated='pending:2026-11-09T13:00:00Z',menu_copied_at=observed,
+  menu_pending_observations=to_jsonb(ARRAY[observed::text])
+ WHERE business_id=b AND restaurant_guid=r;
+ INSERT INTO public.menu_price_history(business_id,menu_item_id,
+  old_price_cents,new_price_cents,source_type,source_provider,changed_at)
+ VALUES(b,a,725,735,'connected_pos','toast',now());
+ failed:=false;
+ BEGIN
+  PERFORM public.toast_reconcile_superseded_menu_history(
+   b,r,'2026-11-09T13:00:00Z',observed);
+ EXCEPTION WHEN sqlstate '22023' THEN failed:=true;END;
+ PERFORM pg_temp.pos0d_assert(failed,'unproven V1 stays pending, not silently dropped');
+ PERFORM pg_temp.pos0d_assert((SELECT toast_publication_version IS NULL
+  FROM public.menu_price_history WHERE menu_item_id=a AND new_price_cents=735),
+  'unverifiable price history never acquires forged source receipt');
+ failed:=false;
+ PERFORM set_config('request.jwt.claim.role','authenticated',true);
+ BEGIN
+  PERFORM public.toast_reconcile_superseded_menu_history(
+   b,r,'2026-11-09T13:00:00Z',observed);
+ EXCEPTION WHEN sqlstate '42501' THEN failed:=true;END;
+ PERFORM pg_temp.pos0d_assert(failed,'owner cannot forge superseded price evidence');
+ PERFORM set_config('request.jwt.claim.role','service_role',true);
 END $pos0d$;
 ROLLBACK;
