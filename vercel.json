@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/supervisor-experiments",
-      "schedule": "30 16 * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/cron/admin-question-patterns",
