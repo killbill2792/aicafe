@@ -224,6 +224,51 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
     .filter(Number.isFinite).sort((a,b)=>b-a)[0];
   if(pause>clock)return {backlog:next,results:[{status:'API_PAUSED',until:asIso(pause)}]};
   if(pause&&pause<=clock)delete next.api_pause_until;
+  if(maxRequests===1){
+    // Git-first mode: the command is already persisted, so ONLY wake the
+    // trusted-main inbox processor. Re-wake the same durable batch every
+    // 15 minutes until receipt: no new signed request, no stale 10-minute
+    // recovery payload, and no dependency on a single pending Actions job.
+    const outstanding=Object.values(next.items||{}).filter(item=>
+      item.git_file&&item.git_request_id===item.request?.request_id&&
+      !['GITHUB_ACKNOWLEDGED','GITHUB_REJECTED'].includes(item.status));
+    if(!outstanding.length)return {backlog:next,results:[]};
+    if(time(next.last_rest_wake_at)!==null&&
+       clock-time(next.last_rest_wake_at)<15*60000)
+      return {backlog:next,results:[{status:'REST_WAKE_COOLDOWN'}]};
+    if(!token)return {backlog:next,
+      results:[{status:'WAITING_FOR_AUTHORIZED_WAKE_TOKEN'}]};
+    const repo=outstanding[0].request.repo;
+    if(!/^[\\w.-]+\\/[\\w.-]+$/.test(repo)||outstanding.some(item=>item.request.repo!==repo))
+      throw Error('Inconsistent signed Git wake repository');
+    next.last_rest_wake_at=now;
+    try{
+      const response=await fetchImpl('https://api.github.com/repos/'+repo+'/dispatches',{
+        method:'POST',headers:{Authorization:'Bearer '+token,
+          Accept:'application/vnd.github+json','Content-Type':'application/json'},
+        body:JSON.stringify({event_type:'dispatcher_git_wake',client_payload:{version:1}})
+      });
+      if(response.status===204)return {backlog:next,
+        results:[{status:'SENT_UNVERIFIED',kind:'GIT_BATCH_WAKE'}]};
+      const remaining=response.headers?.get?.('x-ratelimit-remaining');
+      const retry=response.headers?.get?.('retry-after');
+      const rateLimited=response.status===429||
+        response.status===403&&(remaining==='0'||retry!=null);
+      const reset=response.headers?.get?.('x-ratelimit-reset');
+      const resetTime=reset==null?NaN:Number(reset)*1000;
+      const wait=rateLimited?Math.max(15,
+        Number.isFinite(Number(retry))?Math.ceil(Number(retry)/60):15,
+        Number.isFinite(resetTime)?Math.ceil((resetTime-clock)/60000):0):
+        [401,403].includes(response.status)?60:15;
+      next.api_pause_until=asIso(clock+wait*60000);
+      return {backlog:next,results:[{status:'WAKE_RETRYABLE',
+        reason:rateLimited?'GitHub API rate limit HTTP '+response.status:
+          'GitHub wake HTTP '+response.status}]};
+    }catch{
+      next.api_pause_until=asIso(clock+15*60000);
+      return {backlog:next,results:[{status:'WAKE_RETRYABLE',reason:'transport_unverified'}]};
+    }
+  }
   // When Git inbox is enabled one REST wake is sufficient to process the
   // ENTIRE persisted batch. Suppress additional wakes for 15 minutes even
   // if later Muse polls see other Git-queued requests.
