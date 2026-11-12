@@ -6,6 +6,12 @@ set statement_timeout = '30s';
 -- The old broad member-write policy lets any café member forge a price-history
 -- receipt. History is append-only and the canonical price writer runs under
 -- the authenticated owner (or a service role). Keep existing member READs.
+-- Reason: the existing FOR ALL member-write policy allows a non-owner café
+-- member to forge or alter an owner's canonical price-history receipt.
+-- Replace it with owner-only INSERT while retaining the existing member read
+-- policy and service-role canonical POS/sync access; compatibility is part of
+-- the mandatory production-schema staging rehearsal.
+-- squawk-ignore ban-drop-policy
 drop policy if exists "members write price history" on public.menu_price_history;
 create policy "owner append canonical price history" on public.menu_price_history
   for insert to authenticated with check (exists (
