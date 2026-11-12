@@ -303,17 +303,21 @@ test("ledger validates private-only state and rejects secret and response fields
 test("ledger checks private visibility and retries optimistic CAS collisions", async () => {
   let put = 0;
   let state = { ...emptyLedger(), tasks: { a: { status: "assigned" } } };
-  let sha = "old";
+  let sha = "a".repeat(40);
   const fetchFn = async (url, options) => {
     if (url.endsWith("/example/private")) return { ok: true, json: async () => ({ private: true }) };
     if (options.method === "PUT") {
       put++;
       if (put === 1) return { ok: false, status: 409 };
       state = JSON.parse(Buffer.from(JSON.parse(options.body).content, "base64").toString("utf8"));
-      sha = "new";
+      sha = "b".repeat(40);
       return { ok: true, json: async () => ({ content: { sha } }) };
     }
-    return { ok: true, json: async () => ({ sha, content: Buffer.from(JSON.stringify(state)).toString("base64") }) };
+    if(url.includes('/git/trees/main'))return {ok:true,json:async()=>({
+      truncated:false,tree:[{path:'dispatcher/state.json',type:'blob',sha}]})};
+    if(url.includes('/git/blobs/'))return {ok:true,json:async()=>({
+      encoding:'base64',content:Buffer.from(JSON.stringify(state)).toString('base64')})};
+    throw Error('Unexpected mock API path '+url);
   };
   const ledger = new GitHubLedger({ repo: "example/private", token: "dummy", fetchFn });
   const result = await ledger.transaction(current => ({ ...current, tasks: { ...current.tasks, b: { status: "proposed" } } }));
@@ -384,6 +388,8 @@ test("failed private ledger PUT (including 404) cannot report successful persist
   const fake = async (url, options = {}) => {
     if (url.endsWith("/owner/private")) return { ok: true, json: async () => ({ private: true }) };
     if (options.method === "PUT") return { ok: false, status: 404 };
+    if (url.includes('/git/trees/main'))return {ok:true,json:async()=>({
+      truncated:false,tree:[]})};
     return { ok: false, status: 404 };
   };
   const ledger = new GitHubLedger({ repo: "owner/private", token: "dummy", fetchFn: fake });
@@ -398,7 +404,11 @@ test("CAS retries call reconciliation against newly loaded state each time", asy
       if (puts === 1) return { ok: false, status: 409 };
       return { ok: true, json: async () => ({ content: { sha: "sha" } }) };
     }
-    return { ok: true, json: async () => ({ sha: "sha", content: Buffer.from(JSON.stringify(emptyLedger())).toString("base64") }) };
+    if(url.includes('/git/trees/main'))return {ok:true,json:async()=>({
+      truncated:false,tree:[{path:'dispatcher/state.json',type:'blob',sha:'a'.repeat(40)}]})};
+    if(url.includes('/git/blobs/'))return {ok:true,json:async()=>({
+      encoding:'base64',content:Buffer.from(JSON.stringify(emptyLedger())).toString('base64')})};
+    throw Error('Unexpected mock API path '+url);
   };
   const ledger = new GitHubLedger({ repo: "owner/private", token: "dummy", fetchFn: fake });
   await ledger.transaction(async state => { calls++; state.tasks.a = { status: "proposed", snapshot_version: calls }; return state; });
