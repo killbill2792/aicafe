@@ -229,7 +229,7 @@ describe("thread memory server boundary", () => {
     expect(context.history[0].role).toBe("assistant");
     expect(context.history[0].content).toContain("Which milk?");
     expect(context.history[1]).toEqual({
-      role: "user", content: "We prefer oat milk for staff drinks.",
+      role: "user", content: ownerMessage.text_content,
     });
     expect(state.queries.every(q => q.filters.business_id === CAFE &&
       q.filters.owner_user_id === OWNER && (q.table !== "ai_messages" || q.filters.thread_id === THREAD))).toBe(true);
