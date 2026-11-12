@@ -107,7 +107,6 @@ export async function readElapsedWindowObservations(db:SupabaseClient,
    voided:row.voided,toastExcluded:Boolean(order?.toast_excluded),
    supersededBy:order?.superseded_by??null};
  });
- const result=summarizeElapsedWindow(window,rows,
+ return summarizeElapsedWindow(window,rows,
   sourceCovered&&completePages,asOf);
- return {...result,unknownTimeLines:result.unknownTimeLines+Number(!completePages)};
 }

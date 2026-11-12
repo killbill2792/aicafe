@@ -41,7 +41,7 @@ export async function postVerifiedSourceReminder(db:SupabaseClient,input:{
  try{
   await notifyOwner(db,{
    businessId:input.businessId,ownerUserId:input.ownerUserId,
-   threadId:input.threadId,taskId:id,kind:"price_experiment_reminder",
+   threadId:input.threadId,taskId:id,kind:"price_review",
    localDate:next.localDate,important:true,
   },async()=>{
    const task=await db.from("operating_tasks").upsert({
@@ -69,8 +69,9 @@ export async function postVerifiedSourceReminder(db:SupabaseClient,input:{
   const saved=await db.from("supervisor_experiment_notice_receipts").update({
    state:"posted",posted_at:new Date().toISOString(),task_id:id,
    message_id:messageId,updated_at:new Date().toISOString(),
-  }).eq("business_id",input.businessId).eq("id",claim).eq("state","claimed");
-  if(saved.error)throw new Error("reminder_post_receipt_failed");
+  }).eq("business_id",input.businessId).eq("id",claim).eq("state","claimed")
+   .select("id").maybeSingle();
+  if(saved.error||!saved.data)throw new Error("reminder_post_receipt_failed");
   return "posted";
  }catch(error){
   const updated=await db.from("supervisor_experiment_notice_receipts").update({
