@@ -61,15 +61,15 @@ describe("Task 8a actual notice write and durable delivery",()=>{
     return {data:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",error:null};},
    from:(table:string)=>{
     if(table==="supervisor_experiment_notice_receipts")return {
-     select:()=>({eq:()=>({eq:()=>({eq:()=>({eq:async()=>({
-      data:[],error:null})})})})}),
+     select:()=>({eq:()=>({eq:()=>({eq:()=>({eq:()=>({eq:async()=>({
+      data:[],error:null})})})})})}),
      update:(value:{state:string})=>{effects.push("receipt:"+value.state);
       receipts.state=value.state;
       return {eq:()=>({eq:()=>({eq:()=>({select:()=>query({id:"receipt"})})})})};
      },
     };
     if(table==="operating_tasks")return {upsert:async(value:{kind:string})=>{
-     effects.push("task:"+value.kind);calls.push(value);return {error:null};}};
+     effects.push("task:"+value.kind);calls.push({kind:value.kind});return {error:null};}};
     if(table==="ai_messages")return {insert:async()=>{effects.push("message");return {error:null};}};
     throw Error("Unexpected table "+table);
    },
