@@ -139,7 +139,7 @@ grant execute on function public.toast_apply_verified_menu_presence(
 create or replace function public.toast_verify_existing_price_history(
  p_business_id uuid,p_restaurant_guid uuid,p_item_pos_id text,
  p_version text,p_observed_at timestamptz,p_price_cents bigint
-) returns boolean language plpgsql security definer set search_path=public as $
+) returns boolean language plpgsql security definer set search_path=public as $$
 declare v_id uuid;h_id uuid;
 begin
  if auth.role() IS DISTINCT FROM 'service_role' then
@@ -188,7 +188,7 @@ begin
   toast_effective_at=null
  where id=h_id and (toast_publication_version is null or toast_publication_version=p_version);
  return found;
-end;$;
+end;$$;
 revoke all on function public.toast_verify_existing_price_history(
  uuid,uuid,text,text,timestamptz,bigint) from public,anon,authenticated;
 grant execute on function public.toast_verify_existing_price_history(
