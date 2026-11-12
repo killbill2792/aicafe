@@ -41,8 +41,10 @@ alter table public.ai_threads
     else false end
   ) not valid;
 
--- Verify existing rows with a weaker table lock than an immediate CHECK scan.
-alter table public.ai_threads validate constraint ai_threads_memory_summary_shape;
+-- The new JSONB column has a single known-valid constant default for existing rows.
+-- NOT VALID still enforces this CHECK on every new/updated row. Defer validation
+-- to a separately reviewed follow-up migration with a measured lock budget;
+-- Squawk correctly rejects NOT VALID + VALIDATE in the same transaction.
 
 comment on column public.ai_threads.memory_summary is
   'Bounded nonfinancial owner-authored thread context; provenance and revision are validated by save_ai_thread_memory.';
