@@ -76,7 +76,7 @@ try{
   "create table public.menu_price_history(id uuid primary key default gen_random_uuid(),business_id uuid not null,menu_item_id uuid not null,old_price_cents bigint not null,new_price_cents bigint not null,source_type text not null,source_provider text,changed_at timestamptz not null default now())",
   "create table public.menu_items(id uuid primary key,business_id uuid not null,price_cents bigint not null)",
   "alter table public.menu_price_history enable row level security",
-  "create policy \\"members write price history\\" on public.menu_price_history for all to authenticated using(true) with check(true)",
+  "create policy \"members write price history\" on public.menu_price_history for all to authenticated using(true) with check(true)",
   "grant usage on schema public,auth to authenticated",
   "grant insert,select,update on public.menu_price_history to authenticated",
   "grant usage on schema auth,public to service_role",
@@ -229,8 +229,8 @@ try{
  assert.deepEqual(purchaseReceipt,{state:"verified",receipt_ref:"pantry_stock_purchases:"+receiptId});
  await expectError(()=>withService(db,c=>c.query(rpcReconcile,[B,OWNER2,THREAD,purchaseId,4])),"P0001");
 
- // An unresolved price write has no proposal-scoped authoritative receipt:
- // even a matching current menu price MUST NOT manufacture verification.
+ // An unresolved price write needs both a proposal-scoped history receipt
+ // and a matching canonical menu price; either one alone cannot verify.
  // The old all-member history write policy must be narrowed. A staff member
  // cannot forge an owner price receipt, but the owner writer retains INSERT.
  const staffId="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
