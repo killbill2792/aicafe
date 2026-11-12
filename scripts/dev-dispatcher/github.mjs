@@ -146,6 +146,7 @@ export function isDispatcherMaintenanceChange(files) {
   return Array.isArray(files) && files.length > 0 && files.every(file =>
     typeof file?.filename === 'string' && (
       file.filename === 'AGENTS.md' ||
+      file.filename === 'docs/plans/dispatcher-muse-git-resilience.md' ||
       file.filename === '.claude/skills/'+settings.naming.task_prefix+'-pr-lifecycle/SKILL.md' ||
       file.filename === '.github/workflows/'+settings.workflows.dispatcher ||
       /^scripts\/dev-dispatcher\//.test(file.filename) ||

@@ -61,6 +61,14 @@ export class GitHubLedger {
     this.privateVerified = true;
   }
   async load() {
+    // The trusted persistent runner already uses Git-CAS for writes. Read the
+    // same private state via Git so large ledgers and REST quota pressure do
+    // not make every observation depend on Git Trees/Blobs requests.
+    if(process.env.DISPATCH_LEDGER_GIT_WRITES==='true'&&
+       this.repo===settings.ledger.repo){
+      const {readLedgerViaGit}=await import('./git-operations.mjs');
+      return {sha:null,state:readLedgerViaGit({repo:this.repo,token:this.token})};
+    }
     // Contents API intentionally returns empty content for files larger than
     // 1 MiB. Read by immutable Git blob SHA so an oversized private ledger can
     // never make the trusted dispatcher unable to reconcile.
