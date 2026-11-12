@@ -80,7 +80,8 @@ create policy supervisor_8a_windows_owner_read
 create function public.supervisor_8a_protect_toast_menu_source()
  returns trigger language plpgsql security invoker set search_path='' as $$
 begin
- if current_user not in ('anon','authenticated') then return new;end if;
+ if current_user not in ('anon','authenticated') and
+    coalesce(auth.role(),'') not in ('anon','authenticated') then return new;end if;
  if tg_op='INSERT' then
   if new.catalog_source='toast' or
      new.pos_item_id ~* '^toast:' or
@@ -115,7 +116,8 @@ create function public.supervisor_8a_protect_toast_price_history()
  returns trigger language plpgsql security invoker set search_path='' as $$
 declare protected_source boolean;
 begin
- if current_user not in ('anon','authenticated') then
+ if current_user not in ('anon','authenticated') and
+    coalesce(auth.role(),'') not in ('anon','authenticated') then
   if tg_op='DELETE' then return old;end if;
   return new;
  end if;
