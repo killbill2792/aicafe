@@ -20,7 +20,7 @@ import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure, dispatchLandingCheck } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
-import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue,resolveOwnerIssueIdentity,wakePendingOwnerNotices } from "./alerts.mjs";
+import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue,resolveOwnerIssueIdentity,resolveObsoleteLedgerReadIncidents,wakePendingOwnerNotices } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
@@ -861,7 +861,11 @@ async function main() {
       // by a permanently submitted/queued stable failure identity.
       const restored=resolveOwnerIssueIdentity(withOwnerNotices,{
         kind:'dispatcher_emergency',identity:'trusted-dispatcher:failure'});
-      const projected=recordLifecycleTransitions(restored,queue);
+      // A successful, authenticated trusted-main reconcile proves the old
+      // Contents API overflow no longer blocks state reads. Close only those
+      // historic UNDELIVERED error notices; never change other owner requests.
+      const recovered=resolveObsoleteLedgerReadIncidents(restored);
+      const projected=recordLifecycleTransitions(recovered,queue);
       const result=settleRecoveryRequests(projected,projectLifecycle(projected,queue));
       return JSON.stringify(result)===JSON.stringify(latest)?null:result;
     });

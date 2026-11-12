@@ -6,7 +6,7 @@ on:
   # GitHub may delay/drop scheduled events. Keep one five-minute schedule but
   # offset it from the crowded :00/:05/... boundaries.
   schedule:
-    - cron: '2/5 * * * *'
+    - cron: '3/5 * * * *'
   # When main advances, reconcile the already-received courier receipts now,
   # rather than waiting for a best-effort scheduled event. Not a new dispatcher.
   push:
