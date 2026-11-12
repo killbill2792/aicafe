@@ -10,7 +10,7 @@ import {spawnSync} from 'node:child_process';
 test('versioned Muse matrix uses existing private ledger and courier transport',()=>{
  const c=museOperationsContract();
  assert.equal(c.version,1);
- assert.equal(c.schema,'aicafe.muse-operations.v1');
+ assert.equal(c.schema,'muse.operations.v1');
  assert.equal(c.project_id,settings.naming.task_prefix);
  assert.equal(c.dispatcher.repository,settings.repo);
  assert.equal(c.queue.repository,settings.ledger.repo);
