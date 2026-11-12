@@ -25,17 +25,22 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
  if(bundle.receipt.restaurantGuid.toLowerCase()!==p.restaurantGuid.toLowerCase())
   throw new ToastApiError("unauthorized_location");
  const {data:previous,error:readError}=await db.from("toast_optional_sync_state")
-  .select("menu_last_updated,menu_copied_at,menu_checked_local_day")
+  .select("menu_last_updated,menu_copied_at,menu_checked_local_day,menu_pending_observations")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
  if(readError)throw new ToastApiError("unavailable");
  // Preserve the first same-version receipt BEFORE any canonical price write.
  // A failure after price import but before presence must not swap its original
  // evidence for the fresh observed time of an otherwise identical later fetch.
  const pendingVersion="pending:"+bundle.receipt.publicationVersion;
- const observedAt=(previous?.menu_last_updated===pendingVersion||
+ const samePending=(previous?.menu_last_updated===pendingVersion||
    previous?.menu_last_updated===bundle.receipt.publicationVersion)&&
-  previous.menu_checked_local_day===null&&previous.menu_copied_at
-   ?previous.menu_copied_at:bundle.receipt.observedAt;
+  previous?.menu_checked_local_day===null&&Boolean(previous?.menu_copied_at);
+ const observedAt=samePending?previous!.menu_copied_at!:bundle.receipt.observedAt;
+ // A fresh publication resets old-version provisional evidence; a retry must
+ // retain ALL prior observations, including a prior retry that wrote a price
+ // before crashing at presence or history verification.
+ const priorObservations=samePending&&Array.isArray(previous?.menu_pending_observations)
+  ?previous.menu_pending_observations:[];
  const committedBundle={...bundle,receipt:{...bundle.receipt,observedAt}};
  // A prefixed provisional version records the first source instant without
  // falsely satisfying POS0d's SQL gate that requires canonical import to finish.
@@ -44,8 +49,17 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
   business_id:p.businessId,restaurant_guid:p.restaurantGuid,
   menu_last_updated:pendingVersion,
   menu_copied_at:observedAt,menu_checked_local_day:null,
+  menu_pending_observations:priorObservations,
  },{onConflict:"business_id,restaurant_guid"});
  if(pendingError)throw new ToastApiError("unavailable");
+ // Atomic SQL registration precedes every possible canonical price write.
+ // Never continue if an observation could not be durably recorded.
+ const {error:observationStampError}=await db.rpc("toast_record_pending_menu_observation",{
+  p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+  p_version:bundle.receipt.publicationVersion,
+  p_first_observed_at:observedAt,p_observed_at:bundle.receipt.observedAt,
+ });
+ if(observationStampError)throw new ToastApiError("unavailable");
  await stageToastCatalog(db,p,bundle.facts);
  const imported=await syncCanonicalCatalog(db,p.businessId,
   {...adapter,fetchCatalogItems:async()=>bundle.items},{restaurantGuid:p.restaurantGuid});
@@ -89,22 +103,7 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
    p_observed_at:committedObservedAt,p_price_cents:item.priceCents,
   });
   if(error)throw new ToastApiError("unavailable");
-  let verified=data===true;
-  // A retry may complete a price write that did NOT occur during the first
-  // observation. Do not backdate its real menu_price_history.changed_at.
-  // Only after the original history lookup fails, try the fresh authenticated
-  // same-version receipt; SQL independently restricts that path to the exact
-  // still-pending first observation and the new history's true write window.
-  if(!verified&&Date.parse(committedObservedAt)!==Date.parse(bundle.receipt.observedAt)){
-   const {data:retryData,error:retryError}=await db.rpc("toast_verify_existing_price_history",{
-    p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
-    p_item_pos_id:item.posItemId,p_version:bundle.receipt.publicationVersion,
-    p_observed_at:bundle.receipt.observedAt,p_price_cents:item.priceCents,
-   });
-   if(retryError)throw new ToastApiError("unavailable");
-   verified=retryData===true;
-  }
-  if(verified)verifiedPriceChanges++;
+  if(data===true)verifiedPriceChanges++;
  }
  // This is the completion marker: only now can a matching version use the
  // cheap metadata-only path. A crash before this write leaves NULL pending.
