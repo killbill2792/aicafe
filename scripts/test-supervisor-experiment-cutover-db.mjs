@@ -144,7 +144,7 @@ async function run(){
   [ids.business,ids.item,ids.restaurant,version,observed]),
   "member-imported row with forged Toast provenance fields");
  await expectSourceBoundary(()=>writeAsOwner(
-  "update public.menu_items set price_cents=500 where id=$1",[ids.item]),
+  "update public.menu_items set price_cents=501 where id=$1",[ids.item]),
   "member-mutated Toast price");
  // A SECURITY DEFINER RPC retains the signed-in user's auth claim even
  // when its effective SQL role is privileged. Do not let it launder writes.
@@ -300,6 +300,10 @@ async function run(){
 }
 async function cleanup(){
  if(!seeded)return;
+ // This optional sync row references the location mapping without cascading;
+ // remove the synthetic source snapshot before deleting its café.
+ await admin.query("delete from public.toast_optional_sync_state where business_id=$1 or business_id=$2",
+  [ids.business,ids.foreignBusiness]);
  await admin.query("delete from public.businesses where id=$1 or id=$2",
   [ids.business,ids.foreignBusiness]);
  await admin.query("delete from auth.users where id=$1 or id=$2",
