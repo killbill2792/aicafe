@@ -78,7 +78,7 @@ try{
   "alter table public.menu_price_history enable row level security",
   "create policy \"members write price history\" on public.menu_price_history for all to authenticated using(true) with check(true)",
   "grant usage on schema public,auth to authenticated",
-  "grant insert,select,update on public.menu_price_history to authenticated",
+  "grant insert,select,update,delete on public.menu_price_history to authenticated",
   "grant usage on schema auth,public to service_role",
   "grant execute on function auth.uid() to service_role","grant execute on function auth.role() to service_role",
   "grant select on public.memberships to service_role",
@@ -239,6 +239,16 @@ try{
  await expectError(()=>withAuthenticated(db,staffId,c=>c.query(
   "insert into menu_price_history(business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider) values($1,$2,450,500,'owner_manual','forged')",
   [B,"cccccccc-cccc-4ccc-8ccc-cccccccccccc"])),"42501");
+ const ownerHistoryId=randomUUID();
+ await withAuthenticated(db,OWNER,c=>c.query(
+  "insert into menu_price_history(id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider) values($1,$2,$3,450,500,'owner_manual','owner-unit-proof')",
+  [ownerHistoryId,B,"cccccccc-cccc-4ccc-8ccc-cccccccccccc"]));
+ const staffUpdate=await withAuthenticated(db,staffId,c=>c.query(
+  "update menu_price_history set source_provider='forged' where id=$1",[ownerHistoryId]));
+ assert.equal(staffUpdate.rowCount,0,"staff cannot tamper with history after migration");
+ const staffDelete=await withAuthenticated(db,staffId,c=>c.query(
+  "delete from menu_price_history where id=$1",[ownerHistoryId]));
+ assert.equal(staffDelete.rowCount,0,"history must remain append-only for staff");
 
  const priceId="90000000-0000-4000-8000-000000000014";
  const menuId="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
