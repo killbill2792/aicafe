@@ -90,12 +90,13 @@ export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGa
         note:'Do not mark CI green or send unsanctioned repair; check existing signed repair action'});
     const mergeRow=state.lifecycle_v3?.rows?.[id]?.merge;
     const mergeAge=ago(r.ci_finished_at||r.ready_transition_at||r.last_github_activity,clock);
-    if(mergeRow?.eligible===true&&r.dispatcher_only!==true&&
-      mergeAge!==null&&mergeAge>=mergeEscalateMinutes)
+    if(mergeRow?.eligible===true&&mergeRow.current_head_sha===r.head_sha&&
+      r.dispatcher_only!==true&&mergeAge!==null&&mergeAge>=mergeEscalateMinutes)
       incidents.push({kind:'MERGE_ELIGIBLE_NOT_MOVING',task_id:id,
         pr_number:r.pr_number,head_sha:r.head_sha,age_minutes:mergeAge,
         action:'MERGE_IF_ELIGIBLE',note:'GitHub validates exact-head merge and owner holds'});
-    const codexAge=ago(r.ready_transition_at,clock);
+    const codexAge=ago(r.codex_requested_at||r.ready_transition_at||
+      r.ci_finished_at||r.head_first_seen_at,clock);
     if(r.draft===false&&r.ci_state==='success'&&
       r.codex_state!=='clean'&&r.codex_state!=='findings'&&
       r.codex_reviewed_sha!==r.head_sha&&codexAge!==null&&
