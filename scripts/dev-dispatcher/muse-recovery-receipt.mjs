@@ -53,6 +53,7 @@ export function validateMuseRecoveryReceipt(receipt,{
     typeof receipt.event_id!=='string'||
     !/^[A-Za-z0-9_-]{1,100}$/.test(receipt.event_id)||
     typeof receipt.submitted_at!=='string'||
+    (receipt.request_id!=null&&receipt.event_id!==receipt.request_id)||
     (receipt.requested_at!=null&&receipt.submitted_at!==receipt.requested_at))
    throw Error('Unverified Muse recovery receipt');
  // Muse can use the SAME authenticated Git writer as owner_instruction.
