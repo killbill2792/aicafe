@@ -139,8 +139,7 @@ export function publishEmergencyViaGit({repo=settings.ledger.repo,
       const viewPath=join(root,settings.ledger.owner_view_path);
       mkdirSync(dirname(viewPath),{recursive:true});
       writeFileSync(viewPath,renderPrivateQueue(compacted.state,{repo})+'\n');
-      git(['add','-A','--',settings.ledger.path,settings.ledger.owner_view_path,
-      ...archived,...consumed],{cwd:root,env,run});
+      git(['add','--',settings.ledger.path,settings.ledger.owner_view_path,...archived],{cwd:root,env,run});
       git(identity(['commit','-q','-m','chore(dispatcher): queue emergency owner notice']),{cwd:root,env,run});
       try{
         git(['push','origin','HEAD:refs/heads/main'],{cwd:root,env,run});
@@ -219,7 +218,8 @@ export async function transactLedgerViaGit({repo=settings.ledger.repo,token,
    const view=join(root,settings.ledger.owner_view_path);
    mkdirSync(dirname(view),{recursive:true});
    writeFileSync(view,renderPrivateQueue(compacted.state,{repo})+'\n');
-   git(['add','--',settings.ledger.path,settings.ledger.owner_view_path,...archived],{cwd:root,env,run});
+   git(['add','-A','--',settings.ledger.path,settings.ledger.owner_view_path,
+     ...archived,...consumed],{cwd:root,env,run});
    if(!git(['status','--porcelain'],{cwd:root,env,run}))
      return {committed:false,state};
    const old=git(['rev-parse','HEAD'],{cwd:root,env,run});
