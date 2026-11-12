@@ -25,6 +25,15 @@ async function withService(client,fn){
   const value=await fn(client);await client.query("commit");return value;
  }catch(error){await client.query("rollback");throw error;}
 }
+async function withAuthenticated(client,userId,fn){
+ await client.query("begin");
+ try{
+  await client.query("set local role authenticated");
+  await client.query("select set_config('request.jwt.claim.role','authenticated',true)");
+  await client.query("select set_config('request.jwt.claim.sub',$1,true)",[userId]);
+  const result=await fn(client);await client.query("commit");return result;
+ }catch(error){await client.query("rollback");throw error;}
+}
 async function expectError(fn,code){let actual=null;try{await fn();}catch(error){actual=error.code;}assert.equal(actual,code,"expected SQLSTATE "+code);}
 async function seedProposal(business,owner,thread,id,capability="leo.goal.v1"){
  const effect={goal:"increase_orders",target:5},hash=createHash("sha256").update(JSON.stringify(effect)+id).digest("hex");
@@ -65,6 +74,11 @@ try{
   "create table public.locations(id uuid primary key,business_id uuid not null references businesses(id))",
   "create table public.pantry_stock_purchases(id uuid primary key default gen_random_uuid(),business_id uuid not null,ingredient_id uuid not null,line_id uuid not null,purchase_date date not null,entered_quantity numeric not null,entered_unit text not null,cost_cents bigint,source text not null,voided_at timestamptz,unique(business_id,line_id))",
   "create table public.menu_price_history(id uuid primary key default gen_random_uuid(),business_id uuid not null,menu_item_id uuid not null,old_price_cents bigint not null,new_price_cents bigint not null,source_type text not null,source_provider text,changed_at timestamptz not null default now())",
+  "create table public.menu_items(id uuid primary key,business_id uuid not null,price_cents bigint not null)",
+  "alter table public.menu_price_history enable row level security",
+  "create policy \\"members write price history\\" on public.menu_price_history for all to authenticated using(true) with check(true)",
+  "grant usage on schema public,auth to authenticated",
+  "grant insert,select,update on public.menu_price_history to authenticated",
   "grant usage on schema auth,public to service_role",
   "grant execute on function auth.uid() to service_role","grant execute on function auth.role() to service_role",
   "grant select on public.memberships to service_role",
@@ -217,9 +231,19 @@ try{
 
  // An unresolved price write has no proposal-scoped authoritative receipt:
  // even a matching current menu price MUST NOT manufacture verification.
+ // The old all-member history write policy must be narrowed. A staff member
+ // cannot forge an owner price receipt, but the owner writer retains INSERT.
+ const staffId="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+ await db.query("insert into auth.users(id) values($1)",[staffId]);
+ await db.query("insert into memberships(business_id,user_id,role) values($1,$2,'staff')",[B,staffId]);
+ await expectError(()=>withAuthenticated(db,staffId,c=>c.query(
+  "insert into menu_price_history(business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider) values($1,$2,450,500,'owner_manual','forged')",
+  [B,"cccccccc-cccc-4ccc-8ccc-cccccccccccc"])),"42501");
+
  const priceId="90000000-0000-4000-8000-000000000014";
  const menuId="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
  await seedProposal(B,OWNER,THREAD,priceId,"alex.menu_price_change.v1");
+ await db.query("insert into menu_items(id,business_id,price_cents) values($1,$2,450)",[menuId,B]);
  await db.query("update supervisor_proposals set canonical_effect_payload=$2::jsonb where id=$1",[
    priceId,JSON.stringify({productId:menuId,oldPriceCents:450,newPriceCents:500,currency:"USD"})]);
  await withService(db,c=>c.query(rpcTransition,[B,OWNER,priceId,1,"approve",null]));
@@ -234,6 +258,9 @@ try{
  assert.equal((await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,priceId,3])).rows[0].value)).status,"executing");
  await db.query("update menu_price_history set source_provider=$2 where id=$1",[
    historyId,"Alex (owner approved; proposal "+priceId+")"]);
+ const noPricePostcondition=await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,priceId,3])).rows[0].value);
+ assert.equal(noPricePostcondition.status,"executing","history alone does not prove that the current price was applied");
+ await db.query("update menu_items set price_cents=500 where business_id=$1 and id=$2",[B,menuId]);
  const recoveredPrice=await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,priceId,3])).rows[0].value);
  assert.equal(recoveredPrice.status,"committed");
  const priceReceipt=(await db.query("select state,receipt_ref from supervisor_effect_attempts where proposal_id=$1",[priceId])).rows[0];
