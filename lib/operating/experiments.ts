@@ -1,7 +1,7 @@
 /** Experiments page: every running and finished Supervisor loop item, with no caps.
  * Built from the same rows and line logic as the Operating Board (board.ts), so the
  * page, the board and the chat describe the same experiments. */
-import {monitorDayIndex,reportLines,runningLines,type BoardProposalRow,type BoardReportRow} from "./board";
+import {monitorDayIndex,reportLines,runningLines,verifiedMonitorDay,type BoardProposalRow,type BoardReportRow} from "./board";
 
 export type ExperimentSampleRow={proposal_id:string;business_date:string;observation:unknown};
 export type ExperimentProposalRow=BoardProposalRow&{baseline:unknown};
@@ -28,18 +28,28 @@ const int=(v:unknown)=>typeof v==="number"&&Number.isSafeInteger(v)?v:null;
 const addDays=(day:string,n:number)=>new Date(Date.parse(day+"T00:00:00Z")+n*86_400_000).toISOString().slice(0,10);
 
 export function buildExperimentsList(proposals:readonly ExperimentProposalRow[],reports:readonly BoardReportRow[],
-  samples:readonly ExperimentSampleRow[],today:string):ExperimentsList{
-  const running=new Map(runningLines(proposals,today).map(line=>[line.proposalId,line]));
+  samples:readonly ExperimentSampleRow[],today:string,now=new Date().toISOString()):ExperimentsList{
+  const running=new Map(runningLines(proposals,today,reports,now).map(line=>[line.proposalId,line]));
   const finished=new Map(reportLines(proposals,reports).map(line=>[line.proposalId,line]));
   const reportById=new Map(reports.map(r=>[r.proposal_id,r]));
   const entries=proposals.flatMap((p):ExperimentEntry[]=>{
     const line=running.get(p.id)??finished.get(p.id);
     const effect=obj(p.canonical_effect_payload),baseline=obj(p.baseline),spec=obj(p.monitor_spec);
     const days=int(spec.durationDays);
-    const start=p.monitoring_start_date;
-    const end=start&&days?addDays(start,days-1):null;
-    // A window that ended without a final report yet is still shown, never dropped.
-    const awaiting=!line&&["manual_confirmed","committed"].includes(p.status)&&start&&end&&end<today;
+    const sourceStart=p.verified_window_start_at;
+    const sourceMs=sourceStart?Date.parse(sourceStart):NaN;
+    const sourceDay=sourceStart?verifiedMonitorDay(sourceStart,now):null;
+    const start=Number.isFinite(sourceMs)?new Date(sourceMs).toISOString().slice(0,10):
+      p.monitoring_start_date;
+    // Inclusive UTC label for a source-relative elapsed-24h interval.
+    const end=Number.isFinite(sourceMs)&&days?
+      new Date(sourceMs+days*86_400_000-1).toISOString().slice(0,10):
+      start&&days?addDays(start,days-1):null;
+    // An elapsed interval ending before this tick is awaiting a factual
+    // final report, not another week starting at lifecycle confirmation.
+    const awaiting=!line&&["manual_confirmed","committed"].includes(p.status)&&
+      (Number.isFinite(sourceMs)?sourceDay!==null&&days!==null&&sourceDay>days:
+       Boolean(start&&end&&end<today));
     if(!line&&!awaiting)return [];
     const title=line?line.productName:String(effect.productName??effect.title??"");
     if(!title)return [];
@@ -51,7 +61,8 @@ export function buildExperimentsList(proposals:readonly ExperimentProposalRow[],
       kind:goal?"goal":"price",productId:typeof effect.productId==="string"?effect.productId:null,
       oldPriceCents:goal?null:int(effect.oldPriceCents),newPriceCents:goal?null:int(effect.newPriceCents),
       stage:runningLine?runningLine.stage:report?"finished":"awaitingReport",
-      day:runningLine?.day??(start?Math.min(monitorDayIndex(start,today),days??Infinity):null),days,
+      day:runningLine?.day??(sourceDay!==null?Math.min(sourceDay,days??Infinity):
+        start?Math.min(monitorDayIndex(start,today),days??Infinity):null),days,
       startDate:start,endDate:end,
       baselineUnits7Days:int(effect.baselineUnits7Days),
       estimatedRevenueCents:int(baseline.estimatedAdditionalRevenue7DaysCents),
@@ -64,7 +75,7 @@ export function buildExperimentsList(proposals:readonly ExperimentProposalRow[],
         recommendation:finished.get(p.id)?.recommendation??null,generatedAt:report.generated_at,
         observedRevenueCents:int(result.observedRevenueCents),
         revenueDifferenceCents:int(result.realizedRevenueDifferenceCents),
-        coveredDays:int(result.coveredDays),goalMet:finished.get(p.id)?.goal?.met??null}:null,
+        coveredDays:int(result.coveredWindows)??int(result.coveredDays),goalMet:finished.get(p.id)?.goal?.met??null}:null,
       overlapsWith:[]}];
   });
   const open=entries.filter(e=>e.stage==="waitingOnOwner"||e.stage==="monitoring");
