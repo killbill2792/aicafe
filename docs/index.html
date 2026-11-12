@@ -17,6 +17,21 @@
     </nav>
   </header>
   <main class="container">
+    <section class="panel private-encrypted" aria-labelledby="encrypted-owner-heading">
+      <div class="box-head"><div>
+        <p class="eyebrow">Private · encrypted · read-only</p>
+        <h2 id="encrypted-owner-heading">Unlock full development task status</h2>
+      </div><button id="private-lock" type="button" hidden>Lock dashboard</button></div>
+      <p class="meta">Your task snapshot is encrypted before publication. Enter your private Pages passphrase to decrypt in this browser. No password or GitHub token is stored on this site.</p>
+      <form id="private-unlock-form" class="private-unlock" autocomplete="off">
+        <label for="private-passphrase">Dashboard passphrase</label>
+        <input type="password" id="private-passphrase" name="passphrase" autocomplete="off"
+          minlength="24" required aria-describedby="private-unlock-status" placeholder="Enter your private passphrase">
+        <button type="submit">Unlock private task view</button>
+      </form>
+      <p id="private-unlock-status" class="meta" role="status" aria-live="polite">Locked · private task data not loaded</p>
+      <div id="encrypted-private-view" hidden></div>
+    </section>
     <div class="hero">
       <div>
         <p class="eyebrow">GitHub dispatcher · Read-only</p>
