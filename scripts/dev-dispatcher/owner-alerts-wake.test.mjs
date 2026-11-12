@@ -10,3 +10,35 @@ test('GitHub and ledger 403 log status/body/request-id/rate-limits and not token
 {status:403,headers}); const logs=[],orig=console.error;console.error=x=>logs.push(x); try{ await assert.rejects(new GitHubFacts({repo:'owner/repo',token:'secret-NEVER-LOG', fetchFn:async()=>make()}).request('/pulls'),/RID-403/); await assert.rejects(new GitHubLedger({repo:'owner/ledger',token:'secret-NEVER-LOG', fetchFn:async()=>make()}).request('/contents/state.json'),/Resource not accessible/);
 }finally{console.error=orig;} assert.equal(logs.length,2); for(const line of logs){ assert.match(line,/status=403.*message=Resource not accessible by integration/); assert.match(line,/x-github-request-id=RID-403/); assert.match(line,/x-ratelimit-remaining=0/);
 assert.doesNotMatch(line,/secret-NEVER-LOG/); } }); test('the API message cannot echo the credential into diagnostics',async()=>{ const {GitHubFacts}=await import('./github.mjs'); const old=console.error,logs=[];console.error=x=>logs.push(x); try{ await assert.rejects(new GitHubFacts({repo:'owner/repo',token:'secret-NEVER-LOG',fetchFn:async()=>new Response(JSON.stringify({message:'GitHub echoed secret-NEVER-LOG'}),{status:403})}).request('/x'),/REDACTED/); }finally{console.error=old;} assert.equal(logs.length,1);assert.doesNotMatch(logs[0],/secret-NEVER-LOG/); });
+
+test('current trusted blob recovery retires only exact obsolete Contents overflow notices',async()=>{
+ const {resolveObsoleteLedgerReadIncidents,noticeHash}=await import('./alerts.mjs');
+ const now='2026-11-12T01:25:00.000Z';
+ const archived={kind:'dispatcher_emergency',status:'planned',
+  identity:'run:43123864935:failure',delivery_owner:'muse',
+  question:'Dispatcher killbill2792/aicafe: Unexpected GitHub ledger response Needed: Muse notify owner; inspect failed dispatcher workflow',
+  notice_hash:'a'.repeat(64),created_at:'2026-11-11T23:59:11Z'};
+ const other={...archived,identity:'run:43124000000:failure',notice_hash:'b'.repeat(64),
+   question:'Dispatcher killbill2792/aicafe: GitHub request failed: status=500 message=unavailable'};
+ const owner={kind:'owner_decision',status:'planned',identity:'approval:signed',
+   question:'Approve signed scope?',delivery_owner:'muse',notice_hash:'c'.repeat(64)};
+ const old={...archived,status:'submitted',identity:'run:43123900000:failure',
+   receipt:{courier:'muse',notice_hash:'d'.repeat(64)},notice_hash:'d'.repeat(64)};
+ const state={version:1,tasks:{X:{approved:true}},actions:{
+   one:{status:'planned',delivery:{prompt_hash:'e'.repeat(64)}}},
+   owner_alerts:{a:archived,b:other,c:owner,d:old}};
+ const before=JSON.stringify(state);
+ const next=resolveObsoleteLedgerReadIncidents(state,{now});
+ assert.equal(JSON.stringify(state),before,'source ledger not changed in place');
+ assert.equal(next.owner_alerts.a.status,'resolved');
+ assert.equal(next.owner_alerts.a.resolved_at,now);
+ assert.equal(next.owner_alerts.a.resolution,'git_blob_reader_verified_after_overflow_hotfix');
+ assert.equal(next.owner_alerts.a.notice_hash,archived.notice_hash);
+ assert.equal(next.owner_alerts.a.receipt,undefined,'no fabricated Muse delivery');
+ assert.equal(next.owner_alerts.b.status,'planned','other GitHub outage still live');
+ assert.equal(next.owner_alerts.c.status,'planned','owner question never muted');
+ assert.equal(next.owner_alerts.d.status,'submitted','existing authenticated receipt immutable');
+ assert.deepEqual(next.tasks,state.tasks);
+ assert.deepEqual(next.actions,state.actions);
+ assert.equal(resolveObsoleteLedgerReadIncidents(next,{now}).owner_alerts.a.resolved_at,now);
+});
