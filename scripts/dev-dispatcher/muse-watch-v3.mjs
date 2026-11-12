@@ -282,7 +282,10 @@ export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,a
     ciWarnMinutes:policy.ci_warn_minutes??5,
     ciEscalateMinutes:policy.ci_escalate_minutes??10,
     mergeEscalateMinutes:policy.merge_escalate_minutes??10});
-  const candidates=museRecoveryCandidates(health,state,{repo,actor,now});
+  if(!['safe_recovery_only','manual_only'].includes(policy.recovery_mode||'safe_recovery_only'))
+    throw Error('Unsupported Muse recovery mode');
+  const candidates=(policy.recovery_mode||'safe_recovery_only')==='manual_only'?
+    []:museRecoveryCandidates(health,state,{repo,actor,now});
   const planned=planMuseBacklog(reconcileMuseBacklog(backlog||{version:1,items:{}},state),candidates,now);
   const delivered=await deliverMuseRecovery(planned,{token,now,fetchImpl,
     apiPauseUntil:health.github_api_pause_until});
