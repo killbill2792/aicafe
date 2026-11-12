@@ -1,0 +1,225 @@
+name: Task 9 isolated database acceptance (temporary)
+
+on:
+  push:
+    branches:
+      - test/task9-455-main-adoption
+
+permissions:
+  contents: read
+
+jobs:
+  memory-rls:
+    name: Task 9 PostgreSQL 16 RLS and concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cafe_rls_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cafe_rls_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGDATABASE: cafe_rls_test
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install locked dependencies only
+        run: npm ci --ignore-scripts
+      - name: Execute actual Task 9 owner isolation and CAS tests
+        run: node scripts/test-ai-thread-memory-rls.mjs
+
+  local-supabase-schema:
+    name: Task 9 full local Supabase migration and grants
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Start disposable Supabase database
+        run: supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - name: Replay every migration against a clean local Supabase database
+        run: supabase db reset --local --yes
+      - name: Verify Task 9 schema, RLS, permissions and fail-closed RPC
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -X -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          do $assert$
+          begin
+            if not exists (
+              select 1 from supabase_migrations.schema_migrations
+              where version = '20261111000207'
+            ) then raise exception 'Task 9 migration was not applied'; end if;
+            if not exists (
+              select 1 from information_schema.columns
+              where table_schema='public' and table_name='ai_threads'
+                and column_name='memory_summary' and data_type='jsonb'
+                and is_nullable='NO' and column_default is not null
+            ) then raise exception 'Task 9 memory storage contract absent'; end if;
+            if to_regprocedure('public.save_ai_thread_memory(uuid,uuid,uuid,bigint,jsonb)') is null
+            then raise exception 'Task 9 scoped CAS function absent'; end if;
+            if not has_function_privilege('authenticated','public.save_ai_thread_memory(uuid,uuid,uuid,bigint,jsonb)','EXECUTE')
+              or has_function_privilege('anon','public.save_ai_thread_memory(uuid,uuid,uuid,bigint,jsonb)','EXECUTE')
+            then raise exception 'Task 9 memory RPC grants are unsafe'; end if;
+            if has_table_privilege('authenticated','public.ai_threads','UPDATE')
+            then raise exception 'Direct client updates to thread memory must be denied'; end if;
+            if not exists (
+              select 1 from pg_class where oid='public.ai_threads'::regclass and relrowsecurity
+            ) or not exists (
+              select 1 from pg_class where oid='public.ai_messages'::regclass and relrowsecurity
+            ) then raise exception 'Conversation tenant RLS is not enabled'; end if;
+            if not exists (
+              select 1 from pg_constraint
+              where conrelid='public.ai_threads'::regclass
+                and conname='ai_threads_memory_summary_shape' and contype='c'
+            ) then raise exception 'Memory shape constraint absent'; end if;
+            raise notice 'Task 9 fully migrated local Supabase schema and grants verified';
+          end
+          $assert$;
+
+          begin;
+          set local role authenticated;
+          do $assert$
+          declare outcome jsonb;
+          begin
+            outcome := public.save_ai_thread_memory(
+              '00000000-0000-4000-8000-000000000001'::uuid,
+              '00000000-0000-4000-8000-000000000002'::uuid,
+              '00000000-0000-4000-8000-000000000003'::uuid,
+              0,
+              '{"version":1,"revision":1,"cursor":null,"entries":[],"tombstones":[],"retry":null}'::jsonb
+            );
+            if outcome is distinct from '{"ok":false,"reason":"unauthorized"}'::jsonb
+            then raise exception 'Unauthenticated owner memory write was not denied: %', outcome; end if;
+            raise notice 'Task 9 unauthenticated write correctly rejected';
+          end
+          $assert$;
+          rollback;
+          SQL
+      - name: Stop disposable Supabase database
+        if: always()
+        run: supabase stop --no-backup
+
+  full-disposable-database:
+    name: Full database regressions including Task 9
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Install dependencies and start disposable local Supabase
+        run: |
+          npm ci --ignore-scripts >"$RUNNER_TEMP/npm-ci.log" 2>&1 &
+          npm_pid=$!
+          supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          npm_status=0
+          wait "$npm_pid" || npm_status=$?
+          cat "$RUNNER_TEMP/npm-ci.log"
+          exit "$npm_status"
+      - name: Run the existing full DB runner, including dedicated Task 9
+        run: bash scripts/db/run-all.sh
+      - name: Destroy disposable local Supabase database
+        if: always()
+        run: supabase stop --no-backup
+
+  all-unit-tests:
+    name: Full Vitest regressions (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run full Vitest shard
+        run: npm test -- --shard=${{ matrix.shard }}/3
+
+  quality-build-eval:
+    name: TypeScript, full lint, Webpack build and recorded Supervisor eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Strict TypeScript
+        run: npx tsc --noEmit
+      - name: Full lint
+        run: npm run lint
+      - name: Production Webpack build (no deployment)
+        run: npm run build -- --webpack
+      - name: Zero-cost recorded Supervisor evaluations
+        env:
+          PROMPTFOO_DISABLE_TELEMETRY: "1"
+          PROMPTFOO_DISABLE_UPDATE: "1"
+          PROMPTFOO_DISABLE_UPDATE_CHECK: "1"
+          NODE_OPTIONS: --conditions=react-server
+        run: npm run eval:supervisor
+
+  occupied-schema-upgrade:
+    name: Existing conversation upgrade and data preservation (local Supabase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Prepare an UNMIGRATED disposable checkout (no repository change)
+        run: |
+          cp supabase/migrations/20261111000207_ai_thread_memory.sql "$RUNNER_TEMP/20261111000207_ai_thread_memory.sql"
+          rm supabase/migrations/20261111000207_ai_thread_memory.sql
+          test -f "$RUNNER_TEMP/20261111000207_ai_thread_memory.sql"
+          test ! -f supabase/migrations/20261111000207_ai_thread_memory.sql
+      - name: Start local Supabase with all earlier migrations only
+        run: |
+          supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase db reset --local --yes
+      - name: Seed 64 preexisting threads/529 messages, preserve old behavior, test lock timeout, apply migration
+        env:
+          TASK9_UPGRADE_SQL: ${{ runner.temp }}/20261111000207_ai_thread_memory.sql
+        run: node scripts/test-ai-thread-memory-upgrade.mjs
+      - name: Destroy disposable local Supabase
+        if: always()
+        run: supabase stop --no-backup

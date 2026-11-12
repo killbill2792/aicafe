@@ -155,6 +155,9 @@ export class SupabaseLoopRepository implements LoopRepository{
     state:"verified"|"uncertain"|"stale",nextStatus?:"committed"|"manual_pending",startDate?:string):Promise<LoopProposal>{
     return new SupervisorEffectGateway().finish(scope,claim,expectedRevision,state,nextStatus,startDate);
   }
+  async reconcileEffect(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
+    return new SupervisorEffectGateway().reconcile(scope,uuid.parse(id),revision);
+  }
   async effectAttempt(scope:OwnerLoopScope,id:string){
     return new SupervisorEffectGateway().readAttempt(scope,uuid.parse(id));
   }

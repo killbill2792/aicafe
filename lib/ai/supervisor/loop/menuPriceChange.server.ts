@@ -50,15 +50,16 @@ export const menuPriceChangeCapability=registerLoopCapability({
       baseline:{source:"menu_items",status:"actual"},
       monitorSpec:{durationDays:7,metricScope:item.id}};
   },
-  commit:async(scope,effect)=>{
+  commit:async(scope,effect,proposalId)=>{
+    if(!proposalId)throw new Error("proposal_id_required");
     const supabase=await createServerSupabaseClient();
     // The effect has already been atomically claimed by the approval ledger.
     // No model-provided client or service-role write is permitted here.
     const current=await ownerMenuPrice(scope,effect.productId,supabase);
     if(current!==effect.oldPriceCents)throw new StaleProposalError(current);
-    // A Toast-connected menu price is *not* an AI CAFE-local owner edit.
-    // The only source of a published price is the verified Toast menu,
-    // and the Task 8a cutover must independently observe that publication.
+    // A Toast-connected published price is POS-owned. The local owner approval
+    // can only hand the owner to Toast Web; it must never write a local price
+    // history row that could masquerade as source publication evidence.
     const {data:source,error:sourceError}=await supabase.from("menu_items")
       .select("catalog_source").eq("business_id",scope.businessId)
       .eq("id",effect.productId).maybeSingle();
@@ -70,7 +71,8 @@ export const menuPriceChangeCapability=registerLoopCapability({
       businessId:scope.businessId,menuItemId:effect.productId,
       priceCents:effect.newPriceCents,expectedOldPriceCents:effect.oldPriceCents,
       sourceType:"owner_manual",
-      sourceProvider:"Alex (owner approved)",
+      // Stable canonical price-history receipt for exact proposal recovery.
+      sourceProvider:"Alex (owner approved; proposal "+proposalId+")",
     });
     if(!updated){
       // The approval may have raced with a Menu edit or POS sync AFTER the

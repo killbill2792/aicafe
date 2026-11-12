@@ -67,6 +67,18 @@ describe("single Supervisor effect gateway",()=>{
   expect(await new SupervisorEffectGateway().readAttempt(scope,id)).toBeNull();
   expect(calls.map(x=>x.table)).toEqual(["supervisor_proposals"]);
  });
+ it("reconciles only through the scoped service RPC; no capability commit is invoked",async()=>{
+   f.rpc.mockResolvedValueOnce({data:row("committed"),error:null});
+   const result=await new SupervisorEffectGateway().reconcile(scope,id,3);
+   expect(result.status).toBe("committed");
+   expect(f.rpc).toHaveBeenCalledWith("supervisor_reconcile_effect_attempt",{
+     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+     p_thread_id:scope.threadId,p_proposal_id:id,p_revision:3});
+ });
+ it("rejects a recovered proposal from a different owner or thread",async()=>{
+   f.rpc.mockResolvedValueOnce({data:{...row("committed"),thread_id:"99999999-9999-4999-8999-999999999999"},error:null});
+   await expect(new SupervisorEffectGateway().reconcile(scope,id,3)).rejects.toThrow("invalid scoped proposal");
+ });
  it("marks ambiguous provider outcomes uncertain without a next status or receipt",async()=>{
   f.rpc.mockResolvedValue({data:row("executing"),error:null});
   const claim={proposal:{id} as never,attemptKey:"55555555-5555-4555-8555-555555555555",

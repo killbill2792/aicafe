@@ -32,6 +32,7 @@ import {supervisorLoopRegistry} from "./priceExperiment.server";
 const scope={businessId:state.businessId,ownerUserId:"33333333-3333-4333-8333-333333333333",
   threadId:"44444444-4444-4444-8444-444444444444",locale:"en" as const};
 const input={productId:"22222222-2222-4222-8222-222222222222",newPriceCents:500};
+const proposalId="66666666-6666-4666-8666-666666666666";
 beforeEach(()=>{state.currency="USD";state.menu=[{...state.menu[0],active:true,priceCents:450}];
   state.current=450;state.saves=0;state.saveArgs=null;
   state.saveAttempts=0;state.changeBeforeSave=null;state.catalogSource="manual";});
@@ -65,7 +66,7 @@ describe("approved menu price capability",()=>{
   it("rejects a stale approval before calling canonical save",async()=>{
     const {effect}=await menuPriceChangeCapability.simulate(scope,input);
     state.current=475;
-    await expect(menuPriceChangeCapability.commit(scope,effect)).rejects.toBeInstanceOf(StaleProposalError);
+    await expect(menuPriceChangeCapability.commit(scope,effect,proposalId)).rejects.toBeInstanceOf(StaleProposalError);
     expect(state.saves).toBe(0);
     expect(state.saveAttempts).toBe(0);
   });
@@ -73,16 +74,22 @@ describe("approved menu price capability",()=>{
     const {effect}=await menuPriceChangeCapability.simulate(scope,input);
     // The fake DB changes only when the conditional RPC is called.
     state.changeBeforeSave=475;
-    await expect(menuPriceChangeCapability.commit(scope,effect))
+    await expect(menuPriceChangeCapability.commit(scope,effect,proposalId))
       .rejects.toBeInstanceOf(StaleProposalError);
     expect(state.saveAttempts).toBe(1);
     expect(state.saves).toBe(0);
     expect(state.current).toBe(475);
   });
+  it("requires a proposal identity before any canonical write",async()=>{
+    const {effect}=await menuPriceChangeCapability.simulate(scope,input);
+    await expect(menuPriceChangeCapability.commit(scope,effect)).rejects.toThrow("proposal_id_required");
+    expect(state.saves).toBe(0);
+    expect(state.saveAttempts).toBe(0);
+  });
   it("never writes a Toast-connected published item from a local owner-approved price proposal",async()=>{
     state.catalogSource="toast";
     const {effect}=await menuPriceChangeCapability.simulate(scope,input);
-    expect(await menuPriceChangeCapability.commit(scope,effect)).toEqual({
+    expect(await menuPriceChangeCapability.commit(scope,effect,proposalId)).toEqual({
       status:"requires_manual_action",instructionKey:"update_price_in_pos",
       instructions:{productName:"Latte",toPriceCents:"500"}});
     expect(state.saves).toBe(0);
@@ -93,12 +100,12 @@ describe("approved menu price capability",()=>{
     const {effect,baseline,monitorSpec}=await menuPriceChangeCapability.simulate(scope,input);
     expect(baseline).toEqual({source:"menu_items",status:"actual"});
     expect(monitorSpec).toEqual({durationDays:7,metricScope:input.productId});
-    expect(await menuPriceChangeCapability.commit(scope,effect)).toEqual({
+    expect(await menuPriceChangeCapability.commit(scope,effect,proposalId)).toEqual({
       status:"verified",evidenceSource:"menu_price_history"});
     expect(state.saves).toBe(1);
     expect(state.saveArgs).toMatchObject({businessId:scope.businessId,
       menuItemId:input.productId,priceCents:500,expectedOldPriceCents:450,sourceType:"owner_manual",
-      sourceProvider:"Alex (owner approved)"});
+      sourceProvider:"Alex (owner approved; proposal "+proposalId+")"});
   });
   it("reports only observed factual, non-causal covered sales",async()=>{
     const {effect}=await menuPriceChangeCapability.simulate(scope,input);
