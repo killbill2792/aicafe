@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { collectReceipts, inspectReceipts, applyReceipts, applyReceiptsSafely } from './inbox.mjs';
 import { queueOwnerAlerts } from './alerts.mjs';
+import {receiptFilename} from './receipt-identity.mjs';
 const hash = s=>createHash('sha256').update(s).digest('hex');
 const receipt={action_id:'assign:6',prompt_hash:hash('approved'),conversation_url:'https://chatgpt.com/c/abc-123',project_id:'aicafe',provider:'chatgpt'};
 const path='dispatcher/receipts/'+hash(receipt.action_id+':'+receipt.prompt_hash)+'.json';
@@ -191,4 +192,29 @@ test('unsupported Muse command records an explicit blocking outcome, never a fal
  assert.equal(result.owner_instruction_events.owner_speech_4.status,'BLOCKED');
  assert.equal(result.owner_instruction_events.owner_speech_4.reason,'unsupported_owner_command');
  assert.equal(result.tasks['9'].ci_state,'failure');
+});
+
+test('full private Git receipt scan to owner control uses actor, filename and original words',async()=>{
+ const utterance={kind:'owner_instruction',event_id:'owner_muse_full_1',
+   target:{task_id:'9'},text:'Set Task 9 priority to 90',
+   submitted_at:'2026-11-12T05:01:00Z'};
+ const name=receiptFilename(utterance),file='dispatcher/receipts/'+name;
+ const ledger={request:async key=>{
+   if(key==='/contents/dispatcher/receipts?ref=main')
+     return [{name,path:file,type:'file',sha:'f'.repeat(40)}];
+   if(key.startsWith('/commits?'))return [{author:{login:'authorized-muse'}}];
+   if(key==='/contents/'+file+'?ref=main')
+     return {content:Buffer.from(JSON.stringify(utterance)).toString('base64')};
+   throw Error('Unrecognized GitHub read '+key);
+ }};
+ const scanned=await inspectReceipts({ledger,allowedActors:['authorized-muse']});
+ assert.equal(scanned.complete,true);
+ assert.equal(scanned.accepted.length,1);
+ const s=applyReceipts({version:1,tasks:{'9':{approved:true}},actions:{}},
+   scanned.accepted,{'authorized-muse':'muse'});
+ assert.equal(s.owner_controls.per_task['9'].dispatch_priority,90);
+ assert.equal(s.owner_instruction_events.owner_muse_full_1.status,'APPLIED');
+ const denied=await inspectReceipts({ledger,allowedActors:['different-github-actor']});
+ assert.equal(denied.accepted.length,0);
+ assert.equal(denied.rejected[0].code,'unapproved_git_actor');
 });
