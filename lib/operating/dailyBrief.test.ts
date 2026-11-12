@@ -92,7 +92,7 @@ function fakeDb(o:{open?:string|null;already?:boolean;thread?:boolean;owners?:st
     self.upsert=async(row:Row,options?:{ignoreDuplicates?:boolean})=>{
       if(table==="morning_brief_runs"){
         runUpserts++;
-        if(row.owner_key===o.failRunFor?.owner&&row.channel===o.failRunFor.channel)
+        if(o.failRunFor&&row.owner_key===o.failRunFor.owner&&row.channel===o.failRunFor.channel)
           return {error:{code:"XX000"} as {code:string}|null};
         const index=runs.findIndex(r=>r.business_id===row.business_id&&r.local_date===row.local_date&&
           r.owner_key===row.owner_key&&r.channel===row.channel&&r.run_kind===row.run_kind);
