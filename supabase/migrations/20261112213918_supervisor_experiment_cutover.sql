@@ -15,6 +15,8 @@ create table public.supervisor_experiment_cutover_cafes (
   mode<>'new' or (parity_proven_at is not null and
    rollback_proven_at is not null and release_approved_at is not null))
 );
+-- Reason: supervisor_experiment_cutover_cafes is created here; RLS is required before granting owner-scoped read access.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_experiment_cutover_cafes enable row level security;
 revoke all on public.supervisor_experiment_cutover_cafes from public,anon,authenticated;
 grant select on public.supervisor_experiment_cutover_cafes to authenticated;
@@ -25,6 +27,8 @@ create policy supervisor_8a_cutover_owner_read
    where m.business_id=supervisor_experiment_cutover_cafes.business_id
     and m.user_id=(select auth.uid()) and m.role='owner'));
 
+-- Reason: window indexes are explicitly bounded to 0..90 and revision counters are small.
+-- squawk-ignore prefer-bigint-over-int
 create table public.supervisor_monitor_windows (
  id uuid primary key default gen_random_uuid(),
  business_id uuid not null references public.businesses(id) on delete cascade,
@@ -57,6 +61,8 @@ create table public.supervisor_monitor_windows (
 );
 create index supervisor_8a_windows_by_owner on public.supervisor_monitor_windows
  (business_id,owner_user_id,monitor_kind,updated_at desc);
+-- Reason: supervisor_monitor_windows is created here; RLS is required before granting owner-scoped read access.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_monitor_windows enable row level security;
 revoke all on public.supervisor_monitor_windows from public,anon,authenticated;
 grant select on public.supervisor_monitor_windows to authenticated;
@@ -92,6 +98,8 @@ create table public.supervisor_toast_price_context_changes (
 create index supervisor_8a_context_history
  on public.supervisor_toast_price_context_changes
  (business_id,menu_item_id,observed_at,id);
+-- Reason: supervisor_toast_price_context_changes is created here; RLS is required before granting owner-scoped read access.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_toast_price_context_changes enable row level security;
 revoke all on public.supervisor_toast_price_context_changes
  from public,anon,authenticated;
@@ -142,6 +150,8 @@ create trigger supervisor_8a_toast_price_context_change
  )
  execute function public.supervisor_8a_record_toast_price_context();
 
+-- Reason: reminder slots are 0..2 and retries are capped at 30; these counters cannot overflow.
+-- squawk-ignore prefer-bigint-over-int, prefer-bigint-over-smallint
 create table public.supervisor_experiment_notice_receipts (
  id uuid primary key default gen_random_uuid(),
  business_id uuid not null references public.businesses(id) on delete cascade,
@@ -168,6 +178,8 @@ create table public.supervisor_experiment_notice_receipts (
 );
 create index supervisor_8a_notice_retry on public.supervisor_experiment_notice_receipts
  (state,retry_at) where state<>'posted';
+-- Reason: supervisor_experiment_notice_receipts is created here; RLS is required before granting owner-scoped read access.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_experiment_notice_receipts enable row level security;
 revoke all on public.supervisor_experiment_notice_receipts from public,anon,authenticated;
 grant select on public.supervisor_experiment_notice_receipts to authenticated;
@@ -349,8 +361,6 @@ begin
  end if;
  return new;
 end;$$;
-drop trigger if exists supervisor_8a_toast_price_confirmation_guard
- on public.supervisor_proposals;
 create trigger supervisor_8a_toast_price_confirmation_guard
  before update on public.supervisor_proposals
  for each row execute function public.supervisor_8a_guard_toast_manual_confirmation();
