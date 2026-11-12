@@ -5,7 +5,9 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {z} from "zod";
 import {ACTIVE_PROPOSAL_STATUSES,ProposalRequestConflictError,effectHash} from "./engine";
-import type {LoopCreate,LoopRepository,OwnerLoopScope,LoopProposal,LoopSample,LoopReport} from "./engine";
+import type {LoopCreate,LoopRepository,OwnerLoopScope,LoopProposal,LoopSample,LoopReport,
+  EffectAuthorizationKind,LoopEffectClaim} from "./engine";
+import {SupervisorEffectGateway} from "./effectGateway.server";
 
 const uuid=z.uuid();
 type Row={
@@ -134,7 +136,7 @@ export class SupabaseLoopRepository implements LoopRepository{
     return decode(data as Row);
   }
   async transition(scope:OwnerLoopScope,id:string,revision:number,
-    action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed"|"finish_monitor",
+    action:"approve"|"reject"|"manual_confirmed"|"finish_monitor",
     startDate?:string):Promise<LoopProposal>{
     const db=createAdminSupabaseClient();
     const {data,error}=await db.rpc("supervisor_transition_proposal",{
@@ -145,26 +147,22 @@ export class SupabaseLoopRepository implements LoopRepository{
     if(error||!data)return failed(error,"Proposal state conflict");
     return decode(data as Row);
   }
-  /** These two menu-only operations extend the existing ledger rather than
-   * creating a second proposal store. Both SQL functions are service-only and
-   * lock the scoped, revisioned proposal row. */
-  /** Staff effects and committed ledger state are written in one SQL transaction. */
+  async claimEffect(scope:OwnerLoopScope,id:string,revision:number,
+    authorizationKind:EffectAuthorizationKind):Promise<LoopEffectClaim>{
+    return new SupervisorEffectGateway().claim(scope,uuid.parse(id),revision,authorizationKind);
+  }
+  async finishEffect(scope:OwnerLoopScope,claim:LoopEffectClaim,expectedRevision:number,
+    state:"verified"|"uncertain"|"stale",nextStatus?:"committed"|"manual_pending",startDate?:string):Promise<LoopProposal>{
+    return new SupervisorEffectGateway().finish(scope,claim,expectedRevision,state,nextStatus,startDate);
+  }
+  async effectAttempt(scope:OwnerLoopScope,id:string){
+    return new SupervisorEffectGateway().readAttempt(scope,uuid.parse(id));
+  }
+  /** Staff source CAS and the effect-attempt receipt share one SQL transaction. */
   async commitStaff(scope:OwnerLoopScope,id:string,revision:number):
     Promise<{state:"applied"|"stale";proposal:LoopProposal}>{
-    const {data,error}=await createAdminSupabaseClient().rpc("supervisor_commit_staff_proposal",{
-      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
-      p_thread_id:scope.threadId,p_proposal_id:uuid.parse(id),p_revision:revision,
-    });
-    if(error||!data)failed(error,"Staff approval transaction failed");
-    const result=data as {state:string;proposal:Row};
-    if((result.state!=="applied"&&result.state!=="stale")||!result.proposal)
-      throw new Error("Invalid staff commit result");
-    const proposal=decode(result.proposal);
-    if(proposal.businessId!==scope.businessId||proposal.ownerUserId!==scope.ownerUserId||
-      proposal.threadId!==scope.threadId||proposal.id!==id||
-      proposal.status!==(result.state==="applied"?"committed":"stale"))
-      throw new Error("Staff commit result outside approval scope");
-    return {state:result.state,proposal};
+    const result=await new SupervisorEffectGateway().commitStaff(scope,uuid.parse(id),revision);
+    return {state:result.state,proposal:result.proposal};
   }
   async editPurchaseDraft(scope:OwnerLoopScope,id:string,revision:number,effect:Record<string,unknown>,
     hash:string):Promise<LoopProposal>{
@@ -178,15 +176,6 @@ export class SupabaseLoopRepository implements LoopRepository{
       proposal.ownerUserId!==scope.ownerUserId||proposal.threadId!==scope.threadId)
       throw new Error("Edited purchase outside scope");
     return proposal;
-  }
-  async markStalePrice(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
-    const db=createAdminSupabaseClient();
-    const {data,error}=await db.rpc("supervisor_mark_stale_menu_price",{
-      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
-      p_thread_id:scope.threadId,p_proposal_id:uuid.parse(id),p_revision:revision,
-    });
-    if(error||!data)return failed(error,"Proposal stale transition failed");
-    return decode(data as Row);
   }
   async replacePriceDraft(scope:OwnerLoopScope,id:string,revision:number,
     requestKey:string,newEffect:Record<string,unknown>,newEffectHash:string):

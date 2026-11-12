@@ -81,7 +81,7 @@ export async function POST(request:Request,{params}:Params){
    case "reject":return conversationJson({proposal:await repo.transition(scope,
        input.proposalId,input.revision,"reject")});
    case "commit":return conversationJson(await commitLoop(scope,supervisorLoopRegistry,
-       repo,input.proposalId,input.revision));
+       repo,input.proposalId,input.revision,"click"));
    case "manual_done":{
      const db=createAdminSupabaseClient();
      const {data,error}=await db.from("businesses").select("timezone")

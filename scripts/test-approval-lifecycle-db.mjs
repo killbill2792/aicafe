@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import {spawnSync} from "node:child_process";
 import pg from "pg";
 
 // Disposable PostgreSQL only: exercise the REAL supervisor ledger migration,
@@ -18,6 +19,8 @@ const effect=(price)=>({productId:PRODUCT,productName:"Latte",oldPriceCents:450,
   newPriceCents:price,currency:"USD"});
 const rpcEdit="select public.supervisor_replace_menu_price_draft($1,$2,$3,$4,$5,$6,$7,$8) as value";
 const rpcStale="select public.supervisor_mark_stale_menu_price($1,$2,$3,$4,$5) as value";
+const rpcClaim="select public.supervisor_claim_effect($1,$2,$3,$4,$5,$6) as value";
+const rpcFinish="select to_jsonb(public.supervisor_finish_effect_attempt($1,$2,$3,$4,$5,$6,$7,$8,$9)) as value";
 const rpcTransition="select public.supervisor_transition_proposal($1,$2,$3,$4,$5,$6) as value";
 const params=(id,rev,action)=>[B,OWNER,id,rev,action,null];
 const editArgs=(id,rev,key,price)=>[B,OWNER,THREAD,id,rev,key,JSON.stringify(effect(price)),HASH];
@@ -72,7 +75,7 @@ try{
       $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     create function auth.role() returns text language sql stable as
       $$ select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),'anon') $$;
-    create table public.businesses(id uuid primary key);
+    create table public.businesses(id uuid primary key,timezone text not null default 'UTC',is_demo boolean not null default false);
     create table public.memberships(
       business_id uuid not null references businesses(id),
       user_id uuid not null references auth.users(id),
@@ -94,7 +97,9 @@ try{
   `);
   await db.query(readFileSync(new URL("../supabase/migrations/20261020000074_supervisor_execution_loop.sql",import.meta.url),"utf8"));
   await db.query(readFileSync(new URL("../supabase/migrations/20261023000083_approval_lifecycle_atomicity.sql",import.meta.url),"utf8"));
-  await db.query("insert into businesses(id) values($1),($2)",[B,FOREIGN]);
+  await db.query("create function public.supervisor_commit_staff_proposal(uuid,uuid,uuid,uuid,integer) returns jsonb language plpgsql as $stub$ declare p public.supervisor_proposals; begin update public.supervisor_proposals set status='executing',revision=revision+1,updated_at=now() where business_id=$1 and owner_user_id=$2 and thread_id=$3 and id=$4 and revision=$5 and status='approved' returning * into p; if p.id is null then raise exception 'stub_revision_conflict' using errcode='P0001'; end if; update public.supervisor_proposals set status='committed',revision=revision+1,committed_at=now(),monitoring_start_date=current_date+1,updated_at=now() where id=p.id returning * into p; return jsonb_build_object('state','applied','proposal',to_jsonb(p)); end $stub$");
+   await db.query(readFileSync(new URL("../supabase/migrations/20261111000206_supervisor_effect_gateway.sql",import.meta.url),"utf8"));
+  await db.query("insert into businesses(id,timezone,is_demo) values($1,'UTC',false),($2,'UTC',false)",[B,FOREIGN]);
   await db.query("insert into auth.users(id) values($1),($2)",[OWNER,STRANGER]);
   await db.query("insert into memberships(business_id,user_id,role) values($1,$2,'owner')",[B,OWNER]);
   await db.query("insert into ai_threads(id,business_id,owner_user_id) values($1,$2,$3)",[THREAD,B,OWNER]);
@@ -131,16 +136,20 @@ try{
     rpcStale,[B,OWNER,THREAD,staleId,1])),"P0001");
   await withService(db,c=>c.query(rpcTransition,params(staleId,1,"approve")));
   assert.deepEqual(await row(staleId),{status:"approved",revision:2});
-  await withService(db,c=>c.query(rpcTransition,params(staleId,2,"claim_commit")));
-  assert.deepEqual(await row(staleId),{status:"executing",revision:3});
-  await expectError(()=>withService(db,c=>c.query(
-    rpcStale,[B,OWNER,uuid(888),staleId,3])),"P0001");
-  await withService(db,c=>c.query(rpcStale,[B,OWNER,THREAD,staleId,3]));
+  const claimed=await withService(db,async c=>(await c.query(
+    rpcClaim,[B,OWNER,THREAD,staleId,2,"click"])).rows[0].value);
+  assert.equal(claimed.proposal.status,"executing");
+  assert.equal(claimed.proposal.revision,3);
+  await expectError(()=>withService(db,c=>c.query(rpcFinish,[
+    B,OWNER,uuid(888),staleId,claimed.attempt_key,3,"stale",null,null])),"P0001");
+  const stale=await withService(db,async c=>(await c.query(rpcFinish,[
+    B,OWNER,THREAD,staleId,claimed.attempt_key,3,"stale",null,null])).rows[0].value);
+  assert.equal(stale.status,"stale");
   assert.deepEqual(await row(staleId),{status:"stale",revision:4});
+  await expectError(()=>withService(db,c=>c.query(rpcFinish,[
+    B,OWNER,THREAD,staleId,claimed.attempt_key,3,"stale",null,null])),"P0001");
   await expectError(()=>withService(db,c=>c.query(
-    rpcStale,[B,OWNER,THREAD,staleId,3])),"P0001");
-  await expectError(()=>withService(db,c=>c.query(
-    rpcTransition,params(staleId,4,"claim_commit"))),"P0001");
+    rpcTransition,params(staleId,4,"claim_commit"))),"42501");
 
   // Approval wins row lock first: edit must fail without a child or rejection.
   const raceId=uuid(3);
@@ -196,4 +205,7 @@ try{
     await other.end();
   }
   console.log("Approval lifecycle PostgreSQL: stale terminal, failed edit rollback, scope and both approval/edit race orderings passed.");
+  const gateway=spawnSync(process.execPath,[new URL("./test-supervisor-effect-gateway-db.mjs",import.meta.url).pathname],
+    {stdio:"inherit",env:process.env});
+  assert.equal(gateway.status,0,"Supervisor effect gateway database acceptance failed");
 }finally{await db.end();}
