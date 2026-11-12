@@ -138,3 +138,45 @@ test('authenticated GitHub commit actor is checked before Muse recovery receipt 
  assert.equal(forged.rejected[0].code,'unapproved_git_actor');
  assert.deepEqual(applyReceiptsSafely(baseState(),forged.accepted,actors).state,baseState());
 });
+
+test('Muse can reuse owner-instruction receipt writer: no HMAC, request hash or code read',()=>{
+ const stamp=new Date().toISOString();
+ const raw={kind:'muse_recovery',version:1,project_id:'aicafe',
+  repo,intent:'RECONCILE',event_id:'muse-wake-unique-001',
+  task_id:null,pr_number:null,expected_head_sha:null,submitted_at:stamp};
+ const filename=receiptFilename(raw);
+ assert.match(filename,/^[a-f0-9]{64}\.json$/);
+ assert.equal(Object.hasOwn(raw,'request_id'),false);
+ assert.equal(Object.hasOwn(raw,'actor'),false);
+ const canonical=validateMuseRecoveryReceipt(raw,{actor,actors});
+ assert.match(canonical.request_id,/^[a-f0-9]{64}$/);
+ assert.equal(canonical.event_id,raw.event_id);
+ const applied=applyReceipts(baseState(),[{receipt:raw,actor}],actors);
+ assert.equal(applied.muse_recovery_events[raw.event_id].status,'REQUESTED');
+ assert.equal(applied.muse_recovery_events[raw.event_id].request_id,
+  canonical.request_id);
+ assert.equal(applied.recovery_requests[canonical.request_id].intent,'RECONCILE');
+});
+test('raw Muse recovery event ID collision cannot redirect an already-recorded request',()=>{
+ const stamp=new Date().toISOString();
+ const base={kind:'muse_recovery',version:1,project_id:'aicafe',
+  repo,event_id:'same-event',intent:'RECONCILE',
+  task_id:null,pr_number:null,expected_head_sha:null,submitted_at:stamp};
+ const first=applyReceipts(baseState(),[{receipt:base,actor}],actors);
+ const changed={...base,submitted_at:new Date(Date.parse(stamp)+1000).toISOString()};
+ assert.notEqual(receiptFilename(base),receiptFilename(changed));
+ assert.throws(()=>applyReceipts(first,[{receipt:changed,actor}],actors),
+  /Conflicting Muse recovery event ID/);
+ assert.equal(Object.keys(first.recovery_requests).length,1);
+});
+test('raw Muse receipt cannot forge an actionable request without exact existing task PR and SHA',()=>{
+ const submitted_at=new Date().toISOString();
+ const base={kind:'muse_recovery',version:1,project_id:'aicafe',
+  repo,event_id:'test-scoped-recovery',intent:'MERGE_IF_ELIGIBLE',
+  task_id:'10',pr_number:443,expected_head_sha:'b'.repeat(40),submitted_at};
+ const blocked=applyReceipts(baseState(),[{receipt:base,actor}],actors);
+ const recorded=blocked.muse_recovery_events['test-scoped-recovery'];
+ assert.equal(recorded.status,'BLOCKED');
+ assert.equal(blocked.recovery_rejections[recorded.request_id].reason,'stale_head');
+ assert.deepEqual(blocked.tasks,baseState().tasks);
+});
