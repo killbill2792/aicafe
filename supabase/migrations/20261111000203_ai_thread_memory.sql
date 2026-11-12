@@ -17,7 +17,7 @@ alter table public.ai_threads
         then jsonb_array_length(memory_summary->'entries') <= 20 else false end
       and case when jsonb_typeof(memory_summary->'tombstones') = 'array'
         then jsonb_array_length(memory_summary->'tombstones') <= 40 else false end
-      and case when memory_summary->'cursor' = 'null'::jsonb then true
+      and case when jsonb_typeof(memory_summary->'cursor') = 'null' then true
         when jsonb_typeof(memory_summary->'cursor') = 'object' then
           (memory_summary->'cursor' - array['createdAt','id']) = '{}'::jsonb
           and memory_summary->'cursor' ?& array['createdAt','id']
@@ -26,7 +26,7 @@ alter table public.ai_threads
           and coalesce(memory_summary->'cursor'->>'id','') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
           and coalesce(memory_summary->'cursor'->>'createdAt','') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
         else false end
-      and case when memory_summary->'retry' = 'null'::jsonb then true
+      and case when jsonb_typeof(memory_summary->'retry') = 'null' then true
         when jsonb_typeof(memory_summary->'retry') = 'object' then
           (memory_summary->'retry' - array['code','at']) = '{}'::jsonb
           and memory_summary->'retry' ?& array['code','at']
@@ -124,7 +124,7 @@ begin
   end if;
 
   v_cursor := p_memory_summary->'cursor';
-  if v_cursor <> 'null'::jsonb then
+  if jsonb_typeof(v_cursor) <> 'null' then
     if jsonb_typeof(v_cursor) is distinct from 'object' then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
@@ -157,7 +157,7 @@ begin
     v_cursor_at := null;
   end if;
 
-  if v_current->'cursor' <> 'null'::jsonb then
+  if jsonb_typeof(v_current->'cursor') <> 'null' then
     begin
       v_current_cursor_id := (v_current->'cursor'->>'id')::uuid;
       v_current_cursor_at := (v_current->'cursor'->>'createdAt')::timestamptz;
@@ -416,7 +416,7 @@ begin
     return jsonb_build_object('ok',false,'reason','invalid_summary');
   end if;
 
-  if p_memory_summary->'retry' <> 'null'::jsonb then
+  if jsonb_typeof(p_memory_summary->'retry') <> 'null' then
     if jsonb_typeof(p_memory_summary->'retry') is distinct from 'object' then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
