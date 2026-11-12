@@ -50,7 +50,8 @@ export const menuPriceChangeCapability=registerLoopCapability({
       baseline:{source:"menu_items",status:"actual"},
       monitorSpec:{durationDays:7,metricScope:item.id}};
   },
-  commit:async(scope,effect)=>{
+  commit:async(scope,effect,proposalId)=>{
+    if(!proposalId)throw new Error("proposal_id_required");
     const supabase=await createServerSupabaseClient();
     // The effect has already been atomically claimed by the approval ledger.
     // No model-provided client or service-role write is permitted here.
@@ -60,7 +61,8 @@ export const menuPriceChangeCapability=registerLoopCapability({
       businessId:scope.businessId,menuItemId:effect.productId,
       priceCents:effect.newPriceCents,expectedOldPriceCents:effect.oldPriceCents,
       sourceType:"owner_manual",
-      sourceProvider:"Alex (owner approved)",
+      // Stable canonical price-history receipt for exact proposal recovery.
+      sourceProvider:"Alex (owner approved; proposal "+proposalId+")",
     });
     if(!updated){
       // The approval may have raced with a Menu edit or POS sync AFTER the
