@@ -235,6 +235,10 @@ BEGIN
    'third retry preserves actual price write and second observation');
  -- The actual recorder is idempotent, checks the exact existing pending
  -- café/version/original timestamp, and cannot be forged by an owner.
+ -- Registration happens BEFORE canonical promotion in the actual worker.
+ UPDATE public.toast_optional_sync_state SET
+  menu_last_updated='pending:2026-11-09T12:00:00Z'
+ WHERE business_id=b AND restaurant_guid=r;
  actual:=public.toast_record_pending_menu_observation(
    b,r,'2026-11-09T12:00:00Z',observed,now());
  PERFORM pg_temp.pos0d_assert(jsonb_array_length(actual)=3,
@@ -259,6 +263,9 @@ BEGIN
  PERFORM pg_temp.pos0d_assert(failed,
    'authenticated owner cannot forge a pending observation');
  PERFORM set_config('request.jwt.claim.role','service_role',true);
+ UPDATE public.toast_optional_sync_state SET
+  menu_last_updated='2026-11-09T12:00:00Z'
+ WHERE business_id=b AND restaurant_guid=r;
  PERFORM pg_temp.pos0d_assert((SELECT toast_publication_version IS NULL
    FROM public.menu_price_history WHERE menu_item_id=gone AND source_type='owner_manual'),
    'late source proof cannot relabel the owner manual history');
