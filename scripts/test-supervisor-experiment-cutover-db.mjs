@@ -151,6 +151,11 @@ async function run(){
   [ids.business,ids.item])).n>0,"actual canonical source context mutation is durably audited");
  check((await activate(pinned)).status==="manual_confirmed",
   "pinned source activation recovers after current price/strategy/unpublication changes");
+ // A verified source receipt must cancel an otherwise pending reminder
+ // even if the cron read manual_pending before the source publication.
+ const publishedPending=await proposal("alex.menu_price_change.v1",ids.item,500);
+ check((await claim(workerA,publishedPending))===null,
+  "published exact approved price cannot generate a stale reminder");
  // No-claim on posted, expired lease reclaim, and no reclaim once owner
  // cancels/changes state. All claims use SQL's real service-role boundary.
  const pending=await proposal("alex.menu_price_change.v1",ids.item,600);
