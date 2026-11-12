@@ -36,7 +36,8 @@ BEGIN
  VALUES
  (a,rest_a,'cashmgmt/v1/entries',d,
   '{"guid":"cash-current-A","amount":12.50,"type":"CASH_IN",
-    "cardNumber":"4111111111111111","employee":{"guid":"employee-A","firstName":"Ava"},
+    "cardNumber":"4111111111111111","access_token":"synthetic-no-real-credential",
+    "employee":{"guid":"employee-A","firstName":"Ava"},
     "extra":{"nested":[{"common":true},{"lateOptional":"present-in-second-element"}]}}',
   repeat('a',64),'pos0e:cash-a'),
  (a,rest_a,'stock/v1/inventory',d,
@@ -232,9 +233,25 @@ BEGIN
    and public.ai_query_path('data.customer.paymentMethod.value') is null,
   'SQL keeps permitted contact paths while denying credential paths');
  PERFORM pg_temp.pos0e_assert(
+  public.ai_query_path('data.customer.access_token') is null
+   and public.ai_query_path('data.customer.refresh_token') is null
+   and public.ai_query_path('data.payments.0.payment_token') is null
+   and public.ai_query_path('data.customer.API_KEY') is null
+   and public.ai_query_path('data.customer.session_token') is null
+   and public.ai_query_path('data.customer.authorization_token') is null
+   and public.ai_query_path('data.customer.private_key') is null
+   and public.ai_query_path('data.customer.oauth_token') is null
+   and public.ai_query_path('data.customer.bearer_token') is null
+   and public.ai_query_path('data.customer.card_info') is null
+   and public.ai_query_path('data.customer.first_name') is not null
+   and public.ai_query_path('data.customer.loyalty_guid') is not null,
+  'old retained token keys denied in SQL, normal customer/loyalty keys retained');
+ PERFORM pg_temp.pos0e_assert(
   not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
-    '[{"field":"data.cardNumber"}]'::jsonb),
-  'legacy credential must not be described even when it exists in a retained row');
+    '[{"field":"data.cardNumber"}]'::jsonb)
+   and not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
+    '[{"field":"data.access_token"}]'::jsonb),
+  'legacy credential must not be described even when it exists in retained data');
  FOR n IN 1..36 LOOP
   INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
    payload,payload_sha256,capture_key)
