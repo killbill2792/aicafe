@@ -549,7 +549,7 @@ begin
         and h.old_price_cents = (p.canonical_effect_payload->>'oldPriceCents')::bigint
         and h.new_price_cents = (p.canonical_effect_payload->>'newPriceCents')::bigint
         and h.source_type = 'owner_manual'
-        and h.source_provider = 'Alex (owner approved; proposal ' || p.id::text || ')'
+        and h.source_provider = concat('Alex (owner approved', chr(59), ' proposal ', p.id::text, ')')
         and h.changed_at >= a.created_at
         and exists (select 1 from public.menu_items m
           where m.business_id = p.business_id and m.id = h.menu_item_id
@@ -571,7 +571,7 @@ begin
           where h.business_id = p.business_id and h.menu_item_id = m.id
             and h.source_type = 'owner_manual'
             and h.source_provider =
-              'Alex (owner approved; proposal ' || p.id::text || ')'
+              concat('Alex (owner approved', chr(59), ' proposal ', p.id::text, ')')
         )
     ) then
       -- Toast Web handoff is an INERT instruction, not a price write.
