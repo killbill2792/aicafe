@@ -217,10 +217,14 @@ export function applyThreadMemoryOperations(
     }];
     if (nextEntries.length > THREAD_MEMORY_MAX_ENTRIES) {
       const evicted = nextEntries.shift()!;
-      tombstones = [{
-        key: evicted.key, sourceMessageId: source.id, sourceAt: source.createdAt, revision,
-      }, ...tombstones.filter(item => item.key !== operation.key && item.key !== evicted.key)]
-        .slice(0, THREAD_MEMORY_MAX_TOMBSTONES);
+      // Only a key that already existed durably needs a tombstone. Entries
+      // introduced and evicted inside this same batch were never persisted.
+      if (current.entries.some(entry => entry.key === evicted.key)) {
+        tombstones = [{
+          key: evicted.key, sourceMessageId: source.id, sourceAt: source.createdAt, revision,
+        }, ...tombstones.filter(item => item.key !== operation.key && item.key !== evicted.key)]
+          .slice(0, THREAD_MEMORY_MAX_TOMBSTONES);
+      }
     }
     entries = nextEntries;
     tombstones = tombstones.filter(item => item.key !== operation.key);
