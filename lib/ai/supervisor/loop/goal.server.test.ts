@@ -9,7 +9,7 @@ vi.mock("@/lib/data/metricDay.server",()=>({readMetricDay:async(_b:string,date:s
     facts:{date,netSalesCents:net,ordersCount:100,drinksCount:0,ingredientsCents:0,wagesCents:0,staffTaxCents:0,
       cardFeesCents:0,voidsCents:0,salesDataStatus:"actual"}};
 }}));
-import {goalCapability} from "./goal.server";
+import {goalCapability,goalMandatePolicy} from "./goal.server";
 import {goalEffectSchema} from "@/lib/calc/goals/goalSpec";
 
 const scope={businessId:"b0000000-0000-4000-8000-000000000001",ownerUserId:"u0000000-0000-4000-8000-000000000001",
@@ -20,6 +20,10 @@ const effect=goalEffectSchema.parse({title:"Average ticket up 5%",days:7,propose
     {id:"guardrail1",role:"guardrail",metricKey:"orders",itemId:null,itemName:null,comparator:"gte",targetKind:"relative_pct",target:-10}]});
 
 describe("goal capability",()=>{
+  it("declares the only initial standing policy as count per café-local day",()=>{
+    expect(goalCapability.mandatePolicy).toEqual(goalMandatePolicy);
+    expect(goalMandatePolicy).toEqual({limitKind:"count",limitValue:5,periodKind:"cafe_day"});
+  });
   it("confirming a goal has no side effect",async()=>{
     expect(await goalCapability.commit(scope,effect)).toEqual({status:"verified",evidenceSource:"goal_tracking"});
   });

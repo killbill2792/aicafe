@@ -75,6 +75,38 @@ class MemoryRepo implements LoopRepository{
       monitoringStartDate:startDate??old.monitoringStartDate};
     this.proposals.set(id,updated);return updated;
   }
+  mandateLimit:number|null=null;
+  mandateUsage=0;
+  attempts=new Map<string,"executing"|"verified"|"uncertain"|"stale">();
+  async claimEffect(s:OwnerLoopScope,id:string,revision:number,authorizationKind:"click"|"mandate"){
+    let p=await this.load(s,id);
+    if(p.revision!==revision)throw Error("CAS conflict");
+    if(authorizationKind==="click"){
+      if(p.status!=="approved")throw Error("individual click required");
+    }else{
+      if(p.status!=="draft"||p.capabilityId!=="leo.goal.v1"||
+        this.mandateLimit===null||this.mandateUsage>=this.mandateLimit)
+        throw Error("standing mandate denied");
+      this.mandateUsage++;
+      p={...p,status:"approved",revision:p.revision+1};
+    }
+    const claimed={...p,status:"executing" as const,revision:p.revision+1};
+    this.proposals.set(id,claimed);this.attempts.set(id,"executing");
+    return {proposal:claimed,attemptKey:"attempt:"+id,businessDate:"2026-10-20",authorizationKind};
+  }
+  async finishEffect(s:OwnerLoopScope,claim:{proposal:LoopProposal;attemptKey:string;
+    businessDate:string;authorizationKind:"click"|"mandate"},expectedRevision:number,
+    state:"verified"|"uncertain"|"stale",nextStatus?:"committed"|"manual_pending",startDate?:string){
+    const p=await this.load(s,claim.proposal.id);
+    if(p.status!=="executing"||p.revision!==expectedRevision||
+      claim.attemptKey!=="attempt:"+p.id||this.attempts.get(p.id)!=="executing")throw Error("attempt conflict");
+    if(state==="uncertain"){this.attempts.set(p.id,"uncertain");return p;}
+    if(state==="stale"){const stale={...p,status:"stale" as const,revision:p.revision+1};
+      this.proposals.set(p.id,stale);this.attempts.set(p.id,"stale");return stale;}
+    const updated={...p,status:nextStatus!,revision:p.revision+1,
+      monitoringStartDate:startDate??null};
+    this.proposals.set(p.id,updated);this.attempts.set(p.id,"verified");return updated;
+  }
   async addSample(_s:OwnerLoopScope,id:string,sample:LoopSample){
     const map=this.rows.get(id)??new Map<string,LoopSample>();
     map.set(sample.businessDate,sample);this.rows.set(id,map);
@@ -163,6 +195,45 @@ describe("end-to-end universal Supervisor execution loop",()=>{
     expect(ended).toMatchObject({status:"insufficient_evidence",recommendation:"adjust"});
     expect(repo.reports.get(p.id)?.status).toBe("insufficient_evidence");
  });
+ it("reserves one goal start against the owner-selected café-day cap without a click",async()=>{
+    const goal=registerLoopCapability({
+      dependencyScope:(raw)=>({kind:"goal",raw}),
+      id:"leo.goal.v1",version:1,mandatePolicy:{limitKind:"count",limitValue:5,periodKind:"cafe_day"},
+      inputSchema:z.strictObject({value:z.number().int()}),
+      effectSchema:z.strictObject({value:z.number().int()}),
+      simulate:async(_s,input)=>({effect:input,baseline:{},monitorSpec:{durationDays:1,metricScope:"goal"}}),
+      commit:async()=>({status:"verified",evidenceSource:"goal_tracking"}),
+      monitor:async(_s,_e,date)=>({businessDate:date,observation:{ok:true},source:"test"}),
+      report:async()=>({status:"complete",result:{ok:true},recommendation:"keep",source:"test"}),
+    });
+    const repo=new MemoryRepo();repo.mandateLimit=1;const r=loopRegistry(goal);
+    const first=await proposeLoop(scope,r,repo,goal.id,{value:1},"mandate-first");
+    const started=await commitLoop(scope,r,repo,first.id,first.revision,"mandate");
+    expect(started.proposal.status).toBe("committed");
+    expect(repo.attempts.get(first.id)).toBe("verified");
+    const second=await proposeLoop(scope,r,repo,goal.id,{value:2},"mandate-second");
+    await expect(commitLoop(scope,r,repo,second.id,second.revision,"mandate")).rejects.toThrow("standing mandate denied");
+    expect(repo.attempts.has(second.id)).toBe(false);
+  });
+  it("keeps an ambiguous effect uncertain and never invokes its commit twice",async()=>{
+    let calls=0;
+    const uncertain=registerLoopCapability({
+      dependencyScope:(raw)=>({kind:"uncertain",raw}),
+      id:"test.uncertain_effect.v1",version:1,inputSchema:z.strictObject({value:z.number().int()}),
+      effectSchema:z.strictObject({value:z.number().int()}),
+      simulate:async(_s,input)=>({effect:input,baseline:{},monitorSpec:{durationDays:1,metricScope:"uncertain"}}),
+      commit:async()=>{calls++;throw Error("lost response after provider accepted it");},
+      monitor:async()=>null,report:async()=>({status:"insufficient_evidence",result:{},recommendation:"adjust",source:"test"}),
+    });
+    const repo=new MemoryRepo(),r=loopRegistry(uncertain);
+    const p=await proposeLoop(scope,r,repo,uncertain.id,{value:1},"uncertain-once");
+    const approved=await approveLoop(scope,repo,p.id,p.revision);
+    await expect(commitLoop(scope,r,repo,p.id,approved.revision)).rejects.toThrow("lost response");
+    expect(repo.attempts.get(p.id)).toBe("uncertain");
+    const latest=await repo.load(scope,p.id);
+    await expect(commitLoop(scope,r,repo,p.id,latest.revision)).rejects.toThrow("Approval required");
+    expect(calls).toBe(1);
+  });
  it("rejects cross-tenant/owner access and stale revisions",async()=>{
     const repo=new MemoryRepo();
     const p=await proposeLoop(scope,registry,repo,drinkFixture.id,

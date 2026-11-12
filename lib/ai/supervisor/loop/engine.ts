@@ -64,8 +64,10 @@ export type LoopReport={status:"in_progress"|"complete"|"insufficient_evidence";
     numericEvidence?:readonly import("@/lib/ai/agent/checkNumbers").NumericEvidence[];
   };
 };
+export type StandingMandatePolicy={limitKind:"count";limitValue:5;periodKind:"cafe_day"};
 export type RegisteredLoopCapability={
   id:string;version:1|2;proposalInputJsonSchema:unknown;proposalDescription:string;
+  mandatePolicy?:StandingMandatePolicy;
   simulate:(scope:OwnerLoopScope,rawInput:unknown)=>Promise<LoopSimulation>;
   parseEffect:(rawEffect:unknown)=>Record<string,unknown>;
   dependencyScope:(rawEffect:unknown)=>Record<string,unknown>;
@@ -83,6 +85,7 @@ export function registerLoopCapability<I,E extends Record<string,unknown>>(defin
   id:string;version:1|2;inputSchema:z.ZodType<I>;effectSchema:z.ZodType<E>;
   dependencyScope:(effect:E)=>Record<string,unknown>;
   proposalDescription?:string;
+  mandatePolicy?:StandingMandatePolicy;
   simulate:(scope:OwnerLoopScope,input:I)=>Promise<LoopSimulation>;
   commit:(scope:OwnerLoopScope,effect:E,proposalId?:string)=>Promise<LoopCommitResult>;
   monitor:(scope:OwnerLoopScope,effect:E,date:string)=>Promise<LoopSample|null>;
@@ -94,6 +97,7 @@ export function registerLoopCapability<I,E extends Record<string,unknown>>(defin
   const parse=(raw:unknown):E=>definition.effectSchema.parse(raw);
   return Object.freeze({
     id:definition.id,version:definition.version,
+    ...(definition.mandatePolicy?{mandatePolicy:definition.mandatePolicy}:{}),
     proposalInputJsonSchema:z.toJSONSchema(definition.inputSchema,{unrepresentable:"any",reused:"inline"}),
     proposalDescription:definition.proposalDescription??"Draft a registered effect for explicit owner review; do not approve or execute.",
     simulate:async(scope:OwnerLoopScope,raw:unknown)=>{
@@ -127,6 +131,9 @@ export function loopRegistry(...definitions:RegisteredLoopCapability[]){
   },list:()=>[...map.keys()]});
 }
 export type LoopCreate=Omit<LoopProposal,"id"|"status"|"revision"|"monitoringStartDate"|"createdAt">;
+export type EffectAuthorizationKind="click"|"mandate";
+export type LoopEffectClaim={proposal:LoopProposal;attemptKey:string;businessDate:string;authorizationKind:EffectAuthorizationKind};
+export type LoopEffectAttemptSummary={state:"executing"|"verified"|"uncertain"|"stale";authorizationKind:EffectAuthorizationKind;businessDate:string};
 export interface LoopRepository{
   cafeTimezone?:(scope:OwnerLoopScope)=>Promise<string>;
   /** Every proposal of the café (any owner) in ACTIVE_PROPOSAL_STATUSES. */
@@ -134,8 +141,12 @@ export interface LoopRepository{
   create(scope:OwnerLoopScope,requestKey:string,proposal:LoopCreate):Promise<LoopProposal>;
   load(scope:OwnerLoopScope,id:string):Promise<LoopProposal>;
   transition(scope:OwnerLoopScope,id:string,revision:number,
-    action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed"|"finish_monitor",
+    action:"approve"|"reject"|"manual_confirmed"|"finish_monitor",
     startDate?:string):Promise<LoopProposal>;
+  claimEffect?:(scope:OwnerLoopScope,id:string,revision:number,authorizationKind:EffectAuthorizationKind)=>Promise<LoopEffectClaim>;
+  finishEffect?:(scope:OwnerLoopScope,claim:LoopEffectClaim,expectedRevision:number,state:"verified"|"uncertain"|"stale",
+    nextStatus?:"committed"|"manual_pending",startDate?:string)=>Promise<LoopProposal>;
+  effectAttempt?:(scope:OwnerLoopScope,id:string)=>Promise<LoopEffectAttemptSummary|null>;
   addSample(scope:OwnerLoopScope,id:string,sample:LoopSample):Promise<void>;
   clearSample(scope:OwnerLoopScope,id:string,businessDate:string):Promise<void>;
   samples(scope:OwnerLoopScope,id:string):Promise<LoopSample[]>;
@@ -236,34 +247,54 @@ export async function approveLoop(scope:OwnerLoopScope,repo:LoopRepository,id:st
   throw new ProposalOverlapError(after);
 }
 export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof loopRegistry>,
-  repo:LoopRepository,id:string,revision:number):Promise<{proposal:LoopProposal;result:LoopCommitResult}>{
+  repo:LoopRepository,id:string,revision:number,authorizationKind:EffectAuthorizationKind="click"):
+  Promise<{proposal:LoopProposal;result:LoopCommitResult}>{
   const p=await repo.load(scope,id);assertProposalScope(scope,p);
-  if(p.revision!==revision||p.status!=="approved")throw new Error("Approval required");
+  if(p.revision!==revision||
+    (authorizationKind==="click"&&p.status!=="approved")||
+    (authorizationKind==="mandate"&&p.status!=="draft"))
+    throw new Error(authorizationKind==="mandate"?"Eligible standing mandate required":"Approval required");
   const def=registry.get(p.capabilityId);
+  if(authorizationKind==="mandate"&&!def.mandatePolicy)
+    throw new Error("Capability is not standing-mandate eligible");
   if(p.capabilityVersion!==def.version)throw new Error("Effect contract version changed");
   const effect=def.parseEffect(p.canonicalEffectPayload);
   if(p.effectHash!==effectHash(effect))throw new Error("Immutable effect changed");
-  // Resolve the authenticated café calendar BEFORE committing a side effect.
-  // A missing timezone must never execute an irreversible effect and fail afterward.
-  const timezone=await repo.cafeTimezone?.(scope);
-  if(!timezone)throw new Error("Café timezone required for commit");
-  const committedDate=cafeToday(timezone);
-  // Claim the exact approval under the repository's atomic revision lock
-  // BEFORE invoking a domain effect. A competing call never reaches commit.
-  // A failed effect deliberately remains "executing" for reconciliation:
-  // automatic retries must never invoke a potentially irreversible action twice.
-  const claimed=await repo.transition(scope,id,revision,"claim_commit");
-  if(claimed.status!=="executing"||claimed.revision!==revision+1||
-    claimed.effectHash!==p.effectHash)throw new Error("Approval claim invalid");
-  // Only this mode has access to the domain commit hook.
-  const result=await def.commit(scope,effect,id);
-  const transition=result.status==="requires_manual_action"?"manual_pending":"committed";
-  // For a future connected integration, a verified commit starts a monitor
-  // window. The manual POS workflow uses the café-local confirmed date.
-  const start=transition==="committed"?(result.status==="verified"?result.monitoringStartDate:undefined)??shiftCafeDate(committedDate,1):undefined;
+  // One gateway transaction validates provenance, derives the café-local
+  // business date, debits the quota when applicable, and reserves this effect.
+  if(!repo.claimEffect||!repo.finishEffect)throw new Error("Effect gateway repository unavailable");
+  const claim=await repo.claimEffect(scope,id,revision,authorizationKind);
+  const expectedClaimRevision=revision+(authorizationKind==="mandate"?2:1);
+  if(claim.proposal.status!=="executing"||claim.proposal.id!==p.id||
+    claim.proposal.revision!==expectedClaimRevision||claim.proposal.effectHash!==p.effectHash||
+    claim.authorizationKind!==authorizationKind)
+    throw new Error("Effect gateway claim invalid");
+  const committedDate=claim.businessDate;
+  let result:LoopCommitResult;
+  try{
+    result=await def.commit(scope,effect,id);
+  }catch(error){
+    // A failed response is not proof that the domain effect did not happen.
+    // Preserve an uncertain attempt and never automatically invoke commit again.
+    const state=error instanceof Error&&error.name==="StaleProposalError"?"stale":"uncertain";
+    await repo.finishEffect(scope,claim,claim.proposal.revision,state).catch(()=>{});
+    throw error;
+  }
+  const nextStatus=result.status==="requires_manual_action"?"manual_pending":"committed";
+  const start=nextStatus==="committed"
+    ?(result.status==="verified"?result.monitoringStartDate:undefined)??shiftCafeDate(committedDate,1)
+    :undefined;
   if(start&&utcDateOffset(start,0)!==start)throw new Error("Invalid monitor start date");
-  const updated=await repo.transition(scope,id,claimed.revision,transition,start);
-  return {proposal:updated,result};
+  try{
+    const updated=await repo.finishEffect(scope,claim,claim.proposal.revision,"verified",nextStatus,start);
+    return {proposal:updated,result};
+  }catch(error){
+    const latest=await repo.load(scope,id).catch(()=>null);
+    if(latest&&latest.status===nextStatus&&latest.revision===claim.proposal.revision+1)
+      return {proposal:latest,result};
+    await repo.finishEffect(scope,claim,claim.proposal.revision,"uncertain").catch(()=>{});
+    throw error;
+  }
 }
 export async function confirmManualLoop(scope:OwnerLoopScope,repo:LoopRepository,
   id:string,revision:number,monitorStartDate:string):Promise<LoopProposal>{
