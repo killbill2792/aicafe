@@ -173,7 +173,9 @@ export async function readVerifiedToastPriceEvidence(db:SupabaseClient,
  const facts={businessId,menuItemId,targetCents,
   menu:item,receipt:{...location.data,...checkpoint.data},
   history:prices.data??[]};
- const current=matchVerifiedToastPriceEvidence(facts);
- if(current.status==="verified")return current;
- return activation?matchVerifiedHistoricToastActivation({...facts,...activation}):current;
+ // For approved experiments choose the FIRST matching post-approval source
+ // transition, not a later replay that happens to be the current version.
+ // Any later change is separately checked as an interruption.
+ return activation?matchVerifiedHistoricToastActivation({...facts,...activation}):
+  matchVerifiedToastPriceEvidence(facts);
 }
