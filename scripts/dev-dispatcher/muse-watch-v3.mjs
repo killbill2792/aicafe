@@ -215,6 +215,12 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
     .filter(Number.isFinite).sort((a,b)=>b-a)[0];
   if(pause>clock)return {backlog:next,results:[{status:'API_PAUSED',until:asIso(pause)}]};
   if(pause&&pause<=clock)delete next.api_pause_until;
+  // When Git inbox is enabled one REST wake is sufficient to process the
+  // ENTIRE persisted batch. Suppress additional wakes for 15 minutes even
+  // if later Muse polls see other Git-queued requests.
+  if(maxRequests===1&&time(next.last_rest_wake_at)!==null&&
+    clock-time(next.last_rest_wake_at)<15*60000)
+    return {backlog:next,results:[{status:'REST_WAKE_COOLDOWN'}]};
   const results=[];
   let sent=0;
   for(const item of Object.values(next.items||{})){
@@ -227,6 +233,7 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
     }
     const r=item.request;
     sent++;
+    if(token&&maxRequests===1)next.last_rest_wake_at=now;
     try{
       const response=await fetchImpl('https://api.github.com/repos/'+r.repo+'/dispatches',{
         method:'POST',headers:{Authorization:'Bearer '+token,
