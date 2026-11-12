@@ -55,6 +55,20 @@ export class SupervisorEffectGateway{
    throw new Error("Effect gateway completion returned an invalid proposal");
   return proposal;
  }
+ /** Authoritative recovery: the database must prove a scoped postcondition.
+  * This RPC never invokes a capability commit or a provider send. */
+ async reconcile(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
+  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_reconcile_effect_attempt",{
+   p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
+   p_proposal_id:id,p_revision:revision});
+  if(error||!data)fail(error,"Effect outcome reconciliation failed");
+  const proposal=decode(data as ProposalRow);
+  if(proposal.id!==id||proposal.businessId!==scope.businessId||
+   proposal.ownerUserId!==scope.ownerUserId||proposal.threadId!==scope.threadId||
+   !["executing","committed","manual_pending"].includes(proposal.status))
+   throw new Error("Effect reconciliation returned an invalid scoped proposal");
+  return proposal;
+ }
  async readAttempt(scope:OwnerLoopScope,id:string):Promise<LoopEffectAttemptSummary|null>{
   const db=createAdminSupabaseClient();
   // The attempt ledger has no owner_user_id or thread_id columns. Authorize

@@ -40,6 +40,8 @@ vi.mock("@/lib/menu/priceHistory",()=>({
 }));
 vi.mock("./sales.server",()=>({readPriceExperimentSalesDays:async()=>[]}));
 import {menuPriceChangeCapability,StaleProposalError} from "./menuPriceChange.server";
+const coffeeProposal="66666666-6666-4666-8666-666666666666";
+const latteProposal="77777777-7777-4777-8777-777777777777";
 const scope={businessId:s.business,ownerUserId:"44444444-4444-4444-8444-444444444444",
  threadId:"55555555-5555-4555-8555-555555555555",locale:"en" as const};
 beforeEach(()=>{s.prices.coffee=450;s.prices.latte=600;s.saves=0;s.authUserId="44444444-4444-4444-8444-444444444444";});
@@ -54,16 +56,16 @@ describe("two independent owner price cards",()=>{
   const coffee=await menuPriceChangeCapability.simulate(scope,{productId:s.coffee,newPriceCents:500});
   const latte=await menuPriceChangeCapability.simulate(scope,{productId:s.latte,newPriceCents:675});
   expect(coffee.effect.preview).toHaveLength(1);
-  await Promise.all([menuPriceChangeCapability.commit(scope,coffee.effect),
-    menuPriceChangeCapability.commit(scope,latte.effect)]);
+  await Promise.all([menuPriceChangeCapability.commit(scope,coffee.effect,coffeeProposal),
+    menuPriceChangeCapability.commit(scope,latte.effect,latteProposal)]);
   expect(s.prices).toEqual({coffee:500,latte:675});
   expect(s.saves).toBe(2);
  });
  it("does not permit an outdated second card for the same product",async()=>{
   const first=await menuPriceChangeCapability.simulate(scope,{productId:s.coffee,newPriceCents:500});
   const second=await menuPriceChangeCapability.simulate(scope,{productId:s.coffee,newPriceCents:525});
-  await menuPriceChangeCapability.commit(scope,first.effect);
-  await expect(menuPriceChangeCapability.commit(scope,second.effect))
+  await menuPriceChangeCapability.commit(scope,first.effect,coffeeProposal);
+  await expect(menuPriceChangeCapability.commit(scope,second.effect,latteProposal))
    .rejects.toBeInstanceOf(StaleProposalError);
   expect(s.prices.coffee).toBe(500);
   expect(s.saves).toBe(1);
