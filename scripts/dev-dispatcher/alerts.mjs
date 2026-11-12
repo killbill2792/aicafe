@@ -106,12 +106,17 @@ export function queueOwnerIssue(state,{kind,task_id=null,pr_number=null,identity
 export function resolveObsoleteLedgerOverflowNotices(state,{
   at=new Date().toISOString()
 }={}){
- if(!Number.isFinite(Date.parse(at)))throw Error('Invalid dispatcher recovery timestamp');
+ const resolvedAt=Date.parse(at);
+ if(!Number.isFinite(resolvedAt))throw Error('Invalid dispatcher recovery timestamp');
+ // Run this cleanup ONCE after the first successful trusted-main recovery.
+ // A later recurrence of this error is a NEW incident, not an obsolete one.
+ if(state.legacy_ledger_overflow_cleanup_at)return state;
  const prefix='Dispatcher '+settings.repo+': Unexpected GitHub ledger response Needed:';
  let next=null;
  for(const [key,notice] of Object.entries(state.owner_alerts||{})){
+   const createdAt=Date.parse(notice?.created_at||'');
    if(notice?.kind!=='dispatcher_emergency'||notice.status!=='planned'||
-     notice.receipt||
+     notice.receipt||!Number.isFinite(createdAt)||createdAt>resolvedAt||
      !/^run:\\d+:failure$/.test(notice.identity||'')||
      typeof notice.question!=='string'||!notice.question.startsWith(prefix))
        continue;
@@ -122,6 +127,7 @@ export function resolveObsoleteLedgerOverflowNotices(state,{
    next.owner_alerts[key].resolved_at=at;
    next.owner_alerts[key].resolution_reason='verified_github_ledger_blob_reader_recovered';
  }
+ if(next)next.legacy_ledger_overflow_cleanup_at=at;
  return next||state;
 }
 
