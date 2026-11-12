@@ -30,6 +30,7 @@ const price=z.number().int().safe().positive().max(100000);
 const actions=z.discriminatedUnion("action",[
   z.strictObject({action:z.literal("approve"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("start"),proposalId:uuid,revision}),
+  z.strictObject({action:z.literal("reconcile"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("cancel"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("edit"),proposalId:uuid,revision,newPriceCents:price}),
   z.strictObject({action:z.literal("edit_purchase"),proposalId:uuid,revision,
@@ -163,6 +164,24 @@ export async function POST(request:Request,{params}:Params){
     try{p=await repo.load(scope,input.proposalId);}
     catch{return conversationJson({error:"proposal_not_found"},404);}
     assertProposalScope(scope,p);
+    if(input.action==="reconcile"){
+      if(p.revision!==input.revision)return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      // This POST only checks canonical receipts / inert transitions. It never
+      // invokes a capability commit and cannot resend a failed provider action.
+      if(p.status==="committed"||p.status==="manual_pending")
+        return conversationJson({state:"applied",proposal:await view(scope,repo,p)});
+      if(p.status!=="executing")
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      try{
+        const reconciled=await repo.reconcileEffect(scope,p.id,p.revision);
+        return conversationJson({state:reconciled.status==="executing"?"uncertain":"applied",
+          proposal:await view(scope,repo,reconciled)},reconciled.status==="executing"?409:200);
+      }catch{
+        // A reconciliation failure is not permission to retry the effect.
+        return conversationJson({state:"uncertain",error:"effect_reconciliation_unavailable",
+          proposal:await view(scope,repo,await repo.load(scope,p.id))},409);
+      }
+    }
     if(input.action==="start"&&p.capabilityId!==goalCapabilityId)
       return conversationJson({error:"standing_mandate_action_not_eligible"},403);
     const staff=isStaffCapabilityId(p.capabilityId);
