@@ -57,10 +57,6 @@ table td:last-child{min-width:220px}
 .decision p{font-size:13px;margin:8px 0;color:var(--muted);overflow-wrap:anywhere}
 .decision p:last-child{margin-bottom:0}
 .empty{font-size:13px;color:var(--muted)}
-.private{padding:22px}
-.private p{color:var(--muted);font-size:13px;margin:9px 0 20px}
-.private a.action{background:var(--brand);color:var(--paper);padding:11px 14px;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700;display:inline-block}
-.private a.action:hover{opacity:.88}
 .trust{padding-top:22px;border-top:1px solid var(--border);margin-top:24px;color:var(--muted);font-size:12px}
 footer{padding:25px 0 45px;color:var(--muted);font-size:12px}
 .inline-link{font-weight:650}
@@ -94,23 +90,6 @@ footer{padding:25px 0 45px;color:var(--muted);font-size:12px}
 .guide p{font-size:13px;margin:8px 0;color:var(--ink)}
 @media(max-width:760px){.nav-links{gap:10px}.architecture-stage{min-width:195px}}
 
-
-/* Full owner snapshot stays encrypted until an explicit per-tab unlock. */
-.private-encrypted{margin-top:26px;padding:22px}
-.private-encrypted .box-head{display:flex;justify-content:space-between;align-items:start;gap:14px}
-.private-unlock{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin-top:16px}
-.private-unlock label{font-weight:650;font-size:13px}
-.private-unlock input{min-width:min(320px,100%);padding:10px 12px;border:1px solid var(--border);
-  border-radius:8px;background:var(--paper);color:var(--ink)}
-.private-unlock button,.private-encrypted button{padding:10px 14px;border:1px solid var(--border);
-  border-radius:8px;background:var(--brand);color:var(--paper);cursor:pointer}
-.private-encrypted .private-task-table{width:100%;border-collapse:collapse}
-.private-task-table td,.private-task-table th{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);
-  vertical-align:top;white-space:nowrap;font-size:13px}
-.private-task-table thead th{background:var(--brandsoft);position:sticky;top:0}
-.private-encrypted .table-scroll{max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:9px}
-.private-health{font-weight:650}
-.private-encrypted [hidden]{display:none!important}
 
 /* One owner operations table: status remains readable on phone and desktop. */
 .task-controls{display:flex;flex-wrap:wrap;gap:14px;padding:0 20px 16px;align-items:end}
