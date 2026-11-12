@@ -12,14 +12,19 @@ export function receiptFilename(receipt){
       throw Error('Invalid notice identity');
     identity='owner:'+receipt.notice_id+':'+receipt.notice_hash;
   }else if(receipt.kind==='muse_recovery'){
-    if(typeof receipt.request_id!=='string'||!/^[a-f0-9]{64}$/.test(receipt.request_id)||
-       receipt.event_id!==receipt.request_id||receipt.version!==1||
-       typeof receipt.repo!=='string'||typeof receipt.actor!=='string')
+    if(typeof receipt.event_id!=='string'||
+       !/^[A-Za-z0-9_-]{1,100}$/.test(receipt.event_id)||
+       receipt.version!==1||typeof receipt.repo!=='string'||
+       typeof receipt.project_id!=='string'||
+       (receipt.request_id!=null&&
+        (typeof receipt.request_id!=='string'||
+         !/^[a-f0-9]{64}$/.test(receipt.request_id))))
       throw Error('Invalid Muse recovery receipt identity');
     identity='muse-recovery:'+receipt.event_id+':'+
-      hash(JSON.stringify([receipt.repo,receipt.actor,receipt.intent,
-        receipt.task_id,receipt.pr_number,receipt.expected_head_sha,
-        receipt.requested_at]));
+      hash(JSON.stringify([receipt.project_id,receipt.repo,receipt.intent,
+        receipt.task_id??null,receipt.pr_number??null,
+        receipt.expected_head_sha??null,
+        receipt.requested_at||receipt.submitted_at]));
   }else if(['owner_reply','owner_instruction'].includes(receipt.kind)){
     if(typeof receipt.event_id!=='string'||!receipt.target||
        typeof receipt.target!=='object'||typeof receipt.text!=='string')
