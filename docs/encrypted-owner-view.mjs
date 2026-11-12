@@ -86,7 +86,8 @@ export function initEncryptedOwnerView({fetchImpl=fetch}={}){
  const lock=document.querySelector('#private-lock');
  const result=document.querySelector('#private-unlock-status');
  const panel=document.querySelector('#encrypted-private-view');
- if(!form||!password||!lock||!result||!panel)return;
+ const submit=form?.querySelector('button[type="submit"]');
+ if(!form||!password||!lock||!result||!panel||!submit)return;
  const clear=()=>{panel.replaceChildren();panel.hidden=true;password.value='';
    lock.hidden=true;form.hidden=false;result.textContent='Locked · private task data not loaded';};
  lock.addEventListener('click',clear);
@@ -105,5 +106,9 @@ export function initEncryptedOwnerView({fetchImpl=fetch}={}){
      result.textContent='Unlocked in this tab only. No changes can be made here.';
    }catch(error){clear();result.textContent=String(error.message).slice(0,160);}
  });
+ // HTML is inert by default: enable only after this authenticated browser
+ // handler is installed. No name= attribute can serialize the password in a
+ // native GET even if something breaks later.
+ submit.disabled=false;
  clear();
 }
