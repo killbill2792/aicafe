@@ -5,6 +5,8 @@
 export type BoardProposalRow={
   id:string;thread_id:string;status:string;capability_id:string;
   canonical_effect_payload:unknown;monitor_spec:unknown;monitoring_start_date:string|null;
+  /** Immutable window-zero source instant; present only for verified Task 8a price monitors. */
+  verified_window_start_at?:string|null;
 };
 export type BoardReportRow={proposal_id:string;status:string;report:unknown;generated_at:string};
 
@@ -66,8 +68,16 @@ function durationDays(spec:unknown){
 }
 export const monitorDayIndex=(from:string,to:string)=>Math.round((Date.parse(to+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86_400_000)+1;
 
+/** Time-based progress for verified elapsed-24h source windows, never the
+ * unrelated lifecycle transition date. Null means invalid pinned evidence. */
+export function verifiedMonitorDay(startAt:string,now:string):number|null{
+ const start=Date.parse(startAt),current=Date.parse(now);
+ if(!Number.isFinite(start)||!Number.isFinite(current))return null;
+ return Math.floor((current-start)/86_400_000)+1;
+}
 /** Every running line, uncapped: what the board and the Experiments page call "Running". */
-export function runningLines(proposals:readonly BoardProposalRow[],today:string):BoardRunning[]{
+export function runningLines(proposals:readonly BoardProposalRow[],today:string,
+ reports:readonly BoardReportRow[]=[],now=new Date().toISOString()):BoardRunning[]{
   return proposals.flatMap((p):BoardRunning[]=>{
     // Event insights and their reports live only in the dedicated Events panel.
     if(p.capability_id===EVENT_CAPABILITY)return [];
@@ -78,9 +88,13 @@ export function runningLines(proposals:readonly BoardProposalRow[],today:string)
     if(!["manual_confirmed","committed"].includes(p.status)||!p.monitoring_start_date)return [];
     const days=durationDays(p.monitor_spec);
     if(days===null)return [];
-    const day=monitorDayIndex(p.monitoring_start_date,today);
-    // A monitored change with no monitoring window (a plain price change) is not "running".
-    if(day>days)return [];
+    const sourceStart=p.verified_window_start_at;
+    // The pinned Task 8a report wins over a stale lifecycle 'running' date.
+    if(sourceStart&&reports.some(r=>r.proposal_id===p.id&&
+      (r.status==="complete"||r.status==="insufficient_evidence")))return [];
+    const day=sourceStart?verifiedMonitorDay(sourceStart,now):
+      monitorDayIndex(p.monitoring_start_date,today);
+    if(day===null||day>days)return [];
     return [{proposalId:p.id,threadId:p.thread_id,capabilityId:p.capability_id,...effect,stage:"monitoring",day:Math.max(0,day),days}];
   });
 }
@@ -103,9 +117,9 @@ export function reportLines(proposals:readonly BoardProposalRow[],reports:readon
 
 /** `today` is the café-local date. Newest first; at most three of each. */
 export function buildOperatingBoard(proposals:readonly BoardProposalRow[],reports:readonly BoardReportRow[],
-  today:string):OperatingBoard{
+  today:string,now=new Date().toISOString()):OperatingBoard{
   const cutoff=Date.parse(today+"T00:00:00Z")-RECENT_REPORT_DAYS*86_400_000;
-  return {running:runningLines(proposals,today).slice(0,MAX_ITEMS),
+  return {running:runningLines(proposals,today,reports,now).slice(0,MAX_ITEMS),
     recentReports:reportLines(proposals,reports).filter(r=>Date.parse(r.generatedAt)>=cutoff).slice(0,MAX_ITEMS)};
 }
 
