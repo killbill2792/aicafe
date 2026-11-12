@@ -396,3 +396,37 @@ test('Git survives confirmed REST API rate limit without losing any queued comma
  assert.ok(Object.values(result.backlog.items).every(x=>
    ['RETRYABLE','GIT_QUEUED'].includes(x.status)));
 });
+
+test('Git durable recovery remains identical during a multi-hour GitHub Actions outage',async()=>{
+ const req=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity);
+ const saved=deliverMuseGitRecovery(planMuseBacklog(null,req,now),{
+   token:'private-git',secret:'test',now,push:({request})=>({
+     status:'queued',request_id:request.request_id,
+     file:'dispatcher/recovery-requests/'+request.request_id+'.json'})
+ });
+ const later='2026-11-11T14:30:00Z';
+ const newRequests=museRecoveryCandidates(inspectMuseHealth(state,{now:later}),state,
+   {...identity,now:later});
+ const planned=planMuseBacklog(saved.backlog,newRequests,later);
+ assert.deepEqual(Object.keys(planned.items),Object.keys(saved.backlog.items));
+ assert.deepEqual(Object.values(planned.items).map(x=>x.request.request_id),
+   Object.values(saved.backlog.items).map(x=>x.request.request_id));
+ let pushes=0;
+ const noRepeat=deliverMuseGitRecovery(planned,{token:'private-git',secret:'test',
+   now:later,push:()=>{pushes++;throw Error('should not re-send')}});
+ assert.equal(pushes,0);
+ assert.ok(Object.values(noRepeat.backlog.items).every(x=>x.status==='GIT_QUEUED'));
+});
+test('failed Git transport does not fall through to an API-only wake',async()=>{
+ const req=museRecoveryCandidates(inspectMuseHealth(state,{now}),state,identity);
+ const input=planMuseBacklog(null,req,now);
+ const result=deliverMuseGitRecovery(input,{token:'bad-git-token',secret:'test',
+   now,push:()=>{throw Error('private repository unreachable')}});
+ assert.ok(Object.values(result.backlog.items).every(x=>x.status==='RETRYABLE'));
+ assert.ok(Object.values(result.backlog.items).every(x=>!x.git_file));
+ let apiCalls=0;
+ const wake=await deliverMuseRecovery(result.backlog,{token:'api-token',now,
+   maxRequests:1,fetchImpl:async()=>{apiCalls++;return {status:204}}});
+ assert.equal(apiCalls,0);
+ assert.ok(Object.values(wake.backlog.items).every(x=>x.status==='RETRYABLE'));
+});
