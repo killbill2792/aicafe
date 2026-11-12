@@ -161,3 +161,15 @@ test('invalid typed Muse operations cannot expand owner control permissions',()=
    assert.equal(state.recovery_requests,undefined);
  }
 });
+
+test('closed PR and misleading global target cannot trigger an unintended owner action',()=>{
+ const closed=fixture();closed.tasks['9'].github_state='merged';
+ const request=apply(closed,receipt('Merge PR 442 if eligible',{pr_number:442}));
+ assert.equal(request.owner_instruction_events.owner_instruction_1.status,'BLOCKED');
+ assert.equal(request.owner_instruction_events.owner_instruction_1.reason,'pr_not_open');
+ assert.equal(request.recovery_requests,undefined);
+ const wrong=apply(fixture(),receipt('Pause Task 9',{task_id:'__global__'}));
+ assert.equal(wrong.owner_instruction_events.owner_instruction_1.reason,
+   'target_does_not_match_owner_words');
+ assert.equal(wrong.owner_controls,undefined);
+});
