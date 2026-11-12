@@ -17,6 +17,7 @@ const rpcClaim="select public.supervisor_claim_effect($1,$2,$3,$4,$5,$6) as valu
 const rpcFinish="select to_jsonb(public.supervisor_finish_effect_attempt($1,$2,$3,$4,$5,$6,$7,$8,$9)) as value";
 const rpcRevoke="select to_jsonb(public.supervisor_revoke_mandate($1,$2,$3,$4)) as value";
 const rpcStaff="select public.supervisor_gateway_commit_staff($1,$2,$3,$4,$5) as value";
+const rpcReconcile="select to_jsonb(public.supervisor_reconcile_effect_attempt($1,$2,$3,$4,$5)) as value";
 async function withService(client,fn){
  await client.query("begin");
  try{await client.query("set local role service_role");
@@ -62,6 +63,7 @@ try{
   "create table public.memberships(business_id uuid not null references businesses(id),user_id uuid not null references auth.users(id),role text not null,primary key(business_id,user_id))",
   "create table public.ai_threads(id uuid primary key,business_id uuid not null references businesses(id),owner_user_id uuid not null references auth.users(id),unique(business_id,id,owner_user_id))",
   "create table public.locations(id uuid primary key,business_id uuid not null references businesses(id))",
+  "create table public.pantry_stock_purchases(id uuid primary key default gen_random_uuid(),business_id uuid not null,ingredient_id uuid not null,line_id uuid not null,purchase_date date not null,entered_quantity numeric not null,entered_unit text not null,cost_cents bigint,source text not null,voided_at timestamptz,unique(business_id,line_id))",
   "grant usage on schema auth,public to service_role",
   "grant execute on function auth.uid() to service_role","grant execute on function auth.role() to service_role",
   "grant select on public.memberships to service_role",
@@ -70,6 +72,7 @@ try{
  await db.query(readFileSync(new URL("../supabase/migrations/20261023000083_approval_lifecycle_atomicity.sql",import.meta.url),"utf8"));
   await db.query("create function public.supervisor_commit_staff_proposal(uuid,uuid,uuid,uuid,integer) returns jsonb language plpgsql as $stub$ declare p public.supervisor_proposals; begin update public.supervisor_proposals set status='executing',revision=revision+1,updated_at=now() where business_id=$1 and owner_user_id=$2 and thread_id=$3 and id=$4 and revision=$5 and status='approved' returning * into p; if p.id is null then raise exception 'stub_revision_conflict' using errcode='P0001'; end if; update public.supervisor_proposals set status='committed',revision=revision+1,committed_at=now(),monitoring_start_date=current_date+1,updated_at=now() where id=p.id returning * into p; return jsonb_build_object('state','applied','proposal',to_jsonb(p)); end $stub$");
  await db.query(readFileSync(new URL("../supabase/migrations/20261111000206_supervisor_effect_gateway.sql",import.meta.url),"utf8"));
+ await db.query(readFileSync(new URL("../supabase/migrations/20261112000301_supervisor_effect_reconciliation.sql",import.meta.url),"utf8"));
  await db.query("insert into businesses(id,timezone,is_demo) values($1,'UTC',false),($2,'UTC',false)",[B,B2]);
  await db.query("insert into auth.users(id) values($1),($2)",[OWNER,OWNER2]);
  await db.query("insert into memberships(business_id,user_id,role) values($1,$2,'owner'),($3,$4,'owner')",[B,OWNER,B2,OWNER2]);
@@ -167,9 +170,64 @@ try{
  const staffAttempt=(await db.query("select state,authorization_kind from supervisor_effect_attempts where proposal_id=$1",[staffClickId])).rows[0];
  assert.deepEqual(staffAttempt,{state:"verified",authorization_kind:"click"});
 
+ // A lost response for an inert goal recovers from its durable scoped claim.
+ // Revocation must not erase in-flight evidence or free a spent daily quota.
+ await db.query("update supervisor_effect_attempts set created_at = now()-interval '10 minutes' where attempt_key=$1",[winner.attempt_key]);
+ const recoveredGoal=await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,winner.proposal.id,winner.proposal.revision])).rows[0].value);
+ assert.equal(recoveredGoal.status,"committed");
+ assert.equal((await db.query("select state from supervisor_effect_attempts where attempt_key=$1",[winner.attempt_key])).rows[0].state,"verified");
+ const recoveredAgain=await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,winner.proposal.id,recoveredGoal.revision])).rows[0].value);
+ assert.equal(recoveredAgain.revision,recoveredGoal.revision,"a verified receipt must be idempotent");
+ await expectError(()=>withService(db,c=>c.query(rpcReconcile,[B2,OWNER,THREAD,winner.proposal.id,recoveredGoal.revision])),"42501");
+
+ // A just-claimed request must not be preempted by reconciliation; after
+ // timeout, an inert goal can be completed without calling commit a second time.
+ const pending=await withService(db,async c=>(await c.query(rpcReconcile,[B2,OWNER2,THREAD2,foreignGoal,foreignClaim.proposal.revision])).rows[0].value);
+ assert.equal(pending.status,"executing");
+ await db.query("update supervisor_effect_attempts set created_at=now()-interval '10 minutes' where attempt_key=$1",[foreignClaim.attempt_key]);
+ const afterCrash=await withService(db,async c=>(await c.query(rpcReconcile,[B2,OWNER2,THREAD2,foreignGoal,foreignClaim.proposal.revision])).rows[0].value);
+ assert.equal(afterCrash.status,"committed");
+
+ // For a real purchase only the canonical unique (business_id,line_id)
+ // row with every matching immutable field is authoritative evidence.
+ const purchaseId="90000000-0000-4000-8000-000000000013";
+ const ingredientId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+ const wrongIngredientId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
+ const purchaseDate=(await db.query("select current_date::text as d")).rows[0].d;
+ const purchasePayload={ingredientId,name:"Beans",date:purchaseDate,quantity:2,unit:"kg",costCents:1234,source:"chat_text"};
+ await seedProposal(B,OWNER,THREAD,purchaseId,"maya.inventory_purchase.v1");
+ await db.query("update public.supervisor_proposals set canonical_effect_payload=$2::jsonb where id=$1",[purchaseId,JSON.stringify(purchasePayload)]);
+ await withService(db,c=>c.query(rpcTransition,[B,OWNER,purchaseId,1,"approve",null]));
+ const purchaseClaim=await claim(B,OWNER,THREAD,purchaseId,2,"click");
+ await finish(B,OWNER,THREAD,purchaseId,purchaseClaim,"uncertain");
+ const noProof=await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,purchaseId,3])).rows[0].value);
+ assert.equal(noProof.status,"executing","missing durable receipt cannot be reported as success");
+ const receiptId=randomUUID();
+ await db.query("insert into pantry_stock_purchases(id,business_id,ingredient_id,line_id,purchase_date,entered_quantity,entered_unit,cost_cents,source) values($1,$2,$3,$4,$5,2,'kg',1234,'chat_text')",
+  [receiptId,B,wrongIngredientId,purchaseId,purchaseDate]);
+ const wrongProof=await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,purchaseId,3])).rows[0].value);
+ assert.equal(wrongProof.status,"executing","mismatching purchase identity is not proof");
+ await db.query("update pantry_stock_purchases set ingredient_id=$2 where id=$1",[receiptId,ingredientId]);
+ const saved=await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,purchaseId,3])).rows[0].value);
+ assert.equal(saved.status,"committed");
+ const purchaseReceipt=(await db.query("select state,receipt_ref from supervisor_effect_attempts where proposal_id=$1",[purchaseId])).rows[0];
+ assert.deepEqual(purchaseReceipt,{state:"verified",receipt_ref:"pantry_stock_purchases:"+receiptId});
+ await expectError(()=>withService(db,c=>c.query(rpcReconcile,[B,OWNER2,THREAD,purchaseId,4])),"P0001");
+
+ // An unresolved price write has no proposal-scoped authoritative receipt:
+ // even a matching current menu price MUST NOT manufacture verification.
+ const priceId="90000000-0000-4000-8000-000000000014";
+ await seedProposal(B,OWNER,THREAD,priceId,"alex.menu_price_change.v1");
+ await withService(db,c=>c.query(rpcTransition,[B,OWNER,priceId,1,"approve",null]));
+ const priceClaim=await claim(B,OWNER,THREAD,priceId,2,"click");
+ await finish(B,OWNER,THREAD,priceId,priceClaim,"uncertain");
+ const priceRecovery=await withService(db,async c=>(await c.query(rpcReconcile,[B,OWNER,THREAD,priceId,3])).rows[0].value);
+ assert.equal(priceRecovery.status,"executing");
+ assert.equal((await db.query("select state from supervisor_effect_attempts where proposal_id=$1",[priceId])).rows[0].state,"uncertain");
+
  const columns=await db.query("select column_name from information_schema.columns where table_schema='public' and table_name='supervisor_mandate_challenges' and (column_name ilike '%code%' or column_name ilike '%otp%')");
  assert.equal(columns.rowCount,0,"No OTP plaintext/code column may be stored");
- console.log("Supervisor effect gateway PostgreSQL: owner/café/action binding, MFA challenge replay protection, per-café-day quota race, revision-safe quota debit, revocation, uncertainty, click parity and cross-tenant isolation passed.");
+ console.log("Supervisor effect gateway PostgreSQL: owner/café/action binding, MFA challenge replay protection, per-café-day quota race, revocation, uncertainty, authoritative purchase receipt reconciliation, safe inert recovery and cross-tenant denial passed.");
 }finally{
  await other.end().catch(()=>{});await db.end().catch(()=>{});
  await admin.query("drop database if exists "+database+" with (force)").catch(()=>{});
