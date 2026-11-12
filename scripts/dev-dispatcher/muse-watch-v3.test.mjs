@@ -319,7 +319,7 @@ test('verified merge-eligible unmerged PR requests GitHub merge gate, never merg
  const r={...state,tasks:{T1:{...state.tasks.T1,draft:false,
    ci_state:'success',ci_finished_at:'2026-11-11T09:30:00Z',
    dispatcher_only:false}},
-   lifecycle_v3:{rows:{T1:{merge:{eligible:true}}}}};
+   lifecycle_v3:{rows:{T1:{merge:{eligible:true,current_head_sha:sha}}}}};
  const health=inspectMuseHealth(r,{now});
  assert.equal(health.incidents.find(x=>x.kind==='MERGE_ELIGIBLE_NOT_MOVING').action,
    'MERGE_IF_ELIGIBLE');
@@ -327,5 +327,22 @@ test('verified merge-eligible unmerged PR requests GitHub merge gate, never merg
    .some(x=>x.intent==='MERGE_IF_ELIGIBLE'&&x.expected_head_sha===sha));
  const protectedTask={...r,tasks:{T1:{...r.tasks.T1,dispatcher_only:true}}};
  assert.ok(!inspectMuseHealth(protectedTask,{now}).incidents
+   .some(x=>x.kind==='MERGE_ELIGIBLE_NOT_MOVING'));
+});
+
+test('Codex detection uses verified CI finish if ready transition not recorded',()=>{
+ const r={...state,tasks:{T1:{...state.tasks.T1,draft:false,ci_state:'success',
+   ready_transition_at:null,ci_finished_at:'2026-11-11T09:50:00Z',
+   codex_state:'pending'}}};
+ const h=inspectMuseHealth(r,{now});
+ assert.equal(h.incidents.find(x=>x.kind==='CODEX_NOT_RECEIVED').age_minutes,10);
+ assert.ok(museRecoveryCandidates(h,r,identity)
+   .some(x=>x.intent==='REQUEST_CODEX_IF_ELIGIBLE'));
+});
+test('merge watchdog refuses a stale lifecycle head',()=>{
+ const r={...state,tasks:{T1:{...state.tasks.T1,draft:false,ci_state:'success',
+   ci_finished_at:'2026-11-11T09:00:00Z'}},
+   lifecycle_v3:{rows:{T1:{merge:{eligible:true,current_head_sha:'b'.repeat(40)}}}}};
+ assert.ok(!inspectMuseHealth(r,{now}).incidents
    .some(x=>x.kind==='MERGE_ELIGIBLE_NOT_MOVING'));
 });
