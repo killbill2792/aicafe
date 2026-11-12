@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import { parseOwnerSnapshot, statusLevel, freshness,
-  PUBLIC_COMMENT_URL, PRIVATE_QUEUE_URL, PUBLIC_SNAPSHOT_URL,
+  PUBLIC_COMMENT_URL, PUBLIC_SNAPSHOT_URL,
   REFRESH_INTERVAL_MS, refresh, ageLabel,sortOperations,acceptPublicOperationsSnapshot } from '../../docs/owner-dashboard.mjs';
 
 const sample=[
@@ -58,8 +58,6 @@ test('status freshness reveals stale GitHub scheduler without claiming false liv
 test('public browser source only queries public issue comment and links out to private GitHub',()=>{
  assert.equal(PUBLIC_COMMENT_URL,
   'https://api.github.com/repos/killbill2792/aicafe/issues/comments/6752417190');
- assert.equal(PRIVATE_QUEUE_URL,
-  'https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/owner-queue.md');
  assert.equal(REFRESH_INTERVAL_MS,120000);
 });
 
