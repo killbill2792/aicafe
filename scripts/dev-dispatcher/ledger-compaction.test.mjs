@@ -30,7 +30,7 @@ const fixture=()=>{
 };
 
 test('oversized private ledger archives old history without touching active events',()=>{
- const original=fixture(),before=JSON.stringify(original),res=compactPrivateLedger(original,{now});
+ const original=fixture(),before=JSON.stringify(original),res=compactPrivateLedger(original,{now,targetBytes:100_000});
  assert.ok(res.before_bytes>200_000);
  assert.ok(res.after_bytes<res.before_bytes-150_000);
  assert.equal(JSON.stringify(original),before,'source unchanged');
