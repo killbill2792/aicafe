@@ -125,11 +125,26 @@ export function applyMuseOwnerInstruction(state,receipt,{actor,now=new Date().to
       !next.lifecycle_v3?.rows?.[parsed.task_id]){
      event.reason='unknown_task';return next;
    }
+   const key=parsed.task_id+':'+parsed.field;
+   const previous=next.owner_controls?.muse_watermarks?.[key];
+   const currentAt=Date.parse(receipt.submitted_at);
+   const oldAt=Date.parse(previous?.submitted_at||'');
+   if(Number.isFinite(oldAt)&&
+       (currentAt<oldAt||currentAt===oldAt)){
+     event.reason=currentAt===oldAt?
+       'ambiguous_equal_time_owner_instruction':
+       'superseded_by_newer_owner_instruction';
+     return next;
+   }
    try{
      const applied=applyOwnerDashboardEdit(next,{
        task_id:parsed.task_id,field:parsed.field,value:parsed.value,
        expected_revision:next.owner_controls?.revision||0
      },{role:'owner',now});
+     applied.owner_controls.muse_watermarks||={};
+     applied.owner_controls.muse_watermarks[key]={
+       submitted_at:receipt.submitted_at,event_id:receipt.event_id
+     };
      applied.owner_instruction_events[receipt.event_id].status='APPLIED';
      applied.owner_instruction_events[receipt.event_id].reason='owner_control_saved';
      applied.owner_instruction_events[receipt.event_id].control_revision=
