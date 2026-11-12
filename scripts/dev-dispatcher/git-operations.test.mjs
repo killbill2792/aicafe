@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {settings} from './settings.mjs';
+import {resolveOwnerIssueIdentity} from './alerts.mjs';
 import {gitAuthEnvironment,publishEmergencyViaGit,updateBranchViaGit,transactLedgerViaGit,publishOwnerQueueViaGit,readApiPauseViaGit} from './git-operations.mjs';
 
 const sha='a'.repeat(40);
@@ -223,4 +224,34 @@ test('consecutive Git emergency run IDs reuse one recent owner notice',()=>{
    const state=JSON.parse(readFileSync(join(f.work,settings.ledger.path),'utf8'));
    assert.equal(Object.keys(state.owner_alerts).length,1);
  } finally {f.cleanup();}
+});
+
+test('verified recovery closes stable failure incident so a later outage alerts again',async()=>{
+ const f=fixture();
+ try{
+  run(['branch','-M','main'],f.work);
+  mkdirSync(dirname(join(f.work,settings.ledger.path)),{recursive:true});
+  writeFileSync(join(f.work,settings.ledger.path),JSON.stringify({
+   version:1,tasks:{},actions:{},owner_alerts:{}}));
+  run(['add','.'],f.work);run(['commit','-qm','seed'],f.work);
+  run(['push','-q','origin','main'],f.work);
+  const args={repo:settings.ledger.repo,token:'local-only',remoteUrl:f.bare,
+   identity:'trusted-dispatcher:failure',message:'reconcile could not start'};
+  const first=publishEmergencyViaGit(args);
+  assert.equal(first.status,'queued');
+  const recovered=await transactLedgerViaGit({repo:settings.ledger.repo,token:'local-only',
+   remoteUrl:f.bare,transform:state=>resolveOwnerIssueIdentity(state,{
+    kind:'dispatcher_emergency',identity:'trusted-dispatcher:failure'})});
+  assert.equal(recovered.committed,true);
+  const second=publishEmergencyViaGit({...args,message:'new subsequent outage'});
+  assert.equal(second.status,'queued');
+  assert.notEqual(first.notice_hash,second.notice_hash);
+  run(['pull','-q','origin','main'],f.work);
+  const notices=Object.values(JSON.parse(readFileSync(join(f.work,
+   settings.ledger.path),'utf8')).owner_alerts)
+   .filter(x=>x.kind==='dispatcher_emergency');
+  assert.equal(notices.length,2);
+  assert.ok(notices.some(x=>x.status==='resolved'));
+  assert.ok(notices.some(x=>x.status==='planned'));
+ }finally{f.cleanup();}
 });
