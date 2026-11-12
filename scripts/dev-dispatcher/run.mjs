@@ -145,6 +145,8 @@ async function main() {
         recognized=applied.state.owner_alerts?.[rc.notice_id]?.status==='submitted';
       else if(rc.kind==='owner_instruction')
         recognized=Boolean(applied.state.owner_instruction_events?.[rc.event_id]);
+      else if(rc.kind==='muse_recovery')
+        recognized=Boolean(applied.state.muse_recovery_events?.[rc.event_id]);
       else if(rc.kind==='owner_reply') {
         const task=rc.target?.task_id
           ? applied.state.tasks?.[rc.target.task_id]

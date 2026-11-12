@@ -155,3 +155,99 @@ Run the existing host watchdog with its current positional arguments
 (ledger snapshot path, local backlog path, optional queue path). Its existing
 MUSE_GITHUB_WAKE_TOKEN is optional for the fast API wake. Do not provision
 the GitHub Actions signing secret to any untrusted PR runner or browser page.
+
+## November 12: no-export vault bridge via authenticated Git receipts
+
+The preferred bridge now uses the **already working Muse owner-instruction Git
+courier**. A raw HMAC signing key is NOT required on the Muse host. The signed
+legacy `dispatcher/recovery-requests/` transport is retained for hosts that
+already have an exportable `DISPATCH_MUSE_RECOVERY_KEY`, but there is no new
+secret, HTTP signing service, paid deployment or HMAC export required.
+
+The same existing CLI now chooses the authenticated private Git receipt path
+automatically when `DISPATCH_MUSE_RECOVERY_KEY` is absent:
+
+~~~sh
+node scripts/dev-dispatcher/muse-recovery-git-cli.mjs < recovery-command.json
+~~~
+
+Its output contains `request_id` and the exact private receipt file path.
+The file is committed to `dispatcher/receipts/` using
+`MUSE_PRIVATE_GIT_TOKEN` and the Git author's existing verified email
+(`MUSE_GIT_AUTHOR_EMAIL` only if the host has no configured Git author).
+The trusted dispatcher uses the existing GitHub-attributed commit-actor
+verification, not a self-claimed actor or an untrusted Git commit display name.
+The authenticated actor MUST be mapped to `muse` in the existing
+`DISPATCH_COURIER_ACTORS` configuration.
+
+Muse does NOT need to run the CLI or calculate any hash: the same
+authenticated Git receipt writer that sent the successful owner-instruction
+test may submit this minimal payload directly:
+
+~~~json
+{
+  "kind": "muse_recovery",
+  "version": 1,
+  "project_id": "aicafe",
+  "repo": "killbill2792/aicafe",
+  "event_id": "<stable unique event ID>",
+  "intent": "RECONCILE",
+  "task_id": null,
+  "pr_number": null,
+  "expected_head_sha": null,
+  "submitted_at": "<actual UTC ISO timestamp>"
+}
+~~~
+
+The same `receipt-identity.mjs` command used for owner instructions supplies
+the private Git file name. GitHub derives the `request_id` from its verified
+Git commit author and records `muse_recovery_events[event_id].request_id`
+before Muse checks `recovery_requests[request_id]`. Do not fabricate the
+request hash or HMAC, and do not reuse an event ID for different content.
+
+The generated `muse_recovery` receipt is:
+
+~~~json
+{
+  "kind": "muse_recovery",
+  "version": 1,
+  "project_id": "aicafe",
+  "repo": "killbill2792/aicafe",
+  "actor": "killbill2792",
+  "intent": "RECONCILE",
+  "task_id": null,
+  "pr_number": null,
+  "expected_head_sha": null,
+  "requested_at": "<UTC ISO timestamp>",
+  "request_id": "<canonical recoveryIdentity SHA-256>",
+  "event_id": "<same request_id>",
+  "submitted_at": "<same timestamp>"
+}
+~~~
+
+For one existing command, both timestamps and the request ID must remain
+unchanged across retries. The file name is computed by
+`receipt-identity.mjs`, not manually invented. The dispatcher records
+`muse_recovery_events[event_id]` as REQUESTED or BLOCKED, followed by the
+existing authoritative `recovery_requests[request_id]` or
+`recovery_rejections[request_id]`. Sending the Git file is not proof of
+execution. Unlinked PRs, stale SHA and invalid actor still fail closed.
+
+The independent `muse-watch-v3.mjs` prefers the authenticated Git receipt
+when the private Git credential exists but HMAC is unavailable. A single
+lightweight `dispatcher_git_wake` (payload `{"version":1}`) wakes an entire
+batch. An unacknowledged wake is retried no more than every 15 minutes.
+Existing API rate-limit backoff and durable local spool behavior are retained.
+
+A trusted private-ledger Git-CAS reconcile also publishes:
+`dispatcher/muse-operations.json`. This is the **versioned operation matrix**
+Muse reads instead of dispatcher source code. Each separately configured
+project can publish the same schema from its own dispatcher settings and
+private ledger. This release does not confer cross-project access to the
+AI CAFE credentials or automatically deploy dispatchers into other projects.
+
+**Host acceptance:** read the new manifest, deliver a single test recovery
+receipt through the existing verified Git courier, confirm its GitHub commit
+actor and exact `request_id` in the private ledger, then reactivate the
+existing paused Muse watchdog and signal hooks. Host startup remains an
+operator action; a GitHub merge cannot start an external paused process.
