@@ -47,12 +47,12 @@ BEGIN
  (business_id,restaurant_guid,menu_last_updated,menu_copied_at)
  VALUES(b,r,'2026-11-09T09:00:00Z',now());
 
- INSERT INTO public.menu_items(id,business_id,pos_item_id,name,
+ INSERT INTO public.menu_items(id,business_id,pos_item_id,name,base_name,
   price_cents,catalog_source,is_active)
- VALUES(a,b,item_a,'Latte',500,'toast',true),
-       (gone,b,item_b,'Historic special',600,'toast',true),
+ VALUES(a,b,item_a,'Latte','Latte',500,'toast',true),
+       (gone,b,item_b,'Historic special','Historic special',600,'toast',true),
        (other_item,other_b,'toast:'||other_r||':cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-        'Other restaurant',900,'toast',true);
+        'Other restaurant','Other restaurant',900,'toast',true);
  INSERT INTO public.modifier_recipes(business_id,pos_modifier_id,name,catalog_source)
  VALUES(b,mod_a,'Oat','toast'),(b,mod_b,'Soy','toast');
  INSERT INTO public.menu_item_modifier_groups
