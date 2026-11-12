@@ -6,7 +6,7 @@ vi.mock("server-only",()=>({}));
 vi.mock("./toastPriceEvidence.server",()=>({
  readVerifiedToastPriceEvidence:(...args:unknown[])=>testReader.read(...args),
 }));
-import {resolveExperimentCutoverMode,readVerifiedActivationAnchor,runVerifiedToastPriceTick} from "./experimentCutover.server";
+import {resolveExperimentCutoverMode,readVerifiedActivationAnchor,runVerifiedToastPriceTick,trialSourceInterruption} from "./experimentCutover.server";
 
 describe("Task 8a experiment single-writer cutover",()=>{
  it("defaults to legacy when release evidence is absent",()=>{
@@ -126,5 +126,50 @@ describe("persisted verified price activation survives later Menus version",()=>
    scope,now,"America/Los_Angeles",{} as LoopProposal);
   expect(outcome).toBe("monitoring");
   expect(testReader.read).not.toHaveBeenCalled();
+ });
+});
+
+describe("Task 8a exact interval and source pricing continuity",()=>{
+ const receipt={startAt:"2026-11-11T18:00:00.000Z",
+  posItemId:"toast:dddddddd-dddd-4ddd-8ddd-dddddddddddd:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  newPriceCents:550};
+ const current={catalog_source:"toast",is_active:true,
+  pos_item_id:receipt.posItemId,price_cents:550,
+  toast_publication_state:"active",pos_pricing_strategy:"BASE_PRICE",
+  toast_publication_observed_at:"2026-11-12T12:00:00Z"};
+ const base={receipt,finalEndAt:"2026-11-12T18:00:00.000Z",
+  asOf:"2026-11-13T19:00:00Z",current,
+  firstPriceChangeAt:null,priorInterruptionAt:null};
+ it("ignores verified price reverts strictly after or exactly on the final 24h boundary",()=>{
+  for(const boundary of ["2026-11-12T18:00:00Z","2026-11-12T18:01:00Z"]){
+   expect(trialSourceInterruption({...base,
+    firstPriceChangeAt:boundary,current:{...current,price_cents:500,
+     toast_publication_observed_at:boundary}})).toEqual({at:null,reason:null});
+  }
+ });
+ it("interrupts a trial for a source price change before its end, even if later restored",()=>{
+  expect(trialSourceInterruption({...base,
+   firstPriceChangeAt:"2026-11-12T07:00:00Z"})).toMatchObject({
+    at:"2026-11-12T07:00:00.000Z",reason:"verified_price_changed"});
+ });
+ it("treats contextual pricing as an interruption even when the numeric base stays unchanged",()=>{
+  expect(trialSourceInterruption({...base,
+   current:{...current,pos_pricing_strategy:"TIME_SPECIFIC_PRICE",
+    toast_publication_observed_at:"2026-11-12T10:15:00Z"}})).toMatchObject({
+    at:"2026-11-12T10:15:00.000Z",reason:"unverified_gap"});
+ });
+ it("does not rewrite a complete trial after a later pricing-strategy publication",()=>{
+  expect(trialSourceInterruption({...base,
+   current:{...current,pos_pricing_strategy:"TIME_SPECIFIC_PRICE",
+    toast_publication_observed_at:"2026-11-12T18:05:00Z"}})).toEqual({
+     at:null,reason:null});
+ });
+ it("requires a size-specific strategy for a size-specific receipt",()=>{
+  expect(trialSourceInterruption({...base,
+   receipt:{...receipt,posItemId:receipt.posItemId+
+    ":size:ffffffff-ffff-4fff-8fff-ffffffffffff"},
+   current:{...current,pos_item_id:receipt.posItemId+
+    ":size:ffffffff-ffff-4fff-8fff-ffffffffffff"}})).toMatchObject({
+    reason:"unverified_gap"});
  });
 });

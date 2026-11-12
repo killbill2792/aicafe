@@ -112,6 +112,63 @@ function activationReference(receipt:ActivationAnchor){
  const {status,startAt,...rest}=receipt;
  return rest;
 }
+type CurrentMenuPrice={
+ catalog_source:string|null;is_active:boolean;
+ pos_item_id:string|null;price_cents:number|null;
+ toast_publication_state:string|null;
+ pos_pricing_strategy:string|null;
+ toast_publication_observed_at:string|null;
+};
+/** Source changes after the Nth elapsed 24h boundary belong to a *different*
+ * observation, not the approved experiment. The active menu can have moved
+ * on since the closed window, so distinguish a post-end publication from an
+ * in-window change of item, size, price or pricing strategy. */
+export function trialSourceInterruption(input:{
+ receipt:{startAt:string;posItemId:string;newPriceCents:number};
+ finalEndAt:string;asOf:string;current:CurrentMenuPrice|null;
+ firstPriceChangeAt:string|null;priorInterruptionAt:string|null;
+}):{at:string|null;reason:"verified_price_changed"|"unverified_gap"|null}{
+ const start=Date.parse(input.receipt.startAt);
+ const end=Date.parse(input.finalEndAt);
+ const now=Date.parse(input.asOf);
+ if(!Number.isFinite(start)||!Number.isFinite(end)||!Number.isFinite(now)||
+    end<=start)throw new Error("invalid_price_continuity_interval");
+ const expectedStrategy=input.receipt.posItemId.includes(":size:")?
+  "SIZE_PRICE":"BASE_PRICE";
+ const current=input.current;
+ const matches=Boolean(current&&current.catalog_source==="toast"&&
+  current.is_active&&current.toast_publication_state==="active"&&
+  current.pos_item_id===input.receipt.posItemId&&
+  current.pos_pricing_strategy===expectedStrategy&&
+  current.price_cents===input.receipt.newPriceCents);
+ const occurred=(time:string|null):number|null=>{
+  if(!time)return null;
+  const ms=Date.parse(time);
+  return Number.isFinite(ms)&&ms>=start&&ms<end&&ms<=now?ms:null;
+ };
+ const history=occurred(input.firstPriceChangeAt);
+ const prior=occurred(input.priorInterruptionAt);
+ let gap:number|null=null;
+ if(!matches){
+  const observed=Date.parse(current?.toast_publication_observed_at??"");
+  if(Number.isFinite(observed)&&observed<=now&&observed>=end){
+   // The source change was observed only after the trial had completed.
+   gap=null;
+  }else if(Number.isFinite(observed)&&observed<=now){
+   gap=Math.max(start,observed);
+  }else{
+   // No trusted publication timestamp: do not invent uninterrupted exposure.
+   gap=start;
+  }
+  if(gap!==null&&gap>=end)gap=null;
+ }
+ const events=[...(history!==null?[{at:history,reason:"verified_price_changed" as const}]:[]),
+  ...(prior!==null?[{at:prior,reason:"unverified_gap" as const}]:[]),
+  ...(gap!==null?[{at:gap,reason:"unverified_gap" as const}]:[])]
+  .sort((a,b)=>a.at-b.at);
+ return events[0]?{at:new Date(events[0].at).toISOString(),
+  reason:events[0].reason}:{at:null,reason:null};
+}
 /** The ONE new-path monitor handler for verified Toast prices only. Callers
  * must select mode=new first and must bypass the old calendar-day writer.
  * Note the full source and no-shared-credential preconditions; the worker
@@ -185,40 +242,34 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   const transitionDate=new Date().toISOString().slice(0,10);
   await repo.transition(scope,row.id,row.revision,"manual_confirmed",transitionDate);
  }
- // A later publication of an unchanged price must not erase the first
- // activation. A real subsequent verified price change/revert permanently
- // interrupts that phase, even if a later publication restores the target.
+ // Verify continuity only within the measured source interval. A later
+ // publication or price revert belongs to a different observed phase.
+ const windows=planElapsed24HourWindows(receipt.startAt,days);
+ const finalEndAt=windows[windows.length-1].endAt;
  const [current,changes]=await Promise.all([
   db.from("menu_items").select(
-   "catalog_source,is_active,pos_item_id,price_cents,toast_publication_state")
+   "catalog_source,is_active,pos_item_id,price_cents,toast_publication_state,pos_pricing_strategy,toast_publication_observed_at")
    .eq("business_id",row.business_id).eq("id",effect.productId).maybeSingle(),
   db.from("menu_price_history").select("toast_observed_at,new_price_cents")
    .eq("business_id",row.business_id).eq("menu_item_id",effect.productId)
    .eq("source_type","connected_pos").eq("source_provider","toast")
    .eq("toast_restaurant_guid",receipt.restaurantGuid)
    .gt("toast_observed_at",receipt.observedAt)
+   .lt("toast_observed_at",finalEndAt)
    .lte("toast_observed_at",now)
    .order("toast_observed_at",{ascending:true}).limit(1),
  ]);
  if(current.error||changes.error)throw new Error("source_continuity_read_failed");
- const matching=Boolean(current.data&&current.data.is_active&&
-  current.data.catalog_source==="toast"&&
-  current.data.toast_publication_state==="active"&&
-  current.data.pos_item_id===receipt.posItemId&&
-  Number(current.data.price_cents)===effect.newPriceCents);
  const storedAt=initial.data?.source_reference?.interruptedAt;
- const priorInterruption=typeof storedAt==="string"&&
-   Number.isFinite(Date.parse(storedAt))?storedAt:null;
- const nextChange=changes.data?.[0]?.toast_observed_at??null;
- const firstDisruption=nextChange??(!matching?now:null);
- const interruptionAt=[priorInterruption,firstDisruption]
-  .filter((x):x is string=>typeof x==="string"&&
-   Number.isFinite(Date.parse(x)))
-  .sort((a,b)=>Date.parse(a)-Date.parse(b))[0]??null;
+ const continuity=trialSourceInterruption({
+  receipt,finalEndAt,asOf:now,current:current.data,
+  firstPriceChangeAt:changes.data?.[0]?.toast_observed_at??null,
+  priorInterruptionAt:typeof storedAt==="string"?storedAt:null,
+ });
+ const interruptionAt=continuity.at;
  const sourceReference={...activationReference(receipt),
-  ...(interruptionAt?{interruptedAt:interruptionAt}:{}),
-  ...(nextChange?{sourceContinuity:"verified_price_changed"}:
-   interruptionAt?{sourceContinuity:"unverified_gap"}:{})};
+  ...(interruptionAt?{interruptedAt:interruptionAt,
+   sourceContinuity:continuity.reason}:{})};
  if(interruptionAt&&!priorInterruption){
   const saved=await db.from("supervisor_monitor_windows")
    .update({source_reference:sourceReference,updated_at:new Date().toISOString()})
@@ -226,7 +277,6 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
    .eq("source_id",row.id).eq("window_index",0);
   if(saved.error)throw new Error("source_interruption_receipt_failed");
  }
- const windows=planElapsed24HourWindows(receipt.startAt,days);
  const complete=[] as Awaited<ReturnType<typeof readElapsedWindowObservations>>[];
  for(const window of windows){
   if(Date.parse(window.endAt)>Date.parse(now))break;
