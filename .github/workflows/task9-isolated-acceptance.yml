@@ -190,3 +190,36 @@ jobs:
           PROMPTFOO_DISABLE_UPDATE_CHECK: "1"
           NODE_OPTIONS: --conditions=react-server
         run: npm run eval:supervisor
+
+  occupied-schema-upgrade:
+    name: Existing conversation upgrade and data preservation (local Supabase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Prepare an UNMIGRATED disposable checkout (no repository change)
+        run: |
+          cp supabase/migrations/20261111000207_ai_thread_memory.sql "$RUNNER_TEMP/20261111000207_ai_thread_memory.sql"
+          rm supabase/migrations/20261111000207_ai_thread_memory.sql
+          test -f "$RUNNER_TEMP/20261111000207_ai_thread_memory.sql"
+          test ! -f supabase/migrations/20261111000207_ai_thread_memory.sql
+      - name: Start local Supabase with all earlier migrations only
+        run: |
+          supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase db reset --local --yes
+      - name: Seed 64 preexisting threads/529 messages, preserve old behavior, test lock timeout, apply migration
+        env:
+          TASK9_UPGRADE_SQL: ${{ runner.temp }}/20261111000207_ai_thread_memory.sql
+        run: node scripts/test-ai-thread-memory-upgrade.mjs
+      - name: Destroy disposable local Supabase
+        if: always()
+        run: supabase stop --no-backup
