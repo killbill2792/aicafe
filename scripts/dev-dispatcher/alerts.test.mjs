@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {queueOwnerAlerts,acceptOwnerNoticeReceipt} from './alerts.mjs';
+import {queueOwnerAlerts,acceptOwnerNoticeReceipt,resolveObsoleteLedgerOverflowNotices} from './alerts.mjs';
 import {signalFor} from './signal.mjs';
 const state={version:1,tasks:{'6':{agent:'chatgpt',pr_number:123,owner_question:'Approve widening file ownership?'},
  '7':{agent:'claude',pr_number:124,blocker:{kind:'usage_limit',confirmed:true,detail:'Session limit reached'}}},actions:{}};
@@ -162,4 +162,47 @@ test('proposed task scope revisions cancel unsent notices, preserve sent receipt
  const retained=queueOwnerAlerts(acknowledged,{queue:{tasks:[{...task,goal:'Revised plan'}]}});
  assert.equal(Object.values(retained.owner_alerts).filter(n=>n.status==='submitted').length,1);
  assert.equal(Object.values(retained.owner_alerts).filter(n=>n.status==='planned').length,1);
+});
+
+test('only pre-fix, unsubmitted, run-bound ledger overflow notices retire after trusted success',()=>{
+ const at='2026-11-12T01:30:00.000Z';
+ const fixed='Dispatcher killbill2792/aicafe: Unexpected GitHub ledger response Needed: Muse notify owner; inspect failed dispatcher workflow';
+ const make=(identity,question,status='planned',extras={})=>({
+   kind:'dispatcher_emergency',identity,notice_hash:'hash-'+identity,
+   status,created_at:'2026-11-12T00:00:00Z',
+   question,delivery_owner:'muse',...extras
+ });
+ const source={version:1,tasks:{T:{approved:true}},actions:{a:{status:'submitted'}},
+   owner_alerts:{
+     affected:make('run:43123864935:failure',fixed),
+     unrelated:make('run:43123864936:failure','Dispatcher killbill2792/aicafe: HTTP 500 Needed: Muse notify owner'),
+     generic:make('run:43123864937:failure','Dispatcher killbill2792/aicafe: AI CAFE Development Dispatcher failed or was cancelled; GitHub API may be unavailable.'),
+     different:make('trusted-dispatcher:failure',fixed),
+     delivered:make('run:43123864938:failure',fixed,'submitted',{receipt:{courier:'muse'}}),
+     claimed:make('run:43123864939:failure',fixed,'claimed'),
+     receipt:make('run:43123864940:failure',fixed,'planned',{receipt:{courier:'muse'}}),
+     owner_question:{kind:'owner_decision',status:'planned',question:fixed},
+     forged:make('run:bad:failure',fixed),
+     not_my_repo:make('run:43123864942:failure','Dispatcher another/repo: Unexpected GitHub ledger response Needed: inspect'),
+     historical:make('run:43123864943:failure',fixed,'resolved')
+   }};
+ const saved=JSON.stringify(source);
+ const done=resolveObsoleteLedgerOverflowNotices(source,{at});
+ assert.equal(JSON.stringify(source),saved,'never mutate caller or signed ledger in place');
+ assert.equal(done.owner_alerts.affected.status,'resolved');
+ assert.equal(done.owner_alerts.affected.resolved_at,at);
+ assert.equal(done.owner_alerts.affected.resolution_reason,'verified_github_ledger_blob_reader_recovered');
+ assert.equal(done.owner_alerts.affected.delivery_owner,'muse');
+ assert.equal(done.owner_alerts.affected.receipt,undefined,'no fabricated Muse delivery');
+ for(const [key,notice] of Object.entries(source.owner_alerts)){
+   if(key!=='affected')assert.deepEqual(done.owner_alerts[key],notice,key);
+ }
+ assert.deepEqual(done.tasks,source.tasks);
+ assert.deepEqual(done.actions,source.actions);
+ assert.equal(resolveObsoleteLedgerOverflowNotices(done,{at}),done,'idempotent');
+});
+test('legacy overflow resolution fails closed for invalid timestamp and missing notices',()=>{
+ assert.throws(()=>resolveObsoleteLedgerOverflowNotices({owner_alerts:{}},{at:'bad'}),/timestamp/);
+ const state={version:1,tasks:{},actions:{}};
+ assert.equal(resolveObsoleteLedgerOverflowNotices(state),state);
 });
