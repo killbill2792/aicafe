@@ -6,7 +6,7 @@ vi.mock("server-only",()=>({}));
 vi.mock("./toastPriceEvidence.server",()=>({
  readVerifiedToastPriceEvidence:(...args:unknown[])=>testReader.read(...args),
 }));
-import {resolveExperimentCutoverMode,readVerifiedActivationAnchor,runVerifiedToastPriceTick,trialSourceInterruption} from "./experimentCutover.server";
+import {resolveExperimentCutoverMode,readVerifiedActivationAnchor,runVerifiedToastPriceTick,trialSourceInterruption,contextChangeBreaksApprovedPrice} from "./experimentCutover.server";
 
 describe("Task 8a experiment single-writer cutover",()=>{
  it("defaults to legacy when release evidence is absent",()=>{
@@ -99,7 +99,7 @@ describe("persisted verified price activation survives later Menus version",()=>
     pos_item_id:posItemId,price_cents:550,toast_publication_state:"active",
     toast_publication_version:"menu-v2"},error:null},
    menu_price_history:{data:[],error:null},
-   supervisor_toast_price_context_changes:{data:[],error:null},
+   supervisor_toast_price_context_changes:{data:[],count:0,error:null},
   };
   function query(response:unknown):unknown{
    return new Proxy({},{
@@ -194,4 +194,30 @@ describe("Task 8a exact interval and source pricing continuity",()=>{
     at:null,reason:null});
  });
 
+});
+
+
+describe("Task 8a append-only context audit",()=>{
+ const receipt={posItemId:"toast:dddddddd-dddd-4ddd-8ddd-dddddddddddd:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  newPriceCents:550};
+ const matched={observed_at:"2026-11-11T18:01:00Z",
+  new_pos_item_id:receipt.posItemId,new_pricing_strategy:"BASE_PRICE",
+  new_catalog_source:"toast",new_is_active:true,old_price_cents:500,
+  new_price_cents:550,old_publication_state:null,new_publication_state:"active"};
+ it("does not falsely interrupt because initial canonical price and strategy are populated after source observation",()=>{
+  expect(contextChangeBreaksApprovedPrice(matched,receipt)).toBe(false);
+  expect(contextChangeBreaksApprovedPrice({...matched,old_price_cents:500,
+   new_price_cents:500},receipt)).toBe(false);
+ });
+ it("retains later changes of strategy, identity, price and publication state",()=>{
+  expect(contextChangeBreaksApprovedPrice({...matched,
+   new_pricing_strategy:"TIME_SPECIFIC_PRICE"},receipt)).toBe(true);
+  expect(contextChangeBreaksApprovedPrice({...matched,
+   new_pos_item_id:receipt.posItemId+":size:ffffffff-ffff-4fff-8fff-ffffffffffff"},receipt))
+   .toBe(true);
+  expect(contextChangeBreaksApprovedPrice({...matched,old_price_cents:550,
+   new_price_cents:500},receipt)).toBe(true);
+  expect(contextChangeBreaksApprovedPrice({...matched,
+   old_publication_state:"active",new_publication_state:"inactive"},receipt)).toBe(true);
+ });
 });

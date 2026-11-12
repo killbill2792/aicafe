@@ -112,6 +112,28 @@ function activationReference(receipt:ActivationAnchor){
  const {status,startAt,...rest}=receipt;
  return rest;
 }
+type ContextSnapshot={
+ observed_at:string;new_pos_item_id:string|null;
+ new_pricing_strategy:string|null;new_catalog_source:string|null;
+ new_is_active:boolean;old_price_cents:number|null;
+ new_price_cents:number|null;old_publication_state:string|null;
+ new_publication_state:string|null;
+};
+/** The first canonical import may be updated after source observation but
+ * BEFORE authenticated activation is recorded: it is not an interruption.
+ * Only movement AWAY from the approved price and source context counts. */
+export function contextChangeBreaksApprovedPrice(row:ContextSnapshot,
+ receipt:{posItemId:string;newPriceCents:number}):boolean{
+ const strategy=receipt.posItemId.includes(":size:")?"SIZE_PRICE":"BASE_PRICE";
+ return row.new_pos_item_id!==receipt.posItemId||
+  row.new_pricing_strategy!==strategy||
+  row.new_catalog_source!=="toast"||
+  row.new_is_active!==true||
+  (row.old_price_cents===receipt.newPriceCents&&
+   row.new_price_cents!==receipt.newPriceCents)||
+  (row.old_publication_state==="active"&&
+   row.new_publication_state!=="active");
+}
 type CurrentMenuPrice={
  catalog_source:string|null;is_active:boolean;
  pos_item_id:string|null;price_cents:number|null;
@@ -266,19 +288,26 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   // reverts and unrelated publishes. Unknown source-effective time stays
   // insufficient-evidence rather than becoming a fake clean window.
   db.from("supervisor_toast_price_context_changes")
-   .select("observed_at").eq("business_id",row.business_id)
+   .select("observed_at,new_pos_item_id,new_pricing_strategy,new_catalog_source,new_is_active,old_price_cents,new_price_cents,old_publication_state,new_publication_state",{count:"exact"})
+   .eq("business_id",row.business_id)
    .eq("menu_item_id",effect.productId)
    .gte("observed_at",receipt.startAt).lt("observed_at",finalEndAt)
    .lte("observed_at",now)
-   .order("observed_at",{ascending:true}).limit(1),
+   .order("observed_at",{ascending:true}).limit(10000),
  ]);
  if(current.error||changes.error||contextChanges.error)
   throw new Error("source_continuity_read_failed");
+ // A missing or truncated audit page cannot certify uninterrupted pricing.
+ if(contextChanges.count===null||
+    contextChanges.count!==(contextChanges.data?.length??0))
+  throw new Error("source_context_audit_incomplete");
+ const firstContextChange=(contextChanges.data??[])
+  .find(entry=>contextChangeBreaksApprovedPrice(entry,receipt));
  const storedAt=initial.data?.source_reference?.interruptedAt;
  const continuity=trialSourceInterruption({
   receipt,finalEndAt,asOf:now,current:current.data,
   firstPriceChangeAt:changes.data?.[0]?.toast_observed_at??null,
-  firstContextChangeAt:contextChanges.data?.[0]?.observed_at??null,
+  firstContextChangeAt:firstContextChange?.observed_at??null,
   priorInterruptionAt:typeof storedAt==="string"?storedAt:null,
  });
  const interruptionAt=continuity.at;

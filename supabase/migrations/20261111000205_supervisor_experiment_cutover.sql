@@ -79,6 +79,14 @@ create table public.supervisor_toast_price_context_changes (
  new_pos_item_id text,
  old_pricing_strategy text,
  new_pricing_strategy text,
+ old_catalog_source text,
+ new_catalog_source text,
+ old_is_active boolean,
+ new_is_active boolean,
+ old_price_cents bigint,
+ new_price_cents bigint,
+ old_publication_state text,
+ new_publication_state text,
  observed_at timestamptz not null default clock_timestamp()
 );
 create index supervisor_8a_context_history
@@ -104,9 +112,16 @@ begin
     old.toast_publication_state is distinct from new.toast_publication_state then
   insert into public.supervisor_toast_price_context_changes (
    business_id,menu_item_id,old_pos_item_id,new_pos_item_id,
-   old_pricing_strategy,new_pricing_strategy,observed_at)
+   old_pricing_strategy,new_pricing_strategy,
+   old_catalog_source,new_catalog_source,old_is_active,new_is_active,
+   old_price_cents,new_price_cents,old_publication_state,new_publication_state,
+   observed_at)
   values (new.business_id,new.id,old.pos_item_id,new.pos_item_id,
-   old.pos_pricing_strategy,new.pos_pricing_strategy,clock_timestamp());
+   old.pos_pricing_strategy,new.pos_pricing_strategy,
+   old.catalog_source,new.catalog_source,old.is_active,new.is_active,
+   old.price_cents,new.price_cents,
+   old.toast_publication_state,new.toast_publication_state,
+   clock_timestamp());
  end if;
  return new;
 end;$;
