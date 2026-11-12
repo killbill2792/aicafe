@@ -214,6 +214,35 @@ describe("thread memory server boundary", () => {
     expect(context.history).toHaveLength(2);
   });
 
+  it("reopens after more than eight turns with only recent history plus sourced older preference", async () => {
+    const subsequent = Array.from({ length: 11 }, (_, i) => ({
+      ...ownerMessage,
+      id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+      text_content: "I prefer quiet afternoon preparation.",
+      owner_input_response: null,
+      created_at: new Date(Date.parse(createdAt) + (i + 1) * 60_000).toISOString(),
+    }));
+    const { client, state } = fixture({ messages: [ownerMessage, ...subsequent] });
+    state.document = {
+      version: 1, revision: 1, cursor: { createdAt, id: OWNER_MESSAGE },
+      entries: [{
+        kind: "preference", key: "preference:staff_drinks",
+        text: "We prefer oat milk for staff drinks.", sourceMessageId: OWNER_MESSAGE,
+        sourceAt: createdAt, revision: 1,
+      }],
+      tombstones: [], retry: null,
+    };
+    const result = await loadThreadMemoryContext(client, scope);
+    expect(result.history).toHaveLength(8);
+    expect(result.history.every(item => item.role === "user" &&
+      item.content === "I prefer quiet afternoon preparation.")).toBe(true);
+    expect(result.memoryText).toContain("We prefer oat milk for staff drinks.");
+    expect(result.memoryText).toContain("owner said 2026-11-11");
+    expect(state.queries.filter(q => q.table === "ai_messages").every(q =>
+      q.limit === 8 && q.filters.business_id === CAFE &&
+      q.filters.owner_user_id === OWNER && q.filters.thread_id === THREAD)).toBe(true);
+  });
+
   it("loads only the latest bounded history and labels saved memory advisory", async () => {
     const { client, state } = fixture();
     state.document = {
