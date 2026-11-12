@@ -19,6 +19,20 @@ create policy "owner append canonical price history" on public.menu_price_histor
     select 1 from public.memberships m where m.business_id = menu_price_history.business_id
       and m.user_id = (select auth.uid()) and m.role = 'owner'
   ));
+-- Preserve the pre-existing authenticated café-member CSV/catalog import paths.
+-- They may only append explicitly non-owner sources; in particular they
+-- CANNOT forge an owner_manual receipt used by the Supervisor effect gateway.
+-- Existing SELECT remains from "members read price history"; UPDATE/DELETE
+-- are no longer permitted to any authenticated café member.
+create policy "members append imported price history" on public.menu_price_history
+  for insert to authenticated with check (
+    source_type in ('initial','imported','connected_pos')
+    and exists (
+      select 1 from public.memberships m
+      where m.business_id = menu_price_history.business_id
+        and m.user_id = (select auth.uid())
+    )
+  );
 
 create function public.supervisor_reconcile_effect_attempt(
   p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid,
