@@ -1,6 +1,6 @@
 import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {matchVerifiedToastPriceEvidence} from "./toastPriceEvidence.server";
+import {matchVerifiedToastPriceEvidence,matchVerifiedHistoricToastActivation} from "./toastPriceEvidence.server";
 const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const itemId="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -61,5 +61,42 @@ describe("Task 8a Toast verified published price only",()=>{
   const other={...original.history[0],id:"ffffffff-ffff-4fff-8fff-ffffffffffff"};
   expect(matchVerifiedToastPriceEvidence({...original,history:[...original.history,other]}))
    .toMatchObject({status:"unverified",reason:"ambiguous_price_history"});
+ });
+});
+
+describe("Task 8a approved Toast historical activation survives a later unrelated menu version",()=>{
+ const latest={...original,
+  menu:{...original.menu,
+   toast_publication_version:"2026-11-11T20:00:00Z",
+   toast_publication_observed_at:"2026-11-11T20:01:00Z"},
+  receipt:{...original.receipt,menu_last_updated:"2026-11-11T20:00:00Z",
+   menu_copied_at:"2026-11-11T20:02:00Z"},
+  approvedAt:"2026-11-11T17:00:00Z",oldPriceCents:500};
+ it("recovers the authenticated earlier price receipt, not the latest unrelated menu stamp",()=>{
+  expect(matchVerifiedToastPriceEvidence(latest).status).toBe("unverified");
+  expect(matchVerifiedHistoricToastActivation(latest)).toMatchObject({
+   status:"verified",historyId:original.history[0].id,
+   publicationVersion:original.history[0].toast_publication_version,
+   observedAt:"2026-11-11T18:01:00Z",
+   startAt:"2026-11-11T18:01:00Z"});
+ });
+ it("rejects events before approval, owner writes, wrong restaurant and changed price context",()=>{
+  expect(matchVerifiedHistoricToastActivation({...latest,
+   approvedAt:"2026-11-11T19:00:00Z"}).status).toBe("unverified");
+  expect(matchVerifiedHistoricToastActivation({...latest,
+   history:[{...original.history[0],source_type:"owner_manual"}]}).status)
+   .toBe("unverified");
+  expect(matchVerifiedHistoricToastActivation({...latest,
+   history:[{...original.history[0],toast_restaurant_guid:
+    "ffffffff-ffff-4fff-8fff-ffffffffffff"}]}).status).toBe("unverified");
+  expect(matchVerifiedHistoricToastActivation({...latest,
+   menu:{...latest.menu,pos_pricing_strategy:"TIME_SPECIFIC_PRICE"}}).status)
+   .toBe("unverified");
+ });
+ it("rejects duplicated same-time candidate receipts rather than picking one",()=>{
+  expect(matchVerifiedHistoricToastActivation({...latest,history:[
+   ...latest.history,{...latest.history[0],
+    id:"ffffffff-ffff-4fff-8fff-ffffffffffff"}]})).toMatchObject({
+     status:"unverified",reason:"ambiguous_activation_history"});
  });
 });

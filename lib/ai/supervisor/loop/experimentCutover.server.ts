@@ -223,7 +223,8 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   if(!receipt)throw new Error("invalid_persisted_activation");
  }else{
   const published=await readVerifiedToastPriceEvidence(db,row.business_id,
-   effect.productId,effect.newPriceCents);
+   effect.productId,effect.newPriceCents,{approvedAt:row.approved_at,
+    oldPriceCents:effect.oldPriceCents});
   const ready=published.status==="verified"&&
    published.oldPriceCents===effect.oldPriceCents&&
    Date.parse(published.observedAt)>=Date.parse(row.approved_at)&&

@@ -75,10 +75,65 @@ export function matchVerifiedToastPriceEvidence(input:Candidate):
   observedAt:event.toast_observed_at!,startAt:effective??event.toast_observed_at!,
   startBasis:effective?"source_effective":"first_verified_observation"};
 }
+/** Recovery for a previously source-authenticated price transition whose
+ * catalog version has since advanced WITHOUT a new price transition. The
+ * immutable POS0d history stamp, not current-version equality, is the proof.
+ * Later context/price changes are evaluated by the separate monitor audit. */
+export function matchVerifiedHistoricToastActivation(input:Candidate&{
+ approvedAt:string;oldPriceCents:number;
+}):VerifiedToastPriceEvidence|UnverifiedToastPriceEvidence{
+ const deny=(reason:string):UnverifiedToastPriceEvidence=>({status:"unverified",reason});
+ const {businessId,menuItemId,targetCents,oldPriceCents,approvedAt,
+  menu,receipt,history}=input;
+ if(!validTime(approvedAt)||!Number.isSafeInteger(oldPriceCents)||
+    oldPriceCents<=0||!Number.isSafeInteger(targetCents)||targetCents<=0||
+    oldPriceCents===targetCents||
+    menu.business_id!==businessId||menu.id!==menuItemId||
+    menu.catalog_source!=="toast"||!menu.is_active||
+    menu.toast_publication_state!=="active"||
+    menu.price_cents!==targetCents)return deny("unverified_recovery_context");
+ const parsed=menu.pos_item_id?.match(posPattern);
+ if(!parsed||parsed[1].toLowerCase()!==receipt.restaurant_guid.toLowerCase()||
+    menu.pos_pricing_strategy!==(parsed[3]?"SIZE_PRICE":"BASE_PRICE"))
+  return deny("ambiguous_recovery_item_or_strategy");
+ if(!validTime(receipt.verified_at)||!validTime(receipt.menu_copied_at)||
+    !validTime(menu.toast_publication_observed_at)||
+    !menu.toast_publication_version||
+    menu.toast_publication_version!==receipt.menu_last_updated||
+    Date.parse(receipt.menu_copied_at!)<
+      Date.parse(menu.toast_publication_observed_at!)-20*60000)
+  return deny("unverified_latest_menu_receipt");
+ const rows=history.filter(h=>h.business_id===businessId&&
+  h.menu_item_id===menuItemId&&h.source_type==="connected_pos"&&
+  h.source_provider==="toast"&&
+  h.toast_restaurant_guid?.toLowerCase()===receipt.restaurant_guid.toLowerCase()&&
+  typeof h.toast_publication_version==="string"&&
+  h.toast_publication_version.length>0&&
+  h.old_price_cents===oldPriceCents&&h.new_price_cents===targetCents&&
+  validTime(h.toast_observed_at)&&
+  Date.parse(h.toast_observed_at!)>=Date.parse(approvedAt)&&
+  (h.toast_effective_at===null||
+   (validTime(h.toast_effective_at)&&
+    Date.parse(h.toast_effective_at!)>=Date.parse(approvedAt)&&
+    Date.parse(h.toast_effective_at!)<=Date.parse(h.toast_observed_at!))))
+  .sort((a,b)=>Date.parse(a.toast_observed_at!)-Date.parse(b.toast_observed_at!));
+ if(!rows.length)return deny("no_approved_source_transition");
+ if(rows.length>1&&Date.parse(rows[0].toast_observed_at!)===
+    Date.parse(rows[1].toast_observed_at!))return deny("ambiguous_activation_history");
+ const event=rows[0];
+ const start=event.toast_effective_at??event.toast_observed_at!;
+ return {status:"verified",businessId,menuItemId,
+  restaurantGuid:receipt.restaurant_guid,posItemId:menu.pos_item_id!,
+  historyId:event.id,oldPriceCents,newPriceCents:targetCents,
+  publicationVersion:event.toast_publication_version!,
+  observedAt:event.toast_observed_at!,startAt:start,
+  startBasis:event.toast_effective_at?"source_effective":"first_verified_observation"};
+}
 /** Only records already retained and source-stamped by POS0d are eligible.
  * The passed DB is the existing authorized, scoped server client. */
 export async function readVerifiedToastPriceEvidence(db:SupabaseClient,
- businessId:string,menuItemId:string,targetCents:number):
+ businessId:string,menuItemId:string,targetCents:number,
+ activation?:{approvedAt:string;oldPriceCents:number}):
  Promise<VerifiedToastPriceEvidence|UnverifiedToastPriceEvidence>{
  const {data:item,error:itemError}=await db.from("menu_items").select(
   "business_id,id,pos_item_id,catalog_source,price_cents,is_active,pos_pricing_strategy,toast_publication_state,toast_publication_version,toast_publication_observed_at")
@@ -93,19 +148,32 @@ export async function readVerifiedToastPriceEvidence(db:SupabaseClient,
    .eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).maybeSingle(),
   db.from("toast_optional_sync_state").select("menu_last_updated,menu_copied_at")
    .eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).maybeSingle(),
-  db.from("menu_price_history").select(
-   "id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,toast_restaurant_guid,toast_publication_version,toast_observed_at,toast_effective_at")
-   .eq("business_id",businessId).eq("menu_item_id",menuItemId)
-   .eq("source_type","connected_pos").eq("source_provider","toast")
-   .eq("toast_restaurant_guid",restaurantGuid)
-   .eq("toast_publication_version",item.toast_publication_version)
-   .order("toast_observed_at",{ascending:false}).limit(25)
+  (activation?
+   db.from("menu_price_history").select(
+    "id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,toast_restaurant_guid,toast_publication_version,toast_observed_at,toast_effective_at",{count:"exact"})
+    .eq("business_id",businessId).eq("menu_item_id",menuItemId)
+    .eq("source_type","connected_pos").eq("source_provider","toast")
+    .eq("toast_restaurant_guid",restaurantGuid)
+    .gte("toast_observed_at",activation.approvedAt)
+    .order("toast_observed_at",{ascending:true}).limit(250):
+   db.from("menu_price_history").select(
+    "id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,toast_restaurant_guid,toast_publication_version,toast_observed_at,toast_effective_at")
+    .eq("business_id",businessId).eq("menu_item_id",menuItemId)
+    .eq("source_type","connected_pos").eq("source_provider","toast")
+    .eq("toast_restaurant_guid",restaurantGuid)
+    .eq("toast_publication_version",item.toast_publication_version)
+    .order("toast_observed_at",{ascending:false}).limit(25))
  ]);
  if(location.error||checkpoint.error||prices.error)
   throw new Error("toast_price_source_read_failed");
  if(!location.data||!checkpoint.data)
   return {status:"unverified",reason:"no_verified_restaurant_copy"};
- return matchVerifiedToastPriceEvidence({businessId,menuItemId,targetCents,
+ if(activation&&(prices.count===null||
+    prices.count!==(prices.data?.length??0)))throw new Error("toast_source_history_incomplete");
+ const facts={businessId,menuItemId,targetCents,
   menu:item,receipt:{...location.data,...checkpoint.data},
-  history:prices.data??[]});
+  history:prices.data??[]};
+ const current=matchVerifiedToastPriceEvidence(facts);
+ if(current.status==="verified")return current;
+ return activation?matchVerifiedHistoricToastActivation({...facts,...activation}):current;
 }
