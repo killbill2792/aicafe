@@ -36,6 +36,61 @@ end;$$;
 revoke all on function public.toast_record_pending_menu_observation( uuid,uuid,text,timestamptz,timestamptz) from public,anon,authenticated;
 grant execute on function public.toast_record_pending_menu_observation( uuid,uuid,text,timestamptz,timestamptz) to service_role;
 
+-- An already authenticated, durably recorded V1 observation can prove
+-- EXISTING Toast price history even if V2 is now current. Never invent rows,
+-- backdate changed_at, or use the absence of V1 as menu-retirement proof.
+create or replace function public.toast_reconcile_superseded_menu_history(
+ p_business_id uuid,p_restaurant_guid uuid,p_version text,p_first_observed_at timestamptz
+) returns boolean language plpgsql security definer set search_path=public as $$
+declare evidence jsonb;last_at timestamptz;
+begin
+ if auth.role() IS DISTINCT FROM 'service_role' or not exists(
+   select 1 from public.toast_location_mappings where business_id=p_business_id
+    and restaurant_guid=p_restaurant_guid and verified_at is not null
+ ) then raise exception 'Toast price unauthorized' using errcode='42501';end if;
+ select s.menu_pending_observations,(select max(v.value::timestamptz)
+  from jsonb_array_elements_text(s.menu_pending_observations) v(value))
+ into evidence,last_at from public.toast_optional_sync_state s
+ where s.business_id=p_business_id and s.restaurant_guid=p_restaurant_guid
+  and s.menu_checked_local_day is null and s.menu_copied_at=p_first_observed_at
+  and s.menu_last_updated in (p_version,'pending:'||p_version);
+ if evidence is null or jsonb_typeof(evidence)<>'array' or last_at is null
+  or p_version is null or length(p_version)>150 then
+   raise exception 'No durable superseded receipt' using errcode='22023';end if;
+ with proofs as(
+  select h.id,obs.value::timestamptz observed_at,
+    row_number() over(partition by h.id order by
+      abs(extract(epoch from h.changed_at-obs.value::timestamptz))) rank
+  from public.menu_price_history h join public.menu_items m
+    on m.id=h.menu_item_id and m.business_id=h.business_id
+  cross join lateral jsonb_array_elements_text(evidence) obs(value)
+  where h.business_id=p_business_id and h.source_type='connected_pos'
+   and h.source_provider='toast' and h.toast_publication_version is null
+   and m.catalog_source='toast' and m.pos_item_id like 'toast:'||p_restaurant_guid::text||':%'
+   and m.price_cents=h.new_price_cents
+   and h.changed_at between obs.value::timestamptz-interval '20 minutes'
+                        and obs.value::timestamptz+interval '5 minutes'
+ )
+ update public.menu_price_history h set toast_restaurant_guid=p_restaurant_guid,
+  toast_publication_version=p_version,toast_observed_at=proofs.observed_at,
+  toast_effective_at=null from proofs where h.id=proofs.id and proofs.rank=1;
+ -- Any potentially related Toast history without verifiable source price
+ -- remains unresolved; do NOT discard the previous version's receipts.
+ if exists(select 1 from public.menu_price_history h join public.menu_items m
+  on m.id=h.menu_item_id and m.business_id=h.business_id
+  where h.business_id=p_business_id and h.source_type='connected_pos'
+   and h.source_provider='toast' and h.toast_publication_version is null
+   and m.catalog_source='toast' and m.pos_item_id like 'toast:'||p_restaurant_guid::text||':%'
+   and h.changed_at between p_first_observed_at-interval '20 minutes'
+                        and last_at+interval '5 minutes'
+ ) then raise exception 'Unverified superseded Toast price' using errcode='22023';end if;
+ return true;
+end;$$;
+revoke all on function public.toast_reconcile_superseded_menu_history(
+ uuid,uuid,text,timestamptz) from public,anon,authenticated;
+grant execute on function public.toast_reconcile_superseded_menu_history(
+ uuid,uuid,text,timestamptz) to service_role;
+
 create or replace function public.toast_apply_verified_menu_presence( p_business_id uuid,p_restaurant_guid uuid,p_version text,
  p_observed_at timestamptz,p_item_ids text[],p_modifier_ids text[], p_group_links jsonb
 ) returns jsonb language plpgsql security definer set search_path=public as $$
