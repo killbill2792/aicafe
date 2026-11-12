@@ -240,6 +240,17 @@ try{
  await expectError(()=>withAuthenticated(db,staffId,c=>c.query(
   "insert into menu_price_history(business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider) values($1,$2,450,500,'owner_manual','forged')",
   [B,"cccccccc-cccc-4ccc-8ccc-cccccccccccc"])),"42501");
+ // Existing member-driven CSV/catalog imports must continue working.
+ // They cannot spoof the owner_manual source used for receipt reconciliation.
+ const importedId=randomUUID();
+ await withAuthenticated(db,staffId,c=>c.query(
+  "insert into menu_price_history(id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider) values($1,$2,$3,450,500,'imported','csv import estimated average')",
+  [importedId,B,"cccccccc-cccc-4ccc-8ccc-cccccccccccc"]));
+ assert.equal((await db.query("select source_type from menu_price_history where id=$1",[importedId])).rows[0].source_type,
+  "imported","legitimate member import remains available");
+ await expectError(()=>withAuthenticated(db,staffId,c=>c.query(
+  "insert into menu_price_history(business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider) values($1,$2,450,500,'owner_manual','Alex (owner approved; proposal spoof)')",
+  [B,"cccccccc-cccc-4ccc-8ccc-cccccccccccc"])),"42501");
  const ownerHistoryId=randomUUID();
  await withAuthenticated(db,OWNER,c=>c.query(
   "insert into menu_price_history(id,business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider) values($1,$2,$3,450,500,'owner_manual','owner-unit-proof')",
