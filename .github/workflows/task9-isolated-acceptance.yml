@@ -117,3 +117,76 @@ jobs:
       - name: Stop disposable Supabase database
         if: always()
         run: supabase stop --no-backup
+
+  full-disposable-database:
+    name: Full database regressions including Task 9
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Install dependencies and start disposable local Supabase
+        run: |
+          npm ci --ignore-scripts >"$RUNNER_TEMP/npm-ci.log" 2>&1 &
+          npm_pid=$!
+          supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          npm_status=0
+          wait "$npm_pid" || npm_status=$?
+          cat "$RUNNER_TEMP/npm-ci.log"
+          exit "$npm_status"
+      - name: Run the existing full DB runner, including dedicated Task 9
+        run: bash scripts/db/run-all.sh
+      - name: Destroy disposable local Supabase database
+        if: always()
+        run: supabase stop --no-backup
+
+  all-unit-tests:
+    name: Full Vitest regressions (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run full Vitest shard
+        run: npm test -- --shard=${{ matrix.shard }}/3
+
+  quality-build-eval:
+    name: TypeScript, full lint, Webpack build and recorded Supervisor eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Strict TypeScript
+        run: npx tsc --noEmit
+      - name: Full lint
+        run: npm run lint
+      - name: Production Webpack build (no deployment)
+        run: npm run build -- --webpack
+      - name: Zero-cost recorded Supervisor evaluations
+        env:
+          PROMPTFOO_DISABLE_TELEMETRY: "1"
+          PROMPTFOO_DISABLE_UPDATE: "1"
+          PROMPTFOO_DISABLE_UPDATE_CHECK: "1"
+          NODE_OPTIONS: --conditions=react-server
+        run: npm run eval:supervisor
