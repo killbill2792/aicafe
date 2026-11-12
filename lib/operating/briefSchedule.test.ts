@@ -19,7 +19,8 @@ describe("per-café morning brief send time",()=>{
     expect(briefSchedule(at("05:45"),zone,hours).phase).toBe("fallback");
     expect(briefSchedule(at("06:00"),zone,hours).phase).toBe("late");
     expect(briefSchedule(at("06:30"),zone,hours).phase).toBe("missed");
-    expect(briefSchedule(at("08:30"),zone,hours).phase).toBe("done");
+    expect(briefSchedule(at("08:30"),zone,hours).phase).toBe("missed");
+    expect(briefSchedule(at("12:00"),zone,hours).phase).toBe("missed");
     // The outbox deadline is the opening time itself.
     expect(s.sendBefore).toBe("2026-11-03T14:30:00.000Z");
   });
