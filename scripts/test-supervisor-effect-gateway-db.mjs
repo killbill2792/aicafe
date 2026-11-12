@@ -104,7 +104,7 @@ try{
  const beforeUpgrade=(await db.query("select proposal_id,approved_revision,effect_hash from supervisor_approvals where proposal_id=any($1::uuid[]) order by proposal_id",[preexisting])).rows;
  assert.equal(beforeUpgrade.length,3,"seed the same number of legacy approvals currently stored in production");
  await db.query(readFileSync(new URL("../supabase/migrations/20261111000206_supervisor_effect_gateway.sql",import.meta.url),"utf8"));
- await db.query(readFileSync(new URL("../supabase/migrations/20261112000301_supervisor_effect_reconciliation.sql",import.meta.url),"utf8"));
+ await db.query(readFileSync(new URL("../supabase/migrations/20261112000304_supervisor_effect_reconciliation.sql",import.meta.url),"utf8"));
  const afterUpgrade=(await db.query("select proposal_id,approved_revision,effect_hash,authorization_kind,mandate_id,mandate_revision from supervisor_approvals where proposal_id=any($1::uuid[]) order by proposal_id",[preexisting])).rows;
  assert.deepEqual(afterUpgrade,beforeUpgrade.map(row=>({...row,authorization_kind:"click",
    mandate_id:null,mandate_revision:null})),"Task10 migration must preserve all legacy click approvals");
