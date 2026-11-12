@@ -110,6 +110,12 @@ export function applyMuseOwnerInstruction(state,receipt,{actor,now=new Date().to
  }
  const parsed=spoken||structured;
  if(!parsed)return next;
+ // The private inbox is append-only: don't reinterpret an old instruction as
+ // a fresh owner approval when a delayed runner scans historical receipts.
+ const age=Date.parse(now)-Date.parse(receipt.submitted_at||'');
+ if(!Number.isFinite(age)||age>24*60*60*1000||age< -5*60*1000){
+   event.reason='stale_or_invalid_owner_instruction';return next;
+ }
  event.command_kind=parsed.kind==='control'?parsed.field:parsed.intent;
  if(!validTarget(receipt.target,parsed.kind,parsed)){
    event.reason='target_does_not_match_owner_words';return next;
