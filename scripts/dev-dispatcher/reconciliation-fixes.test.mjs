@@ -64,7 +64,7 @@ test('parent_merged planned action keeps exact child head for courier validation
 });
 test('dispatcher cron and Integration Proof completion wake are configured',()=>{
   const source=readFileSync(new URL('../../.github/workflows/ai-cafe-dev-dispatcher.yml',import.meta.url),'utf8');
-  assert.match(source,/cron: '2\/5 \* \* \* \*'/);
+  assert.match(source,/cron: '3\/5 \* \* \* \*'/);
   assert.match(source,/workflows: \[[^\n]*'AI CAFE Integration Proof'/);
 });
 test('PR-list mergeability must be confirmed by matching live detail SHA/base',async()=>{

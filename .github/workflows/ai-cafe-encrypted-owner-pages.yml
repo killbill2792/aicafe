@@ -1,0 +1,88 @@
+# Existing GitHub Pages publisher — ONE public operations table, NO encryption.
+# Reads private Git ledger on trusted main only; publishes ONLY allowlisted
+# operational statuses, never raw private task ledger/prompts/owner messages.
+name: AI CAFE Owner Operations Pages
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - docs/index.html
+      - docs/owner-dashboard.mjs
+      - docs/owner-dashboard.css
+      - scripts/dev-dispatcher/public-owner-payload.mjs
+      - .github/workflows/ai-cafe-encrypted-owner-pages.yml
+  workflow_run:
+    workflows: ['AI CAFE Development Dispatcher']
+    types: [completed]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: aicafe-owner-pages
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event != 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Verify existing private-ledger read credential
+        id: owner_setup
+        env:
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -z "$DISPATCH_LEDGER_TOKEN" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Operations snapshot not published: missing ledger credential."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.owner_setup.outputs.enabled == 'true'
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        if: steps.owner_setup.outputs.enabled == 'true'
+        with:
+          node-version: '22'
+      - name: Stage allowlisted site assets only
+        if: steps.owner_setup.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/owner-pages"
+          cp docs/index.html docs/owner-dashboard.css docs/owner-dashboard.mjs \
+            docs/owner-dashboard-extras.mjs "$RUNNER_TEMP/owner-pages/"
+      - name: Publish allowlisted public task status
+        if: steps.owner_setup.outputs.enabled == 'true'
+        env:
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/dev-dispatcher/public-owner-payload.mjs \
+            "$RUNNER_TEMP/owner-pages/owner-operations-snapshot.json"
+          test -s "$RUNNER_TEMP/owner-pages/owner-operations-snapshot.json"
+          # Never stage state.json, any receipt or action prompt.
+      - uses: actions/configure-pages@v5
+        if: steps.owner_setup.outputs.enabled == 'true'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.owner_setup.outputs.enabled == 'true'
+        with:
+          path: ${{ runner.temp }}/owner-pages
+      - name: Deploy existing GitHub Pages site
+        if: steps.owner_setup.outputs.enabled == 'true'
+        id: deployment
+        uses: actions/deploy-pages@v4

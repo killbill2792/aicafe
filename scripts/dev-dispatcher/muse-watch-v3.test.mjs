@@ -251,3 +251,98 @@ test('missing PR writer becomes a precise Muse owner incident, not repeated impo
      'Unsigned chat URLs must not generate owner credential incidents');
  }
 });
+
+test('5-minute Codex warning does not automatically request a second review',()=>{
+ const base={...state,tasks:{T1:{...state.tasks.T1,draft:false,
+   ready_transition_at:'2026-11-11T09:55:00Z',ci_state:'success',codex_state:'pending'}}};
+ const health=inspectMuseHealth(base,{now});
+ const issue=health.incidents.find(x=>x.kind==='CODEX_NOT_RECEIVED');
+ assert.equal(issue.age_minutes,5);
+ assert.equal(issue.action,'MUSE_NOTIFY_OWNER');
+ assert.ok(!museRecoveryCandidates(health,base,identity)
+   .some(r=>r.intent==='REQUEST_CODEX_IF_ELIGIBLE'));
+});
+test('10-minute unchanged ready head triggers one bounded safe recovery request',()=>{
+ const base={...state,tasks:{T1:{...state.tasks.T1,draft:false,
+   ready_transition_at:'2026-11-11T09:50:00Z',ci_state:'success',codex_state:'pending'}}};
+ const health=inspectMuseHealth(base,{now});
+ const issue=health.incidents.find(x=>x.kind==='CODEX_NOT_RECEIVED');
+ assert.equal(issue.age_minutes,10);
+ assert.equal(issue.action,'REQUEST_CODEX_IF_ELIGIBLE');
+ const requests=museRecoveryCandidates(health,base,identity);
+ assert.equal(requests.filter(x=>x.intent==='REQUEST_CODEX_IF_ELIGIBLE').length,1);
+ const backlog=planMuseBacklog(null,requests,now);
+ assert.deepEqual(planMuseBacklog(backlog,requests,now),backlog);
+});
+test('integrated parent suggests proposed scope for owner without auto-authorization',()=>{
+ const queue={merged_code_only:[{id:'T1'}],tasks:[{id:'E2',state:'proposed',
+   depends_on:['T1'],edits:[],uses:[],acceptance:['owner verified scope'],brief:'owner plan'}]};
+ const completed={...state,tasks:{T1:{...state.tasks.T1,status:'integrated_proven',
+   integration_proof:{conclusion:'success'}}}};
+ const health=inspectMuseHealth(completed,{now,queue});
+ const notice=health.incidents.find(x=>x.kind==='SCOPE_PROPOSAL_READY');
+ assert.equal(notice.task_id,'E2');
+ assert.equal(notice.action,'MUSE_NOTIFY_OWNER');
+ assert.ok(!museRecoveryCandidates(health,completed,identity)
+   .some(r=>r.task_id==='E2'));
+ const notProven={...completed,tasks:{T1:{...completed.tasks.T1,
+   integration_proof:{conclusion:'pending'}}}};
+ assert.ok(!inspectMuseHealth(notProven,{now,queue}).incidents
+   .some(x=>x.kind==='SCOPE_PROPOSAL_READY'));
+});
+test('invalid Codex escalation configuration fails before dispatch',()=>{
+ assert.throws(()=>inspectMuseHealth(state,{now,codexWarnMinutes:10,
+   codexEscalateMinutes:5}),/Invalid watchdog configuration/);
+});
+
+test('CI pending warns at five minutes, safe reconciliation only at ten',()=>{
+ const base={...state,tasks:{T1:{...state.tasks.T1,
+   ci_state:'pending',ci_started_at:'2026-11-11T09:55:00Z',
+   last_commit_at:'2026-11-11T09:54:00Z'}}};
+ const five=inspectMuseHealth(base,{now});
+ assert.equal(five.incidents.find(x=>x.kind==='CI_PENDING_STALE').action,'MUSE_NOTIFY_OWNER');
+ const safe=museRecoveryCandidates(five,base,identity);
+ assert.ok(!safe.some(x=>x.intent==='RECONCILE'&&x.task_id==='T1'));
+ const ten=inspectMuseHealth(base,{now:'2026-11-11T10:05:00Z'});
+ assert.equal(ten.incidents.find(x=>x.kind==='CI_PENDING_STALE').action,'RECONCILE');
+ assert.ok(museRecoveryCandidates(ten,base,{...identity,now:'2026-11-11T10:05:00Z'})
+   .some(x=>x.intent==='RECONCILE'));
+});
+test('red CI is reported to Muse but never silently marked green or retried unsafely',()=>{
+ const r={...state,tasks:{T1:{...state.tasks.T1,
+   ci_state:'failure',last_github_activity:now}}};
+ const health=inspectMuseHealth(r,{now});
+ assert.equal(health.incidents.find(x=>x.kind==='CI_FAILED').action,'MUSE_INSPECT_SIGNED_REPAIR');
+ assert.ok(!museRecoveryCandidates(health,r,identity).some(x=>x.intent==='RETRY_CI_IF_SAFE'));
+});
+test('verified merge-eligible unmerged PR requests GitHub merge gate, never merges directly',()=>{
+ const r={...state,tasks:{T1:{...state.tasks.T1,draft:false,
+   ci_state:'success',ci_finished_at:'2026-11-11T09:30:00Z',
+   dispatcher_only:false}},
+   lifecycle_v3:{rows:{T1:{merge:{eligible:true,current_head_sha:sha}}}}};
+ const health=inspectMuseHealth(r,{now});
+ assert.equal(health.incidents.find(x=>x.kind==='MERGE_ELIGIBLE_NOT_MOVING').action,
+   'MERGE_IF_ELIGIBLE');
+ assert.ok(museRecoveryCandidates(health,r,identity)
+   .some(x=>x.intent==='MERGE_IF_ELIGIBLE'&&x.expected_head_sha===sha));
+ const protectedTask={...r,tasks:{T1:{...r.tasks.T1,dispatcher_only:true}}};
+ assert.ok(!inspectMuseHealth(protectedTask,{now}).incidents
+   .some(x=>x.kind==='MERGE_ELIGIBLE_NOT_MOVING'));
+});
+
+test('Codex detection uses verified CI finish if ready transition not recorded',()=>{
+ const r={...state,tasks:{T1:{...state.tasks.T1,draft:false,ci_state:'success',
+   ready_transition_at:null,ci_finished_at:'2026-11-11T09:50:00Z',
+   codex_state:'pending'}}};
+ const h=inspectMuseHealth(r,{now});
+ assert.equal(h.incidents.find(x=>x.kind==='CODEX_NOT_RECEIVED').age_minutes,10);
+ assert.ok(museRecoveryCandidates(h,r,identity)
+   .some(x=>x.intent==='REQUEST_CODEX_IF_ELIGIBLE'));
+});
+test('merge watchdog refuses a stale lifecycle head',()=>{
+ const r={...state,tasks:{T1:{...state.tasks.T1,draft:false,ci_state:'success',
+   ci_finished_at:'2026-11-11T09:00:00Z'}},
+   lifecycle_v3:{rows:{T1:{merge:{eligible:true,current_head_sha:'b'.repeat(40)}}}}};
+ assert.ok(!inspectMuseHealth(r,{now}).incidents
+   .some(x=>x.kind==='MERGE_ELIGIBLE_NOT_MOVING'));
+});

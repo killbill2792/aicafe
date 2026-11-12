@@ -2,7 +2,7 @@ import {describe,it,expect,vi,beforeEach} from "vitest";
 const f=vi.hoisted(()=>({
  business:"11111111-1111-4111-8111-111111111111",owner:"22222222-2222-4222-8222-222222222222",
  thread:"33333333-3333-4333-8333-333333333333",id:"44444444-4444-4444-8444-444444444444",
- status:"draft",revision:1,saved:0,approved:0,cancelled:0,stale:false,deny:false,accessAllowed:true,
+ status:"draft",revision:1,saved:0,approved:0,cancelled:0,stale:false,deny:false,accessAllowed:true,gatewayCalls:0,
  token:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 }));
 const effect={operation:"propose_rule_change",expectedToken:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -50,6 +50,7 @@ vi.mock("@/lib/ai/supervisor/loop/supabase.server",()=>({
    throw Error("invalid transition");
   }
   async commitStaff(_scope:unknown,_id:string,revision:number){
+   f.gatewayCalls++;
    if(revision!==f.revision||f.status!=="approved")throw Error("revision conflict");
    if(f.stale||f.token!==effect.expectedToken){f.status="stale";f.revision++;return {state:"stale",proposal:row()};}
    f.status="committed";f.revision+=2;f.saved++;
@@ -62,8 +63,14 @@ const params={params:Promise.resolve({threadId:f.thread})};
 const post=(action:string,revision=1)=>new Request(path,{method:"POST",
  headers:{"content-type":"application/json",origin:"http://localhost:3000"},
  body:JSON.stringify({action,proposalId:f.id,revision})});
-beforeEach(()=>{f.status="draft";f.revision=1;f.saved=0;f.approved=0;f.cancelled=0;f.stale=false;f.deny=false;f.accessAllowed=true;f.token=effect.expectedToken;});
+beforeEach(()=>{f.status="draft";f.revision=1;f.saved=0;f.approved=0;f.cancelled=0;f.stale=false;f.deny=false;f.accessAllowed=true;f.gatewayCalls=0;f.token=effect.expectedToken;});
 describe("staff approval through shared Supervisor ledger",()=>{
+ it("refuses standing-mandate start for staff communication effects",async()=>{
+  const response=await POST(post("start"),params);
+  expect(response.status).toBe(403);
+  expect((await response.json()).error).toBe("standing_mandate_action_not_eligible");
+  expect(f.gatewayCalls).toBe(0);expect(f.saved).toBe(0);expect(f.approved).toBe(0);
+ });
  it("rejects expired access before approving or writing any staff effect",async()=>{
   f.accessAllowed=false;
   const response=await POST(post("approve"),params);
@@ -81,7 +88,7 @@ describe("staff approval through shared Supervisor ledger",()=>{
   const approved=await POST(post("approve"),params);
   expect(approved.status).toBe(200);
   expect((await approved.json()).proposal.state).toBe("applied");
-  expect(f.approved).toBe(1);expect(f.saved).toBe(1);
+  expect(f.approved).toBe(1);expect(f.saved).toBe(1);expect(f.gatewayCalls).toBe(1);
  });
  it("second click cannot apply or duplicate an audit entry",async()=>{
   const results=await Promise.all([POST(post("approve"),params),POST(post("approve"),params)]);

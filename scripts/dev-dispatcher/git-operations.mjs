@@ -5,6 +5,7 @@ import {join,dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {queueOwnerIssue} from './alerts.mjs';
 import {assertLedgerShape,sanitizeLedger} from './ledger.mjs';
+import {compactPrivateLedger} from './ledger-compaction.mjs';
 import {renderPrivateQueue} from './private-owner-view.mjs';
 import {settings} from './settings.mjs';
 
@@ -27,6 +28,14 @@ function git(args,{cwd,env,run=spawnSync,timeout=90000}={}) {
     stdio:['ignore','pipe','pipe']});
   if(r.error||r.status!==0)throw Error('Git '+args[0]+' failed (exit '+(r.status??'transport')+')');
   return String(r.stdout||'').trim();
+}
+function saveCompactionArchive(root,result) {
+  if(!result.archive)return [];
+  const file=join(root,result.archive.path);
+  mkdirSync(dirname(file),{recursive:true,mode:0o700});
+  // Private archive is committed atomically with the compacted active ledger.
+  writeFileSync(file,result.archive.content,{mode:0o600,flag:'wx'});
+  return [result.archive.path];
 }
 const gitUrl = repo => {
   if(!validRepo(repo))throw Error('Invalid Git repository');
@@ -105,6 +114,14 @@ export function publishEmergencyViaGit({repo=settings.ledger.repo,
       const existing=Object.values(state.owner_alerts||{}).find(n=>
         n.kind===kind&&n.identity===incidentId&&['planned','submitted'].includes(n.status));
       if(existing)return {status:'already_queued',notice_hash:existing.notice_hash};
+      // One failed GitHub run can cause multiple observer runs; do not grow
+      // state.json with one new "emergency" per run while reconciling is broken.
+      const recent=kind==='dispatcher_emergency'
+        ?Object.values(state.owner_alerts||{}).find(n=>
+          n.kind===kind&&['planned','submitted','claimed','uncertain'].includes(n.status)&&
+          Date.now()-Date.parse(n.created_at||'')<60*60*1000)
+        :null;
+      if(recent)return {status:'already_queued',notice_hash:recent.notice_hash};
       const next=queueOwnerIssue(state,{kind,identity:incidentId,
         message:'Dispatcher '+targetRepo+': '+message.slice(0,500),
         needs:needs||'Muse notify owner; dispatcher will retry safely'});
@@ -115,15 +132,20 @@ export function publishEmergencyViaGit({repo=settings.ledger.repo,
           identity:incidentId,reason:'github_api_rate_limit'};
       }
       sanitizeLedger(next);
-      writeFileSync(statePath,JSON.stringify(next,null,2)+'\n');
+      const compacted=compactPrivateLedger(next);
+      writeFileSync(statePath,JSON.stringify(compacted.state,null,2)+'\n');
+      const archived=saveCompactionArchive(root,compacted);
       const viewPath=join(root,settings.ledger.owner_view_path);
       mkdirSync(dirname(viewPath),{recursive:true});
-      writeFileSync(viewPath,renderPrivateQueue(next,{repo})+'\n');
-      git(['add','--',settings.ledger.path,settings.ledger.owner_view_path],{cwd:root,env,run});
+      writeFileSync(viewPath,renderPrivateQueue(compacted.state,{repo})+'\n');
+      git(['add','--',settings.ledger.path,settings.ledger.owner_view_path,...archived],{cwd:root,env,run});
       git(identity(['commit','-q','-m','chore(dispatcher): queue emergency owner notice']),{cwd:root,env,run});
       try{
         git(['push','origin','HEAD:refs/heads/main'],{cwd:root,env,run});
-        const item=Object.values(next.owner_alerts).find(n=>n.kind===kind&&n.identity===incidentId);
+        const item=Object.values(compacted.state.owner_alerts).filter(n=>
+          n.kind===kind&&n.identity===incidentId&&n.status==='planned')
+          .sort((a,b)=>(b.incident_cycle||0)-(a.incident_cycle||0))[0];
+        if(!item)throw Error('Emergency incident identity not verified after Git push');
         return {status:'queued',notice_hash:item.notice_hash};
       } catch {
         if(attempt===retry-1)throw Error('Emergency Git queue push failed after bounded retries');
@@ -169,11 +191,13 @@ export async function transactLedgerViaGit({repo=settings.ledger.repo,token,
    updated.updated_at=new Date().toISOString();
    updated.owner_alerts||={};
    sanitizeLedger(updated);
-   writeFileSync(file,JSON.stringify(updated,null,2)+'\n');
+   const compacted=compactPrivateLedger(updated);
+   writeFileSync(file,JSON.stringify(compacted.state,null,2)+'\n');
+   const archived=saveCompactionArchive(root,compacted);
    const view=join(root,settings.ledger.owner_view_path);
    mkdirSync(dirname(view),{recursive:true});
-   writeFileSync(view,renderPrivateQueue(updated,{repo})+'\n');
-   git(['add','--',settings.ledger.path,settings.ledger.owner_view_path],{cwd:root,env,run});
+   writeFileSync(view,renderPrivateQueue(compacted.state,{repo})+'\n');
+   git(['add','--',settings.ledger.path,settings.ledger.owner_view_path,...archived],{cwd:root,env,run});
    if(!git(['status','--porcelain'],{cwd:root,env,run}))
      return {committed:false,state};
    const old=git(['rev-parse','HEAD'],{cwd:root,env,run});
@@ -181,7 +205,7 @@ export async function transactLedgerViaGit({repo=settings.ledger.repo,token,
      {cwd:root,env,run});
    try{
     git(['push','origin','HEAD:refs/heads/main'],{cwd:root,env,run});
-    return {committed:true,state:updated};
+    return {committed:true,state:compacted.state};
    }catch{
     const remote=git(['ls-remote','origin','refs/heads/main'],{cwd:root,env,run})
       .split(/\s+/)[0];

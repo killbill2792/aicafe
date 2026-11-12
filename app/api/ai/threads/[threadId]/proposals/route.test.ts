@@ -5,7 +5,7 @@ const f=vi.hoisted(()=>({
   threadId:"33333333-3333-4333-8333-333333333333",
   id:"44444444-4444-4444-8444-444444444444",
   productId:"55555555-5555-4555-8555-555555555555",
-  revision:1,status:"draft",current:450,saves:0,ownerAllowed:true,accessAllowed:true,
+  revision:1,status:"draft",current:450,saves:0,attemptState:"executing" as "executing"|"verified"|"uncertain"|"stale",ownerAllowed:true,accessAllowed:true,
   created:0,createdPrice:0,commitStale:false,editInsertFails:false,editRace:false,
 }));
 const effect=()=>({productId:f.productId,productName:"Latte",oldPriceCents:450,
@@ -51,10 +51,20 @@ vi.mock("@/lib/ai/supervisor/loop/supabase.server",()=>({
         id:"66666666-6666-4666-8666-666666666666",status:"draft",revision:1,
         canonicalEffectPayload:p,baseline:{editedByOwner:true}}};
     }
-    async markStalePrice(_scope:unknown,_id:string,rev:number){
-      if(f.status!=="executing"||rev!==f.revision)throw Error("revision conflict");
-      f.status="stale";f.revision++;return row();
+    async claimEffect(_scope:unknown,id:string,rev:number,authorizationKind:"click"|"mandate"){
+      if(rev!==f.revision||authorizationKind!=="click"||f.status!=="approved")throw Error("gateway denied");
+      f.status="executing";f.revision++;f.attemptState="executing";
+      return {proposal:row(),attemptKey:"attempt:"+id,businessDate:"2026-10-23",authorizationKind};
     }
+    async finishEffect(_scope:unknown,claim:{proposal:{id:string};attemptKey:string},
+      rev:number,state:"verified"|"uncertain"|"stale",nextStatus?:"committed"|"manual_pending"){
+      if(f.status!=="executing"||f.revision!==rev||claim.attemptKey!=="attempt:"+f.id)throw Error("attempt conflict");
+      if(state==="uncertain"){f.attemptState="uncertain";return row();}
+      if(state==="stale"){f.attemptState="stale";f.status="stale";f.revision++;return row();}
+      f.attemptState="verified";f.status=nextStatus!;f.revision++;return row();
+    }
+    async effectAttempt(){return {state:f.attemptState as "executing"|"verified"|"uncertain"|"stale",
+      authorizationKind:"click" as const,businessDate:"2026-10-23"};}
     async transition(_scope:unknown,_id:string,rev:number,action:string){
       if(rev!==f.revision)throw Error("conflict");
       if(action==="reject"&&f.status==="draft"){f.status="rejected";f.revision++;return row();}
@@ -68,7 +78,7 @@ vi.mock("@/lib/ai/supervisor/loop/supabase.server",()=>({
 vi.mock("@/lib/ai/supervisor/loop/menuPriceChange.server",()=>({
   menuPriceChangeCapabilityId:"alex.menu_price_change.v1",
   StaleProposalError:class extends Error{
-    constructor(public currentPriceCents:number|null){super("stale_menu_price_proposal");}
+    constructor(public currentPriceCents:number|null){super("stale_menu_price_proposal");this.name="StaleProposalError";}
   },
 }));
 vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({
@@ -98,9 +108,15 @@ const request=(action:string,revision=1,withOrigin=true)=>new Request(url,{
   method:"POST",headers:{"content-type":"application/json",...(withOrigin?{origin:"http://localhost:3000"}:{})},
   body:JSON.stringify({action,proposalId:f.id,revision}),
 });
-beforeEach(()=>{f.revision=1;f.status="draft";f.current=450;f.saves=0;f.ownerAllowed=true;f.accessAllowed=true;f.created=0;f.createdPrice=0;
+beforeEach(()=>{f.revision=1;f.status="draft";f.current=450;f.saves=0;f.attemptState="executing";f.ownerAllowed=true;f.accessAllowed=true;f.created=0;f.createdPrice=0;
   f.commitStale=false;f.editInsertFails=false;f.editRace=false;});
 describe("owner-scoped price approval actions",()=>{
+  it("refuses standing-mandate start for a money/POS capability",async()=>{
+    const response=await POST(request("start"),params);
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe("standing_mandate_action_not_eligible");
+    expect(f.saves).toBe(0);expect(f.status).toBe("draft");
+  });
   it("blocks approval of expired access before a price write",async()=>{
     f.accessAllowed=false;
     const response=await POST(request("approve"),params);
@@ -203,6 +219,11 @@ describe("owner-scoped price approval actions",()=>{
     f.current=500;
     const after=await get();
     expect((await after.json()).cards[0].state).toBe("applied");
+  });
+  it("shows a durable uncertain outcome after a reload and never presents it as a retry",async()=>{
+    f.status="executing";f.revision=3;f.attemptState="uncertain";
+    const response=await GET(new Request(url+"?ids="+f.id),params);
+    expect((await response.json()).cards[0].state).toBe("uncertain");
   });
   it("requires owner scope and same-origin",async()=>{
     expect((await POST(request("approve",1,false),params)).status).toBe(403);

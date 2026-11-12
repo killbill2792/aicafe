@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <meta name="description" content="Read-only AI CAFE GitHub dispatcher status and link to the authenticated private Muse queue.">
+  <meta name="description" content="Read-only AI CAFE tasks, PRs, CI, Codex review ages, blockers and Muse handoff status in one live sortable table.">
   <title>AI CAFE — Owner Control Center</title>
   <link rel="stylesheet" href="./owner-dashboard.css">
   <script type="module" src="./owner-dashboard.mjs"></script>
@@ -21,7 +21,7 @@
       <div>
         <p class="eyebrow">GitHub dispatcher · Read-only</p>
         <h1>Development operations</h1>
-        <p class="subtitle">See what's moving, what needs approval, and whether Muse has delivered an instruction.</p>
+        <p class="subtitle">See every task, last commit, CI, Codex review age, blockers and Muse handoff in one sortable table.</p>
       </div>
       <div id="freshness" class="health stale" role="status">Checking dispatcher…</div>
     </div>
@@ -37,15 +37,41 @@
       <p class="panel-note">This map reflects the latest GitHub dispatcher record, not permission to code or proof that the product works.</p>
     </section>
     <section class="panel" aria-labelledby="pr-heading">
-      <div class="box-head"><h2 id="pr-heading">Tasks and handoffs</h2><span class="meta">Source: latest GitHub reconciliation</span></div>
+      <div class="box-head"><div><h2 id="pr-heading">Tasks and handoffs</h2>
+        <p id="operations-source" class="meta">Checking public status snapshot…</p>
+      </div><span class="meta">One table · read-only · live refresh</span></div>
+      <div class="task-controls" role="group" aria-label="Task table sorting and filtering">
+        <label for="task-filter">Find task <input id="task-filter" type="search" placeholder="Task, PR, blocker or stage" autocomplete="off"></label>
+        <label for="task-sort">Sort by <select id="task-sort">
+          <option value="task">Task</option>
+          <option value="commit">Last commit time</option>
+          <option value="codex">Codex review time</option>
+          <option value="codex_requested">Codex requested time</option>
+          <option value="ci">CI status</option>
+          <option value="ci_at">CI last checked</option>
+          <option value="pr">PR</option>
+          <option value="stage">Stage</option>
+          <option value="next">Next action</option>
+          <option value="muse">Muse pending</option>
+        </select></label>
+        <label for="task-order">Order <select id="task-order">
+          <option value="desc">Newest / descending</option>
+          <option value="asc">Oldest / ascending</option>
+        </select></label>
+        <span class="meta" id="task-row-count" aria-live="polite"></span>
+      </div>
       <div class="table-scroll">
-        <table>
+        <table id="tasks-and-handoffs">
           <thead><tr>
-            <th scope="col">Task</th><th scope="col">PR</th><th scope="col">Stage</th>
-            <th scope="col">CI</th><th scope="col">Codex</th><th scope="col">Muse delivery</th>
-            <th scope="col">Next actor</th>
+            <th scope="col">Task / Stage</th><th scope="col">PR / Head</th>
+            <th scope="col">Last commit / age</th><th scope="col">CI / age</th>
+            <th scope="col">Codex / requested / reviewed / age</th>
+            <th scope="col">Acceptance</th><th scope="col">Dependencies</th>
+            <th scope="col">Muse handoff / owner notices</th>
+            <th scope="col">Merge blockers</th><th scope="col">Integration</th>
+            <th scope="col">Next actor / step</th>
           </tr></thead>
-          <tbody id="task-rows"><tr><td colspan="7">Loading the latest GitHub status…</td></tr></tbody>
+          <tbody id="task-rows"><tr><td colspan="11">Loading the latest GitHub status…</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -59,18 +85,12 @@
         <div id="recent-actions" class="record-list"><p class="empty">Loading actions…</p></div>
       </section>
     </div>
-    <div class="two">
+    <div class="owner-decisions">
       <section class="panel" aria-labelledby="approval-heading">
         <div class="box-head"><h2 id="approval-heading">Needs your decision</h2><span class="meta">Approval is never inferred</span></div>
         <div id="decisions" class="decisions"><p class="empty">Loading owner questions…</p></div>
       </section>
-      <section class="panel private" aria-labelledby="queue-heading">
-        <p class="eyebrow">Restricted · GitHub login required</p>
-        <h2 id="queue-heading">Private Muse queue</h2>
-        <p>See every pending delivery, deferred instruction, receipt, wake-up round and owner notice, in your existing private task ledger repository.</p>
-        <a id="private-queue" class="action" href="https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/owner-queue.md" target="_blank" rel="noopener noreferrer">Open authenticated queue</a>
-        <p class="meta" style="margin-top:18px">Private prompts and conversation URLs are never loaded by this public page. GitHub controls access to the private view.</p>
-      </section>
+
     </div>
     <section class="guide" aria-labelledby="guide-heading">
       <h2 id="guide-heading">How to use AI CAFE development</h2>
@@ -80,9 +100,9 @@
       <strong>Last successful dispatcher reconciliation:</strong> <span id="heartbeat">Checking…</span>
       <span aria-hidden="true"> · </span>
       <strong>Last private state change:</strong> <span id="ledger">Checking…</span>
-      <p>Refreshing this page does not submit messages, approve requests or run the dispatcher. The page checks GitHub every 2 minutes while it is open; GitHub Actions schedules remain best-effort.</p>
+      <p>Refreshing this page does not submit messages, approve requests or run the dispatcher. The browser checks the published task snapshot every 2 minutes; each row shows verified source timestamps. GitHub Actions schedules remain best-effort.</p>
     </div>
   </main>
-  <footer class="container">AI CAFE · One GitHub dispatcher, one private Muse queue · Read-only monitoring</footer>
+  <footer class="container">AI CAFE · One GitHub dispatcher · One development operations table · Read-only monitoring</footer>
 </body>
 </html>
