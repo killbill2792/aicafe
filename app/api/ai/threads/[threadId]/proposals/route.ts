@@ -126,8 +126,9 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
   if(p.capabilityId!==menuPriceChangeCapabilityId)return null;
   const effect=supervisorLoopRegistry.get(menuPriceChangeCapabilityId).parseEffect(p.canonicalEffectPayload);
   if(p.status==="executing"){
-    const current=await ownerMenuPrice(scope,String(effect.productId));
-    if(current===effect.newPriceCents)return card(p,"applied");
+    // Matching the requested live menu price is not a durable receipt.
+    // It may have changed for another reason. Only the canonical, scoped
+    // reconciliation RPC may promote the ledger to committed.
     return card(p,executionState);
   }
   if(p.status==="stale")
