@@ -1,5 +1,8 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {formatInTimeZone} from "date-fns-tz";
+import {readDailyFactRows} from "@/lib/data/dailyFacts.server";
+import {utcDateOffset} from "./engine";
 export type ElapsedWindow={index:number;startAt:string;endAt:string};
 export type SourceLine={id:string;orderedAt:string|null;closedAt:string|null;
  quantity:number;netSalesCents:number;voided:boolean;
@@ -60,22 +63,39 @@ export function planVerifiedFinalCloseInterval(window:ElapsedWindow,
  const end=instant(window.endAt),actual=instant(actualClosedAt);
  return actual>end?{startAt:window.endAt,endAt:new Date(actual).toISOString()}:null;
 }
+/** The existing canonical importer attests only coverage, never supplies window
+ * amounts. An incomplete café-local day makes the entire elapsed period
+ * unproven, even if a few source-timed line items happen to be present. */
+export async function verifiedWindowSourceCoverage(db:SupabaseClient,
+ businessId:string,timezone:string,window:ElapsedWindow):Promise<boolean>{
+ const start=new Date(instant(window.startAt));
+ const end=new Date(instant(window.endAt)-1);
+ const first=formatInTimeZone(start,timezone,"yyyy-MM-dd");
+ const last=formatInTimeZone(end,timezone,"yyyy-MM-dd");
+ const facts=await readDailyFactRows(db,businessId,first,last);
+ const status=new Map(facts.map(f=>[f.business_date,f.sales_data_status]));
+ for(let day=first;day<=last;day=utcDateOffset(day,1)){
+  if(status.get(day)!=="actual")return false;
+ }
+ return true;
+}
 /** Pull bounded source LINE records and explicitly query for lines missing
  * event times. No daily rollup or café calendar-day value is substituted.
  * This read never marks source coverage complete on its own. */
 export async function readElapsedWindowObservations(db:SupabaseClient,
- businessId:string,menuItemId:string,window:ElapsedWindow,asOf:string):
- Promise<WindowEvidence>{
+ businessId:string,menuItemId:string,window:ElapsedWindow,asOf:string,
+ timezone:string):Promise<WindowEvidence>{
  const base=()=>db.from("order_lines")
   .select("id,ordered_at,quantity,net_sales_cents,voided,orders!inner(closed_at,business_id,toast_excluded,superseded_by)",{count:"exact"})
   .eq("menu_item_id",menuItemId).eq("orders.business_id",businessId)
   .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
   .eq("voided",false);
- const [known,missing]=await Promise.all([
+ const [known,missing,sourceCovered]=await Promise.all([
   base().gte("ordered_at",window.startAt).lt("ordered_at",window.endAt)
    .limit(10000),
   base().is("ordered_at",null).gte("orders.closed_at",window.startAt)
-   .lt("orders.closed_at",window.endAt).limit(10000)
+   .lt("orders.closed_at",window.endAt).limit(10000),
+  verifiedWindowSourceCoverage(db,businessId,timezone,window),
  ]);
  if(known.error||missing.error)throw new Error("rolling_sales_source_read_failed");
  const completePages=[known,missing].every(r=>r.count!==null&&
@@ -87,6 +107,7 @@ export async function readElapsedWindowObservations(db:SupabaseClient,
    voided:row.voided,toastExcluded:Boolean(order?.toast_excluded),
    supersededBy:order?.superseded_by??null};
  });
- const result=summarizeElapsedWindow(window,rows,false,asOf);
+ const result=summarizeElapsedWindow(window,rows,
+  sourceCovered&&completePages,asOf);
  return {...result,unknownTimeLines:result.unknownTimeLines+Number(!completePages)};
 }
