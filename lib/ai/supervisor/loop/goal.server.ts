@@ -16,6 +16,7 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {tallyCheckins,goalCheckinSchema} from "@/lib/calc/goals/goalSpec";
 
 export const goalCapabilityId="leo.goal.v1";
+export const goalMandatePolicy={limitKind:"count",limitValue:5,periodKind:"cafe_day"} as const;
 const metric=z.enum(GOAL_METRICS);
 export const goalInputSchema=z.strictObject({
   metric,itemId:z.uuid().nullable(),direction:z.enum(["up","down"]),
@@ -45,6 +46,7 @@ function valueOf(effect:GoalEffect,id:string,day:MetricDailyInput){
 
 export const goalCapability=registerLoopCapability({
   id:goalCapabilityId,version:1,inputSchema:goalInputSchema,effectSchema:goalEffectSchema,
+  mandatePolicy:goalMandatePolicy,
   proposalDescription:"Draft an inert goal for the owner to confirm. Tracking a goal changes nothing in the café or the POS.",
   dependencyScope:(effect)=>({version:1,kind:"goal",metric:effect.metrics[0].metricKey,itemId:effect.metrics[0].itemId}),
   simulate:async(scope,input)=>{

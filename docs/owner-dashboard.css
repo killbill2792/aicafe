@@ -57,10 +57,6 @@ table td:last-child{min-width:220px}
 .decision p{font-size:13px;margin:8px 0;color:var(--muted);overflow-wrap:anywhere}
 .decision p:last-child{margin-bottom:0}
 .empty{font-size:13px;color:var(--muted)}
-.private{padding:22px}
-.private p{color:var(--muted);font-size:13px;margin:9px 0 20px}
-.private a.action{background:var(--brand);color:var(--paper);padding:11px 14px;border-radius:9px;text-decoration:none;font-size:13px;font-weight:700;display:inline-block}
-.private a.action:hover{opacity:.88}
 .trust{padding-top:22px;border-top:1px solid var(--border);margin-top:24px;color:var(--muted);font-size:12px}
 footer{padding:25px 0 45px;color:var(--muted);font-size:12px}
 .inline-link{font-weight:650}
@@ -93,3 +89,26 @@ footer{padding:25px 0 45px;color:var(--muted);font-size:12px}
 .guide{border-left:3px solid var(--brand);margin-top:20px;padding:12px 18px;background:var(--brandsoft);border-radius:0 12px 12px 0}
 .guide p{font-size:13px;margin:8px 0;color:var(--ink)}
 @media(max-width:760px){.nav-links{gap:10px}.architecture-stage{min-width:195px}}
+
+
+/* One owner operations table: status remains readable on phone and desktop. */
+.task-controls{display:flex;flex-wrap:wrap;gap:14px;padding:0 20px 16px;align-items:end}
+.task-controls label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:650;color:var(--muted)}
+.task-controls input,.task-controls select{max-width:300px;border:1px solid var(--border);background:var(--paper);
+ color:var(--ink);padding:9px 11px;border-radius:7px;font:inherit;font-size:13px}
+.task-controls input{min-width:220px}
+.task-controls .meta{margin-left:auto}
+#tasks-and-handoffs{width:max-content;min-width:100%;border-collapse:collapse;table-layout:auto}
+#tasks-and-handoffs th,#tasks-and-handoffs td{min-width:130px;max-width:280px;white-space:normal;overflow-wrap:anywhere}
+#tasks-and-handoffs td:first-child{min-width:190px}
+#tasks-and-handoffs td:nth-child(5){min-width:230px}
+#tasks-and-handoffs td:nth-child(8){min-width:220px}
+#tasks-and-handoffs td:last-child{min-width:215px}
+#tasks-and-handoffs .small{margin-top:4px;line-height:1.45}
+#operations-source{margin:5px 0 0}
+.owner-decisions{margin-top:18px}
+.owner-decisions>.panel{min-height:110px}
+@media(max-width:760px){.task-controls{padding:0 16px 12px;gap:9px}
+ .task-controls label{flex:1 1 130px}.task-controls input{min-width:0;width:100%}
+ .task-controls .meta{flex-basis:100%;margin-left:0}
+ #tasks-and-handoffs td{max-width:240px}}

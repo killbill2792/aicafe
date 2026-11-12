@@ -20,7 +20,7 @@ import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure, dispatchLandingCheck } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
-import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue,resolveOwnerIssueIdentity,wakePendingOwnerNotices } from "./alerts.mjs";
+import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue,resolveOwnerIssueIdentity,resolveObsoleteLedgerReadIncidents,wakePendingOwnerNotices } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
@@ -856,7 +856,16 @@ async function main() {
     const projection=await ledger.transaction(latest=>{
       const withEffects=recordGithubEffects(latest,githubEffects);
       const withOwnerNotices=recordPrWriterOwnerNotices(withEffects||latest,githubEffects);
-      const projected=recordLifecycleTransitions(withOwnerNotices,queue);
+      // A completed trusted reconciliation closes the last generic emergency.
+      // A subsequent outage must create a fresh incident cycle, not be hidden
+      // by a permanently submitted/queued stable failure identity.
+      const restored=resolveOwnerIssueIdentity(withOwnerNotices,{
+        kind:'dispatcher_emergency',identity:'trusted-dispatcher:failure'});
+      // A successful, authenticated trusted-main reconcile proves the old
+      // Contents API overflow no longer blocks state reads. Close only those
+      // historic UNDELIVERED error notices; never change other owner requests.
+      const recovered=resolveObsoleteLedgerReadIncidents(restored);
+      const projected=recordLifecycleTransitions(recovered,queue);
       const result=settleRecoveryRequests(projected,projectLifecycle(projected,queue));
       return JSON.stringify(result)===JSON.stringify(latest)?null:result;
     });
@@ -994,7 +1003,7 @@ main().catch(async error => {
       token:process.env.DISPATCH_LEDGER_TOKEN,
       identity:error.code==='RATE_LIMIT'
         ?'github_api_rate_limit:'+String(error.reset_at||'unknown')
-        :'run:'+String(process.env.GITHUB_RUN_ID||'unknown')+':failure',
+        :'trusted-dispatcher:failure',
       resetAt:error.code==='RATE_LIMIT'?error.reset_at:null,
       message:detail,needs:'Muse notify owner; inspect failed dispatcher workflow'
     });

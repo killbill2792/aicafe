@@ -117,11 +117,26 @@ describe("queue and send",()=>{
   });
   it("does not dispatch until migration 148 is applied, and says so",async()=>{
     const {db}=bindingsDb([],false);
-    expect(await dispatchDueMorningBriefs(db)).toEqual({accepted:0,reason:"migration_missing",
-      details:{migration:BRIEF_SEND_MIGRATION}});
+    expect(await dispatchDueMorningBriefs(db)).toEqual({accepted:0,retryResponses:0,failed:0,uncertain:0,
+      reason:"migration_missing",details:{migration:BRIEF_SEND_MIGRATION}});
     expect(mocks.dispatch).not.toHaveBeenCalled();
     mocks.blockers.mockReturnValueOnce(["WHATSAPP_POLICY_APPROVED"]);
     expect(await dispatchDueMorningBriefs(bindingsDb([]).db)).toMatchObject({accepted:0,reason:"whatsapp_setting_off"});
+  });
+  it("reports provider retry, terminal failure and uncertainty without calling acceptance delivery",async()=>{
+    const {db}=bindingsDb([],true);
+    mocks.dispatch.mockResolvedValueOnce("accepted").mockResolvedValueOnce("failed").mockResolvedValueOnce("empty");
+    expect(await dispatchDueMorningBriefs(db)).toEqual({
+      accepted:1,retryResponses:0,failed:1,uncertain:0,
+    });
+    mocks.dispatch.mockReset().mockResolvedValueOnce("retry");
+    expect(await dispatchDueMorningBriefs(db)).toEqual({
+      accepted:0,retryResponses:1,failed:0,uncertain:0,
+    });
+    mocks.dispatch.mockReset().mockResolvedValueOnce("uncertain");
+    expect(await dispatchDueMorningBriefs(db)).toEqual({
+      accepted:0,retryResponses:0,failed:0,uncertain:1,
+    });
   });
   it("at send time, checks the leased brief's own deadline and local day, not a fixed 05:50-06:00",async()=>{
     let lease={business_date:"2026-11-03",send_before:sendBefore as string|null};
@@ -141,7 +156,7 @@ describe("queue and send",()=>{
     });
     // 06:20 local: long past the old 06:00 cut-off, still before this café's 06:30 opening.
     expect(await dispatchDueMorningBriefs(db,send as typeof fetch,()=>new Date("2026-11-03T14:20:00Z")))
-      .toEqual({accepted:10});
+      .toMatchObject({accepted:10,retryResponses:0,failed:0,uncertain:0});
     send.mockClear();
     expect((await dispatchDueMorningBriefs(db,send as typeof fetch,()=>new Date("2026-11-03T14:30:00Z"))).accepted).toBe(0);
     lease={business_date:"2026-11-02",send_before:sendBefore};

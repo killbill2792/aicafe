@@ -19,7 +19,7 @@ const effectSchema=z.strictObject({
 });
 export const menuPriceChangeCapabilityId="alex.menu_price_change.v1";
 export class StaleProposalError extends Error{
-  constructor(public currentPriceCents:number|null){super("stale_menu_price_proposal");}
+  constructor(public currentPriceCents:number|null){super("stale_menu_price_proposal");this.name="StaleProposalError";}
 }
 
 export const menuPriceChangeCapability=registerLoopCapability({
