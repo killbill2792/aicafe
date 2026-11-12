@@ -64,7 +64,7 @@ test('automatic Ready-triggered Codex receives a durable 20-minute watchdog wake
  assert.equal(nextWake(s,at,one),null);
 });
 
-test('missing wake is reissued on same key only after bounded retry lease expires',async()=>{
+test('Muse retry batches receive a 15-minute durable lease after the first wake',async()=>{
  const starting={tasks:{},actions:{one:{type:'assign',task_id:'6',status:'planned',
   delivery_owner:'muse',created_at:new Date(at).toISOString()}}};
  let latest=structuredClone(starting),calls=0;
@@ -83,10 +83,13 @@ test('missing wake is reissued on same key only after bounded retry lease expire
  assert.equal((await scheduleSelfWake({ledger,token:'mock',config:one,now:at+5000,fetchFn})).status,'unchanged');
  const late=await scheduleSelfWake({ledger,token:'mock',config:one,now:at+15*60000+1,fetchFn});
  assert.equal(late.status,'requested');
- assert.equal(late.key,first.key);
- assert.equal(late.due_at,new Date(at+15*60000+5001).toISOString());
+ assert.notEqual(late.key,first.key);
+ assert.equal(late.due_at,new Date(at+30*60000).toISOString());
  assert.equal(calls,2);
+ assert.equal((await scheduleSelfWake({ledger,token:'mock',config:one,
+   now:at+15*60000+2000,fetchFn})).status,'unchanged');
  assert.notEqual(seen[0].due_at,seen[1].due_at);
+ assert.equal(seen[1].due_at,new Date(at+30*60000).toISOString());
 });
 
 test('one stale Codex wake cannot starve an overdue owner approval notice',()=>{
@@ -224,4 +227,56 @@ test('pre-PR delayed wake never uses forged, old-scope or wrong-chat receipts',(
    state.actions.original=item;
    assert.equal(nextWake(state,at,one),null);
  }
+});
+
+test('current v3 owner-notice backlog cannot create a distinct Actions wake each minute',async()=>{
+ const now=at+3*60*60000;
+ let latest={tasks:{},actions:{},owner_alerts:Object.fromEntries(
+   Array.from({length:174},(_,i)=>['notice:'+i,{
+     status:'planned',kind:i<78?'dispatcher_emergency':'owner_decision',
+     delivery_owner:'muse',created_at:new Date(at-2*60*60000+i*30000).toISOString()
+   }]))};
+ const ledger={transaction:async transform=>{
+   const changed=await transform(structuredClone(latest));
+   if(changed===null)return {committed:false,state:latest};
+   latest=changed;return {committed:true,state:latest};
+ }};
+ const calls=[],fetchFn=async(_url,opts)=>{
+   calls.push(JSON.parse(opts.body).inputs);return {ok:true,status:204};
+ };
+ const first=await scheduleSelfWake({ledger,token:'mock',config:one,now,fetchFn});
+ assert.equal(first.reason,'owner_notice_retry');
+ assert.equal(first.status,'requested');
+ assert.equal(calls.length,1);
+ for(let minute=1;minute<=10;minute++){
+   const r=await scheduleSelfWake({ledger,token:'mock',config:one,
+     now:now+minute*60000,fetchFn});
+   // First tick after initial delayed wake schedules the NEXT 15-min wake.
+   assert.equal(r.status,minute===1?'requested':'unchanged');
+ }
+ assert.equal(calls.length,2,'one immediate retry and one future batch lease');
+ assert.equal(calls[1].due_at,new Date(now+5000+900000).toISOString());
+ // Many webhook events during the lease must not dispatch another workflow.
+ for(let minute=11;minute<=14;minute++)
+   assert.equal((await scheduleSelfWake({ledger,token:'mock',config:one,
+     now:now+minute*60000,fetchFn})).status,'unchanged');
+ assert.equal(calls.length,2);
+ const third=await scheduleSelfWake({ledger,token:'mock',config:one,
+   now:now+16*60000,fetchFn});
+ assert.equal(third.status,'requested');
+ assert.equal(calls.length,3);
+ assert.equal(calls[2].due_at,new Date(now+5000+2*900000).toISOString());
+ assert.equal(Object.keys(latest.delayed_wake_history).length,3);
+});
+
+test('failed batch dispatch is not blindly replayed by each GitHub webhook',async()=>{
+ const now=at+20*60000;
+ const state={tasks:{},actions:{},owner_alerts:{n:{status:'planned',
+   delivery_owner:'muse',created_at:new Date(at).toISOString()}},
+   delayed_wake_history:{failure:{key:'failure',reason:'owner_notice_retry',
+     status:'failed',due_at:new Date(now-2000).toISOString(),
+     reserved_at:new Date(now-1000).toISOString()}}};
+ assert.equal(nextWake(state,now,one),null);
+ assert.equal(nextWake(state,now+1000,one),null);
+ assert.equal(nextWake(state,now+16*60000,one).reason,'owner_notice_retry');
 });

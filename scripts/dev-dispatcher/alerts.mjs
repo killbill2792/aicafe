@@ -112,6 +112,25 @@ export function resolveOwnerIssueIdentity(state,{kind,task_id=null,pr_number=nul
   }
  return next;
 }
+// PR #446's immutable Git blob reader has completed a trusted-main
+// reconciliation. Retire only the old unsent Contents API overflow incidents
+// that cannot recur in this exact form. Other GitHub 500/auth/runner incidents
+// and all owner approval questions remain active and unchanged.
+export function resolveObsoleteLedgerReadIncidents(state,{now=new Date().toISOString()}={}){
+ const next=structuredClone(state);
+ const prefix='Dispatcher '+settings.repo+': Unexpected GitHub ledger response Needed:';
+ for(const notice of Object.values(next.owner_alerts||{})){
+   if(notice.kind!=='dispatcher_emergency'||notice.status!=='planned'||
+      !/^run:[0-9]+:failure$/.test(notice.identity||'')||
+      !String(notice.question||'').startsWith(prefix)||
+      notice.receipt)continue;
+   notice.status='resolved';
+   notice.resolved_at=now;
+   notice.resolution='git_blob_reader_verified_after_overflow_hotfix';
+   // Not delivered: no Muse receipt is ever manufactured.
+ }
+ return next;
+}
 export function resolveOwnerIssue(state,kind,pr_number){
  const next=structuredClone(state);
  for(const n of Object.values(next.owner_alerts||{}))
