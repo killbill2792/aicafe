@@ -37,6 +37,13 @@ export function projectPublicOwnerView(state,{now=new Date().toISOString()}={}){
      a.delivery_owner==='muse'&&countPending(a.status));
    const actionTypes=[...new Set(pendingActions.map(a=>status(a.type)).filter(Boolean))].slice(0,8);
    const noticeKinds=[...new Set(pendingNotices.map(a=>status(a.kind)).filter(Boolean))].slice(0,12);
+   const control=state.owner_controls?.per_task?.[taskId]||{};
+   // Only display a verified status code; no owner utterance, instruction
+   // text, note content, chat URL or receipt body leaves the private ledger.
+   const latestOwnerInstruction=Object.values(state.owner_instruction_events||{})
+     .filter(e=>e?.target?.task_id===taskId&&
+       ['APPLIED','REQUESTED','BLOCKED','RECORDED'].includes(e.status))
+     .sort((a,b)=>String(b.at||'').localeCompare(String(a.at||'')))[0];
    const outcome=r.integration?.status==='PROVEN'?'Integrated and proven':
      r.approval?.plan_state==='proposed'?'Proposed — owner scope needed':
      r.current_stage==='TASK_COMPLETE'?'Task complete — proof unverified':
@@ -66,6 +73,14 @@ export function projectPublicOwnerView(state,{now=new Date().toISOString()}={}){
          ?Math.max(0,r.codex.open_threads):null},
      acceptance:status(r.acceptance?.status)||'UNKNOWN',
      dependencies:blocksToIds(r.remaining_dependencies),
+     owner_control:{priority:Number.isInteger(control.dispatch_priority)&&
+       control.dispatch_priority>=0&&control.dispatch_priority<=100?
+       control.dispatch_priority:null,
+       paused:control.pause_new_dispatch===true,
+       note_present:typeof control.note==='string'&&control.note.length>0,
+       last_command_status:status(latestOwnerInstruction?.status),
+       last_command_reason:status(latestOwnerInstruction?.reason),
+       last_command_at:date(latestOwnerInstruction?.at)},
      muse:{delivered:status(r.dispatch?.delivered)||'UNKNOWN',
        last_receipt_at:date(r.dispatch?.latest_delivery_receipt_at),
        pending_actions:pendingActions.length,
