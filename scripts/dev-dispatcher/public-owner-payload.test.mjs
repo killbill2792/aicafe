@@ -95,3 +95,14 @@ test('invalid snapshots fail closed rather than publishing arbitrary private inp
  assert.deepEqual(result.tasks.find(r=>r.id==='9').merge.blockers,['pr_not_open']);
  assert.equal(result.tasks.find(r=>r.id==='9').next.reason,null);
 });
+
+test('proposed scope is explicitly visible and never represented as an approval',()=>{
+ const state=fixture();
+ state.lifecycle_v3.rows['9'].approval={status:'NOT_APPROVED',plan_state:'proposed'};
+ const view=projectPublicOwnerView(state);
+ const row=view.tasks.find(x=>x.id==='9');
+ assert.equal(row.outcome,'Proposed — owner scope needed');
+ assert.equal(row.approval,'NOT_APPROVED');
+ assert.equal(row.plan_state,'proposed');
+ assert.equal(row.pr.number,null);
+});
