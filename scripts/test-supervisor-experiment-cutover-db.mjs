@@ -201,7 +201,7 @@ async function run(){
  // Exact gateway claim order: approved proposal -> reserved attempt INSERT ->
  // executing proposal / uncertain attempt. Sign the source at reservation,
  // not from a mutable catalog snapshot during a later recovery.
- await admin.query("update public.supervisor_proposals set status='approved' where id=$1",[inert]);
+ await admin.query("update public.supervisor_proposals set status='approved',revision=revision+1 where id=$1",[inert]);
  await admin.query("insert into public.supervisor_effect_attempts(business_id,proposal_id,effect_hash,authorization_kind,business_date,state,created_at) values($1,$2,$3,'click',current_date,'reserved',now()-interval '10 minutes')",
   [ids.business,inert,"a".repeat(64)]);
  const sealed=await one(admin,"select attempt_key,receipt_ref from public.supervisor_effect_attempts where proposal_id=$1",[inert]);
@@ -214,12 +214,12 @@ async function run(){
   one(c,reconcile,[ids.business,owner,ids.thread,id,revision]));
  const prePriceCount=(await one(admin,"select count(*)::int as n from public.menu_price_history where business_id=$1 and menu_item_id=$2",
   [ids.business,ids.item])).n;
- check((await recover(ids.owner,inert,2)).status==="manual_pending",
+ check((await recover(ids.owner,inert,3)).status==="manual_pending",
   "uncertain inert Toast handoff recovers through the existing Task10 gateway");
  const attempt=await one(admin,"select state,receipt_ref from public.supervisor_effect_attempts where proposal_id=$1",[inert]);
  check(attempt.state==="verified"&&attempt.receipt_ref==="inert-toast-price-handoff:"+sealed.attempt_key,
   "recovery writes a stable proof tied to the claimed effect attempt");
- check((await recover(ids.owner,inert,3)).status==="manual_pending",
+ check((await recover(ids.owner,inert,4)).status==="manual_pending",
   "recovered handoff reconciliation is idempotent");
  check((await one(admin,"select count(*)::int as n from public.menu_price_history where business_id=$1 and menu_item_id=$2",
   [ids.business,ids.item])).n===prePriceCount,
@@ -227,19 +227,19 @@ async function run(){
  // Existing Task 10 manual-owner CAS receipts still require their original
  // proposal-stamped history: current source price alone is not proof.
  const localPending=await proposal("alex.menu_price_change.v1",ids.manualItem,550);
- await admin.query("update public.supervisor_proposals set status='approved' where id=$1",[localPending]);
+ await admin.query("update public.supervisor_proposals set status='approved',revision=revision+1 where id=$1",[localPending]);
  await admin.query("insert into public.supervisor_effect_attempts(business_id,proposal_id,effect_hash,authorization_kind,business_date,state,created_at) values($1,$2,$3,'click',current_date,'reserved',now()-interval '10 minutes')",
   [ids.business,localPending,"a".repeat(64)]);
  check((await one(admin,"select receipt_ref from public.supervisor_effect_attempts where proposal_id=$1",[localPending])).receipt_ref===null,
   "manual-price claim never receives a Toast recovery stamp");
  await admin.query("update public.supervisor_proposals set status='executing',revision=revision+1 where id=$1",[localPending]);
  await admin.query("update public.supervisor_effect_attempts set state='uncertain' where proposal_id=$1",[localPending]);
- check((await recover(ids.owner,localPending,2)).status==="executing",
+ check((await recover(ids.owner,localPending,3)).status==="executing",
   "manual-price recovery still refuses to infer a write from current price");
  await admin.query("update public.menu_items set price_cents=550 where id=$1",[ids.manualItem]);
  await admin.query("insert into public.menu_price_history(business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,changed_at) values($1,$2,450,550,'owner_manual',$3,now())",
   [ids.business,ids.manualItem,"Alex (owner approved; proposal "+localPending+")"]);
- check((await recover(ids.owner,localPending,2)).status==="committed",
+ check((await recover(ids.owner,localPending,3)).status==="committed",
   "Task10 canonical owner_manual history still authoritatively recovers a committed price");
  // Anchor already proved by the canonical source may survive a later revert
  // without retroactively declaring the full seven-day window complete.
