@@ -109,8 +109,7 @@ describe("Task 8a actual notice write and durable delivery",()=>{
    businessId:base.businessId,ownerUserId:base.ownerUserId,
    agentId:"alex",kind:"commitment",status:"needs_owner",
    payload:{title:"Publish Latte price in Toast",threadId:"thread"},
-   confidence:"low",evidence:[],createdAt:"2026-03-08T11:00:00Z"}
-   as OperatingTask;
+   confidence:"low",evidence:[],createdAt:"2026-03-08T11:00:00Z"} as OperatingTask;
   expect(settleInboxTasks([task],[],new Date("2026-03-08T12:00:00Z"),
    "2026-03-08")[0].status).toBe("needs_owner");
   expect(effects).toEqual(["claim:supervisor_8a_claim_notice","task:commitment",
