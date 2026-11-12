@@ -25,12 +25,14 @@ export function inspectMuseEligibleTasks(queue,state){
 }
 export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGapMinutes=15,
   codingIdleMinutes=20,deliveryGapMinutes=15,codexWarnMinutes=5,
-  codexEscalateMinutes=10,queue=null}={}){
+  codexEscalateMinutes=10,ciWarnMinutes=5,ciEscalateMinutes=10,
+  mergeEscalateMinutes=10,queue=null}={}){
   if(state?.version!==1||!state.tasks||!state.actions)throw Error('Invalid private ledger');
   const clock=time(now);
   if(clock===null||[scheduleGapMinutes,codingIdleMinutes,deliveryGapMinutes,codexWarnMinutes,
-    codexEscalateMinutes].some(v=>!Number.isFinite(v)||v<1)||
-   codexEscalateMinutes<codexWarnMinutes)throw Error('Invalid watchdog configuration');
+    codexEscalateMinutes,ciWarnMinutes,ciEscalateMinutes,mergeEscalateMinutes]
+    .some(v=>!Number.isFinite(v)||v<1)||
+   codexEscalateMinutes<codexWarnMinutes||ciEscalateMinutes<ciWarnMinutes)throw Error('Invalid watchdog configuration');
   const incidents=[],tasks=[];
   const eligible=inspectMuseEligibleTasks(queue,state);
   if(eligible.length)
@@ -78,9 +80,21 @@ export function inspectMuseHealth(state,{now=new Date().toISOString(),scheduleGa
     const pendingAt=r.ci_started_at||r.head_first_seen_at||
       r.last_commit_at||r.last_github_activity;
     const pendingAge=ago(pendingAt,clock);
-    if(r.ci_state==='pending'&&pendingAge!==null&&pendingAge>30)
+    if(r.ci_state==='pending'&&pendingAge!==null&&pendingAge>=ciWarnMinutes)
       incidents.push({kind:'CI_PENDING_STALE',task_id:id,pr_number:r.pr_number,
-        head_sha:r.head_sha,age_minutes:pendingAge,action:'RECONCILE'});
+        head_sha:r.head_sha,age_minutes:pendingAge,
+        action:pendingAge>=ciEscalateMinutes?'RECONCILE':'MUSE_NOTIFY_OWNER'});
+    if(r.ci_state==='failure')
+      incidents.push({kind:'CI_FAILED',task_id:id,pr_number:r.pr_number,
+        head_sha:r.head_sha,age_minutes:pendingAge,action:'MUSE_INSPECT_SIGNED_REPAIR',
+        note:'Do not mark CI green or send unsanctioned repair; check existing signed repair action'});
+    const mergeRow=state.lifecycle_v3?.rows?.[id]?.merge;
+    const mergeAge=ago(r.ci_finished_at||r.ready_transition_at||r.last_github_activity,clock);
+    if(mergeRow?.eligible===true&&r.dispatcher_only!==true&&
+      mergeAge!==null&&mergeAge>=mergeEscalateMinutes)
+      incidents.push({kind:'MERGE_ELIGIBLE_NOT_MOVING',task_id:id,
+        pr_number:r.pr_number,head_sha:r.head_sha,age_minutes:mergeAge,
+        action:'MERGE_IF_ELIGIBLE',note:'GitHub validates exact-head merge and owner holds'});
     const codexAge=ago(r.ready_transition_at,clock);
     if(r.draft===false&&r.ci_state==='success'&&
       r.codex_state!=='clean'&&r.codex_state!=='findings'&&
@@ -128,10 +142,12 @@ export function museRecoveryCandidates(health,state,{repo,actor,now=health?.obse
   // PR requests are hints; the GitHub engine still validates every gate.
   const intents=new Map();
   if(health.incidents.some(i=>['GITHUB_SCHEDULE_STALE','LEDGER_STALE',
-      'UNASSIGNED_APPROVED_TASKS','DELIVERED_TASK_NO_PR','CI_PENDING_STALE'].includes(i.kind)))
+      'UNASSIGNED_APPROVED_TASKS','DELIVERED_TASK_NO_PR'].includes(i.kind)||
+      i.kind==='CI_PENDING_STALE'&&i.action==='RECONCILE'))
     intents.set('global',{intent:'RECONCILE',task_id:null,pr_number:null,expected_head_sha:null});
   for(const i of health.incidents){
-    if(!['SUSPECTED_CODING_STALL','CODEX_NOT_RECEIVED'].includes(i.kind)||
+    if(!['SUSPECTED_CODING_STALL','CODEX_NOT_RECEIVED',
+      'MERGE_ELIGIBLE_NOT_MOVING'].includes(i.kind)||
       i.action==='MUSE_NOTIFY_OWNER')continue;
     if(!state.tasks[i.task_id]||state.tasks[i.task_id].head_sha!==i.head_sha)continue;
     intents.set(i.task_id+':'+i.action,{intent:i.action,task_id:i.task_id,
@@ -262,7 +278,10 @@ export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,a
     codingIdleMinutes:policy.coding_idle_minutes??20,
     deliveryGapMinutes:policy.delivery_gap_minutes??15,
     codexWarnMinutes:policy.codex_warn_minutes??5,
-    codexEscalateMinutes:policy.codex_escalate_minutes??10});
+    codexEscalateMinutes:policy.codex_escalate_minutes??10,
+    ciWarnMinutes:policy.ci_warn_minutes??5,
+    ciEscalateMinutes:policy.ci_escalate_minutes??10,
+    mergeEscalateMinutes:policy.merge_escalate_minutes??10});
   const candidates=museRecoveryCandidates(health,state,{repo,actor,now});
   const planned=planMuseBacklog(reconcileMuseBacklog(backlog||{version:1,items:{}},state),candidates,now);
   const delivered=await deliverMuseRecovery(planned,{token,now,fetchImpl,
