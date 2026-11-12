@@ -66,11 +66,27 @@ export async function collectReceipts(options){
   return (await inspectReceipts(options)).accepted;
 }
 
+// Receipt filenames are hashes, not chronological delivery order. Owner
+// controls are applied in the owner's submission order, not GitHub directory
+// order; the per-field watermark independently rejects late older receipts.
+export function chronologicalOwnerReceipts(inbox){
+ const commands=inbox.filter(item=>item.receipt?.kind==='owner_instruction')
+   .sort((a,b)=>{
+     const ta=Date.parse(a.receipt?.submitted_at||'');
+     const tb=Date.parse(b.receipt?.submitted_at||'');
+     const timeA=Number.isFinite(ta)?ta:-Infinity;
+     const timeB=Number.isFinite(tb)?tb:-Infinity;
+     return timeA-timeB||
+       String(a.receipt?.event_id||'').localeCompare(String(b.receipt?.event_id||''));
+   });
+ return [...commands,...inbox.filter(item=>item.receipt?.kind!=='owner_instruction')];
+}
+
 // A bad receipt must never block unrelated valid receipts or a trusted tick.
 export function applyReceiptsSafely(state, inbox, actorMap) {
   let next=state;
   const rejected=[];
-  for(const item of inbox){
+  for(const item of chronologicalOwnerReceipts(inbox)){
     try{next=applyReceipts(next,[item],actorMap);}
     catch{if(item.file)rejected.push({file:item.file,code:'receipt_validation_failed'});}
   }
@@ -79,7 +95,7 @@ export function applyReceiptsSafely(state, inbox, actorMap) {
 
 export function applyReceipts(state, inbox, actorMap) {
   let next = state;
-  for (const {receipt, actor} of inbox) {
+  for (const {receipt, actor} of chronologicalOwnerReceipts(inbox)) {
     const courier = actorMap[actor];
     if (!courier) continue;
     // Historical receipts stay in the inbox; never replay or revive cancelled actions.
