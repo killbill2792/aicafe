@@ -52,7 +52,7 @@ const conversationMigration = readFileSync(
   new URL("../supabase/migrations/20261010000033_ai_conversations.sql", import.meta.url), "utf8",
 );
 const memoryMigration = readFileSync(
-  new URL("../supabase/migrations/20261111000203_ai_thread_memory.sql", import.meta.url), "utf8",
+  new URL("../supabase/migrations/20261111000207_ai_thread_memory.sql", import.meta.url), "utf8",
 );
 
 async function asActor(actor, fn, db = client) {
