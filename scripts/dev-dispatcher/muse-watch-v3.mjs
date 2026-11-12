@@ -169,6 +169,12 @@ export function planMuseBacklog(backlog,requests,now=new Date().toISOString()){
     const old=next.items[key];
     // Backoff and acknowledged wakes are durable: a 60-second poll must not
     // discard a 30-minute rate-limit cooldown or resend a successful wake.
+    // An already persisted Git command survives cancelled workflows and long
+    // API outages. Reusing its original identity avoids one new signed file
+    // and one Git clone/push per incident every 15 minutes.
+    if(old?.git_file&&old.git_request_id===old.request?.request_id&&
+       !['GITHUB_ACKNOWLEDGED','GITHUB_REJECTED'].includes(old.status)&&
+       time(now)-(time(old.request?.requested_at)||0)<7*86400000)continue;
     if(old&&['QUEUED','GIT_QUEUED','SENT_UNVERIFIED','GITHUB_ACKNOWLEDGED','GITHUB_REJECTED'].includes(old.status)&&
       time(now)-(time(old.acknowledged_at||old.first_seen_at)||0)<15*60000)continue;
     if(old?.status==='RETRYABLE'&&time(old.next_retry_at)>time(now))continue;
@@ -191,6 +197,9 @@ export function deliverMuseGitRecovery(backlog,{token,secret,push=pushMuseGitRec
  const next=structuredClone(backlog),results=[];
  for(const item of Object.values(next.items||{})){
    if(!['QUEUED','RETRYABLE'].includes(item.status)||time(item.next_retry_at)>time(now))continue;
+   // Do not re-push an already durable command while its GitHub receipt is
+   // pending, even after a separate REST wake received HTTP 429/500.
+   if(item.git_file&&item.git_request_id===item.request?.request_id)continue;
    if(!token||!secret){results.push({id:item.key,status:'GIT_NOT_CONFIGURED'});continue;}
    try{
      const result=push({request:item.request,secret,token});
@@ -227,6 +236,10 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
     if(sent>=maxRequests)break;
     if(!['QUEUED','RETRYABLE','GIT_QUEUED'].includes(item.status)||
        time(item.next_retry_at)>clock)continue;
+    // In Git-first mode, never use REST as the only record if the Git write
+    // failed. API-only fallback is reserved for installations lacking keys.
+    if(maxRequests===1&&
+       (!item.git_file||item.git_request_id!==item.request?.request_id))continue;
     if(!token){
       results.push({id:item.key,status:'WAITING_FOR_AUTHORIZED_WAKE_TOKEN'});
       continue;
