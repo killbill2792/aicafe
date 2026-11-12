@@ -56,7 +56,11 @@ test('authenticated Muse owner instruction changes existing owner controls and s
  assert.deepEqual(same,s,'same event ID cannot replay an edit');
  s=apply(s,receipt('Pause Task 9',{task_id:'9'},'owner_instruction_2'));
  assert.equal(s.owner_controls.per_task['9'].pause_new_dispatch,true);
- s=apply(s,receipt('Resume Task 9',{task_id:'9'},'owner_instruction_3'));
+ const laterResume=receipt('Resume Task 9',{task_id:'9'},'owner_instruction_3');
+ // Separate owner utterances have ordered submission instants. Equal instants
+ // deliberately keep pause safe until Muse supplies a fresh instruction.
+ laterResume.submitted_at='2026-11-12T05:01:01Z';
+ s=apply(s,laterResume);
  assert.equal(s.owner_controls.per_task['9'].pause_new_dispatch,false);
  s=apply(s,receipt('Add note to Task 9: private owner decision',{task_id:'9'},'owner_instruction_4'));
  assert.equal(s.owner_controls.per_task['9'].note,'private owner decision');
