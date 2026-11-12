@@ -367,6 +367,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   delivery:{agentId:"alex",taskKind:"price_experiment_report",
    entityType:"menu_item",entityId:effect.productId,
    payload:{productId:effect.productId,productName:effect.productName,
+    itemName:effect.productName,outcomeStatus:status,recommendation:"adjust",
     oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
     observedUnits:units,observedRevenueCents:revenue,
     coveredWindows:result.coveredWindows,totalWindows:days,

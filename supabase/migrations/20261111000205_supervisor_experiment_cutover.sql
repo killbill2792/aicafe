@@ -278,6 +278,44 @@ begin
  if v_before is null or v_before!~'^[0-9]+$' or
     v_target is null or v_target!~'^[0-9]+$'
  then raise exception 'toast_price_baseline_missing' using errcode='22023';end if;
+ -- A prior Task 8a worker may have verified and durably pinned the exact
+ -- Toast source activation, then failed before the lifecycle transition.
+ -- A later price revert, unpublication or contextual menu cannot invalidate
+ -- THAT historical verification. The worker separately records interruption
+ -- and cannot claim full-window evidence for changed source context.
+ if old.approved_at is not null and exists (
+  select 1 from public.supervisor_monitor_windows w
+  join public.menu_price_history h
+   on h.id::text=w.source_reference->>'historyId'
+   and h.business_id=w.business_id and h.menu_item_id=v_item.id
+  join public.toast_location_mappings l
+   on l.business_id=h.business_id and l.restaurant_guid=h.toast_restaurant_guid
+  where w.business_id=old.business_id and w.owner_user_id=old.owner_user_id
+   and w.source_id=old.id and w.monitor_kind='approved_price'
+   and w.window_index=0 and l.verified_at is not null
+   and h.source_type='connected_pos' and h.source_provider='toast'
+   and h.toast_restaurant_guid is not null and h.toast_observed_at is not null
+   and h.toast_publication_version is not null
+   and h.old_price_cents=v_before::bigint and h.new_price_cents=v_target::bigint
+   and h.old_price_cents is distinct from h.new_price_cents
+   and h.toast_observed_at>=old.approved_at
+   and (h.toast_effective_at is null or h.toast_effective_at>=old.approved_at)
+   and w.start_at=coalesce(h.toast_effective_at,h.toast_observed_at)
+   and w.source_reference->>'businessId'=old.business_id::text
+   and w.source_reference->>'menuItemId'=v_item.id::text
+   and w.source_reference->>'historyId'=h.id::text
+   and w.source_reference->>'restaurantGuid'=h.toast_restaurant_guid::text
+   and w.source_reference->>'publicationVersion'=h.toast_publication_version
+   and (w.source_reference->>'observedAt')::timestamptz=h.toast_observed_at
+   and (w.source_reference->>'oldPriceCents')::bigint=v_before::bigint
+   and (w.source_reference->>'newPriceCents')::bigint=v_target::bigint
+   and w.source_reference->>'posItemId' like
+     'toast:'||h.toast_restaurant_guid::text||':%'
+   and (w.source_reference->>'posItemId' ~*
+     ':[0-9a-f-]{36}:[0-9a-f-]{36}$' or
+      w.source_reference->>'posItemId' ~*
+     ':[0-9a-f-]{36}:size:[0-9a-f-]{36}$')
+ ) then return new;end if;
  if v_item.toast_publication_state is distinct from 'active' or
   v_item.pos_pricing_strategy not in ('BASE_PRICE','SIZE_PRICE') or
   v_item.pos_pricing_strategy is null or
@@ -298,29 +336,9 @@ begin
     and (h.toast_effective_at is null or h.toast_effective_at >= old.approved_at)
     and l.verified_at is not null
     and s.menu_copied_at>=h.toast_observed_at-interval '20 minutes'
-    and (
-      (s.menu_last_updated=h.toast_publication_version
-       and v_item.toast_publication_version=h.toast_publication_version
-       and v_item.toast_publication_observed_at=h.toast_observed_at)
-      or exists (
-       -- The already verified activation is durably pinned by Task 8a.
-       -- A newer unchanged-price menu version must not invalidate it.
-       select 1 from public.supervisor_monitor_windows w
-       where w.business_id=old.business_id
-        and w.owner_user_id=old.owner_user_id
-        and w.monitor_kind='approved_price'
-        and w.source_id=old.id and w.window_index=0
-        and w.source_reference->>'businessId'=old.business_id::text
-        and w.source_reference->>'historyId'=h.id::text
-        and w.source_reference->>'restaurantGuid'=h.toast_restaurant_guid::text
-        and w.source_reference->>'posItemId'=v_item.pos_item_id
-        and w.source_reference->>'publicationVersion'=h.toast_publication_version
-        and (w.source_reference->>'observedAt')::timestamptz=h.toast_observed_at
-        and (w.source_reference->>'oldPriceCents')::bigint=v_before::bigint
-        and (w.source_reference->>'newPriceCents')::bigint=v_target::bigint
-        and w.start_at>=old.approved_at
-       )
-    )
+    and s.menu_last_updated=h.toast_publication_version
+    and v_item.toast_publication_version=h.toast_publication_version
+    and v_item.toast_publication_observed_at=h.toast_observed_at
     and v_item.pos_item_id like 'toast:'||h.toast_restaurant_guid::text||':%'
     and (case when v_item.pos_pricing_strategy='SIZE_PRICE'
       then v_item.pos_item_id ~* ':[0-9a-f-]{36}:size:[0-9a-f-]{36}$'
