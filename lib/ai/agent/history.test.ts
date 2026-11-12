@@ -1,5 +1,7 @@
 import {describe,expect,it} from "vitest";
-import {historyContent} from "./history";
+import {randomUUID} from "node:crypto";
+import {applyThreadMemoryOperations,emptyThreadMemoryDocument,formatThreadMemory,historyContent,
+  parseThreadMemoryDocument,safeThreadMemoryText,threadMemorySource,type ThreadMemoryOperation} from "./history";
 import {agentReplyPayload} from "./persist.server";
 import {newResolveState} from "./resolve";
 import type {AgentTurn} from "./loop.server";
@@ -27,6 +29,28 @@ describe("chat history the AI sees",()=>{
   expect(historyContent(facts)).toBe("Question card (owner answers in its form): What is your monthly rent? Fields: Monthly rent");
   expect(historyContent(fill)).toBe("Question card (owner answers in its form): How much oat milk is left? Fields: Oat milk");
  });
+ it("keeps owner-question cards in history without treating them as choice picks",()=>{
+  const card={type:"owner_question",questionId, title:{
+   en:"Which milk do staff prefer?",
+  },input:{kind:"options",options:[
+   {id:"oat",label:{en:"Oat"}},
+   {id:"soy",label:{en:"Soy"}},
+  ]}};
+  const content=historyContent({text:null,blocks:[card]});
+  expect(content).toBe("Owner question: Which milk do staff prefer? Options: Oat; Soy");
+  expect(content).not.toContain("Asked:");
+ });
+ it("never falls back to non-English owner-question fields",()=>{
+  const localizedOnly={type:"owner_question",questionId,
+   title:{es:"Other title",ar:"Alternative title"},
+   input:{kind:"options",options:[{id:"other",label:{es:"Other option"}}],
+    hint:{ar:"Alternative hint"}}};
+  expect(historyContent({text:null,blocks:[localizedOnly]})).toBe("");
+  const english={...localizedOnly,title:{en:"Which milk?"},
+   input:{kind:"options",options:[{id:"oat",label:{en:"Oat"}},
+    {id:"other",label:{es:"Other option"}}],hint:{ar:"Alternative hint"}}};
+  expect(historyContent({text:null,blocks:[english]})).toBe("Owner question: Which milk? Options: Oat");
+ });
  it("keeps the exact choice-card form the pick memory reads",()=>{
   expect(historyContent(choice)).toBe("Asked: Which latte? Options: Latte — Hot ("+hot+"); Latte — Iced ("+iced+")");
   const state=newResolveState("Latte — Iced",[{role:"assistant",content:historyContent(choice)}]);
@@ -43,5 +67,143 @@ describe("chat history the AI sees",()=>{
   expect(historyContent({text:"Sales were up.",blocks:null})).toBe("Sales were up.");
   expect(historyContent({text:null,blocks:[{type:"text",text:"Part one."},{type:"text",text:"Part two."}]})).toBe("Part one. Part two.");
   expect(historyContent({text:null,blocks:[{type:"proposal_card",proposalId:questionId}]})).toBe("");
+ });
+});
+
+
+describe("rolling thread memory primitives",()=>{
+ const owner=(text:string,createdAt=new Date().toISOString())=>({
+  id:randomUUID(),role:"owner" as const,text,createdAt,
+ });
+ const remember=(source:ReturnType<typeof owner>,key:string,quote:string):ThreadMemoryOperation=>({
+  action:"remember",kind:"preference",key,sourceMessageId:source.id,quote,
+ });
+ it("accepts only safe owner-authored nonfinancial source text",()=>{
+  const source=owner("We prefer oat milk for staff drinks.");
+  expect(threadMemorySource(source)).toEqual({id:source.id,createdAt:source.createdAt,text:source.text});
+  expect(threadMemorySource({...source,role:"supervisor"})).toBeNull();
+  expect(safeThreadMemoryText("Sales were $250 yesterday")).toBeNull();
+  expect(safeThreadMemoryText("The API key is confidential")).toBeNull();
+  expect(safeThreadMemoryText("We open at 7")).toBeNull();
+  expect(safeThreadMemoryText("We prefer oat milk")).toBe("We prefer oat milk");
+ });
+ it("accepts only safe structured owner-supplied values as exact provenance sources",()=>{
+  const source=owner("I submitted the selected drink.");
+  const structured=threadMemorySource(source,"We prefer oat milk for staff drinks.")!;
+  expect(structured.structuredText).toBe("We prefer oat milk for staff drinks.");
+  const document=applyThreadMemoryOperations(emptyThreadMemoryDocument(),[{
+   action:"remember",kind:"preference",key:"preference:staff_drinks",
+   sourceMessageId:source.id,quote:"We prefer oat milk for staff drinks.",
+  }],[structured]);
+  expect(document.entries[0].text).toBe("We prefer oat milk for staff drinks.");
+  expect(threadMemorySource(source,"$250")).toMatchObject({text:source.text});
+  expect(threadMemorySource(source,"$250")?.structuredText).toBeUndefined();
+ });
+ it("replaces a corrected key and forgets it without allowing old history to resurrect it",()=>{
+  const first=owner("I prefer oat milk for staff drinks.",new Date(Date.now()-3000).toISOString());
+  const correction=owner("I prefer almond milk for staff drinks.",new Date(Date.now()-2000).toISOString());
+  const forget=owner("Forget that I prefer almond milk.",new Date(Date.now()-1000).toISOString());
+  const key="preference:staff_drinks";
+  let document=applyThreadMemoryOperations(emptyThreadMemoryDocument(),
+   [remember(first,key,first.text)],[threadMemorySource(first)!]);
+  document=applyThreadMemoryOperations(document,
+   [remember(correction,key,correction.text)],[threadMemorySource(correction)!]);
+  expect(document.entries.map(entry=>entry.text)).toEqual([correction.text]);
+  document=applyThreadMemoryOperations(document,[{
+   action:"forget",kind:"preference",key,sourceMessageId:forget.id,quote:"",
+  }],[threadMemorySource(forget)!]);
+  expect(document.entries).toEqual([]);
+  expect(document.tombstones.map(item=>item.key)).toEqual([key]);
+  document=applyThreadMemoryOperations(document,
+   [remember(first,key,first.text)],[threadMemorySource(first)!]);
+  expect(document.entries).toEqual([]);
+  const restated=owner("I prefer soy milk for staff drinks.",new Date(Date.now()+1000).toISOString());
+  document=applyThreadMemoryOperations(document,
+   [remember(restated,key,restated.text)],[threadMemorySource(restated)!]);
+  expect(document.entries.map(entry=>entry.text)).toEqual([restated.text]);
+  expect(document.tombstones).toEqual([]);
+ });
+ it("rejects invented quotes, cross-kind keys and malformed persisted documents",()=>{
+  const source=owner("We prefer oat milk for staff drinks.");
+  const candidate=threadMemorySource(source)!;
+  const rejected=applyThreadMemoryOperations(emptyThreadMemoryDocument(),[
+   remember(source,"preference:staff_drinks","We prefer soy milk."),
+   remember(source,"goal:staff_drinks",source.text),
+   remember(source,"preference:staff_drinks",source.text+" invented"),
+  ],[candidate]);
+  expect(rejected.entries).toEqual([]);
+  expect(parseThreadMemoryDocument(emptyThreadMemoryDocument())).toEqual(emptyThreadMemoryDocument());
+  expect(parseThreadMemoryDocument({...emptyThreadMemoryDocument(),entries:[{
+   kind:"preference",key:"preference:staff_drinks",text:"Monthly sales are high",
+   sourceMessageId:source.id,sourceAt:source.createdAt,revision:1,
+  }]})).toBeNull();
+ });
+ it("tombstones entries evicted by the bounded memory cap",()=>{
+  let document=emptyThreadMemoryDocument();
+  const sources=Array.from({length:20},(_,index)=>owner(
+   "We prefer oat milk for staff drinks.",new Date(Date.now()+index*1000).toISOString()));
+  for(let index=0;index<sources.length;index++){
+   const suffix=String.fromCharCode(97+index);
+   document=applyThreadMemoryOperations(document,[remember(
+    sources[index],"preference:option_"+suffix,sources[index].text,
+   )],[threadMemorySource(sources[index])!]);
+  }
+  expect(document.entries).toHaveLength(20);
+  const next=owner("We prefer quiet morning music.",new Date(Date.now()+30_000).toISOString());
+  document=applyThreadMemoryOperations(document,[remember(
+   next,"preference:option_u",next.text,
+  )],[threadMemorySource(next)!]);
+  expect(document.entries).toHaveLength(20);
+  expect(document.entries.some(entry=>entry.key==="preference:option_a")).toBe(false);
+  expect(document.tombstones).toHaveLength(1);
+  expect(document.tombstones[0]).toMatchObject({
+   key:"preference:option_a",sourceMessageId:next.id,sourceAt:next.createdAt,
+  });
+  document=applyThreadMemoryOperations(document,[remember(
+   sources[0],"preference:option_a",sources[0].text,
+  )],[threadMemorySource(sources[0])!]);
+  expect(document.entries.some(entry=>entry.key==="preference:option_a")).toBe(false);
+ });
+ it("does not tombstone a key added then evicted within one compaction batch",()=>{
+  let document=emptyThreadMemoryDocument();
+  const initial=Array.from({length:19},(_,i)=>owner(
+   "We prefer quiet morning music.",new Date(Date.now()+i*1000).toISOString()));
+  initial.forEach((source,index)=>{
+   document=applyThreadMemoryOperations(document,[remember(source,
+    "preference:old_"+String.fromCharCode(97+index),source.text)],[threadMemorySource(source)!]);
+  });
+  const source=owner("We prefer oat milk for staff drinks.",new Date(Date.now()+40_000).toISOString());
+  const ops=Array.from({length:20},(_,i)=>remember(
+   source,"preference:new_"+String.fromCharCode(97+i),source.text));
+  document=applyThreadMemoryOperations(document,ops,[threadMemorySource(source)!]);
+  expect(document.entries).toHaveLength(20);
+  expect(document.tombstones).toHaveLength(19);
+  expect(document.tombstones.every(item=>item.key.startsWith("preference:old_"))).toBe(true);
+  expect(document.entries.at(-1)?.key).toBe("preference:new_t");
+ });
+ it("rejects extra persisted fields, duplicate keys and entries newer than the document revision",()=>{
+  const source=owner("We prefer oat milk for staff drinks.");
+  const entry={kind:"preference",key:"preference:staff_drinks",text:source.text,
+   sourceMessageId:source.id,sourceAt:source.createdAt,revision:1};
+  const base={...emptyThreadMemoryDocument(),revision:1,
+   cursor:{createdAt:source.createdAt,id:source.id},entries:[entry]};
+  expect(parseThreadMemoryDocument({...base,unexpected:true})).toBeNull();
+  expect(parseThreadMemoryDocument({...base,entries:[entry,{...entry}]})).toBeNull();
+  expect(parseThreadMemoryDocument({...base,entries:[{...entry,revision:2}]})).toBeNull();
+  expect(parseThreadMemoryDocument({...base,entries:[entry],tombstones:[{
+   key:"preference:staff_drinks",sourceMessageId:source.id,sourceAt:source.createdAt,revision:1,
+  }]})).toBeNull();
+ });
+ it("formats only advisory nonfinancial entries and does not mutate the stored order",()=>{
+  const first=owner("We prefer oat milk.");
+  const second=owner("We prefer quiet morning music.");
+  const operations=[remember(second,"preference:music",second.text),remember(first,"preference:milk",first.text)];
+  const document=applyThreadMemoryOperations(emptyThreadMemoryDocument(),operations,
+   [threadMemorySource(first)!,threadMemorySource(second)!]);
+  const before=document.entries.map(entry=>entry.key);
+  const formatted=formatThreadMemory(document);
+  expect(formatted).toContain("advisory only");
+  expect(formatted).toContain("We prefer oat milk.");
+  expect(document.entries.map(entry=>entry.key)).toEqual(before);
  });
 });

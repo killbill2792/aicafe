@@ -27,7 +27,7 @@ on:
   pull_request_review:
     types: [submitted, dismissed]
   repository_dispatch:
-    types: [dispatcher_receipt, dispatcher_owner_reply, dispatcher_owner_instruction, dispatcher_delayed, dispatcher_recovery]
+    types: [dispatcher_receipt, dispatcher_owner_reply, dispatcher_owner_instruction, dispatcher_delayed, dispatcher_recovery, dispatcher_git_wake]
   workflow_dispatch:
     inputs:
       persist_private_ledger:
@@ -156,6 +156,9 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
           DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+          # Optional until the existing Muse host is provisioned. A signed
+          # Git command survives lost repository_dispatch wake events.
+          DISPATCH_MUSE_RECOVERY_KEY: ${{ secrets.DISPATCH_MUSE_RECOVERY_KEY }}
           DISPATCH_INSTALL_TOKEN: ${{ secrets.DISPATCH_INSTALL_TOKEN }}
           DISPATCH_COURIER_ACTORS: ${{ vars.DISPATCH_COURIER_ACTORS }}
           # Owner opt-in Nov 9: only exact-head CI/Codex/actual-acceptance-proven PRs;

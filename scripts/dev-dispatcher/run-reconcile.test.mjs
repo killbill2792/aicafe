@@ -34,6 +34,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     queue: sourceQueue, taskById, settings,
     receiptScan: { accepted: receipts, rejected: [], complete: true },
     actorMap: {}, console: { error: message => errors.push(message), log: () => {} },
+    applyMergedPrEvidence: state => structuredClone(state),
     linkPullRequests: state => ({ state: structuredClone(state), unmapped: [] }),
     adoptAdhocPullRequests: state => ({state:structuredClone(state),skipped:[]}),
     reconcileGithub: state => structuredClone(state),
