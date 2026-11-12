@@ -38,6 +38,7 @@ export function projectPublicOwnerView(state,{now=new Date().toISOString()}={}){
    const actionTypes=[...new Set(pendingActions.map(a=>status(a.type)).filter(Boolean))].slice(0,8);
    const noticeKinds=[...new Set(pendingNotices.map(a=>status(a.kind)).filter(Boolean))].slice(0,12);
    const outcome=r.integration?.status==='PROVEN'?'Integrated and proven':
+     r.approval?.plan_state==='proposed'?'Proposed — owner scope needed':
      r.current_stage==='TASK_COMPLETE'?'Task complete — proof unverified':
      status(r.current_stage)||'UNKNOWN';
    return {
