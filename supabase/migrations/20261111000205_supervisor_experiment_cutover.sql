@@ -141,6 +141,24 @@ begin
    updated_at=now() where id=v_existing.id returning id into v_id;
   return v_id;
  end if;
+ -- Do not send a reminder for a cancelled, rejected, superseded or
+ -- already-confirmed proposal. A cron read may race an owner action.
+ if p_kind='price_reminder' and not exists (
+  select 1 from public.supervisor_proposals p
+  where p.business_id=p_business_id and p.owner_user_id=p_owner_user_id
+   and p.id=p_source_id and p.status='manual_pending'
+   and p.approved_at is not null
+ ) then return null;end if;
+ if p_kind<>'price_reminder' and not exists (
+  select 1 from public.menu_price_history h
+  where h.business_id=p_business_id and h.id=p_source_id
+   and h.source_type='connected_pos' and h.source_provider='toast'
+   and h.toast_restaurant_guid is not null
+   and h.toast_publication_version is not null
+   and h.toast_observed_at is not null
+   and h.old_price_cents>0 and h.new_price_cents>0
+   and h.old_price_cents<>h.new_price_cents
+ ) then return null;end if;
  if p_kind='price_reminder' then
   select count(*) into v_sent from public.supervisor_experiment_notice_receipts
    where business_id=p_business_id and owner_user_id=p_owner_user_id

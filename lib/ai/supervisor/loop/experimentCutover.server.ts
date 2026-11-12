@@ -170,6 +170,31 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
  await repo.saveReport(scope,proposal,report);
  return "reported";
 }
+/** Notification-only action during legacy/shadow rollout. This does not
+ * activate a price monitor or mutate a published price. */
+export async function remindPendingToastPrice(db:SupabaseClient,row:PriceRow,
+ now:string,timezone:string):Promise<"not_price"|"verified"|"not_due"|"posted"|"leased_elsewhere">{
+ if(row.status!=="manual_pending"||!row.approved_at||!isPriceCapability(row.capability_id))
+  return "not_price";
+ const effect=priceEffect(row.canonical_effect_payload);
+ if(!effect)return "not_price";
+ const {data:item,error}=await db.from("menu_items").select("catalog_source")
+  .eq("business_id",row.business_id).eq("id",effect.productId).maybeSingle();
+ if(error)throw new Error("experiment_item_source_unavailable");
+ if(item?.catalog_source!=="toast")return "not_price";
+ const evidence=await readVerifiedToastPriceEvidence(db,row.business_id,
+  effect.productId,effect.newPriceCents);
+ if(evidence.status==="verified"&&evidence.oldPriceCents===effect.oldPriceCents&&
+    Date.parse(evidence.observedAt)>=Date.parse(row.approved_at)&&
+    Date.parse(evidence.startAt)>=Date.parse(row.approved_at))return "verified";
+ return postVerifiedSourceReminder(db,{
+  businessId:row.business_id,ownerUserId:row.owner_user_id,
+  proposalId:row.id,threadId:row.thread_id,productId:effect.productId,
+  productName:effect.productName,targetPriceCents:effect.newPriceCents,
+  currency:effect.currency,approvedAt:row.approved_at,now,timezone,
+  sourceVerified:false,cancelled:false,
+ });
+}
 function formatBusinessDay(instant:string,timezone:string):string{
  // date-fns-tz is required for the true café-local date across DST.
  return formatInTimeZone(new Date(instant),timezone,"yyyy-MM-dd");

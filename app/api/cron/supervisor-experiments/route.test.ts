@@ -6,6 +6,8 @@ const mocks=vi.hoisted(()=>({
   transition:vi.fn(),
   sampled:[] as string[],
   incomplete:[] as string[],
+  pending:[] as (typeof row)[],
+  reminded:vi.fn(),
 }));
 vi.mock("date-fns-tz",()=>({formatInTimeZone:()=> "2026-11-15"}));
 vi.mock("@/lib/ai/supervisor/loop/engine",async origin=>({
@@ -45,6 +47,9 @@ const database={
         in:()=>({not:()=>({order:()=>({order:()=>({
           limit:async()=>({data:[row],error:null}),
         })})})}),
+        eq:()=>({in:()=>({order:()=>({order:()=>({
+          limit:async()=>({data:mocks.pending,error:null}),
+        })})})}),
       }),
       update:()=>({
         eq:()=>({eq:()=>({eq:()=>({eq:()=>({
@@ -71,14 +76,29 @@ const database={
 vi.mock("@/lib/supabase/admin",()=>({
   createAdminSupabaseClient:()=>database,
 }));
+vi.mock("@/lib/ai/supervisor/loop/experimentCutover.server",()=>({
+ priceCapabilityIds:["alex.drink_price_experiment.v1","alex.menu_price_change.v1"],
+ priceProposalCutoverMode:async()=> "legacy",
+ runVerifiedToastPriceTick:vi.fn(async()=> "waiting_source"),
+ remindPendingToastPrice:(...args:unknown[])=>mocks.reminded(...args),
+}));
 import {GET} from "./route";
 describe("delayed Supervisor monitor archival",()=>{
   beforeEach(()=>{
     mocks.events.length=0;mocks.seen.mockClear();mocks.transition.mockReset();
     process.env.CRON_SECRET="test-secret";
     mocks.transition.mockResolvedValue({});
-    mocks.sampled=[];mocks.incomplete=[];
+    mocks.sampled=[];mocks.incomplete=[];mocks.pending=[];
+    mocks.reminded.mockReset().mockResolvedValue("not_due");
     row.monitor_spec={durationDays:7,metricScope:"latte"};row.monitoring_start_date="2026-10-01";
+  });
+  it("includes legacy pending price plans for reminders without activating the gated writer",async()=>{
+    mocks.pending=[{...row,status:"manual_pending",approved_at:"2026-11-11T09:00:00Z"}] as never;
+    const res=await GET(new Request("https://cafe.test/api/cron/supervisor-experiments",{
+      headers:{authorization:"Bearer test-secret"}}));
+    expect(res.status).toBe(200);
+    expect(mocks.reminded).toHaveBeenCalledTimes(1);
+    expect(mocks.reminded.mock.calls[0][1]).toMatchObject({status:"manual_pending"});
   });
   it("regenerates all actual-window samples and the terminal report before archiving a delayed proposal",async()=>{
     const res=await GET(new Request("https://cafe.test/api/cron/supervisor-experiments",{

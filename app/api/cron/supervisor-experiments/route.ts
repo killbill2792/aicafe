@@ -6,10 +6,12 @@ import {monitorLoop,midRunDay,utcDateOffset,type LoopProposal,type OwnerLoopScop
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
-import {priceProposalCutoverMode,runVerifiedToastPriceTick} from "@/lib/ai/supervisor/loop/experimentCutover.server";
+import {priceCapabilityIds,priceProposalCutoverMode,runVerifiedToastPriceTick,remindPendingToastPrice} from "@/lib/ai/supervisor/loop/experimentCutover.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {postGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
 import {goalEffectSchema,checkinDue} from "@/lib/calc/goals/goalSpec";
+const isPendingPriceCapability=(id:string)=>
+ (priceCapabilityIds as readonly string[]).includes(id);
 const sameWeekday=(a:string,b:string)=>new Date(a+"T12:00:00Z").getUTCDay()===new Date(b+"T12:00:00Z").getUTCDay();
 /** A stored day is complete when every reading in it is certified: a price
  * test day has actual coverage, a goal day full coverage on every metric. */
@@ -39,21 +41,15 @@ export async function GET(request:Request){
    .order("monitor_checked_at",{ascending:true,nullsFirst:true})
    .order("id",{ascending:true}).limit(100);
  if(error)return respond(503,{error:"monitor_proposals_unavailable"});
- // Only pre-authorized new-mode cafés may enqueue manual-pending Toast items
- // for automatic independent publication verification. No second cron.
- const cutovers=await db.from("supervisor_experiment_cutover_cafes")
-  .select("business_id").eq("mode","new").limit(50);
- if(cutovers.error)return respond(503,{error:"experiment_cutover_gate_unavailable"});
- let pending:typeof data=[];
- const ids=(cutovers.data??[]).map(c=>c.business_id);
- if(ids.length){
-  const found=await db.from("supervisor_proposals").select("*")
-   .eq("status","manual_pending").in("business_id",ids)
-   .order("monitor_checked_at",{ascending:true,nullsFirst:true}).limit(50);
-  if(found.error)return respond(503,{error:"pending_source_verification_unavailable"});
-  pending=found.data??[];
- }
- const due=[...(data??[]),...(pending??[])];
+ // Reminders are not a second price writer. All approved pending price
+ // experiments need reminders, even before a café qualifies for the
+ // independently gated new monitor. Rotate the bounded queue fairly.
+ const pendingResult=await db.from("supervisor_proposals").select("*")
+  .eq("status","manual_pending").in("capability_id",priceCapabilityIds)
+  .order("monitor_checked_at",{ascending:true,nullsFirst:true})
+  .order("id",{ascending:true}).limit(100);
+ if(pendingResult.error)return respond(503,{error:"pending_source_verification_unavailable"});
+ const due=[...(data??[]),...(pendingResult.data??[])];
  let sampled=0,reported=0,failed=0;
  for(const row of due){
   try{
@@ -85,6 +81,13 @@ export async function GET(request:Request){
      new Date().toISOString(),cafe.data.timezone||"America/Los_Angeles",p);
     if(result==="reported")reported++;
     if(result!=="not_price")continue;
+   }
+   // Legacy/shadow still sends bounded "awaiting Toast" reminders, but
+   // never runs the new verified-window writer until release gates hold.
+   if(row.status==="manual_pending" && isPendingPriceCapability(row.capability_id)){
+    await remindPendingToastPrice(db,row,new Date().toISOString(),
+     cafe.data.timezone||"America/Los_Angeles");
+    continue;
    }
    // Shadow performs no new-path writes; the old monitor remains sole writer.
    if(!p.monitoringStartDate||row.status==="manual_pending")continue;
