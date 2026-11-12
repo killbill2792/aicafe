@@ -19,8 +19,6 @@ export const NEVER_BEFORE_MINUTE=4*60;
 export const FALLBACK_LEAD_MINUTES=15;
 /** Opening times this early (24-hour cafés, overnight hours) use the default. */
 const EARLIEST_USABLE_OPEN=4*60+30;
-/** A missed brief is still recorded for two hours after opening, then left alone. */
-export const MISSED_RECORD_MINUTES=2*60;
 
 export type HoursSource="open_hours"|"default_unknown_hours"|"default_closed_today"|
   "default_overnight_hours";
@@ -34,9 +32,8 @@ export type BriefPhase=
   /** Past the latest send time but before opening: send now, marked late. */
   "late"|
   /** The café has opened: today's brief was missed. */
-  "missed"|
-  /** Long after opening: nothing to do or record. */
-  "done";
+  "missed";
+
 export type BriefSchedule={
   today:string;yesterday:string;timezone:string;nowMinute:number;
   openMinute:number;latestMinute:number;earliestMinute:number;fallbackMinute:number;
@@ -74,7 +71,7 @@ export function briefSchedule(now:Date,timezone:string,openHours:OpenHours|null)
   const fallback=Math.max(earliest,latest-FALLBACK_LEAD_MINUTES);
   const m=clock.minutes;
   const phase:BriefPhase=m<earliest?"early":m<fallback?"window":m<latest?"fallback":
-    m<open.minute?"late":m<open.minute+MISSED_RECORD_MINUTES?"missed":"done";
+    m<open.minute?"late":"missed";
   const sendBefore=fromZonedTime(clock.today+"T"+hhmm(open.minute)+":00",timezone);
   return {today:clock.today,yesterday:addCalendarDays(clock.today,-1),timezone,nowMinute:m,
     openMinute:open.minute,latestMinute:latest,earliestMinute:earliest,fallbackMinute:fallback,
