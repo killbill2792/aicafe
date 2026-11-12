@@ -5,13 +5,13 @@ import {settings} from './settings.mjs';
 import {applyOwnerDashboardEdit} from './owner-controls-v3.mjs';
 import {recordRecoveryEvent,recoveryIdentity} from './recovery-v3.mjs';
 
-const TASK='([A-Za-z0-9][A-Za-z0-9_-]{0,63})';
-const taskPattern=new RegExp('(?:task\\s*#?\\s*)'+TASK,'i');
+
+
 const reasonableText=t=>typeof t==='string'&&t.length>0&&t.length<=2000&&
   !/[\x00-\x08\x0b-\x1f\x7f]/.test(t);
 const textBody=t=>t.trim().replace(/[.!?]+$/,'').replace(
   /^(?:(?:the\s+)?owner\s+(?:said|says)(?:\s+that)?\s*[:,-]?\s*)/i,'').trim();
-const pickId=s=>s.match(taskPattern)?.[1]||null;
+
 const number=s=>Number(s);
 const command=(kind,other={})=>({kind,...other});
 
@@ -46,6 +46,38 @@ const findTaskByPr=(state,n)=>{
  const ids=Object.entries(state.tasks||{}).filter(([,t])=>t?.pr_number===n);
  return ids.length===1?ids[0][0]:null;
 };
+// Muse may interpret arbitrary ordinary owner wording into a typed, bounded
+// command. The owner speaks normally; only the courier's private receipt has
+// the structured field. A recognizable sentence and structured command must
+// agree exactly, preventing accidental reinterpretation of clear owner words.
+export function structuredMuseCommand(value){
+ if(!value||typeof value!=='object'||Array.isArray(value))return null;
+ if(value.type==='control'&&typeof value.task_id==='string'&&
+    ['note','dispatch_priority','pause_new_dispatch',
+      'stall_minutes','escalation_minutes'].includes(value.field)&&
+    ['string','number','boolean'].includes(typeof value.value)){
+   const keys=Object.keys(value).sort().join(',');
+   if(keys!=='field,task_id,type,value')return null;
+   return command('control',{task_id:value.task_id,field:value.field,value:value.value});
+ }
+ if(value.type==='recovery'&&
+    ['RECONCILE','MARK_READY_IF_ELIGIBLE','REQUEST_CODEX_IF_ELIGIBLE',
+      'RETRY_CI_IF_SAFE','REFRESH_BRANCH_IF_SAFE','MERGE_IF_ELIGIBLE',
+      'VERIFY_INTEGRATION','CHECK_STALL'].includes(value.intent)){
+   const keys=Object.keys(value).sort().join(',');
+   if(keys!=='intent,pr_number,task_id,type'&&keys!=='intent,task_id,type')return null;
+   const task_id=value.task_id??null,pr_number=value.pr_number??null;
+   if(task_id!=null&&typeof task_id!=='string')return null;
+   if(pr_number!=null&&(!Number.isSafeInteger(pr_number)||pr_number<1))return null;
+   return command('recovery',{intent:value.intent,task_id,pr_number,
+     global:value.intent==='RECONCILE'&&task_id!=null&&pr_number==null});
+ }
+ return null;
+}
+const sameCommand=(a,b)=>{
+ const fields=['kind','field','value','intent','task_id','pr_number'];
+ return fields.every(k=>(a[k]??null)===(b[k]??null));
+};
 const validTarget=(target,kind,parsed)=>{
  if(!target||typeof target!=='object'||Array.isArray(target))return false;
  if(target.task_id!=null&&target.task_id!=='__global__'&&
@@ -68,7 +100,15 @@ export function applyMuseOwnerInstruction(state,receipt,{actor,now=new Date().to
    courier:'muse',verified_actor:actor,
    at:receipt.submitted_at||now,status:'BLOCKED',reason:'unsupported_owner_command'};
  next.owner_instruction_events[receipt.event_id]=event;
- const parsed=parseOwnerInstruction(receipt.text);
+ const spoken=parseOwnerInstruction(receipt.text);
+ const structured=receipt.command==null?null:structuredMuseCommand(receipt.command);
+ if(receipt.command!=null&&!structured){
+   event.reason='unsupported_or_malformed_muse_command';return next;
+ }
+ if(spoken&&structured&&!sameCommand(spoken,structured)){
+   event.reason='muse_command_conflicts_with_owner_words';return next;
+ }
+ const parsed=spoken||structured;
  if(!parsed)return next;
  event.command_kind=parsed.kind==='control'?parsed.field:parsed.intent;
  if(!validTarget(receipt.target,parsed.kind,parsed)){
@@ -106,6 +146,10 @@ export function applyMuseOwnerInstruction(state,receipt,{actor,now=new Date().to
      const found=findTaskByPr(next,prNumber);
      if(!found){event.reason='pr_not_linked_to_task';return next;}
      taskId=found;
+   }
+   if(receipt.target.task_id!=null&&receipt.target.task_id!=='__global__'&&
+      receipt.target.task_id!==taskId){
+     event.reason='target_does_not_match_verified_pr_task';return next;
    }
    const task=next.tasks?.[taskId];
    if(!task){event.reason='unknown_task';return next;}
