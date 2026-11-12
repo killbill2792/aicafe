@@ -41,7 +41,7 @@ function mockDB(){
   }
   return {inactiveItems:0,inactiveModifiers:0,inactiveGroups:0};
  });
- const rpc=vi.fn(async(name:string):Promise<{error:{message:string}|null;data:boolean|null}>=>({
+ const rpc=vi.fn(async(name:string,_args?:Record<string,unknown>):Promise<{error:{message:string}|null;data:boolean|null}>=>({
   error:null,data:name==="toast_verify_existing_price_history"?true:null}));
  const db={
   from(table:string){
@@ -153,6 +153,33 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history",
    expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
   expect(result.changed).toBe(0);
+  expect(result.verifiedPriceChanges).toBe(1);
+  expect(f.now.menu_checked_local_day).not.toBeNull();
+ });
+ it("verifies a price first written on a delayed retry using the new source observation",async()=>{
+  const retryObservedAt="2026-11-10T19:45:00Z";
+  const later={...bundle,receipt:{...bundle.receipt,observedAt:retryObservedAt}};
+  m.bundle.mockResolvedValueOnce(bundle).mockResolvedValueOnce(later);
+  m.stage.mockRejectedValueOnce(new Error("staging interrupted before any price write"));
+  const f=mockDB();
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow(
+   "staging interrupted before any price write");
+  expect(m.canonical).not.toHaveBeenCalled();
+  expect(f.now.menu_last_updated).toBe("pending:"+bundle.receipt.publicationVersion);
+  expect(f.now.menu_copied_at).toBe(bundle.receipt.observedAt);
+  expect(f.now.menu_checked_local_day).toBeNull();
+  f.rpc.mockImplementation(async(_name:string,args?:Record<string,unknown>)=>({
+   error:null,data:args?.p_observed_at===retryObservedAt
+  }));
+  const result=await copyToastPublishedMenu(f.db,scope);
+  expect(m.canonical).toHaveBeenCalledOnce();
+  expect(m.apply).toHaveBeenCalledWith(f.db,business,expect.objectContaining({
+   receipt:expect.objectContaining({observedAt:bundle.receipt.observedAt})}));
+  expect(f.rpc).toHaveBeenCalledTimes(2);
+  expect(f.rpc.mock.calls[0][1]).toEqual(expect.objectContaining({
+   p_observed_at:bundle.receipt.observedAt}));
+  expect(f.rpc.mock.calls[1][1]).toEqual(expect.objectContaining({
+   p_observed_at:retryObservedAt}));
   expect(result.verifiedPriceChanges).toBe(1);
   expect(f.now.menu_checked_local_day).not.toBeNull();
  });
