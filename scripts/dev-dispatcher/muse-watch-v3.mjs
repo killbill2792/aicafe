@@ -11,6 +11,7 @@ import {dispatchFrontier} from './core.mjs';
 import {dispatchPreferences} from './owner-controls-v3.mjs';
 import {verifiedCodingConversation} from './verified-chat-v3.mjs';
 import {pushMuseGitRecovery} from './git-recovery-transport.mjs';
+import {pushMuseRecoveryReceipt} from './muse-recovery-receipt.mjs';
 import {settings} from './settings.mjs';
 const time=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?Date.parse(v):null;
 const ago=(stamp,clock)=>time(stamp)===null?null:Math.floor((clock-time(stamp))/60000);
@@ -193,6 +194,7 @@ export function planMuseBacklog(backlog,requests,now=new Date().toISOString()){
 // an Actions job or accept REST calls. One HMAC-authenticated private Git file
 // survives pending-run cancellation and can be recovered on the next tick.
 export function deliverMuseGitRecovery(backlog,{token,secret,push=pushMuseGitRecovery,
+  pushReceipt=pushMuseRecoveryReceipt,
   now=new Date().toISOString()}={}){
  const next=structuredClone(backlog),results=[];
  for(const item of Object.values(next.items||{})){
@@ -200,9 +202,13 @@ export function deliverMuseGitRecovery(backlog,{token,secret,push=pushMuseGitRec
    // Do not re-push an already durable command while its GitHub receipt is
    // pending, even after a separate REST wake received HTTP 429/500.
    if(item.git_file&&item.git_request_id===item.request?.request_id)continue;
-   if(!token||!secret){results.push({id:item.key,status:'GIT_NOT_CONFIGURED'});continue;}
+   if(!token){results.push({id:item.key,status:'GIT_NOT_CONFIGURED'});continue;}
    try{
-     const result=push({request:item.request,secret,token});
+     // The existing authenticated owner-instruction Git courier is the
+     // credential proof when the Muse vault cannot export the HMAC secret.
+     // The trusted dispatcher rechecks commit actor, request ID and PR SHA.
+     const result=secret?push({request:item.request,secret,token}):
+       pushReceipt({request:item.request,token,actor:item.request.actor});
      item.status='GIT_QUEUED';
      item.git_file=result.file;item.git_request_id=result.request_id;
      item.git_queued_at=now;item.last_error=null;item.next_retry_at=null;
@@ -384,7 +390,7 @@ export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,a
   const planned=planMuseBacklog(reconcileMuseBacklog(backlog||{version:1,items:{}},state),candidates,now);
   // Git first. At most ONE REST wake per batch because the trusted runner
   // consumes every already-signed Git command in its private durable inbox.
-  const gitEnabled=Boolean(gitToken&&gitSecret);
+  const gitEnabled=Boolean(gitToken);
   const durable=gitEnabled?deliverMuseGitRecovery(planned,{
     token:gitToken,secret:gitSecret,push:gitPush,now}):null;
   const delivered=await deliverMuseRecovery(durable?.backlog||planned,{
@@ -407,8 +413,10 @@ export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,a
 }
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
   const [ledgerPath,backlogPath,queuePath]=process.argv.slice(2);
-  runMuseWatch({ledgerPath,backlogPath,queuePath,repo:process.env.GITHUB_REPOSITORY,
-    actor:process.env.MUSE_GITHUB_ACTOR,token:process.env.MUSE_GITHUB_WAKE_TOKEN,
+  runMuseWatch({ledgerPath,backlogPath,queuePath,
+    repo:process.env.GITHUB_REPOSITORY||settings.repo,
+    actor:process.env.MUSE_GITHUB_ACTOR||process.env.DISPATCH_MUSE_ACTOR,
+    token:process.env.MUSE_GITHUB_WAKE_TOKEN,
     gitToken:process.env.MUSE_PRIVATE_GIT_TOKEN,
     gitSecret:process.env.DISPATCH_MUSE_RECOVERY_KEY})
     .then(r=>{console.log(JSON.stringify(r));if(!r.health.healthy)process.exitCode=2;})
