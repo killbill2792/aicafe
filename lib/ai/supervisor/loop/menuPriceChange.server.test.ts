@@ -4,6 +4,7 @@ const state=vi.hoisted(()=>({
   menu:[{id:"22222222-2222-4222-8222-222222222222",name:"Latte",priceCents:450,active:true}],
   current:450 as number|null,saves:0,saveArgs:null as unknown,
   saveAttempts:0,changeBeforeSave:null as number|null,catalogSource:"manual" as string,
+  claimToast:false,claimExists:true,
 }));
 vi.mock("@/lib/menu/priceHistory",()=>({setCanonicalMenuPrice:async(_client:unknown,input:unknown)=>{
   const args=input as {expectedOldPriceCents:number};
@@ -18,6 +19,9 @@ vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({
  auth:{getUser:async()=>({data:{user:{id:"33333333-3333-4333-8333-333333333333"}}})},
  from:(table:string)=>{
    const filters={eq:()=>filters,maybeSingle:async()=>({data:table==="memberships"?{role:"owner"}:
+     table==="supervisor_effect_attempts"?(state.claimExists?{
+       attempt_key:"77777777-7777-4777-8777-777777777777",
+       receipt_ref:state.claimToast?"inert-toast-claim:77777777-7777-4777-8777-777777777777":null}:null):
      table==="menu_items"?(state.menu[0].active?{id:state.menu[0].id,name:state.menu[0].name,
        price_cents:state.menu[0].priceCents,is_active:state.menu[0].active,
        catalog_source:state.catalogSource}:null):
@@ -35,7 +39,8 @@ const input={productId:"22222222-2222-4222-8222-222222222222",newPriceCents:500}
 const proposalId="66666666-6666-4666-8666-666666666666";
 beforeEach(()=>{state.currency="USD";state.menu=[{...state.menu[0],active:true,priceCents:450}];
   state.current=450;state.saves=0;state.saveArgs=null;
-  state.saveAttempts=0;state.changeBeforeSave=null;state.catalogSource="manual";});
+  state.saveAttempts=0;state.changeBeforeSave=null;state.catalogSource="manual";
+  state.claimToast=false;state.claimExists=true;});
 describe("approved menu price capability",()=>{
   it("drafts a $20 Toast item increase of 10 cents from one scoped menu row",async()=>{
     state.menu=[{...state.menu[0],priceCents:2000}];
@@ -87,7 +92,7 @@ describe("approved menu price capability",()=>{
     expect(state.saveAttempts).toBe(0);
   });
   it("never writes a Toast-connected published item from a local owner-approved price proposal",async()=>{
-    state.catalogSource="toast";
+    state.catalogSource="toast";state.claimToast=true;
     const {effect}=await menuPriceChangeCapability.simulate(scope,input);
     expect(await menuPriceChangeCapability.commit(scope,effect,proposalId)).toEqual({
       status:"requires_manual_action",instructionKey:"update_price_in_pos",
@@ -95,6 +100,27 @@ describe("approved menu price capability",()=>{
     expect(state.saves).toBe(0);
     expect(state.saveAttempts).toBe(0);
     expect(state.current).toBe(450);
+  });
+  it("keeps a claim-time Toast handoff inert after the catalog switches to manual",async()=>{
+    const {effect}=await menuPriceChangeCapability.simulate(scope,input);
+    state.claimToast=true;state.catalogSource="manual";
+    expect(await menuPriceChangeCapability.commit(scope,effect,proposalId))
+      .toMatchObject({status:"requires_manual_action"});
+    expect(state.saveAttempts).toBe(0);
+  });
+  it("fails closed if Toast takes ownership after a local claim",async()=>{
+    const {effect}=await menuPriceChangeCapability.simulate(scope,input);
+    state.catalogSource="toast";
+    await expect(menuPriceChangeCapability.commit(scope,effect,proposalId))
+      .rejects.toMatchObject({code:"write_failed"});
+    expect(state.saveAttempts).toBe(0);
+  });
+  it("never calls the price CAS without its authoritative effect claim",async()=>{
+    const {effect}=await menuPriceChangeCapability.simulate(scope,input);
+    state.claimExists=false;
+    await expect(menuPriceChangeCapability.commit(scope,effect,proposalId))
+      .rejects.toMatchObject({code:"write_failed"});
+    expect(state.saveAttempts).toBe(0);
   });
   it("writes once through owner_manual price history",async()=>{
     const {effect,baseline,monitorSpec}=await menuPriceChangeCapability.simulate(scope,input);
