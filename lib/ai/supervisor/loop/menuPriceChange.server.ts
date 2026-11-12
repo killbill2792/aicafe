@@ -64,9 +64,21 @@ export const menuPriceChangeCapability=registerLoopCapability({
       .select("catalog_source").eq("business_id",scope.businessId)
       .eq("id",effect.productId).maybeSingle();
     if(sourceError||!source)throw new ToolError("write_failed","Menu price source unavailable.");
-    if(source.catalog_source==="toast")return {status:"requires_manual_action" as const,
+    // The gateway sealed the menu source in its atomic claim. Current catalog
+    // may change after authorization, so it cannot decide whether this
+    // approved effect is a local CAS or an inert Toast Web handoff.
+    const {data:attempt,error:attemptError}=await supabase.from("supervisor_effect_attempts")
+      .select("attempt_key,receipt_ref").eq("business_id",scope.businessId)
+      .eq("proposal_id",proposalId).maybeSingle();
+    if(attemptError||!attempt)throw new ToolError("write_failed","Price approval claim unavailable.");
+    const claimedToast=attempt.receipt_ref==="inert-toast-claim:"+attempt.attempt_key;
+    if(claimedToast)return {status:"requires_manual_action" as const,
       instructionKey:"update_price_in_pos",instructions:{productName:effect.productName,
         toPriceCents:String(effect.newPriceCents)}};
+    // Never turn a previously local price claim into an unverified Toast
+    // instruction when the provider took ownership after the claim.
+    if(source.catalog_source==="toast")
+      throw new ToolError("write_failed","Menu price source changed during approval.");
     const updated=await setCanonicalMenuPrice(supabase,{
       businessId:scope.businessId,menuItemId:effect.productId,
       priceCents:effect.newPriceCents,expectedOldPriceCents:effect.oldPriceCents,
