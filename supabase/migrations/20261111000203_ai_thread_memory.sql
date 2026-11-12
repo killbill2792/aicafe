@@ -19,7 +19,7 @@ alter table public.ai_threads
         then jsonb_array_length(memory_summary->'tombstones') <= 40 else false end
       and case when jsonb_typeof(memory_summary->'cursor') = 'null' then true
         when jsonb_typeof(memory_summary->'cursor') = 'object' then
-          (memory_summary->'cursor' - array['createdAt','id']) = '{}'::jsonb
+          ((memory_summary->'cursor') - array['createdAt','id']) = '{}'::jsonb
           and memory_summary->'cursor' ?& array['createdAt','id']
           and jsonb_typeof(memory_summary->'cursor'->'createdAt') = 'string'
           and jsonb_typeof(memory_summary->'cursor'->'id') = 'string'
@@ -28,7 +28,7 @@ alter table public.ai_threads
         else false end
       and case when jsonb_typeof(memory_summary->'retry') = 'null' then true
         when jsonb_typeof(memory_summary->'retry') = 'object' then
-          (memory_summary->'retry' - array['code','at']) = '{}'::jsonb
+          ((memory_summary->'retry') - array['code','at']) = '{}'::jsonb
           and memory_summary->'retry' ?& array['code','at']
           and jsonb_typeof(memory_summary->'retry'->'code') = 'string'
           and jsonb_typeof(memory_summary->'retry'->'at') = 'string'
