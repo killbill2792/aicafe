@@ -35,8 +35,8 @@ async function withAuthenticated(client,userId,fn){
  }catch(error){await client.query("rollback");throw error;}
 }
 async function expectError(fn,code){let actual=null;try{await fn();}catch(error){actual=error.code;}assert.equal(actual,code,"expected SQLSTATE "+code);}
-async function seedProposal(business,owner,thread,id,capability="leo.goal.v1"){
- const effect={goal:"increase_orders",target:5},hash=createHash("sha256").update(JSON.stringify(effect)+id).digest("hex");
+async function seedProposal(business,owner,thread,id,capability="leo.goal.v1",effect={goal:"increase_orders",target:5}){
+ const hash=createHash("sha256").update(JSON.stringify(effect)+id).digest("hex");
  await db.query("insert into public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale) values($1,$2,$3,$4,$5,$6,1,$7::jsonb,$8,$9::jsonb,$10::jsonb,'en')",
  [id,business,owner,thread,randomUUID(),capability,JSON.stringify(effect),hash,JSON.stringify({source:"metric_catalog"}),JSON.stringify({durationDays:1,metricScope:"goal"})]);
 }
@@ -210,8 +210,7 @@ try{
  const wrongIngredientId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
  const purchaseDate=(await db.query("select current_date::text as d")).rows[0].d;
  const purchasePayload={ingredientId,name:"Beans",date:purchaseDate,quantity:2,unit:"kg",costCents:1234,source:"chat_text"};
- await seedProposal(B,OWNER,THREAD,purchaseId,"maya.inventory_purchase.v1");
- await db.query("update public.supervisor_proposals set canonical_effect_payload=$2::jsonb where id=$1",[purchaseId,JSON.stringify(purchasePayload)]);
+ await seedProposal(B,OWNER,THREAD,purchaseId,"maya.inventory_purchase.v1",purchasePayload);
  await withService(db,c=>c.query(rpcTransition,[B,OWNER,purchaseId,1,"approve",null]));
  const purchaseClaim=await claim(B,OWNER,THREAD,purchaseId,2,"click");
  await finish(B,OWNER,THREAD,purchaseId,purchaseClaim,"uncertain");
@@ -252,10 +251,9 @@ try{
 
  const priceId="90000000-0000-4000-8000-000000000014";
  const menuId="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
- await seedProposal(B,OWNER,THREAD,priceId,"alex.menu_price_change.v1");
+ await seedProposal(B,OWNER,THREAD,priceId,"alex.menu_price_change.v1",
+   {productId:menuId,oldPriceCents:450,newPriceCents:500,currency:"USD"});
  await db.query("insert into menu_items(id,business_id,price_cents) values($1,$2,450)",[menuId,B]);
- await db.query("update supervisor_proposals set canonical_effect_payload=$2::jsonb where id=$1",[
-   priceId,JSON.stringify({productId:menuId,oldPriceCents:450,newPriceCents:500,currency:"USD"})]);
  await withService(db,c=>c.query(rpcTransition,[B,OWNER,priceId,1,"approve",null]));
  const priceClaim=await claim(B,OWNER,THREAD,priceId,2,"click");
  await finish(B,OWNER,THREAD,priceId,priceClaim,"uncertain");
