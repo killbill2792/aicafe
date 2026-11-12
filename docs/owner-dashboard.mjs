@@ -147,6 +147,7 @@ function renderOperations(){
   task.append(element('strong','',r.id||'Unknown task'));
   addSmall(task,r.title||r.outcome||r.stage||'');
   task.append(badge(r.outcome||r.stage||'UNKNOWN'));
+  if(r.plan_state)addSmall(task,'Plan: '+r.plan_state);
   const pr=element('td');
   if(Number.isSafeInteger(r.pr?.number)&&r.pr.number>0){
    addLink(pr,'#'+r.pr.number,r.pr.url);
