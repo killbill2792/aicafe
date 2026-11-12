@@ -39,12 +39,14 @@ const baseline=z.strictObject({
   productId:z.uuid(),productName:z.string().min(1).max(200),
   oldPriceCents:cents,newPriceCents:cents,ingredientCostCents:cents,
   baselineUnits7Days:cents,currency:z.string().regex(/^[A-Z]{3}$/),
-  estimateKind:z.literal("conditional_unchanged_demand"),preview:z.array(diffFieldSchema).optional(),
+  estimateKind:z.literal("conditional_unchanged_demand"),durationDays:z.number().int().min(1).max(90).optional(),
+  preview:z.array(diffFieldSchema).optional(),
 });
 export const priceExperimentCapabilityId="alex.drink_price_experiment.v1";
 export const priceExperimentCapability=registerLoopCapability({
   id:priceExperimentCapabilityId,version:1,
-  inputSchema:z.strictObject({productId:z.uuid(),increaseCents:cents.positive().max(100000)}),
+  inputSchema:z.strictObject({productId:z.uuid(),increaseCents:cents.positive().max(100000),
+    days:z.number().int().min(1).max(90).optional()}),
   proposalDescription:"Only when the owner clearly REQUESTS to try/test a specific real drink price increase, or unambiguously confirms the single price trial in their prior message, prepare an inert owner-review proposal. For mere hypothetical questions use read/simulate tools instead. Never approve, commit, change POS prices, or claim an action happened. Read the menu catalog to find an actual product UUID. Match the owner-authored cent increase exactly; ask clarification for ambiguous sizes or amounts. Understand English, Spanish and Arabic.",
   effectSchema:baseline,
   dependencyScope:(effect)=>({version:2,kind:"menu_price",productId:effect.productId}),
@@ -67,15 +69,16 @@ export const priceExperimentCapability=registerLoopCapability({
     if(!result)throw new ToolError("validation","price_experiment_simulation_unavailable: The price trial estimate is unavailable with current sales or recipe coverage. Existing monitoring is unaffected; check its status instead.");
     const {beforeContributionCents,afterContributionCents,
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,...effect}=result;
+    const durationDays=input.days??7;
     const preview=[
       ...diffFields([{field:"price",label:"Price",value:{kind:"money",cents:effect.oldPriceCents}}],
         [{field:"price",label:"Price",value:{kind:"money",cents:effect.newPriceCents}}]),
-      ...diffFields([], [{field:"duration",label:"Duration",value:{kind:"count",n:7,unit:"days"}}] as const),
+      ...diffFields([], [{field:"duration",label:"Duration",value:{kind:"count",n:durationDays,unit:"days"}}] as const),
     ];
-    return {effect:{...effect,preview},baseline:{beforeContributionCents,afterContributionCents,
+    return {effect:{...effect,durationDays,preview},baseline:{beforeContributionCents,afterContributionCents,
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,
       source:"daily_rollups+order_lines",status:"estimated",assumption:"unchanged_unit_demand"},
-      monitorSpec:{durationDays:7,metricScope:item.id}};
+      monitorSpec:{durationDays,metricScope:item.id}};
   },
   // POS menu APIs are READ-ONLY: no simulated side effect and no fake success.
   commit:async(_scope,effect)=>({status:"requires_manual_action",
@@ -95,7 +98,8 @@ export const priceExperimentCapability=registerLoopCapability({
         netSalesCents:Number(d.netSalesCents),
         coverage:d.coverage==="actual"?"actual":"unavailable",source:s.source};
     });
-    const evaluated=evaluatePriceExperiment(effect as PriceExperimentBaseline,observed,7);
+    const durationDays=effect.durationDays??7;
+    const evaluated=evaluatePriceExperiment(effect as PriceExperimentBaseline,observed,durationDays);
     const guard=ordersGuardrail(samples.map(s=>{
       const r=cafeOrdersSchema.safeParse(s.observation.cafeOrders);
       return r.success?r.data:null;
@@ -115,7 +119,7 @@ export const priceExperimentCapability=registerLoopCapability({
     const recommendation=result.recommendation==="keep"?copy.keep:
       result.recommendation==="revert"?copy.revert:copy.adjust;
     const estimatedUplift=priceExperimentEstimatedUplift(effect);
-    const trial={...result,baselineUnits7Days:effect.baselineUnits7Days,
+    const trial={...result,trialDurationDays:durationDays,baselineUnits7Days:effect.baselineUnits7Days,
       oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
       productName:effect.productName,
       estimatedAdditionalRevenue7DaysCents:estimatedUplift};
@@ -144,7 +148,7 @@ export const priceExperimentCapability=registerLoopCapability({
     const count=(v:number)=>new Intl.NumberFormat(_scope.locale).format(v);
     const midRunText=windowComplete?undefined:result.coveredDays>0&&result.units!==null
       ?copy.midRunUpdate.replace("{item}",effect.productName).replace("{covered}",count(result.coveredDays))
-        .replaceAll("{days}",count(7)).replace("{price}",money(effect.newPriceCents))
+        .replaceAll("{days}",count(durationDays)).replace("{price}",money(effect.newPriceCents))
         .replace("{units}",count(result.units)).replace("{revenue}",money(result.observedRevenueCents))
         .replace("{difference}",money(result.realizedRevenueDifferenceCents))
       :copy.midRunNoData.replace("{item}",effect.productName).replace("{price}",money(effect.newPriceCents))
