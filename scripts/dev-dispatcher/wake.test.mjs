@@ -64,7 +64,7 @@ test('automatic Ready-triggered Codex receives a durable 20-minute watchdog wake
  assert.equal(nextWake(s,at,one),null);
 });
 
-test('missing wake is reissued on same key only after bounded retry lease expires',async()=>{
+test('Muse retry batches receive a 15-minute durable lease after the first wake',async()=>{
  const starting={tasks:{},actions:{one:{type:'assign',task_id:'6',status:'planned',
   delivery_owner:'muse',created_at:new Date(at).toISOString()}}};
  let latest=structuredClone(starting),calls=0;
@@ -83,10 +83,13 @@ test('missing wake is reissued on same key only after bounded retry lease expire
  assert.equal((await scheduleSelfWake({ledger,token:'mock',config:one,now:at+5000,fetchFn})).status,'unchanged');
  const late=await scheduleSelfWake({ledger,token:'mock',config:one,now:at+15*60000+1,fetchFn});
  assert.equal(late.status,'requested');
- assert.equal(late.key,first.key);
- assert.equal(late.due_at,new Date(at+15*60000+5001).toISOString());
+ assert.notEqual(late.key,first.key);
+ assert.equal(late.due_at,new Date(at+30*60000).toISOString());
  assert.equal(calls,2);
+ assert.equal((await scheduleSelfWake({ledger,token:'mock',config:one,
+   now:at+15*60000+2000,fetchFn})).status,'unchanged');
  assert.notEqual(seen[0].due_at,seen[1].due_at);
+ assert.equal(seen[1].due_at,new Date(at+30*60000).toISOString());
 });
 
 test('one stale Codex wake cannot starve an overdue owner approval notice',()=>{
@@ -161,4 +164,119 @@ test('dozens of overdue notices share one retry wake and do not drain API quota'
  assert.equal(repeat.status,'unchanged');
  assert.equal(calls,1);
  assert.equal(Object.keys(latest.delayed_wake_history).length,1);
+});
+
+
+test('clean PR does not schedule pointless coder-done self-wake',()=>{
+ const s={tasks:{E2:{task_id:'E2',approved:true,github_state:'open',
+  draft:false,ci_state:'success',codex_state:'clean',codex_reviewed_sha:'a'.repeat(40),
+  head_sha:'a'.repeat(40),threads_resolved:true,
+  conversation_ref:'https://chatgpt.com/c/verified',acceptance_proven:false,
+  coder_done:false,codex_review_at:new Date(at).toISOString(),
+  last_github_activity:new Date(at).toISOString()}},actions:{}};
+ assert.equal(nextWake(s,at,one),null);
+ assert.equal(nextWake(s,at+30*60000,one),null);
+});
+
+test('scope status check uses existing delayed wake, not a guessed planning deadline',()=>{
+ const s={tasks:{'9':{task_id:'9',planning_approved:true,
+  status:'scope_plan_sent',scope_plan_completed:true,
+  conversation_ref:'https://chatgpt.com/c/scope-9',
+  last_submission_at:new Date(at).toISOString()}},actions:{},owner_alerts:{}};
+ const due=nextWake(s,at,one);
+ assert.equal(due.reason,'scope_plan_status_check');
+ assert.equal(due.due_at,new Date(at+30*60000).toISOString());
+ s.owner_alerts['review']={task_id:'9',kind:'scope_plan_review',status:'planned'};
+ assert.equal(nextWake(s,at,one),null);
+});
+
+
+test('verified Muse delivery without a PR schedules exactly one original-chat status check',()=>{
+ const conversation='https://chatgpt.com/c/original-123';
+ const s={tasks:{T:{task_id:'T',status:'assigned',approved:true,
+   approval_hash:'a'.repeat(64),conversation_ref:conversation,
+   last_submission_at:new Date(at).toISOString()}},
+   actions:{assign:{task_id:'T',type:'assign',status:'submitted',
+    delivery_owner:'muse',
+    delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+      approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+    receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:conversation}}}};
+ const due=nextWake(s,at,one);
+ assert.equal(due.reason,'pre_pr_status_check');
+ assert.equal(due.due_at,new Date(at+15*60000).toISOString());
+ assert.equal(nextWake(s,at+900001,one).key,due.key);
+ s.actions.reminder={task_id:'T',type:'pre_pr_reminder',status:'submitted',
+  delivery:{approval_hash:'a'.repeat(64)}};
+ assert.equal(nextWake(s,at+900001,one),null);
+});
+test('pre-PR delayed wake never uses forged, old-scope or wrong-chat receipts',()=>{
+ const conversation='https://chatgpt.com/c/original-123';
+ const rec={task_id:'T',status:'assigned',approved:true,approval_hash:'a'.repeat(64),
+   conversation_ref:conversation,last_submission_at:new Date(at).toISOString()};
+ const original={task_id:'T',type:'assign',status:'submitted',
+   delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+     approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:conversation}};
+ const state={tasks:{T:rec},actions:{original}};
+ for(const item of [
+   {...original,delivery:{...original.delivery,approval_hash:'c'.repeat(64)}},
+   {...original,receipt:{courier:'muse',conversation_url:'https://chatgpt.com/c/other'}},
+   {...original,receipt:{courier:'unknown',conversation_url:conversation}}
+ ]){
+   state.actions.original=item;
+   assert.equal(nextWake(state,at,one),null);
+ }
+});
+
+test('current v3 owner-notice backlog cannot create a distinct Actions wake each minute',async()=>{
+ const now=at+3*60*60000;
+ let latest={tasks:{},actions:{},owner_alerts:Object.fromEntries(
+   Array.from({length:174},(_,i)=>['notice:'+i,{
+     status:'planned',kind:i<78?'dispatcher_emergency':'owner_decision',
+     delivery_owner:'muse',created_at:new Date(at-2*60*60000+i*30000).toISOString()
+   }]))};
+ const ledger={transaction:async transform=>{
+   const changed=await transform(structuredClone(latest));
+   if(changed===null)return {committed:false,state:latest};
+   latest=changed;return {committed:true,state:latest};
+ }};
+ const calls=[],fetchFn=async(_url,opts)=>{
+   calls.push(JSON.parse(opts.body).inputs);return {ok:true,status:204};
+ };
+ const first=await scheduleSelfWake({ledger,token:'mock',config:one,now,fetchFn});
+ assert.equal(first.reason,'owner_notice_retry');
+ assert.equal(first.status,'requested');
+ assert.equal(calls.length,1);
+ for(let minute=1;minute<=10;minute++){
+   const r=await scheduleSelfWake({ledger,token:'mock',config:one,
+     now:now+minute*60000,fetchFn});
+   // First tick after initial delayed wake schedules the NEXT 15-min wake.
+   assert.equal(r.status,minute===1?'requested':'unchanged');
+ }
+ assert.equal(calls.length,2,'one immediate retry and one future batch lease');
+ assert.equal(calls[1].due_at,new Date(now+5000+900000).toISOString());
+ // Many webhook events during the lease must not dispatch another workflow.
+ for(let minute=11;minute<=14;minute++)
+   assert.equal((await scheduleSelfWake({ledger,token:'mock',config:one,
+     now:now+minute*60000,fetchFn})).status,'unchanged');
+ assert.equal(calls.length,2);
+ const third=await scheduleSelfWake({ledger,token:'mock',config:one,
+   now:now+16*60000,fetchFn});
+ assert.equal(third.status,'requested');
+ assert.equal(calls.length,3);
+ assert.equal(calls[2].due_at,new Date(now+5000+2*900000).toISOString());
+ assert.equal(Object.keys(latest.delayed_wake_history).length,3);
+});
+
+test('failed batch dispatch is not blindly replayed by each GitHub webhook',async()=>{
+ const now=at+20*60000;
+ const state={tasks:{},actions:{},owner_alerts:{n:{status:'planned',
+   delivery_owner:'muse',created_at:new Date(at).toISOString()}},
+   delayed_wake_history:{failure:{key:'failure',reason:'owner_notice_retry',
+     status:'failed',due_at:new Date(now-2000).toISOString(),
+     reserved_at:new Date(now-1000).toISOString()}}};
+ assert.equal(nextWake(state,now,one),null);
+ assert.equal(nextWake(state,now+1000,one),null);
+ assert.equal(nextWake(state,now+16*60000,one).reason,'owner_notice_retry');
 });

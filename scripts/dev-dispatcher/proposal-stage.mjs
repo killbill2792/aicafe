@@ -29,21 +29,22 @@ export function proposalEligible(task,queue,records={}){
 const proposalApprovalHash=(task,notice)=>hash(['scope-plan-v1',task.id,
   notice.notice_hash,notice.source_sha]);
 
-export function createScopePlanDelivery(task,{actionId,approvalHash,conversationUrl=null}){
+export function createScopePlanDelivery(task,{actionId,approvalHash,conversationUrl=null,correction=null}){
  const prompt=[
    settings.chatgpt.project_name+' scope_plan | task '+task.id,
    'Owner said YES to the goal and authorized a READ-ONLY planning step. This is NOT coding permission.',
+   ...(correction?['GITHUB DISPATCHER CORRECTION: '+String(correction)]:[]),
    'Read AGENTS.md and PROGRESS.md (read-only), this signed task plan, existing code and active dependencies.',
    'Goal: '+String(task.goal||task.title||'').slice(0,300),
    'Suggested areas only (NOT authorized files): '+String(task.scope_hint||'none').slice(0,500),
    'Required acceptance: '+(task.acceptance||[]).join('; ').slice(0,900),
    'Dependencies: '+(task.depends_on||[]).join(', '),
-   'Prepare a specific architecture/source contract and an EXACT set of disjoint code files, relevant tests, any migration/secret/effect decisions, and a truthful acceptance proof plan.',
-   'Check current open PRs for overlapping file ownership and choose the existing module/path wherever possible.',
+   'Prepare an exact implementation scope, tests, and acceptance plan. Shared-file edits are permitted across separately approved branches; GitHub determines safe integration order.',
+   'Check current PRs and dependencies; disclose shared-file impact. Do not treat another PR editing the same file as a coding blocker.',
    'Show the proposed exact scope to the owner through the existing Muse conversation and request only the missing concrete decision; the owner already approved the task goal and must NOT be asked to approve that again.',
    'STOP at the planning step: DO NOT modify or commit any code, open a coding PR, run effects, create migrations, or claim coding permission. No production/Vercel-preview actions.',
    'Publish your EXACT proposed implementation scope as ONE verified GitHub issue #411 comment (this is NOT a code PR): https://github.com/'+settings.repo+'/issues/411',
-   'Use your connected GitHub account; one line containing exactly: <!-- aicafe-scope-plan:v1 {"task_id":"'+task.id+'","action_id":"'+actionId+'","proposal_source_sha":"'+proposalSourceHash(task)+'","edits":["exact/owned/path.ts"],"uses":[],"architecture":"At least 80 characters describing actual source fields, object keys, persistence/readers, change behavior, omissions and tenant differences","acceptance_plan":"At least 30 characters of executed checks and acceptance plan"} -->',
+   'Use your connected GitHub account; include one aicafe-scope-plan:v1 marker with valid JSON (multiline allowed): <!-- aicafe-scope-plan:v1 {"task_id":"'+task.id+'","action_id":"'+actionId+'","proposal_source_sha":"'+proposalSourceHash(task)+'","edits":["exact/owned/path.ts"],"uses":[],"architecture":"Actual source fields, keys, persistence, readers, changes, omissions and tenant differences","acceptance_plan":"Executable checks and acceptance proof plan"} -->',
    'Replace sample files with your real proposed paths. Keep source fields, keys, rejected data and cross-cafe gaps concrete. Do NOT include credentials, production data or private owner messages in this public comment.',
    'The dispatcher reads that GitHub comment and brings EXACT scope approval to the owner through Muse; never ask Muse to inspect this chat or respond for the owner.',
    'Only after the exact proposal is independently approved in Muse may the dispatcher authorize a coding prompt in this same chat.',

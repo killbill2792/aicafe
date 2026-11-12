@@ -121,7 +121,13 @@ test('studio merge_order serializes overlapping file ownership without granting 
  assert.equal(validateQueue(normalized).size,2);
  assert.deepEqual(dispatchFrontier(normalized,{}),[]);
  const wrong={...normalized,tasks:normalized.tasks.map(t=>({...t,depends_on:[]}))};
- assert.throws(()=>validateQueue(wrong),/Overlapping exclusive file ownership/);
+ // Independent shared-file PRs may also code in parallel; the earlier signed
+ // queue entry remains their deterministic merge predecessor.
+ assert.equal(validateQueue(wrong).size,2);
+ const {overlappingPredecessorIds}=await import('./core.mjs');
+ assert.deepEqual(overlappingPredecessorIds(wrong.tasks[1],{
+  ...wrong,tasks:wrong.tasks.map(t=>({...t,state:'architecture_approved',
+  architecture_approval:{approved:true}}))}),['0a']);
 });
 
 test('fatal dispatcher request error is saved as one owner Muse alert before an immediate wake',async()=>{

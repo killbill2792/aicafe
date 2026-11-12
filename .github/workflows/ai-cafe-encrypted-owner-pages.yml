@@ -1,0 +1,92 @@
+# Publishes only an authenticated encrypted projection to the EXISTING
+# GitHub Pages site. No second dispatcher, new cron, plaintext private ledger,
+# browser PAT or privileged PR-head execution. Requires Pages Source=Actions.
+name: AI CAFE Encrypted Owner Pages
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - docs/index.html
+      - docs/owner-dashboard.mjs
+      - docs/owner-dashboard.css
+      - docs/encrypted-owner-view.mjs
+      - scripts/dev-dispatcher/encrypted-owner-payload.mjs
+      - .github/workflows/ai-cafe-encrypted-owner-pages.yml
+  workflow_run:
+    workflows: ['AI CAFE Development Dispatcher']
+    types: [completed]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: aicafe-encrypted-owner-pages
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event != 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check owner private-page configuration
+        id: owner_setup
+        env:
+          OWNER_PAGES_PASSPHRASE: ${{ secrets.OWNER_PAGES_PASSPHRASE }}
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -z "$OWNER_PAGES_PASSPHRASE" || -z "$DISPATCH_LEDGER_TOKEN" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Encrypted Pages not published: owner passphrase or ledger credential not configured."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.owner_setup.outputs.enabled == 'true'
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        if: steps.owner_setup.outputs.enabled == 'true'
+        with:
+          node-version: '22'
+      - name: Stage PUBLIC allowlisted site assets only
+        if: steps.owner_setup.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/owner-pages"
+          cp docs/index.html docs/owner-dashboard.css docs/owner-dashboard.mjs \
+            docs/owner-dashboard-extras.mjs docs/encrypted-owner-view.mjs \
+            "$RUNNER_TEMP/owner-pages/"
+      - name: Encrypt private view into output artifact
+        if: steps.owner_setup.outputs.enabled == 'true'
+        env:
+          OWNER_PAGES_PASSPHRASE: ${{ secrets.OWNER_PAGES_PASSPHRASE }}
+          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/dev-dispatcher/encrypted-owner-payload.mjs \
+            "$RUNNER_TEMP/owner-pages/encrypted-owner-snapshot.json"
+          test -s "$RUNNER_TEMP/owner-pages/encrypted-owner-snapshot.json"
+          # Never echo or upload any private input or unencrypted task JSON.
+      - uses: actions/configure-pages@v5
+        if: steps.owner_setup.outputs.enabled == 'true'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.owner_setup.outputs.enabled == 'true'
+        with:
+          path: ${{ runner.temp }}/owner-pages
+      - name: Deploy existing GitHub Pages site
+        if: steps.owner_setup.outputs.enabled == 'true'
+        id: deployment
+        uses: actions/deploy-pages@v4

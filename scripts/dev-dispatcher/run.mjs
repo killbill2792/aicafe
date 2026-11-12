@@ -3,7 +3,8 @@ import {settings} from './settings.mjs';
 import {loadQueue} from './queue-source.mjs';
 import {advanceApprovedProposals} from './proposal-stage.mjs';
 import {selectScopePlans,queueScopePlanReviews,acceptScopePlanDecisions,
-  effectiveSignedQueue} from './scope-authority.mjs';
+  effectiveSignedQueue,queueScopePlanRecovery} from './scope-authority.mjs';
+import {fetchScopeComments} from './scope-comments.mjs';
 import {selectObservation,shouldRecheckMergedLanding} from './event-selection.mjs';
 // Trusted-main, read-only by default. --commit only updates a private GitHub ledger.
 // Does NOT submit prompts, merge PRs or use model APIs.
@@ -19,7 +20,7 @@ import { linkPullRequests, adoptAdhocPullRequests } from "./dependencies.mjs";
 import { mergeApprovedPr, integrationStatus, safeUpdateBranch, updateChildAfterParentMerge, retryStartupFailure, dispatchLandingCheck } from "./effects.mjs";
 import { inspectReceipts, applyReceiptsSafely } from "./inbox.mjs";
 import { reconcileReceiptFeedback, wakeReceiptFeedback } from "./receipt-recovery.mjs";
-import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue,resolveOwnerIssueIdentity,wakePendingOwnerNotices } from "./alerts.mjs";
+import { queueOwnerAlerts,applyOwnerStartApprovals,queueOwnerIssue,resolveOwnerIssue,resolveOwnerIssueIdentity,resolveObsoleteLedgerReadIncidents,wakePendingOwnerNotices } from "./alerts.mjs";
 import {trackScheduleGap,verifiedMergedProof,recordDrift} from "./self-heal.mjs";
 import {classifyCodexChange} from './codex-carryover.mjs';
 import { applySafetySignals, stallMinutes, landingFailureForMerge } from "./safety.mjs";
@@ -28,6 +29,12 @@ import {noticeOperationalIssues,reportFatalDispatcherError,reportProjectionFailu
 import { renderOwnerView, publishOwnerView } from "./owner-view.mjs";
 import { publishPrivateQueue } from "./private-owner-view.mjs";
 import {publishEmergencyViaGit,readApiPauseViaGit} from "./git-operations.mjs";
+import {recordLifecycleTransitions,projectLifecycle} from "./lifecycle-v3.mjs";
+import {recordRecoveryEvent,settleRecoveryRequests} from "./recovery-v3.mjs";
+import {dispatchPreferences} from "./owner-controls-v3.mjs";
+import {ensureApprovedDraftPr,classifyPrCreatePreflightError} from "./pr-create-v3.mjs";
+import {verifiedCodingConversation} from "./verified-chat-v3.mjs";
+import {recordGithubEffects,recordPrWriterOwnerNotices} from "./github-effects-v3.mjs";
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -158,11 +165,22 @@ async function main() {
       ...receiptScan,rejected:[...receiptScan.rejected,...applied.rejected]
     },new Date().toISOString());
     const safety=applySafetySignals(withFeedback,{queue:queue.tasks,repo,
-      minutes:stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
+      minutes:dispatchPreferences(withFeedback).stall_minutes||
+        stallMinutes(process.env.DISPATCH_STALL_MINUTES)});
     // A GitHub planning comment is evidence, NOT approval. It is bound to
     // a submitted scope-plan action and source-version, then proposed to Muse.
     const plans=selectScopePlans(scopeComments,sourceQueue,safety);
-    const scopeNotices=queueScopePlanReviews(safety,sourceQueue,plans);
+    // An incomplete GitHub read is an outage, not proof that a plan vanished.
+    // Existing authenticated notices/scopes remain durable in the ledger.
+    const recovered=scopeFetchError ? queueOwnerIssue(safety,{
+      kind:'scope_issue_read_failed',identity:String(settings.owner.dashboard_issue),
+      message:'Could not read all GitHub scope comments: '+scopeFetchError,
+      needs:'GitHub retries this read on the next reconciliation; Muse can inspect the private queue'
+    }) : resolveOwnerIssueIdentity(queueScopePlanRecovery(
+      safety,sourceQueue,scopeComments,plans,{
+        checkMinutes:Number(process.env.DISPATCH_PLANNING_STATUS_CHECK_MINUTES)||30}),
+      {kind:'scope_issue_read_failed',identity:String(settings.owner.dashboard_issue)});
+    const scopeNotices=queueScopePlanReviews(recovered,sourceQueue,plans);
     const scopeApproved=acceptScopePlanDecisions(scopeNotices,sourceQueue,plans);
     queue=effectiveSignedQueue(sourceQueue,scopeApproved,plans);
     taskById=new Map(queue.tasks.map(t=>[t.id,t]));
@@ -172,17 +190,16 @@ async function main() {
         {unmappedPrs:remaining,openPrs:observed.snapshot,queue}),
         {snapshot:observed.snapshot,scan:receiptScan}),queue);
     revalidateQueuedActions(copy, taskById, queue);
+    // v3 does not require ChatGPT to declare itself finished. Retain
+    // submitted/claimed/uncertain legacy receipts for audit and dedup, but
+    // cancel old UNSENT coder-done requests before the browser courier sees them.
+    for(const action of Object.values(copy.actions)){
+      if(action.type==='closeout_evidence'&&action.status==='planned')
+        action.status='cancelled_v3_no_coder_done_gate';
+    }
     wakePendingActions(copy, Date.now());
     wakePendingOwnerNotices(copy, Date.now());
     wakeReceiptFeedback(copy, Date.now());
-    // Replace only still-planned legacy child follow-ups. Never cancel a
-    // claimed/submitted/uncertain delivery or an owner-facing action.
-    for (const action of Object.values(copy.actions)) {
-      if (action.status === 'planned' &&
-          ['repair_ci', 'repair_review', 'continue_pr'].includes(action.type) &&
-          ['POS0b', 'POS0c', 'POS0d'].includes(action.task_id))
-        action.status = 'cancelled_superseded_template';
-    }
     for (const [id, rec] of Object.entries(copy.tasks)) {
       const task = taskById.get(id);
       if (!task || rec.github_state !== 'open') continue;
@@ -208,7 +225,7 @@ async function main() {
       }
     }
 
-    const assignments = dispatchFrontier(queue, copy.tasks);
+    const assignments = dispatchFrontier(queue, copy.tasks,null,dispatchPreferences(copy));
     const assigned = [];
     const nudges = [];
     const now = new Date().toISOString();
@@ -241,7 +258,25 @@ async function main() {
       copy.tasks[assignment.task_id] = record;
     }
     for (const [id, rec] of Object.entries(copy.tasks)) {
-      const normal=decideNudge(rec, Date.now());
+      // A verified Muse coding receipt can precede the first PR. One
+      // head-independent, idempotent same-chat reminder prevents a lost PR
+      // from remaining silent. Never guess that coding is complete.
+      const firstDelivery=verifiedCodingConversation(copy,id,
+        rec.approval_hash,rec.conversation_ref);
+      const lastDelivery=Date.parse(rec.last_submission_at||'');
+      const noPrDue=firstDelivery&&rec.approved===true&&rec.status==='assigned'&&
+        !Number.isInteger(rec.pr_number)&&Boolean(rec.conversation_ref)&&
+        !rec.sensitive_owner_block&&!rec.repo_mismatch&&
+        Number.isFinite(lastDelivery)&&Date.now()-lastDelivery>=15*60000;
+      const prePrKey='pre_pr_reminder:'+encodeURIComponent(id)+':'+
+        String(rec.approval_hash||'');
+      const prePrAlready=Object.values(copy.actions).some(a=>
+        a.task_id===id&&a.type==='pre_pr_reminder'&&
+        a.delivery?.approval_hash===rec.approval_hash&&
+        ['planned','claimed','uncertain','needs_login','submitted'].includes(a.status));
+      const normal=noPrDue&&!prePrAlready?
+        {kind:'propose',action:'pre_pr_reminder',key:prePrKey}:
+        decideNudge(rec,Date.now());
       const proposal=normal.kind==='propose' ? normal :
         rec.stall_pending && !rec.stall_escalate
           ? {kind:'propose',action:'no_push_after_prompt',key:rec.stall_pending} : normal;
@@ -249,7 +284,7 @@ async function main() {
       // built successfully. Other obsolete undelivered prompts may be dropped.
       const superseded=[];
       for(const action of Object.values(copy.actions)) {
-        if(action.task_id!==id||action.status!=='planned'||['assign','scope_plan','scope_plan_update','begin_scoped_coding','landing_failed'].includes(action.type))continue;
+        if(action.task_id!==id||action.status!=='planned'||['assign','scope_plan','scope_plan_update','begin_scoped_coding','landing_failed','pre_pr_reminder'].includes(action.type))continue;
         if(action.delivery?.action_id===proposal.key)continue;
         if(rec.codex_state==='findings'&&action.type==='codex_comments'&&
            action.head_sha===rec.head_sha&&proposal.kind!=='propose')continue;
@@ -353,6 +388,13 @@ async function main() {
     return [actor, courier];
   }));
   actorMap[settings.owner.login] ||= 'owner';
+  // Repository-dispatch is a WAKE, not an effect or authorization. GitHub's
+  // authenticated sender and the current signed ledger are rechecked on main.
+  let recoveryPayload=null;
+  if(process.env.GITHUB_EVENT_NAME==='repository_dispatch'&&process.env.GITHUB_EVENT_PATH){
+    try{recoveryPayload=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));}
+    catch{recoveryPayload=null;}
+  }
   const receiptScan = ledger
     ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])],
        processed:current.receipt_processed_files||{}})
@@ -361,20 +403,13 @@ async function main() {
   // The GitHub login and submitted scope-plan action verify provenance.
   const needsScopeRead=Object.values(current.tasks||{}).some(t=>
     t.planning_approved||t.scope_approval_hash);
-  let scopeComments=[];
+  let scopeComments=[],scopeFetchError=null;
   if(needsScopeRead){
-    // GitHub returns oldest comments first. Fetch the current LAST bounded
-    // page, not the first 100: later plans would otherwise be invisible.
-    // Previous exact owner-approved scopes are retained in the private ledger.
-    const issue=await gh.request('/issues/'+settings.owner.dashboard_issue);
-    const count=Number(issue.comments);
-    if(!Number.isSafeInteger(count)||count<0)
-      throw Error('Cannot verify owner-control issue comment count');
-    const page=Math.max(1,Math.ceil(count/100));
-    scopeComments=await gh.request('/issues/'+settings.owner.dashboard_issue+
-      '/comments?per_page=100&page='+page);
-    if(!Array.isArray(scopeComments)||scopeComments.length>100)
-      throw Error('Invalid bounded scope plan comment batch');
+    try {scopeComments=await fetchScopeComments(gh,settings.owner.dashboard_issue);}
+    catch(error){
+      scopeFetchError=String(error?.message||error).slice(0,160);
+      console.error('Scope issue comment snapshot incomplete: '+scopeFetchError);
+    }
   }
   const observed = await observe(current);
   const proposed = reconcile(current, observed);
@@ -466,6 +501,9 @@ async function main() {
   }
 
   let persisted = null;
+  // Collect technical effect results and persist them with the existing final
+  // reconciliation transaction, not a fresh API write for each PR.
+  const githubEffects=[];
   if (commit && ledger) {
     // Reconcile against fresh facts on every CAS attempt; do not write an
     // identical state every five minutes (avoids 288 empty commits per day).
@@ -492,8 +530,84 @@ async function main() {
       const withNotices = noticeOperationalIssues(queueOwnerAlerts(next,{queue,
         unmappedPrs:linkPullRequests(next,latest.snapshot).unmapped,openPrs:latest.snapshot}),
         {snapshot:latest.snapshot,scan:receiptScan});
-      return JSON.stringify(withNotices) === JSON.stringify(existing) ? null : withNotices;
+      const recovered=recordRecoveryEvent(withNotices,recoveryPayload,{
+        repo,actors:actorMap,owner:settings.owner.login,now:new Date().toISOString()});
+      const projected=recordLifecycleTransitions(recovered,queue);
+      return JSON.stringify(projected) === JSON.stringify(existing) ? null : projected;
     });
+  }
+  // The GitHub App writer is optional infrastructure, but its absence must
+  // never be silent: Muse and the owner need an explicit private-ledger status.
+  if(commit&&ledger&&!process.env.DISPATCH_INSTALL_TOKEN){
+    for(const [id,rec] of Object.entries(persisted?.state?.tasks||{})){
+      if(rec.approved===true&&!Number.isInteger(rec.pr_number)&&rec.branch&&
+        verifiedCodingConversation(persisted.state,id,rec.approval_hash,rec.conversation_ref))
+        githubEffects.push({task_id:id,operation:'CREATE_DRAFT_PR',
+          head_sha:rec.head_sha||null,status:'blocked',
+          reason:'missing_pr_creator_install_token'});
+    }
+  }
+  // Verified early-draft PR recovery. An authorized branch can exist after
+  // ChatGPT pushed code but before the PR was opened. Do not require a
+  // self-reported coder_done. Use installation credentials so PR CI fires.
+  if(commit&&ledger&&process.env.DISPATCH_INSTALL_TOKEN){
+    const writer=new GitHubFacts({repo,token:process.env.DISPATCH_INSTALL_TOKEN});
+    for(const [id,rec] of Object.entries(persisted?.state?.tasks||{})){
+      const task=taskById.get(id);
+      if(!task||rec.pr_number||rec.github_state==='merged'||!rec.conversation_ref||
+        !rec.approved||!rec.branch)continue;
+      try{
+        const verifiedDelivery=verifiedCodingConversation(persisted.state,id,
+          rec.approval_hash,rec.conversation_ref);
+        if(!verifiedDelivery)continue;
+        let result;
+        try{
+          result=await ensureApprovedDraftPr({github:gh,writer,task,record:rec,
+            records:persisted.state.tasks,verifiedDelivery,queueRepo:repo});
+        }catch(error){
+          // ensureApprovedDraftPr catches its own POST errors. Anything thrown
+          // here is a preflight READ failure: no write has been attempted.
+          // Keep other tasks moving and do not create a sticky PR-write hold.
+          const classified=classifyPrCreatePreflightError(error);
+          githubEffects.push({task_id:id,operation:'CREATE_DRAFT_PR',
+            head_sha:rec.head_sha||null,status:classified.status,reason:classified.reason});
+          console.error('Early draft preflight unavailable for '+id+': '+error.message);
+          continue;
+        }
+        githubEffects.push({task_id:id,operation:'CREATE_DRAFT_PR',
+          head_sha:rec.head_sha||result.head_sha||null,status:result.status,
+          reason:result.reason||null,pr_number:result.pr_number||null});
+        if(['created','existing_pr_needs_link'].includes(result.status)&&
+          result.github_state!=='closed'){
+          await ledger.transaction(state=>{
+            const current=state.tasks?.[id];
+            if(!current||current.pr_number||current.approval_hash!==rec.approval_hash||
+              current.branch!==rec.branch||current.github_state==='merged')return null;
+            current.pr_number=result.pr_number;
+            current.github_state='open';current.draft=result.draft??true;
+            current.head_sha=result.head_sha;
+            current.status='draft_open';current.ci_state='pending';current.codex_state='pending';
+            current.pr_creation_status=result.status;current.pr_created_observed_at=new Date().toISOString();
+            return state;
+          });
+          console.log('Early draft PR for '+id+': #'+result.pr_number+' '+result.status);
+        }else if(result.status==='uncertain'){
+          await ledger.transaction(state=>queueOwnerIssue(state,{
+            kind:'pr_creation_uncertain',task_id:id,
+            identity:id+':'+rec.branch,
+            message:'A draft PR creation attempt may have succeeded for '+id+
+              ' but GitHub did not confirm it.',
+            needs:'Muse ask GitHub to re-observe the branch and PR; never duplicate the POST'
+          }));
+        }
+      }catch(error){
+        githubEffects.push({task_id:id,operation:'CREATE_DRAFT_PR',
+          head_sha:rec.head_sha||null,status:'uncertain',
+          reason:'github_pr_create_unverified'});
+        console.error('Early draft creation unavailable for '+id+': '+error.message);
+        process.exitCode=1;
+      }
+    }
   }
   // The dispatcher, not a coder chat, requests the final-head review.
   // Revalidate live GitHub CI, acceptance artifacts, PR base and owner state
@@ -679,8 +793,24 @@ async function main() {
       const predecessorRecords = rec.adhoc ? [] : predecessorsForMerge(task, queue, proposed.state.tasks);
       // Ready transitions need only green CI, not coder-done. The later merge
       // is a separate fresh reconciliation, never the same snapshot.
-      const outcome = await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
-        enabled: true, action: rec.draft ? "ready" : "merge" });
+      let outcome;
+      const operation=rec.draft?'MARK_READY':'MERGE';
+      try{
+        outcome=await mergeApprovedPr({ github: gh, record: rec, predecessors: predecessorRecords,
+          enabled: true, action: rec.draft ? "ready" : "merge" });
+      }catch(error){
+        // One unreachable PR or uncertain GitHub effect cannot stop other
+        // approved PRs. The next read must verify whether a write succeeded.
+        githubEffects.push({task_id:id,operation,head_sha:rec.head_sha,
+          status:'uncertain',reason:'github_effect_unverified',
+          pr_number:rec.pr_number});
+        console.error('PR #'+rec.pr_number+' '+operation+' needs verification: '+error.message);
+        process.exitCode=1;
+        continue;
+      }
+      githubEffects.push({task_id:id,operation,head_sha:rec.head_sha,
+        status:outcome.status,reason:outcome.reasons?.join(',')||outcome.reason||null,
+        pr_number:rec.pr_number});
       if (outcome.status === "ready_for_review") {
         await ledger.transaction(state=>{
           const r=state.tasks?.[id];
@@ -720,12 +850,34 @@ async function main() {
       });
     }
   }
+  // Final v3 status is also reconciled after any successful GitHub effects.
+  // The projection is derived; it never authorizes a merge or delivery.
+  if(commit&&ledger){
+    const projection=await ledger.transaction(latest=>{
+      const withEffects=recordGithubEffects(latest,githubEffects);
+      const withOwnerNotices=recordPrWriterOwnerNotices(withEffects||latest,githubEffects);
+      // A completed trusted reconciliation closes the last generic emergency.
+      // A subsequent outage must create a fresh incident cycle, not be hidden
+      // by a permanently submitted/queued stable failure identity.
+      const restored=resolveOwnerIssueIdentity(withOwnerNotices,{
+        kind:'dispatcher_emergency',identity:'trusted-dispatcher:failure'});
+      // A successful, authenticated trusted-main reconcile proves the old
+      // Contents API overflow no longer blocks state reads. Close only those
+      // historic UNDELIVERED error notices; never change other owner requests.
+      const recovered=resolveObsoleteLedgerReadIncidents(restored);
+      const projected=recordLifecycleTransitions(recovered,queue);
+      const result=settleRecoveryRequests(projected,projectLifecycle(projected,queue));
+      return JSON.stringify(result)===JSON.stringify(latest)?null:result;
+    });
+    if(projection.committed)persisted=projection;
+  }
   const gateCounts = { ready: 0, blocked: 0 };
   for (const rec of Object.values(proposed.state.tasks)) {
     const gate = mergeGate(rec);
     gateCounts[gate.eligible ? "ready" : "blocked"]++;
   }
   const effectiveState = persisted?.state || proposed.state;
+  const v3=projectLifecycle(effectiveState,queue);
   // The existing GitHub Actions summary is the owner-readable control surface.
   // Never expose private courier prompts or conversation URLs in public logs.
   const active = Object.entries(effectiveState.tasks).filter(([,rec])=>
@@ -756,6 +908,8 @@ async function main() {
   const hasChatReceipt = !!foundationRecord?.conversation_ref;
   const summary = [
      '## '+settings.chatgpt.project_name+' development dispatcher — coordination status',
+     '- Lifecycle v3: **'+Object.keys(v3.tasks).length+' task rows**, GitHub schedule '+v3.health.schedule_status+
+       ' (last verified '+(v3.health.last_schedule_at||'unknown')+').',
     `- Last persisted state: **${effectiveState.updated_at || "not yet saved"}** (an unchanged ledger alone is not a scheduler heartbeat)`,
     "- 10-minute code inactivity / 15-minute post-delivery checks are best-effort; GitHub scheduled runs may be delayed or dropped.",
     "",
@@ -849,7 +1003,7 @@ main().catch(async error => {
       token:process.env.DISPATCH_LEDGER_TOKEN,
       identity:error.code==='RATE_LIMIT'
         ?'github_api_rate_limit:'+String(error.reset_at||'unknown')
-        :'run:'+String(process.env.GITHUB_RUN_ID||'unknown')+':failure',
+        :'trusted-dispatcher:failure',
       resetAt:error.code==='RATE_LIMIT'?error.reset_at:null,
       message:detail,needs:'Muse notify owner; inspect failed dispatcher workflow'
     });

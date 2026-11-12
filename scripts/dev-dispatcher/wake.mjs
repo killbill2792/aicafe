@@ -4,6 +4,7 @@ import {GitHubLedger} from './ledger.mjs';
 import {settings} from './settings.mjs';
 import {stallMinutes} from './safety.mjs';
 import {queueOwnerIssue} from './alerts.mjs';
+import {verifiedCodingConversation} from './verified-chat-v3.mjs';
 const sha=s=>createHash('sha256').update(s).digest('hex'),dt=s=>Date.parse(s||'');
 export function nextWake(state,now=Date.now(),config=settings){
  const list=[];
@@ -26,6 +27,36 @@ export function nextWake(state,now=Date.now(),config=settings){
      !['clean','findings'].includes(r.codex_state)&&Number.isFinite(at))
    list.push({at:at+20*60*1000,reason:'codex_watchdog',id});
  }
+ // A completed planning prompt needs a check even if no PR exists. A
+ // published accepted plan or an outstanding recovery action suppresses it.
+ for(const [id,r] of Object.entries(state.tasks||{})){
+  if(r.status!=='scope_plan_sent'||r.planning_approved!==true||
+     r.scope_plan_completed!==true||!r.conversation_ref||
+     state.scope_authorizations?.[id]||
+     Object.values(state.owner_alerts||{}).some(n=>n.task_id===id&&
+       n.kind==='scope_plan_review'&&['planned','submitted'].includes(n.status))||
+     Object.values(state.actions||{}).some(a=>a.task_id===id&&
+       a.scope_recovery===true&&
+       ['planned','claimed','uncertain','needs_login'].includes(a.status)))continue;
+  const sent=dt(r.last_submission_at);
+  if(Number.isFinite(sent))list.push({at:sent+30*60000,
+   reason:'scope_plan_status_check',id});
+ }
+ // A verified coding delivery may still have no PR and no later GitHub event.
+ // Schedule one explicit check, independent of dropped cron ticks. The signed
+ // current-plan Muse receipt is essential: a chat URL alone is not authority.
+ for(const [id,r] of Object.entries(state.tasks||{})){
+   if(r.status!=='assigned'||r.approved!==true||Number.isInteger(r.pr_number)||
+      !r.conversation_ref||!r.approval_hash)continue;
+   const verified=verifiedCodingConversation(state,id,r.approval_hash,r.conversation_ref);
+   const already=Object.values(state.actions||{}).some(a=>
+     a.task_id===id&&a.type==='pre_pr_reminder'&&
+     a.delivery?.approval_hash===r.approval_hash&&
+     ['planned','claimed','uncertain','needs_login','submitted'].includes(a.status));
+   const sent=dt(r.last_submission_at);
+   if(verified&&!already&&Number.isFinite(sent))
+     list.push({at:sent+15*60000,reason:'pre_pr_status_check',id});
+ }
  // One scheduled deadline for unfinished coding; no blanket PR poll.
  for(const [id,r] of Object.entries(state.tasks||{})){
   if(r.github_state!=='open'||r.draft!==true||!r.approved||
@@ -36,7 +67,8 @@ export function nextWake(state,now=Date.now(),config=settings){
       !(r.last_prompt_head_sha&&r.last_prompt_head_sha!==r.head_sha&&!Number.isFinite(observed)))
    list.push({at:Math.max(delivered,Number.isFinite(committed)?committed:0,
       Number.isFinite(observed)?observed:0)+
-     stallMinutes(process.env.DISPATCH_STALL_MINUTES)*60000,reason:'coding_idle',id});
+     stallMinutes(state.owner_controls?.monitoring?.stall_minutes||
+        process.env.DISPATCH_STALL_MINUTES)*60000,reason:'coding_idle',id});
  }
  for(const [id,a] of Object.entries(state.actions||{})){
   const at=dt(a.last_wake_at||a.created_at);
@@ -65,7 +97,33 @@ export function nextWake(state,now=Date.now(),config=settings){
  }
  // An overdue wake is due NOW, not silently dropped. Keep the identity
  // tied to its original deadline so repeated ticks cannot generate a storm.
- const candidates=[...singles,...batches.values()].map(x=>({
+ // v3 incident: batching IDs alone did NOT batch the retry lease. With
+ // 100+ staggered planned notices, each finished wake selected the next oldest
+ // item's distinct deadline and dispatched yet another Actions run a minute
+ // later. Lease the retry KIND, not each owner notification.
+ const interval=(config.muse.retry_seconds||900)*1000;
+ const history=Object.values(state.delayed_wake_history||{});
+ if(state.delayed_wake&&!history.some(x=>x.key===state.delayed_wake.key))
+   history.push(state.delayed_wake);
+ const leasedBatches=[...batches.values()].flatMap(x=>{
+   const recent=history.filter(h=>h.reason===x.reason&&
+     ['requested','reserved','failed'].includes(h.status)&&
+     Number.isFinite(dt(h.requested_at||h.reserved_at)))
+     .sort((a,b)=>dt(b.requested_at||b.reserved_at)-
+       dt(a.requested_at||a.reserved_at))[0];
+   if(!recent)return [x];
+   const lastDue=dt(recent.due_at);
+   const lastAt=dt(recent.requested_at||recent.reserved_at);
+   // An existing future wake already checks the entire pending category.
+   if(Number.isFinite(lastDue)&&lastDue>now)return [];
+   // An unsuccessful workflow dispatch must not be retried on every webhook.
+   if(recent.status==='failed'&&now-lastAt<interval)return [];
+   // When the last wake has fired, schedule just ONE next 15-minute check,
+   // not a different overdue key for each unacknowledged notice.
+   return [{...x,at:Math.max(x.at,now+5000,
+     Number.isFinite(lastDue)?lastDue+interval:0)}];
+ });
+ const candidates=[...singles,...leasedBatches].map(x=>({
    ...x,key:sha(JSON.stringify([config.repo,x.reason,x.id,new Date(x.at).toISOString()]))
  })).filter(x=>{
    // Multiple overdue candidates must not bounce the single delayed_wake

@@ -1,5 +1,6 @@
 // Read-only browser view of the existing GitHub Actions owner-status comment.
 import { renderPublicExtras, loadVerifiedMerges, MERGE_REFRESH_INTERVAL_MS } from "./owner-dashboard-extras.mjs";
+import {initEncryptedOwnerView} from './encrypted-owner-view.mjs';
 // Never request private GitHub data or accept a browser token on this public site.
 export const PUBLIC_COMMENT_URL =
   'https://api.github.com/repos/killbill2792/aicafe/issues/comments/6752417190';
@@ -145,6 +146,7 @@ export async function refresh(fetchFn=fetch) {
 }
 if(typeof document!=='undefined'){
   document.addEventListener('DOMContentLoaded',()=>{
+    initEncryptedOwnerView();
     refresh();
     loadVerifiedMerges();
     setInterval(()=>{if(!document.hidden)refresh();},REFRESH_INTERVAL_MS);

@@ -6,7 +6,7 @@ on:
   # GitHub may delay/drop scheduled events. Keep one five-minute schedule but
   # offset it from the crowded :00/:05/... boundaries.
   schedule:
-    - cron: '2/5 * * * *'
+    - cron: '3/5 * * * *'
   # When main advances, reconcile the already-received courier receipts now,
   # rather than waiting for a best-effort scheduled event. Not a new dispatcher.
   push:
@@ -27,7 +27,7 @@ on:
   pull_request_review:
     types: [submitted, dismissed]
   repository_dispatch:
-    types: [dispatcher_receipt, dispatcher_owner_reply, dispatcher_owner_instruction, dispatcher_delayed]
+    types: [dispatcher_receipt, dispatcher_owner_reply, dispatcher_owner_instruction, dispatcher_delayed, dispatcher_recovery]
   workflow_dispatch:
     inputs:
       persist_private_ledger:

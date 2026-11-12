@@ -16,6 +16,9 @@ export async function githubFailure(response,kind='GitHub',token=''){
   ' retry-after='+h('retry-after');
  const safe=token?detail.split(token).join('[REDACTED]'):detail;
  const error=new Error(safe);
+ // Preserve a typed HTTP status for expected conditions such as a branch
+ // legitimately absent before ChatGPT's first push. Do not parse log text.
+ if(Number.isInteger(response.status))error.status=response.status;
  // Explicit GitHub primary-rate-limit telemetry is not an authorization
  // failure. Callers must fail closed without a futile second ledger write.
  const primary=response.headers?.get?.('x-ratelimit-remaining')==='0';
@@ -147,23 +150,43 @@ export function isDispatcherMaintenanceChange(files) {
       file.filename === '.github/workflows/'+settings.workflows.dispatcher ||
       /^scripts\/dev-dispatcher\//.test(file.filename) ||
       /^\.dispatcher\//.test(file.filename) ||
-      file.filename === '.github/workflows/'+settings.workflows.delayed_wake));
+      file.filename === '.github/workflows/'+settings.workflows.delayed_wake ||
+      file.filename === '.github/workflows/dispatcher-failure-observer.yml'));
 }
 
 export class GitHubFacts {
-  constructor({ repo, token, ownerLogin=settings.owner.login, fetchFn = fetch }) {
+  constructor({ repo, token, ownerLogin=settings.owner.login, fetchFn = fetch,
+    sleepFn = ms => new Promise(resolve=>setTimeout(resolve,ms)) }) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) throw new Error("GitHub repo/token required");
     this.repo = repo; this.token = token; this.fetchFn = fetchFn;
+    this.sleepFn=sleepFn;
     this.ownerLogin=ownerLogin;
   }
   async request(url, options = {}) {
-    const response = await this.fetchFn(url.startsWith("https:") ? url : `https://api.github.com/repos/${this.repo}${url}`, {
-      ...options, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${this.token}`,
-        "X-GitHub-Api-Version": "2022-11-28", ...options.headers },
-    }).catch(()=>{throw githubNetworkFailure('GitHub');});
-    if (!response.ok) throw await githubFailure(response,'GitHub',this.token);
-    if (response.status === 204) return { ok:true };
-    return response.json();
+    const method=String(options.method||'GET').toUpperCase();
+    const canRetry=method==='GET'||method==='HEAD';
+    // Retry only safe reads after upstream/network faults. A write may have
+    // committed despite an HTTP 500; never replay an uncertain side effect.
+    // 429 and rate-limit failures remain explicit instead of retry storms.
+    for(let attempt=0;;attempt++){
+      let response=null;
+      try { response=await this.fetchFn(url.startsWith("https:") ? url :
+        `https://api.github.com/repos/${this.repo}${url}`, {
+          ...options, headers:{Accept:"application/vnd.github+json",
+           Authorization:`Bearer ${this.token}`,
+           "X-GitHub-Api-Version":"2022-11-28", ...options.headers},
+        });}catch{
+        if(canRetry&&attempt<2){await this.sleepFn(150*(attempt+1));continue;}
+        throw githubNetworkFailure('GitHub');
+      }
+      if(!response.ok&&canRetry&&attempt<2&&
+         [500,502,503,504].includes(response.status)){
+        await this.sleepFn(150*(attempt+1));continue;
+      }
+      if(!response.ok)throw await githubFailure(response,'GitHub',this.token);
+      if(response.status===204)return {ok:true};
+      return response.json();
+    }
   }
   // Collection pagination is mandatory for prompt proof transitions: stopping at
   // page one delays integrated_proven indefinitely on busy repositories.
