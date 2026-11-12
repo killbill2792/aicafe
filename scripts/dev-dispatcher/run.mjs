@@ -581,7 +581,7 @@ async function main() {
         if(recovered.recovery_requests?.[item.request.request_id]||
            recovered.recovery_rejections?.[item.request.request_id]){
           recovered.git_recovery_processed_files||={};
-          recovered.git_recovery_processed_files[item.file]=item.request.request_id;
+          recovered.git_recovery_processed_files[item.file]=item.signature;
         }
       }
       if(gitRecoveryScan.rejected.length||gitRecoveryScan.scan_error){
