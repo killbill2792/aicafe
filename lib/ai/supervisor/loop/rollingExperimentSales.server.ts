@@ -13,7 +13,7 @@ export type WindowEvidence={window:ElapsedWindow;status:"actual"|"insufficient_e
 const DAY_MS=86400000;
 function instant(value:string):number{
  const n=Date.parse(value);
- if(!Number.isFinite(n)||!/(Z|[+-]\\d{2}:?\\d{2})$/.test(value))
+ if(!Number.isFinite(n)||!/(Z|[+-]\d{2}:?\d{2})$/.test(value))
   throw new Error("invalid_source_instant");
  return n;
 }

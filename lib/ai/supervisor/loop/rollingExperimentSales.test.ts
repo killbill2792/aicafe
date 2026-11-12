@@ -14,6 +14,14 @@ describe("Task 8a actual source-timed 24-hour periods",()=>{
    "2026-03-10T00:00:00.000Z"]);
   for(const w of list)expect(Date.parse(w.endAt)-Date.parse(w.startAt)).toBe(86400000);
  });
+ it("accepts database timestamps with explicit numeric UTC offsets",()=>{
+  expect(planElapsed24HourWindows("2026-11-11T18:01:00+00:00",1)[0].startAt)
+   .toBe("2026-11-11T18:01:00.000Z");
+  expect(planElapsed24HourWindows("2026-11-11T18:01:00-08:00",1)[0].startAt)
+   .toBe("2026-11-12T02:01:00.000Z");
+  expect(()=>planElapsed24HourWindows("2026-11-11T18:01:00",1))
+   .toThrow("invalid_source_instant");
+ });
  it("measures fall DST in elapsed hours, not 25-hour café days",()=>{
   const list=planElapsed24HourWindows("2026-11-01T08:00:00Z",2);
   expect(list[1].startAt).toBe("2026-11-02T08:00:00.000Z");
