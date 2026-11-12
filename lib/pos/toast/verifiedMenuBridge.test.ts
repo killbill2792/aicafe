@@ -12,15 +12,11 @@ const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const itemGuid="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const posItemId="toast:"+restaurant+":"+itemGuid;
-const scope={businessId:business,restaurantGuid:restaurant, locationId:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",
- timezone:"America/Los_Angeles",deadlineAt:Date.now()+600000};
-const bundle={items:[{posItemId,name:"Latte",baseName:"Latte", category:"DRINK",sizeLabel:null,priceCents:550,modifierGroups:[]}],
- facts:[{kind:"item",provider_guid:itemGuid,name:"Latte",category:"Coffee",
- price_cents:550,pricing_strategy:"BASE_PRICE",modifier_group_guids:[]}],
- receipt:{restaurantGuid:restaurant,publicationVersion:"2026-11-10T15:00:00Z", observedAt:"2026-11-10T16:00:00Z"}};
+const scope={businessId:business,restaurantGuid:restaurant, locationId:"dddddddd-dddd-4ddd-8ddd-dddddddddddd", timezone:"America/Los_Angeles",deadlineAt:Date.now()+600000};
+const bundle={items:[{posItemId,name:"Latte",baseName:"Latte", category:"DRINK",sizeLabel:null,priceCents:550,modifierGroups:[]}], facts:[{kind:"item",provider_guid:itemGuid,name:"Latte",category:"Coffee",
+ price_cents:550,pricing_strategy:"BASE_PRICE",modifier_group_guids:[]}], receipt:{restaurantGuid:restaurant,publicationVersion:"2026-11-10T15:00:00Z", observedAt:"2026-11-10T16:00:00Z"}};
 function mockDB(){
- const previous={menu_last_updated:"2026-11-09T15:00:00Z", menu_copied_at:"2026-11-09T16:00:00Z",menu_checked_local_day:"2026-11-09",
-  menu_pending_observations:[] as string[]};
+ const previous={menu_last_updated:"2026-11-09T15:00:00Z", menu_copied_at:"2026-11-09T16:00:00Z",menu_checked_local_day:"2026-11-09", menu_pending_observations:[] as string[]};
  const now={...previous};
  const writes:Record<string,unknown>[]=[];
  const storedObservations=new Map<string,{version:string;observedAt:string}>();
@@ -67,8 +63,7 @@ function mockDB(){
     return q;
    }
    if(table!=="toast_optional_sync_state")throw new Error("unexpected:"+table);
-   const q={select(_s:string){return q;},eq(_k:string,_v:unknown){return q;}, async maybeSingle(){return {data:{...now},error:null};},
-    async upsert(input:Record<string,unknown>){
+   const q={select(_s:string){return q;},eq(_k:string,_v:unknown){return q;}, async maybeSingle(){return {data:{...now},error:null};}, async upsert(input:Record<string,unknown>){
      Object.assign(now,input);writes.push({...input});return {error:null};
     }, update(input:Record<string,unknown>){
      const query={eq(_k:string,_v:unknown){return query;}, then(resolve:(v:{error:unknown})=>unknown){
@@ -101,17 +96,14 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(m.legacyFacts).not.toHaveBeenCalled();
   expect(m.stage).toHaveBeenCalledWith(f.db,scope,bundle.facts);
   expect(m.apply).toHaveBeenCalledWith(f.db,business,bundle);
-  expect(f.rpc).toHaveBeenCalledWith("toast_verify_existing_price_history",
-   expect.objectContaining({p_business_id:business,p_restaurant_guid:restaurant,
-    p_item_pos_id:posItemId,p_version:bundle.receipt.publicationVersion, p_price_cents:550}));
+  expect(f.rpc).toHaveBeenCalledWith("toast_verify_existing_price_history", expect.objectContaining({p_business_id:business,p_restaurant_guid:restaurant, p_item_pos_id:posItemId,p_version:bundle.receipt.publicationVersion, p_price_cents:550}));
   expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
   expect(f.writes[0]).toEqual(expect.objectContaining({
    menu_last_updated:"pending:"+bundle.receipt.publicationVersion, menu_checked_local_day:null,menu_copied_at:bundle.receipt.observedAt}));
   expect(f.writes[1]).toEqual(expect.objectContaining({
    menu_last_updated:bundle.receipt.publicationVersion, menu_checked_local_day:null,menu_copied_at:bundle.receipt.observedAt}));
   expect(f.now.menu_pending_observations).toEqual([bundle.receipt.observedAt]);
-  expect(f.rpc).toHaveBeenCalledWith("toast_record_pending_menu_observation",
-   expect.objectContaining({p_first_observed_at:bundle.receipt.observedAt, p_observed_at:bundle.receipt.observedAt}));
+  expect(f.rpc).toHaveBeenCalledWith("toast_record_pending_menu_observation", expect.objectContaining({p_first_observed_at:bundle.receipt.observedAt, p_observed_at:bundle.receipt.observedAt}));
   expect(result.verifiedPriceChanges).toBe(1);
  });
  it("refuses a wrong-restaurant receipt before any writer runs",async()=>{
@@ -157,8 +149,7 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(m.bundle).toHaveBeenCalledTimes(2);
   expect(m.apply).toHaveBeenLastCalledWith(f.db,business,expect.objectContaining({
    receipt:expect.objectContaining({observedAt:bundle.receipt.observedAt})}));
-  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history",
-   expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
+  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history", expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
   expect(result.changed).toBe(0);
   expect(result.verifiedPriceChanges).toBe(1);
   expect(f.now.menu_checked_local_day).not.toBeNull();
@@ -182,8 +173,7 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(f.now.menu_pending_observations).toEqual([ bundle.receipt.observedAt,retryObservedAt]);
   expect(f.rpc.mock.calls.filter(([name])=>name==="toast_verify_existing_price_history"))
    .toHaveLength(1);
-  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history",
-   expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
+  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history", expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
   expect(result.verifiedPriceChanges).toBe(1);
   expect(f.now.menu_checked_local_day).not.toBeNull();
  });
@@ -205,8 +195,7 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(m.canonical).toHaveBeenCalledTimes(2);
   expect(m.bundle).toHaveBeenCalledTimes(3);
   expect(f.now.menu_pending_observations).toEqual([ bundle.receipt.observedAt,secondAt,thirdAt]);
-  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history",
-   expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
+  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history", expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
   expect(result.verifiedPriceChanges).toBe(1);
   expect(f.now.menu_checked_local_day).not.toBeNull();
  });
@@ -230,13 +219,10 @@ describe("POS0 verified single-bundle source handoff",()=>{
  it("reconciles unfinished V1 price evidence before advancing to V2",async()=>{
   const f=mockDB();m.apply.mockRejectedValueOnce(new Error("V1 promotion failed"));
   await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow("V1 promotion failed");
-  const next={...bundle,receipt:{...bundle.receipt,
-   publicationVersion:"2026-11-11T15:00:00Z",observedAt:"2026-11-11T16:00:00Z"}};
+  const next={...bundle,receipt:{...bundle.receipt, publicationVersion:"2026-11-11T15:00:00Z",observedAt:"2026-11-11T16:00:00Z"}};
   m.bundle.mockResolvedValueOnce(next);
   await copyToastPublishedMenu(f.db,scope);
-  expect(f.rpc).toHaveBeenCalledWith("toast_reconcile_superseded_menu_history",
-   expect.objectContaining({p_version:bundle.receipt.publicationVersion,
-    p_first_observed_at:bundle.receipt.observedAt}));
+  expect(f.rpc).toHaveBeenCalledWith("toast_reconcile_superseded_menu_history", expect.objectContaining({p_version:bundle.receipt.publicationVersion, p_first_observed_at:bundle.receipt.observedAt}));
   expect(f.now.menu_pending_observations).toEqual([next.receipt.observedAt]);
   expect(f.now.menu_last_updated).toBe(next.receipt.publicationVersion);
  });
@@ -244,8 +230,7 @@ describe("POS0 verified single-bundle source handoff",()=>{
   const f=mockDB();m.apply.mockRejectedValueOnce(new Error("V1 promotion failed"));
   await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow("V1 promotion failed");
   const writes=f.writes.length;f.failSuperseded.value=true;
-  m.bundle.mockResolvedValueOnce({...bundle,receipt:{...bundle.receipt,
-   publicationVersion:"2026-11-11T15:00:00Z",observedAt:"2026-11-11T16:00:00Z"}});
+  m.bundle.mockResolvedValueOnce({...bundle,receipt:{...bundle.receipt, publicationVersion:"2026-11-11T15:00:00Z",observedAt:"2026-11-11T16:00:00Z"}});
   await expect(copyToastPublishedMenu(f.db,scope)).rejects.toMatchObject({category:"unavailable"});
   expect(f.writes).toHaveLength(writes);
   expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
