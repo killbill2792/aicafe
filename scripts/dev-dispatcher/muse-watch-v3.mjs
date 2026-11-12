@@ -239,7 +239,7 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
     if(!token)return {backlog:next,
       results:[{status:'WAITING_FOR_AUTHORIZED_WAKE_TOKEN'}]};
     const repo=outstanding[0].request.repo;
-    if(!/^[\\w.-]+\\/[\\w.-]+$/.test(repo)||outstanding.some(item=>item.request.repo!==repo))
+    if(repo!==settings.repo||outstanding.some(item=>item.request.repo!==repo))
       throw Error('Inconsistent signed Git wake repository');
     next.last_rest_wake_at=now;
     try{
