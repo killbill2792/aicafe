@@ -2,61 +2,90 @@
 // GitHub planner comments are UNTRUSTED proposals, never owner authorization.
 import {createHash} from 'node:crypto';
 import {settings} from './settings.mjs';
-import {noticeHash} from './alerts.mjs';
-import {proposalSourceHash} from './proposal-stage.mjs';
-import {validateQueue,editableFiles} from './core.mjs';
+import {noticeHash,queueOwnerIssue,resolveOwnerIssueIdentity} from './alerts.mjs';
+import {proposalSourceHash,createScopePlanDelivery} from './proposal-stage.mjs';
+import {validateQueue,editableFiles,validEditPath} from './core.mjs';
 import {approvalSignature} from './delivery.mjs';
 
 const digest=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const taskId=id=>typeof id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id);
-const pathOK=p=>typeof p==='string'&&p.length>0&&p.length<240&&
- !p.startsWith('/')&&!p.includes('*')&&!p.split('/').includes('..')&&
- /^[a-zA-Z0-9_./-]+$/.test(p);
+// Use the same repository-path validator at proposal and signed-queue time.
+const pathOK=validEditPath;
 const yes=s=>/^yes(?:[.!]|(?:\s+to\s+(?:start|proceed))[.!]?)?$/i.test(String(s||'').trim());
 
 // Plans go on the existing owner-control issue #411, not a new PR, queue, job
 // or comment channel. The ChatGPT planning agent must post this one-line marker:
 // <!-- aicafe-scope-plan:v1 {"task_id":"...","action_id":"...","proposal_source_sha":"...","edits":["..."],"uses":["..."],"architecture":"source fields / keys / readers / what changes / gaps / multi-cafe","acceptance_plan":"..."} -->
-const pattern=/<!-- aicafe-scope-plan:v1 (\{[^\r\n]{1,6000}\}) -->/g;
-export function parseScopePlanComment(comment,queue,state){
- if(comment?.user?.login!==settings.owner.login ||
-    comment?.author_association!=='OWNER'||!Number.isSafeInteger(comment.id)||
-    !Number.isFinite(Date.parse(comment.created_at||''))||
-    typeof comment.body!=='string')return null;
+// GitHub already bounds comment payloads. Do not impose a second arbitrary
+// 6-KB ceiling or require the authenticated JSON to fit on one line.
+const pattern=/<!--\s*aicafe-scope-plan:v1\s+([\s\S]*?)\s*-->/g;
+// Every authenticated owner scope candidate receives one stable reason code.
+// The same verifier powers approval, correction and durable rejection audit;
+// never maintain a second approximation with different rules.
+export function inspectScopePlanComment(comment,queue,state) {
+ const reject=(code,task=null)=>({accepted:false,code,
+  task_id:task,comment_id:comment?.id||null});
+ if(typeof comment?.body!=='string'||!comment.body.includes('aicafe-scope-plan:v1'))
+  return reject('no_scope_marker');
+ if(comment?.user?.login!==settings.owner.login||
+    comment?.author_association!=='OWNER')return reject('unauthenticated_author');
+ if(!Number.isSafeInteger(comment.id)||
+    !Number.isFinite(Date.parse(comment.created_at||'')))
+  return reject('missing_authenticated_comment_metadata');
  const matches=[...comment.body.matchAll(pattern)];
- if(matches.length!==1)return null;
- let draft;try{draft=JSON.parse(matches[0][1]);}catch{return null;}
- if(!taskId(draft.task_id)||typeof draft.action_id!=='string'||
-    !Array.isArray(draft.edits)||!draft.edits.length||draft.edits.length>25||
-    !draft.edits.every(pathOK)||new Set(draft.edits).size!==draft.edits.length||
-    !Array.isArray(draft.uses||[])||!(draft.uses||[]).every(pathOK)||
-    new Set(draft.uses||[]).size!==(draft.uses||[]).length||
-    typeof draft.architecture!=='string'||draft.architecture.trim().length<80||
-    draft.architecture.length>1800||typeof draft.acceptance_plan!=='string'||
-    draft.acceptance_plan.trim().length<30||draft.acceptance_plan.length>1300)
-   return null;
- const task=queue.tasks.find(t=>t.id===draft.task_id);
- const rec=state.tasks?.[draft.task_id], action=state.actions?.[draft.action_id];
- if(!task||task.state!=='proposed'||task.architecture_approval?.approved===true||
-    !rec?.scope_plan_completed||!rec?.conversation_ref||
-    rec.proposal_source_sha!==proposalSourceHash(task)||
-    draft.proposal_source_sha!==rec.proposal_source_sha||
-    action?.task_id!==task.id||
-    !['scope_plan','scope_plan_update'].includes(action.type)||
-    action.status!=='submitted'||!action.receipt||
-    action.delivery?.approval_hash!==action.receipt?.approval_hash &&
-      action.receipt?.approval_hash!=null||
-    !Number.isFinite(Date.parse(action.submitted_at||''))||
-    Date.parse(comment.created_at)<Date.parse(action.submitted_at))return null;
- // Authenticated owner approval later is still mandatory. Nothing in this
- // untrusted comment can authorize a code effect or override queue dependencies.
- const normalized={task_id:task.id,edits:draft.edits,
-   uses:draft.uses||[],architecture:draft.architecture.trim(),
-   acceptance_plan:draft.acceptance_plan.trim(),
-   comment_id:comment.id,comment_url:comment.html_url,
-   comment_created_at:comment.created_at,
-   proposal_source_sha:draft.proposal_source_sha,action_id:draft.action_id};
- return {...normalized,plan_hash:digest(normalized)};
+ if(matches.length!==1)return reject('marker_count_not_one');
+ let draft;
+ try {draft=JSON.parse(matches[0][1]);}
+ catch {return reject('invalid_json');}
+ if(!draft||typeof draft!=='object'||Array.isArray(draft))
+  return reject('scope_must_be_object');
+ if(!taskId(draft.task_id))return reject('invalid_task_id');
+ const id=draft.task_id;
+ if(typeof draft.action_id!=='string'||!draft.action_id)return reject('missing_action_id',id);
+ if(!Array.isArray(draft.edits)||!draft.edits.length)return reject('missing_edits',id);
+ if(!draft.edits.every(pathOK))return reject('invalid_exact_edit_path',id);
+ if(new Set(draft.edits).size!==draft.edits.length)return reject('duplicate_edit_path',id);
+ if(!Array.isArray(draft.uses||[])||!(draft.uses||[]).every(pathOK))
+  return reject('invalid_read_only_path',id);
+ if(new Set(draft.uses||[]).size!==(draft.uses||[]).length)
+  return reject('duplicate_read_only_path',id);
+ if(typeof draft.architecture!=='string'||!draft.architecture.trim())
+  return reject('missing_architecture',id);
+ if(typeof draft.acceptance_plan!=='string'||!draft.acceptance_plan.trim())
+  return reject('missing_acceptance_plan',id);
+ const task=queue.tasks.find(t=>t.id===id);
+ if(!task)return reject('unknown_task',id);
+ if(task.state!=='proposed'||task.architecture_approval?.approved===true)
+  return reject('task_no_longer_in_planning',id);
+ const rec=state.tasks?.[id],action=state.actions?.[draft.action_id];
+ if(!rec?.scope_plan_completed)return reject('planning_receipt_incomplete',id);
+ if(!rec?.conversation_ref)return reject('planning_chat_not_verified',id);
+ if(rec.proposal_source_sha!==proposalSourceHash(task)||
+    draft.proposal_source_sha!==rec.proposal_source_sha)
+  return reject('stale_planning_source',id);
+ if(!action||action.task_id!==id)return reject('wrong_or_missing_signed_action',id);
+ if(!['scope_plan','scope_plan_update'].includes(action.type))
+  return reject('not_a_planning_action',id);
+ if(action.status!=='submitted'||!action.receipt)
+  return reject('planning_delivery_receipt_unverified',id);
+ if(action.delivery?.approval_hash!==action.receipt?.approval_hash&&
+    action.receipt?.approval_hash!=null)
+  return reject('planning_approval_hash_mismatch',id);
+ const submitted=Date.parse(action.submitted_at||'');
+ if(!Number.isFinite(submitted))return reject('planning_submission_time_unverified',id);
+ if(Date.parse(comment.created_at)<submitted)
+  return reject('comment_before_authenticated_delivery',id);
+ const normalized={task_id:id,edits:draft.edits,
+  uses:draft.uses||[],architecture:draft.architecture.trim(),
+  acceptance_plan:draft.acceptance_plan.trim(),
+  comment_id:comment.id,comment_url:comment.html_url,
+  comment_created_at:comment.created_at,
+  proposal_source_sha:draft.proposal_source_sha,action_id:draft.action_id};
+ return {accepted:true,plan:{...normalized,plan_hash:digest(normalized)}};
+}
+export function parseScopePlanComment(comment,queue,state){
+ const result=inspectScopePlanComment(comment,queue,state);
+ return result.accepted?result.plan:null;
 }
 // Compare authenticated issue comments and verified cached notices by their
 // original GitHub chronology. Ledger insertion order is not scope precedence.
@@ -69,7 +98,7 @@ const newerPlan=(candidate,previous)=>{
 };
 export function selectScopePlans(comments,queue,state){
  const latest={};
- if(!Array.isArray(comments)||comments.length>100)throw Error('Unbounded GitHub scope plans');
+ if(!Array.isArray(comments))throw Error('Invalid GitHub scope comment snapshot');
  for(const c of comments){
    const x=parseScopePlanComment(c,queue,state);
    if(!x)continue;
@@ -144,13 +173,13 @@ export function queueScopePlanReviews(state,queue,plans,{now=new Date().toISOStr
    if(n.kind==='scope_plan_review'&&n.task_id===task.id&&
       n.status==='planned'&&(!plan||n.source_sha!==plan.plan_hash))
       n.status='cancelled_no_longer_needed';
-  const message=conflicts.length
-    ? 'Scope proposal for Task '+task.id+' has OWNERSHIP CONFLICTS ('+
-       conflicts.join(', ')+'). Return to the planner; do not approve or edit overlapping files.'
-    : 'Exact implementation scope for Task '+task.id+' is ready for your separate file/architecture decision. Files: '+
-      'Full plan: '+plan.comment_url+'. Files: '+plan.edits.join(', ')+'. Architecture: '+plan.architecture.slice(0,220)+
-      '. Acceptance plan: '+plan.acceptance_plan.slice(0,160)+
-      '. Reply YES to approve THESE exact files via Muse, or request changes. Your original task-goal yes remains valid.';
+  const message='Exact implementation scope for Task '+task.id+
+    ' is ready for your separate file/architecture decision. Full plan: '+plan.comment_url+
+    '. Proposed edit paths: '+plan.edits.length+'. '+
+    (conflicts.length?'Shared edit paths: '+conflicts.join(', ')+
+      '. These are allowed for parallel coding and require ordered integration, not a new scope. ':'')+
+    'Reply YES to approve the linked exact scope via Muse, or request material changes. '+
+    'Your original task-goal approval remains valid.';
   const question=message.slice(0,1100);
   const hash=noticeHash({kind:'scope_plan_review',task_id:task.id,
     source_sha:plan.plan_hash,question});
@@ -164,7 +193,7 @@ export function queueScopePlanReviews(state,queue,plans,{now=new Date().toISOStr
    status:'planned',created_at:now,
    target_url:plan.comment_url||'https://github.com/'+settings.repo+'/issues/411',
    scope_plan:structuredClone(plan),
-   ...(conflicts.length?{scope_conflicts:conflicts}:{}),
+   ...(conflicts.length?{scope_overlaps:conflicts}:{}),
   };
  }
  return next;
@@ -204,7 +233,6 @@ export function acceptScopePlanDecisions(state,queue,plans,{now=new Date().toISO
      }
      continue;
    }
-   if(approvedScopeOverlap(plan,queue,next).length)continue;
    if(prior?.plan_hash===plan.plan_hash)continue;
    const scope={task_id:task.id,proposal_source_sha:plan.proposal_source_sha,
      plan_hash:plan.plan_hash,plan_comment_id:plan.comment_id,
@@ -256,6 +284,126 @@ export function effectiveSignedQueue(queue,state,plans={}){
      plan_hash:signed.plan_hash}};
  });
  const result={...queue,tasks};
- validateQueue(result); // hard fail on two exclusive path owners
+ validateQueue(result); // validate signed paths and DAG; overlap is merge-gated
  return result;
+}
+
+
+// Progress is checked, never time-limited: an agent may still be writing.
+// GitHub's authenticated comment is the source of truth; only when it is
+// missing or invalid does the existing Muse courier check the SAME chat.
+// A correction remains a signed planning action, not coding permission.
+export function queueScopePlanRecovery(state,queue,comments,plans,{
+ now=new Date().toISOString(),checkMinutes=30
+}={}) {
+ const next=structuredClone(state);next.actions||={};next.scope_rejections||={};
+ // Retain the diagnosis as ledger data, and also queue a deduplicated Muse
+ // owner notice. A bad comment cannot block unrelated tasks or disappear.
+ for(const c of comments||[]) {
+  if(typeof c?.body!=='string'||!c.body.includes('aicafe-scope-plan:v1')||
+     c.user?.login!==settings.owner.login||c.author_association!=='OWNER'||
+     !Number.isSafeInteger(c.id))continue;
+  const checked=inspectScopePlanComment(c,queue,next);
+  const key=String(c.id),prior=next.scope_rejections[key];
+  const later=checked.task_id&&plans?.[checked.task_id]&&
+    plans[checked.task_id].comment_id>c.id;
+  if(checked.accepted||later){
+   if(prior&&prior.status!=='resolved'){
+    prior.status='resolved';prior.resolved_at=now;
+    const clean=resolveOwnerIssueIdentity(next,{kind:'scope_plan_rejected',
+     task_id:prior.task_id,identity:key+':'+prior.code});
+    next.owner_alerts=clean.owner_alerts;
+   }
+   continue;
+  }
+  if(!prior){
+   next.scope_rejections[key]={comment_id:c.id,task_id:checked.task_id||null,
+    code:checked.code,status:'open',observed_at:now};
+  }else if(prior.code===checked.code&&prior.status==='resolved'){
+   // A source can be superseded but never re-authorized by its old comment.
+   continue;
+  }else if(prior.code!==checked.code){
+   prior.code=checked.code;prior.status='open';prior.observed_at=now;
+  }
+  const incident=queueOwnerIssue(next,{kind:'scope_plan_rejected',
+   task_id:checked.task_id||null,identity:key+':'+checked.code,
+   message:'GitHub scope comment #'+c.id+' is not authorized ('+checked.code+').',
+   needs:'Review the existing scope-planning chat and signed action; do not infer code approval'});
+  next.owner_alerts=incident.owner_alerts;
+ }
+ const latest=new Map();
+ for(const c of comments||[]) {
+  if(c?.user?.login!==settings.owner.login||
+     c.author_association!=='OWNER'||!Number.isSafeInteger(c.id)||
+     typeof c.body!=='string'||!c.body.includes('aicafe-scope-plan:v1'))
+    continue;
+  // Even malformed JSON can be associated with its previously authenticated
+  // submitted planning action; do not treat an arbitrary comment as a prompt.
+  const id=c.body.match(/"task_id"\s*:\s*"([a-zA-Z0-9_-]+)"/)?.[1];
+  const actionId=c.body.match(/"action_id"\s*:\s*"([^"]+)"/)?.[1];
+  const source=c.body.match(/"proposal_source_sha"\s*:\s*"([a-f0-9]{64})"/)?.[1];
+  if(!id||!actionId||!source)continue;
+  const prior=latest.get(id);
+  if(!prior||c.id>prior.comment.id)latest.set(id,{comment:c,actionId,source});
+ }
+ const ms=Math.max(1,Number(checkMinutes)||30)*60000;
+ for(const task of queue.tasks||[]) {
+  const rec=next.tasks?.[task.id];
+  if(!rec?.planning_approved||rec.approved===true||
+     !['scope_planning','scope_plan_sent'].includes(rec.status)||
+     !rec.conversation_ref||Number.isInteger(rec.pr_number)||
+     rec.proposal_source_sha!==proposalSourceHash(task))continue;
+  const submitted=Object.entries(next.actions).filter(([,a])=>
+    a.task_id===task.id&&['scope_plan','scope_plan_update'].includes(a.type)&&
+    a.status==='submitted'&&a.proposal_source_sha===rec.proposal_source_sha&&
+    a.receipt);
+  if(!submitted.length)continue; // uncertain courier send stays held
+  const published=plans?.[task.id];
+  // A validated latest scope (including a durable, page-shifted approval)
+  // supersedes all undelivered pre-PR reminders.
+  const raw=latest.get(task.id);
+  if(published&&(!raw||published.comment_id>=raw.comment.id)) {
+   for(const a of Object.values(next.actions))
+    if(a.task_id===task.id&&a.scope_recovery===true&&a.status==='planned')
+     a.status='cancelled_no_longer_needed';
+   continue;
+  }
+  const active=Object.values(next.actions).some(a=>a.task_id===task.id&&
+    a.scope_recovery===true&&
+    ['planned','claimed','uncertain','needs_login'].includes(a.status));
+  if(active)continue;
+  let reason=null,key=null;
+  if(raw&&(!published||raw.comment.id>published.comment_id)) {
+   const action=next.actions[raw.actionId];
+   if(!action||action.task_id!==task.id||action.status!=='submitted'||
+      !['scope_plan','scope_plan_update'].includes(action.type)||
+      raw.source!==rec.proposal_source_sha)continue;
+   const inspected=inspectScopePlanComment(raw.comment,queue,next);
+   if(inspected.accepted)continue;
+   reason='Rejected by the authoritative scope verifier: '+inspected.code+'.';
+   key='scope_plan_update:'+encodeURIComponent(task.id)+':comment-'+raw.comment.id;
+   reason='Published GitHub scope '+(raw.comment.html_url||'#'+raw.comment.id)+
+     ' was NOT accepted. '+reason+' Continue in this existing planning chat; republish a corrected GitHub comment, without another goal approval.';
+  } else if(!published) {
+   const newest=[...submitted].sort((a,b)=>
+     Date.parse(b[1].submitted_at||b[1].receipt?.submitted_at||b[1].created_at||'')-
+     Date.parse(a[1].submitted_at||a[1].receipt?.submitted_at||a[1].created_at||''))[0];
+   const history=Object.values(next.actions).filter(a=>
+     a.task_id===task.id&&a.scope_recovery===true);
+   const last=history.at(-1)||newest[1];
+   const observed=Date.parse(last.submitted_at||last.receipt?.submitted_at||
+      last.created_at||rec.planning_approved_at||'');
+   if(!Number.isFinite(observed)||Date.parse(now)-observed<ms)continue;
+   key='scope_plan_update:'+encodeURIComponent(task.id)+':check-'+(history.length+1);
+   reason='Progress check only: GitHub has no verified scope-plan comment for this task. Muse must inspect whether the existing chat is still generating; do not interrupt an active chat. If idle, ask the planner to publish the plan or provide its actual GitHub comment URL. Do not open a second chat or claim the plan is missing if it is already published.';
+  }
+  if(!key||next.actions[key])continue;
+  const delivery=createScopePlanDelivery(task,{actionId:key,
+   approvalHash:rec.approval_hash,conversationUrl:rec.conversation_ref,
+   correction:reason});
+  next.actions[key]={task_id:task.id,type:'scope_plan_update',
+   status:'planned',delivery_owner:'muse',scope_recovery:true,
+   proposal_source_sha:rec.proposal_source_sha,created_at:now,delivery};
+ }
+ return next;
 }

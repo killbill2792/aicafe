@@ -18,7 +18,7 @@ import type {BoundOwner} from "@/lib/whatsapp/identity.server";
  * day, before it opens: per-café send time (briefSchedule), never blocked by a
  * missing extra, and every skip recorded with its step and reason.
  * One canonical snapshot and rollup per café, then one Supervisor message per owner. */
-export type BriefRun={checked:number;sent:number;skipped:number;failed:number};
+export type BriefRun={checked:number;sent:number;skipped:number;failed:number;failureReasons:string[]};
 export type BriefRunKind="scheduled"|"test";
 export type OutboxResult={outcome:"queued"}|(Blocked&{outcome:"skipped"|"failed"});
 export type BriefOutboxHook=(input:{
@@ -27,9 +27,12 @@ export type BriefOutboxHook=(input:{
   websiteText:string;eligible:EligibleBrief|null;sendBefore:string;
 })=>Promise<OutboxResult|void>;
 export type StepResult={step:string;outcome:BriefRunOutcome;reason:string;details?:Record<string,unknown>};
-export type OwnerBriefResult={ownerUserId:string;inApp:StepResult;whatsapp:StepResult};
+export type OwnerBriefResult={ownerUserId:string;inApp:StepResult;whatsapp:StepResult;
+  /** Failed durable outcome writes; delivery itself may already have succeeded. */
+  runRecordFailures?:Array<"in_app"|"whatsapp">};
 export type CafeBriefResult=StepResult&{businessId:string;localDate:string|null;
-  schedule?:Pick<BriefSchedule,"phase"|"hoursSource"|"latestSendLocal"|"sendBefore">;
+  schedule?:(Pick<BriefSchedule,"phase"|"hoursSource"|"latestSendLocal"|"sendBefore">&
+    {openHoursRead:"available"|"not_found"|"failed"});
   missing?:string[];owners:OwnerBriefResult[]};
 
 type Business={id:string;name?:string|null;currency:string|null;timezone:string|null;is_demo?:boolean|null};
@@ -44,27 +47,63 @@ const states=(db:SupabaseClient)=>new SnapshotCafeStateService(
   async(id,period)=>getBusinessSnapshotFromDb(db,id,period??"month"));
 
 /** Cron: every café, every 5 minutes; each café decides whether it is due. */
+const BLOCKED_IN_APP_REASONS=new Set(["missed_send_window","no_timezone","invalid_timezone",
+  "no_owner","no_chat_thread"]);
+
 export async function sendDailyBriefs(db:SupabaseClient,now=new Date(),outbox?:BriefOutboxHook):Promise<BriefRun>{
-  const run:BriefRun={checked:0,sent:0,skipped:0,failed:0};
+  const run:BriefRun={checked:0,sent:0,skipped:0,failed:0,failureReasons:[]};
+  const failures=new Set<string>();
   for(let offset=0;;offset+=100){
     const {data,error}=await db.from("businesses").select("id,name,timezone,currency,is_demo")
       .order("id",{ascending:true}).range(offset,offset+99);
     if(error)throw new Error("businesses_unavailable");
     for(const b of (data??[]) as Business[]){
       if(b.is_demo)continue; // Sample cafés have no owner to brief.
-      const result=await runCafeBrief(db,b,now,{kind:"scheduled",outbox}).catch(()=>null);
-      if(!result){run.checked++;run.failed++;continue;}
+      const result=await runCafeBrief(db,b,now,{kind:"scheduled",outbox}).catch(async(error:unknown)=>{
+        const reason=error instanceof Error&&error.message==="brief_run_persistence_failed"
+          ?"run_record_persistence_failed":"brief_processing_failed";
+        console.error("daily_brief_cafe_failed",{businessId:b.id,reason});
+        run.checked++;run.failed++;failures.add(reason);
+        if(reason!=="run_record_persistence_failed"){
+          let localDate=now.toISOString().slice(0,10);
+          try{if(b.timezone)localDate=briefSchedule(now,b.timezone,null).today;}catch{}
+          try{
+            await recordBriefRun(db,{businessId:b.id,localDate,ownerKey:CAFE_OWNER_KEY,
+              channel:"in_app",runKind:"scheduled",step:"cafe",outcome:"failed",reason},now);
+          }catch{
+            console.error("daily_brief_run_record_failed",{businessId:b.id,
+              reason:"run_record_persistence_failed"});
+          }
+        }
+        return null;
+      });
+      if(!result)continue;
       if(result.reason==="not_due")continue;
       run.checked++;
-      if(!result.owners.length){if(result.outcome==="failed")run.failed++;else run.skipped++;continue;}
+      if(!result.owners.length){
+        if(result.outcome==="failed"||BLOCKED_IN_APP_REASONS.has(result.reason)){
+          run.failed++;failures.add(result.reason);
+        }else run.skipped++;
+        continue;
+      }
       for(const owner of result.owners){
+        if(owner.runRecordFailures?.length){
+          run.failed+=owner.runRecordFailures.length;
+          failures.add("run_record_persistence_failed");
+        }
         if(owner.inApp.outcome==="sent"&&owner.inApp.reason==="posted")run.sent++;
-        else if(owner.inApp.outcome==="failed")run.failed++;
-        else run.skipped++;
+        else if(owner.inApp.outcome==="failed"||
+          (owner.inApp.outcome==="skipped"&&BLOCKED_IN_APP_REASONS.has(owner.inApp.reason))){
+          run.failed++;failures.add(owner.inApp.reason);
+        }else run.skipped++;
+        if(owner.whatsapp.outcome==="failed"){
+          run.failed++;failures.add(owner.whatsapp.reason);
+        }
       }
     }
     if((data??[]).length<100)break;
   }
+  run.failureReasons=[...failures].sort();
   return run;
 }
 
@@ -75,22 +114,26 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
   const utcDay=now.toISOString().slice(0,10);
   const cafeStep=async(localDate:string,r:StepResult,extra:Partial<CafeBriefResult>={}):Promise<CafeBriefResult>=>{
     // Which send time applied (incl. "default_unknown_hours") is in every record.
-    const hours=extra.schedule?{latestSend:extra.schedule.latestSendLocal,hours:extra.schedule.hoursSource}:{};
+    const hours=extra.schedule?{latestSend:extra.schedule.latestSendLocal,hours:extra.schedule.hoursSource,
+      openHoursRead:extra.schedule.openHoursRead}:{};
     await recordBriefRun(db,{businessId:b.id,localDate,ownerKey:CAFE_OWNER_KEY,channel:"in_app",
       runKind:opts.kind,...r,details:{...hours,...r.details}},now);
     return {...r,businessId:b.id,localDate,owners:[],...extra};
   };
   if(!b.timezone)return cafeStep(utcDay,{step:"schedule",outcome:"skipped",reason:"no_timezone"});
   const timezone=b.timezone;
-  const location=await readPrimaryLocation(db,b.id).catch(()=>null);
+  let location:Awaited<ReturnType<typeof readPrimaryLocation>>=null;
+  let locationReadFailed=false;
+  try{location=await readPrimaryLocation(db,b.id);}catch{locationReadFailed=true;}
   let schedule:BriefSchedule;
   try{schedule=briefSchedule(now,timezone,normalizeOpenHours(location?.open_hours));}
   catch{return cafeStep(utcDay,{step:"schedule",outcome:"skipped",reason:"invalid_timezone"});}
+  const openHoursRead:"available"|"not_found"|"failed"=locationReadFailed?"failed":location?"available":"not_found";
   const scheduleInfo={phase:schedule.phase,hoursSource:schedule.hoursSource,
-    latestSendLocal:schedule.latestSendLocal,sendBefore:schedule.sendBefore};
-  const scheduleDetails={latestSend:schedule.latestSendLocal,hours:schedule.hoursSource};
+    latestSendLocal:schedule.latestSendLocal,sendBefore:schedule.sendBefore,openHoursRead};
+  const scheduleDetails={latestSend:schedule.latestSendLocal,hours:schedule.hoursSource,openHoursRead};
   const test=opts.kind==="test";
-  if(!test&&(schedule.phase==="early"||schedule.phase==="done"))
+  if(!test&&schedule.phase==="early")
     return {step:"schedule",outcome:"waiting",reason:"not_due",businessId:b.id,
       localDate:schedule.today,schedule:scheduleInfo,owners:[]};
   if(test&&b.is_demo)return cafeStep(schedule.today,
@@ -104,7 +147,7 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
     return cafeStep(schedule.today,{step:"pos_sync",outcome:"waiting",
       reason:"yesterday_pos_data_not_complete",details:{...scheduleDetails,missing}},
       {schedule:scheduleInfo,missing});
-  if(!evidence.content.hasSomethingToSay)
+  if(!evidence.content.hasSomethingToSay&&schedule.phase!=="missed")
     return cafeStep(schedule.today,{step:"content",outcome:"skipped",reason:"nothing_to_say",
       details:{missing}},{schedule:scheduleInfo,missing});
 
@@ -138,20 +181,38 @@ export async function runCafeBrief(db:SupabaseClient,b:Business,now:Date,
   for(const ownerId of [...new Set(owners)]){
     let result:OwnerBriefResult;
     try{result=await sendOne(ctx,ownerId);}
-    catch{result={ownerUserId:ownerId,inApp:{step:"in_app",outcome:"failed",reason:"brief_write_failed"},
-      whatsapp:{step:"whatsapp",outcome:"skipped",reason:"in_app_brief_failed"}};}
+    catch(error){
+      const reason=error instanceof Error&&error.message==="brief_run_persistence_failed"
+        ?"run_record_persistence_failed":"brief_write_failed";
+      result={ownerUserId:ownerId,inApp:{step:"in_app",outcome:"failed",reason},
+        whatsapp:{step:"whatsapp",outcome:"skipped",reason:"in_app_brief_failed"}};
+    }
+    const runRecordFailures:Array<"in_app"|"whatsapp">=[];
     for(const channel of ["in_app","whatsapp"] as const){
       const r=channel==="in_app"?result.inApp:result.whatsapp;
-      // A re-run of an already posted brief keeps the first "posted" record.
-      if(r.reason==="already_sent"||r.reason==="already_handled")continue;
-      await recordBriefRun(db,{businessId:b.id,localDate:schedule.today,ownerKey:ownerId,channel,
-        runKind:opts.kind,...r,details:{...scheduleDetails,phase:schedule.phase,missing,...r.details}},now);
+      // Repair a missing run row without replacing an earlier successful record.
+      // The final missed outcome replaces non-terminal waiting/failure rows once.
+      const writeOptions=r.reason==="already_sent"||r.reason==="already_handled"
+        ?{preserveExisting:true}:r.reason==="missed_send_window"?{finalMissed:true}:undefined;
+      try{
+        await recordBriefRun(db,{businessId:b.id,localDate:schedule.today,ownerKey:ownerId,channel,
+          runKind:opts.kind,...r,details:{...scheduleDetails,phase:schedule.phase,missing,...r.details}},now,writeOptions);
+      }catch{
+        // An outcome-write failure must not prevent another channel or owner from
+        // receiving the brief, but the caller must still observe a failed run.
+        runRecordFailures.push(channel);
+        console.error("daily_brief_owner_run_record_failed",{
+          businessId:b.id,ownerKey:ownerId,channel,reason:"run_record_persistence_failed"});
+      }
     }
-    results.push(result);
+    results.push(runRecordFailures.length?{...result,runRecordFailures}:result);
   }
+  const ledgerFailed=results.some(r=>r.runRecordFailures?.length);
   const sent=results.some(r=>r.inApp.outcome==="sent");
-  return {step:"brief",outcome:sent?"sent":results.every(r=>r.inApp.outcome==="failed")?"failed":"skipped",
-    reason:sent?"done":"see_owners",businessId:b.id,localDate:schedule.today,
+  return {step:"brief",outcome:ledgerFailed?"failed":sent?"sent":
+      results.every(r=>r.inApp.outcome==="failed")?"failed":"skipped",
+    reason:ledgerFailed?"run_record_persistence_failed":sent?"done":"see_owners",
+    businessId:b.id,localDate:schedule.today,
     schedule:scheduleInfo,missing,owners:results};
 }
 
@@ -185,10 +246,6 @@ async function sendOne(ctx:CafeContext,ownerId:string):Promise<OwnerBriefResult>
     return done({step:"schedule",outcome:"skipped",reason:"missed_send_window",
       details:{opensAt:schedule.sendBefore}},
       {step:"whatsapp",outcome:"skipped",reason:"missed_send_window"});
-  // Already posted: nothing to redo, and after the café's deadline nothing to re-offer.
-  if(persisted&&(!ctx.outbox||(ctx.kind==="scheduled"&&now.getTime()>=Date.parse(ctx.sendBefore))))
-    return done({step:"in_app",outcome:"sent",reason:"already_sent"},
-      {step:"whatsapp",outcome:"skipped",reason:"already_handled"});
   if(persisted&&(persisted.business_id!==b.id||persisted.owner_user_id!==ownerId||!persisted.thread_id))
     return done({step:"in_app",outcome:"skipped",reason:"saved_brief_scope_mismatch"},
       {step:"whatsapp",outcome:"skipped",reason:"saved_brief_scope_mismatch"});
@@ -262,6 +319,11 @@ async function sendOne(ctx:CafeContext,ownerId:string):Promise<OwnerBriefResult>
       },{onConflict:"business_id,id",ignoreDuplicates:true});
       if(recovered.error)throw recovered.error;
     }
+    // The web message is already durable; repair its inbox row even when the
+    // send window has closed. A persisted brief is never re-offered after deadline.
+    if(!ctx.outbox||(ctx.kind==="scheduled"&&now.getTime()>=Date.parse(ctx.sendBefore)))
+      return done({step:"in_app",outcome:"sent",reason:"already_sent"},
+        {step:"whatsapp",outcome:"skipped",reason:"already_handled"});
     // English owners saw the template text itself: offer only that exact text.
     const sameText=!matched||locale!=="en"||websiteText.startsWith(matched.websiteText);
     const r=await callOutbox(ctx.outbox!,{...hookInput(websiteText),eligible:sameText?matched:null});

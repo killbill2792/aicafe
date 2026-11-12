@@ -155,3 +155,15 @@ test('GITHUB_TOKEN merge dispatches same landing check after merge, never before
  assert.equal(await dispatchLandingCheck({request:async()=>{throw Error('temporary');}},sha),'failed_needs_retry');
  assert.equal(await dispatchLandingCheck({request:async()=>{throw Error('should not call');}},'invalid'),'invalid_merge_sha');
 });
+
+
+test('green shared-file child stays draft until verified merge predecessor, without touching GitHub',async()=>{
+ const record={task_id:'child',pr_number:50,head_sha:'a'.repeat(40),base_sha:'b'.repeat(40),
+  draft:true,ci_state:'success'};
+ let calls=0;
+ const github={request:async()=>{calls++;throw Error('should not reach GitHub for held child');}};
+ const hold=await mergeApprovedPr({github,record,enabled:true,action:'ready',
+  predecessors:[{status:'draft_open',merge_sha:null}]});
+ assert.deepEqual(hold,{status:'blocked',reasons:['predecessor_not_merged']});
+ assert.equal(calls,0);
+});

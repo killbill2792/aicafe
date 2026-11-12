@@ -9,8 +9,13 @@ export const taskKey = (id) => {
 // Retain signed exclusive_files for existing approved tasks until migrated.
 export const editableFiles = task => task?.edits ?? task?.exclusive_files ?? [];
 export const usedFiles = task => task?.uses ?? [];
-const validPath = path => typeof path === 'string' && Boolean(path) &&
-  !path.startsWith('/') && !path.includes('*') && !path.includes('..');
+// Exact relative GitHub paths, including Next.js dynamic routes and Unicode.
+// Reject traversal, globs and control characters, never arbitrary text lengths.
+export const validEditPath = path => typeof path === 'string' && Boolean(path) &&
+  !path.startsWith('/') && !path.includes('\\') &&
+  !/[\x00-\x1f\x7f]/.test(path) && !/[?*]/.test(path) &&
+  path.split('/').every(part=>part&&part!=='.'&&part!=='..'&&part!=='.git');
+const validPath=validEditPath;
 
 export function resolveTaskBase(task, records = {}) {
   const deps = task?.depends_on || [];
@@ -38,14 +43,9 @@ export function validateQueue(queue) {
       throw new Error(`Invalid stack base for ${task.id}`);
     tasks.set(task.id, task);
   }
-  // Read-only uses never reserve a path; only two writers conflict.
-  const ancestor=(later,earlier,seen=new Set())=>{
-    if(later===earlier)return true;
-    if(seen.has(later))return false;
-    seen.add(later);
-    return (tasks.get(later)?.depends_on||[]).some(dep=>ancestor(dep,earlier,seen));
-  };
-  const exclusiveOwners = new Map();
+  // Shared-file edits are permitted on separate branches. Integration order is
+  // enforced by predecessorsForMerge, not by rejecting parallel coding.
+  // Paths remain exact, authorized writes; read-only uses reserve nothing.
   for (const task of queue.tasks) {
     const edits = editableFiles(task), uses = usedFiles(task);
     if (!Array.isArray(edits) || !Array.isArray(uses) ||
@@ -54,13 +54,6 @@ export function validateQueue(queue) {
       throw new Error('Invalid exclusive file ownership for ' + task.id);
     if (uses.some(path => !validPath(path)) || new Set(uses).size !== uses.length)
       throw new Error('Invalid read-only file usage for ' + task.id);
-    for (const path of edits) {
-      const owner = exclusiveOwners.get(path);
-      if (owner && !(queue.sequential_edit_overlap===true&&ancestor(task.id,owner)))
-        throw new Error('Overlapping exclusive file ownership: ' +
-          path + ' (' + owner + ' and ' + task.id + ')');
-      exclusiveOwners.set(path,task.id);
-    }
   }
   const visiting = new Set(), visited = new Set();
   function visit(id) {
@@ -124,18 +117,41 @@ export function architectureFoundationReady(queue, records = {}) {
     /^[a-f0-9]{40}$/.test(signoff.merged_sha || "") &&
     /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+#issuecomment-\d+$/.test(signoff.owner_review_url || "");
 }
-// Merge gate receives only operational predecessors. The owner-accepted POS0a
-// document may satisfy a dependency without pretending it ran production proof.
+// Stable topological ordering: explicit task dependencies win, and otherwise
+// queue order defines integration precedence for two approved shared-file PRs.
+// This does NOT change either task's signed files or authorization.
+export function overlappingPredecessorIds(task, queue) {
+  const byId=new Map((queue?.tasks||[]).map(t=>[t.id,t]));
+  const visited=new Set(),ordered=[];
+  const visit=id=>{
+    if(visited.has(id))return;
+    visited.add(id);
+    const item=byId.get(id);
+    if(!item)return;
+    for(const dep of item.depends_on||[])visit(dep);
+    ordered.push(item);
+  };
+  for(const item of queue?.tasks||[])visit(item.id);
+  const index=ordered.findIndex(item=>item.id===task?.id);
+  if(index<0)return [];
+  const paths=new Set(editableFiles(task));
+  return ordered.slice(0,index)
+    .filter(item=>approved(item)&&editableFiles(item).some(path=>paths.has(path)))
+    .map(item=>item.id);
+}
+// Merge gate receives explicit predecessors AND approved shared-write
+// predecessors. Historic read-only architecture signoff stays unchanged.
 export function predecessorsForMerge(task, queue, records = {}) {
   const foundationId = queue?.dispatch_rules?.architecture_foundation_proof_task;
   const documentationAccepted = foundationId === "POS0a" &&
     queue?.tasks?.some(item => item.id === foundationId && item.test_kinds?.includes("read_only_audit")) &&
     architectureFoundationReady(queue, records);
-  return (task.depends_on || [])
-    .filter(dep => !(dep === foundationId && documentationAccepted))
-    .map(dep => records[dep] || {status:"unknown"});
+  const explicit=(task.depends_on || [])
+    .filter(dep => !(dep === foundationId && documentationAccepted));
+  const prior=[...new Set([...explicit,...overlappingPredecessorIds(task,queue)])];
+  return prior.map(dep => records[dep] || {status:"unknown"});
 }
-export function dispatchFrontier(queue, records = {}, capacity = null) {
+export function dispatchFrontier(queue, records = {}, capacity = null, controls = {}) {
   const tasks = validateQueue(queue);
   // The owner-approved capacity comes from the queue, not a stale hardcoded default.
   // No more than five ChatGPT chats or two Claude chats may be active.
@@ -150,12 +166,6 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
     if (occupiesSlot(r) && r.agent in remaining)
       remaining[r.agent] = Math.max(0, remaining[r.agent] - 1);
   }
-  const claimed = new Set();
-  for (const [id, record] of Object.entries(records)) {
-    if (occupiesSlot(record)) {
-      for (const path of editableFiles(tasks.get(id))) claimed.add(path);
-    }
-  }
   const actions = [];
   const gate = queue.dispatch_rules?.priority_gate_task;
   const gateProven = !gate || integrated(gate, tasks, records);
@@ -164,13 +174,23 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
   // after the owner-reviewed source/field contract is proven on merged main.
   const foundationProven = architectureFoundationReady(queue, records);
   const foundationDependents = new Set(queue.dispatch_rules?.architecture_foundation_dependent_task_ids || []);
-  for (const task of queue.tasks) {
+  // Owner priorities affect only NEW dispatch selection. The signed queue
+  // remains in its original order for shared-file MERGE precedence.
+  const priority=controls.priority||{};
+  const paused=controls.paused instanceof Set?controls.paused:new Set();
+  const candidates=queue.tasks.map((task,index)=>({task,index})).sort((a,b)=>{
+    const ap=Number.isInteger(priority[a.task.id])?priority[a.task.id]:0;
+    const bp=Number.isInteger(priority[b.task.id])?priority[b.task.id]:0;
+    return bp-ap||a.index-b.index;
+  });
+  for (const {task} of candidates) {
+    if(paused.has(task.id))continue;
     if (!gateProven && !gateAllowed.has(task.id)) continue;
     if (!foundationProven && foundationDependents.has(task.id)) continue;
     if (!approved(task) ||
         (records[task.id]?.conversation_ref && !records[task.id]?.scope_plan_completed) ||
         (records[task.id]?.status && records[task.id].status !== 'proposed')) continue;
-    if (!editableFiles(task).length || editableFiles(task).some(path => claimed.has(path))) continue;
+    if (!editableFiles(task).length) continue;
     const openDeps = [];
     let blocked = false;
     for (const dep of task.depends_on) {
@@ -209,7 +229,6 @@ export function dispatchFrontier(queue, records = {}, capacity = null) {
           (k !== 'claude' || task.depends_on.length === 0));
     if (!agent) break;
     remaining[agent]--;
-    for (const path of editableFiles(task)) claimed.add(path);
     const resolved = resolveTaskBase(task,records);
     if (resolved.blocked) { remaining[agent]++; continue; }
     actions.push({ type: "assign", task_id: task.id, agent,
@@ -265,21 +284,22 @@ export function wakePendingActions(state, nowMs, intervalMs = 900000) {
 }
 // Exactly one actionable reason for each quiet-PR continuation. All messages
 // are built by delivery.mjs; this pure selector never asks a courier to guess.
-export function decideNudge(record, _nowMs) {
+export function decideNudge(record, nowMs=Date.now(),{closeoutMinutes=20}={}) {
   if (!record?.approved || !record.conversation_ref)
     return {kind:'hold',reason:'unapproved_or_missing_chat'};
   if (['uncertain','needs_login'].includes(record.submission_state))
     return {kind:'hold',reason:record.submission_state};
   if (!Number.isInteger(record.pr_number) || record.github_state !== 'open')
     return {kind:'hold',reason:'no_open_pr'};
-  // Never wake a clean PR for idle time, ordinary owner comments, parent merge,
-  // missing acceptance, or an otherwise completed stage. Only coder work.
   const conflict = record.mergeable === false || record.mergeable_state === 'dirty';
+  // A clean PR is not a coder-completion claim. Code review and merging
+  // belong to GitHub. Request Muse only for actual code/CI/conflict repair.
+  // v3 accepts no ChatGPT self-reported done as a workflow gate.
   const action = record.field_check_failure ? 'ci_failed' :
     record.ci_state === 'failure' ? 'ci_failed' :
     record.codex_state === 'findings' ? 'codex_comments' :
     conflict ? 'repair_conflict' : null;
-  if (!action) return {kind:'hold',reason:'no_coder_work'};
+  if(!action)return {kind:'hold',reason:'no_coder_work'};
   const fingerprint = [record.head_sha,action,
     action === 'ci_failed' ? record.repo_marker_failure || record.ci_failure_fix || record.ci_failure_job || record.ci_failure_url || '' :
     action === 'codex_comments' ? record.codex_review_at || '' :
@@ -292,8 +312,12 @@ export function decideNudge(record, _nowMs) {
 export function ownerSensitiveHold(record) {
   return record?.sensitive_owner_block === true;
 }
-export function readyGate(record) {
+export function readyGate(record, predecessors = []) {
   const reasons=[];
+  // Coding is parallel; final review starts only after shared-write and
+  // explicit predecessors have a verified GitHub merge identity.
+  if(predecessors.some(p=>!['merged','integrated_proven','released_proven'].includes(p?.status)||
+      !p?.merge_sha))reasons.push('predecessor_not_merged');
   if (record?.draft !== true) reasons.push('not_a_draft');
   if (!record?.pr_number || !record?.head_sha) reasons.push('missing_pr_or_sha');
   if (record?.ci_state !== 'success') reasons.push('ci_not_green');

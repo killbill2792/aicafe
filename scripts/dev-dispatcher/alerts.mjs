@@ -112,6 +112,25 @@ export function resolveOwnerIssueIdentity(state,{kind,task_id=null,pr_number=nul
   }
  return next;
 }
+// PR #446's immutable Git blob reader has completed a trusted-main
+// reconciliation. Retire only the old unsent Contents API overflow incidents
+// that cannot recur in this exact form. Other GitHub 500/auth/runner incidents
+// and all owner approval questions remain active and unchanged.
+export function resolveObsoleteLedgerReadIncidents(state,{now=new Date().toISOString()}={}){
+ const next=structuredClone(state);
+ const prefix='Dispatcher '+settings.repo+': Unexpected GitHub ledger response Needed:';
+ for(const notice of Object.values(next.owner_alerts||{})){
+   if(notice.kind!=='dispatcher_emergency'||notice.status!=='planned'||
+      !/^run:[0-9]+:failure$/.test(notice.identity||'')||
+      !String(notice.question||'').startsWith(prefix)||
+      notice.receipt)continue;
+   notice.status='resolved';
+   notice.resolved_at=now;
+   notice.resolution='git_blob_reader_verified_after_overflow_hotfix';
+   // Not delivered: no Muse receipt is ever manufactured.
+ }
+ return next;
+}
 export function resolveOwnerIssue(state,kind,pr_number){
  const next=structuredClone(state);
  for(const n of Object.values(next.owner_alerts||{}))
@@ -142,7 +161,14 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
   return entry;
  };
  // Preserve historical notice identity and submitted status. Do not re-send.
- for(const notice of Object.values(next.owner_alerts))route(notice);
+ for(const notice of Object.values(next.owner_alerts))
+   // These terminal notice tombstones were archived with their full content.
+   // Do not recreate optional message/routing fields on every ordinary tick:
+   // it causes new archive files for the same old notices indefinitely.
+   // When a withdrawn question genuinely returns, add() below constructs a
+   // complete CURRENT owner notice, restoring delivery fields and identity.
+   if(!['resolved','cancelled_no_longer_needed'].includes(notice.status))
+     route(notice);
  const add=(kind,task_id,pr_number,question,source_sha=null)=>{
   if(typeof question!=='string'||!question.trim()||question.length>1200)return;
   if(pr_number!=null&&(!Number.isInteger(pr_number)||pr_number<1))return;
@@ -158,8 +184,10 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
   else if(prior.status==='cancelled_no_longer_needed' && !prior.receipt) {
     // A withdrawn question may later be restored verbatim. Requeue the SAME
     // verified identity, never a duplicate; submitted notices are immutable.
-    prior.status='planned';
-    prior.requeued_at=now;
+    // A compacted terminal notice is only a tombstone. Restore the current
+    // verified question, routing and Muse delivery fields when it returns;
+    // never revive a stale archived message or lose the signed notice identity.
+    Object.assign(prior,entry,{status:'planned',requeued_at:now});
   }
  };
  for(const [id,rec] of Object.entries(next.tasks||{})){

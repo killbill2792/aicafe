@@ -61,11 +61,31 @@ export class GitHubLedger {
     this.privateVerified = true;
   }
   async load() {
-    const data = await this.request(`/contents/${this.path}?ref=main`);
-    if (data.absent) return { sha: null, state: empty() };
-    if (!data.content || !data.sha) throw new Error("Unexpected GitHub ledger response");
-    const decoded = Buffer.from(data.content.replace(/\s/g, ""), "base64").toString("utf8");
-    return { sha: data.sha, state: assertLedgerShape(JSON.parse(decoded)) };
+    // Contents API intentionally returns empty content for files larger than
+    // 1 MiB. Read by immutable Git blob SHA so an oversized private ledger can
+    // never make the trusted dispatcher unable to reconcile.
+    const tree = await this.request('/git/trees/main?recursive=1');
+    if (tree.absent || !Array.isArray(tree.tree) || tree.truncated === true)
+      throw new Error('Ledger Git tree invalid (keys: ' +
+        Object.keys(tree || {}).join(',').slice(0,120) + ')');
+    const entry = tree.tree.find(x => x.path === this.path);
+    if (!entry) return { sha: null, state: empty() };
+    if (entry.type !== 'blob' || !/^[a-f0-9]{40}$/.test(entry.sha || ''))
+      throw new Error('Ledger Git tree entry invalid (type: ' +
+        String(entry.type).slice(0,24) + ')');
+    const blob = await this.request('/git/blobs/' + entry.sha);
+    if (blob.absent || blob.encoding !== 'base64' ||
+        typeof blob.content !== 'string' || !blob.content.trim())
+      throw new Error('Ledger Git blob invalid (sha: ' + entry.sha +
+        '; keys: ' + Object.keys(blob || {}).join(',').slice(0,120) +
+        '; encoding: ' + String(blob?.encoding).slice(0,30) + ')');
+    let parsed;
+    try {
+      parsed = JSON.parse(Buffer.from(blob.content.replace(/\s/g, ''), 'base64').toString('utf8'));
+    } catch {
+      throw new Error('Ledger Git blob has invalid JSON (sha: ' + entry.sha + ')');
+    }
+    return { sha: entry.sha, state: assertLedgerShape(parsed) };
   }
   async save(state, sha, message = "chore(dispatcher): reconcile task ledger") {
     sanitizeLedger(state);

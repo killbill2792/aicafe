@@ -77,25 +77,46 @@ class MemoryRepo implements LoopRepository{
    return this.proposal;
  }
  async transition(s:OwnerLoopScope,id:string,revision:number,
-   action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed",startDate?:string){
-   // Mirror the production SELECT ... FOR UPDATE RPC atomically. An
-   // await before reading/replacing in this in-memory fixture would allow two
-   // callers to pass the same revision in the same microtask turn.
+   action:"approve"|"reject"|"manual_confirmed"|"finish_monitor",startDate?:string){
    const p=this.proposal;
    if(!p||p.id!==id||p.businessId!==s.businessId||
      p.ownerUserId!==s.ownerUserId||p.threadId!==s.threadId)throw new Error("scope");
    if(p.revision!==revision)throw new Error("conflict");
    const allowed=action==="approve"?p.status==="draft":
-     action==="claim_commit"?p.status==="approved":
-     action==="manual_pending"||action==="committed"?p.status==="executing":
      action==="manual_confirmed"?p.status==="manual_pending":
+     action==="finish_monitor"?p.status==="committed":
      action==="reject"?["draft","approved"].includes(p.status):false;
    if(!allowed)throw new Error("conflict");
    const status=action==="approve"?"approved":action==="reject"?"rejected":
-     action==="claim_commit"?"executing":action;
+     action==="finish_monitor"?"monitored":"manual_confirmed";
    this.proposal={...p,status,revision:revision+1,
-     monitoringStartDate:action==="manual_confirmed"||action==="committed"?
-       startDate??null:p.monitoringStartDate};
+     monitoringStartDate:action==="manual_confirmed"?startDate??null:p.monitoringStartDate};
+   return this.proposal;
+ }
+ async claimEffect(s:OwnerLoopScope,id:string,revision:number,authorizationKind:"click"|"mandate"){
+   // Model the gateway's atomic CAS: no await may separate the revision/status check from the claim.
+   let p=this.proposal;
+   if(!p||p.id!==id||p.businessId!==s.businessId||
+     p.ownerUserId!==s.ownerUserId||p.threadId!==s.threadId)throw Error("scope");
+   if(p.revision!==revision)throw Error("conflict");
+   if(authorizationKind==="click"){if(p.status!=="approved")throw Error("individual click required");}
+   else{
+    if(p.status!=="draft"||p.capabilityId!=="leo.goal.v1")throw Error("standing mandate denied");
+    p={...p,status:"approved",revision:p.revision+1};
+   }
+   const claimed={...p,status:"executing" as const,revision:p.revision+1};
+   this.proposal=claimed;
+   return {proposal:claimed,attemptKey:"attempt:"+id,businessDate:"2026-10-01",authorizationKind};
+ }
+ async finishEffect(s:OwnerLoopScope,claim:{proposal:LoopProposal;attemptKey:string;
+   businessDate:string;authorizationKind:"click"|"mandate"},expectedRevision:number,
+   state:"verified"|"uncertain"|"stale",nextStatus?:"committed"|"manual_pending",startDate?:string){
+   const p=await this.load(s,claim.proposal.id);
+   if(p.status!=="executing"||p.revision!==expectedRevision||claim.attemptKey!=="attempt:"+p.id)
+    throw Error("attempt conflict");
+   if(state==="uncertain")return p;
+   if(state==="stale"){this.proposal={...p,status:"stale",revision:p.revision+1};return this.proposal;}
+   this.proposal={...p,status:nextStatus!,revision:p.revision+1,monitoringStartDate:startDate??null};
    return this.proposal;
  }
  async addSample(s:OwnerLoopScope,id:string,sample:LoopSample){

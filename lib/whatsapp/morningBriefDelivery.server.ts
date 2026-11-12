@@ -18,6 +18,7 @@ export type BriefScope={businessId:string;ownerUserId:string;threadId?:string;
   businessName:string;currency:string|null;timezone:string;today:string;yesterday:string};
 export type Blocked={reason:string;details?:Record<string,unknown>};
 export type EligibleBrief={binding:BoundOwner;prepared:PreparedMorningBrief;websiteText:string};
+export type BriefDispatchResult={accepted:number;retryResponses:number;failed:number;uncertain:number}&Partial<Blocked>;
 
 /** Read only the explicitly selected, consented recipient. Never create a binding,
  * silently select a café, or infer WhatsApp ownership from the website session. */
@@ -82,11 +83,12 @@ export async function enqueueBoundBrief(db:SupabaseClient,input:EligibleBrief,sc
 /** Send through the one canonical worker. A final request-time check makes sure
  * the leased brief is still before its own café deadline and on its local day. */
 export async function dispatchDueMorningBriefs(db:SupabaseClient,
-  send:typeof fetch=fetch,clock:()=>Date=()=>new Date()):Promise<{accepted:number}&Partial<Blocked>>{
+  send:typeof fetch=fetch,clock:()=>Date=()=>new Date()):Promise<BriefDispatchResult>{
+  const empty={accepted:0,retryResponses:0,failed:0,uncertain:0};
   const settings=providerBlockers("daily_brief");
-  if(settings.length)return {accepted:0,reason:"whatsapp_setting_off",details:{settings}};
+  if(settings.length)return {...empty,reason:"whatsapp_setting_off",details:{settings}};
   if(!await whatsappBriefSendReady(db))
-    return {accepted:0,reason:"migration_missing",details:{migration:BRIEF_SEND_MIGRATION}};
+    return {...empty,reason:"migration_missing",details:{migration:BRIEF_SEND_MIGRATION}};
   const guardedSend:typeof fetch=async(url,init)=>{
     const rejected=()=>new Response(null,{status:400});
     if(!providerAllowed("daily_brief"))return rejected();
@@ -115,14 +117,16 @@ export async function dispatchDueMorningBriefs(db:SupabaseClient,
       !providerAllowed("daily_brief"))return rejected();
     return send(url,init);
   };
-  let accepted=0;
+  const result={...empty};
   for(let i=0;i<10;i++){
     const state=await dispatchOutboundOnce("daily_brief",guardedSend);
     if(state==="empty"||state==="disabled")break;
-    if(state==="accepted")accepted++;
-    if(state==="retry"||state==="uncertain")break;
+    if(state==="accepted"){result.accepted++;continue;}
+    if(state==="failed"){result.failed++;continue;}
+    if(state==="retry"){result.retryResponses++;break;}
+    if(state==="uncertain"){result.uncertain++;break;}
   }
-  return {accepted};
+  return result;
 }
 
 /** The one outbox hook for the morning brief, used by the cron and by the

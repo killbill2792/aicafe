@@ -10,20 +10,24 @@ import {withinCafeOpenHours} from "./eventLiveWatch";
 
 /** Only the authenticated cron invokes this after the canonical live Toast
  * reader has refreshed. No UI request, web search or second monitoring ledger. */
-export async function watchLiveEvents(businessId:string,businessDate:string):Promise<{
+export async function watchLiveEvents(businessId:string,businessDate:string,
+ now=new Date()):Promise<{
   checked:number;updated:number;failed:number
 }>{
  const db=createAdminSupabaseClient();
  const {data:business,error:businessError}=await db.from("businesses")
    .select("timezone,is_demo").eq("id",businessId).maybeSingle();
- if(businessError||!business?.timezone||business.is_demo)
-   return {checked:0,updated:0,failed:0};
- const today=formatInTimeZone(new Date(),business.timezone,"yyyy-MM-dd");
+ // A missing/failed tenant or opening-hours read is not a successful
+ // "nothing to watch" outcome. Keep the failure visible for cron repair.
+ if(businessError||!business?.timezone)return {checked:0,updated:0,failed:1};
+ if(business.is_demo)return {checked:0,updated:0,failed:0};
+ const today=formatInTimeZone(now,business.timezone,"yyyy-MM-dd");
  if(today!==businessDate)return {checked:0,updated:0,failed:0};
- const localTime=formatInTimeZone(new Date(),business.timezone,"HH:mm");
+ const localTime=formatInTimeZone(now,business.timezone,"HH:mm");
  const {data:locations,error:hoursError}=await db.from("locations")
    .select("open_hours").eq("business_id",businessId).limit(30);
- if(hoursError||!withinCafeOpenHours((locations??[]).map(x=>x.open_hours),today,localTime))
+ if(hoursError)return {checked:0,updated:0,failed:1};
+ if(!withinCafeOpenHours((locations??[]).map(x=>x.open_hours),today,localTime))
    return {checked:0,updated:0,failed:0};
  const {data:proposals,error}=await db.from("supervisor_proposals")
    .select("id,owner_user_id,thread_id,monitoring_start_date,monitor_spec")

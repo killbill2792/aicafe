@@ -7,7 +7,7 @@ export const promptHash = prompt => createHash('sha256').update(prompt).digest('
 // Generated ONLY on trusted main by the existing deterministic dispatcher.
 const PROVIDERS = new Set(['chatgpt', 'claude']);
 const ACTIONS = new Set(['assign','begin_scoped_coding', 'repair_ci', 'repair_review', 'continue_pr', 'pre_pr_reminder',
-  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'dependency_proven', 'repair_conflict', 'idle_continue', 'no_push_after_prompt', 'landing_failed', 'plan', 'brainstorm']);
+  'codex_comments', 'ci_failed', 'parent_merged', 'owner_answered', 'dependency_proven', 'repair_conflict', 'idle_continue', 'closeout_evidence', 'no_push_after_prompt', 'landing_failed', 'plan', 'brainstorm']);
 const REPO = 'https://github.com/'+settings.repo;
 
 // POS0 SOURCE AUTHORITY PREFLIGHT BEFORE CODING is mandatory and remains
@@ -54,7 +54,7 @@ export function approvalMatches(task, signed) {
 export function createAdhocDelivery({record,action,actionId}) {
   if (!record?.adhoc || !record.approved || (record.github_state !== 'open' && !(action==='landing_failed' && record.github_state==='merged')) ||
       record.task_id !== 'ADHOC-' + record.pr_number ||
-      !['ci_failed','codex_comments','repair_conflict','no_push_after_prompt','landing_failed'].includes(action) ||
+      !['ci_failed','codex_comments','repair_conflict','no_push_after_prompt','landing_failed','closeout_evidence'].includes(action) ||
       typeof actionId !== 'string' || !actionId || actionId.length > 400 ||
       !validConversationUrl('chatgpt',record.conversation_ref) ||
       !/^[a-f0-9]{64}$/.test(record.approval_hash || ''))
@@ -62,6 +62,7 @@ export function createAdhocDelivery({record,action,actionId}) {
   const pr = REPO + '/pull/' + record.pr_number;
   const reason = action === 'landing_failed'
     ? 'Post-merge landing check failed. Forward this exact error tail to the original PR chat and repair the merged-main regression:\n'+String(record.landing_failure||'').slice(0,3500)
+    : action === 'closeout_evidence' ? 'Close-out check on this SAME current-head PR: verify exact-head CI, Codex and review threads; attach real executed acceptance evidence, close outstanding review and provide executed acceptance links without self-certifying completion. If proof is unavailable, record the precise blocker/question. Never declare acceptance or merge automatically.'
     : action === 'no_push_after_prompt' ? STALL_PROMPT : action === 'ci_failed'
     ? 'Diagnose current-head CI failure: ' + (record.ci_failure_url || pr) +
       (record.repo_marker_failure ? '\n'+record.repo_marker_failure : '') +
@@ -147,6 +148,7 @@ export function createDelivery({ task, record, action, actionId }) {
     owner_answered:'owner_answered: Authenticated GitHub owner answer: ' +
       String(record.owner_answer_text || 'Read PR decision').replace(/\s+/g,' ').slice(0,240) +
       '\nApply only within signed edits; reconcile the original PR comment ID and tests.',
+    closeout_evidence:'closeout_evidence: Current-head CI is green and Codex clean, but the PR is missing verified acceptance or an authenticated close-out. Complete the SAME PR rather than opening a new chat. Attach executed acceptance evidence for each signed requirement; resolve all review threads; verify the exact head and current base, then include the exact executed test and evidence links. A self-reported done message is not proof. If acceptance requires live owner/provider access, record the blocker and owner question; do NOT fabricate evidence, bypass approval, request duplicate Codex reviews, or merge.',
     idle_continue:'idle_continue: Continue this SAME PR/chat. Finish scoped edits and tests; inspect ' +
       'latest CI/owner comments. Keep PR draft while coding; dispatcher marks Ready only after all CI checks pass. ' +
       'Do not request Codex before CI green or on intermediate pushes.',
@@ -186,8 +188,7 @@ export function createDelivery({ task, record, action, actionId }) {
       '; exact-head receipt ' + (record.codex_reviewed_sha || 'none') +
       '; resolve outstanding review threads without using old-head findings as current state',
     'Privileged owner hold: ' + (record.sensitive_owner_block ? 'paid/live/prod/secret approval needed' : 'none') +
-      '; acceptance: ' + (record.acceptance_proven === true ? 'proven' : 'not yet proven') +
-      '; coder done: ' + (record.coder_done === true ? 'yes' : 'no'),
+      '; acceptance: ' + (record.acceptance_proven === true ? 'proven' : 'not yet proven'),
     ...(record.dependency_proven_text ? ['Proven dependencies: ' + record.dependency_proven_text] : []),
     'Do all applicable fixes together; keep this same PR/chat and do not open competing prompts.'
   ] : [];

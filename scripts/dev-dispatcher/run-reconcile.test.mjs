@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import {verifiedCodingConversation} from './verified-chat-v3.mjs';
 
 // Evaluate the actual nested reconcile function without starting its GitHub
 // runner or changing the private ledger. Every dependency is explicitly faked.
@@ -42,6 +43,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
       return { state: copy, rejected: [] };
     },
     reconcileReceiptFeedback: state => state,
+    resolveOwnerIssueIdentity: state => state,
     queueOwnerIssue: (state,incident) => ({owner_alerts:{
       ...state.owner_alerts,
       ['notice:'+incident.kind+':'+incident.identity]:{...incident,status:'planned',recipient:'owner'}
@@ -50,16 +52,20 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     noticeOperationalIssues: state => state,
     applySafetySignals: state => state,
     stallMinutes: () => 20,
+    dispatchPreferences: () => ({priority:{},paused:new Set(),stall_minutes:null}),
+    verifiedCodingConversation,
     repo: 'killbill2792/aicafe',
     process: {env:{}},
     applyOwnerStartApprovals: startApproval,
     advanceApprovedProposals: state => state,
     selectScopePlans: () => ({}),
+    queueScopePlanRecovery: state => state,
     queueScopePlanReviews: state => state,
     acceptScopePlanDecisions: state => state,
     effectiveSignedQueue: queue => queue,
     sourceQueue,
     scopeComments:[],
+    scopeFetchError:null,
     revalidateQueuedActions: () => {},
     wakePendingActions: () => {},
     wakePendingOwnerNotices: () => {},
@@ -67,7 +73,7 @@ function harness({ assignments = [], proposals = {}, fail = [], receipts = [], f
     dispatchFrontier: (_queue, records) => frontier ? frontier(records) : assignments,
     assignmentActionKey: (_state, id) => 'assign:' + id,
     approvalSignature: () => 'signed',
-    approvalMatches: (_task, signed) => signed === 'signed',
+    approvalMatches: (_task, signed) => signed === 'signed' || signed === 'a'.repeat(64),
     editableFiles: t => t?.exclusive_files || [],
     decideNudge: rec => proposals[rec.task_id] || { kind: 'hold' },
     createAdhocDelivery: ({ record: rec, action, actionId }) => {
@@ -266,4 +272,160 @@ test('actual reconciler preserves unsigned scope handoff and signed coding conti
    'assign:7':{type:'begin_scoped_coding',task_id:'7',status:'planned',delivery_owner:'muse'}
  });
  assert.equal(run(coding).state.actions['assign:7'].status,'planned');
+});
+
+
+test('delayed self-wake retains Git-backed emergency notice after a failed wake',()=>{
+ const workflow=readFileSync(new URL('../../.github/workflows/dispatcher-delayed-wake.yml',import.meta.url),'utf8');
+ assert.match(workflow,/if: failure\(\)/);
+ assert.match(workflow,/node scripts\/dev-dispatcher\/emergency-report\.mjs/);
+ assert.match(workflow,/secrets\.DISPATCH_LEDGER_TOKEN/);
+});
+
+
+test('failed dispatcher run observer uses trusted main and existing Git-backed owner queue only',()=>{
+ const watcher=readFileSync(new URL('../../.github/workflows/dispatcher-failure-observer.yml',import.meta.url),'utf8');
+ assert.match(watcher,/workflow_run:/);
+ assert.match(watcher,/AI CAFE Development Dispatcher/);
+ assert.match(watcher,/Dispatcher delayed self-wake/);
+ assert.match(watcher,/head_branch == 'main'/);
+ assert.match(watcher,/ref: main/);
+ assert.match(watcher,/persist-credentials: false/);
+ assert.match(watcher,/DISPATCH_FAILED_RUN_ID:/);
+ assert.match(watcher,/node scripts\/dev-dispatcher\/emergency-report\.mjs/);
+ assert.doesNotMatch(watcher,/pull_request_target/);
+});
+
+
+test('new emergency observer remains owner-only infrastructure, while PR size guard stays intact',async()=>{
+ const {isDispatcherMaintenanceChange,dispatcherOnlyFiles}=await import('./github.mjs');
+ const {hasBigOk}=await import('../guards/pr-size.mjs');
+ const paths=[{filename:'.github/workflows/dispatcher-failure-observer.yml'},
+  {filename:'scripts/dev-dispatcher/heartbeat-probe.mjs'}];
+ assert.equal(isDispatcherMaintenanceChange(paths),true);
+ assert.equal(dispatcherOnlyFiles(paths),true);
+ assert.equal(hasBigOk(''),false);
+ assert.equal(hasBigOk('big-ok'),true);
+ assert.equal(hasBigOk(JSON.stringify([{name:'big-ok'}])),true);
+});
+
+
+test('P1: real numeric failed-run IDs reach the Git-backed emergency reporter',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const cli=fileURLToPath(new URL('./emergency-report.mjs',import.meta.url));
+ const env={...process.env,GITHUB_RUN_ID:'43057323529',
+  DISPATCH_FAILED_RUN_ID:'43057323529',
+  GITHUB_REPOSITORY:'killbill2792/aicafe'};
+ delete env.DISPATCH_LEDGER_TOKEN;
+ const result=spawnSync(process.execPath,[cli],{env,encoding:'utf8'});
+ // No credentials: must stop at the existing trusted Git publication gate,
+ // rather than falsely rejecting the valid numeric workflow-run identity.
+ assert.equal(result.status,1);
+ assert.match(result.stderr,/EMERGENCY MUSE DELIVERY UNCONFIRMED/);
+ assert.doesNotMatch(result.stderr,/Invalid failed workflow run ID/);
+ const bad=spawnSync(process.execPath,[cli],{env:{
+  ...env,DISPATCH_FAILED_RUN_ID:'not-a-run'},encoding:'utf8'});
+ assert.equal(bad.status,1);
+ assert.match(bad.stderr,/Invalid failed workflow run ID/);
+});
+
+
+test('verified Muse delivery stalled before PR sends one signed reminder to same chat',()=>{
+ const original={task_id:'good',status:'assigned',approved:true,
+  agent:'chatgpt',approval_hash:'a'.repeat(64),branch:'feat/aicafe-task-good',
+  conversation_ref:'https://chatgpt.com/c/existing',
+  last_submission_at:'2026-10-01T10:00:00Z'};
+ const initialState=initial({good:original},{
+  'assign:good':{task_id:'good',type:'assign',status:'submitted',
+   delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+     approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'b'.repeat(64),
+    conversation_url:'https://chatgpt.com/c/existing'}}});
+ const h=harness();
+ const first=h.run(initialState).state;
+ const pending=Object.entries(first.actions).filter(([,a])=>
+   a.type==='pre_pr_reminder'&&a.status==='planned');
+ assert.equal(pending.length,1);
+ assert.equal(pending[0][1].delivery_owner,'muse');
+ assert.equal(pending[0][1].delivery.action,'pre_pr_reminder');
+ assert.equal(first.tasks.good.pr_number,undefined);
+ const second=h.run(first).state;
+ assert.equal(Object.values(second.actions).filter(a=>
+   a.type==='pre_pr_reminder'&&a.status==='planned').length,1);
+});
+test('pre-PR reminder requires real Muse coding receipt, not just a saved chat URL',()=>{
+ const r={task_id:'good',approved:true,status:'assigned',agent:'chatgpt',
+  approval_hash:'a'.repeat(64),conversation_ref:'https://chatgpt.com/c/existing',
+  last_submission_at:'2026-10-01T10:00:00Z'};
+ const out=harness().run(initial({good:r})).state;
+ assert.equal(Object.values(out.actions).filter(a=>a.type==='pre_pr_reminder').length,0);
+});
+
+
+test('wrong-scope historical Muse receipt cannot authorize a pre-PR reminder',()=>{
+ const r={task_id:'good',approved:true,status:'assigned',agent:'chatgpt',
+  approval_hash:'a'.repeat(64),conversation_ref:'https://chatgpt.com/c/existing',
+  last_submission_at:'2026-10-01T10:00:00Z'};
+ const state=initial({good:r},{original:{task_id:'good',type:'assign',
+   status:'submitted',delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+     approval_hash:'c'.repeat(64),prompt_hash:'b'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:'https://chatgpt.com/c/existing'}}});
+ const out=harness().run(state).state;
+ assert.equal(Object.values(out.actions).filter(a=>a.type==='pre_pr_reminder').length,0);
+});
+test('verified historical delivery to another chat cannot redirect the pre-PR reminder',()=>{
+ const r={task_id:'good',approved:true,status:'assigned',agent:'chatgpt',
+  approval_hash:'a'.repeat(64),conversation_ref:'https://chatgpt.com/c/current-chat',
+  last_submission_at:'2026-10-01T10:00:00Z'};
+ const state=initial({good:r},{original:{task_id:'good',type:'assign',
+   status:'submitted',delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+     approval_hash:'a'.repeat(64),prompt_hash:'b'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:'https://chatgpt.com/c/old-chat'}}});
+ const out=harness().run(state).state;
+ assert.equal(Object.values(out.actions).filter(a=>a.type==='pre_pr_reminder').length,0);
+});
+
+
+test('v3 cancels only unsent old coder-done prompts, preserving uncertain history',()=>{
+ const r=record('good');
+ const state=initial({good:r},{
+  planned:{task_id:'good',type:'closeout_evidence',status:'planned',
+   delivery:{action_id:'planned'}},
+  uncertain:{task_id:'good',type:'closeout_evidence',status:'uncertain',
+   delivery:{action_id:'uncertain'}},
+  submitted:{task_id:'good',type:'closeout_evidence',status:'submitted',
+   receipt:{courier:'muse'}}
+ });
+ const out=harness().run(state).state;
+ assert.equal(out.actions.planned.status,'cancelled_v3_no_coder_done_gate');
+ assert.equal(out.actions.uncertain.status,'uncertain');
+ assert.equal(out.actions.submitted.status,'submitted');
+});
+
+
+test('verified stale-chat continuation recovers the current chat without creating another',()=>{
+ const original='https://chatgpt.com/c/original-123';
+ const continued='https://chatgpt.com/c/continued-456';
+ const hash='a'.repeat(64);
+ const record={task_id:'good',approved:true,status:'assigned',agent:'chatgpt',
+   approval_hash:hash,conversation_ref:continued,
+   last_submission_at:'2026-10-01T10:00:00Z'};
+ const seed={task_id:'good',type:'assign',status:'submitted',delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'start_new_chat',conversation_url:null,
+     approval_hash:hash,prompt_hash:'b'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'b'.repeat(64),conversation_url:original}};
+ const moved={task_id:'good',type:'pre_pr_reminder',status:'submitted',delivery_owner:'muse',
+   delivery:{provider:'chatgpt',intent:'continue_existing_chat',
+     conversation_url:original,approval_hash:hash,prompt_hash:'c'.repeat(64)},
+   receipt:{courier:'muse',prompt_hash:'c'.repeat(64),conversation_url:continued,
+     continuation_of:original}};
+ const state=initial({good:record},{seed,moved});
+ const out=harness().run(state).state;
+ assert.equal(out.tasks.good.conversation_ref,continued);
+ // A previously submitted reminder must not be resubmitted in another chat.
+ assert.equal(Object.values(out.actions).filter(a=>a.type==='pre_pr_reminder').length,1);
 });

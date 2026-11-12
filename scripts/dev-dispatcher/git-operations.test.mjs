@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {settings} from './settings.mjs';
+import {resolveOwnerIssueIdentity} from './alerts.mjs';
 import {gitAuthEnvironment,publishEmergencyViaGit,updateBranchViaGit,transactLedgerViaGit,publishOwnerQueueViaGit,readApiPauseViaGit} from './git-operations.mjs';
 
 const sha='a'.repeat(40);
@@ -163,4 +164,94 @@ test('API outage has one durable Muse incident and suppresses repeated run alert
   assert.equal(Object.values(ledger.owner_alerts).length,1);
   assert.equal(Object.values(ledger.owner_alerts)[0].delivery_owner,'muse');
  } finally {f.cleanup();}
+});
+
+
+test('Git-backed CAS compacts a >1 MiB ledger and preserves private archive atomically',async()=>{
+ const f=fixture();
+ try {
+   run(['branch','-M','main'],f.work);
+   mkdirSync(dirname(join(f.work,settings.ledger.path)),{recursive:true});
+   const old='2026-11-11T20:00:00Z';
+   const history=Object.fromEntries(Array.from({length:700},(_,i)=>['wake-'+i,{
+     key:'wake-'+i,status:'requested',requested_at:old,
+     description:'old deterministic history '+'.'.repeat(200)}]));
+   const alerts=Object.fromEntries(Array.from({length:125},(_,i)=>['notice:old'+i,{
+     kind:'dispatcher_emergency',identity:'run:'+i,notice_hash:'old'+i,
+     status:'resolved',question:'historical '.repeat(90),
+     owner_message:'historical '.repeat(90),created_at:old}]));
+   alerts['notice:live']={kind:'owner_decision',status:'planned',notice_hash:'live',
+     question:'This pending owner question must survive unchanged',created_at:old};
+   const state={version:1,tasks:{T:{approved:true}},
+     actions:{original:{status:'submitted'},payload:{status:'planned',
+       provenance:'x'.repeat(500_000)}},
+     owner_alerts:alerts,delayed_wake_history:history};
+   const initial=JSON.stringify(state,null,2)+'\n';
+   assert.ok(Buffer.byteLength(initial)>1_000_000);
+   writeFileSync(join(f.work,settings.ledger.path),initial);
+   run(['add','.'],f.work);run(['commit','-qm','oversized seed'],f.work);
+   run(['push','-q','origin','main'],f.work);
+   const result=await transactLedgerViaGit({repo:settings.ledger.repo,
+     token:'test-only',remoteUrl:f.bare,transform:next=>{
+       next.tasks.T.last_checked='2026-11-12T00:50:00Z';return next;
+     }});
+   assert.equal(result.committed,true);
+   run(['pull','-q','origin','main'],f.work);
+   const updated=JSON.parse(readFileSync(join(f.work,settings.ledger.path),'utf8'));
+   assert.ok(Buffer.byteLength(readFileSync(join(f.work,settings.ledger.path)))<1_000_000);
+   assert.equal(updated.actions.payload.provenance.length,500_000);
+   assert.equal(updated.owner_alerts['notice:live'].status,'planned');
+   assert.ok(updated.ledger_archives.length>0);
+   const archive=JSON.parse(readFileSync(join(f.work,updated.ledger_archives.at(-1).path),'utf8'));
+   assert.equal(Object.keys(archive.delayed_wake_history).length,700);
+   assert.equal(Object.keys(archive.owner_alerts).length,125);
+   assert.equal(archive.owner_alerts['notice:old1'].question,alerts['notice:old1'].question);
+ } finally {f.cleanup();}
+});
+test('consecutive Git emergency run IDs reuse one recent owner notice',()=>{
+ const f=fixture();
+ try {
+   run(['branch','-M','main'],f.work);
+   mkdirSync(dirname(join(f.work,settings.ledger.path)),{recursive:true});
+   writeFileSync(join(f.work,settings.ledger.path),JSON.stringify({
+     version:1,tasks:{},actions:{},owner_alerts:{}}));
+   run(['add','.'],f.work);run(['commit','-qm','seed'],f.work);
+   run(['push','-q','origin','main'],f.work);
+   const args={repo:settings.ledger.repo,token:'local-only',remoteUrl:f.bare};
+   assert.equal(publishEmergencyViaGit({...args,identity:'run:100:failure',message:'first crash'}).status,'queued');
+   assert.equal(publishEmergencyViaGit({...args,identity:'run:101:failure',message:'same crash'}).status,'already_queued');
+   run(['pull','-q','origin','main'],f.work);
+   const state=JSON.parse(readFileSync(join(f.work,settings.ledger.path),'utf8'));
+   assert.equal(Object.keys(state.owner_alerts).length,1);
+ } finally {f.cleanup();}
+});
+
+test('verified recovery closes stable failure incident so a later outage alerts again',async()=>{
+ const f=fixture();
+ try{
+  run(['branch','-M','main'],f.work);
+  mkdirSync(dirname(join(f.work,settings.ledger.path)),{recursive:true});
+  writeFileSync(join(f.work,settings.ledger.path),JSON.stringify({
+   version:1,tasks:{},actions:{},owner_alerts:{}}));
+  run(['add','.'],f.work);run(['commit','-qm','seed'],f.work);
+  run(['push','-q','origin','main'],f.work);
+  const args={repo:settings.ledger.repo,token:'local-only',remoteUrl:f.bare,
+   identity:'trusted-dispatcher:failure',message:'reconcile could not start'};
+  const first=publishEmergencyViaGit(args);
+  assert.equal(first.status,'queued');
+  const recovered=await transactLedgerViaGit({repo:settings.ledger.repo,token:'local-only',
+   remoteUrl:f.bare,transform:state=>resolveOwnerIssueIdentity(state,{
+    kind:'dispatcher_emergency',identity:'trusted-dispatcher:failure'})});
+  assert.equal(recovered.committed,true);
+  const second=publishEmergencyViaGit({...args,message:'new subsequent outage'});
+  assert.equal(second.status,'queued');
+  assert.notEqual(first.notice_hash,second.notice_hash);
+  run(['pull','-q','origin','main'],f.work);
+  const notices=Object.values(JSON.parse(readFileSync(join(f.work,
+   settings.ledger.path),'utf8')).owner_alerts)
+   .filter(x=>x.kind==='dispatcher_emergency');
+  assert.equal(notices.length,2);
+  assert.ok(notices.some(x=>x.status==='resolved'));
+  assert.ok(notices.some(x=>x.status==='planned'));
+ }finally{f.cleanup();}
 });

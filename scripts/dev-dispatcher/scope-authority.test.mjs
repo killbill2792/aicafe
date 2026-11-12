@@ -5,7 +5,8 @@ import {settings} from './settings.mjs';
 import {queueOwnerAlerts} from './alerts.mjs';
 import {advanceApprovedProposals} from './proposal-stage.mjs';
 import {parseScopePlanComment,selectScopePlans,queueScopePlanReviews,
- acceptScopePlanDecisions,effectiveSignedQueue} from './scope-authority.mjs';
+ acceptScopePlanDecisions,effectiveSignedQueue,queueScopePlanRecovery,
+ inspectScopePlanComment} from './scope-authority.mjs';
 import {acceptDeliveryReceipt} from './receipt.mjs';
 import {acceptMuseOwnerReply} from './self-heal.mjs';
 import {signalFor} from './signal.mjs';
@@ -56,7 +57,7 @@ test('real authenticated yes -> planning receipt -> GitHub plan -> Muse exact-sc
    n.kind==='scope_plan_review'&&n.task_id===taskId);
  assert.ok(reviewEntry);
  const [noticeId,n]=reviewEntry;
- assert.match(n.question,/Reply YES to approve THESE exact files/);
+ assert.match(n.question,/Reply YES to approve the linked exact scope/);
  assert.equal(signalFor(offered,'s'.repeat(64)).pending_count>0,true);
  assert.equal(offered.scope_authorizations,undefined);
  assert.equal(effectiveSignedQueue(queue,offered,plans).tasks.find(t=>t.id===taskId).state,'proposed');
@@ -85,7 +86,7 @@ test('real authenticated yes -> planning receipt -> GitHub plan -> Muse exact-sc
  assert.deepEqual(acceptScopePlanDecisions(authorized,queue,plans),authorized);
  assert.deepEqual(queueScopePlanReviews(offered,queue,plans),offered);
 });
-test('untrusted, stale, malformed and overlapping planning comments never authorize code',()=>{
+test('untrusted, stale and malformed planning comments never authorize code',()=>{
  const {submitted,comment}=fixture();
  const variants=[
   {...comment,user:{login:'stranger'}},
@@ -282,4 +283,203 @@ test('Codex P1: yes after no re-enters exact signed transition without repeating
    type:'begin_scoped_coding',task_id:taskId,status:'submitted',
    submitted_at:'2026-11-11T09:18:00Z',receipt:{courier:'muse'}};
  assert.equal(assignmentActionKey(alreadySent,taskId,effective),null);
+});
+
+
+test('GitHub scope parser accepts long structured comments, 26 files and real dynamic routes',()=>{
+ const {submitted,comment}=fixture();
+ const match=comment.body.match(/<!-- aicafe-scope-plan:v1 (.*) -->/);
+ const data=JSON.parse(match[1]);
+ data.edits=Array.from({length:26},(_,i)=>
+   'app/[locale]/cafe/[threadId]/component-'+i+'.tsx');
+ data.architecture='Actual source, ownership and tenant data: '+('All source changes remain linked to real code. '.repeat(130));
+ data.acceptance_plan='Executable checks: '+('verify current-head behavior '.repeat(70));
+ const multi={...comment,body:'Published and verified.\n<!-- aicafe-scope-plan:v1\n'+
+   JSON.stringify(data,null,2)+'\n-->\nAwaiting signed authorization.'};
+ const parsed=parseScopePlanComment(multi,queue,submitted);
+ assert.ok(parsed);
+ assert.equal(parsed.edits.length,26);
+ assert.match(parsed.edits[0],/\[threadId\]/);
+ const notes=queueScopePlanReviews(submitted,queue,{[taskId]:parsed});
+ assert.equal(Object.values(notes.owner_alerts).some(n=>n.kind==='scope_plan_review'&&
+  n.task_id===taskId),true);
+});
+
+test('shared implementation scope gets an integration notice rather than a rejection',()=>{
+ const {submitted,comment}=fixture();
+ const data=JSON.parse(comment.body.match(/<!-- aicafe-scope-plan:v1 (.*) -->/)[1]);
+ data.edits=['lib/ai/agent/loop.server.ts'];
+ const draft={...comment,body:'<!-- aicafe-scope-plan:v1 '+JSON.stringify(data)+' -->'};
+ const parsed=parseScopePlanComment(draft,queue,submitted);
+ const overlapQueue={...queue,tasks:queue.tasks.map(t=>t.id===taskId?t:{...t,
+  ...(t.id==='9'?{exclusive_files:['lib/ai/agent/loop.server.ts'],
+     architecture_approval:{approved:true},state:'architecture_approved'}:{})})};
+ const notice=Object.values(queueScopePlanReviews(submitted,overlapQueue,
+  {[taskId]:parsed}).owner_alerts).find(n=>n.kind==='scope_plan_review');
+ assert.ok(notice);
+ assert.match(notice.question,/Shared edit paths/);
+ assert.equal(notice.scope_conflicts,undefined);
+});
+
+
+test('invalid published plan gets one signed correction in the original planning chat',()=>{
+ const {submitted,comment}=fixture();
+ const bad={...comment,body:comment.body.replace('trigger.test.ts','trigger.test.*')};
+ const out=queueScopePlanRecovery(submitted,queue,[bad],{},{
+  now:'2026-11-11T09:16:00Z'});
+ const corrections=Object.values(out.actions).filter(a=>a.scope_recovery);
+ assert.equal(corrections.length,1);
+ assert.equal(corrections[0].type,'scope_plan_update');
+ assert.match(corrections[0].delivery.prompt,/invalid_exact_edit_path/);
+ assert.equal(corrections[0].delivery.conversation_url,
+  submitted.tasks[taskId].conversation_ref);
+ assert.equal(corrections[0].delivery.approval_hash,submitted.tasks[taskId].approval_hash);
+ assert.deepEqual(queueScopePlanRecovery(out,queue,[bad],{},{
+  now:'2026-11-11T09:18:00Z'}),out);
+ const valid=selectScopePlans([comment],queue,submitted);
+ const recovered=queueScopePlanRecovery(out,queue,[comment],valid,{
+  now:'2026-11-11T09:19:00Z'});
+ assert.equal(Object.values(recovered.actions).find(a=>a.scope_recovery).status,
+  'cancelled_no_longer_needed');
+});
+
+test('missing scope is a periodic Muse progress check, never a completion deadline',()=>{
+ const {submitted}=fixture();
+ const tooEarly=queueScopePlanRecovery(submitted,queue,[],{},{
+  now:'2026-11-11T09:20:00Z'});
+ assert.equal(Object.values(tooEarly.actions).filter(a=>a.scope_recovery).length,0);
+ const due=queueScopePlanRecovery(tooEarly,queue,[],{},{
+  now:'2026-11-11T09:50:00Z'});
+ const check=Object.values(due.actions).find(a=>a.scope_recovery);
+ assert.ok(check);
+ assert.match(check.delivery.prompt,/Muse must inspect whether the existing chat is still generating/);
+ assert.equal(check.status,'planned');
+ assert.equal(Object.values(queueScopePlanRecovery(due,queue,[],{},{
+  now:'2026-11-11T10:20:00Z'}).actions).filter(a=>a.scope_recovery).length,1);
+});
+
+
+test('P1 regression: scope recovery receipt is authenticated before corrected plan and owner scope YES',()=>{
+ const {submitted,comment}=fixture();
+ const invalid={...comment,body:comment.body.replace('trigger.test.ts','trigger.test.*')};
+ const pending=queueScopePlanRecovery(submitted,queue,[invalid],{},{
+  now:'2026-11-11T09:16:00Z'});
+ const [actionId,action]=Object.entries(pending.actions).find(([_,a])=>a.scope_recovery);
+ assert.ok(actionId);
+ assert.equal(action.type,'scope_plan_update');
+ const received=acceptDeliveryReceipt(pending,{
+  action_id:actionId,task_id:taskId,
+  prompt_hash:action.delivery.prompt_hash,
+  approval_hash:action.delivery.approval_hash,
+  project_id:action.delivery.project.id,provider:'chatgpt',
+  conversation_url:submitted.tasks[taskId].conversation_ref,
+  status:'submitted',submitted_at:'2026-11-11T09:18:00Z'
+ },{authenticatedCourier:'muse'});
+ assert.equal(received.actions[actionId].status,'submitted');
+ assert.equal(received.tasks[taskId].status,'scope_plan_sent');
+ assert.equal(received.tasks[taskId].scope_plan_completed,true);
+ assert.equal(received.tasks[taskId].approved,false);
+ const corrected=JSON.parse(comment.body.match(/<!-- aicafe-scope-plan:v1 (.*) -->/)[1]);
+ corrected.action_id=actionId;
+ const resubmission={...comment,id:comment.id+1,
+  created_at:'2026-11-11T09:19:00Z',
+  html_url:comment.html_url.replace('12345678','12345679'),
+  body:'<!-- aicafe-scope-plan:v1 '+JSON.stringify(corrected)+' -->'};
+ const plans=selectScopePlans([invalid,resubmission],queue,received);
+ assert.equal(plans[taskId].action_id,actionId);
+ assert.equal(plans[taskId].comment_id,resubmission.id);
+ const offered=queueScopePlanReviews(received,queue,plans);
+ assert.ok(Object.values(offered.owner_alerts).find(n=>
+  n.kind==='scope_plan_review'&&n.task_id===taskId));
+ assert.equal(offered.scope_authorizations,undefined);
+ assert.equal(effectiveSignedQueue(queue,offered,plans)
+  .tasks.find(t=>t.id===taskId).state,'proposed');
+ const wrong=structuredClone(pending);
+ wrong.tasks[taskId].planning_approved=false;
+ assert.throws(()=>acceptDeliveryReceipt(wrong,{
+  action_id:actionId,prompt_hash:action.delivery.prompt_hash,
+  approval_hash:action.delivery.approval_hash,
+  project_id:action.delivery.project.id,provider:'chatgpt',
+  conversation_url:submitted.tasks[taskId].conversation_ref
+ },{authenticatedCourier:'muse'}),/not currently/);
+ const modified=structuredClone(pending);
+ modified.actions[actionId].scope_recovery=false;
+ assert.throws(()=>acceptDeliveryReceipt(modified,{
+  action_id:actionId,prompt_hash:action.delivery.prompt_hash,
+  approval_hash:action.delivery.approval_hash,
+  project_id:action.delivery.project.id,provider:'chatgpt',
+  conversation_url:submitted.tasks[taskId].conversation_ref
+ },{authenticatedCourier:'muse'}),/not currently/);
+});
+
+
+test('P1 regression: non-object JSON scope comments never crash all-task reconciliation',()=>{
+ const {submitted,comment,actionId}=fixture();
+ for(const value of ['null','42','true','[]','"not a plan"']){
+  const malformed={...comment,body:'<!-- aicafe-scope-plan:v1 '+value+' -->'};
+  assert.equal(parseScopePlanComment(malformed,queue,submitted),null);
+  assert.deepEqual(selectScopePlans([malformed],queue,submitted),{});
+ }
+ const task=JSON.parse(comment.body.match(/<!-- aicafe-scope-plan:v1 (.*) -->/)[1]);
+ const attributed={...comment,body:'Published identifiers: '+
+  JSON.stringify({task_id:taskId,action_id:actionId,
+   proposal_source_sha:task.proposal_source_sha})+
+  '\n<!-- aicafe-scope-plan:v1 null -->'};
+ const next=queueScopePlanRecovery(submitted,queue,[attributed],{},{
+  now:'2026-11-11T09:16:00Z'});
+ const correction=Object.values(next.actions).find(a=>a.scope_recovery);
+ assert.ok(correction);
+ assert.match(correction.delivery.prompt,/scope_must_be_object/);
+ assert.equal(next.scope_authorizations,undefined);
+});
+
+
+test('full scope snapshots select an authenticated plan from page one of a long issue',()=>{
+ const {submitted,comment}=fixture();
+ const comments=Array.from({length:250},(_,i)=>({
+  id:comment.id+100+i,user:{login:'other'},
+  author_association:'NONE',body:'unrelated',created_at:comment.created_at}));
+ comments[12]=comment;
+ assert.equal(selectScopePlans(comments,queue,submitted)[taskId].comment_id,comment.id);
+});
+
+test('source/receipt/chronology rejection is diagnosed, durable, and owner-visible',()=>{
+ const {submitted,comment}=fixture();
+ const variants=[
+  {comment:{...comment,body:'<!-- aicafe-scope-plan:v1 null -->'},
+   code:'scope_must_be_object'},
+  {comment:{...comment,created_at:'2026-11-11T09:11:00Z'},
+   code:'comment_before_authenticated_delivery'},
+  {comment:{...comment,body:comment.body.replace('trigger.test.ts','trigger.test.*')},
+   code:'invalid_exact_edit_path'},
+ ];
+ for(const {comment:bad,code} of variants){
+  assert.equal(inspectScopePlanComment(bad,queue,submitted).code,code);
+  const out=queueScopePlanRecovery(submitted,queue,[bad],{},{
+   now:'2026-11-11T09:16:00Z'});
+  const item=out.scope_rejections[String(bad.id)];
+  assert.equal(item.code,code);
+  assert.equal(item.status,'open');
+  assert.equal(Object.values(out.owner_alerts).some(n=>n.kind==='scope_plan_rejected'&&
+   n.identity===bad.id+':'+code&&n.status==='planned'),true);
+ }
+ const accepted=selectScopePlans([comment],queue,submitted);
+ const snapshot=queueScopePlanRecovery(submitted,queue,[comment],accepted);
+ assert.equal(snapshot.scope_rejections[String(comment.id)],undefined);
+});
+
+test('superseded rejection resolves old Muse notice and preserves audit trail',()=>{
+ const {submitted,comment}=fixture();
+ const bad={...comment,body:comment.body.replace('trigger.test.ts','trigger.test.*')};
+ const initial=queueScopePlanRecovery(submitted,queue,[bad],{},{
+  now:'2026-11-11T09:16:00Z'});
+ const later={...comment,id:comment.id+1,created_at:'2026-11-11T09:17:00Z'};
+ const plans=selectScopePlans([bad,later],queue,submitted);
+ const clean=queueScopePlanRecovery(initial,queue,[bad,later],plans,{
+  now:'2026-11-11T09:18:00Z'});
+ assert.equal(clean.scope_rejections[String(bad.id)].status,'resolved');
+ assert.equal(Object.values(clean.owner_alerts).some(n=>
+  n.kind==='scope_plan_rejected'&&n.status==='resolved'),true);
+ assert.equal(Object.values(clean.actions).filter(a=>a.scope_recovery&&
+  a.status==='planned').length,0);
 });
