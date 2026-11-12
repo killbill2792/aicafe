@@ -8,7 +8,7 @@ import {affectedLocalDays} from "../timecardDay";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createToastAdapter} from "./adapter";
 import {stageToastCatalog,stageToastRoster,reconcileToastOperationalHealth} from "./operationalStaging";
-import {syncCanonicalCatalog} from "../syncCatalog";
+import {syncCanonicalCatalog,applyPublishedToastCatalogReceipt} from "../syncCatalog";
 import {syncCanonicalEmployees} from "../syncEmployees";
 import {syncToastLaborReadOnly} from "./laborSync";
 import {ToastApiError} from "./client";
@@ -16,9 +16,55 @@ import {queueStaleToastLaborRollups} from "./staleLaborRecovery";
 
 export type ToastCopyScope={businessId:string;restaurantGuid:string;locationId:string;
  timezone:string;deadlineAt?:number};
+/** One authenticated version-consistent Menus V2 response feeds both existing
+ * staging and canonical import; only its matching source receipt may update
+ * publication state and existing connected_pos price-history provenance. */
 export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope){
- await stageToastCatalog(db,p); // mig 099 usage checks continue reading staging.
- return syncCanonicalCatalog(db,p.businessId,createToastAdapter({db,...p}),{restaurantGuid:p.restaurantGuid});
+ const adapter=createToastAdapter({db,...p});
+ const bundle=await adapter.fetchPublishedCatalogBundle();
+ if(bundle.receipt.restaurantGuid.toLowerCase()!==p.restaurantGuid.toLowerCase())
+  throw new ToastApiError("unauthorized_location");
+ await stageToastCatalog(db,p,bundle.facts);
+ const imported=await syncCanonicalCatalog(db,p.businessId,
+  {...adapter,fetchCatalogItems:async()=>bundle.items},{restaurantGuid:p.restaurantGuid});
+ const {data:previous,error:readError}=await db.from("toast_optional_sync_state")
+  .select("menu_last_updated,menu_copied_at,menu_checked_local_day")
+  .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
+ if(readError)throw new ToastApiError("unavailable");
+ // POS0d's existing service-role RPC checks this stamp against the receipt.
+ // The existing Toast scheduler holds one lease per café and restaurant.
+ const {error:stampError}=await db.from("toast_optional_sync_state").upsert({
+  business_id:p.businessId,restaurant_guid:p.restaurantGuid,
+  menu_last_updated:bundle.receipt.publicationVersion,
+  menu_copied_at:new Date().toISOString(),
+ },{onConflict:"business_id,restaurant_guid"});
+ if(stampError)throw new ToastApiError("unavailable");
+ try{
+  const presence=await applyPublishedToastCatalogReceipt(db,p.businessId,bundle);
+  let verifiedPriceChanges=0;
+  for(const item of bundle.items){
+   if(item.priceCents===null||!Number.isSafeInteger(item.priceCents)||item.priceCents<=0)
+    continue;
+   const {data,error}=await db.rpc("toast_verify_existing_price_history",{
+    p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+    p_item_pos_id:item.posItemId,p_version:bundle.receipt.publicationVersion,
+    p_observed_at:bundle.receipt.observedAt,p_price_cents:item.priceCents,
+   });
+   if(error)throw new ToastApiError("unavailable");
+   if(data!==null&&data!==undefined)verifiedPriceChanges++;
+  }
+  return {...imported,receipt:bundle.receipt,presence,verifiedPriceChanges};
+ }catch(error){
+  // If a verified presence/history RPC fails, do not let next 10-minute
+  // poll skip the failed version merely because an interim stamp was written.
+  const {error:restoreError}=await db.from("toast_optional_sync_state").update({
+   menu_last_updated:previous?.menu_last_updated??null,
+   menu_copied_at:previous?.menu_copied_at??null,menu_checked_local_day:null,
+  }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+    .eq("menu_last_updated",bundle.receipt.publicationVersion);
+  if(restoreError)throw new ToastApiError("unavailable");
+  throw error;
+ }
 }
 export async function copyToastStaff(db:SupabaseClient,p:ToastCopyScope){
  await stageToastRoster(db,p); // keeps pilot links and usage checks consistent.
