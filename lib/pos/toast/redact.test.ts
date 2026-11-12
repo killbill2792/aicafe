@@ -86,6 +86,14 @@ describe("Toast day pages are redacted once in the app",()=>{
   expect(safe.report).toEqual({month:"November"});
   expect(JSON.stringify(safe)).not.toMatch(/hmac:|4111111111111111|expiryMonth|expirationYear|cvv/);
  });
+ it("drops numeric card secrets nested under snake-case provider containers",()=>{
+  const source={card_info:{number:4111111111111111,month:11,year:2030,
+   cardholderName:"Ana Lopez"},payment_method:{number:4000000000000002,
+   cardType:"VISA"},service:{status:"READY"}};
+  const result=redactToastRaw(source) as Record<string,unknown>;
+  expect(result).toEqual({card_info:{cardholderName:"Ana Lopez"},
+   payment_method:{cardType:"VISA"},service:{status:"READY"}});
+ });
  it("is stable when a page is redacted twice (staged pages are read back)",()=>{
   const once=redactToastRaw([order],0,"",undefined,"orders");
   expect(redactToastRaw(once,0,"",undefined,"orders")).toEqual(once);

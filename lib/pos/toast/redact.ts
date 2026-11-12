@@ -64,7 +64,7 @@ export function redactToastRaw(value:unknown,depth=0,key="",_hashKey?:string,
   return Object.fromEntries(Object.entries(value as Record<string,unknown>)
    .filter(([k])=>{const key=k.replace(/[-_]/g,"");
     return KEY.test(k)&&!SECRET_KEY.test(key)&&!ENDS_WITH_SECRET.test(key)&&
-     !(CARD_CONTAINER.test(_context)&&CARD_CHILD_SECRET.test(key));
+     !(CARD_CONTAINER.test(_context.replace(/[-_]/g,""))&&CARD_CHILD_SECRET.test(key));
    })
    .map(([k,v])=>[k,redactToastRaw(v,depth+1,k,_hashKey,
     _context?_context+"."+k:k,_scope)]));
