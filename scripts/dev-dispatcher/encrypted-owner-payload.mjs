@@ -83,7 +83,7 @@ if(process.argv[1]&&fileURLToPath(import.meta.url)===process.argv[1]){
    const r=publishEncryptedOwnerView({token:process.env.DISPATCH_LEDGER_TOKEN,
      passphrase:process.env.OWNER_PAGES_PASSPHRASE,
      outputPath:process.argv[2]});
-   console.log('Encrypted owner snapshot: '+r.tasks+' task rows (no plaintext published)');
+   console.log('Encrypted owner snapshot generated; plaintext and private metadata suppressed');
  }catch(error){
    // Never print the environment, private state, passphrase or ciphertext.
    console.error('Encrypted owner snapshot unavailable: '+String(error.message).slice(0,110));
