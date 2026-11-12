@@ -63,3 +63,88 @@ Production `supabase_migrations.schema_migrations` currently ends at `2026110501
 ### Owner clarification — no paid testing infrastructure (Nov 11)
 
 The owner correctly identified that the existing local Supabase/PostgreSQL disposable CI environment already provides database migration and effect-gateway acceptance. The earlier request for authorization to create a hosted development branch at `$0.01344/hour` was unnecessary and withdrawn. **Do not create a Supabase development branch, accept extra cloud costs, or block this repair PR on such a purchase.** The remaining distinct gates are: explicit confirmation of production-specific schema drift/read-only signatures before live migration, final exact-head non-skipped CI/Codex, and later real phone MFA verification. Existing jobs and owner records are not deleted to make acceptance pass.
+
+## Production-readiness audit: actual production vs disposable schema (2026-11-11, 22:40 PT)
+
+**Decision: targeted migration is technically plausible, but not certified for a blind production push.** No production SQL has been changed. We have not asserted a byte-for-byte production clone. The repository's zero-cost local Supabase PG17 runs every migration from scratch; its PostgreSQL 16 fixture applies the pre-Task10 ledger plus both Task10 migrations and checks security/claims/receipts. The pre-existing-data upgrade fixture now seeds three legacy click approvals *before* Task10 migration and proves that the migration preserves the exact owner/effect/revision data and that a legacy approved proposal remains executable through the new gateway. CI evidence for **the changed test head** must pass before these *new* scenarios are accepted.
+
+### Recorded read-only production facts and interpretation
+
+| Fact | Confirmed state | Meaning for deployment |
+| --- | --- | --- |
+| PostgreSQL | 17.6 (2026-11-12 06:37Z UTC inspection) | Matches local Supabase major 17; the isolated claim/race fixture additionally uses PG16 |
+| Proposals | 39: 35 event-readiness drafts, 1 event-readiness committed, 2 price-change committed, 1 price-change rejected | Must not wipe/reseed; no current executing proposals at inspection time |
+| Approvals | 3, all for committed proposals, each approved revision 1 | None has inconsistent owner/café/effect hash or future approved revision; Task10 should add `authorization_kind='click'` and null mandate identifiers |
+| Cafés | 9, all timezones valid in PostgreSQL | Café-local-day quota cannot fail due to a missing timezone **at inspection time** |
+| Old authority | `supervisor_proposals`, `supervisor_approvals`, `supervisor_transition_proposal` and `supervisor_commit_staff_proposal` exist | Mandatory 00206 dependencies are present |
+| Canonical receipts | `pantry_stock_purchases`, `menu_price_history`, `menu_items` exist | 00301 recovery dependencies exist |
+| New Task10 tables | mandates/challenges/effect_attempts **absent** | Vercel application code is ahead of database; live gateway is not certified |
+| Verified phone MFA factors | 0 | The mandate grant flow cannot complete yet; does **not** prove the OTP provider is disabled |
+| Production ledger | last recorded `20261105012125` | Nine later repository migrations exist but some objects are already live, implying mixed out-of-band/manual deployment or ledger drift. Never bulk push pending migrations |
+
+**Unrecorded migration family spot checks:** `supervisor_runs` and `supervisor_run_steps` already exist though 40000 is unrecorded; `create_operating_commitment` and the `due_at` column are already present though 40001 is unrecorded; the shared `toast_records_for` function from POS0e and the POS0b labor staging RPC are present; the Task7 `supervisor_routines` tables and POS0c `toast_stage_operational_batch` function are absent. This mixed state is positive evidence that a blanket `supabase db push` would not be safe. It is **not** permission to mark those missing migrations applied.
+
+**Production Vercel** most recent inspected READY build was at main SHA `d5df6e5623b3589b7f9df9ccb0dcb76b8ed60878`, which already contains #443. A 24-hour runtime error scan found an unrelated Supervisor `get_peak_hours` invalid reporting period and prior events-lookahead timeouts. These are existing operational concerns, *not* proof of a Task10 SQL migration failure; no clean runtime acceptance for Task10 can be inferred from Vercel READY alone.
+
+### Migration compatibility and safety matrix
+
+| Change | Existing data / blast radius | Precondition | Failure response |
+| --- | --- | --- | --- |
+| 00206: add three authorization columns to `supervisor_approvals` | All three existing approval rows gain click defaults; no row deletion, no existing approval reset | Three pre-existing approvals have valid scope/hash/revision; zero executing proposals at cutover | Do not apply if a new executing claim appears; maintain a coordinated release checkpoint |
+| 00206: add mandate, challenge, attempt tables | New, initially empty tables with FK, constraints and RLS | Parent businesses/owners/proposals and `auth.users` present | Stop if table/function signature conflicts; do not use `IF NOT EXISTS` to conceal drift |
+| 00206: replace `supervisor_transition_proposal` | Behavior change: legacy `claim_commit` is explicitly blocked in favor of the gateway | Application #443 / #454 commits exclusively through `supervisor_claim_effect` | Application and SQL MUST stay compatible; never revert only frontend/Next |
+| 00206: staff wrapper `supervisor_gateway_commit_staff` | Delegates to existing atomic staff executor | Existing `supervisor_commit_staff_proposal` signature and privilege still valid | Verify staff compare-and-swap on disposable full schema; do not perform a real staffing action for acceptance |
+| 00301: recovery RPC | Adds a privileged, owner/café/revision-scoped receipt check; never re-sends external effects | 00206 installed; canonical purchase/history/menu records available | On absent/wrong receipt, stay uncertain and stop; no retry |
+| 00301: price-history RLS | Previous all-member-write policy removed; SELECT retained | Owner must still write `owner_manual` through canonical CAS; ordinary authenticated members must still be able to add legitimate `initial`, `imported`, `connected_pos` rows for CSV/catalog | New separate INSERT policy preserves those member import sources but rejects staff `owner_manual` forgery; all authenticated UPDATE/DELETE denied |
+| PR #454 menu writer provenance | Source provider becomes `Alex (owner approved; proposal <uuid>)` | Existing canonical CAS writer passes source provider transactionally into history | History + matching live price must both exist after effect claim; otherwise stay uncertain |
+
+### Human-readable release procedure — **prepared, NOT executed**
+
+**Stage A — release gates before any live migration**
+1. Approve only the 11 changed paths in PR #454 and obtain a reviewed exact-head clean CI (guards, DB, full Vitest, TS/lint, production build) **and** a clean Codex review. No skipped check may be presented as passed.
+2. Recheck read-only production: table/function signatures, current approver hash/scope consistency, valid café timezones, no executing proposals, exact current migration ledger and Vercel production SHA. Confirm live PSQL PG17 version and there are no unexpected newly created Task10 objects.
+3. Obtain a verified restorable backup/snapshot, capture the old transition-function definition, and establish how to put all effectful owner approvals temporarily into maintenance. No delete/reseed of owner jobs, approvals or data.
+4. Resolve the nine unrecorded migration entries **by actual object/signature inspection** with the responsible migration owners. Do not use `supabase db push` or any command that automatically applies all outstanding migrations. No fabrication of migration-history rows.
+5. Choose a controlled low-activity window and confirm which Vercel SHA is on production; do not allow an unrelated automatic deploy between verification and migration.
+
+**Stage B — targeted release (requires a separate explicit production authorization)**
+1. Merge the reviewed repair PR using normal main protections, recognizing that **main auto-deploys on Vercel**. Verify the production deployment is READY, and hold owner effect approvals while schema is missing; the optional reconcile action must remain unused until its RPC exists.
+2. Apply **only** SQL `20261111000206_supervisor_effect_gateway.sql` through a tracked, explicit migration operation. No bulk CLI push. Confirm new tables, authorization columns/defaults, constraints, RLS, grants and transition-function signature before continuing. Confirm all 39 proposals and all 3 approvals are still present.
+3. Apply **only** SQL `20261112000301_supervisor_effect_reconciliation.sql` after 00206 succeeds. Confirm scoped recovery function exists, canonical menu-price import/owner policies are correct, and non-owner `owner_manual` writes remain forbidden.
+4. Reload PostgREST schema cache as needed, then perform read-only integrity checks and specifically exercise a **synthetic controlled, non-provider** goal proposal under approved owner context. Do not use a real purchase, staff command, POS price change or SMS test as a first smoke.
+5. Capture actual post-deploy Vercel request traces, Supabase errors, function response/status and counts. Only mark `integrated_proven` when those receipts and all owner authorization protections pass.
+
+**Stage C — MFA enablement later, not part of this release authorization**
+Confirm project phone MFA provider and delivery setup without exposing credentials; enroll a dedicated test owner phone factor; test OTP delivery, wrong/expired OTP, factor/owner mismatch, one challenge replay, grant/revise/revoke, the café-shared cap 5, expiry and midnight/DST rollover. There are currently **zero verified phone factors** on production, so real phone-based mandates cannot be considered available. Owner-facing grant/revoke UI is a separate Task16a dependency.
+
+### Production preflight SQL (READ-ONLY, safe to inspect; never execute against an unknown target)
+
+```sql
+select current_setting('server_version') as pg_version,
+ (select count(*) from public.supervisor_proposals) as proposals,
+ (select count(*) from public.supervisor_approvals) as approvals,
+ (select count(*) from public.supervisor_proposals where status='executing') as executing;
+select count(*) as approval_mismatches
+ from public.supervisor_approvals a join public.supervisor_proposals p on p.id=a.proposal_id
+ where a.effect_hash is distinct from p.effect_hash
+   or a.business_id is distinct from p.business_id
+   or a.owner_user_id is distinct from p.owner_user_id
+   or a.approved_revision>p.revision;
+select to_regclass('public.supervisor_mandates') as mandates,
+ to_regclass('public.supervisor_mandate_challenges') as challenges,
+ to_regclass('public.supervisor_effect_attempts') as attempts;
+select version from supabase_migrations.schema_migrations
+ where version >= '20261105000000' order by version;
+```
+
+**Interpretation:** pre-cutover `executing=0`, `approval_mismatches=0`, no Task10 tables. After cutover `proposals` and `approvals` must be unchanged except for explicitly approved synthetic smoke records; all three new tables exist and their RPCs are present. Recheck that Task10 table RLS is enabled and that no `anon`/unauthorized role can execute the service functions. Never treat an empty runtime error stream as proof that live effects were exercised.
+
+### Task 10 implementation gap inventory (do not misstate completed scope)
+
+1. **Already fixed in #454:** missing recovery of uncertain attempts using canonical purchase and immutable proposal-specific price/history postconditions; explicit no-resend owner API; conservative older-claim policy; price-history staff forgery; preserving legitimate CSV imports; compatibility test with three legacy approvals.
+2. **Still gated:** no live phone-MFA/SMS provider configuration or verified factor delivery proof; zero verified phone factors; no owner-facing mandate grant/revoke controls (Task16a); no live provider-effect smoke proof, and no guaranteed automatic/operator-visible workflow to periodically reconcile uncertain effects. The `POST action=reconcile` endpoint is usable by an authenticated owner but not yet surfaced as a visible UI recovery button.
+3. **Known limitation:** a price-history row remains owner-writable and a current matching price is not an independent signed provider receipt. For POS/external effects, do not equate the local canonical price with a provider-verified menu update.
+4. **Existing platform health unrelated to Task10:** mixed production migration ledger and newer POS/Task7 objects missing despite deployed code; separate Supervisor peak-hours error. These need their own owner-scoped plans rather than being silently changed in Task10.
+5. **Operational recovery:** forward repair preferred over rollback, but a verified restore path and an effect-claim maintenance plan remain compulsory. No automatic deletion or downgrade of live owner data.
+
+**Production go/no-go is conditional, not an unconditional promise.** A successful disposable test proves code/migration behavior under the test fixtures, not that the user's production database and external providers cannot fail. Merge, production migration and SMS delivery must each be tracked as separate verified steps.
