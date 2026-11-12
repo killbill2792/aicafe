@@ -132,6 +132,14 @@ export function applyMergedPrEvidence(state,observation,now=new Date().toISOStri
   rec.merged_at=item.merged_at;
   rec.pr_link_recovery='verified_git_merge_and_owner_pr_marker';
   rec.recovered_pr_unsigned_files=item.unsigned_files;
+  // A verified historical merge supersedes undelivered coding instructions
+  // for this task. Retain claimed/submitted/uncertain receipts for audit and
+  // never touch any other task (including an independent Task 9).
+  for(const action of Object.values(next.actions||{})){
+    if(action.task_id===item.task_id&&action.status==='planned'&&
+      action.type!=='landing_failed')
+      action.status='cancelled_merged_pr_recovered';
+  }
   if(item.conversation_url&&item.conversation_url===rec.conversation_ref){
    next.pr_chat_links||={};
    next.pr_chat_links[String(item.pr_number)]={task_id:item.task_id,
