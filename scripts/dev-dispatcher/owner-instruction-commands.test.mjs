@@ -110,3 +110,54 @@ test('unsupported/invalid/ambiguous instructions are explicit BLOCKED, never eff
  assert.equal(suspicious.owner_instruction_events.owner_instruction_1.reason,
   'target_does_not_match_owner_words');
 });
+
+test('Muse can translate owner speech into a bounded typed control without a hashtag',()=>{
+ const r=receipt('Please move my rolling memory task ahead of the other work',
+   {task_id:'9'});
+ r.command={type:'control',task_id:'9',field:'dispatch_priority',value:85};
+ const next=apply(fixture(),r);
+ assert.equal(next.owner_instruction_events.owner_instruction_1.status,'APPLIED');
+ assert.equal(next.owner_controls.per_task['9'].dispatch_priority,85);
+ assert.equal(next.owner_controls.history[0].actor,'authenticated_owner');
+});
+test('unambiguous owner words override and verify a Muse structured interpretation',()=>{
+ const r=receipt('Set Task 9 priority to 90',{task_id:'9'});
+ r.command={type:'control',task_id:'9',field:'dispatch_priority',value:10};
+ const next=apply(fixture(),r);
+ assert.equal(next.owner_instruction_events.owner_instruction_1.status,'BLOCKED');
+ assert.equal(next.owner_instruction_events.owner_instruction_1.reason,
+   'muse_command_conflicts_with_owner_words');
+ assert.equal(next.owner_controls,undefined);
+});
+test('typed Muse recovery is a safe verified hint rather than a forged GitHub status',()=>{
+ const r=receipt('Please get the review moving again',{pr_number:442});
+ r.command={type:'recovery',intent:'REQUEST_CODEX_IF_ELIGIBLE',
+   task_id:null,pr_number:442};
+ const state=apply(fixture(),r);
+ const event=state.owner_instruction_events.owner_instruction_1;
+ assert.equal(event.status,'REQUESTED');
+ assert.equal(state.recovery_requests[event.recovery_request_id].expected_head_sha,head);
+ assert.equal(state.tasks['9'].codex_state,'pending');
+ const wrong=receipt('Please get the review moving again',{pr_number:442,task_id:'10'});
+ wrong.command=r.command;
+ const blocked=apply(fixture(),wrong);
+ assert.equal(blocked.owner_instruction_events.owner_instruction_1.reason,
+   'target_does_not_match_verified_pr_task');
+});
+test('invalid typed Muse operations cannot expand owner control permissions',()=>{
+ for(const cmd of [
+  {type:'control',task_id:'9',field:'approved',value:true},
+  {type:'control',task_id:'9',field:'ci_state',value:'success'},
+  {type:'recovery',intent:'FORCE_MERGE',task_id:'9',pr_number:442},
+  {type:'control',task_id:'9',field:'dispatch_priority',value:100,
+    arbitrary_rewrite:true}
+ ]){
+   const r=receipt('Do what I just said',{task_id:'9'});r.command=cmd;
+   const state=apply(fixture(),r);
+   assert.equal(state.owner_instruction_events.owner_instruction_1.status,'BLOCKED');
+   assert.equal(state.owner_instruction_events.owner_instruction_1.reason,
+     'unsupported_or_malformed_muse_command');
+   assert.equal(state.owner_controls,undefined);
+   assert.equal(state.recovery_requests,undefined);
+ }
+});
