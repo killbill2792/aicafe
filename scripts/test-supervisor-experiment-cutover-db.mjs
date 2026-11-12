@@ -55,11 +55,11 @@ async function proposal(capability,product,target=500,cafe=ids.business,owner=id
    JSON.stringify({durationDays:7,metricScope:product}),approved]);
  return id;
 }
-const transition=(id,revision=1)=>
+const transition=(revision=1)=>
  "select (public.supervisor_transition_proposal($1,$2,$3,"+Number(revision)+",'manual_confirmed',current_date)).status as status";
 async function activate(id,client=workerA){
  return role(client,"service_role",null,async c=>
-  one(c,transition(id),[ids.business,ids.owner,id]));
+  one(c,transition(),[ids.business,ids.owner,id]));
 }
 const claimSql="select public.supervisor_8a_claim_notice($1,$2,$3,$4,$5,$6) as id";
 async function claim(client,id,kind="price_reminder",slot=1,cafe=ids.business,owner=ids.owner,date=null){
