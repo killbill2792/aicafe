@@ -473,7 +473,7 @@ create or replace function public.supervisor_reconcile_effect_attempt(
   p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid,
   p_proposal_id uuid, p_revision integer
 ) returns public.supervisor_proposals
-language plpgsql security definer set search_path = public as $
+language plpgsql security definer set search_path = public as $$
 declare
   p public.supervisor_proposals;
   a public.supervisor_effect_attempts;
@@ -598,7 +598,7 @@ begin
     monitoring_start_date = next_start, updated_at = now()
     where id = p.id returning * into p;
   return p;
-end $;
+end $$;
 
 reset lock_timeout;
 reset statement_timeout;
