@@ -413,8 +413,10 @@ export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,a
 }
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
   const [ledgerPath,backlogPath,queuePath]=process.argv.slice(2);
-  runMuseWatch({ledgerPath,backlogPath,queuePath,repo:process.env.GITHUB_REPOSITORY,
-    actor:process.env.MUSE_GITHUB_ACTOR,token:process.env.MUSE_GITHUB_WAKE_TOKEN,
+  runMuseWatch({ledgerPath,backlogPath,queuePath,
+    repo:process.env.GITHUB_REPOSITORY||settings.repo,
+    actor:process.env.MUSE_GITHUB_ACTOR||process.env.DISPATCH_MUSE_ACTOR,
+    token:process.env.MUSE_GITHUB_WAKE_TOKEN,
     gitToken:process.env.MUSE_PRIVATE_GIT_TOKEN,
     gitSecret:process.env.DISPATCH_MUSE_RECOVERY_KEY})
     .then(r=>{console.log(JSON.stringify(r));if(!r.health.healthy)process.exitCode=2;})
