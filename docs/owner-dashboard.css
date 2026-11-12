@@ -111,3 +111,25 @@ footer{padding:25px 0 45px;color:var(--muted);font-size:12px}
 .private-encrypted .table-scroll{max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:9px}
 .private-health{font-weight:650}
 .private-encrypted [hidden]{display:none!important}
+
+/* One owner operations table: status remains readable on phone and desktop. */
+.task-controls{display:flex;flex-wrap:wrap;gap:14px;padding:0 20px 16px;align-items:end}
+.task-controls label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:650;color:var(--muted)}
+.task-controls input,.task-controls select{max-width:300px;border:1px solid var(--border);background:var(--paper);
+ color:var(--ink);padding:9px 11px;border-radius:7px;font:inherit;font-size:13px}
+.task-controls input{min-width:220px}
+.task-controls .meta{margin-left:auto}
+#tasks-and-handoffs{width:max-content;min-width:100%;border-collapse:collapse;table-layout:auto}
+#tasks-and-handoffs th,#tasks-and-handoffs td{min-width:130px;max-width:280px;white-space:normal;overflow-wrap:anywhere}
+#tasks-and-handoffs td:first-child{min-width:190px}
+#tasks-and-handoffs td:nth-child(5){min-width:230px}
+#tasks-and-handoffs td:nth-child(8){min-width:220px}
+#tasks-and-handoffs td:last-child{min-width:215px}
+#tasks-and-handoffs .small{margin-top:4px;line-height:1.45}
+#operations-source{margin:5px 0 0}
+.owner-decisions{margin-top:18px}
+.owner-decisions>.panel{min-height:110px}
+@media(max-width:760px){.task-controls{padding:0 16px 12px;gap:9px}
+ .task-controls label{flex:1 1 130px}.task-controls input{min-width:0;width:100%}
+ .task-controls .meta{flex-basis:100%;margin-left:0}
+ #tasks-and-handoffs td{max-width:240px}}
