@@ -42,8 +42,8 @@ function mockDB(){
   }
   return {inactiveItems:0,inactiveModifiers:0,inactiveGroups:0};
  });
- const rpc=vi.fn(async(name:string)=>({error:null,data:
-  name==="toast_verify_existing_price_history"?true:null}));
+ const rpc=vi.fn(async(name:string):Promise<{error:{message:string}|null;data:boolean|null}>=>({
+  error:null,data:name==="toast_verify_existing_price_history"?true:null}));
  const db={
   from(table:string){
    if(table==="menu_items"){
