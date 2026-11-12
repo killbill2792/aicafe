@@ -128,5 +128,3 @@ export async function readElapsedWindowObservations(db:SupabaseClient,
  return withUnattributedSourceLines(measured,
   (unknownBoth.count??0)>0?1:0,completePages);
 }
-
-}
