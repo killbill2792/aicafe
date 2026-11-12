@@ -131,3 +131,26 @@ label alone is a new owner approval.
 - Obtain owner-only infrastructure merge and cutover approval
 
 No production database, POS, provider or payment effects are authorized here.
+
+
+## Automatic Muse-host watchdog mode
+
+The existing muse-watch-v3.mjs host runner now prefers Git only when BOTH
+MUSE_PRIVATE_GIT_TOKEN and DISPATCH_MUSE_RECOVERY_KEY are configured.
+It writes each eligible recovery intent to the signed private Git inbox before
+attempting any REST wake. It sends **at most one** REST repository_dispatch for
+the entire Git-persisted batch, and never sends another for that batch inside
+the 15-minute cooldown. The old authorized API-only route remains the fallback
+until the host keys are provisioned.
+
+An HTTP 429/403 with confirmed quota exhaustion does not prevent Git queue
+persistence. The watchdog retains local retry/backoff state, does not claim
+GitHub execution from an accepted API request, and reads the private
+recovery_requests/recovery_rejections fields for eventual acknowledgments.
+If the Git push itself is uncertain, it retains the command in the local
+backlog. Neither Muse nor GitHub changes any owner approval to recover it.
+
+Run the existing host watchdog with its current positional arguments
+(ledger snapshot path, local backlog path, optional queue path). Its existing
+MUSE_GITHUB_WAKE_TOKEN is optional for the fast API wake. Do not provision
+the GitHub Actions signing secret to any untrusted PR runner or browser page.
