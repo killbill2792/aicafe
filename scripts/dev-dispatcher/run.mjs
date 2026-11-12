@@ -994,7 +994,7 @@ main().catch(async error => {
       token:process.env.DISPATCH_LEDGER_TOKEN,
       identity:error.code==='RATE_LIMIT'
         ?'github_api_rate_limit:'+String(error.reset_at||'unknown')
-        :'run:'+String(process.env.GITHUB_RUN_ID||'unknown')+':failure',
+        :'trusted-dispatcher:failure',
       resetAt:error.code==='RATE_LIMIT'?error.reset_at:null,
       message:detail,needs:'Muse notify owner; inspect failed dispatcher workflow'
     });
