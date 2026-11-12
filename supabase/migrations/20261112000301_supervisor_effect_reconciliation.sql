@@ -3,6 +3,16 @@
 set lock_timeout = '3s';
 set statement_timeout = '30s';
 
+-- The old broad member-write policy lets any café member forge a price-history
+-- receipt. History is append-only and the canonical price writer runs under
+-- the authenticated owner (or a service role). Keep existing member READs.
+drop policy if exists "members write price history" on public.menu_price_history;
+create policy "owner append canonical price history" on public.menu_price_history
+  for insert to authenticated with check (exists (
+    select 1 from public.memberships m where m.business_id = menu_price_history.business_id
+      and m.user_id = (select auth.uid()) and m.role = 'owner'
+  ));
+
 create function public.supervisor_reconcile_effect_attempt(
   p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid,
   p_proposal_id uuid, p_revision integer
@@ -83,6 +93,10 @@ begin
         and h.new_price_cents = (p.canonical_effect_payload->>'newPriceCents')::bigint
         and h.source_type = 'owner_manual'
         and h.source_provider = 'Alex (owner approved; proposal ' || p.id::text || ')'
+        and h.changed_at >= a.created_at
+        and exists (select 1 from public.menu_items m
+          where m.business_id = p.business_id and m.id = h.menu_item_id
+            and m.price_cents = h.new_price_cents)
       order by h.changed_at desc limit 1;
     if price_record.id is not null then
       next_status := 'committed';
