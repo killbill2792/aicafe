@@ -85,7 +85,7 @@ export function scanMuseGitRecoveryDirectory(root,{secret,actors={},now,
    const envelope=JSON.parse(readFileSync(path,'utf8'));
    const cmd=verifyMuseGitRecovery(envelope,{secret,actors,now});
    if(filename!==cmd.request_id+'.json')throw Error('recovery_filename_mismatch');
-   accepted.push({file:filename,request:cmd});
+   accepted.push({file:filename,request:cmd,signature:envelope.signature});
   }catch(error){
    rejected.push({file:filename,reason:String(error.message||'invalid_recovery').slice(0,80)});
   }
@@ -127,6 +127,14 @@ export function pushMuseGitRecovery({request,secret,token,repo=settings.ledger.r
   try{
    git(['clone','-q','--depth','1','--branch','main',remoteUrl||gitRemote(repo),root],{env,run});
    const file=join(root,relative);
+   // Already recorded in the authoritative ledger? Do not create a new
+   // command file after the first one was atomically consumed and archived
+   // in Git history. This is a Git read, not a REST status call.
+   const saved=JSON.parse(readFileSync(join(root,settings.ledger.path),'utf8'));
+   if(saved.recovery_requests?.[envelope.request.request_id]||
+      saved.recovery_rejections?.[envelope.request.request_id])
+     return {status:'already_acknowledged',file:relative,
+       request_id:envelope.request.request_id};
    if(existsSync(file)){
     if(readFileSync(file,'utf8')!==body)
       throw Error('Recovery ID collision with different signed payload');
