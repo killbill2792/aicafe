@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {createToastAdapter} from "./adapter";
+import {createToastAdapter,type ToastCatalogFact} from "./adapter";
 import {ToastApiError} from "./client";
 type Scope={businessId:string;restaurantGuid:string;deadlineAt?:number};
 /** Keep operational errors in the EXISTING owner-facing Toast health row.
@@ -53,9 +53,10 @@ export async function stageToastRoster(db:SupabaseClient,p:Scope) {
  return {staged:rows.length,canonicalEmployeesChanged:false,
   ownerCorrectionsPreserved:true};
 }
-export async function stageToastCatalog(db:SupabaseClient,p:Scope){
- const adapter=createToastAdapter({db,...p});
- const rows=await adapter.fetchCatalogFacts();
+export async function stageToastCatalog(db:SupabaseClient,p:Scope,
+ publishedFacts?:readonly ToastCatalogFact[]){
+ // Reuse verified facts when passed; never refetch the full menu to stage them.
+ const rows=publishedFacts??await createToastAdapter({db,...p}).fetchCatalogFacts();
  for(let i=0;i<rows.length;i+=500){
   const {error}=await db.rpc("toast_stage_catalog",{
    p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,p_rows:rows.slice(i,i+500)

@@ -86,8 +86,38 @@ describe("Toast day pages are redacted once in the app",()=>{
   expect(safe.report).toEqual({month:"November"});
   expect(JSON.stringify(safe)).not.toMatch(/hmac:|4111111111111111|expiryMonth|expirationYear|cvv/);
  });
+ it("drops numeric card secrets nested under snake-case provider containers",()=>{
+  const source={card_info:{number:4111111111111111,month:11,year:2030,
+   cardholderName:"Ana Lopez"},payment_method:{number:4000000000000002,
+   cardType:"VISA"},service:{status:"READY"}};
+  const result=redactToastRaw(source) as Record<string,unknown>;
+  expect(result).toEqual({card_info:{cardholderName:"Ana Lopez"},
+   payment_method:{cardType:"VISA"},service:{status:"READY"}});
+ });
  it("is stable when a page is redacted twice (staged pages are read back)",()=>{
   const once=redactToastRaw([order],0,"",undefined,"orders");
   expect(redactToastRaw(once,0,"",undefined,"orders")).toEqual(once);
  });
+ it("drops snake-case, kebab-case and mixed-case reusable secrets at every depth",()=>{
+  const input={
+   customer:{firstName:"Ana",loyalty_guid:guid(50),access_token:"bearer-value",
+    refresh_token:"refresh-value",api_key:"api-value",session_token:"session-value"},
+   payments:[{name:"cardholder",payment_token:"payment-value",
+    "client-secret":"client-value",authorization_token:"auth-value",
+    public_note:"Paid at counter"}],
+   extras:{nested:[{"private_key":"private-value","card-number":"4111111111111111",
+     status:"OPEN"}]},
+  };
+  const cleaned=redactToastRaw(input) as Record<string,unknown>;
+  const serialized=JSON.stringify(cleaned);
+  for(const secret of ["bearer-value","refresh-value","api-value","session-value",
+   "payment-value","client-value","auth-value","private-value","4111111111111111"])
+   expect(serialized).not.toContain(secret);
+  for(const field of ["access_token","refresh_token","api_key","session_token",
+   "payment_token","client-secret","authorization_token","private_key","card-number"])
+   expect(serialized).not.toContain('"' + field + '"');
+  expect(cleaned.customer).toEqual({firstName:"Ana",loyalty_guid:guid(50)});
+  expect(cleaned.payments).toEqual([{name:"cardholder",public_note:"Paid at counter"}]);
+ });
+
 });

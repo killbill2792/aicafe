@@ -107,3 +107,20 @@ test('unauthenticated forged recovery request is not recorded or acted upon',()=
  assert.equal(result.recovery_requests,undefined);
  assert.equal(result.recovery_rejections,undefined);
 });
+
+
+test('durable Git command survives delayed run but still cannot bypass current-head gate',()=>{
+ const delayed=signed('MERGE_IF_ELIGIBLE');
+ const later={...options,now:'2026-11-11T12:00:00Z'};
+ assert.equal(recoveryEvent(delayed,later).reason,'stale_or_future_recovery_request');
+ const viaGit={...later,maxAgeMs:7*86400000};
+ const recorded=recordRecoveryEvent(state,delayed,viaGit);
+ assert.equal(Object.values(recorded.recovery_requests).length,1);
+ assert.deepEqual(recorded.tasks,state.tasks);
+ const stale=signed('MERGE_IF_ELIGIBLE',{expected_head_sha:'c'.repeat(40)});
+ const blocked=recordRecoveryEvent(state,stale,viaGit);
+ assert.equal(blocked.recovery_rejections[stale.client_payload.request_id].reason,'stale_head');
+ assert.equal(blocked.recovery_requests,undefined);
+ const forged=signed();forged.sender.login='untrusted';
+ assert.equal(recordRecoveryEvent(state,forged,viaGit).recovery_requests,undefined);
+});
