@@ -36,6 +36,8 @@ import {ensureApprovedDraftPr,classifyPrCreatePreflightError} from "./pr-create-
 import {verifiedCodingConversation} from "./verified-chat-v3.mjs";
 import {recordGithubEffects,recordPrWriterOwnerNotices} from "./github-effects-v3.mjs";
 import {fetchMuseGitRecoveries} from './git-recovery-transport.mjs';
+import {discoverMergedPrEvidence,applyMergedPrEvidence}
+  from './merged-pr-recovery.mjs';
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -72,6 +74,19 @@ async function main() {
     const mainRef = await gh.request("/git/ref/heads/main");
     const mainSha=mainRef.object?.sha || null;
     const snapshot = await gh.snapshot(mainSha,{state,...selection});
+    // Git-first recovery scans only a bounded set of historical merge titles
+    // for approved tasks whose PR number was never linked. One REST PR lookup
+    // per plausible title verifies owner, body marker and full changed paths.
+    let mergedEvidence={candidates:[],blocked:[],checked:false};
+    if(selection.fullAudit&&mainSha){
+      try{
+        mergedEvidence=await discoverMergedPrEvidence({
+          github:gh,state,mainSha,now:new Date().toISOString()});
+      }catch(error){
+        console.error('Merged-PR history scan unavailable: '+
+          String(error.message||'unavailable').slice(0,140));
+      }
+    }
     const closedByPr = {};
     const openNumbers = new Set(snapshot.map(x => x.pr_number));
     // Never downgrade a previously verified merge just because it is not in
@@ -106,10 +121,11 @@ async function main() {
     const history=await gh.request('/actions/workflows/'+settings.workflows.dispatcher+'/runs?event=schedule&per_page=3').catch(()=>null);
     const previous=(history?.workflow_runs||[]).find(r=>r.created_at && r.id!==Number(process.env.GITHUB_RUN_ID));
     return {snapshot,closedByPr,mainSha,audited:selection.fullAudit,
-      lastScheduleAt:previous?.created_at || null};
+      lastScheduleAt:previous?.created_at || null,mergedEvidence};
   }
   function reconcile(state, observed) {
-    const initiallyLinked = linkPullRequests(state, observed.snapshot);
+    const withMerged=applyMergedPrEvidence(state,observed.mergedEvidence);
+    const initiallyLinked = linkPullRequests(withMerged, observed.snapshot);
     const adopted = adoptAdhocPullRequests(initiallyLinked.state, observed.snapshot, [...taskById.keys()]);
     const linked = linkPullRequests(adopted.state, observed.snapshot);
     // Never latch unlinked PRs: re-evaluate branch receipts and optional markers on every wake.
