@@ -176,14 +176,18 @@ begin
  then raise exception 'price_item_identity_missing' using errcode='22023';end if;
  select * into v_item from public.menu_items
  where business_id=old.business_id and id=v_product::uuid;
- if not found or v_item.catalog_source is distinct from 'toast'
+ if not found then
+  raise exception 'price_item_missing' using errcode='23514';end if;
+ if v_item.catalog_source is distinct from 'toast'
  then return new;end if; -- disconnected/manual cafés preserve their flow
  v_before:=old.canonical_effect_payload->>'oldPriceCents';
  v_target:=old.canonical_effect_payload->>'newPriceCents';
  if v_before is null or v_before!~'^[0-9]+$' or
     v_target is null or v_target!~'^[0-9]+$'
  then raise exception 'toast_price_baseline_missing' using errcode='22023';end if;
- if v_item.toast_publication_state<>'active' or
+ if v_item.toast_publication_state is distinct from 'active' or
+  v_item.pos_pricing_strategy not in ('BASE_PRICE','SIZE_PRICE') or
+  v_item.pos_pricing_strategy is null or
   v_item.price_cents is distinct from v_target::bigint or
   not exists(
     select 1 from public.menu_price_history h
@@ -202,6 +206,38 @@ begin
     and v_item.toast_publication_version=h.toast_publication_version
     and v_item.toast_publication_observed_at=h.toast_observed_at
     and v_item.pos_item_id like 'toast:'||h.toast_restaurant_guid::text||':%'
+    and (case when v_item.pos_pricing_strategy='SIZE_PRICE'
+      then v_item.pos_item_id ~* ':[0-9a-f-]{36}:size:[0-9a-f-]{36}
+  ) then
+   raise exception 'toast_price_not_source_verified' using errcode='23514';
+ end if;
+ return new;
+end;$$;
+drop trigger if exists supervisor_8a_toast_price_confirmation_guard
+ on public.supervisor_proposals;
+create trigger supervisor_8a_toast_price_confirmation_guard
+ before update on public.supervisor_proposals
+ for each row execute function public.supervisor_8a_guard_toast_manual_confirmation();
+
+reset lock_timeout;
+reset statement_timeout;
+
+      else v_item.pos_item_id ~* ':[0-9a-f-]{36}:[0-9a-f-]{36}
+  ) then
+   raise exception 'toast_price_not_source_verified' using errcode='23514';
+ end if;
+ return new;
+end;$$;
+drop trigger if exists supervisor_8a_toast_price_confirmation_guard
+ on public.supervisor_proposals;
+create trigger supervisor_8a_toast_price_confirmation_guard
+ before update on public.supervisor_proposals
+ for each row execute function public.supervisor_8a_guard_toast_manual_confirmation();
+
+reset lock_timeout;
+reset statement_timeout;
+
+     end)
   ) then
    raise exception 'toast_price_not_source_verified' using errcode='23514';
  end if;
