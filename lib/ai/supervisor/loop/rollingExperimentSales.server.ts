@@ -55,6 +55,17 @@ export function summarizeElapsedWindow(window:ElapsedWindow,lines:readonly Sourc
   units:complete?units:null,revenueCents:complete?revenue:null,
   countedLines,unknownTimeLines,source:"order_lines.ordered_at",asOf};
 }
+/** A source line with no usable order AND closure time could belong to
+ * any interval. Keep all monetary values UNKNOWN, never treat it as zero. */
+export function withUnattributedSourceLines(measured:WindowEvidence,
+ unknownCount:number,pagesComplete:boolean):WindowEvidence{
+ if(!Number.isSafeInteger(unknownCount)||unknownCount<0)
+  throw new Error("invalid_unknown_line_count");
+ if(unknownCount===0&&pagesComplete)return measured;
+ return {...measured,status:"insufficient_evidence",units:null,
+  revenueCents:null,unknownTimeLines:measured.unknownTimeLines+
+   unknownCount+Number(!pagesComplete)};
+}
 /** Only an actually observed closing instant can define extra final-window
  * trading. A configured closeout hour is never a verified actual close. */
 export function planVerifiedFinalCloseInterval(window:ElapsedWindow,
@@ -90,16 +101,20 @@ export async function readElapsedWindowObservations(db:SupabaseClient,
   .eq("menu_item_id",menuItemId).eq("orders.business_id",businessId)
   .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
   .eq("voided",false);
- const [known,missing,sourceCovered]=await Promise.all([
+ const [known,missing,unknownBoth,sourceCovered]=await Promise.all([
   base().gte("ordered_at",window.startAt).lt("ordered_at",window.endAt)
    .limit(10000),
   // A line with an unknown order time may close AFTER this window. Its
   // missing source timestamp cannot be silently excluded from earlier sales.
   base().is("ordered_at",null).gte("orders.closed_at",window.startAt)
    .lte("orders.closed_at",asOf).limit(10000),
+  // With neither source time present, no window can be certified without
+  // inventing when the sale happened. Count these source rows separately.
+  base().is("ordered_at",null).is("orders.closed_at",null).limit(1),
   verifiedWindowSourceCoverage(db,businessId,timezone,window),
  ]);
- if(known.error||missing.error)throw new Error("rolling_sales_source_read_failed");
+ if(known.error||missing.error||unknownBoth.error)
+  throw new Error("rolling_sales_source_read_failed");
  const completePages=[known,missing].every(r=>r.count!==null&&
   r.count===(r.data?.length??0));
  const rows=[...(known.data??[]),...(missing.data??[])].map(row=>{
@@ -110,6 +125,8 @@ export async function readElapsedWindowObservations(db:SupabaseClient,
    supersededBy:order?.superseded_by??null};
  });
  const measured=summarizeElapsedWindow(window,rows,sourceCovered&&completePages,asOf);
- return completePages?measured:{...measured,
-  unknownTimeLines:measured.unknownTimeLines+1};
+ return withUnattributedSourceLines(measured,
+  (unknownBoth.count??0)>0?1:0,completePages);
+}
+
 }

@@ -1,7 +1,7 @@
 import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {planElapsed24HourWindows,summarizeElapsedWindow,
- planVerifiedFinalCloseInterval} from "./rollingExperimentSales.server";
+ planVerifiedFinalCloseInterval,withUnattributedSourceLines} from "./rollingExperimentSales.server";
 const item=(overrides:Record<string,unknown>={})=>({
  id:"a",orderedAt:"2026-03-08T01:00:00Z",closedAt:"2026-03-08T01:20:00Z",
  quantity:1,netSalesCents:650,voided:false,toastExcluded:false,
@@ -38,6 +38,17 @@ describe("Task 8a actual source-timed 24-hour periods",()=>{
   expect(summarizeElapsedWindow(w,[item({closedAt:"2026-03-10T01:00:00Z"})],
    true,observed)).toMatchObject({status:"insufficient_evidence",units:null,
     unknownTimeLines:1});
+ });
+ it("does not certify any elapsed interval when source line timestamps are both missing",()=>{
+  const w=planElapsed24HourWindows("2026-03-08T00:00:00Z",1)[0];
+  const measured=summarizeElapsedWindow(w,[item()],true,w.endAt);
+  expect(measured.status).toBe("actual");
+  expect(withUnattributedSourceLines(measured,1,true)).toMatchObject({
+   status:"insufficient_evidence",units:null,revenueCents:null,
+   unknownTimeLines:1});
+  expect(withUnattributedSourceLines(measured,0,false)).toMatchObject({
+   status:"insufficient_evidence",units:null,revenueCents:null,
+   unknownTimeLines:1});
  });
  it("requires real importer coverage and a fully elapsed window",()=>{
   const w=planElapsed24HourWindows("2026-03-08T00:00:00Z",1)[0];
