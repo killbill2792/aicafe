@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {museOperationsContract} from './muse-operations-contract.mjs';
+import {settings} from './settings.mjs';
+test('versioned Muse matrix uses existing private ledger and courier transport',()=>{
+ const c=museOperationsContract();
+ assert.equal(c.version,1);
+ assert.equal(c.schema,'aicafe.muse-operations.v1');
+ assert.equal(c.project_id,settings.naming.task_prefix);
+ assert.equal(c.dispatcher.repository,settings.repo);
+ assert.equal(c.queue.repository,settings.ledger.repo);
+ assert.equal(c.queue.state,settings.ledger.path);
+ assert.equal(c.recovery.preferred_transport,'private_git_authenticated_receipt');
+ assert.equal(c.recovery.raw_signing_key_required,false);
+ assert.equal(c.recovery.event_type,'dispatcher_git_wake');
+ assert.equal(c.recovery.receipt_kind,'muse_recovery');
+ assert.equal(c.owner_relay.kind,'owner_instruction');
+ assert.ok(c.writes.forbidden.includes('dispatcher/state.json'));
+ assert.ok(!JSON.stringify(c).includes('DISPATCH_MUSE_RECOVERY_KEY'));
+});
