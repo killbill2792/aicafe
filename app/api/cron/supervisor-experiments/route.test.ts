@@ -52,6 +52,9 @@ const database={
         })})})}),
       }),
     };
+    if(table==="supervisor_experiment_cutover_cafes")return {
+      select:()=>({eq:()=>({limit:async()=>({data:[],error:null})})}),
+    };
     if(table==="memberships")return {
       select:()=>({eq:()=>({eq:()=>({maybeSingle:async()=>({
         data:{role:"owner"},error:null,
