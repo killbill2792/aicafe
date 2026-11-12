@@ -6,7 +6,7 @@ import {settings} from './settings.mjs';
 // use the same incident identity, so they cannot duplicate owner notices.
 const failedId=String(process.env.DISPATCH_FAILED_RUN_ID||process.env.GITHUB_RUN_ID||'unknown');
 if(!/^\d+$/.test(failedId))throw Error('Invalid failed workflow run ID');
-const id='run:'+failedId+':failure';
+const id='trusted-dispatcher:failure'; // Stable incident; not one new notice per failed Actions run.
 const url='https://github.com/'+(process.env.GITHUB_REPOSITORY||settings.repo)+
   '/actions/runs/'+failedId;
 try{
