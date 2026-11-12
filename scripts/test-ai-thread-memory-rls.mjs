@@ -230,12 +230,12 @@ async function main() {
     text: "We prefer quiet morning music.",
   });
   await client.query(
-    "insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content,client_message_id,created_at) values($1,$2,$3,$4,$4,'supervisor','text',$5::jsonb,$6,$7::timestamptz)",
+    "insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content,grounding,created_at) values($1,$2,$3,$4,null,'supervisor','blocks',$5::jsonb,$6::jsonb,$7::timestamptz)",
     [MESSAGE_STRUCTURED_PROMPT, CAFE_A, THREAD_STRUCTURED, OWNER_A,
       JSON.stringify([{ type: "owner_question", questionId: "14141414-1414-4141-8141-141414141414",
-        title: { en: "Which drink should staff use?", es: "¿Qué bebida debe usar el personal?", ar: "ما المشروب الذي ينبغي استخدامه؟" },
-        input: { kind: "free_text", hint: { en: "Drink preference", es: "Preferencia", ar: "التفضيل" } } }]),
-      crypto.randomUUID(), AT_1],
+        title: { en: "Which drink should staff use?", es: "Which drink?", ar: "Which drink?" },
+        input: { kind: "free_text", hint: { en: "Drink preference", es: "Drink preference", ar: "Drink preference" } } }]),
+      JSON.stringify({ status: "verified" }), AT_1],
   );
   await insertOwnerMessage(client, {
     id: MESSAGE_STRUCTURED, thread: THREAD_STRUCTURED, at: AT_2,
