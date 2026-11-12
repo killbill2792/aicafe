@@ -6,6 +6,7 @@ import { acceptDeliveryReceipt } from './receipt.mjs';
 import { validConversationUrl } from './delivery.mjs';
 import { acceptOwnerNoticeReceipt } from './alerts.mjs';
 import { acceptMuseOwnerReply } from './self-heal.mjs';
+import { applyMuseOwnerInstruction } from './owner-instruction-commands.mjs';
 
 
 // The GitHub commit actor is the authentication boundary. A self-declared
@@ -65,11 +66,27 @@ export async function collectReceipts(options){
   return (await inspectReceipts(options)).accepted;
 }
 
+// Receipt filenames are hashes, not chronological delivery order. Owner
+// controls are applied in the owner's submission order, not GitHub directory
+// order; the per-field watermark independently rejects late older receipts.
+export function chronologicalOwnerReceipts(inbox){
+ const commands=inbox.filter(item=>item.receipt?.kind==='owner_instruction')
+   .sort((a,b)=>{
+     const ta=Date.parse(a.receipt?.submitted_at||'');
+     const tb=Date.parse(b.receipt?.submitted_at||'');
+     const timeA=Number.isFinite(ta)?ta:-Infinity;
+     const timeB=Number.isFinite(tb)?tb:-Infinity;
+     return timeA-timeB||
+       String(a.receipt?.event_id||'').localeCompare(String(b.receipt?.event_id||''));
+   });
+ return [...commands,...inbox.filter(item=>item.receipt?.kind!=='owner_instruction')];
+}
+
 // A bad receipt must never block unrelated valid receipts or a trusted tick.
 export function applyReceiptsSafely(state, inbox, actorMap) {
   let next=state;
   const rejected=[];
-  for(const item of inbox){
+  for(const item of chronologicalOwnerReceipts(inbox)){
     try{next=applyReceipts(next,[item],actorMap);}
     catch{if(item.file)rejected.push({file:item.file,code:'receipt_validation_failed'});}
   }
@@ -78,24 +95,32 @@ export function applyReceiptsSafely(state, inbox, actorMap) {
 
 export function applyReceipts(state, inbox, actorMap) {
   let next = state;
-  for (const {receipt, actor} of inbox) {
+  for (const {receipt, actor} of chronologicalOwnerReceipts(inbox)) {
     const courier = actorMap[actor];
     if (!courier) continue;
     // Historical receipts stay in the inbox; never replay or revive cancelled actions.
     if(receipt.kind==='owner_instruction'){
+      // Only a GitHub-verified commit actor explicitly mapped to Muse may
+      // exercise the owner's delegated bounded command channel. The words
+      // 'owner said' and a JSON author field alone never authenticate anyone.
       if(courier!=='muse'||!receipt.target||typeof receipt.text!=='string'||
-        !/^[a-zA-Z0-9_-]{1,100}$/.test(receipt.event_id||''))throw Error('Unverified owner instruction');
-      next=structuredClone(next);next.owner_instruction_events||={};
-      next.owner_instruction_events[receipt.event_id]??={target:receipt.target,
-        text:receipt.text.slice(0,400),courier:'muse',at:receipt.submitted_at||new Date().toISOString()};
-      // Only a chat URL registration is automated; arbitrary instructions are never executed.
+        !/^[a-zA-Z0-9_-]{1,100}$/.test(receipt.event_id||''))
+        throw Error('Unverified owner instruction');
+      if(next.owner_instruction_events?.[receipt.event_id])continue;
+      next=applyMuseOwnerInstruction(next,receipt,{actor,now:new Date().toISOString()});
+      // Preserve the existing independent verified chat registration use case.
       const url=receipt.chat_url||receipt.text.trim();
       if(validConversationUrl('chatgpt',url)&&typeof receipt.target.branch==='string'&&
-        /^[a-zA-Z0-9_./-]{1,160}$/.test(receipt.target.branch)){
+         /^[a-zA-Z0-9_./-]{1,160}$/.test(receipt.target.branch)){
         next.branch_chat_links||={};
         next.branch_chat_links[receipt.target.branch]={branch:receipt.target.branch,
-          conversation_url:url,updated_at:receipt.submitted_at||new Date().toISOString(),source:'verified_muse'};
-        next.owner_instruction_events[receipt.event_id].chat_registered=true;
+          conversation_url:url,updated_at:receipt.submitted_at||new Date().toISOString(),
+          source:'verified_muse'};
+        const event=next.owner_instruction_events[receipt.event_id];
+        event.chat_registered=true;
+        if(event.reason==='unsupported_owner_command'){
+          event.status='RECORDED';event.reason='verified_chat_url_registered';
+        }
       }
       continue;
     }
