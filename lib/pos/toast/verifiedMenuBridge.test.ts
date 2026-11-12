@@ -194,7 +194,7 @@ describe("POS0 verified single-bundle source handoff",()=>{
   const result=await copyToastPublishedMenu(f.db,scope);
   expect(m.canonical).toHaveBeenCalledTimes(2);
   expect(m.bundle).toHaveBeenCalledTimes(3);
-  expect(f.now.menu_pending_observations).toEqual([ bundle.receipt.observedAt,secondAt,thirdAt]);
+  expect(f.now.menu_pending_observations).toEqual([ bundle.receipt.observedAt,secondAt,thirdAt]);expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
   expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history", expect.objectContaining({p_observed_at:bundle.receipt.observedAt}));
   expect(result.verifiedPriceChanges).toBe(1);
   expect(f.now.menu_checked_local_day).not.toBeNull();
@@ -206,7 +206,9 @@ describe("POS0 verified single-bundle source handoff",()=>{
    category:"unavailable"});
   expect(m.stage).not.toHaveBeenCalled();
   expect(m.canonical).not.toHaveBeenCalled();
-  expect(f.now.menu_pending_observations).toEqual([]);
+  expect(f.now.menu_pending_observations).toEqual([]);expect(f.now.menu_last_updated).toBe("pending:"+bundle.receipt.publicationVersion);
+  f.failRecord.value=false;m.bundle.mockResolvedValueOnce({...bundle,receipt:{...bundle.receipt,publicationVersion:"2026-11-11T15:00:00Z",observedAt:"2026-11-11T16:00:00Z"}});await copyToastPublishedMenu(f.db,scope);
+  expect(f.rpc).toHaveBeenCalledWith("toast_reconcile_superseded_menu_history",expect.objectContaining({p_version:bundle.receipt.publicationVersion,p_first_observed_at:bundle.receipt.observedAt}));expect(f.now.menu_last_updated).toBe("2026-11-11T15:00:00Z");expect(m.canonical).toHaveBeenCalledOnce();
  });
  it("clears old-version observations when a new published version arrives",async()=>{
   const f=mockDB();
@@ -218,7 +220,7 @@ describe("POS0 verified single-bundle source handoff",()=>{
  });
  it("reconciles unfinished V1 price evidence before advancing to V2",async()=>{
   const f=mockDB();m.apply.mockRejectedValueOnce(new Error("V1 promotion failed"));
-  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow("V1 promotion failed");
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow("V1 promotion failed");expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
   const next={...bundle,receipt:{...bundle.receipt, publicationVersion:"2026-11-11T15:00:00Z",observedAt:"2026-11-11T16:00:00Z"}};
   m.bundle.mockResolvedValueOnce(next);
   await copyToastPublishedMenu(f.db,scope);

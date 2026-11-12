@@ -49,20 +49,15 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
    previous?.menu_last_updated===bundle.receipt.publicationVersion)&&
   previous?.menu_checked_local_day===null&&Boolean(previous?.menu_copied_at);
  const observedAt=samePending?previous!.menu_copied_at!:bundle.receipt.observedAt;
- // A fresh publication resets old-version provisional evidence; a retry must
- // retain ALL prior observations, including a prior retry that wrote a price
- // before crashing at presence or history verification.
- const priorObservations=samePending&&Array.isArray(previous?.menu_pending_observations)
-  ?previous.menu_pending_observations:[];
+ // Same-version retries preserve the phase marker and SQL-appended receipts.
  const committedBundle={...bundle,receipt:{...bundle.receipt,observedAt}};
  // A prefixed provisional version records the first source instant without
  // falsely satisfying POS0d's SQL gate that requires canonical import to finish.
  // A worker death between price write and promotion must retain this receipt.
  const {error:pendingError}=await db.from("toast_optional_sync_state").upsert({
   business_id:p.businessId,restaurant_guid:p.restaurantGuid,
-  menu_last_updated:pendingVersion,
-  menu_copied_at:observedAt,menu_checked_local_day:null,
-  menu_pending_observations:priorObservations,
+  menu_checked_local_day:null,
+  ...(samePending?{}:{menu_last_updated:pendingVersion,menu_copied_at:observedAt,menu_pending_observations:[]}),
  },{onConflict:"business_id,restaurant_guid"});
  if(pendingError)throw new ToastApiError("unavailable");
  // Atomic SQL registration precedes every possible canonical price write.

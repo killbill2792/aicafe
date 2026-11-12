@@ -187,10 +187,7 @@ BEGIN
  PERFORM pg_temp.pos0d_assert(public.toast_verify_existing_price_history( b,r,item_a,'2026-11-09T12:00:00Z',observed,575), 'delayed same-version replay remains idempotent');
  PERFORM pg_temp.pos0d_assert((SELECT count(*)=3 FROM public.menu_price_history WHERE business_id=b),'delayed replay never duplicates price history');
 
- -- The first attempt did not write item_b. A second attempt later wrote
- -- the price and died before verifying it. The third attempt (45 minutes
- -- later) must use the SECOND, already persisted observation, not invent a
- -- changed_at at the third attempt's time or re-fetch an old effective date.
+ -- Third retry must retain the second attempt's authenticated observation.
  late_observed:=now()-interval '45 minutes';
  UPDATE public.menu_items SET price_cents=675 WHERE id=gone;
  INSERT INTO public.menu_price_history(business_id,menu_item_id, old_price_cents,new_price_cents,source_type,source_provider,changed_at)
@@ -208,9 +205,10 @@ BEGIN
  -- The actual recorder is idempotent, checks the exact existing pending
  -- café/version/original timestamp, and cannot be forged by an owner.
  -- Registration happens BEFORE canonical promotion in the actual worker.
- UPDATE public.toast_optional_sync_state SET menu_last_updated='pending:2026-11-09T12:00:00Z' WHERE business_id=b AND restaurant_guid=r;
+ UPDATE public.toast_optional_sync_state SET menu_last_updated='2026-11-09T12:00:00Z' WHERE business_id=b AND restaurant_guid=r;
  actual:=public.toast_record_pending_menu_observation( b,r,'2026-11-09T12:00:00Z',observed,now());
  PERFORM pg_temp.pos0d_assert(jsonb_array_length(actual)=3, 'fresh retry receipt appended atomically to existing proof');
+ UPDATE public.toast_optional_sync_state SET menu_last_updated='pending:2026-11-09T12:00:00Z' WHERE business_id=b AND restaurant_guid=r;
  actual:=public.toast_record_pending_menu_observation( b,r,'2026-11-09T12:00:00Z',observed,now());
  PERFORM pg_temp.pos0d_assert(jsonb_array_length(actual)=3, 'same observation replay never duplicates evidence');
  failed:=false;
@@ -255,9 +253,9 @@ BEGIN
  -- A verified V1 price write must not vanish when an unrelated V2 is
  -- published before V1 presence or price verification completes.
  observed:=now()-interval '1 minute';
- UPDATE public.toast_optional_sync_state SET menu_last_updated='pending:2026-11-09T13:00:00Z', menu_copied_at=observed,menu_checked_local_day=NULL, menu_pending_observations=to_jsonb(ARRAY[observed::text])
+ UPDATE public.toast_optional_sync_state SET menu_last_updated='2026-11-09T13:00:00Z', menu_copied_at=observed,menu_checked_local_day=NULL, menu_pending_observations=to_jsonb(ARRAY[observed::text])
  WHERE business_id=b AND restaurant_guid=r;
- UPDATE public.menu_items SET price_cents=725 WHERE id=a;
+ UPDATE public.menu_items SET price_cents=725,toast_publication_state='active',toast_publication_version='2026-11-09T13:00:00Z',toast_publication_observed_at=observed WHERE id=a;
  INSERT INTO public.menu_price_history(business_id,menu_item_id, old_price_cents,new_price_cents,source_type,source_provider,changed_at)
  VALUES(b,a,575,725,'connected_pos','toast',now());
  PERFORM pg_temp.pos0d_assert(public.toast_reconcile_superseded_menu_history( b,r,'2026-11-09T13:00:00Z',observed),'V1 price source proven before V2 reset');
@@ -265,12 +263,18 @@ BEGIN
   'V1 history retained with original observed-at, never invented effective-at');
  UPDATE public.toast_optional_sync_state SET menu_last_updated='pending:2026-11-09T14:00:00Z',menu_copied_at=now(), menu_pending_observations='[]'::jsonb WHERE business_id=b AND restaurant_guid=r;
  PERFORM pg_temp.pos0d_assert((SELECT toast_publication_version='2026-11-09T13:00:00Z' FROM public.menu_price_history WHERE menu_item_id=a AND new_price_cents=725), 'V2 receipt reset never removes already verified V1 price evidence');
+ -- Empty pre-registration V1 is safe only before any unverified Toast writer.
+ UPDATE public.toast_optional_sync_state SET menu_last_updated='pending:2026-11-09T13:30:00Z',menu_copied_at=observed,menu_checked_local_day=NULL,menu_pending_observations='[]'::jsonb WHERE business_id=b AND restaurant_guid=r;PERFORM pg_temp.pos0d_assert(public.toast_reconcile_superseded_menu_history(b,r,'2026-11-09T13:30:00Z',observed),'pre-registration failure safely supersedes before writer');
+ UPDATE public.toast_optional_sync_state SET menu_last_updated='2026-11-09T13:30:00Z' WHERE business_id=b AND restaurant_guid=r;failed:=false;BEGIN PERFORM public.toast_reconcile_superseded_menu_history(b,r,'2026-11-09T13:30:00Z',observed);EXCEPTION WHEN sqlstate '22023' THEN failed:=true;END;PERFORM pg_temp.pos0d_assert(failed,'empty post-writer receipt fails closed');
  -- Refuse to erase an unverified V1 price write that cannot be tied to the
  -- current canonical price, even though the source family is still pending.
- UPDATE public.toast_optional_sync_state SET menu_last_updated='pending:2026-11-09T13:00:00Z',menu_copied_at=observed, menu_pending_observations=to_jsonb(ARRAY[observed::text])
+ UPDATE public.toast_optional_sync_state SET menu_last_updated='2026-11-09T13:00:00Z',menu_copied_at=observed, menu_pending_observations=to_jsonb(ARRAY[observed::text])
  WHERE business_id=b AND restaurant_guid=r;
  INSERT INTO public.menu_price_history(business_id,menu_item_id, old_price_cents,new_price_cents,source_type,source_provider,changed_at)
  VALUES(b,a,725,735,'connected_pos','toast',now());
+ UPDATE public.toast_optional_sync_state SET menu_last_updated='pending:2026-11-09T13:00:00Z',menu_pending_observations='[]'::jsonb WHERE business_id=b AND restaurant_guid=r;failed:=false;BEGIN PERFORM public.toast_reconcile_superseded_menu_history(b,r,'2026-11-09T13:00:00Z',observed);EXCEPTION WHEN sqlstate '22023' THEN failed:=true;END;PERFORM pg_temp.pos0d_assert(failed,'empty pre-registration receipt cannot hide unverified price history');
+ UPDATE public.toast_optional_sync_state SET menu_last_updated='2026-11-09T13:00:00Z',menu_pending_observations=to_jsonb(ARRAY[observed::text]) WHERE business_id=b AND restaurant_guid=r;
+ failed:=false;BEGIN PERFORM public.toast_verify_existing_price_history(b,r,item_a,'2026-11-09T13:00:00Z',observed,725);EXCEPTION WHEN sqlstate '22023' THEN failed:=true;END;PERFORM pg_temp.pos0d_assert(failed,'unmatched Toast history blocks publication completion');
  failed:=false;
  BEGIN PERFORM public.toast_reconcile_superseded_menu_history( b,r,'2026-11-09T13:00:00Z',observed);
  EXCEPTION WHEN sqlstate '22023' THEN failed:=true;END;
