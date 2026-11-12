@@ -43,3 +43,77 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Execute actual Task 9 owner isolation and CAS tests
         run: node scripts/test-ai-thread-memory-rls.mjs
+
+  local-supabase-schema:
+    name: Task 9 full local Supabase migration and grants
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Start disposable Supabase database
+        run: supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - name: Replay every migration against a clean local Supabase database
+        run: supabase db reset --local --yes
+      - name: Verify Task 9 schema, RLS, permissions and fail-closed RPC
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -X -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          do $assert$
+          begin
+            if not exists (
+              select 1 from supabase_migrations.schema_migrations
+              where version = '20261111000207'
+            ) then raise exception 'Task 9 migration was not applied'; end if;
+            if not exists (
+              select 1 from information_schema.columns
+              where table_schema='public' and table_name='ai_threads'
+                and column_name='memory_summary' and data_type='jsonb'
+                and is_nullable='NO' and column_default is not null
+            ) then raise exception 'Task 9 memory storage contract absent'; end if;
+            if to_regprocedure('public.save_ai_thread_memory(uuid,uuid,uuid,bigint,jsonb)') is null
+            then raise exception 'Task 9 scoped CAS function absent'; end if;
+            if not has_function_privilege('authenticated','public.save_ai_thread_memory(uuid,uuid,uuid,bigint,jsonb)','EXECUTE')
+              or has_function_privilege('anon','public.save_ai_thread_memory(uuid,uuid,uuid,bigint,jsonb)','EXECUTE')
+            then raise exception 'Task 9 memory RPC grants are unsafe'; end if;
+            if has_table_privilege('authenticated','public.ai_threads','UPDATE')
+            then raise exception 'Direct client updates to thread memory must be denied'; end if;
+            if not exists (
+              select 1 from pg_class where oid='public.ai_threads'::regclass and relrowsecurity
+            ) or not exists (
+              select 1 from pg_class where oid='public.ai_messages'::regclass and relrowsecurity
+            ) then raise exception 'Conversation tenant RLS is not enabled'; end if;
+            if not exists (
+              select 1 from pg_constraint
+              where conrelid='public.ai_threads'::regclass
+                and conname='ai_threads_memory_summary_shape' and contype='c'
+            ) then raise exception 'Memory shape constraint absent'; end if;
+            raise notice 'Task 9 fully migrated local Supabase schema and grants verified';
+          end
+          $assert$;
+
+          begin;
+          set local role authenticated;
+          do $assert$
+          declare outcome jsonb;
+          begin
+            outcome := public.save_ai_thread_memory(
+              '00000000-0000-4000-8000-000000000001'::uuid,
+              '00000000-0000-4000-8000-000000000002'::uuid,
+              '00000000-0000-4000-8000-000000000003'::uuid,
+              0,
+              '{"version":1,"revision":1,"cursor":null,"entries":[],"tombstones":[],"retry":null}'::jsonb
+            );
+            if outcome is distinct from '{"ok":false,"reason":"unauthorized"}'::jsonb
+            then raise exception 'Unauthenticated owner memory write was not denied: %', outcome; end if;
+            raise notice 'Task 9 unauthenticated write correctly rejected';
+          end
+          $assert$;
+          rollback;
+          SQL
+      - name: Stop disposable Supabase database
+        if: always()
+        run: supabase stop --no-backup
