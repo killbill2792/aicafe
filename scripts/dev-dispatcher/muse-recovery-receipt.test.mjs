@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {recoveryIdentity} from './recovery-v3.mjs';
 import {receiptFilename} from './receipt-identity.mjs';
-import {applyReceipts} from './inbox.mjs';
+import {applyReceipts,inspectReceipts,applyReceiptsSafely} from './inbox.mjs';
 import {museRecoveryReceipt,validateMuseRecoveryReceipt,pushMuseRecoveryReceipt}
   from './muse-recovery-receipt.mjs';
 
@@ -113,4 +113,28 @@ test('private Git receipt transport persists without GitHub REST and retry is id
   const history=Number(git(['rev-list','--count','HEAD'],read));
   assert.equal(history,2,'retry did not create a second commit');
  }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('authenticated GitHub commit actor is checked before Muse recovery receipt ingestion',async()=>{
+ const receipt=museRecoveryReceipt(request(),{actor});
+ const filename=receiptFilename(receipt),path='dispatcher/receipts/'+filename;
+ const fakeLedger=commitActor=>({request:async endpoint=>{
+   if(endpoint==='/contents/dispatcher/receipts?ref=main')
+     return [{type:'file',name:filename,path,sha:'f'.repeat(40)}];
+   if(endpoint==='/commits?path='+encodeURIComponent(path)+'&per_page=1')
+     return [{author:{login:commitActor}}];
+   if(endpoint==='/contents/'+path+'?ref=main')
+     return {content:Buffer.from(JSON.stringify(receipt)).toString('base64')};
+   throw Error('unexpected GitHub read '+endpoint);
+ }});
+ const accepted=await inspectReceipts({ledger:fakeLedger(actor),allowedActors:[actor]});
+ assert.equal(accepted.complete,true);
+ assert.equal(accepted.accepted.length,1);
+ assert.equal(accepted.accepted[0].actor,actor);
+ const applied=applyReceiptsSafely(baseState(),accepted.accepted,actors);
+ assert.equal(applied.state.recovery_requests[receipt.request_id].status,'PENDING');
+ const forged=await inspectReceipts({ledger:fakeLedger('attacker'),allowedActors:[actor]});
+ assert.equal(forged.accepted.length,0);
+ assert.equal(forged.rejected[0].code,'unapproved_git_actor');
+ assert.deepEqual(applyReceiptsSafely(baseState(),forged.accepted,actors).state,baseState());
 });
