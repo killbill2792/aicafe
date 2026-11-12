@@ -31,21 +31,32 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
  // Preserve the first same-version receipt BEFORE any canonical price write.
  // A failure after price import but before presence must not swap its original
  // evidence for the fresh observed time of an otherwise identical later fetch.
- const observedAt=previous?.menu_last_updated===bundle.receipt.publicationVersion&&
+ const pendingVersion="pending:"+bundle.receipt.publicationVersion;
+ const observedAt=(previous?.menu_last_updated===pendingVersion||
+   previous?.menu_last_updated===bundle.receipt.publicationVersion)&&
   previous.menu_checked_local_day===null&&previous.menu_copied_at
    ?previous.menu_copied_at:bundle.receipt.observedAt;
  const committedBundle={...bundle,receipt:{...bundle.receipt,observedAt}};
- // This is a pending receipt, NOT evidence that the menu was copied. Leave
- // checked-day NULL through every stage/RPC failure so metadata retries it.
+ // A prefixed provisional version records the first source instant without
+ // falsely satisfying POS0d's SQL gate that requires canonical import to finish.
+ // A worker death between price write and promotion must retain this receipt.
+ const {error:pendingError}=await db.from("toast_optional_sync_state").upsert({
+  business_id:p.businessId,restaurant_guid:p.restaurantGuid,
+  menu_last_updated:pendingVersion,
+  menu_copied_at:observedAt,menu_checked_local_day:null,
+ },{onConflict:"business_id,restaurant_guid"});
+ if(pendingError)throw new ToastApiError("unavailable");
+ await stageToastCatalog(db,p,bundle.facts);
+ const imported=await syncCanonicalCatalog(db,p.businessId,
+  {...adapter,fetchCatalogItems:async()=>bundle.items},{restaurantGuid:p.restaurantGuid});
+ // Only a successful canonical import may expose the exact Toast version to
+ // POS0d's independent version/copy stamp guard. Still incomplete until proof.
  const {error:stampError}=await db.from("toast_optional_sync_state").upsert({
   business_id:p.businessId,restaurant_guid:p.restaurantGuid,
   menu_last_updated:bundle.receipt.publicationVersion,
   menu_copied_at:observedAt,menu_checked_local_day:null,
  },{onConflict:"business_id,restaurant_guid"});
  if(stampError)throw new ToastApiError("unavailable");
- await stageToastCatalog(db,p,bundle.facts);
- const imported=await syncCanonicalCatalog(db,p.businessId,
-  {...adapter,fetchCatalogItems:async()=>bundle.items},{restaurantGuid:p.restaurantGuid});
  // POS0d independently checks the version and source identity. On a stale
  // receipt its SQL freshness guard rejects promotion; never mark it complete.
  const presence=await applyPublishedToastCatalogReceipt(db,p.businessId,committedBundle);
