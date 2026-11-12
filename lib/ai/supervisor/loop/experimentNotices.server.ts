@@ -18,12 +18,12 @@ export async function postVerifiedSourceReminder(db:SupabaseClient,input:{
  sourceVerified:boolean;cancelled:boolean;
 }):Promise<"not_due"|"leased_elsewhere"|"posted">{
  const {data:posted,error:priorError}=await db.from("supervisor_experiment_notice_receipts")
-  .select("local_date,slot").eq("business_id",input.businessId)
+  .select("local_date,slot,posted_at").eq("business_id",input.businessId)
   .eq("owner_user_id",input.ownerUserId).eq("source_id",input.proposalId)
   .eq("kind","price_reminder").eq("state","posted");
  if(priorError)throw new Error("reminder_receipt_read_failed");
  const next=nextOwnerPriceReminder({...input,prior:(posted??[]).map(r=>({
-  localDate:r.local_date,slot:r.slot}))});
+  localDate:r.local_date,slot:r.slot,postedAt:r.posted_at}))});
  if(!next)return "not_due";
  const {data:claim,error:claimError}=await db.rpc("supervisor_8a_claim_notice",{
   p_business_id:input.businessId,p_owner_user_id:input.ownerUserId,
@@ -92,7 +92,7 @@ export type OwnerNoticeKey={
  businessId:string;ownerUserId:string;sourceId:string;
  kind:OwnerNoticeKind;localDate:string;slot:number;
 };
-export type ReminderReceipt=Pick<OwnerNoticeKey,"localDate"|"slot">;
+export type ReminderReceipt=Pick<OwnerNoticeKey,"localDate"|"slot">&{postedAt?:string|null};
 const HOUR=3600000;
 const safeInstant=(value:string)=>{
  const result=Date.parse(value);
@@ -116,6 +116,11 @@ export function nextOwnerPriceReminder(input:{
  const priorToday=input.prior.filter(r=>r.localDate===date);
  if(priorToday.length>=2)return null;
  const slot=priorToday.length+1;
+ // Keep the later reminder at least two real elapsed hours after the last
+ // posted receipt, including on the next café-local morning.
+ const latest=priorToday.reduce((v,r)=>Math.max(v,
+  r.postedAt?safeInstant(r.postedAt):0),0);
+ if(latest&&now<latest+2*HOUR)return null;
  const lastLocalDay=localDay(input.approvedAt,input.timezone);
  // On the same café-local date, do not send two messages in the first 2h
  // after approval. The next reminder requires at least two more hours.

@@ -26,6 +26,13 @@ describe("Task 8a owner notice exact source/day/slot identity",()=>{
   expect(nextOwnerPriceReminder({...base,now:"2026-03-08T20:00:00Z",
    prior:[{localDate:"2026-03-08",slot:1},{localDate:"2026-03-08",slot:2}]})).toBeNull();
  });
+ it("spaces the second reminder by at least two hours on the next local morning",()=>{
+  const first={localDate:"2026-03-09",slot:1,postedAt:"2026-03-09T16:00:00Z"};
+  expect(nextOwnerPriceReminder({...base,now:"2026-03-09T17:59:59Z",
+   prior:[first]})).toBeNull();
+  expect(nextOwnerPriceReminder({...base,now:"2026-03-09T18:00:00Z",
+   prior:[first]})).toMatchObject({slot:2,localDate:"2026-03-09"});
+ });
  it("allows a new morning after yesterday's limit and stops when verified",()=>{
   const prior=[{localDate:"2026-03-08",slot:1},{localDate:"2026-03-08",slot:2}];
   expect(nextOwnerPriceReminder({...base,now:"2026-03-09T16:00:00Z",prior}))
