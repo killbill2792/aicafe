@@ -223,7 +223,6 @@ function renderPublic(data){
  }
  document.querySelector('#count-decisions').textContent=String(data.decisions.length);
  if(!data.decisions.length)ask.append(element('p','empty','No outstanding published owner questions.'));
- document.querySelector('#private-queue').href=PRIVATE_QUEUE_URL;
  renderOperations();
 }
 export function acceptPublicOperationsSnapshot(data){
