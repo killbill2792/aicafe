@@ -22,11 +22,12 @@ test('PR matching never guesses and dependent bases require evidence',()=>{
  {pr_number:12,branch:'unknown',base_branch:'main',draft:false}];
  const result=linkPullRequests(state,prs);
  const withMarker=linkPullRequests({tasks:{'6':{}}},[{pr_number:33,branch:'manual',task_marker:'6',base_branch:'main',draft:false}]);
- assert.equal(withMarker.state.tasks['6'].pr_number,undefined);
+ assert.equal(withMarker.state.tasks['6'].pr_number,33);
  const byBranch=linkPullRequests({tasks:{'6':{branch:'manual'}}},[{pr_number:33,branch:'manual',base_branch:'main',draft:false}]);
  assert.equal(byBranch.state.tasks['6'].pr_number,33);
  const conflict=linkPullRequests({tasks:{'6':{branch:'expected'}}},[{pr_number:34,branch:'unrelated',task_marker:'6',base_branch:'main',draft:false}]);
- assert.deepEqual(conflict.unmapped,[34]);
+ assert.equal(conflict.state.tasks['6'].pr_number,34);
+ assert.deepEqual(conflict.unmapped,[]);
  assert.equal(result.state.tasks['6'].pr_number,11);
  assert.deepEqual(result.unmapped,[12]);
  assert.equal(dependencyBase({depends_on:['6']},{'6':{branch:'feat/a',github_state:'open'}}).base,'feat/a');
@@ -166,4 +167,81 @@ test('green shared-file child stays draft until verified merge predecessor, with
   predecessors:[{status:'draft_open',merge_sha:null}]});
  assert.deepEqual(hold,{status:'blocked',reasons:['predecessor_not_merged']});
  assert.equal(calls,0);
+});
+
+test('PR #442 and #443 branch suffixes link only the corresponding unlinked fixture tasks',()=>{
+ const state={tasks:{
+  '9':{branch:'feat/aicafe-task-9'},
+  '10':{branch:'feat/aicafe-task-10'}
+ }};
+ const prs=[
+  {pr_number:442,branch:'feat/aicafe-task-9-thread-memory',task_marker:null,base_branch:'main',draft:true},
+  {pr_number:443,branch:'feat/aicafe-task-10-effect-gateway',task_marker:null,base_branch:'main',draft:false}
+ ];
+ const result=linkPullRequests(state,prs);
+ assert.equal(result.state.tasks['9'].pr_number,442);
+ assert.equal(result.state.tasks['10'].pr_number,443);
+ assert.deepEqual(result.unmapped,[]);
+ assert.equal(state.tasks['9'].pr_number,undefined);
+ assert.equal(state.tasks['10'].pr_number,undefined);
+});
+
+test('verified task marker takes priority over unrelated branches and unmarked fallback',()=>{
+ const state={tasks:{'9':{branch:'feat/aicafe-task-9'},'10':{branch:'feat/aicafe-task-10'}}};
+ const prs=[
+  {pr_number:442,branch:'feat/aicafe-task-9-thread-memory',task_marker:'10',base_branch:'main',draft:true},
+  {pr_number:443,branch:'feat/aicafe-task-9-backup',task_marker:null,base_branch:'main',draft:true}
+ ];
+ const result=linkPullRequests(state,prs);
+ assert.equal(result.state.tasks['10'].pr_number,442);
+ assert.equal(result.state.tasks['9'].pr_number,443);
+ assert.deepEqual(result.unmapped,[]);
+});
+
+test('conflicting marker forbids branch fallback and branch prefixes need a hyphen boundary',()=>{
+ const state={tasks:{'9':{branch:'feat/aicafe-task-9'}}};
+ const prs=[
+  {pr_number:442,branch:'feat/aicafe-task-9-thread-memory',task_marker:'10',base_branch:'main',draft:true},
+  {pr_number:443,branch:'feat/aicafe-task-90-memory',task_marker:null,base_branch:'main',draft:true}
+ ];
+ const result=linkPullRequests(state,prs);
+ assert.equal(result.state.tasks['9'].pr_number,undefined);
+ assert.deepEqual(result.unmapped,[442,443]);
+});
+
+test('existing PR assignment is immutable and unavailable to other unlinked tasks',()=>{
+ const state={tasks:{
+  '9':{branch:'feat/aicafe-task-9'},
+  '10':{pr_number:443,branch:'feat/recorded-task-10'}
+ }};
+ const prs=[
+  {pr_number:443,branch:'feat/aicafe-task-9-thread-memory',task_marker:'9',base_branch:'main',draft:false},
+  {pr_number:444,branch:'feat/aicafe-task-10-other',task_marker:'10',base_branch:'main',draft:true}
+ ];
+ const result=linkPullRequests(state,prs);
+ assert.equal(result.state.tasks['10'].pr_number,443);
+ assert.equal(result.state.tasks['9'].pr_number,undefined);
+ assert.deepEqual(result.unmapped,[444]);
+});
+
+test('multiple marker or branch candidates and cross-task suffix collisions are rejected',()=>{
+ const marker=linkPullRequests({tasks:{'9':{branch:'feat/aicafe-task-9'}}},[
+  {pr_number:442,branch:'feat/other-one',task_marker:'9'},
+  {pr_number:443,branch:'feat/other-two',task_marker:'9'}
+ ]);
+ assert.equal(marker.state.tasks['9'].pr_number,undefined);
+ assert.deepEqual(marker.unmapped,[442,443]);
+ const branch=linkPullRequests({tasks:{'9':{branch:'feat/aicafe-task-9'}}},[
+  {pr_number:442,branch:'feat/aicafe-task-9-thread-memory'},
+  {pr_number:443,branch:'feat/aicafe-task-9-other'}
+ ]);
+ assert.equal(branch.state.tasks['9'].pr_number,undefined);
+ assert.deepEqual(branch.unmapped,[442,443]);
+ const collision=linkPullRequests({tasks:{
+  '9':{branch:'feat/aicafe-task-9'},
+  '9-thread':{branch:'feat/aicafe-task-9-thread'}
+ }},[{pr_number:442,branch:'feat/aicafe-task-9-thread-memory'}]);
+ assert.equal(collision.state.tasks['9'].pr_number,undefined);
+ assert.equal(collision.state.tasks['9-thread'].pr_number,undefined);
+ assert.deepEqual(collision.unmapped,[442]);
 });

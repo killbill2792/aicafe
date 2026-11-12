@@ -29,19 +29,37 @@ export function adoptAdhocPullRequests(state, prs, _queueIds = []) {
   return {state:next,skipped};
 }
 
-// Map PRs only through explicit task marker or known branch; never guess ownership.
+// Link existing PR numbers first; for unlinked tasks, trust verified PR task markers
+// before a uniquely matching unmarked branch. Never guess ambiguous ownership.
 export function linkPullRequests(state, prs) {
   const next=structuredClone(state);
+  const entries=Object.entries(next.tasks);
+  const recorded=new Set(entries.map(([,rec])=>rec.pr_number).filter(n=>n!=null));
+  const candidates=new Map(entries.map(([id,rec])=>{
+    if(rec.pr_number!=null)
+      return [id,prs.filter(pr=>pr.pr_number===rec.pr_number)];
+    const available=prs.filter(pr=>!recorded.has(pr.pr_number));
+    const marked=available.filter(pr=>pr.task_marker===id);
+    return [id,marked.length ? marked : available.filter(pr=>
+      !pr.task_marker && rec.branch &&
+      (pr.branch===rec.branch || pr.branch?.startsWith(rec.branch+'-')))];
+  }));
+  // Two tasks claiming the same unmarked PR are ambiguous even if each has
+  // only one candidate; reject both before mutating the copied state.
+  const claims=new Map();
+  for(const matching of candidates.values()) {
+    if(matching.length!==1) continue;
+    const number=matching[0].pr_number;
+    claims.set(number,(claims.get(number)||0)+1);
+  }
   const used=new Set();
-  for(const [id,rec] of Object.entries(next.tasks)) {
-    const matching=prs.filter(pr=>pr.pr_number===rec.pr_number ||
-      (!rec.pr_number && ((rec.branch && pr.branch===rec.branch) ||
-        (rec.branch && pr.branch===rec.branch))));
+  for(const [id,rec] of entries) {
+    const matching=candidates.get(id);
     if(matching.length!==1) continue;
     const pr=matching[0];
-    if(used.has(pr.pr_number)) throw new Error('Ambiguous PR mapping');
+    if(claims.get(pr.pr_number)!==1) continue;
     used.add(pr.pr_number);
-    if(rec.pr_number && rec.pr_number!==pr.pr_number) throw new Error('PR changed');
+    if(rec.pr_number!=null && rec.pr_number!==pr.pr_number) throw new Error('PR changed');
     rec.pr_number=pr.pr_number;
     rec.branch=pr.branch;
     const linked=next.branch_chat_links?.[pr.branch];

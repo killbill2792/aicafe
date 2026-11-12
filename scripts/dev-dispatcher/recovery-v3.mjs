@@ -15,7 +15,8 @@ export function recoveryIdentity(input){
   const p=input||{};
   return sha([p.repo,p.actor,p.intent,p.task_id,p.pr_number,p.expected_head_sha,p.requested_at]);
 }
-export function recoveryEvent(event,{repo,actors={},owner,records={},now=new Date().toISOString()}={}){
+export function recoveryEvent(event,{repo,actors={},owner,records={},
+  now=new Date().toISOString(),maxAgeMs=10*60000}={}){
   if(event?.action!=='dispatcher_recovery')return null;
   const payload=event.client_payload||{};
   const actor=event.sender?.login;
@@ -29,8 +30,9 @@ export function recoveryEvent(event,{repo,actors={},owner,records={},now=new Dat
       payload.pr_number<1||!SHA.test(payload.expected_head_sha||''))))
     return {accepted:false,reason:'malformed_recovery_request'};
   const requestedAt=Date.parse(payload.requested_at||''),clock=Date.parse(now);
-  if(!Number.isFinite(requestedAt)||!Number.isFinite(clock)||
-    requestedAt>clock+120000||clock-requestedAt>10*60000)
+  if(!Number.isFinite(maxAgeMs)||maxAgeMs<60000||maxAgeMs>7*86400000||
+    !Number.isFinite(requestedAt)||!Number.isFinite(clock)||
+    requestedAt>clock+120000||clock-requestedAt>maxAgeMs)
     return {accepted:false,reason:'stale_or_future_recovery_request'};
   const current=global?null:records[payload.task_id];
   if(!global&&(!current||current.pr_number!==payload.pr_number))
