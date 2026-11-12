@@ -179,6 +179,16 @@ function renderOperations(){
   addSmall(muse,'Owner notices: '+(r.muse?.pending_owner_notices??'?')+
     (r.muse?.notice_kinds?.length?' ('+r.muse.notice_kinds.join(', ')+')':''));
   addSmall(muse,'Receipt: '+dateText(r.muse?.last_receipt_at));
+  const owner=r.owner_control;
+  if(owner){
+   addSmall(muse,'Owner priority: '+(owner.priority==null?'not set':owner.priority)+
+     ' · '+(owner.paused?'dispatch paused':'dispatch active'));
+   if(owner.note_present)addSmall(muse,'Owner note saved in private ledger');
+   if(owner.last_command_status)
+     addSmall(muse,'Owner command: '+owner.last_command_status+
+       (owner.last_command_reason?' ('+owner.last_command_reason+')':'')+
+       ' · '+dateText(owner.last_command_at));
+  }
   const merge=element('td');
   merge.append(badge(r.merge?.eligible?'Eligible':'Blocked / not verified'));
   addSmall(merge,(r.merge?.blockers||[]).join(', ')||'No verified blocker detail');
