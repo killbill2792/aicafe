@@ -6,6 +6,9 @@ const mocks=vi.hoisted(()=>({
   transition:vi.fn(),
   sampled:[] as string[],
   incomplete:[] as string[],
+  pending:[] as (typeof row)[],
+  reminded:vi.fn(),
+  timezone:"America/Los_Angeles" as string|null,
 }));
 vi.mock("date-fns-tz",()=>({formatInTimeZone:()=> "2026-11-15"}));
 vi.mock("@/lib/ai/supervisor/loop/engine",async origin=>({
@@ -45,12 +48,18 @@ const database={
         in:()=>({not:()=>({order:()=>({order:()=>({
           limit:async()=>({data:[row],error:null}),
         })})})}),
+        eq:()=>({in:()=>({order:()=>({order:()=>({
+          limit:async()=>({data:mocks.pending,error:null}),
+        })})})}),
       }),
       update:()=>({
         eq:()=>({eq:()=>({eq:()=>({eq:()=>({
           in:async()=>({error:null}),
         })})})}),
       }),
+    };
+    if(table==="supervisor_experiment_cutover_cafes")return {
+      select:()=>({eq:()=>({limit:async()=>({data:[],error:null})})}),
     };
     if(table==="memberships")return {
       select:()=>({eq:()=>({eq:()=>({maybeSingle:async()=>({
@@ -59,7 +68,7 @@ const database={
     };
     if(table==="businesses")return {
       select:()=>({eq:()=>({single:async()=>({
-        data:{timezone:"America/Los_Angeles"},error:null,
+        data:{timezone:mocks.timezone},error:null,
       })})}),
     };
     throw Error("Unexpected table "+table);
@@ -68,14 +77,39 @@ const database={
 vi.mock("@/lib/supabase/admin",()=>({
   createAdminSupabaseClient:()=>database,
 }));
+vi.mock("@/lib/ai/supervisor/loop/experimentCutover.server",()=>({
+ priceCapabilityIds:["alex.drink_price_experiment.v1","alex.menu_price_change.v1"],
+ priceProposalCutoverMode:async()=> "legacy",
+ runVerifiedToastPriceTick:vi.fn(async()=> "waiting_source"),
+ remindPendingToastPrice:(...args:unknown[])=>mocks.reminded(...args),
+}));
 import {GET} from "./route";
 describe("delayed Supervisor monitor archival",()=>{
   beforeEach(()=>{
     mocks.events.length=0;mocks.seen.mockClear();mocks.transition.mockReset();
     process.env.CRON_SECRET="test-secret";
     mocks.transition.mockResolvedValue({});
-    mocks.sampled=[];mocks.incomplete=[];
+    mocks.sampled=[];mocks.incomplete=[];mocks.pending=[];
+    mocks.reminded.mockReset().mockResolvedValue("not_due");
+    mocks.timezone="America/Los_Angeles";
     row.monitor_spec={durationDays:7,metricScope:"latte"};row.monitoring_start_date="2026-10-01";
+  });
+  it("includes legacy pending price plans for reminders without activating the gated writer",async()=>{
+    mocks.pending=[{...row,status:"manual_pending",approved_at:"2026-11-11T09:00:00Z"}] as never;
+    const res=await GET(new Request("https://cafe.test/api/cron/supervisor-experiments",{
+      headers:{authorization:"Bearer test-secret"}}));
+    expect(res.status).toBe(200);
+    expect(mocks.reminded).toHaveBeenCalledTimes(1);
+    expect(mocks.reminded.mock.calls[0][1]).toMatchObject({status:"manual_pending"});
+  });
+  it("fails closed when the cafe timezone setting is missing",async()=>{
+    mocks.timezone=null;
+    const res=await GET(new Request("https://cafe.test/api/cron/supervisor-experiments",{
+      headers:{authorization:"Bearer test-secret"}}));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({checked:1,failed:1,sampled:0,reported:0});
+    expect(mocks.seen).not.toHaveBeenCalled();
+    expect(mocks.reminded).not.toHaveBeenCalled();
   });
   it("regenerates all actual-window samples and the terminal report before archiving a delayed proposal",async()=>{
     const res=await GET(new Request("https://cafe.test/api/cron/supervisor-experiments",{

@@ -6,9 +6,12 @@ import {monitorLoop,midRunDay,utcDateOffset,type LoopProposal,type OwnerLoopScop
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
+import {priceCapabilityIds,priceProposalCutoverMode,runVerifiedToastPriceTick,remindPendingToastPrice} from "@/lib/ai/supervisor/loop/experimentCutover.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {postGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
 import {goalEffectSchema,checkinDue} from "@/lib/calc/goals/goalSpec";
+const isPendingPriceCapability=(id:string)=>
+ (priceCapabilityIds as readonly string[]).includes(id);
 const sameWeekday=(a:string,b:string)=>new Date(a+"T12:00:00Z").getUTCDay()===new Date(b+"T12:00:00Z").getUTCDay();
 /** A stored day is complete when every reading in it is certified: a price
  * test day has actual coverage, a goal day full coverage on every metric. */
@@ -38,8 +41,17 @@ export async function GET(request:Request){
    .order("monitor_checked_at",{ascending:true,nullsFirst:true})
    .order("id",{ascending:true}).limit(100);
  if(error)return respond(503,{error:"monitor_proposals_unavailable"});
+ // Reminders are not a second price writer. All approved pending price
+ // experiments need reminders, even before a café qualifies for the
+ // independently gated new monitor. Rotate the bounded queue fairly.
+ const pendingResult=await db.from("supervisor_proposals").select("*")
+  .eq("status","manual_pending").in("capability_id",priceCapabilityIds)
+  .order("monitor_checked_at",{ascending:true,nullsFirst:true})
+  .order("id",{ascending:true}).limit(100);
+ if(pendingResult.error)return respond(503,{error:"pending_source_verification_unavailable"});
+ const due=[...(data??[]),...(pendingResult.data??[])];
  let sampled=0,reported=0,failed=0;
- for(const row of data??[]){
+ for(const row of due){
   try{
    // One event-report writer: the Events cron. Rotate skipped committed rows
    // so they never crowd the bounded generic queue.
@@ -49,7 +61,10 @@ export async function GET(request:Request){
    if(member.error||member.data?.role!=="owner"){failed++;continue;}
    const cafe=await db.from("businesses").select("timezone").eq("id",row.business_id).single();
    if(cafe.error||!cafe.data){failed++;continue;}
-   const today=formatInTimeZone(new Date(),cafe.data.timezone||"America/Los_Angeles","yyyy-MM-dd");
+   // A missing café setting must not silently select another timezone.
+   const timezone=typeof cafe.data.timezone==="string"&&cafe.data.timezone.trim()?cafe.data.timezone:null;
+   if(!timezone){failed++;continue;}
+   const today=formatInTimeZone(new Date(),timezone,"yyyy-MM-dd");
    const yesterday=utcDateOffset(today,-1);
    const p:LoopProposal={
      id:row.id,businessId:row.business_id,ownerUserId:row.owner_user_id,
@@ -61,7 +76,25 @@ export async function GET(request:Request){
    };
    const scope:OwnerLoopScope={businessId:p.businessId,ownerUserId:p.ownerUserId,
      threadId:p.threadId,locale:p.locale};
-   const start=p.monitoringStartDate!;
+   const mode=await priceProposalCutoverMode(db,row);
+   if(mode==="new"){
+    // The new path owns ALL price windows/notices for this proposal; never
+    // also invoke the legacy calendar-day monitor on this cron tick.
+    const result=await runVerifiedToastPriceTick(db,repo,row,scope,
+     new Date().toISOString(),timezone,p);
+    if(result==="reported")reported++;
+    if(result!=="not_price")continue;
+   }
+   // Legacy/shadow still sends bounded "awaiting Toast" reminders, but
+   // never runs the new verified-window writer until release gates hold.
+   if(row.status==="manual_pending" && isPendingPriceCapability(row.capability_id)){
+    await remindPendingToastPrice(db,row,new Date().toISOString(),
+     timezone);
+    continue;
+   }
+   // Shadow performs no new-path writes; the old monitor remains sole writer.
+   if(!p.monitoringStartDate||row.status==="manual_pending")continue;
+   const start=p.monitoringStartDate;
    const end=utcDateOffset(start,p.monitorSpec.durationDays-1);
    // Even after a prolonged cron outage, refresh every day and persist the
    // terminal report BEFORE archiving. Missing coverage must yield an honest
@@ -113,9 +146,9 @@ export async function GET(request:Request){
      updated_at:new Date().toISOString(),
    }).eq("id",row.id).eq("business_id",row.business_id)
      .eq("owner_user_id",row.owner_user_id).eq("revision",row.revision)
-     .in("status",["manual_confirmed","committed"]);
+     .in("status",["manual_pending","manual_confirmed","committed"]);
    if(rotated.error)failed++;
   }
  }
- return respond(200,{checked:(data??[]).length,sampled,reported,failed});
+ return respond(200,{checked:due.length,sampled,reported,failed});
 }

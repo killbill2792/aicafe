@@ -96,3 +96,22 @@ export async function readOwnerMonitorSamples(db:SupabaseClient,scope:OwnerScope
   }
   return rows;
 }
+
+export type OwnerVerifiedPriceWindow={source_id:string;start_at:string};
+/** Exact approved-price window-zero anchor. Only fetch the signed-in owner's
+ * verified source instants for proposals already authorized above; never
+ * infer the experiment start from the lifecycle transition date. */
+export async function readOwnerVerifiedPriceWindows(db:SupabaseClient,scope:OwnerScope,
+ proposalIds:readonly string[]):Promise<OwnerVerifiedPriceWindow[]>{
+ const rows:OwnerVerifiedPriceWindow[]=[];
+ for(let i=0;i<proposalIds.length;i+=100){
+  const ids=proposalIds.slice(i,i+100);
+  const {data,error}=await db.from("supervisor_monitor_windows")
+   .select("source_id,start_at").eq("business_id",scope.businessId)
+   .eq("owner_user_id",scope.ownerUserId).eq("monitor_kind","approved_price")
+   .eq("window_index",0).in("source_id",[...ids]).limit(ids.length);
+  if(error)throw error;
+  rows.push(...((data??[]) as OwnerVerifiedPriceWindow[]));
+ }
+ return rows;
+}

@@ -39,6 +39,27 @@ describe("Experiments page list",()=>{
       {date:"2026-10-21",units:19,netSalesCents:10450,coverage:"actual"}]);
   });
 
+  it("shows delayed verified activation as finished when source windows elapsed",()=>{
+    const p=latte("recovered","manual_confirmed","2026-11-04",500,550,{
+      verified_window_start_at:"2026-10-21T18:00:00Z"});
+    const report={proposal_id:"recovered",status:"insufficient_evidence",
+      generated_at:"2026-11-04T19:00:00Z",report:{
+        windowStartAt:"2026-10-21T18:00:00Z",windowEndAt:"2026-10-28T18:00:00Z",
+        coveredWindows:3,observedRevenueCents:null,recommendation:"adjust"}};
+    const result=buildExperimentsList([p],[report],[],TODAY,
+      "2026-11-04T19:00:00Z");
+    expect(result.running).toEqual([]);
+    expect(result.past[0]).toMatchObject({stage:"finished",day:7,
+      startDate:"2026-10-21",endDate:"2026-10-28",
+      verdict:{status:"insufficient_evidence",coveredDays:3}});
+  });
+  it("does not pretend an expired source interval restarted today before a report",()=>{
+    const p=latte("stale","manual_confirmed","2026-11-04",500,550,{
+      verified_window_start_at:"2026-10-21T18:00:00Z"});
+    const result=buildExperimentsList([p],[],[],TODAY,"2026-11-04T19:00:00Z");
+    expect(result.running).toMatchObject([{proposalId:"stale",
+      stage:"awaitingReport",day:7}]);
+  });
   it("has no three-item or fourteen-day cap, unlike the Home board",()=>{
     const running=["a","b","c","d","e"].map(id=>latte(id,"manual_pending",null,500,550,{canonical_effect_payload:{productId:id,productName:id,oldPriceCents:500,newPriceCents:550}}));
     const old=latte("old","monitored","2026-08-01",500,550);

@@ -57,6 +57,16 @@ export const menuPriceChangeCapability=registerLoopCapability({
     // No model-provided client or service-role write is permitted here.
     const current=await ownerMenuPrice(scope,effect.productId,supabase);
     if(current!==effect.oldPriceCents)throw new StaleProposalError(current);
+    // A Toast-connected published price is POS-owned. The local owner approval
+    // can only hand the owner to Toast Web; it must never write a local price
+    // history row that could masquerade as source publication evidence.
+    const {data:source,error:sourceError}=await supabase.from("menu_items")
+      .select("catalog_source").eq("business_id",scope.businessId)
+      .eq("id",effect.productId).maybeSingle();
+    if(sourceError||!source)throw new ToolError("write_failed","Menu price source unavailable.");
+    if(source.catalog_source==="toast")return {status:"requires_manual_action" as const,
+      instructionKey:"update_price_in_pos",instructions:{productName:effect.productName,
+        toPriceCents:String(effect.newPriceCents)}};
     const updated=await setCanonicalMenuPrice(supabase,{
       businessId:scope.businessId,menuItemId:effect.productId,
       priceCents:effect.newPriceCents,expectedOldPriceCents:effect.oldPriceCents,

@@ -220,6 +220,7 @@ supabase_lane() {
   sql_step toast-pos-copy-sql-integration.sql "Migration 101 invariants after the 102 re-run"
   sql_step supervisor-all-data-db-integration.sql "Financial columns, uniqueness, tenants, grants"
   sql_step supervisor-all-data-schema-check.sql "Read-only schema inventory"
+  check supabase "Task 8a verified price cutover: source, owner RLS, recovery, concurrent claims" env TASK8A_DISPOSABLE_DB=1 node scripts/test-supervisor-experiment-cutover-db.mjs
 }
 
 # ------------------------------------------------------ Plain PostgreSQL lane

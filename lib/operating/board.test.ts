@@ -33,6 +33,25 @@ describe("Operating Board",()=>{
     expect(board.recentReports.map(r=>[r.proposalId,r.status,r.recommendation]))
       .toEqual([["b","insufficient_evidence","adjust"],["a","complete","keep"]]);
   });
+  it("uses pinned elapsed-24h source instants, not a later UTC lifecycle date",()=>{
+    const start="2026-10-20T18:00:00Z",now="2026-10-24T18:00:00Z";
+    const p=row("late","manual_confirmed","2026-10-24",{
+      verified_window_start_at:start});
+    const board=buildOperatingBoard([p],[],"2026-10-24",now);
+    expect(board.running).toMatchObject([{proposalId:"late",stage:"monitoring",day:5,days:7}]);
+    expect(buildOperatingBoard([p],[],"2026-10-29","2026-10-28T18:00:00Z").running).toEqual([]);
+    expect(buildOperatingBoard([p],[{proposal_id:"late",status:"insufficient_evidence",
+      report:{recommendation:"adjust"},generated_at:"2026-10-24T19:00:00Z"}],
+      "2026-10-24",now).running).toEqual([]);
+    expect(buildOperatingBoard([p],[{proposal_id:"late",status:"complete",
+      report:{recommendation:"keep"},generated_at:"2026-10-24T19:00:00Z"}],
+      "2026-10-24",now).recentReports[0].proposalId).toBe("late");
+  });
+  it("retains legacy calendar-day running behavior without Task 8a source proof",()=>{
+    const p=row("legacy","committed","2026-10-20");
+    expect(buildOperatingBoard([p],[],"2026-10-24","2026-10-28T18:00:00Z")
+      .running[0].day).toBe(5);
+  });
   it("uses the registered drink experiment capability id",()=>{
     expect(DRINK_PRICE_EXPERIMENT_CAPABILITY).toBe(priceExperimentCapabilityId);
   });

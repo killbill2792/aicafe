@@ -3,7 +3,7 @@ const state=vi.hoisted(()=>({
   businessId:"11111111-1111-4111-8111-111111111111",currency:"USD" as string|null,
   menu:[{id:"22222222-2222-4222-8222-222222222222",name:"Latte",priceCents:450,active:true}],
   current:450 as number|null,saves:0,saveArgs:null as unknown,
-  saveAttempts:0,changeBeforeSave:null as number|null,
+  saveAttempts:0,changeBeforeSave:null as number|null,catalogSource:"manual" as string,
 }));
 vi.mock("@/lib/menu/priceHistory",()=>({setCanonicalMenuPrice:async(_client:unknown,input:unknown)=>{
   const args=input as {expectedOldPriceCents:number};
@@ -19,7 +19,8 @@ vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({
  from:(table:string)=>{
    const filters={eq:()=>filters,maybeSingle:async()=>({data:table==="memberships"?{role:"owner"}:
      table==="menu_items"?(state.menu[0].active?{id:state.menu[0].id,name:state.menu[0].name,
-       price_cents:state.menu[0].priceCents,is_active:state.menu[0].active}:null):
+       price_cents:state.menu[0].priceCents,is_active:state.menu[0].active,
+       catalog_source:state.catalogSource}:null):
      {currency:state.currency,is_demo:false},error:null})};
    return {select:()=>filters};
  },
@@ -34,7 +35,7 @@ const input={productId:"22222222-2222-4222-8222-222222222222",newPriceCents:500}
 const proposalId="66666666-6666-4666-8666-666666666666";
 beforeEach(()=>{state.currency="USD";state.menu=[{...state.menu[0],active:true,priceCents:450}];
   state.current=450;state.saves=0;state.saveArgs=null;
-  state.saveAttempts=0;state.changeBeforeSave=null;});
+  state.saveAttempts=0;state.changeBeforeSave=null;state.catalogSource="manual";});
 describe("approved menu price capability",()=>{
   it("drafts a $20 Toast item increase of 10 cents from one scoped menu row",async()=>{
     state.menu=[{...state.menu[0],priceCents:2000}];
@@ -84,6 +85,16 @@ describe("approved menu price capability",()=>{
     await expect(menuPriceChangeCapability.commit(scope,effect)).rejects.toThrow("proposal_id_required");
     expect(state.saves).toBe(0);
     expect(state.saveAttempts).toBe(0);
+  });
+  it("never writes a Toast-connected published item from a local owner-approved price proposal",async()=>{
+    state.catalogSource="toast";
+    const {effect}=await menuPriceChangeCapability.simulate(scope,input);
+    expect(await menuPriceChangeCapability.commit(scope,effect,proposalId)).toEqual({
+      status:"requires_manual_action",instructionKey:"update_price_in_pos",
+      instructions:{productName:"Latte",toPriceCents:"500"}});
+    expect(state.saves).toBe(0);
+    expect(state.saveAttempts).toBe(0);
+    expect(state.current).toBe(450);
   });
   it("writes once through owner_manual price history",async()=>{
     const {effect,baseline,monitorSpec}=await menuPriceChangeCapability.simulate(scope,input);
