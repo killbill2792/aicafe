@@ -294,3 +294,38 @@ test('invalid Codex escalation configuration fails before dispatch',()=>{
  assert.throws(()=>inspectMuseHealth(state,{now,codexWarnMinutes:10,
    codexEscalateMinutes:5}),/Invalid watchdog configuration/);
 });
+
+test('CI pending warns at five minutes, safe reconciliation only at ten',()=>{
+ const base={...state,tasks:{T1:{...state.tasks.T1,
+   ci_state:'pending',ci_started_at:'2026-11-11T09:55:00Z',
+   last_commit_at:'2026-11-11T09:54:00Z'}}};
+ const five=inspectMuseHealth(base,{now});
+ assert.equal(five.incidents.find(x=>x.kind==='CI_PENDING_STALE').action,'MUSE_NOTIFY_OWNER');
+ const safe=museRecoveryCandidates(five,base,identity);
+ assert.ok(!safe.some(x=>x.intent==='RECONCILE'&&x.task_id==='T1'));
+ const ten=inspectMuseHealth(base,{now:'2026-11-11T10:05:00Z'});
+ assert.equal(ten.incidents.find(x=>x.kind==='CI_PENDING_STALE').action,'RECONCILE');
+ assert.ok(museRecoveryCandidates(ten,base,{...identity,now:'2026-11-11T10:05:00Z'})
+   .some(x=>x.intent==='RECONCILE'));
+});
+test('red CI is reported to Muse but never silently marked green or retried unsafely',()=>{
+ const r={...state,tasks:{T1:{...state.tasks.T1,
+   ci_state:'failure',last_github_activity:now}}};
+ const health=inspectMuseHealth(r,{now});
+ assert.equal(health.incidents.find(x=>x.kind==='CI_FAILED').action,'MUSE_INSPECT_SIGNED_REPAIR');
+ assert.ok(!museRecoveryCandidates(health,r,identity).some(x=>x.intent==='RETRY_CI_IF_SAFE'));
+});
+test('verified merge-eligible unmerged PR requests GitHub merge gate, never merges directly',()=>{
+ const r={...state,tasks:{T1:{...state.tasks.T1,draft:false,
+   ci_state:'success',ci_finished_at:'2026-11-11T09:30:00Z',
+   dispatcher_only:false}},
+   lifecycle_v3:{rows:{T1:{merge:{eligible:true}}}}};
+ const health=inspectMuseHealth(r,{now});
+ assert.equal(health.incidents.find(x=>x.kind==='MERGE_ELIGIBLE_NOT_MOVING').action,
+   'MERGE_IF_ELIGIBLE');
+ assert.ok(museRecoveryCandidates(health,r,identity)
+   .some(x=>x.intent==='MERGE_IF_ELIGIBLE'&&x.expected_head_sha===sha));
+ const protectedTask={...r,tasks:{T1:{...r.tasks.T1,dispatcher_only:true}}};
+ assert.ok(!inspectMuseHealth(protectedTask,{now}).incidents
+   .some(x=>x.kind==='MERGE_ELIGIBLE_NOT_MOVING'));
+});
