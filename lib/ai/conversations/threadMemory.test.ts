@@ -47,24 +47,27 @@ function fixture(options: {
     from(table: string) {
       const queryState = { table, filters: {} as Record<string, unknown>, limit: undefined as number | undefined };
       state.queries.push(queryState);
-      const q: Record<string, any> = {};
-      q.select = () => q;
-      q.eq = (key: string, value: unknown) => { queryState.filters[key] = value; return q; };
-      q.or = () => q;
-      q.order = () => q;
-      q.limit = (value: number) => { queryState.limit = value; return q; };
-      q.maybeSingle = async () => table === "memberships"
-        ? { data: state.membership, error: null }
-        : { data: { memory_summary: state.document }, error: null };
-      q.then = (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => {
-        let rows = [...state.messages];
-        if (queryState.limit === 8) rows = rows.sort((a,b) =>
-          String(a.created_at).localeCompare(String(b.created_at)) ||
-          String(a.id).localeCompare(String(b.id))).slice(-8).reverse();
-        else rows = rows.sort((a,b) =>
-          String(a.created_at).localeCompare(String(b.created_at)) ||
-          String(a.id).localeCompare(String(b.id)));
-        return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+      const q = {
+        select() { return this; },
+        eq(key: string, value: unknown) { queryState.filters[key] = value; return this; },
+        or() { return this; },
+        order() { return this; },
+        limit(value: number) { queryState.limit = value; return this; },
+        async maybeSingle() {
+          return table === "memberships"
+            ? { data: state.membership, error: null }
+            : { data: { memory_summary: state.document }, error: null };
+        },
+        then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
+          let rows = [...state.messages];
+          if (queryState.limit === 8) rows = rows.sort((a,b) =>
+            String(a.created_at).localeCompare(String(b.created_at)) ||
+            String(a.id).localeCompare(String(b.id))).slice(-8).reverse();
+          else rows = rows.sort((a,b) =>
+            String(a.created_at).localeCompare(String(b.created_at)) ||
+            String(a.id).localeCompare(String(b.id)));
+          return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+        },
       };
       return q;
     },
