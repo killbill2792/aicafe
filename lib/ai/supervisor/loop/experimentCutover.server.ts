@@ -185,16 +185,64 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   const transitionDate=new Date().toISOString().slice(0,10);
   await repo.transition(scope,row.id,row.revision,"manual_confirmed",transitionDate);
  }
+ // A later publication of an unchanged price must not erase the first
+ // activation. A real subsequent verified price change/revert permanently
+ // interrupts that phase, even if a later publication restores the target.
+ const [current,changes]=await Promise.all([
+  db.from("menu_items").select(
+   "catalog_source,is_active,pos_item_id,price_cents,toast_publication_state")
+   .eq("business_id",row.business_id).eq("id",effect.productId).maybeSingle(),
+  db.from("menu_price_history").select("toast_observed_at,new_price_cents")
+   .eq("business_id",row.business_id).eq("menu_item_id",effect.productId)
+   .eq("source_type","connected_pos").eq("source_provider","toast")
+   .eq("toast_restaurant_guid",receipt.restaurantGuid)
+   .gt("toast_observed_at",receipt.observedAt)
+   .lte("toast_observed_at",now)
+   .order("toast_observed_at",{ascending:true}).limit(1),
+ ]);
+ if(current.error||changes.error)throw new Error("source_continuity_read_failed");
+ const matching=Boolean(current.data&&current.data.is_active&&
+  current.data.catalog_source==="toast"&&
+  current.data.toast_publication_state==="active"&&
+  current.data.pos_item_id===receipt.posItemId&&
+  Number(current.data.price_cents)===effect.newPriceCents);
+ const storedAt=initial.data?.source_reference?.interruptedAt;
+ const priorInterruption=typeof storedAt==="string"&&
+   Number.isFinite(Date.parse(storedAt))?storedAt:null;
+ const nextChange=changes.data?.[0]?.toast_observed_at??null;
+ const firstDisruption=nextChange??(!matching?now:null);
+ const interruptionAt=[priorInterruption,firstDisruption]
+  .filter((x):x is string=>typeof x==="string"&&
+   Number.isFinite(Date.parse(x)))
+  .sort((a,b)=>Date.parse(a)-Date.parse(b))[0]??null;
+ const sourceReference={...activationReference(receipt),
+  ...(interruptionAt?{interruptedAt:interruptionAt}:{}),
+  ...(nextChange?{sourceContinuity:"verified_price_changed"}:
+   interruptionAt?{sourceContinuity:"unverified_gap"}:{})};
+ if(interruptionAt&&!priorInterruption){
+  const saved=await db.from("supervisor_monitor_windows")
+   .update({source_reference:sourceReference,updated_at:new Date().toISOString()})
+   .eq("business_id",row.business_id).eq("monitor_kind","approved_price")
+   .eq("source_id",row.id).eq("window_index",0);
+  if(saved.error)throw new Error("source_interruption_receipt_failed");
+ }
  const windows=planElapsed24HourWindows(receipt.startAt,days);
  const complete=[] as Awaited<ReturnType<typeof readElapsedWindowObservations>>[];
  for(const window of windows){
   if(Date.parse(window.endAt)>Date.parse(now))break;
-  const measured=await readElapsedWindowObservations(db,row.business_id,
+  // A window overlapping a subsequent source price change cannot be
+  // valued at the original approved price, even if lines have timestamps.
+  const cut=interruptionAt!==null&&Date.parse(window.endAt)>Date.parse(interruptionAt);
+  const measured=cut?{
+   window,status:"insufficient_evidence" as const,
+   units:null,revenueCents:null,countedLines:0,unknownTimeLines:1,
+   source:"order_lines.ordered_at" as const,asOf:now,
+  }:await readElapsedWindowObservations(db,row.business_id,
    effect.productId,window,now,timezone);
   const written=await db.from("supervisor_monitor_windows").upsert({
    business_id:row.business_id,owner_user_id:row.owner_user_id,
    monitor_kind:"approved_price",source_id:row.id,window_index:window.index,
-   source_reference:activationReference(receipt),
+   source_reference:sourceReference,
    start_at:window.startAt,end_at:window.endAt,
    coverage_status:measured.status==="actual"?"actual":"partial",
    unknown_time_lines:measured.unknownTimeLines,
@@ -206,7 +254,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   complete.push(measured);
  }
  if(complete.length!==days)return "monitoring";
- const actual=complete.every(c=>c.status==="actual");
+ const actual=!interruptionAt&&complete.every(c=>c.status==="actual");
  const units=actual?complete.reduce((a,b)=>a+(b.units??0),0):null;
  const revenue=actual?complete.reduce((a,b)=>a+(b.revenueCents??0),0):null;
  const result={productId:effect.productId,productName:effect.productName,
@@ -215,7 +263,8 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
    c=>c.status==="actual").length,totalWindows:days,windowStartAt:receipt.startAt,
   windowEndAt:windows.at(-1)!.endAt,sourceBasis:receipt.startBasis,
   extraTradingInterval:{status:"not_verified",revenueCents:null},
-  nonCausal:true,sourcePublicationVersion:receipt.publicationVersion};
+  nonCausal:true,sourcePublicationVersion:receipt.publicationVersion,
+  sourceContinuity:interruptionAt?"interrupted":"verified",interruptedAt:interruptionAt};
  const status=actual?"complete":"insufficient_evidence";
  const report:LoopReport={status,result,recommendation:"adjust",
   source:"order_lines.ordered_at+orders.closed_at",
@@ -228,7 +277,9 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
     windowStartAt:receipt.startAt,windowEndAt:windows.at(-1)!.endAt,
     sourceBasis:receipt.startBasis,sourceCoverage:status,
     extraTradingStatus:"not_verified",nonCausal:true,
-    sourcePublicationVersion:receipt.publicationVersion},
+    sourcePublicationVersion:receipt.publicationVersion,
+    sourceContinuity:interruptionAt?"interrupted":"verified",
+    interruptionAt},
    confidence:actual?"high":"low",
    evidence:[{source:"order_lines",facts:{actualWindowCount:result.coveredWindows,
     totalWindowCount:days,status,nonCausal:true}}],
@@ -236,6 +287,8 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
     ". I observed "+result.coveredWindows+" of "+days+
     " elapsed 24-hour sales windows. "+(actual?
     "The recorded lines were complete for those windows.":
+    interruptionAt?
+    "A later source price change or unverifiable price gap interrupted this phase.":
     "Some source timestamps or certified coverage were missing.")+
     " These are observed sales, not proof that the price change caused them. "+
     "Any trading after the final window remains separately unverified.",

@@ -49,3 +49,23 @@ describe("durable Task 8a source-verified activation receipts",()=>{
   expect(readVerifiedActivationAnchor(evidence,"2026-11-11T17:00:00Z",approved)).toBeNull();
  });
 });
+
+describe("Task 8a price-change continuity truth",()=>{
+ it("keeps the first source activation through unrelated version changes, not a source revert",()=>{
+  const receipt={businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+   menuItemId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+   oldPriceCents:500,newPriceCents:550,approvedAt:"2026-11-11T18:00:00Z"};
+  const initial={businessId:receipt.businessId,menuItemId:receipt.menuItemId,
+   oldPriceCents:500,newPriceCents:550,
+   historyId:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+   restaurantGuid:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+   posItemId:"toast:dddddddd-dddd-4ddd-8ddd-dddddddddddd:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+   publicationVersion:"menu-v1",observedAt:"2026-11-11T18:10:00Z",
+   startBasis:"first_verified_observation"};
+  const anchored=readVerifiedActivationAnchor(initial,"2026-11-11T18:10:00Z",receipt);
+  expect(anchored?.publicationVersion).toBe("menu-v1");
+  // Same price in menu-v2 does not modify the source receipt in the anchor.
+  expect(readVerifiedActivationAnchor({...initial,interruptedAt:"2026-11-12T20:00:00Z"},
+   "2026-11-11T18:10:00Z",receipt)?.historyId).toBe(initial.historyId);
+ });
+});
