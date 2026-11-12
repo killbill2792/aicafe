@@ -88,12 +88,31 @@ try{
  await db.query(readFileSync(new URL("../supabase/migrations/20261020000074_supervisor_execution_loop.sql",import.meta.url),"utf8"));
  await db.query(readFileSync(new URL("../supabase/migrations/20261023000083_approval_lifecycle_atomicity.sql",import.meta.url),"utf8"));
   await db.query("create function public.supervisor_commit_staff_proposal(uuid,uuid,uuid,uuid,integer) returns jsonb language plpgsql as $stub$ declare p public.supervisor_proposals; begin update public.supervisor_proposals set status='executing',revision=revision+1,updated_at=now() where business_id=$1 and owner_user_id=$2 and thread_id=$3 and id=$4 and revision=$5 and status='approved' returning * into p; if p.id is null then raise exception 'stub_revision_conflict' using errcode='P0001'; end if; update public.supervisor_proposals set status='committed',revision=revision+1,committed_at=now(),monitoring_start_date=current_date+1,updated_at=now() where id=p.id returning * into p; return jsonb_build_object('state','applied','proposal',to_jsonb(p)); end $stub$");
- await db.query(readFileSync(new URL("../supabase/migrations/20261111000206_supervisor_effect_gateway.sql",import.meta.url),"utf8"));
- await db.query(readFileSync(new URL("../supabase/migrations/20261112000301_supervisor_effect_reconciliation.sql",import.meta.url),"utf8"));
+ // Rehearse an UPGRADE of an occupied pre-Task10 approval ledger, not just
+ // creating empty new tables: preserve real existing approval records untouched.
  await db.query("insert into businesses(id,timezone,is_demo) values($1,'UTC',false),($2,'UTC',false)",[B,B2]);
  await db.query("insert into auth.users(id) values($1),($2)",[OWNER,OWNER2]);
  await db.query("insert into memberships(business_id,user_id,role) values($1,$2,'owner'),($3,$4,'owner')",[B,OWNER,B2,OWNER2]);
  await db.query("insert into ai_threads(id,business_id,owner_user_id) values($1,$2,$3),($4,$5,$6)",[THREAD,B,OWNER,THREAD2,B2,OWNER2]);
+ const preexisting=["90000000-0000-4000-8000-000000000020",
+  "90000000-0000-4000-8000-000000000021",
+  "90000000-0000-4000-8000-000000000022"];
+ for(const id of preexisting){
+   await seedProposal(B,OWNER,THREAD,id,"leo.goal.v1");
+   await withService(db,c=>c.query(rpcTransition,[B,OWNER,id,1,"approve",null]));
+ }
+ const beforeUpgrade=(await db.query("select proposal_id,approved_revision,effect_hash from supervisor_approvals where proposal_id=any($1::uuid[]) order by proposal_id",[preexisting])).rows;
+ assert.equal(beforeUpgrade.length,3,"seed the same number of legacy approvals currently stored in production");
+ await db.query(readFileSync(new URL("../supabase/migrations/20261111000206_supervisor_effect_gateway.sql",import.meta.url),"utf8"));
+ await db.query(readFileSync(new URL("../supabase/migrations/20261112000301_supervisor_effect_reconciliation.sql",import.meta.url),"utf8"));
+ const afterUpgrade=(await db.query("select proposal_id,approved_revision,effect_hash,authorization_kind,mandate_id,mandate_revision from supervisor_approvals where proposal_id=any($1::uuid[]) order by proposal_id",[preexisting])).rows;
+ assert.deepEqual(afterUpgrade,beforeUpgrade.map(row=>({...row,authorization_kind:"click",
+   mandate_id:null,mandate_revision:null})),"Task10 migration must preserve all legacy click approvals");
+ const legacyClaim=await claim(B,OWNER,THREAD,preexisting[0],2,"click");
+ assert.equal(legacyClaim.proposal.status,"executing","a pre-existing approval still executes through the new gateway");
+ const legacyCommittedDate=(await db.query("select ((now() at time zone timezone)::date+1) as next_day from businesses where id=$1",[B])).rows[0].next_day;
+ const legacyDone=await finish(B,OWNER,THREAD,preexisting[0],legacyClaim,"verified","committed",legacyCommittedDate);
+ assert.equal(legacyDone.status,"committed","legacy click proposal can be finished after upgrade");
 
  await expectError(()=>issueChallenge({limit:4}),"22023");
  const first=await issueChallenge();
