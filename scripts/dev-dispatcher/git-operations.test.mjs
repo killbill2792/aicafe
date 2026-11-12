@@ -183,7 +183,7 @@ test('Git-backed CAS compacts a >1 MiB ledger and preserves private archive atom
      question:'This pending owner question must survive unchanged',created_at:old};
    const state={version:1,tasks:{T:{approved:true}},
      actions:{original:{status:'submitted'},payload:{status:'planned',
-       provenance:'x'.repeat(360_000)}},
+       provenance:'x'.repeat(500_000)}},
      owner_alerts:alerts,delayed_wake_history:history};
    const initial=JSON.stringify(state,null,2)+'\n';
    assert.ok(Buffer.byteLength(initial)>1_000_000);
@@ -198,7 +198,7 @@ test('Git-backed CAS compacts a >1 MiB ledger and preserves private archive atom
    run(['pull','-q','origin','main'],f.work);
    const updated=JSON.parse(readFileSync(join(f.work,settings.ledger.path),'utf8'));
    assert.ok(Buffer.byteLength(readFileSync(join(f.work,settings.ledger.path)))<1_000_000);
-   assert.equal(updated.actions.payload.provenance.length,360_000);
+   assert.equal(updated.actions.payload.provenance.length,500_000);
    assert.equal(updated.owner_alerts['notice:live'].status,'planned');
    assert.ok(updated.ledger_archives.length>0);
    const archive=JSON.parse(readFileSync(join(f.work,updated.ledger_archives.at(-1).path),'utf8'));
