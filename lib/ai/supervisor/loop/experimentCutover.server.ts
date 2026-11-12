@@ -126,7 +126,8 @@ type CurrentMenuPrice={
 export function trialSourceInterruption(input:{
  receipt:{startAt:string;posItemId:string;newPriceCents:number};
  finalEndAt:string;asOf:string;current:CurrentMenuPrice|null;
- firstPriceChangeAt:string|null;priorInterruptionAt:string|null;
+ firstPriceChangeAt:string|null;firstContextChangeAt:string|null;
+ priorInterruptionAt:string|null;
 }):{at:string|null;reason:"verified_price_changed"|"unverified_gap"|null}{
  const start=Date.parse(input.receipt.startAt);
  const end=Date.parse(input.finalEndAt);
@@ -147,6 +148,7 @@ export function trialSourceInterruption(input:{
   return Number.isFinite(ms)&&ms>=start&&ms<end&&ms<=now?ms:null;
  };
  const history=occurred(input.firstPriceChangeAt);
+ const context=occurred(input.firstContextChangeAt);
  const prior=occurred(input.priorInterruptionAt);
  let gap:number|null=null;
  if(!matches){
@@ -163,6 +165,7 @@ export function trialSourceInterruption(input:{
   if(gap!==null&&gap>=end)gap=null;
  }
  const events=[...(history!==null?[{at:history,reason:"verified_price_changed" as const}]:[]),
+  ...(context!==null?[{at:context,reason:"unverified_gap" as const}]:[]),
   ...(prior!==null?[{at:prior,reason:"unverified_gap" as const}]:[]),
   ...(gap!==null?[{at:gap,reason:"unverified_gap" as const}]:[])]
   .sort((a,b)=>a.at-b.at);
@@ -246,7 +249,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
  // publication or price revert belongs to a different observed phase.
  const windows=planElapsed24HourWindows(receipt.startAt,days);
  const finalEndAt=windows[windows.length-1].endAt;
- const [current,changes]=await Promise.all([
+ const [current,changes,contextChanges]=await Promise.all([
   db.from("menu_items").select(
    "catalog_source,is_active,pos_item_id,price_cents,toast_publication_state,pos_pricing_strategy,toast_publication_observed_at")
    .eq("business_id",row.business_id).eq("id",effect.productId).maybeSingle(),
@@ -258,12 +261,24 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
    .lt("toast_observed_at",finalEndAt)
    .lte("toast_observed_at",now)
    .order("toast_observed_at",{ascending:true}).limit(1),
+  // Append-only DB trigger records the FIRST context change. Unlike the
+  // menu's latest publication timestamp it survives later menu versions,
+  // reverts and unrelated publishes. Unknown source-effective time stays
+  // insufficient-evidence rather than becoming a fake clean window.
+  db.from("supervisor_toast_price_context_changes")
+   .select("observed_at").eq("business_id",row.business_id)
+   .eq("menu_item_id",effect.productId)
+   .gte("observed_at",receipt.startAt).lt("observed_at",finalEndAt)
+   .lte("observed_at",now)
+   .order("observed_at",{ascending:true}).limit(1),
  ]);
- if(current.error||changes.error)throw new Error("source_continuity_read_failed");
+ if(current.error||changes.error||contextChanges.error)
+  throw new Error("source_continuity_read_failed");
  const storedAt=initial.data?.source_reference?.interruptedAt;
  const continuity=trialSourceInterruption({
   receipt,finalEndAt,asOf:now,current:current.data,
   firstPriceChangeAt:changes.data?.[0]?.toast_observed_at??null,
+  firstContextChangeAt:contextChanges.data?.[0]?.observed_at??null,
   priorInterruptionAt:typeof storedAt==="string"?storedAt:null,
  });
  const interruptionAt=continuity.at;

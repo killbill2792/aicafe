@@ -99,6 +99,7 @@ describe("persisted verified price activation survives later Menus version",()=>
     pos_item_id:posItemId,price_cents:550,toast_publication_state:"active",
     toast_publication_version:"menu-v2"},error:null},
    menu_price_history:{data:[],error:null},
+   supervisor_toast_price_context_changes:{data:[],error:null},
   };
   function query(response:unknown):unknown{
    return new Proxy({},{
@@ -139,7 +140,7 @@ describe("Task 8a exact interval and source pricing continuity",()=>{
   toast_publication_observed_at:"2026-11-12T12:00:00Z"};
  const base={receipt,finalEndAt:"2026-11-12T18:00:00.000Z",
   asOf:"2026-11-13T19:00:00Z",current,
-  firstPriceChangeAt:null,priorInterruptionAt:null};
+  firstPriceChangeAt:null,firstContextChangeAt:null,priorInterruptionAt:null};
  it("ignores verified price reverts strictly after or exactly on the final 24h boundary",()=>{
   for(const boundary of ["2026-11-12T18:00:00Z","2026-11-12T18:01:00Z"]){
    expect(trialSourceInterruption({...base,
@@ -172,4 +173,25 @@ describe("Task 8a exact interval and source pricing continuity",()=>{
     ":size:ffffffff-ffff-4fff-8fff-ffffffffffff"}})).toMatchObject({
     reason:"unverified_gap"});
  });
+ it("preserves an in-window contextual change after later unrelated publication overwrites latest timestamp",()=>{
+  expect(trialSourceInterruption({...base,
+   current:{...current,pos_pricing_strategy:"TIME_SPECIFIC_PRICE",
+    toast_publication_observed_at:"2026-11-13T09:00:00Z"},
+   firstContextChangeAt:"2026-11-12T07:00:00Z"})).toMatchObject({
+    at:"2026-11-12T07:00:00.000Z",reason:"unverified_gap"});
+ });
+ it("retains first transition even if later menu publication restores base strategy",()=>{
+  expect(trialSourceInterruption({...base,
+   current:{...current,toast_publication_observed_at:"2026-11-13T09:00:00Z"},
+   firstContextChangeAt:"2026-11-12T07:00:00Z"})).toMatchObject({
+    at:"2026-11-12T07:00:00.000Z",reason:"unverified_gap"});
+ });
+ it("does not move a clean trial when the first context change was at or beyond end",()=>{
+  expect(trialSourceInterruption({...base,
+   current:{...current,pos_pricing_strategy:"TIME_SPECIFIC_PRICE",
+    toast_publication_observed_at:"2026-11-12T18:01:00Z"},
+   firstContextChangeAt:"2026-11-12T18:00:00Z"})).toEqual({
+    at:null,reason:null});
+ });
+
 });

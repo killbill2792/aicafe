@@ -68,6 +68,65 @@ create policy supervisor_8a_windows_owner_read
   where m.business_id=supervisor_monitor_windows.business_id
    and m.user_id=(select auth.uid()) and m.role='owner'));
 
+-- Capture every actual canonical Toast price-context mutation at database time.
+-- The latest menu publication stamp is NOT when a strategy first changed.
+-- A later unrelated menu publication must never erase an in-window change.
+create table public.supervisor_toast_price_context_changes (
+ id uuid primary key default gen_random_uuid(),
+ business_id uuid not null references public.businesses(id) on delete cascade,
+ menu_item_id uuid not null references public.menu_items(id) on delete cascade,
+ old_pos_item_id text,
+ new_pos_item_id text,
+ old_pricing_strategy text,
+ new_pricing_strategy text,
+ observed_at timestamptz not null default clock_timestamp()
+);
+create index supervisor_8a_context_history
+ on public.supervisor_toast_price_context_changes
+ (business_id,menu_item_id,observed_at,id);
+alter table public.supervisor_toast_price_context_changes enable row level security;
+revoke all on public.supervisor_toast_price_context_changes
+ from public,anon,authenticated;
+grant select on public.supervisor_toast_price_context_changes to service_role;
+-- The client cannot forge observation dates: only an actual menu_items
+-- UPDATE can insert a row. This trigger is callable only by PostgreSQL.
+create function public.supervisor_8a_record_toast_price_context()
+ returns trigger language plpgsql security definer set search_path='' as $
+begin
+ if tg_op<>'UPDATE' or
+    (old.catalog_source is distinct from 'toast'
+     and new.catalog_source is distinct from 'toast') then return new;end if;
+ if old.pos_item_id is distinct from new.pos_item_id or
+    old.pos_pricing_strategy is distinct from new.pos_pricing_strategy or
+    old.catalog_source is distinct from new.catalog_source or
+    old.is_active is distinct from new.is_active or
+    old.price_cents is distinct from new.price_cents or
+    old.toast_publication_state is distinct from new.toast_publication_state then
+  insert into public.supervisor_toast_price_context_changes (
+   business_id,menu_item_id,old_pos_item_id,new_pos_item_id,
+   old_pricing_strategy,new_pricing_strategy,observed_at)
+  values (new.business_id,new.id,old.pos_item_id,new.pos_item_id,
+   old.pos_pricing_strategy,new.pos_pricing_strategy,clock_timestamp());
+ end if;
+ return new;
+end;$;
+revoke all on function public.supervisor_8a_record_toast_price_context()
+ from public,anon,authenticated;
+grant execute on function public.supervisor_8a_record_toast_price_context()
+ to service_role;
+create trigger supervisor_8a_toast_price_context_change
+ after update on public.menu_items
+ for each row
+ when (
+  old.pos_item_id is distinct from new.pos_item_id or
+  old.pos_pricing_strategy is distinct from new.pos_pricing_strategy or
+  old.catalog_source is distinct from new.catalog_source or
+  old.is_active is distinct from new.is_active or
+  old.price_cents is distinct from new.price_cents or
+  old.toast_publication_state is distinct from new.toast_publication_state
+ )
+ execute function public.supervisor_8a_record_toast_price_context();
+
 create table public.supervisor_experiment_notice_receipts (
  id uuid primary key default gen_random_uuid(),
  business_id uuid not null references public.businesses(id) on delete cascade,
