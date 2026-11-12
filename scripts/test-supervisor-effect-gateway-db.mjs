@@ -79,6 +79,8 @@ try{
   "create policy \"members write price history\" on public.menu_price_history for all to authenticated using(true) with check(true)",
   "grant usage on schema public,auth to authenticated",
   "grant insert,select,update,delete on public.menu_price_history to authenticated",
+  "grant select on public.memberships to authenticated",
+  "grant execute on function auth.uid() to authenticated",
   "grant usage on schema auth,public to service_role",
   "grant execute on function auth.uid() to service_role","grant execute on function auth.role() to service_role",
   "grant select on public.memberships to service_role",
