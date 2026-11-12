@@ -39,6 +39,18 @@ async function asActor(userId, task) {
     throw error;
   }
 }
+async function asServiceWriter(task) {
+  await db.query("BEGIN");
+  try {
+    await db.query("SET LOCAL ROLE service_role");
+    const result = await task();
+    await db.query("COMMIT");
+    return result;
+  } catch (error) {
+    await db.query("ROLLBACK");
+    throw error;
+  }
+}
 async function fingerprint(table, exclude) {
   const sql = table === "ai_threads"
     ? "select count(*)::int as n, md5(string_agg((to_jsonb(t) - 'memory_summary')::text, '|' order by t.id)) as hash from public.ai_threads t"
@@ -103,6 +115,9 @@ async function main() {
   assert.equal(beforeThreads.n,64);
   assert.equal(beforeMessages.n,529);
   const beforeSchema=await schemaFingerprint();
+  const beforeOwnerMessageInsert=(await scalar("select has_table_privilege('authenticated','public.ai_messages','INSERT') as allowed")).allowed;
+  const beforeServerMessageInsert=(await scalar("select has_table_privilege('service_role','public.ai_messages','INSERT') as allowed")).allowed;
+  assert.equal(beforeServerMessageInsert,true,"Existing authorized server writer lacks INSERT");
   const beforeOwnerRead=await asActor(owners[0],async()=>(await db.query("select id from public.ai_threads where id=$1",[threads[0].id])).rowCount);
   const beforeOtherOwnerRead=await asActor(owners[1],async()=>(await db.query("select id from public.ai_threads where id=$1",[threads[0].id])).rowCount);
   assert.equal(beforeOwnerRead,1);
@@ -130,7 +145,8 @@ async function main() {
   }
   assert.ok(lockFailure,"Concurrent reader should block the DDL until timeout");
   assert.equal(lockFailure.code,"55P03","DDL lock timeout is the required fail-safe");
-  assert.ok(Date.now()-lockStart < 11000,"DDL lock wait exceeded the approved 5 second budget by too much");
+  const lockDurationMs=Date.now()-lockStart;
+  assert.ok(lockDurationMs < 11000,"DDL lock wait exceeded the approved 5 second budget by too much");
   assert.equal((await scalar("select count(*)::int as n from information_schema.columns where table_schema='public' and table_name='ai_threads' and column_name='memory_summary'")).n,0,"Timed-out migration left a partial column");
 
   // Apply the real unmodified Task 9 migration against populated schema.
@@ -141,6 +157,10 @@ async function main() {
   assert.deepEqual(await fingerprint("ai_threads"),beforeThreads,"Existing thread columns changed during upgrade");
   assert.deepEqual(await fingerprint("ai_messages"),beforeMessages,"Existing messages changed during upgrade");
   assert.deepEqual(await schemaFingerprint(),beforeSchema,"Existing policies/triggers/constraints/message columns changed");
+  assert.equal((await scalar("select has_table_privilege('authenticated','public.ai_messages','INSERT') as allowed")).allowed,beforeOwnerMessageInsert,
+    "Old authenticated-message INSERT privilege unexpectedly changed");
+  assert.equal((await scalar("select has_table_privilege('service_role','public.ai_messages','INSERT') as allowed")).allowed,beforeServerMessageInsert,
+    "Old server-message INSERT privilege unexpectedly changed");
   const expectedDefault={
     version:1,revision:0,cursor:null,entries:[],tombstones:[],retry:null,
   };
@@ -151,20 +171,29 @@ async function main() {
 
   assert.equal(await asActor(owners[0],async()=>(await db.query("select id from public.ai_threads where id=$1",[threads[0].id])).rowCount),beforeOwnerRead);
   assert.equal(await asActor(owners[1],async()=>(await db.query("select id from public.ai_threads where id=$1",[threads[0].id])).rowCount),beforeOtherOwnerRead);
-  // Old application client path still creates threads/messages after migration.
+  // Preserve the PREEXISTING privilege model: authenticated can create/read
+  // threads, but direct authenticated ai_messages INSERT is not granted here.
+  // The authorized server/service-role writer still appends owner messages.
   const freshThread=randomUUID();
   const freshMessage=randomUUID();
   await asActor(owners[0],async()=>{
     await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",
       [freshThread,cafes[0],owners[0],randomUUID()]);
-    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$4,'owner','text','Old owner chat path works after upgrade',$5)",
-      [freshMessage,cafes[0],freshThread,owners[0],randomUUID()]);
-    const row=await scalar("select memory_summary,last_message_at from public.ai_threads where id=$1",[freshThread]);
+    const row=await scalar("select memory_summary from public.ai_threads where id=$1",[freshThread]);
     assert.deepEqual(row.memory_summary,expectedDefault,"New threads do not have compatible memory default");
-    assert.ok(row.last_message_at,"Existing message-trigger behavior is broken");
   });
-  const source=await scalar("select id,created_at from public.ai_messages where id=$1",[firstOwnerMessage.id]);
-  const at=source.created_at.toISOString();
+  await asServiceWriter(async()=>{
+    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$4,'owner','text','Authorized server message write after upgrade',$5)",
+      [freshMessage,cafes[0],freshThread,owners[0],randomUUID()]);
+  });
+  await asActor(owners[0],async()=>{
+    const row=await scalar("select memory_summary,last_message_at from public.ai_threads where id=$1",[freshThread]);
+    assert.deepEqual(row.memory_summary,expectedDefault,"Appending a message changed new memory default");
+    assert.ok(row.last_message_at,"Existing message-trigger behavior is broken");
+    assert.equal((await db.query("select id from public.ai_messages where id=$1",[freshMessage])).rowCount,1);
+  });
+  const source=await scalar("select id,to_char(created_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as created_at_iso from public.ai_messages where id=$1",[firstOwnerMessage.id]);
+  const at=source.created_at_iso;
   const updated={
     ...expectedDefault, revision:1,cursor:{createdAt:at,id:source.id},
     entries:[{kind:"preference",key:"preference:milk_choice",text:"We prefer oat milk",
@@ -195,9 +224,11 @@ async function main() {
     check:"Task9 occupied-database upgrade",result:"PASS",postgres_version:serverVersion,
     preexisting_threads:64,preexisting_messages:529,
     old_columns_and_rows:"unchanged",old_RLS_and_triggers:"unchanged",
-    old_client_thread_and_message_writes:"pass",memory_on_existing_thread:"pass",
+    authenticated_thread_create:"pass",authorized_server_message_insert:"pass",
+    authenticated_direct_message_insert_granted_before_and_after:beforeOwnerMessageInsert,
+    memory_on_existing_thread:"pass",
     cross_owner_denial:"pass",deferred_constraint_validation:"pass_in_rollback",
-    timeout_error_code:lockFailure.code,lock_wait_ms:Date.now()-lockStart,
+    timeout_error_code:lockFailure.code,lock_wait_ms:lockDurationMs,
     successful_migration_ms:migrationMs,
     production_data_used:false,production_database_changed:false,
   }));
