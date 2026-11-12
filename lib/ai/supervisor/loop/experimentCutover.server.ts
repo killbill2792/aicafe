@@ -23,7 +23,7 @@ export const shadowPriceWriterEnabled=(_mode:ExperimentCutoverMode)=>false;
 
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {LoopProposal,LoopRepository,OwnerLoopScope,LoopReport} from "./engine";
-import {readVerifiedToastPriceEvidence} from "./toastPriceEvidence.server";
+import {readVerifiedToastPriceEvidence,type VerifiedToastPriceEvidence} from "./toastPriceEvidence.server";
 import {readElapsedWindowObservations,planElapsed24HourWindows} from "./rollingExperimentSales.server";
 import {postVerifiedSourceReminder} from "./experimentNotices.server";
 
@@ -73,6 +73,45 @@ export async function priceProposalCutoverMode(db:SupabaseClient,
  if(item?.catalog_source!=="toast")return "legacy";
  return readCafeExperimentCutoverMode(db,row.business_id);
 }
+type ActivationAnchor=VerifiedToastPriceEvidence;
+/** The durable row is first written BEFORE lifecycle confirmation. A newer
+ * unrelated Toast publication must not change the approved experiment's
+ * verified start instant or the source change that activated it. */
+export function readVerifiedActivationAnchor(raw:unknown,startAt:unknown,expected:{
+ businessId:string;menuItemId:string;oldPriceCents:number;
+ newPriceCents:number;approvedAt:string;
+}):ActivationAnchor|null{
+ if(!raw||typeof raw!=="object"||typeof startAt!=="string")return null;
+ const v=raw as Record<string,unknown>;
+ const valid=(x:unknown)=>typeof x==="string"&&
+  Number.isFinite(Date.parse(x));
+ const strings=["historyId","restaurantGuid","menuItemId","posItemId",
+  "publicationVersion","observedAt"] as const;
+ if(strings.some(k=>typeof v[k]!=="string"||!v[k])||
+    v.businessId!==expected.businessId||v.menuItemId!==expected.menuItemId||
+    v.oldPriceCents!==expected.oldPriceCents||
+    v.newPriceCents!==expected.newPriceCents||
+    (v.startBasis!=="source_effective"&&
+     v.startBasis!=="first_verified_observation")||
+    !valid(v.observedAt)||!valid(startAt)||!valid(expected.approvedAt)||
+    Date.parse(startAt)<Date.parse(expected.approvedAt)||
+    Date.parse(v.observedAt as string)<Date.parse(expected.approvedAt)||
+    !(v.posItemId as string).toLowerCase().startsWith(
+      "toast:"+(v.restaurantGuid as string).toLowerCase()+":"))
+  return null;
+ return {status:"verified",businessId:expected.businessId,
+  menuItemId:expected.menuItemId,historyId:v.historyId as string,
+  restaurantGuid:v.restaurantGuid as string,
+  posItemId:v.posItemId as string,
+  oldPriceCents:expected.oldPriceCents,newPriceCents:expected.newPriceCents,
+  publicationVersion:v.publicationVersion as string,
+  observedAt:v.observedAt as string,startAt,
+  startBasis:v.startBasis as ActivationAnchor["startBasis"]};
+}
+function activationReference(receipt:ActivationAnchor){
+ const {status,startAt,...rest}=receipt;
+ return rest;
+}
 /** The ONE new-path monitor handler for verified Toast prices only. Callers
  * must select mode=new first and must bypass the old calendar-day writer.
  * Note the full source and no-shared-credential preconditions; the worker
@@ -82,24 +121,61 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
  proposal:LoopProposal):Promise<"waiting_source"|"monitoring"|"reported"|"not_price">{
  const effect=priceEffect(row.canonical_effect_payload);
  if(!effect||!row.approved_at||!isPriceCapability(row.capability_id))return "not_price";
- const published=await readVerifiedToastPriceEvidence(db,row.business_id,
-  effect.productId,effect.newPriceCents);
- const targetReady=published.status==="verified"&&
-  published.oldPriceCents===effect.oldPriceCents&&
-  Date.parse(published.observedAt)>=Date.parse(row.approved_at)&&
-  Date.parse(published.startAt)>=Date.parse(row.approved_at);
- if(!targetReady){
-  if(row.status==="manual_pending")await postVerifiedSourceReminder(db,{
-   businessId:row.business_id,ownerUserId:row.owner_user_id,
-   proposalId:row.id,threadId:row.thread_id,productId:effect.productId,
-   productName:effect.productName,targetPriceCents:effect.newPriceCents,
-   currency:effect.currency,approvedAt:row.approved_at,now,timezone,
-   sourceVerified:false,cancelled:false,
-  });
-  return "waiting_source";
+ const days=row.monitor_spec?.durationDays;
+ if(!Number.isSafeInteger(days)||days<1||days>90)
+  throw new Error("invalid_experiment_monitor_duration");
+ const anchorQuery=()=>db.from("supervisor_monitor_windows")
+  .select("source_reference,start_at")
+  .eq("business_id",row.business_id)
+  .eq("monitor_kind","approved_price").eq("source_id",row.id)
+  .eq("window_index",0).maybeSingle();
+ const initial=await anchorQuery();
+ if(initial.error)throw new Error("activation_receipt_read_failed");
+ const expected={businessId:row.business_id,menuItemId:effect.productId,
+  oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
+  approvedAt:row.approved_at};
+ let receipt:ActivationAnchor|null=null;
+ if(initial.data){
+  receipt=readVerifiedActivationAnchor(initial.data.source_reference,
+   initial.data.start_at,expected);
+  if(!receipt)throw new Error("invalid_persisted_activation");
+ }else{
+  const published=await readVerifiedToastPriceEvidence(db,row.business_id,
+   effect.productId,effect.newPriceCents);
+  const ready=published.status==="verified"&&
+   published.oldPriceCents===effect.oldPriceCents&&
+   Date.parse(published.observedAt)>=Date.parse(row.approved_at)&&
+   Date.parse(published.startAt)>=Date.parse(row.approved_at);
+  if(!ready){
+   if(row.status==="manual_pending")await postVerifiedSourceReminder(db,{
+    businessId:row.business_id,ownerUserId:row.owner_user_id,
+    proposalId:row.id,threadId:row.thread_id,productId:effect.productId,
+    productName:effect.productName,targetPriceCents:effect.newPriceCents,
+    currency:effect.currency,approvedAt:row.approved_at,now,timezone,
+    sourceVerified:false,cancelled:false,
+   });
+   return "waiting_source";
+  }
+  if(published.status!=="verified")return "waiting_source";
+  const window0=planElapsed24HourWindows(published.startAt,days)[0];
+  const recorded=await db.from("supervisor_monitor_windows").upsert({
+   business_id:row.business_id,owner_user_id:row.owner_user_id,
+   monitor_kind:"approved_price",source_id:row.id,window_index:0,
+   source_reference:activationReference(published),
+   start_at:window0.startAt,end_at:window0.endAt,
+   coverage_status:"unknown",evaluation_status:"in_progress",
+  },{onConflict:"business_id,monitor_kind,source_id,window_index",
+      ignoreDuplicates:true});
+  if(recorded.error)throw new Error("activation_receipt_write_failed");
+  // Two cron workers must agree on the first committed source receipt.
+  const persisted=await anchorQuery();
+  if(persisted.error||!persisted.data)
+   throw new Error("activation_receipt_unavailable");
+  receipt=readVerifiedActivationAnchor(persisted.data.source_reference,
+   persisted.data.start_at,expected);
+  if(!receipt)throw new Error("invalid_persisted_activation");
  }
- const receipt=published;
- if(receipt.status!=="verified")return "waiting_source";
+ if(!receipt)throw new Error("activation_receipt_unavailable");
  if(row.status==="manual_pending"){
   // Keep the existing Supervisor proposal lifecycle, but only AFTER the
   // source verification guard. The legacy date is not our 24h clock.
@@ -109,9 +185,6 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   const transitionDate=new Date().toISOString().slice(0,10);
   await repo.transition(scope,row.id,row.revision,"manual_confirmed",transitionDate);
  }
- const days=row.monitor_spec?.durationDays;
- if(!Number.isSafeInteger(days)||days<1||days>90)
-  throw new Error("invalid_experiment_monitor_duration");
  const windows=planElapsed24HourWindows(receipt.startAt,days);
  const complete=[] as Awaited<ReturnType<typeof readElapsedWindowObservations>>[];
  for(const window of windows){
@@ -121,9 +194,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   const written=await db.from("supervisor_monitor_windows").upsert({
    business_id:row.business_id,owner_user_id:row.owner_user_id,
    monitor_kind:"approved_price",source_id:row.id,window_index:window.index,
-   source_reference:{historyId:receipt.historyId,restaurantGuid:receipt.restaurantGuid,
-    menuItemId:receipt.menuItemId,publicationVersion:receipt.publicationVersion,
-    startBasis:receipt.startBasis,observedAt:receipt.observedAt},
+   source_reference:activationReference(receipt),
    start_at:window.startAt,end_at:window.endAt,
    coverage_status:measured.status==="actual"?"actual":"partial",
    unknown_time_lines:measured.unknownTimeLines,

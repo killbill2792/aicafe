@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {resolveExperimentCutoverMode} from "./experimentCutover.server";
+import {resolveExperimentCutoverMode,readVerifiedActivationAnchor} from "./experimentCutover.server";
 
 describe("Task 8a experiment single-writer cutover",()=>{
  it("defaults to legacy when release evidence is absent",()=>{
@@ -21,5 +21,31 @@ describe("Task 8a experiment single-writer cutover",()=>{
    rollbackProven:true,releaseApproved:true})).toBe("legacy");
   expect(resolveExperimentCutoverMode({requested:null,parityProven:true,
    rollbackProven:true,releaseApproved:true})).toBe("legacy");
+ });
+});
+
+describe("durable Task 8a source-verified activation receipts",()=>{
+ const approved={businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  menuItemId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  oldPriceCents:500,newPriceCents:550,approvedAt:"2026-11-11T18:00:00Z"};
+ const evidence={businessId:approved.businessId,
+  menuItemId:approved.menuItemId,oldPriceCents:500,newPriceCents:550,
+  historyId:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  restaurantGuid:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  posItemId:"toast:dddddddd-dddd-4ddd-8ddd-dddddddddddd:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  publicationVersion:"2026-11-11T18:10:00Z",
+  observedAt:"2026-11-11T18:11:00Z",
+  startBasis:"first_verified_observation" as const};
+ it("reuses the first verified event even after an unrelated later menu version",()=>{
+  expect(readVerifiedActivationAnchor(evidence,"2026-11-11T18:11:00Z",approved))
+   .toMatchObject({status:"verified",historyId:evidence.historyId,
+    startAt:"2026-11-11T18:11:00Z",publicationVersion:evidence.publicationVersion});
+ });
+ it("rejects a mismatched café, product, old/new target or pre-approval instant",()=>{
+  expect(readVerifiedActivationAnchor(evidence,"2026-11-11T18:11:00Z",
+   {...approved,businessId:"ffffffff-ffff-4fff-8fff-ffffffffffff"})).toBeNull();
+  expect(readVerifiedActivationAnchor({...evidence,oldPriceCents:400},
+   "2026-11-11T18:11:00Z",approved)).toBeNull();
+  expect(readVerifiedActivationAnchor(evidence,"2026-11-11T17:00:00Z",approved)).toBeNull();
  });
 });
