@@ -9,6 +9,7 @@ import {assertLedgerShape,sanitizeLedger} from './ledger.mjs';
 import {compactPrivateLedger} from './ledger-compaction.mjs';
 import {renderPrivateQueue} from './private-owner-view.mjs';
 import {settings} from './settings.mjs';
+import {museOperationsContract} from './muse-operations-contract.mjs';
 
 const validRepo = value => typeof value==='string' && /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(value);
 const validBranch = value => typeof value==='string' &&
@@ -226,8 +227,15 @@ export async function transactLedgerViaGit({repo=settings.ledger.repo,token,
    const view=join(root,settings.ledger.owner_view_path);
    mkdirSync(dirname(view),{recursive:true});
    writeFileSync(view,renderPrivateQueue(compacted.state,{repo})+'\n');
+   // Publish the current courier API as a versioned private Git artifact.
+   // Muse reads this matrix, never source code. A standard CAS transaction
+   // makes the contract available after any trusted-main reconciliation.
+   const operationsPath='dispatcher/muse-operations.json';
+   const operations=join(root,operationsPath);
+   mkdirSync(dirname(operations),{recursive:true});
+   writeFileSync(operations,JSON.stringify(museOperationsContract(),null,2)+'\n');
    git(['add','-A','--',settings.ledger.path,settings.ledger.owner_view_path,
-     ...archived,...consumed],{cwd:root,env,run});
+     operationsPath,...archived,...consumed],{cwd:root,env,run});
    if(!git(['status','--porcelain'],{cwd:root,env,run}))
      return {committed:false,state};
    const old=git(['rev-parse','HEAD'],{cwd:root,env,run});
