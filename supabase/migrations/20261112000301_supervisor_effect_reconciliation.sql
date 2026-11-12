@@ -49,7 +49,52 @@ begin
     next_status := 'manual_pending';
     proof_ref := 'inert-price-experiment:' || p.id::text;
   elsif p.capability_version = 1 and p.capability_id = 'alex.event_readiness.v1'
-      and p.canonical_effect_payload->>'startDate' ~ '^\\d{4}-\\d{2}-\\d{2}$' then
+      and p.canonical_effect_payload->>'startDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2} then
+    next_status := 'committed';
+    next_start := (p.canonical_effect_payload->>'startDate')::date;
+    proof_ref := 'inert-event-readiness:' || p.id::text;
+  elsif p.capability_version = 1 and p.capability_id = 'maya.inventory_purchase.v1' then
+    -- The canonical purchase writer uses proposal ID as a stable line ID.
+    -- Verify the full immutable purchase identity, not just a matching amount.
+    select * into stock from public.pantry_stock_purchases s
+      where s.business_id = p.business_id and s.line_id = p.id
+        and s.voided_at is null
+        and s.ingredient_id::text = p.canonical_effect_payload->>'ingredientId'
+        and s.purchase_date::text = p.canonical_effect_payload->>'date'
+        and s.entered_quantity = (p.canonical_effect_payload->>'quantity')::numeric
+        and s.entered_unit = p.canonical_effect_payload->>'unit'
+        and s.cost_cents is not distinct from
+          (p.canonical_effect_payload->>'costCents')::bigint
+        and s.source = p.canonical_effect_payload->>'source';
+    if stock.id is not null then
+      next_status := 'committed';
+      next_start := a.business_date + 1;
+      proof_ref := 'pantry_stock_purchases:' || stock.id::text;
+    end if;
+  end if;
+
+  if next_status is null then
+    -- No authoritative receipt: keep the proposal blocked and never resend.
+    update public.supervisor_effect_attempts set state = 'uncertain'
+      where id = a.id and state = 'executing';
+    return p;
+  end if;
+  update public.supervisor_effect_attempts
+    set state = 'verified', receipt_ref = proof_ref, verified_at = now()
+    where id = a.id and state in ('executing','uncertain');
+  update public.supervisor_proposals set status = next_status,
+    revision = revision + 1,
+    committed_at = case when next_status = 'committed' then now() else null end,
+    monitoring_start_date = next_start, updated_at = now()
+    where id = p.id returning * into p;
+  return p;
+end $$;
+
+revoke all on function public.supervisor_reconcile_effect_attempt(
+  uuid,uuid,uuid,uuid,integer) from public, anon, authenticated;
+grant execute on function public.supervisor_reconcile_effect_attempt(
+  uuid,uuid,uuid,uuid,integer) to service_role;
+ then
     next_status := 'committed';
     next_start := (p.canonical_effect_payload->>'startDate')::date;
     proof_ref := 'inert-event-readiness:' || p.id::text;
