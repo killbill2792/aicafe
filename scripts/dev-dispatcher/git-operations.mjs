@@ -142,7 +142,10 @@ export function publishEmergencyViaGit({repo=settings.ledger.repo,
       git(identity(['commit','-q','-m','chore(dispatcher): queue emergency owner notice']),{cwd:root,env,run});
       try{
         git(['push','origin','HEAD:refs/heads/main'],{cwd:root,env,run});
-        const item=Object.values(next.owner_alerts).find(n=>n.kind===kind&&n.identity===incidentId);
+        const item=Object.values(compacted.state.owner_alerts).filter(n=>
+          n.kind===kind&&n.identity===incidentId&&n.status==='planned')
+          .sort((a,b)=>(b.incident_cycle||0)-(a.incident_cycle||0))[0];
+        if(!item)throw Error('Emergency incident identity not verified after Git push');
         return {status:'queued',notice_hash:item.notice_hash};
       } catch {
         if(attempt===retry-1)throw Error('Emergency Git queue push failed after bounded retries');
