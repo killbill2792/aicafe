@@ -251,3 +251,45 @@ test('missing PR writer becomes a precise Muse owner incident, not repeated impo
      'Unsigned chat URLs must not generate owner credential incidents');
  }
 });
+
+test('5-minute Codex warning does not automatically request a second review',()=>{
+ const base={...state,tasks:{T1:{...state.tasks.T1,draft:false,
+   ready_transition_at:'2026-11-11T09:55:00Z',ci_state:'success',codex_state:'pending'}}};
+ const health=inspectMuseHealth(base,{now});
+ const issue=health.incidents.find(x=>x.kind==='CODEX_NOT_RECEIVED');
+ assert.equal(issue.age_minutes,5);
+ assert.equal(issue.action,'MUSE_NOTIFY_OWNER');
+ assert.ok(!museRecoveryCandidates(health,base,identity)
+   .some(r=>r.intent==='REQUEST_CODEX_IF_ELIGIBLE'));
+});
+test('10-minute unchanged ready head triggers one bounded safe recovery request',()=>{
+ const base={...state,tasks:{T1:{...state.tasks.T1,draft:false,
+   ready_transition_at:'2026-11-11T09:50:00Z',ci_state:'success',codex_state:'pending'}}};
+ const health=inspectMuseHealth(base,{now});
+ const issue=health.incidents.find(x=>x.kind==='CODEX_NOT_RECEIVED');
+ assert.equal(issue.age_minutes,10);
+ assert.equal(issue.action,'REQUEST_CODEX_IF_ELIGIBLE');
+ const requests=museRecoveryCandidates(health,base,identity);
+ assert.equal(requests.filter(x=>x.intent==='REQUEST_CODEX_IF_ELIGIBLE').length,1);
+ const backlog=planMuseBacklog(null,requests,now);
+ assert.deepEqual(planMuseBacklog(backlog,requests,now),backlog);
+});
+test('integrated parent suggests proposed scope for owner without auto-authorization',()=>{
+ const queue={tasks:[{id:'E2',state:'proposed',depends_on:['T1']}]};
+ const completed={...state,tasks:{T1:{...state.tasks.T1,status:'integrated_proven',
+   integration_proof:{conclusion:'success'}}}};
+ const health=inspectMuseHealth(completed,{now,queue});
+ const notice=health.incidents.find(x=>x.kind==='SCOPE_PROPOSAL_READY');
+ assert.equal(notice.task_id,'E2');
+ assert.equal(notice.action,'MUSE_NOTIFY_OWNER');
+ assert.ok(!museRecoveryCandidates(health,completed,identity)
+   .some(r=>r.task_id==='E2'));
+ const notProven={...completed,tasks:{T1:{...completed.tasks.T1,
+   integration_proof:{conclusion:'pending'}}}};
+ assert.ok(!inspectMuseHealth(notProven,{now,queue}).incidents
+   .some(x=>x.kind==='SCOPE_PROPOSAL_READY'));
+});
+test('invalid Codex escalation configuration fails before dispatch',()=>{
+ assert.throws(()=>inspectMuseHealth(state,{now,codexWarnMinutes:10,
+   codexEscalateMinutes:5}),/Invalid watchdog configuration/);
+});
