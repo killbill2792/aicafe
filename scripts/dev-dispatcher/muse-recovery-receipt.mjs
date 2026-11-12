@@ -48,20 +48,28 @@ export function validateMuseRecoveryReceipt(receipt,{
  actor,actors={},now=new Date().toISOString()}={}){
  if(!receipt||receipt.kind!=='muse_recovery'||receipt.version!==1||
     receipt.project_id!==settings.naming.task_prefix||receipt.repo!==settings.repo||
-    !actor||actors[actor]!=='muse'||receipt.actor!==actor||
-    !HEX64.test(receipt.request_id||'')||
-    receipt.event_id!==receipt.request_id||
-    receipt.submitted_at!==receipt.requested_at)
+    !actor||actors[actor]!=='muse'||
+    (receipt.actor!=null&&receipt.actor!==actor)||
+    typeof receipt.event_id!=='string'||
+    !/^[A-Za-z0-9_-]{1,100}$/.test(receipt.event_id)||
+    typeof receipt.submitted_at!=='string'||
+    (receipt.requested_at!=null&&receipt.submitted_at!==receipt.requested_at))
    throw Error('Unverified Muse recovery receipt');
- const expected=museRecoveryReceipt(receipt,{repo:settings.repo,actor});
- if(receiptFilename(expected)!==receiptFilename(receipt)||
-    expected.request_id!==receipt.request_id)
+ // Muse can use the SAME authenticated Git writer as owner_instruction.
+ // It supplies a stable event ID, not a signing key or a SHA-256 digest.
+ // GitHub derives the canonical identity from the VERIFIABLE commit actor.
+ const timestamp=receipt.requested_at||receipt.submitted_at;
+ const expected=museRecoveryReceipt({...receipt,requested_at:timestamp},
+   {repo:settings.repo,actor});
+ const normalized={...expected,event_id:receipt.event_id};
+ if((receipt.request_id!=null&&expected.request_id!==receipt.request_id)||
+    receiptFilename(normalized)!==receiptFilename(receipt))
    throw Error('Muse recovery receipt identity mismatch');
  const stamp=Date.parse(receipt.submitted_at),clock=Date.parse(now);
  if(!Number.isFinite(stamp)||!Number.isFinite(clock)||
     stamp>clock+120000||clock-stamp>7*86400000)
    throw Error('Expired or future Muse recovery receipt');
- return expected;
+ return normalized;
 }
 export function pushMuseRecoveryReceipt({request,token,actor,
   repo=settings.ledger.repo,remoteUrl=null,run=spawnSync,
