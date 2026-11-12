@@ -5,7 +5,7 @@ import {settings} from './settings.mjs';
 export const MUSE_OPERATIONS_VERSION=1;
 export function museOperationsContract(){
  return {
-  schema:'aicafe.muse-operations.v1',version:MUSE_OPERATIONS_VERSION,
+  schema:'muse.operations.v1',version:MUSE_OPERATIONS_VERSION,
   project_id:settings.naming.task_prefix,
   dispatcher:{repository:settings.repo,branch:'main'},
   queue:{repository:settings.ledger.repo,branch:'main',
