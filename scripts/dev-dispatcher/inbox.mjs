@@ -130,7 +130,12 @@ export function applyReceipts(state, inbox, actorMap) {
       if(courier!=='muse')throw Error('Unverified Git recovery courier');
       const now=new Date().toISOString();
       const command=validateMuseRecoveryReceipt(receipt,{actor,actors:actorMap,now});
-      if(next.muse_recovery_events?.[command.event_id])continue;
+      const prior=next.muse_recovery_events?.[command.event_id];
+      if(prior){
+        if(prior.request_id!==command.request_id)
+          throw Error('Conflicting Muse recovery event ID');
+        continue;
+      }
       const attempted=recordRecoveryEvent(next,{
         action:'dispatcher_recovery',sender:{login:actor},
         client_payload:{version:1,intent:command.intent,task_id:command.task_id,
