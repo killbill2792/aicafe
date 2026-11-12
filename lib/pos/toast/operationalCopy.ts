@@ -28,6 +28,19 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
   .select("menu_last_updated,menu_copied_at,menu_checked_local_day,menu_pending_observations")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
  if(readError)throw new ToastApiError("unavailable");
+ // A NEW publication must not erase an older validated but unfinished
+ // price-history receipt. Reconcile V1 against its stored source observation
+ // and existing Toast history before clearing its provisional state for V2.
+ const previousVersion=previous?.menu_last_updated?.startsWith("pending:")
+  ?previous.menu_last_updated.slice("pending:".length):previous?.menu_last_updated;
+ if(previousVersion&&previousVersion!==bundle.receipt.publicationVersion&&
+   previous?.menu_checked_local_day===null&&previous.menu_copied_at){
+  const {data,error}=await db.rpc("toast_reconcile_superseded_menu_history",{
+   p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+   p_version:previousVersion,p_first_observed_at:previous.menu_copied_at,
+  });
+  if(error||data!==true)throw new ToastApiError("unavailable");
+ }
  // Preserve the first same-version receipt BEFORE any canonical price write.
  // A failure after price import but before presence must not swap its original
  // evidence for the fresh observed time of an otherwise identical later fetch.
