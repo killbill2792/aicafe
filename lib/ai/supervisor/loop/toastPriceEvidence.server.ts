@@ -84,7 +84,9 @@ type HistoricAudit={
 type HistoricInput={
  businessId:string;menuItemId:string;targetCents:number;
  approvedAt:string;oldPriceCents:number;
- menu:Pick<Candidate["menu"],"business_id"|"id">;
+ // Keep the full current snapshot available to prove later mutable menu state
+ // cannot invalidate the historical Toast activation receipt; only identity is read.
+ menu:Candidate["menu"];
  history:Candidate["history"];
  audits:readonly HistoricAudit[];
  locations:readonly {restaurant_guid:string;verified_at:string|null}[];
