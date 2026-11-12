@@ -10,6 +10,7 @@ import {recoveryIdentity} from './recovery-v3.mjs';
 import {dispatchFrontier} from './core.mjs';
 import {dispatchPreferences} from './owner-controls-v3.mjs';
 import {verifiedCodingConversation} from './verified-chat-v3.mjs';
+import {pushMuseGitRecovery} from './git-recovery-transport.mjs';
 import {settings} from './settings.mjs';
 const time=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?Date.parse(v):null;
 const ago=(stamp,clock)=>time(stamp)===null?null:Math.floor((clock-time(stamp))/60000);
@@ -168,7 +169,7 @@ export function planMuseBacklog(backlog,requests,now=new Date().toISOString()){
     const old=next.items[key];
     // Backoff and acknowledged wakes are durable: a 60-second poll must not
     // discard a 30-minute rate-limit cooldown or resend a successful wake.
-    if(old&&['QUEUED','SENT_UNVERIFIED','GITHUB_ACKNOWLEDGED','GITHUB_REJECTED'].includes(old.status)&&
+    if(old&&['QUEUED','GIT_QUEUED','SENT_UNVERIFIED','GITHUB_ACKNOWLEDGED','GITHUB_REJECTED'].includes(old.status)&&
       time(now)-(time(old.acknowledged_at||old.first_seen_at)||0)<15*60000)continue;
     if(old?.status==='RETRYABLE'&&time(old.next_retry_at)>time(now))continue;
     // The GitHub receiver rejects commands older than 10 minutes. Rebind a
@@ -182,8 +183,31 @@ export function planMuseBacklog(backlog,requests,now=new Date().toISOString()){
   next.items=Object.fromEntries(ordered.slice(0,200).map(x=>[x.key,x]));
   return next;
 }
+// Persist recovery requests FIRST, independently of whether GitHub can run
+// an Actions job or accept REST calls. One HMAC-authenticated private Git file
+// survives pending-run cancellation and can be recovered on the next tick.
+export function deliverMuseGitRecovery(backlog,{token,secret,push=pushMuseGitRecovery,
+  now=new Date().toISOString()}={}){
+ const next=structuredClone(backlog),results=[];
+ for(const item of Object.values(next.items||{})){
+   if(!['QUEUED','RETRYABLE'].includes(item.status)||time(item.next_retry_at)>time(now))continue;
+   if(!token||!secret){results.push({id:item.key,status:'GIT_NOT_CONFIGURED'});continue;}
+   try{
+     const result=push({request:item.request,secret,token});
+     item.status='GIT_QUEUED';
+     item.git_file=result.file;item.git_request_id=result.request_id;
+     item.git_queued_at=now;item.last_error=null;item.next_retry_at=null;
+     results.push({id:item.key,status:result.status});
+   }catch{
+     item.status='RETRYABLE';item.last_error='git_transport_unverified';
+     item.next_retry_at=asIso(time(now)+15*60000);
+     results.push({id:item.key,status:item.status,reason:item.last_error});
+   }
+ }
+ return {backlog:next,results};
+}
 export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOString(),
-  fetchImpl=fetch,apiPauseUntil=null}={}){
+  fetchImpl=fetch,apiPauseUntil=null,maxRequests=Infinity}={}){
   const next=structuredClone(backlog);
   const clock=time(now);
   if(clock===null)throw Error('Invalid delivery clock');
@@ -192,13 +216,17 @@ export async function deliverMuseRecovery(backlog,{token,now=new Date().toISOStr
   if(pause>clock)return {backlog:next,results:[{status:'API_PAUSED',until:asIso(pause)}]};
   if(pause&&pause<=clock)delete next.api_pause_until;
   const results=[];
+  let sent=0;
   for(const item of Object.values(next.items||{})){
-    if(!['QUEUED','RETRYABLE'].includes(item.status)||time(item.next_retry_at)>clock)continue;
+    if(sent>=maxRequests)break;
+    if(!['QUEUED','RETRYABLE','GIT_QUEUED'].includes(item.status)||
+       time(item.next_retry_at)>clock)continue;
     if(!token){
       results.push({id:item.key,status:'WAITING_FOR_AUTHORIZED_WAKE_TOKEN'});
       continue;
     }
     const r=item.request;
+    sent++;
     try{
       const response=await fetchImpl('https://api.github.com/repos/'+r.repo+'/dispatches',{
         method:'POST',headers:{Authorization:'Bearer '+token,
@@ -268,6 +296,7 @@ export function reconcileMuseBacklog(backlog,state){
   return next;
 }
 export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,actor,token,
+  gitToken=null,gitSecret=null,gitPush=pushMuseGitRecovery,
   now=new Date().toISOString(),fetchImpl=fetch}={}){
   if(!ledgerPath||!backlogPath)throw Error('Ledger snapshot and local backlog paths required');
   const state=JSON.parse(readFileSync(ledgerPath,'utf8'));
@@ -288,8 +317,15 @@ export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,a
   const candidates=(policy.recovery_mode||'safe_recovery_only')==='manual_only'?
     []:museRecoveryCandidates(health,state,{repo,actor,now});
   const planned=planMuseBacklog(reconcileMuseBacklog(backlog||{version:1,items:{}},state),candidates,now);
-  const delivered=await deliverMuseRecovery(planned,{token,now,fetchImpl,
-    apiPauseUntil:health.github_api_pause_until});
+  // Git first. At most ONE REST wake per batch because the trusted runner
+  // consumes every already-signed Git command in its private durable inbox.
+  const gitEnabled=Boolean(gitToken&&gitSecret);
+  const durable=gitEnabled?deliverMuseGitRecovery(planned,{
+    token:gitToken,secret:gitSecret,push:gitPush,now}):null;
+  const delivered=await deliverMuseRecovery(durable?.backlog||planned,{
+    token,now,fetchImpl,apiPauseUntil:health.github_api_pause_until,
+    maxRequests:gitEnabled?1:Infinity});
+  if(durable)delivered.results=[...durable.results,...delivered.results];
   mkdirSync(dirname(backlogPath),{recursive:true,mode:0o700});
   // A crash while rewriting the only Muse recovery backlog must not leave
   // truncated JSON and permanently disable the independent watchdog.
@@ -307,7 +343,9 @@ export async function runMuseWatch({ledgerPath,backlogPath,queuePath=null,repo,a
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
   const [ledgerPath,backlogPath,queuePath]=process.argv.slice(2);
   runMuseWatch({ledgerPath,backlogPath,queuePath,repo:process.env.GITHUB_REPOSITORY,
-    actor:process.env.MUSE_GITHUB_ACTOR,token:process.env.MUSE_GITHUB_WAKE_TOKEN})
+    actor:process.env.MUSE_GITHUB_ACTOR,token:process.env.MUSE_GITHUB_WAKE_TOKEN,
+    gitToken:process.env.MUSE_PRIVATE_GIT_TOKEN,
+    gitSecret:process.env.DISPATCH_MUSE_RECOVERY_KEY})
     .then(r=>{console.log(JSON.stringify(r));if(!r.health.healthy)process.exitCode=2;})
     .catch(e=>{console.error('Muse watchdog unavailable: '+String(e.message));process.exitCode=1;});
 }
