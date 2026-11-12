@@ -202,6 +202,32 @@ BEGIN
  PERFORM pg_temp.pos0d_assert((SELECT count(*)=3 FROM public.menu_price_history
    WHERE business_id=b),'delayed replay never duplicates price history');
 
+ -- Distinct late-stage recovery: the first attempt saved the source receipt
+ -- but FAILED BEFORE this second item's canonical price/history update.
+ -- Its real history changed_at is the later retry time, not the first receipt.
+ UPDATE public.menu_items SET price_cents=675 WHERE id=gone;
+ INSERT INTO public.menu_price_history(business_id,menu_item_id,
+  old_price_cents,new_price_cents,source_type,source_provider,changed_at)
+ VALUES(b,gone,600,675,'connected_pos','toast',now());
+ PERFORM pg_temp.pos0d_assert(NOT public.toast_verify_existing_price_history(
+   b,r,item_b,'2026-11-09T12:00:00Z',observed,675),
+   'newly committed retry price cannot be mislabeled as an old write');
+ PERFORM pg_temp.pos0d_assert(public.toast_verify_existing_price_history(
+   b,r,item_b,'2026-11-09T12:00:00Z',now(),675),
+   'same-version pending retry verifies using the fresh source observation');
+ PERFORM pg_temp.pos0d_assert((SELECT count(*)=1 FROM public.menu_price_history
+   WHERE business_id=b AND menu_item_id=gone AND new_price_cents=675
+     AND source_type='connected_pos' AND source_provider='toast'
+     AND toast_publication_version='2026-11-09T12:00:00Z'
+     AND toast_observed_at>=now()-interval '1 minute'
+     AND changed_at>=now()-interval '1 minute' AND toast_effective_at IS NULL),
+   'late writer keeps its real changed-at and fresh verified observation');
+ PERFORM pg_temp.pos0d_assert((SELECT toast_publication_version IS NULL
+   FROM public.menu_price_history WHERE menu_item_id=gone AND source_type='owner_manual'),
+   'late source proof cannot relabel the owner manual history');
+ PERFORM pg_temp.pos0d_assert((SELECT count(*)=4 FROM public.menu_price_history
+   WHERE business_id=b),'retry source proof never creates a second history ledger');
+
  -- The exception must NOT permit stale receipts without the exact original
  -- pending observed-at checkpoint, or after completion.
  UPDATE public.toast_optional_sync_state SET menu_copied_at=now()
