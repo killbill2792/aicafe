@@ -27,15 +27,13 @@ create policy supervisor_8a_cutover_owner_read
    where m.business_id=supervisor_experiment_cutover_cafes.business_id
     and m.user_id=(select auth.uid()) and m.role='owner'));
 
--- Reason: window indexes are explicitly bounded to 0..90 and revision counters are small.
--- squawk-ignore prefer-bigint-over-int
 create table public.supervisor_monitor_windows (
  id uuid primary key default gen_random_uuid(),
  business_id uuid not null references public.businesses(id) on delete cascade,
  owner_user_id uuid not null references auth.users(id) on delete cascade,
  monitor_kind text not null check (monitor_kind in ('approved_price','toast_price_observation')),
  source_id uuid not null,
- window_index integer not null check (window_index between 0 and 90),
+ window_index bigint not null check (window_index between 0 and 90),
  source_reference jsonb not null default '{}'::jsonb
    check (jsonb_typeof(source_reference)='object'),
  start_at timestamptz not null,
@@ -45,10 +43,10 @@ create table public.supervisor_monitor_windows (
    check (coverage_status in ('unknown','partial','actual')),
  units numeric(18,2),
  revenue_cents bigint,
- unknown_time_lines integer not null default 0 check (unknown_time_lines>=0),
+ unknown_time_lines bigint not null default 0 check (unknown_time_lines>=0),
  evaluation_status text not null default 'in_progress'
    check (evaluation_status in ('in_progress','insufficient_evidence','complete')),
- report_revision integer not null default 1 check (report_revision>0),
+ report_revision bigint not null default 1 check (report_revision>0),
  created_at timestamptz not null default now(),
  updated_at timestamptz not null default now(),
  unique (business_id,monitor_kind,source_id,window_index),
@@ -150,8 +148,6 @@ create trigger supervisor_8a_toast_price_context_change
  )
  execute function public.supervisor_8a_record_toast_price_context();
 
--- Reason: reminder slots are 0..2 and retries are capped at 30; these counters cannot overflow.
--- squawk-ignore prefer-bigint-over-int, prefer-bigint-over-smallint
 create table public.supervisor_experiment_notice_receipts (
  id uuid primary key default gen_random_uuid(),
  business_id uuid not null references public.businesses(id) on delete cascade,
@@ -160,12 +156,12 @@ create table public.supervisor_experiment_notice_receipts (
  kind text not null check(kind in ('price_reminder','toast_price_initial',
   'toast_price_daily','toast_price_final')),
  local_date date not null,
- slot smallint not null default 0 check(slot between 0 and 2),
+ slot bigint not null default 0 check(slot between 0 and 2),
  state text not null default 'claimed' check(state in ('claimed','failed','posted')),
  claimed_at timestamptz not null default now(),
  posted_at timestamptz,
  retry_at timestamptz,
- attempts integer not null default 1 check(attempts between 1 and 30),
+ attempts bigint not null default 1 check(attempts between 1 and 30),
  task_id text,
  message_id uuid,
  last_error_category text,
