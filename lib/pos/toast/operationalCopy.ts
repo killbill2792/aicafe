@@ -36,23 +36,53 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
  const {error:stampError}=await db.from("toast_optional_sync_state").upsert({
   business_id:p.businessId,restaurant_guid:p.restaurantGuid,
   menu_last_updated:bundle.receipt.publicationVersion,
-  menu_copied_at:new Date().toISOString(),
+  // The existing SQL RPC requires a recent copied-at stamp before promotion.
+  // NULL checked-day is our durable pending marker until both RPC phases finish.
+  // A crash or a failed rollback must not cause metadata polling to skip retry.
+  menu_copied_at:new Date().toISOString(),menu_checked_local_day:null,
  },{onConflict:"business_id,restaurant_guid"});
  if(stampError)throw new ToastApiError("unavailable");
  try{
   const presence=await applyPublishedToastCatalogReceipt(db,p.businessId,bundle);
+  // On replay, the SQL presence RPC deliberately preserves the original
+  // same-version observed_at. Price proof requires that *stored* instant,
+  // not the timestamp from a later retry of the same Toast publication.
+  const observations=new Map<string,string>();
+  for(let offset=0;offset<bundle.items.length;offset+=100){
+   const ids=bundle.items.slice(offset,offset+100).map(item=>item.posItemId);
+   const {data:rows,error:observationError}=await db.from("menu_items")
+    .select("pos_item_id,toast_publication_observed_at")
+    .eq("business_id",p.businessId)
+    .eq("toast_publication_version",bundle.receipt.publicationVersion)
+    .eq("toast_publication_state","active").in("pos_item_id",ids);
+   if(observationError)throw new ToastApiError("unavailable");
+   for(const row of rows??[]){
+    if(row.pos_item_id&&row.toast_publication_observed_at)
+     observations.set(row.pos_item_id,row.toast_publication_observed_at);
+   }
+  }
   let verifiedPriceChanges=0;
   for(const item of bundle.items){
    if(item.priceCents===null||!Number.isSafeInteger(item.priceCents)||item.priceCents<=0)
     continue;
+   const committedObservedAt=observations.get(item.posItemId);
+   if(!committedObservedAt)throw new ToastApiError("unavailable");
    const {data,error}=await db.rpc("toast_verify_existing_price_history",{
     p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
     p_item_pos_id:item.posItemId,p_version:bundle.receipt.publicationVersion,
-    p_observed_at:bundle.receipt.observedAt,p_price_cents:item.priceCents,
+    p_observed_at:committedObservedAt,p_price_cents:item.priceCents,
    });
    if(error)throw new ToastApiError("unavailable");
    if(data===true)verifiedPriceChanges++;
   }
+  // This is the completion marker: only now can a matching version use the
+  // cheap metadata-only path. A crash before this write leaves NULL pending.
+  const {error:completeError}=await db.from("toast_optional_sync_state").update({
+   menu_checked_local_day:localClock(new Date(),p.timezone).today,
+   menu_copied_at:new Date().toISOString(),
+  }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+   .eq("menu_last_updated",bundle.receipt.publicationVersion);
+  if(completeError)throw new ToastApiError("unavailable");
   return {...imported,receipt:bundle.receipt,presence,verifiedPriceChanges};
  }catch(error){
   // If a verified presence/history RPC fails, do not let next 10-minute

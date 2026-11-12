@@ -30,10 +30,32 @@ function mockDB(){
   menu_copied_at:"2026-11-09T16:00:00Z",menu_checked_local_day:"2026-11-09"};
  const now={...previous};
  const writes:Record<string,unknown>[]=[];
- const rpc=vi.fn(async(name:string)=>({error:null,data:
-  name==="toast_verify_existing_price_history"?true:null}));
+ const storedObservations=new Map<string,{version:string;observedAt:string}>();
+ const failRestore={value:false};
+ // SQL keeps the first observation for an already-active same-version item.
+ m.apply.mockImplementation(async (_db:unknown,_business:unknown,published:typeof bundle)=>{
+  for(const item of published.items){
+   const old=storedObservations.get(item.posItemId);
+   if(!old||old.version!==published.receipt.publicationVersion)
+    storedObservations.set(item.posItemId,{
+     version:published.receipt.publicationVersion,observedAt:published.receipt.observedAt});
+  }
+  return {inactiveItems:0,inactiveModifiers:0,inactiveGroups:0};
+ });
+ const rpc=vi.fn(async(name:string):Promise<{error:{message:string}|null;data:boolean|null}>=>({
+  error:null,data:name==="toast_verify_existing_price_history"?true:null}));
  const db={
   from(table:string){
+   if(table==="menu_items"){
+    const q={select(_s:string){return q;},eq(_k:string,_v:unknown){return q;},
+     async in(_key:string,ids:string[]){
+      return {data:ids.flatMap(id=>{
+       const stored=storedObservations.get(id);
+       return stored?[{pos_item_id:id,toast_publication_observed_at:stored.observedAt}]:[];
+      }),error:null};
+     }};
+    return q;
+   }
    if(table!=="toast_optional_sync_state")throw new Error("unexpected:"+table);
    const q={select(_s:string){return q;},eq(_k:string,_v:unknown){return q;},
     async maybeSingle(){return {data:{...now},error:null};},
@@ -42,7 +64,9 @@ function mockDB(){
     },
     update(input:Record<string,unknown>){
      const query={eq(_k:string,_v:unknown){return query;},
-      then(resolve:(v:{error:null})=>unknown){
+      then(resolve:(v:{error:unknown})=>unknown){
+       if(failRestore.value&&input.menu_checked_local_day===null)
+        return Promise.resolve({error:{message:"db unavailable"}}).then(resolve);
        Object.assign(now,input);writes.push({...input});
        return Promise.resolve({error:null}).then(resolve);
       }};
@@ -51,7 +75,7 @@ function mockDB(){
    return q;
   },rpc
  };
- return {db:db as unknown as SupabaseClient,rpc,writes,now};
+ return {db:db as unknown as SupabaseClient,rpc,writes,now,storedObservations,failRestore};
 }
 beforeEach(()=>{
  for(const fn of Object.values(m))fn.mockReset();
@@ -97,6 +121,33 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(f.now.menu_last_updated).toBe("2026-11-09T15:00:00Z");
   expect(f.now.menu_checked_local_day).toBeNull();
   expect(f.rpc).not.toHaveBeenCalled();
+ });
+ it("keeps an interrupted publication eligible even when checkpoint restore fails",async()=>{
+  const f=mockDB();
+  f.failRestore.value=true;
+  m.apply.mockRejectedValueOnce(new Error("database unavailable"));
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toMatchObject({
+   category:"unavailable"});
+  expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
+  expect(f.now.menu_copied_at).toEqual(expect.any(String));
+  expect(f.now.menu_checked_local_day).toBeNull();
+ });
+ it("reuses the committed observation for price proof after a partial RPC outage",async()=>{
+  const firstObserved=bundle.receipt.observedAt;
+  const laterObserved="2026-11-10T16:15:00Z";
+  m.bundle.mockResolvedValueOnce(bundle).mockResolvedValueOnce({
+   ...bundle,receipt:{...bundle.receipt,observedAt:laterObserved}});
+  const f=mockDB();
+  f.rpc.mockResolvedValueOnce({error:{message:"temporary SQL outage"},data:null});
+  await expect(copyToastPublishedMenu(f.db,scope)).rejects.toMatchObject({
+   category:"unavailable"});
+  expect(f.storedObservations.get(posItemId)?.observedAt).toBe(firstObserved);
+  expect(f.now.menu_checked_local_day).toBeNull();
+  const result=await copyToastPublishedMenu(f.db,scope);
+  expect(result.verifiedPriceChanges).toBe(1);
+  expect(f.rpc).toHaveBeenLastCalledWith("toast_verify_existing_price_history",
+   expect.objectContaining({p_observed_at:firstObserved}));
+  expect(f.now.menu_checked_local_day).not.toBeNull();
  });
  it("does not count an unverified price-history RPC as a source-verified change",async()=>{
   const f=mockDB();
