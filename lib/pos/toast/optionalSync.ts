@@ -25,10 +25,12 @@ export async function ensureToastFirstCatalog(db:SupabaseClient,p:Location,
  now:Date,deadlineAt:number):Promise<boolean>{
  if(Date.now()>=deadlineAt)return false;
  const {data:state,error:stateError}=await db.from("toast_optional_sync_state")
-  .select("menu_copied_at").eq("business_id",p.business_id)
+  .select("menu_copied_at,menu_checked_local_day").eq("business_id",p.business_id)
   .eq("restaurant_guid",p.restaurant_guid).maybeSingle();
  if(stateError)throw new ToastApiError("unavailable");
- if(state?.menu_copied_at)return false;
+ // NULL checked-day is the durable in-progress marker left by interrupted
+ // presence/price verification; do not skip the first-catalog preflight.
+ if(state?.menu_copied_at&&state.menu_checked_local_day!==null)return false;
  const {data:credentials,error:ce}=await db.from("toast_api_credentials")
   .select("scopes_available").eq("business_id",p.business_id).maybeSingle();
  if(ce)throw new ToastApiError("unavailable");
@@ -82,7 +84,10 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     .request("/menus/v2/metadata",p.restaurant_guid,dateSchema,{deadlineAt});
    if(meta.restaurantGuid.toLowerCase()!==p.restaurant_guid.toLowerCase())
     throw new ToastApiError("unauthorized_location");
-   if(!state?.menu_copied_at||meta.lastUpdated!==state?.menu_last_updated){
+   // Retry a version stamped by an interrupted RPC phase even when Toast
+   // metadata is unchanged. A different non-NULL local day is not pending.
+   if(!state?.menu_copied_at||meta.lastUpdated!==state?.menu_last_updated||
+      state.menu_checked_local_day===null){
     const published=await copyToastPublishedMenu(db,scope);
     await update({menu_last_updated:published.receipt.publicationVersion,
      menu_checked_local_day:local.today,menu_copied_at:new Date().toISOString()});
