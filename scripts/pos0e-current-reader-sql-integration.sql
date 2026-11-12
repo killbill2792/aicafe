@@ -42,7 +42,8 @@ BEGIN
       "phone":"5550100","loyalty":{"guid":"loyalty-A"},
       "access_token":"synthetic-not-real","refreshToken":"synthetic-not-real",
       "API_KEY":"synthetic-not-real"},
-    "payments":[{"amount":5,"payment_token":"synthetic-not-real"}],
+    "payments":[{"amount":5,"payment_token":"synthetic-not-real",
+      "last4":"0000","expiration_month":12,"NETWORK_ID":"synthetic-id"}],
     "extra":{"nested":[{"common":true},{"lateOptional":"present-in-second-element"}]}}',
   repeat('a',64),'pos0e:cash-a'),
  (a,rest_a,'stock/v1/inventory',d,
@@ -248,6 +249,11 @@ BEGIN
    and public.ai_query_path('data.customer.oauth_token') is null
    and public.ai_query_path('data.customer.bearer_token') is null
    and public.ai_query_path('data.customer.card_info') is null
+   and public.ai_query_path('data.payments.0.last4') is null
+   and public.ai_query_path('data.payments.0.first_five') is null
+   and public.ai_query_path('data.payments.0.exp_month') is null
+   and public.ai_query_path('data.payments.0.card_expiration_year') is null
+   and public.ai_query_path('data.payments.0.NETWORK_ID') is null
    and public.ai_query_path('data.customer.first_name') is not null
    and public.ai_query_path('data.customer.loyalty_guid') is not null,
   'old retained token keys denied in SQL, normal customer/loyalty keys retained');
@@ -275,7 +281,10 @@ BEGIN
    and not (response->'rows'->0->'data'->'customer' ? 'access_token')
    and not (response->'rows'->0->'data'->'customer' ? 'refreshToken')
    and not (response->'rows'->0->'data'->'customer' ? 'API_KEY')
-   and not (response->'rows'->0->'data'->'payments'->0 ? 'payment_token'),
+   and not (response->'rows'->0->'data'->'payments'->0 ? 'payment_token')
+   and not (response->'rows'->0->'data'->'payments'->0 ? 'last4')
+   and not (response->'rows'->0->'data'->'payments'->0 ? 'expiration_month')
+   and not (response->'rows'->0->'data'->'payments'->0 ? 'NETWORK_ID'),
    'full-object queries preserve permitted values but omit all credential keys');
   PERFORM pg_temp.pos0e_assert(
    (select bool_and(not (r.data ? 'access_token')
