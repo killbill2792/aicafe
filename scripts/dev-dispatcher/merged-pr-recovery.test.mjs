@@ -44,7 +44,7 @@ test('Git first-parent merge log discovers Task 10 PR #443 without scanning ever
 });
 test('only previously approved missing task identities enter historic recovery',()=>{
  const s=state();
- assert.deepEqual(eligibleMissingTaskIds(s),['10','9']);
+ assert.deepEqual(eligibleMissingTaskIds(s),['9','10']);
  s.tasks['9'].pr_number=442;
  assert.deepEqual(eligibleMissingTaskIds(s),['10']);
 });
