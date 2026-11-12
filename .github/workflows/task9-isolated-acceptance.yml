@@ -1,0 +1,45 @@
+name: Task 9 isolated database acceptance (temporary)
+
+on:
+  push:
+    branches:
+      - test/task9-disposable-db-acceptance
+
+permissions:
+  contents: read
+
+jobs:
+  memory-rls:
+    name: Task 9 PostgreSQL 16 RLS and concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cafe_rls_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cafe_rls_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGDATABASE: cafe_rls_test
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install locked dependencies only
+        run: npm ci --ignore-scripts
+      - name: Execute actual Task 9 owner isolation and CAS tests
+        run: node scripts/test-ai-thread-memory-rls.mjs
