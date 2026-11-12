@@ -25,9 +25,9 @@
       <p class="meta">Your task snapshot is encrypted before publication. Enter your private Pages passphrase to decrypt in this browser. No password or GitHub token is stored on this site.</p>
       <form id="private-unlock-form" class="private-unlock" autocomplete="off">
         <label for="private-passphrase">Dashboard passphrase</label>
-        <input type="password" id="private-passphrase" name="passphrase" autocomplete="off"
+        <input type="password" id="private-passphrase" autocomplete="off"
           minlength="24" required aria-describedby="private-unlock-status" placeholder="Enter your private passphrase">
-        <button type="submit">Unlock private task view</button>
+        <button type="submit" disabled>Unlock private task view</button>
       </form>
       <p id="private-unlock-status" class="meta" role="status" aria-live="polite">Locked · private task data not loaded</p>
       <div id="encrypted-private-view" hidden></div>
