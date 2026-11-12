@@ -99,6 +99,32 @@ export function queueOwnerIssue(state,{kind,task_id=null,pr_number=null,identity
   owner_message:message.slice(0,1000)+' Needed: '+needs};
  return next;
 }
+// The old >1MiB Contents API incident was fixed by merged PR #446. Its
+// run-specific emergency messages are no longer actionable after a verified
+// trusted-main reconciliation, but their signed identity/audit history must
+// remain intact. This is NOT a blanket acknowledgement of owner notices.
+export function resolveObsoleteLedgerOverflowNotices(state,{
+  at=new Date().toISOString()
+}={}){
+ if(!Number.isFinite(Date.parse(at)))throw Error('Invalid dispatcher recovery timestamp');
+ const prefix='Dispatcher '+settings.repo+': Unexpected GitHub ledger response Needed:';
+ let next=null;
+ for(const [key,notice] of Object.entries(state.owner_alerts||{})){
+   if(notice?.kind!=='dispatcher_emergency'||notice.status!=='planned'||
+     notice.receipt||
+     !/^run:\\d+:failure$/.test(notice.identity||'')||
+     typeof notice.question!=='string'||!notice.question.startsWith(prefix))
+       continue;
+   if(!next)next=structuredClone(state);
+   // No fabricated courier submission, delivery receipt, or owner approval:
+   // this exact pre-fix technical incident is only marked resolved.
+   next.owner_alerts[key].status='resolved';
+   next.owner_alerts[key].resolved_at=at;
+   next.owner_alerts[key].resolution_reason='verified_github_ledger_blob_reader_recovered';
+ }
+ return next||state;
+}
+
 // Retire only the precise operational incident. Multiple tasks/actions can
 // share a PR; a receipt recovery must never close their unrelated notices.
 export function resolveOwnerIssueIdentity(state,{kind,task_id=null,pr_number=null,identity}){
