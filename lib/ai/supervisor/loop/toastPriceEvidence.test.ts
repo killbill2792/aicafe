@@ -18,7 +18,8 @@ const original={
   business_id:business,menu_item_id:itemId,old_price_cents:500,
   new_price_cents:550,source_type:"connected_pos",source_provider:"toast",
   toast_restaurant_guid:restaurant,toast_publication_version:"2026-11-11T18:00:00Z",
-  toast_observed_at:"2026-11-11T18:01:00Z",toast_effective_at:null}],
+  toast_observed_at:"2026-11-11T18:01:00Z",toast_effective_at:null,
+  changed_at:"2026-11-11T18:01:15Z"}],
 };
 describe("Task 8a Toast verified published price only",()=>{
  it("uses first authenticated observed timestamp when source effectiveAt is absent",()=>{
@@ -71,7 +72,13 @@ describe("Task 8a approved Toast historical activation survives a later unrelate
    toast_publication_observed_at:"2026-11-11T20:01:00Z"},
   receipt:{...original.receipt,menu_last_updated:"2026-11-11T20:00:00Z",
    menu_copied_at:"2026-11-11T20:02:00Z"},
-  approvedAt:"2026-11-11T17:00:00Z",oldPriceCents:500};
+  approvedAt:"2026-11-11T17:00:00Z",oldPriceCents:500,
+  locations:[{restaurant_guid:restaurant,verified_at:"2026-11-01T12:00:00Z"}],
+  audits:[{observed_at:"2026-11-11T18:01:15Z",
+   old_pos_item_id:`toast:${restaurant}:${itemGuid}`,
+   new_pos_item_id:`toast:${restaurant}:${itemGuid}`,
+   old_price_cents:500,new_price_cents:550,
+   new_pricing_strategy:"BASE_PRICE",new_catalog_source:"toast",new_is_active:true}]};
  it("recovers the authenticated earlier price receipt, not the latest unrelated menu stamp",()=>{
   expect(matchVerifiedToastPriceEvidence(latest).status).toBe("unverified");
   expect(matchVerifiedHistoricToastActivation(latest)).toMatchObject({
@@ -90,8 +97,17 @@ describe("Task 8a approved Toast historical activation survives a later unrelate
    history:[{...original.history[0],toast_restaurant_guid:
     "ffffffff-ffff-4fff-8fff-ffffffffffff"}]}).status).toBe("unverified");
   expect(matchVerifiedHistoricToastActivation({...latest,
-   menu:{...latest.menu,pos_pricing_strategy:"TIME_SPECIFIC_PRICE"}}).status)
+   audits:[{...latest.audits[0],new_pricing_strategy:"TIME_SPECIFIC_PRICE"}]}).status)
    .toBe("unverified");
+ });
+ it("recovers the original verified source even after a later revert, unpublication or contextual menu",()=>{
+  expect(matchVerifiedHistoricToastActivation({...latest,menu:{
+   ...latest.menu,price_cents:500,is_active:false,
+   toast_publication_state:"inactive",
+   pos_pricing_strategy:"TIME_SPECIFIC_PRICE",
+   toast_publication_version:"later-unrelated-version"}})).toMatchObject({
+    status:"verified",historyId:original.history[0].id,
+    oldPriceCents:500,newPriceCents:550});
  });
  it("rejects duplicated same-time candidate receipts rather than picking one",()=>{
   expect(matchVerifiedHistoricToastActivation({...latest,history:[
