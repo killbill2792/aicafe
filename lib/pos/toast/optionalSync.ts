@@ -34,18 +34,14 @@ export async function ensureToastFirstCatalog(db:SupabaseClient,p:Location,
  if(ce)throw new ToastApiError("unavailable");
  const scopes=(credentials?.scopes_available??{}) as Record<string,boolean>;
  if(scopes.menus===false)return false;
- const metadata=await createToastClient(db,p.business_id).request(
-  "/menus/v2/metadata",p.restaurant_guid,dateSchema,{deadlineAt});
- if(metadata.restaurantGuid.toLowerCase()!==p.restaurant_guid.toLowerCase())
-  throw new ToastApiError("unauthorized_location");
- await copyToastPublishedMenu(db,{
+ const published=await copyToastPublishedMenu(db,{
   businessId:p.business_id,restaurantGuid:p.restaurant_guid,deadlineAt,
   locationId:p.location_id,timezone:p.toast_time_zone});
  const local=localClock(now,p.toast_time_zone);
  const {error}=await db.from("toast_optional_sync_state").upsert({
   business_id:p.business_id,restaurant_guid:p.restaurant_guid,
-  menu_last_updated:metadata.lastUpdated,menu_checked_local_day:local.today,
-  menu_copied_at:new Date().toISOString(),
+  menu_last_updated:published.receipt.publicationVersion,
+  menu_checked_local_day:local.today,menu_copied_at:new Date().toISOString(),
  },{onConflict:"business_id,restaurant_guid"});
  if(error)throw new ToastApiError("unavailable");
  return true;
@@ -86,12 +82,17 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
     .request("/menus/v2/metadata",p.restaurant_guid,dateSchema,{deadlineAt});
    if(meta.restaurantGuid.toLowerCase()!==p.restaurant_guid.toLowerCase())
     throw new ToastApiError("unauthorized_location");
-   if(!state?.menu_copied_at||meta.lastUpdated!==state?.menu_last_updated||state?.menu_checked_local_day!==local.today){
-    await copyToastPublishedMenu(db,scope);
-    await update({menu_last_updated:meta.lastUpdated,menu_checked_local_day:local.today,
-     menu_copied_at:new Date().toISOString()});
+   if(!state?.menu_copied_at||meta.lastUpdated!==state?.menu_last_updated){
+    const published=await copyToastPublishedMenu(db,scope);
+    await update({menu_last_updated:published.receipt.publicationVersion,
+     menu_checked_local_day:local.today,menu_copied_at:new Date().toISOString()});
     menu="updated";
-   }else menu="unchanged";
+   }else{
+    // An unchanged version uses only the cheap metadata endpoint.
+    if(state?.menu_checked_local_day!==local.today)
+     await update({menu_checked_local_day:local.today});
+    menu="unchanged";
+   }
 
   }catch(e){recordFailure(e);}
  }
