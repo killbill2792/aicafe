@@ -1,11 +1,15 @@
 import {describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {LoopProposal,LoopRepository} from "./engine";
-const testReader=vi.hoisted(()=>({read:vi.fn()}));
+const testReader=vi.hoisted(()=>({read:vi.fn(),elapsed:vi.fn()}));
 vi.mock("server-only",()=>({}));
 vi.mock("./toastPriceEvidence.server",()=>({
  readVerifiedToastPriceEvidence:(...args:unknown[])=>testReader.read(...args),
 }));
+vi.mock("./rollingExperimentSales.server",async importOriginal=>{
+ const real=await importOriginal<typeof import("./rollingExperimentSales.server")>();
+ return {...real,readElapsedWindowObservations:(...args:unknown[])=>testReader.elapsed(...args)};
+});
 import {resolveExperimentCutoverMode,readVerifiedActivationAnchor,runVerifiedToastPriceTick,trialSourceInterruption,contextChangeBreaksApprovedPrice} from "./experimentCutover.server";
 
 describe("Task 8a experiment single-writer cutover",()=>{
@@ -129,6 +133,68 @@ describe("persisted verified price activation survives later Menus version",()=>
    scope,now,"America/Los_Angeles",{} as LoopProposal);
   expect(outcome).toBe("monitoring");
   expect(testReader.read).not.toHaveBeenCalled();
+ });
+});
+
+describe("verified new-mode midpoint delivery",()=>{
+ it("delivers one midpoint key through the existing report writer, not a second cron",async()=>{
+  const businessId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const itemId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const restaurant="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const start="2026-11-01T18:00:00Z";
+  const now="2026-11-05T19:00:00Z";
+  const posItemId="toast:"+restaurant+":eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const anchor={source_reference:{businessId,menuItemId:itemId,
+   restaurantGuid:restaurant,posItemId,historyId:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+   oldPriceCents:500,newPriceCents:550,publicationVersion:"menu-v1",observedAt:start,
+   startBasis:"first_verified_observation"},start_at:start};
+  const responses:Record<string,unknown>={
+   supervisor_monitor_windows:{data:anchor,error:null},
+   menu_items:{data:{catalog_source:"toast",is_active:true,pos_item_id:posItemId,
+    price_cents:550,pos_pricing_strategy:"BASE_PRICE",
+    toast_publication_state:"active",toast_publication_observed_at:start},error:null},
+   menu_price_history:{data:[],error:null},
+   supervisor_toast_price_context_changes:{data:[],count:0,error:null},
+  };
+  const query=(response:unknown):unknown=>new Proxy({},{
+   get:(_target,prop)=>prop==="then"?
+    (resolve:(value:unknown)=>void)=>Promise.resolve(response).then(resolve):
+    (..._args:unknown[])=>query(response),
+  });
+  const db={from:(table:string)=>({
+   select:()=>query(responses[table]),upsert:()=>Promise.resolve({error:null}),
+  })} as unknown as SupabaseClient;
+  const saveReport=vi.fn().mockResolvedValue(undefined);
+  const repo={saveReport} as unknown as LoopRepository;
+  const row={id:"ffffffff-ffff-4fff-8fff-ffffffffffff",
+   business_id:businessId,owner_user_id:"99999999-9999-4999-8999-999999999999",
+   thread_id:"88888888-8888-4888-8888-888888888888",
+   capability_id:"alex.drink_price_experiment.v1",status:"manual_confirmed",
+   revision:3,approved_at:"2026-11-01T16:00:00Z",
+   canonical_effect_payload:{productId:itemId,productName:"Latte",
+    oldPriceCents:500,newPriceCents:550,currency:"USD"},
+   monitor_spec:{durationDays:7},locale:"en" as const};
+  const scope={businessId,ownerUserId:row.owner_user_id,threadId:row.thread_id,locale:"en" as const};
+  testReader.elapsed.mockReset().mockImplementation(async(_db:unknown,_biz:unknown,
+   _item:unknown,window:unknown)=>({window,status:"actual",units:4,revenueCents:2000,
+    countedLines:1,unknownTimeLines:0,source:"order_lines.ordered_at",asOf:now}));
+  const run=(tick:string)=>runVerifiedToastPriceTick(db,repo,row,scope,tick,
+   "America/Los_Angeles",{} as LoopProposal);
+  expect(await run("2026-11-03T19:00:00Z")).toBe("monitoring");
+  expect(saveReport).not.toHaveBeenCalled();
+  expect(await run(now)).toBe("monitoring");
+  expect(saveReport).toHaveBeenCalledTimes(1);
+  const [savedScope,_proposal,report,opts]=saveReport.mock.calls[0];
+  expect(savedScope).toEqual(scope);
+  expect(report).toMatchObject({status:"in_progress",midRunKey:"verified-source-half",
+   result:{coveredWindows:4,totalWindows:7,windowStartAt:start,nonCausal:true}});
+  expect(opts).toEqual({midRun:true});
+  expect(report.midRunText).toContain("elapsed 24-hour windows");
+  expect(await run("2026-11-06T19:00:00Z")).toBe("monitoring");
+  expect(saveReport.mock.calls[1][2].midRunKey).toBe(report.midRunKey);
+  expect(saveReport.mock.calls[1][3]).toEqual({midRun:true});
+  expect(await run("2026-11-08T19:00:00Z")).toBe("reported");
+  expect(saveReport.mock.calls.at(-1)?.[2].status).toBe("complete");
  });
 });
 
