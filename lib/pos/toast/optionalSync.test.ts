@@ -28,6 +28,7 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
  const writes:Array<Record<string,unknown>>=[];
  const rpcCalls:string[]=[];
  let copyAt=alreadyCopied?"2026-10-22T00:00:00Z":null;
+ let checkedDay:string|null=pending?null:stale?"2026-10-23":alreadyCopied?"2026-10-22":null;
  let rosterAt=alreadyCopied?"2026-10-22T00:00:00Z":null;
  let attendanceAt=alreadyCopied?"2026-10-22T00:00:00Z":null;
  let operationalSources:Record<string,unknown>={};
@@ -40,7 +41,7 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
      ?{scopes_available:scopes}:table==="toast_optional_sync_state"
       ?{menu_last_updated:lastMenu,menu_copied_at:copyAt,
         roster_copied_at:rosterAt,attendance_copied_at:attendanceAt,
-        menu_checked_local_day:pending?null:stale?"2026-10-23":alreadyCopied?"2026-10-22":null,
+        menu_checked_local_day:checkedDay,
         roster_local_day:stale?"2026-10-23":null,
         labor_local_day:stale?"2026-10-23":null,
         operational_sources:operationalSources}:null,error:null};},
@@ -50,6 +51,8 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
         operationalSources=value.operational_sources as Record<string,unknown>;
       if(typeof value.menu_last_updated==="string")lastMenu=value.menu_last_updated;
       if(typeof value.menu_copied_at==="string")copyAt=value.menu_copied_at;
+       if("menu_checked_local_day" in value)
+        checkedDay=typeof value.menu_checked_local_day==="string"?value.menu_checked_local_day:null;
       if(typeof value.roster_copied_at==="string")rosterAt=value.roster_copied_at;
       if(typeof value.attendance_copied_at==="string")attendanceAt=value.attendance_copied_at;
       return {error:null};}
