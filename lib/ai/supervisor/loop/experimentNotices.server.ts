@@ -41,14 +41,17 @@ export async function postVerifiedSourceReminder(db:SupabaseClient,input:{
  try{
   await notifyOwner(db,{
    businessId:input.businessId,ownerUserId:input.ownerUserId,
-   threadId:input.threadId,taskId:id,kind:"price_review",
+   threadId:input.threadId,taskId:id,kind:"commitment",
    localDate:next.localDate,important:true,
   },async()=>{
    const task=await db.from("operating_tasks").upsert({
-    business_id:input.businessId,id,agent_id:"alex",
-    kind:"price_review",status:"needs_owner",confidence:"low",
+    business_id:input.businessId,id,agent_id:"alex",owner_user_id:input.ownerUserId,
+    origin:"supervisor_followup",dedupe_key:id,
+    due_local_date:next.localDate,due_timezone:input.timezone,
+    due_at:input.now,kind:"commitment",status:"needs_owner",confidence:"low",
     entity_type:"menu_item",entity_id:input.productId,
-    payload:{proposalId:input.proposalId,threadId:input.threadId,
+    payload:{title:"Publish "+input.productName+" price in Toast",
+     proposalId:input.proposalId,threadId:input.threadId,
      targetPriceCents:input.targetPriceCents,currency:input.currency,
      ownerNoticeDate:next.localDate,slot:next.slot,
      verificationStatus:"not_verified",source:"Toast Menus V2"},
@@ -118,7 +121,7 @@ export function nextOwnerPriceReminder(input:{
  const slot=priorToday.length+1;
  // Keep the later reminder at least two real elapsed hours after the last
  // posted receipt, including on the next café-local morning.
- const latest=priorToday.reduce((v,r)=>Math.max(v,
+ const latest=input.prior.reduce((v,r)=>Math.max(v,
   r.postedAt?safeInstant(r.postedAt):0),0);
  if(latest&&now<latest+2*HOUR)return null;
  const lastLocalDay=localDay(input.approvedAt,input.timezone);

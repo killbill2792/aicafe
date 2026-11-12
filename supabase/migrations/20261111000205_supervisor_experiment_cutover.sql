@@ -127,20 +127,6 @@ begin
   raise exception 'invalid_notice_key' using errcode='22023';end if;
  perform pg_advisory_xact_lock(hashtextextended(
   concat_ws(':',p_business_id,p_owner_user_id,p_source_id,p_local_date),0));
- select * into v_existing from public.supervisor_experiment_notice_receipts
-  where business_id=p_business_id and owner_user_id=p_owner_user_id
-   and source_id=p_source_id and kind=p_kind
-   and local_date=p_local_date and slot=p_slot for update;
- if found then
-  if v_existing.state='posted' or
-   (v_existing.state='claimed' and v_existing.claimed_at>now()-interval '5 minutes') or
-   (v_existing.state='failed' and v_existing.retry_at>now()) or
-   v_existing.attempts>=30 then return null;end if;
-  update public.supervisor_experiment_notice_receipts
-  set state='claimed',claimed_at=now(),retry_at=null,attempts=attempts+1,
-   updated_at=now() where id=v_existing.id returning id into v_id;
-  return v_id;
- end if;
  -- Do not send a reminder for a cancelled, rejected, superseded or
  -- already-confirmed proposal. A cron read may race an owner action.
  if p_kind='price_reminder' and not exists (
@@ -159,6 +145,20 @@ begin
    and h.old_price_cents>0 and h.new_price_cents>0
    and h.old_price_cents<>h.new_price_cents
  ) then return null;end if;
+ select * into v_existing from public.supervisor_experiment_notice_receipts
+  where business_id=p_business_id and owner_user_id=p_owner_user_id
+   and source_id=p_source_id and kind=p_kind
+   and local_date=p_local_date and slot=p_slot for update;
+ if found then
+  if v_existing.state='posted' or
+   (v_existing.state='claimed' and v_existing.claimed_at>now()-interval '5 minutes') or
+   (v_existing.state='failed' and v_existing.retry_at>now()) or
+   v_existing.attempts>=30 then return null;end if;
+  update public.supervisor_experiment_notice_receipts
+  set state='claimed',claimed_at=now(),retry_at=null,attempts=attempts+1,
+   updated_at=now() where id=v_existing.id returning id into v_id;
+  return v_id;
+ end if;
  if p_kind='price_reminder' then
   select count(*) into v_sent from public.supervisor_experiment_notice_receipts
    where business_id=p_business_id and owner_user_id=p_owner_user_id
@@ -186,7 +186,8 @@ declare v_item public.menu_items;v_product text;v_before text;v_target text;
 begin
  if tg_op<>'UPDATE' or new.status is not distinct from old.status
    or new.status<>'manual_confirmed' or
-   old.capability_id<>'alex.drink_price_experiment.v1'
+   old.capability_id not in ('alex.drink_price_experiment.v1',
+    'alex.menu_price_change.v1')
  then return new;end if;
  v_product:=old.canonical_effect_payload->>'productId';
  if v_product is null or v_product !~*

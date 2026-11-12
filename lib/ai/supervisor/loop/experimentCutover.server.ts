@@ -1,5 +1,4 @@
 import "server-only";
-import {formatInTimeZone} from "date-fns-tz";
 
 /** One per-café writer decision. Shadow mode may compare reads but MUST NOT
  * perform any new-path writes; legacy goals and check-ins stay enabled. */
@@ -104,8 +103,11 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
  if(row.status==="manual_pending"){
   // Keep the existing Supervisor proposal lifecycle, but only AFTER the
   // source verification guard. The legacy date is not our 24h clock.
-  const localToday=formatBusinessDay(now,timezone);
-  await repo.transition(scope,row.id,row.revision,"manual_confirmed",localToday);
+  // The existing transition RPC validates PostgreSQL current_date (UTC),
+  // not the café-local display day. This is only lifecycle bookkeeping;
+  // elapsed source windows still begin at receipt.startAt.
+  const transitionDate=new Date().toISOString().slice(0,10);
+  await repo.transition(scope,row.id,row.revision,"manual_confirmed",transitionDate);
  }
  const days=row.monitor_spec?.durationDays;
  if(!Number.isSafeInteger(days)||days<1||days>90)
@@ -194,8 +196,4 @@ export async function remindPendingToastPrice(db:SupabaseClient,row:PriceRow,
   currency:effect.currency,approvedAt:row.approved_at,now,timezone,
   sourceVerified:false,cancelled:false,
  });
-}
-function formatBusinessDay(instant:string,timezone:string):string{
- // date-fns-tz is required for the true café-local date across DST.
- return formatInTimeZone(new Date(instant),timezone,"yyyy-MM-dd");
 }

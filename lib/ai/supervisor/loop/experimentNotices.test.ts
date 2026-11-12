@@ -4,7 +4,7 @@ vi.mock("server-only",()=>({}));
 import {nextOwnerPriceReminder,toastObservationNoticeKey,postVerifiedSourceReminder} from "./experimentNotices.server";
 vi.mock("@/lib/operating/notifyOwner.server",()=>({notifyOwner:async(
  _db:unknown,notice:{kind:string},write:()=>Promise<unknown>)=>{
-  if(notice.kind!=="price_review")throw Error("Unsupported notice type");
+  if(notice.kind!=="commitment")throw Error("Unsupported notice type");
   return {decision:"posted",result:await write()};
  }}));
 const base={businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -32,6 +32,13 @@ describe("Task 8a owner notice exact source/day/slot identity",()=>{
    prior:[first]})).toBeNull();
   expect(nextOwnerPriceReminder({...base,now:"2026-03-09T18:00:00Z",
    prior:[first]})).toMatchObject({slot:2,localDate:"2026-03-09"});
+ });
+ it("does not send a second slot fifteen minutes after a near-midnight prior-day post",()=>{
+  const prior=[{localDate:"2026-03-08",slot:2,postedAt:"2026-03-09T07:45:00Z"}];
+  expect(nextOwnerPriceReminder({...base,now:"2026-03-09T08:00:00Z",
+    prior})).toBeNull();
+  expect(nextOwnerPriceReminder({...base,now:"2026-03-09T09:45:00Z",
+    prior})).toMatchObject({localDate:"2026-03-09",slot:1});
  });
  it("allows a new morning after yesterday's limit and stops when verified",()=>{
   const prior=[{localDate:"2026-03-08",slot:1},{localDate:"2026-03-08",slot:2}];
@@ -90,8 +97,8 @@ describe("Task 8a actual notice write and durable delivery",()=>{
    timezone:base.timezone,sourceVerified:false,cancelled:false,
   });
   expect(posted).toBe("posted");
-  expect(calls).toEqual([{kind:"price_review"}]);
-  expect(effects).toEqual(["claim:supervisor_8a_claim_notice","task:price_review",
+  expect(calls).toEqual([{kind:"commitment"}]);
+  expect(effects).toEqual(["claim:supervisor_8a_claim_notice","task:commitment",
    "message","receipt:posted"]);
   expect(receipts.state).toBe("posted");
  });
