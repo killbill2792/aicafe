@@ -275,7 +275,8 @@ test('10-minute unchanged ready head triggers one bounded safe recovery request'
  assert.deepEqual(planMuseBacklog(backlog,requests,now),backlog);
 });
 test('integrated parent suggests proposed scope for owner without auto-authorization',()=>{
- const queue={tasks:[{id:'E2',state:'proposed',depends_on:['T1']}]};
+ const queue={merged_code_only:[{id:'T1'}],tasks:[{id:'E2',state:'proposed',
+   depends_on:['T1'],edits:[],uses:[],acceptance:['owner verified scope'],brief:'owner plan'}]};
  const completed={...state,tasks:{T1:{...state.tasks.T1,status:'integrated_proven',
    integration_proof:{conclusion:'success'}}}};
  const health=inspectMuseHealth(completed,{now,queue});
