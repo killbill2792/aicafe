@@ -35,6 +35,7 @@ import {dispatchPreferences} from "./owner-controls-v3.mjs";
 import {ensureApprovedDraftPr,classifyPrCreatePreflightError} from "./pr-create-v3.mjs";
 import {verifiedCodingConversation} from "./verified-chat-v3.mjs";
 import {recordGithubEffects,recordPrWriterOwnerNotices} from "./github-effects-v3.mjs";
+import {fetchMuseGitRecoveries} from './git-recovery-transport.mjs';
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -395,6 +396,26 @@ async function main() {
     try{recoveryPayload=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));}
     catch{recoveryPayload=null;}
   }
+  // Durable signed Git inbox is authoritative for recovery command delivery.
+  // repository_dispatch can still accelerate an execution, but cancelled Actions
+  // runs never delete these files. Muse writes them by Git, not REST.
+  let gitRecoveryScan={accepted:[],rejected:[],complete:false};
+  if(commit&&ledger&&process.env.DISPATCH_MUSE_RECOVERY_KEY){
+    try{
+      gitRecoveryScan=fetchMuseGitRecoveries({
+        token:ledgerToken,secret:process.env.DISPATCH_MUSE_RECOVERY_KEY,
+        actors:actorMap,processed:current.git_recovery_processed_files||{},
+        now:new Date().toISOString()});
+    }catch(error){
+      gitRecoveryScan={accepted:[],rejected:[],complete:false,
+        scan_error:'private_git_recovery_unavailable'};
+      console.error('Signed Muse Git inbox scan unavailable: '+String(error.message).slice(0,140));
+    }
+  }else if(commit&&ledger){
+    // Optional until both GitHub and Muse have the new shared signing key.
+    // Existing authenticated repository_dispatch behavior is unchanged.
+    console.warn('Signed Muse Git recovery inbox not enabled (missing signing key)');
+  }
   const receiptScan = ledger
     ? await inspectReceipts({ledger,allowedActors:[...new Set([...Object.keys(actorMap),settings.owner.login])],
        processed:current.receipt_processed_files||{}})
@@ -530,8 +551,30 @@ async function main() {
       const withNotices = noticeOperationalIssues(queueOwnerAlerts(next,{queue,
         unmappedPrs:linkPullRequests(next,latest.snapshot).unmapped,openPrs:latest.snapshot}),
         {snapshot:latest.snapshot,scan:receiptScan});
-      const recovered=recordRecoveryEvent(withNotices,recoveryPayload,{
+      let recovered=recordRecoveryEvent(withNotices,recoveryPayload,{
         repo,actors:actorMap,owner:settings.owner.login,now:new Date().toISOString()});
+      // Signed private Git commands survive missed/cancelled GitHub wakes.
+      // HMAC, Git-verified private repo access, actor allowlist, exact task/PR
+      // and SHA gates are all enforced; commands do NOT mutate approval facts.
+      for(const item of gitRecoveryScan.accepted){
+        const ev={action:'dispatcher_recovery',sender:{login:item.request.actor},
+          client_payload:item.request};
+        recovered=recordRecoveryEvent(recovered,ev,{
+          repo,actors:actorMap,owner:settings.owner.login,
+          now:new Date().toISOString(),maxAgeMs:7*86400000});
+        if(recovered.recovery_requests?.[item.request.request_id]||
+           recovered.recovery_rejections?.[item.request.request_id]){
+          recovered.git_recovery_processed_files||={};
+          recovered.git_recovery_processed_files[item.file]=item.request.request_id;
+        }
+      }
+      if(gitRecoveryScan.rejected.length||gitRecoveryScan.scan_error){
+        recovered=queueOwnerIssue(recovered,{
+          kind:'muse_git_recovery_inbox_failure',
+          identity:'signed_git_recovery_inbox',
+          message:'Muse signed Git recovery inbox contains unreadable or unverified records.',
+          needs:'Muse inspect signed Git request delivery and the authenticated writer; do not replay failed effects'});
+      }
       const projected=recordLifecycleTransitions(recovered,queue);
       return JSON.stringify(projected) === JSON.stringify(existing) ? null : projected;
     });
