@@ -29,6 +29,19 @@ describe("Toast operational staging never mutates owner canonical data",()=>{
   expect(rpc).toHaveBeenCalledWith("toast_stage_employee_roster",
     expect.objectContaining({p_rows:expect.arrayContaining([expect.objectContaining({deleted:true})])}));
  });
+ it("stages trusted snapshot facts without a duplicate full menu fetch",async()=>{
+  calls.catalog.mockReset();
+  const rows=[{kind:"item" as const,provider_guid:guid1,name:"Coffee",
+   category:"Coffee",price_cents:450,pricing_strategy:"BASE_PRICE",
+   modifier_group_guids:[]}];
+  const rpc=vi.fn().mockResolvedValue({error:null});
+  const upsert=vi.fn().mockResolvedValue({error:null});
+  const db={rpc,from:()=>({upsert})} as unknown as SupabaseClient;
+  expect(await stageToastCatalog(db,s,rows)).toMatchObject({staged:1,items:1});
+  expect(calls.catalog).not.toHaveBeenCalled();
+  expect(rpc).toHaveBeenCalledWith("toast_stage_catalog",
+   expect.objectContaining({p_rows:rows}));
+ });
  it("stages menu and modifiers without updating recipes or canonical menu",async()=>{
   calls.catalog.mockResolvedValue([
    {kind:"item",provider_guid:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",name:"Coffee",price_cents:500},

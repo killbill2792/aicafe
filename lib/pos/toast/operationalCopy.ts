@@ -8,7 +8,7 @@ import {affectedLocalDays} from "../timecardDay";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createToastAdapter} from "./adapter";
 import {stageToastCatalog,stageToastRoster,reconcileToastOperationalHealth} from "./operationalStaging";
-import {syncCanonicalCatalog} from "../syncCatalog";
+import {syncCanonicalCatalog,applyPublishedToastCatalogReceipt} from "../syncCatalog";
 import {syncCanonicalEmployees} from "../syncEmployees";
 import {syncToastLaborReadOnly} from "./laborSync";
 import {ToastApiError} from "./client";
@@ -16,9 +16,112 @@ import {queueStaleToastLaborRollups} from "./staleLaborRecovery";
 
 export type ToastCopyScope={businessId:string;restaurantGuid:string;locationId:string;
  timezone:string;deadlineAt?:number};
+/** One authenticated version-consistent Menus V2 response feeds both existing
+ * staging and canonical import; only its matching source receipt may update
+ * publication state and existing connected_pos price-history provenance. */
 export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope){
- await stageToastCatalog(db,p); // mig 099 usage checks continue reading staging.
- return syncCanonicalCatalog(db,p.businessId,createToastAdapter({db,...p}),{restaurantGuid:p.restaurantGuid});
+ const adapter=createToastAdapter({db,...p});
+ const bundle=await adapter.fetchPublishedCatalogBundle();
+ if(bundle.receipt.restaurantGuid.toLowerCase()!==p.restaurantGuid.toLowerCase())
+  throw new ToastApiError("unauthorized_location");
+ const {data:previous,error:readError}=await db.from("toast_optional_sync_state")
+  .select("menu_last_updated,menu_copied_at,menu_checked_local_day,menu_pending_observations")
+  .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
+ if(readError)throw new ToastApiError("unavailable");
+ // A NEW publication must not erase an older validated but unfinished
+ // price-history receipt. Reconcile V1 against its stored source observation
+ // and existing Toast history before clearing its provisional state for V2.
+ const previousVersion=previous?.menu_last_updated?.startsWith("pending:")
+  ?previous.menu_last_updated.slice("pending:".length):previous?.menu_last_updated;
+ if(previousVersion&&previousVersion!==bundle.receipt.publicationVersion&&
+   previous?.menu_checked_local_day===null&&previous.menu_copied_at){
+  const {data,error}=await db.rpc("toast_reconcile_superseded_menu_history",{
+   p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+   p_version:previousVersion,p_first_observed_at:previous.menu_copied_at,
+  });
+  if(error||data!==true)throw new ToastApiError("unavailable");
+ }
+ // Preserve the first same-version receipt BEFORE any canonical price write.
+ // A failure after price import but before presence must not swap its original
+ // evidence for the fresh observed time of an otherwise identical later fetch.
+ const pendingVersion="pending:"+bundle.receipt.publicationVersion;
+ const samePending=(previous?.menu_last_updated===pendingVersion||
+   previous?.menu_last_updated===bundle.receipt.publicationVersion)&&
+  previous?.menu_checked_local_day===null&&Boolean(previous?.menu_copied_at);
+ const observedAt=samePending?previous!.menu_copied_at!:bundle.receipt.observedAt;
+ // Same-version retries preserve the phase marker and SQL-appended receipts.
+ const committedBundle={...bundle,receipt:{...bundle.receipt,observedAt}};
+ // A prefixed provisional version records the first source instant without
+ // falsely satisfying POS0d's SQL gate that requires canonical import to finish.
+ // A worker death between price write and promotion must retain this receipt.
+ const {error:pendingError}=await db.from("toast_optional_sync_state").upsert({
+  business_id:p.businessId,restaurant_guid:p.restaurantGuid,
+  menu_checked_local_day:null,
+  ...(samePending?{}:{menu_last_updated:pendingVersion,menu_copied_at:observedAt,menu_pending_observations:[]}),
+ },{onConflict:"business_id,restaurant_guid"});
+ if(pendingError)throw new ToastApiError("unavailable");
+ // Atomic SQL registration precedes every possible canonical price write.
+ // Never continue if an observation could not be durably recorded.
+ const {error:observationStampError}=await db.rpc("toast_record_pending_menu_observation",{
+  p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+  p_version:bundle.receipt.publicationVersion,
+  p_first_observed_at:observedAt,p_observed_at:bundle.receipt.observedAt,
+ });
+ if(observationStampError)throw new ToastApiError("unavailable");
+ await stageToastCatalog(db,p,bundle.facts);
+ const imported=await syncCanonicalCatalog(db,p.businessId,
+  {...adapter,fetchCatalogItems:async()=>bundle.items},{restaurantGuid:p.restaurantGuid});
+ // Only a successful canonical import may expose the exact Toast version to
+ // POS0d's independent version/copy stamp guard. Still incomplete until proof.
+ const {error:stampError}=await db.from("toast_optional_sync_state").upsert({
+  business_id:p.businessId,restaurant_guid:p.restaurantGuid,
+  menu_last_updated:bundle.receipt.publicationVersion,
+  menu_copied_at:observedAt,menu_checked_local_day:null,
+ },{onConflict:"business_id,restaurant_guid"});
+ if(stampError)throw new ToastApiError("unavailable");
+ // POS0d independently checks the version and source identity. On a stale
+ // receipt its SQL freshness guard rejects promotion; never mark it complete.
+ const presence=await applyPublishedToastCatalogReceipt(db,p.businessId,committedBundle);
+ // On replay, the SQL presence RPC deliberately preserves the original
+ // same-version observed_at. Price proof requires that *stored* instant,
+ // not the timestamp from a later retry of the same Toast publication.
+ const observations=new Map<string,string>();
+ for(let offset=0;offset<bundle.items.length;offset+=100){
+  const ids=bundle.items.slice(offset,offset+100).map(item=>item.posItemId);
+  const {data:rows,error:observationError}=await db.from("menu_items")
+   .select("pos_item_id,toast_publication_observed_at")
+   .eq("business_id",p.businessId)
+   .eq("toast_publication_version",bundle.receipt.publicationVersion)
+   .eq("toast_publication_state","active").in("pos_item_id",ids);
+  if(observationError)throw new ToastApiError("unavailable");
+  for(const row of rows??[]){
+   if(row.pos_item_id&&row.toast_publication_observed_at)
+    observations.set(row.pos_item_id,row.toast_publication_observed_at);
+  }
+ }
+ let verifiedPriceChanges=0;
+ for(const item of bundle.items){
+  if(item.priceCents===null||!Number.isSafeInteger(item.priceCents)||item.priceCents<=0)
+   continue;
+  const committedObservedAt=observations.get(item.posItemId);
+  if(!committedObservedAt)throw new ToastApiError("unavailable");
+  const {data,error}=await db.rpc("toast_verify_existing_price_history",{
+   p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+   p_item_pos_id:item.posItemId,p_version:bundle.receipt.publicationVersion,
+   p_observed_at:committedObservedAt,p_price_cents:item.priceCents,
+  });
+  if(error)throw new ToastApiError("unavailable");
+  if(data===true)verifiedPriceChanges++;
+ }
+ // This is the completion marker: only now can a matching version use the
+ // cheap metadata-only path. A crash before this write leaves NULL pending.
+ const {error:completeError}=await db.from("toast_optional_sync_state").update({
+  menu_checked_local_day:localClock(new Date(),p.timezone).today,
+  menu_copied_at:new Date().toISOString(),
+ }).eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+  .eq("menu_last_updated",bundle.receipt.publicationVersion);
+ if(completeError)throw new ToastApiError("unavailable");
+ return {...imported,receipt:committedBundle.receipt,presence,verifiedPriceChanges};
 }
 export async function copyToastStaff(db:SupabaseClient,p:ToastCopyScope){
  await stageToastRoster(db,p); // keeps pilot links and usage checks consistent.

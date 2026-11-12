@@ -22,12 +22,13 @@ const location="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const scope={business_id:business,restaurant_guid:restaurant,location_id:location,
  toast_time_zone:"America/Los_Angeles",closeout_hour:4};
 const now=new Date("2026-10-23T19:00:00-07:00");
-function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,legacyChecked=false){
+function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,legacyChecked=false,pending=false){
  let lastMenu=legacyChecked?"2026-10-23T00:00:00Z":
   alreadyCopied?"2026-10-22T00:00:00Z":null;
  const writes:Array<Record<string,unknown>>=[];
  const rpcCalls:string[]=[];
  let copyAt=alreadyCopied?"2026-10-22T00:00:00Z":null;
+ let checkedDay:string|null=pending?null:stale?"2026-10-23":alreadyCopied?"2026-10-22":null;
  let rosterAt=alreadyCopied?"2026-10-22T00:00:00Z":null;
  let attendanceAt=alreadyCopied?"2026-10-22T00:00:00Z":null;
  let operationalSources:Record<string,unknown>={};
@@ -40,7 +41,7 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
      ?{scopes_available:scopes}:table==="toast_optional_sync_state"
       ?{menu_last_updated:lastMenu,menu_copied_at:copyAt,
         roster_copied_at:rosterAt,attendance_copied_at:attendanceAt,
-        menu_checked_local_day:stale?"2026-10-23":null,
+        menu_checked_local_day:checkedDay,
         roster_local_day:stale?"2026-10-23":null,
         labor_local_day:stale?"2026-10-23":null,
         operational_sources:operationalSources}:null,error:null};},
@@ -50,6 +51,8 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
         operationalSources=value.operational_sources as Record<string,unknown>;
       if(typeof value.menu_last_updated==="string")lastMenu=value.menu_last_updated;
       if(typeof value.menu_copied_at==="string")copyAt=value.menu_copied_at;
+       if("menu_checked_local_day" in value)
+        checkedDay=typeof value.menu_checked_local_day==="string"?value.menu_checked_local_day:null;
       if(typeof value.roster_copied_at==="string")rosterAt=value.roster_copied_at;
       if(typeof value.attendance_copied_at==="string")attendanceAt=value.attendance_copied_at;
       return {error:null};}
@@ -62,7 +65,8 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
 beforeEach(()=>{
  Object.values(m).forEach(fn=>fn.mockReset());
  m.roster.mockResolvedValue({staged:0});
- m.catalog.mockResolvedValue({staged:0});
+ m.catalog.mockResolvedValue({staged:0,receipt:{restaurantGuid:restaurant,
+  publicationVersion:"2026-10-23T00:00:00Z",observedAt:"2026-10-23T19:00:00Z"}});
  m.labor.mockResolvedValue({staged:0});
  m.attendance.mockResolvedValue({changed:0,affectedDates:[]});
  m.staged.mockResolvedValue({changed:0,affectedDates:[]});
@@ -93,6 +97,12 @@ describe("first-time Toast catalog before sales",()=>{
    expect(await ensureToastFirstCatalog(denied.db,scope,now,Date.now()+20000)).toBe(false);
    expect(m.catalog).not.toHaveBeenCalled();
  });
+ it("retries an interrupted first catalog even when copied-at was stamped",async()=>{
+  const f=mockDB({menus:true},true,false,false,true);
+  expect(await ensureToastFirstCatalog(f.db,scope,now,Date.now()+20000)).toBe(true);
+  expect(m.catalog).toHaveBeenCalledOnce();
+  expect(f.writes.some(w=>w.menu_checked_local_day==="2026-10-23")).toBe(true);
+ });
  it("copies when a legacy menu timestamp exists but no canonical copy stamp",async()=>{
    const f=mockDB({menus:true},false,true,true);
    await ensureToastFirstCatalog(f.db,scope,now,Date.now()+20000);
@@ -109,6 +119,34 @@ describe("first-time Toast catalog before sales",()=>{
 });
 
 describe("independent optional Toast source phases",()=>{
+ it("keeps unchanged publication on the metadata-only path across local days",async()=>{
+  const f=mockDB({menus:true},true,false,false);
+  m.request.mockImplementation(async(path:string)=>{
+   if(path==="/menus/v2/metadata")return {
+    restaurantGuid:restaurant,lastUpdated:"2026-10-22T00:00:00Z"};
+   return [];
+  });
+  await syncToastOptionalSources(f.db,scope,now,Date.now()+20000);
+  expect(m.catalog).not.toHaveBeenCalled();
+  expect(f.writes.some(w=>w.menu_checked_local_day==="2026-10-23")).toBe(true);
+ });
+ it("retries unchanged Toast metadata when a prior publication is pending",async()=>{
+  const f=mockDB({menus:true},true,false,false,true);
+  m.request.mockImplementation(async(path:string)=>path==="/menus/v2/metadata"?
+   {restaurantGuid:restaurant,lastUpdated:"2026-10-22T00:00:00Z"}:[]);
+  await syncToastOptionalSources(f.db,scope,now,Date.now()+20000);
+  expect(m.catalog).toHaveBeenCalledOnce();
+  expect(f.writes.some(w=>w.menu_checked_local_day==="2026-10-23")).toBe(true);
+ });
+ it("copies the trusted bundle version, not a stale preflight metadata version",async()=>{
+  const f=mockDB({menus:true});
+  m.catalog.mockResolvedValueOnce({receipt:{restaurantGuid:restaurant,
+   publicationVersion:"2026-10-24T00:00:00Z",observedAt:"2026-10-24T01:00:00Z"}});
+  await ensureToastFirstCatalog(f.db,scope,now,Date.now()+20000);
+  expect(f.writes).toContainEqual(expect.objectContaining({
+   menu_last_updated:"2026-10-24T00:00:00Z"}));
+ });
+
  it("a malformed menu response records the failure but does not block roster, labor, jobs or reasons",async()=>{
   const f=mockDB({menus:true,labor:true,config:true});
   m.request.mockImplementation(async(path:string)=>{
