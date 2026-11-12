@@ -38,6 +38,11 @@ BEGIN
   '{"guid":"cash-current-A","amount":12.50,"type":"CASH_IN",
     "cardNumber":"4111111111111111","access_token":"synthetic-no-real-credential",
     "employee":{"guid":"employee-A","firstName":"Ava"},
+    "customer":{"firstName":"Ava","email":"synthetic@example.invalid",
+      "phone":"5550100","loyalty":{"guid":"loyalty-A"},
+      "access_token":"synthetic-not-real","refreshToken":"synthetic-not-real",
+      "API_KEY":"synthetic-not-real"},
+    "payments":[{"amount":5,"payment_token":"synthetic-not-real"}],
     "extra":{"nested":[{"common":true},{"lateOptional":"present-in-second-element"}]}}',
   repeat('a',64),'pos0e:cash-a'),
  (a,rest_a,'stock/v1/inventory',d,
@@ -252,6 +257,58 @@ BEGIN
    and not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
     '[{"field":"data.access_token"}]'::jsonb),
   'legacy credential must not be described even when it exists in retained data');
+
+  -- The entire data object is a selectable physical column: redact inside
+  -- it too, or historic credential keys escape the named-field guard.
+  response:=public.ai_query_view(a,'cv_toast_records',ARRAY['data']::text[],
+   '[{"column":"record_type","op":"=","value":"cashmgmt/v1/entries"}]'::jsonb,
+   null::text[],null::jsonb,d,d,null,10);
+  PERFORM pg_temp.pos0e_assert(
+   jsonb_array_length(response->'rows')=1
+   and response->'rows'->0->'data'->>'guid'='cash-current-A'
+   and response->'rows'->0->'data'->'customer'->>'email'='synthetic@example.invalid'
+   and response->'rows'->0->'data'->'customer'->>'phone'='5550100'
+   and response->'rows'->0->'data'->'customer'->'loyalty'->>'guid'='loyalty-A'
+   and response->'rows'->0->'data'->'payments'->0->>'amount'='5'
+   and not (response->'rows'->0->'data' ? 'cardNumber')
+   and not (response->'rows'->0->'data' ? 'access_token')
+   and not (response->'rows'->0->'data'->'customer' ? 'access_token')
+   and not (response->'rows'->0->'data'->'customer' ? 'refreshToken')
+   and not (response->'rows'->0->'data'->'customer' ? 'API_KEY')
+   and not (response->'rows'->0->'data'->'payments'->0 ? 'payment_token'),
+   'full-object queries preserve permitted values but omit all credential keys');
+  PERFORM pg_temp.pos0e_assert(
+   (select bool_and(not (r.data ? 'access_token')
+    and not (r.data->'customer' ? 'refreshToken')
+    and not (r.data->'payments'->0 ? 'payment_token'))
+    from public.toast_records_for(a,d,d) r
+    where r.record_type='cashmgmt/v1/entries'),
+   'direct source-shaped reader must not return old retained credentials');
+  PERFORM pg_temp.pos0e_assert(
+   public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
+    '[{"field":"data.customer.email","type":"string"}]'::jsonb
+   and not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
+    '[{"field":"data.customer.access_token"}]'::jsonb)
+   and not (public.ai_toast_fields(a,'cashmgmt/v1/entries') @>
+    '[{"field":"data.payments.0.payment_token"}]'::jsonb),
+   'field discovery retains email but excludes old nested credentials');
+  response:=public.ai_query_view(a,'cv_toast_records',
+   ARRAY['data.customer.email','data.employee.guid']::text[],
+   '[{"column":"record_type","op":"=","value":"cashmgmt/v1/entries"}]'::jsonb,
+   null::text[],null::jsonb,d,d,null,10);
+  PERFORM pg_temp.pos0e_assert(
+   response->'rows'->0->>'data.customer.email'='synthetic@example.invalid'
+   and response->'rows'->0->>'data.employee.guid'='employee-A',
+   'customer email and employee GUID still work through named query');
+  BEGIN
+   PERFORM public.ai_query_view(a,'cv_toast_records',
+    ARRAY['data.customer.access_token']::text[],'[]'::jsonb,
+    null::text[],null::jsonb,d,d,null,10);
+   RAISE EXCEPTION 'POS0e FAIL: forbidden named column returned';
+  EXCEPTION WHEN others THEN
+   IF SQLERRM<>'invalid column' THEN RAISE; END IF;
+  END;
+
  FOR n IN 1..36 LOOP
   INSERT INTO public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
    payload,payload_sha256,capture_key)

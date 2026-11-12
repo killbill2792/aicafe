@@ -11,6 +11,9 @@ describe("Toast reusable-credential named-path boundary",()=>{
   "data.customer.authorization_token","data.customer.private_key",
   "data.customer.oauth_token","data.customer.bearer_token",
   "data.customer.accessToken","data.customer.paymentToken",
+  "data.customer.ACCESS_TOKEN","data.customer.refreshToken",
+  "data.customer.lastFour","data.customer.expiration_date",
+  "data.loyalty.events.0.client_secret","data.payments.0.API_KEY",
   "data.customer.card_number","data.customer.card_info",
   "data.token","data.customer.cardNumber",
  ])("rejects reusable secret: %s",field=>{
@@ -19,7 +22,8 @@ describe("Toast reusable-credential named-path boundary",()=>{
  it.each([
   "data.customer.first_name","data.customer.email","data.staff.employee_guid",
   "data.loyalty.membership_id","data.checks.0.amount",
-  "data.customer.phone","data.description","data.product_name",
+  "data.customer.phone","data.employee.guid","data.customer.phoneCountryCode",
+  "data.loyalty.membership_guid","data.description","data.product_name",
   "data.order_channel","data.customer_card_name",
  ])("preserves permitted path: %s",field=>{
   expect(isDataField(field)).toBe(true);
