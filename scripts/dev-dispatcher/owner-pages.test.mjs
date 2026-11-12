@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import { parseOwnerSnapshot, statusLevel, freshness,
   PUBLIC_COMMENT_URL, PRIVATE_QUEUE_URL, REFRESH_INTERVAL_MS, refresh } from '../../docs/owner-dashboard.mjs';
 
@@ -75,4 +76,39 @@ test('failed public GitHub refresh visibly revokes healthy status rather than fa
   if(old===undefined)delete globalThis.document;
   else globalThis.document=old;
  }
+});
+
+test('existing Pages owner view contains a locked private panel with explicit Lock',()=>{
+ const html=readFileSync(new URL('../../docs/index.html',import.meta.url),'utf8');
+ assert.match(html,/id="private-unlock-form"/);
+ assert.match(html,/id="private-passphrase"/);
+ assert.match(html,/id="encrypted-private-view" hidden/);
+ assert.match(html,/id="private-lock"/);
+});
+test('public Pages JavaScript never fetches private repo or stores password',()=>{
+ const script=readFileSync(new URL('../../docs/encrypted-owner-view.mjs',import.meta.url),'utf8');
+ assert.match(script,/encrypted-owner-snapshot\.json/);
+ assert.doesNotMatch(script,/api\.github\.com\/repos\/killbill2792\/dave-task-queue/);
+ assert.doesNotMatch(script,/localStorage|sessionStorage|document\.cookie/);
+ assert.doesNotMatch(script,/\/api\/control|method:\s*['"]POST/);
+ assert.match(script,/decryptOwnerEnvelope/);
+});
+test('trusted Pages publishing copies only public static assets and ciphertext',()=>{
+ const yaml=readFileSync(new URL('../../.github/workflows/ai-cafe-encrypted-owner-pages.yml',import.meta.url),'utf8');
+ assert.match(yaml,/OWNER_PAGES_PASSPHRASE/);
+ assert.match(yaml,/encrypted-owner-snapshot\.json/);
+ assert.match(yaml,/actions\/upload-pages-artifact/);
+ assert.match(yaml,/head_branch == 'main'/);
+ assert.doesNotMatch(yaml,/cron:/);
+});
+
+test('password form fails closed if scripts do not initialize',()=>{
+ const html=readFileSync(new URL('../../docs/index.html',import.meta.url),'utf8');
+ const input=html.match(/<input[^>]*id="private-passphrase"[^>]*>/);
+ assert.ok(input);
+ assert.doesNotMatch(input[0],/\bname=/);
+ assert.match(html,/<button type="submit" disabled>Unlock private task view<\/button>/);
+ const script=readFileSync(new URL('../../docs/encrypted-owner-view.mjs',import.meta.url),'utf8');
+ assert.match(script,/submit\.disabled=false/);
+ assert.match(script,/event\.preventDefault\(\)/);
 });
