@@ -146,6 +146,12 @@ async function run(){
  await expectSourceBoundary(()=>writeAsOwner(
   "update public.menu_items set price_cents=500 where id=$1",[ids.item]),
   "member-mutated Toast price");
+ // A SECURITY DEFINER RPC retains the signed-in user's auth claim even
+ // when its effective SQL role is privileged. Do not let it launder writes.
+ await expectSourceBoundary(()=>role(workerA,"service_role",null,async c=>{
+  await c.query("select set_config('request.jwt.claim.role','authenticated',true)");
+  await c.query("update public.menu_items set price_cents=501 where id=$1",[ids.item]);
+ }),"authenticated claim through privileged function context");
  await expectSourceBoundary(()=>writeAsOwner(
   "update public.menu_items set pos_pricing_strategy='TIME_SPECIFIC_PRICE' where id=$1",
   [ids.item]),"member-mutated Toast strategy");
