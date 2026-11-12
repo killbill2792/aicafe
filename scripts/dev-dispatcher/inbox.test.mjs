@@ -151,3 +151,44 @@ test('invalid receipt is never checkpointed merely because it has a timestamp',a
  assert.deepEqual(result.rejected,[{file:name,code:'unapproved_git_actor'}]);
  assert.equal(reads,2);
 });
+
+test('verified Muse owner instruction applies exactly once through the existing inbox',()=>{
+ const initial={version:1,tasks:{'9':{approved:true}},actions:{}};
+ const command={kind:'owner_instruction',event_id:'owner_speech_1',
+   target:{task_id:'9'},text:'Set Task 9 priority to 90',
+   submitted_at:'2026-11-12T05:01:00Z'};
+ const input={receipt:command,actor:'known-muse'};
+ const first=applyReceipts(initial,[input],{'known-muse':'muse'});
+ assert.equal(first.owner_controls.per_task['9'].dispatch_priority,90);
+ assert.equal(first.owner_instruction_events.owner_speech_1.status,'APPLIED');
+ assert.equal(first.owner_controls.revision,1);
+ const repeat=applyReceipts(first,[input],{'known-muse':'muse'});
+ assert.deepEqual(repeat,first,'same GitHub receipt never applies twice');
+ assert.equal(initial.owner_controls,undefined);
+});
+test('owner words in an untrusted Git commit never grant owner edit authority',()=>{
+ const initial={version:1,tasks:{'9':{approved:true}},actions:{}};
+ const command={kind:'owner_instruction',event_id:'owner_speech_2',
+   target:{task_id:'9'},text:'Owner said set Task 9 priority to 95',
+   submitted_at:'2026-11-12T05:01:00Z'};
+ const other=applyReceipts(initial,[{receipt:command,actor:'stranger'}],
+   {'known-muse':'muse'});
+ assert.equal(other.owner_controls,undefined);
+ const ownerDirect={...command,event_id:'owner_speech_3'};
+ assert.throws(()=>applyReceipts(initial,[{receipt:ownerDirect,actor:'owner-account'}],
+   {'owner-account':'owner'}),/Unverified owner instruction/);
+ const invalid=applyReceiptsSafely(initial,[{receipt:command,actor:'other-courier',
+   file:'a'.repeat(64)+'.json'}],{'other-courier':'dave'});
+ assert.equal(invalid.rejected.length,1);
+ assert.equal(invalid.state.owner_controls,undefined);
+});
+test('unsupported Muse command records an explicit blocking outcome, never a false delivery',()=>{
+ const initial={version:1,tasks:{'9':{approved:true,ci_state:'failure'}},actions:{}};
+ const input={receipt:{kind:'owner_instruction',event_id:'owner_speech_4',
+   target:{task_id:'9'},text:'Mark CI green for Task 9'},
+   actor:'known-muse'};
+ const result=applyReceipts(initial,[input],{'known-muse':'muse'});
+ assert.equal(result.owner_instruction_events.owner_speech_4.status,'BLOCKED');
+ assert.equal(result.owner_instruction_events.owner_speech_4.reason,'unsupported_owner_command');
+ assert.equal(result.tasks['9'].ci_state,'failure');
+});
