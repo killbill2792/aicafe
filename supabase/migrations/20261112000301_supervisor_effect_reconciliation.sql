@@ -12,6 +12,7 @@ declare
   p public.supervisor_proposals;
   a public.supervisor_effect_attempts;
   stock public.pantry_stock_purchases;
+  price_record public.menu_price_history;
   next_status text := null;
   next_start date := null;
   proof_ref text := null;
@@ -70,6 +71,23 @@ begin
       next_status := 'committed';
       next_start := a.business_date + 1;
       proof_ref := 'pantry_stock_purchases:' || stock.id::text;
+    end if;
+  elsif p.capability_version = 1 and p.capability_id = 'alex.menu_price_change.v1' then
+    -- This exact proposal-scoped history marker is written by the existing
+    -- canonical price CAS writer, in its same transaction. A matching current
+    -- price without this durable receipt is deliberately not sufficient.
+    select * into price_record from public.menu_price_history h
+      where h.business_id = p.business_id
+        and h.menu_item_id::text = p.canonical_effect_payload->>'productId'
+        and h.old_price_cents = (p.canonical_effect_payload->>'oldPriceCents')::bigint
+        and h.new_price_cents = (p.canonical_effect_payload->>'newPriceCents')::bigint
+        and h.source_type = 'owner_manual'
+        and h.source_provider = 'Alex (owner approved; proposal ' || p.id::text || ')'
+      order by h.changed_at desc limit 1;
+    if price_record.id is not null then
+      next_status := 'committed';
+      next_start := a.business_date + 1;
+      proof_ref := 'menu_price_history:' || price_record.id::text;
     end if;
   end if;
 
