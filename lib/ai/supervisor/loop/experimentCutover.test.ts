@@ -1,5 +1,12 @@
-import {describe,expect,it} from "vitest";
-import {resolveExperimentCutoverMode,readVerifiedActivationAnchor} from "./experimentCutover.server";
+import {describe,expect,it,vi} from "vitest";
+import type {SupabaseClient} from "@supabase/supabase-js";
+import type {LoopProposal,LoopRepository} from "./engine";
+const testReader=vi.hoisted(()=>({read:vi.fn()}));
+vi.mock("server-only",()=>({}));
+vi.mock("./toastPriceEvidence.server",()=>({
+ readVerifiedToastPriceEvidence:(...args:unknown[])=>testReader.read(...args),
+}));
+import {resolveExperimentCutoverMode,readVerifiedActivationAnchor,runVerifiedToastPriceTick} from "./experimentCutover.server";
 
 describe("Task 8a experiment single-writer cutover",()=>{
  it("defaults to legacy when release evidence is absent",()=>{
@@ -67,5 +74,57 @@ describe("Task 8a price-change continuity truth",()=>{
   // Same price in menu-v2 does not modify the source receipt in the anchor.
   expect(readVerifiedActivationAnchor({...initial,interruptedAt:"2026-11-12T20:00:00Z"},
    "2026-11-11T18:10:00Z",receipt)?.historyId).toBe(initial.historyId);
+ });
+});
+
+describe("persisted verified price activation survives later Menus version",()=>{
+ it("continues the elapsed monitor from its first receipt without re-reading current version history",async()=>{
+  testReader.read.mockReset();
+  const businessId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const menuItemId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const restaurantGuid="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const posItemId="toast:"+restaurantGuid+":eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const now="2026-11-12T19:00:00Z";
+  const firstAt="2026-11-12T18:30:00Z";
+  const anchor={source_reference:{businessId,menuItemId,restaurantGuid,posItemId,
+   historyId:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+   oldPriceCents:500,newPriceCents:550,
+   publicationVersion:"menu-v1",observedAt:firstAt,
+   startBasis:"first_verified_observation"},start_at:firstAt};
+  // Menu v2 was published without a price change. The original event no
+  // longer belongs to the latest publication, but its pinned receipt remains.
+  const responses:Record<string,unknown>={
+   supervisor_monitor_windows:{data:anchor,error:null},
+   menu_items:{data:{catalog_source:"toast",is_active:true,
+    pos_item_id:posItemId,price_cents:550,toast_publication_state:"active",
+    toast_publication_version:"menu-v2"},error:null},
+   menu_price_history:{data:[],error:null},
+  };
+  function query(response:unknown):unknown{
+   return new Proxy({},{
+    get:(_target,prop)=>{
+     if(prop==="then")return (resolve:(value:unknown)=>void)=>
+       Promise.resolve(response).then(resolve);
+     return (..._args:unknown[])=>query(response);
+    },
+   });
+  }
+  const db={from:(table:string)=>({
+   select:()=>query(responses[table]),
+  })} as unknown as SupabaseClient;
+  const row={id:"ffffffff-ffff-4fff-8fff-ffffffffffff",
+   business_id:businessId,owner_user_id:"99999999-9999-4999-8999-999999999999",
+   thread_id:"88888888-8888-4888-8888-888888888888",
+   capability_id:"alex.drink_price_experiment.v1",status:"manual_confirmed",
+   revision:3,approved_at:"2026-11-11T16:00:00Z",
+   canonical_effect_payload:{productId:menuItemId,productName:"Latte",
+    oldPriceCents:500,newPriceCents:550,currency:"USD"},
+   monitor_spec:{durationDays:7},locale:"en" as const};
+  const scope={businessId,ownerUserId:row.owner_user_id,
+   threadId:row.thread_id,locale:"en" as const};
+  const outcome=await runVerifiedToastPriceTick(db,{} as LoopRepository,row,
+   scope,now,"America/Los_Angeles",{} as LoopProposal);
+  expect(outcome).toBe("monitoring");
+  expect(testReader.read).not.toHaveBeenCalled();
  });
 });
