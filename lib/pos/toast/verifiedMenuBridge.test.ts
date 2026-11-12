@@ -98,6 +98,12 @@ describe("POS0 verified single-bundle source handoff",()=>{
     p_item_pos_id:posItemId,p_version:bundle.receipt.publicationVersion,
     p_price_cents:550}));
   expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
+  expect(f.writes[0]).toEqual(expect.objectContaining({
+   menu_last_updated:"pending:"+bundle.receipt.publicationVersion,
+   menu_checked_local_day:null,menu_copied_at:bundle.receipt.observedAt}));
+  expect(f.writes[1]).toEqual(expect.objectContaining({
+   menu_last_updated:bundle.receipt.publicationVersion,
+   menu_checked_local_day:null,menu_copied_at:bundle.receipt.observedAt}));
   expect(result.verifiedPriceChanges).toBe(1);
  });
  it("refuses a wrong-restaurant receipt before any writer runs",async()=>{
@@ -125,9 +131,10 @@ describe("POS0 verified single-bundle source handoff",()=>{
   m.canonical.mockRejectedValueOnce(new Error("database unavailable"));
   const f=mockDB();
   await expect(copyToastPublishedMenu(f.db,scope)).rejects.toThrow("database unavailable");
-  expect(f.now.menu_last_updated).toBe(bundle.receipt.publicationVersion);
+  expect(f.now.menu_last_updated).toBe("pending:"+bundle.receipt.publicationVersion);
   expect(f.now.menu_copied_at).toBe(bundle.receipt.observedAt);
   expect(f.now.menu_checked_local_day).toBeNull();
+  expect(f.writes).toHaveLength(1);
   expect(m.apply).not.toHaveBeenCalled();
  });
  it("reconciles a delayed pre-presence interruption with the first receipt",async()=>{
