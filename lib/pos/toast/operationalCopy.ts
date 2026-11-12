@@ -51,7 +51,7 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
     p_observed_at:bundle.receipt.observedAt,p_price_cents:item.priceCents,
    });
    if(error)throw new ToastApiError("unavailable");
-   if(data!==null&&data!==undefined)verifiedPriceChanges++;
+   if(data===true)verifiedPriceChanges++;
   }
   return {...imported,receipt:bundle.receipt,presence,verifiedPriceChanges};
  }catch(error){

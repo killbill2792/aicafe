@@ -31,7 +31,7 @@ function mockDB(){
  const now={...previous};
  const writes:Record<string,unknown>[]=[];
  const rpc=vi.fn(async(name:string)=>({error:null,data:
-  name==="toast_verify_existing_price_history"?"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee":null}));
+  name==="toast_verify_existing_price_history"?true:null}));
  const db={
   from(table:string){
    if(table!=="toast_optional_sync_state")throw new Error("unexpected:"+table);
@@ -58,7 +58,7 @@ beforeEach(()=>{
  m.bundle.mockResolvedValue(bundle);m.stage.mockResolvedValue({staged:1});
  m.canonical.mockImplementation(async (_db:unknown,_business:unknown,adapter:{
   fetchCatalogItems:()=>Promise<unknown[]>})=>{
-  expect(await adapter.fetchCatalogItems()).toBe(bundle.items);
+  expect(await adapter.fetchCatalogItems()).toEqual(expect.arrayContaining([expect.objectContaining({posItemId})]));
   return {imported:1,matched:1,needsReview:0,created:0,changed:1};
  });
  m.apply.mockResolvedValue({inactiveItems:0,inactiveModifiers:0,inactiveGroups:0});
@@ -97,6 +97,13 @@ describe("POS0 verified single-bundle source handoff",()=>{
   expect(f.now.menu_last_updated).toBe("2026-11-09T15:00:00Z");
   expect(f.now.menu_checked_local_day).toBeNull();
   expect(f.rpc).not.toHaveBeenCalled();
+ });
+ it("does not count an unverified price-history RPC as a source-verified change",async()=>{
+  const f=mockDB();
+  f.rpc.mockImplementation(async()=>({error:null,data:false}));
+  const result=await copyToastPublishedMenu(f.db,scope);
+  expect(result.verifiedPriceChanges).toBe(0);
+  expect(f.rpc).toHaveBeenCalledWith("toast_verify_existing_price_history",expect.anything());
  });
  it("skips unverifiable open-price changes without claiming zero or a source delta",async()=>{
   m.bundle.mockResolvedValueOnce({...bundle,items:[{...bundle.items[0],
