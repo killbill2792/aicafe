@@ -217,15 +217,19 @@ describe("owner-scoped price approval actions",()=>{
     expect(f.created).toBe(0);
     expect(f.saves).toBe(0);
   });
-  it("does not report an executing claim as failed before the save completes",async()=>{
+  it("never portrays an executing claim as verified merely from a matching price",async()=>{
     f.status="executing";f.revision=3;
     const get=()=>GET(new Request(url+"?ids="+f.id),params);
     const during=await get();
     expect(during.status).toBe(200);
     expect((await during.json()).cards[0].state).toBe("applying");
-    f.current=500;
+    f.current=500; // Other owner/POS edits may independently match this price.
     const after=await get();
-    expect((await after.json()).cards[0].state).toBe("applied");
+    expect((await after.json()).cards[0].state).toBe("applying");
+    f.attemptState="uncertain";
+    expect((await (await get()).json()).cards[0].state).toBe("uncertain");
+    expect(f.reconciles).toBe(0);
+    expect(f.saves).toBe(0);
   });
   it("shows a durable uncertain outcome after a reload and never presents it as a retry",async()=>{
     f.status="executing";f.revision=3;f.attemptState="uncertain";
