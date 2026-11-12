@@ -31,14 +31,25 @@ describe("chat history the AI sees",()=>{
  });
  it("keeps owner-question cards in history without treating them as choice picks",()=>{
   const card={type:"owner_question",questionId, title:{
-   en:"Which milk do staff prefer?",es:"¿Qué leche prefiere el personal?",ar:"ما الحليب المفضل؟",
+   en:"Which milk do staff prefer?",
   },input:{kind:"options",options:[
-   {id:"oat",label:{en:"Oat",es:"Avena",ar:"شوفان"}},
-   {id:"soy",label:{en:"Soy",es:"Soja",ar:"صويا"}},
+   {id:"oat",label:{en:"Oat"}},
+   {id:"soy",label:{en:"Soy"}},
   ]}};
   const content=historyContent({text:null,blocks:[card]});
   expect(content).toBe("Owner question: Which milk do staff prefer? Options: Oat; Soy");
   expect(content).not.toContain("Asked:");
+ });
+ it("never falls back to non-English owner-question fields",()=>{
+  const localizedOnly={type:"owner_question",questionId,
+   title:{es:"Other title",ar:"Alternative title"},
+   input:{kind:"options",options:[{id:"other",label:{es:"Other option"}}],
+    hint:{ar:"Alternative hint"}}};
+  expect(historyContent({text:null,blocks:[localizedOnly]})).toBe("");
+  const english={...localizedOnly,title:{en:"Which milk?"},
+   input:{kind:"options",options:[{id:"oat",label:{en:"Oat"}},
+    {id:"other",label:{es:"Other option"}}],hint:{ar:"Alternative hint"}}};
+  expect(historyContent({text:null,blocks:[english]})).toBe("Owner question: Which milk? Options: Oat");
  });
  it("keeps the exact choice-card form the pick memory reads",()=>{
   expect(historyContent(choice)).toBe("Asked: Which latte? Options: Latte — Hot ("+hot+"); Latte — Iced ("+iced+")");
