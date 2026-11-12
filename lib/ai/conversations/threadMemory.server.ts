@@ -2,7 +2,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { DEFAULT_SUPERVISOR_OPENAI_MODEL } from "./modelConfig";
-import { ownerInputResponseSchema, type ConversationScope } from "./contracts";
+import type { ConversationScope } from "./contracts";
+import { ownerInputResponseSchema } from "@/lib/ai/supervisor/ownerInput/contracts";
 import {
   applyThreadMemoryOperations, formatThreadMemory, historyContent, safeThreadMemoryText,
   parseThreadMemoryDocument, threadMemorySource, type ThreadMemoryDocument,
