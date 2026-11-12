@@ -7,6 +7,8 @@ import { validConversationUrl } from './delivery.mjs';
 import { acceptOwnerNoticeReceipt } from './alerts.mjs';
 import { acceptMuseOwnerReply } from './self-heal.mjs';
 import { applyMuseOwnerInstruction } from './owner-instruction-commands.mjs';
+import {validateMuseRecoveryReceipt} from './muse-recovery-receipt.mjs';
+import {recordRecoveryEvent} from './recovery-v3.mjs';
 
 
 // The GitHub commit actor is the authentication boundary. A self-declared
@@ -122,6 +124,31 @@ export function applyReceipts(state, inbox, actorMap) {
           event.status='RECORDED';event.reason='verified_chat_url_registered';
         }
       }
+      continue;
+    }
+    if(receipt.kind==='muse_recovery'){
+      if(courier!=='muse')throw Error('Unverified Git recovery courier');
+      const now=new Date().toISOString();
+      const command=validateMuseRecoveryReceipt(receipt,{actor,actors:actorMap,now});
+      if(next.muse_recovery_events?.[command.event_id])continue;
+      const attempted=recordRecoveryEvent(next,{
+        action:'dispatcher_recovery',sender:{login:actor},
+        client_payload:{version:1,intent:command.intent,task_id:command.task_id,
+          pr_number:command.pr_number,expected_head_sha:command.expected_head_sha,
+          requested_at:command.requested_at,request_id:command.request_id}
+      },{repo:settings.repo,actors:actorMap,owner:settings.owner.login,
+        now,maxAgeMs:7*86400000});
+      const accepted=Boolean(attempted.recovery_requests?.[command.request_id]);
+      const rejected=attempted.recovery_rejections?.[command.request_id];
+      attempted.muse_recovery_events||={};
+      attempted.muse_recovery_events[command.event_id]={
+        request_id:command.request_id,
+        status:accepted?'REQUESTED':'BLOCKED',
+        reason:accepted?'received_from_verified_private_git_receipt':
+          rejected?.reason||'recovery_command_not_accepted',
+        at:now,verified_actor:actor
+      };
+      next=attempted;
       continue;
     }
     if (receipt.kind === 'owner_reply') {
