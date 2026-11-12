@@ -11,6 +11,15 @@ export function receiptFilename(receipt){
     if(typeof receipt.notice_id!=='string'||typeof receipt.notice_hash!=='string')
       throw Error('Invalid notice identity');
     identity='owner:'+receipt.notice_id+':'+receipt.notice_hash;
+  }else if(receipt.kind==='muse_recovery'){
+    if(typeof receipt.request_id!=='string'||!/^[a-f0-9]{64}$/.test(receipt.request_id)||
+       receipt.event_id!==receipt.request_id||receipt.version!==1||
+       typeof receipt.repo!=='string'||typeof receipt.actor!=='string')
+      throw Error('Invalid Muse recovery receipt identity');
+    identity='muse-recovery:'+receipt.event_id+':'+
+      hash(JSON.stringify([receipt.repo,receipt.actor,receipt.intent,
+        receipt.task_id,receipt.pr_number,receipt.expected_head_sha,
+        receipt.requested_at]));
   }else if(['owner_reply','owner_instruction'].includes(receipt.kind)){
     if(typeof receipt.event_id!=='string'||!receipt.target||
        typeof receipt.target!=='object'||typeof receipt.text!=='string')
