@@ -430,7 +430,7 @@ begin
     if jsonb_typeof(p_memory_summary->'retry') is distinct from 'object' then
       return jsonb_build_object('ok',false,'reason','invalid_summary');
     end if;
-    if (p_memory_summary->'retry' - array['code','at']) <> '{}'::jsonb
+    if ((p_memory_summary->'retry') - array['code','at']) <> '{}'::jsonb
       or not (p_memory_summary->'retry' ?& array['code','at'])
       or jsonb_typeof(p_memory_summary->'retry'->'code') is distinct from 'string'
       or jsonb_typeof(p_memory_summary->'retry'->'at') is distinct from 'string'
