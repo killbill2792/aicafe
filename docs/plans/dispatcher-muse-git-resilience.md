@@ -180,6 +180,31 @@ verification, not a self-claimed actor or an untrusted Git commit display name.
 The authenticated actor MUST be mapped to `muse` in the existing
 `DISPATCH_COURIER_ACTORS` configuration.
 
+Muse does NOT need to run the CLI or calculate any hash: the same
+authenticated Git receipt writer that sent the successful owner-instruction
+test may submit this minimal payload directly:
+
+~~~json
+{
+  "kind": "muse_recovery",
+  "version": 1,
+  "project_id": "aicafe",
+  "repo": "killbill2792/aicafe",
+  "event_id": "<stable unique event ID>",
+  "intent": "RECONCILE",
+  "task_id": null,
+  "pr_number": null,
+  "expected_head_sha": null,
+  "submitted_at": "<actual UTC ISO timestamp>"
+}
+~~~
+
+The same `receipt-identity.mjs` command used for owner instructions supplies
+the private Git file name. GitHub derives the `request_id` from its verified
+Git commit author and records `muse_recovery_events[event_id].request_id`
+before Muse checks `recovery_requests[request_id]`. Do not fabricate the
+request hash or HMAC, and do not reuse an event ID for different content.
+
 The generated `muse_recovery` receipt is:
 
 ~~~json
