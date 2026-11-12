@@ -194,6 +194,41 @@ async function run(){
  const manual=await proposal("alex.menu_price_change.v1",ids.manualItem,550);
  check((await activate(manual)).status==="manual_confirmed",
   "disconnected/manual café retains existing lifecycle");
+ // An effect-claimed Toast handoff is INERT. The gateway must be able
+ // to restore manual_pending from an uncertain claim without inventing
+ // an owner_manual price history or replaying a canonical price effect.
+ const inert=await proposal("alex.menu_price_change.v1",ids.item);
+ await admin.query("update public.supervisor_proposals set status='executing',revision=revision+1 where id=$1",[inert]);
+ await admin.query("insert into public.supervisor_effect_attempts(business_id,proposal_id,effect_hash,authorization_kind,business_date,state,created_at) values($1,$2,$3,'click',current_date,'uncertain',now()-interval '10 minutes')",
+  [ids.business,inert,"a".repeat(64)]);
+ const reconcile="select (public.supervisor_reconcile_effect_attempt($1,$2,$3,$4,$5)).status as status";
+ const recover=(owner,id,revision)=>role(workerA,"service_role",null,async c=>
+  one(c,reconcile,[ids.business,owner,ids.thread,id,revision]));
+ const prePriceCount=(await one(admin,"select count(*)::int as n from public.menu_price_history where business_id=$1 and menu_item_id=$2",
+  [ids.business,ids.item])).n;
+ check((await recover(ids.owner,inert,2)).status==="manual_pending",
+  "uncertain inert Toast handoff recovers through the existing Task10 gateway");
+ const attempt=await one(admin,"select state,receipt_ref from public.supervisor_effect_attempts where proposal_id=$1",[inert]);
+ check(attempt.state==="verified"&&attempt.receipt_ref==="inert-toast-price-handoff:"+inert,
+  "inert handoff recovery writes a stable verified effect attempt receipt");
+ check((await recover(ids.owner,inert,3)).status==="manual_pending",
+  "recovered handoff reconciliation is idempotent");
+ check((await one(admin,"select count(*)::int as n from public.menu_price_history where business_id=$1 and menu_item_id=$2",
+  [ids.business,ids.item])).n===prePriceCount,
+  "inert handoff neither creates Toast history nor repeats a price write");
+ // Existing Task 10 manual-owner CAS receipts still require their original
+ // proposal-stamped history: current source price alone is not proof.
+ const localPending=await proposal("alex.menu_price_change.v1",ids.manualItem,550);
+ await admin.query("update public.supervisor_proposals set status='executing',revision=revision+1 where id=$1",[localPending]);
+ await admin.query("insert into public.supervisor_effect_attempts(business_id,proposal_id,effect_hash,authorization_kind,business_date,state,created_at) values($1,$2,$3,'click',current_date,'uncertain',now()-interval '10 minutes')",
+  [ids.business,localPending,"a".repeat(64)]);
+ check((await recover(ids.owner,localPending,2)).status==="executing",
+  "manual-price recovery still refuses to infer a write from current price");
+ await admin.query("update public.menu_items set price_cents=550 where id=$1",[ids.manualItem]);
+ await admin.query("insert into public.menu_price_history(business_id,menu_item_id,old_price_cents,new_price_cents,source_type,source_provider,changed_at) values($1,$2,450,550,'owner_manual',$3,now())",
+  [ids.business,ids.manualItem,"Alex (owner approved; proposal "+localPending+")"]);
+ check((await recover(ids.owner,localPending,2)).status==="committed",
+  "Task10 canonical owner_manual history still authoritatively recovers a committed price");
  // Anchor already proved by the canonical source may survive a later revert
  // without retroactively declaring the full seven-day window complete.
  const pinned=await proposal("alex.drink_price_experiment.v1",ids.item);
