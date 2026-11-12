@@ -264,3 +264,18 @@ test('P1: owner priority uses per-field watermark, not global last instruction a
  assert.equal(replay.owner_instruction_events.old_late.reason,
    'superseded_by_newer_owner_instruction');
 });
+
+test('P1: equal-clock conflicting pause and resume conservatively keeps pause',()=>{
+ const t=new Date().toISOString();
+ for(const reverse of [false,true]){
+   const pause={receipt:{kind:'owner_instruction',event_id:'aaa_pause',
+     target:{task_id:'9'},text:'Pause Task 9',submitted_at:t},actor:'muse'};
+   const resume={receipt:{kind:'owner_instruction',event_id:'zzz_resume',
+     target:{task_id:'9'},text:'Resume Task 9',submitted_at:t},actor:'muse'};
+   const s=applyReceipts({version:1,tasks:{'9':{approved:true}},actions:{}},
+     reverse?[resume,pause]:[pause,resume],{muse:'muse'});
+   assert.equal(s.owner_controls.per_task['9'].pause_new_dispatch,true);
+   assert.equal(s.owner_instruction_events.zzz_resume.reason,
+     'ambiguous_equal_time_owner_instruction');
+ }
+});
