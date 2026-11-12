@@ -185,3 +185,18 @@ test('old command receipts and future-dated commands cannot execute retroactivel
  assert.equal(future.owner_instruction_events.owner_instruction_1.status,'BLOCKED');
  assert.equal(future.owner_controls,undefined);
 });
+
+test('P1: older late instruction cannot overwrite a newer owner control',()=>{
+ const latest=receipt('Pause Task 9');latest.submitted_at=clock;
+ const saved=apply(fixture(),latest);
+ assert.equal(saved.owner_controls.muse_watermarks['9:pause_new_dispatch'].event_id,
+   'owner_instruction_1');
+ const older=receipt('Resume Task 9',{task_id:'9'},'late_old_resume');
+ older.submitted_at='2026-11-12T05:00:00Z';
+ const next=apply(saved,older);
+ assert.equal(next.owner_instruction_events.late_old_resume.status,'BLOCKED');
+ assert.equal(next.owner_instruction_events.late_old_resume.reason,
+   'superseded_by_newer_owner_instruction');
+ assert.equal(next.owner_controls.per_task['9'].pause_new_dispatch,true);
+ assert.equal(next.owner_controls.revision,1);
+});
