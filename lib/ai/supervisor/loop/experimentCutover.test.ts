@@ -97,6 +97,8 @@ describe("persisted verified price activation survives later Menus version",()=>
    supervisor_monitor_windows:{data:anchor,error:null},
    menu_items:{data:{catalog_source:"toast",is_active:true,
     pos_item_id:posItemId,price_cents:550,toast_publication_state:"active",
+    pos_pricing_strategy:"BASE_PRICE",
+    toast_publication_observed_at:"2026-11-12T18:45:00Z",
     toast_publication_version:"menu-v2"},error:null},
    menu_price_history:{data:[],error:null},
    supervisor_toast_price_context_changes:{data:[],count:0,error:null},
