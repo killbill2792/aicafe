@@ -18,6 +18,10 @@ For a safe PR recovery, the optional command is `{"type":"recovery","intent":"RE
 
 **Important owner approvals:** If the owner answers a pending specific scope/proposal decision, Muse must use the *existing authenticated `owner_reply` receipt* with the exact target and original owner's words, not reinterpret the decision as an owner control. The existing signed scope-plan approval validation remains in force. Unsupported new operations must be recorded BLOCKED with a reason; they must not silently disappear. The user never needs a hashtag; selecting the appropriate existing receipt kind is Muse's job.
 
+**Freshness and deduplication:** Commands are applied only if their original `submitted_at` is valid and at most 24 hours old (and no more than five minutes ahead of the trusted runner clock). The original event ID must be unique per distinct owner instruction; retries of the same receipt preserve it. Older historical receipts are recorded with a blocked reason, not retroactively executed.
+
+**After write:** Muse rereads `owner_instruction_events[event_id].status/reason`; for `REQUESTED`, it must also check `recovery_requests[recovery_request_id]` or `recovery_rejections` and current GitHub facts. A `REQUESTED` status means the authenticated recovery was queued, not that CI passed or the PR was merged. The live Pages status updates only after a successful GitHub dispatcher and Pages publish.
+
 GitHub recognizes ordinary statements:
 - `Set Task 9 priority to 90`
 - `Pause Task 9` and `Resume Task 9`
