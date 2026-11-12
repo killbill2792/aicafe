@@ -85,5 +85,13 @@
   },
   "dispatcher": {
     "full_audit_minutes": 30
+  },
+  "muse_watch": {
+    "codex_warn_minutes": 5,
+    "codex_escalate_minutes": 10,
+    "coding_idle_minutes": 10,
+    "delivery_gap_minutes": 15,
+    "schedule_gap_minutes": 15,
+    "recovery_mode": "safe_recovery_only"
   }
 }
