@@ -32,6 +32,13 @@ describe("Task 8a actual source-timed 24-hour periods",()=>{
   expect(summarizeElapsedWindow(w,[item({closedAt:null})],true,w.endAt).status)
    .toBe("insufficient_evidence");
  });
+ it("rejects source line closures after the observation cutoff",()=>{
+  const w=planElapsed24HourWindows("2026-03-08T00:00:00Z",1)[0];
+  const observed="2026-03-09T00:00:00Z";
+  expect(summarizeElapsedWindow(w,[item({closedAt:"2026-03-10T01:00:00Z"})],
+   true,observed)).toMatchObject({status:"insufficient_evidence",units:null,
+    unknownTimeLines:1});
+ });
  it("requires real importer coverage and a fully elapsed window",()=>{
   const w=planElapsed24HourWindows("2026-03-08T00:00:00Z",1)[0];
   expect(summarizeElapsedWindow(w,[item()],false,w.endAt).status)

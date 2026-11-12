@@ -43,7 +43,7 @@ export function summarizeElapsedWindow(window:ElapsedWindow,lines:readonly Sourc
   let orderTime:number,closeTime:number;
   try{orderTime=instant(line.orderedAt);closeTime=instant(line.closedAt);}
   catch{unknownTimeLines++;continue;}
-  if(closeTime<orderTime){unknownTimeLines++;continue;}
+  if(closeTime<orderTime||closeTime>observed){unknownTimeLines++;continue;}
   if(orderTime<start||orderTime>=end)continue;
   if(!Number.isFinite(line.quantity)||line.quantity<0||
      !Number.isSafeInteger(line.netSalesCents)){unknownTimeLines++;continue;}
@@ -93,8 +93,10 @@ export async function readElapsedWindowObservations(db:SupabaseClient,
  const [known,missing,sourceCovered]=await Promise.all([
   base().gte("ordered_at",window.startAt).lt("ordered_at",window.endAt)
    .limit(10000),
+  // A line with an unknown order time may close AFTER this window. Its
+  // missing source timestamp cannot be silently excluded from earlier sales.
   base().is("ordered_at",null).gte("orders.closed_at",window.startAt)
-   .lt("orders.closed_at",window.endAt).limit(10000),
+   .lte("orders.closed_at",asOf).limit(10000),
   verifiedWindowSourceCoverage(db,businessId,timezone,window),
  ]);
  if(known.error||missing.error)throw new Error("rolling_sales_source_read_failed");
@@ -107,6 +109,7 @@ export async function readElapsedWindowObservations(db:SupabaseClient,
    voided:row.voided,toastExcluded:Boolean(order?.toast_excluded),
    supersededBy:order?.superseded_by??null};
  });
- return summarizeElapsedWindow(window,rows,
-  sourceCovered&&completePages,asOf);
+ const measured=summarizeElapsedWindow(window,rows,sourceCovered&&completePages,asOf);
+ return completePages?measured:{...measured,
+  unknownTimeLines:measured.unknownTimeLines+1};
 }
