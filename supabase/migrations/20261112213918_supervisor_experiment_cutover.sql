@@ -78,7 +78,7 @@ create policy supervisor_8a_windows_owner_read
 -- cannot fabricate provider context, and member import receipts remain non-Toast.
 -- SECURITY INVOKER makes current_user the actual PostgreSQL request role.
 create function public.supervisor_8a_protect_toast_menu_source()
- returns trigger language plpgsql security invoker set search_path='' as $
+ returns trigger language plpgsql security invoker set search_path='' as $$
 begin
  if current_user not in ('anon','authenticated') then return new;end if;
  if tg_op='INSERT' then
@@ -101,7 +101,7 @@ begin
   raise exception 'toast_menu_source_service_role_only' using errcode='42501';
  end if;
  return new;
-end;$;
+end;$$;
 revoke all on function public.supervisor_8a_protect_toast_menu_source()
  from public,anon,authenticated;
 create trigger supervisor_8a_protect_toast_menu_source
@@ -112,7 +112,7 @@ create trigger supervisor_8a_protect_toast_menu_source
 -- connected_pos rows, but must never forge Toast-stamped history or later
 -- tamper with an existing server-verified receipt.
 create function public.supervisor_8a_protect_toast_price_history()
- returns trigger language plpgsql security invoker set search_path='' as $
+ returns trigger language plpgsql security invoker set search_path='' as $$
 declare protected_source boolean;
 begin
  if current_user not in ('anon','authenticated') then
@@ -145,7 +145,7 @@ begin
  end if;
  if tg_op='DELETE' then return old;end if;
  return new;
-end;$;
+end;$$;
 revoke all on function public.supervisor_8a_protect_toast_price_history()
  from public,anon,authenticated;
 create trigger supervisor_8a_protect_toast_price_history
