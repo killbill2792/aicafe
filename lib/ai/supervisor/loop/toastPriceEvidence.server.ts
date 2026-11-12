@@ -58,7 +58,8 @@ export function matchVerifiedToastPriceEvidence(input:Candidate):
    h.source_provider==="toast"&&
    h.toast_restaurant_guid?.toLowerCase()===receipt.restaurant_guid.toLowerCase()&&
    h.toast_publication_version===menu.toast_publication_version&&
-   h.toast_observed_at===menu.toast_publication_observed_at&&
+   validTime(h.toast_observed_at)&&validTime(menu.toast_publication_observed_at)&&
+   Date.parse(h.toast_observed_at!)===Date.parse(menu.toast_publication_observed_at!)&&
    Number.isSafeInteger(h.old_price_cents)&&h.old_price_cents!>0&&
    h.new_price_cents===targetCents&&h.old_price_cents!==h.new_price_cents&&
    validTime(h.toast_observed_at));

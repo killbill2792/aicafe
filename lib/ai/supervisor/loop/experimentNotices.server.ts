@@ -34,7 +34,7 @@ export function nextOwnerPriceReminder(input:{
  const lastLocalDay=localDay(input.approvedAt,input.timezone);
  // On the same café-local date, do not send two messages in the first 2h
  // after approval. The next reminder requires at least two more hours.
- if(date===lastLocalDay&&now<approved+(slot+1)*2*HOUR)return null;
+ if(date===lastLocalDay&&now<approved+slot*2*HOUR)return null;
  // A newer local day uses the first eligible existing cron tick; it must not
  // replay both missed daily slots on one run.
  if(priorToday.some(r=>r.slot===slot))return null;

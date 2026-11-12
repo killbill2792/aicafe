@@ -9,13 +9,13 @@ const base={businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
 describe("Task 8a owner notice exact source/day/slot identity",()=>{
  it("waits for two real elapsed hours after approval despite spring DST",()=>{
   expect(nextOwnerPriceReminder({...base,now:"2026-03-08T10:59:59Z"})).toBeNull();
-  expect(nextOwnerPriceReminder({...base,now:"2026-03-08T13:00:00Z"})).toMatchObject({
+  expect(nextOwnerPriceReminder({...base,now:"2026-03-08T11:00:00Z"})).toMatchObject({
    kind:"price_reminder",slot:1,localDate:"2026-03-08"});
  });
  it("limits reminder slots by owner/experiment and café-local date",()=>{
-  expect(nextOwnerPriceReminder({...base,now:"2026-03-08T13:00:00Z",
+  expect(nextOwnerPriceReminder({...base,now:"2026-03-08T12:59:59Z",
    prior:[{localDate:"2026-03-08",slot:1}]})).toBeNull();
-  expect(nextOwnerPriceReminder({...base,now:"2026-03-08T15:00:00Z",
+  expect(nextOwnerPriceReminder({...base,now:"2026-03-08T13:00:00Z",
    prior:[{localDate:"2026-03-08",slot:1}]})).toMatchObject({slot:2});
   expect(nextOwnerPriceReminder({...base,now:"2026-03-08T20:00:00Z",
    prior:[{localDate:"2026-03-08",slot:1},{localDate:"2026-03-08",slot:2}]})).toBeNull();
