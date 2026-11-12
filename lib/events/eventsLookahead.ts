@@ -29,13 +29,38 @@ export function eventScanWindows(today:string,state:EventScanState|null,
     missed.push({from:today,to:horizon,reason:"weekly"});
   return missed;
 }
-/** City research has its own coverage ledger. An older nearby-events cursor
- * must never suppress the first complete public-city research window. */
+/** City source coverage outranks the older nearby-events cursor.
+ * Unsearched coverage needs the initial window; failed or partial coverage
+ * remains retryable even when the old cursor already spans the horizon.
+ * Retry as new_day so the shared city ledger resumes only incomplete slices,
+ * without paying the larger first-scan budget on every scheduled retry. */
 export function cityScanWindows(today:string,state:EventScanState|null,locationHash:string,
   cityCoverage:"unsearched"|"partial"|"complete"|"unavailable"|null):EventScanWindow[]{
-  return cityCoverage==="unsearched"?
-    [{from:today,to:addDays(today,13),reason:"initial"}]:
-    eventScanWindows(today,state,locationHash);
+  if(cityCoverage==="unsearched")
+    return [{from:today,to:addDays(today,13),reason:"initial"}];
+  const windows=eventScanWindows(today,state,locationHash);
+  if(cityCoverage==="partial"&&!windows.some(w=>w.from<=today&&w.to>=today))
+    return [{from:today,to:addDays(today,13),reason:"new_day"},...windows];
+  return windows;
+}
+/** Replay every date of a recently ended event window, preserving the
+ * existing late/corrected-Toast parity contract. An event is eligible if its
+ * END falls in the last 14 local days; all of its prior days remain subject to
+ * correction, even if the START is older than that cutoff. Date-only arithmetic
+ * avoids a skipped/duplicated day at DST. Both crons still share monitorLoop. */
+export function closedEventObservationDays(
+  startDate:string,durationDays:number,today:string,lookbackDays=14
+):string[]{
+  if(!Number.isInteger(durationDays)||durationDays<1||durationDays>14||
+    !Number.isInteger(lookbackDays)||lookbackDays<1)return [];
+  const first=addDays(today,-lookbackDays);
+  const last=addDays(today,-1);
+  const end=addDays(startDate,durationDays-1);
+  if(startDate>last||end<first)return [];
+  const until=end<last?end:last;
+  const days:string[]=[];
+  for(let day=startDate;day<=until;day=addDays(day,1))days.push(day);
+  return days;
 }
 /** Fair selection for one shared daily research budget. Stable UTC-day
  * rotation prevents a café in the first DB page (or city) from permanently

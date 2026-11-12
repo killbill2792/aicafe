@@ -19,14 +19,17 @@ const proposal={id:"44444444-4444-4444-8444-444444444444",
   canonicalEffectPayload:effect,effectHash:effectHash(effect),baseline:{},
   monitorSpec:{durationDays:1,metricScope:"event"},revision:0,locale:"en",
   createdAt:"2026-10-30T00:00:00Z",monitoringStartDate:null,status:"draft"};
+const errors={business:false,hours:false,missingTimezone:false};
 const db={
   from(table:string){
     if(table==="businesses")return {
       select:()=>({eq:()=>({maybeSingle:async()=>({data:{
-        timezone:"America/Los_Angeles",is_demo:false},error:null})})})};
+        timezone:errors.missingTimezone?null:"America/Los_Angeles",is_demo:false},
+        error:errors.business?new Error("read failed"):null})})})};
     if(table==="locations")return {
       select:()=>({eq:()=>({limit:async()=>({data:[{open_hours:{
-        sat:[["00:00","23:59"]]} }],error:null})})})};
+        sat:[["00:00","23:59"]]} }],
+        error:errors.hours?new Error("hours unavailable"):null})})})};
     if(table==="supervisor_monitor_samples")return {
       select:()=>({eq:()=>({in:()=>({limit:async()=>({data:[],error:null})})})})};
     if(table==="supervisor_proposals"){
@@ -53,6 +56,7 @@ vi.mock("@/lib/ai/supervisor/loop/eventReadiness.server",async importOriginal=>{
 describe("live event watch is read-only",()=>{
  beforeEach(()=>{
    vi.clearAllMocks();vi.useFakeTimers();
+   errors.business=false;errors.hours=false;errors.missingTimezone=false;
    vi.setSystemTime(new Date("2026-10-31T16:00:00Z")); // 09:00 Pacific
  });
  afterEach(()=>vi.useRealTimers());
@@ -69,4 +73,20 @@ describe("live event watch is read-only",()=>{
    expect(await watchLiveEvents(businessId,"2026-11-01")).toMatchObject({checked:0});
    expect(monitorLoop).not.toHaveBeenCalled();
  });
+ it("reports a failed tenant or opening-hours read rather than silently skipping",async()=>{
+   errors.business=true;
+   expect(await watchLiveEvents(businessId,day)).toEqual({
+     checked:0,updated:0,failed:1,
+   });
+   errors.business=false;errors.missingTimezone=true;
+   expect(await watchLiveEvents(businessId,day)).toEqual({
+     checked:0,updated:0,failed:1,
+   });
+   errors.missingTimezone=false;errors.hours=true;
+   expect(await watchLiveEvents(businessId,day)).toEqual({
+     checked:0,updated:0,failed:1,
+   });
+   expect(monitorLoop).not.toHaveBeenCalled();
+ });
+
 });
