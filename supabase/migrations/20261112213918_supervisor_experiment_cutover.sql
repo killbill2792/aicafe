@@ -209,19 +209,37 @@ begin
   raise exception 'invalid_notice_key' using errcode='22023';end if;
  perform pg_advisory_xact_lock(hashtextextended(
   concat_ws(':',p_business_id,p_owner_user_id,p_source_id,p_local_date),0));
- -- Do not send a reminder for a cancelled, rejected, superseded or
- -- already-confirmed proposal. A cron read may race an owner action.
+ -- Recheck under the claim lock. A queued cron read may race an owner
+ -- cancellation OR the matching Toast source publication. Never reclaim a
+ -- failed lease when the exact approved change is already source-verified.
  if p_kind='price_reminder' and not exists (
   select 1 from public.supervisor_proposals p
   where p.business_id=p_business_id and p.owner_user_id=p_owner_user_id
    and p.id=p_source_id and p.status='manual_pending'
    and p.approved_at is not null
+   and not exists (
+    select 1 from public.menu_price_history h
+    join public.toast_location_mappings l
+     on l.business_id=h.business_id
+     and l.restaurant_guid=h.toast_restaurant_guid
+    where h.business_id=p.business_id
+     and h.menu_item_id::text=p.canonical_effect_payload->>'productId'
+     and h.old_price_cents::text=p.canonical_effect_payload->>'oldPriceCents'
+     and h.new_price_cents::text=p.canonical_effect_payload->>'newPriceCents'
+     and h.source_type='connected_pos' and h.source_provider='toast'
+     and h.toast_publication_version is not null
+     and h.toast_observed_at>=p.approved_at
+     and l.verified_at is not null
+   )
  ) then return null;end if;
  if p_kind<>'price_reminder' and not exists (
   select 1 from public.menu_price_history h
+  join public.toast_location_mappings l
+   on l.business_id=h.business_id
+   and l.restaurant_guid=h.toast_restaurant_guid
   where h.business_id=p_business_id and h.id=p_source_id
    and h.source_type='connected_pos' and h.source_provider='toast'
-   and h.toast_restaurant_guid is not null
+   and h.toast_restaurant_guid is not null and l.verified_at is not null
    and h.toast_publication_version is not null
    and h.toast_observed_at is not null
    and h.old_price_cents>0 and h.new_price_cents>0
