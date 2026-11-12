@@ -92,6 +92,9 @@
     "coding_idle_minutes": 10,
     "delivery_gap_minutes": 15,
     "schedule_gap_minutes": 15,
-    "recovery_mode": "safe_recovery_only"
+    "recovery_mode": "safe_recovery_only",
+    "ci_warn_minutes": 5,
+    "ci_escalate_minutes": 10,
+    "merge_escalate_minutes": 10
   }
 }
