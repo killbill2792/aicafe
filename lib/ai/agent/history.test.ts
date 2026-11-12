@@ -153,6 +153,23 @@ describe("rolling thread memory primitives",()=>{
   )],[threadMemorySource(sources[0])!]);
   expect(document.entries.some(entry=>entry.key==="preference:option_a")).toBe(false);
  });
+ it("does not tombstone a key added then evicted within one compaction batch",()=>{
+  let document=emptyThreadMemoryDocument();
+  const initial=Array.from({length:19},(_,i)=>owner(
+   "We prefer quiet morning music.",new Date(Date.now()+i*1000).toISOString()));
+  initial.forEach((source,index)=>{
+   document=applyThreadMemoryOperations(document,[remember(source,
+    "preference:old_"+String.fromCharCode(97+index),source.text)],[threadMemorySource(source)!]);
+  });
+  const source=owner("We prefer oat milk for staff drinks.",new Date(Date.now()+40_000).toISOString());
+  const ops=Array.from({length:20},(_,i)=>remember(
+   source,"preference:new_"+String.fromCharCode(97+i),source.text));
+  document=applyThreadMemoryOperations(document,ops,[threadMemorySource(source)!]);
+  expect(document.entries).toHaveLength(20);
+  expect(document.tombstones).toHaveLength(19);
+  expect(document.tombstones.every(item=>item.key.startsWith("preference:old_"))).toBe(true);
+  expect(document.entries.at(-1)?.key).toBe("preference:new_t");
+ });
  it("rejects extra persisted fields, duplicate keys and entries newer than the document revision",()=>{
   const source=owner("We prefer oat milk for staff drinks.");
   const entry={kind:"preference",key:"preference:staff_drinks",text:source.text,
