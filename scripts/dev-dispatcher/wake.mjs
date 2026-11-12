@@ -97,7 +97,33 @@ export function nextWake(state,now=Date.now(),config=settings){
  }
  // An overdue wake is due NOW, not silently dropped. Keep the identity
  // tied to its original deadline so repeated ticks cannot generate a storm.
- const candidates=[...singles,...batches.values()].map(x=>({
+ // v3 incident: batching IDs alone did NOT batch the retry lease. With
+ // 100+ staggered planned notices, each finished wake selected the next oldest
+ // item's distinct deadline and dispatched yet another Actions run a minute
+ // later. Lease the retry KIND, not each owner notification.
+ const interval=(config.muse.retry_seconds||900)*1000;
+ const history=Object.values(state.delayed_wake_history||{});
+ if(state.delayed_wake&&!history.some(x=>x.key===state.delayed_wake.key))
+   history.push(state.delayed_wake);
+ const leasedBatches=[...batches.values()].flatMap(x=>{
+   const recent=history.filter(h=>h.reason===x.reason&&
+     ['requested','reserved','failed'].includes(h.status)&&
+     Number.isFinite(dt(h.requested_at||h.reserved_at)))
+     .sort((a,b)=>dt(b.requested_at||b.reserved_at)-
+       dt(a.requested_at||a.reserved_at))[0];
+   if(!recent)return [x];
+   const lastDue=dt(recent.due_at);
+   const lastAt=dt(recent.requested_at||recent.reserved_at);
+   // An existing future wake already checks the entire pending category.
+   if(Number.isFinite(lastDue)&&lastDue>now)return [];
+   // An unsuccessful workflow dispatch must not be retried on every webhook.
+   if(recent.status==='failed'&&now-lastAt<interval)return [];
+   // When the last wake has fired, schedule just ONE next 15-minute check,
+   // not a different overdue key for each unacknowledged notice.
+   return [{...x,at:Math.max(x.at,now+5000,
+     Number.isFinite(lastDue)?lastDue+interval:0)}];
+ });
+ const candidates=[...singles,...leasedBatches].map(x=>({
    ...x,key:sha(JSON.stringify([config.repo,x.reason,x.id,new Date(x.at).toISOString()]))
  })).filter(x=>{
    // Multiple overdue candidates must not bounce the single delayed_wake
