@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import { parseOwnerSnapshot, statusLevel, freshness,
-  PUBLIC_COMMENT_URL, PRIVATE_QUEUE_URL, REFRESH_INTERVAL_MS, refresh } from '../../docs/owner-dashboard.mjs';
+  PUBLIC_COMMENT_URL, PUBLIC_SNAPSHOT_URL,
+  REFRESH_INTERVAL_MS, refresh, ageLabel,sortOperations,acceptPublicOperationsSnapshot } from '../../docs/owner-dashboard.mjs';
 
 const sample=[
   '<!-- aicafe-dispatcher-owner-view:v1 -->',
@@ -57,8 +58,6 @@ test('status freshness reveals stale GitHub scheduler without claiming false liv
 test('public browser source only queries public issue comment and links out to private GitHub',()=>{
  assert.equal(PUBLIC_COMMENT_URL,
   'https://api.github.com/repos/killbill2792/aicafe/issues/comments/6752417190');
- assert.equal(PRIVATE_QUEUE_URL,
-  'https://github.com/killbill2792/dave-task-queue/blob/main/dispatcher/owner-queue.md');
  assert.equal(REFRESH_INTERVAL_MS,120000);
 });
 
@@ -78,37 +77,51 @@ test('failed public GitHub refresh visibly revokes healthy status rather than fa
  }
 });
 
-test('existing Pages owner view contains a locked private panel with explicit Lock',()=>{
+test('existing Pages has ONE Tasks and handoffs table with live sorting and no password panel',()=>{
  const html=readFileSync(new URL('../../docs/index.html',import.meta.url),'utf8');
- assert.match(html,/id="private-unlock-form"/);
- assert.match(html,/id="private-passphrase"/);
- assert.match(html,/id="encrypted-private-view" hidden/);
- assert.match(html,/id="private-lock"/);
+ assert.equal((html.match(/id="task-rows"/g)||[]).length,1);
+ assert.equal((html.match(/<table/g)||[]).length,1);
+ assert.match(html,/id="task-sort"/);
+ assert.match(html,/id="task-filter"/);
+ assert.match(html,/id="task-order"/);
+ for(const col of ['Last commit','CI / age','Codex / requested / reviewed / age',
+   'Dependencies','Muse handoff / owner notices','Merge blockers','Next actor'])
+   assert.ok(html.includes(col),col);
+ assert.doesNotMatch(html,/private-unlock-form|private-passphrase|encrypted-private-view|private-lock/);
 });
-test('public Pages JavaScript never fetches private repo or stores password',()=>{
- const script=readFileSync(new URL('../../docs/encrypted-owner-view.mjs',import.meta.url),'utf8');
- assert.match(script,/encrypted-owner-snapshot\.json/);
+test('public Pages JavaScript reads only status snapshot and public GitHub comment',()=>{
+ const script=readFileSync(new URL('../../docs/owner-dashboard.mjs',import.meta.url),'utf8');
+ assert.equal(PUBLIC_SNAPSHOT_URL,'./owner-operations-snapshot.json');
+ assert.match(script,/owner-operations-snapshot\.json/);
+ assert.match(script,/function renderOperations\(/);
+ assert.doesNotMatch(script,/encrypted-owner-view|localStorage|sessionStorage|document\.cookie/);
+ assert.doesNotMatch(script,/\/api\/control|method:\\s*['"]POST/);
  assert.doesNotMatch(script,/api\.github\.com\/repos\/killbill2792\/dave-task-queue/);
- assert.doesNotMatch(script,/localStorage|sessionStorage|document\.cookie/);
- assert.doesNotMatch(script,/\/api\/control|method:\s*['"]POST/);
- assert.match(script,/decryptOwnerEnvelope/);
 });
-test('trusted Pages publishing copies only public static assets and ciphertext',()=>{
+test('trusted Pages publication includes one public allowlisted operational artifact',()=>{
  const yaml=readFileSync(new URL('../../.github/workflows/ai-cafe-encrypted-owner-pages.yml',import.meta.url),'utf8');
- assert.match(yaml,/OWNER_PAGES_PASSPHRASE/);
- assert.match(yaml,/encrypted-owner-snapshot\.json/);
+ assert.match(yaml,/public-owner-payload\.mjs/);
+ assert.match(yaml,/owner-operations-snapshot\.json/);
  assert.match(yaml,/actions\/upload-pages-artifact/);
  assert.match(yaml,/head_branch == 'main'/);
- assert.doesNotMatch(yaml,/cron:/);
+ assert.doesNotMatch(yaml,/OWNER_PAGES_PASSPHRASE|encrypted-owner-snapshot|cron:/);
+ assert.doesNotMatch(yaml,/cp.*state\.json|cp.*receipts/);
 });
-
-test('password form fails closed if scripts do not initialize',()=>{
- const html=readFileSync(new URL('../../docs/index.html',import.meta.url),'utf8');
- const input=html.match(/<input[^>]*id="private-passphrase"[^>]*>/);
- assert.ok(input);
- assert.doesNotMatch(input[0],/\bname=/);
- assert.match(html,/<button type="submit" disabled>Unlock private task view<\/button>/);
- const script=readFileSync(new URL('../../docs/encrypted-owner-view.mjs',import.meta.url),'utf8');
- assert.match(script,/submit\.disabled=false/);
- assert.match(script,/event\.preventDefault\(\)/);
+test('commit and Codex review age, sorting and unknown status remain accurate',()=>{
+ const now=Date.parse('2026-11-12T10:00:00Z');
+ assert.equal(ageLabel('2026-11-12T09:50:00Z',now),'10m ago');
+ assert.equal(ageLabel('2026-11-12T07:30:00Z',now),'2h 30m ago');
+ assert.equal(ageLabel(null,now),'age unknown');
+ const rows=[
+ {id:'Task9',coding:{last_commit_at:'2026-11-12T07:00:00Z'},codex:{reviewed_at:null},
+  ci:{status:'GREEN'}},
+ {id:'Task10',coding:{last_commit_at:'2026-11-12T09:00:00Z'},
+  codex:{reviewed_at:'2026-11-12T08:20:00Z'},ci:{status:'FAILED'}}
+ ];
+ assert.deepEqual(sortOperations(rows,{by:'commit',order:'desc'}).map(r=>r.id),['Task10','Task9']);
+ assert.deepEqual(sortOperations(rows,{by:'commit',order:'asc'}).map(r=>r.id),['Task9','Task10']);
+ assert.deepEqual(sortOperations(rows,{by:'codex',order:'desc'}).map(r=>r.id),['Task10','Task9']);
+ assert.deepEqual(sortOperations(rows,{by:'ci',order:'asc'}).map(r=>r.id),['Task10','Task9']);
+ assert.throws(()=>acceptPublicOperationsSnapshot({version:2,tasks:[{id:'../bad'}]}),
+   /Invalid published/);
 });
