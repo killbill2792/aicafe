@@ -234,7 +234,14 @@ describe("thread memory server boundary", () => {
     expect(context.history[1]).toEqual({
       role: "user", content: ownerMessage.text_content,
     });
-    expect(state.queries.every(q => q.filters.business_id === CAFE &&
-      q.filters.owner_user_id === OWNER && (q.table !== "ai_messages" || q.filters.thread_id === THREAD))).toBe(true);
+    expect(state.queries.some(q => q.table === "memberships")).toBe(true);
+    expect(state.queries.filter(q => q.table === "memberships").every(q =>
+      q.filters.business_id === CAFE && q.filters.user_id === OWNER)).toBe(true);
+    expect(state.queries.filter(q => q.table === "ai_threads").every(q =>
+      q.filters.business_id === CAFE && q.filters.owner_user_id === OWNER &&
+      q.filters.id === THREAD)).toBe(true);
+    expect(state.queries.filter(q => q.table === "ai_messages").every(q =>
+      q.filters.business_id === CAFE && q.filters.owner_user_id === OWNER &&
+      q.filters.thread_id === THREAD)).toBe(true);
   });
 });
