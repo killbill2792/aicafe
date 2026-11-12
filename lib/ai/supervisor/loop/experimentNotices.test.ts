@@ -1,5 +1,7 @@
 import {describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import type {OperatingTask} from "@/lib/operating/tasks";
+import {settleInboxTasks} from "@/lib/operating/inboxLifecycle";
 vi.mock("server-only",()=>({}));
 import {nextOwnerPriceReminder,toastObservationNoticeKey,postVerifiedSourceReminder} from "./experimentNotices.server";
 vi.mock("@/lib/operating/notifyOwner.server",()=>({notifyOwner:async(
@@ -34,10 +36,10 @@ describe("Task 8a owner notice exact source/day/slot identity",()=>{
    prior:[first]})).toMatchObject({slot:2,localDate:"2026-03-09"});
  });
  it("does not send a second slot fifteen minutes after a near-midnight prior-day post",()=>{
-  const prior=[{localDate:"2026-03-08",slot:2,postedAt:"2026-03-09T07:45:00Z"}];
-  expect(nextOwnerPriceReminder({...base,now:"2026-03-09T08:00:00Z",
+  const prior=[{localDate:"2026-03-08",slot:2,postedAt:"2026-03-09T06:45:00Z"}];
+  expect(nextOwnerPriceReminder({...base,now:"2026-03-09T07:00:00Z",
     prior})).toBeNull();
-  expect(nextOwnerPriceReminder({...base,now:"2026-03-09T09:45:00Z",
+  expect(nextOwnerPriceReminder({...base,now:"2026-03-09T08:45:00Z",
     prior})).toMatchObject({localDate:"2026-03-09",slot:1});
  });
  it("allows a new morning after yesterday's limit and stops when verified",()=>{
@@ -66,7 +68,7 @@ describe("Task 8a owner notice exact source/day/slot identity",()=>{
 describe("Task 8a actual notice write and durable delivery",()=>{
  it("writes a supported Operations kind and marks posted only after the inbox + chat",async()=>{
   const effects:string[]=[];
-  const calls:{kind?:string}[]=[];
+  const calls:{kind?:string;origin?:string;owner_user_id?:string;payload?:{title?:string}}[]=[];
   const receipts={state:"claimed"};
   const query=(answer:unknown)=>({eq:()=>query(answer),select:()=>query(answer),
     maybeSingle:async()=>({data:answer,error:null})});
@@ -82,8 +84,12 @@ describe("Task 8a actual notice write and durable delivery",()=>{
       return {eq:()=>({eq:()=>({eq:()=>({select:()=>query({id:"receipt"})})})})};
      },
     };
-    if(table==="operating_tasks")return {upsert:async(value:{kind:string})=>{
-     effects.push("task:"+value.kind);calls.push({kind:value.kind});return {error:null};}};
+    if(table==="operating_tasks")return {upsert:async(value:{
+      kind:string;origin:string;owner_user_id:string;payload:{title:string}})=>{
+     effects.push("task:"+value.kind);
+     calls.push({kind:value.kind,origin:value.origin,
+      owner_user_id:value.owner_user_id,payload:{title:value.payload.title}});
+     return {error:null};}};
     if(table==="ai_messages")return {insert:async()=>{effects.push("message");return {error:null};}};
     throw Error("Unexpected table "+table);
    },
@@ -97,7 +103,16 @@ describe("Task 8a actual notice write and durable delivery",()=>{
    timezone:base.timezone,sourceVerified:false,cancelled:false,
   });
   expect(posted).toBe("posted");
-  expect(calls).toEqual([{kind:"commitment"}]);
+  expect(calls).toEqual([{kind:"commitment",origin:"supervisor_followup",
+   owner_user_id:base.ownerUserId,payload:{title:"Publish Latte price in Toast"}}]);
+  const task={id:"price-reminder:"+base.proposalId+":2026-03-08:1",
+   businessId:base.businessId,ownerUserId:base.ownerUserId,
+   agentId:"alex",kind:"commitment",status:"needs_owner",
+   payload:{title:"Publish Latte price in Toast",threadId:"thread"},
+   confidence:"low",evidence:[],createdAt:"2026-03-08T11:00:00Z"}
+   as OperatingTask;
+  expect(settleInboxTasks([task],[],new Date("2026-03-08T12:00:00Z"),
+   "2026-03-08")[0].status).toBe("needs_owner");
   expect(effects).toEqual(["claim:supervisor_8a_claim_notice","task:commitment",
    "message","receipt:posted"]);
   expect(receipts.state).toBe("posted");
