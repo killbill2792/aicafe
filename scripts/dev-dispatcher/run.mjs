@@ -36,8 +36,8 @@ import {ensureApprovedDraftPr,classifyPrCreatePreflightError} from "./pr-create-
 import {verifiedCodingConversation} from "./verified-chat-v3.mjs";
 import {recordGithubEffects,recordPrWriterOwnerNotices} from "./github-effects-v3.mjs";
 import {fetchMuseGitRecoveries} from './git-recovery-transport.mjs';
-import {discoverMergedPrEvidence,applyMergedPrEvidence}
-  from './merged-pr-recovery.mjs';
+import {discoverMergedPrEvidence,applyMergedPrEvidence,
+  recoveredMergeIntegrationAllowed} from './merged-pr-recovery.mjs';
 
 async function main() {
   // The checked-in queue or an external studio queue is read after GitHub auth.
@@ -497,6 +497,7 @@ async function main() {
     if(!pending.length)return;
     const runs=await gh.workflowRuns(settings.workflows.integration,'branch=main');
     for(const [id,rec] of pending) for(const run of runs) {
+      if(!recoveredMergeIntegrationAllowed(rec))continue;
       if(run.name!==settings.required_checks.integration_workflow || run.head_branch!=='main' ||
          !['push','workflow_dispatch'].includes(run.event) ||
          run.status!=='completed'||run.conclusion!=='success'||
@@ -533,7 +534,9 @@ async function main() {
       state.owner_alerts=queueOwnerIssue(state,{kind:'integration_pending',task_id:id,
         pr_number:rec.pr_number,identity:rec.merge_sha,
         message:'PR #'+rec.pr_number+' remains merged but integration cannot be promoted for '+rec.merge_sha,
-        needs:'A completed exact-SHA Integration Proof job with all required green steps'}).owner_alerts;
+        needs:!recoveredMergeIntegrationAllowed(rec)
+          ?'Owner must reconcile signed changed-file scope before integration is proven'
+          :'A completed exact-SHA Integration Proof job with all required green steps'}).owner_alerts;
     }
   }
 
