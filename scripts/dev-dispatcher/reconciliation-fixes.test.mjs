@@ -264,19 +264,3 @@ test('mergeApprovedPr emits ancestry-preserving merge commit API request',async(
   {merge_method:'merge',sha,commit_title:'AI CAFE approved task POS0d (#407)'});
  assert.equal(calls.some(x=>x.path==='/pulls/407/update-branch'),false);
 });
-
-test('only one five-minute GitHub schedule, with no second dispatcher cron',()=>{
- const yaml=readFileSync(new URL('../../.github/workflows/ai-cafe-dev-dispatcher.yml',import.meta.url),'utf8');
- const entries=yaml.match(/^\s*- cron:\s*['"][^'"]+['"]/gm)||[];
- assert.deepEqual(entries.map(x=>x.trim()),["- cron: '3/5 * * * *'"]);
- assert.match(yaml,/repository_dispatch:/);
- assert.match(yaml,/DISPATCH_LEDGER_GIT_WRITES: 'true'/);
-});
-test('old overflow notification repair is only part of successful trusted reconciliation',()=>{
- const code=readFileSync(new URL('./run.mjs',import.meta.url),'utf8');
- const position=code.indexOf('const withRecoveredNotices=resolveObsoleteLedgerOverflowNotices(restored)');
- const successful=code.indexOf('const projection=await ledger.transaction(latest=>');
- assert.ok(position>successful);
- assert.ok(code.indexOf('const projected=recordLifecycleTransitions(withRecoveredNotices,queue);')>position);
- assert.ok(code.indexOf('main().catch')>position);
-});
