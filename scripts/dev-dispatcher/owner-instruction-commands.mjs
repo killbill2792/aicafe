@@ -129,8 +129,11 @@ export function applyMuseOwnerInstruction(state,receipt,{actor,now=new Date().to
    const previous=next.owner_controls?.muse_watermarks?.[key];
    const currentAt=Date.parse(receipt.submitted_at);
    const oldAt=Date.parse(previous?.submitted_at||'');
+   const safePauseTie=currentAt===oldAt&&
+     parsed.field==='pause_new_dispatch'&&parsed.value===true&&
+     next.owner_controls?.per_task?.[parsed.task_id]?.pause_new_dispatch!==true;
    if(Number.isFinite(oldAt)&&
-       (currentAt<oldAt||currentAt===oldAt)){
+       (currentAt<oldAt||(currentAt===oldAt&&!safePauseTie))){
      event.reason=currentAt===oldAt?
        'ambiguous_equal_time_owner_instruction':
        'superseded_by_newer_owner_instruction';
