@@ -158,8 +158,10 @@ export function queueOwnerAlerts(state,{unmappedPrs=null,openPrs=[],queue=null,n
   else if(prior.status==='cancelled_no_longer_needed' && !prior.receipt) {
     // A withdrawn question may later be restored verbatim. Requeue the SAME
     // verified identity, never a duplicate; submitted notices are immutable.
-    prior.status='planned';
-    prior.requeued_at=now;
+    // A compacted terminal notice is only a tombstone. Restore the current
+    // verified question, routing and Muse delivery fields when it returns;
+    // never revive a stale archived message or lose the signed notice identity.
+    Object.assign(prior,entry,{status:'planned',requeued_at:now});
   }
  };
  for(const [id,rec] of Object.entries(next.tasks||{})){
