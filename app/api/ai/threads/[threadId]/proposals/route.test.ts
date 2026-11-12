@@ -6,7 +6,7 @@ const f=vi.hoisted(()=>({
   id:"44444444-4444-4444-8444-444444444444",
   productId:"55555555-5555-4555-8555-555555555555",
   revision:1,status:"draft",current:450,saves:0,attemptState:"executing" as "executing"|"verified"|"uncertain"|"stale",ownerAllowed:true,accessAllowed:true,
-  created:0,createdPrice:0,commitStale:false,editInsertFails:false,editRace:false,
+  created:0,createdPrice:0,commitStale:false,editInsertFails:false,editRace:false,reconcileProven:false,reconciles:0,
 }));
 const effect=()=>({productId:f.productId,productName:"Latte",oldPriceCents:450,
   newPriceCents:500,currency:"USD"});
@@ -63,6 +63,13 @@ vi.mock("@/lib/ai/supervisor/loop/supabase.server",()=>({
       if(state==="stale"){f.attemptState="stale";f.status="stale";f.revision++;return row();}
       f.attemptState="verified";f.status=nextStatus!;f.revision++;return row();
     }
+    async reconcileEffect(_scope:unknown,_id:string,rev:number){
+      f.reconciles++;
+      if(f.status!=="executing"||rev!==f.revision)throw Error("reconcile revision conflict");
+      if(f.reconcileProven){f.status="committed";f.revision++;f.attemptState="verified";}
+      else f.attemptState="uncertain";
+      return row();
+    }
     async effectAttempt(){return {state:f.attemptState as "executing"|"verified"|"uncertain"|"stale",
       authorizationKind:"click" as const,businessDate:"2026-10-23"};}
     async transition(_scope:unknown,_id:string,rev:number,action:string){
@@ -109,7 +116,7 @@ const request=(action:string,revision=1,withOrigin=true)=>new Request(url,{
   body:JSON.stringify({action,proposalId:f.id,revision}),
 });
 beforeEach(()=>{f.revision=1;f.status="draft";f.current=450;f.saves=0;f.attemptState="executing";f.ownerAllowed=true;f.accessAllowed=true;f.created=0;f.createdPrice=0;
-  f.commitStale=false;f.editInsertFails=false;f.editRace=false;});
+  f.commitStale=false;f.editInsertFails=false;f.editRace=false;f.reconcileProven=false;f.reconciles=0;});
 describe("owner-scoped price approval actions",()=>{
   it("refuses standing-mandate start for a money/POS capability",async()=>{
     const response=await POST(request("start"),params);
@@ -224,6 +231,28 @@ describe("owner-scoped price approval actions",()=>{
     f.status="executing";f.revision=3;f.attemptState="uncertain";
     const response=await GET(new Request(url+"?ids="+f.id),params);
     expect((await response.json()).cards[0].state).toBe("uncertain");
+  });
+  it("reconciles a durable uncertain effect without another capability commit",async()=>{
+    f.status="executing";f.revision=3;f.attemptState="uncertain";f.reconcileProven=true;
+    const response=await POST(request("reconcile",3),params);
+    expect(response.status).toBe(200);
+    expect((await response.json()).proposal.state).toBe("applied");
+    expect(f.reconciles).toBe(1);expect(f.saves).toBe(0);
+    const again=await POST(request("reconcile",4),params);
+    expect(again.status).toBe(200);expect(f.reconciles).toBe(1);
+  });
+  it("keeps unproven effects uncertain and never enables retry",async()=>{
+    f.status="executing";f.revision=3;f.attemptState="uncertain";
+    const response=await POST(request("reconcile",3),params);
+    expect(response.status).toBe(409);
+    expect((await response.json()).state).toBe("uncertain");
+    expect(f.status).toBe("executing");expect(f.saves).toBe(0);
+  });
+  it("refuses stale-revision and unclaimed recovery requests",async()=>{
+    expect((await POST(request("reconcile",1),params)).status).toBe(409);
+    f.status="executing";f.revision=3;
+    expect((await POST(request("reconcile",1),params)).status).toBe(409);
+    expect(f.reconciles).toBe(0);
   });
   it("requires owner scope and same-origin",async()=>{
     expect((await POST(request("approve",1,false),params)).status).toBe(403);
