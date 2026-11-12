@@ -62,7 +62,8 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
 beforeEach(()=>{
  Object.values(m).forEach(fn=>fn.mockReset());
  m.roster.mockResolvedValue({staged:0});
- m.catalog.mockResolvedValue({staged:0});
+ m.catalog.mockResolvedValue({staged:0,receipt:{restaurantGuid:restaurant,
+  publicationVersion:"2026-10-23T00:00:00Z",observedAt:"2026-10-23T19:00:00Z"}});
  m.labor.mockResolvedValue({staged:0});
  m.attendance.mockResolvedValue({changed:0,affectedDates:[]});
  m.staged.mockResolvedValue({changed:0,affectedDates:[]});
@@ -109,6 +110,26 @@ describe("first-time Toast catalog before sales",()=>{
 });
 
 describe("independent optional Toast source phases",()=>{
+ it("keeps unchanged publication on the metadata-only path across local days",async()=>{
+  const f=mockDB({menus:true},true,false,false);
+  m.request.mockImplementation(async(path:string)=>{
+   if(path==="/menus/v2/metadata")return {
+    restaurantGuid:restaurant,lastUpdated:"2026-10-22T00:00:00Z"};
+   return [];
+  });
+  await syncToastOptionalSources(f.db,scope,now,Date.now()+20000);
+  expect(m.catalog).not.toHaveBeenCalled();
+  expect(f.writes.some(w=>w.menu_checked_local_day==="2026-10-23")).toBe(true);
+ });
+ it("copies the trusted bundle version, not a stale preflight metadata version",async()=>{
+  const f=mockDB({menus:true});
+  m.catalog.mockResolvedValueOnce({receipt:{restaurantGuid:restaurant,
+   publicationVersion:"2026-10-24T00:00:00Z",observedAt:"2026-10-24T01:00:00Z"}});
+  await ensureToastFirstCatalog(f.db,scope,now,Date.now()+20000);
+  expect(f.writes).toContainEqual(expect.objectContaining({
+   menu_last_updated:"2026-10-24T00:00:00Z"}));
+ });
+
  it("a malformed menu response records the failure but does not block roster, labor, jobs or reasons",async()=>{
   const f=mockDB({menus:true,labor:true,config:true});
   m.request.mockImplementation(async(path:string)=>{
