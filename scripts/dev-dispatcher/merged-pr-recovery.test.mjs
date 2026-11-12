@@ -27,7 +27,7 @@ function mocks(detail=pr(),files=['lib/gateway.ts']){
   calls.push(path);
   if(path==='/pulls/443')return detail;
   if(path==='/pulls/443/files?per_page=100&page=1')
-   return files.map(filename=>({filename}));
+   return files.map(file=>typeof file==='string'?{filename:file,status:'modified'}:file);
   throw Error('Unexpected GitHub request '+path);
  }};
  return {github,calls};
@@ -142,4 +142,27 @@ test('historically recovered unsigned merged PR cannot be labelled integrated-pr
    pr_link_recovery:'verified_git_merge_and_owner_pr_marker',
    recovered_pr_unsigned_files:[]}),true);
  assert.equal(recoveredMergeIntegrationAllowed({status:'merged'}),true);
+});
+
+test('Codex P1: historical PR rename audits unsigned source and approved destination',async()=>{
+ const s=state();
+ const {github}=mocks(pr({files:1}),[{status:'renamed',
+   filename:'lib/gateway.ts',previous_filename:'lib/unapproved-private.ts'}]);
+ const evidence=await discoverMergedPrEvidence({github,state:s,mainSha:main,
+   now:'2026-11-12T06:30:00Z',gitHistory:()=>commitTitle});
+ assert.equal(evidence.candidates.length,1);
+ assert.deepEqual(evidence.candidates[0].unsigned_files,['lib/unapproved-private.ts']);
+ const next=applyMergedPrEvidence(s,evidence);
+ assert.equal(recoveredMergeIntegrationAllowed(next.tasks['10']),false);
+ assert.ok(Object.values(next.owner_alerts).some(a=>a.kind==='merged_pr_scope_audit'));
+ assert.equal(next.tasks['9'].pr_number,undefined);
+});
+test('historical PR rename missing source path fails closed, even with approved destination',async()=>{
+ const s=state();
+ const {github}=mocks(pr({files:1}),[{status:'renamed',filename:'lib/gateway.ts'}]);
+ const evidence=await discoverMergedPrEvidence({github,state:s,mainSha:main,
+   now:'2026-11-12T06:30:00Z',gitHistory:()=>commitTitle});
+ assert.equal(evidence.candidates.length,0);
+ assert.equal(evidence.blocked[0].reason,'merged_pr_changed_files_incomplete');
+ assert.equal(applyMergedPrEvidence(s,evidence).tasks['10'].pr_number,undefined);
 });
