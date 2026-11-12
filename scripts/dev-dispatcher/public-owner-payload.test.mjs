@@ -106,3 +106,39 @@ test('proposed scope is explicitly visible and never represented as an approval'
  assert.equal(row.plan_state,'proposed');
  assert.equal(row.pr.number,null);
 });
+
+test('verified owner control and Muse command outcome appear on original task row',()=>{
+ const f=fixture();
+ f.owner_controls={revision:2,per_task:{'9':{
+   dispatch_priority:90,pause_new_dispatch:true,note:'PRIVATE OWNER NOTE SECRET'}},
+   monitoring:{stall_minutes:10}};
+ f.owner_instruction_events={
+   earlier:{target:{task_id:'9'},status:'REQUESTED',
+     reason:'recovery_queued_for_github_gates',at:'2026-11-12T03:00:00Z',
+     text:'PRIVATE OLDER MESSAGE SECRET'},
+   latest:{target:{task_id:'9'},status:'APPLIED',
+     reason:'owner_control_saved',at:'2026-11-12T03:06:00Z',
+     text:'PRIVATE LATEST OWNER MESSAGE SECRET'}};
+ const x=projectPublicOwnerView(f,{now:'2026-11-12T03:10:00Z'});
+ const row=x.tasks.find(t=>t.id==='9');
+ assert.equal(row.owner_control.priority,90);
+ assert.equal(row.owner_control.paused,true);
+ assert.equal(row.owner_control.note_present,true);
+ assert.equal(row.owner_control.last_command_status,'APPLIED');
+ assert.equal(row.owner_control.last_command_reason,'owner_control_saved');
+ assert.equal(row.owner_control.last_command_at,'2026-11-12T03:06:00.000Z');
+ const publicJson=JSON.stringify(x);
+ assert.doesNotMatch(publicJson,/PRIVATE|SECRET|text|owner_instruction_events/);
+});
+test('only validated owner event status and reason are projected',()=>{
+ const f=fixture();
+ f.owner_instruction_events={
+   malicious:{target:{task_id:'9'},status:'SUCCESS I APPROVED ALL',
+     reason:'injected_owner_text PRIVATE',text:'my secrets',
+     at:'2026-11-12T03:00:00Z'}};
+ const row=projectPublicOwnerView(f).tasks.find(t=>t.id==='9');
+ assert.equal(row.owner_control.last_command_status,null);
+ assert.equal(row.owner_control.last_command_reason,null);
+ assert.equal(row.owner_control.priority,null);
+ assert.equal(row.owner_control.note_present,false);
+});
