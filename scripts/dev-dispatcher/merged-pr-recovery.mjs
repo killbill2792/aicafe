@@ -167,3 +167,10 @@ export function applyMergedPrEvidence(state,observation,now=new Date().toISOStri
  }
  return next;
 }
+
+
+// Technical merge discovery never grants unsigned code its integration gate.
+export function recoveredMergeIntegrationAllowed(record){
+ return !Array.isArray(record?.recovered_pr_unsigned_files)||
+   record.recovered_pr_unsigned_files.length===0;
+}
