@@ -101,3 +101,14 @@ test('trusted Pages publishing copies only public static assets and ciphertext',
  assert.match(yaml,/head_branch == 'main'/);
  assert.doesNotMatch(yaml,/cron:/);
 });
+
+test('password form fails closed if scripts do not initialize',()=>{
+ const html=readFileSync(new URL('../../docs/index.html',import.meta.url),'utf8');
+ const input=html.match(/<input[^>]*id="private-passphrase"[^>]*>/);
+ assert.ok(input);
+ assert.doesNotMatch(input[0],/\bname=/);
+ assert.match(html,/<button type="submit" disabled>Unlock private task view<\/button>/);
+ const script=readFileSync(new URL('../../docs/encrypted-owner-view.mjs',import.meta.url),'utf8');
+ assert.match(script,/submit\.disabled=false/);
+ assert.match(script,/event\.preventDefault\(\)/);
+});
