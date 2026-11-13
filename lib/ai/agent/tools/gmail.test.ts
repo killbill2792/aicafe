@@ -10,7 +10,7 @@ const input={operation:"send",action:null,to:["supplier@example.com"],cc:[],bcc:
 describe("Gmail tools are owner scoped and inert",()=>{
  it("provides an honest missing-connection response, not a fake success",async()=>{
    const response=await gmailTools.propose_gmail_action.execute(input,context);
-   expect(response).toMatchObject({missing:["gmail_not_connected"]});
+   expect(response).toMatchObject({source:"gmail_proposal",missing:["gmail_not_connected"]});
  });
  it("only prepares an owner-click approval, never sends directly",async()=>{
    const propose=vi.fn().mockResolvedValue({proposalId:"11111111-1111-4111-8111-111111111111",
@@ -19,7 +19,7 @@ describe("Gmail tools are owner scoped and inert",()=>{
      ...context,gmail:{propose,labels:vi.fn(),search:vi.fn(),read:vi.fn(),thread:vi.fn(),attachment:vi.fn()}
    });
    expect(propose).toHaveBeenCalledWith(input);
-   expect(response).toMatchObject({draft:true,saved:false,requiredApproval:"owner_click"});
+   expect(response).toMatchObject({source:"gmail_proposal",draft:true,saved:false,requiredApproval:"owner_click"});
  });
  it("rejects spoofed recipients and invalid Gmail message ID syntax",async()=>{
    await expect(gmailTools.propose_gmail_action.execute({...input,to:["bad-address"]},context)).rejects.toThrow();

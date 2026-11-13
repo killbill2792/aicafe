@@ -56,9 +56,9 @@ export const gmailTools={
     description:"Create an INERT owner-review proposal for an explicitly requested Gmail send, reply, forward, draft or mailbox organization. Never send or modify on tool call. Use the exact recipients/body/subject chosen by the owner and show an approval card. Null values are empty strings/arrays where appropriate. No automatic Gmail action.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const input=gmailProposalToolSchema.parse(raw) as GmailProposalInput;
-      if(!ctx.gmail)return {source:"gmail",period:null,missing:["gmail_not_connected"]};
+      if(!ctx.gmail)return {source:"gmail_proposal",period:null,missing:["gmail_not_connected"]};
       const result=await ctx.gmail.propose(input);
-      return {source:"gmail",period:null,agentId:"alex",missing:[],draft:true,
+      return {source:"gmail_proposal",period:null,agentId:"alex",missing:[],draft:true,
         saved:false,proposalId:result.proposalId,revision:result.revision,
         account:result.account,operation:input.operation,
         requiredApproval:"owner_click",explain:"Gmail action drafted. Nothing sent or changed."};
