@@ -404,4 +404,20 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
       .toBe(true);
   });
 
+
+  it("uses saved trading hours as advisory evidence, preserving confirmed prep coverage",()=>{
+    const opening=coverage("prep",{start_local:"08:00",end_local:"09:00"});
+    const args=input([employee("prep-worker",{recurring:[recurring(1,"08:00","10:00")]})],
+      [opening],{locations:[{id:"a",timezone:"America/Los_Angeles",
+       openHours:{mon:[["09:00","17:00"]],tue:[]}}]});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.completeCoverage).toBe(true);
+    expect(result.best?.shifts).toHaveLength(1);
+    expect(result.warnings.some(w=>w.includes("outside regular opening hours"))).toBe(true);
+    const missing=optimizeOliviaWeek({...args,locations:[{id:"a",timezone:"America/Los_Angeles",
+      openHours:null}]});
+    expect(missing.warnings.some(w=>w.includes("hours are unverified"))).toBe(true);
+    expect(missing.best?.shifts).toEqual(result.best?.shifts);
+  });
 });
