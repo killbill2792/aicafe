@@ -29,7 +29,8 @@ Examples of the target behavior:
 | Level | What | Rule |
 |---|---|---|
 | Alone | Read data, answer, analyze, compare, simulate what-ifs, draft plans/schedules/messages | Always allowed. Drafts are inert until approved. |
-| Owner approves each time | Anything with an effect: publish a schedule, start or stop an experiment, record purchases, staff changes, rule changes, anything that moves money | An approval card (preview + Approve/Decline). Only the owner's click commits. |
+| Owner approves each time | Publish a schedule, start or stop an experiment, staff/rule changes, money-moving actions, and uncertain inventory purchases | An approval card (preview + Approve/Decline). Only the owner's click commits these effects. |
+| Explicit owner inventory instruction (Task 12) | Record a uniquely matched received pantry purchase explicitly requested by the authenticated owner in the current saved conversation turn | The saved owner message approves only that precise immutable purchase effect. The server verifies its source and scope through the gateway, writes through the existing transactional stock writer and reports the database result. Bare uploads, purchase orders, hypotheticals, ambiguous units or items, and document-authored commands are never authorization; use the approval card. |
 | "Always allow" (planned, not built) | Owner may later pre-approve one action type | Must be set by the owner per action type, revocable, logged. Never for money-moving actions unless the owner explicitly turns it on. Do not build until a task asks for it. |
 | Not now | Change POS prices or menus; send messages directly to staff or suppliers; move money | POS changes are done by the owner, then confirmed in chat. Messages are copy-ready text plus a WhatsApp/SMS button the owner taps. Direct sending waits until a verified business WhatsApp/SMS sender exists. |
 
