@@ -43,7 +43,21 @@ export async function gmailApi(token:string,path:string,init?:{method?:"GET"|"PO
     ...(init?.body===undefined?{}:{body:JSON.stringify(init.body)}),
     cache:"no-store",signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw new Error(response.status===401?"gmail_reconnect_required":"gmail_provider_request_failed");
-  return response.status===204?null:response.json();
+  if(response.status===204)return null;
+  const limit=512000;
+  if(Number(response.headers?.get("content-length")??0)>limit)
+    throw new Error("gmail_response_too_large");
+  if(!response.body)return response.json(); // Injected test doubles only.
+  const reader=response.body.getReader(),chunks:Uint8Array[]=[];
+  let count=0;
+  while(true){
+    const {done,value}=await reader.read();
+    if(done)break;
+    count+=value.byteLength;
+    if(count>limit){await reader.cancel();throw new Error("gmail_response_too_large");}
+    chunks.push(value);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 export type GmailMessage={id:string;threadId?:string;snippet?:string;internalDate?:string;
   payload?:{headers?:Array<{name:string;value:string}>;mimeType?:string;body?:{data?:string;size?:number};
@@ -119,11 +133,11 @@ export async function gmailReadAttachment(scope:ConnectorOwner,messageId:string,
   const match=parts.find(x=>x.body?.attachmentId===attachmentId);
   if(!match||!match.filename||!["text/plain","text/csv","application/json"].includes(match.mimeType??""))
     throw new Error("gmail_attachment_type_requires_file_capability");
-  if(!Number.isFinite(match.body?.size)||match.body!.size!>65536)
+  if(!Number.isFinite(match.body?.size)||(match.body?.size??0)>65536)
     throw new Error("gmail_attachment_too_large");
   const payload=await gmailApi(token,"/messages/"+encodeURIComponent(messageId)+
     "/attachments/"+encodeURIComponent(attachmentId)) as {data?:string;size?:number};
-  if(!payload.data||!Number.isFinite(payload.size)||payload.size!>65536)
+  if(!payload.data||!Number.isFinite(payload.size)||payload.size>65536)
     throw new Error("gmail_attachment_unavailable");
   const bytes=Buffer.from(payload.data,"base64url");
   if(bytes.length!==payload.size||bytes.length>65536)throw new Error("gmail_attachment_size_mismatch");
