@@ -69,7 +69,7 @@ export const draftScheduleTools={draft_week_schedule:{
   return {source:"olivia_schedule",period:{from:start,to:result.plan.horizonEnd},
    agentId:"olivia",draft:true,saved:false,
    missing:[...result.notices.map(n=>n.code),
-    ...(demand?.status==="unavailable"?demand.missing:[]),
+    ...(demand?.missing??[]),
     ...(approvalError?[approvalError]:[]),
     ...(!canPropose?["approvalShiftLimitOrInvalidShift"]:[])],
    plannerStatus:result.plan.status,completeCoverage:best.completeCoverage,
