@@ -28,6 +28,20 @@ describe("canonical data available to authenticated chat, not only standalone to
    expect.objectContaining({name:"cv_kitchen"})
   ]));
  });
+ it("describes the authoritative stock receipt state on the same dictionary path",async()=>{
+  const result=await executeAgentTool("describe_data",{record_type:null,view:"cv_inventory",field_prefix:null},caller().context);
+  expect(result.views).toEqual([expect.objectContaining({
+   name:"cv_inventory",meaning:expect.stringContaining("evidence_state")
+  })]);
+ });
+ it("labels pre-migration or stale stock rows incomplete without assuming their quantity is live",async()=>{
+  const {context}=caller();
+  const query={view:"cv_inventory",columns:["stock_status","quantity","data"],
+   filters:null,group_by:null,metrics:null,date_from:"2026-10-20",date_to:"2026-10-20",
+   order_by:null,limit:50};
+  const result=await executeAgentTool("query_data",query,context);
+  expect(result.missing).toContain("inventoryStockPartial");
+ });
  it("routes a scoped chat query through the same safe query RPC",async()=>{
   const {rpc,context}=caller();
   const input={view:"cv_orders",columns:["business_date"],filters:null,
