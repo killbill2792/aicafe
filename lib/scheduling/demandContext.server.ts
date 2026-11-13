@@ -19,7 +19,13 @@ export async function readSchedulingDemandContext(
   }
   // Scheduling a future week cannot require POS facts from future days.
   // Use the verified business timezone and the last fully completed day.
-  const today=localParts(asOf.getTime(),cafeTimezone).date;
+  let today:string;
+  try{today=localParts(asOf.getTime(),cafeTimezone).date;}
+  catch{
+    const historicalPeriod={from:civilDateAdd(weekStart,-56),to:civilDateAdd(weekStart,-1)};
+    return unavailableScheduleDemand({targetWeekStart:weekStart,historicalPeriod,
+      readAt:asOf.toISOString()},["invalidCafeTimezone"]);
+  }
   const end=civilDateAdd(weekStart,-1)<civilDateAdd(today,-1)
     ?civilDateAdd(weekStart,-1):civilDateAdd(today,-1);
   const historicalPeriod={from:civilDateAdd(end,-55),to:end};
