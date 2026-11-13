@@ -11,6 +11,9 @@ describe("explicit owner-turn purchase authority",()=>{
   expect(ownerTextSupportsTypedLine("I bought 2 gallons of milk",line)).toBe(false);
   expect(ownerTextSupportsTypedLine("Please update inventory",line)).toBe(false);
   expect(ownerTextSupportsTypedLine("I bought 10 gallons of cream",line)).toBe(false);
+  expect(ownerTextSupportsTypedLine("I bought 10 gallons of milk and 2 pounds of beans",{name:"beans",quantity:10,unit:"gal"})).toBe(false);
+  expect(ownerTextSupportsTypedLine("I bought 10 gallons of milk and 2 pounds of beans",{name:"beans",quantity:2,unit:"lb"})).toBe(true);
+  expect(ownerTextSupportsTypedLine("I bought 10 gallons of whole milk",{name:"milk",quantity:10,unit:"gal"})).toBe(true);
  });
 
  it("accepts clear owner instructions, no repeat click",()=>{
