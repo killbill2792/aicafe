@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { attachmentInput, MAX_BYTES, safeFileName, verifySignature } from "@/lib/ai/conversations/attachments";
+import { attachmentInput, safeFileName, verifySignature } from "@/lib/ai/conversations/attachments";
 import type { ConversationScope } from "@/lib/ai/conversations/contracts";
 import { authorizedExternalConversation,externalOwnerClientMessageId } from "@/lib/ai/conversations/authorizedTurn.server";
 
@@ -18,6 +18,9 @@ export type IncomingWhatsAppMedia = {
 export type DownloadedWhatsAppMedia = {
   bytes:Uint8Array; mimeType:"image/jpeg"|"image/png"|"application/pdf"; name:string;
 };
+// WhatsApp's vetted provider-media contract remains 2 MiB even though browser
+// receipt photos now allow 8 MiB in the separate authenticated upload route.
+const MAX_WHATSAPP_BYTES=2*1024*1024;
 const mediaIdPattern=/^[A-Za-z0-9_-]{1,200}$/;
 const acceptedTypes=["image/jpeg","image/png","application/pdf"] as const;
 const suffix:Record<DownloadedWhatsAppMedia["mimeType"],string>={
@@ -41,13 +44,13 @@ export function chooseMetaMediaName(original:unknown,mimeType:DownloadedWhatsApp
   return safeFileName(name);
 }
 export function verifyMetaMediaContent(mimeType:string,bytes:Uint8Array,sha256:string):boolean {
-  if(!acceptedTypes.some(t=>t===mimeType)||!bytes.length||bytes.length>MAX_BYTES||
+  if(!acceptedTypes.some(t=>t===mimeType)||!bytes.length||bytes.length>MAX_WHATSAPP_BYTES||
      !/^[a-f0-9]{64}$/i.test(sha256))return false;
   return verifySignature(mimeType,bytes) &&
     createHash("sha256").update(bytes).digest("hex")===sha256.toLowerCase();
 }
 
-async function boundedBytes(response:Response,maxBytes=MAX_BYTES):Promise<Uint8Array> {
+async function boundedBytes(response:Response,maxBytes=MAX_WHATSAPP_BYTES):Promise<Uint8Array> {
  if(!response.ok||!response.body)throw new Error("meta_media_download_failed");
  const type=response.headers.get("content-length");
  if(type!==null&&(!/^\d+$/.test(type)||Number(type)>maxBytes))throw new Error("meta_media_too_large");
@@ -90,7 +93,7 @@ export async function downloadWhatsAppMedia(
     (input.kind==="image"&&mimeType!=="image/jpeg"&&mimeType!=="image/png")||
     typeof meta.sha256!=="string"||
     typeof meta.file_size!=="number"||!Number.isSafeInteger(meta.file_size)||
-    meta.file_size<1||meta.file_size>MAX_BYTES)throw new Error("unsupported_whatsapp_media");
+    meta.file_size<1||meta.file_size>MAX_WHATSAPP_BYTES)throw new Error("unsupported_whatsapp_media");
  const url=verifiedMetaMediaUrl(meta.url);
  const response=await fetcher(url,{headers,redirect:"error",signal:AbortSignal.timeout(10_000)});
  if(response.headers.get("content-type")?.split(";")[0].trim()!==mimeType)
@@ -110,6 +113,7 @@ export async function saveWhatsAppMediaDraft(params:{
 }):Promise<{attachmentId:string;state:"stored_unanalysed"}>{
  const {scope,threadId,media,wamid}=params;
  await authorizedExternalConversation(scope,threadId);
+ if(media.bytes.byteLength>MAX_WHATSAPP_BYTES)throw new Error("unsupported_whatsapp_media");
  const parsed=attachmentInput.parse({filename:media.name,mimeType:media.mimeType,bytes:media.bytes.byteLength});
  if(!verifySignature(parsed.mimeType,media.bytes))throw new Error("invalid_media_signature");
  const db=createAdminSupabaseClient(),id=externalOwnerClientMessageId(scope,wamid);
