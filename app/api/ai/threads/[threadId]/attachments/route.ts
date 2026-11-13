@@ -2,7 +2,7 @@ import { assertCafeAiAccess } from "@/lib/access/access.server";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
 import { threadIdInput } from "@/lib/ai/conversations/contracts";
-import { attachmentInput, MAX_BYTES, safeFileName, verifySignature } from "@/lib/ai/conversations/attachments";
+import { attachmentInput, MAX_BYTES, MAX_DOCUMENT_BYTES, safeFileName, verifySignature } from "@/lib/ai/conversations/attachments";
 import { conversationError, conversationJson, parseInput, requireSameOrigin } from "@/lib/ai/conversations/http.server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -48,9 +48,11 @@ export async function POST(request:Request,context:Context){
   if(!(file instanceof File))throw new ConversationApiError(422,"file_required");
   const browserMime=file.type||"";
   const inferredMime=browserMime&&browserMime!=="application/octet-stream"?browserMime:
-   /\\.xlsx$/i.test(file.name)?"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-   /\\.csv$/i.test(file.name)?"text/csv":browserMime;
+   /\.xlsx$/i.test(file.name)?"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+   /\.csv$/i.test(file.name)?"text/csv":browserMime;
   const parsed=parseInput(attachmentInput,{filename:file.name,mimeType:inferredMime,bytes:file.size});
+  if(!parsed.mimeType.startsWith("image/")&&parsed.bytes>MAX_DOCUMENT_BYTES)
+   throw new ConversationApiError(413,"attachment_too_large");
   const buffer=new Uint8Array(await file.arrayBuffer());
   if(!verifySignature(parsed.mimeType,buffer))
    throw new ConversationApiError(422,"invalid_file_signature");
