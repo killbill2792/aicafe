@@ -117,7 +117,7 @@ export const draftScheduleTools={draft_week_schedule:{
    explanationScope:"Based on owner-confirmed coverage and recorded availability; POS close-hour history is informational, not an inferred staffing requirement; scheduled wages are not actual payroll",
    proposedShifts,
    proposedShiftCount:proposedShifts.length,
-   proposalReady:canPropose&&!previewOnly&&approvalError===null,previewOnly, ...(approval??{}),
+   proposalReady:canPropose&&!previewOnly&&approvalError!=="existingScheduleCardDiffers",previewOnly, ...(approval??{}),
    approvalTool:approval?"existing_card_created":"not_created",weekStart:start};
  }
  },
