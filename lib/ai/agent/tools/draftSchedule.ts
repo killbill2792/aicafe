@@ -12,7 +12,7 @@ const schema=z.strictObject({week_start:monday.nullable(),purpose:z.enum(["draft
  */
 export const draftScheduleTools={draft_week_schedule:{
  agentId:"olivia",schema,
- description:"Use Olivia's canonical scheduler. purpose=draft prepares the next week's roster and ONE existing approval card, so never call propose_schedule after it. purpose=owner_savings models where the unpaid owner could replace paid staff and returns the wage evidence and cost comparison WITHOUT creating a card. Hypothetical owner certification and opportunity costs are not assumed. Never say a preview was published.",
+ description:"Understand owner scheduling requests naturally; use the one existing Olivia optimizer. purpose=draft prepares the roster and ONE existing approval card, so never call propose_schedule again. A request to change employee availability or a scheduling rule first requires its existing propose_availability_change or propose_rule_change tool; don't pretend an unapproved change was used in the roster. Return scenario costs, gaps and source limitations so the owner can ask 'why', 'what if' or 'make it cheaper' without invented arithmetic. purpose=owner_savings models an unpaid owner alternative WITHOUT a card. Never claim a draft was published, accepted by workers, or sent.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const {week_start,purpose}=schema.parse(raw);
   const start=week_start??nextMonday(ctx.asOf);
@@ -66,6 +66,18 @@ export const draftScheduleTools={draft_week_schedule:{
    missing:demand.missing,
    note:"Historical order close-hour observations only; not a customer arrival forecast or an automatic staffing requirement",
   }:null;
+  // The solver supplies exact comparable scenarios, not the language model.
+  // Null costs remain unknown; two alternatives need not be globally optimal.
+  const alternatives=result.plan.scenarios.slice(0,3).map(scenario=>({
+   objective:scenario.objective,staffShiftCount:scenario.shifts.length,
+   completeCoverage:scenario.completeCoverage,hardConstraintsSatisfied:scenario.hardConstraintsSatisfied,
+   gapCount:scenario.gaps.length,ownerMinutes:scenario.ownerMinutes,
+   cashWagesCents:scenario.cost.cashWagesCents,
+   loadedPayrollCents:scenario.cost.loadedPayrollCents,
+   costState:scenario.cost.costState,
+   missingWageEmployeeIds:scenario.cost.missingWageEmployeeIds,
+   legalReview:scenario.legalReview,
+  }));
   return {source:"olivia_schedule",period:{from:start,to:result.plan.horizonEnd},
    agentId:"olivia",draft:true,saved:false,
    missing:[...result.notices.map(n=>n.code),
@@ -75,6 +87,8 @@ export const draftScheduleTools={draft_week_schedule:{
    plannerStatus:result.plan.status,completeCoverage:best.completeCoverage,
    demandEvidence:demandSummary,
    laborCost:best.cost,gaps:best.gaps,warnings:result.plan.warnings,
+   scenarioAlternatives:alternatives,solverProof:result.plan.proof,
+   explanationScope:"Based on owner-confirmed coverage and recorded availability; POS close-hour history is informational, not an inferred staffing requirement; scheduled wages are not actual payroll",
    proposedShifts,
    proposedShiftCount:proposedShifts.length,
    proposalReady:canPropose, ...(approval??{}),
