@@ -2,6 +2,10 @@
 -- New readable types are strictly opt-in; no new bucket or unaudited storage path.
 set lock_timeout='3s';
 set statement_timeout='30s';
+-- Reason: Expand the existing MIME allowlist without changing the private
+-- storage key or existing valid attachments. No old row can violate the new
+-- broader check, and the replacement is validated immediately after swap.
+-- squawk-ignore ban-drop-constraint
 alter table public.ai_attachments drop constraint if exists ai_attachments_media_type_check;
 alter table public.ai_attachments add constraint ai_attachments_media_type_check
  check (media_type in ('text/plain','text/csv',
