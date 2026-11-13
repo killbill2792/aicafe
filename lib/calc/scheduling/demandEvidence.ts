@@ -16,6 +16,9 @@ export type ScheduleDemandEvidence={
   historicalPeriod:{from:string;to:string};
   readAt:string;
   sourceUpdatedAt:null;
+  /** Total qualified comparable hours before the bounded presentation cap. */
+  totalComparableHours:number;
+  truncated:boolean;
   hours:ComparableDemandHour[];
   missing:string[];
 };
@@ -32,7 +35,8 @@ export function unavailableScheduleDemand(input:Pick<Inputs,"targetWeekStart"|"h
   return {status:"unavailable",source:"hourly_sales_rollup",
     basis:"observed_comparable_weekday_close_hours",
     targetWeekStart:input.targetWeekStart,historicalPeriod:input.historicalPeriod,
-    readAt:input.readAt,sourceUpdatedAt:null,hours:[],missing};
+    readAt:input.readAt,sourceUpdatedAt:null,totalComparableHours:0,
+    truncated:false,hours:[],missing};
 }
 const datePattern=/^\d{4}-\d{2}-\d{2}$/;
 const validDate=(d:string)=>datePattern.test(d)&&!Number.isNaN(Date.parse(d+"T12:00:00Z"))&&
@@ -87,10 +91,20 @@ export function comparableDemandHours(input:Inputs):ScheduleDemandEvidence{
     }
   }
   if(!context.length)return unavailableScheduleDemand(shell,["insufficientComparableHourSamples"]);
-  context.sort((a,b)=>a.targetDate.localeCompare(b.targetDate)||
+  const totalComparableHours=context.length;
+  // Presentation budget, NOT a café staffing threshold. Prioritize actual
+  // observed peak hours, report omissions and never use this subset as totals.
+  const MAX_PRESENTED_HOURS=80;
+  context.sort((a,b)=>b.observedAverageOrders-a.observedAverageOrders||
+    a.targetDate.localeCompare(b.targetDate)||a.hourLocal-b.hourLocal||
+    (a.locationId??"").localeCompare(b.locationId??""));
+  const truncated=context.length>MAX_PRESENTED_HOURS;
+  const presented=context.slice(0,MAX_PRESENTED_HOURS);
+  presented.sort((a,b)=>a.targetDate.localeCompare(b.targetDate)||
     a.hourLocal-b.hourLocal||(a.locationId??"").localeCompare(b.locationId??""));
   return {status:"available",source:"hourly_sales_rollup",
     basis:"observed_comparable_weekday_close_hours",
     targetWeekStart:input.targetWeekStart,historicalPeriod:input.historicalPeriod,
-    readAt:input.readAt,sourceUpdatedAt:null,hours:context,missing:[]};
+    readAt:input.readAt,sourceUpdatedAt:null,totalComparableHours,truncated,
+    hours:presented,missing:truncated?["comparableHourResultTruncated"]:[]};
 }
