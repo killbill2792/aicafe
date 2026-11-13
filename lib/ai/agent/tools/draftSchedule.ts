@@ -68,7 +68,7 @@ export const draftScheduleTools={draft_week_schedule:{
   }:null;
   // The solver supplies exact comparable scenarios, not the language model.
   // Null costs remain unknown; two alternatives need not be globally optimal.
-  const alternatives=result.plan.scenarios.slice(0,3).map(scenario=>({
+  const alternatives=(result.plan.scenarios??[]).slice(0,3).map(scenario=>({
    objective:scenario.objective,staffShiftCount:scenario.shifts.length,
    completeCoverage:scenario.completeCoverage,hardConstraintsSatisfied:scenario.hardConstraintsSatisfied,
    gapCount:scenario.gaps.length,ownerMinutes:scenario.ownerMinutes,
