@@ -115,7 +115,13 @@ export async function previewOliviaAbsenceWhatIf(raw:unknown){
   const alternative=optimizeOliviaWeek(simulatedInput);
   const before=baseline.best?.cost.cashWagesCents??null;
   const after=alternative.best?.cost.cashWagesCents??null;
-  const change=before!==null&&after!==null&&
+  // A cheaper roster that leaves the café uncovered is not a legitimate
+  // savings comparison. Both must be valid complete-coverage alternatives.
+  const comparable=baseline.status==="feasible"&&alternative.status==="feasible"&&
+    baseline.best?.completeCoverage===true&&alternative.best?.completeCoverage===true&&
+    baseline.best.hardConstraintsSatisfied===true&&
+    alternative.best.hardConstraintsSatisfied===true;
+  const change=comparable&&before!==null&&after!==null&&
     Number.isSafeInteger(after-before)?after-before:null;
   // Explain precisely WHOSE shifts moved, rather than merely supplying a
   // cost number. Compare exact optimizer assignments; no modeled result
@@ -153,6 +159,7 @@ export async function previewOliviaAbsenceWhatIf(raw:unknown){
     shiftCount:alternative.best?.shifts.length??0},
    changeInModeledCashWagesCents:change,
    laborCostDifferenceKnown:change!==null,
+   comparisonCompleteCoverage:comparable,
    rosterChanges,
    warnings:[...new Set([...baseline.warnings,...alternative.warnings])]};
  }catch{
