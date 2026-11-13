@@ -271,4 +271,35 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
    requestedObjectiveMet:true,proposedShiftCount:1});
   expect(proposeStaff).not.toHaveBeenCalled();
  });
+
+ it("does not falsely reuse a previous approval card after the owner changes the roster",async()=>{
+  const shift={employeeId:"11111111-1111-4111-8111-111111111111",locationId:"loc",
+   startAt:"2026-11-09T16:00:00Z",endAt:"2026-11-09T18:00:00Z",paidMinutes:120};
+  const first={...shift};
+  const revised={...shift,startAt:"2026-11-09T18:00:00Z",
+   endAt:"2026-11-09T20:00:00Z"};
+  const plan=(shifts:typeof shift[])=>({ok:true,locations:{loc:"America/Los_Angeles"},notices:[],
+   plan:{status:"feasible",horizonEnd:"2026-11-15",warnings:[],
+    best:{objective:"balanced",completeCoverage:true,hardConstraintsSatisfied:true,
+     gaps:[],cost:{cashWagesCents:3500},shifts}}});
+  mocks.preview.mockResolvedValueOnce(plan([first])).mockResolvedValueOnce(plan([revised]));
+  const proposeStaff=vi.fn().mockResolvedValue({proposalId:"22222222-2222-4222-8222-222222222222",
+   revision:1,capabilityId:"olivia.staff_propose_schedule.v2"});
+  const context={...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}};
+  const approved=await draftScheduleTools.draft_week_schedule.execute(
+   {week_start:"2026-11-09",purpose:"draft"},context);
+  const different=await draftScheduleTools.draft_week_schedule.execute(
+   {week_start:"2026-11-09",purpose:"draft"},context);
+  expect(approved).toMatchObject({approvalTool:"existing_card_created",proposalReady:true});
+  expect(different).toMatchObject({approvalTool:"not_created",proposalReady:false,
+   proposedShifts:[expect.objectContaining({start:"10:00",end:"12:00"})],
+   missing:expect.arrayContaining(["existingScheduleCardDiffers"])});
+  expect(different).not.toHaveProperty("proposalId");
+  expect(proposeStaff).toHaveBeenCalledTimes(1);
+  const staleDirect=await staffProposalTools.propose_schedule.execute({
+   week_start:"2026-11-09",shifts:different.proposedShifts},context);
+  expect(staleDirect).toMatchObject({missing:["existingScheduleCardDiffers"],
+   duplicateSuppressed:true});
+  expect(proposeStaff).toHaveBeenCalledTimes(1);
+ });
 });
