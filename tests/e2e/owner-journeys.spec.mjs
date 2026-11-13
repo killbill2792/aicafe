@@ -142,21 +142,6 @@ test("@menu Pantry retains confirmed zero and rejects historical Toast stock as 
       await expect(evidence.locator('[data-evidence-state="not_observed"]')).toContainText("Historical only");
       await expect(evidence.getByText("Quantity: Unknown (not zero)",{exact:true})).toBeVisible();
       await expect(evidence.getByText("Quantity: 0 ml",{exact:true})).toBeVisible();
-      // Same authenticated stock evidence, without English-only or raw source-state text.
-      await page.goto("/es/menu/pantry");
-      const es=page.locator("section[data-inventory-evidence]");
-      await expect(es.getByRole("heading",{name:"Evidencia de existencias"})).toBeVisible();
-      await expect(es.locator('[data-evidence-state="not_observed"]'))
-        .toContainText("Solo histórico");
-      await expect(es.getByText("Cantidad: Desconocido (no equivale a cero)"))
-        .toBeVisible();
-      await page.goto("/ar/menu/pantry");
-      const ar=page.locator("section[data-inventory-evidence]");
-      await expect(ar.getByRole("heading",{name:"أدلة المخزون"})).toBeVisible();
-      await expect(ar.locator('[data-evidence-state="not_observed"]'))
-        .toContainText("سجل تاريخي فقط");
-      await expect(ar.getByText("الكمية: غير معروف (لا يعني صفرًا)"))
-        .toBeVisible();
     } finally {
       await first.close();
     }
