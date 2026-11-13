@@ -47,9 +47,11 @@ describe("canonical inventory evidence projection",()=>{
  });
  it("preserves an explicit owner zero without turning an absent quantity into zero",()=>{
   const owner={source:"app",source_ref:"stock:1",status:"actual",
-   business_date:"2026-11-12",quantity:0,data:{ingredient_id:"milk",count_date:"2026-11-12"}};
+   business_date:"2026-11-12",quantity:0,data:{ingredient_id:"milk",
+    ingredient_name:"Whole Milk",base_unit:"ml",count_date:"2026-11-12"}};
   expect(projectInventoryEvidence([owner,{...base,quantity:null}]).rows).toMatchObject([
-   {quantity:0,evidence_state:"dated_owner_count",quantity_state:"known"},
+   {quantity:0,evidence_state:"dated_owner_count",quantity_state:"known",
+    ingredient_id:"milk",ingredient_name:"Whole Milk",quantity_unit:"ml"},
    {quantity:null,quantity_state:"unknown"}]);
  });
  it("does not count duplicate evidence rows as stock totals or assume a missing item",()=>{
