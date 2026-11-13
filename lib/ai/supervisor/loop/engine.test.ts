@@ -78,9 +78,10 @@ class MemoryRepo implements LoopRepository{
   mandateLimit:number|null=null;
   mandateUsage=0;
   attempts=new Map<string,"executing"|"verified"|"uncertain"|"stale">();
-  async claimEffect(s:OwnerLoopScope,id:string,revision:number,authorizationKind:"click"|"mandate"){
+  async claimEffect(s:OwnerLoopScope,id:string,revision:number,authorizationKind:"click"|"mandate"|"owner_message"){
     let p=await this.load(s,id);
     if(p.revision!==revision)throw Error("CAS conflict");
+    if(authorizationKind==="owner_message")throw Error("owner message not in legacy memory fixture");
     if(authorizationKind==="click"){
       if(p.status!=="approved")throw Error("individual click required");
     }else{
@@ -95,7 +96,7 @@ class MemoryRepo implements LoopRepository{
     return {proposal:claimed,attemptKey:"attempt:"+id,businessDate:"2026-10-20",authorizationKind};
   }
   async finishEffect(s:OwnerLoopScope,claim:{proposal:LoopProposal;attemptKey:string;
-    businessDate:string;authorizationKind:"click"|"mandate"},expectedRevision:number,
+    businessDate:string;authorizationKind:"click"|"mandate"|"owner_message"},expectedRevision:number,
     state:"verified"|"uncertain"|"stale",nextStatus?:"committed"|"manual_pending",startDate?:string){
     const p=await this.load(s,claim.proposal.id);
     if(p.status!=="executing"||p.revision!==expectedRevision||
