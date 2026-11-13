@@ -139,6 +139,26 @@ try{
  await expectError(()=>withService(db,c=>c.query(
   "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
   [B,OWNER,THREAD,duplicatePurchase,1,purchaseMsg])),"42501");
+ // One photographed receipt can contain two separate identical stock lines.
+ // For stock-only receipts the source is chat_text (no expense), so replay
+ // protection must use receipt group + source line, not quantity alone.
+ const receiptMessage=randomUUID(),receiptGroup=randomUUID();
+ await db.query("insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
+  [receiptMessage,B,THREAD,OWNER,"Record these receipt purchases in inventory"]);
+ const receiptEffect=index=>({...purchasedEffect,source:"chat_text",
+  receiptGroupId:receiptGroup,receiptLineIndex:index,
+  receiptVendor:"Test supplier",receiptTotalCents:2000});
+ const receiptClaim=async(proposalId)=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6) as value",
+  [B,OWNER,THREAD,proposalId,1,receiptMessage]));
+ const receiptFirst=randomUUID(),receiptSecond=randomUUID(),receiptRetry=randomUUID();
+ await seedProposal(B,OWNER,THREAD,receiptFirst,"maya.inventory_purchase.v1",receiptEffect(0));
+ assert.equal((await receiptClaim(receiptFirst)).rows[0].value.authorization_kind,"owner_message");
+ await seedProposal(B,OWNER,THREAD,receiptSecond,"maya.inventory_purchase.v1",receiptEffect(1));
+ assert.equal((await receiptClaim(receiptSecond)).rows[0].value.authorization_kind,"owner_message",
+  "a second physical receipt line with identical quantity must be allowed");
+ await seedProposal(B,OWNER,THREAD,receiptRetry,"maya.inventory_purchase.v1",receiptEffect(0));
+ await expectError(()=>receiptClaim(receiptRetry),"42501");
  const naturalMessage=randomUUID(),naturalPurchase=randomUUID();
  await db.query("insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
   [naturalMessage,B,THREAD,OWNER,"Put these 10 gallons of milk into inventory"]);
