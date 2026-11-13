@@ -42,7 +42,7 @@ export function ownerTextSupportsTypedLine(
    if(!allowed.has(words[j]))continue;
    for(let k=j+1;k<Math.min(words.length,j+7);k++){
     const between=words.slice(j+1,k);
-    if(between.some(v=>blockers.has(v)||allUnits.has(v)||/^\\d/u.test(v)))break;
+    if(between.some(v=>blockers.has(v)||allUnits.has(v)||/^\d/u.test(v)))break;
     if(nameWords.every((w,n)=>words[k+n]===w))return true;
    }
   }
