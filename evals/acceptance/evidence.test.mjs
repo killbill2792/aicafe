@@ -1,0 +1,78 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {scoreAcceptance} from "./evidence.mjs";
+
+const load=name=>JSON.parse(readFileSync(new URL("./fixtures/"+name,import.meta.url),"utf8"));
+const truth=load("calibration-truth.json");
+const report=load("calibration-observations.json");
+const clone=value=>structuredClone(value);
+function rejected(name,change,expected){
+ test("must detect corruption: "+name,()=>{
+  const t=clone(truth),o=clone(report);
+  change(t,o);
+  assert.throws(()=>scoreAcceptance(t,o),error=>
+   error instanceof Error && error.message.startsWith("acceptance_integrity:") &&
+   (!expected||error.message.includes(expected)));
+ });
+}
+test("independently annotated calibration scenarios pass with exact item, owner and stock evidence",()=>{
+ const result=scoreAcceptance(truth,report);
+ assert.equal(result.status,"calibration_pass_not_live_proof");
+ assert.equal(result.cases,8);
+ assert.deepEqual(result.categories,{receipt:5,conversation:3});
+ assert.equal(result.latencyMs,null);
+ assert.match(result.limitations.join(" "),/No real model/);
+});
+rejected("missing entire case",(_,o)=>{o.cases.pop();},"missing_or_skipped_case");
+rejected("duplicate reported case",(_,o)=>{o.cases.push(clone(o.cases[0]));},"invalid_or_duplicate_observed_case");
+rejected("unexpected invented case",(_,o)=>{o.cases[0].id="fake_case";},"unexpected_case");
+rejected("skip disguised as a valid row",(_,o)=>{o.cases[0].executed=false;},"not_executed");
+rejected("hidden skipped test",(_,o)=>{o.cases[0].skipped=true;},"not_executed");
+rejected("wrong owner or café",(_,o)=>{o.cases[0].actor.businessId="another_cafe";},"cross_tenant");
+rejected("changed user instruction",(_,o)=>{o.cases[0].sourceSha256="0".repeat(64);},"source_text_changed");
+rejected("wrong photo bytes",(_,o)=>{o.cases[1].assetSha256="0".repeat(64);},"attachment_identity_changed");
+rejected("missing independent SQL readback",(_,o)=>{o.cases[0].readbackKind="model_said_saved";},"untrusted_db_readback");
+rejected("false starting quantity",(_,o)=>{o.cases[0].dbBefore[0].quantity=999;},"stock_mismatch");
+rejected("false ending quantity",(_,o)=>{o.cases[0].dbAfter[0].quantity=999;},"stock_mismatch");
+rejected("missing durable receipt",(_,o)=>{o.cases[0].receiptWrites=[];},"wrong_or_missing_write");
+rejected("committed claim without actual receipt",(_,o)=>{o.cases[0].receiptWrites[0].receiptId="";},"unverified_receipt");
+rejected("duplicate stock receipt",(_,o)=>{o.cases[1].receiptWrites[1].receiptId="rec_102";},"duplicate_receipt");
+rejected("wrong stock unit",(_,o)=>{o.cases[1].receiptWrites[0].unit="lb";},"wrong_or_missing_write");
+rejected("wrong stock quantity",(_,o)=>{o.cases[1].receiptWrites[0].delta=10;},"wrong_or_missing_write");
+rejected("wrong source line item",(_,o)=>{o.cases[1].receiptWrites[0].ingredient="beans";},"wrong_or_missing_write");
+rejected("unexpected extra write",(_,o)=>{o.cases[2].receiptWrites.push({sourceLineId:"bad_line",ingredient:"milk",delta:1,unit:"gal",status:"committed",receiptId:"rec_222"});},"wrong_or_missing_write");
+rejected("no-action case falsely claims update",(_,o)=>{o.cases[3].outcome="updated";},"false_outcome");
+rejected("assistant claims success but nothing changed",(_,o)=>{o.cases[3].reply="I updated stock and added inventory purchases."; },"false_success_claim");
+rejected("incorrect extracted quantity",(_,o)=>{o.cases[1].extracted[1].quantity=20;},"extraction_mismatch");
+rejected("guessed value for blurry evidence",(_,o)=>{o.cases[2].extracted[0].quantity=5;o.cases[2].extracted[0].unit="gal";o.cases[2].extracted[0].confidence="verified";},"extraction_mismatch");
+rejected("too many owner questions",(_,o)=>{o.cases[0].clarifications=1;},"excess_clarifications");
+rejected("impossibly fast completion",(_,o)=>{o.cases[0].latency.completedMs=1;},"invalid_timing");
+rejected("other café inventory changed",(_,o)=>{o.cases[5].otherTenantAfter[0].quantity=777;},"stock_mismatch");
+rejected("missing other-café readback",(_,o)=>{delete o.cases[5].otherTenantAfter;},"missing_stock");
+rejected("wrong answer expectation in golden labels",(t)=>{t.cases[0].expected.after[0].quantity=200;},"stock_mismatch");
+rejected("wrong quantity despite altered label",(t)=>{t.cases[0].expected.writes[0].delta=11;},"wrong_or_missing_write");
+rejected("contradictory golden DB delta",(t)=>{t.cases[0].expected.after[0].quantity=111;}, "stock_mismatch");
+rejected("missing expected source",(t)=>{t.cases[0].input.text="";},"missing_ground_truth_source");
+rejected("duplicate golden case ids",(t)=>{t.cases[1].id=t.cases[0].id;},"invalid_or_duplicate_truth_case");
+rejected("empty golden suite",(t)=>{t.cases=[];},"empty_ground_truth");
+rejected("recorded model passed off as real",(t,o)=>{
+ t.datasetKind="human-labeled-holdout";
+ o.capture.mode="live_provider";
+ o.capture.headSha="a".repeat(40);
+ o.capture.runId="run_1";
+ o.capture.modelId="real_provider";
+}, "missing_provider_call");
+test("synthetic evidence cannot be promoted into real-model acceptance",()=>{
+ assert.throws(()=>scoreAcceptance(truth,report,{mode:"live"}),/wrong_dataset_kind/);
+});
+test("calibration does not count as human-labeled even with a passing-looking status field",()=>{
+ const fake=clone(report);
+ fake.status="pass";
+ fake.capture.mode="live_provider";
+ assert.throws(()=>scoreAcceptance(truth,fake),/wrong_capture_mode/);
+});
+test("source tampering in the truth cannot be overlooked",()=>{
+ const t=clone(truth);t.cases[0].input.text="I bought two gallons";
+ assert.throws(()=>scoreAcceptance(t,report),/source_text_changed/);
+});
