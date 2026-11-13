@@ -49,8 +49,16 @@ test("@home owner uploads and reselects a private receipt while another café ca
     const uploads=[];
     page.on("response", response=>{
       const pathname=new URL(response.url()).pathname;
-      if(pathname.startsWith("/api/ai/threads"))
-        uploads.push({method:response.request().method(),path:pathname,status:response.status()});
+      if(pathname.startsWith("/api/ai/threads")) {
+        const item={method:response.request().method(),path:pathname,status:response.status(),
+          origin:response.request().headers().origin??null,
+          requestOrigin:new URL(response.url()).origin,error:null};
+        uploads.push(item);
+        if(response.status()>=400)
+          void response.json().then(value=>{
+            if(value&&typeof value.error==="string")item.error=value.error.slice(0,100);
+          }).catch(()=>undefined);
+      }
     });
     page.on("requestfailed", request=>{
       const pathname=new URL(request.url()).pathname;
