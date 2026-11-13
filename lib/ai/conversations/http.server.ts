@@ -12,7 +12,20 @@ export function conversationJson(data: unknown, status = 200) {
 /** Cookie-authenticated POSTs must be same-origin. Do not permit missing origins. */
 export function requireSameOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  if (!origin || origin !== new URL(request.url).origin) {
+  const internal = new URL(request.url);
+  // Next.js can normalize a loopback/reverse-proxy Request.url to its
+  // internal "localhost" host even when the browser addressed the Host
+  // header directly. Preserve mandatory Origin validation and compare it
+  // only with origins actually represented by this HTTP request.
+  const host = request.headers.get("host");
+  let hostOrigin: string | null = null;
+  if (host && !/[\\/@\\s]/u.test(host)) {
+    try {
+      const candidate = new URL(internal.protocol + "//" + host);
+      if (candidate.host === host.toLowerCase()) hostOrigin = candidate.origin;
+    } catch { /* Untrusted/invalid Host cannot create an allowed origin. */ }
+  }
+  if (!origin || (origin !== internal.origin && origin !== hostOrigin)) {
     throw new ConversationApiError(403, "invalid_origin");
   }
 }
