@@ -2,13 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {classifyPaths, parseNameStatus, selectedScenarios, summarizeReport} from "./targeted.mjs";
 
-test("real Home, Staff, Menu, Money changes select only relevant journeys", () => {
+test("real Home, Staff, Menu, Money and Gmail changes select only relevant journeys", () => {
   assert.deepEqual(classifyPaths(["app/[locale]/page.tsx"]).scenarios, ["home"]);
   assert.deepEqual(classifyPaths(["components/staff/StaffWorkspace.tsx"]).scenarios, ["staff"]);
   assert.deepEqual(classifyPaths(["app/[locale]/menu/page.tsx"]).scenarios, ["menu"]);
   assert.deepEqual(classifyPaths(["app/[locale]/money/page.tsx"]).scenarios, ["money"]);
+  assert.deepEqual(classifyPaths(["app/[locale]/more/gmail/page.tsx"]).scenarios, ["gmail"]);
+  assert.deepEqual(classifyPaths(["components/more/GmailConnectionPanel.tsx"]).scenarios, ["gmail"]);
   assert.deepEqual(classifyPaths(["app/[locale]/layout.tsx"]).scenarios,
-    ["home", "staff", "menu", "money"]);
+    ["home", "staff", "menu", "money", "gmail"]);
 });
 
 test("backend and docs are not delayed by unrelated browser jobs", () => {
@@ -51,6 +53,7 @@ test("browser scenario selection rejects missing, duplicates or unknown names", 
     assert.throws(() => selectedScenarios(v), /Missing or invalid/);
   }
   assert.deepEqual(selectedScenarios("money,home"), ["home", "money"]);
+  assert.deepEqual(selectedScenarios("gmail"), ["gmail"]);
 });
 
 function report(rows) {
