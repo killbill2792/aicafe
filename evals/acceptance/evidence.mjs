@@ -123,7 +123,10 @@ export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,
    "missing_asset_hash");
   requireThat(["updated","needs_review","no_action"].includes(item.expected?.outcome),
    "invalid_expected_outcome");
-  if(item.expected.outcome!=="updated")
+  if(item.expected.outcome==="updated")
+   requireThat(Array.isArray(item.expected.writes)&&item.expected.writes.length>0,
+    "ground_truth_claims_update_without_write");
+  else
    requireThat(item.expected.writes?.length===0,"unapproved_expected_write");
   expected.set(item.id,item);
  }
@@ -133,7 +136,7 @@ export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,
   actual.set(item.id,item);
  }
  requireThat(actual.size===expected.size,"missing_or_skipped_case");
- const counts={receipt:0,conversation:0}, durations=[];
+ const counts={receipt:0,conversation:0}, firstUsefulDurations=[], completionDurations=[];
  for(const [id,source] of expected){
   const obs=actual.get(id);
   requireThat(obs?.executed===true&&!obs.skipped,"not_executed_"+id);
@@ -174,7 +177,8 @@ export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,
   if(mode==="live"){
    requireThat(isId(obs.modelRequestId),"missing_provider_call_"+id);
    requireThat(latency.completedMs>0,"zero_live_latency_"+id);
-   durations.push(latency.completedMs);
+   firstUsefulDurations.push(latency.firstUsefulMs);
+   completionDurations.push(latency.completedMs);
   }
   counts[source.category]++;
  }
@@ -182,12 +186,17 @@ export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,
   requireThat(counts.receipt>=minReceipts&&counts.conversation>=minConversations,
    "insufficient_real_sample");
  }
- const sorted=[...durations].sort((a,b)=>a-b);
- const percentile=p=>sorted[Math.max(0,Math.ceil(sorted.length*p)-1)]??null;
+ const percentile=(values,p)=>{
+  const sorted=[...values].sort((a,b)=>a-b);
+  return sorted[Math.max(0,Math.ceil(sorted.length*p)-1)]??null;
+ };
  return {
   status:mode==="calibration"?"calibration_pass_not_live_proof":"objective_checks_pass_subjective_and_provenance_unverified",
   suiteId:truth.suiteId,cases:actual.size,categories:counts,
-  latencyMs:mode==="live"?{p50:percentile(.5),p95:percentile(.95)}:null,
+  latencyMs:mode==="live"?{
+   firstUseful:{p50:percentile(firstUsefulDurations,.5),p95:percentile(firstUsefulDurations,.95)},
+   completion:{p50:percentile(completionDurations,.5),p95:percentile(completionDurations,.95)}
+  }:null,
   limitations:mode==="live"?["Requires trusted CI execution attestation","Human-reviewed conversational quality","Competitor comparisons not measured"]:
    ["Recorded/synthetic observations only","No real model, database, live receipt or competitive acceptance"]
  };
