@@ -20,8 +20,10 @@ const selectedObjectiveLabel=(objective:"cash"|"owner_time"|"balanced"|null)=>ob
 /** Choice cards require unique labels, even for identically named staff.
  * Use sourced employee UUID suffixes only to disambiguate, not to create IDs. */
 const employeeChoiceCandidates=(candidates:ReadonlyArray<{id:string;name:string}>)=>
- candidates.map(e=>({id:e.id,
-  label:e.name.slice(0,46)+" ("+e.id.slice(-8)+")",
+ candidates.slice(0,5).map((e,i)=>({id:e.id,
+  // A stable position plus a sourced suffix distinguishes even colliding
+  // UUID suffixes. The owner must still choose the actual verified record.
+  label:e.name.slice(0,39)+" — "+String(i+1)+" ("+e.id.slice(-8)+")",
   detail:"Team member",
  }));
 
