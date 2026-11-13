@@ -1,7 +1,9 @@
 import type { UsageRow } from "./usageVariance";
 
-export type UsageToolRead={from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null};
+export type UsageToolRead={from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null;provenance?:UsageProvenance};
 type ToolRow=Omit<UsageRow,"groups"> & {groups:UsageRow["groups"];groupsComplete:boolean};
+export type UsageProvenance={sales:string;recipes:string;counts:string;
+ purchases:string;coverage:"complete"|"incomplete"};
 /** The group identity must be stable across changes in order or number of groups.
  * Old ordinal IDs are invalidated by usageEvidenceRefresh during the next
  * authoritative read. A short deterministic fingerprint keeps model payloads
@@ -24,7 +26,7 @@ export function projectUsageTool(read:UsageToolRead,maxChars=3400) {
  const rows:ToolRow[]=[],items:VerifiedQuantity[]=[];
  const result={
   source:"usage_variance",period:{from:read.from,to:read.to},agentId:"maya" as const,
-  missing:read.missing.slice(0,12),groupBy:read.groupBy,rows,items,
+  missing:read.missing.slice(0,12),groupBy:read.groupBy,provenance:read.provenance??null,rows,items,
   actualShiftUsage:null as null,omittedIngredients:read.rows.length,
   omittedGroups:read.rows.reduce((n,r)=>n+r.groups.length,0),
   truncated:false,
