@@ -119,4 +119,44 @@ describe("Task 13a registered Supervisor staffing conversation",()=>{
   expect(proposeStaff).not.toHaveBeenCalled();
   expect(result.text).toContain("No roster or availability was changed");
  });
+
+ it("delivers a single natural-language roster request with Tuesday absence and ONE approval card",async()=>{
+  const sarahAway={employeeName:"Sarah Jones",absentDate:"2026-11-10",saved:false};
+  schedule.preview.mockReset().mockResolvedValue({
+   ok:true,temporaryConstraint:sarahAway,locations:{loc:"America/Los_Angeles"},notices:[],
+   plan:{status:"feasible",horizonEnd:"2026-11-15",warnings:[],scenarios:[],
+    best:{objective:"balanced",completeCoverage:true,hardConstraintsSatisfied:true,
+     gaps:[],shifts:[shift],cost:{cashWagesCents:2400,costState:"verified",
+      loadedPayrollCents:null,missingWageEmployeeIds:[]}}}});
+  const calls:Record<string,unknown>[]=[];
+  const provider:AgentProvider=async function* (request){
+   calls.push(request);
+   if(calls.length===1)yield tool("draft_week_schedule",{
+    week_start:null,purpose:"draft",
+    temporary_absence:{employee_name:"Sarah",weekday:2}},"one-roster");
+   else yield message("I prepared next week's roster without Sarah on Tuesday. Her saved availability is unchanged.");
+   yield done;
+  };
+  const proposeStaff=vi.fn().mockResolvedValue({proposalId:"22222222-2222-4222-8222-222222222222",
+   revision:1,capabilityId:"olivia.staff_propose_schedule.v2"});
+  const result=await runAgentTurn({
+   ownerText:"Make next week's schedule but keep Sarah off Tuesday",
+   context:{...context(),proposals:{proposePriceChange:vi.fn(),proposeStaff}},
+   provider,
+  });
+  expect(result.endReason).toBe("complete");
+  expect(result.tools).toEqual(["draft_week_schedule"]);
+  expect(schedule.preview).toHaveBeenCalledExactlyOnceWith({
+   week:"2026-11-09",temporaryAbsence:{
+    employeeName:"Sarah",weekday:2,selectedEmployeeIds:[]}});
+  expect(result.results).toEqual(expect.arrayContaining([
+   expect.objectContaining({approvalTool:"existing_card_created",
+    temporaryConstraint:sarahAway})]));
+  expect(proposeStaff).toHaveBeenCalledExactlyOnceWith({
+    name:"propose_schedule",input:{
+      week_start:"2026-11-09",shifts:[expect.objectContaining({start:"08:00",end:"10:00"})],
+    }});
+  expect(result.text).toContain("saved availability is unchanged");
+  expect(calls).toHaveLength(2);
+ });
 });
