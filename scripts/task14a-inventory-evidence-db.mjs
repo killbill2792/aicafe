@@ -95,6 +95,26 @@ try{
  let row=await view();
  check(Number(row?.quantity)===7&&row?.evidence_state==="observed_current",
   "latest successful row has reported quantity");
+ // Prove the existing registered model's REAL SQL aggregation grammar with
+ // a state and one exact identity, not just a mocked tool-call assertion.
+ const verifiedAggregate=async(state,identityColumn,identityValue)=>{
+  const filters=JSON.stringify([
+   {column:"data.evidence_state",op:"=",value:state},
+   {column:identityColumn,op:"=",value:identityValue}
+  ]);
+  const metrics=JSON.stringify([{fn:"sum",column:"quantity"}]);
+  const result=await one(`select public.ai_query_view($1,'cv_inventory',
+   ARRAY[]::text[],$2::jsonb,ARRAY[]::text[],$3::jsonb,
+   $4::date,$4::date,null,20) as evidence`,
+   [ids.cafe,filters,metrics,date]);
+  return result?.evidence;
+ };
+ const toastSum=await verifiedAggregate("observed_current","menu_item_ref",ids.stock);
+ check(toastSum?.sourceCount===1&&Number(toastSum?.rows?.[0]?.sum_quantity)===7,
+  "registered SQL sums one verified Toast stock object without mixing sources");
+ const ownerSum=await verifiedAggregate("dated_owner_count","data.ingredient_id",ids.ingredient);
+ check(ownerSum?.sourceCount===1&&Number(ownerSum?.rows?.[0]?.sum_quantity)===0,
+  "registered SQL retains a measured zero for one named owner ingredient");
  // A new complete empty GET must invalidate the retained item even if the
  // source repeats the previous observation instant at millisecond precision.
  await receipt(first,first,"empty",0);
