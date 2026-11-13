@@ -1,6 +1,7 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import {recordPurchases} from "@/lib/inventory/recordPurchases.server";
 import {receiptStockLineId} from "./receiptAllocation";
+import {simulationOwnerReader} from "./simulationOwner.server";
 import {purchaseCapability} from "./purchases.server";
 
 vi.mock("server-only",()=>({}));
@@ -16,6 +17,19 @@ const line={ingredientId,name:"Milk",quantity:10,unit:"gal",costCents:4000,date:
  source:"chat_text" as const,receiptGroupId:groupId,receiptLineIndex:2,
  receiptVendor:"Shop",receiptTotalCents:4000};
 beforeEach(()=>{vi.mocked(recordPurchases).mockReset().mockResolvedValue([{lineId:receiptStockLineId(groupId,2),ok:true}]);});
+describe("new ingredient matching excludes archived stock",()=>{
+ it("selects active café ingredients only before proposing an effect",async()=>{
+  const last=vi.fn(async()=>({data:[{id:ingredientId,name:"Milk",base_unit:"gal"}],error:null}));
+  const filterActive=vi.fn(()=>({limit:last}));
+  const filterCafe=vi.fn(()=>({is:filterActive}));
+  const select=vi.fn(()=>({eq:filterCafe}));
+  vi.mocked(simulationOwnerReader).mockResolvedValue({client:{from:vi.fn(()=>({select}))}} as never);
+  const result=await purchaseCapability.simulate(owner,{...line,ingredientId:null});
+  expect(filterCafe).toHaveBeenCalledWith("business_id",owner.businessId);
+  expect(filterActive).toHaveBeenCalledWith("archived_at",null);
+  expect(result.effect.ingredientId).toBe(ingredientId);
+ });
+});
 describe("single authoritative inventory purchase writer",()=>{
  it("commits photo-backed stock only, with source-derived stable id and no separate expense",async()=>{
   await purchaseCapability.commit(owner,line,proposalId);
