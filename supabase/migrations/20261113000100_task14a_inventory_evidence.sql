@@ -37,8 +37,10 @@ grant execute on function public.toast_stock_source_receipts(uuid) to authentica
 -- record omitted from a newer complete fetch stays in toast_raw_records as
 -- historical evidence, but its CURRENT quantity/status must be null. A failure
 -- may leave an old successful timestamp: source_status gates current claims.
--- The view date represents the time of this present-state query; the actual
--- source observation date/timestamp remain explicit in data.
+-- Receipt-backed rows represent a present-state lookup on the café-local
+-- query date. Legacy records without a stock-family receipt retain their
+-- original observed business_date for existing canonical SQL range consumers;
+-- the pure projection treats those values as unverified, never current.
 create or replace view public.cv_inventory
  (business_id,source,source_ref,status,business_date,data,menu_item_ref,stock_status,quantity)
  with (security_invoker=true) as
@@ -50,7 +52,9 @@ create or replace view public.cv_inventory
  from public.pantry_stock_counts i
  union all
  select r.business_id,r.source,r.source_ref,r.status,
-  (now() at time zone b.timezone)::date,
+  case when receipt.restaurant_guid is not null
+   then (now() at time zone b.timezone)::date
+   else r.business_date end,
   jsonb_build_object('menu_item_ref',r.data->>'guid',
    'reported_stock_status',r.data->>'status',
    'quantity',case when e.evidence_state='observed_current' then r.data->'quantity' end,
