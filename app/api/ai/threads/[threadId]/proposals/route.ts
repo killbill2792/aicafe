@@ -17,6 +17,7 @@ import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {gmailCapabilityId,gmailEffectSchema} from "@/lib/ai/supervisor/loop/gmail.server";
+import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 /** The loop refused a second active proposal on the same item (engine ProposalOverlapError). */
 function runningOverlap(error:unknown):{proposalId:string;status:string;endsOn:string|null}|null{
@@ -180,7 +181,9 @@ export async function POST(request:Request,{params}:Params){
       if(p.status!=="executing")
         return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
       try{
-        const reconciled=await repo.reconcileEffect(scope,p.id,p.revision);
+        const reconciled=p.capabilityId===gmailCapabilityId?
+          await new SupervisorEffectGateway().reconcileGmail(scope,p.id,p.revision):
+          await repo.reconcileEffect(scope,p.id,p.revision);
         return conversationJson({state:reconciled.status==="executing"?"uncertain":"applied",
           proposal:await view(scope,repo,reconciled)},reconciled.status==="executing"?409:200);
       }catch{

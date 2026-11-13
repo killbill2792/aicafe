@@ -11,6 +11,8 @@ create table public.connector_accounts (
   provider_subject text not null check (length(provider_subject) between 1 and 255),
   email text not null check (length(email) between 3 and 320),
   granted_scopes text[] not null default '{}',
+  enabled_operations text[] not null default '{}',
+  constraint gmail_operations_valid check (enabled_operations <@ array['read','draft','send','organize']::text[]),
   status text not null check (status in ('active','needs_reconnect','revoking','disconnected')),
   generation bigint not null default 1 check (generation > 0),
   connected_at timestamptz not null default now(),

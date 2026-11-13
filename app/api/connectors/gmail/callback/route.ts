@@ -34,6 +34,7 @@ export async function GET(request:Request){
     const {data:account,error:accountError}=await db.from("connector_accounts").upsert({
       business_id:owner.businessId,owner_user_id:owner.ownerUserId,provider:"gmail",
       provider_subject:identity.subject,email:identity.email,granted_scopes:granted,
+      enabled_operations:["read","draft","send","organize"],
       status:"needs_reconnect",generation:(old?.generation??0)+1,updated_at:new Date().toISOString()
     },{onConflict:"business_id,owner_user_id,provider"}).select("id,generation").single();
     if(accountError||!account)throw new Error("gmail_account_save_failed");

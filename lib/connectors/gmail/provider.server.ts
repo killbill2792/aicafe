@@ -161,17 +161,22 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
   let response:{id?:string;threadId?:string};
   let returnedId:string;
   let referenceId:string|null=null;
+  let verifiedThreadId:string|null=null;
   if(effect.operation==="send"||effect.operation==="draft"){
     if(effect.messageId){
       const source=await gmailApi(token,"/messages/"+encodeURIComponent(effect.messageId)+"?format=metadata") as GmailMessage;
       if(!source.id||!source.threadId)throw new Error("gmail_reply_source_unavailable");
       if(effect.threadId&&effect.threadId!==source.threadId)throw new Error("gmail_reply_thread_mismatch");
+      verifiedThreadId=source.threadId;
       referenceId=headersOf(source)["message-id"]??null;
       if(referenceId&&(!/^<[^<>\r\n]{1,240}>$/.test(referenceId)))throw new Error("gmail_reply_header_untrusted");
     }
     const raw=gmailMime(effect,rfc??gmailRfcId(proposalId,effect.from),referenceId);
-    const threadId=effect.messageId?effect.threadId??null:effect.threadId;
+    const threadId=effect.messageId?verifiedThreadId:effect.threadId;
     if(effect.operation==="send"){
+      const live=await getConnectorAccount(scope);
+      if(live?.status!=="active"||live.id!==account.id||live.generation!==account.generation)
+        throw new Error("gmail_connection_revoked_before_send");
       response=await gmailApi(token,"/messages/send",{method:"POST",body:{
         raw,...(threadId?{threadId}:{})}}) as {id?:string;threadId?:string};
     }else{
