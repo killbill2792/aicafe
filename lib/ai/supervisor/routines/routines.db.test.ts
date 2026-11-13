@@ -29,8 +29,8 @@ async function connect(role:"postgres"|"owner"|"service",ownerId?:string){
   return db;
 }
 const call=(db:Client,name:string,args:unknown[])=>
-  db.query("select public."+name+"("+args.map((_,i)=>"$"+(i+1)).join(",")+
-    ") as result",args).then(rows=>rows.rows[0].result);
+  db.query("select to_jsonb(public."+name+"("+args.map((_,i)=>"$"+(i+1)).join(",")+
+    ")) as result",args).then(rows=>rows.rows[0].result);
 
 describe("routine SQL security contract",()=>{
   it("keeps owner notice security, atomic source proof and worker separation",()=>{
