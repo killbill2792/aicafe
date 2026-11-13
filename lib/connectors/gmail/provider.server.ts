@@ -74,7 +74,8 @@ export async function gmailSearch(scope:ConnectorOwner,query:string,limit=12){
     const msg=await gmailApi(token,"/messages/"+encodeURIComponent(m.id)+"?format=full") as GmailMessage;
     return safeMessage(msg);
   }));
-  return {account:account.email,source:"gmail",asOf:new Date().toISOString(),messages};
+  return {account:account.email,source:"gmail",asOf:new Date().toISOString(),messages:messages.map(m=>({
+    id:m.id,threadId:m.threadId,headers:m.headers,snippet:m.snippet,receivedAt:m.receivedAt,attachments:m.attachments}))};
 }
 export async function gmailRead(scope:ConnectorOwner,messageId:string){
   if(!/^[a-zA-Z0-9_-]{8,100}$/.test(messageId))throw new Error("gmail_invalid_message_id");
