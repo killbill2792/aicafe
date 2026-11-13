@@ -6,6 +6,7 @@ import {readSchedulingDemandContext} from "@/lib/scheduling/demandContext.server
 import type {ScheduleDemandEvidence} from "@/lib/calc/scheduling/demandEvidence";
 import { createOliviaDraftFromTrustedSnapshot, oliviaSnapshotDigest } from "@/lib/scheduling/planDrafts.server";
 import { optimizeOliviaWeek } from "@/lib/calc/scheduling/plannerEngine";
+import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import {modelUnpaidOwnerWhatIf} from "@/lib/calc/scheduling/plannerOwnerSavings";
 import type { PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
 import { requireSchedulingOwner } from "@/lib/scheduling/foundation.server";
@@ -116,6 +117,29 @@ export async function previewOliviaAbsenceWhatIf(raw:unknown){
   const after=alternative.best?.cost.cashWagesCents??null;
   const change=before!==null&&after!==null&&
     Number.isSafeInteger(after-before)?after-before:null;
+  // Explain precisely WHOSE shifts moved, rather than merely supplying a
+  // cost number. Compare exact optimizer assignments; no modeled result
+  // may be mistaken for saved/published work.
+  const key=(shift:{employeeId:string;locationId:string;startAt:string;
+   endAt:string;paidMinutes:number;breaks:unknown})=>JSON.stringify([
+    shift.employeeId,shift.locationId,shift.startAt,shift.endAt,
+    shift.paidMinutes,shift.breaks,
+   ]);
+  const baselineShifts=baseline.best?.shifts??[];
+  const alternativeShifts=alternative.best?.shifts??[];
+  const oldKeys=new Set(baselineShifts.map(key));
+  const newKeys=new Set(alternativeShifts.map(key));
+  const removed=baselineShifts.filter(s=>!newKeys.has(key(s)));
+  const added=alternativeShifts.filter(s=>!oldKeys.has(key(s)));
+  const timezones=Object.fromEntries(loaded.input.locations.map(l=>[l.id,l.timezone]));
+  const names=Object.fromEntries(loaded.input.employees.map(e=>[e.id,e.displayName]));
+  const present=(shifts:typeof added)=>oliviaProposalShifts(shifts.slice(0,20),timezones)
+   .map(s=>({...s,employeeName:names[s.employee_id]??"Team member"}));
+  const rosterChanges={
+   removed:present(removed),added:present(added),
+   totalRemoved:removed.length,totalAdded:added.length,
+   truncated:removed.length>20||added.length>20,
+  };
   return {ok:true as const,source:"olivia_hypothetical_absence",
    period:{from:week,to:baseline.horizonEnd},employeeId:employee.id,
    employeeName:employee.displayName,absentDate:localDate,
@@ -129,6 +153,7 @@ export async function previewOliviaAbsenceWhatIf(raw:unknown){
     shiftCount:alternative.best?.shifts.length??0},
    changeInModeledCashWagesCents:change,
    laborCostDifferenceKnown:change!==null,
+   rosterChanges,
    warnings:[...new Set([...baseline.warnings,...alternative.warnings])]};
  }catch{
   // A hypothetical absence may conflict with immutable already-started
