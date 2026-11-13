@@ -26,6 +26,24 @@ describe("Supervisor conversation HTTP boundary", () => {
     expect(() => requireSameOrigin(post("{}"))).not.toThrow();
   });
 
+  it("accepts the browser Host when Next canonicalizes Request.url behind loopback proxy",()=>{
+    const request=new Request("http://localhost:3000/api/ai/threads",{
+      method:"POST",headers:{origin:"http://127.0.0.1:3000",host:"127.0.0.1:3000",
+        "content-type":"application/json"},body:"{}"});
+    expect(()=>requireSameOrigin(request)).not.toThrow();
+    const wrongOrigin=new Request("http://localhost:3000/api/ai/threads",{
+      method:"POST",headers:{origin:"http://evil.example",host:"127.0.0.1:3000",
+        "content-type":"application/json"},body:"{}"});
+    expect(()=>requireSameOrigin(wrongOrigin)).toThrow();
+    const missingOrigin=new Request("http://localhost:3000/api/ai/threads",{
+      method:"POST",headers:{host:"127.0.0.1:3000","content-type":"application/json"},body:"{}"});
+    expect(()=>requireSameOrigin(missingOrigin)).toThrow();
+    const mismatchedScheme=new Request("http://localhost:3000/api/ai/threads",{
+      method:"POST",headers:{origin:"https://127.0.0.1:3000",host:"127.0.0.1:3000",
+        "content-type":"application/json"},body:"{}"});
+    expect(()=>requireSameOrigin(mismatchedScheme)).toThrow();
+  });
+
   it("parses a correctly bounded JSON body", async () => {
     expect(await readBoundedJson(post('{"requestId":"abc"}'))).toEqual({ requestId: "abc" });
   });
