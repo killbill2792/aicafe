@@ -4,7 +4,7 @@ import {createHash} from "node:crypto";
 import {createOwnerScopedCafeTools} from "@/lib/ai/cafeTools.server";
 import {recordedWhatsAppImageIds} from "@/lib/ai/conversations/authorizedTurn.server";
 import {fileEvidence} from "@/lib/ai/conversations/fileEvidence.server";
-import {verifySignature,MAX_BYTES} from "@/lib/ai/conversations/attachments";
+import {verifySignature,MAX_UPLOAD_BYTES} from "@/lib/ai/conversations/attachments";
 import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {TeamRulesService} from "@/lib/ai/policies/service";
 import {SupabaseTeamRulesRepository} from "@/lib/ai/policies/repository.server";
@@ -91,7 +91,7 @@ async function readOwnerAttachments(scope:ConversationScope,threadId:string,ids:
  if(error||!data||data.length!==ids.length)throw new ConversationApiError(403,"attachments_not_available");
  for(const id of ids){
   const row=data.find(a=>a.id===id);
-  if(!row||row.bytes<1||row.bytes>MAX_BYTES)throw new ConversationApiError(422,"invalid_attachment");
+  if(!row||row.bytes<1||row.bytes>MAX_UPLOAD_BYTES)throw new ConversationApiError(422,"invalid_attachment");
   const {data:blob,error:downloadError}=await db.storage.from("ai-chat-private").download(row.object_path);
   if(downloadError||!blob||blob.size!==row.bytes)throw new ConversationApiError(503,"attachment_unavailable");
   const bytes=new Uint8Array(await blob.arrayBuffer());
