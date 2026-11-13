@@ -115,7 +115,8 @@ export const draftScheduleTools={draft_week_schedule:{
    proposedShiftCount:proposedShifts.length,
    proposalReady:canPropose&&!previewOnly,previewOnly, ...(approval??{}),
    approvalTool:approval?"existing_card_created":"not_created",weekStart:start};
-  },
+ }
+ },
  simulate_staff_absence:{
   agentId:"olivia",schema:absenceSchema,
   description:"Answer a read-only hypothetical like 'What if Sarah cannot work Tuesday next week?' using the same verified Olivia scheduling solver, without saving anything or creating a proposal card. week_start=null means next business-local week. employee_name is the owner's actual name or unique first name; weekday is Sunday=0 through Saturday=6. Ambiguous/missing employees are reported rather than guessed. If the owner explicitly asks to SAVE an absence, use existing propose_availability_change instead.",
