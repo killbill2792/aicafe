@@ -286,17 +286,24 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           try{
             const requestKey=requestKeys[index];
             const receiptLineIndex=input.source==="receipt_chat"?indexes[index]:null;
+            // A clear owner request to update stock authorizes a stock purchase,
+            // NOT an additional expense-ledger entry. Preserve receipt metadata
+            // for the review card, but save through the canonical stock-only source.
+            const attached=(p.attachmentIds?.length??0)>0;
+            const stockOnlyReceipt=input.source==="receipt_chat"&&attached&&
+              authorizesInventoryWrite(p.ownerText,attached)&&input.documentKind==="receipt"&&
+              !/\b(expense|accounting|bookkeeping|payable|pay the bill)\b/iu.test(p.ownerText);
+            const sourceForEffect=stockOnlyReceipt?"chat_text":input.source;
             const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
-              new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:input.source,
+              new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:sourceForEffect,
                 receiptGroupId:input.source==="receipt_chat"?owner.id:null,
                 receiptLineIndex,
                 receiptVendor:input.source==="receipt_chat"?input.receiptVendor:null,
                 receiptTotalCents:input.source==="receipt_chat"?input.receiptTotalCents:null},requestKey);
-            const attached=(p.attachmentIds?.length??0)>0;
             const authorized=authorizesInventoryWrite(p.ownerText,attached)&&
               !/\b(purchase order|not received|ordered|pending delivery|quote)\b/iu.test(p.ownerText)&&
               (input.source==="receipt_chat"
-                ?attached&&input.documentKind==="receipt"&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
+                ?stockOnlyReceipt&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
                  line.costCents!==null
                 :!attached&&ownerTextSupportsTypedLine(p.ownerText,line))&&
               Boolean((proposal.canonicalEffectPayload as {ingredientId?:string|null}).ingredientId);
