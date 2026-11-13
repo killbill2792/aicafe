@@ -1,6 +1,6 @@
 import "server-only";
 import {posFactReaders} from "@/lib/data/posFactReaders.server";
-import {civilDateAdd} from "@/lib/calc/scheduling/plannerClock";
+import {civilDateAdd,localParts} from "@/lib/calc/scheduling/plannerClock";
 import {comparableDemandHours,unavailableScheduleDemand,
   type ScheduleDemandEvidence} from "@/lib/calc/scheduling/demandEvidence";
 import {requireSchedulingOwner} from "./foundation.server";
@@ -9,11 +9,15 @@ import {requireSchedulingOwner} from "./foundation.server";
  * An absent or uncertified POS source never blocks manual schedule planning.
  * No direct provider calls, independent rollup queries or persisted forecasts. */
 export async function readSchedulingDemandContext(
-  weekStart:string,expectedBusinessId:string):Promise<ScheduleDemandEvidence>{
-  const historicalPeriod={
-    from:civilDateAdd(weekStart,-56),to:civilDateAdd(weekStart,-1),
-  };
-  const readAt=new Date().toISOString();
+  weekStart:string,expectedBusinessId:string,cafeTimezone:string,
+  asOf:Date=new Date()):Promise<ScheduleDemandEvidence>{
+  // Scheduling a future week cannot require POS facts from future days.
+  // Use the verified business timezone and the last fully completed day.
+  const today=localParts(asOf.getTime(),cafeTimezone).date;
+  const end=civilDateAdd(weekStart,-1)<civilDateAdd(today,-1)
+    ?civilDateAdd(weekStart,-1):civilDateAdd(today,-1);
+  const historicalPeriod={from:civilDateAdd(end,-55),to:end};
+  const readAt=asOf.toISOString();
   const shell={targetWeekStart:weekStart,historicalPeriod,readAt};
   try{
     const owner=await requireSchedulingOwner();
