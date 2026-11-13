@@ -92,7 +92,7 @@ function sortedExtracted(lines,where){
 function obviousUnsupportedSuccess(reply,writes){
  if(typeof reply!=="string"||reply.length>8000)issue("missing_reply");
  const success=/\b(?:added|updated|increased|recorded|saved|posted)\b.{0,65}\b(?:inventory|stock|purchases?)\b|\b(?:inventory|stock)\b.{0,50}\b(?:updated|increased)\b/i;
- const negation=/\b(?:did not|not|could not|couldn't|didn't|haven't|has not|wasn't)\b.{0,45}\b(?:add|update|increase|record|save|post)/i;
+ const negation=/\b(?:did not|not|no|could not|couldn't|didn't|haven't|has not|wasn't|without)\b.{0,65}\b(?:add|update|increase|record|save|post|added|updated|increased|recorded|saved|posted|stock)\b/i;
  return writes.length===0&&success.test(reply)&&!negation.test(reply);
 }
 /** Each independent observation must report actual DB readback, never model-described stock. */
