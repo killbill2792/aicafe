@@ -46,10 +46,13 @@ create or replace view public.cv_inventory
  with (security_invoker=true) as
  select i.business_id,'app'::text,'stock:'||i.id::text,'actual'::text,
   i.count_date,jsonb_build_object('ingredient_id',i.ingredient_id,
+   'ingredient_name',ingredient.name,'base_unit',ingredient.base_unit,
    'count_date',i.count_date,'quantity_base',i.quantity_base,
    'evidence_state','dated_owner_count'),null::text,null::text,
   i.quantity_base::numeric
  from public.pantry_stock_counts i
+ left join public.ingredients ingredient on
+  ingredient.id=i.ingredient_id and ingredient.business_id=i.business_id
  union all
  select r.business_id,r.source,r.source_ref,r.status,
   case when receipt.restaurant_guid is not null
