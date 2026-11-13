@@ -96,7 +96,10 @@ test("@gmail seeded owner sees Gmail entry, connection status and revocation UX 
   await page.reload();
   await expect(page.getByText("Connected and ready")).toBeVisible();
   await expect(page.getByText("owner@example.com",{exact:true})).toBeVisible();
-  await expect(page.getByRole("button",{name:"Connect Gmail"})).toHaveCount(0);
+  // React may retain an offscreen navigation tree during reload; require the
+  // action to be invisible to the owner, not absent from hidden DOM snapshots.
+  await expect(page.getByRole("button",{name:"Connect Gmail"})).toBeHidden();
+  await expect(page.getByRole("button",{name:"Disconnect Gmail"})).toBeVisible();
   page.once("dialog",dialog=>void dialog.accept());
   await page.getByRole("button",{name:"Disconnect Gmail"}).click();
   await expect(page.getByText("Not connected",{exact:true})).toBeVisible();
