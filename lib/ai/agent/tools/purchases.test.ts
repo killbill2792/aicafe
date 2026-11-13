@@ -23,6 +23,18 @@ describe("purchase proposal tool: ten-line receipt, independent approvals",()=>{
   expect(proposed[3].error).toBe("needs_review");
   expect(proposed.filter(row=>row.proposalId)).toHaveLength(9);
  });
+ it("reports verified writes and separate review-needed lines",async()=>{
+  const proposePurchases=vi.fn(async()=>[
+   {name:"Milk",proposalId:"proposal-one",revision:3,saved:true},
+   {name:"Coffee",proposalId:"proposal-two",revision:1}
+  ]);
+  const ctx={proposals:{proposePurchases}} as unknown as AgentToolContext;
+  const result=await purchasesTools.propose_purchases.execute({
+   source:"receipt_chat",lines:[line(0),line(1)],receiptVendor:"Market",
+   receiptTotalCents:1200,documentKind:"receipt"
+  },ctx);
+  expect(result).toMatchObject({saved:true,draft:true,missing:["someLinesNeedReview"]});
+ });
  it("rejects eleven lines and invalid extracted totals without invoking writes",()=>{
   expect(purchaseToolInput.safeParse({source:"receipt_chat",
    lines:Array.from({length:11},(_,n)=>line(n)),receiptVendor:"Market",receiptTotalCents:5500}).success).toBe(false);
