@@ -8,8 +8,8 @@ export const attachmentInput = z.strictObject({
  filename:z.string().trim().min(1).max(150),
  mimeType:z.enum(allowedTypes),
  bytes:z.number().int().min(1).max(MAX_UPLOAD_BYTES),
-}).refine(input=>!["text/plain","text/csv","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(input.mimeType)
-  ||input.bytes<=MAX_DOCUMENT_BYTES,{message:"document_too_large",path:["bytes"]});
+}).refine(input=>input.mimeType.startsWith("image/")||input.bytes<=MAX_DOCUMENT_BYTES,
+ {message:"document_too_large",path:["bytes"]});
 export function safeFileName(name:string):string {
  return name.replace(/[^a-zA-Z0-9._-]/g,"_").replace(/^\.+/,"file").slice(0,90)||"file";
 }
