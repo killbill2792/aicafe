@@ -69,4 +69,17 @@ describe("Task 13a pure historical demand evidence",()=>{
    sampleDays:["2026-11-02","2026-11-09"],
   }]);
  });
+
+ it("caps model-bound rows without silently claiming the subset is all observed history",()=>{
+  const facts=Array.from({length:90},(_,i)=>[
+    row("2026-11-02",i,1000,"location-"+i),
+    row("2026-11-09",i+2,1200,"location-"+i),
+  ]).flat();
+  const result=comparableDemandHours(input(facts));
+  expect(result.status).toBe("available");
+  expect(result.totalComparableHours).toBe(90);
+  expect(result.truncated).toBe(true);
+  expect(result.hours).toHaveLength(80);
+  expect(result.missing).toContain("comparableHourResultTruncated");
+ });
 });
