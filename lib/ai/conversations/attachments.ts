@@ -1,11 +1,13 @@
 import { z } from "zod";
-export const MAX_BYTES = 8*1024*1024; // Modern phone receipts often exceed 2 MiB.
-export const MAX_DOCUMENT_BYTES = 2*1024*1024; // Bound parsed text/spreadsheet decompression.
+// Historical 2 MiB limit continues to govern signed WhatsApp media.
+export const MAX_BYTES = 2*1024*1024;
+export const MAX_DOCUMENT_BYTES = MAX_BYTES;
+export const MAX_UPLOAD_BYTES = 8*1024*1024; // Web chat photos may exceed 2 MiB.
 export const allowedTypes = ["text/plain","text/csv","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/pdf","image/jpeg","image/png","image/webp"] as const;
 export const attachmentInput = z.strictObject({
  filename:z.string().trim().min(1).max(150),
  mimeType:z.enum(allowedTypes),
- bytes:z.number().int().min(1).max(MAX_BYTES),
+ bytes:z.number().int().min(1).max(MAX_UPLOAD_BYTES),
 }).refine(input=>!["text/plain","text/csv","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(input.mimeType)
   ||input.bytes<=MAX_DOCUMENT_BYTES,{message:"document_too_large",path:["bytes"]});
 export function safeFileName(name:string):string {
