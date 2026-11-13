@@ -34,6 +34,7 @@ test("@home real password sign-in isolates two cafés and ignores an unauthorize
 });
 
 test("@home owner uploads and reselects a private receipt while another café cannot read it", async ({browser}) => {
+  test.setTimeout(90_000); // Two signed-in sessions, one real Storage upload and a reload.
   const owner = seededCafe(0), other = seededCafe(1);
   const context = await browser.newContext({baseURL: "http://127.0.0.1:3000", serviceWorkers: "block"});
   const otherContext = await browser.newContext({baseURL: "http://127.0.0.1:3000", serviceWorkers: "block"});
