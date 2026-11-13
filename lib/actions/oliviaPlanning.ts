@@ -68,6 +68,71 @@ export async function previewOliviaWeek(raw: unknown): Promise<
   }
 }
 
+/** Hypothetical named employee absence, with absolutely no persistence.
+ * This is NOT a confirmed staffing fact: the owner can evaluate a scenario
+ * conversationally without approving a change to employee records.
+ * Names are selected only if unique within the authenticated café snapshot. */
+const absenceWhatIfArgs=args.extend({
+ employeeName:z.string().trim().min(1).max(80),
+ weekday:z.number().int().min(0).max(6), // Sunday=0, Monday=1
+}).strict();
+export async function previewOliviaAbsenceWhatIf(raw:unknown){
+ const parsed=absenceWhatIfArgs.safeParse(raw);
+ if(!parsed.success)return {ok:false as const,error:"invalid_input"};
+ const {week,employeeName,weekday}=parsed.data;
+ const loaded=await loadOliviaWeekFromSavedStaff(week);
+ if(!loaded.ok)return {ok:false as const,error:loaded.error};
+ if(loaded.blockers.length)return {ok:false as const,error:"missing_inputs",
+  blockers:loaded.blockers};
+ // First match exact saved display name; a unique first name is supported,
+ // but a shared first name cannot be guessed into the wrong person's record.
+ const normal=(name:string)=>name.trim().replace(/\\s+/g," ").toLocaleLowerCase("en");
+ const target=normal(employeeName);
+ const all=loaded.input.employees;
+ const exact=all.filter(e=>normal(e.displayName)===target);
+ const matches=exact.length?exact:all.filter(e=>normal(e.displayName).split(" ")[0]===target);
+ if(matches.length!==1)return {ok:false as const,
+  error:matches.length?"employee_ambiguous":"employee_not_found",
+  candidates:matches.slice(0,5).map(e=>({id:e.id,name:e.displayName}))};
+ const employee=matches[0];
+ const localDate=new Date(Date.parse(week+"T12:00:00Z")+
+   ((weekday+6)%7)*86400000).toISOString().slice(0,10);
+ try{
+  const baseline=optimizeOliviaWeek(loaded.input);
+  const simulatedInput={...loaded.input,employees:all.map(e=>e.id===employee.id?{
+   ...e,exceptions:[...e.exceptions,{
+    local_date:localDate,exception_type:"unavailable" as const,
+    confirmation:"owner_confirmed" as const,
+   }],
+  }:e)};
+  // owner_confirmed is the existing pure-optimizer's input vocabulary,
+  // not a claim about the database. The temporary snapshot is NEVER saved.
+  const alternative=optimizeOliviaWeek(simulatedInput);
+  const before=baseline.best?.cost.cashWagesCents??null;
+  const after=alternative.best?.cost.cashWagesCents??null;
+  const change=before!==null&&after!==null&&
+    Number.isSafeInteger(after-before)?after-before:null;
+  return {ok:true as const,source:"olivia_hypothetical_absence",
+   period:{from:week,to:baseline.horizonEnd},employeeId:employee.id,
+   employeeName:employee.displayName,absentDate:localDate,
+   hypothetical:true,saved:false,published:false,
+   assumptions:["Simulated absence supplied for this scenario only; employee availability was not changed"],
+   baseline:{status:baseline.status,completeCoverage:baseline.best?.completeCoverage??false,
+    cost:baseline.best?.cost??null,gaps:baseline.best?.gaps??[],shiftCount:baseline.best?.shifts.length??0},
+   alternative:{status:alternative.status,
+    completeCoverage:alternative.best?.completeCoverage??false,
+    cost:alternative.best?.cost??null,gaps:alternative.best?.gaps??[],
+    shiftCount:alternative.best?.shifts.length??0},
+   changeInModeledCashWagesCents:change,
+   laborCostDifferenceKnown:change!==null,
+   warnings:[...new Set([...baseline.warnings,...alternative.warnings])]};
+ }catch{
+  // A hypothetical absence may conflict with immutable already-started
+  // published work. Never hide that by removing or rewriting the shift.
+  return {ok:false as const,error:"hypothetical_plan_unavailable"};
+ }
+}
+
 /** Simulate unpaid owner labor using the same Olivia snapshot + optimizer.
  * Never creates a proposal, saves a draft or assumes owner qualifications.
  */
