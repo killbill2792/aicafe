@@ -137,6 +137,7 @@ export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,
  }
  requireThat(actual.size===expected.size,"missing_or_skipped_case");
  const counts={receipt:0,conversation:0}, firstUsefulDurations=[], completionDurations=[];
+ const distinctReceiptAssets=new Set(),distinctConversationInputs=new Set(),providerRequestIds=new Set();
  for(const [id,source] of expected){
   const obs=actual.get(id);
   requireThat(obs?.executed===true&&!obs.skipped,"not_executed_"+id);
@@ -145,6 +146,9 @@ export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,
   requireThat(obs.sourceSha256===hash(source.input.text),"source_text_changed_"+id);
   requireThat((obs.assetSha256??null)===(source.input.assetSha256??null),
    "attachment_identity_changed_"+id);
+  if(source.category==="receipt"&&source.input.assetSha256)
+   distinctReceiptAssets.add(source.input.assetSha256);
+  if(source.category==="conversation")distinctConversationInputs.add(source.input.text);
   requireThat(obs.readbackKind==="independent_scoped_sql","untrusted_db_readback_"+id);
   const expectedBefore=stockMap(source.expected.before,id+"_truth_before");
   const expectedAfter=stockMap(source.expected.after,id+"_truth_after");
@@ -176,6 +180,8 @@ export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,
    "invalid_timing_"+id);
   if(mode==="live"){
    requireThat(isId(obs.modelRequestId),"missing_provider_call_"+id);
+   requireThat(!providerRequestIds.has(obs.modelRequestId),"reused_provider_request_"+id);
+   providerRequestIds.add(obs.modelRequestId);
    requireThat(latency.completedMs>0,"zero_live_latency_"+id);
    firstUsefulDurations.push(latency.firstUsefulMs);
    completionDurations.push(latency.completedMs);
@@ -185,6 +191,11 @@ export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,
  if(mode==="live"){
   requireThat(counts.receipt>=minReceipts&&counts.conversation>=minConversations,
    "insufficient_real_sample");
+  // Duplicate/retry tests are expected, but not 50 copies of one receipt.
+  requireThat(distinctReceiptAssets.size>=Math.ceil(minReceipts*0.8),
+   "insufficient_receipt_diversity");
+  requireThat(distinctConversationInputs.size>=Math.ceil(minConversations*0.8),
+   "insufficient_conversation_diversity");
  }
  const percentile=(values,p)=>{
   const sorted=[...values].sort((a,b)=>a-b);
