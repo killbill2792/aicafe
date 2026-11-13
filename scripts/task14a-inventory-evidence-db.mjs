@@ -95,6 +95,17 @@ try{
  let row=await view();
  check(Number(row?.quantity)===7&&row?.evidence_state==="observed_current",
   "latest successful row has reported quantity");
+ // A new complete empty GET must invalidate the retained item even if the
+ // source repeats the previous observation instant at millisecond precision.
+ await receipt(first,first,"empty",0);
+ row=await view();
+ check(row?.quantity===null&&row?.evidence_state==="not_observed",
+  "empty source receipt cannot resurrect a historical row at equal timestamps");
+ await receipt(first,first,"current",0);
+ row=await view();
+ check(row?.quantity===null&&row?.evidence_state==="source_unverified",
+  "inconsistent current status with no observed objects cannot certify stock");
+ await receipt(first,first,"current",1);
  // Replaying the same object preserves its unique operational identity.
  await stage(stock(7,first));
  check(Number((await one(`select count(*)::int as n from public.toast_raw_records
