@@ -21,6 +21,8 @@ create table public.connector_accounts (
   unique (id, business_id, owner_user_id)
 );
 create index connector_accounts_owner on public.connector_accounts (business_id,owner_user_id,status);
+-- Reason: New service-only connector table; protect it with RLS before any client grants.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.connector_accounts enable row level security;
 revoke all on public.connector_accounts from public, anon, authenticated;
 grant select, insert, update, delete on public.connector_accounts to service_role;
@@ -33,6 +35,8 @@ create table public.connector_credentials (
   updated_at timestamptz not null default now(),
   check (length(access_token_enc) > 30 and length(refresh_token_enc) > 30)
 );
+-- Reason: New service-only connector table; protect it with RLS before any client grants.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.connector_credentials enable row level security;
 revoke all on public.connector_credentials from public, anon, authenticated;
 grant select, insert, update, delete on public.connector_credentials to service_role;
@@ -47,6 +51,8 @@ create table public.connector_oauth_states (
   created_at timestamptz not null default now()
 );
 create index connector_oauth_states_expiry on public.connector_oauth_states(expires_at);
+-- Reason: New service-only connector table; protect it with RLS before any client grants.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.connector_oauth_states enable row level security;
 revoke all on public.connector_oauth_states from public, anon, authenticated;
 grant select, insert, update, delete on public.connector_oauth_states to service_role;
@@ -77,6 +83,8 @@ create table public.connector_provider_receipts (
 create unique index connector_provider_receipts_rfc_id
   on public.connector_provider_receipts(account_id,rfc_message_id)
   where rfc_message_id is not null;
+-- Reason: New service-only connector table; protect it with RLS before any client grants.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.connector_provider_receipts enable row level security;
 revoke all on public.connector_provider_receipts from public, anon, authenticated;
 grant select, insert, update, delete on public.connector_provider_receipts to service_role;
