@@ -45,6 +45,8 @@ This is **evaluator integrity only**, not real-model acceptance. The existing Pr
 
 When adding a domain (inventory, Gmail, staffing, cash, menu), extend the human-labeled manifest and **introduce an incorrect observation that fails before accepting the new assertion**. Keep one independent source/ground-truth owner from the implementer. Calibrate recorded tests with positive *and* negative examples and never weaken assertions merely to obtain a green run. Any changed evaluator must rerun this mutation suite and have its owner-approved reference labels checked independently. Split/test on new inputs after model or prompt changes. Do not let a test fixture double as production seed data or expose private receipts.
 
+**PR size review note:** This initial foundation keeps expected labels and observed readbacks as separately human-readable JSON fixtures so reviewers can compare every item and stock row. The owner-authorized `big-ok` exception is used for the larger fixture/documentation diff; it does **not** waive executable CI, coverage or review gates.
+
 **Initial calibration:** 8 intentionally synthetic scenarios covering typed purchase, multi-line receipt, unreadable photo, undelivered purchase order, duplicate receipt, cross-café denial, correction and invoice without delivery. Their named ingredient quantities are **test-only** and not business defaults. No real receipts, human holdout, real provider, production effect or competitor timings are bundled.
 
 ## Operator command reference
