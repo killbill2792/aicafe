@@ -36,7 +36,7 @@ alter table public.supervisor_effect_attempts add constraint supervisor_effect_a
   (authorization_kind='click' and owner_message_id is null and mandate_id is null and mandate_revision is null)
   or (authorization_kind='mandate' and owner_message_id is null and mandate_id is not null and mandate_revision is not null)
   or (authorization_kind='owner_message' and owner_message_id is not null and mandate_id is null and mandate_revision is null)
- );
+ ) not valid;
 alter table public.supervisor_effect_attempts validate constraint supervisor_effect_attempts_authorization_v2;
 alter table public.supervisor_effect_attempts add constraint supervisor_attempt_owner_message_fk
  foreign key(owner_message_id) references public.ai_messages(id) not valid;
@@ -122,5 +122,7 @@ begin
 end $$;
 revoke all on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
  from public,anon,authenticated;
+alter table public.supervisor_approvals validate constraint supervisor_approvals_authorization_v2;
+alter table public.supervisor_effect_attempts validate constraint supervisor_effect_attempts_authorization_v2;
 grant execute on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
  to service_role;
