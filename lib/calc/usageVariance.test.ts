@@ -16,6 +16,15 @@ describe("weekly ingredient reconciliation",()=>{
   const rows=calculateUsage({...base,purchases:[{ingredientId:"milk",date:"2026-10-20",quantity:100}]});
   expect(rows[0]).toMatchObject({expected:400,actual:450,differencePct:12.5,status:"over"});
  });
+ it("does not double count a replayed canonical order line identity",()=>{
+  const same={...sales[0],sourceLineId:"order-line-one"};
+  const row=calculateUsage({...base,sales:[same,same]})[0];
+  expect(row.expected).toBeNull();
+  expect(row.missing).toContain("unlinkedSalesRecipeOrModifier");
+  // A corrected version replaces the single canonical line rather than being added.
+  const corrected=calculateUsage({...base,sales:[{...same,quantity:3}]})[0];
+  expect(corrected.expected).toBe(600);
+ });
  it("preserves unknown sales or either missing boundary as null, never zero",()=>{
   const rows=calculateUsage({...base,salesCovered:false,counts:[]});
   expect(rows[0]).toMatchObject({expected:null,actual:null,differencePct:null,status:null});
