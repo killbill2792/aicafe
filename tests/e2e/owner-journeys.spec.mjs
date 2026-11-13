@@ -73,6 +73,11 @@ test("@home owner uploads and reselects a private receipt while another café ca
       if(pathname.startsWith("/api/ai/threads"))
         uploads.push({method:request.method(),path:pathname,error:request.failure()?.errorText?.slice(0,100)});
     });
+    // A new chat creates its thread before uploading. Verify this first so
+    // 403 origin/auth failures cannot masquerade as 20-second upload timeouts.
+    const createdThread=page.waitForResponse(response=>
+      new URL(response.url()).pathname==="/api/ai/threads" &&
+      response.request().method()==="POST",{timeout:20_000});
     const uploaded = page.waitForResponse(response =>
       /^\/api\/ai\/threads\/[^/]+\/attachments$/.test(new URL(response.url()).pathname) &&
       response.request().method() === "POST",{timeout:20_000}).catch(()=>{
@@ -85,6 +90,15 @@ test("@home owner uploads and reselects a private receipt while another café ca
     await page.locator('input[type="file"]').setInputFiles({
       name:"receipt.png",mimeType:"image/png",buffer:png,
     });
+    const created=await createdThread;
+    if(created.status()!==201){
+      let code="non_json_rejection";
+      try{const body=await created.json();if(typeof body?.error==="string")code=body.error.slice(0,100);}
+      catch{code="non_json_rejection";}
+      throw new Error("Thread create rejected, status="+created.status()+", code="+code+
+        ", requestOrigin="+new URL(created.url()).origin+
+        ", browserOrigin="+(created.request().headers().origin??"absent"));
+    }
     const response = await uploaded;
     expect(response.status()).toBe(201);
     const {attachment} = await response.json();
