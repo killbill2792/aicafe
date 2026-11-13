@@ -9,8 +9,14 @@ import {requireSchedulingOwner} from "./foundation.server";
  * An absent or uncertified POS source never blocks manual schedule planning.
  * No direct provider calls, independent rollup queries or persisted forecasts. */
 export async function readSchedulingDemandContext(
-  weekStart:string,expectedBusinessId:string,cafeTimezone:string,
+  weekStart:string,expectedBusinessId:string,cafeTimezone:string|undefined,
   asOf:Date=new Date()):Promise<ScheduleDemandEvidence>{
+  // A missing timezone is unknown, never a guessed UTC business date.
+  if(!cafeTimezone){
+    const historicalPeriod={from:civilDateAdd(weekStart,-56),to:civilDateAdd(weekStart,-1)};
+    return unavailableScheduleDemand({targetWeekStart:weekStart,historicalPeriod,
+      readAt:asOf.toISOString()},["cafeTimezoneUnavailable"]);
+  }
   // Scheduling a future week cannot require POS facts from future days.
   // Use the verified business timezone and the last fully completed day.
   const today=localParts(asOf.getTime(),cafeTimezone).date;
