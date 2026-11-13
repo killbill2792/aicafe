@@ -6,7 +6,9 @@ alter table public.ai_attachments drop constraint if exists ai_attachments_media
 alter table public.ai_attachments add constraint ai_attachments_media_type_check
  check (media_type in ('text/plain','text/csv',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/pdf','image/jpeg','image/png','image/webp'));
+  'application/pdf','image/jpeg','image/png','image/webp')) not valid;
+-- Validate using a weaker lock than immediate ADD CONSTRAINT's table scan.
+alter table public.ai_attachments validate constraint ai_attachments_media_type_check;
 update storage.buckets set allowed_mime_types=array[
  'text/plain','text/csv',
  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
