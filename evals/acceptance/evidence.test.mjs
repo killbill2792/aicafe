@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import {createHash} from "node:crypto";
 import {scoreAcceptance} from "./evidence.mjs";
 
 const load=name=>JSON.parse(readFileSync(new URL("./fixtures/"+name,import.meta.url),"utf8"));
@@ -78,4 +79,67 @@ test("calibration does not count as human-labeled even with a passing-looking st
 test("source tampering in the truth cannot be overlooked",()=>{
  const t=clone(truth);t.cases[0].input.text="I bought two gallons";
  assert.throws(()=>scoreAcceptance(t,report),/source_text_changed/);
+});
+
+/**
+ * Synthetic contract exercise of the *live-mode scorer branch*. No model or
+ * database is called; even a passing report retains an unverified provenance
+ * status. This catches the evaluator defect where live mode always fails.
+ */
+function syntheticLiveContract(){
+ const t=clone(truth),o=clone(report);
+ t.datasetKind="human-labeled-holdout";
+ o.capture={mode:"live_provider",headSha:"a".repeat(40),
+  runId:"synthetic_contract",modelId:"synthetic_contract"};
+ t.cases=[];o.cases=[];
+ for(let i=0;i<80;i++){
+  const receipt=i<50;
+  const source=clone(truth.cases[receipt?1:0]);
+  const observation=clone(report.cases[receipt?1:0]);
+  const id="contract_"+i;
+  source.id=id;
+  observation.id=id;
+  source.input.text+=" (synthetic contract "+i+")";
+  observation.sourceSha256=createHash("sha256").update(source.input.text).digest("hex");
+  if(receipt){
+   source.input.assetSha256=createHash("sha256").update("synthetic_receipt_"+i).digest("hex");
+   observation.assetSha256=source.input.assetSha256;
+  }
+  observation.modelRequestId="synthetic_request_"+i;
+  observation.latency={firstUsefulMs:(i+1)*10,completedMs:(i+1)*20};
+  t.cases.push(source);
+  o.cases.push(observation);
+ }
+ return {t,o};
+}
+test("the full-size synthetic live-mode contract reaches scoring, never a real acceptance verdict",()=>{
+ const {t,o}=syntheticLiveContract();
+ const result=scoreAcceptance(t,o,{mode:"live"});
+ assert.equal(result.status,"objective_checks_pass_subjective_and_provenance_unverified");
+ assert.deepEqual(result.categories,{receipt:50,conversation:30});
+ assert.equal(result.cases,80);
+ assert.deepEqual(result.latencyMs,{
+  firstUseful:{p50:400,p95:760},completion:{p50:800,p95:1520}
+ });
+ assert.match(result.limitations.join(" "),/trusted CI execution attestation/);
+});
+test("live mode refuses a complete-looking set below required sample counts",()=>{
+ const {t,o}=syntheticLiveContract();
+ t.cases.splice(0,1);o.cases.splice(0,1);
+ assert.throws(()=>scoreAcceptance(t,o,{mode:"live"}),/insufficient_real_sample/);
+});
+test("live mode refuses synthetic request IDs missing on one case of a full batch",()=>{
+ const {t,o}=syntheticLiveContract();
+ delete o.cases[25].modelRequestId;
+ assert.throws(()=>scoreAcceptance(t,o,{mode:"live"}),/missing_provider_call/);
+});
+test("live mode requires an exact GitHub head and trustworthy model identifier shape",()=>{
+ const {t,o}=syntheticLiveContract();
+ o.capture.headSha="not_a_commit";
+ assert.throws(()=>scoreAcceptance(t,o,{mode:"live"}),/missing_head_sha/);
+});
+test("live mode still rejects a wrong database delta in one of 80 otherwise valid cases",()=>{
+ const {t,o}=syntheticLiveContract();
+ o.cases[79].dbAfter[0].quantity+=1;
+ assert.throws(()=>scoreAcceptance(t,o,{mode:"live"}),/stock_mismatch/);
 });
