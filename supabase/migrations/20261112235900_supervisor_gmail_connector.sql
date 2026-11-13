@@ -29,6 +29,7 @@ grant select, insert, update, delete on public.connector_accounts to service_rol
 
 create table public.connector_credentials (
   account_id uuid primary key references public.connector_accounts(id) on delete cascade,
+  generation bigint not null check (generation > 0),
   access_token_enc text not null,
   refresh_token_enc text not null,
   token_expires_at timestamptz not null,

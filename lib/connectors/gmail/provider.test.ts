@@ -18,7 +18,7 @@ const account={id:"44444444-4444-4444-8444-444444444444",...scope,provider:"gmai
 const effect:GmailEffect={accountId:account.id,generation:1,from:account.email,operation:"send",action:null,
  to:["supplier@example.net"],cc:[],bcc:[],subject:"Order confirmation",body:"Confirmed. Thanks.",
  messageId:null,threadId:null,labelId:null,labelName:null};
-const credentials={access_token_enc:"encrypted",refresh_token_enc:"encrypted",
+const credentials={generation:1,access_token_enc:"encrypted",refresh_token_enc:"encrypted",
  token_expires_at:new Date(Date.now()+3600000).toISOString()};
 function db(receipt?:Record<string,unknown>,duplicate=false){
  const writes:Array<{table:string;operation:string;data:unknown}>=[];

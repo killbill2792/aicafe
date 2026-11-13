@@ -10,14 +10,16 @@ export async function authorizedGmail(scope:ConnectorOwner,operation:ConnectorOp
   assertGmailCapability(account,operation);
   const db=createAdminSupabaseClient();
   const {data:secret,error}=await db.from("connector_credentials")
-    .select("access_token_enc,refresh_token_enc,token_expires_at").eq("account_id",account.id).maybeSingle();
-  if(error||!secret)throw new Error("gmail_reconnect_required");
+    .select("access_token_enc,refresh_token_enc,token_expires_at,generation").eq("account_id",account.id).maybeSingle();
+  if(error||!secret||Number(secret.generation)!==account.generation)throw new Error("gmail_reconnect_required");
   const expiry=Date.parse(secret.token_expires_at);
   if(!Number.isFinite(expiry))throw new Error("gmail_reconnect_required");
   if(expiry>Date.now()+60000)return {account,token:decryptToken(secret.access_token_enc)};
   let refreshed;
   try{refreshed=await tokenRequest({grant_type:"refresh_token",refresh_token:decryptToken(secret.refresh_token_enc)});}
-  catch{
+  catch(error){
+    if(!(error instanceof Error&&"grantRevoked" in error&&error.grantRevoked===true))
+      throw new Error("gmail_temporary_refresh_failure");
     await db.from("connector_accounts").update({status:"needs_reconnect",generation:account.generation+1,updated_at:new Date().toISOString()})
       .eq("id",account.id).eq("generation",account.generation).eq("status","active");
     throw new Error("gmail_reconnect_required");
@@ -27,8 +29,8 @@ export async function authorizedGmail(scope:ConnectorOwner,operation:ConnectorOp
     refresh_token_enc:refreshed.refresh_token?encryptToken(refreshed.refresh_token):secret.refresh_token_enc,
     token_expires_at:new Date(Date.now()+refreshed.expires_in*1000).toISOString(),
     updated_at:new Date().toISOString(),
-  }).eq("account_id",account.id);
-  if(updated.error)throw new Error("gmail_refresh_save_failed");
+  }).eq("account_id",account.id).eq("generation",account.generation).select("account_id").maybeSingle();
+  if(updated.error||!updated.data)throw new Error("gmail_refresh_conflict");
   // A concurrent owner disconnect may have invalidated the refreshed credentials.
   const still=await getConnectorAccount(scope);
   if(still?.id!==account.id||still?.generation!==account.generation||still.status!=="active")

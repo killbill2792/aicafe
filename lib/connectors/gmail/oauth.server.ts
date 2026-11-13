@@ -35,6 +35,9 @@ export function authorizationUrl(state:string,challenge:string):string{
   u.searchParams.set("code_challenge",challenge);
   return u.toString();
 }
+export class GmailOAuthError extends Error {
+  constructor(readonly grantRevoked:boolean){super("gmail_token_exchange_failed");}
+}
 export type GoogleTokens={access_token:string;refresh_token?:string;expires_in:number;scope?:string;token_type:string};
 export async function tokenRequest(fields:Record<string,string>):Promise<GoogleTokens>{
   const {clientId,clientSecret}=oauthConfig();
@@ -42,7 +45,12 @@ export async function tokenRequest(fields:Record<string,string>):Promise<GoogleT
     headers:{"content-type":"application/x-www-form-urlencoded"},
     body:new URLSearchParams({...fields,client_id:clientId,client_secret:clientSecret}),
     cache:"no-store",signal:AbortSignal.timeout(12000)});
-  if(!response.ok)throw new Error("gmail_token_exchange_failed");
+  if(!response.ok){
+    // Only Google's explicit invalid_grant is evidence that the owner's
+    // consent expired/revoked; a transient 429/5xx must never disconnect them.
+    const problem=response.status===400?await response.json().catch(()=>null) as {error?:string}|null:null;
+    throw new GmailOAuthError(problem?.error==="invalid_grant");
+  }
   const json=await response.json() as Partial<GoogleTokens>;
   if(!json.access_token||!Number.isFinite(json.expires_in)||!json.token_type||json.token_type.toLowerCase()!=="bearer")
     throw new Error("gmail_invalid_token_response");

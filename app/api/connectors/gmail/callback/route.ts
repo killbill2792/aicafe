@@ -39,7 +39,7 @@ export async function GET(request:Request){
     },{onConflict:"business_id,owner_user_id,provider"}).select("id,generation").single();
     if(accountError||!account)throw new Error("gmail_account_save_failed");
     const credential=await db.from("connector_credentials").upsert({
-      account_id:account.id,access_token_enc:encryptToken(tokens.access_token),
+      account_id:account.id,generation:account.generation,access_token_enc:encryptToken(tokens.access_token),
       refresh_token_enc:encryptToken(tokens.refresh_token),
       token_expires_at:new Date(Date.now()+tokens.expires_in*1000).toISOString(),
       updated_at:new Date().toISOString()
