@@ -149,6 +149,8 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   suggest_new_item_price:["category"],
   // A public web search phrase is not a café catalog identifier.
   web_search:["query"],
+  // Free-form Gmail search is owner text, not an internal catalogue identity.
+  search_gmail:["query"],
   propose_event_plan:["summary","actions","expectedBusyHours"],
   manage_commitment:["title","due_date","due_time","origin","commitment_id"],
   manage_routine:["title","routine_id"]

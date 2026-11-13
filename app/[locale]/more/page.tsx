@@ -1,6 +1,7 @@
 import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
 import { AlertTriangle, ChevronRight, CreditCard, FileText, Languages, Menu as MenuIcon, Mail, Percent, Receipt, Shield, SlidersHorizontal, Store, Target, Trash2, UserRound, Users, type LucideIcon } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
+import en from "@/messages/en.json";
 import { cookies } from "next/headers";
 import { parseThemeCookie, parseModeCookie } from "@/app/themes";
 import { ThemePicker } from "@/components/ui/ThemePicker";

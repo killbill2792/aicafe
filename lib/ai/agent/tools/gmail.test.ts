@@ -16,7 +16,7 @@ describe("Gmail tools are owner scoped and inert",()=>{
    const propose=vi.fn().mockResolvedValue({proposalId:"11111111-1111-4111-8111-111111111111",
      revision:1,account:"owner@example.com"});
    const response=await gmailTools.propose_gmail_action.execute(input,{
-     ...context,gmail:{propose,search:vi.fn(),read:vi.fn()}
+     ...context,gmail:{propose,search:vi.fn(),read:vi.fn(),thread:vi.fn(),attachment:vi.fn()}
    });
    expect(propose).toHaveBeenCalledWith(input);
    expect(response).toMatchObject({draft:true,saved:false,requiredApproval:"owner_click"});
@@ -28,7 +28,7 @@ describe("Gmail tools are owner scoped and inert",()=>{
  it("search is bounded and invokes only the authorized reader",async()=>{
    const search=vi.fn().mockResolvedValue({messages:[],account:"owner@example.com"});
    const result=await gmailTools.search_gmail.execute({query:"invoice",limit:5},{
-     ...context,gmail:{search,read:vi.fn(),propose:vi.fn()}
+     ...context,gmail:{search,read:vi.fn(),thread:vi.fn(),attachment:vi.fn(),propose:vi.fn()}
    });
    expect(search).toHaveBeenCalledWith("invoice",5);
    expect(result).toMatchObject({missing:[],source:"gmail"});

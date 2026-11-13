@@ -138,10 +138,11 @@ export async function gmailReadAttachment(scope:ConnectorOwner,messageId:string,
     throw new Error("gmail_attachment_too_large");
   const payload=await gmailApi(token,"/messages/"+encodeURIComponent(messageId)+
     "/attachments/"+encodeURIComponent(attachmentId)) as {data?:string;size?:number};
-  if(!payload.data||!Number.isFinite(payload.size)||payload.size>65536)
+  if(!payload.data||typeof payload.size!=="number"||!Number.isFinite(payload.size)||payload.size>65536)
     throw new Error("gmail_attachment_unavailable");
+  const responseSize=payload.size;
   const bytes=Buffer.from(payload.data,"base64url");
-  if(bytes.length!==payload.size||bytes.length>65536)throw new Error("gmail_attachment_size_mismatch");
+  if(bytes.length!==responseSize||bytes.length>65536)throw new Error("gmail_attachment_size_mismatch");
   return {source:"gmail_attachment",account:account.email,asOf:new Date().toISOString(),
     messageId,attachmentId,filename:match.filename.slice(0,180),mimeType:match.mimeType,
     content:bytes.toString("utf8").slice(0,12000)};
