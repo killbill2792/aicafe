@@ -93,12 +93,13 @@ class MemoryRepo implements LoopRepository{
      monitoringStartDate:action==="manual_confirmed"?startDate??null:p.monitoringStartDate};
    return this.proposal;
  }
- async claimEffect(s:OwnerLoopScope,id:string,revision:number,authorizationKind:"click"|"mandate"){
+ async claimEffect(s:OwnerLoopScope,id:string,revision:number,authorizationKind:"click"|"mandate"|"owner_message"){
    // Model the gateway's atomic CAS: no await may separate the revision/status check from the claim.
    let p=this.proposal;
    if(!p||p.id!==id||p.businessId!==s.businessId||
      p.ownerUserId!==s.ownerUserId||p.threadId!==s.threadId)throw Error("scope");
    if(p.revision!==revision)throw Error("conflict");
+   if(authorizationKind==="owner_message")throw Error("owner message not in legacy integration fixture");
    if(authorizationKind==="click"){if(p.status!=="approved")throw Error("individual click required");}
    else{
     if(p.status!=="draft"||p.capabilityId!=="leo.goal.v1")throw Error("standing mandate denied");
@@ -109,7 +110,7 @@ class MemoryRepo implements LoopRepository{
    return {proposal:claimed,attemptKey:"attempt:"+id,businessDate:"2026-10-01",authorizationKind};
  }
  async finishEffect(s:OwnerLoopScope,claim:{proposal:LoopProposal;attemptKey:string;
-   businessDate:string;authorizationKind:"click"|"mandate"},expectedRevision:number,
+   businessDate:string;authorizationKind:"click"|"mandate"|"owner_message"},expectedRevision:number,
    state:"verified"|"uncertain"|"stale",nextStatus?:"committed"|"manual_pending",startDate?:string){
    const p=await this.load(s,claim.proposal.id);
    if(p.status!=="executing"||p.revision!==expectedRevision||claim.attemptKey!=="attempt:"+p.id)
