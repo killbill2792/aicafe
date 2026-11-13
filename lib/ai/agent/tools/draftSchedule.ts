@@ -123,13 +123,15 @@ export const draftScheduleTools={draft_week_schedule:{
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const {week_start,employee_name,weekday}=absenceSchema.parse(raw);
    const week=week_start??nextMonday(ctx.asOf);
+   const selectedEmployeeIds=[...(ctx.resolveState?.chosenIds??[])]
+     .filter(id=>z.uuid().safeParse(id).success).slice(0,10);
    const result=await previewOliviaAbsenceWhatIf({
-     week,employeeName:employee_name,weekday});
+     week,employeeName:employee_name,weekday,selectedEmployeeIds});
    if(!result.ok)return {source:"olivia_hypothetical_absence",
     agentId:"olivia",period:null,draft:false,saved:false,
     missing:[result.error],...(result.error==="employee_ambiguous"?{
      needsOwnerChoice:true,candidates:result.candidates?.map(e=>({
-      id:e.id,label:e.name,detail:"Team member",
+      id:e.id,label:e.name,detail:"Team member • record "+e.id.slice(-6),
      }))??[],
     }:{})};
    return {source:"olivia_hypothetical_absence",agentId:"olivia",
