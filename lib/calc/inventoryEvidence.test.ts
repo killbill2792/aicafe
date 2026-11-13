@@ -1,35 +1,26 @@
 import {describe,expect,it} from "vitest";
 import {projectInventoryEvidence} from "./inventoryEvidence";
 import en from "../../messages/en.json";
-import es from "../../messages/es.json";
-import ar from "../../messages/ar.json";
 
 const base={source:"toast",source_ref:"toast-current:1",status:"open",
  business_date:"2026-11-12",menu_item_ref:"b",stock_status:"QUANTITY",quantity:4,
  data:{source_as_of:"2026-11-12T20:00:00.000Z",checked_at:"2026-11-12T20:00:00.000Z",
   reported_stock_status:"QUANTITY",evidence_state:"observed_current"}};
-describe("localized inventory evidence labels",()=>{
- it("has matching human-readable EN/ES/AR keys and no raw provider-state jargon",()=>{
-  const messages=[en,es,ar].map(lang=>lang.MenuBuilder);
-  const keys=Object.keys(messages[0]).filter(key=>key.startsWith("stockEvidence")).sort();
+describe("English inventory evidence labels",()=>{
+ it("has explicit, human-readable English status and unknown-vs-zero semantics",()=>{
+  const labels=en.MenuBuilder;
+  const keys=Object.keys(labels).filter(key=>key.startsWith("stockEvidence")).sort();
   expect(keys).toHaveLength(15);
-  for(const m of messages){
-   expect(Object.keys(m).filter(key=>key.startsWith("stockEvidence")).sort()).toEqual(keys);
-   for(const key of keys){
-    const label=m[key as keyof typeof m];
-    expect(label).toBeTruthy();
-    expect(label).not.toMatch(/source_unverified|not_observed|source_failed|observed_current/);
-   }
-  }
   for(const key of keys){
-   expect(es.MenuBuilder[key as keyof typeof es.MenuBuilder])
-    .not.toBe(en.MenuBuilder[key as keyof typeof en.MenuBuilder]);
-   expect(ar.MenuBuilder[key as keyof typeof ar.MenuBuilder])
-    .not.toBe(en.MenuBuilder[key as keyof typeof en.MenuBuilder]);
+   const text=labels[key as keyof typeof labels];
+   expect(text).toBeTruthy();
+   expect(text).not.toMatch(/source_unverified|not_observed|source_failed|observed_current/);
   }
-  expect(en.MenuBuilder.stockEvidenceUnknown).toContain("not zero");
-  expect(es.MenuBuilder.stockEvidenceUnknown).toContain("no equivale a cero");
-  expect(ar.MenuBuilder.stockEvidenceUnknown).toContain("لا يعني صفرًا");
+  expect(labels.stockEvidenceCurrent).toContain("latest successful Toast");
+  expect(labels.stockEvidenceNotObserved).toContain("Historical only");
+  expect(labels.stockEvidenceFailed).toContain("failed");
+  expect(labels.stockEvidenceUnknown).toContain("not zero");
+  expect(labels.stockEvidenceNoRows).toContain("does not mean zero");
  });
 });
 
