@@ -3,7 +3,7 @@
  * hypothetical, negated and exploratory language; uncertain cases use approval cards. */
 export function authorizesInventoryWrite(ownerText:string,hasAttachments:boolean):boolean{
  const t=ownerText.normalize("NFKC").toLocaleLowerCase().trim();
- if(!t||t.length>4000||/\b(if|what if|suppose|maybe|might|could|would|should|hypothetical|preview|draft|review only|do not|don't|never|cancel|not yet|planning|plan to)\b/u.test(t))
+ if(!t||t.length>4000||t.includes("?")||/\b(if|what if|suppose|maybe|might|could|would|should|hypothetical|preview|draft|review only|do not|don't|never|cancel|not yet|planning|plan to)\b/u.test(t))
   return false;
  const explicit=/\b(record|add|update|log|increase|save|post)\b/u.test(t)&&
    /\b(inventory|stock|purchases?|receipt|bill|invoice|items?)\b/u.test(t);
