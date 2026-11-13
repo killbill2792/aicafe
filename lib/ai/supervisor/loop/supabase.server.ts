@@ -148,8 +148,8 @@ export class SupabaseLoopRepository implements LoopRepository{
     return decode(data as Row);
   }
   async claimEffect(scope:OwnerLoopScope,id:string,revision:number,
-    authorizationKind:EffectAuthorizationKind):Promise<LoopEffectClaim>{
-    return new SupervisorEffectGateway().claim(scope,uuid.parse(id),revision,authorizationKind);
+    authorizationKind:EffectAuthorizationKind,ownerMessageId?:string):Promise<LoopEffectClaim>{
+    return new SupervisorEffectGateway().claim(scope,uuid.parse(id),revision,authorizationKind,ownerMessageId);
   }
   async finishEffect(scope:OwnerLoopScope,claim:LoopEffectClaim,expectedRevision:number,
     state:"verified"|"uncertain"|"stale",nextStatus?:"committed"|"manual_pending",startDate?:string):Promise<LoopProposal>{
