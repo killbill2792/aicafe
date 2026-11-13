@@ -280,7 +280,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           .from("supervisor_proposals")
           .select("request_key,canonical_effect_payload,status,created_at")
           .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
-          .eq("thread_id",id).eq("capability_id",purchaseCapabilityId):null;
+          .eq("capability_id",purchaseCapabilityId):null;
         if(receiptRows?.error)throw new Error("receipt_proposals_unavailable");
         const sameReceipt=(receiptRows?.data??[]).filter(row=>
           (row.canonical_effect_payload as {receiptGroupId?:string}|null)?.receiptGroupId===receiptGroupId);
