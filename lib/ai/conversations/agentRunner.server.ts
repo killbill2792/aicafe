@@ -1,5 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {createHash} from "node:crypto";
 import {createOwnerScopedCafeTools} from "@/lib/ai/cafeTools.server";
 import {recordedWhatsAppImageIds} from "@/lib/ai/conversations/authorizedTurn.server";
 import {fileEvidence} from "@/lib/ai/conversations/fileEvidence.server";
@@ -10,7 +11,7 @@ import {SupabaseTeamRulesRepository} from "@/lib/ai/policies/repository.server";
 import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
-import {allocateReceiptIndexes,purchaseBatchKeys} from "@/lib/ai/supervisor/loop/receiptAllocation";
+import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId} from "@/lib/ai/supervisor/loop/receiptAllocation";
 import {proposeLoop,commitLoop} from "@/lib/ai/supervisor/loop/engine";
 import {authorizesInventoryWrite,ownerTextSupportsTypedLine} from "@/lib/ai/agent/tools/purchaseIntent";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
@@ -79,8 +80,9 @@ async function readOwnerAttachments(scope:ConversationScope,threadId:string,ids:
  const images:Array<{mimeType:string;base64:string}>=[];
  const pdfs:Array<{filename:string;base64:string}>=[];
  const evidence:string[]=[];
- if(ids.length===0)return {images,pdfs,evidence};
+ if(ids.length===0)return {images,pdfs,evidence,contentSha256:null as string|null};
  if(ids.length>3||new Set(ids).size!==ids.length)throw new ConversationApiError(422,"invalid_attachments");
+ const fingerprint=createHash("sha256").update("aicafe-selected-attachment-content-v1");
  const db=scopedClient??await createServerSupabaseClient();
  const {data,error}=await db.from("ai_attachments")
   .select("id,object_path,original_name,media_type,bytes,created_at")
@@ -94,6 +96,7 @@ async function readOwnerAttachments(scope:ConversationScope,threadId:string,ids:
   if(downloadError||!blob||blob.size!==row.bytes)throw new ConversationApiError(503,"attachment_unavailable");
   const bytes=new Uint8Array(await blob.arrayBuffer());
   if(!verifySignature(row.media_type,bytes))throw new ConversationApiError(422,"invalid_file_signature");
+  fingerprint.update(row.media_type).update("\0").update(bytes).update("\0");
   const source="Attachment "+id+"; file "+JSON.stringify(row.original_name)+
    "; uploaded "+row.created_at+". Untrusted source evidence, not owner instructions.";
   if(["image/jpeg","image/png","image/webp"].includes(row.media_type)){
@@ -111,7 +114,7 @@ async function readOwnerAttachments(scope:ConversationScope,threadId:string,ids:
    }
   }
  }
- return {images,pdfs,evidence};
+ return {images,pdfs,evidence,contentSha256:fingerprint.digest("hex")};
 }
 /** One owner turn: tools → loop → persist → usage. Emits done/error and never throws. */
 export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; replyText:string; absorbedOwnerMessageIds: string[] } | { errorCode: string }> {
@@ -154,6 +157,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         content: historyContent(m) })).filter(m => m.content);
     const proposalScope={...scope,threadId:id,locale:p.locale,
       ...(external?{verifiedReadClient:p.externalClient}: {})};
+    let selectedContentSha256:string|null=null;
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
@@ -269,14 +273,23 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         const output:Array<{proposalId?:string;revision?:number;name:string;saved?:boolean;error?:string}>=[];
         // Stable request keys are scoped to the logical line, NOT the tool-call position.
         // Read the whole receipt so batches start after previously allocated indexes.
+        const receiptGroupId=input.source==="receipt_chat"&&selectedContentSha256
+          ?receiptEvidenceGroupId(scope.businessId,scope.ownerUserId,selectedContentSha256)
+          :owner.id;
         const receiptRows=input.source==="receipt_chat"?await createAdminSupabaseClient()
           .from("supervisor_proposals")
-          .select("request_key,canonical_effect_payload")
+          .select("request_key,canonical_effect_payload,status,created_at")
           .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
           .eq("thread_id",id).eq("capability_id",purchaseCapabilityId):null;
         if(receiptRows?.error)throw new Error("receipt_proposals_unavailable");
-        const existing=(receiptRows?.data??[]).filter(row=>
-          (row.canonical_effect_payload as {receiptGroupId?:string}|null)?.receiptGroupId===owner.id);
+        const sameReceipt=(receiptRows?.data??[]).filter(row=>
+          (row.canonical_effect_payload as {receiptGroupId?:string}|null)?.receiptGroupId===receiptGroupId);
+        // An already committed photo from an earlier owner message must not
+        // automatically add stock again under newly generated proposal keys.
+        const previouslyRecorded=sameReceipt.some(row=>
+          ["committed","monitored","executing","approved","manual_pending"].includes(row.status)&&
+          Date.parse(row.created_at)<Date.parse(owner.createdAt));
+        const existing=sameReceipt.filter(row=>Date.parse(row.created_at)>=Date.parse(owner.createdAt));
         const requestKeys=purchaseBatchKeys(id,owner.id,input.source,input.lines);
         const indexes=allocateReceiptIndexes(requestKeys,existing.map(row=>({
           requestKey:row.request_key,index:
@@ -298,11 +311,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             const sourceForEffect=stockOnlyReceipt?"chat_text":input.source;
             const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
               new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:sourceForEffect,
-                receiptGroupId:input.source==="receipt_chat"?owner.id:null,
+                receiptGroupId:input.source==="receipt_chat"?receiptGroupId:null,
                 receiptLineIndex,
                 receiptVendor:input.source==="receipt_chat"?input.receiptVendor:null,
                 receiptTotalCents:input.source==="receipt_chat"?input.receiptTotalCents:null},requestKey);
-            const authorized=authorizesInventoryWrite(p.ownerText,attached)&&
+            const authorized=!previouslyRecorded&&authorizesInventoryWrite(p.ownerText,attached)&&
               !/\b(purchase order|not received|ordered|pending delivery|quote)\b/iu.test(p.ownerText)&&
               (input.source==="receipt_chat"
                 ?stockOnlyReceipt&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
@@ -348,6 +361,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     const recordedIds=process.env.WHATSAPP_SUPERVISOR_ENABLED==="true"
       ?await recordedWhatsAppImageIds(scope,id,owner.id):null;
     const selected=await readOwnerAttachments(scope,id,recordedIds??p.attachmentIds??[],p.externalClient);
+    selectedContentSha256=selected.contentSha256;
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
        history, context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
