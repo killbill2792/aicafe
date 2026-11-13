@@ -53,15 +53,27 @@ export function safeMessage(message:GmailMessage){
   const headers=Object.fromEntries((message.payload?.headers??[])
     .filter(h=>/^(from|to|cc|subject|date|message-id)$/i.test(h.name))
     .map(h=>[h.name.toLowerCase(),h.value.slice(0,500)]));
-  const plainParts=[...(message.payload?.mimeType==="text/plain"&&message.payload.body?.data?
-    [message.payload.body.data]:[]),...(message.payload?.parts??[])
-    .filter(p=>p.mimeType==="text/plain"&&p.body?.data).map(p=>p.body!.data!)];
-  const body=plainParts.slice(0,3).map(encoded=>{
-    try{return Buffer.from(encoded,"base64url").toString("utf8");}catch{return "";}
-  }).join("\n").slice(0,12000);
-  const attachments=(message.payload?.parts??[])
-    .filter(p=>Boolean(p.filename&&p.body?.attachmentId)).slice(0,20)
-    .map(p=>({filename:p.filename!.slice(0,180),size:p.body!.size??null,attachmentId:p.body!.attachmentId}));
+  const allParts:Array<{mimeType?:string;filename?:string;body?:{data?:string;attachmentId?:string;size?:number}}>= [];
+  const walk=(part:NonNullable<GmailMessage["payload"]>,depth:number)=>{
+    if(depth>6||allParts.length>60)return;
+    allParts.push(part);
+    for(const child of part.parts??[])walk(child,depth+1);
+  };
+  if(message.payload)walk(message.payload,0);
+  const decode=(v:string)=>{
+    try{return Buffer.from(v,"base64url").toString("utf8");}catch{return "";}
+  };
+  const plain=allParts.filter(p=>p.mimeType==="text/plain"&&p.body?.data)
+    .slice(0,8).map(p=>decode(p.body!.data!)).join("\n");
+  const html=allParts.filter(p=>p.mimeType==="text/html"&&p.body?.data)
+    .slice(0,4).map(p=>decode(p.body!.data!)).join("\n");
+  // The model sees plain text only; no email HTML is executed or treated as instructions.
+  const body=(plain||(html?html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi," ")
+    .replace(/<[^>]*>/g," ").replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&")
+    .replace(/&lt;/gi,"<").replace(/&gt;/gi,">"):"")).slice(0,12000);
+  const attachments=allParts.filter(p=>Boolean(p.filename&&p.body?.attachmentId))
+    .slice(0,20).map(p=>({filename:p.filename!.slice(0,180),mimeType:p.mimeType??"unknown",
+      size:p.body!.size??null,attachmentId:p.body!.attachmentId}));
   return {id:message.id,threadId:message.threadId??null,headers,body,
     snippet:message.snippet?.slice(0,400)??"",receivedAt:message.internalDate?
       new Date(Number(message.internalDate)).toISOString():null,labels:message.labelIds??[],attachments};
@@ -83,6 +95,43 @@ export async function gmailRead(scope:ConnectorOwner,messageId:string){
   const message=await gmailApi(token,"/messages/"+encodeURIComponent(messageId)+"?format=full") as GmailMessage;
   return {account:account.email,source:"gmail",asOf:new Date().toISOString(),message:safeMessage(message)};
 }
+export async function gmailReadThread(scope:ConnectorOwner,threadId:string){
+  if(!/^[a-zA-Z0-9_-]{8,100}$/.test(threadId))throw new Error("gmail_invalid_thread_id");
+  const {token,account}=await authorizedGmail(scope,"read");
+  const result=await gmailApi(token,"/threads/"+encodeURIComponent(threadId)+"?format=full")
+    as {id?:string;messages?:GmailMessage[]};
+  if(result.id!==threadId||!Array.isArray(result.messages))throw new Error("gmail_thread_unavailable");
+  return {source:"gmail",account:account.email,asOf:new Date().toISOString(),threadId,
+    messages:result.messages.slice(-12).map(safeMessage)};
+}
+export async function gmailReadAttachment(scope:ConnectorOwner,messageId:string,attachmentId:string){
+  if(!/^[a-zA-Z0-9_-]{8,100}$/.test(messageId)||!/^[a-zA-Z0-9_-]{8,200}$/.test(attachmentId))
+    throw new Error("gmail_invalid_attachment_id");
+  const {token,account}=await authorizedGmail(scope,"read");
+  const message=await gmailApi(token,"/messages/"+encodeURIComponent(messageId)+"?format=full") as GmailMessage;
+  const parts:Array<{mimeType?:string;filename?:string;body?:{attachmentId?:string;size?:number};parts?:unknown[]}>= [];
+  const walk=(node:NonNullable<GmailMessage["payload"]>,depth:number)=>{
+    if(depth>6||parts.length>60)return;
+    parts.push(node);
+    for(const child of node.parts??[])walk(child,depth+1);
+  };
+  if(message.payload)walk(message.payload,0);
+  const match=parts.find(x=>x.body?.attachmentId===attachmentId);
+  if(!match||!match.filename||!["text/plain","text/csv","application/json"].includes(match.mimeType??""))
+    throw new Error("gmail_attachment_type_requires_file_capability");
+  if(!Number.isFinite(match.body?.size)||match.body!.size!>65536)
+    throw new Error("gmail_attachment_too_large");
+  const payload=await gmailApi(token,"/messages/"+encodeURIComponent(messageId)+
+    "/attachments/"+encodeURIComponent(attachmentId)) as {data?:string;size?:number};
+  if(!payload.data||!Number.isFinite(payload.size)||payload.size!>65536)
+    throw new Error("gmail_attachment_unavailable");
+  const bytes=Buffer.from(payload.data,"base64url");
+  if(bytes.length!==payload.size||bytes.length>65536)throw new Error("gmail_attachment_size_mismatch");
+  return {source:"gmail_attachment",account:account.email,asOf:new Date().toISOString(),
+    messageId,attachmentId,filename:match.filename.slice(0,180),mimeType:match.mimeType,
+    content:bytes.toString("utf8").slice(0,12000)};
+}
+
 export {GOOGLE_MODIFY_SCOPE};
 
 /** A send receipt must be durable BEFORE the provider request starts. Gmail has no

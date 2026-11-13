@@ -84,6 +84,8 @@ export type AgentToolContext = {
   };
   gmail?:{search(query:string,limit:number):Promise<Record<string,unknown>>;
     read(messageId:string):Promise<Record<string,unknown>>;
+    thread(threadId:string):Promise<Record<string,unknown>>;
+    attachment(messageId:string,attachmentId:string):Promise<Record<string,unknown>>;
     propose(input:import("@/lib/ai/supervisor/loop/gmail.server").GmailProposalInput):Promise<{proposalId:string;revision:number;account:string}>};
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
@@ -201,6 +203,8 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="ask_owner")return askOwnerTools.ask_owner.execute(raw,ctx);
   if(name==="search_gmail")return gmailTools.search_gmail.execute(raw,ctx);
   if(name==="read_gmail")return gmailTools.read_gmail.execute(raw,ctx);
+  if(name==="read_gmail_thread")return gmailTools.read_gmail_thread.execute(raw,ctx);
+  if(name==="read_gmail_attachment")return gmailTools.read_gmail_attachment.execute(raw,ctx);
   if(name==="propose_gmail_action")return gmailTools.propose_gmail_action.execute(raw,ctx);
   if(name==="describe_data"){
     // Field names for one Toast record type need the café-scoped reader.

@@ -18,7 +18,7 @@ import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server"
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
-import {gmailSearch,gmailRead} from "@/lib/connectors/gmail/provider.server";
+import {gmailSearch,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
@@ -178,6 +178,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       gmail:{
         search:(query,limit)=>gmailSearch(scope,query,limit),
         read:messageId=>gmailRead(scope,messageId),
+        thread:threadId=>gmailReadThread(scope,threadId),
+        attachment:(messageId,attachmentId)=>gmailReadAttachment(scope,messageId,attachmentId),
         propose:async(input:GmailProposalInput)=>{
           // The authenticated turn binds the specific owner, thread, and message.
           const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,gmail:input}));
