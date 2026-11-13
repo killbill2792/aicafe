@@ -33,11 +33,15 @@ describe("redesign 16 cleanup integration", () => {
     });
   }
 
-  it("keeps English, Spanish, and Arabic translation keys in sync", () => {
+  it("keeps existing translation keys in sync while allowing Task 11 English-only Gmail copy", () => {
+    // AGENTS.md currently forbids new es/ar copy. Preserve strict parity for
+    // every pre-existing key; only the new Gmail namespaces are English-only.
+    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect)$/;
     const keys = (locale: string) => {
       const messages = localeMessages(locale);
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
+        .filter(key => !englishOnly.test(key))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));
