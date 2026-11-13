@@ -1,93 +1,12 @@
 "use client";
 import {useEffect,useState} from "react";
 import {Mail,ShieldCheck,CheckCircle2,AlertTriangle} from "lucide-react";
-import {useLocale} from "next-intl";
+import en from "@/messages/en.json";
 
 type Status={status:"active"|"needs_reconnect"|"revoking"|"disconnected";configured:boolean;
   email:string|null;permissions:{read:boolean;draft:boolean;send:boolean;organize:boolean}};
-export const gmailCopy={
-  en:{
-  "title": "Gmail",
-  "subtitle": "Connect your email securely to Supervisor",
-  "mailboxTitle": "Your Gmail account",
-  "mailboxSubtitle": "One connection. A more capable Supervisor.",
-  "loading": "Checking your Gmail connection…",
-  "connected": "Connected and ready",
-  "notConnected": "Not connected",
-  "reconnectRequired": "Please reconnect to keep using Gmail",
-  "revoking": "Disconnected from AI CAFE. Finishing Google's revocation.",
-  "googleConsent": "Choose your Google account and approve access. No API keys or passwords are required.",
-  "permissions": "Your Gmail connection is private to your café and owner account.",
-  "canDo": "Supervisor can search mail, read conversations, prepare replies and organize messages.",
-  "ownerApproves": "Every draft creation, send or mailbox change requires your approval.",
-  "connect": "Connect Gmail",
-  "reconnect": "Reconnect Gmail",
-  "disconnect": "Disconnect Gmail",
-  "disconnectConfirm": "Disconnect this Gmail account from AI CAFE? Your existing emails remain in Gmail.",
-  "disconnecting": "Disconnecting…",
-  "retryRevoke": "Retry Google revocation",
-  "revokePending": "AI CAFE access is blocked. Google's revocation is pending; please retry.",
-  "statusUnavailable": "Gmail connection status is unavailable. Please refresh.",
-  "connectionFailed": "Google connection was not completed. Please try again.",
-  "notConfigured": "Gmail is not enabled for this AI CAFE deployment yet.",
-  "disconnectHint": "Disconnecting never deletes messages from your Gmail mailbox."
-},
-  es:{
-  "title": "Gmail",
-  "subtitle": "Conecta tu correo de forma segura con Supervisor",
-  "mailboxTitle": "Tu cuenta de Gmail",
-  "mailboxSubtitle": "Una conexión. Un Supervisor más útil.",
-  "loading": "Comprobando la conexión de Gmail…",
-  "connected": "Conectado y listo",
-  "notConnected": "Sin conectar",
-  "reconnectRequired": "Vuelve a conectar Gmail para seguir usándolo",
-  "revoking": "Acceso de AI CAFE desconectado. Finalizando la revocación en Google.",
-  "googleConsent": "Elige tu cuenta de Google y autoriza el acceso. No necesitas contraseñas ni claves API.",
-  "permissions": "Tu conexión de Gmail es privada para tu cafetería y tu cuenta de propietario.",
-  "canDo": "Supervisor puede buscar correos, leer conversaciones, preparar respuestas y organizar mensajes.",
-  "ownerApproves": "Crear borradores, enviar o cambiar mensajes siempre requiere tu aprobación.",
-  "connect": "Conectar Gmail",
-  "reconnect": "Reconectar Gmail",
-  "disconnect": "Desconectar Gmail",
-  "disconnectConfirm": "¿Desconectar Gmail de AI CAFE? Tus correos seguirán en Gmail.",
-  "disconnecting": "Desconectando…",
-  "retryRevoke": "Reintentar revocación",
-  "revokePending": "El acceso de AI CAFE está bloqueado. La revocación en Google sigue pendiente; vuelve a intentarlo.",
-  "statusUnavailable": "No se puede consultar el estado de Gmail. Actualiza la página.",
-  "connectionFailed": "La conexión de Google no se completó. Inténtalo de nuevo.",
-  "notConfigured": "Gmail todavía no está habilitado para esta instalación de AI CAFE.",
-  "disconnectHint": "Desconectar Gmail nunca borra tus mensajes."
-},
-  ar:{
-  "title": "Gmail",
-  "subtitle": "اربط بريدك الإلكتروني بأمان مع المشرف",
-  "mailboxTitle": "حساب Gmail الخاص بك",
-  "mailboxSubtitle": "اتصال واحد. مشرف أكثر قدرة.",
-  "loading": "جارٍ التحقق من اتصال Gmail…",
-  "connected": "متصل وجاهز",
-  "notConnected": "غير متصل",
-  "reconnectRequired": "أعِد ربط Gmail لمتابعة استخدامه",
-  "revoking": "تم إيقاف وصول AI CAFE. جارٍ إكمال إلغاء الإذن لدى Google.",
-  "googleConsent": "اختر حساب Google ووافق على الوصول. لا حاجة إلى كلمات مرور أو مفاتيح API.",
-  "permissions": "اتصال Gmail خاص بمقهاك وحساب المالك.",
-  "canDo": "يستطيع المشرف البحث في الرسائل وقراءة المحادثات وتجهيز الردود وتنظيم البريد.",
-  "ownerApproves": "إنشاء مسودة أو إرسال رسالة أو تغيير البريد يتطلب موافقتك في كل مرة.",
-  "connect": "ربط Gmail",
-  "reconnect": "إعادة ربط Gmail",
-  "disconnect": "فصل Gmail",
-  "disconnectConfirm": "هل تريد فصل Gmail عن AI CAFE؟ ستبقى رسائلك في Gmail.",
-  "disconnecting": "جارٍ الفصل…",
-  "retryRevoke": "إعادة محاولة إلغاء الإذن",
-  "revokePending": "تم حظر وصول AI CAFE. إلغاء إذن Google لم يكتمل بعد؛ أعِد المحاولة.",
-  "statusUnavailable": "تعذّر التحقق من حالة Gmail. حدّث الصفحة.",
-  "connectionFailed": "لم يكتمل ربط حساب Google. حاول مجددًا.",
-  "notConfigured": "Gmail غير مفعّل لهذا الإصدار من AI CAFE بعد.",
-  "disconnectHint": "فصل الحساب لا يحذف أي رسالة من Gmail."
-}
-} as const;
 export default function GmailConnectionPanel(){
-  const activeLocale=useLocale();
-  const copy=gmailCopy[activeLocale==="es"?"es":activeLocale==="ar"?"ar":"en"];
+  const copy=en.GmailConnect;
   const [data,setData]=useState<Status|null>(null);
   const [error,setError]=useState("");
   const [busy,setBusy]=useState(false);
