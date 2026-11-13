@@ -6,6 +6,16 @@ import {newResolveState} from "./resolve";
 
 const base = { source: "profitability", period: null, missing: [],
   ownerProfitCents: 12345, operatingMargin: 0.125, coveredSalesDays: 4 };
+describe("registered inventory dispatch", () => {
+  it("passes authenticated café context through the universal tool registry", async () => {
+    let wasCalled=false;
+    const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-11-13",locale:"en",
+      tools:{},canonicalData:async()=>{wasCalled=true;throw new Error("synthetic scoped reader outage");}};
+    const response=await executeAgentTool("get_inventory",{},ctx);
+    expect(wasCalled).toBe(true);
+    expect(response).toMatchObject({source:"inventory",missing:["inventoryReaderUnavailable"]});
+  });
+});
 describe("numbers, statuses, and strict tool contracts", () => {
   it("keeps an owner's stated sales when recorded profitability is unavailable without inventing profit",async()=>{
     const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-10-24",locale:"en",tools:{
