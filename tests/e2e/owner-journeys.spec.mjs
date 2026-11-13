@@ -69,3 +69,36 @@ test("@money seeded owner switches from recovery to real profit & costs", async 
   await expect(page).toHaveURL(/view=profit/);
   await expect(page.getByText(own.name, {exact: true}).first()).toBeVisible();
 });
+
+test("@gmail seeded owner sees Gmail entry, connection status and revocation UX without external Google calls",async({page})=>{
+  const own=seededCafe(0);
+  let connected=false,disconnects=0;
+  await page.route("**/api/connectors/gmail/status",async route=>{
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({
+      status:connected?"active":"disconnected",configured:true,
+      email:connected?"owner@example.com":null,
+      permissions:{read:connected,draft:connected,send:connected,organize:connected}
+    })});
+  });
+  await page.route("**/api/connectors/gmail/disconnect",async route=>{
+    if(route.request().method()!=="POST")throw Error("Unexpected Gmail disconnect method");
+    connected=false;disconnects++;
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({status:"disconnected"})});
+  });
+  await login(page,own);
+  await openOwnedPage(page,own,"more");
+  await page.getByRole("link",{name:"Connect Gmail"}).click();
+  await expect(page).toHaveURL(/\/more\/gmail/);
+  await expect(page.getByRole("link",{name:"Connect Gmail"})).toHaveAttribute("href","/api/connectors/gmail/connect");
+  // A provider callback refreshes the owner-facing status; no real Google OAuth call.
+  connected=true;
+  await page.reload();
+  await expect(page.getByText("Connected and ready")).toBeVisible();
+  await expect(page.getByText("owner@example.com",{exact:true})).toBeVisible();
+  await expect(page.getByRole("link",{name:"Connect Gmail"})).toHaveCount(0);
+  page.once("dialog",dialog=>void dialog.accept());
+  await page.getByRole("button",{name:"Disconnect Gmail"}).click();
+  await expect(page.getByText("Not connected",{exact:true})).toBeVisible();
+  expect(disconnects).toBe(1);
+  await expect(page.getByRole("link",{name:"Connect Gmail"})).toBeVisible();
+});
