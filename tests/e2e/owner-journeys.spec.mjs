@@ -51,12 +51,20 @@ test("@home owner uploads and reselects a private receipt while another café ca
       const pathname=new URL(response.url()).pathname;
       if(pathname.startsWith("/api/ai/threads")) {
         const item={method:response.request().method(),path:pathname,status:response.status(),
-          origin:response.request().headers().origin??null,
-          requestOrigin:new URL(response.url()).origin,error:null};
+          origin:null,fetchSite:null,requestOrigin:new URL(response.url()).origin,
+          contentType:response.headers()["content-type"]??null,error:null};
         uploads.push(item);
+        void response.request().allHeaders().then(headers=>{
+          item.origin=headers.origin??null;
+          item.fetchSite=headers["sec-fetch-site"]??null;
+        }).catch(()=>undefined);
         if(response.status()>=400)
-          void response.json().then(value=>{
-            if(value&&typeof value.error==="string")item.error=value.error.slice(0,100);
+          void response.text().then(value=>{
+            if(item.contentType?.includes("application/json")){
+              try{const parsed=JSON.parse(value);
+                if(typeof parsed.error==="string")item.error=parsed.error.slice(0,100);}
+              catch{item.error="unreadable_json";}
+            }else item.error="non_json_response";
           }).catch(()=>undefined);
       }
     });
