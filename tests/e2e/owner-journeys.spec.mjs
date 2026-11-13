@@ -33,6 +33,62 @@ test("@home real password sign-in isolates two cafés and ignores an unauthorize
   }
 });
 
+test("@home owner uploads and reselects a private receipt while another café cannot read it", async ({browser}) => {
+  const owner = seededCafe(0), other = seededCafe(1);
+  const context = await browser.newContext({baseURL: "http://127.0.0.1:3000", serviceWorkers: "block"});
+  const otherContext = await browser.newContext({baseURL: "http://127.0.0.1:3000", serviceWorkers: "block"});
+  try {
+    const page = await context.newPage();
+    await login(page, owner);
+    await openOwnedPage(page, owner, "");
+    const attach = page.getByRole("button", {name: "Add an attachment"});
+    await expect(attach).toBeEnabled({timeout: 30_000});
+    const uploaded = page.waitForResponse(response =>
+      /\\/api\\/ai\\/threads\\/[^/]+\\/attachments$/.test(new URL(response.url()).pathname) &&
+      response.request().method() === "POST");
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XouYAAAAASUVORK5CYII=",
+      "base64");
+    await page.locator('input[type="file"]').setInputFiles({
+      name:"receipt.png",mimeType:"image/png",buffer:png,
+    });
+    const response = await uploaded;
+    expect(response.status()).toBe(201);
+    const {attachment} = await response.json();
+    expect(attachment).toMatchObject({
+      originalName:"receipt.png",mediaType:"image/png",
+      bytes:png.length,processingState:"stored_unanalysed",
+    });
+    const match = new URL(response.url()).pathname.match(/\\/threads\\/([^/]+)\\/attachments$/);
+    expect(match).not.toBeNull();
+    const threadId = match[1];
+    const route = "/api/ai/threads/" + threadId + "/attachments";
+    const listing = await context.request.get(route);
+    expect(listing.ok()).toBe(true);
+    expect((await listing.json()).items.some(row => row.id === attachment.id)).toBe(true);
+    // An owner can download the privately stored original, but another café
+    // owner's independently authenticated session cannot see it.
+    const ownDownload = await context.request.get(route + "/" + attachment.id,{maxRedirects:0});
+    expect([302,303,307,308]).toContain(ownDownload.status());
+    await expect(page.getByRole("button",{name:"Remove receipt.png"})).toBeVisible();
+    await page.getByRole("button",{name:"Remove receipt.png"}).click();
+    await expect(page.getByRole("button",{name:"Remove receipt.png"})).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole("button",{name:"Remove receipt.png"})).toHaveCount(0);
+    await page.getByText("Previous files",{exact:true}).click();
+    await page.getByRole("button",{name:"Use receipt.png"}).click();
+    await expect(page.getByRole("button",{name:"Remove receipt.png"})).toBeVisible();
+
+    const otherPage=await otherContext.newPage();
+    await login(otherPage, other);
+    const denied=await otherContext.request.get(route + "/" + attachment.id,{maxRedirects:0});
+    expect([401,403,404]).toContain(denied.status());
+  } finally {
+    await otherContext.close();
+    await context.close();
+  }
+});
+
 test("@staff seeded owner can open actual schedule and Team view", async ({page}) => {
   const own = seededCafe(0);
   await login(page, own);
