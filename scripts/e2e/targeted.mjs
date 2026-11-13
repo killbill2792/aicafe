@@ -28,7 +28,9 @@ export function scenariosForPath(path) {
   if (path === "app/[locale]/more/page.tsx" ||
       path === "app/[locale]/more/gmail/page.tsx" ||
       path === "components/more/GmailConnectionPanel.tsx" ||
-      path === "components/home/SupervisorProposalCard.tsx")
+      path === "components/home/SupervisorProposalCard.tsx" ||
+      path === "components/home/SupervisorProposalCard.gmail.test.tsx" ||
+      path === "components/more/GmailConnectionPanel.test.tsx")
     return ["gmail"];
   if (path === "app/[locale]/page.tsx" ||
       path.startsWith("lib/viewmodels/home") ||
