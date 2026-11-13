@@ -12,7 +12,7 @@ import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys} from "@/lib/ai/supervisor/loop/receiptAllocation";
 import {proposeLoop,commitLoop} from "@/lib/ai/supervisor/loop/engine";
-import {authorizesInventoryWrite} from "@/lib/ai/agent/tools/purchaseIntent";
+import {authorizesInventoryWrite,ownerTextSupportsTypedLine} from "@/lib/ai/agent/tools/purchaseIntent";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -298,7 +298,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
               (input.source==="receipt_chat"
                 ?attached&&input.documentKind==="receipt"&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
                  line.costCents!==null
-                :!attached)&&
+                :!attached&&ownerTextSupportsTypedLine(p.ownerText,line))&&
               Boolean((proposal.canonicalEffectPayload as {ingredientId?:string|null}).ingredientId);
             if(authorized&&proposal.status==="draft"){
               try{
