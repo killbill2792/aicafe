@@ -108,6 +108,45 @@ try{
  const afterUpgrade=(await db.query("select proposal_id,approved_revision,effect_hash,authorization_kind,mandate_id,mandate_revision from supervisor_approvals where proposal_id=any($1::uuid[]) order by proposal_id",[preexisting])).rows;
  assert.deepEqual(afterUpgrade,beforeUpgrade.map(row=>({...row,authorization_kind:"click",
    mandate_id:null,mandate_revision:null})),"Task10 migration must preserve all legacy click approvals");
+ // Task 12: revalidate a real saved owner utterance before executing a purchase.
+ // This is a disposable, deliberately minimal schema for the new FK.
+ await db.query("create table public.ai_messages(id uuid primary key,business_id uuid not null,thread_id uuid not null,owner_user_id uuid not null,author_user_id uuid not null,role text not null,text_content text not null,created_at timestamptz not null default now())");
+ await db.query(readFileSync(new URL("../supabase/migrations/20261113022900_supervisor_owner_message_inventory_effect.sql",import.meta.url),"utf8"));
+ const purchaseMsg=randomUUID(),purchaseProposal=randomUUID(),purchasedEffect={
+  ingredientId:randomUUID(),name:"Milk",quantity:10,unit:"gal",costCents:null,date:"2026-11-12",source:"chat_text"};
+ await db.query("insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
+  [purchaseMsg,B,THREAD,OWNER,"I bought 10 gallons of milk today"]);
+ await seedProposal(B,OWNER,THREAD,purchaseProposal,"maya.inventory_purchase.v1",purchasedEffect);
+ const ownerClaim=await withService(db,async c=>(await c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6) as value",
+  [B,OWNER,THREAD,purchaseProposal,1,purchaseMsg])).rows[0].value);
+ assert.equal(ownerClaim.authorization_kind,"owner_message");
+ assert.equal(ownerClaim.proposal.status,"executing");
+ assert.equal(ownerClaim.proposal.revision,3);
+ const audit=(await db.query("select authorization_kind,owner_message_id,state from supervisor_effect_attempts where proposal_id=$1",
+  [purchaseProposal])).rows[0];
+ assert.equal(audit.authorization_kind,"owner_message");
+ assert.equal(audit.owner_message_id,purchaseMsg);
+ assert.equal(audit.state,"executing");
+ const ownerDate=(await db.query("select ((now() at time zone timezone)::date+1) as day from businesses where id=$1",[B])).rows[0].day;
+ assert.equal((await finish(B,OWNER,THREAD,purchaseProposal,ownerClaim,"verified","committed",ownerDate)).status,"committed");
+ await expectError(()=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
+  [B,OWNER,THREAD,purchaseProposal,1,purchaseMsg])),"42501");
+
+ const otherPurchase=randomUUID();
+ await seedProposal(B2,OWNER2,THREAD2,otherPurchase,"maya.inventory_purchase.v1",purchasedEffect);
+ await expectError(()=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
+  [B2,OWNER2,THREAD2,otherPurchase,1,purchaseMsg])),"42501");
+ const documentOnlyMsg=randomUUID(),unapprovedPurchase=randomUUID();
+ await db.query("insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
+  [documentOnlyMsg,B,THREAD,OWNER,"Here is a photo of a receipt"]);
+ await seedProposal(B,OWNER,THREAD,unapprovedPurchase,"maya.inventory_purchase.v1",purchasedEffect);
+ await expectError(()=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
+  [B,OWNER,THREAD,unapprovedPurchase,1,documentOnlyMsg])),"42501");
+
  const legacyClaim=await claim(B,OWNER,THREAD,preexisting[0],2,"click");
  assert.equal(legacyClaim.proposal.status,"executing","a pre-existing approval still executes through the new gateway");
  const legacyCommittedDate=(await db.query("select ((now() at time zone timezone)::date+1) as next_day from businesses where id=$1",[B])).rows[0].next_day;
