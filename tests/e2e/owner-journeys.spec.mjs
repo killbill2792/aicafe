@@ -55,7 +55,7 @@ test("@home owner uploads and reselects a private receipt while another café ca
     page.on("requestfailed", request=>{
       const pathname=new URL(request.url()).pathname;
       if(pathname.startsWith("/api/ai/threads"))
-        uploads.push({method:request.method(),path:pathname,error:request.failure()?.slice(0,100)});
+        uploads.push({method:request.method(),path:pathname,error:request.failure()?.errorText?.slice(0,100)});
     });
     const uploaded = page.waitForResponse(response =>
       /^\/api\/ai\/threads\/[^/]+\/attachments$/.test(new URL(response.url()).pathname) &&
