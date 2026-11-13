@@ -11,7 +11,8 @@ import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys} from "@/lib/ai/supervisor/loop/receiptAllocation";
-import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
+import {proposeLoop,commitLoop} from "@/lib/ai/supervisor/loop/engine";
+import {authorizesInventoryWrite} from "@/lib/ai/agent/tools/purchaseIntent";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -265,7 +266,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         return {proposalId:proposal.id,revision:proposal.revision,productName:effect.productName,oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents};
       },
       proposePurchases:async(input)=>{
-        const output:Array<{proposalId?:string;revision?:number;name:string;error?:string}>=[];
+        const output:Array<{proposalId?:string;revision?:number;name:string;saved?:boolean;error?:string}>=[];
         // Stable request keys are scoped to the logical line, NOT the tool-call position.
         // Read the whole receipt so batches start after previously allocated indexes.
         const receiptRows=input.source==="receipt_chat"?await createAdminSupabaseClient()
@@ -291,6 +292,28 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
                 receiptLineIndex,
                 receiptVendor:input.source==="receipt_chat"?input.receiptVendor:null,
                 receiptTotalCents:input.source==="receipt_chat"?input.receiptTotalCents:null},requestKey);
+            const attached=(p.attachmentIds?.length??0)>0;
+            const authorized=authorizesInventoryWrite(p.ownerText,attached)&&
+              !/\\b(purchase order|not received|ordered|pending delivery|quote)\\b/iu.test(p.ownerText)&&
+              (input.source==="receipt_chat"
+                ?attached&&input.documentKind==="receipt"&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
+                 line.costCents!==null
+                :!attached)&&
+              Boolean((proposal.canonicalEffectPayload as {ingredientId?:string|null}).ingredientId);
+            if(authorized&&proposal.status==="draft"){
+              try{
+                const committed=await commitLoop(proposalScope,supervisorLoopRegistry,
+                  new SupabaseLoopRepository(),proposal.id,proposal.revision,"owner_message",owner.id);
+                if(committed.proposal.status==="committed"){
+                  output.push({proposalId:proposal.id,revision:committed.proposal.revision,name:line.name,saved:true});
+                  continue;
+                }
+              }catch{
+                // A failed/uncertain gateway receipt must never be retried blindly.
+                output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name,error:"save_uncertain_needs_review"});
+                continue;
+              }
+            }
             output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name});
           }catch{output.push({name:line.name,error:"needs_review"});}
         }
