@@ -35,6 +35,9 @@ describe("explicit owner-turn purchase authority",()=>{
   expect(receivedPurchaseDocument("purchase_order","This is my order, update inventory")).toBe(false);
   expect(receivedPurchaseDocument("invoice","Not received yet, update inventory")).toBe(false);
   expect(receivedPurchaseDocument("invoice","The goods were delivered, add to inventory")).toBe(true);
+  expect(receivedPurchaseDocument("invoice","I received the invoice for 10 gallons of milk; add to inventory")).toBe(false);
+  expect(receivedPurchaseDocument("purchase_order","I received my purchase order for the goods; update inventory")).toBe(false);
+  expect(receivedPurchaseDocument("purchase_order","The supplies arrived, add them to inventory")).toBe(true);
  });
  it("never treats bare upload, uncertain language, or negation as authority",()=>{
   expect(authorizesInventoryWrite("Here is my receipt",true)).toBe(false);
