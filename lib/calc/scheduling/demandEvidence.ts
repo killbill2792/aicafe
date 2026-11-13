@@ -9,7 +9,7 @@ export type ComparableDemandHour={
   sampleDays:string[];
 };
 export type ScheduleDemandEvidence={
-  status:"available"|"unavailable";
+  status:"available"|"partial"|"unavailable";
   source:"hourly_sales_rollup";
   basis:"observed_comparable_weekday_close_hours";
   targetWeekStart:string;
@@ -49,8 +49,13 @@ export function comparableDemandHours(input:Inputs):ScheduleDemandEvidence{
   if(!validDate(input.targetWeekStart)||!validDate(input.historicalPeriod.from)||
     !validDate(input.historicalPeriod.to)||input.historicalPeriod.from>input.historicalPeriod.to)
     return unavailableScheduleDemand(shell,["invalidDemandPeriod"]);
-  const caveats=[...input.missing,...input.stale];
-  if(caveats.length)return unavailableScheduleDemand(shell,[...new Set(caveats)]);
+  // The canonical POS reader reports missing dates when a source emits no
+  // hourly rows. Those dates are UNKNOWN, never an inferred zero. Real,
+  // independently observed comparable days may still be shown as PARTIAL.
+  // A stale, failed or uncertified import cannot support a trusted average.
+  const noObservedDate=input.missing.filter(m=>m==="hourlySalesDatesNotObserved");
+  const blocking=[...input.missing.filter(m=>m!=="hourlySalesDatesNotObserved"),...input.stale];
+  if(blocking.length)return unavailableScheduleDemand(shell,[...new Set(blocking)]);
   if(!input.hours.length)return unavailableScheduleDemand(shell,["noHourlySalesFacts"]);
   const unique=new Set<string>();
   const groups=new Map<string,Hour[]>();
@@ -102,9 +107,9 @@ export function comparableDemandHours(input:Inputs):ScheduleDemandEvidence{
   const presented=context.slice(0,MAX_PRESENTED_HOURS);
   presented.sort((a,b)=>a.targetDate.localeCompare(b.targetDate)||
     a.hourLocal-b.hourLocal||(a.locationId??"").localeCompare(b.locationId??""));
-  return {status:"available",source:"hourly_sales_rollup",
+  return {status:noObservedDate.length?"partial":"available",source:"hourly_sales_rollup",
     basis:"observed_comparable_weekday_close_hours",
     targetWeekStart:input.targetWeekStart,historicalPeriod:input.historicalPeriod,
     readAt:input.readAt,sourceUpdatedAt:null,totalComparableHours,truncated,
-    hours:presented,missing:truncated?["comparableHourResultTruncated"]:[]};
+    hours:presented,missing:[...new Set([...noObservedDate,...(truncated?["comparableHourResultTruncated"]:[])])]} ;
 }
