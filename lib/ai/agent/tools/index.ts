@@ -186,7 +186,9 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // Routine management is a verified-owner-only additional function, rather
 // than a global public tool. Keep the existing baseline tool contract stable.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
-  baseToolDefinitions.filter(tool=>tool.name!=="manage_routine");
+  baseToolDefinitions.filter(tool=>tool.name!=="manage_routine"&&!["search_gmail","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+/** Offered only for a verified connected owner. Default cafés keep their existing tools. */
+export const gmailToolDefinitions=baseToolDefinitions.filter(tool=>["search_gmail","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
