@@ -28,7 +28,7 @@ export const purchaseCapability=registerLoopCapability({
  simulate:async(scope,input)=>{
   const {client:db}=await simulationOwnerReader(scope);
   const {data:ingredients,error}=await db.from("ingredients").select("id,name,base_unit")
-   .eq("business_id",scope.businessId).limit(2000);
+   .eq("business_id",scope.businessId).is("archived_at",null).limit(2000);
   if(error||!ingredients)throw new Error("ingredients_unavailable");
   const norm=(text:string)=>text.trim().toLocaleLowerCase().replace(/\s+/g," ");
   const candidates=ingredients.filter(x=>norm(x.name)===norm(input.name));
