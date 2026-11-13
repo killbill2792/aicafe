@@ -174,6 +174,7 @@ supabase_lane() {
   sql_step whatsapp-owner-provenance-sql-integration.sql "WhatsApp owner provenance and insert RLS"
   sql_step csv-import-rls.sql "CSV import: RLS, atomic promotion, wage review"
   sql_step commitments-db-acceptance.sql "Owner reminders: scope, dedupe, recovery, due once, DST"
+  sql_step gmail-connector-security-db.sql "Task 11 Gmail OAuth, credential and receipt RLS / service-only rights"
   sql_step gmail-connector-security-db.sql "Task 11 Gmail: RLS, scoped owner, receipt-gated effect completion"
 
   group "Concurrent sessions"
