@@ -2599,7 +2599,8 @@
     }
   },
   "MenuBuilder": {
-    "stockEvidenceTitle": "Toast stock observations",
+    "stockEvidenceTitle": "Stock evidence (owner counts and Toast observations)",
+    "stockEvidenceOwnerCount": "Owner-recorded count on this café date",
     "stockEvidenceCurrent": "Reported by the latest successful stock check",
     "stockEvidenceNotObserved": "Historical only — omitted from the latest complete check",
     "stockEvidenceFailed": "Stock source unavailable — historical only",
