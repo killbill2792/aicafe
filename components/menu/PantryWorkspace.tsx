@@ -59,15 +59,18 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  <section className="mb-5 rounded-2xl border border-line bg-card p-4" aria-label={t.stockEvidenceTitle}>
  <h2 className="font-headline text-xl font-bold">{t.stockEvidenceTitle}</h2>
  {!stockEvidence&&<p role="status" className="mt-2 text-ink-muted">{t.stockEvidenceUnverified}</p>}
- {stockEvidence&&stockEvidence.rows.filter(row=>row.source==="toast").length===0&&
+ {stockEvidence&&stockEvidence.rows.length===0&&
   <p className="mt-2 text-ink-muted">{t.stockEvidenceNoRows}</p>}
  <div className="mt-3 grid gap-2 sm:grid-cols-2">
- {stockEvidence?.rows.filter(row=>row.source==="toast").map(row=><div key={row.source_ref} className="rounded-xl border border-line p-3">
- <p className="break-all text-sm font-semibold">{row.menu_item_ref??row.source_ref}</p>
- <p className="mt-1 text-sm">{row.evidence_state==="observed_current"?t.stockEvidenceCurrent:
+ {stockEvidence?.rows.map(row=><div key={row.source_ref} className="rounded-xl border border-line p-3">
+ <p className="break-all text-sm font-semibold">{row.source==="app"?
+  (items.find(item=>item.id===row.ingredient_id)?.name??row.ingredient_id??row.source_ref):
+  row.menu_item_ref??row.source_ref}</p>
+ <p className="mt-1 text-sm">{row.source==="app"?t.stockEvidenceOwnerCount:
+  row.evidence_state==="observed_current"?t.stockEvidenceCurrent:
   row.evidence_state==="not_observed"?t.stockEvidenceNotObserved:
   row.evidence_state==="source_failed"?t.stockEvidenceFailed:t.stockEvidenceUnverified}</p>
- <p className="text-sm">{t.stockEvidenceQuantity}: {row.quantity===null?t.stockEvidenceUnknown:row.quantity.toLocaleString()}</p>
+ <p className="text-sm">{t.stockEvidenceQuantity}: {row.quantity===null?t.stockEvidenceUnknown:row.quantity.toLocaleString()} {row.source==="app"?items.find(item=>item.id===row.ingredient_id)?.baseUnit??"":""}</p>
  {row.reported_stock_status&&<p className="text-sm text-ink-muted">{t.stockEvidenceReported}: {row.reported_stock_status}</p>}
  <p className="text-sm text-ink-muted">{t.stockEvidenceAsOf}: {row.source_as_of??t.stockEvidenceUnknown}</p>
  </div>)}
