@@ -420,4 +420,15 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(missing.warnings.some(w=>w.includes("hours are unverified"))).toBe(true);
     expect(missing.best?.shifts).toEqual(result.best?.shifts);
   });
+
+  it("does not invent staffed slots or wages when the selected café has no active team",()=>{
+    const plan=optimizeOliviaWeek(input([],[coverage("uncovered")]));
+    expect(plan.status).toBe("infeasible");
+    expect(plan.best?.completeCoverage).toBe(false);
+    expect(plan.best?.shifts).toEqual([]);
+    expect(plan.best?.gaps).toEqual(expect.arrayContaining([
+      expect.objectContaining({reason:"no_active_staff",missingHeadcount:1}),
+    ]));
+    expect(plan.best?.cost.cashWagesCents).not.toBeGreaterThan(0);
+  });
 });
