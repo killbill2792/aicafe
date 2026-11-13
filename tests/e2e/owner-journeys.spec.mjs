@@ -127,17 +127,18 @@ test("@menu Pantry retains confirmed zero and rejects historical Toast stock as 
       const page=await first.newPage();
       await login(page,own);
       await openOwnedPage(page,own,"menu/pantry");
-      await expect(page.getByRole("heading",{name:/Stock evidence/})).toBeVisible();
-      await expect(page.getByText("Task14a measured zero",{exact:true})).toBeVisible();
-      await expect(page.getByText("Known quantity: 0 ml",{exact:true})).toBeVisible();
-      await expect(page.getByText(stockGuid,{exact:true})).toBeVisible();
-      await expect(page.getByText("Known quantity: 7",{exact:true})).toBeVisible();
+      const evidence=page.locator("section[data-inventory-evidence]");
+      await expect(evidence.getByRole("heading",{name:"Inventory",exact:true})).toBeVisible();
+      await expect(evidence.getByText("Task14a measured zero",{exact:true})).toBeVisible();
+      await expect(evidence.getByText("Quantity: 0 ml",{exact:true})).toBeVisible();
+      await expect(evidence.getByText(stockGuid,{exact:true})).toBeVisible();
+      await expect(evidence.getByText("Quantity: 7",{exact:true})).toBeVisible();
       await updateReceipt(latestTime,"empty",0);
       await page.reload();
-      await expect(page.getByText(stockGuid,{exact:true})).toBeVisible();
-      await expect(page.getByText("Historical only — omitted from the latest complete check",{exact:true})).toBeVisible();
-      await expect(page.getByText("Known quantity: Unknown",{exact:true})).toBeVisible();
-      await expect(page.getByText("Known quantity: 0 ml",{exact:true})).toBeVisible();
+      await expect(evidence.getByText(stockGuid,{exact:true})).toBeVisible();
+      await expect(evidence.locator('[data-evidence-state="not_observed"]')).toContainText("not observed");
+      await expect(evidence.getByText("Quantity: Unknown",{exact:true})).toBeVisible();
+      await expect(evidence.getByText("Quantity: 0 ml",{exact:true})).toBeVisible();
     } finally {
       await first.close();
     }
@@ -146,9 +147,10 @@ test("@menu Pantry retains confirmed zero and rejects historical Toast stock as 
       const page=await second.newPage();
       await login(page,other);
       await openOwnedPage(page,other,"menu/pantry");
-      await expect(page.getByRole("heading",{name:/Stock evidence/})).toBeVisible();
-      await expect(page.getByText(stockGuid,{exact:true})).toHaveCount(0);
-      await expect(page.getByText("Task14a measured zero",{exact:true})).toHaveCount(0);
+      const evidence=page.locator("section[data-inventory-evidence]");
+      await expect(evidence.getByRole("heading",{name:"Inventory",exact:true})).toBeVisible();
+      await expect(evidence.getByText(stockGuid,{exact:true})).toHaveCount(0);
+      await expect(evidence.getByText("Task14a measured zero",{exact:true})).toHaveCount(0);
     } finally {
       await second.close();
     }
