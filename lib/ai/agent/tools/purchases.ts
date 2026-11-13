@@ -1,5 +1,6 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
+import {isPurchaseCorrection} from "./purchaseIntent";
 /** Parse into owner-provided quantities only. No silent new ingredient or purchase. */
 export const purchaseToolLine=z.strictObject({
  ingredientId:z.uuid().nullable(),name:z.string().trim().min(1).max(160),
@@ -20,6 +21,9 @@ export const purchasesTools={propose_purchases:{
  description:"When an owner says they bought stock or sends a purchase receipt, prepare validated per-line inventory purchases through the existing proposal gateway. An explicitly authorized owner instruction may complete the purchase immediately; all other lines remain inert owner-review proposals. Use owner-given quantity, unit, date, and cost only; omit unknown cost as null. Find a real matching ingredient UUID from read tools, or pass null and name for a New item needing review. For receipt_chat, include the receipt vendor and exact printed receipt total in integer cents when legible; otherwise use null and the owner must complete them in the approval card. For chat_text, set receiptVendor and receiptTotalCents to null. Set documentKind to receipt only when visible source is clearly an actual shopping receipt, purchase_order for an order that is not evidence of delivery, otherwise unknown. Never estimate taxes, gratuities, units or missing totals. The server independently checks the actual owner message for direct authorization and verifies any database write; otherwise each line remains an approval proposal.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const input=purchaseToolInput.parse(raw);
+  if(isPurchaseCorrection(ctx.ownerText??""))
+   return {source:"purchase_proposal",period:null,agentId:"maya",saved:false,draft:false,
+    missing:["existing_purchase_edit_required"]};
   if(!ctx.proposals?.proposePurchases)
    return {source:"purchase_proposal",period:null,agentId:"maya",draft:true,saved:false,missing:["proposalsUnavailable"]};
   const results=await ctx.proposals.proposePurchases(input);

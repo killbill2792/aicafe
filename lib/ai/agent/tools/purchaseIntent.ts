@@ -3,10 +3,13 @@
  * hypothetical, negated and exploratory language; uncertain cases use approval cards. */
 export function authorizesInventoryWrite(ownerText:string,hasAttachments:boolean):boolean{
  const t=ownerText.normalize("NFKC").toLocaleLowerCase().trim();
- if(!t||t.length>4000||t.includes("?")||/\b(if|what if|suppose|maybe|might|could|would|should|hypothetical|preview|draft|review only|do not|don't|never|cancel|not yet|planning|plan to)\b/u.test(t))
+ if(!t||t.length>4000||t.includes("?")||/\b(if|what if|suppose|maybe|might|could|would|should|hypothetical|preview|draft|review only|do not|don't|never|cancel|not yet|planning|plan to|actually|correction|correct|instead|meant|undo)\b/u.test(t))
   return false;
- const explicit=/\b(record|add|update|log|increase|save|post)\b/u.test(t)&&
-   /\b(inventory|stock|purchases?|receipt|bill|invoice|items?)\b/u.test(t);
+ const action=/\b(record|add|update|log|increase|save|post|put|enter)\b/u.test(t);
+ const stockTarget=/\b(inventory|stock)\b/u.test(t);
+ const purchasesTarget=/\b(purchases?|ingredients?|supplies)\b/u.test(t);
+ const explicit=action&&(stockTarget||
+   purchasesTarget&&/\b(record|add|log|post|save|enter)\b/u.test(t));
  const directBought=/\b(i|we)\s+(?:just\s+)?(?:bought|purchased)\s+\d+(?:[.,]\d+)?\s+(?:[a-z]+(?:\s+|$)){1,5}/u.test(t);
  // A naked receipt upload describes evidence; it does not grant permission.
  return explicit||(directBought&&!hasAttachments);
@@ -48,4 +51,19 @@ export function ownerTextSupportsTypedLine(
   }
   return false;
  });
+}
+
+/** An order or invoice proves purchase intent, not physical stock receipt.
+ * A saved owner declaration of delivery authorizes inventory-only recording.
+ * A negated/undelivered statement always falls back to owner review. */
+export function receivedPurchaseDocument(kind:"receipt"|"invoice"|"purchase_order"|"unknown"|null|undefined,
+ ownerText:string):boolean{
+ if(kind==="receipt")return true;
+ if(kind!=="purchase_order"&&kind!=="invoice")return false;
+ const text=ownerText.normalize("NFKC").toLocaleLowerCase();
+ return /\b(received|delivered|collected|picked up|picked-up)\b/u.test(text)&&
+  !/\b(not received|not delivered|not yet|pending|expected|awaiting|unreceived|haven't received|hasn't arrived)\b/u.test(text);
+}
+export function isPurchaseCorrection(ownerText:string):boolean{
+ return /\b(actually|correction|correct|instead|meant|undo|edit previous|change earlier)\b/iu.test(ownerText);
 }

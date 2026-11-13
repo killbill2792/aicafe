@@ -14,7 +14,7 @@ import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId} from "@/lib/ai/supervisor/loop/receiptAllocation";
 import {proposeLoop,commitLoop} from "@/lib/ai/supervisor/loop/engine";
-import {authorizesInventoryWrite,ownerTextSupportsTypedLine} from "@/lib/ai/agent/tools/purchaseIntent";
+import {authorizesInventoryWrite,ownerTextSupportsTypedLine,receivedPurchaseDocument} from "@/lib/ai/agent/tools/purchaseIntent";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -311,8 +311,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             const attached=(p.attachmentIds?.length??0)>0;
             const stockOnlyReceipt=input.source==="receipt_chat"&&attached&&
               authorizesInventoryWrite(p.ownerText,attached)&&
-              (input.documentKind==="receipt"||
-               input.documentKind==="invoice"&&/\b(received|delivered|bought|purchased|paid)\b/iu.test(p.ownerText))&&
+              receivedPurchaseDocument(input.documentKind,p.ownerText)&&
               !/\b(expense|accounting|bookkeeping|payable|pay the bill)\b/iu.test(p.ownerText);
             const sourceForEffect=stockOnlyReceipt?"chat_text":input.source;
             const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
@@ -323,7 +322,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
                 receiptTotalCents:input.source==="receipt_chat"?input.receiptTotalCents:null},requestKey);
             const authorized=!previouslyRecorded&&!possiblyRephotographed&&
               authorizesInventoryWrite(p.ownerText,attached)&&
-              !/\b(purchase order|not received|ordered|pending delivery|quote)\b/iu.test(p.ownerText)&&
+              !/\b(not received|not delivered|ordered only|pending delivery|quote)\b/iu.test(p.ownerText)&&
               (input.source==="receipt_chat"
                 ?stockOnlyReceipt&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
                  line.costCents!==null
