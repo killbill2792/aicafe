@@ -429,6 +429,6 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(plan.best?.gaps).toEqual(expect.arrayContaining([
       expect.objectContaining({reason:"no_active_staff",missingHeadcount:1}),
     ]));
-    expect(plan.best?.cost.cashWagesCents).not.toBeGreaterThan(0);
+    expect([null,0]).toContain(plan.best?.cost.cashWagesCents);
   });
 });
