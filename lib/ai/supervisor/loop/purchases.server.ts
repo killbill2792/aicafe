@@ -3,6 +3,7 @@ import {simulationOwnerReader} from "./simulationOwner.server";
 import {z} from "zod";
 import {registerLoopCapability} from "./engine";
 import {recordPurchases} from "@/lib/inventory/recordPurchases.server";
+import {receiptStockLineId} from "./receiptAllocation";
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 export const purchaseInputSchema=z.strictObject({
  ingredientId:z.uuid().nullable(),
@@ -43,14 +44,21 @@ export const purchaseCapability=registerLoopCapability({
  commit:async(scope,effect,proposalId)=>{
   if(!effect.ingredientId)throw new Error("ingredient_match_required");
   if(!proposalId)throw new Error("proposal_id_required");
+  // A photo-backed stock-only purchase uses a deterministic original-source
+  // identity. Reuploading identical bytes and line ordinal cannot credit stock
+  // twice, even if the proposal ID or chat message changes.
+  const photoStock=effect.source==="chat_text"&&effect.receiptGroupId&&
+    effect.receiptLineIndex!==null&&effect.receiptLineIndex!==undefined;
+  const lineId=photoStock?receiptStockLineId(effect.receiptGroupId!,effect.receiptLineIndex!):proposalId;
+  const sourceRef=photoStock?effect.receiptGroupId!+":"+effect.receiptLineIndex:
+    effect.source==="receipt_chat"?effect.receiptGroupId??null:proposalId;
   const result=await recordPurchases([{
-   lineId:proposalId,ingredientId:effect.ingredientId,date:effect.date,
+   lineId,ingredientId:effect.ingredientId,date:effect.date,
    quantity:effect.quantity,unit:effect.unit,costCents:effect.costCents,
    ...(effect.source==="receipt_chat"?{receipt:{groupId:effect.receiptGroupId??null,
      index:effect.receiptLineIndex??null,vendor:effect.receiptVendor??null,
      totalCents:effect.receiptTotalCents??null,name:effect.name}}:{})
-  }],effect.source,effect.source==="receipt_chat"?effect.receiptGroupId??null:proposalId,
-   scope.businessId);
+  }],effect.source,sourceRef,scope.businessId);
   if(result.length!==1||!result[0].ok)throw new Error(result[0]?.error??"purchase_save_failed");
   return {status:"verified",evidenceSource:"pantry_stock_purchases"};
  },
