@@ -10,7 +10,11 @@ describe("registered inventory dispatch", () => {
   it("passes authenticated café context through the universal tool registry", async () => {
     let wasCalled=false;
     const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-11-13",locale:"en",
-      tools:{},canonicalData:async()=>{wasCalled=true;throw new Error("synthetic scoped reader outage");}};
+      tools:{
+        getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+        getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+        getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+      },canonicalData:async()=>{wasCalled=true;throw new Error("synthetic scoped reader outage");}};
     const response=await executeAgentTool("get_inventory",{},ctx);
     expect(wasCalled).toBe(true);
     expect(response).toMatchObject({source:"inventory",missing:["inventoryReaderUnavailable"]});
