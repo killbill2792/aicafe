@@ -300,6 +300,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
                  line.costCents!==null
                 :!attached&&ownerTextSupportsTypedLine(p.ownerText,line))&&
               Boolean((proposal.canonicalEffectPayload as {ingredientId?:string|null}).ingredientId);
+            if(authorized&&proposal.status==="committed"){
+              output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name,saved:true});
+              continue;
+            }
             if(authorized&&proposal.status==="draft"){
               try{
                 const committed=await commitLoop(proposalScope,supervisorLoopRegistry,
