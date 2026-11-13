@@ -18,7 +18,7 @@ vi.mock("@/lib/scheduling/foundation.server",()=>({
   requireSchedulingOwner:mocks.owner,
 }));
 
-import { previewOliviaWeek, saveOliviaWeekDraft } from "./oliviaPlanning";
+import { previewOliviaWeek, previewOliviaAbsenceWhatIf, saveOliviaWeekDraft } from "./oliviaPlanning";
 
 const businessId="10000000-0000-4000-8000-000000000001";
 const requestKey="20000000-0000-4000-8000-000000000002";
@@ -111,4 +111,45 @@ describe("Olivia preview/draft server action safety",()=>{
       .toEqual({ok:false,error:"missing_inputs",blockers:[{code:"no_coverage"}]});
     expect(mocks.optimizer).not.toHaveBeenCalled();
   });
+
+ it("simulates an exact owner's absence on the real planner without saving employee data",async()=>{
+  const alice={id:"emp",displayName:"Sarah Jones",active:true,recurring:[],
+    exceptions:[],qualifications:[],wage:{wage_period:"hour",wage_amount_cents:2100}};
+  mocks.load.mockResolvedValue({...saved,input:{...input,employees:[alice]}});
+  const basic={status:"feasible",horizonEnd:"2026-10-18",warnings:[],
+    best:{completeCoverage:true,gaps:[],shifts:[{employeeId:"emp"}],
+      cost:{cashWagesCents:2100}}};
+  const simulated={...basic,status:"unproven",best:{
+    completeCoverage:false,gaps:[{reason:"no_confirmed_availability"}],shifts:[],
+    cost:{cashWagesCents:null}}};
+  mocks.optimizer.mockReturnValueOnce(basic).mockReturnValueOnce(simulated);
+  const result=await previewOliviaAbsenceWhatIf({
+    week:"2026-10-12",employeeName:"Sarah",weekday:2});
+  expect(result).toMatchObject({ok:true,employeeName:"Sarah Jones",
+   absentDate:"2026-10-13",hypothetical:true,saved:false,published:false,
+   baseline:{completeCoverage:true},alternative:{completeCoverage:false},
+   changeInModeledCashWagesCents:null,laborCostDifferenceKnown:false});
+  expect(mocks.optimizer).toHaveBeenCalledTimes(2);
+  const snapshot=mocks.optimizer.mock.calls[0][0];
+  const hypothetical=mocks.optimizer.mock.calls[1][0];
+  expect(hypothetical).not.toBe(snapshot);
+  expect(hypothetical.employees[0].exceptions).toEqual([{
+   local_date:"2026-10-13",exception_type:"unavailable",
+   confirmation:"owner_confirmed",
+  }]);
+  expect(snapshot.employees[0].exceptions).toEqual([]);
+  expect(mocks.draft).not.toHaveBeenCalled();
+ });
+ it("refuses ambiguous same-name worker instead of pretending one was selected",async()=>{
+  const people=[{id:"emp-a",displayName:"Sam Lee"},{id:"emp-b",displayName:"Sam Lee"}];
+  mocks.load.mockResolvedValue({...saved,input:{...input,employees:people}});
+  const result=await previewOliviaAbsenceWhatIf({
+    week:"2026-10-12",employeeName:"Sam",weekday:2});
+  expect(result).toMatchObject({ok:false,error:"employee_ambiguous"});
+  expect(result).toHaveProperty("candidates",[
+   {id:"emp-a",name:"Sam Lee"},{id:"emp-b",name:"Sam Lee"},
+  ]);
+  expect(mocks.optimizer).not.toHaveBeenCalled();
+  expect(mocks.draft).not.toHaveBeenCalled();
+ });
 });
