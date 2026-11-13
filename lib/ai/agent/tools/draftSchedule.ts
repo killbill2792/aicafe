@@ -142,6 +142,7 @@ export const draftScheduleTools={draft_week_schedule:{
     changeInModeledCashWagesCents:result.changeInModeledCashWagesCents,
     rosterChanges:result.rosterChanges,
     laborCostDifferenceKnown:result.laborCostDifferenceKnown,
+    comparisonCompleteCoverage:result.comparisonCompleteCoverage,
     assumptions:result.assumptions,warnings:result.warnings,
     note:"Read-only owner hypothetical; employee availability and published rosters are unchanged",
    };
