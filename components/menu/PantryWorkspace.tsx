@@ -64,13 +64,13 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  <div className="mt-3 grid gap-2 sm:grid-cols-2">
  {stockEvidence?.rows.map(row=><div key={row.source_ref} data-evidence-state={row.evidence_state} className="rounded-xl border border-line p-3">
  <p className="break-all text-sm font-semibold">{row.source==="app"?
-  (items.find(item=>item.id===row.ingredient_id)?.name??row.ingredient_id??row.source_ref):
+  (row.ingredient_name??items.find(item=>item.id===row.ingredient_id)?.name??row.ingredient_id??row.source_ref):
   row.menu_item_ref??row.source_ref}</p>
  <p className="mt-1 text-sm">{row.source==="app"?t.stockEvidenceOwnerCount:
   row.evidence_state==="observed_current"?t.stockEvidenceCurrent:
   row.evidence_state==="not_observed"?t.stockEvidenceNotObserved:
   row.evidence_state==="source_failed"?t.stockEvidenceFailed:t.stockEvidenceUnverified}</p>
- <p className="text-sm">{t.stockEvidenceQuantity}: {row.quantity===null?t.stockEvidenceUnknown:row.quantity.toLocaleString()} {row.source==="app"?items.find(item=>item.id===row.ingredient_id)?.baseUnit??"":""}</p>
+ <p className="text-sm">{t.stockEvidenceQuantity}: {row.quantity===null?t.stockEvidenceUnknown:row.quantity.toLocaleString()} {row.source==="app"?row.quantity_unit??items.find(item=>item.id===row.ingredient_id)?.baseUnit??"":""}</p>
  {row.reported_stock_status&&<p className="text-sm text-ink-muted">{t.stockEvidenceReported}: {row.reported_stock_status==="QUANTITY"?t.stockEvidenceProviderQuantity:row.reported_stock_status==="OUT_OF_STOCK"?t.stockEvidenceProviderOut:row.reported_stock_status==="IN_STOCK"?t.stockEvidenceProviderIn:t.stockEvidenceUnknown}</p>}
  <p className="text-sm text-ink-muted">{t.stockEvidenceAsOf}: {row.source_as_of??t.stockEvidenceUnknown}</p>
  </div>)}
