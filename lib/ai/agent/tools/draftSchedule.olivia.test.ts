@@ -135,4 +135,35 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   expect(r).toMatchObject({proposalReady:false,approvalTool:"not_created",
    missing:expect.arrayContaining(["hourlySalesUnavailable"])});
  });
+
+ it("lets the owner compare only solver-backed costs and reasons, not invented savings",async()=>{
+  mocks.preview.mockResolvedValue({ok:true,locations:{location:"America/Los_Angeles"},
+   notices:[],plan:{status:"feasible",horizonEnd:"2026-11-15",proof:"complete_candidate_solution",
+    warnings:["not a global optimum"],best:{completeCoverage:true,
+    hardConstraintsSatisfied:true,cost:{cashWagesCents:35000,costState:"estimate",
+      loadedPayrollCents:null,missingWageEmployeeIds:["other"]},gaps:[],
+    shifts:[{employeeId:"11111111-1111-4111-8111-111111111111",
+      locationId:"location",startAt:"2026-11-09T16:00:00Z",
+      endAt:"2026-11-09T18:00:00Z",paidMinutes:120}]},
+    scenarios:[
+      {objective:"cash",shifts:[{id:"first"}],gaps:[],completeCoverage:true,
+       hardConstraintsSatisfied:true,ownerMinutes:0,
+       cost:{cashWagesCents:35000,loadedPayrollCents:null,costState:"estimate",
+        missingWageEmployeeIds:["other"]},legalReview:"unverified_profile"},
+      {objective:"owner_time",shifts:[],gaps:[{reason:"no_active_staff"}],
+       completeCoverage:false,hardConstraintsSatisfied:false,ownerMinutes:0,
+       cost:{cashWagesCents:null,loadedPayrollCents:null,costState:"unavailable",
+        missingWageEmployeeIds:["other"]},legalReview:"unverified_profile"},
+    ]}});
+  const result=await draftScheduleTools.draft_week_schedule.execute({
+    week_start:"2026-11-09",purpose:"draft"},ctx);
+  expect(result.scenarioAlternatives).toEqual([
+    expect.objectContaining({objective:"cash",cashWagesCents:35000,
+      loadedPayrollCents:null,costState:"estimate"}),
+    expect.objectContaining({objective:"owner_time",completeCoverage:false,
+      cashWagesCents:null}),
+  ]);
+  expect(result.solverProof).toBe("complete_candidate_solution");
+  expect(result.explanationScope).toContain("not actual payroll");
+ });
 });
