@@ -166,4 +166,56 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   expect(result.solverProof).toBe("complete_candidate_solution");
   expect(result.explanationScope).toContain("not actual payroll");
  });
+
+ it("honors a conversational request to minimize owner shifts using solver-verified alternatives",async()=>{
+  const employeeId="11111111-1111-4111-8111-111111111111";
+  const cashShift={employeeId,locationId:"loc",
+    startAt:"2026-11-09T16:00:00Z",endAt:"2026-11-09T18:00:00Z",paidMinutes:120};
+  const ownerTimeShift={...cashShift,startAt:"2026-11-09T18:00:00Z",
+    endAt:"2026-11-09T20:00:00Z"};
+  const cash={objective:"cash",shifts:[cashShift],gaps:[],completeCoverage:true,
+    hardConstraintsSatisfied:true,ownerMinutes:120,
+    cost:{cashWagesCents:2000,loadedPayrollCents:null,costState:"estimate",
+      missingWageEmployeeIds:[]},legalReview:"unverified_profile"};
+  const ownerTime={...cash,objective:"owner_time",ownerMinutes:0,
+    shifts:[ownerTimeShift],cost:{...cash.cost,cashWagesCents:2500}};
+  mocks.preview.mockResolvedValue({ok:true,locations:{loc:"America/Los_Angeles"},notices:[],
+    plan:{status:"feasible",horizonEnd:"2026-11-15",scenarios:[cash,ownerTime],
+      best:cash,warnings:[],proof:"complete_candidate_solution"}});
+  const proposeStaff=vi.fn().mockResolvedValue({proposalId:"22222222-2222-4222-8222-222222222222",
+    revision:1,capabilityId:"olivia.staff_propose_schedule.v2"});
+  const result=await draftScheduleTools.draft_week_schedule.execute(
+    {week_start:"2026-11-09",purpose:"owner_time"},
+    {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+  expect(result).toMatchObject({selectedObjective:"owner_time",requestedObjective:"owner_time",
+    requestedObjectiveMet:true,laborCost:{cashWagesCents:2500},approvalTool:"existing_card_created"});
+  expect(proposeStaff).toHaveBeenCalledExactlyOnceWith({
+    name:"propose_schedule",
+    input:{week_start:"2026-11-09",shifts:[expect.objectContaining({
+      employee_id:employeeId,start:"10:00",end:"12:00"})]}
+  });
+ });
+ it("explains an unavailable cheaper option instead of silently pretending it was selected",async()=>{
+  const employeeId="11111111-1111-4111-8111-111111111111";
+  const shift={employeeId,locationId:"loc",
+    startAt:"2026-11-09T16:00:00Z",endAt:"2026-11-09T18:00:00Z",paidMinutes:120};
+  const balanced={objective:"balanced",shifts:[shift],gaps:[],completeCoverage:true,
+    hardConstraintsSatisfied:true,ownerMinutes:0,
+    cost:{cashWagesCents:null,loadedPayrollCents:null,
+      costState:"unavailable",missingWageEmployeeIds:[employeeId]},legalReview:"unverified_profile"};
+  const cheaper={...balanced,objective:"cash",shifts:[],completeCoverage:false,
+    hardConstraintsSatisfied:false,gaps:[{reason:"no_confirmed_availability"}]};
+  mocks.preview.mockResolvedValue({ok:true,locations:{loc:"America/Los_Angeles"},notices:[],
+   plan:{status:"feasible",horizonEnd:"2026-11-15",scenarios:[cheaper,balanced],
+     best:balanced,warnings:[],proof:"complete_candidate_solution"}});
+  const result=await draftScheduleTools.draft_week_schedule.execute(
+    {week_start:"2026-11-09",purpose:"cash_cost"},ctx);
+  expect(result).toMatchObject({requestedObjective:"cash",
+    selectedObjective:"balanced",requestedObjectiveMet:false,
+    laborCost:{cashWagesCents:null,costState:"unavailable"}});
+  expect(result.scenarioAlternatives).toEqual(expect.arrayContaining([
+    expect.objectContaining({objective:"cash",completeCoverage:false}),
+    expect.objectContaining({objective:"balanced",completeCoverage:true}),
+  ]));
+ });
 });
