@@ -128,13 +128,13 @@ describe("Task 11 Gmail connector routes (fake Google, verified owner)",()=>{
    const res=await disconnect(new Request(browserUrl+"disconnect",
      {method:"POST",headers:{origin:"http://localhost:3000"}}));
    expect(res.status).toBe(200);
-   expect(await res.json()).toMatchObject({status:"disconnected",dataPreserved:true});
+   const result=await res.json();
+   expect(result).toMatchObject({status:"disconnected",dataPreserved:true});
    expect(mocks.fetch).toHaveBeenCalledTimes(1);
    expect(mocks.fetch.mock.calls[0][0]).toBe("https://oauth2.googleapis.com/revoke");
    const calls=mocks.dbFrom.mock.calls.map(x=>x[0]);
    expect(calls).toEqual(["connector_accounts","connector_credentials","connector_credentials","connector_accounts"]);
-   const body=await res.clone().text().catch(()=>"");
-   expect(body).not.toContain("fake-refresh");
+   expect(JSON.stringify(result)).not.toContain("fake-refresh");
  });
  it("keeps local access denied when Google's revocation fails, rather than pretending disconnect succeeded",async()=>{
    mocks.fetch.mockResolvedValue({ok:false});
