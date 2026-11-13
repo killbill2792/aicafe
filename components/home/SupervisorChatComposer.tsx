@@ -559,7 +559,7 @@ export default function SupervisorChatComposer({
   }
   async function sendText(value: string, existingKey?: string, targetThreadId?: string,
     attachmentOverride?:readonly StoredAttachment[]) {
-    const inputText=value.trim() || (attachments.some(file=>file.mediaType.startsWith("image/"))?copy.photoRequest:"");
+    const inputText=value.trim() || (attachments.length>0?copy.photoRequest:"");
     const context=eventContext?.threadId===(targetThreadId??threadId)?eventContext:null;
     const text=eventOwnerMessage(inputText,context);
     // A confirmed background job accepts follow-ups while the first response streams.
@@ -1080,7 +1080,7 @@ export default function SupervisorChatComposer({
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
         className="flex items-end gap-1 rounded-[22px] border border-line bg-surface p-1.5 shadow-sm">
         <input ref={filePicker} type="file" className="sr-only"
-          accept=".txt,.pdf,.jpg,.jpeg,.png,.webp,text/plain,application/pdf,image/jpeg,image/png,image/webp"
+          accept=".txt,.csv,.xlsx,.pdf,.jpg,.jpeg,.png,.webp,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf,image/jpeg,image/png,image/webp"
           onChange={(event) => void attach(event)} />
         <button type="button" onClick={() => filePicker.current?.click()}
           aria-label={copy.addAttachment} title={copy.addAttachment}
