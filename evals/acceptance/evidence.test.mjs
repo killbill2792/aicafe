@@ -45,6 +45,8 @@ rejected("wrong source line item",(_,o)=>{o.cases[1].receiptWrites[0].ingredient
 rejected("unexpected extra write",(_,o)=>{o.cases[2].receiptWrites.push({sourceLineId:"bad_line",ingredient:"milk",delta:1,unit:"gal",status:"committed",receiptId:"rec_222"});},"wrong_or_missing_write");
 rejected("no-action case falsely claims update",(_,o)=>{o.cases[3].outcome="updated";},"false_outcome");
 rejected("assistant claims success but nothing changed",(_,o)=>{o.cases[3].reply="I updated stock and added inventory purchases."; },"false_success_claim");
+rejected("false item-specific purchase claim without inventory keyword",(_,o)=>{o.cases[3].reply="I added five pounds of beans."; },"false_success_claim");
+rejected("later false stock claim not hidden by earlier negation",(_,o)=>{o.cases[3].reply="I did not record the purchase, but I added beans."; },"false_success_claim");
 rejected("incorrect extracted quantity",(_,o)=>{o.cases[1].extracted[1].quantity=20;},"extraction_mismatch");
 rejected("guessed value for blurry evidence",(_,o)=>{o.cases[2].extracted[0].quantity=5;o.cases[2].extracted[0].unit="gal";o.cases[2].extracted[0].confidence="verified";},"extraction_mismatch");
 rejected("too many owner questions",(_,o)=>{o.cases[0].clarifications=1;},"excess_clarifications");
