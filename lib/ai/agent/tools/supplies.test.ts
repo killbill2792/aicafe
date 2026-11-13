@@ -95,7 +95,8 @@ describe("Maya read-only costs and unavailable inventory",()=>{
           data:{evidence_state:"not_observed",reported_stock_status:"QUANTITY",
             source_as_of:"2026-10-21T16:00:00Z"}},
         {source:"app",source_ref:"stock:milk",quantity:0,business_date:"2026-10-22",
-          data:{evidence_state:"dated_owner_count",ingredient_id:"milk",count_date:"2026-10-22"}}
+          data:{evidence_state:"dated_owner_count",ingredient_id:"milk",
+            ingredient_name:"Whole Milk",base_unit:"ml",count_date:"2026-10-22"}}
       ],sourceCount:3,sourceMix:{toast:2,app:1},truncated:false}};
     });
     const canonicalData=vi.fn(async()=>({db:{rpc} as unknown as SupabaseClient,businessId}));
@@ -110,7 +111,8 @@ describe("Maya read-only costs and unavailable inventory",()=>{
       expect.objectContaining({source_ref:"current:item",quantity:3.5,evidence_state:"observed_current"}),
       expect.objectContaining({source_ref:"historical:item",quantity:null,stock_status:null,
         evidence_state:"not_observed"}),
-      expect.objectContaining({source_ref:"stock:milk",quantity:0,evidence_state:"dated_owner_count"})
+      expect.objectContaining({source_ref:"stock:milk",quantity:0,evidence_state:"dated_owner_count",
+        ingredient_name:"Whole Milk",quantity_unit:"ml"})
     ]);
     expect(result.missing).toContain("stockNotObservedInLatestSuccess");
   });
