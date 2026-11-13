@@ -131,7 +131,8 @@ try{
   ownerRows.rows.some(r=>r.source==="toast"&&r.quantity===null),
   "Pantry and registered canonical query read identical bounded state");
  const def=(await one("select pg_get_viewdef('public.cv_inventory'::regclass) as definition")).definition;
- check(!def.includes("toast_raw_samples"),"diagnostic captures never feed stock view");
+ check(def.includes("toast_records_for")&&def.includes("toast_stock_source_receipts"),
+ "view must rely on operational current records and the scoped source receipt");
  check((await one(`select reloptions @> array['security_invoker=true'] as ok
  from pg_class where oid='public.cv_inventory'::regclass`)).ok,
  "view remains RLS invoker");
