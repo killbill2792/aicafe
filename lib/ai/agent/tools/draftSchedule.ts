@@ -5,14 +5,15 @@ import {nextMonday} from "@/lib/scheduling/staffScheduleLinks";
 import {previewOliviaWeek,previewOliviaOwnerSavings} from "@/lib/actions/oliviaPlanning";
 
 const monday=z.iso.date().refine(v=>new Date(v+"T12:00:00Z").getUTCDay()===1,"Must be a Monday");
-const schema=z.strictObject({week_start:monday.nullable(),purpose:z.enum(["draft","owner_savings"])});
+const schema=z.strictObject({week_start:monday.nullable(),purpose:z.enum(["draft","owner_savings","cash_cost","owner_time","balanced"])});
+const selectedObjectiveLabel=(objective:"cash"|"owner_time"|"balanced"|null)=>objective??"default";
 
 /** Supervisor is the only conversation entry point; Olivia is the only optimizer.
  * The preview is inert. Existing propose_schedule handles the approval card.
  */
 export const draftScheduleTools={draft_week_schedule:{
  agentId:"olivia",schema,
- description:"Understand owner scheduling requests naturally; use the one existing Olivia optimizer. purpose=draft prepares the roster and ONE existing approval card, so never call propose_schedule again. A request to change employee availability or a scheduling rule first requires its existing propose_availability_change or propose_rule_change tool; don't pretend an unapproved change was used in the roster. Return scenario costs, gaps and source limitations so the owner can ask 'why', 'what if' or 'make it cheaper' without invented arithmetic. purpose=owner_savings models an unpaid owner alternative WITHOUT a card. Never claim a draft was published, accepted by workers, or sent.",
+ description:"Use the single existing Olivia optimizer for natural staffing instructions. purpose=draft uses its default feasible plan; cash_cost uses the valid minimum-modeled-wage objective for 'reduce staffing costs'; owner_time selects its valid worker-hours objective for 'reduce owner shifts'; balanced selects the valid balanced objective. All give ONE inert owner approval card if a valid roster is found; never call propose_schedule again. A request to change saved employee availability or rules first uses its existing propose_availability_change or propose_rule_change tool; don't pretend unapproved edits were reflected. Return exact solver scenarios, sources, gaps and cost unknowns to support follow-ups; no inferred workers from historical sales. purpose=owner_savings compares unpaid owner work as a what-if WITHOUT creating a card. Never claim published, accepted or sent.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
   const {week_start,purpose}=schema.parse(raw);
   const start=week_start??nextMonday(ctx.asOf);
@@ -32,7 +33,15 @@ export const draftScheduleTools={draft_week_schedule:{
   const result=await previewOliviaWeek({week:start});
   if(!result.ok)return {source:"olivia_schedule",period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
    agentId:"olivia",draft:true,saved:false,missing:[result.error,...(result.blockers??[]).map(b=>b.code)]};
-  const best=result.plan.best;
+  // The requested business objective chooses among already-validated
+  // deterministic solver candidates; a missing/infeasible alternative may
+  // not override a valid default schedule.
+  const requestedObjective=purpose==="cash_cost"?"cash":
+   purpose==="owner_time"?"owner_time":purpose==="balanced"?"balanced":null;
+  const requestedCandidate=requestedObjective?
+   result.plan.scenarios?.find(s=>s.objective===requestedObjective&&
+     s.completeCoverage&&s.hardConstraintsSatisfied):null;
+  const best=requestedCandidate??result.plan.best;
   if(!best)return {source:"olivia_schedule",period:null,agentId:"olivia",draft:true,saved:false,missing:["noPlannerScenario"]};
   const proposedShifts=oliviaProposalShifts(best.shifts,result.locations);
   const canPropose=result.plan.status==="feasible"&&best.completeCoverage!==false&&
@@ -90,6 +99,9 @@ export const draftScheduleTools={draft_week_schedule:{
    demandEvidence:demandSummary,
    laborCost:best.cost,gaps:best.gaps,warnings:result.plan.warnings,
    scenarioAlternatives:alternatives,solverProof:result.plan.proof,
+   requestedObjective:selectedObjectiveLabel(requestedObjective),
+   selectedObjective:best.objective,
+   requestedObjectiveMet:requestedObjective===null||best.objective===requestedObjective,
    explanationScope:"Based on owner-confirmed coverage and recorded availability; POS close-hour history is informational, not an inferred staffing requirement; scheduled wages are not actual payroll",
    proposedShifts,
    proposedShiftCount:proposedShifts.length,
