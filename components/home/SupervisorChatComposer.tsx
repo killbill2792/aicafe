@@ -268,11 +268,12 @@ export default function SupervisorChatComposer({
   const [attachments, setAttachments] = useState<StoredAttachment[]>([]);
   const [storedAttachments, setStoredAttachments] =
     useState<{threadId:string;items:StoredAttachment[]}|null>(null);
+  // AGENTS.md ships new UI copy in English only until translations are approved.
   const fileCopy={
-    en:{recent:"Previous files",reuse:"Use",remove:"Remove",tooLarge:"File too large (8 MB for photos, 2 MB for other files).",limit:"Choose up to three files per message.",failed:"File upload failed."},
-    es:{recent:"Archivos anteriores",reuse:"Usar",remove:"Quitar",tooLarge:"El archivo es demasiado grande (8 MB para fotos, 2 MB para otros archivos).",limit:"Selecciona hasta tres archivos por mensaje.",failed:"No se pudo subir el archivo."},
-    ar:{recent:"الملفات السابقة",reuse:"استخدام",remove:"إزالة",tooLarge:"الملف كبير جدًا (٨ ميغابايت للصور و٢ ميغابايت للملفات الأخرى).",limit:"اختر حتى ثلاثة ملفات لكل رسالة.",failed:"فشل رفع الملف."}
-  }[locale];
+    recent:"Previous files",reuse:"Use",remove:"Remove",
+    tooLarge:"File too large (8 MB for photos, 2 MB for documents).",
+    limit:"Choose up to three files per message.",failed:"File upload failed."
+  };
   const [mediaNotice, setMediaNotice] = useState("");
   const recorder = useRef<MediaRecorder | null>(null);
   const recordingStream = useRef<MediaStream | null>(null);
