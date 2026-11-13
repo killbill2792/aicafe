@@ -1,6 +1,7 @@
 import {z} from "zod";
 import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import type {AgentToolContext,AgentToolResult} from "./index";
+import {scheduleCardKey} from "./staffProposals";
 import {nextMonday} from "@/lib/scheduling/staffScheduleLinks";
 import {previewOliviaWeek,previewOliviaOwnerSavings,previewOliviaAbsenceWhatIf} from "@/lib/actions/oliviaPlanning";
 
@@ -57,18 +58,21 @@ export const draftScheduleTools={draft_week_schedule:{
    proposedShifts.every(s=>s.break_minutes<=240&&s.start!==s.end);
   let approval: {proposalId:string;revision:number;capabilityId:string}|null=null;
   let approvalError:string|null=null;
-  if(!previewOnly&&canPropose&&ctx.scheduleProposalCreated)approval=ctx.scheduleProposalCreated;
-  else if(!previewOnly&&canPropose&&ctx.proposals?.proposeStaff){
-   try {
-    // The existing authorized proposal writer creates ONE inert owner card.
-    // Only the owner's approval click may write dated draft shifts.
-    approval=await ctx.proposals.proposeStaff({name:"propose_schedule",
-     input:{week_start:start,shifts:proposedShifts}});
-    ctx.scheduleProposalCreated=approval;
-   }catch{approvalError="approvalProposalUnavailable";}
+  const cardKey=scheduleCardKey(start,proposedShifts);
+  if(!previewOnly&&canPropose){
+   if(ctx.scheduleProposalCreated){
+    if(ctx.scheduleProposalKey===cardKey)approval=ctx.scheduleProposalCreated;
+    else approvalError="existingScheduleCardDiffers";
+   }else if(ctx.proposals?.proposeStaff){
+    try {
+     // Only the owner can approve a real write; preview itself is inert.
+     approval=await ctx.proposals.proposeStaff({name:"propose_schedule",
+      input:{week_start:start,shifts:proposedShifts}});
+     ctx.scheduleProposalCreated=approval;
+     ctx.scheduleProposalKey=cardKey;
+    }catch{approvalError="approvalProposalUnavailable";}
+   }else approvalError="approvalProposalUnavailable";
   }
-  if(!previewOnly&&canPropose&&!approval&&!approvalError&&!ctx.proposals?.proposeStaff)
-   approvalError="approvalProposalUnavailable";
   // The hourly rollup groups orders by their CLOSE hour, not customer arrival.
   // This is observed comparable history, never an inferred worker count.
   const demand=result.demandEvidence;
@@ -113,7 +117,7 @@ export const draftScheduleTools={draft_week_schedule:{
    explanationScope:"Based on owner-confirmed coverage and recorded availability; POS close-hour history is informational, not an inferred staffing requirement; scheduled wages are not actual payroll",
    proposedShifts,
    proposedShiftCount:proposedShifts.length,
-   proposalReady:canPropose&&!previewOnly,previewOnly, ...(approval??{}),
+   proposalReady:canPropose&&!previewOnly&&approvalError===null,previewOnly, ...(approval??{}),
    approvalTool:approval?"existing_card_created":"not_created",weekStart:start};
  }
  },
