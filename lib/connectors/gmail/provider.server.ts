@@ -112,8 +112,7 @@ export async function gmailRead(scope:ConnectorOwner,messageId:string){
 export async function gmailReadThread(scope:ConnectorOwner,threadId:string){
   if(!/^[a-zA-Z0-9_-]{8,100}$/.test(threadId))throw new Error("gmail_invalid_thread_id");
   const {token,account}=await authorizedGmail(scope,"read");
-  const result=(await gmailApi(token,"/threads/"+encodeURIComponent(threadId)+"?format=full"))
-    as {id?:string;messages?:GmailMessage[]};
+  const result=await gmailApi(token,"/threads/"+encodeURIComponent(threadId)+"?format=full") as {id?:string;messages?:GmailMessage[]};
   if(result.id!==threadId||!Array.isArray(result.messages))throw new Error("gmail_thread_unavailable");
   return {source:"gmail",account:account.email,asOf:new Date().toISOString(),threadId,
     messages:result.messages.slice(-12).map(safeMessage)};
