@@ -44,7 +44,7 @@ test("@home owner uploads and reselects a private receipt while another café ca
     const attach = page.getByRole("button", {name: "Add an attachment"});
     await expect(attach).toBeEnabled({timeout: 30_000});
     const uploaded = page.waitForResponse(response =>
-      /\\/api\\/ai\\/threads\\/[^/]+\\/attachments$/.test(new URL(response.url()).pathname) &&
+      /^\/api\/ai\/threads\/[^/]+\/attachments$/.test(new URL(response.url()).pathname) &&
       response.request().method() === "POST");
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XouYAAAAASUVORK5CYII=",
@@ -59,7 +59,7 @@ test("@home owner uploads and reselects a private receipt while another café ca
       originalName:"receipt.png",mediaType:"image/png",
       bytes:png.length,processingState:"stored_unanalysed",
     });
-    const match = new URL(response.url()).pathname.match(/\\/threads\\/([^/]+)\\/attachments$/);
+    const match = new URL(response.url()).pathname.match(/^\/api\/ai\/threads\/([^/]+)\/attachments$/);
     expect(match).not.toBeNull();
     const threadId = match[1];
     const route = "/api/ai/threads/" + threadId + "/attachments";
