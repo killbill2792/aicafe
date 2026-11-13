@@ -86,7 +86,7 @@ export async function previewOliviaAbsenceWhatIf(raw:unknown){
   blockers:loaded.blockers};
  // First match exact saved display name; a unique first name is supported,
  // but a shared first name cannot be guessed into the wrong person's record.
- const normal=(name:string)=>name.trim().replace(/\\s+/g," ").toLocaleLowerCase("en");
+ const normal=(name:string)=>name.trim().replace(/\s+/g," ").toLocaleLowerCase("en");
  const target=normal(employeeName);
  const all=loaded.input.employees;
  const exact=all.filter(e=>normal(e.displayName)===target);
