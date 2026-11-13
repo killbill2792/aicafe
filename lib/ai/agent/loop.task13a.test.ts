@@ -159,4 +159,109 @@ describe("Task 13a registered Supervisor staffing conversation",()=>{
   expect(result.text).toContain("saved availability is unchanged");
   expect(calls).toHaveLength(2);
  });
+
+ /**
+  * Reference acceptance, NOT a head-to-head Grok/Muse or live-model score.
+  * Recorded Responses function_calls are an oracle: they exercise the real
+  * Supervisor runtime, tool boundaries, solver result handling, approval
+  * rules and overhead without a billable model or production data.
+  * Report synthetic-loop p95 separately from real hosted-model p95.
+  */
+ it("passes 8 repeatable Grok/Muse-style staffing journeys and reports synthetic-loop p95",async()=>{
+  const scenarios=[
+   {id:"show-roster-first",owner:"Show next week's roster before asking me to approve anything.",
+    purpose:"compare_only",objective:"balanced",preview:true,approval:false,covered:true,missingWages:false,absence:false},
+   {id:"cost-conversation",owner:"Is there a cheaper option? Just compare costs for now.",
+    purpose:"cash_preview",objective:"cash",preview:true,approval:false,covered:true,missingWages:false,absence:false},
+   {id:"owner-time-conversation",owner:"Can I work less next week? Show me alternatives, don't change anything.",
+    purpose:"owner_time_preview",objective:"owner_time",preview:true,approval:false,covered:true,missingWages:false,absence:false},
+   {id:"balanced-approval",owner:"Prepare a balanced schedule for my approval.",
+    purpose:"balanced",objective:"balanced",preview:false,approval:true,covered:true,missingWages:false,absence:false},
+   {id:"low-wages-approval",owner:"Draft the lower cash wage schedule for approval.",
+    purpose:"cash_cost",objective:"cash",preview:false,approval:true,covered:true,missingWages:false,absence:false},
+   {id:"week-one-exception",owner:"Draft next week's roster, but Sarah is off Tuesday. Don't alter her availability.",
+    purpose:"draft",objective:"balanced",preview:false,approval:true,covered:true,missingWages:false,absence:true},
+   {id:"zero-workers",owner:"No one is available next week. Tell me the gaps, don't fake a schedule.",
+    purpose:"draft",objective:"balanced",preview:false,approval:false,covered:false,missingWages:false,absence:false},
+   {id:"unknown-payroll",owner:"Show a roster comparison, but we don't have wage information yet.",
+    purpose:"compare_only",objective:"balanced",preview:true,approval:false,covered:true,missingWages:true,absence:false},
+  ] as const;
+  const durations:number[]=[];
+  let turns=0;
+  for(const scenario of scenarios){
+   for(let repetition=0;repetition<4;repetition++){
+    schedule.preview.mockReset();
+    const best={objective:scenario.objective,completeCoverage:scenario.covered,
+     hardConstraintsSatisfied:scenario.covered,
+     shifts:scenario.covered?[shift]:[],gaps:scenario.covered?[]:[{
+      reason:"no_confirmed_availability",startAt:"2026-11-09T16:00:00.000Z",
+     }],
+     ownerMinutes:scenario.objective==="owner_time"?0:60,
+     legalReview:"unverified_profile",
+     cost:{cashWagesCents:scenario.missingWages?null:2400,
+      loadedPayrollCents:null,costState:scenario.missingWages?"unknown":"verified",
+      missingWageEmployeeIds:scenario.missingWages?[shift.employeeId]:[]}};
+    const temp=scenario.absence?{
+     employeeName:"Sarah Jones",absentDate:"2026-11-10",saved:false}:null;
+    schedule.preview.mockResolvedValue({ok:true,notices:[],
+     locations:{loc:"America/Los_Angeles"},
+     ...(temp?{temporaryConstraint:temp}:{}),
+     plan:{status:scenario.covered?"feasible":"infeasible",
+      horizonEnd:"2026-11-15",warnings:[],scenarios:[best],best,
+      proof:scenario.covered?"complete_candidate_solution":"incomplete_coverage"}});
+    const approved=vi.fn().mockResolvedValue({
+     proposalId:"33333333-3333-4333-8333-333333333333",
+     revision:1,capabilityId:"olivia.staff_propose_schedule.v2"});
+    let round=0;
+    const model:AgentProvider=async function* (){
+     round++;
+     if(round===1)yield tool("draft_week_schedule",{
+      week_start:null,purpose:scenario.purpose,
+      temporary_absence:scenario.absence?{employee_name:"Sarah",weekday:2}:null,
+     },"scenario-"+scenario.id+"-"+repetition);
+     else yield message(scenario.covered
+      ?"This is a preview based on recorded availability; nothing has been published or sent."
+      :"The required hours are uncovered. No complete schedule can be proposed.");
+     yield done;
+    };
+    const result=await runAgentTurn({
+     ownerText:scenario.owner,context:{...context(),
+      proposals:{proposePriceChange:vi.fn(),proposeStaff:approved}},provider:model});
+    turns++;
+    expect(result.endReason,scenario.id).toBe("complete");
+    expect(result.tools,scenario.id).toEqual(["draft_week_schedule"]);
+    expect(result.usage.modelCalls,scenario.id).toBe(2);
+    expect(result.usage.toolCalls,scenario.id).toBe(1);
+    expect(result.usage.latencyMs,scenario.id).toBeGreaterThanOrEqual(0);
+    const data=result.results.find(x=>x.source==="olivia_schedule");
+    expect(data,scenario.id).toBeDefined();
+    expect(data,scenario.id).toMatchObject({
+     saved:false,previewOnly:scenario.preview,
+     completeCoverage:scenario.covered,
+     approvalTool:scenario.approval?"existing_card_created":"not_created"});
+    if(scenario.missingWages)expect(data?.laborCost).toMatchObject({
+     cashWagesCents:null,missingWageEmployeeIds:[shift.employeeId]});
+    if(scenario.absence)expect(data?.temporaryConstraint).toEqual(temp);
+    if(!scenario.covered)expect(data).toMatchObject({
+     proposalReady:false,missing:expect.arrayContaining(["approvalShiftLimitOrInvalidShift"]),
+     gaps:expect.arrayContaining([expect.objectContaining({
+      reason:"no_confirmed_availability"})]),
+    });
+    expect(approved,scenario.id).toHaveBeenCalledTimes(scenario.approval?1:0);
+    expect(result.text).not.toMatch(/published|sent/i);
+    durations.push(result.usage.latencyMs);
+   }
+  }
+  const sorted=[...durations].sort((a,b)=>a-b);
+  const p95Ms=sorted[Math.ceil(sorted.length*0.95)-1];
+  expect(turns).toBe(32);
+  // This is only synchronous recorded-provider runtime overhead, not hosted
+  // model/network latency. Keep the bound generous under parallel CI load.
+  expect(p95Ms).toBeLessThan(3000);
+  console.info("TASK13A_OFFLINE_CONVERSATION_SCORECARD",JSON.stringify({
+   cases:scenarios.length,repeatCount:4,passed:turns,total:turns,
+   p95SyntheticLoopMs:p95Ms,hostedModelMeasured:false,
+   competitorModelsMeasured:false,productionDataUsed:false,
+  }));
+ });
 });
