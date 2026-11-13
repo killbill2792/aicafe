@@ -20,7 +20,7 @@ const effect:GmailEffect={accountId:account.id,generation:1,from:account.email,o
  messageId:null,threadId:null,labelId:null,labelName:null};
 const credentials={generation:1,access_token_enc:"encrypted",refresh_token_enc:"encrypted",
  token_expires_at:new Date(Date.now()+3600000).toISOString()};
-function db(receipt?:Record<string,unknown>,duplicate=false){
+function db(receipt?:Record<string,unknown>,duplicate=false,hasClaim=true){
  const writes:Array<{table:string;operation:string;data:unknown}>=[];
  deps.dbFrom.mockImplementation((table:string)=>{
    const chain={
@@ -29,6 +29,12 @@ function db(receipt?:Record<string,unknown>,duplicate=false){
      insert:vi.fn((data:unknown)=>{writes.push({table,operation:"insert",data});return chain;}),
      maybeSingle:vi.fn(async()=>{
        if(table==="connector_credentials")return {data:credentials,error:null};
+       if(table==="supervisor_proposals")return {data:{id:proposal,status:"executing",
+         capability_id:"alex.gmail_effect.v1",capability_version:1,
+         effect_hash:effectHash,canonical_effect_payload:{accountId:account.id,
+           generation:1,from:account.email}},error:null};
+       if(table==="supervisor_effect_attempts")return {data:hasClaim?
+         {state:"executing",authorization_kind:"click"}:null,error:null};
        if(table==="connector_provider_receipts"){
          if(duplicate&&writes.some(x=>x.operation==="insert"))
            return {data:null,error:{code:"23505"}};
@@ -75,6 +81,15 @@ describe("Gmail provider proof and no duplicate sends",()=>{
    expect(posted).toHaveLength(1);
    expect(writes.map(x=>x.operation)).toEqual(["insert","update"]);
    expect((writes[1].data as {state:string}).state).toBe("verified");
+ });
+ it("cannot send without an existing owner-click claim in the single Task 10 gateway",async()=>{
+   const writes=db(undefined,false,false);
+   const fetch=vi.fn();
+   vi.stubGlobal("fetch",fetch);
+   await expect(performGmailEffect(scope,effect,proposal,effectHash))
+     .rejects.toThrow("gmail_gateway_owner_click_required");
+   expect(writes).toEqual([]);
+   expect(fetch).not.toHaveBeenCalled();
  });
  it("refuses a second provider call after uncertain send reservation",async()=>{
    const writes=db(undefined,true);

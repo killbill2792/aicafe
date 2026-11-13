@@ -226,6 +226,25 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
   if(account.id!==effect.accountId||account.generation!==effect.generation||
     account.email.toLowerCase()!==effect.from.toLowerCase())throw new Error("gmail_connection_changed");
   const db=createAdminSupabaseClient();
+  // A server-side provider method must never become a second action gateway.
+  // Verify the actual owner's immutable, executing proposal and Task 10's
+  // owner-click attempt BEFORE reserving a provider receipt or making a write.
+  const {data:proposal,error:proposalError}=await db.from("supervisor_proposals")
+    .select("id,status,capability_id,capability_version,effect_hash,canonical_effect_payload")
+    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+    .eq("id",proposalId).maybeSingle();
+  const bound=proposal?.canonical_effect_payload as
+    {accountId?:string;generation?:number;from?:string}|null;
+  if(proposalError||!proposal||proposal.status!=="executing"||
+     proposal.capability_id!=="alex.gmail_effect.v1"||proposal.capability_version!==1||
+     proposal.effect_hash!==effectHash||bound?.accountId!==effect.accountId||
+     bound.generation!==effect.generation||bound.from!==effect.from)
+    throw new Error("gmail_gateway_proposal_required");
+  const {data:attempt,error:attemptError}=await db.from("supervisor_effect_attempts")
+    .select("state,authorization_kind").eq("business_id",scope.businessId)
+    .eq("proposal_id",proposalId).eq("effect_hash",effectHash).maybeSingle();
+  if(attemptError||attempt?.state!=="executing"||attempt.authorization_kind!=="click")
+    throw new Error("gmail_gateway_owner_click_required");
   const rfc=effect.operation==="send"?gmailRfcId(proposalId,effect.from):null;
   const receipt={account_id:account.id,business_id:scope.businessId,owner_user_id:scope.ownerUserId,
     proposal_id:proposalId,effect_hash:effectHash,account_generation:account.generation,
@@ -297,8 +316,11 @@ export async function reconcileGmailReceipt(scope:ConnectorOwner,effect:GmailEff
   if(error||!record||record.account_id!==effect.accountId||record.account_generation!==effect.generation)return false;
   if(record.state==="verified"&&record.provider_message_id)return true;
   if(effect.operation!=="send"||!record.rfc_message_id)return false;
-  let token:string;
-  try{({token}=await authorizedGmail(scope,"read"));}catch{return false;}
+  let authorized:GmailAuthorized;
+  try{authorized=await authorizedGmail(scope,"read");}catch{return false;}
+  if(authorized.account.id!==record.account_id||
+     authorized.account.generation!==record.account_generation)return false;
+  const token=authorized.token;
   const q="rfc822msgid:"+record.rfc_message_id;
   const found=await gmailApi(token,"/messages?"+new URLSearchParams({q,maxResults:"10"})) as {messages?:Array<{id:string}>};
   for(const candidate of found.messages??[]){
