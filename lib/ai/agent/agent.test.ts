@@ -7,6 +7,16 @@ import {newResolveState} from "./resolve";
 const base = { source: "profitability", period: null, missing: [],
   ownerProfitCents: 12345, operatingMargin: 0.125, coveredSalesDays: 4 };
 describe("numbers, statuses, and strict tool contracts", () => {
+  it("publishes a strict but nullable weekly staff exclusion field for native model tool calls",()=>{
+    const tool=agentToolDefinitions.find(t=>t.name==="draft_week_schedule");
+    expect(tool).toMatchObject({strict:true});
+    const p=tool?.parameters as {required?:string[];
+      properties?:Record<string,unknown>}|undefined;
+    expect(p?.required).toEqual(expect.arrayContaining([
+      "week_start","purpose","temporary_absence"]));
+    expect(JSON.stringify(p?.properties?.temporary_absence)).toContain("null");
+  });
+
   it("keeps an owner's stated sales when recorded profitability is unavailable without inventing profit",async()=>{
     const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-10-24",locale:"en",tools:{
       getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}}),
