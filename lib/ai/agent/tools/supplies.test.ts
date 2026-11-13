@@ -44,7 +44,7 @@ describe("Maya read-only costs and unavailable inventory",()=>{
       expect(args.p_business_id).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
       return {error:null,data:{rows:[{source:"toast",source_ref:"toast-current:1",
         menu_item_ref:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",stock_status:"QUANTITY",
-        quantity:3.5,business_date:"2026-10-22",data:{source_as_of:"2026-10-22T18:00:00Z"}}],
+        quantity:3.5,business_date:"2026-10-22",data:{source_as_of:"2026-10-22T18:00:00Z",evidence_state:"observed_current"}}],
         sourceMix:{toast:1},sourceCount:1,truncated:false}};
     });
     const context={...ctx({}),canonicalData:async()=>({
@@ -53,8 +53,21 @@ describe("Maya read-only costs and unavailable inventory",()=>{
     const got=await suppliesTools.get_inventory.execute({},context);
     expect(got.inventory).toEqual([expect.objectContaining({
       quantity:3.5,stock_status:"QUANTITY",source:"toast"})]);
-    expect(got.missing).toContain("source_freshness_unverified");
+    expect(got.missing).not.toContain("source_freshness_unverified");
     expect(got.quantitySemantics).toBe("no_unobserved_zero");
+  });
+  it("hides historical Toast quantity when latest successful source omitted the item",async()=>{
+    const rpc=vi.fn(async()=>({error:null,data:{
+      rows:[{source:"toast",source_ref:"toast-current:1",stock_status:null,quantity:null,
+       data:{source_as_of:"2026-10-21T18:00:00Z",reported_stock_status:"QUANTITY",
+        evidence_state:"not_observed"}}],sourceMix:{toast:1},sourceCount:1,truncated:false
+    }}));
+    const context={...ctx({}),canonicalData:async()=>({db:{rpc} as unknown as SupabaseClient,
+      businessId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"})};
+    const got=await suppliesTools.get_inventory.execute({},context);
+    expect(got.inventory).toEqual([expect.objectContaining({
+      quantity:null,evidence_state:"not_observed",stock_status:null})]);
+    expect(got.missing).toContain("stockNotObservedInLatestSuccess");
   });
   it("returns missing, not empty live stock, after an unavailable canonical read",async()=>{
     const context={...ctx({}),canonicalData:async()=>({
