@@ -56,13 +56,15 @@ rejected("contradictory golden DB delta",(t)=>{t.cases[0].expected.after[0].quan
 rejected("missing expected source",(t)=>{t.cases[0].input.text="";},"missing_ground_truth_source");
 rejected("duplicate golden case ids",(t)=>{t.cases[1].id=t.cases[0].id;},"invalid_or_duplicate_truth_case");
 rejected("empty golden suite",(t)=>{t.cases=[];},"empty_ground_truth");
-rejected("recorded model passed off as real",(t,o)=>{
+test("recorded model cannot fake a real provider request even when other headers look live",()=>{
+ const t=clone(truth),o=clone(report);
  t.datasetKind="human-labeled-holdout";
  o.capture.mode="live_provider";
  o.capture.headSha="a".repeat(40);
  o.capture.runId="run_1";
  o.capture.modelId="real_provider";
-}, "missing_provider_call");
+ assert.throws(()=>scoreAcceptance(t,o,{mode:"live",minReceipts:1,minConversations:1}),/missing_provider_call/);
+});
 test("synthetic evidence cannot be promoted into real-model acceptance",()=>{
  assert.throws(()=>scoreAcceptance(truth,report,{mode:"live"}),/wrong_dataset_kind/);
 });
