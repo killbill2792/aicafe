@@ -37,6 +37,8 @@ export function scenariosForPath(path) {
       path === ".github/workflows/staff-pr155-screenshots.yml")
     return ["staff"];
   if (path === "app/[locale]/menu/page.tsx" ||
+      path === "app/[locale]/menu/pantry/page.tsx" ||
+      path === "components/menu/PantryWorkspace.tsx" ||
       path === "components/menu/MenuCatalog.tsx" ||
       path.startsWith("lib/viewmodels/menu")) return ["menu"];
   if (path === "app/[locale]/money/page.tsx" ||
