@@ -83,6 +83,11 @@ create or replace view public.cv_inventory
   when receipt.restaurant_guid is null or receipt.successful_at is null
    then 'source_unverified'
   when receipt.source_status not in ('current','empty') then 'source_failed'
+  -- An empty family receipt is authoritative absence even if a fast retry
+  -- reused the same millisecond timestamp as the retained object.
+  when receipt.source_status='empty' then 'not_observed'
+  -- Malformed/legacy count metadata cannot certify a full family observation.
+  when coalesce(receipt.observed_count,0)<1 then 'source_unverified'
   when r.data->>'lastSuccessAt'=receipt.successful_at then 'observed_current'
   else 'not_observed' end::text as evidence_state) e
  where r.record_type='stock/v1/inventory';
