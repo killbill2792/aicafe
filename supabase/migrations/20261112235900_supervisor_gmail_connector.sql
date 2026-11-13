@@ -80,3 +80,56 @@ revoke all on public.connector_provider_receipts from public, anon, authenticate
 grant select, insert, update, delete on public.connector_provider_receipts to service_role;
 
 -- Never expose any connector credential or OAuth state through an authenticated RLS policy.
+
+-- Gmail receipt-specific completion reuses the ONE Task 10 effect reservation.
+-- Unlike the generic local effects, a Gmail 'verified' transition REQUIRES an
+-- independently persisted provider receipt; an attempt key is never a receipt.
+create function public.supervisor_finish_gmail_effect_attempt(
+  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_proposal_id uuid,
+  p_attempt_key uuid,p_revision integer,p_state text,p_next_status text default null,
+  p_monitoring_start_date date default null
+) returns public.supervisor_proposals
+language plpgsql security definer set search_path = public as $$
+declare p public.supervisor_proposals; a public.supervisor_effect_attempts;
+  r public.connector_provider_receipts;
+begin
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'service_role_only' using errcode='42501'; end if;
+  if not exists(select 1 from public.memberships m where m.business_id=p_business_id
+      and m.user_id=p_owner_user_id and m.role='owner') then
+    raise exception 'gmail_owner_required' using errcode='42501'; end if;
+  select * into p from public.supervisor_proposals where business_id=p_business_id
+    and owner_user_id=p_owner_user_id and thread_id=p_thread_id and id=p_proposal_id for update;
+  select * into a from public.supervisor_effect_attempts where business_id=p_business_id
+    and proposal_id=p_proposal_id and attempt_key=p_attempt_key for update;
+  if p.id is null or p.status<>'executing' or p.revision<>p_revision
+    or p.capability_id<>'alex.gmail_effect.v1' or p.capability_version<>1
+    or a.id is null or a.effect_hash<>p.effect_hash
+    or a.authorization_kind<>'click' or a.state not in ('executing','uncertain') then
+    raise exception 'gmail_attempt_conflict' using errcode='P0001'; end if;
+  if p_state='uncertain' then
+    update public.supervisor_effect_attempts set state='uncertain' where id=a.id;
+    return p;
+  end if;
+  if p_state<>'verified' or p_next_status<>'committed'
+    or p_monitoring_start_date is null then
+    raise exception 'gmail_completion_requires_provider_receipt' using errcode='42501'; end if;
+  select * into r from public.connector_provider_receipts where business_id=p_business_id
+    and owner_user_id=p_owner_user_id and proposal_id=p_proposal_id
+    and effect_hash=p.effect_hash and state='verified'
+    and provider_message_id is not null and provider_accepted_at is not null
+    and account_id::text=p.canonical_effect_payload->>'accountId'
+    and account_generation::text=p.canonical_effect_payload->>'generation'
+    and operation=p.canonical_effect_payload->>'operation' for update;
+  if r.id is null then raise exception 'gmail_provider_receipt_missing' using errcode='42501'; end if;
+  update public.supervisor_effect_attempts set state='verified',
+    verified_at=now(),receipt_ref='gmail:'||r.provider_message_id where id=a.id;
+  update public.supervisor_proposals set status='committed',committed_at=now(),
+    monitoring_start_date=p_monitoring_start_date,revision=revision+1,updated_at=now()
+    where id=p.id returning * into p;
+  return p;
+end $$;
+revoke all on function public.supervisor_finish_gmail_effect_attempt(
+  uuid,uuid,uuid,uuid,uuid,integer,text,text,date) from public,anon,authenticated;
+grant execute on function public.supervisor_finish_gmail_effect_attempt(
+  uuid,uuid,uuid,uuid,uuid,integer,text,text,date) to service_role;
