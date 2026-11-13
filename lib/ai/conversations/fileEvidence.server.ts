@@ -55,26 +55,33 @@ export function fileEvidence(mimeType:string,bytes:Uint8Array,name:string):FileE
  if(mimeType==="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"){
   assertSafeWorkbook(bytes);
   let workbook:XLSX.WorkBook;
-  try{workbook=XLSX.read(bytes,{type:"buffer",sheetRows:MAX_ROWS,cellFormula:false,cellStyles:false,bookVBA:false});}
+  try{workbook=XLSX.read(bytes,{type:"buffer",sheetRows:MAX_ROWS,cellFormula:true,cellStyles:false,bookVBA:false});}
   catch{throw new Error("xlsx_parse_failed");}
   let truncated=workbook.SheetNames.length>MAX_SHEETS;
   const lines:string[]=["Workbook "+name+"; formulas are not evaluated; saved values may be stale."];
   for(const [i,sheetName] of workbook.SheetNames.entries()){
    if(i>=MAX_SHEETS)break;
    const visibility=workbook.Workbook?.Sheets?.[i]?.Hidden??0;
-   if(visibility!==0){lines.push("Sheet "+(i+1)+" hidden: omitted");continue;}
+   if(visibility!==0){truncated=true;lines.push("Sheet "+(i+1)+" hidden: omitted");continue;}
    const sheet=workbook.Sheets[sheetName];
    if(!sheet?.["!ref"]){lines.push("Sheet "+(i+1)+" "+JSON.stringify(sheetName)+" empty");continue;}
    const range=XLSX.utils.decode_range(sheet["!ref"]);
+   const fullRef=(sheet as XLSX.WorkSheet&{"!fullref"?:string})["!fullref"];
+   if(fullRef){
+    const fullRange=XLSX.utils.decode_range(fullRef);
+    if(fullRange.e.r>range.e.r||fullRange.e.c>range.e.c)truncated=true;
+   }
    truncated||=(range.e.r-range.s.r+1)>MAX_ROWS||(range.e.c-range.s.c+1)>MAX_COLUMNS;
    lines.push("Sheet "+(i+1)+" "+JSON.stringify(sheetName));
    for(let row=range.s.r;row<=Math.min(range.e.r,range.s.r+MAX_ROWS-1);row++){
     const cells:string[]=[];
     for(let col=range.s.c;col<=Math.min(range.e.c,range.s.c+MAX_COLUMNS-1);col++){
      const ref=XLSX.utils.encode_cell({r:row,c:col});
-     const cell=sheet[ref];if(!cell||cell.v===undefined)continue;
+     const cell=sheet[ref];if(!cell)continue;
+     if(cell.f){cells.push(ref+"=[formula; cached value withheld]");continue;}
+     if(cell.v===undefined)continue;
      const value=String(cell.v).slice(0,300);
-     cells.push(ref+"="+JSON.stringify(value)+(cell.f?" [formula cache; unverified]":""));
+     cells.push(ref+"="+JSON.stringify(value));
     }
     if(cells.length)lines.push(cells.join(" | "));
    }
