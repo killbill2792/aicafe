@@ -62,6 +62,32 @@ describe("canonical data available to authenticated chat, not only standalone to
   expect(unsafe.missing).toContain("inventory_quantity_requires_current_evidence");
   expect(rpc).toHaveBeenCalledTimes(1);
  });
+ it("refuses mixed-unit or unscoped stock math even with a valid freshness label",async()=>{
+  const rpc=vi.fn(async()=>({error:null,data:{rows:[{sum_quantity:7}],
+   sourceCount:1,sourceMix:{toast:1},truncated:false}}));
+  const context={...(await caller().context.canonicalData()),db:{rpc} as never};
+  const base={view:"cv_inventory",columns:null,filters:[{
+    column:"data.evidence_state",op:"=",value:"observed_current"}],
+   group_by:null,metrics:[{fn:"sum",column:"quantity"}],
+   date_from:"2026-10-20",date_to:"2026-10-20",order_by:null,limit:5};
+  const ambiguous=await dataQueryTools.query_data.execute(base,context);
+  expect(ambiguous.missing).toContain("inventory_quantity_requires_current_evidence");
+  const byQty=await dataQueryTools.query_data.execute({...base,
+   metrics:[{fn:"count",column:"source_ref"}],group_by:["quantity"]},context);
+  expect(byQty.missing).toContain("inventory_quantity_requires_current_evidence");
+  const incorrectOwnerUnits=await dataQueryTools.query_data.execute({...base,
+   filters:[{column:"data.evidence_state",op:"=",value:"dated_owner_count"}],
+   metrics:[{fn:"sum",column:"data.quantity_base"}]},context);
+  expect(incorrectOwnerUnits.missing).toContain("inventory_quantity_requires_current_evidence");
+  expect(rpc).not.toHaveBeenCalled();
+  const specific=await dataQueryTools.query_data.execute({...base,filters:[
+   ...base.filters,{column:"menu_item_ref",op:"=",value:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}]},context);
+  expect(specific.error).toBeUndefined();
+  expect(rpc).toHaveBeenCalledTimes(1);
+  expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+   p_filters:expect.arrayContaining([expect.objectContaining({column:"menu_item_ref"})])
+  }));
+ });
  it("routes a scoped chat query through the same safe query RPC",async()=>{
   const {rpc,context}=caller();
   const input={view:"cv_orders",columns:["business_date"],filters:null,
