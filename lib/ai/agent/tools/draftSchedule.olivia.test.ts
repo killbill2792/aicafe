@@ -92,4 +92,47 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   expect(result).toMatchObject({saved:false,missing:["disabled"]});
   expect(mocks.preview).toHaveBeenCalledTimes(1);
  });
+
+ it("returns recorded historical demand with contributing dates, not invented staffing levels",async()=>{
+  mocks.preview.mockResolvedValue({ok:true,locations:{loc:"America/Los_Angeles"},
+   notices:[],demandEvidence:{status:"available",source:"hourly_sales_rollup",
+    basis:"observed_comparable_weekday_close_hours",targetWeekStart:"2026-11-09",
+    historicalPeriod:{from:"2026-09-14",to:"2026-11-08"},
+    readAt:"2026-11-09T17:00:00Z",sourceUpdatedAt:null,missing:[],
+    hours:[{targetDate:"2026-11-09",hourLocal:9,locationId:"loc",
+      observedAverageOrders:6,observedAverageNetSalesCents:900,
+      sampleDays:["2026-10-26","2026-11-02"]}]},
+   plan:{status:"feasible",horizonEnd:"2026-11-15",warnings:[],
+    best:{completeCoverage:true,hardConstraintsSatisfied:true,
+      cost:{cashWagesCents:1800,costState:"verified"},gaps:[],
+      shifts:[{employeeId:"11111111-1111-4111-8111-111111111111",
+        locationId:"loc",startAt:"2026-11-09T16:00:00Z",
+        endAt:"2026-11-09T17:00:00Z",paidMinutes:60}]}}});
+  const result=await draftScheduleTools.draft_week_schedule.execute(
+    {week_start:"2026-11-09",purpose:"draft"},ctx);
+  expect(result.demandEvidence).toMatchObject({status:"available",
+   source:"hourly_sales_rollup",availableComparableHours:1,
+   sampledHours:[{observedAverageOrders:6,sampleDays:["2026-10-26","2026-11-02"]}]});
+  expect((result.demandEvidence as {note:string}).note).toContain("not a customer arrival forecast");
+  expect(result.laborCost).toMatchObject({cashWagesCents:1800,costState:"verified"});
+ });
+ it("never issues a proposal card when confirmed coverage remains incomplete",async()=>{
+  mocks.preview.mockResolvedValue({ok:true,locations:{loc:"America/Los_Angeles"},notices:[],
+   demandEvidence:{status:"unavailable",missing:["hourlySalesUnavailable"],hours:[],
+    historicalPeriod:{from:"2026-09-14",to:"2026-11-08"},readAt:"2026-11-09T17:00:00Z",
+    source:"hourly_sales_rollup",basis:"observed_comparable_weekday_close_hours",sourceUpdatedAt:null},
+   plan:{status:"infeasible",horizonEnd:"2026-11-15",warnings:[],
+    best:{completeCoverage:false,hardConstraintsSatisfied:false,gaps:[{reason:"no_active_staff"}],
+    cost:{cashWagesCents:null,costState:"unavailable"},
+    shifts:[{employeeId:"11111111-1111-4111-8111-111111111111",
+      locationId:"loc",startAt:"2026-11-09T16:00:00Z",
+      endAt:"2026-11-09T17:00:00Z",paidMinutes:60}]}}});
+  const proposeStaff=vi.fn();
+  const r=await draftScheduleTools.draft_week_schedule.execute(
+   {week_start:"2026-11-09",purpose:"draft"},
+   {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+  expect(proposeStaff).not.toHaveBeenCalled();
+  expect(r).toMatchObject({proposalReady:false,approvalTool:"not_created",
+   missing:expect.arrayContaining(["hourlySalesUnavailable"])});
+ });
 });
