@@ -7,7 +7,7 @@ type ProposalRow={id:string;business_id:string;owner_user_id:string;thread_id:st
  baseline:Record<string,unknown>;monitor_spec:{durationDays:number;metricScope:string};
  status:LoopProposal["status"];revision:number;locale:LoopProposal["locale"];
  monitoring_start_date:string|null;created_at:string};
-export type EffectAuthorizationKind="click"|"mandate";
+export type EffectAuthorizationKind="click"|"mandate"|"owner_message";
 export type EffectClaim={proposal:LoopProposal;attemptKey:string;businessDate:string;
  authorizationKind:EffectAuthorizationKind};
 export type SupervisorMandate={id:string;revision:number;business_id:string;owner_user_id:string;
@@ -27,10 +27,15 @@ const decode=(r:ProposalRow):LoopProposal=>({id:r.id,businessId:r.business_id,
 const fail=(error:unknown,message:string):never=>{throw new Error(message,{cause:error});};
 /** The sole server-side authority for reserving, finishing and auditing effects. */
 export class SupervisorEffectGateway{
- async claim(scope:OwnerLoopScope,id:string,revision:number,authorizationKind:EffectAuthorizationKind):Promise<EffectClaim>{
-  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_claim_effect",{
+ async claim(scope:OwnerLoopScope,id:string,revision:number,authorizationKind:EffectAuthorizationKind,ownerMessageId?:string):Promise<EffectClaim>{
+  if(authorizationKind==="owner_message"&&!ownerMessageId)throw new Error("owner_message_id_required");
+  const rpcName=authorizationKind==="owner_message"
+   ?"supervisor_claim_owner_purchase_effect":"supervisor_claim_effect";
+  const {data,error}=await createAdminSupabaseClient().rpc(rpcName,{
    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
-   p_proposal_id:id,p_revision:revision,p_authorization_kind:authorizationKind});
+   p_proposal_id:id,p_revision:revision,
+   ...(authorizationKind==="owner_message"?{p_owner_message_id:ownerMessageId}:
+    {p_authorization_kind:authorizationKind})});
   if(error||!data)fail(error,"Effect authorization failed");
   const row=data as {proposal:ProposalRow;attempt_key:string;business_date:string;authorization_kind:EffectAuthorizationKind};
   if(!row.proposal||row.proposal.id!==id||row.proposal.business_id!==scope.businessId||
@@ -87,7 +92,7 @@ export class SupervisorEffectGateway{
   if(!data)return null;
   const row=data as {state:string;authorization_kind:string;business_date:string};
   if(!["executing","verified","uncertain","stale"].includes(row.state)||
-   !["click","mandate"].includes(row.authorization_kind)||
+   !["click","mandate","owner_message"].includes(row.authorization_kind)||
    !/^\d{4}-\d{2}-\d{2}$/u.test(row.business_date))
    throw new Error("Invalid effect attempt status");
   return {state:row.state as LoopEffectAttemptSummary["state"],
