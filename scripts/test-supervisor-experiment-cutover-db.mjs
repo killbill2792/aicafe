@@ -281,7 +281,12 @@ async function run(){
   "second slot remains separately deduplicated");
  check((await claim(workerA,raced,"price_reminder",1))===null,
   "per-slot replay cannot create a third notice");
- const differentDay=await claim(workerA,raced,"price_reminder",1,ids.business,ids.owner,"2026-11-13");
+ // Use a genuinely distinct date derived from the test's first claim day;
+ // a fixed 2026-11-13 becomes identical to the fixture after UTC midnight.
+ const firstNoticeDay=observed.slice(0,10);
+ const nextNoticeDay=new Date(Date.parse(firstNoticeDay+"T00:00:00Z")+24*60*60*1000)
+  .toISOString().slice(0,10);
+ const differentDay=await claim(workerA,raced,"price_reminder",1,ids.business,ids.owner,nextNoticeDay);
  check(typeof differentDay==="string","café-local next date is independently keyed");
  const foreignClaim=await claim(workerA,raced,"price_reminder",1,ids.foreignBusiness,ids.foreignOwner);
  check(foreignClaim===null,"foreign café owner cannot claim another café's proposal");
