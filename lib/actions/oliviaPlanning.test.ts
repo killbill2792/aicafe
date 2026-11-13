@@ -131,6 +131,7 @@ describe("Olivia preview/draft server action safety",()=>{
    absentDate:"2026-10-13",hypothetical:true,saved:false,published:false,
    baseline:{completeCoverage:true},alternative:{completeCoverage:false},
    changeInModeledCashWagesCents:null,laborCostDifferenceKnown:false,
+   comparisonCompleteCoverage:false,
    rosterChanges:{totalRemoved:1,totalAdded:0,added:[],removed:[
     expect.objectContaining({employeeName:"Sarah Jones",date:"2026-10-13",
       start:"16:00",end:"17:00",break_minutes:0}),
@@ -156,6 +157,33 @@ describe("Olivia preview/draft server action safety",()=>{
    {id:"emp-a",name:"Sam Lee"},{id:"emp-b",name:"Sam Lee"},
   ]);
   expect(mocks.optimizer).not.toHaveBeenCalled();
+  expect(mocks.draft).not.toHaveBeenCalled();
+ });
+
+ it("never presents savings from a cheaper hypothetical that leaves required shifts uncovered",async()=>{
+  const employee={id:"emp",displayName:"Sarah Jones",active:true,
+    recurring:[],exceptions:[],qualifications:[]};
+  mocks.load.mockResolvedValue({...saved,input:{...input,employees:[employee]}});
+  const goodShift={employeeId:"emp",locationId:"loc",
+    startAt:"2026-10-13T16:00:00Z",endAt:"2026-10-13T18:00:00Z",
+    paidMinutes:120,breaks:[],pinned:false};
+  mocks.optimizer.mockReturnValueOnce({
+    status:"feasible",horizonEnd:"2026-10-18",warnings:[],
+    best:{completeCoverage:true,hardConstraintsSatisfied:true,
+      gaps:[],shifts:[goodShift],cost:{cashWagesCents:4200}},
+  }).mockReturnValueOnce({
+    status:"infeasible",horizonEnd:"2026-10-18",warnings:[],
+    best:{completeCoverage:false,hardConstraintsSatisfied:false,
+      gaps:[{reason:"no_confirmed_availability"}],shifts:[],
+      cost:{cashWagesCents:0}},
+  });
+  const result=await previewOliviaAbsenceWhatIf({
+    week:"2026-10-12",employeeName:"Sarah",weekday:2});
+  expect(result).toMatchObject({ok:true,
+    baseline:{completeCoverage:true},alternative:{completeCoverage:false},
+    comparisonCompleteCoverage:false,changeInModeledCashWagesCents:null,
+    laborCostDifferenceKnown:false,
+    rosterChanges:{totalRemoved:1,totalAdded:0}});
   expect(mocks.draft).not.toHaveBeenCalled();
  });
 });
