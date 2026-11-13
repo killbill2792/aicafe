@@ -53,6 +53,7 @@ rejected("missing other-café readback",(_,o)=>{delete o.cases[5].otherTenantAft
 rejected("wrong answer expectation in golden labels",(t)=>{t.cases[0].expected.after[0].quantity=200;},"stock_mismatch");
 rejected("wrong quantity despite altered label",(t)=>{t.cases[0].expected.writes[0].delta=11;},"wrong_or_missing_write");
 rejected("contradictory golden DB delta",(t)=>{t.cases[0].expected.after[0].quantity=111;}, "stock_mismatch");
+rejected("golden says updated with no approved effect",(t)=>{t.cases[0].expected.writes=[];},"ground_truth_claims_update_without_write");
 rejected("missing expected source",(t)=>{t.cases[0].input.text="";},"missing_ground_truth_source");
 rejected("duplicate golden case ids",(t)=>{t.cases[1].id=t.cases[0].id;},"invalid_or_duplicate_truth_case");
 rejected("empty golden suite",(t)=>{t.cases=[];},"empty_ground_truth");
