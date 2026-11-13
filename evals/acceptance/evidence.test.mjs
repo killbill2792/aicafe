@@ -143,3 +143,28 @@ test("live mode still rejects a wrong database delta in one of 80 otherwise vali
  o.cases[79].dbAfter[0].quantity+=1;
  assert.throws(()=>scoreAcceptance(t,o,{mode:"live"}),/stock_mismatch/);
 });
+
+test("live benchmark cannot manufacture 50 receipts by repeating one image",()=>{
+ const {t,o}=syntheticLiveContract();
+ const copied=t.cases[0].input.assetSha256;
+ for(let i=1;i<50;i++){
+  t.cases[i].input.assetSha256=copied;
+  o.cases[i].assetSha256=copied;
+ }
+ assert.throws(()=>scoreAcceptance(t,o,{mode:"live"}),/insufficient_receipt_diversity/);
+});
+test("live benchmark cannot manufacture 30 conversations by repeating one prompt",()=>{
+ const {t,o}=syntheticLiveContract();
+ const copied=t.cases[50].input.text;
+ const matchingHash=createHash("sha256").update(copied).digest("hex");
+ for(let i=51;i<80;i++){
+  t.cases[i].input.text=copied;
+  o.cases[i].sourceSha256=matchingHash;
+ }
+ assert.throws(()=>scoreAcceptance(t,o,{mode:"live"}),/insufficient_conversation_diversity/);
+});
+test("live scorer refuses to count a single provider request as multiple case executions",()=>{
+ const {t,o}=syntheticLiveContract();
+ o.cases[1].modelRequestId=o.cases[0].modelRequestId;
+ assert.throws(()=>scoreAcceptance(t,o,{mode:"live"}),/reused_provider_request/);
+});
