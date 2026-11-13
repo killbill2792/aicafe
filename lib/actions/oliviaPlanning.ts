@@ -54,7 +54,7 @@ export async function previewOliviaWeek(raw: unknown): Promise<
     // Historical sales are advisory, and must never affect Olivia's confirmed
     // coverage requirements, solver or mutable source-approval digest.
     const demandEvidence=await readSchedulingDemandContext(parsed.data.week,loaded.businessId,
-      loaded.cafeTimezone||loaded.input.locations[0]?.timezone||"UTC");
+      loaded.cafeTimezone||loaded.input.locations[0]?.timezone);
     return { ok: true, plan, demandEvidence, notices: loaded.notices, blockers: loaded.blockers,
       employees: Object.fromEntries(loaded.input.employees.map(e => [e.id, e.displayName])),
       locations: Object.fromEntries(loaded.input.locations.map(l => [l.id, l.timezone])),
