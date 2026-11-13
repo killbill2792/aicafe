@@ -18,7 +18,9 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null;
   purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string;
     receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
-  ingredientOptions?:Array<{id:string;name:string;base_unit:string}>;};
+  ingredientOptions?:Array<{id:string;name:string;base_unit:string}>;
+  gmail?:{operation:string;action:string|null;from:string;to:string[];cc:string[];bcc:string[];
+    subject:string;body:string;messageId:string|null;threadId:string|null;labelId:string|null;labelName:string|null};};
 const dict={en,es,ar} as const;
 
 /** Historical event proposals are informational. Keep their saved content,
@@ -97,7 +99,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     },3000);
     return ()=>{alive=false;clearInterval(interval);};
   },[endpoint,proposalId,value?.state]);
-  const invoke=async(action:"approve"|"cancel"|"edit")=>{
+  const invoke=async(action:"approve"|"cancel"|"edit"|"reconcile")=>{
     if(!value||busy)return;
     const cents=priceInputCents(price);
     if(action==="edit"&&cents===null){
@@ -125,12 +127,54 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   };
   if(!value)return error?<p role="alert">{copy.error}</p>:<p role="status">{copy.loading}</p>;
   const money=(cents:number)=>formatCardValue({kind:"money",cents},locale,value.currency??"USD");
+  const gmail=value.capabilityId==="alex.gmail_effect.v1";
   const staff=value.capabilityId?.startsWith("olivia.staff_")===true;
   const purchase=value.capabilityId==="maya.inventory_purchase.v1";
   const experiment=value.capabilityId==="alex.drink_price_experiment.v1";
   const goal=value.capabilityId==="leo.goal.v1";
   const eventPlan=value.capabilityId==="alex.event_readiness.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
+  if(gmail&&value.gmail){
+    const g=value.gmail;
+    const c=en.GmailApprovalCard;
+    const sending=g.operation==="send",drafting=g.operation==="draft";
+    const action=sending?c.send:drafting?c.createDraft:c.apply;
+    const previewLabel=g.action?g.action.replaceAll("_"," "):g.operation.replaceAll("_"," ");
+    const status=value.state==="pending"?c.pending:value.state==="applied"?c.applied:
+      value.state==="applying"?c.applying:value.state==="uncertain"?c.uncertain:
+      value.state==="cancelled"?c.cancelled:c.error;
+    return <section aria-label={c.title} className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-headline text-xl font-bold">{c.title}</h3>
+        <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-semibold">{status}</span>
+      </div>
+      <p className="mt-2 text-sm text-ink-muted">{c.ownerReview}</p>
+      <dl className="mt-4 grid gap-3 rounded-xl bg-surface2 p-4 text-base">
+        <div><dt className="text-sm text-ink-muted">{c.action}</dt><dd className="font-semibold capitalize">{previewLabel}</dd></div>
+        <div><dt className="text-sm text-ink-muted">{c.from}</dt><dd className="break-all" dir="auto">{g.from}</dd></div>
+        {(sending||drafting)&&<>
+          <div><dt className="text-sm text-ink-muted">{c.to}</dt><dd className="break-all" dir="auto">{g.to.join(", ")||c.none}</dd></div>
+          {g.cc.length>0&&<div><dt className="text-sm text-ink-muted">{c.cc}</dt><dd className="break-all" dir="auto">{g.cc.join(", ")}</dd></div>}
+          {g.bcc.length>0&&<div><dt className="text-sm text-ink-muted">{c.bcc}</dt><dd className="break-all" dir="auto">{g.bcc.join(", ")}</dd></div>}
+          <div><dt className="text-sm text-ink-muted">{c.subject}</dt><dd className="whitespace-pre-wrap break-words" dir="auto">{g.subject}</dd></div>
+          <div><dt className="text-sm text-ink-muted">{c.message}</dt><dd className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-card p-3" dir="auto">{g.body}</dd></div>
+        </>}
+        {g.messageId&&<div><dt className="text-sm text-ink-muted">{c.messageId}</dt><dd className="break-all font-mono text-xs">{g.messageId}</dd></div>}
+        {g.labelName&&<div><dt className="text-sm text-ink-muted">{c.label}</dt><dd>{g.labelName}</dd></div>}
+        {g.labelId&&<div><dt className="text-sm text-ink-muted">{c.label}</dt><dd className="break-all">{g.labelId}</dd></div>}
+      </dl>
+      <p className="mt-4 text-sm text-ink-muted">{sending?c.sendNotice:c.changeNotice}</p>
+      {value.state==="pending"&&<div className="mt-5 flex flex-wrap gap-3">
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
+          className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">{action}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
+          className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{c.cancel}</button>
+      </div>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")}
+        className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{c.checkReceipt}</button>}
+      {error&&<p className="mt-3 text-sm text-warn" role="alert">{c.error}</p>}
+    </section>;
+  }
   if(eventPlan)return <EventReadinessPreview value={value} locale={locale}/>;
   if(purchase&&value.purchase){
     const copy=dict[locale].InventoryApprovalCard;

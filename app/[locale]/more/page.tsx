@@ -1,5 +1,5 @@
 import {formatCafeCurrency} from "@/lib/format/cafeCurrency";
-import { AlertTriangle, ChevronRight, CreditCard, FileText, Languages, Menu as MenuIcon, Percent, Receipt, Shield, SlidersHorizontal, Store, Target, Trash2, UserRound, Users, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ChevronRight, CreditCard, FileText, Languages, Menu as MenuIcon, Mail, Percent, Receipt, Shield, SlidersHorizontal, Store, Target, Trash2, UserRound, Users, type LucideIcon } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { cookies } from "next/headers";
 import { parseThemeCookie, parseModeCookie } from "@/app/themes";
@@ -86,6 +86,7 @@ export default async function MorePage() {
     </MoreGroup>
     <MoreGroup title={t("yourData")}>
       <MoreRow href="/more/toast" Icon={CreditCard} label={t("toastConnect")} badge={toastBadge} />
+      <MoreRow href="/more/gmail" Icon={Mail} label={t("gmailConnect")} />
       {evidence.toast?.checkMode&&<p className="px-4 text-[17px] text-muted">{toastCheck(evidence.toast.checkMode==="official"?"checkModeOfficial":"checkModeInternal")}</p>}
       <MoreRow href="/more/uploads" Icon={FileText} label={t("uploads")} badge={uploadBadge} />
       <MoreRow href="/more/processing-fees" Icon={Percent} label={t("processingFees")} badge={feesBadge} />
