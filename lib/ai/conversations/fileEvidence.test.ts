@@ -21,6 +21,19 @@ describe("bounded untrusted source evidence",()=>{
   expect(value.text).toContain('Sheet 2 "February"');
   expect(value.text).toContain('B1="5"');
  });
+ it("never trusts cached formula prices and labels truncated long worksheets",()=>{
+  const wb=XLSX.utils.book_new();
+  const rows=Array.from({length:120},(_,i)=>["Item "+i,i]);
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws.C2={t:"n",f:"1+1",v:9999};
+  ws["!ref"]="A1:C120";
+  XLSX.utils.book_append_sheet(wb,ws,"Long");
+  const buf=XLSX.write(wb,{type:"buffer",bookType:"xlsx"}) as Uint8Array;
+  const value=fileEvidence("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",buf,"long.xlsx");
+  expect(value.truncated).toBe(true);
+  expect(value.text).toContain("C2=[formula; cached value withheld]");
+  expect(value.text).not.toContain("9999");
+ });
  it("rejects malicious, empty and invalid workbook input",()=>{
   expect(()=>assertSafeWorkbook(bytes("PK garbage"))).toThrow("invalid_xlsx");
   expect(()=>fileEvidence("text/plain",bytes("<script>not allowed</script>"),"hostile.txt")).not.toThrow();
