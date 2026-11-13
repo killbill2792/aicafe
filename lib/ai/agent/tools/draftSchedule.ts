@@ -50,6 +50,8 @@ export const draftScheduleTools={draft_week_schedule:{
     ctx.scheduleProposalCreated=approval;
    }catch{approvalError="approvalProposalUnavailable";}
   }
+  if(canPropose&&!approval&&!approvalError&&!ctx.proposals?.proposeStaff)
+   approvalError="approvalProposalUnavailable";
   // The hourly rollup groups orders by their CLOSE hour, not customer arrival.
   // This is observed comparable history, never an inferred worker count.
   const demand=result.demandEvidence;
