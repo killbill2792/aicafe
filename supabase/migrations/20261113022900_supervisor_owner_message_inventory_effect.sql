@@ -88,6 +88,9 @@ begin
    and existing.canonical_effect_payload->>'quantity'=p.canonical_effect_payload->>'quantity'
    and existing.canonical_effect_payload->>'unit'=p.canonical_effect_payload->>'unit'
    and existing.canonical_effect_payload->>'date'=p.canonical_effect_payload->>'date'
+   and (p.canonical_effect_payload->>'source'<>'receipt_chat'
+    or existing.canonical_effect_payload->>'receiptLineIndex'
+      =p.canonical_effect_payload->>'receiptLineIndex')
  ) then raise exception 'purchase_already_claimed_for_message' using errcode='42501'; end if;
  select (now() at time zone b.timezone)::date into local_day from public.businesses b
   where b.id=p_business_id and b.timezone is not null
