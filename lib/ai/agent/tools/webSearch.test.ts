@@ -1,5 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import {createWebSearch,extractWebSearchAnswer} from "../webSearch.server";
+import {ownerPublicPage} from "./webSearch";
 import {agentToolDefinitions,executeAgentTool,type AgentToolContext} from "./index";
 
 const input={asOf:"2026-10-30",timezone:"America/Chicago",locale:"en"} as AgentToolContext;
@@ -9,6 +10,27 @@ const message=(text:string,annotations:unknown[]=[])=>
     {type:"message",content:[{type:"output_text",text,annotations}]}]});
 const cited={type:"url_citation",title:"Official parade route",url:"https://city.example.org/parade"};
 
+describe("exact page inspection",()=>{
+ it("never opens model-suggested or private URLs",()=>{
+  expect(ownerPublicPage("http://supplier.example.com","http://supplier.example.com")).toBeNull();
+  expect(ownerPublicPage("https://127.0.0.1/admin","https://127.0.0.1/admin")).toBeNull();
+  expect(ownerPublicPage("https://supplier.example.com","what are prices?")).toBeNull();
+  expect(ownerPublicPage("https://supplier.example.com/prices","See https://supplier.example.com/prices"))
+   .toBe("https://supplier.example.com/prices");
+ });
+ it("requires the requested source URL in the provider citations",async()=>{
+  const webSearch=vi.fn(async()=>({
+   available:true as const,answer:"Coffee is available",sources:[{url:"https://unrelated.example.com",title:"Unrelated"}]
+  }));
+  const ctx={...input,ownerText:"Check https://supplier.example.com/prices",webSearch};
+  expect(await executeAgentTool("inspect_public_page",{url:"https://supplier.example.com/prices"},ctx))
+   .toMatchObject({source:"public_page",missing:["exact_page_not_verified"]});
+  webSearch.mockResolvedValueOnce({available:true,answer:"Coffee is available",
+   sources:[{url:"https://supplier.example.com/prices",title:"Prices"}]});
+  expect(await executeAgentTool("inspect_public_page",{url:"https://supplier.example.com/prices"},ctx))
+   .toMatchObject({source:"public_page",missing:[],sourceConfirmed:true});
+ });
+});
 describe("general web_search",()=>{
   beforeEach(()=>vi.restoreAllMocks());
 
