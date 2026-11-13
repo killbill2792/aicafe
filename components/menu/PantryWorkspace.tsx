@@ -69,12 +69,14 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  <p className="mt-1 text-sm">{row.source==="app"?t.stockEvidenceOwnerCount:
   row.evidence_state==="observed_current"?t.stockEvidenceCurrent:
   row.evidence_state==="not_observed"?t.stockEvidenceNotObserved:
-  row.evidence_state==="source_failed"?t.stockEvidenceFailed:t.stockEvidenceUnverified} · <span className="capitalize">{row.evidence_state.replaceAll("_"," ")}</span></p>
+  row.evidence_state==="source_failed"?t.stockEvidenceFailed:t.stockEvidenceUnverified}</p>
  <p className="text-sm">{t.stockEvidenceQuantity}: {row.quantity===null?t.stockEvidenceUnknown:row.quantity.toLocaleString()} {row.source==="app"?items.find(item=>item.id===row.ingredient_id)?.baseUnit??"":""}</p>
- {row.reported_stock_status&&<p className="text-sm text-ink-muted">{t.stockEvidenceReported}: {row.reported_stock_status}</p>}
+ {row.reported_stock_status&&<p className="text-sm text-ink-muted">{t.stockEvidenceReported}: {row.reported_stock_status==="QUANTITY"?t.stockEvidenceProviderQuantity:row.reported_stock_status==="OUT_OF_STOCK"?t.stockEvidenceProviderOut:row.reported_stock_status==="IN_STOCK"?t.stockEvidenceProviderIn:t.stockEvidenceUnknown}</p>}
  <p className="text-sm text-ink-muted">{t.stockEvidenceAsOf}: {row.source_as_of??t.stockEvidenceUnknown}</p>
  </div>)}
- </div></section>
+ </div>
+ {stockEvidence?.truncated&&<p role="status" className="mt-2 text-ink-muted">{t.stockEvidenceTruncated}</p>}
+ </section>
  <form method="get" className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-card p-3">
  <label className="min-w-0 flex-1">{t.usageStart}<input type="date" name="from" defaultValue={variance?.from??""} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2"/></label>
  <label className="min-w-0 flex-1">{t.usageEnd}<input type="date" name="to" defaultValue={variance?.to??""} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2"/></label>
