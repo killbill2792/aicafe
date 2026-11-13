@@ -825,7 +825,9 @@ export default function SupervisorChatComposer({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file || !enabled || !canUseAi || uploading || sending) return;
-    if (file.size > 8 * 1024 * 1024 || file.size === 0) { setMediaNotice(copy.attachmentUpload); return; }
+    const imageFile=file.type.startsWith("image/")||/\.(jpe?g|png|webp)$/i.test(file.name);
+    const limit=imageFile?8*1024*1024:2*1024*1024;
+    if (file.size > limit || file.size === 0) { setMediaNotice(copy.attachmentUpload); return; }
     setUploading(true); setError(false);
     try {
       const id = await ensureThread();
