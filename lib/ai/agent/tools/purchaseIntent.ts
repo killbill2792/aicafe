@@ -31,7 +31,21 @@ export function ownerTextSupportsTypedLine(
   pcs:["pcs","pieces","piece"],case:["case","cases"]
  };
  const allowed=new Set(aliases[unit]??[unit]);
- const words=text.split(" ");
- return words.some((word,index)=>word===String(line.quantity)&&
-  words.slice(index+1,index+3).some(next=>allowed.has(next)));
+ const words=text.split(" "),nameWords=name.split(" ");
+ const blockers=new Set(["and","or","plus","but","then","also","another"]);
+ const allUnits=new Set(Object.values(aliases).flat());
+ // A quantity/unit mentioned somewhere else in a multi-item sentence must
+ // never authorize a mismatched item. Match the ingredient in the same clause.
+ return words.some((word,index)=>{
+  if(word!==String(line.quantity))return false;
+  for(let j=index+1;j<Math.min(words.length,index+4);j++){
+   if(!allowed.has(words[j]))continue;
+   for(let k=j+1;k<Math.min(words.length,j+7);k++){
+    const between=words.slice(j+1,k);
+    if(between.some(v=>blockers.has(v)||allUnits.has(v)||/^\\d/u.test(v)))break;
+    if(nameWords.every((w,n)=>words[k+n]===w))return true;
+   }
+  }
+  return false;
+ });
 }
