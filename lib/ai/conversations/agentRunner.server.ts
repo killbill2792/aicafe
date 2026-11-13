@@ -4,6 +4,7 @@ import {createHash} from "node:crypto";
 import {createOwnerScopedCafeTools} from "@/lib/ai/cafeTools.server";
 import {recordedWhatsAppImageIds} from "@/lib/ai/conversations/authorizedTurn.server";
 import {fileEvidence} from "@/lib/ai/conversations/fileEvidence.server";
+import {possiblePriorReceipt} from "@/lib/ai/conversations/receiptDuplicate";
 import {verifySignature,MAX_UPLOAD_BYTES} from "@/lib/ai/conversations/attachments";
 import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
 import {TeamRulesService} from "@/lib/ai/policies/service";
@@ -290,6 +291,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           ["committed","monitored","executing","approved","manual_pending"].includes(row.status)&&
           Date.parse(row.created_at)<Date.parse(owner.createdAt));
         const existing=sameReceipt.filter(row=>Date.parse(row.created_at)>=Date.parse(owner.createdAt));
+        const possiblyRephotographed=input.source==="receipt_chat"?
+          possiblePriorReceipt(receiptRows?.data??[],{
+            groupId:receiptGroupId,vendor:input.receiptVendor,totalCents:input.receiptTotalCents,
+            dates:input.lines.map(line=>line.date),ownerMessageAt:owner.createdAt
+          }):false;
         const requestKeys=purchaseBatchKeys(id,owner.id,input.source,input.lines);
         const indexes=allocateReceiptIndexes(requestKeys,existing.map(row=>({
           requestKey:row.request_key,index:
@@ -315,7 +321,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
                 receiptLineIndex,
                 receiptVendor:input.source==="receipt_chat"?input.receiptVendor:null,
                 receiptTotalCents:input.source==="receipt_chat"?input.receiptTotalCents:null},requestKey);
-            const authorized=!previouslyRecorded&&authorizesInventoryWrite(p.ownerText,attached)&&
+            const authorized=!previouslyRecorded&&!possiblyRephotographed&&
+              authorizesInventoryWrite(p.ownerText,attached)&&
               !/\b(purchase order|not received|ordered|pending delivery|quote)\b/iu.test(p.ownerText)&&
               (input.source==="receipt_chat"
                 ?stockOnlyReceipt&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
