@@ -17,6 +17,14 @@ const absenceSchema=z.strictObject({week_start:monday.nullable(),
  employee_name:z.string().trim().min(1).max(80),
  weekday:z.number().int().min(0).max(6)});
 const selectedObjectiveLabel=(objective:"cash"|"owner_time"|"balanced"|null)=>objective??"default";
+/** Choice cards require unique labels, even for identically named staff.
+ * Use sourced employee UUID suffixes only to disambiguate, not to create IDs. */
+const employeeChoiceCandidates=(candidates:ReadonlyArray<{id:string;name:string}>)=>
+ candidates.map(e=>({id:e.id,
+  label:e.name.slice(0,46)+" ("+e.id.slice(-8)+")",
+  detail:"Team member",
+ }));
+
 
 /** Supervisor is the only conversation entry point; Olivia is the only optimizer.
  * The preview is inert. Existing propose_schedule handles the approval card.
@@ -56,10 +64,10 @@ export const draftScheduleTools={draft_week_schedule:{
   if(!result.ok)return {source:"olivia_schedule",
    period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
    agentId:"olivia",draft:true,saved:false,
-   missing:[result.error,...(result.blockers??[]).map(b=>b.code)],
-   ...(result.candidates?.length?{needsOwnerChoice:true,candidates:
-    result.candidates.map(e=>({id:e.id,label:e.name,
-     detail:"Team member • record "+e.id.slice(-6)}))}:{}),
+   missing:[...(result.error==="employee_ambiguous"?["ownerChoiceRequired"]:[]),
+    result.error,...(result.blockers??[]).map(b=>b.code)],
+   ...(result.error==="employee_ambiguous"&&result.candidates?.length?{
+    needsOwnerChoice:true,candidates:employeeChoiceCandidates(result.candidates)}:{}),
   };
   // The requested business objective chooses among already-validated
   // deterministic solver candidates; a missing/infeasible alternative may
@@ -156,10 +164,9 @@ export const draftScheduleTools={draft_week_schedule:{
      week,employeeName:employee_name,weekday,selectedEmployeeIds});
    if(!result.ok)return {source:"olivia_hypothetical_absence",
     agentId:"olivia",period:null,draft:false,saved:false,
-    missing:[result.error],...(result.error==="employee_ambiguous"?{
-     needsOwnerChoice:true,candidates:result.candidates?.map(e=>({
-      id:e.id,label:e.name,detail:"Team member • record "+e.id.slice(-6),
-     }))??[],
+    missing:[...(result.error==="employee_ambiguous"?["ownerChoiceRequired"]:[]),result.error],
+    ...(result.error==="employee_ambiguous"?{
+     needsOwnerChoice:true,candidates:employeeChoiceCandidates(result.candidates??[]),
     }:{})};
    return {source:"olivia_hypothetical_absence",agentId:"olivia",
     period:result.period,draft:false,saved:false,missing:[],
