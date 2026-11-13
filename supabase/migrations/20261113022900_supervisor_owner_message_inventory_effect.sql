@@ -29,13 +29,15 @@ alter table public.supervisor_approvals add constraint supervisor_approvals_auth
   (authorization_kind='click' and owner_message_id is null and mandate_id is null and mandate_revision is null)
   or (authorization_kind='mandate' and owner_message_id is null and mandate_id is not null and mandate_revision is not null)
   or (authorization_kind='owner_message' and owner_message_id is not null and mandate_id is null and mandate_revision is null)
- );
+ ) not valid;
+alter table public.supervisor_approvals validate constraint supervisor_approvals_authorization_v2;
 alter table public.supervisor_effect_attempts add constraint supervisor_effect_attempts_authorization_v2
  check (
   (authorization_kind='click' and owner_message_id is null and mandate_id is null and mandate_revision is null)
   or (authorization_kind='mandate' and owner_message_id is null and mandate_id is not null and mandate_revision is not null)
   or (authorization_kind='owner_message' and owner_message_id is not null and mandate_id is null and mandate_revision is null)
  );
+alter table public.supervisor_effect_attempts validate constraint supervisor_effect_attempts_authorization_v2;
 alter table public.supervisor_effect_attempts add constraint supervisor_attempt_owner_message_fk
  foreign key(owner_message_id) references public.ai_messages(id) not valid;
 alter table public.supervisor_approvals add constraint supervisor_approval_owner_message_fk
