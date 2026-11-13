@@ -1,5 +1,6 @@
 import "server-only";
 import {formatInTimeZone} from "date-fns-tz";
+import {normalizeOpenHours} from "@/lib/business/openHours";
 import {readToastPlannedShifts} from "@/lib/data/toastScheduledShifts.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 
@@ -285,6 +286,9 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
 
     const locations: PlannerLocation[] = rows.locations.map(r => ({
       id: str(r.id), timezone: nullable(r.timezone) || str(business.data.timezone),
+      // This is advisory regular trading time, not a substitute for owner-confirmed
+      // preparation/closure staffing coverage or date-specific holiday hours.
+      openHours: normalizeOpenHours(r.open_hours),
     }));
     if (!locations.length) blockers.push({code:"no_location"});
     const locationNames = Object.fromEntries(rows.locations.map(r => [str(r.id), str(r.name)]));
