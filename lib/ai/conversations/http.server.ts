@@ -19,7 +19,7 @@ export function requireSameOrigin(request: Request) {
   // only with origins actually represented by this HTTP request.
   const host = request.headers.get("host");
   let hostOrigin: string | null = null;
-  if (host && !/[\\/@\\s]/u.test(host)) {
+  if (host) {
     try {
       const candidate = new URL(internal.protocol + "//" + host);
       if (candidate.host === host.toLowerCase()) hostOrigin = candidate.origin;
