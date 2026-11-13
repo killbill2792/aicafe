@@ -27,7 +27,7 @@ describe("registered Gmail Supervisor capability",()=>{
    await expect(gmailCapability.simulate(scope,input)).rejects.toThrow("gmail_not_authorized");
  });
  it("refuses effectful commit without a gateway-provided proposal ID",async()=>{
-   await expect(gmailCapability.commit(scope,{},undefined)).rejects.toThrow("gmail_proposal_id_required");
+   await expect(gmailCapability.commit(scope,{...input,accountId:"44444444-4444-4444-8444-444444444444",generation:1,from:"owner@example.com"},undefined)).rejects.toThrow("gmail_proposal_id_required");
    expect(mocks.send).not.toHaveBeenCalled();
  });
 });
