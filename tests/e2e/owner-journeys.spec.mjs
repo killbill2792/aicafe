@@ -44,9 +44,25 @@ test("@home owner uploads and reselects a private receipt while another café ca
     await openOwnedPage(page, owner, "");
     const attach = page.getByRole("button", {name: "Add an attachment"});
     await expect(attach).toBeEnabled({timeout: 30_000});
+    // Observe only status/path metadata. Failing a real upload must explain
+    // whether the lazy thread creation or the private file endpoint failed.
+    const uploads=[];
+    page.on("response", response=>{
+      const pathname=new URL(response.url()).pathname;
+      if(pathname.startsWith("/api/ai/threads"))
+        uploads.push({method:response.request().method(),path:pathname,status:response.status()});
+    });
+    page.on("requestfailed", request=>{
+      const pathname=new URL(request.url()).pathname;
+      if(pathname.startsWith("/api/ai/threads"))
+        uploads.push({method:request.method(),path:pathname,error:request.failure()?.slice(0,100)});
+    });
     const uploaded = page.waitForResponse(response =>
       /^\/api\/ai\/threads\/[^/]+\/attachments$/.test(new URL(response.url()).pathname) &&
-      response.request().method() === "POST");
+      response.request().method() === "POST",{timeout:20_000}).catch(()=>{
+      throw new Error("Private upload POST not reached. Conversation API requests: "+
+        JSON.stringify(uploads.slice(-20)));
+    });
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XouYAAAAASUVORK5CYII=",
       "base64");
