@@ -1,4 +1,5 @@
-import {describe,expect,it} from "vitest";
+import {describe,expect,it,vi} from "vitest";
+vi.mock("server-only",()=>({}));
 import * as XLSX from "xlsx";
 import {assertSafeWorkbook,fileEvidence} from "./fileEvidence.server";
 const bytes=(s:string)=>new TextEncoder().encode(s);
