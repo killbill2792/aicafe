@@ -13,8 +13,9 @@ returns table(restaurant_guid uuid,checked_at text,successful_at text,
  source_status text,observed_count integer)
 language plpgsql stable security definer set search_path=public,pg_temp as $receipts$
 begin
- if p_business_id is null or auth.uid() is null
-  or not coalesce(public.scheduling_is_owner(p_business_id),false)
+ if p_business_id is null or (current_setting('role',true) not in ('none','service_role')
+  and (auth.uid() is null
+   or not coalesce(public.scheduling_is_owner(p_business_id),false)))
  then raise exception 'stock_source_scope_denied' using errcode='42501'; end if;
  return query
  select s.restaurant_guid,
