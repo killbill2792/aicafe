@@ -14,13 +14,14 @@ import type { PantryCategory } from "@/lib/menu/pantryStarter";
 import {PANTRY_CATEGORY_CHOICES} from "@/lib/menu/pantryCategoryChoices";
 
 import type { UsageRow } from "@/lib/calc/usageVariance";
+import type {InventoryEvidenceRead} from "@/lib/data/inventoryEvidence.server";
 type Variance={from:string;to:string;rows:UsageRow[]};
 type Item = {archivedAt:string|null;originalPack:{count:number;unitQuantity:number;unit:string}|null;id:string;name:string;category:string|null;starterKey:string|null;baseUnit:BaseUnit;costPerBaseMicros:number|null;packQuantity:number|null;packUnit:string|null;packCostCents:number|null;usedInCount:number};
 type Starter = {key:string;name:string;category:string;baseUnit:BaseUnit;packQuantity:number;packUnit:string};
 const categories=["all","coffee","milk","syrups","packaging","bakery","other"] as const;
 function categoryOf(value:string|null) { if(value==="syrup"||value==="sauce")return "syrups";if(value==="bakery"||value==="food")return "bakery";if(value==="coffee"||value==="milk"||value==="packaging")return value;return "other"; }
 const units:Record<BaseUnit,string[]>={ml:["gal","qt","l","ml","fl_oz"],g:["lb","kg","oz_wt","g"],each:["each","dozen","case(100)","case(1000)"]};
-export default function PantryWorkspace({items,starters,labels:t,variance,businessToday,inventoryPanel}:{items:Item[];starters:Starter[];labels:Record<string,string>;variance:Variance|null;businessToday:string;inventoryPanel?:ReactNode}) {
+export default function PantryWorkspace({items,starters,labels:t,variance,businessToday,inventoryPanel,stockEvidence}:{items:Item[];starters:Starter[];labels:Record<string,string>;variance:Variance|null;businessToday:string;inventoryPanel?:ReactNode;stockEvidence:InventoryEvidenceRead|null}) {
  const pendingPurchaseId=useRef<string|null>(null);
  const router=useRouter();const [entryKind,setEntryKind]=useState<"count"|"purchase">("count"); const [entryItem,setEntryItem]=useState(items.find(item=>!item.archivedAt)?.id??""); const [entryQuantity,setEntryQuantity]=useState(""); const [entryUnit,setEntryUnit]=useState<string>(items.find(item=>!item.archivedAt)?.baseUnit??"each"); const [entryDate,setEntryDate]=useState(businessToday); const [entryError,setEntryError]=useState(""); const [entryDone,setEntryDone]=useState(false);
  const [query,setQuery]=useState("");const [filter,setFilter]=useState<string>("all");const [dialog,setDialog]=useState<"starter"|"custom"|"price"|"edit"|null>(null);
@@ -54,6 +55,22 @@ export default function PantryWorkspace({items,starters,labels:t,variance,busine
  <div className="mb-3 flex flex-wrap gap-2"><button type="button" aria-pressed={!showArchived} onClick={()=>setShowArchived(false)} className="min-h-12 rounded-xl border border-line px-4 font-bold">{t.activeIngredients}</button><button type="button" aria-pressed={showArchived} onClick={()=>setShowArchived(true)} className="min-h-12 rounded-xl border border-line px-4 font-bold">{t.archivedIngredients} ({items.length-activeItems.length})</button></div>
  <InlinePantryTable items={visible} t={t}/></div>
  {inventoryPanel}
+ <section className="mb-5 rounded-2xl border border-line bg-card p-4" aria-label={t.stockEvidenceTitle}>
+ <h2 className="font-headline text-xl font-bold">{t.stockEvidenceTitle}</h2>
+ {!stockEvidence&&<p role="status" className="mt-2 text-ink-muted">{t.stockEvidenceUnverified}</p>}
+ {stockEvidence&&stockEvidence.rows.filter(row=>row.source==="toast").length===0&&
+  <p className="mt-2 text-ink-muted">{t.stockEvidenceNoRows}</p>}
+ <div className="mt-3 grid gap-2 sm:grid-cols-2">
+ {stockEvidence?.rows.filter(row=>row.source==="toast").map(row=><div key={row.source_ref} className="rounded-xl border border-line p-3">
+ <p className="break-all text-sm font-semibold">{row.menu_item_ref??row.source_ref}</p>
+ <p className="mt-1 text-sm">{row.evidence_state==="observed_current"?t.stockEvidenceCurrent:
+  row.evidence_state==="not_observed"?t.stockEvidenceNotObserved:
+  row.evidence_state==="source_failed"?t.stockEvidenceFailed:t.stockEvidenceUnverified}</p>
+ <p className="text-sm">{t.stockEvidenceQuantity}: {row.quantity===null?t.stockEvidenceUnknown:row.quantity.toLocaleString()}</p>
+ {row.reported_stock_status&&<p className="text-sm text-ink-muted">{t.stockEvidenceReported}: {row.reported_stock_status}</p>}
+ <p className="text-sm text-ink-muted">{t.stockEvidenceAsOf}: {row.source_as_of??t.stockEvidenceUnknown}</p>
+ </div>)}
+ </div></section>
  <form method="get" className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-card p-3">
  <label className="min-w-0 flex-1">{t.usageStart}<input type="date" name="from" defaultValue={variance?.from??""} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2"/></label>
  <label className="min-w-0 flex-1">{t.usageEnd}<input type="date" name="to" defaultValue={variance?.to??""} className="mt-1 min-h-12 w-full rounded-xl border border-line bg-card px-2"/></label>
