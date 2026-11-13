@@ -234,7 +234,7 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
     {week_start:null,employee_name:"Sarah",weekday:2},
     {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
   expect(mocks.absence).toHaveBeenCalledExactlyOnceWith({
-   week:"2026-11-09",employeeName:"Sarah",weekday:2});
+   week:"2026-11-09",employeeName:"Sarah",weekday:2,selectedEmployeeIds:[]});
   expect(r).toMatchObject({
    hypothetical:true,saved:false,absentDate:"2026-11-10",
    changeInModeledCashWagesCents:null,
