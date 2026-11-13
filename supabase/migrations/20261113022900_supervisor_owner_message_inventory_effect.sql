@@ -59,7 +59,7 @@ begin
   and owner_user_id=p_owner_user_id and author_user_id=p_owner_user_id
   and thread_id=p_thread_id and role='owner';
  if m.id is null or m.text_content is null
-   or m.text_content !~* '(record|add|update|log|increase|save|post|bought|purchased)'
+   or m.text_content !~* '(record|add|update|log|increase|save|post|put|enter|bought|purchased)'
    or m.text_content ~* '(what if|hypothetical|review only|do not|don.t|never|not yet|cancel)'
  then raise exception 'explicit_owner_purchase_instruction_required' using errcode='42501'; end if;
  select * into p from public.supervisor_proposals

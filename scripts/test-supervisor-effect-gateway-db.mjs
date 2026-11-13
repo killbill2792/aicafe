@@ -139,6 +139,14 @@ try{
  await expectError(()=>withService(db,c=>c.query(
   "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
   [B,OWNER,THREAD,duplicatePurchase,1,purchaseMsg])),"42501");
+ const naturalMessage=randomUUID(),naturalPurchase=randomUUID();
+ await db.query("insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
+  [naturalMessage,B,THREAD,OWNER,"Put these 10 gallons of milk into inventory"]);
+ await seedProposal(B,OWNER,THREAD,naturalPurchase,"maya.inventory_purchase.v1",purchasedEffect);
+ const naturalClaim=await withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6) as value",
+  [B,OWNER,THREAD,naturalPurchase,1,naturalMessage]));
+ assert.equal(naturalClaim.rows[0].value.authorization_kind,"owner_message");
  const otherPurchase=randomUUID();
  await seedProposal(B2,OWNER2,THREAD2,otherPurchase,"maya.inventory_purchase.v1",purchasedEffect);
  await expectError(()=>withService(db,c=>c.query(
