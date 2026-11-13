@@ -93,6 +93,16 @@ describe("single transactional purchase path",()=>{
    p_line_id:ID1,p_expected_revision:2,p_ingredient_id:INGREDIENT
   }));
  });
+ it("refuses to post a Supervisor-approved purchase to a newly switched café",async()=>{
+  const {db,rpc}=fakeDb();
+  vi.mocked(createServerSupabaseClient).mockResolvedValue(db as never);
+  const OTHER="55555555-5555-4555-8555-555555555555";
+  expect(await recordPurchases([line(ID1)],"chat_text",ID1,OTHER))
+   .toEqual([{lineId:ID1,ok:false,error:"business_scope_changed"}]);
+  expect(rpc).not.toHaveBeenCalled();
+  expect(await recordPurchases([line(ID1)],"chat_text",ID1,BUSINESS))
+   .toEqual([{lineId:ID1,ok:true}]);
+ });
  it("rejects demo and non-owner requests before writing stock",async()=>{
   for(const [role,demo] of [["owner",true],["member",false]] as const){
    const {db,rpc}=fakeDb(role,demo);
