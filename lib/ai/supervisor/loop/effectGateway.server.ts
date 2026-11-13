@@ -78,7 +78,9 @@ export class SupervisorEffectGateway{
   const {data:row,error:readError}=await db.from("supervisor_proposals").select("*")
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
     .eq("thread_id",scope.threadId).eq("id",id).maybeSingle();
-  if(readError||!row||row.revision!==revision||row.capability_id!==gmailCapabilityId||
+  if(readError||!row||row.id!==id||row.business_id!==scope.businessId||
+     row.owner_user_id!==scope.ownerUserId||row.thread_id!==scope.threadId||
+     row.revision!==revision||row.capability_id!==gmailCapabilityId||
      row.status!=="executing")throw new Error("Gmail reconciliation scope unavailable");
   const effect=gmailEffectSchema.parse(row.canonical_effect_payload);
   const verified=await reconcileGmailReceipt({businessId:scope.businessId,ownerUserId:scope.ownerUserId},
