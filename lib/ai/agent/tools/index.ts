@@ -82,7 +82,8 @@ export type AgentToolContext = {
     change(input:{id:string;revision:number;status?:RoutineRecord["status"];
       schedule?:RoutineSchedule}):Promise<RoutineRecord>;
   };
-  gmail?:{search(query:string,limit:number):Promise<Record<string,unknown>>;
+  gmail?:{labels():Promise<Record<string,unknown>>;
+    search(query:string,limit:number):Promise<Record<string,unknown>>;
     read(messageId:string):Promise<Record<string,unknown>>;
     thread(threadId:string):Promise<Record<string,unknown>>;
     attachment(messageId:string,attachmentId:string):Promise<Record<string,unknown>>;
@@ -188,7 +189,7 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // Routine management is a verified-owner-only additional function, rather
 // than a global public tool. Keep the existing baseline tool contract stable.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
-  baseToolDefinitions.filter(tool=>tool.name!=="manage_routine"&&!["search_gmail","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+  baseToolDefinitions.filter(tool=>tool.name!=="manage_routine"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 /** Offered only for a verified connected owner. Default cafés keep their existing tools. */
 export const gmailToolDefinitions=baseToolDefinitions.filter(tool=>["search_gmail","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
@@ -206,6 +207,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");
   if(name==="ask_owner")return askOwnerTools.ask_owner.execute(raw,ctx);
   if(name==="search_gmail")return gmailTools.search_gmail.execute(raw,ctx);
+  if(name==="list_gmail_labels")return gmailTools.list_gmail_labels.execute(raw,ctx);
   if(name==="read_gmail")return gmailTools.read_gmail.execute(raw,ctx);
   if(name==="read_gmail_thread")return gmailTools.read_gmail_thread.execute(raw,ctx);
   if(name==="read_gmail_attachment")return gmailTools.read_gmail_attachment.execute(raw,ctx);

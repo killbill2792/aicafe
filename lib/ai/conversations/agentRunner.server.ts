@@ -18,7 +18,7 @@ import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server"
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
-import {gmailSearch,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
+import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
 import {gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
@@ -178,6 +178,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         change:async input=>changeOwnerRoutine(input,{scope,threadId:id,client:await getDb()}),
       },
       gmail:{
+        labels:()=>gmailListLabels(scope),
         search:(query,limit)=>gmailSearch(scope,query,limit),
         read:messageId=>gmailRead(scope,messageId),
         thread:threadId=>gmailReadThread(scope,threadId),

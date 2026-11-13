@@ -105,6 +105,14 @@ export async function gmailSearch(scope:ConnectorOwner,query:string,limit=12){
   return {account:account.email,source:"gmail",asOf:new Date().toISOString(),messages:messages.map(m=>({
     id:m.id,threadId:m.threadId,headers:m.headers,snippet:m.snippet,receivedAt:m.receivedAt,attachments:m.attachments}))};
 }
+export async function gmailListLabels(scope:ConnectorOwner){
+  const {token,account}=await authorizedGmail(scope,"read");
+  const response=await gmailApi(token,"/labels") as {
+    labels?:Array<{id?:string;name?:string;type?:string;labelListVisibility?:string}>};
+  const labels=(response.labels??[]).filter(l=>typeof l.id==="string"&&typeof l.name==="string")
+    .slice(0,200).map(l=>({id:l.id!,name:l.name!.slice(0,160),type:l.type??"user"}));
+  return {account:account.email,source:"gmail",asOf:new Date().toISOString(),labels};
+}
 export async function gmailRead(scope:ConnectorOwner,messageId:string){
   if(!/^[a-zA-Z0-9_-]{8,100}$/.test(messageId))throw new Error("gmail_invalid_message_id");
   const {token,account}=await authorizedGmail(scope,"read");
