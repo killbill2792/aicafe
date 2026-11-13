@@ -42,6 +42,26 @@ describe("canonical data available to authenticated chat, not only standalone to
   const result=await executeAgentTool("query_data",query,context);
   expect(result.missing).toContain("inventoryStockPartial");
  });
+ it("cannot leak pre-receipt stock from sparse columns or unscoped aggregates",async()=>{
+  const rpc=vi.fn(async()=>({error:null,data:{rows:[{source:"toast",
+   menu_item_ref:"item",quantity:7,stock_status:"QUANTITY",
+   data:{evidence_state:"source_unverified",source_as_of:"2026-10-20T11:00:00Z"}}],
+   sourceCount:1,sourceMix:{toast:1},truncated:false}}));
+  const context=await caller().context.canonicalData();
+  const db={rpc} as never;
+  const base={view:"cv_inventory",columns:["menu_item_ref","quantity"],filters:null,
+   group_by:null,metrics:null,date_from:"2026-10-20",date_to:"2026-10-20",
+   order_by:null,limit:5};
+  const plain=await dataQueryTools.query_data.execute(base,{...context,db});
+  expect(rpc).toHaveBeenCalledWith("ai_query_view",expect.objectContaining({
+   p_columns:expect.arrayContaining(["source","data","quantity"])}));
+  expect(plain.rows[0]).toMatchObject({quantity:null,stock_status:null});
+  expect(plain.missing).toContain("inventoryStockPartial");
+  const unsafe=await dataQueryTools.query_data.execute({...base,columns:null,
+   metrics:[{fn:"sum",column:"quantity"}]}, {...context,db});
+  expect(unsafe.missing).toContain("inventory_quantity_requires_current_evidence");
+  expect(rpc).toHaveBeenCalledTimes(1);
+ });
  it("routes a scoped chat query through the same safe query RPC",async()=>{
   const {rpc,context}=caller();
   const input={view:"cv_orders",columns:["business_date"],filters:null,
