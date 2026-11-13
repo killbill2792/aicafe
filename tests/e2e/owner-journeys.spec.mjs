@@ -74,6 +74,9 @@ test("@money seeded owner switches from recovery to real profit & costs", async 
 
 
 test("@menu Pantry retains confirmed zero and rejects historical Toast stock as current for two cafés", async ({browser}) => {
+  // The full journey checks 3 localizations and two independent authenticated
+  // café sessions; this test alone needs more time than a single-page smoke test.
+  test.setTimeout(120_000);
   // This E2 journey is deliberately local: the existing seed/login helpers
   // refuse preview and real production endpoints, and the DB is loopback-only.
   const own = seededCafe(0), other = seededCafe(1);
