@@ -329,6 +329,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
                  line.costCents!==null
                 :!attached&&ownerTextSupportsTypedLine(p.ownerText,line))&&
               Boolean((proposal.canonicalEffectPayload as {ingredientId?:string|null}).ingredientId);
+            if(previouslyRecorded||possiblyRephotographed){
+              output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name,
+                error:previouslyRecorded?"receipt_already_recorded":"possible_duplicate_receipt"});
+              continue;
+            }
             if(authorized&&proposal.status==="committed"){
               output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name,saved:true});
               continue;
