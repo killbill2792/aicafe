@@ -89,11 +89,20 @@ function sortedExtracted(lines,where){
    unit:line.unit,costCents:line.costCents,confidence:line.confidence};
  }).sort((a,b)=>a.lineId.localeCompare(b.lineId));
 }
-function obviousUnsupportedSuccess(reply,writes){
+function obviousUnsupportedSuccess(reply,writes,expectedLines){
  if(typeof reply!=="string"||reply.length>8000)issue("missing_reply");
+ if(writes.length>0)return false;
+ // Scan clauses, not the whole reply: "I did not add beans, but I added milk"
+ // must not be excused by negation in a different clause.
  const success=/\b(?:added|updated|increased|recorded|saved|posted)\b.{0,65}\b(?:inventory|stock|purchases?)\b|\b(?:inventory|stock)\b.{0,50}\b(?:updated|increased)\b/i;
- const negation=/\b(?:did not|not|no|could not|couldn't|didn't|haven't|has not|wasn't|without)\b.{0,65}\b(?:add|update|increase|record|save|post|added|updated|increased|recorded|saved|posted|stock)\b/i;
- return writes.length===0&&success.test(reply)&&!negation.test(reply);
+ const action=/\b(?:i|we)(?:'ve| have)?\s+(?:now\s+|already\s+)?(?:added|updated|increased|recorded|saved|posted)\b/i;
+ const negation=/\b(?:did not|not|no|could not|couldn't|didn't|haven't|has not|wasn't|without|never)\b/i;
+ const names=(expectedLines??[]).map(line=>line.name.toLocaleLowerCase());
+ return reply.split(/\bbut\b|[.!?;\n]/i).some(part=>{
+  if(negation.test(part))return false;
+  return success.test(part)||(action.test(part)&&
+   names.some(name=>name.length>0&&part.toLocaleLowerCase().includes(name)));
+ });
 }
 /** Each independent observation must report actual DB readback, never model-described stock. */
 export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,minConversations=30}={}){
@@ -166,7 +175,7 @@ export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,
    requireThat(jsonEqual(other.before,other.after),"other_tenant_expected_change");
   }
   requireThat(obs.outcome===source.expected.outcome,"false_outcome_"+id);
-  requireThat(!obviousUnsupportedSuccess(obs.reply,observedWrites),
+  requireThat(!obviousUnsupportedSuccess(obs.reply,observedWrites,source.expected.extracted),
    "false_success_claim_"+id);
   requireThat(jsonEqual(sortedExtracted(obs.extracted,id+"_observed"),
    sortedExtracted(source.expected.extracted,id+"_truth")),
