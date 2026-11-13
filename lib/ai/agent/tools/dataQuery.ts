@@ -10,7 +10,7 @@ const DEFAULT_ROWS=50,MAX_ROWS=100;
 /** Current-source operational views. Storing a row is not proof that the
  * provider is freshly reachable; until family sync proof, label its freshness. */
 const UNVERIFIED_FRESHNESS_VIEWS:ReadonlySet<CanonicalView>=new Set([
- "cv_cash","cv_inventory","cv_kitchen","cv_dining_options"]);
+ "cv_cash","cv_kitchen","cv_dining_options"]);
 const TOAST_COVERAGE_VIEWS:ReadonlySet<CanonicalView>=new Set([
  "cv_sales_days","cv_sales_hours","cv_item_sales","cv_payments",
  "cv_discounts","cv_voids_refunds","cv_card_fees","cv_orders","cv_toast_records"
@@ -229,6 +229,14 @@ export const dataQueryTools={
       currentDayIncomplete?:boolean}|null;
     const fit=fitRows(Array.isArray(result?.rows)?result.rows:[]);
     const rows=fit.rows,truncated=result?.truncated===true||fit.cut;
+    const inventoryPartial=p.view==="cv_inventory"&&rows.some(item=>{
+      if(!item||typeof item!=="object"||Array.isArray(item))return false;
+      const row=item as Record<string,unknown>;
+      if(row.source!=="toast")return false;
+      const data=row.data;
+      return !data||typeof data!=="object"||Array.isArray(data)||
+       (data as Record<string,unknown>).evidence_state!=="observed_current";
+    });
     const isEmpty=result?.sourceCount===0||(rows.length===0&&!truncated);
     // A single DB-computed aggregate is directly answerable; no guessing which
     // alias contains the total. Null/empty or truncated never means zero.
@@ -257,6 +265,7 @@ export const dataQueryTools={
      :{quality:[] as string[],notes:[] as string[]};
     return {source:"canonical_data",period:{from:p.date_from,to:p.date_to},
      missing:[...(isEmpty?["empty"]:[]),...(UNVERIFIED_FRESHNESS_VIEWS.has(p.view)&&Number(result?.sourceMix?.toast??0)>0?["source_freshness_unverified"]:[]),
+      ...(inventoryPartial?["inventoryStockPartial"]:[]),
       ...(result?.hasIncomplete?["incompleteEvidence"]:[]),
       ...(result?.currentDayIncomplete?["currentDayIncomplete"]:[]),
       ...coverage.quality,
