@@ -35,7 +35,8 @@ export const draftScheduleTools={draft_week_schedule:{
   const best=result.plan.best;
   if(!best)return {source:"olivia_schedule",period:null,agentId:"olivia",draft:true,saved:false,missing:["noPlannerScenario"]};
   const proposedShifts=oliviaProposalShifts(best.shifts,result.locations);
-  const canPropose=proposedShifts.length>0&&proposedShifts.length<=60&&
+  const canPropose=result.plan.status==="feasible"&&best.completeCoverage!==false&&
+   best.hardConstraintsSatisfied!==false&&proposedShifts.length>0&&proposedShifts.length<=60&&
    proposedShifts.every(s=>s.break_minutes<=240&&s.start!==s.end);
   let approval: {proposalId:string;revision:number;capabilityId:string}|null=null;
   let approvalError:string|null=null;
@@ -49,11 +50,29 @@ export const draftScheduleTools={draft_week_schedule:{
     ctx.scheduleProposalCreated=approval;
    }catch{approvalError="approvalProposalUnavailable";}
   }
+  // The hourly rollup groups orders by their CLOSE hour, not customer arrival.
+  // This is observed comparable history, never an inferred worker count.
+  const demand=result.demandEvidence;
+  const demandSummary=demand?{
+   status:demand.status,source:demand.source,basis:demand.basis,
+   historicalPeriod:demand.historicalPeriod,readAt:demand.readAt,
+   sourceUpdatedAt:demand.sourceUpdatedAt,
+   availableComparableHours:demand.hours.length,
+   // Keep the full comparable count while bounding model input tokens.
+   sampledHours:demand.hours.slice().sort((a,b)=>
+     b.observedAverageOrders-a.observedAverageOrders||
+     a.targetDate.localeCompare(b.targetDate)||a.hourLocal-b.hourLocal).slice(0,30),
+   missing:demand.missing,
+   note:"Historical order close-hour observations only; not a customer arrival forecast or an automatic staffing requirement",
+  }:null;
   return {source:"olivia_schedule",period:{from:start,to:result.plan.horizonEnd},
    agentId:"olivia",draft:true,saved:false,
-   missing:[...result.notices.map(n=>n.code),...(approvalError?[approvalError]:[]),
+   missing:[...result.notices.map(n=>n.code),
+    ...(demand?.status==="unavailable"?demand.missing:[]),
+    ...(approvalError?[approvalError]:[]),
     ...(!canPropose?["approvalShiftLimitOrInvalidShift"]:[])],
    plannerStatus:result.plan.status,completeCoverage:best.completeCoverage,
+   demandEvidence:demandSummary,
    laborCost:best.cost,gaps:best.gaps,warnings:result.plan.warnings,
    proposedShifts,
    proposedShiftCount:proposedShifts.length,
