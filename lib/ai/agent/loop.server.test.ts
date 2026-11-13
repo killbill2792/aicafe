@@ -94,6 +94,23 @@ describe("recorded Responses streaming fixtures", () => {
     expect(String(inputs[0].instructions)).toContain("that exact named event and date is the current subject");
     expect(String(inputs[0].instructions)).toContain("never emit HTML details or summary tags");
   });
+  it("takes a natural shopping instruction through the registered tool and reports an actual saved line",async()=>{
+    const ingredientId="33333333-3333-4333-8333-333333333333";
+    const write=vi.fn(async()=>[{name:"Milk",proposalId:"44444444-4444-4444-8444-444444444444",
+      revision:4,saved:true}]);
+    const ctx:AgentToolContext={...context,proposals:{proposePurchases:write}};
+    const args={source:"chat_text",lines:[{ingredientId,name:"Milk",quantity:10,
+      unit:"gal",costCents:null,date:"2026-10-21"}],receiptVendor:null,receiptTotalCents:null};
+    const result=await runAgentTurn({ownerText:"I bought 10 gallons of milk. Update inventory.",
+      context:ctx,provider:fixture([
+       [call("propose_purchases",JSON.stringify(args),"stock1"),completed],
+       [text("Inventory updated."),completed]
+      ])});
+    expect(write).toHaveBeenCalledOnce();
+    expect(result.results).toMatchObject([{source:"purchase_proposal",saved:true,draft:false,
+      proposals:[{name:"Milk",saved:true}]}]);
+    expect(result.text).toBe("Inventory updated.");
+  });
   it("answers without tools and tracks usage", async () => {
     const deltas: string[] = [];
     const result = await runAgentTurn({ownerText:"Hello",context,
