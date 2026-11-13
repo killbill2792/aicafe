@@ -700,7 +700,7 @@ export const canonicalDictionary = {
         "example": "Which facts are incomplete?"
       },
       "business_date": {
-        "meaning": "For owner counts, the dated measurement; for Toast current-state stock, the café-local query date. The original provider observation date and source time stay in data.",
+        "meaning": "Owner count measurement date; Toast stock with a family receipt uses the café-local query date, while legacy source rows without a receipt retain their observed business date and remain unverified. The original provider observation date and source time stay in data.",
         "unit": "local date",
         "source": "app",
         "example": "What happened last week?"
