@@ -339,7 +339,12 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
     temporary_absence:{employee_name:"Sam",weekday:2}},
    {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
   expect(r).toMatchObject({saved:false,needsOwnerChoice:true,
-   missing:["employee_ambiguous"],candidates:[expect.objectContaining({label:"Sam Lee"})]});
+   missing:["employee_ambiguous"],candidates:[
+    expect.objectContaining({id:"11111111-1111-4111-8111-111111111111",
+      label:"Sam Lee"}),
+    expect.objectContaining({id:"22222222-2222-4222-8222-222222222222",
+      label:"Sam Lee"}),
+   ]});
   expect(proposeStaff).not.toHaveBeenCalled();
  });
 });
