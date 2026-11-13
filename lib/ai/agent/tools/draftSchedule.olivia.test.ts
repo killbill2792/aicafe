@@ -343,9 +343,9 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   expect(r).toMatchObject({saved:false,needsOwnerChoice:true,
    missing:["ownerChoiceRequired","employee_ambiguous"],candidates:[
     expect.objectContaining({id:"11111111-1111-4111-8111-111111111111",
-      label:"Sam Lee (11111111)"}),
+      label:"Sam Lee — 1 (11111111)"}),
     expect.objectContaining({id:"22222222-2222-4222-8222-222222222222",
-      label:"Sam Lee (22222222)"}),
+      label:"Sam Lee — 2 (22222222)"}),
    ]});
   expect(proposeStaff).not.toHaveBeenCalled();
  });
@@ -378,8 +378,8 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   expect(choiceState.ambiguous).toHaveLength(1);
   const choices=first.candidates as Array<{id:string;label:string;detail:string}>;
   expect(choices).toEqual([
-   {id:firstId,label:"Sam Lee (11111111)",detail:"Team member"},
-   {id:secondId,label:"Sam Lee (22222222)",detail:"Team member"},
+   {id:firstId,label:"Sam Lee — 1 (11111111)",detail:"Team member"},
+   {id:secondId,label:"Sam Lee — 2 (22222222)",detail:"Team member"},
   ]);
   const options=choices.map(v=>({label:v.label,value:v.id}));
   const card=await askOwnerTools.ask_owner.execute({
