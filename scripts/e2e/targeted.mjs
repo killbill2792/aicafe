@@ -25,6 +25,7 @@ export function scenariosForPath(path) {
       path.startsWith("lib/auth/") ||
       path.startsWith("lib/supabase/") ||
       path === "messages/en.json") return ALL;
+  if (path.startsWith("components/home/")) return ["home"];
   if (path === "app/[locale]/page.tsx" ||
       path.startsWith("lib/viewmodels/home") ||
       path === "scripts/ldi-g-visual-check.mjs" ||
