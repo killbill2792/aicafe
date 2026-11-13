@@ -9,7 +9,10 @@ const monday=z.iso.date().refine(v=>new Date(v+"T12:00:00Z").getUTCDay()===1,"Mu
 const schema=z.strictObject({week_start:monday.nullable(),purpose:z.enum([
  "draft","owner_savings","cash_cost","owner_time","balanced",
  "compare_only","cash_preview","owner_time_preview",
-])});
+]),temporary_absence:z.strictObject({
+ employee_name:z.string().trim().min(1).max(80),
+ weekday:z.number().int().min(0).max(6),
+}).nullable().optional()});
 const absenceSchema=z.strictObject({week_start:monday.nullable(),
  employee_name:z.string().trim().min(1).max(80),
  weekday:z.number().int().min(0).max(6)});
@@ -20,10 +23,15 @@ const selectedObjectiveLabel=(objective:"cash"|"owner_time"|"balanced"|null)=>ob
  */
 export const draftScheduleTools={draft_week_schedule:{
  agentId:"olivia",schema,
- description:"Use the one Olivia optimizer for natural staffing instructions. draft makes a full proposed roster; cash_cost asks for the low modeled cash-wage candidate (not guaranteed global minimum); owner_time asks for fewer owner-shift minutes; balanced uses the balanced candidate. These create ONE inert owner card only if all required coverage is feasible. For 'what if', 'compare', 'explain cost' or 'show me the cheaper option first', use compare_only, cash_preview or owner_time_preview: they NEVER create a card. owner_savings is another read-only what-if. For 'what if Sarah is off Tuesday' use simulate_staff_absence, not saved availability edits. Actual saved availability/rule changes use the existing propose_availability_change/propose_rule_change gateway. Do not claim saved, published, messaged, or guaranteed demand prediction.",
+ description:"Use the one Olivia optimizer for natural staffing instructions. For 'schedule next week, Sarah off Tuesday' pass temporary_absence={employee_name:'Sarah',weekday:2} with purpose=draft (Sunday=0), so the requested exception affects the actual roster while the employee's saved availability stays unchanged; if identity ambiguous ask the owner to choose. draft makes a full proposed roster; cash_cost asks for the low modeled cash-wage candidate (not guaranteed global minimum); owner_time asks for fewer owner-shift minutes; balanced uses the balanced candidate. These create ONE inert owner card only if all required coverage is feasible. For 'what if', 'compare', 'explain cost' or 'show me the cheaper option first', use compare_only, cash_preview or owner_time_preview: they NEVER create a card. owner_savings is another read-only what-if. For 'what if Sarah is off Tuesday' use simulate_staff_absence, not saved availability edits. Actual saved availability/rule changes use the existing propose_availability_change/propose_rule_change gateway. Do not claim saved, published, messaged, or guaranteed demand prediction.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-  const {week_start,purpose}=schema.parse(raw);
+  const {week_start,purpose,temporary_absence}=schema.parse(raw);
   const start=week_start??nextMonday(ctx.asOf);
+  // An unpaid-owner replacement calculation is a different scenario and
+  // must never silently ignore an owner-specified employee exclusion.
+  if(purpose==="owner_savings"&&temporary_absence)return {
+   source:"olivia_owner_what_if",period:null,agentId:"olivia",saved:false,
+   missing:["temporaryAbsenceNotSupportedForOwnerSavings"]};
   if(purpose==="owner_savings"){
    const whatIf=await previewOliviaOwnerSavings({week:start});
    if(!whatIf.ok)return {source:"olivia_owner_what_if",period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
@@ -37,9 +45,22 @@ export const draftScheduleTools={draft_week_schedule:{
     replacementRows:whatIf.replacementRows,assumptions:whatIf.assumptions,
     warnings:whatIf.warnings,notices:whatIf.notices,locations:whatIf.locations};
   }
-  const result=await previewOliviaWeek({week:start});
-  if(!result.ok)return {source:"olivia_schedule",period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
-   agentId:"olivia",draft:true,saved:false,missing:[result.error,...(result.blockers??[]).map(b=>b.code)]};
+  const selectedEmployeeIds=[...(ctx.resolveState?.chosenIds??[])]
+    .filter(id=>z.uuid().safeParse(id).success).slice(0,10);
+  const result=await previewOliviaWeek(temporary_absence?{
+   week:start,temporaryAbsence:{
+    employeeName:temporary_absence.employee_name,
+    weekday:temporary_absence.weekday,selectedEmployeeIds,
+   },
+  }:{week:start});
+  if(!result.ok)return {source:"olivia_schedule",
+   period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
+   agentId:"olivia",draft:true,saved:false,
+   missing:[result.error,...(result.blockers??[]).map(b=>b.code)],
+   ...(result.candidates?.length?{needsOwnerChoice:true,candidates:
+    result.candidates.map(e=>({id:e.id,label:e.name,
+     detail:"Team member • record "+e.id.slice(-6)}))}:{}),
+  };
   // The requested business objective chooses among already-validated
   // deterministic solver candidates; a missing/infeasible alternative may
   // not override a valid default schedule.
@@ -110,6 +131,8 @@ export const draftScheduleTools={draft_week_schedule:{
    plannerStatus:result.plan.status,completeCoverage:best.completeCoverage,
    demandEvidence:demandSummary,
    laborCost:best.cost,gaps:best.gaps,warnings:result.plan.warnings,
+   ...(result.temporaryConstraint?{temporaryConstraint:result.temporaryConstraint,
+    note:"This employee was excluded for this proposed week's roster only; the saved availability record was not changed"}:{}),
    scenarioAlternatives:alternatives,solverProof:result.plan.proof,
    requestedObjective:selectedObjectiveLabel(requestedObjective),
    selectedObjective:best.objective,
