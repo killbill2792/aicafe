@@ -224,7 +224,6 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     throw new Error("gmail_effect_already_reserved_reconcile_first");
   }
   let response:{id?:string;threadId?:string};
-  let returnedId:string;
   let referenceId:string|null=null;
   let verifiedThreadId:string|null=null;
   if(effect.operation==="send"||effect.operation==="draft"){
@@ -258,7 +257,7 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     else if(effect.operation==="restore")response=await gmailApi(token,"/messages/"+id+"/untrash",{method:"POST"}) as {id?:string};
     else response=await gmailApi(token,"/messages/"+id+"/modify",{method:"POST",body:labelChanges(effect)}) as {id?:string};
   }
-  returnedId=response?.id??"";
+  const returnedId=response?.id??"";
   if(!returnedId)throw new Error("gmail_provider_receipt_missing");
   const checked=await verifyReceipt(token,effect,returnedId,rfc);
   const updated=await db.from("connector_provider_receipts").update({

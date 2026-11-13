@@ -89,16 +89,17 @@ test("@gmail seeded owner sees Gmail entry, connection status and revocation UX 
   await openOwnedPage(page,own,"more");
   await page.getByRole("link",{name:"Connect Gmail"}).click();
   await expect(page).toHaveURL(/\/more\/gmail/);
-  await expect(page.getByRole("link",{name:"Connect Gmail"})).toHaveAttribute("href","/api/connectors/gmail/connect");
+  await expect(page.getByRole("button",{name:"Connect Gmail"})).toHaveAttribute("type","submit");
+  await expect(page.locator('form[action="/api/connectors/gmail/connect"]')).toHaveAttribute("method","get");
   // A provider callback refreshes the owner-facing status; no real Google OAuth call.
   connected=true;
   await page.reload();
   await expect(page.getByText("Connected and ready")).toBeVisible();
   await expect(page.getByText("owner@example.com",{exact:true})).toBeVisible();
-  await expect(page.getByRole("link",{name:"Connect Gmail"})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"Connect Gmail"})).toHaveCount(0);
   page.once("dialog",dialog=>void dialog.accept());
   await page.getByRole("button",{name:"Disconnect Gmail"}).click();
   await expect(page.getByText("Not connected",{exact:true})).toBeVisible();
   expect(disconnects).toBe(1);
-  await expect(page.getByRole("link",{name:"Connect Gmail"})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Connect Gmail"})).toBeVisible();
 });

@@ -57,11 +57,13 @@ export default function GmailConnectionPanel(){
     {(error||failure)&&<p role="alert" className="mt-4 flex gap-2 text-warn">
       <AlertTriangle size={18} className="shrink-0"/>{error||copy.connectionFailed}</p>}
     <div className="mt-6 flex flex-wrap gap-3">
-      {!connected&&data?.status!=="revoking"&&data?.configured&&<a
-        href="/api/connectors/gmail/connect"
-        className="flex min-h-12 items-center justify-center rounded-xl bg-accent px-6 text-base font-bold text-white">
-        {data?.status==="needs_reconnect"?copy.reconnect:copy.connect}
-      </a>}
+      {!connected&&data?.status!=="revoking"&&data?.configured&&<form
+        action="/api/connectors/gmail/connect" method="get">
+        <button type="submit"
+          className="flex min-h-12 items-center justify-center rounded-xl bg-accent px-6 text-base font-bold text-white">
+          {data?.status==="needs_reconnect"?copy.reconnect:copy.connect}
+        </button>
+      </form>}
       {connected&&<button type="button" onClick={()=>void disconnect()} disabled={busy}
         className="min-h-12 rounded-xl border border-line px-5 text-base font-bold disabled:opacity-50">
         {busy?copy.disconnecting:copy.disconnect}
