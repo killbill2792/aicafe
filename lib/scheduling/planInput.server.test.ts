@@ -392,4 +392,24 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     expect(calls).toBe(2);
   });
 
+
+  it("passes saved opening hours without converting a closed day into false availability",async()=>{
+    fixtures.tables.locations=[{id:id(800),name:"Downtown",timezone:null,
+      open_hours:{mon:[["09:00","17:00"]],tue:[]}}];
+    const result=await loadOliviaWeekFromSavedStaff(week);
+    expect(result.ok).toBe(true);
+    if(!result.ok)return;
+    expect(result.input.locations[0].openHours)
+      .toEqual({mon:[["09:00","17:00"]],tue:[]});
+    expect(result.input.coverage[0].start_local).toBe("08:00");
+    // The confirmed 08:00 prep requirement is not silently moved to 09:00.
+    expect(result.input.coverage[0].minHeadcount).toBe(1);
+    expect(result.sourceFingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("labels absent opening hours as unknown, not as a permanently closed café",async()=>{
+    const result=await loadOliviaWeekFromSavedStaff(week);
+    expect(result.ok).toBe(true);
+    if(result.ok)expect(result.input.locations[0].openHours).toBeNull();
+  });
 });
