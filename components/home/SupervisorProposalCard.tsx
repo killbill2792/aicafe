@@ -22,13 +22,97 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   gmail?:{operation:string;action:string|null;from:string;to:string[];cc:string[];bcc:string[];
     subject:string;body:string;messageId:string|null;threadId:string|null;labelId:string|null;labelName:string|null};};
 const dict={en,es,ar} as const;
+const gmailReviewCopy={
+  en:{
+  "title": "Review Gmail action",
+  "pending": "Needs your approval",
+  "applied": "Applied",
+  "applying": "Working…",
+  "uncertain": "Outcome needs checking",
+  "cancelled": "Cancelled",
+  "error": "Could not confirm this action.",
+  "action": "Action",
+  "from": "Gmail account",
+  "to": "To",
+  "cc": "Cc",
+  "bcc": "Bcc",
+  "subject": "Subject",
+  "message": "Message",
+  "messageId": "Gmail message",
+  "label": "Label",
+  "none": "None",
+  "ownerReview": "Check the exact message or mailbox change before approving.",
+  "send": "Approve & send",
+  "createDraft": "Create Gmail draft",
+  "apply": "Approve change",
+  "cancel": "Cancel",
+  "sendNotice": "Sending is irreversible. Gmail acceptance does not prove the recipient received the email.",
+  "changeNotice": "This change will update your real Gmail account.",
+  "checkReceipt": "Check Gmail for the result (will not send again)"
+},
+  es:{
+  "title": "Revisar acción de Gmail",
+  "pending": "Necesita tu aprobación",
+  "applied": "Aplicado",
+  "applying": "En proceso…",
+  "uncertain": "Hay que comprobar el resultado",
+  "cancelled": "Cancelado",
+  "error": "No se pudo confirmar esta acción.",
+  "action": "Acción",
+  "from": "Cuenta de Gmail",
+  "to": "Para",
+  "cc": "Cc",
+  "bcc": "Cco",
+  "subject": "Asunto",
+  "message": "Mensaje",
+  "messageId": "Mensaje de Gmail",
+  "label": "Etiqueta",
+  "none": "Ninguno",
+  "ownerReview": "Comprueba el mensaje o cambio exacto antes de aprobar.",
+  "send": "Aprobar y enviar",
+  "createDraft": "Crear borrador en Gmail",
+  "apply": "Aprobar cambio",
+  "cancel": "Cancelar",
+  "sendNotice": "Enviar no se puede deshacer. La aceptación de Gmail no confirma la recepción del destinatario.",
+  "changeNotice": "Este cambio actualizará tu cuenta real de Gmail.",
+  "checkReceipt": "Comprobar resultado en Gmail (no se volverá a enviar)"
+},
+  ar:{
+  "title": "مراجعة إجراء Gmail",
+  "pending": "يحتاج إلى موافقتك",
+  "applied": "تم التنفيذ",
+  "applying": "جارٍ التنفيذ…",
+  "uncertain": "يجب التحقق من النتيجة",
+  "cancelled": "تم الإلغاء",
+  "error": "تعذّر تأكيد هذا الإجراء.",
+  "action": "الإجراء",
+  "from": "حساب Gmail",
+  "to": "إلى",
+  "cc": "نسخة",
+  "bcc": "نسخة مخفية",
+  "subject": "الموضوع",
+  "message": "الرسالة",
+  "messageId": "معرّف الرسالة",
+  "label": "التصنيف",
+  "none": "لا يوجد",
+  "ownerReview": "راجع الرسالة أو التغيير بدقة قبل الموافقة.",
+  "send": "الموافقة والإرسال",
+  "createDraft": "إنشاء مسودة Gmail",
+  "apply": "الموافقة على التغيير",
+  "cancel": "إلغاء",
+  "sendNotice": "لا يمكن التراجع عن الإرسال. قبول Gmail لا يثبت أن المستلم استلم الرسالة.",
+  "changeNotice": "سيُطبّق هذا التغيير على حساب Gmail الحقيقي.",
+  "checkReceipt": "التحقق من النتيجة في Gmail (دون إعادة الإرسال)"
+}
+} as const;
+
 
 /** Deterministic, full Gmail effect preview. The owner sees recipients and
  * exact content before a click can authorize any provider action. */
-export function GmailApprovalDetails({effect}:{
-  effect:NonNullable<ProposalView["gmail"]>
+export function GmailApprovalDetails({effect,locale="en"}:{
+  effect:NonNullable<ProposalView["gmail"]>;locale?:Locale
 }){
-  const g=effect,c=en.GmailApprovalCard;
+  const g=effect,c=gmailReviewCopy[locale];
   const sending=g.operation==="send",drafting=g.operation==="draft";
   const previewLabel=g.action?g.action.replaceAll("_"," "):g.operation.replaceAll("_"," ");
   return <>
@@ -163,7 +247,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const staffCopy=dict[locale].StaffApprovalCard;
   if(gmail&&value.gmail){
     const g=value.gmail;
-    const c=en.GmailApprovalCard;
+    const c=gmailReviewCopy[locale];
     const sending=g.operation==="send",drafting=g.operation==="draft";
     const action=sending?c.send:drafting?c.createDraft:c.apply;
     const status=value.state==="pending"?c.pending:value.state==="applied"?c.applied:
@@ -175,7 +259,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-semibold">{status}</span>
       </div>
       <p className="mt-2 text-sm text-ink-muted">{c.ownerReview}</p>
-      <GmailApprovalDetails effect={g}/>
+      <GmailApprovalDetails effect={g} locale={locale}/>
       <p className="mt-4 text-sm text-ink-muted">{sending?c.sendNotice:c.changeNotice}</p>
       {value.state==="pending"&&<div className="mt-5 flex flex-wrap gap-3">
         <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
