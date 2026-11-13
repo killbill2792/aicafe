@@ -86,9 +86,19 @@ begin
    and existing.canonical_effect_payload->>'quantity'=p.canonical_effect_payload->>'quantity'
    and existing.canonical_effect_payload->>'unit'=p.canonical_effect_payload->>'unit'
    and existing.canonical_effect_payload->>'date'=p.canonical_effect_payload->>'date'
-   and (p.canonical_effect_payload->>'source'<>'receipt_chat'
-    or existing.canonical_effect_payload->>'receiptLineIndex'
-      =p.canonical_effect_payload->>'receiptLineIndex')
+   -- For typed purchases, dedupe the same quantified ingredient in one
+   -- owner message. For photo-backed stock (source=chat_text) as well as
+   -- reviewed receipts, distinguish physical receipt line ordinals.
+   -- Two real receipt lines can have identical ingredient and quantities.
+   and (
+    (p.canonical_effect_payload->>'receiptGroupId' is null
+     and existing.canonical_effect_payload->>'receiptGroupId' is null)
+    or (p.canonical_effect_payload->>'receiptGroupId' is not null
+     and existing.canonical_effect_payload->>'receiptGroupId'
+       =p.canonical_effect_payload->>'receiptGroupId'
+     and existing.canonical_effect_payload->>'receiptLineIndex'
+       =p.canonical_effect_payload->>'receiptLineIndex')
+   )
  ) then raise exception 'purchase_already_claimed_for_message' using errcode='42501'; end if;
  select (now() at time zone b.timezone)::date into local_day from public.businesses b
   where b.id=p_business_id and b.timezone is not null
