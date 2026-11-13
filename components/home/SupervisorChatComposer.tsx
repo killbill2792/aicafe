@@ -264,7 +264,15 @@ export default function SupervisorChatComposer({
   const [error, setError] = useState(false);
   const [dictation, dispatchDictation] = useReducer(nextDictationStage, "idle");
   const [uploading, setUploading] = useState(false);
+  // Only explicitly chosen attachments belong to the current owner turn.
   const [attachments, setAttachments] = useState<StoredAttachment[]>([]);
+  const [storedAttachments, setStoredAttachments] =
+    useState<{threadId:string;items:StoredAttachment[]}|null>(null);
+  const fileCopy={
+    en:{recent:"Previous files",reuse:"Use",remove:"Remove",tooLarge:"File too large (8 MB for photos, 2 MB for other files).",limit:"Choose up to three files per message.",failed:"File upload failed."},
+    es:{recent:"Archivos anteriores",reuse:"Usar",remove:"Quitar",tooLarge:"El archivo es demasiado grande (8 MB para fotos, 2 MB para otros archivos).",limit:"Selecciona hasta tres archivos por mensaje.",failed:"No se pudo subir el archivo."},
+    ar:{recent:"الملفات السابقة",reuse:"استخدام",remove:"إزالة",tooLarge:"الملف كبير جدًا (٨ ميغابايت للصور و٢ ميغابايت للملفات الأخرى).",limit:"اختر حتى ثلاثة ملفات لكل رسالة.",failed:"فشل رفع الملف."}
+  }[locale];
   const [mediaNotice, setMediaNotice] = useState("");
   const recorder = useRef<MediaRecorder | null>(null);
   const recordingStream = useRef<MediaStream | null>(null);
@@ -437,7 +445,8 @@ export default function SupervisorChatComposer({
     void fetch("/api/ai/threads/" + encodeURIComponent(threadId) + "/attachments",
       { signal: controller.signal, cache: "no-store" })
       .then((res) => jsonFrom<{ items: StoredAttachment[] }>(res))
-      .then((page) => { if (!controller.signal.aborted) setAttachments(page.items); })
+      .then((page) => { if (!controller.signal.aborted)
+        setStoredAttachments({threadId,items:page.items}); })
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [enabled, threadId, sending, reloadVersion]);
@@ -715,7 +724,8 @@ export default function SupervisorChatComposer({
     prependAnchor.current = null;
     selectedThreadId.current = id;
     setLoading(false);
-    setThreadId(id); setMessages([]);setLoadedThreadId(null);setStartExpanded(false); setNextOffset(null); setAttachments([]);
+    setThreadId(id); setMessages([]);setLoadedThreadId(null);setStartExpanded(false); setNextOffset(null);
+    setAttachments([]);setStoredAttachments(null);
     setOptimisticOwner(null);
     openingThread.current = Boolean(id); pinned.current = true;
     setShowNewMessage(false);
@@ -825,19 +835,20 @@ export default function SupervisorChatComposer({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file || !enabled || !canUseAi || uploading || sending) return;
+    if(attachments.length>=3){setMediaNotice(fileCopy.limit);return;}
     const imageFile=file.type.startsWith("image/")||/\.(jpe?g|png|webp)$/i.test(file.name);
     const limit=imageFile?8*1024*1024:2*1024*1024;
-    if (file.size > limit || file.size === 0) { setMediaNotice(copy.attachmentUpload); return; }
+    if (file.size > limit || file.size === 0) { setMediaNotice(fileCopy.tooLarge); return; }
     setUploading(true); setError(false);
     try {
       const id = await ensureThread();
       const body = new FormData(); body.append("file", file);
       const result = await jsonFrom<{ attachment: StoredAttachment }>(await fetch(
         "/api/ai/threads/" + encodeURIComponent(id) + "/attachments", { method: "POST", body }));
-      setAttachments((old) => [result.attachment, ...old]);
+      setAttachments(old=>old.length>=3?old:[result.attachment,...old]);
       setMediaNotice(copy.attachmentSaved);
       await refreshThreads();
-    } catch { setError(true); setMediaNotice(copy.attachmentUpload); }
+    } catch { setError(false); setMediaNotice(fileCopy.failed); }
     finally { setUploading(false); }
   }
   function composerKey(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -1064,13 +1075,36 @@ export default function SupervisorChatComposer({
     </div>}
     <div className="mt-auto shrink-0 border-t border-line bg-surface2 px-2 py-2 md:px-4">
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
-        {attachments.map((file) => <a key={file.id}
-          href={"/api/ai/threads/" + encodeURIComponent(threadId ?? "") + "/attachments/" + encodeURIComponent(file.id)}
-          target="_blank" rel="noopener noreferrer"
-          className="inline-flex max-w-full min-h-10 items-center gap-2 rounded-xl bg-surface px-3 text-[14px] font-semibold text-ink underline">
-          <Paperclip size={17} aria-hidden="true" /><span className="truncate">{file.originalName}</span>
-        </a>)}
+        {attachments.map(file=><div key={file.id}
+          className="inline-flex max-w-full min-h-10 items-center gap-1 rounded-xl bg-surface ps-3 text-[14px] font-semibold text-ink">
+          <Paperclip size={17} aria-hidden="true"/>
+          <a href={"/api/ai/threads/"+encodeURIComponent(threadId??"")+"/attachments/"+encodeURIComponent(file.id)}
+            target="_blank" rel="noopener noreferrer" className="min-w-0 truncate underline">
+            {file.originalName}</a>
+          <button type="button" disabled={sending}
+            onClick={()=>setAttachments(old=>old.filter(x=>x.id!==file.id))}
+            aria-label={fileCopy.remove+" "+file.originalName}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+            <X size={16} aria-hidden="true"/>
+          </button>
+        </div>)}
       </div>}
+      {storedAttachments?.threadId===threadId && storedAttachments.items.length>0 &&
+        <details className="mb-2">
+          <summary className="cursor-pointer text-[14px] font-semibold text-ink-muted">{fileCopy.recent}</summary>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {storedAttachments.items.filter(file=>!attachments.some(a=>a.id===file.id)).slice(0,8).map(file=>
+              <button key={file.id} type="button" disabled={sending}
+                onClick={()=>{
+                  if(attachments.length>=3){setMediaNotice(fileCopy.limit);return;}
+                  setAttachments(old=>old.some(a=>a.id===file.id)?old:[file,...old]);
+                }}
+                aria-label={fileCopy.reuse+" "+file.originalName}
+                className="inline-flex min-h-10 max-w-full items-center gap-2 rounded-xl border border-line bg-surface px-3 text-[14px] font-medium text-ink hover:bg-surface2">
+                <Paperclip size={16} aria-hidden="true"/><span className="truncate">{file.originalName}</span>
+              </button>)}
+          </div>
+        </details>}
       {eventContext?.threadId===threadId&&
         <div role="status" className="mb-2 flex min-h-10 items-center gap-2 rounded-xl bg-accent-soft px-3 py-2 text-[15px] font-semibold text-ink">
           <span className="min-w-0 flex-1 break-words">@event {eventContext.title} · {eventContext.date}</span>
@@ -1125,7 +1159,7 @@ export default function SupervisorChatComposer({
         {failureCode && (!error || pendingOwnerIds.size === 0) ? failureLine(failureCode, liveCopy)
           : error && pendingOwnerIds.size === 0 ? copy.answerFailed : uploading ? copy.attachmentUpload
           : dictation === "error" || dictation === "ready" ? mediaNotice
-            : mediaNotice === copy.attachmentSaved ? mediaNotice : ""}
+            : mediaNotice}
       </div>
     </div>
     {historyOpen && <div className="absolute inset-0 z-30 flex" role="presentation">
