@@ -98,7 +98,9 @@ describe("recorded Responses streaming fixtures", () => {
     const ingredientId="33333333-3333-4333-8333-333333333333";
     const write=vi.fn(async()=>[{name:"Milk",proposalId:"44444444-4444-4444-8444-444444444444",
       revision:4,saved:true}]);
-    const ctx:AgentToolContext={...context,proposals:{proposePurchases:write}};
+    const ctx:AgentToolContext={...context,proposals:{
+      proposePriceChange:async()=>{throw new Error('unrelated proposal must not be called');},
+      proposePurchases:write}};
     const args={source:"chat_text",lines:[{ingredientId,name:"Milk",quantity:10,
       unit:"gal",costCents:null,date:"2026-10-21"}],receiptVendor:null,receiptTotalCents:null};
     const result=await runAgentTurn({ownerText:"I bought 10 gallons of milk. Update inventory.",
