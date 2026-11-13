@@ -64,7 +64,7 @@ describe("Task 13a registered Supervisor staffing conversation",()=>{
       alternative:expect.objectContaining({completeCoverage:false})}),
   ]));
   expect(schedule.absence).toHaveBeenCalledExactlyOnceWith({
-    week:"2026-11-09",employeeName:"Sarah",weekday:2});
+    week:"2026-11-09",employeeName:"Sarah",weekday:2,selectedEmployeeIds:[]});
   expect(result.text).toContain("Nothing was saved");
   expect(requests).toHaveLength(2);
  });
