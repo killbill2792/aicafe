@@ -117,7 +117,9 @@ describe("Olivia preview/draft server action safety",()=>{
     exceptions:[],qualifications:[],wage:{wage_period:"hour",wage_amount_cents:2100}};
   mocks.load.mockResolvedValue({...saved,input:{...input,employees:[alice]}});
   const basic={status:"feasible",horizonEnd:"2026-10-18",warnings:[],
-    best:{completeCoverage:true,gaps:[],shifts:[{employeeId:"emp"}],
+    best:{completeCoverage:true,gaps:[],shifts:[{employeeId:"emp",
+      locationId:"loc",startAt:"2026-10-13T16:00:00Z",endAt:"2026-10-13T17:00:00Z",
+      paidMinutes:60,breaks:[],pinned:false}],
       cost:{cashWagesCents:2100}}};
   const simulated={...basic,status:"unproven",best:{
     completeCoverage:false,gaps:[{reason:"no_confirmed_availability"}],shifts:[],
@@ -128,7 +130,11 @@ describe("Olivia preview/draft server action safety",()=>{
   expect(result).toMatchObject({ok:true,employeeName:"Sarah Jones",
    absentDate:"2026-10-13",hypothetical:true,saved:false,published:false,
    baseline:{completeCoverage:true},alternative:{completeCoverage:false},
-   changeInModeledCashWagesCents:null,laborCostDifferenceKnown:false});
+   changeInModeledCashWagesCents:null,laborCostDifferenceKnown:false,
+   rosterChanges:{totalRemoved:1,totalAdded:0,added:[],removed:[
+    expect.objectContaining({employeeName:"Sarah Jones",date:"2026-10-13",
+      start:"16:00",end:"17:00",break_minutes:0}),
+   ]}});
   expect(mocks.optimizer).toHaveBeenCalledTimes(2);
   const snapshot=mocks.optimizer.mock.calls[0][0];
   const hypothetical=mocks.optimizer.mock.calls[1][0];
