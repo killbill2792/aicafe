@@ -7,6 +7,7 @@ test.beforeEach(() => {
 });
 
 test("@home real password sign-in isolates two cafés and ignores an unauthorized café cookie", async ({browser}) => {
+  test.setTimeout(90_000); // Two real café sign-ins and protected Money routes.
   const first = seededCafe(0), second = seededCafe(1);
   for (const [own, other] of [[first, second], [second, first]]) {
     const context = await browser.newContext({baseURL: "http://127.0.0.1:3000", serviceWorkers: "block"});
