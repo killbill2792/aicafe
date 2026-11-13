@@ -27,6 +27,19 @@ describe("single Supervisor effect gateway",()=>{
    p_proposal_id:id,p_revision:2,p_authorization_kind:"click"});
   expect(f.rpc.mock.calls.some(([name])=>name==="supervisor_transition_proposal")).toBe(false);
  });
+ it("claims only an exact saved owner purchase message via a distinct authorization RPC",async()=>{
+  f.rpc.mockResolvedValueOnce({data:{proposal:{...row(),capability_id:"maya.inventory_purchase.v1"},
+   attempt_key:"55555555-5555-4555-8555-555555555555",
+   business_date:"2026-10-23",authorization_kind:"owner_message"},error:null});
+  const ownerMessageId="77777777-7777-4777-8777-777777777777";
+  const claim=await new SupervisorEffectGateway().claim(scope,id,1,"owner_message",ownerMessageId);
+  expect(claim.authorizationKind).toBe("owner_message");
+  expect(f.rpc).toHaveBeenCalledWith("supervisor_claim_owner_purchase_effect",{
+   p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
+   p_proposal_id:id,p_revision:1,p_owner_message_id:ownerMessageId
+  });
+  await expect(new SupervisorEffectGateway().claim(scope,id,1,"owner_message")).rejects.toThrow("owner_message_id_required");
+ });
  it("rejects a gateway response whose proposal escapes the owner or thread scope",async()=>{
   f.rpc.mockResolvedValue({data:{proposal:{...row(),owner_user_id:"99999999-9999-4999-8999-999999999999"},
    attempt_key:"55555555-5555-4555-8555-555555555555",business_date:"2026-10-23",
