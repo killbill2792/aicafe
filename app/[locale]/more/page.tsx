@@ -86,7 +86,7 @@ export default async function MorePage() {
     </MoreGroup>
     <MoreGroup title={t("yourData")}>
       <MoreRow href="/more/toast" Icon={CreditCard} label={t("toastConnect")} badge={toastBadge} />
-      <MoreRow href="/more/gmail" Icon={Mail} label={locale==="es"?"Conectar Gmail":locale==="ar"?"ربط Gmail":"Connect Gmail"} />
+      <MoreRow href="/more/gmail" Icon={Mail} label={en.More.gmailConnect} />
       {evidence.toast?.checkMode&&<p className="px-4 text-[17px] text-muted">{toastCheck(evidence.toast.checkMode==="official"?"checkModeOfficial":"checkModeInternal")}</p>}
       <MoreRow href="/more/uploads" Icon={FileText} label={t("uploads")} badge={uploadBadge} />
       <MoreRow href="/more/processing-fees" Icon={Percent} label={t("processingFees")} badge={feesBadge} />
