@@ -34,12 +34,17 @@ describe("Task 13a pure historical demand evidence",()=>{
  });
  it("never treats a missing day, failed import or stale source as a zero-demand hour",()=>{
   const facts=[row("2026-11-02",0,0),row("2026-11-09",0,0)];
-  for(const missing of [["hourlySalesDatesNotObserved"],["toastImportIncompleteDays:1:2026-11-09:0"]]){
-   const r=comparableDemandHours(input(facts,missing));
-   expect(r.status).toBe("unavailable");
-   expect(r.hours).toEqual([]);
-   expect(r.missing).toEqual(missing);
-  }
+  const unknownDays=comparableDemandHours(input(facts,["hourlySalesDatesNotObserved"]));
+  expect(unknownDays.status).toBe("partial");
+  expect(unknownDays.hours).toMatchObject([{
+   observedAverageOrders:0,sampleDays:["2026-11-02","2026-11-09"],
+  }]);
+  expect(unknownDays.missing).toEqual(["hourlySalesDatesNotObserved"]);
+  const failedImport=comparableDemandHours(input(facts,
+   ["hourlySalesDatesNotObserved","toastImportIncompleteDays:1:2026-11-09:0"]));
+  expect(failedImport.status).toBe("unavailable");
+  expect(failedImport.hours).toEqual([]);
+  expect(failedImport.missing).toEqual(["toastImportIncompleteDays:1:2026-11-09:0"]);
   expect(comparableDemandHours(input(facts,[],["sourceStale"])).status).toBe("unavailable");
  });
  it("fails closed on duplicate same-day/source-hour records instead of double counting",()=>{
