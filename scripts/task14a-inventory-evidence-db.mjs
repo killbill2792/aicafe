@@ -87,9 +87,12 @@ try{
  await db.query(`insert into public.pantry_stock_counts
  (business_id,ingredient_id,count_date,quantity_base,entered_quantity,entered_unit)
  values($1,$2,$3,0,0,'ml')`,[ids.cafe,ids.ingredient,date]);
- const zero=await one("select quantity from public.cv_inventory where business_id=$1 and source='app' and business_date=$2",
-  [ids.cafe,date]);
+ const zero=await one(`select quantity,data->>'ingredient_name' as ingredient_name,
+  data->>'base_unit' as base_unit from public.cv_inventory
+  where business_id=$1 and source='app' and business_date=$2`,[ids.cafe,date]);
  check(Number(zero?.quantity)===0,"explicit owner-count zero is a known zero");
+ check(zero?.ingredient_name==="Milk"&&zero?.base_unit==="ml",
+  "canonical owner count includes trustworthy ingredient name and base unit for chat");
  const first=stamped(-10),second=stamped(-5),third=stamped(-1),fourth=stamped(0);
  await stage(stock(7,first));await receipt(first,first,"current",1);
  let row=await view();
