@@ -354,7 +354,8 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   const firstId="11111111-1111-4111-8111-111111111111";
   const secondId="22222222-2222-4222-8222-222222222222";
   const candidates=[{id:firstId,name:"Sam Lee"},{id:secondId,name:"Sam Lee"}];
-  const assigned={employeeId:secondId,locationId:"loc",
+  const replacementId="44444444-4444-4444-8444-444444444444";
+  const assigned={employeeId:replacementId,locationId:"loc",
     startAt:"2026-11-10T16:00:00Z",endAt:"2026-11-10T18:00:00Z",paidMinutes:120};
   mocks.preview.mockResolvedValueOnce({ok:false,error:"employee_ambiguous",candidates})
    .mockResolvedValueOnce({ok:true,locations:{loc:"America/Los_Angeles"},
@@ -395,7 +396,8 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
   expect(mocks.preview).toHaveBeenLastCalledWith({week:"2026-11-09",
    temporaryAbsence:{employeeName:"Sam",weekday:2,selectedEmployeeIds:[secondId]}});
   expect(second).toMatchObject({approvalTool:"existing_card_created",
-   temporaryConstraint:{saved:false,absentDate:"2026-11-10"}});
+   temporaryConstraint:{saved:false,absentDate:"2026-11-10"},
+   proposedShifts:[expect.objectContaining({employee_id:replacementId})]});
   expect(proposeStaff).toHaveBeenCalledTimes(1);
  });
  it("registers hypothetical ambiguity as a real owner choice instead of rejecting ask_owner",async()=>{
