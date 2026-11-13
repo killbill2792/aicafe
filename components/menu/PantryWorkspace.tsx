@@ -14,14 +14,15 @@ import type { PantryCategory } from "@/lib/menu/pantryStarter";
 import {PANTRY_CATEGORY_CHOICES} from "@/lib/menu/pantryCategoryChoices";
 
 import type { UsageRow } from "@/lib/calc/usageVariance";
-import type {InventoryEvidenceRead} from "@/lib/data/inventoryEvidence.server";
+import type {InventoryEvidenceRow} from "@/lib/calc/inventoryEvidence";
+type StockEvidence={rows:InventoryEvidenceRow[];missing:string[];truncated:boolean};
 type Variance={from:string;to:string;rows:UsageRow[]};
 type Item = {archivedAt:string|null;originalPack:{count:number;unitQuantity:number;unit:string}|null;id:string;name:string;category:string|null;starterKey:string|null;baseUnit:BaseUnit;costPerBaseMicros:number|null;packQuantity:number|null;packUnit:string|null;packCostCents:number|null;usedInCount:number};
 type Starter = {key:string;name:string;category:string;baseUnit:BaseUnit;packQuantity:number;packUnit:string};
 const categories=["all","coffee","milk","syrups","packaging","bakery","other"] as const;
 function categoryOf(value:string|null) { if(value==="syrup"||value==="sauce")return "syrups";if(value==="bakery"||value==="food")return "bakery";if(value==="coffee"||value==="milk"||value==="packaging")return value;return "other"; }
 const units:Record<BaseUnit,string[]>={ml:["gal","qt","l","ml","fl_oz"],g:["lb","kg","oz_wt","g"],each:["each","dozen","case(100)","case(1000)"]};
-export default function PantryWorkspace({items,starters,labels:t,variance,businessToday,inventoryPanel,stockEvidence}:{items:Item[];starters:Starter[];labels:Record<string,string>;variance:Variance|null;businessToday:string;inventoryPanel?:ReactNode;stockEvidence:InventoryEvidenceRead|null}) {
+export default function PantryWorkspace({items,starters,labels:t,variance,businessToday,inventoryPanel,stockEvidence}:{items:Item[];starters:Starter[];labels:Record<string,string>;variance:Variance|null;businessToday:string;inventoryPanel?:ReactNode;stockEvidence:StockEvidence|null}) {
  const pendingPurchaseId=useRef<string|null>(null);
  const router=useRouter();const [entryKind,setEntryKind]=useState<"count"|"purchase">("count"); const [entryItem,setEntryItem]=useState(items.find(item=>!item.archivedAt)?.id??""); const [entryQuantity,setEntryQuantity]=useState(""); const [entryUnit,setEntryUnit]=useState<string>(items.find(item=>!item.archivedAt)?.baseUnit??"each"); const [entryDate,setEntryDate]=useState(businessToday); const [entryError,setEntryError]=useState(""); const [entryDone,setEntryDone]=useState(false);
  const [query,setQuery]=useState("");const [filter,setFilter]=useState<string>("all");const [dialog,setDialog]=useState<"starter"|"custom"|"price"|"edit"|null>(null);
