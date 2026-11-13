@@ -302,4 +302,44 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
    duplicateSuppressed:true});
   expect(proposeStaff).toHaveBeenCalledTimes(1);
  });
+
+ it("prepares one approval card for a weekly roster honoring Sarah off Tuesday without writing her availability",async()=>{
+  const shift={employeeId:"11111111-1111-4111-8111-111111111111",
+    locationId:"loc",startAt:"2026-11-10T16:00:00Z",
+    endAt:"2026-11-10T18:00:00Z",paidMinutes:120};
+  mocks.preview.mockResolvedValue({ok:true,
+   temporaryConstraint:{employeeName:"Sarah Jones",absentDate:"2026-11-10",saved:false},
+   locations:{loc:"America/Los_Angeles"},notices:[],
+   plan:{status:"feasible",horizonEnd:"2026-11-15",warnings:[],
+    best:{objective:"balanced",completeCoverage:true,hardConstraintsSatisfied:true,
+     shifts:[shift],gaps:[],cost:{cashWagesCents:3500}}}});
+  const proposeStaff=vi.fn().mockResolvedValue({
+    proposalId:"22222222-2222-4222-8222-222222222222",revision:1,
+    capabilityId:"olivia.staff_propose_schedule.v2"});
+  const result=await draftScheduleTools.draft_week_schedule.execute({
+   week_start:"2026-11-09",purpose:"draft",
+   temporary_absence:{employee_name:"Sarah",weekday:2}},
+   {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+  expect(mocks.preview).toHaveBeenCalledExactlyOnceWith({
+   week:"2026-11-09",temporaryAbsence:{
+    employeeName:"Sarah",weekday:2,selectedEmployeeIds:[]}});
+  expect(result).toMatchObject({approvalTool:"existing_card_created",
+   temporaryConstraint:{employeeName:"Sarah Jones",absentDate:"2026-11-10",saved:false},
+   proposedShifts:[expect.objectContaining({start:"08:00",end:"10:00"})]});
+  expect(result.note).toContain("saved availability record was not changed");
+  expect(proposeStaff).toHaveBeenCalledTimes(1);
+ });
+ it("does not approve a fabricated one-week employee absence when names are ambiguous",async()=>{
+  mocks.preview.mockResolvedValue({ok:false,error:"employee_ambiguous",
+   candidates:[{id:"11111111-1111-4111-8111-111111111111",name:"Sam Lee"},
+    {id:"22222222-2222-4222-8222-222222222222",name:"Sam Lee"}]});
+  const proposeStaff=vi.fn();
+  const r=await draftScheduleTools.draft_week_schedule.execute({
+    week_start:"2026-11-09",purpose:"draft",
+    temporary_absence:{employee_name:"Sam",weekday:2}},
+   {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+  expect(r).toMatchObject({saved:false,needsOwnerChoice:true,
+   missing:["employee_ambiguous"],candidates:[expect.objectContaining({label:"Sam Lee"})]});
+  expect(proposeStaff).not.toHaveBeenCalled();
+ });
 });
