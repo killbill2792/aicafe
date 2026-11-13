@@ -294,7 +294,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
                 receiptTotalCents:input.source==="receipt_chat"?input.receiptTotalCents:null},requestKey);
             const attached=(p.attachmentIds?.length??0)>0;
             const authorized=authorizesInventoryWrite(p.ownerText,attached)&&
-              !/\\b(purchase order|not received|ordered|pending delivery|quote)\\b/iu.test(p.ownerText)&&
+              !/\b(purchase order|not received|ordered|pending delivery|quote)\b/iu.test(p.ownerText)&&
               (input.source==="receipt_chat"
                 ?attached&&input.documentKind==="receipt"&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
                  line.costCents!==null
