@@ -2,6 +2,8 @@
 
 import { z } from "zod";
 import { loadOliviaWeekFromSavedStaff, type OliviaBlocker, type OliviaNotice } from "@/lib/scheduling/planInput.server";
+import {readSchedulingDemandContext} from "@/lib/scheduling/demandContext.server";
+import type {ScheduleDemandEvidence} from "@/lib/calc/scheduling/demandEvidence";
 import { createOliviaDraftFromTrustedSnapshot, oliviaSnapshotDigest } from "@/lib/scheduling/planDrafts.server";
 import { optimizeOliviaWeek } from "@/lib/calc/scheduling/plannerEngine";
 import {modelUnpaidOwnerWhatIf} from "@/lib/calc/scheduling/plannerOwnerSavings";
@@ -24,7 +26,7 @@ const saveArgs = args.extend({
 
 export async function previewOliviaWeek(raw: unknown): Promise<
   | { ok: true; plan: PlannerResult; notices: OliviaNotice[]; blockers: OliviaBlocker[]; employees: Record<string,string>; locations: Record<string,string>; locationNames: Record<string,string>; sourceDigest: string; previewRevision: number;
-      frozenShiftKeys:string[] }
+      frozenShiftKeys:string[]; demandEvidence:ScheduleDemandEvidence }
   | { ok: false; error: string; blockers?: OliviaBlocker[] }
 > {
   const parsed = args.safeParse(raw);
@@ -49,7 +51,10 @@ export async function previewOliviaWeek(raw: unknown): Promise<
   const previewRevision = head.data?.current_revision ?? 0;
   try {
     const plan = optimizeOliviaWeek(loaded.input);
-    return { ok: true, plan, notices: loaded.notices, blockers: loaded.blockers,
+    // Historical sales are advisory, and must never affect Olivia's confirmed
+    // coverage requirements, solver or mutable source-approval digest.
+    const demandEvidence=await readSchedulingDemandContext(parsed.data.week,loaded.businessId);
+    return { ok: true, plan, demandEvidence, notices: loaded.notices, blockers: loaded.blockers,
       employees: Object.fromEntries(loaded.input.employees.map(e => [e.id, e.displayName])),
       locations: Object.fromEntries(loaded.input.locations.map(l => [l.id, l.timezone])),
       locationNames: loaded.locationNames, previewRevision,
