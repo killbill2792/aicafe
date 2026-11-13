@@ -19,6 +19,13 @@ describe("Gmail review includes the exact irreversible action details",()=>{
    expect(html).not.toContain("access_token");
    expect(html).not.toContain("refresh_token");
  });
+ it("shows the actual provider operation even for a legacy mismatched action",()=>{
+   const html=renderToStaticMarkup(createElement(GmailApprovalDetails,{effect:{
+     ...effect,operation:"trash",action:"archive",messageId:"message12345"}}));
+   expect(html).toContain(">trash</dd>");
+   expect(html).not.toContain(">archive</dd>");
+   expect(html).toContain("message12345");
+ });
  it("shows precisely which provider message and label a modify effect targets",()=>{
    const html=renderToStaticMarkup(createElement(GmailApprovalDetails,{effect:{
      ...effect,operation:"modify",action:"add_label",messageId:"message-12345",

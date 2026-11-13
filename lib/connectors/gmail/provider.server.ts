@@ -221,6 +221,9 @@ async function verifyReceipt(token:string,e:GmailEffect,returnedId:string,rfc:st
   return {messageId:returnedId,threadId:msg.threadId??null};
 }
 export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect,proposalId:string,effectHash:string){
+  // Defensive direct-provider guard for older or corrupted stored proposals.
+  if(effect.operation!=="modify"&&effect.action!==null)
+    throw new Error("gmail_action_operation_mismatch");
   const required:ConnectorOperation=effect.operation==="send"?"send":effect.operation==="draft"?"draft":"organize";
   const {token,account}=await authorizedGmail(scope,required);
   if(account.id!==effect.accountId||account.generation!==effect.generation||

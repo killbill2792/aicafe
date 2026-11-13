@@ -29,7 +29,7 @@ export function GmailApprovalDetails({effect,locale="en"}:{
 }){
   const g=effect,c=en.GmailApprovalCard;
   const sending=g.operation==="send",drafting=g.operation==="draft";
-  const previewLabel=g.action?g.action.replaceAll("_"," "):g.operation.replaceAll("_"," ");
+  const previewLabel=g.operation==="modify"&&g.action?g.action.replaceAll("_"," "):g.operation.replaceAll("_"," ");
   return <>
       <dl className="mt-4 grid gap-3 rounded-xl bg-surface2 p-4 text-base">
         <div><dt className="text-sm text-ink-muted">{c.action}</dt><dd className="font-semibold capitalize">{previewLabel}</dd></div>

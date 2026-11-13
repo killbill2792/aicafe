@@ -26,6 +26,9 @@ export const gmailEffectSchema=gmailEffectInput.extend({
 });
 export type GmailProposalInput=z.infer<typeof gmailEffectInput>;
 function validate(input:GmailProposalInput){
+  // A non-modify effect must never smuggle a different action into the preview.
+  if(input.operation!=="modify"&&input.action!==null)
+    throw new Error("gmail_action_operation_mismatch");
   if((input.operation==="send"||input.operation==="draft")&&
     (input.operation==="send"&&!input.to.length||!input.subject.trim()||!input.body.trim()))
     throw new Error("gmail_message_details_required");

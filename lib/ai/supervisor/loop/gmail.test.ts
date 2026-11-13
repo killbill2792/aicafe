@@ -22,6 +22,15 @@ describe("registered Gmail Supervisor capability",()=>{
      generation:4,from:"owner@example.com"});
    expect(mocks.send).not.toHaveBeenCalled();
  });
+ it("rejects a conflicting action/operation before creating a preview or calling Gmail",async()=>{
+   mocks.getAccount.mockResolvedValue({id:"44444444-4444-4444-8444-444444444444",generation:4,email:"owner@example.com"});
+   await expect(gmailCapability.simulate(scope,{...input,operation:"trash",action:"archive",messageId:"message12345"}))
+     .rejects.toThrow("gmail_action_operation_mismatch");
+   await expect(gmailCapability.simulate(scope,{...input,operation:"send",action:"mark_read"}))
+     .rejects.toThrow("gmail_action_operation_mismatch");
+   expect(mocks.getAccount).not.toHaveBeenCalled();
+   expect(mocks.send).not.toHaveBeenCalled();
+ });
  it("refuses to propose if account is absent",async()=>{
    mocks.getAccount.mockResolvedValue(null);
    await expect(gmailCapability.simulate(scope,input)).rejects.toThrow("gmail_not_authorized");

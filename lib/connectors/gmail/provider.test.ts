@@ -59,6 +59,13 @@ describe("Gmail provider proof and no duplicate sends",()=>{
    expect(decoded).toContain("Message-ID: "+mid);
    expect(decoded).not.toContain("test-access");
  });
+ it("blocks a forged, mismatched operation/action before any database or Gmail request",async()=>{
+   const writes=db();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+   await expect(performGmailEffect(scope,{...effect,operation:"trash",action:"archive",messageId:"message12345"},proposal,effectHash))
+     .rejects.toThrow("gmail_action_operation_mismatch");
+   expect(writes).toEqual([]);
+   expect(fetch).not.toHaveBeenCalled();
+ });
  it("sends once only after reserving durable receipt, then verifies Gmail SENT postcondition",async()=>{
    const writes=db();
    const posted:{raw:string}[]=[];
