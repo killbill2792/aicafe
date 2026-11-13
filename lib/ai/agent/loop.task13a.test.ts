@@ -220,7 +220,7 @@ describe("Task 13a registered Supervisor staffing conversation",()=>{
       temporary_absence:scenario.absence?{employee_name:"Sarah",weekday:2}:null,
      },"scenario-"+scenario.id+"-"+repetition);
      else yield message(scenario.covered
-      ?"This is a preview based on recorded availability; nothing has been published or sent."
+      ?"This is a planning preview only. Approval and delivery have not happened."
       :"The required hours are uncovered. No complete schedule can be proposed.");
      yield done;
     };
