@@ -143,6 +143,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   suggest_new_item_price:["category"],
   // A public web search phrase is not a café catalog identifier.
   web_search:["query"],
+  inspect_public_page:["url"],
   propose_event_plan:["summary","actions","expectedBusyHours"],
   manage_commitment:["title","due_date","due_time","origin","commitment_id"],
   manage_routine:["title","routine_id"]
@@ -296,6 +297,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_today_so_far")return todayTools.get_today_so_far.execute(raw,ctx);
   if(name==="get_nearby_events")return eventsTools.get_nearby_events.execute(raw,ctx);
   if(name==="get_events")return savedEventsTools.get_events.execute(raw,ctx);
+  if(name==="inspect_public_page")return webSearchTools.inspect_public_page.execute(raw,ctx);
   if(name==="web_search")return webSearchTools.web_search.execute(raw,ctx);
   if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
   if (name === "get_menu_items") {
