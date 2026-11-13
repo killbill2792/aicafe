@@ -208,6 +208,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     catch{return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};}
   }
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
+  if(name==="simulate_staff_absence")return draftScheduleTools.simulate_staff_absence.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
   if(name==="milk_swap_price")return milkSwapTools.milk_swap_price.execute(raw,ctx);
   if(name==="simulate_scenario")return scenarioTools.simulate_scenario.execute(raw,ctx);
