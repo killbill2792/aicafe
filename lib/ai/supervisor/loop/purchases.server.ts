@@ -40,7 +40,7 @@ export const purchaseCapability=registerLoopCapability({
    enteredUnit:input.unit,costCents:input.costCents},
    monitorSpec:{durationDays:1,metricScope:resolved?.id??"unmatched"}};
  },
- commit:async(_scope,effect,proposalId)=>{
+ commit:async(scope,effect,proposalId)=>{
   if(!effect.ingredientId)throw new Error("ingredient_match_required");
   if(!proposalId)throw new Error("proposal_id_required");
   const result=await recordPurchases([{
@@ -49,7 +49,8 @@ export const purchaseCapability=registerLoopCapability({
    ...(effect.source==="receipt_chat"?{receipt:{groupId:effect.receiptGroupId??null,
      index:effect.receiptLineIndex??null,vendor:effect.receiptVendor??null,
      totalCents:effect.receiptTotalCents??null,name:effect.name}}:{})
-  }],effect.source,effect.source==="receipt_chat"?effect.receiptGroupId??null:proposalId);
+  }],effect.source,effect.source==="receipt_chat"?effect.receiptGroupId??null:proposalId,
+   scope.businessId);
   if(result.length!==1||!result[0].ok)throw new Error(result[0]?.error??"purchase_save_failed");
   return {status:"verified",evidenceSource:"pantry_stock_purchases"};
  },
