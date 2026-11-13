@@ -1,7 +1,6 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {isPurchaseCorrection} from "./purchaseIntent";
-import {isPurchaseCorrection} from "./purchaseIntent";
 /** Parse into owner-provided quantities only. No silent new ingredient or purchase. */
 export const purchaseToolLine=z.strictObject({
  ingredientId:z.uuid().nullable(),name:z.string().trim().min(1).max(160),
@@ -27,9 +26,6 @@ export const purchasesTools={propose_purchases:{
   if(isPurchaseCorrection(ctx.ownerText??""))
    return {source:"purchase_proposal",period:null,agentId:"maya",
     draft:false,saved:false,missing:["existingPurchaseCorrectionRequiresReview"],proposals:[]};
-  if(isPurchaseCorrection(ctx.ownerText??""))
-   return {source:"purchase_proposal",period:null,agentId:"maya",saved:false,draft:false,
-    missing:["existing_purchase_edit_required"]};
   if(!ctx.proposals?.proposePurchases)
    return {source:"purchase_proposal",period:null,agentId:"maya",draft:true,saved:false,missing:["proposalsUnavailable"]};
   const results=await ctx.proposals.proposePurchases(input);
