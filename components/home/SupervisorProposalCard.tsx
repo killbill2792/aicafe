@@ -23,6 +23,33 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
     subject:string;body:string;messageId:string|null;threadId:string|null;labelId:string|null;labelName:string|null};};
 const dict={en,es,ar} as const;
 
+/** Deterministic, full Gmail effect preview. The owner sees recipients and
+ * exact content before a click can authorize any provider action. */
+export function GmailApprovalDetails({effect}:{
+  effect:NonNullable<ProposalView["gmail"]>
+}){
+  const g=effect,c=en.GmailApprovalCard;
+  const sending=g.operation==="send",drafting=g.operation==="draft";
+  const previewLabel=g.action?g.action.replaceAll("_"," "):g.operation.replaceAll("_"," ");
+  return <>
+      <dl className="mt-4 grid gap-3 rounded-xl bg-surface2 p-4 text-base">
+        <div><dt className="text-sm text-ink-muted">{c.action}</dt><dd className="font-semibold capitalize">{previewLabel}</dd></div>
+        <div><dt className="text-sm text-ink-muted">{c.from}</dt><dd className="break-all" dir="auto">{g.from}</dd></div>
+        {(sending||drafting)&&<>
+          <div><dt className="text-sm text-ink-muted">{c.to}</dt><dd className="break-all" dir="auto">{g.to.join(", ")||c.none}</dd></div>
+          {g.cc.length>0&&<div><dt className="text-sm text-ink-muted">{c.cc}</dt><dd className="break-all" dir="auto">{g.cc.join(", ")}</dd></div>}
+          {g.bcc.length>0&&<div><dt className="text-sm text-ink-muted">{c.bcc}</dt><dd className="break-all" dir="auto">{g.bcc.join(", ")}</dd></div>}
+          <div><dt className="text-sm text-ink-muted">{c.subject}</dt><dd className="whitespace-pre-wrap break-words" dir="auto">{g.subject}</dd></div>
+          <div><dt className="text-sm text-ink-muted">{c.message}</dt><dd className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-card p-3" dir="auto">{g.body}</dd></div>
+        </>}
+        {g.messageId&&<div><dt className="text-sm text-ink-muted">{c.messageId}</dt><dd className="break-all font-mono text-xs">{g.messageId}</dd></div>}
+        {g.labelName&&<div><dt className="text-sm text-ink-muted">{c.label}</dt><dd>{g.labelName}</dd></div>}
+        {g.labelId&&<div><dt className="text-sm text-ink-muted">{c.label}</dt><dd className="break-all">{g.labelId}</dd></div>}
+      </dl>
+  </>;
+}
+
+
 /** Historical event proposals are informational. Keep their saved content,
  * but do not present old approval actions or physical checkboxes. */
 export function EventReadinessPreview({value,locale}:{value:ProposalView;locale:Locale}){
@@ -139,7 +166,6 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     const c=en.GmailApprovalCard;
     const sending=g.operation==="send",drafting=g.operation==="draft";
     const action=sending?c.send:drafting?c.createDraft:c.apply;
-    const previewLabel=g.action?g.action.replaceAll("_"," "):g.operation.replaceAll("_"," ");
     const status=value.state==="pending"?c.pending:value.state==="applied"?c.applied:
       value.state==="applying"?c.applying:value.state==="uncertain"?c.uncertain:
       value.state==="cancelled"?c.cancelled:c.error;
@@ -149,20 +175,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         <span role="status" className="rounded-full bg-surface2 px-3 py-1 text-sm font-semibold">{status}</span>
       </div>
       <p className="mt-2 text-sm text-ink-muted">{c.ownerReview}</p>
-      <dl className="mt-4 grid gap-3 rounded-xl bg-surface2 p-4 text-base">
-        <div><dt className="text-sm text-ink-muted">{c.action}</dt><dd className="font-semibold capitalize">{previewLabel}</dd></div>
-        <div><dt className="text-sm text-ink-muted">{c.from}</dt><dd className="break-all" dir="auto">{g.from}</dd></div>
-        {(sending||drafting)&&<>
-          <div><dt className="text-sm text-ink-muted">{c.to}</dt><dd className="break-all" dir="auto">{g.to.join(", ")||c.none}</dd></div>
-          {g.cc.length>0&&<div><dt className="text-sm text-ink-muted">{c.cc}</dt><dd className="break-all" dir="auto">{g.cc.join(", ")}</dd></div>}
-          {g.bcc.length>0&&<div><dt className="text-sm text-ink-muted">{c.bcc}</dt><dd className="break-all" dir="auto">{g.bcc.join(", ")}</dd></div>}
-          <div><dt className="text-sm text-ink-muted">{c.subject}</dt><dd className="whitespace-pre-wrap break-words" dir="auto">{g.subject}</dd></div>
-          <div><dt className="text-sm text-ink-muted">{c.message}</dt><dd className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-card p-3" dir="auto">{g.body}</dd></div>
-        </>}
-        {g.messageId&&<div><dt className="text-sm text-ink-muted">{c.messageId}</dt><dd className="break-all font-mono text-xs">{g.messageId}</dd></div>}
-        {g.labelName&&<div><dt className="text-sm text-ink-muted">{c.label}</dt><dd>{g.labelName}</dd></div>}
-        {g.labelId&&<div><dt className="text-sm text-ink-muted">{c.label}</dt><dd className="break-all">{g.labelId}</dd></div>}
-      </dl>
+      <GmailApprovalDetails effect={g}/>
       <p className="mt-4 text-sm text-ink-muted">{sending?c.sendNotice:c.changeNotice}</p>
       {value.state==="pending"&&<div className="mt-5 flex flex-wrap gap-3">
         <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
