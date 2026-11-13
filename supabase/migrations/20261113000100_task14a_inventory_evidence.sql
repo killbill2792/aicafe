@@ -61,8 +61,13 @@ create or replace view public.cv_inventory
    'observed_count',receipt.observed_count,
    'evidence_state',e.evidence_state),
   r.data->>'guid',
-  case when e.evidence_state='observed_current' then r.data->>'status' end,
-  case when e.evidence_state='observed_current'
+  -- Preserve the pre-existing SQL projection for legacy rows that have no
+  -- recorded family check. They are NOT verified current stock: evidence_state
+  -- stays source_unverified and all owner-facing tools must null the value.
+  -- A known failed or newer successful receipt always hides historical stock.
+  case when e.evidence_state='observed_current' or receipt.restaurant_guid is null
+   then r.data->>'status' end,
+  case when (e.evidence_state='observed_current' or receipt.restaurant_guid is null)
     and jsonb_typeof(r.data->'quantity')='number'
     and (r.data->>'quantity')::numeric>=0
    then (r.data->>'quantity')::numeric else null::numeric end
