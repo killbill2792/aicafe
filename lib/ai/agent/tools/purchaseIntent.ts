@@ -7,7 +7,31 @@ export function authorizesInventoryWrite(ownerText:string,hasAttachments:boolean
   return false;
  const explicit=/\b(record|add|update|log|increase|save|post)\b/u.test(t)&&
    /\b(inventory|stock|purchases?|receipt|bill|invoice|items?)\b/u.test(t);
- const directBought=/\b(i|we)\s+(?:just\s+)?(?:bought|purchased)\s+\d+(?:[.,]\d+)?\s+(?:[a-z]+\s+){1,5}/u.test(t);
+ const directBought=/\b(i|we)\s+(?:just\s+)?(?:bought|purchased)\s+\d+(?:[.,]\d+)?\s+(?:[a-z]+(?:\s+|$)){1,5}/u.test(t);
  // A naked receipt upload describes evidence; it does not grant permission.
  return explicit||(directBought&&!hasAttachments);
+}
+
+/** Typed purchases must match explicit quantity, unit and item in the original
+ * owner utterance before an unconfirmed model-proposed line can change stock.
+ * Ambiguous written numbers or package units fall back to owner review. */
+export function ownerTextSupportsTypedLine(
+ ownerText:string,line:{name:string;quantity:number;unit:string}
+):boolean{
+ if(!Number.isFinite(line.quantity)||line.quantity<=0||!line.unit.trim()||!line.name.trim())
+  return false;
+ const normalize=(s:string)=>s.normalize("NFKC").toLocaleLowerCase().replace(/[^a-z0-9.]+/gu," ").trim();
+ const text=normalize(ownerText),name=normalize(line.name),unit=normalize(line.unit);
+ if(!text||!name||!unit||!(" "+text+" ").includes(" "+name+" "))return false;
+ const aliases:Record<string,string[]>={
+  gal:["gal","gallon","gallons"],lb:["lb","lbs","pound","pounds"],
+  oz:["oz","ounce","ounces"],kg:["kg","kilogram","kilograms"],
+  g:["g","gram","grams"],l:["l","liter","liters","litre","litres"],
+  ml:["ml","milliliter","milliliters"],ea:["ea","each","unit","units"],
+  pcs:["pcs","pieces","piece"],case:["case","cases"]
+ };
+ const allowed=new Set(aliases[unit]??[unit]);
+ const words=text.split(" ");
+ return words.some((word,index)=>word===String(line.quantity)&&
+  words.slice(index+1,index+3).some(next=>allowed.has(next)));
 }
