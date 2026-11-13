@@ -75,11 +75,13 @@ export async function previewOliviaWeek(raw: unknown): Promise<
 const absenceWhatIfArgs=args.extend({
  employeeName:z.string().trim().min(1).max(80),
  weekday:z.number().int().min(0).max(6), // Sunday=0, Monday=1
+ // Server-supplied prior owner-choice IDs, never accepted as authority for writes.
+ selectedEmployeeIds:z.array(z.uuid()).max(10).optional(),
 }).strict();
 export async function previewOliviaAbsenceWhatIf(raw:unknown){
  const parsed=absenceWhatIfArgs.safeParse(raw);
  if(!parsed.success)return {ok:false as const,error:"invalid_input"};
- const {week,employeeName,weekday}=parsed.data;
+ const {week,employeeName,weekday,selectedEmployeeIds=[]}=parsed.data;
  const loaded=await loadOliviaWeekFromSavedStaff(week);
  if(!loaded.ok)return {ok:false as const,error:loaded.error};
  if(loaded.blockers.length)return {ok:false as const,error:"missing_inputs",
@@ -91,10 +93,12 @@ export async function previewOliviaAbsenceWhatIf(raw:unknown){
  const all=loaded.input.employees;
  const exact=all.filter(e=>normal(e.displayName)===target);
  const matches=exact.length?exact:all.filter(e=>normal(e.displayName).split(" ")[0]===target);
- if(matches.length!==1)return {ok:false as const,
+ const previouslyChosen=matches.filter(e=>
+   selectedEmployeeIds.includes(e.id));
+ if(matches.length!==1&&previouslyChosen.length!==1)return {ok:false as const,
   error:matches.length?"employee_ambiguous":"employee_not_found",
   candidates:matches.slice(0,5).map(e=>({id:e.id,name:e.displayName}))};
- const employee=matches[0];
+ const employee=previouslyChosen.length===1?previouslyChosen[0]:matches[0];
  const localDate=new Date(Date.parse(week+"T12:00:00Z")+
    ((weekday+6)%7)*86400000).toISOString().slice(0,10);
  try{
