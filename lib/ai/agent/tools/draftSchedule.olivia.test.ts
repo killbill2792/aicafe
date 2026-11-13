@@ -3,6 +3,8 @@ const mocks=vi.hoisted(()=>({preview:vi.fn(),ownerSavings:vi.fn(),absence:vi.fn(
 vi.mock("@/lib/actions/oliviaPlanning",()=>({previewOliviaWeek:mocks.preview,previewOliviaOwnerSavings:mocks.ownerSavings,previewOliviaAbsenceWhatIf:mocks.absence}));
 import {draftScheduleTools} from "./draftSchedule";
 import {staffProposalTools} from "./staffProposals";
+import {askOwnerTools} from "./askOwner";
+import {newResolveState,observeToolResult} from "../resolve";
 import type {AgentToolContext} from "./index";
 const ctx:AgentToolContext={asOf:"2026-11-03",timezone:"America/Los_Angeles",locale:"en",
  tools:{} as AgentToolContext["tools"]};
@@ -248,7 +250,7 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
     {id:"22222222-2222-4222-8222-222222222222",name:"Sam Lee"}]});
   const r=await draftScheduleTools.simulate_staff_absence.execute(
     {week_start:null,employee_name:"Sam Lee",weekday:2},ctx);
-  expect(r).toMatchObject({missing:["employee_ambiguous"],needsOwnerChoice:true});
+  expect(r).toMatchObject({missing:["ownerChoiceRequired","employee_ambiguous"],needsOwnerChoice:true});
   expect(r.candidates).toHaveLength(2);
  });
  it("comparison-only request never creates a needless approval card",async()=>{
@@ -339,11 +341,11 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
     temporary_absence:{employee_name:"Sam",weekday:2}},
    {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
   expect(r).toMatchObject({saved:false,needsOwnerChoice:true,
-   missing:["employee_ambiguous"],candidates:[
+   missing:["ownerChoiceRequired","employee_ambiguous"],candidates:[
     expect.objectContaining({id:"11111111-1111-4111-8111-111111111111",
-      label:"Sam Lee"}),
+      label:"Sam Lee (11111111)"}),
     expect.objectContaining({id:"22222222-2222-4222-8222-222222222222",
-      label:"Sam Lee"}),
+      label:"Sam Lee (22222222)"}),
    ]});
   expect(proposeStaff).not.toHaveBeenCalled();
  });
