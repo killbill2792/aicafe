@@ -197,7 +197,11 @@ function labelChanges(e:GmailEffect):{addLabelIds:string[];removeLabelIds:string
 function headersOf(msg:GmailMessage){return Object.fromEntries((msg.payload?.headers??[])
   .map(h=>[h.name.toLowerCase(),h.value]));}
 async function verifyReceipt(token:string,e:GmailEffect,returnedId:string,rfc:string|null):Promise<{messageId:string;threadId:string|null}>{
-  if(e.operation==="create_label")return {messageId:returnedId,threadId:null};
+  if(e.operation==="create_label"){
+    const label=await gmailApi(token,"/labels/"+encodeURIComponent(returnedId)) as {id?:string;name?:string};
+    if(label.id!==returnedId||label.name!==e.labelName)throw new Error("gmail_label_receipt_unverified");
+    return {messageId:returnedId,threadId:null};
+  }
   if(e.operation==="draft"){
     const draft=await gmailApi(token,"/drafts/"+encodeURIComponent(returnedId)) as {id?:string;message?:GmailMessage};
     if(draft.id!==returnedId||!draft.message?.id)throw new Error("gmail_draft_receipt_unverified");
@@ -231,6 +235,12 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     // A previously reserved send might already have reached Gmail. Never invoke it again.
     throw new Error("gmail_effect_already_reserved_reconcile_first");
   }
+  const ensureLive=async()=>{
+    const live=await getConnectorAccount(scope);
+    if(live?.status!=="active"||live.id!==account.id||live.generation!==account.generation)
+      throw new Error(effect.operation==="send"?
+        "gmail_connection_revoked_before_send":"gmail_connection_revoked_before_effect");
+  };
   let response:{id?:string;threadId?:string};
   let referenceId:string|null=null;
   let verifiedThreadId:string|null=null;
@@ -246,20 +256,21 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     const raw=gmailMime(effect,rfc??gmailRfcId(proposalId,effect.from),referenceId);
     const threadId=effect.messageId?verifiedThreadId:effect.threadId;
     if(effect.operation==="send"){
-      const live=await getConnectorAccount(scope);
-      if(live?.status!=="active"||live.id!==account.id||live.generation!==account.generation)
-        throw new Error("gmail_connection_revoked_before_send");
+      await ensureLive();
       response=await gmailApi(token,"/messages/send",{method:"POST",body:{
         raw,...(threadId?{threadId}:{})}}) as {id?:string;threadId?:string};
     }else{
+      await ensureLive();
       response=await gmailApi(token,"/drafts",{method:"POST",body:{message:{
         raw,...(threadId?{threadId}:{})}}}) as {id?:string;threadId?:string};
     }
   }else if(effect.operation==="create_label"){
+    await ensureLive();
     response=await gmailApi(token,"/labels",{method:"POST",body:{
       name:effect.labelName,labelListVisibility:"labelShow",messageListVisibility:"show"}}) as {id?:string};
   }else{
     if(!effect.messageId)throw new Error("gmail_message_required");
+    await ensureLive();
     const id=encodeURIComponent(effect.messageId);
     if(effect.operation==="trash")response=await gmailApi(token,"/messages/"+id+"/trash",{method:"POST"}) as {id?:string};
     else if(effect.operation==="restore")response=await gmailApi(token,"/messages/"+id+"/untrash",{method:"POST"}) as {id?:string};

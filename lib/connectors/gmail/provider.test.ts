@@ -94,6 +94,22 @@ describe("Gmail provider proof and no duplicate sends",()=>{
      .rejects.toThrow("gmail_connection_revoked_before_send");
    expect(fetch).not.toHaveBeenCalled();
  });
+ it("does not treat a created Gmail label as verified until exact provider readback",async()=>{
+   const writes=db();
+   const label={...effect,operation:"create_label" as const,labelName:"Suppliers"};
+   const fetch=vi.fn(async(url:string,init:Record<string,unknown>)=>{
+     if(url.endsWith("/labels")&&init.method==="POST")
+       return {ok:true,status:200,json:async()=>({id:"Label_42"})};
+     if(url.endsWith("/labels/Label_42"))
+       return {ok:true,status:200,json:async()=>({id:"Label_42",name:"Suppliers"})};
+     throw Error("unexpected label request");
+   });
+   vi.stubGlobal("fetch",fetch);
+   const result=await performGmailEffect(scope,label,proposal,effectHash);
+   expect(result.providerAccepted).toBe(true);
+   expect(fetch).toHaveBeenCalledTimes(2);
+   expect(writes.map(x=>x.operation)).toEqual(["insert","update"]);
+ });
  it("treats mail body as bounded evidence, never an instruction for a provider effect",()=>{
    const m=safeMessage({id:"message123",snippet:"text",
     payload:{headers:[{name:"Subject",value:"Invoice"},{name:"Authorization",value:"secret"}],
