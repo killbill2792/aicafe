@@ -228,8 +228,25 @@ export const dataQueryTools={
       sourceMix?:Record<string,number>;sourceCount?:number;hasIncomplete?:boolean;
       currentDayIncomplete?:boolean}|null;
     const fit=fitRows(Array.isArray(result?.rows)?result.rows:[]);
-    const rows=fit.rows,truncated=result?.truncated===true||fit.cut;
-    const inventoryPartial=p.view==="cv_inventory"&&rows.some(item=>{
+    const truncated=result?.truncated===true||fit.cut;
+    // Old canonical SQL clients still read retained values for rows created
+    // before a family receipt existed. The registered model may NOT use those
+    // as current stock. Any inventory plain read without explicit evidence
+    // must be labeled incomplete and its quantity suppressed.
+    const rows=p.view==="cv_inventory"?fit.rows.map(item=>{
+      if(!item||typeof item!=="object"||Array.isArray(item))return item;
+      const record={...(item as Record<string,unknown>)};
+      const meta=record.data&&typeof record.data==="object"&&!Array.isArray(record.data)
+       ?record.data as Record<string,unknown>:{};
+      if(record.source==="toast"&&meta.evidence_state!=="observed_current"){
+       if("quantity" in record)record.quantity=null;
+       if("stock_status" in record)record.stock_status=null;
+       if("data" in record)record.data={...meta,quantity:null};
+      }
+      return record;
+    }):fit.rows;
+    const inventoryPartial=p.view==="cv_inventory"&&(p.metrics?.length??0)>0
+      ||p.view==="cv_inventory"&&rows.some(item=>{
       if(!item||typeof item!=="object"||Array.isArray(item))return false;
       const row=item as Record<string,unknown>;
       if(row.source!=="toast")return false;
