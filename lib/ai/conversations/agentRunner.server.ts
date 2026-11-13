@@ -291,7 +291,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             // for the review card, but save through the canonical stock-only source.
             const attached=(p.attachmentIds?.length??0)>0;
             const stockOnlyReceipt=input.source==="receipt_chat"&&attached&&
-              authorizesInventoryWrite(p.ownerText,attached)&&input.documentKind==="receipt"&&
+              authorizesInventoryWrite(p.ownerText,attached)&&
+              (input.documentKind==="receipt"||
+               input.documentKind==="invoice"&&/\b(received|delivered|bought|purchased|paid)\b/iu.test(p.ownerText))&&
               !/\b(expense|accounting|bookkeeping|payable|pay the bill)\b/iu.test(p.ownerText);
             const sourceForEffect=stockOnlyReceipt?"chat_text":input.source;
             const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
