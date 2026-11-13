@@ -245,7 +245,9 @@ jobs:
       contents: read
     env:
       NEXT_TELEMETRY_DISABLED: '1'
-      OPENAI_API_KEY: ''
+      # Unusable sentinel unlocks the local chat composer for file-only E2E.
+      # No model request is sent; the browser helper rejects real provider keys.
+      OPENAI_API_KEY: 'aicafe-disposable-e2e-no-provider'
       VERCEL_URL: ''
       BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money' || needs.changes.outputs.browser_scenarios }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -266,7 +268,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/seed/generateSeedSql.mjs
-          supabase start -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
           supabase db reset --local --yes
           supabase status -o json > "$RUNNER_TEMP/e2e-supabase-status.json"
           node --input-type=module <<'NODE'
