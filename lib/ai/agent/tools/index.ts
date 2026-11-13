@@ -55,6 +55,8 @@ export type AgentToolResult = {
 export type AgentToolContext = {
   /** Ephemeral per-turn schedule approval; prevents a second card if the model retries via propose_schedule. */
   scheduleProposalCreated?:{proposalId:string;revision:number;capabilityId:string};
+  /** Ephemeral week+ordered-shifts identity for the one card. Never attach a different roster to it. */
+  scheduleProposalKey?:string;
   tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
   timezone:string;
   /** Authenticated ISO 4217 currency; absent only in legacy test contexts. */
