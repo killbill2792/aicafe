@@ -140,6 +140,7 @@ export const draftScheduleTools={draft_week_schedule:{
     absentDate:result.absentDate,
     baseline:result.baseline,alternative:result.alternative,
     changeInModeledCashWagesCents:result.changeInModeledCashWagesCents,
+    rosterChanges:result.rosterChanges,
     laborCostDifferenceKnown:result.laborCostDifferenceKnown,
     assumptions:result.assumptions,warnings:result.warnings,
     note:"Read-only owner hypothetical; employee availability and published rosters are unchanged",
