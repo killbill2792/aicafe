@@ -61,8 +61,15 @@ export function receivedPurchaseDocument(kind:"receipt"|"invoice"|"purchase_orde
  if(kind==="receipt")return true;
  if(kind!=="purchase_order"&&kind!=="invoice")return false;
  const text=ownerText.normalize("NFKC").toLocaleLowerCase();
- return /\b(received|delivered|collected|picked up|picked-up)\b/u.test(text)&&
-  !/\b(not received|not delivered|not yet|pending|expected|awaiting|unreceived|haven't received|hasn't arrived)\b/u.test(text);
+ if(/\b(not received|not delivered|not yet|pending|expected|awaiting|unreceived|haven't received|hasn't arrived)\b/u.test(text))
+   return false;
+ // Receiving an invoice or PO is not proof of receiving physical stock.
+ // Non-receipt documents require an explicit delivery signal AND a physical
+ // goods noun, not just the word "received" anywhere in the conversation.
+ const arrival=/\b(received|delivered|collected|picked up|picked-up|arrived)\b/u.test(text);
+ const physicalGoods=/\b(goods|items|products|stock|supplies|ingredients|groceries|shipment|delivery)\b/u.test(text);
+ const paperworkReceived=/\b(received|collected)\s+(?:(?:this|the|my|an?|new)\s+)?(?:invoice|bill|statement|purchase order)\b/u.test(text);
+ return arrival&&physicalGoods&&!paperworkReceived;
 }
 export function isPurchaseCorrection(ownerText:string):boolean{
  return /\b(actually|correction|correct|instead|meant|undo|edit previous|change earlier)\b/iu.test(ownerText);
