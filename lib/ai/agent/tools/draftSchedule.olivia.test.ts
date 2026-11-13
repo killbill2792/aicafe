@@ -349,4 +349,86 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
    ]});
   expect(proposeStaff).not.toHaveBeenCalled();
  });
+
+ it("connects a weekly ambiguous staff name through the ACTUAL choice card to the selected roster",async()=>{
+  const firstId="11111111-1111-4111-8111-111111111111";
+  const secondId="22222222-2222-4222-8222-222222222222";
+  const candidates=[{id:firstId,name:"Sam Lee"},{id:secondId,name:"Sam Lee"}];
+  const assigned={employeeId:secondId,locationId:"loc",
+    startAt:"2026-11-10T16:00:00Z",endAt:"2026-11-10T18:00:00Z",paidMinutes:120};
+  mocks.preview.mockResolvedValueOnce({ok:false,error:"employee_ambiguous",candidates})
+   .mockResolvedValueOnce({ok:true,locations:{loc:"America/Los_Angeles"},
+    temporaryConstraint:{employeeName:"Sam Lee",absentDate:"2026-11-10",saved:false},
+    notices:[],plan:{status:"feasible",horizonEnd:"2026-11-15",warnings:[],
+      best:{objective:"balanced",completeCoverage:true,hardConstraintsSatisfied:true,
+        shifts:[assigned],gaps:[],cost:{cashWagesCents:3000}}}});
+  const proposeStaff=vi.fn().mockResolvedValue({proposalId:"33333333-3333-4333-8333-333333333333",
+   revision:1,capabilityId:"olivia.staff_propose_schedule.v2"});
+  const choiceState=newResolveState("Make next week's roster; Sam off Tuesday");
+  const firstContext={...ctx,resolveState:choiceState,
+   proposals:{proposePriceChange:vi.fn(),proposeStaff}};
+  const request={week_start:"2026-11-09",purpose:"draft" as const,
+   temporary_absence:{employee_name:"Sam",weekday:2}};
+  const first=await draftScheduleTools.draft_week_schedule.execute(request,firstContext);
+  expect(first).toMatchObject({missing:["ownerChoiceRequired","employee_ambiguous"],
+   needsOwnerChoice:true});
+  expect(proposeStaff).not.toHaveBeenCalled();
+  observeToolResult(choiceState,first);
+  expect(choiceState.ambiguous).toHaveLength(1);
+  const choices=first.candidates as Array<{id:string;label:string;detail:string}>;
+  expect(choices).toEqual([
+   {id:firstId,label:"Sam Lee (11111111)",detail:"Team member"},
+   {id:secondId,label:"Sam Lee (22222222)",detail:"Team member"},
+  ]);
+  const options=choices.map(v=>({label:v.label,value:v.id}));
+  const card=await askOwnerTools.ask_owner.execute({
+   question:"Which Sam?",kind:"choice",options,allowOther:false,
+   fields:[],changeSaved:null},firstContext);
+  expect(card).toMatchObject({source:"ask_owner",kind:"choice",missing:[]});
+  const history=[{role:"assistant",content:
+   "Asked: Which Sam? Options: "+options.map(o=>o.label+" ("+o.value+")").join("; ")}];
+  const chosenState=newResolveState(options[1].label,history);
+  expect([...chosenState.chosenIds]).toEqual([secondId]);
+  const second=await draftScheduleTools.draft_week_schedule.execute(request,{
+   ...ctx,resolveState:chosenState,
+   proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+  expect(mocks.preview).toHaveBeenLastCalledWith({week:"2026-11-09",
+   temporaryAbsence:{employeeName:"Sam",weekday:2,selectedEmployeeIds:[secondId]}});
+  expect(second).toMatchObject({approvalTool:"existing_card_created",
+   temporaryConstraint:{saved:false,absentDate:"2026-11-10"}});
+  expect(proposeStaff).toHaveBeenCalledTimes(1);
+ });
+ it("registers hypothetical ambiguity as a real owner choice instead of rejecting ask_owner",async()=>{
+  const a="11111111-1111-4111-8111-111111111111";
+  const b="22222222-2222-4222-8222-222222222222";
+  mocks.absence.mockResolvedValueOnce({ok:false,error:"employee_ambiguous",
+   candidates:[{id:a,name:"Sam Lee"},{id:b,name:"Sam Lee"}]})
+   .mockResolvedValueOnce({ok:true,period:{from:"2026-11-09",to:"2026-11-15"},
+    employeeName:"Sam Lee",absentDate:"2026-11-10",
+    baseline:{completeCoverage:true},alternative:{completeCoverage:false},
+    assumptions:[],warnings:[],changeInModeledCashWagesCents:null,
+    laborCostDifferenceKnown:false,rosterChanges:{removed:[],added:[]}});
+  const state=newResolveState("What if Sam is off Tuesday?");
+  const context={...ctx,resolveState:state};
+  const first=await draftScheduleTools.simulate_staff_absence.execute({
+    week_start:"2026-11-09",employee_name:"Sam",weekday:2},context);
+  expect(first).toMatchObject({missing:["ownerChoiceRequired","employee_ambiguous"],
+   needsOwnerChoice:true});
+  observeToolResult(state,first);
+  const opts=(first.candidates as Array<{id:string;label:string}>)
+   .map(v=>({label:v.label,value:v.id}));
+  const card=await askOwnerTools.ask_owner.execute({
+   question:"Which Sam?",kind:"choice",options:opts,allowOther:false,
+   fields:[],changeSaved:null},context);
+  expect(card).toMatchObject({kind:"choice",missing:[]});
+  const secondState=newResolveState(opts[1].label,[{role:"assistant",
+   content:"Asked: Which Sam? Options: "+opts.map(o=>o.label+" ("+o.value+")").join("; ")}]);
+  const result=await draftScheduleTools.simulate_staff_absence.execute({
+   week_start:"2026-11-09",employee_name:"Sam",weekday:2},
+   {...ctx,resolveState:secondState});
+  expect(mocks.absence).toHaveBeenLastCalledWith({
+   week:"2026-11-09",employeeName:"Sam",weekday:2,selectedEmployeeIds:[b]});
+  expect(result).toMatchObject({hypothetical:true,saved:false,
+   employeeName:"Sam Lee",absentDate:"2026-11-10"});
+ });
 });
