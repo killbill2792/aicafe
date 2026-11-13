@@ -48,7 +48,7 @@ export async function login(page, cafe) {
 }
 
 export async function openOwnedPage(page, cafe, pathname) {
-  await page.goto("/en/" + pathname, {waitUntil:"domcontentloaded"});
+  await page.goto("/en/" + pathname);
   await expect(page).not.toHaveURL(/\/login(?:\?|$)|\/onboarding(?:\?|$)/);
   await expect(page.getByText(cafe.name, {exact: true}).first())
     .toBeVisible({timeout: 30_000});
