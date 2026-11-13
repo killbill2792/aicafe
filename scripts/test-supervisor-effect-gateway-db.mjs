@@ -134,6 +134,11 @@ try{
   "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
   [B,OWNER,THREAD,purchaseProposal,1,purchaseMsg])),"42501");
 
+ const duplicatePurchase=randomUUID();
+ await seedProposal(B,OWNER,THREAD,duplicatePurchase,"maya.inventory_purchase.v1",purchasedEffect);
+ await expectError(()=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
+  [B,OWNER,THREAD,duplicatePurchase,1,purchaseMsg])),"42501");
  const otherPurchase=randomUUID();
  await seedProposal(B2,OWNER2,THREAD2,otherPurchase,"maya.inventory_purchase.v1",purchasedEffect);
  await expectError(()=>withService(db,c=>c.query(
