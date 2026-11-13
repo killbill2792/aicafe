@@ -82,4 +82,22 @@ describe("Task 13a pure historical demand evidence",()=>{
   expect(result.hours).toHaveLength(80);
   expect(result.missing).toContain("comparableHourResultTruncated");
  });
+
+ it("uses verified observed dates with an honest partial label instead of inventing zeros",()=>{
+  const r=comparableDemandHours(input(
+   [row("2026-11-02",4,1000),row("2026-11-09",8,2000)],
+   ["hourlySalesDatesNotObserved"]));
+  expect(r.status).toBe("partial");
+  expect(r.hours).toMatchObject([{targetDate:"2026-11-16",observedAverageOrders:6}]);
+  expect(r.hours[0].sampleDays).toEqual(["2026-11-02","2026-11-09"]);
+  expect(r.missing).toContain("hourlySalesDatesNotObserved");
+ });
+ it("does not use even valid-looking rows when import certification is missing",()=>{
+  const r=comparableDemandHours(input([row("2026-11-02",4,1000),
+   row("2026-11-09",8,2000)],
+   ["hourlySalesDatesNotObserved","toastImportIncompleteDays:2026-11-09"]));
+  expect(r.status).toBe("unavailable");
+  expect(r.hours).toEqual([]);
+  expect(r.missing).toContain("toastImportIncompleteDays:2026-11-09");
+ });
 });
