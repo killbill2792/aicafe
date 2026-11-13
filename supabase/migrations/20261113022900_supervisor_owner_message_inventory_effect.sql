@@ -71,6 +71,22 @@ begin
   or p.canonical_effect_payload->>'source' not in ('chat_text','receipt_chat')
   or p.created_at < m.created_at or p.created_at > m.created_at + interval '30 minutes'
  then raise exception 'purchase_effect_not_eligible' using errcode='42501'; end if;
+ -- Serialize distinct proposal keys for one exact owner message, then reject an
+ -- already-claimed identical source ingredient/quantity/unit/date. One LLM
+ -- message retry must never turn into a second physical stock purchase.
+ perform pg_advisory_xact_lock(hashtextextended(
+  'owner-purchase-message:'||p_business_id::text||':'||p_owner_message_id::text,64));
+ if exists (
+  select 1 from public.supervisor_effect_attempts prev
+  join public.supervisor_proposals existing
+   on existing.business_id=prev.business_id and existing.id=prev.proposal_id
+  where prev.business_id=p_business_id and prev.owner_message_id=p_owner_message_id
+   and existing.capability_id='maya.inventory_purchase.v1'
+   and existing.canonical_effect_payload->>'ingredientId'=p.canonical_effect_payload->>'ingredientId'
+   and existing.canonical_effect_payload->>'quantity'=p.canonical_effect_payload->>'quantity'
+   and existing.canonical_effect_payload->>'unit'=p.canonical_effect_payload->>'unit'
+   and existing.canonical_effect_payload->>'date'=p.canonical_effect_payload->>'date'
+ ) then raise exception 'purchase_already_claimed_for_message' using errcode='42501'; end if;
  select (now() at time zone b.timezone)::date into local_day from public.businesses b
   where b.id=p_business_id and b.timezone is not null
    and exists(select 1 from pg_timezone_names z where z.name=b.timezone);
