@@ -54,4 +54,20 @@ describe("Task 13a canonical demand reader boundary",()=>{
   expect(result.historicalPeriod.to).toBe("2026-11-11");
   expect(result.status).toBe("available");
  });
+
+ it("labels closed/unknown date coverage partial and never imputes zero orders",async()=>{
+  mocks.peak.mockResolvedValue({...good,quality:{...good.quality,
+   missingInputs:["hourlySalesDatesNotObserved"]}});
+  const result=await call("cafe-A");
+  expect(result.status).toBe("partial");
+  expect(result.hours[0].observedAverageOrders).toBe(6);
+  expect(result.hours[0].sampleDays).toEqual(["2026-11-02","2026-11-09"]);
+  expect(result.missing).toContain("hourlySalesDatesNotObserved");
+ });
+ it("does not substitute a guessed business timezone",async()=>{
+  const result=await readSchedulingDemandContext("2026-11-16","cafe-A",undefined,asOf);
+  expect(result.status).toBe("unavailable");
+  expect(result.missing).toEqual(["cafeTimezoneUnavailable"]);
+  expect(mocks.owner).not.toHaveBeenCalled();
+ });
 });
