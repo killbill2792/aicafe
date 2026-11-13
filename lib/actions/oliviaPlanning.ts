@@ -8,7 +8,8 @@ import { createOliviaDraftFromTrustedSnapshot, oliviaSnapshotDigest } from "@/li
 import { optimizeOliviaWeek } from "@/lib/calc/scheduling/plannerEngine";
 import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import {modelUnpaidOwnerWhatIf} from "@/lib/calc/scheduling/plannerOwnerSavings";
-import type { PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
+import type { PlannerInput, PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
+import {civilDateAdd} from "@/lib/calc/scheduling/plannerClock";
 import { requireSchedulingOwner } from "@/lib/scheduling/foundation.server";
 import { editDraftSchema, saveOliviaEditedDraft } from "@/lib/scheduling/planEdits.server";
 import {transitionOliviaPlan} from "@/lib/scheduling/planPublication.server";
@@ -18,6 +19,35 @@ import type { PlannerScenario } from "@/lib/calc/scheduling/plannerTypes";
 const args = z.object({
   week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 }).strict();
+
+const temporaryAbsenceSchema=z.strictObject({
+ employeeName:z.string().trim().min(1).max(80),
+ weekday:z.number().int().min(0).max(6), // Sunday=0 through Saturday=6
+ selectedEmployeeIds:z.array(z.uuid()).max(10).optional(),
+});
+const previewArgs=args.extend({temporaryAbsence:temporaryAbsenceSchema.optional()}).strict();
+type TemporaryAbsence=z.infer<typeof temporaryAbsenceSchema>;
+
+/** Only the saved snapshot may supply identities and availability.
+ * This helper modifies an ephemeral planner input; it does NOT claim an
+ * employee requested leave or write anything to staff/availability tables. */
+function withRequestedDayOff(input:PlannerInput,week:string,request:TemporaryAbsence){
+ const norm=(v:string)=>v.trim().replace(/\s+/g," ").toLocaleLowerCase("en");
+ const name=norm(request.employeeName);
+ const exact=input.employees.filter(e=>norm(e.displayName)===name);
+ const options=exact.length?exact:input.employees.filter(e=>norm(e.displayName).split(" ")[0]===name);
+ const chosen=options.filter(e=>(request.selectedEmployeeIds??[]).includes(e.id));
+ if(options.length!==1&&chosen.length!==1)return {
+  ok:false as const,error:options.length?"employee_ambiguous":"employee_not_found",
+  candidates:options.slice(0,5).map(e=>({id:e.id,name:e.displayName}))};
+ const employee=chosen.length===1?chosen[0]:options[0];
+ const absentDate=civilDateAdd(week,(request.weekday+6)%7);
+ const changed:PlannerInput={...input,employees:input.employees.map(e=>e.id===employee.id?
+  {...e,exceptions:[...e.exceptions,{local_date:absentDate,
+   exception_type:"unavailable" as const,confirmation:"owner_confirmed" as const}]}:e)};
+ return {ok:true as const,input:changed,employee,absentDate};
+}
+
 const saveArgs = args.extend({
   objective: z.enum(["cash", "owner_time", "balanced"]),
   expectedRevision: z.number().int().min(0).max(499),
@@ -27,10 +57,10 @@ const saveArgs = args.extend({
 
 export async function previewOliviaWeek(raw: unknown): Promise<
   | { ok: true; plan: PlannerResult; notices: OliviaNotice[]; blockers: OliviaBlocker[]; employees: Record<string,string>; locations: Record<string,string>; locationNames: Record<string,string>; sourceDigest: string; previewRevision: number;
-      frozenShiftKeys:string[]; demandEvidence:ScheduleDemandEvidence }
-  | { ok: false; error: string; blockers?: OliviaBlocker[] }
+      frozenShiftKeys:string[]; demandEvidence:ScheduleDemandEvidence; temporaryConstraint:null|{employeeName:string;absentDate:string;saved:false} }
+  | { ok: false; error: string; blockers?: OliviaBlocker[]; candidates?:Array<{id:string;name:string}> }
 > {
-  const parsed = args.safeParse(raw);
+  const parsed = previewArgs.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "invalid_input" };
   const loaded = await loadOliviaWeekFromSavedStaff(parsed.data.week);
   if (!loaded.ok) return { ok: false, error: loaded.error };
@@ -50,13 +80,18 @@ export async function previewOliviaWeek(raw: unknown): Promise<
        head.data.current_revision < 0 || head.data.current_revision > 500)))
     return {ok:false,error:"storage_unavailable"};
   const previewRevision = head.data?.current_revision ?? 0;
+  const chosen=parsed.data.temporaryAbsence?
+    withRequestedDayOff(loaded.input,parsed.data.week,parsed.data.temporaryAbsence):null;
+  if(chosen&&!chosen.ok)return {ok:false,error:chosen.error,candidates:chosen.candidates};
   try {
-    const plan = optimizeOliviaWeek(loaded.input);
+    const plan = optimizeOliviaWeek(chosen?.ok?chosen.input:loaded.input);
     // Historical sales are advisory, and must never affect Olivia's confirmed
     // coverage requirements, solver or mutable source-approval digest.
     const demandEvidence=await readSchedulingDemandContext(parsed.data.week,loaded.businessId,
       loaded.cafeTimezone||loaded.input.locations[0]?.timezone);
     return { ok: true, plan, demandEvidence, notices: loaded.notices, blockers: loaded.blockers,
+      temporaryConstraint:chosen?.ok?{employeeName:chosen.employee.displayName,
+       absentDate:chosen.absentDate,saved:false as const}:null,
       employees: Object.fromEntries(loaded.input.employees.map(e => [e.id, e.displayName])),
       locations: Object.fromEntries(loaded.input.locations.map(l => [l.id, l.timezone])),
       locationNames: loaded.locationNames, previewRevision,
@@ -69,16 +104,8 @@ export async function previewOliviaWeek(raw: unknown): Promise<
   }
 }
 
-/** Hypothetical named employee absence, with absolutely no persistence.
- * This is NOT a confirmed staffing fact: the owner can evaluate a scenario
- * conversationally without approving a change to employee records.
- * Names are selected only if unique within the authenticated café snapshot. */
-const absenceWhatIfArgs=args.extend({
- employeeName:z.string().trim().min(1).max(80),
- weekday:z.number().int().min(0).max(6), // Sunday=0, Monday=1
- // Server-supplied prior owner-choice IDs, never accepted as authority for writes.
- selectedEmployeeIds:z.array(z.uuid()).max(10).optional(),
-}).strict();
+/** Hypothetical named employee absence, with absolutely no persistence. */
+const absenceWhatIfArgs=args.extend(temporaryAbsenceSchema.shape).strict();
 export async function previewOliviaAbsenceWhatIf(raw:unknown){
  const parsed=absenceWhatIfArgs.safeParse(raw);
  if(!parsed.success)return {ok:false as const,error:"invalid_input"};
@@ -87,32 +114,15 @@ export async function previewOliviaAbsenceWhatIf(raw:unknown){
  if(!loaded.ok)return {ok:false as const,error:loaded.error};
  if(loaded.blockers.length)return {ok:false as const,error:"missing_inputs",
   blockers:loaded.blockers};
- // First match exact saved display name; a unique first name is supported,
- // but a shared first name cannot be guessed into the wrong person's record.
- const normal=(name:string)=>name.trim().replace(/\s+/g," ").toLocaleLowerCase("en");
- const target=normal(employeeName);
- const all=loaded.input.employees;
- const exact=all.filter(e=>normal(e.displayName)===target);
- const matches=exact.length?exact:all.filter(e=>normal(e.displayName).split(" ")[0]===target);
- const previouslyChosen=matches.filter(e=>
-   selectedEmployeeIds.includes(e.id));
- if(matches.length!==1&&previouslyChosen.length!==1)return {ok:false as const,
-  error:matches.length?"employee_ambiguous":"employee_not_found",
-  candidates:matches.slice(0,5).map(e=>({id:e.id,name:e.displayName}))};
- const employee=previouslyChosen.length===1?previouslyChosen[0]:matches[0];
- const localDate=new Date(Date.parse(week+"T12:00:00Z")+
-   ((weekday+6)%7)*86400000).toISOString().slice(0,10);
+ const selected=withRequestedDayOff(loaded.input,week,{
+  employeeName,weekday,selectedEmployeeIds});
+ if(!selected.ok)return {ok:false as const,error:selected.error,
+  candidates:selected.candidates};
+ const employee=selected.employee;
+ const localDate=selected.absentDate;
  try{
   const baseline=optimizeOliviaWeek(loaded.input);
-  const simulatedInput={...loaded.input,employees:all.map(e=>e.id===employee.id?{
-   ...e,exceptions:[...e.exceptions,{
-    local_date:localDate,exception_type:"unavailable" as const,
-    confirmation:"owner_confirmed" as const,
-   }],
-  }:e)};
-  // owner_confirmed is the existing pure-optimizer's input vocabulary,
-  // not a claim about the database. The temporary snapshot is NEVER saved.
-  const alternative=optimizeOliviaWeek(simulatedInput);
+  const alternative=optimizeOliviaWeek(selected.input);
   const before=baseline.best?.cost.cashWagesCents??null;
   const after=alternative.best?.cost.cashWagesCents??null;
   // A cheaper roster that leaves the café uncovered is not a legitimate
