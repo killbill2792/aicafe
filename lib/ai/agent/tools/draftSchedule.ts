@@ -57,7 +57,8 @@ export const draftScheduleTools={draft_week_schedule:{
    status:demand.status,source:demand.source,basis:demand.basis,
    historicalPeriod:demand.historicalPeriod,readAt:demand.readAt,
    sourceUpdatedAt:demand.sourceUpdatedAt,
-   availableComparableHours:demand.hours.length,
+   availableComparableHours:demand.totalComparableHours,
+   returnedComparableHours:demand.hours.length,truncated:demand.truncated,
    // Keep the full comparable count while bounding model input tokens.
    sampledHours:demand.hours.slice().sort((a,b)=>
      b.observedAverageOrders-a.observedAverageOrders||
