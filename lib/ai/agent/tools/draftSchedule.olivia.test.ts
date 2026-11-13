@@ -1,13 +1,13 @@
 import {describe,it,expect,vi,beforeEach} from "vitest";
-const mocks=vi.hoisted(()=>({preview:vi.fn(),ownerSavings:vi.fn()}));
-vi.mock("@/lib/actions/oliviaPlanning",()=>({previewOliviaWeek:mocks.preview,previewOliviaOwnerSavings:mocks.ownerSavings}));
+const mocks=vi.hoisted(()=>({preview:vi.fn(),ownerSavings:vi.fn(),absence:vi.fn()}));
+vi.mock("@/lib/actions/oliviaPlanning",()=>({previewOliviaWeek:mocks.preview,previewOliviaOwnerSavings:mocks.ownerSavings,previewOliviaAbsenceWhatIf:mocks.absence}));
 import {draftScheduleTools} from "./draftSchedule";
 import {staffProposalTools} from "./staffProposals";
 import type {AgentToolContext} from "./index";
 const ctx:AgentToolContext={asOf:"2026-11-03",timezone:"America/Los_Angeles",locale:"en",
  tools:{} as AgentToolContext["tools"]};
 describe("Supervisor delegates to one Olivia scheduler",()=>{
- beforeEach(()=>{mocks.preview.mockReset();mocks.ownerSavings.mockReset();});
+ beforeEach(()=>{mocks.preview.mockReset();mocks.ownerSavings.mockReset();mocks.absence.mockReset();});
  it("previews Olivia and returns proposal-ready assignments without writing",async()=>{
   mocks.preview.mockResolvedValue({ok:true,locations:{location:"America/Los_Angeles"},
    notices:[],plan:{status:"feasible",horizonEnd:"2026-11-15",
@@ -217,5 +217,58 @@ describe("Supervisor delegates to one Olivia scheduler",()=>{
     expect.objectContaining({objective:"cash",completeCoverage:false}),
     expect.objectContaining({objective:"balanced",completeCoverage:true}),
   ]));
+ });
+
+ it("answers a named day-off hypothetical without creating any proposal or real staff change",async()=>{
+  const proposeStaff=vi.fn();
+  mocks.absence.mockResolvedValue({
+   ok:true,period:{from:"2026-11-09",to:"2026-11-15"},
+   employeeName:"Sarah Jones",absentDate:"2026-11-10",
+   baseline:{status:"feasible",completeCoverage:true,cost:{cashWagesCents:24000},gaps:[],shiftCount:12},
+   alternative:{status:"unproven",completeCoverage:false,cost:{cashWagesCents:null},
+    gaps:[{startAt:"2026-11-10T16:00:00Z",reason:"no_confirmed_availability"}],shiftCount:10},
+   changeInModeledCashWagesCents:null,laborCostDifferenceKnown:false,
+   assumptions:["Scenario only; no records modified"],warnings:[],
+  });
+  const r=await draftScheduleTools.simulate_staff_absence.execute(
+    {week_start:null,employee_name:"Sarah",weekday:2},
+    {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+  expect(mocks.absence).toHaveBeenCalledExactlyOnceWith({
+   week:"2026-11-09",employeeName:"Sarah",weekday:2});
+  expect(r).toMatchObject({
+   hypothetical:true,saved:false,absentDate:"2026-11-10",
+   changeInModeledCashWagesCents:null,
+   alternative:{completeCoverage:false},missing:[],
+  });
+  expect(proposeStaff).not.toHaveBeenCalled();
+ });
+ it("does not guess which same-named worker is absent",async()=>{
+  mocks.absence.mockResolvedValue({ok:false,error:"employee_ambiguous",
+   candidates:[{id:"11111111-1111-4111-8111-111111111111",name:"Sam Lee"},
+    {id:"22222222-2222-4222-8222-222222222222",name:"Sam Lee"}]});
+  const r=await draftScheduleTools.simulate_staff_absence.execute(
+    {week_start:null,employee_name:"Sam Lee",weekday:2},ctx);
+  expect(r).toMatchObject({missing:["employee_ambiguous"],needsOwnerChoice:true});
+  expect(r.candidates).toHaveLength(2);
+ });
+ it("comparison-only request never creates a needless approval card",async()=>{
+  const shift={employeeId:"11111111-1111-4111-8111-111111111111",
+   locationId:"main",startAt:"2026-11-09T16:00:00Z",
+   endAt:"2026-11-09T18:00:00Z",paidMinutes:120};
+  const best={objective:"cash",completeCoverage:true,hardConstraintsSatisfied:true,
+   shifts:[shift],gaps:[],cost:{cashWagesCents:2100,costState:"verified",
+    loadedPayrollCents:null,missingWageEmployeeIds:[]},ownerMinutes:0,
+   legalReview:"unverified_profile"};
+  mocks.preview.mockResolvedValue({ok:true,locations:{main:"America/Los_Angeles"},
+   notices:[],plan:{best,scenarios:[best],horizonEnd:"2026-11-15",
+    status:"feasible",proof:"complete_candidate_solution",warnings:[]}});
+  const proposeStaff=vi.fn();
+  const r=await draftScheduleTools.draft_week_schedule.execute({
+    week_start:"2026-11-09",purpose:"cash_preview"},
+    {...ctx,proposals:{proposePriceChange:vi.fn(),proposeStaff}});
+  expect(r).toMatchObject({previewOnly:true,proposalReady:false,
+   approvalTool:"not_created",selectedObjective:"cash",
+   requestedObjectiveMet:true,proposedShiftCount:1});
+  expect(proposeStaff).not.toHaveBeenCalled();
  });
 });
