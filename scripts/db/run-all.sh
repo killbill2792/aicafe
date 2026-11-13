@@ -277,6 +277,7 @@ plain_lane() {
   check plain "Team updates: owner-only read, status-only update" plain_pg postgres node scripts/test-team-updates-rls.mjs
   check plain "Owner notifications migration 36 security" plain_pg cafe_rls_test node scripts/test-ai-notifications-migration.mjs
   check plain "Supervisor conversations RLS" plain_pg cafe_rls_test node scripts/test-supervisor-conversation-rls.mjs
+  check plain "Task 10/12 effect gateway: owner message purchase and duplicate denial" plain_pg postgres node scripts/test-supervisor-effect-gateway-db.mjs
   check plain "Task 9 thread memory: owner RLS, provenance, revoke, CAS and concurrency" plain_pg cafe_rls_test node scripts/test-ai-thread-memory-rls.mjs
   check plain "Owner facts (migrations 110, 153) Vitest" plain_pg ownerfacts_test \
     env OWNER_FACTS_DB_URL="postgresql://postgres:postgres@127.0.0.1:5432/ownerfacts_test" npx vitest run lib/ownerFacts
