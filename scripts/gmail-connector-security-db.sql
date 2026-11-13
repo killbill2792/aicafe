@@ -45,4 +45,75 @@ begin
   ) then raise exception 'Gmail outbound Message-ID deduplication missing'; end if;
 end
 $check$;
+
+-- Two isolated cafés, one provider send. All data stays inside this rollback.
+do $fixture$
+declare ba uuid:=gen_random_uuid();bb uuid:=gen_random_uuid();
+ oa uuid:=gen_random_uuid();ob uuid:=gen_random_uuid();
+ ta uuid:=gen_random_uuid();tb uuid:=gen_random_uuid();
+ pid uuid:=gen_random_uuid();aid uuid:=gen_random_uuid();
+ account_id uuid; p public.supervisor_proposals; got public.supervisor_proposals;
+begin
+ insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
+ values (oa,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+         'gmail-fixture-a@example.invalid','',now(),now()),
+        (ob,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+         'gmail-fixture-b@example.invalid','',now(),now());
+ insert into public.businesses(id,name,timezone,is_demo)
+ values (ba,'Gmail disposable café A','UTC',false),(bb,'Gmail disposable café B','UTC',false);
+ insert into public.memberships(business_id,user_id,role)
+ values (ba,oa,'owner'),(bb,ob,'owner');
+ insert into public.ai_threads(id,business_id,owner_user_id,client_request_id)
+ values (ta,ba,oa,gen_random_uuid()),(tb,bb,ob,gen_random_uuid());
+ insert into public.connector_accounts(business_id,owner_user_id,provider,
+   provider_subject,email,granted_scopes,enabled_operations,status)
+ values (ba,oa,'gmail','fake-google-A','gmail-fixture-a@example.invalid',
+   array['https://www.googleapis.com/auth/gmail.modify'],
+   array['read','draft','send','organize'],'active') returning id into account_id;
+ insert into public.connector_accounts(business_id,owner_user_id,provider,
+   provider_subject,email,granted_scopes,enabled_operations,status)
+ values (bb,ob,'gmail','fake-google-B','gmail-fixture-b@example.invalid',
+   array['https://www.googleapis.com/auth/gmail.modify'],
+   array['read','draft','send','organize'],'active');
+ insert into public.supervisor_proposals(id,business_id,owner_user_id,thread_id,request_key,
+   capability_id,capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale)
+ values (pid,ba,oa,ta,gen_random_uuid(),'alex.gmail_effect.v1',1,
+   jsonb_build_object('accountId',account_id::text,'generation',1,'operation','send'),
+   repeat('c',64),'{}'::jsonb,'{"durationDays":1,"metricScope":"gmail_provider_receipt"}'::jsonb,'en');
+ update public.supervisor_proposals set status='executing',revision=revision+1
+   where id=pid returning * into p;
+ insert into public.supervisor_effect_attempts(attempt_key,business_id,proposal_id,
+   effect_hash,authorization_kind,business_date,state)
+ values (aid,ba,pid,repeat('c',64),'click',current_date,'executing');
+ insert into public.connector_provider_receipts(account_id,business_id,owner_user_id,proposal_id,
+   effect_hash,account_generation,operation,rfc_message_id,state)
+ values (account_id,ba,oa,pid,repeat('c',64),1,'send',
+   '<aicafe-durable-fixture@example.invalid>','pending');
+ perform set_config('request.jwt.claim.role','service_role',true);
+ begin
+   perform public.supervisor_finish_gmail_effect_attempt(
+     ba,oa,ta,pid,aid,p.revision,'verified','committed',current_date);
+   raise exception 'Gmail incorrectly committed without provider receipt';
+ exception when sqlstate '42501' then null; end;
+ if (select status from public.supervisor_proposals where id=pid) <> 'executing' then
+   raise exception 'Unverified Gmail effect changed proposal status'; end if;
+ begin
+   perform public.supervisor_finish_gmail_effect_attempt(
+     bb,ob,tb,pid,aid,p.revision,'verified','committed',current_date);
+   raise exception 'Cross-café Gmail effect was accepted';
+ exception when sqlstate 'P0001' then null; end;
+ update public.connector_provider_receipts set state='verified',
+   provider_message_id='gmail-verified-message-id',provider_accepted_at=now()
+   where proposal_id=pid and business_id=ba;
+ got:=public.supervisor_finish_gmail_effect_attempt(
+    ba,oa,ta,pid,aid,p.revision,'verified','committed',current_date);
+ if got.status <> 'committed' or (select receipt_ref from public.supervisor_effect_attempts
+   where attempt_key=aid)<>'gmail:gmail-verified-message-id' then
+     raise exception 'Gmail receipt was not authoritative';end if;
+ begin
+   perform public.supervisor_finish_gmail_effect_attempt(
+    ba,oa,ta,pid,aid,p.revision,'verified','committed',current_date);
+   raise exception 'Duplicate Gmail provider effect was committed twice';
+ exception when sqlstate 'P0001' then null; end;
+end $fixture$;
 rollback;
