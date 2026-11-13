@@ -7,7 +7,8 @@ export type InventoryEvidenceState =
 export type InventoryEvidenceRow = {
  source:"toast"|"app";source_ref:string;status:string|null;
  business_date:string|null;menu_item_ref:string|null;stock_status:string|null;
- quantity:number|null;ingredient_id:string|null;source_as_of:string|null;
+ quantity:number|null;ingredient_id:string|null;ingredient_name:string|null;quantity_unit:string|null;
+ source_as_of:string|null;
  checked_at:string|null;reported_stock_status:string|null;
  evidence_state:InventoryEvidenceState;quantity_state:"known"|"unknown";
 };
@@ -52,6 +53,8 @@ export function projectInventoryEvidence(raw:unknown,maxRows=50):{
    business_date:text(row.business_date),menu_item_ref:text(row.menu_item_ref),
    stock_status:source==="toast"&&verified?text(row.stock_status):null,
    quantity:usable,ingredient_id:source==="app"?text(data.ingredient_id):null,
+   ingredient_name:source==="app"?text(data.ingredient_name):null,
+   quantity_unit:source==="app"?text(data.base_unit):null,
    source_as_of:source==="toast"?text(data.source_as_of):text(data.count_date),
    checked_at:text(data.checked_at),reported_stock_status:source==="toast"?reportedStatus:null,
    evidence_state,quantity_state:usable===null?"unknown":"known"
