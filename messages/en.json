@@ -2599,6 +2599,16 @@
     }
   },
   "MenuBuilder": {
+    "stockEvidenceTitle": "Toast stock observations",
+    "stockEvidenceCurrent": "Reported by the latest successful stock check",
+    "stockEvidenceNotObserved": "Historical only — omitted from the latest complete check",
+    "stockEvidenceFailed": "Stock source unavailable — historical only",
+    "stockEvidenceUnverified": "Freshness not verified — do not use as current quantity",
+    "stockEvidenceUnknown": "Unknown",
+    "stockEvidenceNoRows": "No stock observations recorded here. This does not mean zero stock.",
+    "stockEvidenceAsOf": "Source observed",
+    "stockEvidenceQuantity": "Known quantity",
+    "stockEvidenceReported": "Last reported Toast status",
     "packUnitFlOz": "fluid ounces",
     "packUnitOzWt": "ounces by weight",
     "packUnitMl": "milliliters",
