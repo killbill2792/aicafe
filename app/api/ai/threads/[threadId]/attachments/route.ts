@@ -46,7 +46,11 @@ export async function POST(request:Request,context:Context){
    throw new ConversationApiError(422,"invalid_attachment");
   const file=body.get("file");
   if(!(file instanceof File))throw new ConversationApiError(422,"file_required");
-  const parsed=parseInput(attachmentInput,{filename:file.name,mimeType:file.type,bytes:file.size});
+  const browserMime=file.type||"";
+  const inferredMime=browserMime&&browserMime!=="application/octet-stream"?browserMime:
+   /\\.xlsx$/i.test(file.name)?"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+   /\\.csv$/i.test(file.name)?"text/csv":browserMime;
+  const parsed=parseInput(attachmentInput,{filename:file.name,mimeType:inferredMime,bytes:file.size});
   const buffer=new Uint8Array(await file.arrayBuffer());
   if(!verifySignature(parsed.mimeType,buffer))
    throw new ConversationApiError(422,"invalid_file_signature");
