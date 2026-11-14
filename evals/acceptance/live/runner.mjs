@@ -292,8 +292,9 @@ export async function runLive(manifest,prepared,env,outputPath){
    const [before,otherBefore,oldLedger,oldProposals]=await Promise.all([
     stock(db,cafe.businessId),stock(db,other.businessId),ledger(db,cafe.businessId),
     proposals(db,cafe.businessId,thread)]);
+   const turnStarted=Date.now();
    const attachmentIds=file?[await upload(session.context,thread,file)]:[];
-   const msgId=randomUUID(),turnStarted=Date.now();
+   const uploadMs=Date.now()-turnStarted,msgId=randomUUID();
    const actual=await actualTurn(session.page,thread,label.input.text,attachmentIds,msgId);
    requireCompletedTurn(actual);
    const proposalsAfterModel=await proposals(db,cafe.businessId,thread);
@@ -328,8 +329,8 @@ export async function runLive(manifest,prepared,env,outputPath){
     receiptWrites:saved,extracted,outcome:status,
     reply:textFromReply(actual.done?.reply),clarifications,
     approvalPath:label.expected.authorization,approvedPurchaseLines:approvalsApplied,
-    latency:{firstUsefulMs:actual.firstUsefulMs,
-     completedMs:Math.max(actual.firstUsefulMs,Date.now()-turnStarted)},
+    latency:{firstUsefulMs:uploadMs+actual.firstUsefulMs,
+     completedMs:Math.max(uploadMs+actual.firstUsefulMs,Date.now()-turnStarted)},
     // A durable backend audit row, NOT an OpenAI request ID; provenance
     // remains an explicit limitation in scorer's live-mode status.
     modelRequestId:"usage_"+model.id.replaceAll("-",""),
