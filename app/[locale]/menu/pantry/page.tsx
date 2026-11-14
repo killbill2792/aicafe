@@ -15,6 +15,7 @@ import PageShell from "@/components/shared/PageShell";
 import PantryWorkspace from "@/components/menu/PantryWorkspace";
 import {PANTRY_CATEGORY_CHOICES} from "@/lib/menu/pantryCategoryChoices";
 import {selectRequestedPurchases} from "@/lib/calc/inventoryReviewLinks";
+import {readInventoryEvidence} from "@/lib/data/inventoryEvidence.server";
 
 export const dynamic = "force-dynamic";
 export default async function PantryPage({searchParams}:{searchParams:Promise<{from?:string;to?:string;month?:string;proposals?:string}>}) {
@@ -26,10 +27,11 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
   const start=usageWeekEnding(to).from;
   const month=params.month&&/^\d{4}-(0[1-9]|1[0-2])$/.test(params.month)?params.month:businessToday.slice(0,7);
   const selectedIds=(params.proposals??"").split(",").filter(id=>/^[0-9a-f]{8}-[0-9a-f-]{27,}$/.test(id)).slice(0,100);
-  const from=valid(params.from)&&params.from!<=to&&(Date.parse(to)-Date.parse(params.from!))/86400000<=30?params.from!:start; const [items,t,variance,purchases,inventoryText,locale,modifierSetup,pendingProposals]=await Promise.all([
+  const from=valid(params.from)&&params.from!<=to&&(Date.parse(to)-Date.parse(params.from!))/86400000<=30?params.from!:start; const [items,t,variance,purchases,inventoryText,locale,modifierSetup,pendingProposals,stockEvidence]=await Promise.all([
     listPantry(),getTranslations("MenuBuilder"),readUsageVariance({from,to,groupBy:"shift"}).catch(()=>null),
     readPurchaseMonth(month).catch(()=>null),getTranslations("Inventory"),getLocale(),
-    readModifierSetup().catch(()=>null),readPendingInventoryProposals(selectedIds).catch(()=>null)
+    readModifierSetup().catch(()=>null),readPendingInventoryProposals(selectedIds).catch(()=>null),
+    readInventoryEvidence(businessToday).catch(()=>null)
   ]);
   const selected=selectRequestedPurchases(selectedIds,pendingProposals??[]);
   const orderedProposals=selectedIds.length?selected:pendingProposals;
@@ -45,18 +47,21 @@ export default async function PantryPage({searchParams}:{searchParams:Promise<{f
     "proposalsHeading","proposalsUnavailable"];
   const inventoryLabels=Object.fromEntries(i18nKeys.map(key=>[key,inventoryText.raw(key as never) as string]));
 
+  const stockLabels=Object.fromEntries(["stockEvidenceTitle","stockEvidenceOwnerCount","stockEvidenceCurrent","stockEvidenceNotObserved","stockEvidenceFailed","stockEvidenceUnverified","stockEvidenceUnknown","stockEvidenceNoRows","stockEvidenceAsOf","stockEvidenceQuantity","stockEvidenceReported","stockEvidenceProviderQuantity","stockEvidenceProviderOut","stockEvidenceProviderIn","stockEvidenceTruncated"]
+    .map(key=>[key,t.raw(key as never) as string]));
+
   return <PageShell className="px-4 pb-24 pt-6" wide>
     {selectedIds.length>0&&selected.length===0&&<p role="status" className="mb-4 text-[17px]">{inventoryLabels.proposalsUnavailable}</p>}
     {selectedIds.length>0&&selected.length>0&&<section className="mb-5 space-y-3">
       <h2 className="text-xl font-bold">{inventoryLabels.proposalsHeading}</h2>
       {selected.map(p=><SupervisorProposalCard key={p.id} threadId={p.threadId} proposalId={p.id} locale={locale as "en"|"es"|"ar"}/>)}
     </section>}
-    <PantryWorkspace businessToday={businessToday} inventoryPanel={
+    <PantryWorkspace businessToday={businessToday} stockEvidence={stockEvidence} inventoryPanel={
       <InventoryPurchasePanel items={items.map(i=>({id:i.id,name:i.name,baseUnit:i.baseUnit,archivedAt:i.archivedAt}))}
         month={month} rows={purchases?.rows??[]} currency={purchases?.currency??"USD"}
         locale={locale as "en"|"es"|"ar"} t={inventoryLabels} today={businessToday} unavailable={!purchases}/>
     } variance={variance} items={items} starters={PANTRY_STARTERS.map(({key,name,category,baseUnit,packQuantity,packUnit})=>({key,name,category,baseUnit,packQuantity,packUnit}))}
-      labels={Object.fromEntries(["title","search","all","coffee","milk","syrups","packaging","bakery","other",...PANTRY_CATEGORY_CHOICES.map(choice=>choice.labelKey),"reviewNow","confirmed","add","packSize","packPrice","purchasePackExampleLiquid","purchasePackExampleWeight","purchasePackExampleCount","category","baseUnit","measurementType","liquidMeasurement","weightMeasurement","pieceMeasurement","name","create","save","cancel","edit","estimate","confirm","usedIn","perUnit","priceUnknown","starterPack","chooseStarter","newIngredient","noItems","priceTitle","purchaseUnit","error","usageTitle","usagePeriod","usageExpected","usageActual","usageDifference","usageUnknown","usage_on_target","usage_watch","usage_over","usageMissing","usageRecord","usage_count","usage_purchase","usageIngredient","usageQuantity","usageUnit","usageDate","usageSaved","usageCountNote","usageShifts","usageExpectedOnly","usageStart","usageEnd","usageApply","usageStartCount","usageEndCount","usageCoverage","usageRecipeMissing","usageUnavailable","usageConnectToast","usageErrorInvalidQuantity","usageErrorInvalidUnit","usageErrorIngredientNotFound","usageErrorSaveFailed","archiveIngredient","restoreIngredient","archivedIngredient","archiveConfirm","activeIngredients","archivedIngredients","packUnitFlOz","packUnitOzWt","packUnitMl","packUnitG","packUnitKg","packUnitL","packUnitLb","packUnitGal","packUnitQt","packUnitEach","packUnitDozen"].map(key=>[key,key==="title"?inventoryLabels.title:t.raw(key as never) as string]))} />
+      labels={{...Object.fromEntries(["title","search","all","coffee","milk","syrups","packaging","bakery","other",...PANTRY_CATEGORY_CHOICES.map(choice=>choice.labelKey),"reviewNow","confirmed","add","packSize","packPrice","purchasePackExampleLiquid","purchasePackExampleWeight","purchasePackExampleCount","category","baseUnit","measurementType","liquidMeasurement","weightMeasurement","pieceMeasurement","name","create","save","cancel","edit","estimate","confirm","usedIn","perUnit","priceUnknown","starterPack","chooseStarter","newIngredient","noItems","priceTitle","purchaseUnit","error","usageTitle","usagePeriod","usageExpected","usageActual","usageDifference","usageUnknown","usage_on_target","usage_watch","usage_over","usageMissing","usageRecord","usage_count","usage_purchase","usageIngredient","usageQuantity","usageUnit","usageDate","usageSaved","usageCountNote","usageShifts","usageExpectedOnly","usageStart","usageEnd","usageApply","usageStartCount","usageEndCount","usageCoverage","usageRecipeMissing","usageUnavailable","usageConnectToast","usageErrorInvalidQuantity","usageErrorInvalidUnit","usageErrorIngredientNotFound","usageErrorSaveFailed","archiveIngredient","restoreIngredient","archivedIngredient","archiveConfirm","activeIngredients","archivedIngredients","packUnitFlOz","packUnitOzWt","packUnitMl","packUnitG","packUnitKg","packUnitL","packUnitLb","packUnitGal","packUnitQt","packUnitEach","packUnitDozen"].map(key=>[key,key==="title"?inventoryLabels.title:t.raw(key as never) as string])),...stockLabels}} />
     {pendingProposals===null?<p role="alert" className="text-[17px]">{inventoryLabels.proposalsUnavailable}</p>:
       selectedIds.length===0&&orderedProposals&&orderedProposals.length>0&&<section className="mb-5 space-y-3">
         <h2 className="text-xl font-bold">{inventoryLabels.proposalsHeading}</h2>

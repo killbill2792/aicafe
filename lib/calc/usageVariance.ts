@@ -2,7 +2,7 @@
 export type UsageIngredient={id:string;name:string;unit:"g"|"ml"|"each"};
 export type UsageRecipe={menuItemId:string;ingredientId:string;quantity:number};
 export type UsageModifier={posModifierId:string;ingredientId:string|null;quantityDelta:number;replacesIngredientId:string|null};
-export type UsageSale={menuItemId:string|null;quantity:number;businessDate:string;closedAt:string;locationId:string|null;modifiers:Array<{posModifierId:string;name:string;quantity?:number;priceCents?:number|null;parentPosModifierId?:string|null}>};
+export type UsageSale={sourceLineId?:string;menuItemId:string|null;quantity:number;businessDate:string;closedAt:string;locationId:string|null;modifiers:Array<{posModifierId:string;name:string;quantity?:number;priceCents?:number|null;parentPosModifierId?:string|null}>};
 export type UsageStaff={id:string;staffId:string;staff:string;locationId:string;clockIn:string;clockOut:string|null};
 export type UsageCount={ingredientId:string;date:string;quantity:number};
 export type UsagePurchase={ingredientId:string;date:string;quantity:number};
@@ -30,6 +30,7 @@ export function calculateUsage(input:{
  const mods=new Map(input.modifiers.map(m=>[m.posModifierId,m]));
  const totals=new Map<string,number>(),groups=new Map<string,Map<string,{label:string;staff:string[];expected:number}>>();
  let salesMissing=false;
+ const observedLineIds=new Set<string>();
  const staff=input.staff??[];
  const add=(id:string,amount:number,key:string,label:string,onDuty:string[])=>{
   totals.set(id,(totals.get(id)??0)+amount);
@@ -38,6 +39,12 @@ export function calculateUsage(input:{
   item.expected+=amount;byKey.set(key,item);groups.set(id,byKey);
  };
  for(const sale of input.sales){
+  // Canonical order_lines.id is the idempotency key. Unexpected duplicate
+  // source lines fail completeness rather than silently double-count use.
+  if(sale.sourceLineId){
+   if(observedLineIds.has(sale.sourceLineId)){salesMissing=true;continue;}
+   observedLineIds.add(sale.sourceLineId);
+  }
   if(!Number.isFinite(sale.quantity)||sale.quantity<=0||!sale.menuItemId||!recipes.has(sale.menuItemId)){
    salesMissing=true;continue;
   }

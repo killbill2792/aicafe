@@ -673,7 +673,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_inventory": {
-    "meaning": "App pantry and retained current Toast inventory records. A Toast menu-item GUID identifies menu_item_ref, not source_ref; query the café-local business date. Unknown stock quantity stays missing, never zero.",
+    "meaning": "Dated owner stock counts and one retained Toast stock object per café/restaurant/item. The latest complete family receipt determines whether Toast quantity is current; data.evidence_state identifies observed_current, not_observed, source_failed or source_unverified. A menu GUID is menu_item_ref, not source_ref. Unknown is not zero.",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -700,13 +700,13 @@ export const canonicalDictionary = {
         "example": "Which facts are incomplete?"
       },
       "business_date": {
-        "meaning": "Café business date when recorded; null for undated reference facts.",
+        "meaning": "Owner count measurement date; Toast stock with a family receipt uses the café-local query date, while legacy source rows without a receipt retain their observed business date and remain unverified. The original provider observation date and source time stay in data.",
         "unit": "local date",
         "source": "app",
         "example": "What happened last week?"
       },
       "data": {
-        "meaning": "Restricted, non-sensitive attributes relevant to this canonical entity.",
+        "meaning": "Restricted inventory evidence: source_as_of, observed_business_date, checked_at, source_status and evidence_state; never raw provider credentials or diagnostic captures.",
         "unit": "JSON",
         "source": "app",
         "example": "Show the source detail."
@@ -718,13 +718,13 @@ export const canonicalDictionary = {
         "example": "What was recorded?"
       },
       "stock_status": {
-        "meaning": "Toast OUT_OF_STOCK or QUANTITY status; null for app pantry rows.",
+        "meaning": "Last authenticated Toast QUANTITY / OUT_OF_STOCK status only while the latest successful source receipt matches; null on stale, failed or missing stock.",
         "unit": "label",
         "source": "toast",
         "example": "What was recorded?"
       },
       "quantity": {
-        "meaning": "Reported quantity when known; pantry base quantity for app rows.",
+        "meaning": "Toast reported nonnegative quantity only for a current matching successful stock receipt; dated owner count (including explicit zero) otherwise. Missing or historical Toast quantities are null.",
         "unit": "quantity",
         "source": "toast",
         "example": "What was recorded?"

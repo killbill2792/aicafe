@@ -38,6 +38,16 @@ describe("budgeted Maya usage evidence",()=>{
   expect(projected.rows[0].groups).toEqual([]);
   expect(projected.items.filter(x=>x.metric==="expected_group")).toEqual([]);
  });
+ it("retains canonical input sources and incomplete sales coverage without zero invention",()=>{
+  const provenance={sales:"canonical_order_lines",recipes:"owner_recipe_lines",
+   counts:"dated_owner_stock_counts",purchases:"nonvoid_purchase_lines",coverage:"incomplete" as const};
+  const result=projectUsageTool({from:"2026-10-20",to:"2026-10-21",
+   rows:[{...milk,expected:null,actual:null,differencePct:null,status:null,
+    missing:["salesCoverage"]}],missing:["salesCoverage"],groupBy:null,provenance});
+  expect(result.provenance).toEqual(provenance);
+  expect(result.rows[0]).toMatchObject({expected:null,actual:null});
+  expect(result.missing).toContain("salesCoverage");
+ });
  it("caps both nested groups and rows and marks omissions without inventing actual shift use",()=>{
   const rows=Array.from({length:45},(_,i)=>({...milk,ingredientId:"ingredient-"+i,
    name:"Ingredient "+i,groups:Array.from({length:31},(_,j)=>({
