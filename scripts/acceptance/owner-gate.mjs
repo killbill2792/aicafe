@@ -39,7 +39,7 @@ export function domainsForPaths(paths){
   const backend=/^(?:lib\/|supabase\/migrations\/)/.test(p);
   if(!app&&!backend)continue;
   const seenBefore=found.size;
-  if(/^lib\/ai\/|^app\/api\/ai\/|^components\/home\/Supervisor/.test(p))found.add("supervisor");
+  if(/^lib\/ai\/|^app\/api\/ai\/|^components\/home\/Supervisor|^supabase\/migrations\//.test(p))found.add("supervisor");
   if(includes(p,/gmail/))found.add("gmail");
   if(includes(p,/inventor|pantry|purchas|receipt|suppl|recipe|attach|fileevidence/))found.add("inventory");
   if(includes(p,/staff|schedul|labor|shift|availability|demand|olivia/))found.add("staffing");
