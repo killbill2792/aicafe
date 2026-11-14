@@ -43,6 +43,14 @@ test("write receipts originate only from actually new local ledger rows",()=>{
   delta:20000,receiptId:"receipt_1",status:"committed"
  }]);
  assert.deepEqual(ledgerWrites(old,old,expected),[]);
+ const two=[...received,{id:"receipt_3",line_id:"purchase_3",
+  created_at:"2026-11-13T09:00:00Z",name:"Espresso beans",
+  base_unit:"g",quantity_base:"1.0000",voided_at:null,cost_cents:250}];
+ const unorderedLabels=[...expected,{sourceLineId:"human_line_2",
+  ingredient:"espresso_beans",unit:"g_x10000",delta:10000,costCents:250}];
+ assert.deepEqual(ledgerWrites(old,two,unorderedLabels).map(x=>x.sourceLineId),
+  ["human_line_2","human_line_1"]);
+
  assert.throws(()=>ledgerWrites(old,[...old,{...received[1],cost_cents:500}],expected),/saved_purchase_cost_mismatch/);
  assert.equal(ledgerWrites(old,[...received,{...received[1],id:"receipt_2",
   line_id:"purchase_2"}],expected)[1].sourceLineId,"unexpected_1");
