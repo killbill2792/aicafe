@@ -70,7 +70,7 @@ export async function createStaffScheduleMandateChallenge(scope:MandateScope,
  const expiresAt=validFutureDate(input.expiresAt);
  if(!Number.isSafeInteger(input.limitValue)||input.limitValue<1||input.limitValue>30)
    throw new Error("staff_mandate_recipient_limit_invalid");
- if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(input.weekStart)||
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(input.weekStart)||
    new Date(input.weekStart+"T12:00:00Z").getUTCDay()!==1)
    throw new Error("staff_mandate_monday_required");
  const end=new Date(input.weekStart+"T00:00:00Z").valueOf()+7*86400000;
