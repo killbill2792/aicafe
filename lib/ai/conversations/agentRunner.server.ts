@@ -13,7 +13,7 @@ import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId,ambiguousEarlierReceiptIngredient} from "@/lib/ai/supervisor/loop/receiptAllocation";
-import {proposeLoop,commitLoop} from "@/lib/ai/supervisor/loop/engine";
+import {proposeLoop,commitLoop,simulateLoop,effectHash} from "@/lib/ai/supervisor/loop/engine";
 import {authorizesInventoryWrite,ownerTextSupportsTypedLine,ownerTextSupportsTypedFinancials,receivedPurchaseDocument} from "@/lib/ai/agent/tools/purchaseIntent";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -229,21 +229,38 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
               "This order was already approved or several drafts match. An approved order cannot be silently changed; specify a new order or review the existing one.");
           const previous=correction?previousOrders[0]:undefined;
           const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,supplierPurchase:input}));
-          const draft=await proposeLoop(proposalScope,supervisorLoopRegistry,
-            new SupabaseLoopRepository(),supplierPurchaseOrderCapabilityId,input,key);
-          if(draft.status!=="draft")throw new ToolError("validation","Purchase-order draft is no longer active.");
-          if(previous&&previous.id!==draft.id){
-            // One service-only SQL CAS simultaneously rejects the earlier
-            // draft and links its replacement for old cards to follow.
-            const {data,error}=await createAdminSupabaseClient()
-              .rpc("supervisor_supersede_supplier_draft",{
+          // A correction uses ONE PostgreSQL transaction. Persisting a new draft
+          // and then invalidating the old one would create a crash window in
+          // which both approval cards are actionable.
+          let draft:{id:string;revision:number;status:string;canonicalEffectPayload:unknown};
+          if(previous){
+            const simulation=await simulateLoop(proposalScope,supervisorLoopRegistry,
+              supplierPurchaseOrderCapabilityId,input);
+            const validated=supervisorLoopRegistry.get(supplierPurchaseOrderCapabilityId)
+              .parseEffect(simulation.effect);
+            const {data,error}=await createAdminSupabaseClient().rpc(
+              "supervisor_replace_supplier_draft",{
                p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
-               p_thread_id:id,p_previous_id:previous.id,
-               p_previous_revision:previous.revision,p_new_id:draft.id});
-            if(error||data!=="superseded")
+               p_thread_id:id,p_previous_id:previous.id,p_previous_revision:previous.revision,
+               p_request_key:key,p_effect:validated,p_effect_hash:effectHash(validated),
+               p_baseline:simulation.baseline,p_monitor_spec:simulation.monitorSpec
+              });
+            const row=(data as {proposal?:{
+              id:string;business_id:string;owner_user_id:string;thread_id:string;
+              status:string;revision:number;canonical_effect_payload:unknown
+            }}|null)?.proposal;
+            if(error||!row||row.business_id!==scope.businessId||
+              row.owner_user_id!==scope.ownerUserId||row.thread_id!==id||
+              row.status!=="draft")
               throw new ToolError("validation",
-                "The earlier purchase order changed before this correction. Check the current order; no replacement was approved.");
+                "Purchase-order correction was not saved. The original approval remains unchanged unless an atomic replacement is verified.");
+            draft={id:row.id,revision:row.revision,status:row.status,
+              canonicalEffectPayload:row.canonical_effect_payload};
+          }else{
+            draft=await proposeLoop(proposalScope,supervisorLoopRegistry,
+              new SupabaseLoopRepository(),supplierPurchaseOrderCapabilityId,input,key);
           }
+          if(draft.status!=="draft")throw new ToolError("validation","Purchase-order draft is no longer active.");
           const effect=draft.canonicalEffectPayload as SupplierPurchaseOrderEffect;
           return {proposalId:draft.id,revision:draft.revision,
             supplierName:effect.supplierName,subtotalCents:effect.subtotalCents,
