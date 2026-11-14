@@ -27,7 +27,7 @@ test("owner-impacting infrastructure and migrations cannot silently escape the g
  assert.deepEqual(domainsForPaths(["supabase/migrations/20261113022500_supervisor_owner_message_inventory_effect.sql"]),
   ["supervisor","inventory"]);
  assert.deepEqual(domainsForPaths(["lib/data/futureEconomics.server.ts"]),["supervisor"]);
- assert.deepEqual(domainsForPaths([".github/workflows/ai-cafe-pr-baseline.yml"]),["acceptance"]);
+ assert.deepEqual(domainsForPaths([".github/workflows/ai-cafe-pr-baseline.yml"]),["supervisor","acceptance"]);
  assert.deepEqual(domainsForPaths(["docs/README.md","README.md"]),[]);
  assert.throws(()=>domainsForPaths(["lib/connectors/newProvider/oauth.ts"]),/unknown_connector_contract/);
  assert.throws(()=>domainsForPaths(["app/api/connectors/unknown/callback/route.ts"]),/unknown_connector_contract/);
