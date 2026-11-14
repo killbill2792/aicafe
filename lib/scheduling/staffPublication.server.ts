@@ -31,10 +31,11 @@ export async function cancelStaffPublication(scope:Scope,proposalId:string){
  const publication=await db.from("staff_schedule_publications")
   .select("id").eq("business_id",scope.businessId)
   .eq("owner_user_id",scope.ownerUserId).eq("proposal_id",proposalId).maybeSingle();
- if(publication.error||!publication.data)result(publication.error);
+ const authorizedPublication=publication.data;
+ if(publication.error||!authorizedPublication)throw new Error("staff_publication_scope_unavailable",{cause:publication.error});
  const {data,error}=await db.rpc("staff_schedule_cancel_publication",{
   p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
-  p_publication_id:publication.data.id,
+  p_publication_id:authorizedPublication.id,
  });
  if(error||!data||data.state!=="cancelled")result(error);
  return data as {state:"cancelled";publicationId:string;
@@ -207,16 +208,17 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
   }
   const updated=await db.from("staff_schedule_deliveries")
    .select("status,employee_id").eq("business_id",businessId).eq("publication_id",p.id).limit(201);
-  if(updated.error||!updated.data)result(updated.error);
+  if(updated.error||!updated.data)throw new Error("staff_publication_receipts_unavailable",{cause:updated.error});
+  const receiptRows=updated.data;
   const possible=new Set(p.snapshot.map(s=>s.employee_id));
-  const present=new Set(updated.data.map(x=>x.employee_id));
+  const present=new Set(receiptRows.map(x=>x.employee_id));
   const missing=[...possible].filter(id=>!present.has(id)).length;
-  const failures=updated.data.filter(x=>["failed","uncertain","sending"].includes(x.status)).length;
-  const pending=updated.data.filter(x=>["prepared","sent"].includes(x.status)).length;
-  const delivered=updated.data.filter(x=>["delivered","read","sent_by_owner"].includes(x.status)).length;
+  const failures=receiptRows.filter(x=>["failed","uncertain","sending"].includes(x.status)).length;
+  const pending=receiptRows.filter(x=>["prepared","sent"].includes(x.status)).length;
+  const delivered=receiptRows.filter(x=>["delivered","read","sent_by_owner"].includes(x.status)).length;
   const complete=errors===0&&missing===0&&failures===0&&pending===0;
   const evidence={week:p.week_start,publicationId:p.id,
-   eligible:updated.data.length,delivered,missing,failures,pending,
+   eligible:receiptRows.length,delivered,missing,failures,pending,
    providerEnabled:blockers.length===0};
   const taskId="staff-publication:"+p.id;
   const t=await db.from("operating_tasks").upsert({
