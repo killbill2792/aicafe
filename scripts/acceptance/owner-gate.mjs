@@ -2,7 +2,7 @@
 /* Required Task 17a no-secret owner-domain acceptance on exact PR heads.
  * Live Luna quality is separate and is never inferred from this job. */
 import {execFileSync,spawnSync} from "node:child_process";
-import {existsSync,mkdirSync,readFileSync,writeFileSync,realpathSync} from "node:fs";
+import {appendFileSync,existsSync,mkdirSync,readFileSync,writeFileSync,realpathSync} from "node:fs";
 import {resolve,dirname,sep} from "node:path";
 import {pathToFileURL} from "node:url";
 import {parseNameStatus} from "../e2e/targeted.mjs";
@@ -49,6 +49,29 @@ export function domainsForPaths(paths){
  }
  return DOMAINS.filter(d=>found.has(d));
 }
+/** Same original baseline change categories; computed from local Git instead
+ * of the rate-limited GitHub pull-request listFiles API. */
+export function classifyBaselinePaths(paths){
+ if(!Array.isArray(paths)||!paths.length)fail("empty_pull_request_diff");
+ const docs=p=>p.startsWith("docs/")||p.endsWith(".md")||p.startsWith(".github/ISSUE_TEMPLATE/");
+ const e2e=p=>p.startsWith("e2e/")||p.startsWith("tests/e2e/")||
+  /(?:\.e2e\.|\.spec\.)/.test(p)||p.startsWith("playwright.config.")||
+  /^scripts\/[^/]*(?:visual|screenshots)/.test(p)||
+  /^\.github\/workflows\/[^/]*(?:visual|screenshots)\.yml$/.test(p);
+ const code=paths.some(p=>!docs(p)),supervisor=paths.some(p=>p.startsWith("lib/ai/"));
+ const hasE2e=paths.some(e2e),hasDocs=paths.some(docs);
+ return {code,e2e:hasE2e,supervisor,"docs-only":hasDocs,"non-docs":code};
+}
+function classifyForGithub(){
+ if(process.env.GITHUB_EVENT_NAME!=="pull_request")fail("classify_pr_only");
+ const files=changedPaths(process.env.BASE_SHA,process.env.HEAD_SHA);
+ const values=classifyBaselinePaths(files);
+ if(!process.env.GITHUB_OUTPUT)fail("github_output_required");
+ appendFileSync(process.env.GITHUB_OUTPUT,
+  Object.entries(values).map(([key,value])=>key+"="+value+"\n").join(""));
+ console.log("Git-local baseline changed paths:",JSON.stringify(values));
+}
+
 export function selectedFiles(domains){
  if(!Array.isArray(domains)||!domains.length||new Set(domains).size!==domains.length||
     domains.some(d=>!DOMAINS.includes(d)))fail("invalid_domains");
@@ -111,7 +134,8 @@ export function selection({eventName,base,head,paths}){
 }
 function main(){
  const action=process.argv[2];
- if(action!=="run"&&action!=="verify")fail("usage_run_or_verify");
+ if(action==="classify"){classifyForGithub();return;}
+ if(action!=="run"&&action!=="verify")fail("usage_classify_run_or_verify");
  const root=realpathSync(process.cwd()),head=process.env.HEAD_SHA;
  if(!sha(head)||git("rev-parse","HEAD")!==head)fail("checkout_head_mismatch");
  const plan=selection({eventName:process.env.GITHUB_EVENT_NAME,
