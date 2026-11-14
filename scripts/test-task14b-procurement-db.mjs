@@ -107,6 +107,18 @@ try{
   drafts.rows.find(x=>x.id===correctedDraft)?.baseline.editedFrom===oldDraft,
   "old approval card is retired and follows the corrected draft");
  await fails(()=>asRole(a.owner,()=>supersede()),/permission denied|service_role_only/);
+ // Fresh negative supplier evidence must invalidate an old quote at the
+ // database commit boundary, not only during model planning.
+ const unavailableQuote=id();
+ await db.query("insert into public.ai_supplier_quotes"+
+  " (id,business_id,owner_user_id,client_request_id,supplier_name,item_name,price_cents,"+
+  " package_count,package_unit,source_kind,quoted_on,currency_code,ingredient_id,"+
+  " available_status,available_checked_at,created_at)"+
+  " values($1,$2,$3,$4,'Farm A','Milk',450,1,'gal','supplier_quote',"+
+  " $5::date,'CAD',$6,'unavailable',null,now()+interval '1 second')",
+ [unavailableQuote,a.cafe,a.owner,id(),today,a.ingredient]);
+ await fails(()=>invoke(),/supplier_quote_superseded/);
+ await db.query("delete from public.ai_supplier_quotes where id=$1",[unavailableQuote]);
  const before=await one("select (select count(*)::int from public.pantry_stock_purchases where business_id=$1) as stock,"+
   " (select count(*)::int from public.expenses where business_id=$1) as expenses",[a.cafe]);
  const first=(await invoke())?.result;
