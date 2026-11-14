@@ -45,7 +45,7 @@ const descriptions:Record<StaffProposalName,string>={
  propose_staff_change:"Prepare a card to change an existing staff member's name, role, hourly wage, phone or active status; provide the complete desired profile.",
  propose_availability_change:"Use when owner requests recurring availability or a day off in plain language, e.g. 'Maria can only work Mon, Wed, Fri mornings' or 'Sam is off next Tuesday'. Review before save.",
  propose_rule_change:"Prepare a card to change one team rule. Provide exactly one of boolean_value or number_value based on the rule type.",
- propose_send_schedule:"Prepare an owner approval card to PUBLISH the verified weekly roster and NOTIFY opted-in staff. Set publish_and_notify:true ONLY when the owner wants publication and automated employee messaging. Otherwise false means copy-ready text ONLY. The authorization gateway, not this tool, performs approved publication; report provider accepted/delivered only after real receipts.",
+ propose_send_schedule:"Prepare an owner approval card to PUBLISH the current dated roster and NOTIFY opted-in staff only after explicit review. This message-preparation tool does NOT independently certify legal coverage or labor-policy compliance; request review of the Task 13A evidence. Set publish_and_notify:true ONLY when the owner wants publication and automated employee messaging. Otherwise false means copy-ready text ONLY. The authorization gateway, not this tool, performs approved publication; report provider accepted/delivered only after real receipts.",
 };
 export const staffProposalTools=Object.fromEntries(
  (Object.keys(staffProposalInputs) as StaffProposalName[]).map(name=>[name,{
