@@ -4,8 +4,6 @@ import {randomUUID,createHash} from "node:crypto";
 import {readFileSync,writeFileSync,realpathSync} from "node:fs";
 import {resolve,dirname,isAbsolute,sep} from "node:path";
 import {pathToFileURL} from "node:url";
-import pg from "pg";
-import {chromium} from "@playwright/test";
 import {TEST_CAFES} from "../../../scripts/seed/cafes.mjs";
 import {scoreAcceptance} from "../evidence.mjs";
 import {assertLocalLiveEnvironment,assertLiveManifest} from "./preflight.mjs";
@@ -165,6 +163,9 @@ function ownerLabel(caseLabel,before,otherBefore){
     otherTenant:{before:otherBefore,after:otherBefore}}};
 }
 export async function runLive(manifest,prepared,env,outputPath){
+ // The no-secret evaluator-integrity job deliberately does not run npm ci.
+ // Only real paid execution loads the pinned browser and DB dependencies.
+ const [{default:pg},{chromium}]=await Promise.all([import("pg"),import("@playwright/test")]);
  const db=new pg.Client({connectionString:env.ACCEPTANCE_DATABASE_URL,
   options:"-c default_transaction_read_only=on"});
  const browser=await chromium.launch({headless:true});
