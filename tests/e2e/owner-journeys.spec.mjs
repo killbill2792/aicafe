@@ -1,5 +1,5 @@
 import {test, expect} from "@playwright/test";
-import {randomUUID} from "node:crypto";
+import {randomUUID,createHash} from "node:crypto";
 import pg from "pg";
 import {assertDisposableEnvironment, seededCafe, login, openOwnedPage}
   from "./seeded-auth.mjs";
@@ -370,5 +370,148 @@ test("@purchasing real supplier quote entry preserves currency and denies cross-
   } finally {
     await second.close();
     await first.close();
+  }
+});
+
+
+test("@purchasing owner approves real PO from the Supervisor screen, reopens status and proves no receiving",async({browser})=>{
+  // This verifies the real owner/browser/database portion of the workflow.
+  // Recorded model tests separately prove the multi-tool sequence; a sentinel
+  // provider cannot be passed off as live-model or proactive parity evidence.
+  test.setTimeout(120_000);
+  const own=seededCafe(0),other=seededCafe(1);
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const id={ingredient:randomUUID(),quote:randomUUID(),thread:randomUUID(),proposal:randomUUID()};
+  const now=new Date();
+  const parts=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{
+    timeZone:own.timezone,year:"numeric",month:"2-digit",day:"2-digit"
+  }).formatToParts(now).map(x=>[x.type,x.value]));
+  const today=parts.year+"-"+parts.month+"-"+parts.day;
+  const shift=d=>{const date=new Date(today+"T12:00:00Z");date.setUTCDate(date.getUTCDate()+d);
+    return date.toISOString().slice(0,10)};
+  const name="Task14B Milk "+id.ingredient.slice(0,8);
+  const supplier="Task14B Farm "+id.quote.slice(0,8);
+  const effect={
+    supplierName:supplier,currency:own.currency,neededBy:shift(3),subtotalCents:450,
+    totalCents:null,shippingCents:null,taxCents:null,
+    limitations:["owner_reported_not_supplier_verified","shipping_unknown",
+      "tax_unknown","landed_total_not_comparable"],
+    lines:[{quoteId:id.quote,ingredientId:id.ingredient,itemName:name,
+      neededBaseQuantity:3785.411784,baseUnit:"ml",packs:1,
+      packQuantity:1,packUnit:"gal",priceCents:450,lineSubtotalCents:450,
+      quotedOn:today,deliveryOn:shift(2)}]
+  };
+  const canonical=value=>Array.isArray(value)?value.map(canonical):
+    value&&typeof value==="object"?Object.fromEntries(Object.entries(value)
+      .sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,canonical(v)])):value;
+  const hash=createHash("sha256").update(JSON.stringify(canonical(effect))).digest("hex");
+  let connected=false;
+  const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const second=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  try{
+    await db.connect();connected=true;
+    await db.query("insert into public.ingredients(id,business_id,name,base_unit) values($1,$2,$3,'ml')",
+      [id.ingredient,own.businessId,name]);
+    await db.query("insert into public.ai_supplier_quotes("+
+      " id,business_id,owner_user_id,client_request_id,supplier_name,item_name,ingredient_id,"+
+      " price_cents,package_count,package_unit,source_kind,quoted_on,currency_code,"+
+      " valid_until,available_status,available_checked_at,delivery_on)"+
+      " values($1,$2,$3,$4,$5,$6,$7,450,1,'gal','supplier_quote',"+
+      " $8::date,$9,$10::date,'confirmed',$8::date,$11::date)",
+      [id.quote,own.businessId,own.owner.userId,randomUUID(),supplier,name,id.ingredient,
+        today,own.currency,shift(5),shift(2)]);
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title)"+
+      " values($1,$2,$3,$4,'Task14B Purchase Acceptance')",
+      [id.thread,own.businessId,own.owner.userId,randomUUID()]);
+    await db.query("insert into public.supervisor_proposals("+
+      " id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,"+
+      " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale)"+
+      " values($1,$2,$3,$4,$5,'maya.supplier_purchase_order.v1',1,"+
+      " $6::jsonb,$7,'{}'::jsonb,$8::jsonb,'en')",
+      [id.proposal,own.businessId,own.owner.userId,id.thread,randomUUID(),
+        JSON.stringify(effect),hash,JSON.stringify({durationDays:1,metricScope:"supplier_purchase_order"})]);
+    await db.query("insert into public.ai_messages("+
+      " business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id)"+
+      " values($1,$2,$3,$3,'owner','text',$4,$5)",
+      [own.businessId,id.thread,own.owner.userId,
+        "Compare milk quotes and prepare an order. Do not send it.",randomUUID()]);
+    await db.query("insert into public.ai_messages("+
+      " business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content,grounding)"+
+      " values($1,$2,$3,null,'supervisor','blocks',$4::jsonb,$5::jsonb)",
+      [own.businessId,id.thread,own.owner.userId,
+        JSON.stringify([{type:"text",text:"I checked the saved quote and prepared a purchase order for approval. It has NOT been sent."},
+          {type:"proposal_card",proposalId:id.proposal}]),
+        JSON.stringify({status:"estimated",intent:"operating_tasks",
+          evidence:[{source:"owner_rules",identifier:"task14b-e2e-proposal",asOf:today}]})]);
+    const oldStock=await db.query("select count(*)::int as n from public.pantry_stock_purchases where business_id=$1",[own.businessId]);
+    const oldExpense=await db.query("select count(*)::int as n from public.expenses where business_id=$1",[own.businessId]);
+
+    const page=await first.newPage();
+    await login(page,own);
+    await openOwnedPage(page,own,"?thread="+encodeURIComponent(id.thread));
+    const card=page.getByRole("region",{name:"Supplier purchase-order approval"});
+    await expect(card).toBeVisible({timeout:30_000});
+    await expect(card).toContainText(supplier);
+    await expect(card).toContainText(name);
+    await expect(card).toContainText("Shipping, tax and full landed total: unknown");
+    await expect(card.getByRole("button",{name:"Approve purchase order"})).toBeVisible();
+    const approved=page.waitForResponse(r=>new URL(r.url()).pathname===
+      "/api/ai/threads/"+id.thread+"/proposals"&&r.request().method()==="POST");
+    await card.getByRole("button",{name:"Approve purchase order"}).click();
+    const response=await approved;
+    expect(response.status()).toBe(200);
+    await expect(card).toContainText("Approved for ordering — NOT sent to supplier",
+      {timeout:30_000});
+    const order=await db.query("select id,status,subtotal_cents,currency_code from public.purchase_orders"+
+      " where business_id=$1 and proposal_id=$2",[own.businessId,id.proposal]);
+    expect(order.rows).toHaveLength(1);
+    expect(order.rows[0]).toMatchObject({status:"approved_for_ordering",
+      subtotal_cents:"450",currency_code:own.currency});
+    const count=await db.query("select count(*)::int as n from public.purchase_order_lines"+
+      " where business_id=$1 and purchase_order_id=$2",[own.businessId,order.rows[0].id]);
+    expect(count.rows[0].n).toBe(1);
+    const nowStock=await db.query("select count(*)::int as n from public.pantry_stock_purchases where business_id=$1",[own.businessId]);
+    const nowExpense=await db.query("select count(*)::int as n from public.expenses where business_id=$1",[own.businessId]);
+    expect(nowStock.rows[0].n).toBe(oldStock.rows[0].n);
+    expect(nowExpense.rows[0].n).toBe(oldExpense.rows[0].n);
+    await page.reload();
+    await expect(page.getByRole("region",{name:"Supplier purchase-order approval"}))
+      .toContainText("Approved for ordering — NOT sent to supplier",{timeout:30_000});
+    const foreignPage=await second.newPage();
+    await login(foreignPage,other);
+    const denied=await second.request.get("/api/ai/threads/"+id.thread+"/proposals?ids="+id.proposal);
+    expect(denied.status()).not.toBe(200);
+  }finally{
+    await second.close();await first.close();
+    if(connected){
+      const queries=[
+        ["delete from public.purchase_order_events where business_id=$1 and proposal_id=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.purchase_order_lines where business_id=$1 and purchase_order_id in"+
+          " (select id from public.purchase_orders where business_id=$1 and proposal_id=$2)",
+          [own.businessId,id.proposal]],
+        ["delete from public.purchase_orders where business_id=$1 and proposal_id=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.cafe_suppliers where business_id=$1 and display_name=$2",
+          [own.businessId,supplier]],
+        ["delete from public.supervisor_effect_attempts where business_id=$1 and proposal_id=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.supervisor_approvals where business_id=$1 and proposal_id=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.supervisor_proposals where business_id=$1 and id=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.ai_messages where business_id=$1 and thread_id=$2",
+          [own.businessId,id.thread]],
+        ["delete from public.ai_threads where business_id=$1 and id=$2",
+          [own.businessId,id.thread]],
+        ["delete from public.ai_supplier_quotes where business_id=$1 and id=$2",
+          [own.businessId,id.quote]],
+        ["delete from public.ingredients where business_id=$1 and id=$2",
+          [own.businessId,id.ingredient]]
+      ];
+      for(const [query,params] of queries)await db.query(query,params).catch(()=>{});
+      await db.end();
+    }
   }
 });
