@@ -2,6 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
+import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {buildScheduleMessage} from "@/lib/calc/scheduling/ownerDeliveryLinks";
 import {staffProviderBlockers,sendStaffScheduleTemplate} from "@/lib/whatsapp/staffScheduleDelivery.server";
 
@@ -169,6 +170,44 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
   }).eq("business_id",businessId).eq("id","staff-publication:"+row.id)
    .neq("status","handled");
   if(done.error)result(done.error);
+ }
+ // Autonomous continuation is explicitly constrained to the single
+ // owner-phone-MFA-verified week/recipient mandate. The trusted SQL gateway
+ // performs the exact source CAS, quota claim, approval, and effect receipt
+ // atomically. No model text, background tick, or task row grants permission.
+ const mandates=await db.from("supervisor_mandates")
+  .select("id,owner_user_id,staff_week_start,limit_value")
+  .eq("business_id",businessId)
+  .eq("capability_id","olivia.staff_propose_send_schedule.v2")
+  .is("superseded_at",null).is("revoked_at",null)
+  .gt("expires_at",new Date().toISOString()).limit(30);
+ if(mandates.error)result(mandates.error);
+ if(mandates.data?.length){
+  const drafts=await db.from("supervisor_proposals")
+   .select("id,owner_user_id,thread_id,revision,locale,canonical_effect_payload")
+   .eq("business_id",businessId)
+   .eq("capability_id","olivia.staff_propose_send_schedule.v2")
+   .eq("status","draft").order("created_at",{ascending:true}).limit(60);
+  if(drafts.error)result(drafts.error);
+  const gateway=new SupervisorEffectGateway();
+  for(const m of mandates.data){
+   const candidate=(drafts.data??[]).find(row=>{
+    const e=row.canonical_effect_payload as {operation?:unknown;
+      payload?:{week_start?:unknown;publish_and_notify?:unknown}}|null;
+    return row.owner_user_id===m.owner_user_id&&
+      e?.operation==="propose_send_schedule"&&
+      e.payload?.publish_and_notify===true&&
+      e.payload.week_start===m.staff_week_start;
+   });
+   if(!candidate)continue;
+   try{
+    const done=await gateway.commitStaffMandate({
+      businessId,ownerUserId:candidate.owner_user_id,threadId:candidate.thread_id,
+      locale:candidate.locale==="ar"?"ar":candidate.locale==="es"?"es":"en",
+    },candidate.id,candidate.revision);
+    if(done.state!=="applied")state.blocked++;
+   }catch{state.blocked++;} // SQL denies stale/revoked/over-cap without side effects.
+  }
  }
  const proposals=await db.from("supervisor_proposals")
   .select("id,owner_user_id,canonical_effect_payload")
