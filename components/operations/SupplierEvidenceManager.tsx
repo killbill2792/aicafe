@@ -5,7 +5,9 @@ import {parseSupplierDollars,compareSupplierQuotePrices} from "@/lib/calc/suppli
 import type {PublicSource} from "@/lib/ai/suppliers/contracts";
 type Quote={id:string;supplierName:string;itemName:string;priceCents:number;
  packageCount:number;packageUnit:string;sourceKind:string;sourceUrl:string|null;
- quotedOn:string;evidenceStatus:string;createdAt:string};
+ quotedOn:string;evidenceStatus:string;createdAt:string;currencyCode:string|null;
+ ingredientId:string|null;validUntil:string|null;availableStatus:"unknown"|"confirmed"|"unavailable";
+ availableCheckedAt:string|null;deliveryOn:string|null};
 export type SupplierCopy={
  title:string;description:string;supplier:string;item:string;price:string;count:string;
  unit:string;sourceKind:string;sourceUrl:string;date:string;save:string;saving:string;
@@ -16,8 +18,8 @@ const field="min-h-12 w-full rounded-xl border border-line bg-surface p-3 text-[
 async function read<T>(resp:Response):Promise<T>{if(!resp.ok)throw new Error();return resp.json() as Promise<T>;}
 export default function SupplierEvidenceManager({copy,today,currency}:{copy:SupplierCopy;today:string;currency:string|null}){
   const locale=useLocale();
-  const formatPrice=(cents:number)=>currency?
-    new Intl.NumberFormat(locale,{style:"currency",currency}).format(cents/100):
+  const formatPrice=(cents:number,quoteCurrency:string|null)=>quoteCurrency?
+    new Intl.NumberFormat(locale,{style:"currency",currency:quoteCurrency}).format(cents/100):
     new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100)+" ("+copy.currencyMissing+")";
  const [supplier,setSupplier]=useState("");
  const [item,setItem]=useState("");
@@ -27,6 +29,11 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
  const [kind,setKind]=useState("supplier_quote");
  const [url,setUrl]=useState("");
  const [quotedOn,setQuotedOn]=useState("");
+ const [quoteCurrency,setQuoteCurrency]=useState(currency??"");
+ const [validUntil,setValidUntil]=useState("");
+ const [availability,setAvailability]=useState<"unknown"|"confirmed"|"unavailable">("unknown");
+ const [availableCheckedAt,setAvailableCheckedAt]=useState("");
+ const [deliveryOn,setDeliveryOn]=useState("");
  const [quotes,setQuotes]=useState<Quote[]>([]);
  const [query,setQuery]=useState("");
  const [sources,setSources]=useState<PublicSource[]>([]);
@@ -44,7 +51,8 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
  async function submit(e:FormEvent<HTMLFormElement>){
   e.preventDefault();
   const cents=parseSupplierDollars(dollars);
-  if(!cents||busy)return;
+  if(!cents||busy||!/^[A-Z]{3}$/u.test(quoteCurrency)||
+    (availability==="confirmed"&&!availableCheckedAt))return;
   setBusy(true);setNotice("");
   requestId.current??=crypto.randomUUID();
   try{
@@ -52,10 +60,14 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
     method:"POST",headers:{"content-type":"application/json"},
     body:JSON.stringify({requestId:requestId.current,supplierName:supplier,itemName:item,
      priceCents:cents,packageCount:Number(count),packageUnit:unit,sourceKind:kind,
-     sourceUrl:url.trim()||null,quotedOn:quotedOn||today}),
+     sourceUrl:url.trim()||null,quotedOn:quotedOn||today,
+     currencyCode:quoteCurrency,ingredientId:null,validUntil:validUntil||null,
+     availableStatus:availability,availableCheckedAt:availableCheckedAt||null,
+     deliveryOn:deliveryOn||null}),
    }));
    setQuotes((prev)=>[result.quote,...prev.filter(q=>q.id!==result.quote.id)]);
    setNotice(copy.saved);setSupplier("");setItem("");setDollars("");setUrl("");
+   setAvailability("unknown");setAvailableCheckedAt("");setDeliveryOn("");setValidUntil("");
    requestId.current=null;
   }catch{setNotice(copy.error);}
   finally{setBusy(false);}
@@ -70,7 +82,9 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
   }catch{setNotice(copy.searchUnavailable);}
   finally{setBusy(false);}
  }
- const comparison=quotes.length>1&&quotes[0].itemName.toLocaleLowerCase()===quotes[1].itemName.toLocaleLowerCase()
+ const currencyComparable=quotes.length>1&&Boolean(quotes[0].currencyCode)&&
+   quotes[0].currencyCode===quotes[1].currencyCode;
+ const comparison=currencyComparable&&quotes[0].itemName.toLocaleLowerCase()===quotes[1].itemName.toLocaleLowerCase()
   ?compareSupplierQuotePrices(quotes[1],quotes[0]):null;
  return <div className="flex flex-col gap-4">
   <p className="rounded-2xl border border-line bg-warn-soft p-4 text-[17px] text-ink">
@@ -87,6 +101,23 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
     <label className="text-[17px] font-semibold text-ink">{copy.unit}
      <select className={field+" mt-1"} value={unit} onChange={e=>{setUnit(e.target.value);requestId.current=null;}}>
       {["each","oz","lb","kg","gal","liter","case"].map(x=><option key={x}>{x}</option>)}</select></label>
+    <label className="text-[17px] font-semibold text-ink">Quote currency (ISO 4217)
+     <input className={field+" mt-1"} required maxLength={3} pattern="[A-Z]{3}"
+      value={quoteCurrency} onChange={e=>{setQuoteCurrency(e.target.value.toUpperCase());requestId.current=null;}}/></label>
+    <label className="text-[17px] font-semibold text-ink">Supplier availability
+     <select className={field+" mt-1"} value={availability}
+      onChange={e=>{setAvailability(e.target.value as typeof availability);requestId.current=null;}}>
+      <option value="unknown">Not confirmed</option><option value="confirmed">Owner-confirmed</option>
+      <option value="unavailable">Unavailable</option></select></label>
+    {availability==="confirmed"&&<label className="text-[17px] font-semibold text-ink">Availability checked on
+     <input className={field+" mt-1"} type="date" required max={today} value={availableCheckedAt}
+      onChange={e=>{setAvailableCheckedAt(e.target.value);requestId.current=null;}}/></label>}
+    <label className="text-[17px] font-semibold text-ink">Offer expires (optional)
+     <input className={field+" mt-1"} type="date" min={quotedOn||undefined} value={validUntil}
+      onChange={e=>{setValidUntil(e.target.value);requestId.current=null;}}/></label>
+    <label className="text-[17px] font-semibold text-ink">Confirmed delivery date (optional)
+     <input className={field+" mt-1"} type="date" value={deliveryOn}
+      onChange={e=>{setDeliveryOn(e.target.value);requestId.current=null;}}/></label>
     <label className="text-[17px] font-semibold text-ink">{copy.sourceKind}
      <select className={field+" mt-1"} value={kind} onChange={e=>{setKind(e.target.value);requestId.current=null;}}>
       {["supplier_quote","supplier_email","public_listing"].map(x=><option key={x}>{x}</option>)}</select></label>
@@ -99,18 +130,20 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
       onChange={e=>{setQuotedOn(e.target.value);requestId.current=null;}}/></label>
    </div>
    <button className="mt-4 min-h-12 rounded-full bg-ink px-5 text-[17px] font-bold text-paper"
-    disabled={busy||!parseSupplierDollars(dollars)}>{busy?copy.saving:copy.save}</button>
+    disabled={busy||!parseSupplierDollars(dollars)||!/^[A-Z]{3}$/u.test(quoteCurrency)||
+      availability==="confirmed"&&!availableCheckedAt}>{busy?copy.saving:copy.save}</button>
   </form>
   <section className="rounded-2xl bg-card p-4">
    <h2 className="font-headline text-2xl font-bold text-ink">{copy.history}</h2>
    {!quotes.length&&<p className="mt-2 text-[17px] text-ink-muted">{copy.empty}</p>}
    {comparison?.comparable&&<p className="mt-3 text-[17px] text-ink">
-    {copy.comparison}: {formatPrice(comparison.differenceCents)} ({copy.notVerified})</p>}
+    {copy.comparison}: {formatPrice(comparison.differenceCents,quotes[0].currencyCode)} ({copy.notVerified})</p>}
    <ul className="mt-3 space-y-3">{quotes.map(q=><li key={q.id}
     className="rounded-xl border border-line p-3 text-[17px] text-ink">
-    <strong>{q.itemName} · {formatPrice(q.priceCents)}</strong>
+    <strong>{q.itemName} · {formatPrice(q.priceCents,q.currencyCode)}</strong>
     <p>{q.supplierName} · {q.packageCount} {q.packageUnit} · {q.quotedOn}</p>
-    <p className="text-ink-muted">{copy.notVerified} · {q.sourceKind}</p>
+    <p className="text-ink-muted">{copy.notVerified} · {q.sourceKind} · {q.availableStatus} · {q.availableCheckedAt??"date unknown"}</p>
+    <p className="text-ink-muted">Delivery: {q.deliveryOn??"unknown"} · Expires: {q.validUntil??"unknown"}</p>
     {q.sourceUrl&&<a href={q.sourceUrl} rel="noopener noreferrer" target="_blank"
      className="underline">{copy.sourceUrl}</a>}
    </li>)}</ul>
