@@ -25,6 +25,13 @@ export const supplierPurchaseInputSchema=z.strictObject({
  preferredSupplier:z.string().trim().min(2).max(120).nullable(),
 });
 export type SupplierPurchaseInput=z.infer<typeof supplierPurchaseInputSchema>;
+/** A proposal replacement is NEVER inferred from owner keywords. The model must
+ * bind a correction to an explicit, owner-scoped saved draft ID. Null always
+ * means an independent new PO; this is not approval authority. */
+export const supplierPurchaseProposalToolInputSchema=z.strictObject({
+ ...supplierPurchaseInputSchema.shape,replaceProposalId:z.uuid().nullable(),
+});
+export type SupplierPurchaseProposalInput=z.infer<typeof supplierPurchaseProposalToolInputSchema>;
 const poLine=z.strictObject({
  quoteId:z.uuid(),ingredientId:z.uuid(),itemName:z.string().min(1).max(120),
  neededBaseQuantity:z.number().finite().positive(),baseUnit:z.enum(["g","ml","each"]),
