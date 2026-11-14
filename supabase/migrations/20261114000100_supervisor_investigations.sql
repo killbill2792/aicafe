@@ -31,7 +31,7 @@ create table public.supervisor_investigations (
 create index supervisor_investigations_due_idx
   on public.supervisor_investigations(next_retry_at,created_at)
   where phase in ('collect','investigate','awaiting_owner');
--- squawk-ignore ban-alter-row-level-security
+-- Reason: This is a new table created within this migration; RLS precedes client grants.\n-- squawk-ignore ban-alter-row-level-security
 alter table public.supervisor_investigations enable row level security;
 create policy supervisor_investigations_owner_read
   on public.supervisor_investigations for select to authenticated
