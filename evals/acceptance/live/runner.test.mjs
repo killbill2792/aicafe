@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,planOwnerApprovals,readPersistedModelUsage,requireCompletedTurn,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
+import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,planOwnerApprovals,observedOutcome,readPersistedModelUsage,requireCompletedTurn,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
 
 const milk={name:"Whole milk",base_unit:"ml",quantity_base:"5.2500"};
 const beans={name:"Espresso beans",base_unit:"g",quantity_base:"12.5000"};
@@ -150,4 +150,13 @@ test("only independently labeled purchase lines are approved through owner autho
  assert.throws(()=>planOwnerApprovals({expected},[],[{
   ...p,canonical_effect_payload:{...p.canonical_effect_payload,ingredientId:null}}]),
   /live_capture:/);
+});
+
+test("a pending owner-approval card cannot be mistaken for no action",()=>{
+ const queued=[{id:"queued_purchase",status:"draft"}];
+ assert.equal(observedOutcome([],[],queued,0),"needs_review");
+ assert.equal(observedOutcome([],[],[{status:"approved"}],0),"needs_review");
+ assert.equal(observedOutcome([],[],[],0),"no_action");
+ assert.equal(observedOutcome([],[],[],1),"needs_review");
+ assert.equal(observedOutcome([{receiptId:"real_purchase"}],[],queued,0),"updated");
 });
