@@ -16,7 +16,7 @@ const week="2026-11-23";
 const p={id:"publication-A",business_id:"cafe-A",owner_user_id:"owner-A",
  proposal_id:"proposal-A",week_start:week,status:"published",
  snapshot:[{employee_id:"worker-A",date:week,start:"09:00",end:"15:00"}]};
-function dbFixture(status="prepared",explicit=true){
+function dbFixture(status="prepared",explicit=true,upcomingPublished=true){
  const operations:Array<Record<string,unknown>>=[];
  const calls:Array<{table:string;column:string;value:unknown}>=[];
  const rpc=vi.fn(async(name:string)=>{
@@ -33,13 +33,16 @@ function dbFixture(status="prepared",explicit=true){
      canonical_effect_payload:{payload:{week_start:week,publish_and_notify:explicit}}}]:
    table==="staff_schedule_publications"?[p]:
    table==="staff_schedule_deliveries"?[{id:"delivery-A",employee_id:"worker-A",
-     status,recipient_e164:"+14155550123"}]:[];
+     status,recipient_e164:"+14155550123"}]:
+   table==="employees"?[{id:"worker-A"}]:
+   table==="scheduled_shifts"?[{id:"shift-A"}]:
+   table==="memberships"?[{user_id:"owner-A"}]:[];
   const q:Record<string,unknown>={};
   q.select=()=>q;q.eq=(column:string,value:unknown)=>{calls.push({table,column,value});return q;};
   q.gte=()=>q;q.order=()=>q;q.limit=async()=>({data:rows(),error:null});
   q.maybeSingle=async()=>({data:table==="employees"?{
     id:"worker-A",display_name:"Ari",preferred_language:"en",
-   }:table==="staff_schedule_publications"?p:null,error:null});
+   }:table==="staff_schedule_publications"&&upcomingPublished?p:null,error:null});
   q.upsert=async(row:Record<string,unknown>)=>{operations.push(row);return {error:null};};
   return q;
  });
@@ -75,6 +78,19 @@ describe("Task 13B existing-Supervisor durability and receipt boundary",()=>{
   mocks.blockers.mockReturnValue(["WHATSAPP_STAFF_TEMPLATE_APPROVED"]);
   await followUpStaffPublicationForBusiness(f.db,"cafe-A",week);
   expect(f.rpc.mock.calls.filter(x=>x[0]==="staff_schedule_publish")).toHaveLength(0);
+  expect(mocks.send).not.toHaveBeenCalled();
+ });
+ it("proactively creates the next-week owner decision before a new chat prompt",async()=>{
+  const f=dbFixture("prepared",true,false);mocks.admin.mockReturnValue(f.db);
+  mocks.blockers.mockReturnValue(["WHATSAPP_STAFF_TEMPLATE_APPROVED"]);
+  await followUpStaffPublicationForBusiness(f.db,"cafe-A","2026-11-21");
+  expect(f.operations).toContainEqual(expect.objectContaining({
+    kind:"staff_schedule_publication",status:"needs_owner",
+    owner_user_id:"owner-A",agent_id:"olivia",
+    payload:expect.objectContaining({
+      week:"2026-11-23",legalAndCoverageVerification:"not_claimed",
+    }),
+  }));
   expect(mocks.send).not.toHaveBeenCalled();
  });
  it("withholds all outbound sends when provider/template is off and creates an owner task",async()=>{
