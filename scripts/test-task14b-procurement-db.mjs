@@ -108,6 +108,12 @@ try{
   "owner correction creates its replacement within the atomic RPC");
  check((await supersede())?.result?.proposal?.id===correctedDraft,
   "replayed owner correction returns identical proposal without a second draft");
+ const movedCurrent=await one("select public.supervisor_replace_supplier_draft("+
+  "$1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9::jsonb,$10::jsonb) as result",
+  [a.cafe,a.owner,a.thread,correctedDraft,1,replacementKey,JSON.stringify(effect),
+   hash,JSON.stringify({}),JSON.stringify({durationDays:1,metricScope:"supplier_purchase_order"})]);
+ check(movedCurrent?.result?.proposal?.id===correctedDraft,
+  "retry after a previous-draft reader moves to replacement is idempotent");
  const drafts=await db.query("select id,status,baseline from public.supervisor_proposals where id=any($1::uuid[])",
   [[oldDraft,correctedDraft]]);
  const replacements=await db.query(
