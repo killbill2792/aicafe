@@ -1,5 +1,14 @@
 # Supervisor evaluations — zero-cost recorded traces
 
+> **Shared acceptance integrity:** `evals/acceptance/` is a separate code-based
+> evidence scorer and mutation-tested calibration suite. Every code PR runs it
+> through the existing required baseline, without a paid provider. Its
+> synthetic cases never establish a real-model pass. The human-label, trusted
+> DB readback and live performance protocol is in
+> [acceptance-quality.md](acceptance-quality.md). This preserves, rather than
+> replaces, the 13 recorded Promptfoo golden cases below.
+
+
 This suite uses Promptfoo 0.125.1 as a local test runner, **not as an API caller**.
 Its TypeScript provider imports the production `runAgentTurn` and supplies
 recorded Responses events as the model stream. The Supervisor still runs its
