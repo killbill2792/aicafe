@@ -1,6 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 import {buildScheduleMessage} from "@/lib/calc/scheduling/ownerDeliveryLinks";
 import {staffProviderBlockers,sendStaffScheduleTemplate} from "@/lib/whatsapp/staffScheduleDelivery.server";
 
@@ -137,4 +138,37 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
   if(!complete)state.blocked++;
  }
  return state;
+}
+
+/** A live, RLS-authorized Staff screen projection. Status never implies that
+ * acceptance, delivery, employee acknowledgement or attendance are the same. */
+export async function readStaffWeekPublication(week:string):Promise<null|{
+ publishedAt:string;publicationId:string;expected:number;prepared:number;accepted:number;
+ delivered:number;read:number;openedManually:number;failed:number;uncertain:number;
+}>{
+ if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(week))return null;
+ const owner=await requireSchedulingOwner();
+ if(!owner)return null;
+ const publication=await owner.supabase.from("staff_schedule_publications")
+  .select("id,published_at,snapshot").eq("business_id",owner.businessId)
+  .eq("week_start",week).eq("status","published").maybeSingle();
+ if(publication.error)result(publication.error);
+ if(!publication.data)return null;
+ const p=publication.data;
+ const deliveries=await owner.supabase.from("staff_schedule_deliveries")
+  .select("employee_id,status").eq("business_id",owner.businessId)
+  .eq("publication_id",p.id).limit(201);
+ if(deliveries.error||!deliveries.data)result(deliveries.error);
+ const rows=deliveries.data??[];
+ const shifts=p.snapshot as Shift[];
+ if(!Array.isArray(shifts))result("invalid_snapshot");
+ return {publishedAt:p.published_at,publicationId:p.id,
+  expected:new Set(shifts.map(x=>x.employee_id)).size,
+  prepared:rows.filter(x=>x.status==="prepared"||x.status==="sending").length,
+  accepted:rows.filter(x=>x.status==="sent").length,
+  delivered:rows.filter(x=>x.status==="delivered").length,
+  read:rows.filter(x=>x.status==="read").length,
+  openedManually:rows.filter(x=>x.status==="sent_by_owner").length,
+  failed:rows.filter(x=>x.status==="failed").length,
+  uncertain:rows.filter(x=>x.status==="uncertain").length};
 }
