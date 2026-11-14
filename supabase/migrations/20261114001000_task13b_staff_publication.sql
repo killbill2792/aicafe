@@ -43,7 +43,7 @@ alter table public.staff_schedule_deliveries
   add column if not exists attempted_at timestamptz,
   add column if not exists delivered_at timestamptz,
   add column if not exists retry_after timestamptz,
-  add column if not exists retry_count integer not null default 0;
+  add column if not exists retry_count bigint not null default 0;
 -- This is an additive composite FK; existing rows have null publication_id.
 -- Reason: Existing prepared worker rows have null publication_id; this additive composite FK is validated on future real publication links only.
 -- squawk-ignore constraint-missing-not-valid, adding-foreign-key-constraint
