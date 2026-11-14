@@ -67,6 +67,12 @@ export function assertLiveManifest(manifest,{assetRoot,allowedOwners,minReceipts
     !/^(g|ml|each)_x10000$/.test(write.unit)||
     !Number.isSafeInteger(write.delta)||write.delta<=0)
     fail("invalid_canonical_stock_delta");
+   if(item.category==="receipt"&&
+    (!Number.isSafeInteger(write.costCents)||write.costCents<0))
+    fail("receipt_saved_cost_label_required");
+   if(Object.hasOwn(write,"costCents")&&write.costCents!==null&&
+    (!Number.isSafeInteger(write.costCents)||write.costCents<0))
+    fail("invalid_purchase_cost_label");
   }
   const asset=item.input.assetSha256;
   if(item.category==="receipt"&&!asset)fail("receipt_asset_required");
