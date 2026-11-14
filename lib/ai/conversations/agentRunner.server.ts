@@ -21,7 +21,7 @@ import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperim
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
-import {supplierPurchaseOrderCapabilityId,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {readSupplierPurchaseOrders} from "@/lib/data/supplierPurchasing.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
@@ -210,32 +210,44 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       purchasing:{
         list:async()=>{
           const {client}=await simulationOwnerReader(proposalScope);
-          return readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId);
+          const [orders,rows]=await Promise.all([
+            readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId),
+            readOwnerProposals(client,
+              {businessId:scope.businessId,ownerUserId:scope.ownerUserId},
+              {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
+               statuses:["draft"],limit:21})
+          ]);
+          // Reuse the canonical scoped proposal reader: every correction target
+          // is a real saved draft, not a guessed name or model-supplied café.
+          const drafts=rows.slice(0,20).map(row=>{
+            const effect=supplierPurchaseOrderEffectSchema.parse(row.canonical_effect_payload);
+            return {id:row.id,revision:row.revision,supplierName:effect.supplierName,
+              itemNames:effect.lines.map(line=>line.itemName),
+              subtotalCents:effect.subtotalCents,currency:effect.currency};
+          });
+          return {...orders,drafts,draftsTruncated:rows.length>20};
         },
         inspect:input=>investigateSupplierPurchase(proposalScope,input),
         propose:async input=>{
-          // A multi-turn owner correction must retire the previous draft's
-          // approval authority, not leave two independently approvable POs.
-          // The correction signal comes only from the SAVED OWNER message.
-          const correction=/\b(?:change|update|revise|correct|instead|rather|make it|reduce|increase)\b/iu
-            .test(p.ownerText);
-          const previousOrders=correction?await readOwnerProposals(await getDb(),
+          // ONLY an explicitly bound proposal ID can authorize a replacement.
+          // Keywords in owner text must NEVER cancel an unrelated PO approval.
+          const {replaceProposalId,...purchaseInput}=input;
+          const previous=replaceProposalId?(await readOwnerProposals(await getDb(),
             {businessId:scope.businessId,ownerUserId:scope.ownerUserId},
-            {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
-             statuses:["draft","approved","executing","committed"],limit:20}):[];
-          if(correction&&(previousOrders.length>1||
-              previousOrders.some(row=>row.status!=="draft")))
+            {threadId:id,id:replaceProposalId,
+             capabilityId:supplierPurchaseOrderCapabilityId,limit:1}))[0]:undefined;
+          if(replaceProposalId&&(!previous||
+              !["draft","rejected"].includes(previous.status)))
             throw new ToolError("validation",
-              "This order was already approved or several drafts match. An approved order cannot be silently changed; specify a new order or review the existing one.");
-          const previous=correction?previousOrders[0]:undefined;
+              "The selected purchase-order draft is not available for correction. Read the saved draft list and choose the exact active draft, or create a separate new order.");
           const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,supplierPurchase:input}));
-          // A correction uses ONE PostgreSQL transaction. Persisting a new draft
-          // and then invalidating the old one would create a crash window in
-          // which both approval cards are actionable.
+          // A correction uses ONE PostgreSQL transaction. Retrying a rejected
+          // old ID is allowed ONLY if its original request key matches an
+          // already verified replacement; the DB enforces this replay rule.
           let draft:{id:string;revision:number;status:string;canonicalEffectPayload:unknown};
           if(previous){
             const simulation=await simulateLoop(proposalScope,supervisorLoopRegistry,
-              supplierPurchaseOrderCapabilityId,input);
+              supplierPurchaseOrderCapabilityId,purchaseInput);
             const validated=supervisorLoopRegistry.get(supplierPurchaseOrderCapabilityId)
               .parseEffect(simulation.effect);
             const {data,error}=await createAdminSupabaseClient().rpc(
@@ -257,8 +269,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             draft={id:row.id,revision:row.revision,status:row.status,
               canonicalEffectPayload:row.canonical_effect_payload};
           }else{
+            // Null replacement ID means a NEW purchase request even if other
+            // unrelated drafts exist and the owner says 'increase production'.
             draft=await proposeLoop(proposalScope,supervisorLoopRegistry,
-              new SupabaseLoopRepository(),supplierPurchaseOrderCapabilityId,input,key);
+              new SupabaseLoopRepository(),supplierPurchaseOrderCapabilityId,purchaseInput,key);
           }
           if(draft.status!=="draft")throw new ToolError("validation","Purchase-order draft is no longer active.");
           const effect=draft.canonicalEffectPayload as SupplierPurchaseOrderEffect;
