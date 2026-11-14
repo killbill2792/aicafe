@@ -239,6 +239,21 @@ describe("Task 13a registered Supervisor staffing conversation",()=>{
      saved:false,previewOnly:scenario.preview,
      completeCoverage:scenario.covered,
      approvalTool:scenario.approval?"existing_card_created":"not_created"});
+    // Acceptance integrity: a passing model reply never substitutes for
+    // actual one-and-only proposal receipt, and a read/failed plan must
+    // never silently acquire one. This is grounded in the tool results.
+    expect(result.results.filter(x=>x.source==="olivia_schedule"),
+     scenario.id).toHaveLength(1);
+    if(scenario.approval){
+     expect(data,scenario.id).toMatchObject({
+      proposalReady:true,proposalId:"33333333-3333-4333-8333-333333333333"});
+     expect(approved,scenario.id).toHaveBeenCalledWith(
+      expect.objectContaining({name:"propose_schedule",
+       input:expect.objectContaining({week_start:"2026-11-09"})}));
+    }else{
+     expect(data,scenario.id).not.toHaveProperty("proposalId");
+     expect(data,scenario.id).toMatchObject({approvalTool:"not_created"});
+    }
     if(scenario.missingWages)expect(data?.laborCost).toMatchObject({
      cashWagesCents:null,missingWageEmployeeIds:[shift.employeeId]});
     if(scenario.absence)expect(data?.temporaryConstraint).toEqual(temp);
