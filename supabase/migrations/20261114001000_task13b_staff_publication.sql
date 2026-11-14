@@ -48,13 +48,16 @@ alter table public.staff_schedule_deliveries
 alter table public.staff_schedule_deliveries add constraint staff_delivery_publication_fk
   foreign key (publication_id,business_id)
   references public.staff_schedule_publications(id,business_id);
--- Reason: Expand the existing status-only constraint for provider-uncertain/read states, preserving all legacy states.
+-- Reason: The existing status-only check excludes provider-uncertain and read receipts;
+-- explicitly replace this exact constraint after preserving all legacy status values.
 -- squawk-ignore ban-drop-constraint
-alter table public.staff_schedule_deliveries
-  drop constraint staff_schedule_deliveries_status_check;
+alter table public.staff_schedule_deliveries drop constraint staff_schedule_deliveries_status_check;
+-- Reason: Existing rows already satisfy the original stricter check, and this
+-- broadened NOT VALID constraint enforces every future change without table scan.
+-- Validate it separately, outside the migration transaction in a controlled
+-- operational window to avoid blocking readers.
 alter table public.staff_schedule_deliveries add constraint staff_schedule_deliveries_status_check
   check (status in ('prepared','sending','sent','failed','uncertain','delivered','read','sent_by_owner')) not valid;
-alter table public.staff_schedule_deliveries validate constraint staff_schedule_deliveries_status_check;
 create unique index staff_schedule_delivery_provider_wamid
   on public.staff_schedule_deliveries(meta_message_id)
   where meta_message_id is not null;
