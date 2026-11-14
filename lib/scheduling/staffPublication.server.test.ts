@@ -192,6 +192,18 @@ describe("Task 13B existing-Supervisor durability and receipt boundary",()=>{
     payload:expect.objectContaining({delivered:0,manuallyOpened:1}),
   }));
  });
+ it("a provider 429 preserves the retry state for the SQL bounded backoff",async()=>{
+  const f=dbFixture();mocks.admin.mockReturnValue(f.db);
+  mocks.send.mockResolvedValue({state:"retry",reason:"rate_limited"});
+  await followUpStaffPublicationForBusiness(f.db,"cafe-A",week);
+  expect(f.rpc).toHaveBeenCalledWith("staff_schedule_finish_delivery",{
+   p_delivery_id:"delivery-A",p_attempt_token:"token-A",
+   p_state:"retry",p_wamid:null,p_error:"rate_limited",
+  });
+  expect(f.operations).toContainEqual(expect.objectContaining({
+    kind:"staff_schedule_delivery",status:"needs_owner",
+  }));
+ });
  it("an ambiguous network outcome records uncertain and never fabricates delivery",async()=>{
   const f=dbFixture();mocks.admin.mockReturnValue(f.db);
   mocks.send.mockResolvedValue({state:"uncertain",reason:"network_or_timeout_ambiguous"});
