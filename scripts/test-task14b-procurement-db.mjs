@@ -31,6 +31,9 @@ async function asRole(user,fn){
   await db.query("select set_config('request.jwt.claim.role','authenticated',true)");
   await db.query("select set_config('request.jwt.claim.sub',$1,true)",[user]);
   const result=await fn();
+  // This helper only reads or verifies denials. Roll back even a successful
+  // query so the calling session keeps its original service JWT context.
+  await db.query("ROLLBACK TO SAVEPOINT task14b_role");
   await db.query("SET LOCAL ROLE NONE");
   await db.query("RELEASE SAVEPOINT task14b_role");
   return result;
@@ -43,6 +46,7 @@ async function asRole(user,fn){
 }
 try{
  await db.connect();await db.query("BEGIN");
+ await db.query("select set_config('request.jwt.claim.role','service_role',true)");
  check((await one("select to_regprocedure('public.supervisor_commit_supplier_po(uuid,uuid,uuid,uuid,text)') is not null as ok")).ok,"migration installed");
  for(const [owner,address] of [[a.owner,"task14b-a@example.invalid"],[b.owner,"task14b-b@example.invalid"]]){
   await db.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)"+

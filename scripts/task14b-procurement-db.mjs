@@ -68,9 +68,9 @@ try{
   check((await one("select relrowsecurity as enabled from pg_class where oid=$1::regclass",["public."+table])).enabled,
    table+" is covered by row-level security");
  }
- await db.query(\`insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
+ await db.query(`insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
  values($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated','task14b-owner@example.invalid','',now(),now()),
- ($2,'00000000-0000-0000-0000-000000000000','authenticated','authenticated','task14b-other@example.invalid','',now(),now())\`,
+ ($2,'00000000-0000-0000-0000-000000000000','authenticated','authenticated','task14b-other@example.invalid','',now(),now())`,
  [id.owner,id.otherOwner]);
  await db.query("insert into public.businesses(id,name,is_demo,timezone,currency) values($1,'Task14B Local A',false,'UTC',$3),($2,'Task14B Local B',false,'UTC',$3)",
  [id.cafe,id.otherCafe,currency]);
@@ -80,18 +80,18 @@ try{
  [id.thread,id.cafe,id.owner,randomUUID()]);
  await db.query("insert into public.ingredients(id,business_id,name,base_unit) values($1,$2,'Milk','ml')",
  [id.ingredient,id.cafe]);
- await db.query(\`insert into public.ai_supplier_quotes(id,business_id,owner_user_id,client_request_id,
+ await db.query(`insert into public.ai_supplier_quotes(id,business_id,owner_user_id,client_request_id,
  supplier_name,item_name,ingredient_id,price_cents,package_count,package_unit,source_kind,
  quoted_on,currency_code,valid_until,available_status,available_checked_at,delivery_on)
  values($1,$2,$3,$4,'Farm A','Milk',$5,450,1,'gal','supplier_quote',
- $6,$7,$8,'confirmed',$9,$10)\`,
+ $6,$7,$8,'confirmed',$9,$10)`,
  [id.quote,id.cafe,id.owner,randomUUID(),id.ingredient,iso(-1),currency,iso(7),iso(-1),iso(2)]);
- await db.query(\`insert into public.supervisor_proposals(
+ await db.query(`insert into public.supervisor_proposals(
  id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,
  canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision)
  values($1,$2,$3,$4,$5,'maya.supplier_purchase_order.v1',1,$6::jsonb,$7,
  '{}'::jsonb,'{"durationDays":1,"metricScope":"supplier_purchase_order"}'::jsonb,
- 'en','executing',3)\`,
+ 'en','executing',3)`,
  [id.proposal,id.cafe,id.owner,id.thread,id.request,JSON.stringify(effect),hash]);
  const fullArgs=args(id.cafe,id.owner,id.proposal,hash);
  const before=await one("select count(*)::int as n from public.pantry_stock_purchases where business_id=$1",[id.cafe]);
@@ -104,12 +104,12 @@ try{
   "42501","Even service role cannot write before a gateway click attempt");
  check((await one("select count(*)::int as n from public.purchase_orders where business_id=$1",[id.cafe])).n===0,
   "Unauthorized calls did not create a PO");
- await db.query(\`insert into public.supervisor_approvals(
+ await db.query(`insert into public.supervisor_approvals(
  business_id,proposal_id,owner_user_id,approved_revision,effect_hash,authorization_kind)
- values($1,$2,$3,1,$4,'click')\`,[id.cafe,id.proposal,id.owner,hash]);
- await db.query(\`insert into public.supervisor_effect_attempts(
+ values($1,$2,$3,1,$4,'click')`,[id.cafe,id.proposal,id.owner,hash]);
+ await db.query(`insert into public.supervisor_effect_attempts(
  attempt_key,business_id,proposal_id,effect_hash,authorization_kind,business_date,state,created_at)
- values($1,$2,$3,$4,'click',$5,'executing',now()-interval '6 minutes')\`,
+ values($1,$2,$3,$4,'click',$5,'executing',now()-interval '6 minutes')`,
  [id.attempt,id.cafe,id.proposal,hash,iso()]);
  await fails(()=>asRole("service_role",id.otherOwner,()=>
    db.query("select public.supervisor_commit_supplier_po($1,$2,$3,$4,$5)",
