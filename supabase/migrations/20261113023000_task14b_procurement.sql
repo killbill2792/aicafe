@@ -365,36 +365,6 @@ revoke all on function public.supervisor_reconcile_supplier_po(uuid,uuid,uuid,uu
 grant execute on function public.supervisor_reconcile_supplier_po(uuid,uuid,uuid,uuid,integer)
  to service_role;
 
--- Bounded progress cursor for the EXISTING Supervisor cron. This is not a
--- second action queue; the authoritative pending state stays on proposals and
--- effect attempts. Never update an immutable proposal merely to rotate reads.
-create table public.supplier_po_recovery_marks(
- business_id uuid not null references public.businesses(id) on delete cascade,
- proposal_id uuid not null,
- checked_at timestamptz not null,
- primary key(business_id,proposal_id),
- foreign key(business_id,proposal_id)
-  references public.supervisor_proposals(business_id,id) on delete cascade
-);
--- Reason: New service-managed cursor table has no pre-existing rows.
--- squawk-ignore ban-alter-row-level-security
-alter table public.supplier_po_recovery_marks enable row level security;
-revoke all on public.supplier_po_recovery_marks from public,anon,authenticated;
-grant all on public.supplier_po_recovery_marks to service_role;
-
--- Service-only RLS-invoker projection. Existing worker owns cadence/priority;
--- stale checks rotate by checked_at without editing approved effect revisions.
-create view public.supplier_po_recovery_due with (security_invoker=true) as
- select p.id,p.business_id,p.owner_user_id,p.thread_id,
-   p.revision,p.locale,p.status,p.updated_at,m.checked_at
- from public.supervisor_proposals p
- left join public.supplier_po_recovery_marks m
-  on m.business_id=p.business_id and m.proposal_id=p.id
- where p.capability_id='maya.supplier_purchase_order.v1'
-   and p.status='executing';
-revoke all on public.supplier_po_recovery_due from public,anon,authenticated;
-grant select on public.supplier_po_recovery_due to service_role;
-
 -- Immutable, café-scoped link between replacement and rejected draft. Do NOT
 -- edit supervisor_proposals.baseline: its existing trigger forbids it.
 create table public.supplier_po_draft_replacements(
