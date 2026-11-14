@@ -41,7 +41,9 @@ alter table public.staff_schedule_deliveries
   add column if not exists publication_id uuid,
   add column if not exists attempt_token uuid,
   add column if not exists attempted_at timestamptz,
-  add column if not exists delivered_at timestamptz;
+  add column if not exists delivered_at timestamptz,
+  add column if not exists retry_after timestamptz,
+  add column if not exists retry_count integer not null default 0;
 -- This is an additive composite FK; existing rows have null publication_id.
 -- Reason: Existing prepared worker rows have null publication_id; this additive composite FK is validated on future real publication links only.
 -- squawk-ignore constraint-missing-not-valid, adding-foreign-key-constraint
@@ -173,7 +175,8 @@ begin
   select * into d from public.staff_schedule_deliveries
     where publication_id=pub.id and business_id=pub.business_id
       and employee_id=p_employee_id for update;
-  if not found or d.status<>'prepared' then return null; end if;
+  if not found or d.status<>'prepared' or d.retry_count>=5 or
+     (d.retry_after is not null and d.retry_after>now()) then return null; end if;
   select * into e from public.employees
     where business_id=pub.business_id and id=p_employee_id and active for share;
   if not found or e.phone_e164 is distinct from d.recipient_e164
@@ -196,27 +199,46 @@ end $$;
 revoke all on function public.staff_schedule_claim_delivery(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.staff_schedule_claim_delivery(uuid,uuid) to service_role;
 
+-- A callback may arrive before the Meta HTTP acceptance response is recorded.
+-- Match the existing owner transport's exact wamid advisory lock ordering.
 create function public.staff_schedule_finish_delivery(
   p_delivery_id uuid,p_attempt_token uuid,p_state text,p_wamid text default null,
   p_error text default null
 ) returns boolean language plpgsql security definer set search_path=public,pg_temp as $$
 declare d public.staff_schedule_deliveries%rowtype;
+  callback public.whatsapp_status_ledger%rowtype;
+  final_state text;
 begin
   if auth.role() is distinct from 'service_role' then
     raise exception 'service_role_only' using errcode='42501'; end if;
-  if p_state not in ('sent','failed','uncertain')
+  if p_state not in ('sent','failed','uncertain','retry')
     or (p_state='sent') is distinct from (p_wamid is not null)
-    or (p_wamid is not null and p_wamid !~ '^wamid\.[A-Za-z0-9_.:-]{1,240}={0,2}$')
+    or (p_wamid is not null and p_wamid !~ '^wamid\\.[A-Za-z0-9_.:-]{1,240}={0,2}$')
     or length(coalesce(p_error,''))>120 then
     raise exception 'invalid_delivery_result' using errcode='22023'; end if;
+  if p_state='sent' then
+    perform pg_advisory_xact_lock(hashtextextended('wa_status:'||p_wamid,0));
+    select * into callback from public.whatsapp_status_ledger
+      where provider_wamid=p_wamid;
+  end if;
   select * into d from public.staff_schedule_deliveries
     where id=p_delivery_id and attempt_token=p_attempt_token and status='sending'
       and publication_id is not null for update;
   if not found then return false; end if;
-  update public.staff_schedule_deliveries
-    set status=p_state,meta_message_id=p_wamid,error_code=p_error,
-      sent_at=case when p_state='sent' then now() else null end,updated_at=now()
-    where id=d.id;
+  final_state:=case
+    when p_state='retry' and d.retry_count>=4 then 'failed'
+    when p_state='retry' then 'prepared'
+    when p_state='sent' and callback.state is not null then callback.state
+    else p_state end;
+  update public.staff_schedule_deliveries set status=final_state,
+    retry_count=case when p_state='retry' then d.retry_count+1 else d.retry_count end,
+    retry_after=case when final_state='prepared' then
+      now()+make_interval(secs=>least(3600,60*power(2,d.retry_count)::int)) else null end,
+    meta_message_id=p_wamid,error_code=case when final_state in ('failed','uncertain','prepared')
+      then p_error else null end,
+    sent_at=case when p_state='sent' then now() else null end,
+    delivered_at=case when final_state in ('delivered','read') then now() else null end,
+    updated_at=now() where id=d.id;
   return true;
 end $$;
 revoke all on function public.staff_schedule_finish_delivery(uuid,uuid,text,text,text) from public,anon,authenticated;
@@ -231,6 +253,7 @@ begin
   if auth.role() is distinct from 'service_role' then
     raise exception 'service_role_only' using errcode='42501'; end if;
   if p_status not in ('sent','delivered','read','failed') then return false; end if;
+  perform pg_advisory_xact_lock(hashtextextended('wa_status:'||p_wamid,0));
   select * into d from public.staff_schedule_deliveries
     where meta_message_id=p_wamid and publication_id is not null for update;
   if not found then return false; end if;
