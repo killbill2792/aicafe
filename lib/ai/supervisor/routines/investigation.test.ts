@@ -45,6 +45,8 @@ describe("Task 15A proactive multi-step agentic acceptance",()=>{
     expect(verifyInvestigationTurn(turn({tools:["get_sales","get_sales","calculate"]}))).toEqual({
       ok:false,reason:"evidence_incomplete",
     });
+    expect(verifyInvestigationTurn(turn({results:[{source:"sales",period:null,missing:[]}]})))
+      .toEqual({ok:false,reason:"evidence_incomplete"});
     const result=verifyInvestigationTurn(turn());
     expect(result).toMatchObject({ok:true,tools:["get_sales","get_labor"],
       missing:["laborDaysIncomplete"]});
