@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {domainsForPaths,selectedFiles,selection,validateReport,validateTap,
+import {domainsForPaths,classifyBaselinePaths,selectedFiles,selection,validateReport,validateTap,
  validateProof,DOMAINS} from "./owner-gate.mjs";
 import {parseNameStatus} from "../e2e/targeted.mjs";
 const head="a".repeat(40),base="b".repeat(40);
@@ -85,4 +85,30 @@ test("exact-head domain proof fails on wrong SHA, missing tests or fake Luna ide
   {...ok,provider_model_proof:true},{...ok,executed_tests:0},
  ])assert.throws(()=>validateProof(bad,{head,domains}),/owner_acceptance:/);
  assert.throws(()=>validateProof(ok,{head:"not-sha",domains}),/invalid_or_wrong_head_proof/);
+});
+
+test("Git-local CI classification retains the original docs, code, E2E and Supervisor gates",()=>{
+ assert.deepEqual(classifyBaselinePaths(["docs/README.md"]),{
+  code:false,e2e:false,supervisor:false,"docs-only":true,"non-docs":false
+ });
+ assert.deepEqual(classifyBaselinePaths(["lib/ai/agent/loop.server.ts","tests/e2e/owner-journeys.spec.mjs"]),{
+  code:true,e2e:true,supervisor:true,"docs-only":false,"non-docs":true
+ });
+ assert.deepEqual(classifyBaselinePaths([".github/workflows/ai-cafe-pr-baseline.yml"]),{
+  code:true,e2e:false,supervisor:false,"docs-only":false,"non-docs":true
+ });
+ assert.deepEqual(classifyBaselinePaths(["docs/README.md","scripts/dev-dispatcher/ci.mjs"]),{
+  code:true,e2e:false,supervisor:false,"docs-only":true,"non-docs":true
+ });
+ assert.deepEqual(classifyBaselinePaths([".github/workflows/a-visual.yml"]),{
+  code:true,e2e:true,supervisor:false,"docs-only":false,"non-docs":true
+ });
+ assert.throws(()=>classifyBaselinePaths([]),/empty_pull_request_diff/);
+});
+test("shared connector boundary runs Gmail security tests; new unknown provider remains blocked",()=>{
+ const domains=domainsForPaths(["lib/connectors/registry.server.ts","lib/connectors/crypto.server.ts",
+  "lib/connectors/registry.test.ts"]);
+ assert.deepEqual(domains,["gmail"]);
+ assert.throws(()=>domainsForPaths(["lib/connectors/newProvider/token.server.ts"]),
+  /unknown_connector_contract/);
 });
