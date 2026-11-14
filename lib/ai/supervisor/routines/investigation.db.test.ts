@@ -175,24 +175,36 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       const blocked=await admin.query("select phase,last_error,failure_count from public.supervisor_investigations where business_id=$1 and owner_user_id=$2 and source_type='operating_task' and source_id=$3",
         [cafes[0],owners[0],taskId]);
       expect(blocked.rows).toHaveLength(1);
-      expect(blocked.rows[0]).toMatchObject({phase:"blocked",last_error:"model_incomplete"});
+      expect(blocked.rows[0]).toMatchObject({phase:"investigate",last_error:"model_incomplete"});
       // pg returns bigint counters as strings. Check the exact numeric value.
       expect(Number(blocked.rows[0].failure_count)).toBe(5);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
         [cafes[0],threads[0]])).rows[0].n).toBe(1);
       expect(await rpc(a,"supervisor_claim_investigation",[stamp(now,120)])).toBeNull();
+      // Source evidence did not change, but provider recovery MUST resume
+      // automatically after the long cooldown; the warning remains one message.
+      const automaticRetry=await rpc(a,"supervisor_claim_investigation",
+        [stamp(now,500)]) as Record<string,unknown>;
+      expect(automaticRetry.source_id).toBe(taskId);
+      expect(automaticRetry.phase).toBe("investigate");
+      expect(await rpc(a,"supervisor_fail_investigation",[
+        cafes[0],owners[0],"operating_task",taskId,automaticRetry.lease_token,
+        "provider_unavailable",stamp(now,501),
+      ])).toBe(true);
+      expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
+        [cafes[0],threads[0]])).rows[0].n).toBe(1);
       // Material source revision, not an arbitrary retry of an uncertain effect,
       // safely reopens investigation with a fresh checkpoint and newer priority.
       expect(await rpc(a,"supervisor_enqueue_investigation",[
         cafes[0],owners[0],threads[0],"operating_task",taskId,
-        hex("e"),hex("f"),140,stamp(now,121),
+        hex("e"),hex("f"),140,stamp(now,502),
       ])).toBe(false);
       expect(await rpc(a,"supervisor_enqueue_investigation",[
         cafes[0],owners[0],threads[0],"operating_task",taskId,
-        hex("8"),hex("9"),220,stamp(now,121),
+        hex("8"),hex("9"),220,stamp(now,502),
       ])).toBe(true);
       const reopened=await rpc(a,"supervisor_claim_investigation",
-        [stamp(now,122)]) as Record<string,unknown>;
+        [stamp(now,503)]) as Record<string,unknown>;
       expect(reopened.phase).toBe("collect");
       expect(reopened.step_version).toBe(0);
       expect(reopened.revision_hash).toBe(hex("8"));
