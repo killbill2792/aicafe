@@ -296,7 +296,7 @@ grant execute on function public.supervisor_commit_supplier_po(uuid,uuid,uuid,uu
 -- Extend the ONE Supervisor effect gateway with the supplier PO receipt.
 create function public.supervisor_reconcile_supplier_po(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
- p_proposal_id uuid,p_revision integer
+ p_proposal_id uuid,p_revision bigint
 ) returns public.supervisor_proposals
 language plpgsql security definer set search_path=public as $$
 declare
