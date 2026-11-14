@@ -328,6 +328,12 @@ begin
       next_status := 'committed';
       next_start := a.business_date + 1;
       proof_ref := 'menu_price_history:' || price_record.id::text;
+    elsif a.receipt_ref = 'inert-toast-claim:' || a.attempt_key::text then
+      -- Keep Task 8a's source-sealed Toast price handoff after recreating
+      -- the shared reconciler for receipt-derived inventory identities.
+      -- This confirms only the inert handoff; never replay a price write.
+      next_status := 'manual_pending';
+      proof_ref := 'inert-toast-price-handoff:' || a.attempt_key::text;
     end if;
   end if;
 
