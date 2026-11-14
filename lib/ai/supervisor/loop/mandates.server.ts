@@ -11,6 +11,17 @@ const CHALLENGE_TTL_MS=5*60*1000;
 export type MandateScope=Pick<OwnerLoopScope,"businessId"|"ownerUserId">;
 export type MandateGrantInput={factorId:string;limitValue:5;expiresAt:string;mandateId?:string;revision?:number};
 export type MandateVerifyInput={challengeId:string;code:string};
+export const staffScheduleMandateCapabilityId="olivia.staff_propose_send_schedule.v2" as const;
+export type StaffMandateGrantInput={factorId:string;limitValue:number;weekStart:string;
+ expiresAt:string;mandateId?:string;revision?:number};
+export function staffScheduleMandatePolicyHash(input:{weekStart:string;limitValue:number;expiresAt:string}){
+ return effectHash({
+  capabilityId:staffScheduleMandateCapabilityId,capabilityVersion:2,
+  limitKind:"count",periodKind:"staff_week",currency:null,
+  weekStart:input.weekStart,limitValue:input.limitValue,expiresAt:input.expiresAt,
+ });
+}
+
 export function mandatePolicyHash(expiresAt:string):string{
  return effectHash({capabilityId:CAPABILITY_ID,capabilityVersion:CAPABILITY_VERSION,
   limitKind:goalMandatePolicy.limitKind,limitValue:goalMandatePolicy.limitValue,
@@ -49,6 +60,47 @@ export async function createMandateChallenge(scope:MandateScope,client:SupabaseC
   challengeExpiresAt});
  return {challengeId:saved.id,expiresAt:saved.expires_at,mandateExpiresAt:saved.mandate_expires_at,
   capabilityId:CAPABILITY_ID,limitValue:saved.limit_value,periodKind:saved.period_kind};
+}
+/** The existing Supabase Auth verified-phone challenge is reused; there is
+ * no second OTP store or blanket staff mandate. Week and recipient ceiling
+ * are immutable signed policy inputs in the original ledger. */
+export async function createStaffScheduleMandateChallenge(scope:MandateScope,
+ client:SupabaseClient,input:StaffMandateGrantInput,
+ gateway=new SupervisorEffectGateway()){
+ const expiresAt=validFutureDate(input.expiresAt);
+ if(!Number.isSafeInteger(input.limitValue)||input.limitValue<1||input.limitValue>30)
+   throw new Error("staff_mandate_recipient_limit_invalid");
+ if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(input.weekStart)||
+   new Date(input.weekStart+"T12:00:00Z").getUTCDay()!==1)
+   throw new Error("staff_mandate_monday_required");
+ const end=new Date(input.weekStart+"T00:00:00Z").valueOf()+7*86400000;
+ if(!Number.isFinite(end)||Date.parse(expiresAt)>end)
+   throw new Error("staff_mandate_expires_after_week");
+ const hasId=Boolean(input.mandateId),hasRevision=Number.isSafeInteger(input.revision)&&
+   Number(input.revision)>0;
+ if(hasId!==hasRevision)throw new Error("mandate_revision_required");
+ const {data:{user},error:userError}=await client.auth.getUser();
+ if(userError||!user||user.id!==scope.ownerUserId)throw new Error("authentication_required");
+ const {data:factors,error:factorError}=await client.auth.mfa.listFactors();
+ if(factorError)throw new Error("phone_mfa_unavailable");
+ const factor=phoneFactor(factors,input.factorId);
+ const {data:issued,error:challengeError}=await client.auth.mfa.challenge({factorId:factor.id});
+ if(challengeError||!issued?.id)throw new Error("phone_mfa_challenge_failed");
+ const challengeId=randomUUID(),mandateId=input.mandateId??randomUUID();
+ const challengeExpiresAt=new Date(Date.now()+CHALLENGE_TTL_MS).toISOString();
+ const policyHash=staffScheduleMandatePolicyHash({
+  weekStart:input.weekStart,limitValue:input.limitValue,expiresAt,
+ });
+ const saved=await gateway.createStaffMandateChallenge(scope,{
+  id:challengeId,action:hasId?"revise":"grant",mandateId,
+  mandateRevision:hasId?Number(input.revision):0,policyHash,
+  limitValue:input.limitValue,weekStart:input.weekStart,
+  mandateExpiresAt:expiresAt,factorId:factor.id,
+  providerChallengeId:issued.id,challengeExpiresAt,
+ });
+ return {challengeId:saved.id,expiresAt:saved.expires_at,
+  mandateExpiresAt:saved.mandate_expires_at,capabilityId:staffScheduleMandateCapabilityId,
+  weekStart:saved.staff_week_start,limitValue:saved.limit_value,periodKind:saved.period_kind};
 }
 export async function verifyMandateChallenge(scope:MandateScope,client:SupabaseClient,
  input:MandateVerifyInput,gateway=new SupervisorEffectGateway()):Promise<SupervisorMandate>{
