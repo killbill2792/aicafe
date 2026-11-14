@@ -68,7 +68,7 @@ try{
   "create schema auth","create table auth.users(id uuid primary key)",
   "create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$",
   "create function auth.role() returns text language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),'anon') $$",
-  "create table public.businesses(id uuid primary key,timezone text not null,is_demo boolean not null default false)",
+  "create table public.businesses(id uuid primary key,timezone text not null,currency text not null,is_demo boolean not null default false)",
   "create table public.memberships(business_id uuid not null references businesses(id),user_id uuid not null references auth.users(id),role text not null,primary key(business_id,user_id))",
   "create table public.ai_threads(id uuid primary key,business_id uuid not null references businesses(id),owner_user_id uuid not null references auth.users(id),unique(business_id,id,owner_user_id))",
   "create table public.locations(id uuid primary key,business_id uuid not null references businesses(id))",
@@ -90,7 +90,7 @@ try{
   await db.query("create function public.supervisor_commit_staff_proposal(uuid,uuid,uuid,uuid,integer) returns jsonb language plpgsql as $stub$ declare p public.supervisor_proposals; begin update public.supervisor_proposals set status='executing',revision=revision+1,updated_at=now() where business_id=$1 and owner_user_id=$2 and thread_id=$3 and id=$4 and revision=$5 and status='approved' returning * into p; if p.id is null then raise exception 'stub_revision_conflict' using errcode='P0001'; end if; update public.supervisor_proposals set status='committed',revision=revision+1,committed_at=now(),monitoring_start_date=current_date+1,updated_at=now() where id=p.id returning * into p; return jsonb_build_object('state','applied','proposal',to_jsonb(p)); end $stub$");
  // Rehearse an UPGRADE of an occupied pre-Task10 approval ledger, not just
  // creating empty new tables: preserve real existing approval records untouched.
- await db.query("insert into businesses(id,timezone,is_demo) values($1,'UTC',false),($2,'UTC',false)",[B,B2]);
+ await db.query("insert into businesses(id,timezone,currency,is_demo) values($1,'UTC','USD',false),($2,'UTC','EUR',false)",[B,B2]);
  await db.query("insert into auth.users(id) values($1),($2)",[OWNER,OWNER2]);
  await db.query("insert into memberships(business_id,user_id,role) values($1,$2,'owner'),($3,$4,'owner')",[B,OWNER,B2,OWNER2]);
  await db.query("insert into ai_threads(id,business_id,owner_user_id) values($1,$2,$3),($4,$5,$6)",[THREAD,B,OWNER,THREAD2,B2,OWNER2]);
@@ -166,6 +166,34 @@ try{
   {...purchasedEffect,costCents:4500});
  assert.equal((await claimIntent(pricedIntent,pricedProposal)).rows[0].supervisor_claim_owner_purchase_effect.authorization_kind,
   "owner_message","an exact owner-specified cost must still be allowed");
+ // A café's configured currency, not a dollar assumption, authorizes
+ // the matching owner-entered symbol; an unrelated symbol cannot bypass SQL.
+ for(const [currency,token] of [["GBP","£"],["EUR","€"],["CAD","CA$"],["AUD","A$"]]){
+  await db.query("update businesses set currency=$1 where id=$2",[currency,B]);
+  const msg=await intentRow("I bought 10 gallons of milk for "+token+"45.00");
+  const id=randomUUID();
+  await seedProposal(B,OWNER,THREAD,id,"maya.inventory_purchase.v1",
+   {...purchasedEffect,costCents:4500});
+  assert.equal((await claimIntent(msg,id)).rows[0].supervisor_claim_owner_purchase_effect.authorization_kind,
+   "owner_message",currency+" owner price must be accepted from the configured currency");
+  const wrongMsg=await intentRow("I bought 10 gallons of milk for $45.00");
+  const wrongId=randomUUID();
+  await seedProposal(B,OWNER,THREAD,wrongId,"maya.inventory_purchase.v1",
+   {...purchasedEffect,costCents:4500});
+  await expectError(()=>claimIntent(wrongMsg,wrongId),"42501");
+ }
+ await db.query("update businesses set currency='USD' where id=$1",[B]);
+ const wrongEuroIntent=await intentRow("I bought 10 gallons of milk for €45.00");
+ const wrongEuroId=randomUUID();
+ await seedProposal(B,OWNER,THREAD,wrongEuroId,"maya.inventory_purchase.v1",
+  {...purchasedEffect,costCents:4500});
+ await expectError(()=>claimIntent(wrongEuroIntent,wrongEuroId),"42501");
+ const alteredCostIntent=await intentRow("I bought 10 gallons of milk for $45.00");
+ const alteredCostId=randomUUID();
+ await seedProposal(B,OWNER,THREAD,alteredCostId,"maya.inventory_purchase.v1",
+  {...purchasedEffect,costCents:450});
+ await expectError(()=>claimIntent(alteredCostIntent,alteredCostId),"42501");
+
 
  // One photographed receipt can contain two separate identical stock lines.
  // For stock-only receipts the source is chat_text (no expense), so replay
