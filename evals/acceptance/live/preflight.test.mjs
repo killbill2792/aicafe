@@ -10,6 +10,7 @@ const local=()=>({AI_CAFE_LIVE_ACCEPTANCE:"OWNER_APPROVED_LOCAL_ONLY",
  APP_URL:"http://127.0.0.1:3000",
  NEXT_PUBLIC_SUPABASE_URL:"http://127.0.0.1:54321",
  ACCEPTANCE_DATABASE_URL:"postgres://postgres:local@127.0.0.1:54322/postgres",
+ SUPERVISOR_OPENAI_MODEL:"gpt-6-luna",
  OPENAI_API_KEY:"sk-this_is_a_test_key_not_real"});
 const owners=new Map([["business_alpha","owner_alpha"],["business_beta","owner_beta"]]);
 const png=Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489","hex");
@@ -46,6 +47,18 @@ test("owner-authorized disposable environment only",()=>{
  }
  assert.throws(()=>assertLocalLiveEnvironment({...local(),VERCEL_URL:"preview.vercel.app"}),/hosted_environment/);
 });
+test("Luna acceptance fails closed on the 4.1 fallback or a missing model setting",()=>{
+ const good=assertLocalLiveEnvironment(local());
+ assert.equal(good.expectedModelId,"gpt-6-luna");
+ for(const model of ["gpt-4.1-mini","gpt-6-luna-v2","",undefined]){
+  const env=local();
+  if(model===undefined)delete env.SUPERVISOR_OPENAI_MODEL;
+  else env.SUPERVISOR_OPENAI_MODEL=model;
+  assert.throws(()=>assertLocalLiveEnvironment(env),
+   /live_preflight:production_supervisor_model_required/);
+ }
+});
+
 test("independent human labels and original verified bytes required",()=>{
  const {root,manifest}=example();
  try{
