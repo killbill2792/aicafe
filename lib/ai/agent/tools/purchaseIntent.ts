@@ -53,6 +53,43 @@ export function ownerTextSupportsTypedLine(
  });
 }
 
+/** A model cannot invent a typed-purchase cost or backdate an inventory
+ * movement. The owner turn is the authority, and the café-local day is trusted
+ * server context. Ambiguous currency/line attribution stays in owner review.
+ */
+export function ownerTextSupportsTypedFinancials(
+ ownerText:string,line:{costCents:number|null;date:string},
+ cafeToday:string,lineCount:number,currency:string|null
+):boolean{
+ if(!/^\d{4}-\d{2}-\d{2}$/u.test(line.date)||
+    !/^\d{4}-\d{2}-\d{2}$/u.test(cafeToday))return false;
+ const text=ownerText.normalize("NFKC").toLocaleLowerCase();
+ const dates=[...text.matchAll(/\b\d{4}-\d{2}-\d{2}\b/gu)].map(m=>m[0]);
+ let allowedDate=cafeToday;
+ if(dates.length){
+  if(new Set(dates).size!==1)return false;
+  allowedDate=dates[0];
+ }else if(/\byesterday\b/u.test(text)){
+  const shifted=new Date(cafeToday+"T12:00:00Z");
+  if(Number.isNaN(shifted.valueOf()))return false;
+  shifted.setUTCDate(shifted.getUTCDate()-1);
+  allowedDate=shifted.toISOString().slice(0,10);
+ }else if(/\b(tomorrow|last|next|ago|earlier|previous|on monday|on tuesday|on wednesday|on thursday|on friday|on saturday|on sunday)\b/u.test(text))
+  return false;
+ if(line.date!==allowedDate)return false;
+ const amounts=[...text.matchAll(/(?:\$|\busd\s*)(\d{1,7})(?:\.(\d{1,2}))?(?![\d.])/gu)];
+ // No price in the owner's words: the model must submit null. Phrases such
+ // as "spent 45" have no verified currency/line allocation, so require review.
+ if(amounts.length===0)
+  return line.costCents===null&&!/\b(?:paid|spent|cost|price)\s+(?:about\s+)?\d/u.test(text);
+ if(currency!=="USD"||lineCount!==1||amounts.length!==1||
+   line.costCents===null||!Number.isSafeInteger(line.costCents)||line.costCents<0||
+   /\b(per|each|unit price|discount|tax|tip|approx|about)\b/u.test(text))return false;
+ const [,whole,fraction=""]=amounts[0];
+ const cents=Number(whole)*100+Number(fraction.padEnd(2,"0"));
+ return Number.isSafeInteger(cents)&&line.costCents===cents;
+}
+
 /** An order or invoice proves purchase intent, not physical stock receipt.
  * A saved owner declaration of delivery authorizes inventory-only recording.
  * A negated/undelivered statement always falls back to owner review. */
