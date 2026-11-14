@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkNumbers, compactEvidence, numberProvenance } from "./checkNumbers";
 import { statusFromResults } from "./status";
-import { executeAgentTool, agentToolDefinitions, type AgentToolContext, requestedPeriod } from "./tools";
+import { executeAgentTool, agentToolDefinitions, gmailToolDefinitions, agentForTool, type AgentToolContext, requestedPeriod } from "./tools";
 import {newResolveState} from "./resolve";
 
 const base = { source: "profitability", period: null, missing: [],
@@ -20,6 +20,31 @@ describe("registered inventory dispatch", () => {
     expect(response).toMatchObject({source:"inventory",missing:["inventoryReaderUnavailable"]});
   });
 });
+describe("Task 11/12/13A/14A integrated Supervisor registry",()=>{
+  it("keeps inventory, stock actions, staff planning and absence previews in one strict tool registry",()=>{
+    const publicNames=agentToolDefinitions.map(x=>x.name);
+    for(const name of ["get_inventory","get_usage_variance","get_staff","get_labor",
+      "draft_week_schedule","simulate_staff_absence","propose_purchases"]){
+      expect(publicNames).toContain(name);
+      expect(agentToolDefinitions.find(x=>x.name===name)?.strict).toBe(true);
+    }
+    expect(agentForTool("draft_week_schedule")).toBe("olivia");
+    expect(agentForTool("simulate_staff_absence")).toBe("olivia");
+    expect(agentForTool("propose_purchases")).toBe("maya");
+  });
+  it("does not silently make Gmail or standing routines public to unconnected owners",()=>{
+    const visible=new Set(agentToolDefinitions.map(x=>x.name));
+    const gated=gmailToolDefinitions.map(x=>x.name);
+    for(const name of ["search_gmail","read_gmail","read_gmail_thread","propose_gmail_action"]){
+      expect(gated).toContain(name);
+      expect(visible.has(name)).toBe(false);
+    }
+    expect(visible.has("manage_routine")).toBe(false);
+    expect(visible.has("remember_cafe_fact")).toBe(false);
+    expect(gmailToolDefinitions.every(x=>x.strict)).toBe(true);
+  });
+});
+
 describe("numbers, statuses, and strict tool contracts", () => {
   it("publishes a strict but nullable weekly staff exclusion field for native model tool calls",()=>{
     const tool=agentToolDefinitions.find(t=>t.name==="draft_week_schedule");
