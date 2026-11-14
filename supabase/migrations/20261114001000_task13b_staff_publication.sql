@@ -78,6 +78,7 @@ begin
       and id=p_proposal_id and capability_id='olivia.staff_propose_send_schedule.v2'
       and capability_version=2 and status='committed' for share;
   if not found or p.canonical_effect_payload->>'operation' is distinct from 'propose_send_schedule'
+    or p.canonical_effect_payload->'payload'->>'publish_and_notify' is distinct from 'true'
     then raise exception 'committed_send_approval_required' using errcode='42501'; end if;
   if not exists(select 1 from public.supervisor_approvals a
     where a.business_id=p_business_id and a.proposal_id=p.id
@@ -130,9 +131,12 @@ begin
   if auth.role() is distinct from 'service_role' then
     raise exception 'service_role_only' using errcode='42501'; end if;
   select * into pub from public.staff_schedule_publications
-    where id=p_publication_id and status='published' for share;
+    where id=p_publication_id and status='published';
   if not found then return null; end if;
   perform pg_advisory_xact_lock(hashtextextended('olivia-'||pub.business_id::text,0));
+  select * into pub from public.staff_schedule_publications
+    where id=p_publication_id and status='published' for share;
+  if not found then return null; end if;
   lock table public.employees,public.scheduled_shifts in share mode;
   if pub.snapshot is distinct from public.staff_handoff_week_shifts(pub.business_id,pub.week_start)
     or not exists(select 1 from public.supervisor_proposals p
