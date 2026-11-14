@@ -10,7 +10,7 @@ type Shift={employee_id:string;date:string;start:string;end:string};
 type Publication={id:string;business_id:string;owner_user_id:string;
  proposal_id:string;week_start:string;snapshot:Shift[];status:string};
 type Delivery={id:string;employee_id:string;status:string;recipient_e164:string};
-const result=(error:unknown)=>{throw new Error("staff_publication_storage_unavailable",{cause:error});};
+const result=(error:unknown):never=>{throw new Error("staff_publication_storage_unavailable",{cause:error});};
 
 /** Only a NEW, explicit publish_and_notify approval may pass the SQL gateway;
  * past copy-ready approvals cannot accidentally become actual staff sends. */
