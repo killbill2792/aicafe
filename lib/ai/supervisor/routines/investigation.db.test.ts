@@ -43,7 +43,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
     const now=new Date();
     const anchor=stamp(now,1);
     const enqueue=(cafe:number,sourceType:string,source:string,revision=hex("a"),key=hex("b"))=>
-      [cafes[cafe],owners[cafe],threads[cafe],sourceType,source,revision,key,anchor];
+      [cafes[cafe],owners[cafe],threads[cafe],sourceType,source,revision,key,315,anchor];
     const finish=(claim:Record<string,unknown>,outcome:string,evidence:unknown,
       narrative:string|null,when=stamp(now,2))=>[
       claim.business_id,claim.owner_user_id,claim.thread_id,
@@ -70,7 +70,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       await expect(rpc(ownerClient,"supervisor_enqueue_investigation",
         enqueue(0,"alert",alerts[0]))).rejects.toThrow();
       await expect(rpc(a,"supervisor_enqueue_investigation",
-        [cafes[0],owners[1],threads[1],"alert",alerts[0],hex("a"),hex("b"),anchor]))
+        [cafes[0],owners[1],threads[1],"alert",alerts[0],hex("a"),hex("b"),315,anchor]))
         .rejects.toThrow();
       expect(await rpc(a,"supervisor_enqueue_investigation",
         enqueue(0,"alert",alerts[0]))).toBe(true);
@@ -136,7 +136,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       // Recovery after a failed source read: durable retries with backoff,
       // no premature success, no blind repeated effect attempts.
       expect(await rpc(a,"supervisor_enqueue_investigation",
-        [cafes[0],owners[0],threads[0],"operating_task",taskId,hex("e"),hex("f"),stamp(now,8)]))
+        [cafes[0],owners[0],threads[0],"operating_task",taskId,hex("e"),hex("f"),140,stamp(now,8)]))
         .toBe(true);
       const next=await rpc(a,"supervisor_claim_investigation",
         [stamp(now,9)]) as Record<string,unknown>;
