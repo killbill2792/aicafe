@@ -33,10 +33,11 @@ describe("redesign 16 cleanup integration", () => {
     });
   }
 
-  it("keeps existing translation keys in sync while allowing Task 11 English-only Gmail copy", () => {
-    // AGENTS.md currently forbids new es/ar copy. Preserve strict parity for
-    // every pre-existing key; only the new Gmail namespaces are English-only.
-    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect)$/;
+  it("keeps existing translation keys in sync while allowing only approved English-only domains", () => {
+    // AGENTS.md forbids new es/ar copy. Keep strict parity for ALL pre-existing
+    // keys; Task 11 Gmail and Task 16B work-status keys are the only exceptions.
+    // This is an exact key allowlist, NOT a blanket SupervisorWork namespace skip.
+    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect|SupervisorWork\.(?:heading|stale|more|effectReceipt|replyReceipt|status))$/;
     const keys = (locale: string) => {
       const messages = localeMessages(locale);
       return Object.entries(messages)
@@ -46,6 +47,24 @@ describe("redesign 16 cleanup integration", () => {
     };
     expect(keys("es")).toEqual(keys("en"));
     expect(keys("ar")).toEqual(keys("en"));
+  });
+
+  it("requires complete English-only Task 16B status copy rather than hiding missing keys", () => {
+    const work = localeMessages("en").SupervisorWork as unknown as {
+      heading: string; stale: string; more: string; effectReceipt: string;
+      replyReceipt: string; status: Record<string, string>;
+    };
+    expect(Object.keys(work).sort()).toEqual([
+      "heading", "stale", "more", "effectReceipt", "replyReceipt", "status"
+    ].sort());
+    expect(Object.keys(work.status).sort()).toEqual([
+      "queued", "running", "retrying", "approval_required", "uncertain",
+      "failed", "cancelled", "answer_ready", "verified_complete",
+    ].sort());
+    for (const [key, value] of Object.entries(work.status)) {
+      expect(value, "SupervisorWork.status." + key).toEqual(expect.any(String));
+      expect(value.trim().length).toBeGreaterThan(0);
+    }
   });
 
   it("removes only the four no-longer-imported components", () => {
