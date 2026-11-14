@@ -86,6 +86,27 @@ try{
   " (business_id,proposal_id,effect_hash,authorization_kind,business_date,state)"+
   " values($1,$2,$3,'click',$4,'executing')",[a.cafe,a.proposal,hash,today]);
  await fails(()=>invoke(b.cafe,b.owner,b.thread),/purchase_proposal_invalid/);
+ // A natural owner correction retires the previous draft atomically.
+ // Both proposals are persisted under the same authenticated café/thread.
+ const oldDraft=id(),correctedDraft=id();
+ const createDraft=pid=>db.query("insert into public.supervisor_proposals"+
+  " (id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,"+
+  " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision)"+
+  " select $1,business_id,owner_user_id,thread_id,$2,capability_id,capability_version,"+
+  " canonical_effect_payload,effect_hash,'{}'::jsonb,monitor_spec,locale,'draft',1"+
+  " from public.supervisor_proposals where id=$3",[pid,id(),a.proposal]);
+ await createDraft(oldDraft);await createDraft(correctedDraft);
+ const supersede=()=>one("select public.supervisor_supersede_supplier_draft($1,$2,$3,$4,1,$5) as decision",
+  [a.cafe,a.owner,a.thread,oldDraft,correctedDraft]);
+ check((await supersede())?.decision==="superseded","owner correction is atomic");
+ check((await supersede())?.decision==="superseded","replayed correction is idempotent");
+ const drafts=await db.query("select id,status,baseline from public.supervisor_proposals where id=any($1::uuid[])",
+  [[oldDraft,correctedDraft]]);
+ check(drafts.rows.find(x=>x.id===oldDraft)?.status==="rejected"&&
+  drafts.rows.find(x=>x.id===correctedDraft)?.status==="draft"&&
+  drafts.rows.find(x=>x.id===correctedDraft)?.baseline.editedFrom===oldDraft,
+  "old approval card is retired and follows the corrected draft");
+ await fails(()=>asRole(a.owner,()=>supersede()),/permission denied|service_role_only/);
  const before=await one("select (select count(*)::int from public.pantry_stock_purchases where business_id=$1) as stock,"+
   " (select count(*)::int from public.expenses where business_id=$1) as expenses",[a.cafe]);
  const first=(await invoke())?.result;
