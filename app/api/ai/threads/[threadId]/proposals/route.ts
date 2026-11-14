@@ -14,6 +14,7 @@ import {menuPriceChangeCapabilityId,StaleProposalError}
   from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {isStaffCapabilityId,readStaffProposalToken} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
+import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {gmailCapabilityId,gmailEffectSchema} from "@/lib/ai/supervisor/loop/gmail.server";
@@ -67,6 +68,12 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
     assertProposalScope(scope,p);
   }
   assertProposalScope(scope,p);
+  if(p.capabilityId===supplierPurchaseOrderCapabilityId){
+    const effect=supervisorLoopRegistry.get(supplierPurchaseOrderCapabilityId).parseEffect(p.canonicalEffectPayload);
+    return {...card(p,p.status==="executing"?executionState:undefined),
+      productName:"Supplier PO · "+effect.supplierName,currency:effect.currency,
+      purchaseOrder:effect};
+  }
   if(p.capabilityId===purchaseCapabilityId){
     const effect=supervisorLoopRegistry.get(purchaseCapabilityId).parseEffect(p.canonicalEffectPayload);
     const db=await createServerSupabaseClient();
@@ -183,6 +190,8 @@ export async function POST(request:Request,{params}:Params){
       try{
         const reconciled=p.capabilityId===gmailCapabilityId?
           await new SupervisorEffectGateway().reconcileGmail(scope,p.id,p.revision):
+          p.capabilityId===supplierPurchaseOrderCapabilityId?
+          await new SupervisorEffectGateway().reconcileSupplierPurchaseOrder(scope,p.id,p.revision):
           await repo.reconcileEffect(scope,p.id,p.revision);
         return conversationJson({state:reconciled.status==="executing"?"uncertain":"applied",
           proposal:await view(scope,repo,reconciled)},reconciled.status==="executing"?409:200);
@@ -196,7 +205,8 @@ export async function POST(request:Request,{params}:Params){
       return conversationJson({error:"standing_mandate_action_not_eligible"},403);
     const staff=isStaffCapabilityId(p.capabilityId);
     const purchase=p.capabilityId===purchaseCapabilityId;
-    if(!staff&&!purchase&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
+    const supplierPO=p.capabilityId===supplierPurchaseOrderCapabilityId;
+    if(!staff&&!purchase&&!supplierPO&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
       p.capabilityId!==goalCapabilityId&&p.capabilityId!==eventReadinessCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
     if(p.capabilityId===gmailCapabilityId){
@@ -217,6 +227,36 @@ export async function POST(request:Request,{params}:Params){
         const latest=await repo.load(scope,p.id);
         return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
           error:latest.status==="executing"?"gmail_outcome_uncertain":"gmail_action_failed",
+          proposal:await view(scope,repo,latest)},409);
+      }
+    }
+    if(supplierPO){
+      // The owner's specific click approves the immutable quote snapshot.
+      // NEVER route through the owner-message inventory write exception.
+      if(input.action==="edit"||input.action==="edit_purchase")
+        return conversationJson({error:"supplier_po_edits_need_new_proposal"},422);
+      if(p.status==="committed")return conversationJson({state:"applied",proposal:await view(scope,repo,p)});
+      if(p.status==="executing")
+        return conversationJson({state:"uncertain",error:"effect_outcome_uncertain",
+          proposal:await view(scope,repo,p)},409);
+      if(p.revision!==input.revision||p.status!=="draft")
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      if(input.action==="cancel"){
+        try{return conversationJson({proposal:await view(scope,repo,
+          await repo.transition(scope,p.id,p.revision,"reject"))});}
+        catch{return conversationJson({state:"conflict",proposal:await view(scope,repo,await repo.load(scope,p.id))},409);}
+      }
+      if(input.action!=="approve")return conversationJson({error:"supplier_po_action_not_supported"},422);
+      try{
+        const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
+        const finished=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision,"click");
+        return conversationJson({proposal:await view(scope,repo,finished.proposal)});
+      }catch{
+        const latest=await repo.load(scope,p.id);
+        if(latest.status==="committed")
+          return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
+        return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
+          error:latest.status==="executing"?"effect_outcome_uncertain":"supplier_po_approval_failed",
           proposal:await view(scope,repo,latest)},409);
       }
     }

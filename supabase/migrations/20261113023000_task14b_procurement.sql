@@ -219,8 +219,8 @@ begin
      or q.available_checked_at is null
      or q.available_checked_at>local_day or q.available_checked_at<local_day-7
      or q.quoted_on>local_day or q.valid_until<local_day
-     or q.supplier_name<>supplier_name
-     or q.item_name<>ingredient.name
+     or lower(btrim(q.supplier_name))<>lower(btrim(supplier_name))
+     or lower(btrim(q.item_name))<>lower(btrim(ingredient.name))
      or q.ingredient_id is distinct from ingredient.id and q.ingredient_id is not null
      or q.price_cents::bigint is distinct from (line->>'priceCents')::bigint
      or q.package_count is distinct from (line->>'packQuantity')::integer
@@ -277,3 +277,70 @@ end $$;
 revoke all on function public.supervisor_commit_supplier_po(uuid,uuid,uuid,uuid,text)
  from public,anon,authenticated;
 grant execute on function public.supervisor_commit_supplier_po(uuid,uuid,uuid,uuid,text) to service_role;
+
+
+-- Recovery is purely proof-based: it never invokes the writer a second time.
+-- Extend the ONE Supervisor effect gateway with the supplier PO receipt.
+create function public.supervisor_reconcile_supplier_po(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
+ p_proposal_id uuid,p_revision integer
+) returns public.supervisor_proposals
+language plpgsql security definer set search_path=public as $$
+declare
+ p public.supervisor_proposals;
+ a public.supervisor_effect_attempts;
+ po public.purchase_orders;
+ n integer;
+ sum_lines bigint;
+begin
+ if auth.role() is distinct from 'service_role' then
+  raise exception 'service_role_only' using errcode='42501';
+ end if;
+ if not exists(select 1 from public.memberships m where m.business_id=p_business_id
+   and m.user_id=p_owner_user_id and m.role='owner') then
+  raise exception 'proposal_owner_required' using errcode='42501';
+ end if;
+ select * into p from public.supervisor_proposals
+ where business_id=p_business_id and owner_user_id=p_owner_user_id
+   and thread_id=p_thread_id and id=p_proposal_id for update;
+ if p.id is null or p.revision<>p_revision
+   or p.capability_id<>'maya.supplier_purchase_order.v1' or p.capability_version<>1
+ then raise exception 'po_reconciliation_scope_conflict' using errcode='P0001'; end if;
+ select * into a from public.supervisor_effect_attempts where
+   business_id=p_business_id and proposal_id=p_proposal_id
+   and effect_hash=p.effect_hash and authorization_kind='click' for update;
+ if a.id is null then raise exception 'po_gateway_attempt_missing' using errcode='P0001'; end if;
+ if a.state='verified' and p.status='committed' then return p; end if;
+ if p.status<>'executing' or a.state not in ('executing','uncertain')
+ then raise exception 'po_reconciliation_state_conflict' using errcode='P0001'; end if;
+ if a.state='executing' and a.created_at>now()-interval '5 minutes'
+ then return p; end if;
+ select * into po from public.purchase_orders where
+   business_id=p_business_id and owner_user_id=p_owner_user_id
+   and proposal_id=p.id and effect_hash=p.effect_hash;
+ if po.id is not null then
+  select count(*)::integer,coalesce(sum(subtotal_cents),0) into n,sum_lines
+  from public.purchase_order_lines where business_id=p_business_id and purchase_order_id=po.id;
+ end if;
+ if po.id is null or po.status<>'approved_for_ordering'
+   or po.subtotal_cents is distinct from (p.canonical_effect_payload->>'subtotalCents')::bigint
+   or po.currency_code is distinct from p.canonical_effect_payload->>'currency'
+   or n is distinct from jsonb_array_length(p.canonical_effect_payload->'lines')
+   or sum_lines is distinct from po.subtotal_cents then
+  update public.supervisor_effect_attempts set state='uncertain'
+  where id=a.id and state='executing';
+  return p; -- Uncertain, no automatic retry, never claim approval without receipt.
+ end if;
+ update public.supervisor_effect_attempts set state='verified',
+  receipt_ref='purchase_orders:'||po.id::text,verified_at=now()
+ where id=a.id;
+ update public.supervisor_proposals set status='committed',
+  revision=revision+1,committed_at=now(),
+  monitoring_start_date=a.business_date+1,updated_at=now()
+ where id=p.id returning * into p;
+ return p;
+end $$;
+revoke all on function public.supervisor_reconcile_supplier_po(uuid,uuid,uuid,uuid,integer)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_reconcile_supplier_po(uuid,uuid,uuid,uuid,integer)
+ to service_role;
