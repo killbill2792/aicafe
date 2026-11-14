@@ -102,6 +102,13 @@ begin
   if exists(select 1 from public.staff_schedule_publications
      where business_id=p_business_id and week_start=s.week_start and status='published') then
     raise exception 'already_published_different_approval' using errcode='P0001'; end if;
+  -- The same transaction that issues the publication receipt changes the
+  -- canonical dated roster from draft to published legacy status. No attendance
+  -- records or duplicate schedules are created. The immutable snapshot omits
+  -- this display-only status so the source CAS remains valid.
+  update public.scheduled_shifts set status='sent',updated_at=now()
+    where business_id=p_business_id and deleted_at is null
+      and local_date between s.week_start and s.week_start+6 and status='draft';
   insert into public.staff_schedule_publications
     (business_id,proposal_id,owner_user_id,week_start,snapshot)
     values (p_business_id,p.id,p_owner_user_id,s.week_start,s.shifts) returning * into pub;
