@@ -14,7 +14,7 @@ import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId} from "@/lib/ai/supervisor/loop/receiptAllocation";
 import {proposeLoop,commitLoop} from "@/lib/ai/supervisor/loop/engine";
-import {authorizesInventoryWrite,ownerTextSupportsTypedLine,receivedPurchaseDocument} from "@/lib/ai/agent/tools/purchaseIntent";
+import {authorizesInventoryWrite,ownerTextSupportsTypedLine,ownerTextSupportsTypedFinancials,receivedPurchaseDocument} from "@/lib/ai/agent/tools/purchaseIntent";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -326,7 +326,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
               (input.source==="receipt_chat"
                 ?stockOnlyReceipt&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
                  line.costCents!==null
-                :!attached&&ownerTextSupportsTypedLine(p.ownerText,line))&&
+                :!attached&&ownerTextSupportsTypedLine(p.ownerText,line)&&
+                  ownerTextSupportsTypedFinancials(p.ownerText,line,identity.asOf,input.lines.length,identity.currency))&&
               Boolean((proposal.canonicalEffectPayload as {ingredientId?:string|null}).ingredientId);
             if(previouslyRecorded||possiblyRephotographed){
               output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name,
