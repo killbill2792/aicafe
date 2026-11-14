@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,verifyCheckoutHead} from "./runner.mjs";
+import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,verifyCheckoutHead,allCasesAccountedFor,failureCode} from "./runner.mjs";
 
 const milk={name:"Whole milk",base_unit:"ml",quantity_base:"5.2500"};
 const beans={name:"Espresso beans",base_unit:"g",quantity_base:"12.5000"};
@@ -75,4 +75,12 @@ test("live results cannot be attributed to a different checkout SHA",()=>{
  assert.equal(verifyCheckoutHead(sha,()=>sha),sha);
  assert.throws(()=>verifyCheckoutHead(sha,()=> "b".repeat(40)),/checkout_does_not_match_attested_head/);
  assert.throws(()=>verifyCheckoutHead("bad",()=>sha),/checkout_does_not_match_attested_head/);
+});
+
+test("a live report cannot pass by ignoring failed cases",()=>{
+ assert.equal(allCasesAccountedFor(80,80,[]),true);
+ assert.equal(allCasesAccountedFor(80,79,[]),false);
+ assert.equal(allCasesAccountedFor(80,80,[{id:"case_17",code:"live_capture:timeout"}]),false);
+ assert.equal(failureCode(new Error("live_capture:agent_timeout")),"live_capture:agent_timeout");
+ assert.equal(failureCode(new Error("token=secret owner@example.com")),"live_capture:unclassified_failure");
 });
