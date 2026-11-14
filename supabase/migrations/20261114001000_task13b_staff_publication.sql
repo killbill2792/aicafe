@@ -67,7 +67,7 @@ create index staff_schedule_delivery_queued
 -- Publication rechecks it under the very same advisory/table locks before writing.
 create function public.staff_schedule_publish(
   p_business_id uuid,p_owner_user_id uuid,p_proposal_id uuid
-) returns jsonb language plpgsql security definer set search_path=public as $$
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
 declare p public.supervisor_proposals%rowtype;
   s public.staff_schedule_handoff_snapshots%rowtype;
   pub public.staff_schedule_publications%rowtype;
@@ -141,7 +141,7 @@ grant execute on function public.staff_schedule_publish(uuid,uuid,uuid) to servi
 -- PREPARED is claimable exactly once; timed-out sending is NEVER auto-replayed.
 create function public.staff_schedule_claim_delivery(
   p_publication_id uuid,p_employee_id uuid
-) returns jsonb language plpgsql security definer set search_path=public as $$
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
 declare pub public.staff_schedule_publications%rowtype;
   d public.staff_schedule_deliveries%rowtype;
   e public.employees%rowtype; token uuid;
@@ -192,7 +192,7 @@ grant execute on function public.staff_schedule_claim_delivery(uuid,uuid) to ser
 create function public.staff_schedule_finish_delivery(
   p_delivery_id uuid,p_attempt_token uuid,p_state text,p_wamid text default null,
   p_error text default null
-) returns boolean language plpgsql security definer set search_path=public as $$
+) returns boolean language plpgsql security definer set search_path=public,pg_temp as $
 declare d public.staff_schedule_deliveries%rowtype;
 begin
   if auth.role() is distinct from 'service_role' then
@@ -218,7 +218,7 @@ grant execute on function public.staff_schedule_finish_delivery(uuid,uuid,text,t
 -- Called only AFTER the existing webhook's HMAC verification. Duplicated and
 -- out-of-order Meta events cannot demote a delivered/read receipt.
 create function public.staff_schedule_record_provider_status(p_wamid text,p_status text)
-returns boolean language plpgsql security definer set search_path=public as $$
+returns boolean language plpgsql security definer set search_path=public,pg_temp as $
 declare d public.staff_schedule_deliveries%rowtype;
 begin
   if auth.role() is distinct from 'service_role' then
@@ -245,7 +245,7 @@ grant execute on function public.staff_schedule_record_provider_status(text,text
 -- A later corrected roster needs a NEW owner approval and publication revision.
 create function public.staff_schedule_cancel_publication(
   p_business_id uuid,p_owner_user_id uuid,p_publication_id uuid
-) returns jsonb language plpgsql security definer set search_path=public as $$
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
 declare pub public.staff_schedule_publications%rowtype;
   in_flight integer;accepted integer;
 begin
@@ -291,7 +291,7 @@ grant execute on function public.staff_schedule_cancel_publication(uuid,uuid,uui
 -- cancellation/opt-out between claim and request must prevent a new request.
 create function public.staff_schedule_can_send(
  p_delivery_id uuid,p_attempt_token uuid
-) returns boolean language plpgsql security definer set search_path=public as $$
+) returns boolean language plpgsql security definer set search_path=public,pg_temp as $
 declare d public.staff_schedule_deliveries%rowtype;
 begin
  if auth.role() is distinct from 'service_role' then
