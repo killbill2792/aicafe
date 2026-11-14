@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {createHash} from "node:crypto";
 import {scoreAcceptance} from "./evidence.mjs";
+// Every code PR must kill-test the real capture gate, without using an API key.
+import "./live/preflight.test.mjs";
+import "./live/runner.test.mjs";
 
 const load=name=>JSON.parse(readFileSync(new URL("./fixtures/"+name,import.meta.url),"utf8"));
 const truth=load("calibration-truth.json");
