@@ -48,8 +48,9 @@ alter table public.staff_schedule_deliveries
 alter table public.staff_schedule_deliveries add constraint staff_delivery_publication_fk
   foreign key (publication_id,business_id)
   references public.staff_schedule_publications(id,business_id);
--- Reason: The existing status-only check excludes provider-uncertain and read receipts;
--- explicitly replace this exact constraint after preserving all legacy status values.
+-- The existing status check excludes provider-uncertain and read receipts;
+-- all legacy states are retained in the expanded replacement.
+-- Reason: Replace only the status constraint so genuine provider uncertain/read outcomes are representable, preserving every legacy value.
 -- squawk-ignore ban-drop-constraint
 alter table public.staff_schedule_deliveries drop constraint staff_schedule_deliveries_status_check;
 -- Reason: Existing rows already satisfy the original stricter check, and this
