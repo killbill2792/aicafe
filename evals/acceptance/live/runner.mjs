@@ -68,15 +68,18 @@ export function ledgerWrites(before,after,expectedWrites){
     ingredient,unit,delta,receiptId:r.id,status:"committed"};
   });
 }
-export function proposalLines(before,after,expectedExtracted){
+export function proposalLines(before,after){
  const ids=new Set(before.map(x=>x.id));
  return after.filter(x=>!ids.has(x.id)&&x.capability_id==="maya.inventory_purchase.v1")
   .sort((a,b)=>Number(a.canonical_effect_payload.receiptLineIndex??999)-
     Number(b.canonical_effect_payload.receiptLineIndex??999)||
-    String(a.created_at).localeCompare(String(b.created_at)))
+    String(a.created_at).localeCompare(String(b.created_at))||
+    String(a.id).localeCompare(String(b.id)))
   .map((p,i)=>{
    const e=p.canonical_effect_payload;
-   return {lineId:expectedExtracted[i]?.lineId??"unexpected_"+i,
+   if(!e||typeof e!=="object")error("invalid_observed_proposal");
+   // Observed identifiers must NEVER come from human expected labels.
+   return {lineId:"proposal_"+i,
      name:e.name??"",quantity:e.quantity??null,unit:e.unit??null,
      costCents:e.costCents??null,confidence:e.ingredientId?"verified":"needs_review"};
   });
@@ -95,17 +98,36 @@ async function rows(db,sql,params){return (await db.query(sql,params)).rows}
 async function stock(db,id){return stockRows(await rows(db,stockSql,[id]))}
 async function ledger(db,id){return rows(db,ledgerSql,[id])}
 async function proposals(db,id,thread){return rows(db,proposalSql,[id,thread])}
-async function audit(db,id,ownerMessageId){
- const sql="select id::text,model,input_tokens,status from public.agent_turn_logs "+
-  "where business_id=$1 and owner_message_id=$2 order by started_at desc limit 1";
- for(let attempts=0;attempts<60;attempts++){
-  const data=(await rows(db,sql,[id,ownerMessageId]))[0];
-  if(data&&data.status==="ok"&&data.model&&data.model!=="unknown"&&Number(data.input_tokens)>0)
+/** Verify model usage using the table actually migrated by AI CAFE.
+ * Backend usage identifiers are NOT provider-native request IDs. */
+export async function readPersistedModelUsage(db,businessId,ownerMessageId,{
+ attempts=60,pause=()=>new Promise(r=>setTimeout(r,250))
+}={}){
+ const sql="select id::text,provider,model,input_tokens,model_call_count "+
+  "from public.ai_usage_events where business_id=$1 and owner_message_id=$2 "+
+  "order by created_at desc limit 1";
+ for(let i=0;i<attempts;i++){
+  const data=(await rows(db,sql,[businessId,ownerMessageId]))[0];
+  if(data){
+   const tokens=Number(data.input_tokens),calls=Number(data.model_call_count);
+   if(data.provider!=="openai"||typeof data.model!=="string"||!data.model||
+      data.model==="unknown"||!Number.isSafeInteger(tokens)||tokens<=0||
+      !Number.isSafeInteger(calls)||calls<=0||
+      !/^[0-9a-f-]{36}$/i.test(data.id??""))
+    error("model_usage_unverified");
    return data;
-  if(data&&data.status!=="ok")error("actual_model_turn_failed");
-  await new Promise(r=>setTimeout(r,250));
+  }
+  if(i+1<attempts)await pause();
  }
- error("model_audit_not_persisted");
+ error("model_usage_not_persisted");
+}
+export function requireCompletedTurn(actual){
+ if(actual?.error||actual?.done?.endReason!=="complete"||
+    !/^[0-9a-f-]{36}$/i.test(actual?.done?.reply?.id??"")||
+    !Array.isArray(actual?.done?.reply?.blocks)||
+    actual.done.reply.blocks.length===0)
+  error("agent_turn_not_complete");
+ return actual.done;
 }
 async function checked(response,code,status=200){
  if(response.status()!==status)error(code+"_"+response.status());
@@ -230,15 +252,15 @@ export async function runLive(manifest,prepared,env,outputPath){
     rows(db,"select id::text from public.ai_messages where business_id=$1 "+
      "and thread_id=$2 and client_message_id=$3 and role='owner'",
      [cafe.businessId,thread,msgId])]);
-   if(actual.error)error(actual.error);
+   requireCompletedTurn(actual);
    if(ownerMessages.length!==1)error("owner_message_not_persisted");
-   const model=await audit(db,cafe.businessId,ownerMessages[0].id);
+   const model=await readPersistedModelUsage(db,cafe.businessId,ownerMessages[0].id);
    requireObservedProductionModel(model.model,expectedModelId);
    if(observation.capture.modelId!=="pending"&&observation.capture.modelId!==model.model)
     error("mixed_models_in_same_benchmark");
    observation.capture.modelId=model.model;
    const saved=ledgerWrites(oldLedger,newLedger,label.expected.writes);
-   const extracted=proposalLines(oldProposals,newProposals,label.expected.extracted);
+   const extracted=proposalLines(oldProposals,newProposals);
    const blocks=actual.done?.reply?.blocks??[];
    const clarifications=blocks.filter(x=>x.type==="clarify").length;
    const status=saved.length?"updated":
@@ -255,8 +277,8 @@ export async function runLive(manifest,prepared,env,outputPath){
     latency:{firstUsefulMs:actual.firstUsefulMs,completedMs:actual.completedMs},
     // A durable backend audit row, NOT an OpenAI request ID; provenance
     // remains an explicit limitation in scorer's live-mode status.
-    modelRequestId:"agentlog_"+model.id.replaceAll("-",""),
-    auditModel:model.model,auditEvidenceType:"agent_turn_log_not_provider_request_id"
+    modelRequestId:"usage_"+model.id.replaceAll("-",""),
+    auditModel:model.model,auditEvidenceType:"ai_usage_event_not_provider_request_id"
    });
    }catch(cause){
     failures.push({id:label.id,code:failureCode(cause)});
