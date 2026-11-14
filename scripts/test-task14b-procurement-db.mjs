@@ -229,13 +229,13 @@ try{
  // Expired evidence is also a transactionally rejected attempt, not a lost
  // response. Restore evidence after the negative, so subsequent valid PO and
  // independent genuinely uncertain recovery tests continue to execute.
- await db.query("update public.ai_supplier_quotes set valid_until=$1::date"+
-  " where business_id=$2 and id=$3",[date(-1),a.cafe,a.quote]);
+ await db.query("update public.ai_supplier_quotes set quoted_on=$1::date,valid_until=$2::date"+
+  " where business_id=$3 and id=$4",[date(-5),date(-1),a.cafe,a.quote]);
  const expiredProposal=id();
  await createExecutingAttempt(expiredProposal);
  await finishKnownStale(expiredProposal,"supplier_source_stale_or_mismatched");
- await db.query("update public.ai_supplier_quotes set valid_until=$1::date"+
-  " where business_id=$2 and id=$3",[until,a.cafe,a.quote]);
+ await db.query("update public.ai_supplier_quotes set quoted_on=$1::date,valid_until=$2::date"+
+  " where business_id=$3 and id=$4",[today,until,a.cafe,a.quote]);
  const freshDraftAfterStale=id();
  await createDraft(freshDraftAfterStale);
  check((await one("select status from public.supervisor_proposals where id=$1",
