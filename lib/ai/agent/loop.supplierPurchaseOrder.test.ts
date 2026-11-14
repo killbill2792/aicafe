@@ -90,6 +90,31 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
   expect(propose).toHaveBeenCalledOnce();
   expect(Object.hasOwn(ctx,"approve")).toBe(false);
  });
+ it("refreshes a stale quote with new evidence and a NEW approval draft, never a replay",async()=>{
+  const steps:string[]=[];
+  const list=vi.fn(async()=>{steps.push("list");return {orders:[],truncated:false,
+   drafts:[],draftsTruncated:false};});
+  const inspect=vi.fn(async()=>{steps.push("inspect");return plan;});
+  const propose=vi.fn(async(input:{replaceProposalId:string|null})=>{
+   steps.push("propose");
+   expect(input.replaceProposalId).toBe(null);
+   return {proposalId:"88888888-8888-4888-8888-888888888888",
+    revision:1,supplierName:"Farm A",subtotalCents:2250,currency:"CAD"};
+  });
+  const ctx={...baseContext,purchasing:{list,inspect,propose}} as unknown as AgentToolContext;
+  const {provider}=playback([
+   [call("get_supplier_purchase_orders","{}","status-1"),completed],
+   [call("inspect_supplier_purchase",args(5),"fresh-evidence-2"),completed],
+   [call("propose_supplier_purchase_order",proposalArgs(5,null),"fresh-draft-3"),completed],
+   [text("I inspected current quotes and saved a new milk order for your approval. The stale approval remains closed; I did not retry the old order."),completed]
+  ]);
+  const outcome=await runAgentTurn({ownerText:"The old milk order expired. Refresh the quotes and prepare a new approval.",
+   context:ctx,provider});
+  expect(steps).toEqual(["list","inspect","propose"]);
+  expect(propose).toHaveBeenCalledWith(JSON.parse(proposalArgs(5,null)));
+  expect(outcome.text).toContain("new milk order");
+  expect(Object.hasOwn(ctx,"approve")).toBe(false);
+ });
  it("a SEPARATE flour order containing 'increase' leaves a pending milk draft untouched",async()=>{
   const flourId="77777777-7777-4777-8777-777777777777";
   const flourArgs=JSON.stringify({items:[{ingredientId:flourId,itemName:"Flour",
