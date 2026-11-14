@@ -60,7 +60,10 @@ export function verifyInvestigationTurn(turn:AgentTurn):
   if(turn.endReason!=="complete"||!text||text.length>1800||turn.unverified.length>0)
     return {ok:false,reason:"model_incomplete"};
   const used=[...new Set(turn.tools??[])].filter(name=>evidenceTools.has(name));
-  if(used.length<2)return {ok:false,reason:"evidence_incomplete"};
+  // Count actual canonical result families, not just a model's declaration
+  // that it called tools. An attempted/failed RPC is not a second domain.
+  const observed=new Set(turn.results.map(result=>result.source).filter(Boolean));
+  if(used.length<2||observed.size<2)return {ok:false,reason:"evidence_incomplete"};
   // A failed tool is useful evidence of a gap, NOT confirmation of an amount.
   // Preserve explicit gaps rather than silently labeling the whole plan proven.
   const missing=turn.results.flatMap(result=>result.missing??[]);
