@@ -152,7 +152,9 @@ function main(){
  if(action==="verify"){
   const proof=JSON.parse(readFileSync(proofPath,"utf8"));
   if(!plan.domains.length){
-   if(proof?.status!=="not_applicable"||proof.head_sha!==head||proof.executed_tests!==0)
+   if(proof?.status!=="not_applicable"||proof.head_sha!==head||
+      proof.base_sha!==(process.env.BASE_SHA??null)||proof.run_id!==runId||
+      proof.executed_tests!==0||proof.provider_model_proof!==false)
     fail("invalid_n_a_proof");
   }else validateProof(proof,{head,base:process.env.BASE_SHA??null,runId,domains:plan.domains});
   console.log("Owner journey acceptance proof verified:",proof.status,head);
