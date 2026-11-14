@@ -23,12 +23,15 @@ function example(){
    {id:"case_receipt",threadKey:"thread_a",category:"receipt",
     actor:{businessId:"business_alpha",ownerId:"owner_alpha"},
     input:{text:"Add my purchases.",assetPath:"bill.png",assetSha256:digest},
-    expected:{outcome:"updated",maxClarifications:0,
-     writes:[{sourceLineId:"line_1",ingredient:"whole_milk",delta:10000,unit:"ml_x10000",costCents:300}],extracted:[]}},
+    expected:{outcome:"updated",authorization:"owner_click",maxClarifications:0,
+     approvals:[{lineId:"proposal_0",sourceLineId:"line_1"}],
+     writes:[{sourceLineId:"line_1",ingredient:"whole_milk",delta:10000,unit:"ml_x10000",costCents:300}],
+     extracted:[{lineId:"proposal_0",name:"Whole milk",quantity:1,unit:"ml",costCents:300,confidence:"verified"}]}},
    {id:"case_chat",threadKey:"thread_b",category:"conversation",
     actor:{businessId:"business_beta",ownerId:"owner_beta"},
     input:{text:"Check if I already purchased milk.",assetSha256:null},
-    expected:{outcome:"no_action",maxClarifications:1,writes:[],extracted:[]}}
+    expected:{outcome:"no_action",authorization:"none",approvals:[],
+     maxClarifications:1,writes:[],extracted:[]}}
   ]};
  return {root:a,manifest};
 }
@@ -102,5 +105,32 @@ test("prevent path traversal, symlink bytes, fake label reviewers and repeated s
   changed.cases[1].id=changed.cases[0].id;
   assert.throws(()=>assertLiveManifest(changed,{assetRoot:root,allowedOwners:owners,
    minReceipts:1,minConversations:1}),/duplicate_or_invalid_case/);
+ }finally{rmSync(root,{recursive:true,force:true})}
+});
+
+test("independent approval path is mandatory and cannot approve extra model suggestions",()=>{
+ const {root,manifest}=example();
+ const check=()=>{
+  assertLiveManifest(manifest,{assetRoot:root,allowedOwners:owners,
+   minReceipts:1,minConversations:1});
+ };
+ try{
+  check();
+  const original=structuredClone(manifest.cases[0].expected);
+  for(const change of [
+   {authorization:"none"},
+   {authorization:"owner_click",approvals:[]},
+   {authorization:"owner_click",approvals:[{lineId:"proposal_1",sourceLineId:"line_1"}]},
+   {authorization:"owner_click",approvals:[{lineId:"proposal_0",sourceLineId:"another_line"}]},
+   {authorization:"direct_authorized",approvals:[{lineId:"proposal_0",sourceLineId:"line_1"}]}
+  ]){
+   manifest.cases[0].expected={...original,...change};
+   assert.throws(check,/live_preflight:/);
+  }
+  manifest.cases[0].expected={...original,authorization:"direct_authorized",approvals:[]};
+  check(); // Owner's explicit instruction can be separately labeled as direct-action.
+  manifest.cases[0].expected=original;
+  manifest.cases[1].expected.authorization="owner_click";
+  assert.throws(check,/unapproved_expected_purchase/);
  }finally{rmSync(root,{recursive:true,force:true})}
 });
