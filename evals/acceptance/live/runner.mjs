@@ -43,9 +43,16 @@ export function ledgerWrites(before,after,expectedWrites){
  return after.filter(x=>!ids.has(x.line_id)&&x.voided_at===null)
   .sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||
      String(a.line_id).localeCompare(String(b.line_id)))
-  .map((r,i)=>({sourceLineId:expectedWrites[i]?.sourceLineId??"unexpected_"+i,
+  .map((r,i)=>{
+   const expected=expectedWrites[i];
+   const savedCost=r.cost_cents===null?null:Number(r.cost_cents);
+   if(!Number.isSafeInteger(savedCost)&&savedCost!==null)error("invalid_saved_cost");
+   if(expected&&Object.hasOwn(expected,"costCents")&&expected.costCents!==savedCost)
+    error("saved_purchase_cost_mismatch");
+   return {sourceLineId:expected?.sourceLineId??"unexpected_"+i,
     ingredient:slug(r.name),unit:r.base_unit+"_x10000",
-    delta:toScaled(r.quantity_base),receiptId:r.id,status:"committed"}));
+    delta:toScaled(r.quantity_base),receiptId:r.id,status:"committed"};
+  });
 }
 export function proposalLines(before,after,expectedExtracted){
  const ids=new Set(before.map(x=>x.id));
@@ -65,7 +72,7 @@ const stockSql="select i.name,i.base_unit,coalesce(sum(p.quantity_base) filter (
  "on p.business_id=i.business_id and p.ingredient_id=i.id "+
  "where i.business_id=$1 group by i.id,i.name,i.base_unit order by i.id";
 const ledgerSql="select p.id::text,p.line_id::text,p.quantity_base::text,p.created_at::text,"+
- "p.voided_at::text,i.name,i.base_unit from public.pantry_stock_purchases p "+
+ "p.voided_at::text,p.cost_cents,i.name,i.base_unit from public.pantry_stock_purchases p "+
  "join public.ingredients i on i.id=p.ingredient_id and i.business_id=p.business_id "+
  "where p.business_id=$1 order by p.created_at,p.line_id";
 const proposalSql="select id::text,capability_id,canonical_effect_payload,created_at::text "+
