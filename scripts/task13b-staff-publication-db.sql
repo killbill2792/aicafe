@@ -113,6 +113,18 @@ BEGIN
  THEN RAISE EXCEPTION '13B second delivery claim escaped'; END IF;
  IF public.staff_schedule_finish_delivery(d.id,gen_random_uuid(),'sent','wamid.abc',null)
  THEN RAISE EXCEPTION '13B forged token succeeded'; END IF;
+ IF NOT public.staff_schedule_can_send(d.id,d.attempt_token) THEN
+   RAISE EXCEPTION '13B final original approved source was unexpectedly denied'; END IF;
+ UPDATE public.scheduled_shifts SET start_local='09:30' WHERE
+   business_id=current_setting('test.t13b.cafe')::uuid AND
+   employee_id=current_setting('test.t13b.worker_a')::uuid;
+ IF public.staff_schedule_can_send(d.id,d.attempt_token) THEN
+   RAISE EXCEPTION '13B final send check ignored a changed roster after claim'; END IF;
+ UPDATE public.scheduled_shifts SET start_local='09:00' WHERE
+   business_id=current_setting('test.t13b.cafe')::uuid AND
+   employee_id=current_setting('test.t13b.worker_a')::uuid;
+ IF NOT public.staff_schedule_can_send(d.id,d.attempt_token) THEN
+   RAISE EXCEPTION '13B final send check did not recover the verified source'; END IF;
  IF NOT public.staff_schedule_finish_delivery(d.id,d.attempt_token,'sent','wamid.abc',null)
  THEN RAISE EXCEPTION '13B accepted receipt not stored'; END IF;
  IF (SELECT status FROM public.staff_schedule_deliveries WHERE id=d.id)<>'sent'
