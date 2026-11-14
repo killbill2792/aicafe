@@ -86,20 +86,28 @@ try{
   " (business_id,proposal_id,effect_hash,authorization_kind,business_date,state)"+
   " values($1,$2,$3,'click',$4,'executing')",[a.cafe,a.proposal,hash,today]);
  await fails(()=>invoke(b.cafe,b.owner,b.thread),/purchase_proposal_invalid/);
- // A natural owner correction retires the previous draft atomically.
- // Both proposals are persisted under the same authenticated café/thread.
- const oldDraft=id(),correctedDraft=id();
+ // Atomic correction must create ONE new draft while retiring the old
+ // inside a single SQL transaction. A duplicate owner request returns the same
+ // proposal, and no already-live replacement may be minted on failure.
+ const oldDraft=id();
  const createDraft=pid=>db.query("insert into public.supervisor_proposals"+
   " (id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,"+
   " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision)"+
   " select $1,business_id,owner_user_id,thread_id,$2,capability_id,capability_version,"+
   " canonical_effect_payload,effect_hash,'{}'::jsonb,monitor_spec,locale,'draft',1"+
   " from public.supervisor_proposals where id=$3",[pid,id(),a.proposal]);
- await createDraft(oldDraft);await createDraft(correctedDraft);
- const supersede=()=>one("select public.supervisor_supersede_supplier_draft($1,$2,$3,$4,1,$5) as decision",
-  [a.cafe,a.owner,a.thread,oldDraft,correctedDraft]);
- check((await supersede())?.decision==="superseded","owner correction is atomic");
- check((await supersede())?.decision==="superseded","replayed correction is idempotent");
+ await createDraft(oldDraft);
+ const replacementKey=id();
+ const supersede=()=>one("select public.supervisor_replace_supplier_draft("+
+  "$1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9::jsonb,$10::jsonb) as result",
+  [a.cafe,a.owner,a.thread,oldDraft,1,replacementKey,JSON.stringify(effect),
+   hash,JSON.stringify({}),JSON.stringify({durationDays:1,metricScope:"supplier_purchase_order"})]);
+ const firstReplacement=(await supersede())?.result?.proposal;
+ const correctedDraft=firstReplacement?.id;
+ check(Boolean(correctedDraft)&&firstReplacement.status==="draft",
+  "owner correction creates its replacement within the atomic RPC");
+ check((await supersede())?.result?.proposal?.id===correctedDraft,
+  "replayed owner correction returns identical proposal without a second draft");
  const drafts=await db.query("select id,status,baseline from public.supervisor_proposals where id=any($1::uuid[])",
   [[oldDraft,correctedDraft]]);
  const replacements=await db.query(
@@ -110,8 +118,16 @@ try{
   replacements.rows.length===1&&replacements.rows[0].previous_id===oldDraft&&
   replacements.rows[0].replacement_id===correctedDraft&&
   replacements.rows[0].owner_user_id===a.owner&&
-  Object.keys(drafts.rows.find(x=>x.id===correctedDraft)?.baseline??{}).length===0,
-  "old card is atomically rejected; immutable replacement linkage is persisted");
+  drafts.rows.find(x=>x.id===correctedDraft)?.baseline.editedFrom===oldDraft,
+  "old card rejected and immutable new draft linked in one transaction");
+ const separateOld=id();await createDraft(separateOld);
+ await fails(()=>one("select public.supervisor_replace_supplier_draft("+
+  "$1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9::jsonb,$10::jsonb) as result",
+  [a.cafe,a.owner,a.thread,separateOld,1,replacementKey,JSON.stringify(effect),
+   "b".repeat(64),JSON.stringify({}),JSON.stringify({durationDays:1,metricScope:"supplier_purchase_order"})]),
+  /supplier_draft_replay_conflict/);
+ check((await one("select status from public.supervisor_proposals where id=$1",[separateOld]))?.status==="draft",
+  "failed replacement rolls back without retiring original approval card");
  await fails(()=>asRole(a.owner,()=>supersede()),/permission denied|service_role_only/);
  // Fresh negative supplier evidence must invalidate an old quote at the
  // database commit boundary, not only during model planning.
