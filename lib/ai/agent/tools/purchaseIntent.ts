@@ -88,17 +88,25 @@ export function ownerTextSupportsTypedFinancials(
   }catch{return false;}
  }
  const escape=(value:string)=>value.replace(/[.*+?^${}()|[\]\\]/gu,"\\$&");
+ // Count physical purchase quantities in the ORIGINAL saved owner message, not
+ // model-controlled propose_purchases batching. A shared "$45 total" across
+ // milk + beans must remain in review even if sent as two one-line calls.
+ const ownerQuantityMentions=[...text.matchAll(
+  /\b\d+(?:\.\d+)?\s*(?:gal(?:lon)?s?|lbs?|pounds?|oz|ounces?|kg|kilograms?|g|grams?|l|liters?|litres?|ml|milliliters?|ea|each|units?|pcs|pieces?|cases?)\b/giu
+ )].length;
+ const multiLineOwner=ownerQuantityMentions!==1||
+  /\b(?:and|plus|also)\s+\d+(?:\.\d+)?\b/iu.test(text);
  const amountPattern=currencyValid&&symbol?
    new RegExp("(?:"
      +escape(symbol)+"|\\b"+escape(currency!.toLocaleLowerCase())+"\\s*)"
-     +"(\\d{1,7})(?:\\.(\\d{1,2}))?(?![\\d.])","giu"):null;
+     +"(\\d{1,7})(?:\\.(\\d{1,2}))?(?![\\d.,])","giu"):null;
  const amounts=amountPattern?[...text.matchAll(amountPattern)]:[];
  const hasOtherMoney=/\p{Sc}/u.test(text)&&amounts.length===0;
  // No owner-provided price: a model may not fill in a fabricated cost.
  if(amounts.length===0)
   return line.costCents===null&&!hasOtherMoney&&
    !/\b(?:paid|spent|cost|price)\s+(?:about\s+)?\d/u.test(text);
- if(!currencyValid||lineCount!==1||amounts.length!==1||
+ if(!currencyValid||lineCount!==1||multiLineOwner||amounts.length!==1||
    line.costCents===null||!Number.isSafeInteger(line.costCents)||line.costCents<0||
    /\b(per|each|unit price|discount|tax|tip|approx|about)\b/u.test(text))return false;
  const [,whole,fraction=""]=amounts[0];
