@@ -20,7 +20,6 @@ export const SUITES=Object.freeze({
 export const DOMAINS=Object.freeze(Object.keys(SUITES));
 const sha=x=>typeof x==="string"&&/^[a-f0-9]{40}$/.test(x);
 const fail=msg=>{throw Error("owner_acceptance:"+msg);};
-const isTest=p=>/(?:\.test|\.spec|\.e2e)\.[cm]?[jt]sx?$/.test(p);
 const includes=(p,re)=>re.test(p.toLowerCase());
 
 /** Map actual changed paths to canonical owner domains, including test-only edits.
@@ -36,6 +35,7 @@ export function domainsForPaths(paths){
   const app=/^(?:app\/api\/|app\/\[locale\]\/|components\/)/.test(p);
   const backend=/^(?:lib\/|supabase\/migrations\/)/.test(p);
   if(!app&&!backend)continue;
+  const seenBefore=found.size;
   if(/^lib\/ai\/|^app\/api\/ai\/|^components\/home\/Supervisor/.test(p))found.add("supervisor");
   if(includes(p,/gmail/))found.add("gmail");
   if(includes(p,/inventor|pantry|purchas|receipt|suppl|recipe|attach|fileevidence/))found.add("inventory");
@@ -45,7 +45,7 @@ export function domainsForPaths(paths){
   if(includes(p,/toast|pos0|dataquery|canonical|menu|orders|sales/))found.add("pos");
   // All other business data / API changes receive a general Supervisor regression.
   if(/^lib\/(?:calc|data|actions|operating)\/|^app\/api\/|^supabase\/migrations\//.test(p)
-     && ![...found].some(d=>d!=="acceptance"))found.add("supervisor");
+     && found.size===seenBefore)found.add("supervisor");
  }
  return DOMAINS.filter(d=>found.has(d));
 }
@@ -61,7 +61,7 @@ export function validateReport(report,files){
    fail("vitest_missing_failed_or_skipped");
  const observed=report.testResults;
  for(const file of files){
-  const row=observed.find(r=>typeof r.name==="string"&&r.name.replaceAll("\\","/").endsWith("/"+file));
+  const row=observed.find(r=>typeof r.name==="string"&&(r.name.replaceAll("\\","/")===file||r.name.replaceAll("\\","/").endsWith("/"+file)));
   if(!row||row.status!=="passed"||!Array.isArray(row.assertionResults)||
      row.assertionResults.length===0||row.assertionResults.some(t=>t.status!=="passed"))
    fail("vitest_file_not_executed_"+file.replaceAll("/","_"));
