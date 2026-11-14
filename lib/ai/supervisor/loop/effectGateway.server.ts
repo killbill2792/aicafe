@@ -148,6 +148,27 @@ export class SupervisorEffectGateway{
    throw new Error("Staff effect gateway result outside scope");
   return {state:result.state,proposal,attemptKey:result.attempt_key};
  }
+ /** Same Supervisor gateway, distinct SQL transaction for correction of a
+  * CANCELLED, previously sent future-week roster. Existing accepted staff
+  * delivery receipts and approval ledger are never modified or replayed. */
+ async commitStaffCorrection(scope:OwnerLoopScope,id:string,revision:number):
+  Promise<{state:"applied"|"stale";proposal:LoopProposal;attemptKey:string}>{
+  const {data,error}=await createAdminSupabaseClient().rpc(
+    "supervisor_gateway_commit_staff_correction",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+      p_thread_id:scope.threadId,p_proposal_id:id,p_revision:revision,
+    });
+  if(error||!data)fail(error,"Staff correction gateway transaction failed");
+  const result=data as {state:string;proposal:ProposalRow;attempt_key:string};
+  if((result.state!=="applied"&&result.state!=="stale")||!result.proposal||!result.attempt_key)
+    throw new Error("Invalid staff correction gateway receipt");
+  const proposal=decode(result.proposal);
+  if(proposal.id!==id||proposal.businessId!==scope.businessId||
+   proposal.ownerUserId!==scope.ownerUserId||proposal.threadId!==scope.threadId||
+   proposal.status!==(result.state==="applied"?"committed":"stale"))
+    throw new Error("Staff correction gateway result outside owner scope");
+  return {state:result.state,proposal,attemptKey:result.attempt_key};
+ }
  async createMandateChallenge(scope:Pick<OwnerLoopScope,"businessId"|"ownerUserId">,
   input:{id:string;action:"grant"|"revise";mandateId:string;mandateRevision:number;
    policyHash:string;limitValue:typeof goalMandatePolicy.limitValue;mandateExpiresAt:string;factorId:string;
