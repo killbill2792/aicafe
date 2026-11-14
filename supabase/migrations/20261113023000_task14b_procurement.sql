@@ -24,6 +24,7 @@ create unique index if not exists ai_supplier_quotes_business_id_uq
 -- uniqueness prevents a forged cross-café ingredient reference.
 create unique index if not exists ingredients_business_id_supplier_uq
   on public.ingredients(business_id,id);
+-- Reason: A nullable scoped ingredient reference must never point to a foreign café; existing rows remain valid.
 -- squawk-ignore constraint-missing-not-valid, adding-foreign-key-constraint
 alter table public.ai_supplier_quotes add constraint ai_supplier_quotes_ingredient_scope_fk
   foreign key (business_id,ingredient_id) references public.ingredients(business_id,id);
@@ -105,12 +106,16 @@ create table public.purchase_order_events(
 );
 
 -- Only café owners see orders; every mutation is service-role only via gateway.
+-- Reason: This new supplier identity table has no pre-existing client data; enable RLS before any grants.
 -- squawk-ignore ban-alter-row-level-security
 alter table public.cafe_suppliers enable row level security;
+-- Reason: New purchase-order rows must be protected by owner-specific RLS from first creation.
 -- squawk-ignore ban-alter-row-level-security
 alter table public.purchase_orders enable row level security;
+-- Reason: Newly created PO line data must not be visible across cafés or owner accounts.
 -- squawk-ignore ban-alter-row-level-security
 alter table public.purchase_order_lines enable row level security;
+-- Reason: Newly created immutable event receipts are owner-scoped and service-role writable only.
 -- squawk-ignore ban-alter-row-level-security
 alter table public.purchase_order_events enable row level security;
 create policy "owner reads suppliers" on public.cafe_suppliers for select to authenticated
