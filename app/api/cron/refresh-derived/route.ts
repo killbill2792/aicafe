@@ -59,7 +59,7 @@ export async function GET(request:Request){
   }
   // A global fair, bounded slice across all cafés, not paid model calls per
   // business. The existing cron remains the only schedule for this capability.
-  let investigations={processed:0,collected:0,investigated:0,followUps:0,failed:0};
+  let investigations={processed:0,collected:0,investigated:0,followUps:0,rechecked:0,failed:0};
   try{investigations=await processDueInvestigations(db,now,2);}
   catch{investigations.failed++;}
   return respond(failed||commitments.failed||routines.failed||investigations.failed?207:200,
