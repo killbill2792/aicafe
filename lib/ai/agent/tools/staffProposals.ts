@@ -20,7 +20,8 @@ const rules=[
  "coverage_enabled","min_headcount","prep_minutes_before_open","prep_minutes_after_close"
 ] as const;
 export const staffProposalInputs={
- propose_schedule:z.strictObject({week_start:date.nullable(),shifts:z.array(shift).max(60)}),
+ propose_schedule:z.strictObject({week_start:date.nullable(),shifts:z.array(shift).max(60),
+  correct_cancelled_publication:z.boolean().optional()}),
  propose_shift_change:z.strictObject({shift_id:uuid.nullable(),shift,remove:z.boolean()}),
  propose_add_staff:person,
  propose_staff_change:z.strictObject({employee_id:uuid, ...person.shape,active:z.boolean()}),
@@ -39,7 +40,7 @@ export type StaffProposalName=keyof typeof staffProposalInputs;
 export const isStaffProposalName=(value:string):value is StaffProposalName=>
  Object.hasOwn(staffProposalInputs,value);
 const descriptions:Record<StaffProposalName,string>={
- propose_schedule:"Prepare an owner approval card to replace DRAFT shifts in a specific week. For 'next week' pass week_start null (resolved to next café-local Monday); ask only if truly ambiguous. Include staff UUIDs, dates, local start/end and breaks. Never claim saved.",
+ propose_schedule:"Prepare an owner approval card to replace DRAFT shifts in a specific week. For 'next week' pass week_start null (resolved to next café-local Monday); ask only if truly ambiguous. Include staff UUIDs, dates, local start/end and breaks. For a PREVIOUSLY PUBLISHED roster cancelled after notification, set correct_cancelled_publication:true ONLY after owner requests a full-week corrected roster and a new explicit approval. Never change sent shifts in place; old delivery receipts remain historical. Never claim saved.",
  propose_shift_change:"Prepare a card to add, edit or remove a dated staff shift. Use an existing shift_id for edits; null for creates. No write before approval.",
  propose_add_staff:"Prepare an owner approval card to add a staff member with hourly wage in cents; never directly add.",
  propose_staff_change:"Prepare a card to change an existing staff member's name, role, hourly wage, phone or active status; provide the complete desired profile.",
