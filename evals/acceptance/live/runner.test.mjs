@@ -32,17 +32,18 @@ test("expected DB delta comes from human-labeled effect, never a model reply",()
 });
 test("write receipts originate only from actually new local ledger rows",()=>{
  const old=[{id:"old",line_id:"recorded",created_at:"2026-11-01T00:00:00Z",
-  name:"Whole milk",base_unit:"ml",quantity_base:"1.0000",voided_at:null}];
+  name:"Whole milk",base_unit:"ml",quantity_base:"1.0000",voided_at:null,cost_cents:null}];
  const received=[...old,{id:"receipt_1",line_id:"purchase_1",
   created_at:"2026-11-13T10:00:00Z",name:"Whole milk",base_unit:"ml",
-  quantity_base:"2.0000",voided_at:null}];
+  quantity_base:"2.0000",voided_at:null,cost_cents:400}];
  const expected=[{sourceLineId:"human_line_1",ingredient:"whole_milk",
-  unit:"ml_x10000",delta:20000}];
+  unit:"ml_x10000",delta:20000,costCents:400}];
  assert.deepEqual(ledgerWrites(old,received,expected),[{
   sourceLineId:"human_line_1",ingredient:"whole_milk",unit:"ml_x10000",
   delta:20000,receiptId:"receipt_1",status:"committed"
  }]);
  assert.deepEqual(ledgerWrites(old,old,expected),[]);
+ assert.throws(()=>ledgerWrites(old,[...old,{...received[1],cost_cents:500}],expected),/saved_purchase_cost_mismatch/);
  assert.equal(ledgerWrites(old,[...received,{...received[1],id:"receipt_2",
   line_id:"purchase_2"}],expected)[1].sourceLineId,"unexpected_1");
 });
