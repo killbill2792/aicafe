@@ -12,17 +12,16 @@ alter table public.ai_supplier_quotes
     check (available_status in ('unknown','confirmed','unavailable')),
   add column available_checked_at date,
   add column delivery_on date;
--- Existing quotes remain readable during installation. NOT VALID enforces all
--- new writes immediately; VALIDATE scans historic rows without exclusive write
--- blocking and proves the added constraints before this migration completes.
+-- Existing quotes remain readable during installation. NOT VALID protects
+-- every NEW insert/update without locking legacy records for a blocking scan.
+-- Old rows have default 'unknown' availability and null expiry/date fields.
+-- A separately scheduled validation may certify historic rows after rollout.
 alter table public.ai_supplier_quotes
   add constraint ai_supplier_quotes_availability_date_check
     check (available_status <> 'confirmed' or available_checked_at is not null) not valid;
 alter table public.ai_supplier_quotes
   add constraint ai_supplier_quotes_quote_dates_check
     check (valid_until is null or valid_until >= quoted_on) not valid;
-alter table public.ai_supplier_quotes validate constraint ai_supplier_quotes_availability_date_check;
-alter table public.ai_supplier_quotes validate constraint ai_supplier_quotes_quote_dates_check;
 -- Reason: A new composite FK validates existing rows (which have NULL ingredient_id).
 -- squawk-ignore constraint-missing-not-valid, adding-foreign-key-constraint
 create unique index if not exists ai_supplier_quotes_business_id_uq
@@ -304,7 +303,7 @@ grant execute on function public.supervisor_commit_supplier_po(uuid,uuid,uuid,uu
 -- Extend the ONE Supervisor effect gateway with the supplier PO receipt.
 create function public.supervisor_reconcile_supplier_po(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
- p_proposal_id uuid,p_revision bigint
+ p_proposal_id uuid,p_revision integer
 ) returns public.supervisor_proposals
 language plpgsql security definer set search_path=public as $$
 declare
