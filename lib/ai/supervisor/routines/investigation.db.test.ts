@@ -212,7 +212,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       // never receive a false success receipt. Reappearance is recoverable
       // even when the source ID and evidence revision have not changed.
       const vanished=randomUUID();
-      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'unavailable_sales','new','{}')",
+      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'meal_break','new','{}')",
         [vanished,cafes[0]]);
       const original=[cafes[0],owners[0],threads[0],"alert",vanished,
         hex("2"),hex("3"),330,stamp(now,504)];
@@ -223,7 +223,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       const missing=await admin.query("select phase,last_error from public.supervisor_investigations where business_id=$1 and source_type='alert' and source_id=$2",
         [cafes[0],vanished]);
       expect(missing.rows).toEqual([{phase:"blocked",last_error:"source_missing"}]);
-      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'unavailable_sales','new','{}')",
+      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'meal_break','new','{}')",
         [vanished,cafes[0]]);
       expect(await rpc(a,"supervisor_enqueue_investigation",[
         ...original.slice(0,8),stamp(now,506),
