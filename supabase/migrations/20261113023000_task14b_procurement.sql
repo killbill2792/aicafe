@@ -364,3 +364,57 @@ revoke all on function public.supervisor_reconcile_supplier_po(uuid,uuid,uuid,uu
  from public,anon,authenticated;
 grant execute on function public.supervisor_reconcile_supplier_po(uuid,uuid,uuid,uuid,integer)
  to service_role;
+
+-- A correction must not leave the old proposal independently approvable.
+-- This service-only CAS links the immutable replacement while retiring the
+-- original within one DB transaction; old approval cards follow editedFrom.
+create function public.supervisor_supersede_supplier_draft(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
+ p_previous_id uuid,p_previous_revision integer,p_new_id uuid
+) returns text
+language plpgsql security definer set search_path=public as $$
+declare old_p public.supervisor_proposals; new_p public.supervisor_proposals;
+begin
+ if auth.role() is distinct from 'service_role' then
+  raise exception 'service_role_only' using errcode='42501'; end if;
+ if p_previous_id=p_new_id then
+  raise exception 'same_purchase_draft' using errcode='P0001'; end if;
+ if not exists(select 1 from public.memberships m where m.business_id=p_business_id
+    and m.user_id=p_owner_user_id and m.role='owner')
+ then raise exception 'proposal_owner_required' using errcode='42501'; end if;
+ select * into old_p from public.supervisor_proposals
+  where business_id=p_business_id and owner_user_id=p_owner_user_id
+    and thread_id=p_thread_id and id=p_previous_id
+    and capability_id='maya.supplier_purchase_order.v1' for update;
+ select * into new_p from public.supervisor_proposals
+  where business_id=p_business_id and owner_user_id=p_owner_user_id
+    and thread_id=p_thread_id and id=p_new_id
+    and capability_id='maya.supplier_purchase_order.v1' for update;
+ if old_p.id is null or new_p.id is null then
+  raise exception 'supplier_draft_not_found' using errcode='42501'; end if;
+ if old_p.status='rejected' and new_p.status='draft'
+   and new_p.baseline->>'editedFrom'=old_p.id::text
+ then return 'superseded'; end if;
+ if new_p.status<>'draft' then
+  raise exception 'replacement_not_draft' using errcode='P0001'; end if;
+ if old_p.status<>'draft' or old_p.revision<>p_previous_revision then
+  -- A stale or newly approved old card cannot be silently replaced. The new
+  -- unapproved row must not remain independently actionable after this race.
+  update public.supervisor_proposals set status='rejected',
+   revision=revision+1,updated_at=now()
+   where id=new_p.id and status='draft';
+  return 'previous_no_longer_editable';
+ end if;
+ update public.supervisor_proposals set status='rejected',revision=revision+1,
+   updated_at=now() where id=old_p.id and status='draft'
+   and revision=p_previous_revision;
+ update public.supervisor_proposals set
+   baseline=jsonb_set(coalesce(baseline,'{}'::jsonb),'{editedFrom}',
+     to_jsonb(old_p.id::text)),updated_at=now()
+   where id=new_p.id and status='draft';
+ return 'superseded';
+end $$;
+revoke all on function public.supervisor_supersede_supplier_draft(uuid,uuid,uuid,uuid,integer,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_supersede_supplier_draft(uuid,uuid,uuid,uuid,integer,uuid)
+ to service_role;
