@@ -112,8 +112,11 @@ try{
  // This is a disposable, deliberately minimal schema for the new FK.
  await db.query("create table public.ai_messages(id uuid primary key,business_id uuid not null,thread_id uuid not null,owner_user_id uuid not null,author_user_id uuid not null,role text not null,text_content text not null,created_at timestamptz not null default now())");
  await db.query(readFileSync(new URL("../supabase/migrations/20261113022900_supervisor_owner_message_inventory_effect.sql",import.meta.url),"utf8"));
+ const today=(await db.query(
+  "select (now() at time zone timezone)::date::text as today from businesses where id=$1",[B]
+ )).rows[0].today;
  const purchaseMsg=randomUUID(),purchaseProposal=randomUUID(),purchasedEffect={
-  ingredientId:randomUUID(),name:"Milk",quantity:10,unit:"gal",costCents:null,date:"2026-11-12",source:"chat_text"};
+  ingredientId:randomUUID(),name:"Milk",quantity:10,unit:"gal",costCents:null,date:today,source:"chat_text"};
  await db.query("insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
   [purchaseMsg,B,THREAD,OWNER,"I bought 10 gallons of milk today"]);
  await seedProposal(B,OWNER,THREAD,purchaseProposal,"maya.inventory_purchase.v1",purchasedEffect);
@@ -139,6 +142,31 @@ try{
  await expectError(()=>withService(db,c=>c.query(
   "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
   [B,OWNER,THREAD,duplicatePurchase,1,purchaseMsg])),"42501");
+ // A saved owner intent cannot authorize model-invented ingredient costs or
+ // backdated stock, even if an internal caller invokes the SQL gateway directly.
+ const intentRow=async(message)=>{const id=randomUUID();await db.query(
+  "insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
+  [id,B,THREAD,OWNER,message]);return id;};
+ const claimIntent=async(messageId,proposalId)=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
+  [B,OWNER,THREAD,proposalId,1,messageId]));
+ const noPriceIntent=await intentRow("I bought 10 gallons of milk today");
+ const inventedCostProposal=randomUUID();
+ await seedProposal(B,OWNER,THREAD,inventedCostProposal,"maya.inventory_purchase.v1",
+  {...purchasedEffect,costCents:4500});
+ await expectError(()=>claimIntent(noPriceIntent,inventedCostProposal),"42501");
+ const invalidDateIntent=await intentRow("I bought 10 gallons of milk today");
+ const invalidDateProposal=randomUUID();
+ await seedProposal(B,OWNER,THREAD,invalidDateProposal,"maya.inventory_purchase.v1",
+  {...purchasedEffect,date:"2020-01-01"});
+ await expectError(()=>claimIntent(invalidDateIntent,invalidDateProposal),"42501");
+ const pricedIntent=await intentRow("I bought 10 gallons of milk for $45.00");
+ const pricedProposal=randomUUID();
+ await seedProposal(B,OWNER,THREAD,pricedProposal,"maya.inventory_purchase.v1",
+  {...purchasedEffect,costCents:4500});
+ assert.equal((await claimIntent(pricedIntent,pricedProposal)).rows[0].supervisor_claim_owner_purchase_effect.authorization_kind,
+  "owner_message","an exact owner-specified cost must still be allowed");
+
  // One photographed receipt can contain two separate identical stock lines.
  // For stock-only receipts the source is chat_text (no expense), so replay
  // protection must use receipt group + source line, not quantity alone.
