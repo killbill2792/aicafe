@@ -125,9 +125,9 @@ begin
     if claimed_cost<0 then
       raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
     dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
-    price_pattern:='(\\$|USD[[:space:]]*)[[:space:]]*'||dollars::text||
-      case when cents=0 then '(\\.00)?'
-           else '\\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+    price_pattern:='(\$|USD[[:space:]]*)[[:space:]]*'||dollars::text||
+      case when cents=0 then '(\.00)?'
+           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
     if m.text_content !~* price_pattern then
       raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
   end if;
