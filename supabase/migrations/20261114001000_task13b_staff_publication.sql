@@ -352,3 +352,137 @@ end $$;
 revoke all on function public.staff_schedule_can_send(uuid,uuid)
  from public,anon,authenticated;
 grant execute on function public.staff_schedule_can_send(uuid,uuid) to service_role;
+
+-- Codex P1: correction of a published schedule after some worker messages
+-- have ALREADY been accepted. This is a NEW owner-click effect through the
+-- same Supervisor gateway: never mutate a sent shift in-place or re-use the
+-- previously approved send snapshot. Historical publications and receipts stay.
+-- A correction may only replace an unstarted, future full week after cancelling
+-- the previous published revision; a new send approval is then required.
+create function public.supervisor_gateway_commit_staff_correction(
+  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
+  p_proposal_id uuid,p_revision integer
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
+declare p public.supervisor_proposals%rowtype;
+  v_effect jsonb; d jsonb; row jsonb; scope jsonb;
+  v_week date;v_today date; v_staff uuid; v_date date;
+  seen text[]:='{}'; token text; attempt uuid; v_time text;
+  cancelled_count integer;
+begin
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'service_role_only' using errcode='42501'; end if;
+  select (now() at time zone b.timezone)::date into v_today from public.businesses b
+    where b.id=p_business_id and b.is_demo=false;
+  if v_today is null or not exists(select 1 from public.memberships m
+    where m.business_id=p_business_id and m.user_id=p_owner_user_id and m.role='owner')
+    then raise exception 'staff_correction_owner_required' using errcode='42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('olivia-'||p_business_id::text,0));
+  lock table public.employees,public.scheduled_shifts in share row exclusive mode;
+  select * into p from public.supervisor_proposals
+    where business_id=p_business_id and owner_user_id=p_owner_user_id
+      and thread_id=p_thread_id and id=p_proposal_id and revision=p_revision
+      and status='approved' and capability_id='olivia.staff_propose_schedule.v2'
+      and capability_version=2 for update;
+  if not found then raise exception 'correction_approval_required' using errcode='42501'; end if;
+  if not exists(select 1 from public.supervisor_approvals a
+    where a.business_id=p_business_id and a.proposal_id=p.id
+      and a.owner_user_id=p_owner_user_id and a.approved_revision=p.revision-1
+      and a.effect_hash=p.effect_hash and a.authorization_kind='click'
+      and a.mandate_id is null and a.mandate_revision is null) then
+    raise exception 'correction_click_approval_missing' using errcode='42501'; end if;
+  v_effect:=p.canonical_effect_payload;
+  d:=v_effect->'payload';scope:=v_effect->'dependencyScope';
+  v_week:=(d->>'week_start')::date;
+  if v_effect->>'operation'<>'propose_schedule'
+     or d->>'correct_cancelled_publication' is distinct from 'true'
+     or v_effect->>'scopeVersion' is distinct from '2'
+     or scope->>'version' is distinct from '2'
+     or scope->>'kind' is distinct from 'schedule'
+     or scope->>'weekStart' is distinct from d->>'week_start'
+     or jsonb_typeof(scope->'staffIds')<>'array'
+     or jsonb_typeof(v_effect->'preview')<>'array'
+     or jsonb_array_length(v_effect->'preview')=0
+     or (v_effect->>'expectedToken') !~ '^[0-9a-f]{32}$'
+     or extract(isodow from v_week)<>1 or v_week<=v_today
+     or jsonb_typeof(d->'shifts')<>'array'
+     or jsonb_array_length(d->'shifts') not between 1 and 60 then
+     raise exception 'invalid_staff_correction' using errcode='22023'; end if;
+  -- Once a shift began, a correction is an attendance/13C decision, not a
+  -- silent future-roster replacement. Current week is deliberately excluded.
+  if exists(select 1 from public.staff_schedule_publications pub
+    where pub.business_id=p_business_id and pub.week_start=v_week and pub.status='published')
+    then raise exception 'active_publication_requires_cancellation' using errcode='P0001'; end if;
+  select count(*) into cancelled_count from public.staff_schedule_publications pub
+    where pub.business_id=p_business_id and pub.week_start=v_week and pub.status='cancelled';
+  if cancelled_count=0 or not exists(select 1 from public.scheduled_shifts s
+      where s.business_id=p_business_id and s.deleted_at is null and s.status='sent'
+        and s.local_date between v_week and v_week+6) then
+    raise exception 'cancelled_published_roster_required' using errcode='P0001'; end if;
+  token:=public.supervisor_staff_scoped_token(p_business_id,scope);
+  if v_effect->>'expectedToken' is distinct from token then
+    update public.supervisor_proposals set status='stale',revision=revision+1,updated_at=now()
+      where id=p.id returning * into p;
+    return jsonb_build_object('state','stale','proposal',to_jsonb(p),
+      'attempt_key',gen_random_uuid());
+  end if;
+  for row in select value from jsonb_array_elements(d->'shifts') loop
+    v_staff:=(row->>'employee_id')::uuid;v_date:=(row->>'date')::date;
+    if v_date not between v_week and v_week+6
+      or (row->>'start') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+      or (row->>'end') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+      or row->>'start'=row->>'end'
+      or (row->>'break_minutes')::integer not between 0 and 240
+      or not exists(select 1 from public.employees e
+        where e.id=v_staff and e.business_id=p_business_id and e.active)
+      then raise exception 'invalid_correction_shift' using errcode='22023'; end if;
+    if v_staff::text||v_date::text||(row->>'start')=any(seen) then
+      raise exception 'duplicate_correction_shift' using errcode='22023'; end if;
+    seen:=array_append(seen,v_staff::text||v_date::text||(row->>'start'));
+    if not (scope->'staffIds' ? v_staff::text) then
+      raise exception 'correction_staff_out_of_authorized_scope' using errcode='42501'; end if;
+  end loop;
+  if (select count(*) from (select distinct (x.value->>'employee_id')::uuid as id
+     from jsonb_array_elements(d->'shifts') x) new_staff)
+       <>jsonb_array_length(scope->'staffIds') then
+    raise exception 'correction_staff_scope_not_exact' using errcode='42501'; end if;
+  -- The old sent rows are soft-deleted, not erased. Each old publication's
+  -- immutable snapshot and all delivery evidence stay unchanged.
+  update public.scheduled_shifts set deleted_at=now(),updated_at=now()
+    where business_id=p_business_id and deleted_at is null
+      and local_date between v_week and v_week+6
+      and status in ('sent','draft');
+  for row in select value from jsonb_array_elements(d->'shifts') loop
+    insert into public.scheduled_shifts(business_id,employee_id,local_date,
+      start_local,end_local,overnight,break_minutes,break_source,status,
+      source,proposal_id,created_by)
+    values(p_business_id,(row->>'employee_id')::uuid,(row->>'date')::date,
+      (row->>'start')::time,(row->>'end')::time,
+      (row->>'end')<(row->>'start'),(row->>'break_minutes')::int,
+      'owner','draft','olivia',p.id,p_owner_user_id);
+  end loop;
+  if exists(
+    select 1 from public.scheduled_shifts a
+      join public.scheduled_shifts b on b.business_id=a.business_id
+       and b.employee_id=a.employee_id and b.id<>a.id and b.deleted_at is null
+    where a.business_id=p_business_id and a.proposal_id=p.id and a.deleted_at is null
+      and tsrange(a.local_date+a.start_local,
+        a.local_date+a.end_local+case when a.end_local<=a.start_local
+          then interval '1 day' else interval '0 day' end,'[)')
+       && tsrange(b.local_date+b.start_local,
+        b.local_date+b.end_local+case when b.end_local<=b.start_local
+          then interval '1 day' else interval '0 day' end,'[)')
+  ) then raise exception 'overlapping_correction_shifts' using errcode='P0001'; end if;
+  attempt:=gen_random_uuid();
+  insert into public.supervisor_effect_attempts(
+    attempt_key,business_id,proposal_id,effect_hash,authorization_kind,business_date,state)
+    values(attempt,p_business_id,p.id,p.effect_hash,'click',v_today,'verified');
+  update public.supervisor_proposals set status='committed',revision=revision+2,
+    committed_at=now(),monitoring_start_date=v_today+1,updated_at=now()
+    where id=p.id returning * into p;
+  return jsonb_build_object('state','applied','proposal',to_jsonb(p),
+    'attempt_key',attempt);
+end $$;
+revoke all on function public.supervisor_gateway_commit_staff_correction(uuid,uuid,uuid,uuid,integer)
+  from public,anon,authenticated;
+grant execute on function public.supervisor_gateway_commit_staff_correction(uuid,uuid,uuid,uuid,integer)
+  to service_role;
