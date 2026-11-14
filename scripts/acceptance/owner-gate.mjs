@@ -102,8 +102,11 @@ export function validateTap(output){
   fail("node_tests_missing_failed_or_skipped");
  return count;
 }
-export function validateProof(proof,{head,domains}){
+export function validateProof(proof,{head,base,runId,domains}){
  if(!sha(head)||proof?.schema_version!==1||proof.head_sha!==head||
+    (base!==undefined&&proof.base_sha!==base)||
+    (runId!==undefined&&proof.run_id!==runId)||
+    !Number.isSafeInteger(proof.run_id)||proof.run_id<1||
     proof.status!=="passed"||proof.provider_model_proof!==false||
     JSON.stringify(proof.domains)!==JSON.stringify(domains)||!Array.isArray(proof.files)||
     proof.files.length===0||!Number.isSafeInteger(proof.executed_tests)||proof.executed_tests<1)
@@ -139,8 +142,10 @@ function main(){
  const action=process.argv[2];
  if(action==="classify"){classifyForGithub();return;}
  if(action!=="run"&&action!=="verify")fail("usage_classify_run_or_verify");
- const root=realpathSync(process.cwd()),head=process.env.HEAD_SHA;
+ const root=realpathSync(process.cwd()),head=process.env.HEAD_SHA,
+  runId=Number(process.env.GITHUB_RUN_ID);
  if(!sha(head)||git("rev-parse","HEAD")!==head)fail("checkout_head_mismatch");
+ if(!Number.isSafeInteger(runId)||runId<1)fail("github_run_id_required");
  const plan=selection({eventName:process.env.GITHUB_EVENT_NAME,
   base:process.env.BASE_SHA,head});
  const proofPath=resolve(root,"test-results/acceptance/owner-journey-proof.json");
@@ -149,7 +154,7 @@ function main(){
   if(!plan.domains.length){
    if(proof?.status!=="not_applicable"||proof.head_sha!==head||proof.executed_tests!==0)
     fail("invalid_n_a_proof");
-  }else validateProof(proof,{head,domains:plan.domains});
+  }else validateProof(proof,{head,base:process.env.BASE_SHA??null,runId,domains:plan.domains});
   console.log("Owner journey acceptance proof verified:",proof.status,head);
   return;
  }
@@ -172,11 +177,12 @@ function main(){
   }
  }
  const proof={schema_version:1,head_sha:head,base_sha:process.env.BASE_SHA??null,
+  run_id:runId,
   status:plan.files.length?"passed":"not_applicable",domains:plan.domains,
   files:plan.files,executed_tests:executed,provider_model_proof:false,
   scope:"deterministic_registered_domain_regression_not_live_luna"};
  writeFileSync(proofPath,JSON.stringify(proof,null,2)+"\n",{mode:0o600});
- if(plan.files.length)validateProof(proof,{head,domains:plan.domains});
+ if(plan.files.length)validateProof(proof,{head,base:process.env.BASE_SHA??null,runId,domains:plan.domains});
  console.log("Owner journey acceptance:",JSON.stringify(proof));
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
