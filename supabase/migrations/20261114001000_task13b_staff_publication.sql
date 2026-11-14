@@ -254,7 +254,7 @@ begin
     where id=p_publication_id and business_id=p_business_id
       and owner_user_id=p_owner_user_id for update;
   if not found then raise exception 'publication_not_owned' using errcode='42501'; end if;
-  select count(*) filter(where status='sending'),
+  select count(*) filter(where status in ('sending','uncertain')),
      count(*) filter(where status in ('sent','delivered','read','sent_by_owner'))
     into in_flight,accepted from public.staff_schedule_deliveries
     where publication_id=pub.id and business_id=pub.business_id;
