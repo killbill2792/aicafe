@@ -5,6 +5,8 @@ const allowed={
  WHATSAPP_PROVIDER_SEND_ENABLED:"true",WHATSAPP_POLICY_APPROVED:"true",
  WHATSAPP_STAFF_SCHEDULE_SEND_ENABLED:"true",WHATSAPP_STAFF_TEMPLATE_APPROVED:"true",
  META_WHATSAPP_TOKEN:"test-token",WHATSAPP_STAFF_SCHEDULE_TEMPLATE:"staff_schedule_approved",
+ WHATSAPP_STAFF_PHONE_NUMBER_ID:"1555999888777666",
+ WHATSAPP_STAFF_SENDER_APPROVED:"true",WHATSAPP_APP_SECRET:"secret",WHATSAPP_VERIFY_TOKEN:"verify",
 };
 beforeEach(()=>{for(const [k,v] of Object.entries(allowed))vi.stubEnv(k,v);});
 afterEach(()=>vi.unstubAllEnvs());
@@ -19,6 +21,7 @@ describe("Task 13B staff send: real provider receipts, not a chat-only message",
  });
  it("does not expose owner-only chat buttons or use free text; sends only template parameter",async()=>{
   const send=vi.fn(async(_url:string,req:RequestInit)=>{
+   expect(_url).toContain("/1555999888777666/messages");
    const body=JSON.parse(String(req.body));
    expect(body).toMatchObject({messaging_product:"whatsapp",to:"14155550123",type:"template",
      template:{name:"staff_schedule_approved",language:{code:"en_US"}}});
@@ -37,10 +40,21 @@ describe("Task 13B staff send: real provider receipts, not a chat-only message",
     .toMatchObject({state:"failed"});
   expect(await sendStaffScheduleTemplate("+14155550123","x".repeat(1001),send))
     .toMatchObject({state:"failed"});
-  vi.stubEnv("WHATSAPP_PHONE_NUMBER_ID","a-nonapproved-number");
-  expect(staffProviderBlockers()).toContain("approved staff webhook sender");
+  vi.stubEnv("WHATSAPP_STAFF_PHONE_NUMBER_ID","1322195347653883");
+  expect(staffProviderBlockers()).toContain("WHATSAPP_STAFF_PHONE_NUMBER_ID");
   expect(await sendStaffScheduleTemplate("+14155550123","Message",send))
     .toEqual({state:"failed",reason:"staff_provider_disabled"});
+  expect(send).not.toHaveBeenCalled();
+ });
+ it("requires a separate approved staff sender and authenticated callback configuration",async()=>{
+  vi.stubEnv("WHATSAPP_STAFF_SENDER_APPROVED","false");
+  expect(staffProviderBlockers()).toContain("WHATSAPP_STAFF_SENDER_APPROVED");
+  vi.stubEnv("WHATSAPP_STAFF_SENDER_APPROVED","true");
+  vi.stubEnv("WHATSAPP_APP_SECRET","");
+  expect(staffProviderBlockers()).toContain("staff_signed_webhook_configuration");
+  const send=vi.fn();
+  expect(await sendStaffScheduleTemplate("+14155550123","Message",send))
+    .toMatchObject({state:"failed"});
   expect(send).not.toHaveBeenCalled();
  });
  it("does not equate HTTP success without a wamid with a send or delivery",async()=>{
