@@ -1,5 +1,31 @@
 # AI CAFE — Shared real-world Supervisor acceptance protocol
 
+## Live local capture runner (owner-approved follow-up #477)
+
+A real-model run is **not automatically triggered** on every PR; that would spend provider credits, require private real receipts and contaminate a holdout set. The shared deterministic evaluator integrity CI runs on every code PR, while this live capture is explicitly launched by an operator in a completely disposable local environment.
+
+**Required private inputs outside the Git checkout:** 50 or more independently reviewed, distinct receipt JPG/PNG/WEBP/PDF originals and at least 30 independently reviewed conversation cases. No real labeled receipts are currently included with this repository or project handoff. Do not use the AI-team portrait assets as receipts. Each private JSON manifest has `schemaVersion:1`, `suiteId`, `datasetKind:"human-labeled-holdout"`, `reviewerApproval:{reviewerId,approvedAt}`, and `cases:[...]`. Every case has `id`, `threadKey`, `category:"receipt"|"conversation"`, `actor:{businessId,ownerId}` matching one of the synthetic `TEST_CAFES`, `input:{text,assetPath,assetSha256}` (use `null` for both asset fields on text-only cases), and `expected:{outcome:"updated"|"needs_review"|"no_action",writes,extracted,maxClarifications}`.
+
+Write labels from the actual original **before any run**, not copied from model responses. A write is `{sourceLineId,ingredient,delta,unit}`, where `ingredient` is the current seeded ingredient-name slug and `unit` is a canonical base-unit scale `g_x10000`, `ml_x10000`, or `each_x10000`. `delta` is the **integer number of 1/10,000 base units**, independently calculated from the receipt and checked ingredient conversions. This preserves database `numeric(18,4)` precision; it is **not gallons**, nor does it invent a universal pack, pump or shot conversion. `extracted` contains independently expected visible line records using the evaluator's `lineId,name,quantity,unit,costCents,confidence` schema. A purchase order not delivered must have no expected writes. A correction to an earlier purchase cannot be silently represented as a second positive stock line. Each case has a unique ID; multiple consecutive turns may share the same `threadKey` to test genuine context.
+
+**Local setup:** On a disposable developer machine with Node 22, locked dependencies, Chromium, Docker and pinned Supabase CLI v2 (the same version as existing CI), generate `supabase/seed.sql` and run `supabase start` then `supabase db reset --local --yes`. **Never use `--remote`, `--linked` or a hosted Supabase URL.** Export only local `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321`, local anon/service keys from `supabase status`, a budget-limited `OPENAI_API_KEY` in the shell environment, `APP_URL=http://127.0.0.1:3000`, `ACCEPTANCE_DATABASE_URL=postgres://postgres:<local-password>@127.0.0.1:54322/postgres`, `HEAD_SHA` from the exact code under test, and `AI_CAFE_LIVE_ACCEPTANCE=OWNER_APPROVED_LOCAL_ONLY`. Start the real Next.js app on localhost with these variables, then run:
+
+```bash
+node evals/acceptance/live/runner.mjs \
+  --labels /private/owner-reviewed-manifest.json \
+  --assets /private/receipt-originals \
+  --output /private/new-aicafe-live-evidence.json
+```
+
+The tool refuses production/preview hosts, missing provider keys, invalid labels, wrong owners/cafés, duplicate IDs, tampered file hashes, symlink escape, receipts in source control, undersized or duplicate-only data, and overwriting evidence files. It logs only a verdict, never private receipt contents or credentials. It logs into the app's two local owners, invokes `/api/ai/threads`, private upload and `/agent` SSE, captures first useful streamed event and completion time, and independently reads local `pantry_stock_purchases`, `ingredients` and `supervisor_proposals`. Observed purchases come from **new committed stock rows**, not model text; missing, duplicate or unexpected writes cause failure.
+
+**Important evidence limits:** The independent before quantity is taken from scoped local SQL, and expected after is **before + owner-reviewed expected deltas**. This is a legitimate dynamic-baseline comparison, but the baseline is database-derived, not a human-authored absolute starting quantity. Proposal payloads provide a structured proxy for extracted purchase lines; a model that only chats without producing structured lines may fail extraction acceptance. Backend `agent_turn_logs` proves real model tokens and records a durable turn ID; that is **not** an external provider request ID, and the scorer therefore retains `objective_checks_pass_subjective_and_provenance_unverified` even on a perfect objective run. A reopened inventory screen, human wording rubric and independently captured competitor sessions require separate evaluation. Never claim those were measured because the JSON scorer returned a success status.
+
+**Merge/branch order:** Foundation [PR #476](https://github.com/killbill2792/aicafe/pull/476) merges first, then the dependent live-runner PR targets the merged main and reruns exact-head CI/Codex. Task 12 [PR #473](https://github.com/killbill2792/aicafe/pull/473) is also not merged; the live stock-write benchmark must be run against code that actually includes Task 12 (or a successor). Running the tool against main before that code lands is not proof of Task 12. A clean local unit run with no provider is an integrity check, not a real owner task.
+
+---
+
+
 **Status:** The zero-cost scorer calibration is a *test of the test*. It is **not** proof that a live AI model, browser, receipt OCR or café inventory write works. It supplements the existing Promptfoo recorded-event suite (`evals/supervisor/`) and trusted per-PR acceptance runner (`scripts/dev-dispatcher/acceptance-runner.mjs`); it does not replace either.
 
 ## What data goes where
