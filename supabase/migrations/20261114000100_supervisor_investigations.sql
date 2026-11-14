@@ -274,7 +274,7 @@ begin
     on conflict(id) do nothing;
   end if;
   return true;
-end $;
+end $$;
 revoke all on function public.supervisor_fail_investigation(uuid,uuid,text,text,uuid,text,timestamptz)
   from public,anon,authenticated;
 grant execute on function public.supervisor_fail_investigation(uuid,uuid,text,text,uuid,text,timestamptz)
