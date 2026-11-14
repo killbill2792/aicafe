@@ -46,7 +46,7 @@ async function allRows<T>(load:(first:number,last:number)=>PromiseLike<{data:T[]
  throw new Error("usage_rows_exceed_safe_limit");
 }
 /** UI and Maya use this same owner-scoped read; no LLM/client-supplied business ID. */
-export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?:{client:SupabaseClient;businessId:string}):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null}>{
+export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?:{client:SupabaseClient;businessId:string}):Promise<{from:string;to:string;rows:UsageRow[];missing:string[];groupBy:string|null;provenance:{sales:string;recipes:string;counts:string;purchases:string;coverage:"complete"|"incomplete"}}>{
  const input=readInput.parse(raw);
  const {db,businessId}=await scope();
  const {data:ingredients,error:ie}=await db.from("ingredients").select("id,name,base_unit,category")
@@ -143,7 +143,7 @@ export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?
    // Do not accidentally match Toast modifiers with generic names across items.
    return {posModifierId:key||"unmapped:"+s.id+":"+index,...metadata};
   });
-  return {menuItemId:s.menu_item_id,quantity:Number(s.quantity),businessDate:order.business_date,
+  return {sourceLineId:s.id,menuItemId:s.menu_item_id,quantity:Number(s.quantity),businessDate:order.business_date,
    closedAt:order.closed_at,locationId:order.location_id,modifiers:normalized};
  });
  const rows=calculateUsage({ingredients:selected.map(i=>({id:i.id,name:i.name,unit:i.base_unit as UsageIngredient["unit"]})),
@@ -153,6 +153,9 @@ export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?
   purchases:purchases.map(p=>({ingredientId:p.ingredient_id,date:p.purchase_date,quantity:Number(p.quantity_base)} satisfies UsagePurchase)),
   staff:e?.staff??[],from:input.from,to:input.to,groupBy:input.groupBy??null});
  return {from:input.from,to:input.to,rows,groupBy:input.groupBy??null,
+  provenance:{sales:"canonical_order_lines",recipes:"owner_recipe_lines",
+   counts:"dated_owner_stock_counts",purchases:"nonvoid_purchase_lines",
+   coverage:e?.covered===true?"complete":"incomplete"},
   missing:[...new Set(rows.flatMap(r=>r.missing))]};
 }
 /** Closing counts overwrite an ingredient/date; purchases use a stable line ID. */

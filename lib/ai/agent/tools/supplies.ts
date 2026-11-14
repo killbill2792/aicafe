@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {projectUsageTool} from "@/lib/calc/usageToolProjection";
+import {projectInventoryEvidence} from "@/lib/calc/inventoryEvidence";
 import type { AgentToolContext, AgentToolResult } from "./index";
 import {resolveEntity,choicePayload,ownerNamedTarget} from "../resolve";
 import {dataQueryTools} from "./dataQuery";
@@ -85,10 +86,11 @@ export const suppliesTools={
             "menu_item_ref","stock_status","quantity","data"],
           filters:null,group_by:null,metrics:null,date_from:date,date_to:date,
           order_by:null,limit:50},scoped);
-        const missing=result.missing??[];
+        const evidence=projectInventoryEvidence(result.rows);
+        const missing=[...new Set([...(result.missing??[]),...evidence.missing])];
         return {source:"inventory",period:{from:date,to:date},agentId:"maya",
-          missing,inventory:result.empty?null:result.rows,
-          sourceMix:result.sourceMix,truncated:result.truncated,
+          missing,inventory:result.empty?null:evidence.rows,
+          sourceMix:result.sourceMix,truncated:result.truncated||evidence.truncated,
           // No implied complete inventory: Toast GET excludes IN_STOCK items.
           scope:"observed_inventory_only",quantitySemantics:"no_unobserved_zero"};
       }catch{

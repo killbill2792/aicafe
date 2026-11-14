@@ -257,7 +257,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_product_costs")return suppliesTools.get_product_costs.execute(raw,ctx);
   if(name==="get_ingredient_costs")return suppliesTools.get_ingredient_costs.execute(raw,ctx);
   if(name==="get_usage_variance")return suppliesTools.get_usage_variance.execute(raw,ctx);
-  if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw);
+  if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw,ctx);
   if(name==="get_peak_hours"||name==="get_employee_sales"||name==="get_payroll_facts"){
     const input=posPeriodSchema.parse(raw);
     const checked=resolveOwnerPeriod(input,{asOf:ctx.asOf,timezone:ctx.timezone},ctx.resolveState);
