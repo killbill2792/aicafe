@@ -39,19 +39,21 @@ export function expectedAfter(before,expectedWrites){
  return [...map.values()].sort((a,b)=>a.ingredient.localeCompare(b.ingredient));
 }
 export function ledgerWrites(before,after,expectedWrites){
- const ids=new Set(before.map(x=>x.line_id));
+ const ids=new Set(before.map(x=>x.line_id)),used=new Set();
  return after.filter(x=>!ids.has(x.line_id)&&x.voided_at===null)
   .sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))||
      String(a.line_id).localeCompare(String(b.line_id)))
   .map((r,i)=>{
-   const expected=expectedWrites[i];
+   const ingredient=slug(r.name),unit=r.base_unit+"_x10000",delta=toScaled(r.quantity_base);
+   const matches=expectedWrites.map((line,index)=>({line,index})).filter(x=>
+    !used.has(x.index)&&x.line.ingredient===ingredient&&x.line.unit===unit&&x.line.delta===delta);
    const savedCost=r.cost_cents===null?null:Number(r.cost_cents);
    if(!Number.isSafeInteger(savedCost)&&savedCost!==null)error("invalid_saved_cost");
-   if(expected&&Object.hasOwn(expected,"costCents")&&expected.costCents!==savedCost)
-    error("saved_purchase_cost_mismatch");
-   return {sourceLineId:expected?.sourceLineId??"unexpected_"+i,
-    ingredient:slug(r.name),unit:r.base_unit+"_x10000",
-    delta:toScaled(r.quantity_base),receiptId:r.id,status:"committed"};
+   const matched=matches.find(x=>!Object.hasOwn(x.line,"costCents")||x.line.costCents===savedCost);
+   if(matches.length&&!matched)error("saved_purchase_cost_mismatch");
+   if(matched)used.add(matched.index);
+   return {sourceLineId:matched?.line.sourceLineId??"unexpected_"+i,
+    ingredient,unit,delta,receiptId:r.id,status:"committed"};
   });
 }
 export function proposalLines(before,after,expectedExtracted){
