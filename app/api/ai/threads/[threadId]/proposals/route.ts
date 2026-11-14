@@ -236,6 +236,9 @@ export async function POST(request:Request,{params}:Params){
       if(input.action==="edit"||input.action==="edit_purchase")
         return conversationJson({error:"supplier_po_edits_need_new_proposal"},422);
       if(p.status==="committed")return conversationJson({state:"applied",proposal:await view(scope,repo,p)});
+      if(p.status==="stale")
+        return conversationJson({state:"stale",error:"supplier_po_evidence_stale",
+          proposal:await view(scope,repo,p)},409);
       if(p.status==="executing")
         return conversationJson({state:"uncertain",error:"effect_outcome_uncertain",
           proposal:await view(scope,repo,p)},409);
@@ -255,6 +258,11 @@ export async function POST(request:Request,{params}:Params){
         const latest=await repo.load(scope,p.id);
         if(latest.status==="committed")
           return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
+        // A definite stale source is safe to refresh with a NEW owner draft;
+        // don't misreport it as an unknown supplier write or generic conflict.
+        if(latest.status==="stale")
+          return conversationJson({state:"stale",error:"supplier_po_evidence_stale",
+            proposal:await view(scope,repo,latest)},409);
         return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
           error:latest.status==="executing"?"effect_outcome_uncertain":"supplier_po_approval_failed",
           proposal:await view(scope,repo,latest)},409);
