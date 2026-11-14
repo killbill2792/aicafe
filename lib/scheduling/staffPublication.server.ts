@@ -64,6 +64,56 @@ async function attemptEmployee(db:SupabaseClient,p:Publication,d:Delivery):Promi
 }
 const addDay=(day:string,n:number)=>new Date(Date.parse(day+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
 
+/** Proactive source-based owner question. Do not claim feasibility/legality
+ * without the 13A planner. This notices a real missing publication before the
+ * week starts, and the same Supervisor subsequently resumes approved work.
+ * No synthetic owner prompt, second agent, or invented schedule. */
+async function surfaceUpcomingScheduleNeed(db:SupabaseClient,businessId:string,
+ localDate:string):Promise<void>{
+ const d=new Date(localDate+"T12:00:00Z");
+ if(Number.isNaN(d.getTime()))throw new Error("invalid_cafe_date");
+ const daysUntilMonday=(8-d.getUTCDay())%7||7;
+ // Inform Thursday–Sunday before the following work week; no daily spam.
+ if(daysUntilMonday>4)return;
+ const week=addDay(localDate,daysUntilMonday);
+ const prior=await db.from("staff_schedule_publications").select("id")
+  .eq("business_id",businessId).eq("week_start",week)
+  .eq("status","published").maybeSingle();
+ if(prior.error)result(prior.error);
+ if(prior.data)return;
+ const [employees,shifts,owners]=await Promise.all([
+  db.from("employees").select("id").eq("business_id",businessId)
+   .eq("active",true).limit(201),
+  db.from("scheduled_shifts").select("id").eq("business_id",businessId)
+   .gte("local_date",week).lte("local_date",addDay(week,6))
+   .is("deleted_at",null).limit(201),
+  db.from("memberships").select("user_id").eq("business_id",businessId)
+   .eq("role","owner").limit(30),
+ ]);
+ if(employees.error||shifts.error||owners.error)
+   result(employees.error??shifts.error??owners.error);
+ if(!employees.data?.length)return; // no café staff, so no shift schedule
+ const count=shifts.data?.length??0;
+ const evidence={week,plannedShiftRows:count,employees:employees.data.length,
+  state:"approval_and_validated_publication_needed",
+  legalAndCoverageVerification:"not_claimed"};
+ for(const owner of owners.data??[]){
+  const id="staff-publish-needed:"+week+":"+owner.user_id;
+  const task=await db.from("operating_tasks").upsert({
+   business_id:businessId,id,owner_user_id:owner.user_id,agent_id:"olivia",
+   kind:"staff_schedule_publication",entity_type:"schedule",entity_id:week,
+   status:"needs_owner",confidence:"high",
+   payload:{title:count?
+      "Supervisor: review and approve week "+week+" schedule publication":
+      "Supervisor: prepare and review the week "+week+" staff schedule",
+     ...evidence,nextAction:count?
+      "Review the actual staffing/coverage and explicitly approve publication and notification":
+      "Use the Task13A planner to draft, review, and approve the week"},
+   evidence:[{source:"scheduled_shifts",facts:evidence}],
+  },{onConflict:"business_id,id",ignoreDuplicates:true});
+  if(task.error)result(task.error);
+ }
+}
 /** Called from the EXISTING durable café routine refresh. Never creates a new
  * cron/AI loop. Publication is a verified idempotent SQL effect; each staff
  * delivery is claimed once and is never replayed after a provider ambiguity.
@@ -72,6 +122,7 @@ const addDay=(day:string,n:number)=>new Date(Date.parse(day+"T12:00:00Z")+n*8640
 export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
  businessId:string,localDate:string):Promise<{published:number;attempted:number;blocked:number}>{
  const state={published:0,attempted:0,blocked:0};
+ await surfaceUpcomingScheduleNeed(db,businessId,localDate);
  // Only a newly created v2 effect with explicit owner-visible publish intent
  // is eligible. Old committed COPY-only approvals never get sent.
  const proposals=await db.from("supervisor_proposals")
