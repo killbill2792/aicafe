@@ -93,7 +93,36 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
         ).dependencyScope)!==effect.expectedToken)return {...data,state:"stale"};
       }catch{return {...data,state:"stale"};}
     }
-    return {...data,state:p.status==="approved"?"conflict":data.state};
+    const intent=p.canonicalEffectPayload as {operation?:string;
+      payload?:{publish_and_notify?:boolean}};
+    const publishAndNotify=intent.operation==="propose_send_schedule"&&
+      intent.payload?.publish_and_notify===true;
+    if(!publishAndNotify)return {...data,state:p.status==="approved"?"conflict":data.state};
+    if(p.status!=="committed")return {...data,publishAndNotify,
+      state:p.status==="approved"?"conflict":data.state};
+    const db=await createServerSupabaseClient();
+    const publication=await db.from("staff_schedule_publications")
+      .select("id,week_start,published_at,snapshot")
+      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+      .eq("proposal_id",p.id).eq("status","published").maybeSingle();
+    if(publication.error||!publication.data)return {...data,publishAndNotify,
+      state:"applying",publication:{state:"pending"}};
+    const receipts=await db.from("staff_schedule_deliveries")
+      .select("employee_id,status").eq("business_id",scope.businessId)
+      .eq("publication_id",publication.data.id).limit(201);
+    if(receipts.error||!receipts.data)return {...data,publishAndNotify,
+      state:"applying",publication:{state:"pending"}};
+    const shifts=publication.data.snapshot as Array<{employee_id:string}>;
+    const present=new Set(receipts.data.map(row=>row.employee_id));
+    const expected=new Set(shifts.map(s=>s.employee_id));
+    const counts=(status:string)=>receipts.data.filter(row=>row.status===status).length;
+    return {...data,publishAndNotify,state:"applied",publication:{
+      state:"published",week:publication.data.week_start,
+      expected:expected.size,missing:[...expected].filter(id=>!present.has(id)).length,
+      accepted:counts("sent"),delivered:counts("delivered"),read:counts("read"),
+      pending:counts("prepared")+counts("sending"),failed:counts("failed"),
+      uncertain:counts("uncertain")}};
+
   }
   if(p.capabilityId===gmailCapabilityId){
     const effect=gmailEffectSchema.parse(p.canonicalEffectPayload);
