@@ -156,5 +156,70 @@ try{
  check((await one("select receipt_ref like 'purchase_orders:%' as ok"+
   " from public.supervisor_effect_attempts where business_id=$1 and proposal_id=$2",
   [a.cafe,a.proposal]))?.ok,"receipt links canonical purchase order");
+ // Simulate an orphaned gateway attempt whose writer's response was lost.
+ // The scheduled claim reads/rotates ONLY the gateway attempt, never the
+ // immutable proposal. A missing PO receipt cannot be promoted to committed.
+ const orphan=id();
+ await db.query("insert into public.supervisor_proposals"+
+  " (id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,"+
+  " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision,updated_at)"+
+  " select $1,business_id,owner_user_id,thread_id,$2,capability_id,capability_version,"+
+  " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,'executing',3,"+
+  " now()-interval '12 minutes' from public.supervisor_proposals where id=$3",
+  [orphan,id(),a.proposal]);
+ await db.query("insert into public.supervisor_effect_attempts"+
+  " (business_id,proposal_id,effect_hash,authorization_kind,business_date,state,created_at)"+
+  " values($1,$2,$3,'click',$4,'executing',now()-interval '12 minutes')",
+  [a.cafe,orphan,hash,today]);
+ await fails(()=>asRole(a.owner,()=>one(
+  "select * from public.supervisor_claim_supplier_po_recovery(25,now()-interval '5 minutes')")),
+  /permission denied|service_role_only/);
+ const queue=await db.query("select id from public.supervisor_claim_supplier_po_recovery(25,now()-interval '5 minutes')");
+ check(queue.rows.some(x=>x.id===orphan),"gateway cursor claims the stale orphan");
+ const cursor=await one("select supplier_po_recovery_checked_at is not null as checked"+
+  " from public.supervisor_effect_attempts where business_id=$1 and proposal_id=$2",
+  [a.cafe,orphan]);
+ check(cursor?.checked===true,"recovery cursor is on the effect attempt ledger");
+ const untouched=await one("select revision,status from public.supervisor_proposals where id=$1",[orphan]);
+ check(untouched?.revision===3&&untouched?.status==="executing",
+  "queue rotation never changes immutable proposal revision/status");
+ const absent=await one("select status,revision from public.supervisor_reconcile_supplier_po($1,$2,$3,$4,3)",
+  [a.cafe,a.owner,a.thread,orphan]);
+ check(absent?.status==="executing"&&absent?.revision===3,
+  "no receipt: reconciliation cannot claim an approved PO");
+ check((await one("select state from public.supervisor_effect_attempts where proposal_id=$1",[orphan]))
+  ?.state==="uncertain","missing receipt stays in durable uncertain state");
+ const next=await db.query("select id from public.supervisor_claim_supplier_po_recovery(25,now()-interval '5 minutes')");
+ check(next.rows.some(x=>x.id===orphan),"uncertain attempt rotates through repeated worker checks");
+ // A delayed persisted receipt appears later (test fixture simulates the
+ // saved domain transaction, NOT a retry of the external purchasing effect).
+ const supplier=await one("select id from public.cafe_suppliers where business_id=$1"+
+  " and display_name='Farm A' limit 1",[a.cafe]);
+ check(Boolean(supplier?.id),"canonical supplier identity persisted for recovery");
+ const late=await one("insert into public.purchase_orders("+
+  " business_id,owner_user_id,supplier_id,supplier_name_snapshot,proposal_id,effect_hash,"+
+  " currency_code,needed_by,subtotal_cents)"+
+  " values($1,$2,$3,'Farm A',$4,$5,'CAD',$6::date,450) returning id",
+  [a.cafe,a.owner,supplier.id,orphan,hash,needed]);
+ await db.query("insert into public.purchase_order_lines("+
+  " business_id,purchase_order_id,quote_id,ingredient_id,ordinal,item_name_snapshot,"+
+  " needed_base_quantity,base_unit,packs,pack_quantity,pack_unit,unit_price_cents,"+
+  " subtotal_cents,quoted_on,delivery_on)"+
+  " values($1,$2,$3,$4,1,'Milk',3785.411784,'ml',1,1,'gal',450,450,$5::date,$6::date)",
+  [a.cafe,late.id,a.quote,a.ingredient,today,delivery]);
+ await db.query("insert into public.purchase_order_events("+
+  " business_id,purchase_order_id,event_sequence,event_kind,actor_user_id,proposal_id,effect_hash)"+
+  " values($1,$2,1,'approved_for_ordering',$3,$4,$5)",
+  [a.cafe,late.id,a.owner,orphan,hash]);
+ const final=await one("select status,revision from public.supervisor_reconcile_supplier_po($1,$2,$3,$4,3)",
+  [a.cafe,a.owner,a.thread,orphan]);
+ check(final?.status==="committed"&&final?.revision===4,
+  "later exact receipt repairs the uncertain orphan without effect resending");
+ const attempt=await one("select state,receipt_ref from public.supervisor_effect_attempts"+
+  " where proposal_id=$1",[orphan]);
+ check(attempt?.state==="verified"&&attempt.receipt_ref==="purchase_orders:"+late.id,
+  "late recovery writes a verified exact PO receipt");
+ check((await db.query("select * from public.supervisor_claim_supplier_po_recovery(25,now()-interval '5 minutes')")).rows
+  .every(x=>x.id!==orphan),"committed PO is never re-claimed or resent");
  console.log("Task14B DB: "+count+" assertions passed");
 }finally{try{await db.query("ROLLBACK");}catch{}await db.end().catch(()=>{});}
