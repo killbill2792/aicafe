@@ -89,7 +89,10 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const d=input as z.infer<typeof staffProposalInputs.propose_schedule> & {week_start:string};
    ensure(isoDay(d.week_start)===1&&d.week_start>=localDate,"Choose a future Monday");
    const last=add(d.week_start,6),old=shifts.filter(x=>x.local_date>=d.week_start&&x.local_date<=last);
-   ensure(old.every(x=>x.status==="draft"),"Sent shifts cannot be replaced");
+   if(d.correct_cancelled_publication===true)
+     ensure(old.some(x=>x.status==="sent")&&old.every(x=>["sent","draft"].includes(x.status)),
+       "Correction requires a previously sent roster; owner must cancel the published revision before approving");
+   else ensure(old.every(x=>x.status==="draft"),"Sent shifts cannot be replaced");
    // Replacement keeps adjacent-week shifts; include those to catch overnight
    // overlaps on both Monday and Sunday (the week itself is replaced).
    const retained=shifts.filter(x=>x.local_date<d.week_start||x.local_date>last)
@@ -112,7 +115,11 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
      p.wage_amount_cents===null&&(p.wage_period!=="hour"||p.default_hourly_wage_cents==null));
    if(unknown.length)item("labor:partial","Labor estimate",null,
      text("Partial: wages missing for "+unknown.length+" staff"));
-   payload={week_start:d.week_start,shifts:d.shifts};break;
+   if(d.correct_cancelled_publication===true)
+     item("publication:correction",copy.week+" "+d.week_start,null,
+       text("CORRECTION: Replaces the previously sent full-week roster only after owner cancels the publication. Previously accepted staff messages cannot be recalled. A fresh approval to notify employees of these changes is required."));
+   payload={week_start:d.week_start,shifts:d.shifts,
+     ...(d.correct_cancelled_publication===true?{correct_cancelled_publication:true}:{})};break;
   }
   case "propose_shift_change":{
    const d=input as z.infer<typeof staffProposalInputs.propose_shift_change>;
