@@ -220,7 +220,7 @@ export async function enqueueInvestigationsForOwner(db:SupabaseClient,
       p_thread_id:scope.threadId,p_source_type:decision.source.sourceType,
       p_source_id:decision.source.sourceId,
       p_revision_hash:decision.revisionHash,p_stable_key:decision.stableKey,
-      p_now:now.toISOString(),
+      p_priority:decision.priority,p_now:now.toISOString(),
     });
     if(error)throw new Error("investigation_enqueue_failed");
     if(data===true)enqueued++;
