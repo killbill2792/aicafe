@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,readPersistedModelUsage,requireCompletedTurn,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
+import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,planOwnerApprovals,readPersistedModelUsage,requireCompletedTurn,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
 
 const milk={name:"Whole milk",base_unit:"ml",quantity_base:"5.2500"};
 const beans={name:"Espresso beans",base_unit:"g",quantity_base:"12.5000"};
@@ -119,4 +119,35 @@ test("an ack, incomplete turn or failed model response cannot count as done",()=
   {done:{...good.done,reply:{...good.done.reply,id:null}}},
   {done:{...good.done,reply:{...good.done.reply,blocks:[]}}}])
   assert.throws(()=>requireCompletedTurn(item),/live_capture:agent_turn_not_complete/);
+});
+
+test("only independently labeled purchase lines are approved through owner authority",()=>{
+ const p={id:"11111111-1111-4111-8111-111111111111",revision:1,status:"draft",
+  capability_id:"maya.inventory_purchase.v1",created_at:"2026-11-13T10:00:00Z",
+  canonical_effect_payload:{name:"Whole milk",quantity:1,unit:"gal",costCents:500,
+   ingredientId:"44444444-4444-4444-8444-444444444444",receiptLineIndex:0}};
+ const observation=[p];
+ const expected={outcome:"updated",authorization:"owner_click",
+  approvals:[{lineId:"proposal_0",sourceLineId:"line_1"}],
+  writes:[{sourceLineId:"line_1",ingredient:"whole_milk",unit:"ml_x10000",delta:37854118,costCents:500}],
+  extracted:[{lineId:"proposal_0",name:"Whole milk",quantity:1,unit:"gal",
+   costCents:500,confidence:"verified"}]};
+ assert.deepEqual(planOwnerApprovals({expected},[],observation),[
+  {proposalId:p.id,revision:1}]);
+ assert.deepEqual(planOwnerApprovals({expected:{...expected,authorization:"direct_authorized",approvals:[]}},[],observation),[]);
+ const fails=[
+  {...expected,writes:[{...expected.writes[0],ingredient:"espresso_beans"}]},
+  {...expected,writes:[{...expected.writes[0],costCents:999}]},
+  {...expected,extracted:[{...expected.extracted[0],quantity:2}]},
+  {...expected,approvals:[{lineId:"proposal_1",sourceLineId:"line_1"}]}
+ ];
+ for(const candidate of fails)assert.throws(
+  ()=>planOwnerApprovals({expected:candidate},[],observation),/live_capture:/);
+ assert.throws(()=>planOwnerApprovals({expected},[],[{...p,status:"committed"}]),
+  /unreviewed_proposal_cannot_be_approved/);
+ assert.throws(()=>planOwnerApprovals({expected},[],[{...p,revision:0}]),
+  /unreviewed_proposal_cannot_be_approved/);
+ assert.throws(()=>planOwnerApprovals({expected},[],[{
+  ...p,canonical_effect_payload:{...p.canonical_effect_payload,ingredientId:null}}]),
+  /live_capture:/);
 });
