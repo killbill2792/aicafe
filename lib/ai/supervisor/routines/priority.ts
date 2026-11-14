@@ -42,7 +42,8 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     source.dueAt!==null&&source.dueAt!==undefined&&
     Number.isFinite(Date.parse(source.dueAt))&&Date.parse(source.dueAt)<=now.getTime();
   const ownerAction=source.status==="needs_owner";
-  let priority=source.sourceType==="alert"?65:ownerAction?90:75;
+  let priority=source.sourceType==="alert"?65:
+    source.sourceType==="supplier_po"?90:ownerAction?90:75;
   if(overdue)priority+=20;
   if(source.severity==="critical")priority+=20;
   else if(source.severity==="high")priority+=10;
@@ -51,7 +52,9 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
   // This hash encodes scope and source identity, unlike a text-title dedupe.
   const stableKey=digest(source.businessId+":"+source.ownerUserId+":"+
     source.sourceType+":"+source.sourceId+":"+revisionHash);
-  const reason=overdue?"Overdue item needs review":
+  const reason=source.sourceType==="supplier_po"?
+    "Supplier purchase-order draft needs your approval":
+    overdue?"Overdue item needs review":
     source.sourceType==="alert"?"Actionable café alert needs review":
     ownerAction?"Owner task needs review":"Task response needs review";
   return {source,revisionHash,priority,reason,stableKey};
@@ -61,7 +64,8 @@ export function choosePriorities(sources:readonly PrioritySource[],now:Date,limi
   const candidates=sources.filter(s=>
     (s.sourceType==="alert"&&(s.status==="new"||s.status==="seen"))||
     (s.sourceType==="operating_task"&&!alreadyNotifiedTaskKinds.has(s.kind)&&
-      (s.status==="needs_owner"||s.status==="needs_response")))
+      (s.status==="needs_owner"||s.status==="needs_response"))||
+    (s.sourceType==="supplier_po"&&s.status==="draft"))
     .map(s=>rankPriority(s,now));
   return candidates.sort((a,b)=>b.priority-a.priority||
     a.source.createdAt.localeCompare(b.source.createdAt)||
