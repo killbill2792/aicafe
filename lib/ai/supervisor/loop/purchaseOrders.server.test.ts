@@ -114,8 +114,7 @@ describe("Task14B Supervisor PO: independently investigates, then prepares a dur
   const finishEffect=vi.fn(async (_scope:unknown,_claim:unknown,_revision:number,state:string)=>({
    ...claim.proposal,status:state==="stale"?"stale":"executing",revision:state==="stale"?4:3,
   }));
-  const repo={load:vi.fn(async()=>p),claimEffect:vi.fn(async()=>claim),finishEffect}
-   as unknown as LoopRepository;
+  const repo={load:vi.fn(async()=>p),claimEffect:vi.fn(async()=>claim),finishEffect} as unknown as LoopRepository;
   const rpc=vi.fn().mockResolvedValue({data:null,
    error:{code:"P0001",message:"supplier_quote_superseded"}});
   vi.mocked(createAdminSupabaseClient).mockReturnValue({rpc} as never);
@@ -139,8 +138,7 @@ describe("Task14B Supervisor PO: independently investigates, then prepares a dur
    attemptKey:"99999999-9999-4999-8999-999999999999",
    businessDate:"2026-11-14",authorizationKind:"click" as const};
   const finishEffect=vi.fn(async()=>claim.proposal);
-  const repo={load:vi.fn(async()=>p),claimEffect:vi.fn(async()=>claim),finishEffect}
-   as unknown as LoopRepository;
+  const repo={load:vi.fn(async()=>p),claimEffect:vi.fn(async()=>claim),finishEffect} as unknown as LoopRepository;
   const rpc=vi.fn().mockRejectedValue(new Error("connection closed after request"));
   vi.mocked(createAdminSupabaseClient).mockReturnValue({rpc} as never);
   await expect(commitLoop(scope,loopRegistry(supplierPurchaseOrderCapability),repo,p.id,p.revision))
