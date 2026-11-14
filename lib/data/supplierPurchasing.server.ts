@@ -11,7 +11,7 @@ export async function readSupplierPurchasingEvidence(db:SupabaseClient,businessI
     .is("archived_at",null).order("name").limit(2000),
   db.from("ai_supplier_quotes").select("id,supplier_name,item_name,ingredient_id,price_cents,"+
     "package_count,package_unit,currency_code,source_kind,quoted_on,valid_until,"+
-    "available_status,available_checked_at,delivery_on")
+    "available_status,available_checked_at,delivery_on,created_at")
     .eq("business_id",businessId).order("created_at",{ascending:false}).limit(501),
   db.from("businesses").select("currency,timezone").eq("id",businessId).maybeSingle(),
  ]);

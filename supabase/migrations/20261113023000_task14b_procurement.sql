@@ -222,6 +222,14 @@ begin
   i:=i+1;
   select * into q from public.ai_supplier_quotes
    where business_id=p_business_id and id=(line->>'quoteId')::uuid;
+  -- Superseding quote evidence blocks old offers even when it says unavailable.
+  if q.id is not null and exists(select 1 from public.ai_supplier_quotes newer
+      where newer.business_id=p_business_id
+        and lower(btrim(newer.supplier_name))=lower(btrim(q.supplier_name))
+        and lower(btrim(newer.item_name))=lower(btrim(q.item_name))
+        and newer.package_count=q.package_count and newer.package_unit=q.package_unit
+        and (newer.created_at,newer.id)>(q.created_at,q.id))
+  then raise exception 'supplier_quote_superseded' using errcode='P0001'; end if;
   select * into ingredient from public.ingredients
    where business_id=p_business_id and id=(line->>'ingredientId')::uuid
     and archived_at is null;

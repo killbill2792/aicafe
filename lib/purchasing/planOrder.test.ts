@@ -39,6 +39,25 @@ describe("Task 14B deterministic purchasing decisions",()=>{
   expect(p.offers).toHaveLength(1);
   expect(p.offers[0]).toMatchObject({subtotalCents:1000,lines:[{packs:5,packUnit:"liter"}]});
  });
+ it("never over-orders exact multiples because of floating conversion noise",()=>{
+  expect(plan({needs:[{ingredientId:ingredient.id,itemName:"Milk",quantity:11,unit:"gal"}]})
+    .offers[0].lines[0].packs).toBe(11);
+  expect(plan({needs:[{ingredientId:ingredient.id,itemName:"Milk",quantity:11.0001,unit:"gal"}]})
+    .offers[0].lines[0].packs).toBe(12);
+  expect(plan({needs:[{ingredientId:ingredient.id,itemName:"Milk",quantity:22,unit:"qt"}]})
+    .offers[0].lines[0].packs).toBe(6);
+ });
+ it("the newest unavailable or repriced quote supersedes the old one",()=>{
+  const old={...quote,created_at:"2026-11-12T10:00:00Z"};
+  const newer={...quote,id:"55555555-5555-4555-8555-555555555555",
+    created_at:"2026-11-13T10:00:00Z",available_status:"unavailable"};
+  expect(plan({quotes:[old,newer]}).offers).toHaveLength(0);
+  expect(plan({quotes:[newer,old]}).offers).toHaveLength(0);
+  const corrected={...newer,available_status:"confirmed",price_cents:550};
+  expect(plan({quotes:[old,corrected]}).offers[0]).toMatchObject({
+    subtotalCents:2750,lines:[{quoteId:corrected.id,priceCents:550}]
+  });
+ });
  it("never guesses how many ingredients are in a case",()=>{
   expect(plan({quotes:[{...quote,package_unit:"case",package_count:12}]}).offers).toHaveLength(0);
  });

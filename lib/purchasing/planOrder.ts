@@ -60,6 +60,17 @@ export function planSupplierOrder(input:{
   const group=groups.get(key)??{name:quote.supplier_name,quotes:[]};
   group.quotes.push(quote);groups.set(key,group);
  }
+ // Latest append-only supplier evidence wins, even if it reports unavailable.
+ // Never resurrect an older confirmed quote for the same physical package.
+ const versionKey=(q:SupplierQuote)=>[norm(q.supplier_name),norm(q.item_name),
+   q.package_unit,q.package_count].join("\u0000");
+ const latestByPack=new Map<string,SupplierQuote>();
+ const stamped=(q:SupplierQuote)=>q.created_at??q.quoted_on+"T00:00:00Z";
+ for(const quote of input.quotes){
+  const k=versionKey(quote),prior=latestByPack.get(k);
+  if(!prior||stamped(quote)>stamped(prior)||
+    stamped(quote)===stamped(prior)&&quote.id>prior.id)latestByPack.set(k,quote);
+ }
  const offers:PurchaseOffer[]=[];
  for(const [key,group] of groups){
   if(input.preferredSupplier&&norm(input.preferredSupplier)!==key)continue;
@@ -68,6 +79,7 @@ export function planSupplierOrder(input:{
    if(!need)continue;
    const candidates:PurchaseLine[]=[];
    for(const quote of group.quotes){
+    if(latestByPack.get(versionKey(quote))?.id!==quote.id)continue;
     if((quote.ingredient_id&&quote.ingredient_id!==need.ingredient.id)||
        norm(quote.item_name)!==norm(need.ingredient.name))continue;
     let reason:string|null=null;
@@ -91,7 +103,15 @@ export function planSupplierOrder(input:{
      quote.package_unit==="liter"?"l":quote.package_unit,need.base);
     if(perPack===null)reason="package_conversion_missing";
     if(reason){missing.add(reason+":"+group.name+":"+need.ingredient.name);continue;}
-    const packs=Math.ceil(need.quantityBase/perPack!);
+    // Same physical-unit counts are exact; normalize only floating-point
+    // conversion noise before ceiling mixed-unit pack counts.
+    const normalizedUnit=(unit:string)=>unit==="liter"?"l":unit;
+    const ratio=normalizedUnit(need.n.unit)===normalizedUnit(quote.package_unit)
+      ?need.n.quantity/quote.package_count:need.quantityBase/perPack!;
+    const nearest=Math.round(ratio);
+    const safeRatio=Math.abs(ratio-nearest)<=
+      Number.EPSILON*16*Math.max(1,Math.abs(ratio))?nearest:ratio;
+    const packs=Math.ceil(safeRatio);
     const lineSubtotalCents=packs*quote.price_cents;
     if(!Number.isSafeInteger(packs)||packs<1||packs>100000||
        !Number.isSafeInteger(lineSubtotalCents)||lineSubtotalCents>1000000000){
