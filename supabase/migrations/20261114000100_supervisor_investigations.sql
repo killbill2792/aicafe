@@ -90,8 +90,10 @@ begin
   where public.supervisor_investigations.revision_hash<>excluded.revision_hash
     and (public.supervisor_investigations.lease_until is null
       or public.supervisor_investigations.lease_until<=p_now);
-  return true;
-end $$;
+  -- FOUND reports whether a new investigation was inserted or a material
+  -- source revision reset it. Repeated identical scans are not new work.
+  return found;
+end $;
 revoke all on function public.supervisor_enqueue_investigation(uuid,uuid,uuid,text,text,text,text,timestamptz)
   from public,anon,authenticated;
 grant execute on function public.supervisor_enqueue_investigation(uuid,uuid,uuid,text,text,text,text,timestamptz)
