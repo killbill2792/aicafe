@@ -173,7 +173,7 @@ begin
     'lease_token',v_token);
   end loop;
   return null;
-end $;
+end $$;
 revoke all on function public.supervisor_claim_investigation(timestamptz)
   from public,anon,authenticated;
 grant execute on function public.supervisor_claim_investigation(timestamptz)
