@@ -114,6 +114,33 @@ function syntheticLiveContract(){
  }
  return {t,o};
 }
+test("live contract accepts the configured Supervisor fallback model gpt-4.1-mini",()=>{
+ const {t,o}=syntheticLiveContract();
+ // This is the real fallback string in lib/ai/conversations/modelConfig.ts.
+ o.capture.modelId="gpt-4.1-mini";
+ const result=scoreAcceptance(t,o,{mode:"live"});
+ assert.equal(result.status,"objective_checks_pass_subjective_and_provenance_unverified");
+ assert.equal(result.cases,80);
+});
+test("live contract accepts a provider-qualified model name without treating it as a run ID",()=>{
+ const {t,o}=syntheticLiveContract();
+ o.capture.modelId="openai/gpt-4.1-mini";
+ assert.equal(scoreAcceptance(t,o,{mode:"live"}).cases,80);
+});
+test("live contract rejects malformed provider model IDs and keeps internal run IDs strict",()=>{
+ for(const modelId of ["", ".", "/gpt-4.1-mini", "gpt-4.1 mini",
+  "gpt-4.1-mini\\n", "x".repeat(129), null]){
+  const {t,o}=syntheticLiveContract();
+  o.capture.modelId=modelId;
+  assert.throws(()=>scoreAcceptance(t,o,{mode:"live"}),/missing_real_model_identity/,
+   "must reject "+JSON.stringify(modelId));
+ }
+ const {t,o}=syntheticLiveContract();
+ o.capture.modelId="gpt-4.1-mini";
+ o.capture.runId="run.with.period";
+ assert.throws(()=>scoreAcceptance(t,o,{mode:"live"}),/missing_real_model_identity/);
+});
+
 test("the full-size synthetic live-mode contract reaches scoring, never a real acceptance verdict",()=>{
  const {t,o}=syntheticLiveContract();
  const result=scoreAcceptance(t,o,{mode:"live"});
