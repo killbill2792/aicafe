@@ -26,7 +26,7 @@ function example(){
     expected:{outcome:"updated",authorization:"owner_click",maxClarifications:0,
      approvals:[{lineId:"proposal_0",sourceLineId:"line_1"}],
      writes:[{sourceLineId:"line_1",ingredient:"whole_milk",delta:10000,unit:"ml_x10000",costCents:300}],
-     extracted:[{lineId:"proposal_0",name:"Whole milk",quantity:1,unit:"ml",costCents:300,confidence:"verified"}]}},
+     extracted:[{lineId:"proposal_0",name:"Whole milk",quantity:10000,unit:"ml_x10000",costCents:300,confidence:"verified"}]}},
    {id:"case_chat",threadKey:"thread_b",category:"conversation",
     actor:{businessId:"business_beta",ownerId:"owner_beta"},
     input:{text:"Check if I already purchased milk.",assetSha256:null},
