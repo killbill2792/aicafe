@@ -29,6 +29,7 @@ const collected={...base,phase:"collect",evidence:{}};
 const investigating={...base,phase:"investigate",step_version:1,
   evidence:{source:synopsis,collectedAt:now.toISOString()}};
 const following={...base,phase:"awaiting_owner",step_version:2,
+  narrative:"Previous owner-visible plan: examine wage coverage and propose an approved roster adjustment.",
   evidence:{source:synopsis,collectedAt:now.toISOString()}};
 const agentResult=(patch:Record<string,unknown>={})=>({
   text:"I checked sales and labor coverage. Staffing remains uncertain. Review the owner approval card before any change; I will check again.",
@@ -134,10 +135,23 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(result).toMatchObject({processed:2,investigated:1,followUps:1,failed:0});
     expect(mocks.model).toHaveBeenCalledTimes(2);
     expect(mocks.model.mock.calls[1][0].ownerText).toContain("persistent follow-up");
+    expect(mocks.model.mock.calls[1][0].ownerText).toContain("Previous owner-visible plan");
     expect(d.calls.filter(x=>x.name==="supervisor_finish_investigation")
       .map(x=>x.args.p_outcome)).toEqual(["investigated","followed_up"]);
     expect(d.calls.every(x=>!x.name.includes("commit_effect")&&
       !x.name.includes("approve"))).toBe(true);
+  });
+  it("silently checkpoints unchanged short-interval monitoring without owner-message spam",async()=>{
+    const d=db([{...following,last_error:null,evidence:{
+      ...following.evidence,lastOwnerUpdate:now.toISOString(),unchangedChecks:0,
+    }}]);
+    const status=await processNextInvestigation(d.client,now);
+    expect(status).toMatchObject({processed:1,rechecked:1,followUps:0,failed:0});
+    expect(mocks.model).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+    expect(d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args)
+      .toMatchObject({p_outcome:"rechecked",p_narrative:null,
+        p_evidence:expect.objectContaining({unchangedChecks:1})});
   });
   it("does not silently publish a one-tool answer as a multi-step investigation",async()=>{
     mocks.model.mockResolvedValue(agentResult({tools:["get_sales"]}));
