@@ -479,3 +479,55 @@ revoke all on function public.supervisor_supersede_supplier_draft(uuid,uuid,uuid
  from public,anon,authenticated;
 grant execute on function public.supervisor_supersede_supplier_draft(uuid,uuid,uuid,uuid,integer,uuid)
  to service_role;
+
+
+-- Recovery fairness state belongs on the existing gateway's attempt ledger,
+-- NEVER on the immutable Supervisor proposal. No second job queue or sender.
+alter table public.supervisor_effect_attempts
+ add column supplier_po_recovery_checked_at timestamptz;
+
+-- Claim a bounded, globally fair batch of eligible stale PO attempts from the
+-- original effect gateway. A claim only rotates an attempt's read cursor; it
+-- cannot change an immutable effect/revision or re-invoke the purchase writer.
+create function public.supervisor_claim_supplier_po_recovery(
+ p_limit integer,p_cutoff timestamptz
+) returns table(
+ id uuid,business_id uuid,owner_user_id uuid,thread_id uuid,revision integer,locale text
+)
+language plpgsql security definer set search_path=public as $$
+begin
+ if auth.role() is distinct from 'service_role' then
+  raise exception 'service_role_only' using errcode='42501'; end if;
+ if p_limit is null or p_limit < 1 or p_limit > 25 or p_cutoff is null then
+  raise exception 'invalid_po_recovery_window' using errcode='P0001'; end if;
+ return query
+ with candidates as materialized (
+  select a.id as attempt_id,p.id as proposal_id,p.business_id as cafe_id,
+   p.owner_user_id as owner_id,p.thread_id as thread,
+   p.revision as current_revision,p.locale::text as current_locale
+  from public.supervisor_effect_attempts a
+  join public.supervisor_proposals p
+   on p.business_id=a.business_id and p.id=a.proposal_id
+   and p.effect_hash=a.effect_hash
+  where p.capability_id='maya.supplier_purchase_order.v1'
+   and p.capability_version=1 and p.status='executing'
+   and p.updated_at <= p_cutoff
+   and a.authorization_kind='click' and a.state in ('executing','uncertain')
+  order by a.supplier_po_recovery_checked_at asc nulls first,
+   a.created_at asc,a.id asc
+  limit p_limit for update of a skip locked
+ ), rotated as (
+  update public.supervisor_effect_attempts a
+   set supplier_po_recovery_checked_at=now()
+   from candidates c where a.id=c.attempt_id
+   returning a.id as attempt_id
+ )
+ select c.proposal_id,c.cafe_id,c.owner_id,c.thread,
+   c.current_revision,c.current_locale
+ from candidates c join rotated r on r.attempt_id=c.attempt_id
+ order by c.proposal_id;
+end $$;
+revoke all on function public.supervisor_claim_supplier_po_recovery(integer,timestamptz)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_claim_supplier_po_recovery(integer,timestamptz)
+ to service_role;
