@@ -7,7 +7,7 @@ create table public.staff_schedule_publications (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references public.businesses(id) on delete cascade,
   proposal_id uuid not null,
-  publication_revision integer not null default 1 check (publication_revision>0),
+  publication_revision bigint not null default 1 check (publication_revision>0),
   owner_user_id uuid not null references auth.users(id),
   week_start date not null check (extract(isodow from week_start)=1),
   snapshot jsonb not null check (jsonb_typeof(snapshot)='array' and jsonb_array_length(snapshot)>0),
@@ -25,6 +25,8 @@ create unique index staff_schedule_one_published_week
   where status='published';
 create index staff_schedule_publications_owner_week
   on public.staff_schedule_publications(business_id,owner_user_id,week_start desc);
+-- Reason: This is a brand-new service-owned publication table; RLS must be enabled before owner-select policy and grants.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.staff_schedule_publications enable row level security;
 create policy "owner read schedule publications" on public.staff_schedule_publications
   for select to authenticated using (
@@ -46,10 +48,13 @@ alter table public.staff_schedule_deliveries
 alter table public.staff_schedule_deliveries add constraint staff_delivery_publication_fk
   foreign key (publication_id,business_id)
   references public.staff_schedule_publications(id,business_id);
+-- Reason: Expand the existing status-only constraint for provider-uncertain/read states, preserving all legacy states.
+-- squawk-ignore ban-drop-constraint
 alter table public.staff_schedule_deliveries
   drop constraint staff_schedule_deliveries_status_check;
 alter table public.staff_schedule_deliveries add constraint staff_schedule_deliveries_status_check
-  check (status in ('prepared','sending','sent','failed','uncertain','delivered','read','sent_by_owner'));
+  check (status in ('prepared','sending','sent','failed','uncertain','delivered','read','sent_by_owner')) not valid;
+alter table public.staff_schedule_deliveries validate constraint staff_schedule_deliveries_status_check;
 create unique index staff_schedule_delivery_provider_wamid
   on public.staff_schedule_deliveries(meta_message_id)
   where meta_message_id is not null;
