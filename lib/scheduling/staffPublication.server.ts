@@ -242,7 +242,7 @@ export async function readStaffWeekPublication(week:string):Promise<null|{
  publishedAt:string;publicationId:string;expected:number;prepared:number;accepted:number;
  delivered:number;read:number;openedManually:number;failed:number;uncertain:number;
 }>{
- if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(week))return null;
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(week))return null;
  const owner=await requireSchedulingOwner();
  if(!owner)return null;
  const publication=await owner.supabase.from("staff_schedule_publications")
