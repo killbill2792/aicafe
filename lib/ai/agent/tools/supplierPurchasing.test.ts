@@ -23,7 +23,8 @@ describe("Task14B: one agent, real purchasing work—not chat-only advice",()=>{
   const result=await supplierPurchasingTools.propose_supplier_purchase_order.execute(newProposal,{
    purchasing:{inspect:vi.fn(),propose}
   } as unknown as AgentToolContext);
-  expect(propose).toHaveBeenCalledExactlyOnceWith(newProposal);
+  expect(propose).toHaveBeenCalledOnce();
+  expect(propose).toHaveBeenCalledWith(newProposal);
   expect(result).toMatchObject({draft:true,saved:false,approvalRequired:true,
    orderSent:false,inventoryUpdated:false});
  });
