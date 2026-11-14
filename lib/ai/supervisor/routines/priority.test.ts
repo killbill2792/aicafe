@@ -38,6 +38,16 @@ describe("proactive priority ranking and source revision",()=>{
     expect(choosePriorities([outage,verified],now,2).map(x=>x.source.sourceId))
       .toEqual(["verified","outage"]);
   });
+  it("hashes untrusted __proto__ evidence instead of losing its revision",()=>{
+    const evilA=JSON.parse('{"__proto__":{"observed":"first"}}');
+    const evilB=JSON.parse('{"__proto__":{"observed":"changed"}}');
+    const a=choosePriorities([{...base,sourceId:"untrusted",evidence:evilA}],
+      new Date("2026-11-11T00:00:00Z"),1)[0];
+    const b=choosePriorities([{...base,sourceId:"untrusted",evidence:evilB}],
+      new Date("2026-11-11T00:00:00Z"),1)[0];
+    expect(a.revisionHash).not.toBe(b.revisionHash);
+    expect(a.stableKey).not.toBe(b.stableKey);
+  });
   it("does not generate a new notice for incidental poll/seen changes",()=>{
     expect(priorityRevision(base)).toBe(priorityRevision({
       ...base,status:"seen",evidence:{lastCheckedAt:"after",quality:"partial"},
