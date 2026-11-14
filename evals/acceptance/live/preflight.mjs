@@ -3,10 +3,13 @@ import {readFileSync,realpathSync,lstatSync} from "node:fs";
 import {resolve,relative,isAbsolute,sep} from "node:path";
 
 /** Paid/live acceptance is strictly local and explicit, never a preview or a production café. */
+export const REQUIRED_PRODUCTION_SUPERVISOR_MODEL="gpt-6-luna"; // lib/ai/conversations/modelConfig.ts release contract
 export function assertLocalLiveEnvironment(env){
  const fail=reason=>{throw new Error("live_preflight:"+reason);};
  const exact=(value,want)=>value===want||fail("non_disposable_endpoint");
  exact(env.AI_CAFE_LIVE_ACCEPTANCE,"OWNER_APPROVED_LOCAL_ONLY");
+ if(env.SUPERVISOR_OPENAI_MODEL!==REQUIRED_PRODUCTION_SUPERVISOR_MODEL)
+  fail("production_supervisor_model_required");
  exact(env.APP_URL,"http://127.0.0.1:3000");
  exact(env.NEXT_PUBLIC_SUPABASE_URL,"http://127.0.0.1:54321");
  if(env.VERCEL_URL||env.VERCEL_ENV||env.SUPABASE_PROJECT_REF)
@@ -19,7 +22,8 @@ export function assertLocalLiveEnvironment(env){
  if(typeof env.OPENAI_API_KEY!=="string"||!/^sk-[A-Za-z0-9_-]{15,}$/.test(env.OPENAI_API_KEY)||
    env.OPENAI_API_KEY==="aicafe-disposable-e2e-no-provider")
    fail("real_provider_key_required");
- return {appUrl:env.APP_URL,dbUrl:env.ACCEPTANCE_DATABASE_URL};
+ return {appUrl:env.APP_URL,dbUrl:env.ACCEPTANCE_DATABASE_URL,
+  expectedModelId:REQUIRED_PRODUCTION_SUPERVISOR_MODEL};
 }
 const allowedMime=Object.freeze({
  ".jpeg":"image/jpeg",".jpg":"image/jpeg",".png":"image/png",
