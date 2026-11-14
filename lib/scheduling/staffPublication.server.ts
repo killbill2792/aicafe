@@ -184,6 +184,13 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
   try{
    const done=await publishApprovedStaffSchedule({businessId,ownerUserId:p.owner_user_id},p.id);
    if(!done.replayed)state.published++;
+   // Publication supersedes every owner's preflight task for this week.
+   // Do not leave a stale "unpublished" task generating owner notices.
+   const clearedWeek=await db.from("operating_tasks").update({
+     status:"handled",resolved_at:new Date().toISOString(),
+   }).eq("business_id",businessId).eq("kind","staff_schedule_publication")
+     .eq("entity_id",done.week).neq("status","handled");
+   if(clearedWeek.error)result(clearedWeek.error);
    // A previous ambiguous/failed publication is now independently verified.
    const closed=await db.from("operating_tasks").update({
      status:"handled",resolved_at:new Date().toISOString(),
@@ -218,8 +225,10 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
     .eq("business_id",businessId).eq("publication_id",p.id).limit(201);
   if(list.error||!list.data)result(list.error);
   let errors=0;
-  if(blockers.length)errors++;
-  else for(const d of (list.data??[]) as Delivery[]){
+  const needsProvider=(list.data??[]).some(d=>d.status==="prepared");
+  const providerPaused=needsProvider&&blockers.length>0;
+  if(providerPaused)errors++;
+  else if(!blockers.length)for(const d of (list.data??[]) as Delivery[]){
     if(d.status!=="prepared")continue;
     try{
      const attempt=await attemptEmployee(db,p,d);
@@ -248,7 +257,7 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
    kind:"staff_schedule_delivery",entity_type:"schedule",entity_id:p.id,
    status:complete?"handled":"needs_owner",confidence:"high",
    payload:{title:complete?"Staff schedule receipts confirmed":
-    blockers.length?"Staff schedule published; messaging requires provider setup":
+    providerPaused?"Staff schedule published; messaging requires provider setup":
     missing||failures?"Staff schedule requires messaging attention":"Staff schedule delivery awaiting confirmation",
     ...evidence},
    evidence:[{source:"staff_schedule_deliveries",facts:evidence}],
