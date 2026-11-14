@@ -16,8 +16,8 @@ export function staffProviderBlockers():string[] {
  // Employee messaging requires an independently approved sender identity;
  // the owner-only developer sender is not silently borrowed as staff transport.
  const sender=process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID??"";
- if(!/^[0-9]{8,25}$/.test(sender)||
-    sender===(process.env.WHATSAPP_PHONE_NUMBER_ID??""))
+ const ownerSender=process.env.WHATSAPP_PHONE_NUMBER_ID??"1322195347653883";
+ if(!/^[0-9]{8,25}$/.test(sender)||sender===ownerSender)
    missing.push("WHATSAPP_STAFF_PHONE_NUMBER_ID");
  if(!enabled("WHATSAPP_STAFF_SENDER_APPROVED"))
    missing.push("WHATSAPP_STAFF_SENDER_APPROVED");
