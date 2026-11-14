@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,planOwnerApprovals,observedOutcome,readPersistedModelUsage,requireCompletedTurn,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
+import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,planOwnerApprovals,approveExpectedPurchases,observedOutcome,readPersistedModelUsage,requireCompletedTurn,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
 
 const milk={name:"Whole milk",base_unit:"ml",quantity_base:"5.2500"};
 const beans={name:"Espresso beans",base_unit:"g",quantity_base:"12.5000"};
@@ -159,4 +159,29 @@ test("a pending owner-approval card cannot be mistaken for no action",()=>{
  assert.equal(observedOutcome([],[],[],0),"no_action");
  assert.equal(observedOutcome([],[],[],1),"needs_review");
  assert.equal(observedOutcome([{receiptId:"real_purchase"}],[],queued,0),"updated");
+});
+
+test("owner approval uses real authenticated proposal route and verifies committed receipt",async()=>{
+ const id="11111111-1111-4111-8111-111111111111";
+ const thread="22222222-2222-4222-8222-222222222222";
+ const seen=[];
+ const request=(payload,status=200)=>({request:{post:async(url,options)=>{
+  seen.push({url,options});
+  return {status:()=>status,json:async()=>payload};
+ }}});
+ const expected=[{proposalId:id,revision:2}];
+ assert.equal(await approveExpectedPurchases(request({
+  proposal:{proposalId:id,state:"applied"}}),thread,expected),1);
+ assert.equal(seen[0].url,"/api/ai/threads/"+thread+"/proposals");
+ assert.equal(seen[0].options.data.action,"approve");
+ assert.equal(seen[0].options.data.revision,2);
+ assert.equal(seen[0].options.headers.Origin,"http://127.0.0.1:3000");
+ await assert.rejects(approveExpectedPurchases(request({
+  proposal:{proposalId:id,state:"applying"}}),thread,expected),
+  /live_capture:approved_effect_not_committed/);
+ await assert.rejects(approveExpectedPurchases(request({
+  proposal:{proposalId:"33333333-3333-4333-8333-333333333333",state:"applied"}}),thread,expected),
+  /live_capture:approved_effect_not_committed/);
+ await assert.rejects(approveExpectedPurchases(request({error:"conflict"},409),thread,expected),
+  /live_capture:purchase_owner_approval_409/);
 });
