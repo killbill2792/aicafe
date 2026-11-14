@@ -2,10 +2,14 @@
 
 import { z } from "zod";
 import { loadOliviaWeekFromSavedStaff, type OliviaBlocker, type OliviaNotice } from "@/lib/scheduling/planInput.server";
+import {readSchedulingDemandContext} from "@/lib/scheduling/demandContext.server";
+import type {ScheduleDemandEvidence} from "@/lib/calc/scheduling/demandEvidence";
 import { createOliviaDraftFromTrustedSnapshot, oliviaSnapshotDigest } from "@/lib/scheduling/planDrafts.server";
 import { optimizeOliviaWeek } from "@/lib/calc/scheduling/plannerEngine";
+import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import {modelUnpaidOwnerWhatIf} from "@/lib/calc/scheduling/plannerOwnerSavings";
-import type { PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
+import type { PlannerInput, PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
+import {civilDateAdd} from "@/lib/calc/scheduling/plannerClock";
 import { requireSchedulingOwner } from "@/lib/scheduling/foundation.server";
 import { editDraftSchema, saveOliviaEditedDraft } from "@/lib/scheduling/planEdits.server";
 import {transitionOliviaPlan} from "@/lib/scheduling/planPublication.server";
@@ -15,6 +19,35 @@ import type { PlannerScenario } from "@/lib/calc/scheduling/plannerTypes";
 const args = z.object({
   week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 }).strict();
+
+const temporaryAbsenceSchema=z.strictObject({
+ employeeName:z.string().trim().min(1).max(80),
+ weekday:z.number().int().min(0).max(6), // Sunday=0 through Saturday=6
+ selectedEmployeeIds:z.array(z.uuid()).max(10).optional(),
+});
+const previewArgs=args.extend({temporaryAbsence:temporaryAbsenceSchema.optional()}).strict();
+type TemporaryAbsence=z.infer<typeof temporaryAbsenceSchema>;
+
+/** Only the saved snapshot may supply identities and availability.
+ * This helper modifies an ephemeral planner input; it does NOT claim an
+ * employee requested leave or write anything to staff/availability tables. */
+function withRequestedDayOff(input:PlannerInput,week:string,request:TemporaryAbsence){
+ const norm=(v:string)=>v.trim().replace(/\s+/g," ").toLocaleLowerCase("en");
+ const name=norm(request.employeeName);
+ const exact=input.employees.filter(e=>norm(e.displayName)===name);
+ const options=exact.length?exact:input.employees.filter(e=>norm(e.displayName).split(" ")[0]===name);
+ const chosen=options.filter(e=>(request.selectedEmployeeIds??[]).includes(e.id));
+ if(options.length!==1&&chosen.length!==1)return {
+  ok:false as const,error:options.length?"employee_ambiguous":"employee_not_found",
+  candidates:options.slice(0,5).map(e=>({id:e.id,name:e.displayName}))};
+ const employee=chosen.length===1?chosen[0]:options[0];
+ const absentDate=civilDateAdd(week,(request.weekday+6)%7);
+ const changed:PlannerInput={...input,employees:input.employees.map(e=>e.id===employee.id?
+  {...e,exceptions:[...e.exceptions,{local_date:absentDate,
+   exception_type:"unavailable" as const,confirmation:"owner_confirmed" as const}]}:e)};
+ return {ok:true as const,input:changed,employee,absentDate};
+}
+
 const saveArgs = args.extend({
   objective: z.enum(["cash", "owner_time", "balanced"]),
   expectedRevision: z.number().int().min(0).max(499),
@@ -24,10 +57,10 @@ const saveArgs = args.extend({
 
 export async function previewOliviaWeek(raw: unknown): Promise<
   | { ok: true; plan: PlannerResult; notices: OliviaNotice[]; blockers: OliviaBlocker[]; employees: Record<string,string>; locations: Record<string,string>; locationNames: Record<string,string>; sourceDigest: string; previewRevision: number;
-      frozenShiftKeys:string[] }
-  | { ok: false; error: string; blockers?: OliviaBlocker[] }
+      frozenShiftKeys:string[]; demandEvidence:ScheduleDemandEvidence; temporaryConstraint:null|{employeeName:string;absentDate:string;saved:false} }
+  | { ok: false; error: string; blockers?: OliviaBlocker[]; candidates?:Array<{id:string;name:string}> }
 > {
-  const parsed = args.safeParse(raw);
+  const parsed = previewArgs.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "invalid_input" };
   const loaded = await loadOliviaWeekFromSavedStaff(parsed.data.week);
   if (!loaded.ok) return { ok: false, error: loaded.error };
@@ -47,9 +80,18 @@ export async function previewOliviaWeek(raw: unknown): Promise<
        head.data.current_revision < 0 || head.data.current_revision > 500)))
     return {ok:false,error:"storage_unavailable"};
   const previewRevision = head.data?.current_revision ?? 0;
+  const chosen=parsed.data.temporaryAbsence?
+    withRequestedDayOff(loaded.input,parsed.data.week,parsed.data.temporaryAbsence):null;
+  if(chosen&&!chosen.ok)return {ok:false,error:chosen.error,candidates:chosen.candidates};
   try {
-    const plan = optimizeOliviaWeek(loaded.input);
-    return { ok: true, plan, notices: loaded.notices, blockers: loaded.blockers,
+    const plan = optimizeOliviaWeek(chosen?.ok?chosen.input:loaded.input);
+    // Historical sales are advisory, and must never affect Olivia's confirmed
+    // coverage requirements, solver or mutable source-approval digest.
+    const demandEvidence=await readSchedulingDemandContext(parsed.data.week,loaded.businessId,
+      loaded.cafeTimezone||loaded.input.locations[0]?.timezone);
+    return { ok: true, plan, demandEvidence, notices: loaded.notices, blockers: loaded.blockers,
+      temporaryConstraint:chosen?.ok?{employeeName:chosen.employee.displayName,
+       absentDate:chosen.absentDate,saved:false as const}:null,
       employees: Object.fromEntries(loaded.input.employees.map(e => [e.id, e.displayName])),
       locations: Object.fromEntries(loaded.input.locations.map(l => [l.id, l.timezone])),
       locationNames: loaded.locationNames, previewRevision,
@@ -60,6 +102,81 @@ export async function previewOliviaWeek(raw: unknown): Promise<
   } catch {
     return { ok: false, error: "planner_unavailable" };
   }
+}
+
+/** Hypothetical named employee absence, with absolutely no persistence. */
+const absenceWhatIfArgs=args.extend(temporaryAbsenceSchema.shape).strict();
+export async function previewOliviaAbsenceWhatIf(raw:unknown){
+ const parsed=absenceWhatIfArgs.safeParse(raw);
+ if(!parsed.success)return {ok:false as const,error:"invalid_input"};
+ const {week,employeeName,weekday,selectedEmployeeIds=[]}=parsed.data;
+ const loaded=await loadOliviaWeekFromSavedStaff(week);
+ if(!loaded.ok)return {ok:false as const,error:loaded.error};
+ if(loaded.blockers.length)return {ok:false as const,error:"missing_inputs",
+  blockers:loaded.blockers};
+ const selected=withRequestedDayOff(loaded.input,week,{
+  employeeName,weekday,selectedEmployeeIds});
+ if(!selected.ok)return {ok:false as const,error:selected.error,
+  candidates:selected.candidates};
+ const employee=selected.employee;
+ const localDate=selected.absentDate;
+ try{
+  const baseline=optimizeOliviaWeek(loaded.input);
+  const alternative=optimizeOliviaWeek(selected.input);
+  const before=baseline.best?.cost.cashWagesCents??null;
+  const after=alternative.best?.cost.cashWagesCents??null;
+  // A cheaper roster that leaves the café uncovered is not a legitimate
+  // savings comparison. Both must be valid complete-coverage alternatives.
+  const comparable=baseline.status==="feasible"&&alternative.status==="feasible"&&
+    baseline.best?.completeCoverage===true&&alternative.best?.completeCoverage===true&&
+    baseline.best.hardConstraintsSatisfied===true&&
+    alternative.best.hardConstraintsSatisfied===true;
+  const change=comparable&&before!==null&&after!==null&&
+    Number.isSafeInteger(after-before)?after-before:null;
+  // Explain precisely WHOSE shifts moved, rather than merely supplying a
+  // cost number. Compare exact optimizer assignments; no modeled result
+  // may be mistaken for saved/published work.
+  const key=(shift:{employeeId:string;locationId:string;startAt:string;
+   endAt:string;paidMinutes:number;breaks:unknown})=>JSON.stringify([
+    shift.employeeId,shift.locationId,shift.startAt,shift.endAt,
+    shift.paidMinutes,shift.breaks,
+   ]);
+  const baselineShifts=baseline.best?.shifts??[];
+  const alternativeShifts=alternative.best?.shifts??[];
+  const oldKeys=new Set(baselineShifts.map(key));
+  const newKeys=new Set(alternativeShifts.map(key));
+  const removed=baselineShifts.filter(s=>!newKeys.has(key(s)));
+  const added=alternativeShifts.filter(s=>!oldKeys.has(key(s)));
+  const timezones=Object.fromEntries(loaded.input.locations.map(l=>[l.id,l.timezone]));
+  const names=Object.fromEntries(loaded.input.employees.map(e=>[e.id,e.displayName]));
+  const present=(shifts:typeof added)=>oliviaProposalShifts(shifts.slice(0,20),timezones)
+   .map(s=>({...s,employeeName:names[s.employee_id]??"Team member"}));
+  const rosterChanges={
+   removed:present(removed),added:present(added),
+   totalRemoved:removed.length,totalAdded:added.length,
+   truncated:removed.length>20||added.length>20,
+  };
+  return {ok:true as const,source:"olivia_hypothetical_absence",
+   period:{from:week,to:baseline.horizonEnd},employeeId:employee.id,
+   employeeName:employee.displayName,absentDate:localDate,
+   hypothetical:true,saved:false,published:false,
+   assumptions:["Simulated absence supplied for this scenario only; employee availability was not changed"],
+   baseline:{status:baseline.status,completeCoverage:baseline.best?.completeCoverage??false,
+    cost:baseline.best?.cost??null,gaps:baseline.best?.gaps??[],shiftCount:baseline.best?.shifts.length??0},
+   alternative:{status:alternative.status,
+    completeCoverage:alternative.best?.completeCoverage??false,
+    cost:alternative.best?.cost??null,gaps:alternative.best?.gaps??[],
+    shiftCount:alternative.best?.shifts.length??0},
+   changeInModeledCashWagesCents:change,
+   laborCostDifferenceKnown:change!==null,
+   comparisonCompleteCoverage:comparable,
+   rosterChanges,
+   warnings:[...new Set([...baseline.warnings,...alternative.warnings])]};
+ }catch{
+  // A hypothetical absence may conflict with immutable already-started
+  // published work. Never hide that by removing or rewriting the shift.
+  return {ok:false as const,error:"hypothetical_plan_unavailable"};
+ }
 }
 
 /** Simulate unpaid owner labor using the same Olivia snapshot + optimizer.
