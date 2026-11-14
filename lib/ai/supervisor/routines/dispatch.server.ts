@@ -8,7 +8,7 @@ import type {PriorityDecision,PrioritySource,RoutineRecord} from "./contracts";
 
 export type RoutineDispatchResult={
   routinesChecked:number;runs:number;notices:number;failed:number;
-  evidenceChecks:number;
+  evidenceChecks:number;investigationsQueued:number;
 };
 type DbRow={id:string;[field:string]:unknown};
 const batchLimit=100;
@@ -21,7 +21,7 @@ function safeSeverity(payload:unknown):string|null{
 /** Read existing authoritative alert/task rows; do NOT use cached café money or
  * infer that a missing/failed provider is a verified zero. */
 export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
-  now:Date):Promise<PriorityDecision[]>{
+  now:Date,options?:{includeNotified?:boolean;limit?:number}):Promise<PriorityDecision[]>{
   const [alerts,tasks]=await Promise.all([
     db.from("alerts").select("id,kind,status,payload,created_at")
       .eq("business_id",scope.businessId).in("status",["new","seen"])
@@ -66,6 +66,10 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
   // starve later actionable sources while the first three stay open.
   const ranked=choosePriorities(sources,now,batchLimit*2);
   if(ranked.length===0)return [];
+  // Durable autonomous investigation must examine known unresolved issues even
+  // when an earlier generic notice was already delivered. The notice path
+  // below still excludes that revision and cannot spam duplicate inbox tasks.
+  if(options?.includeNotified)return ranked.slice(0,Math.max(0,Math.min(batchLimit,options.limit??25)));
   const {data:receipts,error:receiptError}=await db.from("operating_tasks")
     .select("dedupe_key").eq("business_id",scope.businessId)
     .eq("owner_user_id",scope.ownerUserId).eq("kind","priority_notice")
@@ -106,10 +110,12 @@ type OwnerScope={ownerUserId:string;threadId:string};
  * generation. Any owner with an existing thread receives change-driven notices,
  * even on dates where no routine is due. No new AI worker, event loop or inbox. */
 export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:string,
-  timezone:string,now:Date):Promise<RoutineDispatchResult>{
+  timezone:string,now:Date,
+  enqueueInvestigations?:(db:SupabaseClient,scope:Scope,now:Date)=>Promise<number>,
+):Promise<RoutineDispatchResult>{
   if(!Number.isFinite(now.getTime()))throw new Error("Invalid routine now");
   const localDate=localDateAt(now,timezone);
-  const result:RoutineDispatchResult={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0};
+  const result:RoutineDispatchResult={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const [ownerRows,threadRows,routineRows]=await Promise.all([
     db.from("memberships").select("user_id").eq("business_id",businessId)
       .eq("role","owner").order("user_id",{ascending:true}).limit(batchLimit),
@@ -137,6 +143,13 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       result.evidenceChecks+=done.checked;
       result.notices+=done.posted;
     }catch{result.failed++;}
+    // This is the SAME verified owner/thread selected for the notice scanner.
+    // A failed notice cannot prevent persistent investigation, and vice versa.
+    if(enqueueInvestigations){
+      try{result.investigationsQueued+=await enqueueInvestigations(db,
+        {businessId,ownerUserId,threadId,localDate},now);}
+      catch{result.failed++;}
+    }
   }
   for(const routine of routines){
     result.routinesChecked++;
