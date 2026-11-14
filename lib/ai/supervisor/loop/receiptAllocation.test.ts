@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId,receiptStockLineId} from "./receiptAllocation";
+import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId,receiptStockLineId,ambiguousEarlierReceiptIngredient} from "./receiptAllocation";
 const thread="11111111-1111-4111-8111-111111111111";
 const owner="22222222-2222-4222-8222-222222222222";
 describe("receipt-wide proposal indexes",()=>{
@@ -20,6 +20,18 @@ describe("receipt-wide proposal indexes",()=>{
   expect(new Set(identical).size).toBe(2);
   expect(identical[0]).toBe(first[0]);
   expect(allocateReceiptIndexes(identical,stored)).toEqual([0,2]);
+ });
+ it("holds a repeated ingredient whose later model batch changes details",()=>{
+  const milk="33333333-3333-4333-8333-333333333333";
+  const beans="44444444-4444-4444-8444-444444444444";
+  const previous=[{request_key:"milk-original",status:"committed",
+    canonical_effect_payload:{ingredientId:milk,name:"Milk",quantity:10,costCents:4500}}];
+  expect(ambiguousEarlierReceiptIngredient(previous,"milk-new",{ingredientId:milk,name:"Milk"})).toBe(true);
+  expect(ambiguousEarlierReceiptIngredient(previous,"milk-original",{ingredientId:milk,name:"Milk"})).toBe(false);
+  expect(ambiguousEarlierReceiptIngredient(previous,"beans-new",{ingredientId:beans,name:"Beans"})).toBe(false);
+  expect(ambiguousEarlierReceiptIngredient([{...previous[0],status:"draft"}],
+    "milk-new",{ingredientId:milk,name:"Milk"})).toBe(false);
+  expect(ambiguousEarlierReceiptIngredient(previous,"milk-new",{ingredientId:null,name:" milk "})).toBe(true);
  });
  it("does not add stock twice for byte-identical photo reuploads",()=>{
   const group1=receiptEvidenceGroupId(thread,owner,"a".repeat(64));
