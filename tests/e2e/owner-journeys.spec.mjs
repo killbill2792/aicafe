@@ -327,3 +327,48 @@ test("@menu Pantry retains confirmed zero and rejects historical Toast stock as 
     }
   }
 });
+
+
+test("@purchasing real supplier quote entry preserves currency and denies cross-café reads",async({browser})=>{
+  test.setTimeout(90_000);
+  const own=seededCafe(0),other=seededCafe(1);
+  const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const second=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const supplier="Task14B Supplier "+randomUUID().slice(0,8);
+  try{
+    const page=await first.newPage();
+    await login(page,own);
+    await openOwnedPage(page,own,"operations/suppliers");
+    const form=page.locator("form").first();
+    await expect(form.getByLabel("Quote currency (ISO 4217)")).toBeVisible();
+    await form.locator("input").nth(0).fill(supplier);
+    await form.locator("input").nth(1).fill("Milk");
+    await form.locator("input").nth(2).fill("7.25");
+    await form.locator("input").nth(3).fill("1");
+    await expect(form.getByLabel("Quote currency (ISO 4217)")).toHaveValue(own.currency);
+    await form.getByLabel("Supplier availability").selectOption("confirmed");
+    const date=await form.getByLabel("Availability checked on").getAttribute("max");
+    expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await form.getByLabel("Availability checked on").fill(date);
+    const saved=page.waitForResponse(response=>
+      new URL(response.url()).pathname==="/api/ai/suppliers/quotes"&&
+      response.request().method()==="POST");
+    await form.locator("button").last().click();
+    const response=await saved;
+    expect(response.status()).toBe(201);
+    const record=(await response.json()).quote;
+    expect(record).toMatchObject({supplierName:supplier,itemName:"Milk",priceCents:725,
+      currencyCode:own.currency,availableStatus:"confirmed",availableCheckedAt:date});
+    await page.reload();
+    await expect(page.getByText(supplier,{exact:false}).first()).toBeVisible();
+
+    const foreignPage=await second.newPage();
+    await login(foreignPage,other);
+    const denied=await second.request.get("/api/ai/suppliers/quotes");
+    expect(denied.status()).toBe(200);
+    expect((await denied.json()).items.some(q=>q.id===record.id)).toBe(false);
+  } finally {
+    await second.close();
+    await first.close();
+  }
+});
