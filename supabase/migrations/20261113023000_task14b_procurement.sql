@@ -11,11 +11,18 @@ alter table public.ai_supplier_quotes
   add column available_status text not null default 'unknown'
     check (available_status in ('unknown','confirmed','unavailable')),
   add column available_checked_at date,
-  add column delivery_on date,
+  add column delivery_on date;
+-- Existing quotes remain readable during installation. NOT VALID enforces all
+-- new writes immediately; VALIDATE scans historic rows without exclusive write
+-- blocking and proves the added constraints before this migration completes.
+alter table public.ai_supplier_quotes
   add constraint ai_supplier_quotes_availability_date_check
-    check (available_status <> 'confirmed' or available_checked_at is not null),
+    check (available_status <> 'confirmed' or available_checked_at is not null) not valid;
+alter table public.ai_supplier_quotes
   add constraint ai_supplier_quotes_quote_dates_check
-    check (valid_until is null or valid_until >= quoted_on);
+    check (valid_until is null or valid_until >= quoted_on) not valid;
+alter table public.ai_supplier_quotes validate constraint ai_supplier_quotes_availability_date_check;
+alter table public.ai_supplier_quotes validate constraint ai_supplier_quotes_quote_dates_check;
 -- Reason: A new composite FK validates existing rows (which have NULL ingredient_id).
 -- squawk-ignore constraint-missing-not-valid, adding-foreign-key-constraint
 create unique index if not exists ai_supplier_quotes_business_id_uq
@@ -51,7 +58,7 @@ create table public.purchase_orders(
  effect_hash text not null check (effect_hash ~ '^[a-f0-9]{64}$'),
  status text not null default 'approved_for_ordering'
    check (status in ('approved_for_ordering','cancelled','superseded')),
- revision integer not null default 1 check (revision>=1),
+ revision bigint not null default 1 check (revision>=1),
  currency_code text not null check (currency_code ~ '^[A-Z]{3}$'),
  needed_by date,
  subtotal_cents bigint not null check (subtotal_cents>0 and subtotal_cents<=1000000000),
@@ -75,12 +82,12 @@ create table public.purchase_order_lines(
  purchase_order_id uuid not null,
  quote_id uuid not null,
  ingredient_id uuid not null,
- ordinal integer not null check(ordinal between 1 and 10),
+ ordinal bigint not null check(ordinal between 1 and 10),
  item_name_snapshot text not null,
  needed_base_quantity numeric not null check (needed_base_quantity>0),
  base_unit text not null check(base_unit in ('g','ml','each')),
- packs integer not null check(packs between 1 and 100000),
- pack_quantity integer not null check(pack_quantity between 1 and 100000),
+ packs bigint not null check(packs between 1 and 100000),
+ pack_quantity bigint not null check(pack_quantity between 1 and 100000),
  pack_unit text not null,
  unit_price_cents bigint not null check(unit_price_cents between 1 and 100000000),
  subtotal_cents bigint not null check(subtotal_cents=packs*unit_price_cents),
@@ -95,7 +102,7 @@ create table public.purchase_order_events(
  id uuid primary key default gen_random_uuid(),
  business_id uuid not null,
  purchase_order_id uuid not null,
- event_sequence integer not null check(event_sequence>=1),
+ event_sequence bigint not null check(event_sequence>=1),
  event_kind text not null check(event_kind in ('approved_for_ordering','cancelled','superseded')),
  actor_user_id uuid not null references auth.users(id),
  proposal_id uuid not null,
