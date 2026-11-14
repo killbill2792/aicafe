@@ -217,7 +217,11 @@ begin
       content_type,structured_content,grounding)
     values(v_msg,p_business_id,p_thread_id,p_owner_user_id,'supervisor','blocks',
       jsonb_build_array(jsonb_build_object('type','text','text',btrim(p_narrative))),
-      jsonb_build_object('status','verified','intent','priority_investigation',
+      jsonb_build_object('status',case
+          when p_evidence->'source'->>'quality' in ('partial','missing','stale')
+            or (p_evidence ? 'missing' and p_evidence->'missing'<>'[]'::jsonb)
+          then 'partial' else 'verified' end,
+        'intent','priority_investigation',
         'evidence',jsonb_build_array(jsonb_build_object('source',p_source_type,
           'identifier',p_source_id,'revisionHash',p_revision_hash,
           'asOf',p_now::text)),
