@@ -16,6 +16,8 @@ import {isStaffCapabilityId,readStaffProposalToken} from "@/lib/ai/supervisor/lo
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
+import {gmailCapabilityId,gmailEffectSchema} from "@/lib/ai/supervisor/loop/gmail.server";
+import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 /** The loop refused a second active proposal on the same item (engine ProposalOverlapError). */
 function runningOverlap(error:unknown):{proposalId:string;status:string;endsOn:string|null}|null{
@@ -91,6 +93,11 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
       }catch{return {...data,state:"stale"};}
     }
     return {...data,state:p.status==="approved"?"conflict":data.state};
+  }
+  if(p.capabilityId===gmailCapabilityId){
+    const effect=gmailEffectSchema.parse(p.canonicalEffectPayload);
+    return {...card(p,p.status==="executing"?executionState:undefined),
+      gmail:{...effect},productName:"Gmail · "+effect.operation};
   }
   if(p.capabilityId===eventReadinessCapabilityId){
     const effect=supervisorLoopRegistry.get(eventReadinessCapabilityId).parseEffect(p.canonicalEffectPayload) as {
@@ -174,7 +181,9 @@ export async function POST(request:Request,{params}:Params){
       if(p.status!=="executing")
         return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
       try{
-        const reconciled=await repo.reconcileEffect(scope,p.id,p.revision);
+        const reconciled=p.capabilityId===gmailCapabilityId?
+          await new SupervisorEffectGateway().reconcileGmail(scope,p.id,p.revision):
+          await repo.reconcileEffect(scope,p.id,p.revision);
         return conversationJson({state:reconciled.status==="executing"?"uncertain":"applied",
           proposal:await view(scope,repo,reconciled)},reconciled.status==="executing"?409:200);
       }catch{
@@ -187,9 +196,30 @@ export async function POST(request:Request,{params}:Params){
       return conversationJson({error:"standing_mandate_action_not_eligible"},403);
     const staff=isStaffCapabilityId(p.capabilityId);
     const purchase=p.capabilityId===purchaseCapabilityId;
-    if(!staff&&!purchase&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
+    if(!staff&&!purchase&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
       p.capabilityId!==goalCapabilityId&&p.capabilityId!==eventReadinessCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
+    if(p.capabilityId===gmailCapabilityId){
+      if(input.action==="start"||input.action==="edit"||input.action==="edit_purchase")
+        return conversationJson({error:"gmail_action_not_supported"},422);
+      if(p.status==="committed")return conversationJson({proposal:await view(scope,repo,p)});
+      if(p.revision!==input.revision||p.status!=="draft")
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      if(input.action==="cancel")
+        return conversationJson({proposal:await view(scope,repo,await repo.transition(scope,p.id,p.revision,"reject"))});
+      if(input.action!=="approve")return conversationJson({error:"gmail_action_not_supported"},422);
+      // A specific owner click on this immutable card is the only outbound authority.
+      try{
+        const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
+        const finished=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision,"click");
+        return conversationJson({proposal:await view(scope,repo,finished.proposal)});
+      }catch{
+        const latest=await repo.load(scope,p.id);
+        return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
+          error:latest.status==="executing"?"gmail_outcome_uncertain":"gmail_action_failed",
+          proposal:await view(scope,repo,latest)},409);
+      }
+    }
     if(purchase){
       if(p.status==="committed")
         return conversationJson({state:"applied",proposal:await view(scope,repo,p)});

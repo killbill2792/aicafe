@@ -38,17 +38,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Classify changed paths from local Git history (fail closed)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Classify changed paths with local Git (no API rate-limit dependency)
         id: filter
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        # The installation REST "listFiles" quota must not make a required
-        # baseline skip all tests. The checkout above fetches complete Git
-        # history; this classifier verifies exact SHAs and rename boundaries.
-        run: |
-          node --test scripts/ci/classify-pr-changes.test.mjs
-          node scripts/ci/classify-pr-changes.mjs
+        run: node scripts/acceptance/owner-gate.mjs classify
       - name: Select real browser journeys from the PR diff (fail closed)
         id: browser_select
         env:
@@ -245,9 +243,7 @@ jobs:
       contents: read
     env:
       NEXT_TELEMETRY_DISABLED: '1'
-      # Unusable sentinel unlocks the local chat composer for file-only E2E.
-      # No model request is sent; the browser helper rejects real provider keys.
-      OPENAI_API_KEY: 'aicafe-disposable-e2e-no-provider'
+      OPENAI_API_KEY: ''
       VERCEL_URL: ''
       BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money' || needs.changes.outputs.browser_scenarios }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -268,7 +264,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/seed/generateSeedSql.mjs
-          supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase start -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
           supabase db reset --local --yes
           supabase status -o json > "$RUNNER_TEMP/e2e-supabase-status.json"
           node --input-type=module <<'NODE'
@@ -327,11 +323,73 @@ jobs:
           if [ -f "$RUNNER_TEMP/e2e-next.pid" ]; then kill "$(cat "$RUNNER_TEMP/e2e-next.pid")" || true; fi
           supabase stop --no-backup || true
 
+  evaluator-integrity:
+    # Always-on zero-cost checks for the *test itself*. No provider key,
+    # customer data, or browser/DB service. Recorded calibration != live proof.
+    needs: changes
+    if: ${{ always() && github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || (needs.changes.result == 'success' && needs.changes.outputs.code == 'true')) }}
+    name: Acceptance evaluator integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Kill-test the evaluator with known bad observations
+        run: node --test evals/acceptance/evidence.test.mjs
+      - name: Verify independent synthetic calibration is not live proof
+        run: node evals/acceptance/cli.mjs
+
+  owner-journey-acceptance:
+    # A required no-secret executable domain gate for every code PR.
+    # No arbitrary PR code receives OpenAI or OAuth credentials.
+    needs: changes
+    if: ${{ always() && github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || (needs.changes.result == 'success' && needs.changes.outputs.code == 'true')) }}
+    name: Owner journey acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      OPENAI_API_KEY: ''
+      VERCEL_URL: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Mutation-test owner-domain selection and proof validation
+        run: node --test scripts/acceptance/owner-gate.test.mjs
+      - name: Execute all selected registered domain regressions
+        run: node scripts/acceptance/owner-gate.mjs run
+      - name: Verify exact-head proof and actual case execution
+        run: node scripts/acceptance/owner-gate.mjs verify
+      - name: Upload redacted exact-head domain proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-required-owner-journey-proof
+          path: test-results/acceptance/owner-journey-proof.json
+          if-no-files-found: warn
+          retention-days: 14
+
   baseline:
     # Preserve the branch-protection check, even for docs-only pull requests.
     name: AI CAFE PR baseline
     if: ${{ always() && github.event_name != 'push' }}
-    needs: [changes, quality, regressions, production-build, supervisor-evals, guards, db, browser]
+    needs: [changes, quality, regressions, production-build, supervisor-evals, evaluator-integrity, owner-journey-acceptance, guards, db, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -347,6 +405,8 @@ jobs:
           TEST_RESULT: ${{ needs.regressions.result }}
           BUILD_RESULT: ${{ needs.production-build.result }}
           EVAL_RESULT: ${{ needs.supervisor-evals.result }}
+          EVALUATOR_RESULT: ${{ needs.evaluator-integrity.result }}
+          OWNER_JOURNEY_RESULT: ${{ needs.owner-journey-acceptance.result }}
           GUARDS_RESULT: ${{ needs.guards.result }}
           DB_RESULT: ${{ needs.db.result }}
           BROWSER_REQUIRED: ${{ needs.changes.outputs.browser_required }}
@@ -355,6 +415,8 @@ jobs:
         run: |
           echo "Changes: $CHANGES_RESULT; code=$CODE_CHANGED; e2e=$E2E_CHANGED; supervisor=$SUPERVISOR_CHANGED; docs-only=$DOCS_ONLY"
           echo "Quality: $QUALITY_RESULT; Vitest: $TEST_RESULT; build: $BUILD_RESULT; database: $DB_RESULT; Supervisor: $EVAL_RESULT; guards: $GUARDS_RESULT; browser-required: $BROWSER_REQUIRED; browser: $BROWSER_RESULT"
+          echo "Evaluator integrity: $EVALUATOR_RESULT (synthetic only; not live-model acceptance)"
+          echo "Owner journey acceptance: $OWNER_JOURNEY_RESULT (registered domain regressions, not paid Luna proof)"
           test "$GUARDS_RESULT" = success
           if [ "$EVENT_NAME" = pull_request ]; then
             test "$CHANGES_RESULT" = success
@@ -372,11 +434,15 @@ jobs:
             test "$E2E_CHANGED" = false
           fi
           if [ "$CODE_CHANGED" = true ] || [ "$EVENT_NAME" = workflow_dispatch ]; then
+            test "$EVALUATOR_RESULT" = success
+             test "$OWNER_JOURNEY_RESULT" = success
             test "$QUALITY_RESULT" = success
             test "$TEST_RESULT" = success
             test "$BUILD_RESULT" = success
             test "$DB_RESULT" = success
           else
+            test "$EVALUATOR_RESULT" = skipped
+             test "$OWNER_JOURNEY_RESULT" = skipped
             test "$QUALITY_RESULT" = skipped
             test "$TEST_RESULT" = skipped
             test "$BUILD_RESULT" = skipped

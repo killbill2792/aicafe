@@ -1,0 +1,421 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "aicafe_operator_acceptance_v1",
+  "capture": {
+    "mode": "recorded_calibration",
+    "description": "Hand-curated observation fixture for calibrating deterministic scorer, not live evidence."
+  },
+  "cases": [
+    {
+      "id": "typed_milk",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "sourceSha256": "9470864c851f59b3f9c4ac9163cf7671b36d2a941f6940ed6f6d9305b844a00e",
+      "assetSha256": null,
+      "executed": true,
+      "readbackKind": "independent_scoped_sql",
+      "dbBefore": [
+        {
+          "ingredient": "milk",
+          "quantity": 100,
+          "unit": "gal"
+        }
+      ],
+      "dbAfter": [
+        {
+          "ingredient": "milk",
+          "quantity": 110,
+          "unit": "gal"
+        }
+      ],
+      "receiptWrites": [
+        {
+          "sourceLineId": "typed_milk_1",
+          "ingredient": "milk",
+          "delta": 10,
+          "unit": "gal",
+          "status": "committed",
+          "receiptId": "rec_101"
+        }
+      ],
+      "outcome": "updated",
+      "reply": "I updated your inventory with 10 gallons of milk.",
+      "extracted": [
+        {
+          "lineId": "typed_milk_1",
+          "name": "milk",
+          "quantity": 10,
+          "unit": "gal",
+          "costCents": null,
+          "confidence": "verified"
+        }
+      ],
+      "clarifications": 0,
+      "latency": {
+        "firstUsefulMs": 20,
+        "completedMs": 80
+      }
+    },
+    {
+      "id": "receipt_two_lines",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "sourceSha256": "9c4d6117f1e57dd862027ad4f87fca1f6c77da1cf1bf2d562b56bdec8aee19cd",
+      "assetSha256": "2524ee37aed5432418cf9019ab25b28f42310de7d316144a530e23e013f1706c",
+      "executed": true,
+      "readbackKind": "independent_scoped_sql",
+      "dbBefore": [
+        {
+          "ingredient": "milk",
+          "quantity": 20,
+          "unit": "gal"
+        },
+        {
+          "ingredient": "beans",
+          "quantity": 100,
+          "unit": "lb"
+        }
+      ],
+      "dbAfter": [
+        {
+          "ingredient": "milk",
+          "quantity": 21,
+          "unit": "gal"
+        },
+        {
+          "ingredient": "beans",
+          "quantity": 102,
+          "unit": "lb"
+        }
+      ],
+      "receiptWrites": [
+        {
+          "sourceLineId": "receipt_line_1",
+          "ingredient": "milk",
+          "delta": 1,
+          "unit": "gal",
+          "status": "committed",
+          "receiptId": "rec_102"
+        },
+        {
+          "sourceLineId": "receipt_line_2",
+          "ingredient": "beans",
+          "delta": 2,
+          "unit": "lb",
+          "status": "committed",
+          "receiptId": "rec_103"
+        }
+      ],
+      "outcome": "updated",
+      "reply": "I saved both receipt purchases to inventory.",
+      "extracted": [
+        {
+          "lineId": "receipt_line_1",
+          "name": "milk",
+          "quantity": 1,
+          "unit": "gal",
+          "costCents": 400,
+          "confidence": "verified"
+        },
+        {
+          "lineId": "receipt_line_2",
+          "name": "beans",
+          "quantity": 2,
+          "unit": "lb",
+          "costCents": 2000,
+          "confidence": "verified"
+        }
+      ],
+      "clarifications": 0,
+      "latency": {
+        "firstUsefulMs": 45,
+        "completedMs": 120
+      }
+    },
+    {
+      "id": "blurry_photo",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "sourceSha256": "0daadd9eb66c747af98a45feb23326bfba5d49be594cd94a7a3ba639769455f5",
+      "assetSha256": "5ace75dcbda9c89f95cf9df424cc257a08249ff60cfda735c7979c9db3841958",
+      "executed": true,
+      "readbackKind": "independent_scoped_sql",
+      "dbBefore": [
+        {
+          "ingredient": "milk",
+          "quantity": 30,
+          "unit": "gal"
+        }
+      ],
+      "dbAfter": [
+        {
+          "ingredient": "milk",
+          "quantity": 30,
+          "unit": "gal"
+        }
+      ],
+      "receiptWrites": [],
+      "outcome": "needs_review",
+      "reply": "I can see milk, but cannot read the quantity. How many containers?",
+      "extracted": [
+        {
+          "lineId": "blurry_line_1",
+          "name": "milk",
+          "quantity": null,
+          "unit": null,
+          "costCents": null,
+          "confidence": "needs_review"
+        }
+      ],
+      "clarifications": 1,
+      "latency": {
+        "firstUsefulMs": 15,
+        "completedMs": 40
+      }
+    },
+    {
+      "id": "undelivered_order",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "sourceSha256": "c3cd512cfcc39d4bf28b0b21c9b10fed81e816f57590f0a484394447f4c4d7a0",
+      "assetSha256": "b965e59ff8527c21d05563cc3e1c1de9a08d7b4c3e7a89701caba18e92f08c02",
+      "executed": true,
+      "readbackKind": "independent_scoped_sql",
+      "dbBefore": [
+        {
+          "ingredient": "beans",
+          "quantity": 100,
+          "unit": "lb"
+        }
+      ],
+      "dbAfter": [
+        {
+          "ingredient": "beans",
+          "quantity": 100,
+          "unit": "lb"
+        }
+      ],
+      "receiptWrites": [],
+      "outcome": "no_action",
+      "reply": "The goods have not arrived, so stock remains unchanged.",
+      "extracted": [
+        {
+          "lineId": "po_line_1",
+          "name": "beans",
+          "quantity": 5,
+          "unit": "lb",
+          "costCents": 5000,
+          "confidence": "verified"
+        }
+      ],
+      "clarifications": 0,
+      "latency": {
+        "firstUsefulMs": 10,
+        "completedMs": 32
+      }
+    },
+    {
+      "id": "replayed_receipt",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "sourceSha256": "fc3f69cbfa6cf737b1fac7c79cafdba608d14ccb05239d3560171a05b5b2ba63",
+      "assetSha256": "2524ee37aed5432418cf9019ab25b28f42310de7d316144a530e23e013f1706c",
+      "executed": true,
+      "readbackKind": "independent_scoped_sql",
+      "dbBefore": [
+        {
+          "ingredient": "milk",
+          "quantity": 21,
+          "unit": "gal"
+        },
+        {
+          "ingredient": "beans",
+          "quantity": 102,
+          "unit": "lb"
+        }
+      ],
+      "dbAfter": [
+        {
+          "ingredient": "milk",
+          "quantity": 21,
+          "unit": "gal"
+        },
+        {
+          "ingredient": "beans",
+          "quantity": 102,
+          "unit": "lb"
+        }
+      ],
+      "receiptWrites": [],
+      "outcome": "no_action",
+      "reply": "This receipt was recorded earlier. No extra stock was added.",
+      "extracted": [
+        {
+          "lineId": "receipt_line_1",
+          "name": "milk",
+          "quantity": 1,
+          "unit": "gal",
+          "costCents": 400,
+          "confidence": "verified"
+        },
+        {
+          "lineId": "receipt_line_2",
+          "name": "beans",
+          "quantity": 2,
+          "unit": "lb",
+          "costCents": 2000,
+          "confidence": "verified"
+        }
+      ],
+      "clarifications": 0,
+      "latency": {
+        "firstUsefulMs": 12,
+        "completedMs": 36
+      }
+    },
+    {
+      "id": "cross_cafe_denied",
+      "actor": {
+        "businessId": "business_beta",
+        "ownerId": "owner_beta"
+      },
+      "sourceSha256": "39dba30b80e96a88a13ec9b246cf42c305641c265972eb11459f4bb2e5362f18",
+      "assetSha256": null,
+      "executed": true,
+      "readbackKind": "independent_scoped_sql",
+      "dbBefore": [
+        {
+          "ingredient": "beans",
+          "quantity": 80,
+          "unit": "lb"
+        }
+      ],
+      "dbAfter": [
+        {
+          "ingredient": "beans",
+          "quantity": 80,
+          "unit": "lb"
+        }
+      ],
+      "otherTenantBefore": [
+        {
+          "ingredient": "milk",
+          "quantity": 100,
+          "unit": "gal"
+        }
+      ],
+      "otherTenantAfter": [
+        {
+          "ingredient": "milk",
+          "quantity": 100,
+          "unit": "gal"
+        }
+      ],
+      "receiptWrites": [],
+      "outcome": "no_action",
+      "reply": "I cannot access the other café's private stock.",
+      "extracted": [],
+      "clarifications": 0,
+      "latency": {
+        "firstUsefulMs": 15,
+        "completedMs": 28
+      }
+    },
+    {
+      "id": "correction_review",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "sourceSha256": "d723f6692bf0c5aac6d859a5ed067f8d417215e4b3b0aebdec5e3131cf77873a",
+      "assetSha256": null,
+      "executed": true,
+      "readbackKind": "independent_scoped_sql",
+      "dbBefore": [
+        {
+          "ingredient": "milk",
+          "quantity": 110,
+          "unit": "gal"
+        }
+      ],
+      "dbAfter": [
+        {
+          "ingredient": "milk",
+          "quantity": 110,
+          "unit": "gal"
+        }
+      ],
+      "receiptWrites": [],
+      "outcome": "needs_review",
+      "reply": "I can review the earlier purchase correction without adding a new purchase.",
+      "extracted": [
+        {
+          "lineId": "prior_milk_1",
+          "name": "milk",
+          "quantity": 8,
+          "unit": "gal",
+          "costCents": null,
+          "confidence": "verified"
+        }
+      ],
+      "clarifications": 1,
+      "latency": {
+        "firstUsefulMs": 22,
+        "completedMs": 55
+      }
+    },
+    {
+      "id": "invoice_without_delivery",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "sourceSha256": "50c24ebc2945918147be1015d833b2afb4c964211dac4bbe1e84a1f49cd48439",
+      "assetSha256": null,
+      "executed": true,
+      "readbackKind": "independent_scoped_sql",
+      "dbBefore": [
+        {
+          "ingredient": "beans",
+          "quantity": 100,
+          "unit": "lb"
+        }
+      ],
+      "dbAfter": [
+        {
+          "ingredient": "beans",
+          "quantity": 100,
+          "unit": "lb"
+        }
+      ],
+      "receiptWrites": [],
+      "outcome": "needs_review",
+      "reply": "The invoice arrived, but I need delivery confirmation before changing stock.",
+      "extracted": [
+        {
+          "lineId": "invoice_line_1",
+          "name": "beans",
+          "quantity": 5,
+          "unit": "lb",
+          "costCents": 5000,
+          "confidence": "verified"
+        }
+      ],
+      "clarifications": 1,
+      "latency": {
+        "firstUsefulMs": 16,
+        "completedMs": 40
+      }
+    }
+  ]
+}
