@@ -143,6 +143,62 @@ BEGIN
    RAISE EXCEPTION '13B signed status demoted a read receipt'; END IF;
 END $test$;
 
+-- Codex P1: callback may arrive BEFORE the provider acceptance HTTP
+-- result is persisted. The existing owner WhatsApp signed ledger is the
+-- durable truth; reconcile it in the same wamid advisory-lock transaction.
+DO $test$
+DECLARE d public.staff_schedule_deliveries%rowtype; claim jsonb;
+BEGIN
+ PERFORM public.whatsapp_record_status('wamid.staff-early','delivered');
+ claim:=public.staff_schedule_claim_delivery(
+  current_setting('test.t13b.pub')::uuid,
+  current_setting('test.t13b.worker_b')::uuid);
+ IF claim IS NULL THEN RAISE EXCEPTION '13B early callback: no valid worker claim'; END IF;
+ d.id:=(claim->>'deliveryId')::uuid;
+ IF NOT public.staff_schedule_finish_delivery(d.id,
+     (claim->>'attemptToken')::uuid,'sent','wamid.staff-early',null) THEN
+   RAISE EXCEPTION '13B early callback: acceptance completion failed'; END IF;
+ SELECT * INTO d FROM public.staff_schedule_deliveries WHERE id=d.id;
+ IF d.status<>'delivered' OR d.delivered_at IS NULL OR d.meta_message_id<>'wamid.staff-early' THEN
+   RAISE EXCEPTION '13B early callback lost real delivered receipt'; END IF;
+ -- Reset only this synthetic sandbox fixture for the independent 429/consent cases.
+ UPDATE public.staff_schedule_deliveries
+  SET status='prepared',meta_message_id=null,sent_at=null,delivered_at=null
+  WHERE id=d.id;
+END $test$;
+
+-- Codex P1: a signed 429 rejection is not an uncertain acceptance. The
+-- backoff is persisted and rejects immediate claims; max five attempts fail
+-- permanently without sleeping or suppressing any assertions.
+DO $test$
+DECLARE d public.staff_schedule_deliveries%rowtype; claim jsonb; i integer;
+BEGIN
+ FOR i IN 1..5 LOOP
+   claim:=public.staff_schedule_claim_delivery(
+     current_setting('test.t13b.pub')::uuid,
+     current_setting('test.t13b.worker_b')::uuid);
+   IF claim IS NULL THEN RAISE EXCEPTION '13B 429 claim missing on attempt %',i; END IF;
+   d.id:=(claim->>'deliveryId')::uuid;
+   IF NOT public.staff_schedule_finish_delivery(
+     d.id,(claim->>'attemptToken')::uuid,'retry',null,'rate_limited') THEN
+     RAISE EXCEPTION '13B 429 outcome was not durably stored'; END IF;
+   SELECT * INTO d FROM public.staff_schedule_deliveries WHERE id=d.id;
+   IF i<5 AND (d.status<>'prepared' OR d.retry_count<>i OR d.retry_after<=now()
+      OR public.staff_schedule_claim_delivery(current_setting('test.t13b.pub')::uuid,
+       current_setting('test.t13b.worker_b')::uuid) IS NOT NULL) THEN
+     RAISE EXCEPTION '13B 429 retry skipped bounded backoff'; END IF;
+   IF i=5 AND (d.status<>'failed' OR d.retry_count<>5 OR
+      public.staff_schedule_claim_delivery(current_setting('test.t13b.pub')::uuid,
+       current_setting('test.t13b.worker_b')::uuid) IS NOT NULL) THEN
+     RAISE EXCEPTION '13B 429 retries not bounded at five'; END IF;
+   UPDATE public.staff_schedule_deliveries SET retry_after=now()-interval '1 second'
+     WHERE id=d.id AND i<5;
+ END LOOP;
+ -- Restore this disposable employee for independent channel/consent tests only.
+ UPDATE public.staff_schedule_deliveries SET status='prepared',retry_count=0,
+   retry_after=null,error_code=null WHERE id=d.id;
+END $test$;
+
 -- A WhatsApp opt-in does not override SMS channel preference or
 -- Spanish-language preference when only an English template is approved.
 UPDATE public.employees SET preferred_schedule_channel='sms' WHERE id=:'worker_b';
