@@ -21,6 +21,8 @@ import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperim
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
+import {supplierPurchaseOrderCapabilityId,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
@@ -202,6 +204,20 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         }),
         list:async()=>listOwnerRoutines({scope,threadId:id,client:await getDb()}),
         change:async input=>changeOwnerRoutine(input,{scope,threadId:id,client:await getDb()}),
+      },
+      purchasing:{
+        inspect:input=>investigateSupplierPurchase(proposalScope,input),
+        propose:async input=>{
+          // An owner goal may span multiple model steps. Only the existing
+          // proposal repository saves the immutable draft; no PO is approved here.
+          const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,supplierPurchase:input}));
+          const draft=await proposeLoop(proposalScope,supervisorLoopRegistry,
+            new SupabaseLoopRepository(),supplierPurchaseOrderCapabilityId,input,key);
+          const effect=draft.canonicalEffectPayload as SupplierPurchaseOrderEffect;
+          return {proposalId:draft.id,revision:draft.revision,
+            supplierName:effect.supplierName,subtotalCents:effect.subtotalCents,
+            currency:effect.currency};
+        }
       },
       gmail:{
         labels:()=>gmailListLabels(scope),
