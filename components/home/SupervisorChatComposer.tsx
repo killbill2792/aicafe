@@ -26,6 +26,8 @@ import {resumeOwnerQuestion,ownerAnswerAcknowledgement} from "@/lib/ownerFacts/r
 import {explainLineSchema} from "@/lib/ai/agent/explain";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress from "./ChatJobProgress";
+import SupervisorWorkStatus from "./SupervisorWorkStatus";
+import { useSupervisorWork } from "./useSupervisorWork";
 import { useAgentJobWatcher } from "./useAgentJobWatcher";
 import { answeredOwnerMessageIds, shouldShowRunningJob, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
 import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
@@ -313,6 +315,7 @@ export default function SupervisorChatComposer({
     setReloadVersion((v) => v + 1);
     if (job.status === "failed") { setFailureCode(job.errorCode ?? "agent_turn_failed"); setError(true); }
   });
+  const supervisorWork = useSupervisorWork(threadId, enabled);
   const resumedRunning = !sending && shouldShowRunningJob(watcher.job,messages);
 
   function cleanupRecording() {
@@ -1052,6 +1055,7 @@ export default function SupervisorChatComposer({
             disabled={!canUseAi} className="min-h-10 rounded-xl bg-accent px-3 font-bold text-on-accent disabled:opacity-50">{copy.retryAnswer}</button>
         </div>}
       </div>)}
+      <SupervisorWorkStatus items={supervisorWork.items} unavailable={supervisorWork.unavailable} />
       {queuedOwner.map((item) => <article key={item.id} className="ms-auto w-fit max-w-[80%] rounded-[22px] rounded-ee-md bg-accent-soft px-4 py-3 text-[17px] text-ink opacity-80 shadow-sm">
         <p className="whitespace-pre-wrap break-words">{item.text}</p>
       </article>)}

@@ -1,9 +1,9 @@
 "use client";
-import { Check } from "lucide-react";
+import { CircleDot } from "lucide-react";
 import type { AgentJobStep } from "@/lib/ai/agent/jobState";
 import { chatExperienceCopy, progressLines, type ChatLocale } from "./chatExperience";
 
-/** The instant "Got it" line plus one short line per finished step. */
+/** A tool-progress line records investigation, never verified side-effect completion. */
 export default function ChatJobProgress({ locale, acknowledged, steps, note }: {
   locale: ChatLocale; acknowledged: boolean; steps: AgentJobStep[]; note?: string | null;
 }) {
@@ -14,7 +14,7 @@ export default function ChatJobProgress({ locale, acknowledged, steps, note }: {
     dir={locale === "ar" ? "rtl" : "ltr"}>
     {acknowledged && <p className="font-semibold text-ink">{copy.ack}</p>}
     {lines.map((line, i) => <p key={i + line} className="flex items-center gap-2">
-      <Check size={16} aria-hidden="true" className="shrink-0 text-good" />{line}
+      <CircleDot size={16} aria-hidden="true" className="shrink-0 text-ink-muted" />{line}
     </p>)}
     {note && <p>{note}</p>}
   </div>;
