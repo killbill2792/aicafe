@@ -451,6 +451,11 @@ begin
      from jsonb_array_elements(d->'shifts') x) new_staff)
        <>jsonb_array_length(scope->'staffIds') then
     raise exception 'correction_staff_scope_not_exact' using errcode='42501'; end if;
+  -- Preserve the existing two audited Supervisor revision transitions:
+  -- approved -> executing -> committed, one CAS revision per transition.
+  -- Never skip straight across two revisions; the revision trigger forbids it.
+  update public.supervisor_proposals set status='executing',
+    revision=revision+1,updated_at=now() where id=p.id;
   -- The old sent rows are soft-deleted, not erased. Each old publication's
   -- immutable snapshot and all delivery evidence stay unchanged.
   update public.scheduled_shifts set deleted_at=now(),updated_at=now()
@@ -484,7 +489,7 @@ begin
     verified_at,receipt_ref)
     values(attempt,p_business_id,p.id,p.effect_hash,'click',v_today,'verified',
       now(),attempt::text);
-  update public.supervisor_proposals set status='committed',revision=revision+2,
+  update public.supervisor_proposals set status='committed',revision=revision+1,
     committed_at=now(),monitoring_start_date=v_today+1,updated_at=now()
     where id=p.id returning * into p;
   return jsonb_build_object('state','applied','proposal',to_jsonb(p),
