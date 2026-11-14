@@ -26,3 +26,40 @@ export async function readSupplierPurchasingEvidence(db:SupabaseClient,businessI
   truncated:(quotes.data??[]).length>500,
   currency:business.data.currency as string,timezone:business.data.timezone as string};
 }
+
+export type SupplierOrderStatus={
+ id:string;status:string;revision:number;supplierName:string;currency:string;
+ subtotalCents:number;neededBy:string|null;approvedAt:string;
+ lines:Array<{itemName:string;packs:number;packUnit:string;packQuantity:number;
+  lineSubtotalCents:number;quotedOn:string}>;
+ sentToSupplier:false;receivedIntoInventory:false;
+};
+/** The same authenticated read path used by Supervisor: no separate owner PO store.
+ * Approved-for-ordering means prepared internally, never sent or delivered. */
+export async function readSupplierPurchaseOrders(db:SupabaseClient,businessId:string,ownerUserId:string):
+ Promise<{orders:SupplierOrderStatus[];truncated:boolean}>{
+ const result=await db.from("purchase_orders")
+  .select("id,status,revision,supplier_name_snapshot,currency_code,subtotal_cents,needed_by,approved_at")
+  .eq("business_id",businessId).eq("owner_user_id",ownerUserId)
+  .order("approved_at",{ascending:false}).limit(41);
+ if(result.error)throw new Error("supplier_purchase_orders_unavailable");
+ const orders=(result.data??[]).slice(0,40);
+ if(!orders.length)return {orders:[],truncated:false};
+ const lines=await db.from("purchase_order_lines")
+  .select("purchase_order_id,item_name_snapshot,packs,pack_unit,pack_quantity,subtotal_cents,quoted_on,ordinal")
+  .eq("business_id",businessId).in("purchase_order_id",orders.map(x=>x.id))
+  .order("ordinal",{ascending:true}).limit(401);
+ if(lines.error)throw new Error("supplier_purchase_order_lines_unavailable");
+ if((lines.data??[]).length>400)throw new Error("supplier_purchase_order_lines_truncated");
+ return {orders:orders.map(row=>({
+  id:row.id,status:row.status,revision:row.revision,supplierName:row.supplier_name_snapshot,
+  currency:row.currency_code,subtotalCents:row.subtotal_cents,neededBy:row.needed_by,
+  approvedAt:row.approved_at,
+  lines:(lines.data??[]).filter(line=>line.purchase_order_id===row.id).map(line=>({
+   itemName:line.item_name_snapshot,packs:line.packs,
+   packUnit:line.pack_unit,packQuantity:line.pack_quantity,
+   lineSubtotalCents:line.subtotal_cents,quotedOn:line.quoted_on
+  })),
+  sentToSupplier:false as const,receivedIntoInventory:false as const,
+ })),truncated:(result.data??[]).length>40};
+}

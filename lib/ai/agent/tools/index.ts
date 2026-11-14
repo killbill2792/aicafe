@@ -24,6 +24,7 @@ import {purchasesTools,purchaseToolInput} from "./purchases";
 import {supplierPurchasingTools} from "./supplierPurchasing";
 import type {SupplierPurchaseInput} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import type {PurchasePlan} from "@/lib/purchasing/planOrder";
+import type {SupplierOrderStatus} from "@/lib/data/supplierPurchasing.server";
 import {priceExperimentTools} from "./priceExperiment";
 import {priceMonitorTools} from "./priceMonitor";
 import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
@@ -95,6 +96,7 @@ export type AgentToolContext = {
     propose(input:import("@/lib/ai/supervisor/loop/gmail.server").GmailProposalInput):Promise<{proposalId:string;revision:number;account:string}>};
   /** Owner-scoped purchasing capability in the ONE Supervisor. No model-supplied café IDs or approvals. */
   purchasing?:{
+    list():Promise<{orders:SupplierOrderStatus[];truncated:boolean}>;
     inspect(input:SupplierPurchaseInput):Promise<PurchasePlan>;
     propose(input:SupplierPurchaseInput):Promise<{proposalId:string;revision:number;
       supplierName:string;currency:string;subtotalCents:number}>;
@@ -246,6 +248,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="calculate")return calculateTools.calculate.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
    if(name==="propose_purchases")return purchasesTools.propose_purchases.execute(raw,ctx);
+  if(name==="get_supplier_purchase_orders")return supplierPurchasingTools.get_supplier_purchase_orders.execute(raw,ctx);
   if(name==="inspect_supplier_purchase")return supplierPurchasingTools.inspect_supplier_purchase.execute(raw,ctx);
   if(name==="propose_supplier_purchase_order")return supplierPurchasingTools.propose_supplier_purchase_order.execute(raw,ctx);
   if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);

@@ -22,6 +22,8 @@ import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceCha
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import {readSupplierPurchaseOrders} from "@/lib/data/supplierPurchasing.server";
+import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
@@ -206,6 +208,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         change:async input=>changeOwnerRoutine(input,{scope,threadId:id,client:await getDb()}),
       },
       purchasing:{
+        list:async()=>{
+          const {client}=await simulationOwnerReader(proposalScope);
+          return readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId);
+        },
         inspect:input=>investigateSupplierPurchase(proposalScope,input),
         propose:async input=>{
           // An owner goal may span multiple model steps. Only the existing

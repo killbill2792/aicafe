@@ -1,3 +1,4 @@
+import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {supplierPurchaseInputSchema} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 
@@ -5,6 +6,19 @@ import {supplierPurchaseInputSchema} from "@/lib/ai/supervisor/loop/purchaseOrde
  * approval proposal using the SAME server-bound Supervisor planner. A model
  * cannot smuggle in a café ID, quote price, or authorization kind. */
 export const supplierPurchasingTools={
+ get_supplier_purchase_orders:{
+  agentId:"maya",schema:z.strictObject({}),
+  description:"Follow through on actual prepared supplier POs by reading the real scoped order and line snapshots. approved_for_ordering does NOT mean a supplier was contacted or goods received; do not infer delivery or payment. Use for owner follow-up status questions instead of starting another order.",
+  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+   z.strictObject({}).parse(raw);
+   if(!ctx.purchasing)return {source:"purchase_orders",period:null,agentId:"maya",
+    missing:["purchasing_unavailable"],orders:[]};
+   const result=await ctx.purchasing.list();
+   return {source:"purchase_orders",period:null,agentId:"maya",
+    missing:result.truncated?["purchase_order_history_truncated"]:[],
+    orders:result.orders,truncated:result.truncated};
+  }
+ },
  inspect_supplier_purchase:{
   agentId:"maya",schema:supplierPurchaseInputSchema,
   description:"Investigate a future supply/order request using canonical café ingredients and saved supplier quotations. Input actual required item quantity/unit and needed-by date (null if not specified). Returns full-café-currency supplier carts, exact integer-cent subtotals and missing evidence. A subtotal is NEVER a verified full cost: shipping/tax unknown. Never mark public search snippets as firm offers. If no valid quotes, explain gaps; do not fabricate prices. Read-only; use BEFORE proposing a future supplier purchase order.",

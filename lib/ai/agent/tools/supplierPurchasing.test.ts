@@ -26,6 +26,18 @@ describe("Task14B: one agent, real purchasing work—not chat-only advice",()=>{
   expect(result).toMatchObject({draft:true,saved:false,approvalRequired:true,
    orderSent:false,inventoryUpdated:false});
  });
+ it("reads durable PO status rather than inventing supplier contact",async()=>{
+  const list=vi.fn().mockResolvedValue({orders:[{
+   id:"77777777-7777-4777-8777-777777777777",status:"approved_for_ordering",
+   sentToSupplier:false,receivedIntoInventory:false,subtotalCents:2250,currency:"CAD"}],
+   truncated:false});
+  const result=await supplierPurchasingTools.get_supplier_purchase_orders.execute({},{
+   purchasing:{inspect:vi.fn(),propose:vi.fn(),list}
+  } as unknown as AgentToolContext);
+  expect(list).toHaveBeenCalledOnce();
+  expect(result).toMatchObject({source:"purchase_orders",missing:[],
+   orders:[{status:"approved_for_ordering",sentToSupplier:false,receivedIntoInventory:false}]});
+ });
  it("a missing server authority never invents a prepared PO",async()=>{
   const result=await supplierPurchasingTools.propose_supplier_purchase_order.execute(input,{} as AgentToolContext);
   expect(result).toMatchObject({draft:false,saved:false,missing:["purchasing_unavailable"]});
