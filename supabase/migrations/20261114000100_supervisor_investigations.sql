@@ -95,7 +95,9 @@ begin
     thread_id=excluded.thread_id,phase='collect',step_version=0,
     failure_count=0,lease_token=null,lease_until=null,next_retry_at=p_now,
     evidence='{}'::jsonb,narrative=null,last_error=null,updated_at=p_now
-  where public.supervisor_investigations.revision_hash<>excluded.revision_hash
+  where (public.supervisor_investigations.revision_hash<>excluded.revision_hash
+      or (public.supervisor_investigations.phase='blocked'
+        and public.supervisor_investigations.last_error='source_missing'))
     and (public.supervisor_investigations.lease_until is null
       or public.supervisor_investigations.lease_until<=p_now);
   -- FOUND reports whether a new investigation was inserted or a material
@@ -119,7 +121,7 @@ grant execute on function public.supervisor_enqueue_investigation(uuid,uuid,uuid
 create function public.supervisor_claim_investigation(p_now timestamptz)
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare v public.supervisor_investigations;v_token uuid;v_open boolean;
-  v_scan integer;
+  v_exists boolean;v_status_open boolean;v_scan integer;
 begin
   if coalesce(auth.role(),'')<>'service_role' then
     raise exception 'Service role required' using errcode='42501'; end if;
@@ -144,18 +146,31 @@ begin
       and source_type=v.source_type and source_id=v.source_id;
     continue;
   end if;
+  -- Missing evidence is NOT verified resolution. Neither is a still-open
+  -- owner task reassigned to someone else. Treat these as blocked exceptions.
   if v.source_type='alert' then
+    select exists(select 1 from public.alerts a
+      where a.business_id=v.business_id and a.id::text=v.source_id) into v_exists;
     select exists(select 1 from public.alerts a
       where a.business_id=v.business_id and a.id::text=v.source_id
         and a.status in ('new','seen')) into v_open;
+    v_status_open:=v_open;
   else
+    select exists(select 1 from public.operating_tasks t
+      where t.business_id=v.business_id and t.id=v.source_id) into v_exists;
+    select exists(select 1 from public.operating_tasks t
+      where t.business_id=v.business_id and t.id=v.source_id
+        and t.status in ('needs_owner','needs_response')) into v_status_open;
     select exists(select 1 from public.operating_tasks t
       where t.business_id=v.business_id and t.id=v.source_id
         and t.status in ('needs_owner','needs_response')
         and (t.owner_user_id is null or t.owner_user_id=v.owner_user_id)) into v_open;
   end if;
   if not v_open then
-    update public.supervisor_investigations set phase='resolved',last_error='source_closed',
+    update public.supervisor_investigations set
+      phase=case when v_exists and not v_status_open then 'resolved' else 'blocked' end,
+      last_error=case when not v_exists then 'source_missing'
+        when v_status_open then 'source_reassigned' else 'source_closed' end,
       lease_token=null,lease_until=null,updated_at=p_now
     where business_id=v.business_id and owner_user_id=v.owner_user_id
       and source_type=v.source_type and source_id=v.source_id;
