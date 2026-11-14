@@ -315,7 +315,7 @@ export default function SupervisorChatComposer({
     setReloadVersion((v) => v + 1);
     if (job.status === "failed") { setFailureCode(job.errorCode ?? "agent_turn_failed"); setError(true); }
   });
-  const supervisorWork = useSupervisorWork(threadId, enabled);
+  const supervisorWork = useSupervisorWork(threadId, Boolean(threadId));
   const resumedRunning = !sending && shouldShowRunningJob(watcher.job,messages);
 
   function cleanupRecording() {
