@@ -7,6 +7,28 @@ const base:PrioritySource={
   createdAt:"2026-11-09T01:00:00Z",evidence:{quality:"partial",lastCheckedAt:"before"},
 };
 describe("proactive priority ranking and source revision",()=>{
+  it("always ranks critical operational evidence above ordinary overdue owner work",()=>{
+    const now=new Date("2026-11-11T00:00:00Z");
+    const critical={...base,sourceId:"urgent-sales",severity:"critical" as const,
+      evidence:{verified:true,metric:"sales_drop"}};
+    const overdue={...base,sourceId:"ordinary-overdue",
+      sourceType:"operating_task" as const,kind:"review",
+      status:"needs_owner",dueAt:"2026-11-01T00:00:00Z",
+      confidence:"high",severity:null};
+    expect(choosePriorities([overdue,critical],now,2).map(x=>x.source.sourceId))
+      .toEqual(["urgent-sales","ordinary-overdue"]);
+  });
+  it("keeps high-severity work above routine needs without inventing impact",()=>{
+    const now=new Date("2026-11-11T00:00:00Z");
+    const high={...base,sourceId:"high-risk",severity:"high" as const,
+      evidence:{quality:"partial"}};
+    const ordinary={...base,sourceId:"normal",
+      sourceType:"operating_task" as const,kind:"review",status:"needs_owner",
+      dueAt:"2026-11-01T00:00:00Z"};
+    const ranked=choosePriorities([ordinary,high],now,2);
+    expect(ranked[0].source.sourceId).toBe("high-risk");
+    expect(ranked[0].reason).toBe("Actionable café alert needs review");
+  });
   it("does not generate a new notice for incidental poll/seen changes",()=>{
     expect(priorityRevision(base)).toBe(priorityRevision({
       ...base,status:"seen",evidence:{lastCheckedAt:"after",quality:"partial"},
