@@ -317,9 +317,11 @@ export async function POST(request:Request,{params}:Params){
       // Task 13B: only a NEW approval with explicit publish_and_notify
       // can publish/send. Historic copy-ready approvals never acquire consent.
       const staffEffect=p.canonicalEffectPayload as {operation?:string;
-        payload?:{publish_and_notify?:boolean}};
+        payload?:{publish_and_notify?:boolean;correct_cancelled_publication?:boolean}};
       const needsPublish=staffEffect.operation==="propose_send_schedule"&&
         staffEffect.payload?.publish_and_notify===true;
+      const needsCorrection=staffEffect.operation==="propose_schedule"&&
+        staffEffect.payload?.correct_cancelled_publication===true;
       if(input.action==="cancel_publication"){
         if(p.status!=="committed"||!needsPublish||p.revision!==input.revision)
           return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
@@ -356,7 +358,9 @@ export async function POST(request:Request,{params}:Params){
       // The SQL function independently locks source and compares the token.
       try{
         const approved=p.status==="draft"?await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry):p;
-        const result=await repo.commitStaff(scope,p.id,approved.revision);
+        const result=needsCorrection
+          ?await repo.commitStaffCorrection(scope,p.id,approved.revision)
+          :await repo.commitStaff(scope,p.id,approved.revision);
         if(result.state==="applied"&&needsPublish){
           try{
             const publication=await publishApprovedStaffSchedule(scope,p.id);
