@@ -12,7 +12,7 @@ export const supplierPurchasingTools={
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    z.strictObject({}).parse(raw);
    if(!ctx.purchasing)return {source:"purchase_orders",period:null,agentId:"maya",
-    missing:["purchasing_unavailable"],orders:[]};
+    missing:["purchasing_unavailable"],orders:[],drafts:[],draftsTruncated:false};
    const result=await ctx.purchasing.list();
    return {source:"purchase_orders",period:null,agentId:"maya",
     missing:[...(result.truncated?["purchase_order_history_truncated"]:[]),
