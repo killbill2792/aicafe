@@ -19,7 +19,7 @@ import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadines
 import {gmailCapabilityId,gmailEffectSchema} from "@/lib/ai/supervisor/loop/gmail.server";
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
-import {publishApprovedStaffSchedule} from "@/lib/scheduling/staffPublication.server";
+import {publishApprovedStaffSchedule,cancelStaffPublication} from "@/lib/scheduling/staffPublication.server";
 /** The loop refused a second active proposal on the same item (engine ProposalOverlapError). */
 function runningOverlap(error:unknown):{proposalId:string;status:string;endsOn:string|null}|null{
   if(!(error instanceof Error)||error.name!=="ProposalOverlapError"||!("running" in error))return null;
@@ -35,6 +35,7 @@ const actions=z.discriminatedUnion("action",[
   z.strictObject({action:z.literal("start"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("reconcile"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("cancel"),proposalId:uuid,revision}),
+  z.strictObject({action:z.literal("cancel_publication"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("edit"),proposalId:uuid,revision,newPriceCents:price}),
   z.strictObject({action:z.literal("edit_purchase"),proposalId:uuid,revision,
     ingredientId:uuid.nullable(),quantity:z.number().finite().positive().max(1e9),
@@ -102,11 +103,14 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
       state:p.status==="approved"?"conflict":data.state};
     const db=await createServerSupabaseClient();
     const publication=await db.from("staff_schedule_publications")
-      .select("id,week_start,published_at,snapshot")
+      .select("id,week_start,published_at,snapshot,status")
       .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
-      .eq("proposal_id",p.id).eq("status","published").maybeSingle();
+      .eq("proposal_id",p.id).maybeSingle();
     if(publication.error||!publication.data)return {...data,publishAndNotify,
       state:"applying",publication:{state:"pending"}};
+    if(publication.data.status==="cancelled")return {...data,publishAndNotify,
+      state:"cancelled",publication:{state:"cancelled",
+        week:publication.data.week_start}};
     const receipts=await db.from("staff_schedule_deliveries")
       .select("employee_id,status").eq("business_id",scope.businessId)
       .eq("publication_id",publication.data.id).limit(201);
@@ -225,6 +229,8 @@ export async function POST(request:Request,{params}:Params){
     if(input.action==="start"&&p.capabilityId!==goalCapabilityId)
       return conversationJson({error:"standing_mandate_action_not_eligible"},403);
     const staff=isStaffCapabilityId(p.capabilityId);
+    if(input.action==="cancel_publication"&&!staff)
+      return conversationJson({error:"publication_cancellation_not_supported"},422);
     const purchase=p.capabilityId===purchaseCapabilityId;
     if(!staff&&!purchase&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
       p.capabilityId!==goalCapabilityId&&p.capabilityId!==eventReadinessCapabilityId)
@@ -314,6 +320,18 @@ export async function POST(request:Request,{params}:Params){
         payload?:{publish_and_notify?:boolean}};
       const needsPublish=staffEffect.operation==="propose_send_schedule"&&
         staffEffect.payload?.publish_and_notify===true;
+      if(input.action==="cancel_publication"){
+        if(p.status!=="committed"||!needsPublish||p.revision!==input.revision)
+          return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+        try{
+          const cancellation=await cancelStaffPublication(scope,p.id);
+          return conversationJson({state:"cancelled",cancellation,
+            proposal:await view(scope,repo,p)});
+        }catch{
+          return conversationJson({state:"uncertain",error:"publication_cancel_outcome_uncertain",
+            proposal:await view(scope,repo,p)},409);
+        }
+      }
       if(p.status==="committed"&&needsPublish){
         try{
           const publication=await publishApprovedStaffSchedule(scope,p.id);
