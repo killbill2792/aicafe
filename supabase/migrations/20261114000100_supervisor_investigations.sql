@@ -148,7 +148,8 @@ begin
   return jsonb_build_object('business_id',v.business_id,'owner_user_id',v.owner_user_id,
     'thread_id',v.thread_id,'source_type',v.source_type,'source_id',v.source_id,
     'revision_hash',v.revision_hash,'stable_key',v.stable_key,
-    'phase',v.phase,'evidence',v.evidence,'step_version',v.step_version,
+    'phase',v.phase,'evidence',v.evidence,'narrative',v.narrative,
+    'last_error',v.last_error,'step_version',v.step_version,
     'lease_token',v_token);
 end $$;
 revoke all on function public.supervisor_claim_investigation(timestamptz)
@@ -179,22 +180,23 @@ begin
   if p_outcome='collected' and v.phase='collect' then v_phase:='investigate';
   elsif p_outcome='investigated' and v.phase='investigate' then v_phase:='awaiting_owner';
   elsif p_outcome='followed_up' and v.phase='awaiting_owner' then v_phase:='awaiting_owner';
+  elsif p_outcome='rechecked' and v.phase='awaiting_owner' then v_phase:='awaiting_owner';
   else raise exception 'Invalid investigation transition' using errcode='23514'; end if;
   if p_evidence is null or jsonb_typeof(p_evidence)<>'object'
     or octet_length(p_evidence::text)>8192 then
     raise exception 'Invalid investigation evidence' using errcode='22023'; end if;
-  if p_outcome<>'collected' and
+  if p_outcome not in ('collected','rechecked') and
     (p_narrative is null or length(btrim(p_narrative)) not between 1 and 1800) then
     raise exception 'Investigation needs a grounded next step' using errcode='22023'; end if;
   update public.supervisor_investigations set phase=v_phase,evidence=p_evidence,
-    narrative=case when p_outcome='collected' then narrative else btrim(p_narrative) end,
+    narrative=case when p_outcome in ('collected','rechecked') then narrative else btrim(p_narrative) end,
     step_version=step_version+1,failure_count=0,lease_token=null,lease_until=null,
     next_retry_at=case when p_outcome='collected' then p_now
       else p_now+interval '6 hours' end,
     last_error=null,updated_at=p_now
     where business_id=p_business_id and owner_user_id=p_owner_user_id
       and source_type=p_source_type and source_id=p_source_id;
-  if p_outcome<>'collected' then
+  if p_outcome in ('investigated','followed_up') then
     v_hash:=md5('investigation:'||p_business_id::text||':'||p_owner_user_id::text||
       ':'||p_source_type||':'||p_source_id||':'||p_revision_hash||':'||(v.step_version+1)::text);
     v_msg:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
