@@ -12,7 +12,7 @@ import {SupabaseTeamRulesRepository} from "@/lib/ai/policies/repository.server";
 import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
-import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId} from "@/lib/ai/supervisor/loop/receiptAllocation";
+import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId,ambiguousEarlierReceiptIngredient} from "@/lib/ai/supervisor/loop/receiptAllocation";
 import {proposeLoop,commitLoop} from "@/lib/ai/supervisor/loop/engine";
 import {authorizesInventoryWrite,ownerTextSupportsTypedLine,ownerTextSupportsTypedFinancials,receivedPurchaseDocument} from "@/lib/ai/agent/tools/purchaseIntent";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
@@ -324,16 +324,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             // with a changed quantity/price/unit, we cannot prove whether it
             // is a second physical receipt line or a model correction.
             // Identical lines in the SAME batch remain independently indexed.
-            const ambiguousPriorLine=input.source==="receipt_chat"&&existing.some(row=>{
-              if(row.request_key===requestKey||
-                 !["approved","executing","committed","monitored","manual_pending"].includes(row.status))
-                return false;
-              const prior=row.canonical_effect_payload as {ingredientId?:string|null;name?:string}|null;
-              return Boolean(prior&&(
-                line.ingredientId&&prior.ingredientId===line.ingredientId||
-                !line.ingredientId&&prior.name?.toLocaleLowerCase()===line.name.toLocaleLowerCase()
-              ));
-            });
+            const ambiguousPriorLine=input.source==="receipt_chat"&&
+              ambiguousEarlierReceiptIngredient(existing,requestKey,line);
             const authorized=!previouslyRecorded&&!possiblyRephotographed&&!ambiguousPriorLine&&
               authorizesInventoryWrite(p.ownerText,attached)&&
               !/\b(not received|not delivered|ordered only|pending delivery|quote)\b/iu.test(p.ownerText)&&
