@@ -424,9 +424,10 @@ begin
  if new_p.id is not null then
   if new_p.capability_id='maya.supplier_purchase_order.v1'
     and new_p.effect_hash=p_effect_hash and new_p.status='draft'
-    and exists(select 1 from public.supplier_po_draft_replacements r
+    and (new_p.id=old_p.id or exists(
+      select 1 from public.supplier_po_draft_replacements r
        where r.business_id=p_business_id and r.previous_id=old_p.id
-        and r.replacement_id=new_p.id and r.owner_user_id=p_owner_user_id)
+        and r.replacement_id=new_p.id and r.owner_user_id=p_owner_user_id))
   then return jsonb_build_object('proposal',to_jsonb(new_p)); end if;
   raise exception 'supplier_draft_replay_conflict' using errcode='P0001';
  end if;
