@@ -1,3 +1,5 @@
+import english from "@/messages/en.json";
+
 /**
  * Task 16B: owner-visible status from canonical persisted evidence.
  * This module never starts work, approves an effect, or treats a model reply
@@ -44,10 +46,14 @@ export type AttemptRow = {
   receipt_ref: string | null; verified_at: string | null;
 };
 
+// All owner-visible phrasing comes from the required English message catalog.
+// Never let a server or model-authored work state bypass this locale source.
+const copy = english.SupervisorWork.copy;
+
 const stepNames: Record<string, string> = {
-  authorize_owner: "Checking your authorization",
-  owner_turn: "Investigating and carrying out the approved work",
-  verify_report: "Verifying the saved result",
+  authorize_owner: copy.stepAuthorizeOwner,
+  owner_turn: copy.stepOwnerTurn,
+  verify_report: copy.stepVerifyReport,
 };
 export function projectOwnerWork(input: {
   runs: RunRow[]; steps: StepRow[]; jobs: JobRow[];
@@ -66,18 +72,18 @@ export function projectOwnerWork(input: {
       : run.status === "blocked" ? expired ? "uncertain" : "failed"
       : next?.status === "leased" && next.attempts > 1 ? "retrying" : "running";
     work.push({
-      id: "run:" + run.id, kind: "durable_run", status, title: "Supervisor work",
+      id: "run:" + run.id, kind: "durable_run", status, title: copy.runTitle,
       detail: status === "answer_ready"
-        ? "Supervisor saved an answer. This does not verify any external action."
-        : status === "uncertain" ? "A saved step needs reconciliation; its outcome is not known."
-        : status === "failed" ? "Supervisor stopped while carrying out a saved step."
-        : status === "queued" ? "The saved plan is waiting for its worker."
-        : next ? (stepNames[next.step_key] ?? "Working through the saved plan")
-        : "Checking the saved work",
-      nextStep: status === "uncertain" ? "Waiting for evidence or safe reconciliation; no blind retry."
-        : status === "failed" ? "Work is blocked. Investigate before resuming."
-        : status === "answer_ready" ? "Read the saved answer; effects require separate receipts."
-        : "Supervisor keeps the saved work and checks the next step.",
+        ? copy.runAnswerReady
+        : status === "uncertain" ? copy.runUncertain
+        : status === "failed" ? copy.runFailed
+        : status === "queued" ? copy.runQueued
+        : next ? (stepNames[next.step_key] ?? copy.runGeneric)
+        : copy.runChecking,
+      nextStep: status === "uncertain" ? copy.runUncertainNext
+        : status === "failed" ? copy.runFailedNext
+        : status === "answer_ready" ? copy.runAnswerNext
+        : copy.runActiveNext,
       updatedAt: run.updated_at, ownerMessageId: run.request_key,
       step: next?.step_key ?? null, attempt: next?.attempts ?? null,
       errorCode: next?.error_code ?? null,
@@ -102,15 +108,15 @@ export function projectOwnerWork(input: {
       : stale ? "uncertain" : job.attempt > 1 ? "retrying" : "running";
     work.push({
       id: "job:" + job.id, kind: "agent_turn", status,
-      title: "Supervisor investigation",
-      detail: status === "answer_ready" ? "A reply was saved; external effects are checked separately."
-        : stale ? "The last worker heartbeat is old; its outcome is not verified."
-        : status === "failed" ? "The saved agent turn failed."
-        : "Supervisor is continuing the saved conversation.",
-      nextStep: stale ? "Checking persisted work and receipts before any retry."
-        : status === "failed" ? "Check the failure without assuming any effect was undone."
-        : status === "answer_ready" ? "Read the saved answer in this conversation."
-        : "The existing worker is responsible for the next step.",
+      title: copy.jobTitle,
+      detail: status === "answer_ready" ? copy.jobAnswerReady
+        : stale ? copy.jobStale
+        : status === "failed" ? copy.jobFailed
+        : copy.jobRunning,
+      nextStep: stale ? copy.jobStaleNext
+        : status === "failed" ? copy.jobFailedNext
+        : status === "answer_ready" ? copy.jobAnswerNext
+        : copy.jobActiveNext,
       updatedAt: job.heartbeat_at || job.created_at, ownerMessageId: job.owner_message_id,
       step: null, attempt: job.attempt, errorCode: job.error_code,
       proof: status === "answer_ready" && job.reply_message_id
@@ -131,20 +137,20 @@ export function projectOwnerWork(input: {
       : p.status === "manual_pending" ? "uncertain" : "running";
     work.push({
       id: "proposal:" + p.id, kind: "approval", status,
-      title: "Supervisor proposed action",
-      detail: status === "approval_required" ? "A proposed action is waiting for your decision."
-        : status === "verified_complete" ? "An authorized effect has a verified receipt."
-        : status === "uncertain" ? "The action has no verified final receipt; do not send it again."
-        : status === "cancelled" ? "The proposal was declined or expired."
-        : status === "failed" ? "The proposal is no longer executable as written."
-        : "The approved action is awaiting its verified outcome.",
+      title: copy.proposalTitle,
+      detail: status === "approval_required" ? copy.proposalDraft
+        : status === "verified_complete" ? copy.proposalVerified
+        : status === "uncertain" ? copy.proposalUncertain
+        : status === "cancelled" ? copy.proposalCancelled
+        : status === "failed" ? copy.proposalFailed
+        : copy.proposalExecuting,
       nextStep: status === "approval_required"
-        ? "Review the existing proposal card in this conversation."
-        : status === "verified_complete" ? "The saved effect receipt is available."
-        : status === "uncertain" ? "Reconcile the effect using the existing authorization gateway."
-        : status === "cancelled" ? "No action will be taken on this proposal."
-        : status === "failed" ? "Ask Supervisor to investigate the exception."
-        : "Supervisor will report the actual outcome when it is verified.",
+        ? copy.proposalDraftNext
+        : status === "verified_complete" ? copy.proposalVerifiedNext
+        : status === "uncertain" ? copy.proposalUncertainNext
+        : status === "cancelled" ? copy.proposalCancelledNext
+        : status === "failed" ? copy.proposalFailedNext
+        : copy.proposalExecutingNext,
       updatedAt: p.updated_at, ownerMessageId: null,
       step: null, attempt: null, errorCode: null, proposalId: p.id,
       proof: status === "verified_complete" && effect?.receipt_ref && effect.verified_at

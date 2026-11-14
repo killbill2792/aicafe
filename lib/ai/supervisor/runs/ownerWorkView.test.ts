@@ -71,6 +71,21 @@ describe("Task 16B persisted agentic work", () => {
     expect(items).toHaveLength(1);
     expect(items[0].kind).toBe("durable_run");
   });
+  it("resolves all rendered run, job, proposal and exception wording from the English catalog", async () => {
+    const english = (await import("../../../../messages/en.json")).default;
+    const registeredCopy = Object.values(english.SupervisorWork.copy);
+    const representative = view({
+      runs: [run, { ...run, id: "blocked", status: "blocked" }],
+      steps: [step, { ...step, run_id: "blocked", status: "blocked", error_code: "lease_expired" }],
+      jobs: [{ ...job, owner_message_id: "different" }],
+      proposals: [proposal, { ...proposal, id: "failed", status: "stale" }],
+    });
+    for (const item of representative) {
+      for (const field of [item.title, item.detail, item.nextStep]) {
+        expect(registeredCopy, "unregistered owner-facing copy: " + field).toContain(field);
+      }
+    }
+  });
   it("does not treat approval or a manual pending handoff as a completed effect", () => {
     expect(view({ proposals: [{ ...proposal, status: "manual_pending" }] })[0].status).toBe("uncertain");
     expect(view({ proposals: [{ ...proposal, status: "approved" }] })[0].status).toBe("running");

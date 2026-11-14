@@ -37,7 +37,7 @@ describe("redesign 16 cleanup integration", () => {
     // AGENTS.md forbids new es/ar copy. Keep strict parity for ALL pre-existing
     // keys; Task 11 Gmail and Task 16B work-status keys are the only exceptions.
     // This is an exact key allowlist, NOT a blanket SupervisorWork namespace skip.
-    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect|SupervisorWork\.(?:heading|stale|more|effectReceipt|replyReceipt|status))$/;
+    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect|SupervisorWork\.(?:heading|stale|more|effectReceipt|replyReceipt|status|copy))$/;
     const keys = (locale: string) => {
       const messages = localeMessages(locale);
       return Object.entries(messages)
@@ -52,15 +52,58 @@ describe("redesign 16 cleanup integration", () => {
   it("requires complete English-only Task 16B status copy rather than hiding missing keys", () => {
     const work = localeMessages("en").SupervisorWork as unknown as {
       heading: string; stale: string; more: string; effectReceipt: string;
-      replyReceipt: string; status: Record<string, string>;
+      replyReceipt: string; status: Record<string, string>; copy: Record<string, string>;
     };
     expect(Object.keys(work).sort()).toEqual([
-      "heading", "stale", "more", "effectReceipt", "replyReceipt", "status"
+      "heading", "stale", "more", "effectReceipt", "replyReceipt", "status", "copy"
     ].sort());
     expect(Object.keys(work.status).sort()).toEqual([
       "queued", "running", "retrying", "approval_required", "uncertain",
       "failed", "cancelled", "answer_ready", "verified_complete",
     ].sort());
+    const requiredWorkCopyKeys = [
+      "stepAuthorizeOwner",
+      "stepOwnerTurn",
+      "stepVerifyReport",
+      "runTitle",
+      "runAnswerReady",
+      "runUncertain",
+      "runFailed",
+      "runQueued",
+      "runGeneric",
+      "runChecking",
+      "runUncertainNext",
+      "runFailedNext",
+      "runAnswerNext",
+      "runActiveNext",
+      "jobTitle",
+      "jobAnswerReady",
+      "jobStale",
+      "jobFailed",
+      "jobRunning",
+      "jobStaleNext",
+      "jobFailedNext",
+      "jobAnswerNext",
+      "jobActiveNext",
+      "proposalTitle",
+      "proposalDraft",
+      "proposalVerified",
+      "proposalUncertain",
+      "proposalCancelled",
+      "proposalFailed",
+      "proposalExecuting",
+      "proposalDraftNext",
+      "proposalVerifiedNext",
+      "proposalUncertainNext",
+      "proposalCancelledNext",
+      "proposalFailedNext",
+      "proposalExecutingNext"
+    ];
+    expect(Object.keys(work.copy).sort()).toEqual(requiredWorkCopyKeys.sort());
+    for (const [key, value] of Object.entries(work.copy)) {
+      expect(value, "SupervisorWork.copy." + key).toEqual(expect.any(String));
+      expect(value.trim().length).toBeGreaterThan(0);
+    }
     for (const [key, value] of Object.entries(work.status)) {
       expect(value, "SupervisorWork.status." + key).toEqual(expect.any(String));
       expect(value.trim().length).toBeGreaterThan(0);
