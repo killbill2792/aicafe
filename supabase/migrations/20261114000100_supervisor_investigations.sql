@@ -219,7 +219,7 @@ create function public.supervisor_fail_investigation(
   p_business_id uuid,p_owner_user_id uuid,p_source_type text,p_source_id text,
   p_lease_token uuid,p_error text,p_now timestamptz
 ) returns boolean language plpgsql security definer set search_path=public as $$
-declare v public.supervisor_investigations;v_count integer;
+declare v public.supervisor_investigations;v_count integer;v_hash text;v_msg uuid;
 begin
   if coalesce(auth.role(),'')<>'service_role' then
     raise exception 'Service role required' using errcode='42501'; end if;
@@ -239,8 +239,26 @@ begin
     updated_at=p_now
   where business_id=p_business_id and owner_user_id=p_owner_user_id
     and source_type=p_source_type and source_id=p_source_id;
+  -- Repeated failure is owner-visible, not silently abandoned. No message is
+  -- attempted after membership/thread revocation, and no effect is retried.
+  if v_count=5 and public.supervisor_routine_owner_authorized(
+    v.business_id,v.owner_user_id,v.thread_id) then
+    v_hash:=md5('investigation-blocked:'||v.business_id::text||':'||v.owner_user_id::text||
+      ':'||v.source_type||':'||v.source_id||':'||v.revision_hash);
+    v_msg:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
+      substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
+    insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,
+      content_type,structured_content,grounding)
+    values(v_msg,v.business_id,v.thread_id,v.owner_user_id,'supervisor','blocks',
+      jsonb_build_array(jsonb_build_object('type','text','text',
+        'Investigation update: I could not verify the café issue after repeated checks. I have paused this investigation; the original attention item remains available. No external action was taken. I will re-examine it if its source evidence changes.')),
+      jsonb_build_object('status','verified','intent','priority_investigation_exception',
+        'evidence',jsonb_build_array(jsonb_build_object('source',v.source_type,
+          'identifier',v.source_id,'asOf',p_now::text))))
+    on conflict(id) do nothing;
+  end if;
   return true;
-end $$;
+end $;
 revoke all on function public.supervisor_fail_investigation(uuid,uuid,text,text,uuid,text,timestamptz)
   from public,anon,authenticated;
 grant execute on function public.supervisor_fail_investigation(uuid,uuid,text,text,uuid,text,timestamptz)
