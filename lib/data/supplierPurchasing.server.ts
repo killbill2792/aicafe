@@ -22,7 +22,7 @@ export async function readSupplierPurchasingEvidence(db:SupabaseClient,businessI
  if(!business.data.currency||!business.data.timezone)
   throw new Error("cafe_currency_or_timezone_missing");
  return {ingredients:(ingredients.data??[]) as Ingredient[],
-  quotes:(quotes.data??[]).slice(0,500) as SupplierQuote[],
+  quotes:(quotes.data??[]).slice(0,500) as unknown as SupplierQuote[],
   truncated:(quotes.data??[]).length>500,
   currency:business.data.currency as string,timezone:business.data.timezone as string};
 }
