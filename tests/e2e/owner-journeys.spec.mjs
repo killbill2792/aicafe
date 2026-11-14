@@ -26,12 +26,15 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       [runId, own.businessId, own.owner.userId, threadId, messageId, "a".repeat(64)]);
     await db.query("insert into public.supervisor_run_steps(business_id,run_id,step_key,step_index,retry_mode,status) values($1,$2,'owner_turn',1,'reconcile','pending')",
       [own.businessId, runId]);
-    const context = await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block",
-      viewport:{width:390,height:844}});
+    // The existing shared login helper asserts a desktop-visible nav label.
+    // Authenticate normally, then switch to the real mobile viewport for ALL
+    // status, reconnect, and horizontal-overflow assertions below.
+    const context = await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
     try {
       const page = await context.newPage();
       await login(page,own);
       await openOwnedPage(page,own,"?thread="+threadId);
+      await page.setViewportSize({width:390,height:844});
       const work = page.getByRole("region",{name:"Supervisor work"});
       await expect(work).toBeVisible();
       await expect(work.locator('[data-work-status="queued"]')).toBeVisible();
