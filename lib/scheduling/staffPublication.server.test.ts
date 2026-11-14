@@ -24,6 +24,7 @@ function dbFixture(status="prepared",explicit=true,upcomingPublished=true){
   if(name==="staff_schedule_claim_delivery")return {data:{
    deliveryId:"delivery-A",attemptToken:"token-A",to:"+14155550123"},error:null};
   if(name==="staff_schedule_finish_delivery")return {data:true,error:null};
+  if(name==="staff_schedule_can_send")return {data:true,error:null};
   if(name==="staff_schedule_record_provider_status")return {data:true,error:null};
   return {data:null,error:new Error("unexpected rpc "+name)};
  });
@@ -115,6 +116,26 @@ describe("Task 13B existing-Supervisor durability and receipt boundary",()=>{
    p_delivery_id:"delivery-A",p_attempt_token:"token-A",p_state:"sent",
    p_wamid:"wamid.worker-a",p_error:null});
   expect(f.operations[0]).toMatchObject({status:"needs_owner"});
+ });
+ it("a cancelled or opt-out-after-claim result blocks HTTP even when claim was valid",async()=>{
+  const f=dbFixture();mocks.admin.mockReturnValue(f.db);
+  f.rpc.mockImplementation(async(name:string)=>{
+   if(name==="staff_schedule_publish")return {data:{id:p.id,week,state:"published",replayed:true},error:null};
+   if(name==="staff_schedule_claim_delivery")return {data:{
+     deliveryId:"delivery-A",attemptToken:"token-A",to:"+14155550123"},error:null};
+   if(name==="staff_schedule_can_send")return {data:false,error:null};
+   if(name==="staff_schedule_finish_delivery")return {data:true,error:null};
+   return {data:null,error:null};
+  });
+  await followUpStaffPublicationForBusiness(f.db,"cafe-A",week);
+  expect(f.rpc).toHaveBeenCalledWith("staff_schedule_can_send",{
+    p_delivery_id:"delivery-A",p_attempt_token:"token-A",
+  });
+  expect(f.rpc).toHaveBeenCalledWith("staff_schedule_finish_delivery",{
+    p_delivery_id:"delivery-A",p_attempt_token:"token-A",p_state:"failed",
+    p_wamid:null,p_error:"revoked_before_send",
+  });
+  expect(mocks.send).not.toHaveBeenCalled();
  });
  it("no provider retransmission for a previously accepted or ambiguous receipt",async()=>{
   for(const status of ["sent","uncertain","sending"]){
