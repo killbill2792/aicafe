@@ -214,11 +214,36 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         },
         inspect:input=>investigateSupplierPurchase(proposalScope,input),
         propose:async input=>{
-          // An owner goal may span multiple model steps. Only the existing
-          // proposal repository saves the immutable draft; no PO is approved here.
+          // A multi-turn owner correction must retire the previous draft's
+          // approval authority, not leave two independently approvable POs.
+          // The correction signal comes only from the SAVED OWNER message.
+          const correction=/\b(?:change|update|revise|correct|instead|rather|make it|reduce|increase)\b/iu
+            .test(p.ownerText);
+          const previousOrders=correction?await readOwnerProposals(await getDb(),
+            {businessId:scope.businessId,ownerUserId:scope.ownerUserId},
+            {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
+             statuses:["draft","approved","executing","committed"],limit:20}):[];
+          if(correction&&(previousOrders.length>1||
+              previousOrders.some(row=>row.status!=="draft")))
+            throw new ToolError("validation",
+              "This order was already approved or several drafts match. An approved order cannot be silently changed; specify a new order or review the existing one.");
+          const previous=correction?previousOrders[0]:undefined;
           const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,supplierPurchase:input}));
           const draft=await proposeLoop(proposalScope,supervisorLoopRegistry,
             new SupabaseLoopRepository(),supplierPurchaseOrderCapabilityId,input,key);
+          if(draft.status!=="draft")throw new ToolError("validation","Purchase-order draft is no longer active.");
+          if(previous&&previous.id!==draft.id){
+            // One service-only SQL CAS simultaneously rejects the earlier
+            // draft and links its replacement for old cards to follow.
+            const {data,error}=await createAdminSupabaseClient()
+              .rpc("supervisor_supersede_supplier_draft",{
+               p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+               p_thread_id:id,p_previous_id:previous.id,
+               p_previous_revision:previous.revision,p_new_id:draft.id});
+            if(error||data!=="superseded")
+              throw new ToolError("validation",
+                "The earlier purchase order changed before this correction. Check the current order; no replacement was approved.");
+          }
           const effect=draft.canonicalEffectPayload as SupplierPurchaseOrderEffect;
           return {proposalId:draft.id,revision:draft.revision,
             supplierName:effect.supplierName,subtotalCents:effect.subtotalCents,
