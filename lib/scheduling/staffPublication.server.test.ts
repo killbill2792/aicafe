@@ -18,6 +18,7 @@ const p={id:"publication-A",business_id:"cafe-A",owner_user_id:"owner-A",
  snapshot:[{employee_id:"worker-A",date:week,start:"09:00",end:"15:00"}]};
 function dbFixture(status="prepared",explicit=true,upcomingPublished=true){
  const operations:Array<Record<string,unknown>>=[];
+ const updates:Array<{table:string;row:Record<string,unknown>}> = [];
  const calls:Array<{table:string;column:string;value:unknown}>=[];
  const rpc=vi.fn(async(name:string):Promise<{data:unknown;error:Error|null}>=>{
   if(name==="staff_schedule_publish")return {data:{id:p.id,week,state:"published",replayed:true},error:null};
@@ -43,7 +44,7 @@ function dbFixture(status="prepared",explicit=true,upcomingPublished=true){
    calls.push({table,column,value});
    if(column==="status")statusFilter=value;return q;};
   q.gte=()=>q;q.lte=()=>q;q.is=()=>q;q.order=()=>q;q.neq=()=>q;
-  q.update=()=>q;
+  q.update=(row:Record<string,unknown>)=>{updates.push({table,row});return q;};
   q.limit=async()=>({data:table==="staff_schedule_publications"&&
     statusFilter==="cancelled"?[]:rows(),error:null});
   q.maybeSingle=async()=>({data:table==="employees"?{
@@ -53,7 +54,7 @@ function dbFixture(status="prepared",explicit=true,upcomingPublished=true){
   return q;
  });
  const db={rpc,from} as unknown as SupabaseClient;
- return {db,rpc,from,operations,calls};
+ return {db,rpc,from,operations,calls,updates};
 }
 beforeEach(()=>{
  vi.clearAllMocks();
@@ -132,6 +133,27 @@ describe("Task 13B existing-Supervisor durability and receipt boundary",()=>{
    p_delivery_id:"delivery-A",p_attempt_token:"token-A",p_state:"sent",
    p_wamid:"wamid.worker-a",p_error:null});
   expect(f.operations[0]).toMatchObject({status:"needs_owner"});
+ });
+ it("closes every owner's stale unpublished-week notice after verified publication",async()=>{
+  const f=dbFixture("delivered");mocks.admin.mockReturnValue(f.db);
+  await followUpStaffPublicationForBusiness(f.db,"cafe-A",week);
+  expect(f.updates).toContainEqual({table:"operating_tasks",
+    row:expect.objectContaining({status:"handled"})});
+  expect(f.calls).toEqual(expect.arrayContaining([
+    {table:"operating_tasks",column:"business_id",value:"cafe-A"},
+    {table:"operating_tasks",column:"kind",value:"staff_schedule_publication"},
+    {table:"operating_tasks",column:"entity_id",value:week},
+  ]));
+ });
+ it("a disabled transport does not reopen fully delivered worker receipts",async()=>{
+  const f=dbFixture("delivered");mocks.admin.mockReturnValue(f.db);
+  mocks.blockers.mockReturnValue(["WHATSAPP_STAFF_SCHEDULE_SEND_ENABLED"]);
+  await followUpStaffPublicationForBusiness(f.db,"cafe-A",week);
+  expect(f.operations).toContainEqual(expect.objectContaining({
+    kind:"staff_schedule_delivery",status:"handled",
+    payload:expect.objectContaining({delivered:1,pending:0}),
+  }));
+  expect(mocks.send).not.toHaveBeenCalled();
  });
  it("a cancelled or opt-out-after-claim result blocks HTTP even when claim was valid",async()=>{
   const f=dbFixture();mocks.admin.mockReturnValue(f.db);
