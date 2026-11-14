@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {authorizesInventoryWrite,ownerTextSupportsTypedLine,receivedPurchaseDocument,isPurchaseCorrection} from "./purchaseIntent";
+import {authorizesInventoryWrite,ownerTextSupportsTypedLine,ownerTextSupportsTypedFinancials,receivedPurchaseDocument,isPurchaseCorrection} from "./purchaseIntent";
 describe("explicit owner-turn purchase authority",()=>{
  it("supports the common short owner instruction",()=>{
   expect(authorizesInventoryWrite("I bought 10 gallons of milk",false)).toBe(true);
@@ -16,6 +16,31 @@ describe("explicit owner-turn purchase authority",()=>{
   expect(ownerTextSupportsTypedLine("I bought 10 gallons of whole milk",{name:"milk",quantity:10,unit:"gal"})).toBe(true);
  });
 
+ it("blocks invented or altered cost and backdated typed inventory effects",()=>{
+  const today="2026-11-13";
+  const check=(message:string,costCents:number|null,date="2026-11-13",lineCount=1,currency="USD")=>
+   ownerTextSupportsTypedFinancials(message,{costCents,date},today,lineCount,currency);
+  // Owner gave quantity, not money: never use a model-invented ingredient price.
+  expect(check("I bought 10 gallons of milk",null)).toBe(true);
+  expect(check("I bought 10 gallons of milk",4500)).toBe(false);
+  expect(check("I bought 10 gallons of milk","4500" as unknown as number)).toBe(false);
+  expect(check("I bought 10 gallons of milk",null,"2026-11-12")).toBe(false);
+  expect(check("I bought 10 gallons of milk yesterday",null,"2026-11-12")).toBe(true);
+  expect(check("I bought 10 gallons of milk yesterday",null,"2026-11-13")).toBe(false);
+  expect(check("I bought 10 gallons of milk on 2026-11-10",null,"2026-11-10")).toBe(true);
+  expect(check("I bought 10 gallons of milk on 2026-11-10",null,"2026-11-13")).toBe(false);
+  expect(check("I bought 10 gallons of milk last Tuesday",null)).toBe(false);
+  // Exact single owner money amount can be saved; changed cents, ambiguous
+  // multi-line allocation or non-USD symbols require review instead.
+  expect(check("I bought 10 gallons of milk for $45.00",4500)).toBe(true);
+  expect(check("I bought 10 gallons of milk for $45.00",450)).toBe(false);
+  expect(check("I bought 10 gallons of milk for $45.00",null)).toBe(false);
+  expect(check("I bought 10 gallons of milk for $45.00",4500,today,2)).toBe(false);
+  expect(check("I bought 10 gallons of milk for $45.00",4500,today,1,"CAD")).toBe(false);
+  expect(check("I bought 10 gallons of milk for $45 each",4500)).toBe(false);
+  expect(check("I bought 10 gallons of milk and 2 lb beans for $45",4500,today,2)).toBe(false);
+  expect(check("I bought 10 gallons of milk, paid 45",null)).toBe(false);
+ });
  it("accepts clear owner instructions, no repeat click",()=>{
   expect(authorizesInventoryWrite("I bought 10 gallons of milk today",false)).toBe(true);
   expect(authorizesInventoryWrite("Please add these purchases to inventory.",true)).toBe(true);
