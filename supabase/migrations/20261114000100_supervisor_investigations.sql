@@ -1,5 +1,7 @@
 -- Task 15A. One durable read-only investigation attached to the existing
 -- Supervisor, existing 15-minute refresh cron and existing owner conversation.
+set lock_timeout = '10s';
+set statement_timeout = '5min';
 -- An investigation can NEVER grant an effect or fabricate an owner message.
 create table public.supervisor_investigations (
   business_id uuid not null references public.businesses(id) on delete cascade,
@@ -9,11 +11,11 @@ create table public.supervisor_investigations (
   source_id text not null,
   revision_hash text not null check (revision_hash ~ '^[a-f0-9]{64}$'),
   stable_key text not null check (stable_key ~ '^[a-f0-9]{64}$'),
-  priority integer not null default 0 check (priority between 0 and 400),
+  priority bigint not null default 0 check (priority between 0 and 400),
   phase text not null default 'collect' check
     (phase in ('collect','investigate','awaiting_owner','resolved','blocked')),
-  step_version integer not null default 0 check (step_version >= 0),
-  failure_count integer not null default 0 check (failure_count between 0 and 5),
+  step_version bigint not null default 0 check (step_version >= 0),
+  failure_count bigint not null default 0 check (failure_count between 0 and 5),
   lease_token uuid,
   lease_until timestamptz,
   next_retry_at timestamptz not null default now(),
@@ -23,6 +25,8 @@ create table public.supervisor_investigations (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (business_id,owner_user_id,source_type,source_id),
+  foreign key (business_id,thread_id,owner_user_id)
+    references public.ai_threads(business_id,id,owner_user_id) on delete cascade,
   constraint investigation_lease_pair check
     ((lease_token is null)=(lease_until is null)),
   constraint investigation_evidence_size check (octet_length(evidence::text)<=8192),
