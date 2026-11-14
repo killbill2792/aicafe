@@ -566,7 +566,8 @@ begin
         and p.owner_user_id=p_owner_user_id and p.thread_id=p_thread_id
         and p.capability_id='maya.supplier_purchase_order.v1'
         and p.status='draft'
-        and p.created_at<=p_as_of-interval '2 hours') into v_found;
+        and p.created_at<=p_as_of-interval '2 hours'
+        for share) into v_found;
   else
     select exists(select 1 from public.operating_tasks t where t.business_id=p_business_id
       and t.id=p_source_id and t.kind not in
