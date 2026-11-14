@@ -89,7 +89,7 @@ export function ownerTextSupportsTypedFinancials(
  }
  const escape=(value:string)=>value.replace(/[.*+?^${}()|[\]\\]/gu,"\\$&");
  // Count physical purchase quantities in the ORIGINAL saved owner message, not
- // model-controlled propose_purchases batching. A shared "$45 total" across
+ // model-controlled propose_purchases batching. A shared multi-item total across
  // milk + beans must remain in review even if sent as two one-line calls.
  const ownerQuantityMentions=[...text.matchAll(
   /\b\d+(?:\.\d+)?\s*(?:gal(?:lon)?s?|lbs?|pounds?|oz|ounces?|kg|kilograms?|g|grams?|l|liters?|litres?|ml|milliliters?|ea|each|units?|pcs|pieces?|cases?)\b/giu
