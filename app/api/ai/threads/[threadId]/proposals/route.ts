@@ -359,7 +359,7 @@ export async function POST(request:Request,{params}:Params){
       try{
         const approved=p.status==="draft"?await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry):p;
         const result=needsCorrection
-          ?await repo.commitStaffCorrection(scope,p.id,approved.revision)
+          ?await new SupervisorEffectGateway().commitStaffCorrection(scope,p.id,approved.revision)
           :await repo.commitStaff(scope,p.id,approved.revision);
         if(result.state==="applied"&&needsPublish){
           try{
