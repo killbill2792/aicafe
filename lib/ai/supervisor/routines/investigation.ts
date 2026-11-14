@@ -32,7 +32,7 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
   // This is a SYSTEM turn: none of the untrusted alert/task literals may
   // become an authorized numeric claim merely by appearing in that field.
   // The model must obtain all amounts and dates again from canonical tools.
-  const redact=(value:string)=>value.replace(/\\p{N}/gu,"#");
+  const redact=(value:string)=>value.replace(/\p{N}/gu,"#");
   const facts=JSON.stringify({
     issueKind:redact(source.kind.slice(0,80)),
     sourceStatus:redact(source.status),
