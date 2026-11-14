@@ -77,12 +77,28 @@ export function ownerTextSupportsTypedFinancials(
  }else if(/\b(tomorrow|last|next|ago|earlier|previous|on monday|on tuesday|on wednesday|on thursday|on friday|on saturday|on sunday)\b/u.test(text))
   return false;
  if(line.date!==allowedDate)return false;
- const amounts=[...text.matchAll(/(?:\$|\busd\s*)(\d{1,7})(?:\.(\d{1,2}))?(?![\d.])/gu)];
- // No price in the owner's words: the model must submit null. Phrases such
- // as "spent 45" have no verified currency/line allocation, so require review.
+ // The authoritative café currency is supplied by the owner-scoped business
+ // record. Do not assume a dollar currency or accept a mismatched money glyph.
+ const currencyValid=typeof currency==="string"&&/^[A-Z]{3}$/u.test(currency);
+ let symbol:string|null=null;
+ if(currencyValid){
+  try{
+   symbol=new Intl.NumberFormat("en",{style:"currency",currency:currency!})
+    .formatToParts(1).find(part=>part.type==="currency")?.value??null;
+  }catch{return false;}
+ }
+ const escape=(value:string)=>value.replace(/[.*+?^{}()|[\]\\]/gu,"\\$&");
+ const amountPattern=currencyValid&&symbol?
+   new RegExp("(?:"
+     +escape(symbol)+"|\\b"+escape(currency!.toLocaleLowerCase())+"\\s*)"
+     +"(\\d{1,7})(?:\\.(\\d{1,2}))?(?![\\d.])","gu"):null;
+ const amounts=amountPattern?[...text.matchAll(amountPattern)]:[];
+ const hasOtherMoney=/\p{Sc}/u.test(text)&&amounts.length===0;
+ // No owner-provided price: a model may not fill in a fabricated cost.
  if(amounts.length===0)
-  return line.costCents===null&&!/\b(?:paid|spent|cost|price)\s+(?:about\s+)?\d/u.test(text);
- if(currency!=="USD"||lineCount!==1||amounts.length!==1||
+  return line.costCents===null&&!hasOtherMoney&&
+   !/\b(?:paid|spent|cost|price)\s+(?:about\s+)?\d/u.test(text);
+ if(!currencyValid||lineCount!==1||amounts.length!==1||
    line.costCents===null||!Number.isSafeInteger(line.costCents)||line.costCents<0||
    /\b(per|each|unit price|discount|tax|tip|approx|about)\b/u.test(text))return false;
  const [,whole,fraction=""]=amounts[0];
