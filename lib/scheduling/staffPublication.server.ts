@@ -155,6 +155,20 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
  await surfaceUpcomingScheduleNeed(db,businessId,localDate);
  // Only a newly created v2 effect with explicit owner-visible publish intent
  // is eligible. Old committed COPY-only approvals never get sent.
+ // A cancelled publication is terminal for this approval. Never let the
+ // routine resurrect it or indefinitely show the old open delivery task.
+ const cancelledRows=await db.from("staff_schedule_publications")
+  .select("id,proposal_id").eq("business_id",businessId)
+  .eq("status","cancelled").limit(100);
+ if(cancelledRows.error)result(cancelledRows.error);
+ const cancelled=new Set((cancelledRows.data??[]).map(x=>x.proposal_id));
+ for(const row of cancelledRows.data??[]){
+  const done=await db.from("operating_tasks").update({
+    status:"handled",resolved_at:new Date().toISOString(),updated_at:new Date().toISOString(),
+  }).eq("business_id",businessId).eq("id","staff-publication:"+row.id)
+   .neq("status","handled");
+  if(done.error)result(done.error);
+ }
  const proposals=await db.from("supervisor_proposals")
   .select("id,owner_user_id,canonical_effect_payload")
   .eq("business_id",businessId).eq("capability_id","olivia.staff_propose_send_schedule.v2")
@@ -162,7 +176,8 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
  if(proposals.error)result(proposals.error);
  for(const p of proposals.data??[]){
   const effect=p.canonical_effect_payload as {payload?:{week_start?:unknown;publish_and_notify?:unknown}}|null;
-  if(effect?.payload?.publish_and_notify!==true||typeof effect.payload.week_start!=="string"||
+  if(cancelled.has(p.id)||effect?.payload?.publish_and_notify!==true||
+    typeof effect.payload.week_start!=="string"||
     effect.payload.week_start<addDay(localDate,-6))continue;
   try{
    const done=await publishApprovedStaffSchedule({businessId,ownerUserId:p.owner_user_id},p.id);
