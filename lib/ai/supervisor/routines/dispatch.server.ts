@@ -22,7 +22,7 @@ function safeSeverity(payload:unknown):string|null{
  * infer that a missing/failed provider is a verified zero. */
 export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
   now:Date):Promise<PriorityDecision[]>{
-  const [alerts,tasks]=await Promise.all([
+  const [alerts,tasks,purchaseDrafts]=await Promise.all([
     db.from("alerts").select("id,kind,status,payload,created_at")
       .eq("business_id",scope.businessId).in("status",["new","seen"])
       .order("created_at",{ascending:false}).limit(batchLimit),
@@ -33,8 +33,19 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
       .not("kind","in","(priority_notice,commitment,event_plan,event_change,event_report)")
       .or("owner_user_id.is.null,owner_user_id.eq."+scope.ownerUserId)
       .order("created_at",{ascending:false}).limit(batchLimit),
+    // The canonical approved-order proposal is the source; do not infer
+    // stockouts, create new purchase drafts, or invent owner authorization.
+    db.from("supervisor_proposals")
+      .select("id,thread_id,created_at,status,revision")
+      .eq("business_id",scope.businessId)
+      .eq("owner_user_id",scope.ownerUserId)
+      .eq("capability_id","maya.supplier_purchase_order.v1")
+      .eq("status","draft")
+      .lte("created_at",new Date(now.getTime()-2*60*60_000).toISOString())
+      .order("created_at",{ascending:true}).limit(batchLimit),
   ]);
-  if(alerts.error||tasks.error)throw alerts.error??tasks.error;
+  if(alerts.error||tasks.error||purchaseDrafts.error)
+    throw alerts.error??tasks.error??purchaseDrafts.error;
   const sources:PrioritySource[]=[];
   for(const raw of (alerts.data??[]) as DbRow[]){
     const payload=raw.payload as Record<string,unknown>|null;
@@ -61,6 +72,16 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
       createdAt:String(raw.created_at),evidence:raw.evidence??null,
     });
   }
+  for(const raw of (purchaseDrafts.data??[]) as DbRow[]){
+    if(typeof raw.id!=="string"||typeof raw.thread_id!=="string"||
+      typeof raw.created_at!=="string"||raw.status!=="draft")continue;
+    sources.push({
+      businessId:scope.businessId,ownerUserId:scope.ownerUserId,
+      sourceType:"supplier_po",sourceId:raw.id,sourceThreadId:raw.thread_id,
+      kind:"supplier_po_approval",status:"draft",createdAt:raw.created_at,
+      evidence:{revision:raw.revision,status:"draft"}
+    });
+  }
   // Rank the whole bounded source batch before applying the fresh-notice cap.
   // An existing notice is a receipt for that exact revision, not a reason to
   // starve later actionable sources while the first three stay open.
@@ -81,7 +102,11 @@ async function postForOwner(db:SupabaseClient,scope:Scope,now:Date,
   const priorities=await readActionablePriorities(db,scope,now);
   let posted=0;
   for(const decision of priorities){
-    const outcome=await postPriorityNotice(db,{...scope,...opts},decision,now);
+    // Purchasing approval belongs in the saved proposal's original chat,
+    // not an arbitrary latest owner thread. SQL rechecks both memberships.
+    const target=decision.source.sourceType==="supplier_po"?
+      decision.source.sourceThreadId??scope.threadId:scope.threadId;
+    const outcome=await postPriorityNotice(db,{...scope,...opts,threadId:target},decision,now);
     if(outcome==="posted")posted++;
   }
   return {posted,checked:priorities.length};
