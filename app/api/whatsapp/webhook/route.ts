@@ -40,22 +40,31 @@ export async function POST(request:Request):Promise<Response>{
     process.env.WHATSAPP_APP_SECRET))return answer(401,"Unauthorized");
   let events:ReturnType<typeof parseWebhook>;
   try {
-    const phoneId=process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID;
-    // This PR is wired only for the supplied Meta developer test sender.
-    if(phoneId!==TEST_PHONE_NUMBER_ID)return answer(503,"Not configured");
-    events=parseWebhook(bytes,phoneId);
+    const ownerPhoneId=process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID;
+    // Preserve the original owner-only webhook boundary: it is wired to the
+    // Meta developer test sender, NEVER to a production employee sender.
+    if(ownerPhoneId!==TEST_PHONE_NUMBER_ID)return answer(503,"Not configured");
+    const staffPhoneId=process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID??"";
+    const staffEnabled=process.env.WHATSAPP_STAFF_SCHEDULE_SEND_ENABLED==="true"&&
+      process.env.WHATSAPP_STAFF_SENDER_APPROVED==="true"&&
+      /^[0-9]{8,25}$/.test(staffPhoneId)&&staffPhoneId!==ownerPhoneId;
+    events=parseWebhook(bytes,staffEnabled?[ownerPhoneId,staffPhoneId]:ownerPhoneId);
+    // Worker numbers are a status-only channel in 13B. A signed inbound
+    // employee message is not an authorized owner command or chat turn.
+    if(events.some(e=>e.type==="message"&&e.phoneId!==ownerPhoneId))
+      return answer(422,"Unsupported staff inbound message");
   }catch(error){
     return answer(error instanceof Error&&error.message==="wrong_sender"?403:422,"Invalid event");
   }
   try{
     for(const event of events){
       if(event.type==="message")await acceptSignedMessage(event);
-      else {
+      else if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID)){
         await recordSignedStatus(event);
-        // Additive staff status ledger is opt-in: a pre-migration rollout
-        // must not break the existing owner WhatsApp webhook.
-        if(process.env.WHATSAPP_STAFF_SCHEDULE_SEND_ENABLED==="true")
-          await recordSignedStaffScheduleStatus(event);
+      }else{
+        // Store verified employee provider receipts only in the staff ledger.
+        // Never mix employee delivery status into owner chat/brief transport.
+        await recordSignedStaffScheduleStatus(event);
       }
     }
   }catch {
