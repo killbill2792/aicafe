@@ -5,7 +5,7 @@ export type Ingredient={id:string;name:string;base_unit:string};
 export type SupplierQuote={
  id:string;supplier_name:string;item_name:string;ingredient_id:string|null;
  price_cents:number;package_count:number;package_unit:string;currency_code:string|null;
- source_kind:string;quoted_on:string;valid_until:string|null;available_status:string;
+ source_kind:string;quoted_on:string;created_at?:string;valid_until:string|null;available_status:string;
  available_checked_at:string|null;delivery_on:string|null;
 };
 export type PurchaseLine={quoteId:string;ingredientId:string;itemName:string;neededBaseQuantity:number;
