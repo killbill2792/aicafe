@@ -47,7 +47,8 @@ create function public.supervisor_claim_owner_purchase_effect(
 ) returns jsonb
 language plpgsql security definer set search_path=public as $$
 declare p public.supervisor_proposals; m public.ai_messages;
- local_day date; attempt_id uuid;
+ local_day date; typed_day date; attempt_id uuid;
+ claimed_cost bigint; dollars bigint; cents integer; price_pattern text;
 begin
  if auth.role() is distinct from 'service_role'
  then raise exception 'service_role_only' using errcode='42501'; end if;
@@ -104,6 +105,33 @@ begin
   where b.id=p_business_id and b.timezone is not null
    and exists(select 1 from pg_timezone_names z where z.name=b.timezone);
  if local_day is null then raise exception 'cafe_timezone_unavailable'; end if;
+ -- For a typed owner utterance, the source of the date and cost must be the
+ -- saved owner's words, never a model-filled JSON value. Photo-based lines
+ -- have a non-null receipt group and use separate document-backed validation.
+ if p.canonical_effect_payload->>'source'='chat_text'
+    and p.canonical_effect_payload->>'receiptGroupId' is null then
+  select (m.created_at at time zone b.timezone)::date into typed_day
+    from public.businesses b where b.id=p_business_id;
+  if p.canonical_effect_payload->>'date' is null
+    or not (
+      p.canonical_effect_payload->>'date'=typed_day::text
+      or (m.text_content ~* 'yesterday'
+          and p.canonical_effect_payload->>'date'=(typed_day-1)::text)
+      or position(p.canonical_effect_payload->>'date' in m.text_content)>0
+    )
+  then raise exception 'typed_purchase_date_not_grounded' using errcode='42501'; end if;
+  if p.canonical_effect_payload->>'costCents' is not null then
+    claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
+    if claimed_cost<0 then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+    dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
+    price_pattern:='(\\$|USD[[:space:]]*)[[:space:]]*'||dollars::text||
+      case when cents=0 then '(\\.00)?'
+           else '\\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+    if m.text_content !~* price_pattern then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+  end if;
+ end if;
 
  insert into public.supervisor_approvals(
   business_id,proposal_id,owner_user_id,approved_revision,effect_hash,
