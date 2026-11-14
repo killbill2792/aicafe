@@ -216,7 +216,7 @@ begin
     raise exception 'service_role_only' using errcode='42501'; end if;
   if p_state not in ('sent','failed','uncertain','retry')
     or (p_state='sent') is distinct from (p_wamid is not null)
-    or (p_wamid is not null and p_wamid !~ '^wamid[.][A-Za-z0-9_.:-]{1,240}={0,2})
+    or (p_wamid is not null and p_wamid !~ '^wamid[.][A-Za-z0-9_.:-]{1,240}={0,2}$')
     or length(coalesce(p_error,''))>120 then
     raise exception 'invalid_delivery_result' using errcode='22023'; end if;
   if p_state='sent' then
