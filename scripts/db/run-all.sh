@@ -168,6 +168,7 @@ supabase_lane() {
   sql_step staff-pr155-rls.sql "Staff workspace permissions and availability audit"
   sql_step staff-pr178-availability-rls.sql "Staff all-day availability and owner isolation"
   sql_step task13a-scheduling-db-integration.sql "Task13a migrated owner scheduling, missing timecards and hourly two-café RLS"
+  sql_step task13b-staff-publication-db.sql "Task13B agentic publication: approval, two-café RLS, opt-out, provider receipts and dedupe"
   sql_step staff-approval-atomic.sql "Staff approvals: atomic, stale CAS, rollback"
   sql_step staff-approval-scoped.sql "Staff approvals: scoped CAS, independent approvals"
   sql_step ldi-e-db-contract.sql "Events (LDI E): canonical RPC and two-café RLS"
