@@ -129,6 +129,47 @@ try{
  check((await one("select status from public.supervisor_proposals where id=$1",[separateOld]))?.status==="draft",
   "failed replacement rolls back without retiring original approval card");
  await fails(()=>asRole(a.owner,()=>supersede()),/permission denied|service_role_only/);
+ // The EXISTING Supervisor priority-notice gateway proactively follows up
+ // a persisted old draft, once, in its original owner thread. A source change
+ // closes the notice. No scheduled scan is authorized to approve the PO.
+ const priorityHash="d".repeat(64),priorityKey="e".repeat(64);
+ const noteArgs=[a.cafe,a.owner,a.thread,"supplier_po",correctedDraft,
+   priorityHash,priorityKey,"Supplier purchase-order draft needs your approval"];
+ const remind=at=>one("select public.post_supervisor_priority_notice("+
+   "$1,$2,$3,$4,$5,$6,$7,$8,$9::timestamptz) as posted",
+   [...noteArgs,at]);
+ check((await remind(new Date().toISOString()))?.posted===false,
+   "a new draft must not trigger an unsolicited owner reminder");
+ const afterTwoHours=new Date(Date.now()+3*60*60_000).toISOString();
+ check((await remind(afterTwoHours))?.posted===true,
+   "existing Supervisor notice gateway posts a saved old PO for owner review");
+ check((await remind(afterTwoHours))?.posted===false,
+   "repeat routine scans cannot duplicate a PO approval reminder");
+ const notice=await one("select id,status,agent_id,payload from public.operating_tasks"+
+   " where business_id=$1 and kind='priority_notice' and dedupe_key=$2",
+   [a.cafe,priorityKey]);
+ check(notice?.status==="needs_owner"&&notice.agent_id==="maya"&&
+   notice.payload.sourceType==="supplier_po"&&
+   notice.payload.sourceId===correctedDraft&&
+   notice.payload.threadId===a.thread,
+   "proactive purchasing reminder is owner-thread scoped in original inbox");
+ const messageCount=await one("select count(*)::int as n from public.ai_messages"+
+   " where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_notice'",
+   [a.cafe,a.thread]);
+ check(messageCount.n===1,"saved owner follow-up is delivered to the original Supervisor chat exactly once");
+ await fails(()=>asRole(a.owner,()=>remind(afterTwoHours)),/permission denied|Service role required/);
+ const foreignReminder=await one("select public.post_supervisor_priority_notice("+
+   "$1,$2,$3,$4,$5,$6,$7,$8,$9::timestamptz) as posted",
+   [b.cafe,b.owner,b.thread,"supplier_po",correctedDraft,priorityHash,
+    "f".repeat(64),"Supplier purchase-order draft needs your approval",afterTwoHours]);
+ check(foreignReminder?.posted===false,
+   "another café cannot reuse supplier PO evidence to notify its owner");
+ await db.query("update public.supervisor_proposals"+
+   " set status='rejected',revision=revision+1,updated_at=now()"+
+   " where business_id=$1 and id=$2 and status='draft'",[a.cafe,correctedDraft]);
+ check((await one("select status from public.operating_tasks"+
+   " where business_id=$1 and id=$2",[a.cafe,notice.id]))?.status==="handled",
+   "approving or rejecting a draft retires its existing proactive notice");
  // Fresh negative supplier evidence must invalidate an old quote at the
  // database commit boundary, not only during model planning.
  const unavailableQuote=id();
