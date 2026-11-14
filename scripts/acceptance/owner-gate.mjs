@@ -28,8 +28,11 @@ export function domainsForPaths(paths){
  if(!Array.isArray(paths)||paths.some(p=>typeof p!=="string"||!p||p.includes("\0")))fail("invalid_changed_paths");
  const found=new Set();
  for(const p of paths){
-  if(/^lib\/connectors\/|^app\/api\/connectors\//.test(p) && !includes(p,/gmail/))
+  const sharedConnector=/^lib\/connectors\/(?:crypto|registry)(?:\.server|\.test)?\.[cm]?[jt]s$/.test(p);
+  if(/^lib\/connectors\/|^app\/api\/connectors\//.test(p) &&
+     !includes(p,/gmail/)&&!sharedConnector)
    fail("unknown_connector_contract");
+  if(sharedConnector)found.add("gmail");
   if(/^scripts\/acceptance\/|^evals\/acceptance\/|^\.github\/workflows\/ai-cafe-pr-baseline\.yml$/.test(p))
    found.add("acceptance");
   const app=/^(?:app\/api\/|app\/\[locale\]\/|components\/)/.test(p);
