@@ -320,7 +320,21 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
                 receiptLineIndex,
                 receiptVendor:input.source==="receipt_chat"?input.receiptVendor:null,
                 receiptTotalCents:input.source==="receipt_chat"?input.receiptTotalCents:null},requestKey);
-            const authorized=!previouslyRecorded&&!possiblyRephotographed&&
+            // If a later model tool call re-describes the same ingredient
+            // with a changed quantity/price/unit, we cannot prove whether it
+            // is a second physical receipt line or a model correction.
+            // Identical lines in the SAME batch remain independently indexed.
+            const ambiguousPriorLine=input.source==="receipt_chat"&&existing.some(row=>{
+              if(row.request_key===requestKey||
+                 !["approved","executing","committed","monitored","manual_pending"].includes(row.status))
+                return false;
+              const prior=row.canonical_effect_payload as {ingredientId?:string|null;name?:string}|null;
+              return Boolean(prior&&(
+                line.ingredientId&&prior.ingredientId===line.ingredientId||
+                !line.ingredientId&&prior.name?.toLocaleLowerCase()===line.name.toLocaleLowerCase()
+              ));
+            });
+            const authorized=!previouslyRecorded&&!possiblyRephotographed&&!ambiguousPriorLine&&
               authorizesInventoryWrite(p.ownerText,attached)&&
               !/\b(not received|not delivered|ordered only|pending delivery|quote)\b/iu.test(p.ownerText)&&
               (input.source==="receipt_chat"
@@ -329,6 +343,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
                 :!attached&&ownerTextSupportsTypedLine(p.ownerText,line)&&
                   ownerTextSupportsTypedFinancials(p.ownerText,line,identity.asOf,input.lines.length,identity.currency))&&
               Boolean((proposal.canonicalEffectPayload as {ingredientId?:string|null}).ingredientId);
+            if(ambiguousPriorLine){
+              output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name,
+                error:"ambiguous_repeat_receipt_line_needs_review"});
+              continue;
+            }
             if(previouslyRecorded||possiblyRephotographed){
               output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name,
                 error:previouslyRecorded?"receipt_already_recorded":"possible_duplicate_receipt"});
