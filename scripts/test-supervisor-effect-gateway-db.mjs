@@ -395,6 +395,57 @@ try{
  assert.equal(saved.status,"committed");
  const purchaseReceipt=(await db.query("select state,receipt_ref from supervisor_effect_attempts where proposal_id=$1",[purchaseId])).rows[0];
  assert.deepEqual(purchaseReceipt,{state:"verified",receipt_ref:"pantry_stock_purchases:"+receiptId});
+ // A photo-backed stock row is keyed to the stable original receipt line,
+ // not the model's proposal ID. Reconciliation must read the actual
+ // immutable receipt and NEVER replay the purchase writer after a lost ACK.
+ const photoGroup="e0000000-0000-4000-8000-000000000123";
+ const photoLine="f05d9e94-a407-5b7c-8ace-b35a9dc7a1ff";
+ const photoLine2="d8bbd8c4-52b2-57ba-85a4-097229ce25ce";
+ const derived=await db.query(
+  "select public.supervisor_receipt_stock_line_id($1::uuid,0) as first,"+
+  "public.supervisor_receipt_stock_line_id($1::uuid,1) as second",[photoGroup]);
+ assert.deepEqual(derived.rows[0],{first:photoLine,second:photoLine2},
+  "SQL must calculate the exact source-line UUID used by receiptStockLineId");
+ const photoProposal=randomUUID();
+ const photoPayload={...purchasePayload,receiptGroupId:photoGroup,
+  receiptLineIndex:0,receiptVendor:"Test supplier",receiptTotalCents:2000};
+ await seedProposal(B,OWNER,THREAD,photoProposal,"maya.inventory_purchase.v1",photoPayload);
+ await withService(db,c=>c.query(rpcTransition,[B,OWNER,photoProposal,1,"approve",null]));
+ const photoClaim=await claim(B,OWNER,THREAD,photoProposal,2,"click");
+ await finish(B,OWNER,THREAD,photoProposal,photoClaim,"uncertain");
+ const photoSavedId=randomUUID(),foreignSavedId=randomUUID();
+ await db.query("insert into pantry_stock_purchases(id,business_id,ingredient_id,line_id,purchase_date,entered_quantity,entered_unit,cost_cents,source,source_ref) values($1,$2,$3,$4,$5,2,'kg',1234,'chat_text',$6)",
+  [foreignSavedId,B2,ingredientId,photoLine,purchaseDate,photoGroup+":0"]);
+ assert.equal((await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,3])).rows[0].value)).status,"executing",
+  "a foreign cafe's identical line ID is not evidence of our stock write");
+ await db.query("insert into pantry_stock_purchases(id,business_id,ingredient_id,line_id,purchase_date,entered_quantity,entered_unit,cost_cents,source,source_ref) values($1,$2,$3,$4,$5,2,'kg',1235,'chat_text',$6)",
+  [photoSavedId,B,ingredientId,photoProposal,purchaseDate,photoGroup+":0"]);
+ assert.equal((await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,3])).rows[0].value)).status,"executing",
+  "the old proposal ID must not masquerade as the source-line identity");
+ await db.query("update pantry_stock_purchases set line_id=$2 where id=$1",
+  [photoSavedId,photoLine]);
+ assert.equal((await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,3])).rows[0].value)).status,"executing",
+  "a wrong saved amount must not count as a verified receipt");
+ await db.query("update pantry_stock_purchases set cost_cents=1234,source_ref='unrelated' where id=$1",
+  [photoSavedId]);
+ assert.equal((await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,3])).rows[0].value)).status,"executing",
+  "the same line ID with a spoofed source reference is not proof");
+ await db.query("update pantry_stock_purchases set source_ref=$2 where id=$1",
+  [photoSavedId,photoGroup+":0"]);
+ const recoveredPhoto=await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,3])).rows[0].value);
+ assert.equal(recoveredPhoto.status,"committed",
+  "the exact durable photo stock line must reconcile after a lost ACK");
+ const noReplay=await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,recoveredPhoto.revision])).rows[0].value);
+ assert.equal(noReplay.revision,recoveredPhoto.revision,"reconciliation is idempotent");
+ assert.equal((await db.query("select count(*)::integer as n from pantry_stock_purchases where business_id=$1 and line_id=$2",
+  [B,photoLine])).rows[0].n,1,"recovery cannot create another physical stock purchase");
+
  await expectError(()=>withService(db,c=>c.query(rpcReconcile,[B,OWNER2,THREAD,purchaseId,4])),"P0001");
 
  // An unresolved price write needs both a proposal-scoped history receipt
