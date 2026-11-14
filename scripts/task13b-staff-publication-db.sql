@@ -117,11 +117,18 @@ BEGIN
  THEN RAISE EXCEPTION '13B accepted receipt not stored'; END IF;
  IF (SELECT status FROM public.staff_schedule_deliveries WHERE id=d.id)<>'sent'
  THEN RAISE EXCEPTION '13B provider acceptance mislabeled delivery'; END IF;
- IF NOT public.staff_schedule_record_provider_status('wamid.abc','delivered')
- OR NOT public.staff_schedule_record_provider_status('wamid.abc','read')
- OR NOT public.staff_schedule_record_provider_status('wamid.abc','sent')
- OR (SELECT status FROM public.staff_schedule_deliveries WHERE id=d.id)<>'read'
- THEN RAISE EXCEPTION '13B signed status not monotonic'; END IF;
+ IF NOT public.staff_schedule_record_provider_status('wamid.abc','delivered') THEN
+   RAISE EXCEPTION '13B signed delivered status missing'; END IF;
+ IF (SELECT status FROM public.staff_schedule_deliveries WHERE id=d.id)<>'delivered' THEN
+   RAISE EXCEPTION '13B signed delivered status not applied'; END IF;
+ IF NOT public.staff_schedule_record_provider_status('wamid.abc','read') THEN
+   RAISE EXCEPTION '13B signed read status missing'; END IF;
+ IF (SELECT status FROM public.staff_schedule_deliveries WHERE id=d.id)<>'read' THEN
+   RAISE EXCEPTION '13B signed read status not applied'; END IF;
+ IF NOT public.staff_schedule_record_provider_status('wamid.abc','sent') THEN
+   RAISE EXCEPTION '13B duplicate sent status missing'; END IF;
+ IF (SELECT status FROM public.staff_schedule_deliveries WHERE id=d.id)<>'read' THEN
+   RAISE EXCEPTION '13B signed status demoted a read receipt'; END IF;
 END $test$;
 
 -- Live consent or roster edits revoke pending recipient effects.
