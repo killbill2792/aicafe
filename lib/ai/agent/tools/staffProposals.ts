@@ -29,6 +29,12 @@ export const staffProposalInputs={
   number_value:z.number().int().min(0).max(50000).nullable()}),
  propose_send_schedule:z.strictObject({week_start:date}),
 } as const;
+/** Exactly which draft week/rows an ephemeral approval card represents.
+ * This is a turn-local identity guard, not persisted authorization or a DB key. */
+export const scheduleCardKey=(weekStart:string,shifts:ReadonlyArray<{
+ employee_id:string;date:string;start:string;end:string;break_minutes:number;
+}>)=>JSON.stringify([weekStart,shifts]);
+
 export type StaffProposalName=keyof typeof staffProposalInputs;
 export const isStaffProposalName=(value:string):value is StaffProposalName=>
  Object.hasOwn(staffProposalInputs,value);
@@ -46,11 +52,20 @@ export const staffProposalTools=Object.fromEntries(
   agentId:"olivia" as const,description:descriptions[name],schema:staffProposalInputs[name],
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const parsed=staffProposalInputs[name].parse(raw);
-   if(name==="propose_schedule"&&ctx.scheduleProposalCreated)
-    return {source:"staff_proposal",period:null,agentId:"olivia",draft:true,saved:false,
-     missing:[],...ctx.scheduleProposalCreated,duplicateSuppressed:true};
    const input=name==="propose_schedule"&&"week_start" in parsed&&parsed.week_start===null
     ?{...parsed,week_start:nextMonday(ctx.asOf)}:parsed;
+   const cardKey=name==="propose_schedule"?
+     (()=>{const v=staffProposalInputs.propose_schedule.parse(input);
+       return scheduleCardKey(v.week_start??nextMonday(ctx.asOf),v.shifts);})():null;
+   if(name==="propose_schedule"&&ctx.scheduleProposalCreated)
+    return ctx.scheduleProposalKey===cardKey?{
+     source:"staff_proposal",period:null,agentId:"olivia",draft:true,saved:false,
+     missing:[],...ctx.scheduleProposalCreated,duplicateSuppressed:true,
+    }:{
+     source:"staff_proposal",period:null,agentId:"olivia",draft:true,saved:false,
+     missing:["existingScheduleCardDiffers"],duplicateSuppressed:true,
+     note:"A previous card represents different or unverified shifts; this request did not make or replace it",
+    };
    // The ordinary agent always supplies resolveState. Keep legacy tests that
    // call this handler directly compatible without weakening the live guard.
    if(ctx.resolveState&&name!=="propose_add_staff"&&name!=="propose_rule_change"&&name!=="propose_send_schedule"){
@@ -104,7 +119,10 @@ export const staffProposalTools=Object.fromEntries(
    if(!ctx.proposals?.proposeStaff)return {source:"staff_proposal",period:null,agentId:"olivia",
      draft:true,saved:false,missing:["proposalsUnavailable"]};
    const p=await ctx.proposals.proposeStaff({name,input});
-   if(name==="propose_schedule")ctx.scheduleProposalCreated=p;
+   if(name==="propose_schedule"){
+     ctx.scheduleProposalCreated=p;
+     ctx.scheduleProposalKey=cardKey??undefined;
+   }
    return {source:"staff_proposal",period:null,agentId:"olivia",draft:true,saved:false,
      missing:[],...p,
      ...(name==="propose_send_schedule"?{handoffNotice:scheduleDraftNotice(ctx.locale)}:{})};

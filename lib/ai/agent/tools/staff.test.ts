@@ -276,4 +276,25 @@ describe("Olivia bounded reads",()=>{
   it("rejects extraneous owner-supplied scope",async()=>{
     await expect(staffTools.get_staff.execute({businessId:"other"},ctx())).rejects.toThrow();
   });
+
+  it("preserves incomplete timecards and unknown paid amounts instead of zero labor",async()=>{
+    const response=await staffTools.get_labor.execute(
+      {period:{from:"2026-10-22",to:"2026-10-22"}},ctx({
+      getLaborMetrics:async()=>({available:true,value:[{
+        date:"2026-10-22",wagesCents:null,staffTaxCents:null,
+        loadedStaffCostCents:null,wageStatus:"missing",
+      }],quality:{...q,missingInputs:["incompleteTimecard"]}}),
+      getStaffAttendance:async()=>({available:true,value:{
+        timecardCount:1,onClockCount:1,attendanceTracked:true,
+        missingWageShifts:[{date:"2026-10-22",employeeName:"Open clock-in",hours:null}],
+      },quality:{...q,missingInputs:["openTimecard"]}}),
+    }));
+    expect(response.laborDays).toMatchObject([{wagesCents:null,staffTaxCents:null}]);
+    expect(response.missing).toContain("laborWageUnknown:2026-10-22");
+    expect(response.missing).toContain("incompleteTimecard");
+    expect(response.missing).toContain("openTimecard");
+    expect(response.laborCostPercent).toBeNull();
+    expect(response.explain).toEqual([]);
+    expect(response.attendance).toMatchObject({onClockCount:1});
+  });
 });

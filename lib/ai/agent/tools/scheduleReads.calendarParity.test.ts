@@ -43,4 +43,21 @@ describe("Staff and Supervisor use exactly one Toast-first shift list",()=>{
   expect(fromChat.knownWagesCents).toBeNull();
   expect(fromStaff.laborShifts).toEqual([]);
  });
+
+ it("preserves Staff and Supervisor source/unknown-wage parity for an app-only week",async()=>{
+  const uncertain={...approved,id:"unknown",source:"owner_manual",
+    status:"draft",costCents:null,estimated:true,unknown:true};
+  const onlyApp={...data,shifts:[uncertain],calendarEntries:[]};
+  vi.mocked(getWeekSchedule).mockResolvedValue({ok:true,data:onlyApp} as never);
+  const visible=projectVisibleStaffWeek(onlyApp);
+  const chat=await scheduleReadTools.get_week_schedule.execute({week_start:week},
+    {asOf:week,locale:"en",timezone:"America/Los_Angeles"} as AgentToolContext);
+  const range=await staffTools.get_schedule.execute({from:week,to:"2026-11-15"},
+    {asOf:week,locale:"en",timezone:"America/Los_Angeles"} as AgentToolContext);
+  expect(chat.shifts).toEqual(visible.visible);
+  expect(range.shifts).toEqual(visible.visible);
+  expect(chat.missing).toContain("wagesUnknownForSomeShifts");
+  expect(visible.total.unknownCount).toBe(1);
+  expect(visible.costComplete).toBe(false);
+ });
 });
