@@ -118,10 +118,14 @@ grant execute on function public.supervisor_enqueue_investigation(uuid,uuid,uuid
 create function public.supervisor_claim_investigation(p_now timestamptz)
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare v public.supervisor_investigations;v_token uuid;v_open boolean;
+  v_scan integer;
 begin
   if coalesce(auth.role(),'')<>'service_role' then
     raise exception 'Service role required' using errcode='42501'; end if;
   if p_now is null then raise exception 'Invalid instant' using errcode='22023'; end if;
+  -- A stale or revoked row must not hide healthy work elsewhere in the queue.
+  -- Bounded cleanup in the SAME transaction; no unbounded worker loop.
+  for v_scan in 1..16 loop
   select * into v from public.supervisor_investigations
     where phase in ('collect','investigate','awaiting_owner')
       and next_retry_at<=p_now and (lease_until is null or lease_until<=p_now)
@@ -137,7 +141,7 @@ begin
       lease_token=null,lease_until=null,updated_at=p_now
     where business_id=v.business_id and owner_user_id=v.owner_user_id
       and source_type=v.source_type and source_id=v.source_id;
-    return null;
+    continue;
   end if;
   if v.source_type='alert' then
     select exists(select 1 from public.alerts a
@@ -154,7 +158,7 @@ begin
       lease_token=null,lease_until=null,updated_at=p_now
     where business_id=v.business_id and owner_user_id=v.owner_user_id
       and source_type=v.source_type and source_id=v.source_id;
-    return null;
+    continue;
   end if;
   v_token:=gen_random_uuid();
   update public.supervisor_investigations set lease_token=v_token,
@@ -167,7 +171,9 @@ begin
     'phase',v.phase,'evidence',v.evidence,'narrative',v.narrative,
     'last_error',v.last_error,'step_version',v.step_version,
     'lease_token',v_token);
-end $$;
+  end loop;
+  return null;
+end $;
 revoke all on function public.supervisor_claim_investigation(timestamptz)
   from public,anon,authenticated;
 grant execute on function public.supervisor_claim_investigation(timestamptz)
