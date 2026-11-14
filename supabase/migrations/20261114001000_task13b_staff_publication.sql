@@ -41,6 +41,7 @@ alter table public.staff_schedule_deliveries
   add column if not exists attempted_at timestamptz,
   add column if not exists delivered_at timestamptz;
 -- This is an additive composite FK; existing rows have null publication_id.
+-- Reason: Existing prepared worker rows have null publication_id; this additive composite FK is validated on future real publication links only.
 -- squawk-ignore constraint-missing-not-valid, adding-foreign-key-constraint
 alter table public.staff_schedule_deliveries add constraint staff_delivery_publication_fk
   foreign key (publication_id,business_id)
