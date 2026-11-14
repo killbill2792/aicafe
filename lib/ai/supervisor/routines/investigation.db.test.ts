@@ -159,6 +159,40 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         finish(retry,"collected",checkpoint,null,stamp(now,18)))).toBe(false);
       expect(await rpc(b,"supervisor_finish_investigation",
         finish(recovered,"collected",checkpoint,null,stamp(now,18)))).toBe(true);
+      // A repeated model failure is not silently dropped. After five bounded
+      // attempts, the source stays open, an owner-visible exception is saved
+      // once, and no additional paid/model work is claimed.
+      const attempts=[[19,20],[23,24],[29,30],[39,40],[57,58]];
+      for(const [claimedAt,failedAt] of attempts){
+        const lease=await rpc(a,"supervisor_claim_investigation",
+          [stamp(now,claimedAt)]) as Record<string,unknown>;
+        expect(lease.phase).toBe("investigate");
+        expect(await rpc(a,"supervisor_fail_investigation",[
+          cafes[0],owners[0],"operating_task",taskId,lease.lease_token,
+          "model_incomplete",stamp(now,failedAt),
+        ])).toBe(true);
+      }
+      const blocked=await admin.query("select phase,last_error,failure_count from public.supervisor_investigations where business_id=$1 and owner_user_id=$2 and source_type='operating_task' and source_id=$3",
+        [cafes[0],owners[0],taskId]);
+      expect(blocked.rows).toEqual([{phase:"blocked",last_error:"model_incomplete",failure_count:5}]);
+      expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
+        [cafes[0],threads[0]])).rows[0].n).toBe(1);
+      expect(await rpc(a,"supervisor_claim_investigation",[stamp(now,120)])).toBeNull();
+      // Material source revision, not an arbitrary retry of an uncertain effect,
+      // safely reopens investigation with a fresh checkpoint and newer priority.
+      expect(await rpc(a,"supervisor_enqueue_investigation",[
+        cafes[0],owners[0],threads[0],"operating_task",taskId,
+        hex("e"),hex("f"),140,stamp(now,121),
+      ])).toBe(false);
+      expect(await rpc(a,"supervisor_enqueue_investigation",[
+        cafes[0],owners[0],threads[0],"operating_task",taskId,
+        hex("8"),hex("9"),220,stamp(now,121),
+      ])).toBe(true);
+      const reopened=await rpc(a,"supervisor_claim_investigation",
+        [stamp(now,122)]) as Record<string,unknown>;
+      expect(reopened.phase).toBe("collect");
+      expect(reopened.step_version).toBe(0);
+      expect(reopened.revision_hash).toBe(hex("8"));
     }finally{
       await Promise.all([a?.end(),b?.end(),ownerClient?.end()]);
       await admin.query("delete from public.businesses where id=any($1::uuid[])",[cafes]);
