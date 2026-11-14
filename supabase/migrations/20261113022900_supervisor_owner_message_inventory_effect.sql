@@ -50,6 +50,7 @@ declare p public.supervisor_proposals; m public.ai_messages;
  local_day date; typed_day date; attempt_id uuid;
  claimed_cost bigint; dollars bigint; cents integer; price_pattern text;
  currency_code text; currency_glyph text; currency_pattern text;
+ typed_source_quantities integer;
 begin
  if auth.role() is distinct from 'service_role'
  then raise exception 'service_role_only' using errcode='42501'; end if;
@@ -141,13 +142,23 @@ begin
      m.text_content ~* ('(^|[^[:alnum:]])'||currency_pattern||'[[:space:]]*[0-9]')
   then raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
   if p.canonical_effect_payload->>'costCents' is not null then
+    -- Human source, NOT an LLM tool-call batch, determines whether the amount
+    -- can belong to exactly one line. Split tool calls cannot double-count a
+    -- shared receipt total. Unknown attribution must stay in owner review.
+    select count(*) into typed_source_quantities from regexp_matches(
+      m.text_content,
+      '(^|[^[:alnum:]])[0-9]+(\.[0-9]+)?[[:space:]]*(gal(lon)?s?|lbs?|pounds?|oz|ounces?|kg|kilograms?|g|grams?|l|liters?|litres?|ml|milliliters?|ea|each|units?|pcs|pieces?|cases?)([^[:alnum:]]|$)',
+      'gi');
+    if typed_source_quantities<>1 or
+       m.text_content ~* '(^|[[:space:]])(and|plus|also)[[:space:]]+[0-9]+'
+    then raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
     claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
     if claimed_cost<0 then
       raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
     dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
     price_pattern:='(^|[^[:alnum:]])'||currency_pattern||'[[:space:]]*'||dollars::text||
       case when cents=0 then '(\.00)?'
-           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.,]|$)';
     if m.text_content !~* price_pattern then
       raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
   end if;
