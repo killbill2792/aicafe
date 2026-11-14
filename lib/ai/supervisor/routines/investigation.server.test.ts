@@ -82,9 +82,9 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
   it("enqueues even already-notified revisions and keeps owner/café identity scoped",async()=>{
     mocks.priorities.mockResolvedValue([
       {source:{sourceType:"alert",sourceId:"alert-a"},
-        revisionHash:"a".repeat(64),stableKey:"b".repeat(64)},
+        revisionHash:"a".repeat(64),stableKey:"b".repeat(64),priority:315},
       {source:{sourceType:"operating_task",sourceId:"task-a"},
-        revisionHash:"c".repeat(64),stableKey:"d".repeat(64)},
+        revisionHash:"c".repeat(64),stableKey:"d".repeat(64),priority:120},
     ]);
     const d=db([]);
     const scope={businessId:"cafe-a",ownerUserId:"owner-a",threadId:"thread-a",localDate:"2026-11-14"};
@@ -94,6 +94,7 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(d.calls.map(x=>x.name)).toEqual([
       "supervisor_enqueue_investigation","supervisor_enqueue_investigation",
     ]);
+    expect(d.calls.map(x=>x.args.p_priority)).toEqual([315,120]);
     expect(d.calls.every(x=>x.args.p_business_id==="cafe-a"&&
       x.args.p_owner_user_id==="owner-a"&&x.args.p_thread_id==="thread-a")).toBe(true);
   });
