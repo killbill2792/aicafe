@@ -11,6 +11,12 @@ import {assertLocalLiveEnvironment,assertLiveManifest} from "./preflight.mjs";
 
 const error=code=>{throw new Error("live_capture:"+code);};
 const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+/** A logged fallback is not evidence of the production Luna model. */
+export function requireObservedProductionModel(observed,expected){
+ if(typeof expected!=="string"||!expected||observed!==expected)
+  error("unexpected_runtime_model");
+ return observed;
+}
 export function verifyCheckoutHead(expected,readHead=()=>execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).trim()){
  if(!/^[a-f0-9]{40}$/.test(expected??"")||readHead()!==expected)
   error("checkout_does_not_match_attested_head");
@@ -186,6 +192,7 @@ export function allCasesAccountedFor(expected,observed,failures){
  return Number.isSafeInteger(expected)&&observed===expected&&failures.length===0;
 }
 export async function runLive(manifest,prepared,env,outputPath){
+ const {expectedModelId}=assertLocalLiveEnvironment(env);
  // The no-secret evaluator-integrity job deliberately does not run npm ci.
  // Only real paid execution loads the pinned browser and DB dependencies.
  const [{default:pg},{chromium}]=await Promise.all([import("pg"),import("@playwright/test")]);
@@ -226,6 +233,7 @@ export async function runLive(manifest,prepared,env,outputPath){
    if(actual.error)error(actual.error);
    if(ownerMessages.length!==1)error("owner_message_not_persisted");
    const model=await audit(db,cafe.businessId,ownerMessages[0].id);
+   requireObservedProductionModel(model.model,expectedModelId);
    if(observation.capture.modelId!=="pending"&&observation.capture.modelId!==model.model)
     error("mixed_models_in_same_benchmark");
    observation.capture.modelId=model.model;
