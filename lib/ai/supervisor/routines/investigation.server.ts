@@ -172,6 +172,11 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date):
     }));
     const verified=verifyInvestigationTurn(turn);
     if(!verified.ok)throw new Error(verified.reason);
+    // Entitlement can change while a paid model call is running. Recheck
+    // before submitting a verified owner-facing report; SQL independently
+    // rechecks membership, ownership and the conversation thread.
+    try{await assertCafeAiAccess(c.business_id);}
+    catch{throw new Error("authorization_revoked");}
     // The agent's complete, number-checked reply is the only owner-visible
     // result. An incomplete response is NEVER recorded as investigation done.
     const next:InvestigationCheckpoint={
