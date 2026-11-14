@@ -97,14 +97,14 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(investigate.phase).toBe("investigate");
       expect(investigate.step_version).toBe(1);
       expect(await rpc(a,"supervisor_finish_investigation",
-        finish(investigate,"investigated",checkpoint,
+        finish(investigate,"investigated",{...checkpoint,missing:["laborDaysIncomplete"]},
           "Sales and staffing were checked. Both have coverage gaps; ask the owner before any change.",
           stamp(now,4)))).toBe(true);
       // A successful investigation records one REAL Supervisor thread message,
       // never a forged owner request, and enters bounded follow-up monitoring.
-      const messages=await admin.query("select role,grounding->>'intent' intent from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation'",
+      const messages=await admin.query("select role,grounding->>'intent' intent,grounding->>'status' status from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation'",
         [cafes[0],threads[0]]);
-      expect(messages.rows).toEqual([{role:"supervisor",intent:"priority_investigation"}]);
+      expect(messages.rows).toEqual([{role:"supervisor",intent:"priority_investigation",status:"partial"}]);
       expect(await rpc(b,"supervisor_claim_investigation",[stamp(now,5)])).toBeNull();
       // A second café can progress independently even with the first waiting.
       expect(await rpc(a,"supervisor_enqueue_investigation",
