@@ -2,6 +2,7 @@ import { laborKnown } from "@/lib/calc";
 import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
 import {dataQueryTools,type DataQueryContext} from "./dataQuery";
+import {gmailTools} from "./gmail";
 import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard,periodChoicePayload,resolveOwnerPeriod,rememberedCandidate} from "../resolve";
 
 import {money,count} from "../explain";
@@ -81,6 +82,12 @@ export type AgentToolContext = {
     change(input:{id:string;revision:number;status?:RoutineRecord["status"];
       schedule?:RoutineSchedule}):Promise<RoutineRecord>;
   };
+  gmail?:{labels():Promise<Record<string,unknown>>;
+    search(query:string,limit:number):Promise<Record<string,unknown>>;
+    read(messageId:string):Promise<Record<string,unknown>>;
+    thread(threadId:string):Promise<Record<string,unknown>>;
+    attachment(messageId:string,attachmentId:string):Promise<Record<string,unknown>>;
+    propose(input:import("@/lib/ai/supervisor/loop/gmail.server").GmailProposalInput):Promise<{proposalId:string;revision:number;account:string}>};
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
   /** Authenticated canonical screen read, bound to session membership rather than model args. */
@@ -119,7 +126,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...gmailTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -143,6 +150,8 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   suggest_new_item_price:["category"],
   // A public web search phrase is not a café catalog identifier.
   web_search:["query"],
+  // Free-form Gmail search is owner text, not an internal catalogue identity.
+  search_gmail:["query"],
   propose_event_plan:["summary","actions","expectedBusyHours"],
   manage_commitment:["title","due_date","due_time","origin","commitment_id"],
   manage_routine:["title","routine_id"]
@@ -180,7 +189,9 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // Routine management is a verified-owner-only additional function, rather
 // than a global public tool. Keep the existing baseline tool contract stable.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
-  baseToolDefinitions.filter(tool=>tool.name!=="manage_routine");
+  baseToolDefinitions.filter(tool=>tool.name!=="manage_routine"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+/** Offered only for a verified connected owner. Default cafés keep their existing tools. */
+export const gmailToolDefinitions=baseToolDefinitions.filter(tool=>["search_gmail","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
@@ -195,6 +206,12 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="remember_cafe_fact")return memoryTools.remember_cafe_fact.execute(raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new ToolError("not_supported");
   if(name==="ask_owner")return askOwnerTools.ask_owner.execute(raw,ctx);
+  if(name==="search_gmail")return gmailTools.search_gmail.execute(raw,ctx);
+  if(name==="list_gmail_labels")return gmailTools.list_gmail_labels.execute(raw,ctx);
+  if(name==="read_gmail")return gmailTools.read_gmail.execute(raw,ctx);
+  if(name==="read_gmail_thread")return gmailTools.read_gmail_thread.execute(raw,ctx);
+  if(name==="read_gmail_attachment")return gmailTools.read_gmail_attachment.execute(raw,ctx);
+  if(name==="propose_gmail_action")return gmailTools.propose_gmail_action.execute(raw,ctx);
   if(name==="describe_data"){
     // Field names for one Toast record type need the café-scoped reader.
     const scoped=raw&&typeof raw==="object"&&typeof (raw as {record_type?:unknown}).record_type==="string";

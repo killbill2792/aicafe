@@ -2,6 +2,8 @@ import "server-only";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import type {OwnerLoopScope,LoopProposal,LoopEffectAttemptSummary} from "./engine";
 import {goalCapabilityId,goalMandatePolicy} from "./goal.server";
+import {gmailCapabilityId,gmailEffectSchema} from "./gmail.server";
+import {reconcileGmailReceipt} from "@/lib/connectors/gmail/provider.server";
 type ProposalRow={id:string;business_id:string;owner_user_id:string;thread_id:string;
  capability_id:string;capability_version:number;canonical_effect_payload:unknown;effect_hash:string;
  baseline:Record<string,unknown>;monitor_spec:{durationDays:number;metricScope:string};
@@ -41,7 +43,9 @@ export class SupervisorEffectGateway{
  }
  async finish(scope:OwnerLoopScope,claim:EffectClaim,expectedRevision:number,state:"verified"|"uncertain"|"stale",
   nextStatus?:"committed"|"manual_pending",monitoringStartDate?:string):Promise<LoopProposal>{
-  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_finish_effect_attempt",{
+  const functionName=claim.proposal.capabilityId===gmailCapabilityId?
+   "supervisor_finish_gmail_effect_attempt":"supervisor_finish_effect_attempt";
+  const {data,error}=await createAdminSupabaseClient().rpc(functionName,{
    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
    p_proposal_id:claim.proposal.id,p_attempt_key:claim.attemptKey,p_revision:expectedRevision,
    p_state:state,p_next_status:state==="verified"?nextStatus:null,
@@ -69,7 +73,38 @@ export class SupervisorEffectGateway{
    throw new Error("Effect reconciliation returned an invalid scoped proposal");
   return proposal;
  }
- async readAttempt(scope:OwnerLoopScope,id:string):Promise<LoopEffectAttemptSummary|null>{
+ async reconcileGmail(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
+  const db=createAdminSupabaseClient();
+  const {data:row,error:readError}=await db.from("supervisor_proposals").select("*")
+    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+    .eq("thread_id",scope.threadId).eq("id",id).maybeSingle();
+  if(readError||!row||row.id!==id||row.business_id!==scope.businessId||
+     row.owner_user_id!==scope.ownerUserId||row.thread_id!==scope.threadId||
+     row.revision!==revision||row.capability_id!==gmailCapabilityId||
+     row.status!=="executing")throw new Error("Gmail reconciliation scope unavailable");
+  const effect=gmailEffectSchema.parse(row.canonical_effect_payload);
+  const verified=await reconcileGmailReceipt({businessId:scope.businessId,ownerUserId:scope.ownerUserId},
+    effect,id,row.effect_hash).catch(()=>false);
+  if(!verified)return decode(row as ProposalRow);
+  const {data:attempt,error:attemptError}=await db.from("supervisor_effect_attempts")
+    .select("attempt_key,business_date,state").eq("business_id",scope.businessId).eq("proposal_id",id)
+    .eq("effect_hash",row.effect_hash).maybeSingle();
+  if(attemptError||!attempt||!["executing","uncertain"].includes(attempt.state))
+    throw new Error("Gmail attempt unavailable");
+  const {data:finalized,error}=await db.rpc("supervisor_finish_gmail_effect_attempt",{
+    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
+    p_proposal_id:id,p_attempt_key:attempt.attempt_key,p_revision:revision,
+    p_state:"verified",p_next_status:"committed",p_monitoring_start_date:attempt.business_date
+  });
+  if(error||!finalized)throw new Error("Gmail receipt completion failed");
+  const verifiedProposal=decode(finalized as ProposalRow);
+  if(verifiedProposal.businessId!==scope.businessId||verifiedProposal.ownerUserId!==scope.ownerUserId||
+     verifiedProposal.threadId!==scope.threadId||verifiedProposal.id!==id||
+     verifiedProposal.status!=="committed")
+    throw new Error("Gmail reconciliation returned an invalid scoped proposal");
+  return verifiedProposal;
+ }
+  async readAttempt(scope:OwnerLoopScope,id:string):Promise<LoopEffectAttemptSummary|null>{
   const db=createAdminSupabaseClient();
   // The attempt ledger has no owner_user_id or thread_id columns. Authorize
   // against the immutable, owner-scoped proposal before reading its attempt.
