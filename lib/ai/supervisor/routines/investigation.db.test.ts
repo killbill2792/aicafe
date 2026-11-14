@@ -208,6 +208,30 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(reopened.phase).toBe("collect");
       expect(reopened.step_version).toBe(0);
       expect(reopened.revision_hash).toBe(hex("8"));
+      // A disappearing source is not evidence of resolution; its owner must
+      // never receive a false success receipt. Reappearance is recoverable
+      // even when the source ID and evidence revision have not changed.
+      const vanished=randomUUID();
+      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'unavailable_sales','new','{}')",
+        [vanished,cafes[0]]);
+      const original=[cafes[0],owners[0],threads[0],"alert",vanished,
+        hex("2"),hex("3"),330,stamp(now,504)];
+      expect(await rpc(a,"supervisor_enqueue_investigation",original)).toBe(true);
+      await admin.query("delete from public.alerts where business_id=$1 and id=$2",
+        [cafes[0],vanished]);
+      expect(await rpc(a,"supervisor_claim_investigation",[stamp(now,505)])).toBeNull();
+      const missing=await admin.query("select phase,last_error from public.supervisor_investigations where business_id=$1 and source_type='alert' and source_id=$2",
+        [cafes[0],vanished]);
+      expect(missing.rows).toEqual([{phase:"blocked",last_error:"source_missing"}]);
+      await admin.query("insert into public.alerts(id,business_id,kind,status,payload) values ($1,$2,'unavailable_sales','new','{}')",
+        [vanished,cafes[0]]);
+      expect(await rpc(a,"supervisor_enqueue_investigation",[
+        ...original.slice(0,8),stamp(now,506),
+      ])).toBe(true);
+      const revived=await rpc(a,"supervisor_claim_investigation",
+        [stamp(now,507)]) as Record<string,unknown>;
+      expect(revived.source_id).toBe(vanished);
+      expect(revived.phase).toBe("collect");
     }finally{
       await Promise.all([a?.end(),b?.end(),ownerClient?.end()]);
       await admin.query("delete from public.businesses where id=any($1::uuid[])",[cafes]);
