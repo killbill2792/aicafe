@@ -131,6 +131,19 @@ test("@home owner uploads and reselects a private receipt while another café ca
     await login(otherPage, other);
     const denied=await otherContext.request.get(route + "/" + attachment.id,{maxRedirects:0});
     expect([401,403,404]).toContain(denied.status());
+    // The same cross-café boundary must prevent enumeration, not only
+    // direct file download. A foreign owner must not see attachment IDs.
+    const foreignListing=await otherContext.request.get(route);
+    expect([401,403,404]).toContain(foreignListing.status());
+    // The foreign owner cannot write into the first owner's thread either.
+    // Attempt a real multipart request, keeping all data disposable/local.
+    const foreignUpload=await otherContext.request.post(route,{multipart:{
+      file:{name:"foreign-receipt.png",mimeType:"image/png",buffer:png}
+    }});
+    expect([401,403,404]).toContain(foreignUpload.status());
+    const unchanged=await context.request.get(route);
+    expect(unchanged.ok()).toBe(true);
+    expect((await unchanged.json()).items.filter(row=>row.id===attachment.id)).toHaveLength(1);
   } finally {
     await otherContext.close();
     await context.close();
