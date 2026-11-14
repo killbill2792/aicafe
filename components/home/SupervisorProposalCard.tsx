@@ -20,7 +20,7 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
     receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
   ingredientOptions?:Array<{id:string;name:string;base_unit:string}>;
   publishAndNotify?:boolean;
-  publication?:{state:"pending"|"published";week?:string;expected?:number;
+  publication?:{state:"pending"|"published"|"cancelled";week?:string;expected?:number;
     accepted?:number;delivered?:number;read?:number;pending?:number;
     failed?:number;uncertain?:number;missing?:number};
   gmail?:{operation:string;action:string|null;from:string;to:string[];cc:string[];bcc:string[];
@@ -129,7 +129,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     },3000);
     return ()=>{alive=false;clearInterval(interval);};
   },[endpoint,proposalId,value?.state]);
-  const invoke=async(action:"approve"|"cancel"|"edit"|"reconcile")=>{
+  const invoke=async(action:"approve"|"cancel"|"cancel_publication"|"edit"|"reconcile")=>{
     if(!value||busy)return;
     const cents=priceInputCents(price);
     if(action==="edit"&&cents===null){
@@ -325,7 +325,14 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
             </div>)}
           </dl>
           <p className="mt-2 text-sm text-ink-muted">{en.StaffApprovalCard.agenticNext}</p>
+          <button type="button" className="mt-3 min-h-12 rounded-xl border border-line px-4 font-bold"
+            disabled={busy} onClick={()=>void invoke("cancel_publication")}>
+            {en.StaffApprovalCard.agenticCancel}
+          </button>
+          <p className="mt-1 text-sm text-ink-muted">{en.StaffApprovalCard.agenticCancelWarning}</p>
         </div>}
+      {value.publishAndNotify&&value.publication?.state==="cancelled"&&
+        <p role="status" className="mt-3 text-[17px]">{en.StaffApprovalCard.agenticCancelled}</p>}
       {value.state==="applied"&&!value.publishAndNotify&&(
         value.capabilityId?.startsWith("olivia.staff_propose_schedule.v")===true||
         value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true)&&
