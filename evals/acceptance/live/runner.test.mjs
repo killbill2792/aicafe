@@ -146,6 +146,10 @@ test("only independently labeled purchase lines are approved through owner autho
    costCents:500,confidence:"verified"}]};
  assert.deepEqual(planOwnerApprovals({expected},[],observation),[
   {proposalId:p.id,revision:1}]);
+ assert.deepEqual(planOwnerApprovals({expected:{...expected,extracted:[{
+  confidence:"verified",costCents:500,unit:"gal_x10000",
+  quantity:10000,name:"Whole milk",lineId:"proposal_0",extraMetadata:"human_note"
+ }]}},[],observation),[{proposalId:p.id,revision:1}]);
  assert.deepEqual(planOwnerApprovals({expected:{...expected,authorization:"direct_authorized",approvals:[]}},[],observation),[]);
  const fails=[
   {...expected,writes:[{...expected.writes[0],ingredient:"espresso_beans"}]},
