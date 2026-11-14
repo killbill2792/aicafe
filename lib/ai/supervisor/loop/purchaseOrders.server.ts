@@ -32,6 +32,36 @@ export const supplierPurchaseProposalToolInputSchema=z.strictObject({
  ...supplierPurchaseInputSchema.shape,replaceProposalId:z.uuid().nullable(),
 });
 export type SupplierPurchaseProposalInput=z.infer<typeof supplierPurchaseProposalToolInputSchema>;
+/** Only these exact PostgreSQL P0001 exceptions come from checks that run
+ * BEFORE any supplier/PO insert in the single transactional PO writer. A
+ * returned DB exception proves the transaction rolled back; a network error,
+ * malformed success receipt, or unrecognized database error does NOT. */
+const definiteSupplierRejections=new Set([
+ "cafe_context_unavailable",
+ "supplier_currency_or_name_changed",
+ "supplier_lines_missing",
+ "delivery_date_stale",
+ "supplier_quote_superseded",
+ "supplier_source_stale_or_mismatched",
+ "supplier_delivery_unverified",
+ "supplier_line_math_invalid",
+ "supplier_subtotal_invalid",
+]);
+export class StaleSupplierPurchaseOrderError extends Error{
+ override name="StaleProposalError";
+ constructor(readonly reason:string){
+  super("Supplier purchase order needs fresh evidence before approval: "+reason);
+ }
+}
+/** A PostgREST response is structured {code,message}; freeform HTTP/provider
+ * text must never grant authority to retire an executing proposal as stale. */
+export function definiteSupplierPoRejection(error:unknown):string|null{
+ if(!error||typeof error!=="object"||Array.isArray(error))return null;
+ const e=error as {code?:unknown;message?:unknown};
+ return e.code==="P0001"&&typeof e.message==="string"&&
+   definiteSupplierRejections.has(e.message)?e.message:null;
+}
+
 const poLine=z.strictObject({
  quoteId:z.uuid(),ingredientId:z.uuid(),itemName:z.string().min(1).max(120),
  neededBaseQuantity:z.number().finite().positive(),baseUnit:z.enum(["g","ml","each"]),
@@ -85,7 +115,15 @@ export const supplierPurchaseOrderCapability=registerLoopCapability({
   const {data,error}=await createAdminSupabaseClient().rpc("supervisor_commit_supplier_po",{
    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
    p_thread_id:scope.threadId,p_proposal_id:proposalId,p_effect_hash:effectHash(effect)});
-  if(error||!data||data.status!=="approved_for_ordering"||
+  if(error){
+   const reason=definiteSupplierPoRejection(error);
+   // The shared commitLoop recognizes this error class and atomically closes
+   // the existing effect attempt/proposal as stale through its ONE gateway.
+   // Other errors may hide a successful write, so remain uncertain.
+   if(reason)throw new StaleSupplierPurchaseOrderError(reason);
+   throw new Error("supplier_po_save_unverified",{cause:error});
+  }
+  if(!data||data.status!=="approved_for_ordering"||
     data.subtotalCents!==effect.subtotalCents||data.currency!==effect.currency||
     typeof data.orderId!=="string")
    throw new Error("supplier_po_save_unverified");
