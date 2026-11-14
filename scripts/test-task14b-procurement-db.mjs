@@ -19,7 +19,10 @@ const effect={supplierName:"Farm A",currency:"CAD",neededBy:needed,subtotalCents
 let count=0;
 const check=(v,m)=>{assert.ok(v,m);count++;};
 const one=async(s,params=[])=>((await db.query(s,params)).rows[0]??null);
-const fails=async(fn,re)=>{let m="";try{await fn();}catch(e){m=String(e.message);}
+const fails=async(fn,re)=>{let m="";await db.query("SAVEPOINT task14b_expected");
+ try{await fn();}catch(e){m=String(e.message);}
+ await db.query("ROLLBACK TO SAVEPOINT task14b_expected");
+ await db.query("RELEASE SAVEPOINT task14b_expected");
  assert.match(m,re);count++;};
 async function asRole(user,fn){
  await db.query("SAVEPOINT task14b_role");
