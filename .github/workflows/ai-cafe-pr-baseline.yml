@@ -247,7 +247,7 @@ jobs:
       # test rejects both real credentials and a missing sentinel.
       OPENAI_API_KEY: 'aicafe-disposable-e2e-no-provider'
       VERCEL_URL: ''
-      BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money,gmail' || needs.changes.outputs.browser_scenarios }}
+      BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money,gmail,purchasing' || needs.changes.outputs.browser_scenarios }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4

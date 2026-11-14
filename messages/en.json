@@ -1996,7 +1996,7 @@
     "description": "Record actual supplier quotes with their sources. They are owner-reported, not verified or automatically added to costs.",
     "supplier": "Supplier name",
     "item": "Item",
-    "price": "Package price (USD)",
+    "price": "Package price (quote currency)",
     "count": "Package quantity",
     "unit": "Package unit",
     "sourceKind": "Where this came from",

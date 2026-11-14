@@ -78,6 +78,19 @@ export class SupervisorEffectGateway{
    throw new Error("Effect reconciliation returned an invalid scoped proposal");
   return proposal;
  }
+ /** Proof-based recovery for Task14B purchase orders through the one effect gateway.
+  * This only reads the durable PO and finishes the existing attempt; never orders twice. */
+ async reconcileSupplierPurchaseOrder(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
+  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_reconcile_supplier_po",{
+   p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
+   p_proposal_id:id,p_revision:revision});
+  if(error||!data)fail(error,"Purchase order reconciliation failed");
+  const proposal=decode(data as ProposalRow);
+  if(proposal.id!==id||proposal.businessId!==scope.businessId||proposal.ownerUserId!==scope.ownerUserId||
+   proposal.threadId!==scope.threadId||!["executing","committed"].includes(proposal.status))
+   throw new Error("Purchase order reconciliation returned an invalid scoped proposal");
+  return proposal;
+ }
  async reconcileGmail(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
   const db=createAdminSupabaseClient();
   const {data:row,error:readError}=await db.from("supervisor_proposals").select("*")

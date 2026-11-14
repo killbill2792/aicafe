@@ -13,7 +13,7 @@ import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId,ambiguousEarlierReceiptIngredient} from "@/lib/ai/supervisor/loop/receiptAllocation";
-import {proposeLoop,commitLoop} from "@/lib/ai/supervisor/loop/engine";
+import {proposeLoop,commitLoop,simulateLoop,effectHash} from "@/lib/ai/supervisor/loop/engine";
 import {authorizesInventoryWrite,ownerTextSupportsTypedLine,ownerTextSupportsTypedFinancials,receivedPurchaseDocument} from "@/lib/ai/agent/tools/purchaseIntent";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -21,6 +21,10 @@ import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperim
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
+import {supplierPurchaseOrderCapabilityId,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import {readSupplierPurchaseOrders} from "@/lib/data/supplierPurchasing.server";
+import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
+import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
@@ -202,6 +206,66 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         }),
         list:async()=>listOwnerRoutines({scope,threadId:id,client:await getDb()}),
         change:async input=>changeOwnerRoutine(input,{scope,threadId:id,client:await getDb()}),
+      },
+      purchasing:{
+        list:async()=>{
+          const {client}=await simulationOwnerReader(proposalScope);
+          return readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId);
+        },
+        inspect:input=>investigateSupplierPurchase(proposalScope,input),
+        propose:async input=>{
+          // A multi-turn owner correction must retire the previous draft's
+          // approval authority, not leave two independently approvable POs.
+          // The correction signal comes only from the SAVED OWNER message.
+          const correction=/\b(?:change|update|revise|correct|instead|rather|make it|reduce|increase)\b/iu
+            .test(p.ownerText);
+          const previousOrders=correction?await readOwnerProposals(await getDb(),
+            {businessId:scope.businessId,ownerUserId:scope.ownerUserId},
+            {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
+             statuses:["draft","approved","executing","committed"],limit:20}):[];
+          if(correction&&(previousOrders.length>1||
+              previousOrders.some(row=>row.status!=="draft")))
+            throw new ToolError("validation",
+              "This order was already approved or several drafts match. An approved order cannot be silently changed; specify a new order or review the existing one.");
+          const previous=correction?previousOrders[0]:undefined;
+          const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,supplierPurchase:input}));
+          // A correction uses ONE PostgreSQL transaction. Persisting a new draft
+          // and then invalidating the old one would create a crash window in
+          // which both approval cards are actionable.
+          let draft:{id:string;revision:number;status:string;canonicalEffectPayload:unknown};
+          if(previous){
+            const simulation=await simulateLoop(proposalScope,supervisorLoopRegistry,
+              supplierPurchaseOrderCapabilityId,input);
+            const validated=supervisorLoopRegistry.get(supplierPurchaseOrderCapabilityId)
+              .parseEffect(simulation.effect);
+            const {data,error}=await createAdminSupabaseClient().rpc(
+              "supervisor_replace_supplier_draft",{
+               p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+               p_thread_id:id,p_previous_id:previous.id,p_previous_revision:previous.revision,
+               p_request_key:key,p_effect:validated,p_effect_hash:effectHash(validated),
+               p_baseline:simulation.baseline,p_monitor_spec:simulation.monitorSpec
+              });
+            const row=(data as {proposal?:{
+              id:string;business_id:string;owner_user_id:string;thread_id:string;
+              status:string;revision:number;canonical_effect_payload:unknown
+            }}|null)?.proposal;
+            if(error||!row||row.business_id!==scope.businessId||
+              row.owner_user_id!==scope.ownerUserId||row.thread_id!==id||
+              row.status!=="draft")
+              throw new ToolError("validation",
+                "Purchase-order correction was not saved. The original approval remains unchanged unless an atomic replacement is verified.");
+            draft={id:row.id,revision:row.revision,status:row.status,
+              canonicalEffectPayload:row.canonical_effect_payload};
+          }else{
+            draft=await proposeLoop(proposalScope,supervisorLoopRegistry,
+              new SupabaseLoopRepository(),supplierPurchaseOrderCapabilityId,input,key);
+          }
+          if(draft.status!=="draft")throw new ToolError("validation","Purchase-order draft is no longer active.");
+          const effect=draft.canonicalEffectPayload as SupplierPurchaseOrderEffect;
+          return {proposalId:draft.id,revision:draft.revision,
+            supplierName:effect.supplierName,subtotalCents:effect.subtotalCents,
+            currency:effect.currency};
+        }
       },
       gmail:{
         labels:()=>gmailListLabels(scope),

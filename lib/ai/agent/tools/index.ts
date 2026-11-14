@@ -21,6 +21,10 @@ import {newItemPriceTools} from "./newItemPrice";
 import {milkSwapTools} from "./milkSwap";
 import {proposalTools} from "./proposals";
 import {purchasesTools,purchaseToolInput} from "./purchases";
+import {supplierPurchasingTools} from "./supplierPurchasing";
+import type {SupplierPurchaseInput} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import type {PurchasePlan} from "@/lib/purchasing/planOrder";
+import type {SupplierOrderStatus} from "@/lib/data/supplierPurchasing.server";
 import {priceExperimentTools} from "./priceExperiment";
 import {priceMonitorTools} from "./priceMonitor";
 import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
@@ -90,6 +94,13 @@ export type AgentToolContext = {
     thread(threadId:string):Promise<Record<string,unknown>>;
     attachment(messageId:string,attachmentId:string):Promise<Record<string,unknown>>;
     propose(input:import("@/lib/ai/supervisor/loop/gmail.server").GmailProposalInput):Promise<{proposalId:string;revision:number;account:string}>};
+  /** Owner-scoped purchasing capability in the ONE Supervisor. No model-supplied café IDs or approvals. */
+  purchasing?:{
+    list():Promise<{orders:SupplierOrderStatus[];truncated:boolean}>;
+    inspect(input:SupplierPurchaseInput):Promise<PurchasePlan>;
+    propose(input:SupplierPurchaseInput):Promise<{proposalId:string;revision:number;
+      supplierName:string;currency:string;subtotalCents:number}>;
+  };
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
   /** Authenticated canonical screen read, bound to session membership rather than model args. */
@@ -128,7 +139,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...gmailTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...gmailTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -150,6 +161,8 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   // These fields describe NEW values, not names or IDs of existing records.
   propose_add_staff:["name"],propose_staff_change:["name"],
   suggest_new_item_price:["category"],
+  inspect_supplier_purchase:["items.itemName","preferredSupplier"],
+  propose_supplier_purchase_order:["items.itemName","preferredSupplier"],
   // A public web search phrase is not a café catalog identifier.
   web_search:["query"],
   // Free-form Gmail search is owner text, not an internal catalogue identity.
@@ -160,7 +173,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   manage_routine:["title","routine_id"]
 };
 
-export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
+export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools||name in supplierPurchasingTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
@@ -235,6 +248,9 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="calculate")return calculateTools.calculate.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
    if(name==="propose_purchases")return purchasesTools.propose_purchases.execute(raw,ctx);
+  if(name==="get_supplier_purchase_orders")return supplierPurchasingTools.get_supplier_purchase_orders.execute(raw,ctx);
+  if(name==="inspect_supplier_purchase")return supplierPurchasingTools.inspect_supplier_purchase.execute(raw,ctx);
+  if(name==="propose_supplier_purchase_order")return supplierPurchasingTools.propose_supplier_purchase_order.execute(raw,ctx);
   if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);
   if(name==="get_price_monitor_status")return priceMonitorTools.get_price_monitor_status.execute(raw,ctx);
   if(name==="propose_goal")return goalTools.propose_goal.execute(raw,ctx);

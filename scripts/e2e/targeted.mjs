@@ -3,7 +3,7 @@ import {appendFileSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 
-export const SCENARIOS = Object.freeze(["home", "staff", "menu", "money", "gmail"]);
+export const SCENARIOS = Object.freeze(["home", "staff", "menu", "money", "gmail", "purchasing"]);
 const ALL = SCENARIOS;
 
 // Recognize real user journeys, not just *.spec.* changes. Unknown browser UI
@@ -31,7 +31,10 @@ export function scenariosForPath(path) {
       path === "components/home/SupervisorProposalCard.tsx" ||
       path === "components/home/SupervisorProposalCard.gmail.test.tsx" ||
       path === "components/more/GmailConnectionPanel.test.tsx")
-    return ["gmail"];
+    return path === "components/home/SupervisorProposalCard.tsx" ? ["gmail","purchasing"] : ["gmail"];
+  if (path === "components/operations/SupplierEvidenceManager.tsx" ||
+      path === "app/[locale]/operations/suppliers/page.tsx")
+    return ["purchasing"];
   if (path.startsWith("components/home/")) return ["home"];
   if (path === "app/[locale]/page.tsx" ||
       path.startsWith("lib/viewmodels/home") ||
