@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines} from "./runner.mjs";
+import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,verifyCheckoutHead} from "./runner.mjs";
 
 const milk={name:"Whole milk",base_unit:"ml",quantity_base:"5.2500"};
 const beans={name:"Espresso beans",base_unit:"g",quantity_base:"12.5000"};
@@ -68,4 +68,11 @@ test("proposal extraction never fabricates missing tool output",()=>{
  assert.deepEqual(proposalLines(one,one,gold),[]);
  const unmapped=proposalLines([],one,[]);
  assert.equal(unmapped[0].lineId,"unexpected_0");
+});
+
+test("live results cannot be attributed to a different checkout SHA",()=>{
+ const sha="a".repeat(40);
+ assert.equal(verifyCheckoutHead(sha,()=>sha),sha);
+ assert.throws(()=>verifyCheckoutHead(sha,()=> "b".repeat(40)),/checkout_does_not_match_attested_head/);
+ assert.throws(()=>verifyCheckoutHead("bad",()=>sha),/checkout_does_not_match_attested_head/);
 });
