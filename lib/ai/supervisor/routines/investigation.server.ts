@@ -133,7 +133,13 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date):
     // copies of the same generic alert. A new source revision re-enqueues
     // immediately, and an unchanged issue receives a verified daily follow-up.
     const lastUpdate=Date.parse(checkpoint.lastOwnerUpdate??"");
-    const unchanged=JSON.stringify(synopsis)===JSON.stringify(checkpoint.source);
+    const earlier=checkpoint.source;
+    const unchanged=synopsis.kind===earlier.kind&&synopsis.status===earlier.status&&
+      synopsis.quality===earlier.quality&&synopsis.severity===earlier.severity&&
+      synopsis.relatedAlerts.length===earlier.relatedAlerts.length&&
+      synopsis.relatedTasks.length===earlier.relatedTasks.length&&
+      synopsis.relatedAlerts.every((item,i)=>item===earlier.relatedAlerts[i])&&
+      synopsis.relatedTasks.every((item,i)=>item===earlier.relatedTasks[i]);
     if(c.phase==="awaiting_owner"&&!c.last_error&&unchanged&&
       Number.isFinite(lastUpdate)&&now.getTime()-lastUpdate>=0&&
       now.getTime()-lastUpdate<24*60*60*1000){
