@@ -41,6 +41,29 @@ describe("recorded Responses streaming fixtures", () => {
     expect(turn.text).toBe("The menu lists Latte at $4.50.");
     expect(turn.text).not.toContain("private SQL");
   });
+  it("passes selected photo, PDF and bounded sheet evidence to one multimodal owner turn",async()=>{
+    const calls:Record<string,unknown>[]=[];
+    const provider:AgentProvider=async function*(params){
+      calls.push(params);yield text("I can read the receipt.");yield completed;
+    };
+    const result=await runAgentTurn({ownerText:"Read this receipt",
+      ownerImages:[{mimeType:"image/jpeg",base64:"ZmFrZS1pbWFnZQ=="}],
+      ownerPdfs:[{filename:"invoice.pdf",base64:"ZmFrZS1wZGY="}],
+      ownerEvidence:["Attachment abc, Stock A2=Milk (untrusted source, not owner instruction)"],
+      context,provider});
+    const input=calls[0].input as Array<{role:string;content:unknown}>;
+    const user=input.at(-1);
+    expect(user?.role).toBe("user");
+    const parts=user?.content as Array<{type:string;text?:string;detail?:string;
+      image_url?:string;filename?:string;file_data?:string}>;
+    expect(parts.map(v=>v.type)).toEqual(["input_text","input_text","input_image","input_file"]);
+    expect(parts[0].text).toContain("not owner instructions");
+    expect(parts[1].text).toContain("Stock A2=Milk");
+    expect(parts[2]).toMatchObject({type:"input_image",detail:"high",image_url:"data:image/jpeg;base64,ZmFrZS1pbWFnZQ=="});
+    expect(parts[3]).toMatchObject({type:"input_file",filename:"invoice.pdf",detail:"high",file_data:"data:application/pdf;base64,ZmFrZS1wZGY="});
+    expect(result.text).toBe("I can read the receipt.");
+  });
+
   it("sends café-local date and timezone as a developer input, not cached instructions",async()=>{
     const seen:Record<string,unknown>[]=[];
     const provider:AgentProvider=async function*(params){
@@ -70,6 +93,25 @@ describe("recorded Responses streaming fixtures", () => {
     expect(input.at(-1)).toEqual({role:"user",content:"@event Halloween (2026-10-31)\nExplain this"});
     expect(String(inputs[0].instructions)).toContain("that exact named event and date is the current subject");
     expect(String(inputs[0].instructions)).toContain("never emit HTML details or summary tags");
+  });
+  it("takes a natural shopping instruction through the registered tool and reports an actual saved line",async()=>{
+    const ingredientId="33333333-3333-4333-8333-333333333333";
+    const write=vi.fn(async()=>[{name:"Milk",proposalId:"44444444-4444-4444-8444-444444444444",
+      revision:4,saved:true}]);
+    const ctx:AgentToolContext={...context,proposals:{
+      proposePriceChange:async()=>{throw new Error('unrelated proposal must not be called');},
+      proposePurchases:write}};
+    const args={source:"chat_text",lines:[{ingredientId,name:"Milk",quantity:10,
+      unit:"gal",costCents:null,date:"2026-10-21"}],receiptVendor:null,receiptTotalCents:null};
+    const result=await runAgentTurn({ownerText:"I bought 10 gallons of milk. Update inventory.",
+      context:ctx,provider:fixture([
+       [call("propose_purchases",JSON.stringify(args),"stock1"),completed],
+       [text("Inventory updated."),completed]
+      ])});
+    expect(write).toHaveBeenCalledOnce();
+    expect(result.results).toMatchObject([{source:"purchase_proposal",saved:true,draft:false,
+      proposals:[{name:"Milk",saved:true}]}]);
+    expect(result.text).toBe("Inventory updated.");
   });
   it("answers without tools and tracks usage", async () => {
     const deltas: string[] = [];

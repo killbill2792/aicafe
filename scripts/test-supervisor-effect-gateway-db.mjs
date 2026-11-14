@@ -68,11 +68,11 @@ try{
   "create schema auth","create table auth.users(id uuid primary key)",
   "create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$",
   "create function auth.role() returns text language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),'anon') $$",
-  "create table public.businesses(id uuid primary key,timezone text not null,is_demo boolean not null default false)",
+  "create table public.businesses(id uuid primary key,timezone text not null,currency text not null,is_demo boolean not null default false)",
   "create table public.memberships(business_id uuid not null references businesses(id),user_id uuid not null references auth.users(id),role text not null,primary key(business_id,user_id))",
   "create table public.ai_threads(id uuid primary key,business_id uuid not null references businesses(id),owner_user_id uuid not null references auth.users(id),unique(business_id,id,owner_user_id))",
   "create table public.locations(id uuid primary key,business_id uuid not null references businesses(id))",
-  "create table public.pantry_stock_purchases(id uuid primary key default gen_random_uuid(),business_id uuid not null,ingredient_id uuid not null,line_id uuid not null,purchase_date date not null,entered_quantity numeric not null,entered_unit text not null,cost_cents bigint,source text not null,voided_at timestamptz,unique(business_id,line_id))",
+  "create table public.pantry_stock_purchases(id uuid primary key default gen_random_uuid(),business_id uuid not null,ingredient_id uuid not null,line_id uuid not null,purchase_date date not null,entered_quantity numeric not null,entered_unit text not null,cost_cents bigint,source text not null,source_ref text,voided_at timestamptz,unique(business_id,line_id))",
   "create table public.menu_price_history(id uuid primary key default gen_random_uuid(),business_id uuid not null,menu_item_id uuid not null,old_price_cents bigint not null,new_price_cents bigint not null,source_type text not null,source_provider text,changed_at timestamptz not null default now())",
   "create table public.menu_items(id uuid primary key,business_id uuid not null,price_cents bigint not null)",
   "alter table public.menu_price_history enable row level security",
@@ -90,7 +90,7 @@ try{
   await db.query("create function public.supervisor_commit_staff_proposal(uuid,uuid,uuid,uuid,integer) returns jsonb language plpgsql as $stub$ declare p public.supervisor_proposals; begin update public.supervisor_proposals set status='executing',revision=revision+1,updated_at=now() where business_id=$1 and owner_user_id=$2 and thread_id=$3 and id=$4 and revision=$5 and status='approved' returning * into p; if p.id is null then raise exception 'stub_revision_conflict' using errcode='P0001'; end if; update public.supervisor_proposals set status='committed',revision=revision+1,committed_at=now(),monitoring_start_date=current_date+1,updated_at=now() where id=p.id returning * into p; return jsonb_build_object('state','applied','proposal',to_jsonb(p)); end $stub$");
  // Rehearse an UPGRADE of an occupied pre-Task10 approval ledger, not just
  // creating empty new tables: preserve real existing approval records untouched.
- await db.query("insert into businesses(id,timezone,is_demo) values($1,'UTC',false),($2,'UTC',false)",[B,B2]);
+ await db.query("insert into businesses(id,timezone,currency,is_demo) values($1,'UTC','USD',false),($2,'UTC','EUR',false)",[B,B2]);
  await db.query("insert into auth.users(id) values($1),($2)",[OWNER,OWNER2]);
  await db.query("insert into memberships(business_id,user_id,role) values($1,$2,'owner'),($3,$4,'owner')",[B,OWNER,B2,OWNER2]);
  await db.query("insert into ai_threads(id,business_id,owner_user_id) values($1,$2,$3),($4,$5,$6)",[THREAD,B,OWNER,THREAD2,B2,OWNER2]);
@@ -108,6 +108,154 @@ try{
  const afterUpgrade=(await db.query("select proposal_id,approved_revision,effect_hash,authorization_kind,mandate_id,mandate_revision from supervisor_approvals where proposal_id=any($1::uuid[]) order by proposal_id",[preexisting])).rows;
  assert.deepEqual(afterUpgrade,beforeUpgrade.map(row=>({...row,authorization_kind:"click",
    mandate_id:null,mandate_revision:null})),"Task10 migration must preserve all legacy click approvals");
+ // Task 12: revalidate a real saved owner utterance before executing a purchase.
+ // This is a disposable, deliberately minimal schema for the new FK.
+ await db.query("create table public.ai_messages(id uuid primary key,business_id uuid not null,thread_id uuid not null,owner_user_id uuid not null,author_user_id uuid not null,role text not null,text_content text not null,created_at timestamptz not null default now())");
+ await db.query(readFileSync(new URL("../supabase/migrations/20261113022900_supervisor_owner_message_inventory_effect.sql",import.meta.url),"utf8"));
+ const today=(await db.query(
+  "select (now() at time zone timezone)::date::text as today from businesses where id=$1",[B]
+ )).rows[0].today;
+ const purchaseMsg=randomUUID(),purchaseProposal=randomUUID(),purchasedEffect={
+  ingredientId:randomUUID(),name:"Milk",quantity:10,unit:"gal",costCents:null,date:today,source:"chat_text"};
+ await db.query("insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
+  [purchaseMsg,B,THREAD,OWNER,"I bought 10 gallons of milk today"]);
+ await seedProposal(B,OWNER,THREAD,purchaseProposal,"maya.inventory_purchase.v1",purchasedEffect);
+ const ownerClaim=await withService(db,async c=>(await c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6) as value",
+  [B,OWNER,THREAD,purchaseProposal,1,purchaseMsg])).rows[0].value);
+ assert.equal(ownerClaim.authorization_kind,"owner_message");
+ assert.equal(ownerClaim.proposal.status,"executing");
+ assert.equal(ownerClaim.proposal.revision,3);
+ const audit=(await db.query("select authorization_kind,owner_message_id,state from supervisor_effect_attempts where proposal_id=$1",
+  [purchaseProposal])).rows[0];
+ assert.equal(audit.authorization_kind,"owner_message");
+ assert.equal(audit.owner_message_id,purchaseMsg);
+ assert.equal(audit.state,"executing");
+ const ownerDate=(await db.query("select ((now() at time zone timezone)::date+1) as day from businesses where id=$1",[B])).rows[0].day;
+ assert.equal((await finish(B,OWNER,THREAD,purchaseProposal,ownerClaim,"verified","committed",ownerDate)).status,"committed");
+ await expectError(()=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
+  [B,OWNER,THREAD,purchaseProposal,1,purchaseMsg])),"42501");
+
+ const duplicatePurchase=randomUUID();
+ await seedProposal(B,OWNER,THREAD,duplicatePurchase,"maya.inventory_purchase.v1",purchasedEffect);
+ await expectError(()=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
+  [B,OWNER,THREAD,duplicatePurchase,1,purchaseMsg])),"42501");
+ // A saved owner intent cannot authorize model-invented ingredient costs or
+ // backdated stock, even if an internal caller invokes the SQL gateway directly.
+ const intentRow=async(message)=>{const id=randomUUID();await db.query(
+  "insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
+  [id,B,THREAD,OWNER,message]);return id;};
+ const claimIntent=async(messageId,proposalId)=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
+  [B,OWNER,THREAD,proposalId,1,messageId]));
+ const noPriceIntent=await intentRow("I bought 10 gallons of milk today");
+ const inventedCostProposal=randomUUID();
+ await seedProposal(B,OWNER,THREAD,inventedCostProposal,"maya.inventory_purchase.v1",
+  {...purchasedEffect,costCents:4500});
+ await expectError(()=>claimIntent(noPriceIntent,inventedCostProposal),"42501");
+ const invalidDateIntent=await intentRow("I bought 10 gallons of milk today");
+ const invalidDateProposal=randomUUID();
+ await seedProposal(B,OWNER,THREAD,invalidDateProposal,"maya.inventory_purchase.v1",
+  {...purchasedEffect,date:"2020-01-01"});
+ await expectError(()=>claimIntent(invalidDateIntent,invalidDateProposal),"42501");
+ const pricedIntent=await intentRow("I bought 10 gallons of milk for $45.00");
+ const pricedProposal=randomUUID();
+ await seedProposal(B,OWNER,THREAD,pricedProposal,"maya.inventory_purchase.v1",
+  {...purchasedEffect,costCents:4500});
+ assert.equal((await claimIntent(pricedIntent,pricedProposal)).rows[0].supervisor_claim_owner_purchase_effect.authorization_kind,
+  "owner_message","an exact owner-specified cost must still be allowed");
+ // A café's configured currency, not a dollar assumption, authorizes
+ // the matching owner-entered symbol; an unrelated symbol cannot bypass SQL.
+ for(const [currency,token] of [["GBP","£"],["EUR","€"],["CAD","CA$"],["AUD","A$"]]){
+  await db.query("update businesses set currency=$1 where id=$2",[currency,B]);
+  const msg=await intentRow("I bought 10 gallons of milk for "+token+"45.00");
+  const id=randomUUID();
+  await seedProposal(B,OWNER,THREAD,id,"maya.inventory_purchase.v1",
+   {...purchasedEffect,costCents:4500});
+  assert.equal((await claimIntent(msg,id)).rows[0].supervisor_claim_owner_purchase_effect.authorization_kind,
+   "owner_message",currency+" owner price must be accepted from the configured currency");
+  const wrongMsg=await intentRow("I bought 10 gallons of milk for $45.00");
+  const wrongId=randomUUID();
+  await seedProposal(B,OWNER,THREAD,wrongId,"maya.inventory_purchase.v1",
+   {...purchasedEffect,costCents:4500});
+  await expectError(()=>claimIntent(wrongMsg,wrongId),"42501");
+ }
+ await db.query("update businesses set currency='USD' where id=$1",[B]);
+ const wrongEuroIntent=await intentRow("I bought 10 gallons of milk for €45.00");
+ const wrongEuroId=randomUUID();
+ await seedProposal(B,OWNER,THREAD,wrongEuroId,"maya.inventory_purchase.v1",
+  {...purchasedEffect,costCents:4500});
+ await expectError(()=>claimIntent(wrongEuroIntent,wrongEuroId),"42501");
+ const alteredCostIntent=await intentRow("I bought 10 gallons of milk for $45.00");
+ const alteredCostId=randomUUID();
+ await seedProposal(B,OWNER,THREAD,alteredCostId,"maya.inventory_purchase.v1",
+  {...purchasedEffect,costCents:450});
+ await expectError(()=>claimIntent(alteredCostIntent,alteredCostId),"42501");
+ // Independently test the original utterance, not model-controlled tool batch
+ // lengths: two one-line calls cannot each claim the shared $45 total.
+ const sharedTotal=await intentRow("I bought 10 gallons of milk and 2 lb beans for $45 total");
+ for(const purchaseLine of [
+  {...purchasedEffect,costCents:4500},
+  {...purchasedEffect,name:"Beans",ingredientId:randomUUID(),quantity:2,unit:"lb",costCents:4500}
+ ]){
+  const attempt=randomUUID();
+  await seedProposal(B,OWNER,THREAD,attempt,"maya.inventory_purchase.v1",purchaseLine);
+  await expectError(()=>claimIntent(sharedTotal,attempt),"42501");
+ }
+ // A grouped owner price must not be interpreted as the prefix '$1'.
+ const groupedMoney=await intentRow("I bought 10 gallons of milk for $1,000");
+ for(const costCents of [100,100000]){
+  const id=randomUUID();
+  await seedProposal(B,OWNER,THREAD,id,"maya.inventory_purchase.v1",
+   {...purchasedEffect,costCents});
+  await expectError(()=>claimIntent(groupedMoney,id),"42501");
+ }
+
+
+
+ // One photographed receipt can contain two separate identical stock lines.
+ // For stock-only receipts the source is chat_text (no expense), so replay
+ // protection must use receipt group + source line, not quantity alone.
+ const receiptMessage=randomUUID(),receiptGroup=randomUUID();
+ await db.query("insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
+  [receiptMessage,B,THREAD,OWNER,"Record these receipt purchases in inventory"]);
+ const receiptEffect=index=>({...purchasedEffect,source:"chat_text",
+  receiptGroupId:receiptGroup,receiptLineIndex:index,
+  receiptVendor:"Test supplier",receiptTotalCents:2000});
+ const receiptClaim=async(proposalId)=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6) as value",
+  [B,OWNER,THREAD,proposalId,1,receiptMessage]));
+ const receiptFirst=randomUUID(),receiptSecond=randomUUID(),receiptRetry=randomUUID();
+ await seedProposal(B,OWNER,THREAD,receiptFirst,"maya.inventory_purchase.v1",receiptEffect(0));
+ assert.equal((await receiptClaim(receiptFirst)).rows[0].value.authorization_kind,"owner_message");
+ await seedProposal(B,OWNER,THREAD,receiptSecond,"maya.inventory_purchase.v1",receiptEffect(1));
+ assert.equal((await receiptClaim(receiptSecond)).rows[0].value.authorization_kind,"owner_message",
+  "a second physical receipt line with identical quantity must be allowed");
+ await seedProposal(B,OWNER,THREAD,receiptRetry,"maya.inventory_purchase.v1",receiptEffect(0));
+ await expectError(()=>receiptClaim(receiptRetry),"42501");
+ const naturalMessage=randomUUID(),naturalPurchase=randomUUID();
+ await db.query("insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
+  [naturalMessage,B,THREAD,OWNER,"Put these 10 gallons of milk into inventory"]);
+ await seedProposal(B,OWNER,THREAD,naturalPurchase,"maya.inventory_purchase.v1",purchasedEffect);
+ const naturalClaim=await withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6) as value",
+  [B,OWNER,THREAD,naturalPurchase,1,naturalMessage]));
+ assert.equal(naturalClaim.rows[0].value.authorization_kind,"owner_message");
+ const otherPurchase=randomUUID();
+ await seedProposal(B2,OWNER2,THREAD2,otherPurchase,"maya.inventory_purchase.v1",purchasedEffect);
+ await expectError(()=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
+  [B2,OWNER2,THREAD2,otherPurchase,1,purchaseMsg])),"42501");
+ const documentOnlyMsg=randomUUID(),unapprovedPurchase=randomUUID();
+ await db.query("insert into ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,text_content) values($1,$2,$3,$4,$4,'owner',$5)",
+  [documentOnlyMsg,B,THREAD,OWNER,"Here is a photo of a receipt"]);
+ await seedProposal(B,OWNER,THREAD,unapprovedPurchase,"maya.inventory_purchase.v1",purchasedEffect);
+ await expectError(()=>withService(db,c=>c.query(
+  "select public.supervisor_claim_owner_purchase_effect($1,$2,$3,$4,$5,$6)",
+  [B,OWNER,THREAD,unapprovedPurchase,1,documentOnlyMsg])),"42501");
+
  const legacyClaim=await claim(B,OWNER,THREAD,preexisting[0],2,"click");
  assert.equal(legacyClaim.proposal.status,"executing","a pre-existing approval still executes through the new gateway");
  const legacyCommittedDate=(await db.query("select ((now() at time zone timezone)::date+1) as next_day from businesses where id=$1",[B])).rows[0].next_day;
@@ -247,6 +395,57 @@ try{
  assert.equal(saved.status,"committed");
  const purchaseReceipt=(await db.query("select state,receipt_ref from supervisor_effect_attempts where proposal_id=$1",[purchaseId])).rows[0];
  assert.deepEqual(purchaseReceipt,{state:"verified",receipt_ref:"pantry_stock_purchases:"+receiptId});
+ // A photo-backed stock row is keyed to the stable original receipt line,
+ // not the model's proposal ID. Reconciliation must read the actual
+ // immutable receipt and NEVER replay the purchase writer after a lost ACK.
+ const photoGroup="e0000000-0000-4000-8000-000000000123";
+ const photoLine="f05d9e94-a407-5b7c-8ace-b35a9dc7a1ff";
+ const photoLine2="d8bbd8c4-52b2-57ba-85a4-097229ce25ce";
+ const derived=await db.query(
+  "select public.supervisor_receipt_stock_line_id($1::uuid,0) as first,"+
+  "public.supervisor_receipt_stock_line_id($1::uuid,1) as second",[photoGroup]);
+ assert.deepEqual(derived.rows[0],{first:photoLine,second:photoLine2},
+  "SQL must calculate the exact source-line UUID used by receiptStockLineId");
+ const photoProposal=randomUUID();
+ const photoPayload={...purchasePayload,receiptGroupId:photoGroup,
+  receiptLineIndex:0,receiptVendor:"Test supplier",receiptTotalCents:2000};
+ await seedProposal(B,OWNER,THREAD,photoProposal,"maya.inventory_purchase.v1",photoPayload);
+ await withService(db,c=>c.query(rpcTransition,[B,OWNER,photoProposal,1,"approve",null]));
+ const photoClaim=await claim(B,OWNER,THREAD,photoProposal,2,"click");
+ await finish(B,OWNER,THREAD,photoProposal,photoClaim,"uncertain");
+ const photoSavedId=randomUUID(),foreignSavedId=randomUUID();
+ await db.query("insert into pantry_stock_purchases(id,business_id,ingredient_id,line_id,purchase_date,entered_quantity,entered_unit,cost_cents,source,source_ref) values($1,$2,$3,$4,$5,2,'kg',1234,'chat_text',$6)",
+  [foreignSavedId,B2,ingredientId,photoLine,purchaseDate,photoGroup+":0"]);
+ assert.equal((await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,3])).rows[0].value)).status,"executing",
+  "a foreign cafe's identical line ID is not evidence of our stock write");
+ await db.query("insert into pantry_stock_purchases(id,business_id,ingredient_id,line_id,purchase_date,entered_quantity,entered_unit,cost_cents,source,source_ref) values($1,$2,$3,$4,$5,2,'kg',1235,'chat_text',$6)",
+  [photoSavedId,B,ingredientId,photoProposal,purchaseDate,photoGroup+":0"]);
+ assert.equal((await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,3])).rows[0].value)).status,"executing",
+  "the old proposal ID must not masquerade as the source-line identity");
+ await db.query("update pantry_stock_purchases set line_id=$2 where id=$1",
+  [photoSavedId,photoLine]);
+ assert.equal((await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,3])).rows[0].value)).status,"executing",
+  "a wrong saved amount must not count as a verified receipt");
+ await db.query("update pantry_stock_purchases set cost_cents=1234,source_ref='unrelated' where id=$1",
+  [photoSavedId]);
+ assert.equal((await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,3])).rows[0].value)).status,"executing",
+  "the same line ID with a spoofed source reference is not proof");
+ await db.query("update pantry_stock_purchases set source_ref=$2 where id=$1",
+  [photoSavedId,photoGroup+":0"]);
+ const recoveredPhoto=await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,3])).rows[0].value);
+ assert.equal(recoveredPhoto.status,"committed",
+  "the exact durable photo stock line must reconcile after a lost ACK");
+ const noReplay=await withService(db,async c=>(await c.query(rpcReconcile,
+  [B,OWNER,THREAD,photoProposal,recoveredPhoto.revision])).rows[0].value);
+ assert.equal(noReplay.revision,recoveredPhoto.revision,"reconciliation is idempotent");
+ assert.equal((await db.query("select count(*)::integer as n from pantry_stock_purchases where business_id=$1 and line_id=$2",
+  [B,photoLine])).rows[0].n,1,"recovery cannot create another physical stock purchase");
+
  await expectError(()=>withService(db,c=>c.query(rpcReconcile,[B,OWNER2,THREAD,purchaseId,4])),"P0001");
 
  // An unresolved price write needs both a proposal-scoped history receipt

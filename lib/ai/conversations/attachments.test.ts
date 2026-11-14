@@ -1,10 +1,12 @@
 import {describe,it,expect} from "vitest";
-import {attachmentInput,safeFileName,verifySignature,MAX_BYTES} from "./attachments";
+import {attachmentInput,safeFileName,verifySignature,MAX_BYTES,MAX_DOCUMENT_BYTES} from "./attachments";
 describe("Phase 6 owner attachment validation",()=>{
  it("rejects unsupported formats, oversized files and spoofed claims",()=>{
   expect(attachmentInput.safeParse({filename:"bill.pdf",mimeType:"application/pdf",bytes:150}).success).toBe(true);
   expect(attachmentInput.safeParse({filename:"bill.html",mimeType:"text/html",bytes:150}).success).toBe(false);
   expect(attachmentInput.safeParse({filename:"bill.pdf",mimeType:"application/pdf",bytes:MAX_BYTES+1}).success).toBe(false);
+  expect(attachmentInput.safeParse({filename:"receipt.jpg",mimeType:"image/jpeg",bytes:4*1024*1024}).success).toBe(true);
+  expect(attachmentInput.safeParse({filename:"sheet.xlsx",mimeType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",bytes:MAX_DOCUMENT_BYTES+1}).success).toBe(false);
   expect(attachmentInput.safeParse({filename:"bill.pdf",mimeType:"application/pdf",bytes:150,role:"supervisor"}).success).toBe(false);
  });
  it("rejects fake PDF, script masquerading as text and binary",()=>{

@@ -243,9 +243,11 @@ jobs:
       contents: read
     env:
       NEXT_TELEMETRY_DISABLED: '1'
-      OPENAI_API_KEY: ''
+      # This deliberately cannot authorize model calls. The seeded browser
+      # test rejects both real credentials and a missing sentinel.
+      OPENAI_API_KEY: 'aicafe-disposable-e2e-no-provider'
       VERCEL_URL: ''
-      BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money' || needs.changes.outputs.browser_scenarios }}
+      BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money,gmail' || needs.changes.outputs.browser_scenarios }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -264,7 +266,9 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/seed/generateSeedSql.mjs
-          supabase start -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          # Real private receipt upload requires the local Storage API; the
+          # database-only job above still excludes it. No hosted services.
+          supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
           supabase db reset --local --yes
           supabase status -o json > "$RUNNER_TEMP/e2e-supabase-status.json"
           node --input-type=module <<'NODE'

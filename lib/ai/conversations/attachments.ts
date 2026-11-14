@@ -1,11 +1,15 @@
 import { z } from "zod";
+// Historical 2 MiB limit continues to govern signed WhatsApp media.
 export const MAX_BYTES = 2*1024*1024;
-export const allowedTypes = ["text/plain","application/pdf","image/jpeg","image/png","image/webp"] as const;
+export const MAX_DOCUMENT_BYTES = MAX_BYTES;
+export const MAX_UPLOAD_BYTES = 8*1024*1024; // Web chat photos may exceed 2 MiB.
+export const allowedTypes = ["text/plain","text/csv","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/pdf","image/jpeg","image/png","image/webp"] as const;
 export const attachmentInput = z.strictObject({
  filename:z.string().trim().min(1).max(150),
  mimeType:z.enum(allowedTypes),
- bytes:z.number().int().min(1).max(MAX_BYTES),
-});
+ bytes:z.number().int().min(1).max(MAX_UPLOAD_BYTES),
+}).refine(input=>input.mimeType.startsWith("image/")||input.bytes<=MAX_DOCUMENT_BYTES,
+ {message:"document_too_large",path:["bytes"]});
 export function safeFileName(name:string):string {
  return name.replace(/[^a-zA-Z0-9._-]/g,"_").replace(/^\.+/,"file").slice(0,90)||"file";
 }
@@ -15,7 +19,9 @@ export function verifySignature(type:string,bytes:Uint8Array):boolean {
  if(type==="image/jpeg")return bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
  if(type==="image/webp")return String.fromCharCode(...bytes.slice(0,4))==="RIFF"&&
    String.fromCharCode(...bytes.slice(8,12))==="WEBP";
- if(type==="text/plain"){
+ if(type==="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")return bytes.length>64&&
+  bytes[0]===0x50&&bytes[1]===0x4b&&bytes[2]===0x03&&bytes[3]===0x04;
+ if(type==="text/plain"||type==="text/csv"){
   try{const text=new TextDecoder("utf-8",{fatal:true}).decode(bytes);
    return !text.includes("\u0000")&&!text.trimStart().startsWith("<");}
   catch{return false;}

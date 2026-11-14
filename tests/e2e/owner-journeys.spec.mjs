@@ -9,6 +9,7 @@ test.beforeEach(() => {
 });
 
 test("@home real password sign-in isolates two cafés and ignores an unauthorized café cookie", async ({browser}) => {
+  test.setTimeout(90_000); // Two real café sign-ins and protected Money routes.
   const first = seededCafe(0), second = seededCafe(1);
   for (const [own, other] of [[first, second], [second, first]]) {
     const context = await browser.newContext({baseURL: "http://127.0.0.1:3000", serviceWorkers: "block"});
@@ -32,6 +33,122 @@ test("@home real password sign-in isolates two cafés and ignores an unauthorize
     } finally {
       await context.close();
     }
+  }
+});
+
+test("@home owner uploads and reselects a private receipt while another café cannot read it", async ({browser}) => {
+  test.setTimeout(90_000); // Two signed-in sessions, one real Storage upload and a reload.
+  const owner = seededCafe(0), other = seededCafe(1);
+  const context = await browser.newContext({baseURL: "http://127.0.0.1:3000", serviceWorkers: "block"});
+  const otherContext = await browser.newContext({baseURL: "http://127.0.0.1:3000", serviceWorkers: "block"});
+  try {
+    const page = await context.newPage();
+    await login(page, owner);
+    await openOwnedPage(page, owner, "");
+    const attach = page.getByRole("button", {name: "Add an attachment"});
+    await expect(attach).toBeEnabled({timeout: 30_000});
+    // Observe only status/path metadata. Failing a real upload must explain
+    // whether the lazy thread creation or the private file endpoint failed.
+    const uploads=[];
+    page.on("response", response=>{
+      const pathname=new URL(response.url()).pathname;
+      if(pathname.startsWith("/api/ai/threads")) {
+        const item={method:response.request().method(),path:pathname,status:response.status(),
+          origin:null,fetchSite:null,requestOrigin:new URL(response.url()).origin,
+          contentType:response.headers()["content-type"]??null,error:null};
+        uploads.push(item);
+        void response.request().allHeaders().then(headers=>{
+          item.origin=headers.origin??null;
+          item.fetchSite=headers["sec-fetch-site"]??null;
+        }).catch(()=>undefined);
+        if(response.status()>=400)
+          void response.text().then(value=>{
+            if(item.contentType?.includes("application/json")){
+              try{const parsed=JSON.parse(value);
+                if(typeof parsed.error==="string")item.error=parsed.error.slice(0,100);}
+              catch{item.error="unreadable_json";}
+            }else item.error="non_json_response";
+          }).catch(()=>undefined);
+      }
+    });
+    page.on("requestfailed", request=>{
+      const pathname=new URL(request.url()).pathname;
+      if(pathname.startsWith("/api/ai/threads"))
+        uploads.push({method:request.method(),path:pathname,error:request.failure()?.errorText?.slice(0,100)});
+    });
+    // A new chat creates its thread before uploading. Verify this first so
+    // 403 origin/auth failures cannot masquerade as 20-second upload timeouts.
+    const createdThread=page.waitForResponse(response=>
+      new URL(response.url()).pathname==="/api/ai/threads" &&
+      response.request().method()==="POST",{timeout:20_000});
+    const uploaded = page.waitForResponse(response =>
+      /^\/api\/ai\/threads\/[^/]+\/attachments$/.test(new URL(response.url()).pathname) &&
+      response.request().method() === "POST",{timeout:20_000}).catch(()=>{
+      throw new Error("Private upload POST not reached. Conversation API requests: "+
+        JSON.stringify(uploads.slice(-20)));
+    });
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XouYAAAAASUVORK5CYII=",
+      "base64");
+    await page.locator('input[type="file"]').setInputFiles({
+      name:"receipt.png",mimeType:"image/png",buffer:png,
+    });
+    const created=await createdThread;
+    if(created.status()!==201){
+      let code="non_json_rejection";
+      try{const body=await created.json();if(typeof body?.error==="string")code=body.error.slice(0,100);}
+      catch{code="non_json_rejection";}
+      throw new Error("Thread create rejected, status="+created.status()+", code="+code+
+        ", requestOrigin="+new URL(created.url()).origin+
+        ", browserOrigin="+(created.request().headers().origin??"absent"));
+    }
+    const response = await uploaded;
+    expect(response.status()).toBe(201);
+    const {attachment} = await response.json();
+    expect(attachment).toMatchObject({
+      originalName:"receipt.png",mediaType:"image/png",
+      bytes:png.length,processingState:"stored_unanalysed",
+    });
+    const match = new URL(response.url()).pathname.match(/^\/api\/ai\/threads\/([^/]+)\/attachments$/);
+    expect(match).not.toBeNull();
+    const threadId = match[1];
+    const route = "/api/ai/threads/" + threadId + "/attachments";
+    const listing = await context.request.get(route);
+    expect(listing.ok()).toBe(true);
+    expect((await listing.json()).items.some(row => row.id === attachment.id)).toBe(true);
+    // An owner can download the privately stored original, but another café
+    // owner's independently authenticated session cannot see it.
+    const ownDownload = await context.request.get(route + "/" + attachment.id,{maxRedirects:0});
+    expect([302,303,307,308]).toContain(ownDownload.status());
+    await expect(page.getByRole("button",{name:"Remove receipt.png"})).toBeVisible();
+    await page.getByRole("button",{name:"Remove receipt.png"}).click();
+    await expect(page.getByRole("button",{name:"Remove receipt.png"})).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole("button",{name:"Remove receipt.png"})).toHaveCount(0);
+    await page.getByText("Previous files",{exact:true}).click();
+    await page.getByRole("button",{name:"Use receipt.png"}).click();
+    await expect(page.getByRole("button",{name:"Remove receipt.png"})).toBeVisible();
+
+    const otherPage=await otherContext.newPage();
+    await login(otherPage, other);
+    const denied=await otherContext.request.get(route + "/" + attachment.id,{maxRedirects:0});
+    expect([401,403,404]).toContain(denied.status());
+    // The same cross-café boundary must prevent enumeration, not only
+    // direct file download. A foreign owner must not see attachment IDs.
+    const foreignListing=await otherContext.request.get(route);
+    expect([401,403,404]).toContain(foreignListing.status());
+    // The foreign owner cannot write into the first owner's thread either.
+    // Attempt a real multipart request, keeping all data disposable/local.
+    const foreignUpload=await otherContext.request.post(route,{multipart:{
+      file:{name:"foreign-receipt.png",mimeType:"image/png",buffer:png}
+    }});
+    expect([401,403,404]).toContain(foreignUpload.status());
+    const unchanged=await context.request.get(route);
+    expect(unchanged.ok()).toBe(true);
+    expect((await unchanged.json()).items.filter(row=>row.id===attachment.id)).toHaveLength(1);
+  } finally {
+    await otherContext.close();
+    await context.close();
   }
 });
 

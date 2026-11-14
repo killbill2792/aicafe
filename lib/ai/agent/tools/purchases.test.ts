@@ -6,6 +6,19 @@ const line=(n:number)=>({
  ingredientId:id,name:"Milk",quantity:n+1,unit:"gal",costCents:(n+1)*100,
  date:"2026-10-25"
 });
+describe("committed purchase correction guard",()=>{
+ it("never creates a second additive purchase for an owner correction",async()=>{
+  const proposePurchases=vi.fn();
+  const ctx={ownerText:"Actually, I meant 8 gallons of milk, not 10",
+   proposals:{proposePurchases}} as unknown as AgentToolContext;
+  const result=await purchasesTools.propose_purchases.execute({
+   source:"chat_text",lines:[line(0)],receiptVendor:null,receiptTotalCents:null
+  },ctx);
+  expect(proposePurchases).not.toHaveBeenCalled();
+  expect(result).toMatchObject({saved:false,draft:false,
+   missing:["existingPurchaseCorrectionRequiresReview"]});
+ });
+});
 describe("purchase proposal tool: ten-line receipt, independent approvals",()=>{
  it("prepares ten inert lines without writing purchases; failed line remains distinct",async()=>{
   const proposePurchases=vi.fn(async(input:{lines:ReturnType<typeof line>[]})=>
@@ -22,6 +35,18 @@ describe("purchase proposal tool: ten-line receipt, independent approvals",()=>{
   expect(proposed).toHaveLength(10);
   expect(proposed[3].error).toBe("needs_review");
   expect(proposed.filter(row=>row.proposalId)).toHaveLength(9);
+ });
+ it("reports verified writes and separate review-needed lines",async()=>{
+  const proposePurchases=vi.fn(async()=>[
+   {name:"Milk",proposalId:"proposal-one",revision:3,saved:true},
+   {name:"Coffee",proposalId:"proposal-two",revision:1}
+  ]);
+  const ctx={proposals:{proposePurchases}} as unknown as AgentToolContext;
+  const result=await purchasesTools.propose_purchases.execute({
+   source:"receipt_chat",lines:[line(0),line(1)],receiptVendor:"Market",
+   receiptTotalCents:1200,documentKind:"receipt"
+  },ctx);
+  expect(result).toMatchObject({saved:true,draft:true,missing:["someLinesNeedReview"]});
  });
  it("rejects eleven lines and invalid extracted totals without invoking writes",()=>{
   expect(purchaseToolInput.safeParse({source:"receipt_chat",

@@ -38,7 +38,8 @@ const lineSchema=z.strictObject({
  * Idempotent retries upsert the same stock and ingredient-price rows.
  */
 export async function recordPurchases(
- items:readonly PurchaseLineInput[],source:PurchaseSource,sourceRef:string|null
+ items:readonly PurchaseLineInput[],source:PurchaseSource,sourceRef:string|null,
+ expectedBusinessId?:string
 ):Promise<PurchaseResult[]>{
  if(!purchaseSources.includes(source)||items.length>500||sourceRef!==null&&sourceRef.length>200)
   return items.map(line=>({lineId:String(line.lineId),ok:false,error:"invalid_request"}));
@@ -46,6 +47,10 @@ export async function recordPurchases(
  const {data:{user}}=await db.auth.getUser();
  if(!user)return items.map(line=>({lineId:String(line.lineId),ok:false,error:"sign_in_required"}));
  const businessId=await getActiveBusinessId(user.id);
+ // A purchase approved for café A must never be written to café B if the
+ // active-café cookie changed while an asynchronous Supervisor turn ran.
+ if(expectedBusinessId&&businessId!==expectedBusinessId)
+  return items.map(line=>({lineId:String(line.lineId),ok:false,error:"business_scope_changed"}));
  const {data:member,error:memberError}=await db.from("memberships")
   .select("role,businesses(is_demo)").eq("business_id",businessId).eq("user_id",user.id).maybeSingle();
  const business=member?.businesses as unknown as {is_demo:boolean}|{is_demo:boolean}[]|null;

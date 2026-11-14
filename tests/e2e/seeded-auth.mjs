@@ -20,8 +20,11 @@ export function assertDisposableEnvironment() {
   if (process.env.NEXT_PUBLIC_SUPABASE_URL !== localSupabase ||
       !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
     throw new Error("E2 requires the actual local Supabase anon key");
-  if (process.env.OPENAI_API_KEY || process.env.VERCEL_URL)
-    throw new Error("E2 refuses external provider/preview configuration");
+  // A nonfunctional local E2 sentinel permits testing the authenticated file
+  // picker without a paid model. A real model key is still categorically denied.
+  if ((process.env.OPENAI_API_KEY ?? "") !== "aicafe-disposable-e2e-no-provider" ||
+      process.env.VERCEL_URL)
+    throw new Error("E2 requires the nonfunctional provider sentinel and no previews");
 }
 
 export function seededCafe(index) {

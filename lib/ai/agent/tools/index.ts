@@ -114,7 +114,7 @@ export type AgentToolContext = {
   proposals?: {proposePriceChange(input:{productId:string;newPriceCents:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposePriceExperiment?(input:{productId:string;newPriceCents:number|null;increaseCents:number|null;days:number}):Promise<{proposalId:string;revision:number;productName:string;oldPriceCents:number;newPriceCents:number}>;
     proposeStaff?(input:{name:import("./staffProposals").StaffProposalName;input:unknown}):Promise<{proposalId:string;revision:number;capabilityId:string}>;
-    proposePurchases?(input:z.infer<typeof purchaseToolInput>):Promise<Array<{proposalId?:string;revision?:number;name:string;error?:string}>>;};
+    proposePurchases?(input:z.infer<typeof purchaseToolInput>):Promise<Array<{proposalId?:string;revision?:number;name:string;saved?:boolean;error?:string}>>;};
 };
 const periodSchema = z.strictObject({ period: z.union([z.string().min(1).max(32),z.strictObject({preset:z.enum(["today","week","month","last_week","last_month","ytd"])}),z.strictObject({from:z.iso.date(),to:z.iso.date()})]),ownerInputs:ownerInputsSchema.nullable().optional() });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
@@ -152,6 +152,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   web_search:["query"],
   // Free-form Gmail search is owner text, not an internal catalogue identity.
   search_gmail:["query"],
+  inspect_public_page:["url"],
   propose_event_plan:["summary","actions","expectedBusyHours"],
   manage_commitment:["title","due_date","due_time","origin","commitment_id"],
   manage_routine:["title","routine_id"]
@@ -313,6 +314,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_today_so_far")return todayTools.get_today_so_far.execute(raw,ctx);
   if(name==="get_nearby_events")return eventsTools.get_nearby_events.execute(raw,ctx);
   if(name==="get_events")return savedEventsTools.get_events.execute(raw,ctx);
+  if(name==="inspect_public_page")return webSearchTools.inspect_public_page.execute(raw,ctx);
   if(name==="web_search")return webSearchTools.web_search.execute(raw,ctx);
   if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
   if (name === "get_menu_items") {

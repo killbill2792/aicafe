@@ -131,7 +131,7 @@ export function loopRegistry(...definitions:RegisteredLoopCapability[]){
   },list:()=>[...map.keys()]});
 }
 export type LoopCreate=Omit<LoopProposal,"id"|"status"|"revision"|"monitoringStartDate"|"createdAt">;
-export type EffectAuthorizationKind="click"|"mandate";
+export type EffectAuthorizationKind="click"|"mandate"|"owner_message";
 export type LoopEffectClaim={proposal:LoopProposal;attemptKey:string;businessDate:string;authorizationKind:EffectAuthorizationKind};
 export type LoopEffectAttemptSummary={state:"executing"|"verified"|"uncertain"|"stale";authorizationKind:EffectAuthorizationKind;businessDate:string};
 export interface LoopRepository{
@@ -143,7 +143,7 @@ export interface LoopRepository{
   transition(scope:OwnerLoopScope,id:string,revision:number,
     action:"approve"|"reject"|"manual_confirmed"|"finish_monitor",
     startDate?:string):Promise<LoopProposal>;
-  claimEffect?:(scope:OwnerLoopScope,id:string,revision:number,authorizationKind:EffectAuthorizationKind)=>Promise<LoopEffectClaim>;
+  claimEffect?:(scope:OwnerLoopScope,id:string,revision:number,authorizationKind:EffectAuthorizationKind,ownerMessageId?:string)=>Promise<LoopEffectClaim>;
   finishEffect?:(scope:OwnerLoopScope,claim:LoopEffectClaim,expectedRevision:number,state:"verified"|"uncertain"|"stale",
     nextStatus?:"committed"|"manual_pending",startDate?:string)=>Promise<LoopProposal>;
   effectAttempt?:(scope:OwnerLoopScope,id:string)=>Promise<LoopEffectAttemptSummary|null>;
@@ -247,14 +247,16 @@ export async function approveLoop(scope:OwnerLoopScope,repo:LoopRepository,id:st
   throw new ProposalOverlapError(after);
 }
 export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof loopRegistry>,
-  repo:LoopRepository,id:string,revision:number,authorizationKind:EffectAuthorizationKind="click"):
+  repo:LoopRepository,id:string,revision:number,authorizationKind:EffectAuthorizationKind="click",ownerMessageId?:string):
   Promise<{proposal:LoopProposal;result:LoopCommitResult}>{
   const p=await repo.load(scope,id);assertProposalScope(scope,p);
   if(p.revision!==revision||
     (authorizationKind==="click"&&p.status!=="approved")||
-    (authorizationKind==="mandate"&&p.status!=="draft"))
+    (authorizationKind!=="click"&&p.status!=="draft"))
     throw new Error(authorizationKind==="mandate"?"Eligible standing mandate required":"Approval required");
   const def=registry.get(p.capabilityId);
+  if(authorizationKind==="owner_message"&&(p.capabilityId!=="maya.inventory_purchase.v1"||!ownerMessageId))
+    throw new Error("Verified owner purchase message required");
   if(authorizationKind==="mandate"&&!def.mandatePolicy)
     throw new Error("Capability is not standing-mandate eligible");
   if(p.capabilityVersion!==def.version)throw new Error("Effect contract version changed");
@@ -263,8 +265,8 @@ export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof
   // One gateway transaction validates provenance, derives the café-local
   // business date, debits the quota when applicable, and reserves this effect.
   if(!repo.claimEffect||!repo.finishEffect)throw new Error("Effect gateway repository unavailable");
-  const claim=await repo.claimEffect(scope,id,revision,authorizationKind);
-  const expectedClaimRevision=revision+(authorizationKind==="mandate"?2:1);
+  const claim=await repo.claimEffect(scope,id,revision,authorizationKind,ownerMessageId);
+  const expectedClaimRevision=revision+(authorizationKind==="click"?1:2);
   if(claim.proposal.status!=="executing"||claim.proposal.id!==p.id||
     claim.proposal.revision!==expectedClaimRevision||claim.proposal.effectHash!==p.effectHash||
     claim.authorizationKind!==authorizationKind)

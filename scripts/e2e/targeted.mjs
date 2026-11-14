@@ -32,6 +32,7 @@ export function scenariosForPath(path) {
       path === "components/home/SupervisorProposalCard.gmail.test.tsx" ||
       path === "components/more/GmailConnectionPanel.test.tsx")
     return ["gmail"];
+  if (path.startsWith("components/home/")) return ["home"];
   if (path === "app/[locale]/page.tsx" ||
       path.startsWith("lib/viewmodels/home") ||
       path === "scripts/ldi-g-visual-check.mjs" ||

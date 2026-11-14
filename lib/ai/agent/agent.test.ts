@@ -6,6 +6,20 @@ import {newResolveState} from "./resolve";
 
 const base = { source: "profitability", period: null, missing: [],
   ownerProfitCents: 12345, operatingMargin: 0.125, coveredSalesDays: 4 };
+describe("registered inventory dispatch", () => {
+  it("passes authenticated café context through the universal tool registry", async () => {
+    let wasCalled=false;
+    const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-11-13",locale:"en",
+      tools:{
+        getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+        getProfitability:async()=>({available:false,value:null,quality:{level:"low",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+        getMenuCatalog:async()=>({available:true,value:[],quality:{level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]}}),
+      },canonicalData:async()=>{wasCalled=true;throw new Error("synthetic scoped reader outage");}};
+    const response=await executeAgentTool("get_inventory",{},ctx);
+    expect(wasCalled).toBe(true);
+    expect(response).toMatchObject({source:"inventory",missing:["inventoryReaderUnavailable"]});
+  });
+});
 describe("numbers, statuses, and strict tool contracts", () => {
   it("keeps an owner's stated sales when recorded profitability is unavailable without inventing profit",async()=>{
     const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-10-24",locale:"en",tools:{
@@ -119,7 +133,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
       "get_item_sales","get_price_recommendation","get_today_so_far","draft_week_schedule","suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","propose_price_change","propose_price_experiment","get_price_monitor_status","propose_goal","record_checkin","get_goal_status",
       "propose_schedule","propose_shift_change","propose_add_staff","propose_staff_change",
-      "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_nearby_events","get_events","propose_event_plan","web_search","manage_commitment"]);
+      "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_nearby_events","get_events","propose_event_plan","inspect_public_page","web_search","manage_commitment"]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);
     for (const tool of agentToolDefinitions) {
       expect(Object.hasOwn(tool.parameters,"$schema")).toBe(false);
