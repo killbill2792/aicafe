@@ -10,6 +10,8 @@ const ingredientId="11111111-1111-4111-8111-111111111111";
 const args=(quantity:number)=>JSON.stringify({items:[{
  ingredientId,itemName:"Milk",quantity,unit:"gal"}],
  neededBy:"2026-11-17",preferredSupplier:null});
+const proposalArgs=(quantity:number,replaceProposalId:string|null=null)=>
+ JSON.stringify({...JSON.parse(args(quantity)),replaceProposalId});
 const plan={offers:[{supplierName:"Farm A",currency:"CAD",subtotalCents:2250,
  totalCents:null,shippingCents:null,taxCents:null,limitations:["shipping_unknown","tax_unknown"],
  lines:[{quoteId:"22222222-2222-4222-8222-222222222222",ingredientId,
@@ -46,14 +48,14 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
   const ctx={...baseContext,purchasing:{inspect,propose}} as unknown as AgentToolContext;
   const {requests,provider}=playback([
    [call("inspect_supplier_purchase",args(5),"inspect-1"),completed],
-   [call("propose_supplier_purchase_order",args(5),"propose-2"),completed],
+   [call("propose_supplier_purchase_order",proposalArgs(5),"propose-2"),completed],
    [text("I investigated the quoted milk supply and prepared a CAD 22.50 subtotal draft. Shipping and tax are unknown; owner approval is still required. I have not ordered or received stock."),completed]
   ]);
   const result=await runAgentTurn({ownerText:"Handle our milk needs for Monday. Find a supplier and prepare the purchase order.",context:ctx,provider});
   expect(requests).toHaveLength(3);
   expect(order).toEqual(["inspect","propose"]);
   expect(inspect).toHaveBeenCalledWith(JSON.parse(args(5)));
-  expect(propose).toHaveBeenCalledWith(JSON.parse(args(5)));
+  expect(propose).toHaveBeenCalledWith(JSON.parse(proposalArgs(5)));
   expect(result.text).toContain("owner approval");
   expect((requests[2].input as unknown[]).length).toBeGreaterThan(1);
   expect(requests[0].tools).toEqual(expect.arrayContaining([
@@ -61,26 +63,47 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
    expect.objectContaining({name:"propose_supplier_purchase_order",strict:true})
   ]));
  });
- it("owner correction is a fresh bounded read+proposal, not auto-approval or silent inventory write",async()=>{
-  const count:number[]=[];
-  const propose=vi.fn(async (input:{items:Array<{quantity:number}>})=>{
-   count.push(input.items[0].quantity);
+ it("explicit owner correction lists saved drafts then targets ONLY the selected proposal",async()=>{
+  const oldId="55555555-5555-4555-8555-555555555555";
+  const proposed:Array<{quantity:number;replaceProposalId:string|null}>=[];
+  const list=vi.fn(async()=>({orders:[],truncated:false,drafts:[{
+   id:oldId,revision:1,supplierName:"Farm A",itemNames:["Milk"],subtotalCents:2250,currency:"CAD"
+  }],draftsTruncated:false}));
+  const propose=vi.fn(async (input:{items:Array<{quantity:number}>;replaceProposalId:string|null})=>{
+   proposed.push({quantity:input.items[0].quantity,replaceProposalId:input.replaceProposalId});
    return {proposalId:"44444444-4444-4444-8444-444444444444",
     revision:1,supplierName:"Farm A",subtotalCents:3150,currency:"CAD"};
   });
   const ctx={...baseContext,purchasing:{
-   inspect:vi.fn(async()=>({...plan,offers:[{...plan.offers[0],subtotalCents:3150}]})),propose
+   list,inspect:vi.fn(async()=>({...plan,offers:[{...plan.offers[0],subtotalCents:3150}]})),propose
   }} as unknown as AgentToolContext;
-  const {provider}=playback([
+  const {requests,provider}=playback([
+   [call("get_supplier_purchase_orders","{}","list-original"),completed],
    [call("inspect_supplier_purchase",args(7),"inspect-corrected"),completed],
-   [call("propose_supplier_purchase_order",args(7),"propose-corrected"),completed],
-   [text("I revised the draft to seven gallons. It remains unapproved."),completed],
+   [call("propose_supplier_purchase_order",proposalArgs(7,oldId),"propose-corrected"),completed],
+   [text("I replaced only the selected milk draft with seven gallons. It remains unapproved."),completed],
   ]);
-  await runAgentTurn({ownerText:"Change it to seven gallons and update the draft.",context:ctx,provider});
-  expect(count).toEqual([7]);
+  await runAgentTurn({ownerText:"Change that milk draft to seven gallons.",context:ctx,provider});
+  expect(requests).toHaveLength(4);
+  expect(list).toHaveBeenCalledOnce();
+  expect(proposed).toEqual([{quantity:7,replaceProposalId:oldId}]);
   expect(propose).toHaveBeenCalledOnce();
-  // The actual owner click belongs only to the protected /proposals API,
-  // not to any model tool or this test context.
   expect(Object.hasOwn(ctx,"approve")).toBe(false);
+ });
+ it("a SEPARATE order containing 'increase' creates an independent draft, not a correction",async()=>{
+  const propose=vi.fn(async()=>({proposalId:"66666666-6666-4666-8666-666666666666",
+   revision:1,supplierName:"Farm B",subtotalCents:900,currency:"CAD"}));
+  const ctx={...baseContext,purchasing:{inspect:vi.fn(async()=>plan),propose,
+   list:vi.fn(async()=>({orders:[],truncated:false,drafts:[{
+    id:"55555555-5555-4555-8555-555555555555",revision:1,
+    supplierName:"Farm A",itemNames:["Milk"],subtotalCents:2250,currency:"CAD"
+   }],draftsTruncated:false}))}} as unknown as AgentToolContext;
+  const {provider}=playback([
+   [call("inspect_supplier_purchase",args(5),"inspect-separate"),completed],
+   [call("propose_supplier_purchase_order",proposalArgs(5,null),"propose-separate"),completed],
+   [text("I prepared a separate supplier order and left the earlier draft untouched."),completed]
+  ]);
+  await runAgentTurn({ownerText:"Prepare a separate flour order to increase pastry production.",context:ctx,provider});
+  expect(propose).toHaveBeenCalledWith(JSON.parse(proposalArgs(5,null)));
  });
 });
