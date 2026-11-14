@@ -8,7 +8,7 @@ const good=files=>({testResults:files.map(name=>({name:"/repo/"+name,
  status:"passed",assertionResults:[{title:"actual contract",status:"passed"}]})),
  numTotalTests:files.length,numPassedTests:files.length,
  numFailedTests:0,numPendingTests:0,numTodoTests:0});
-const claim=domains=>({schema_version:1,head_sha:head,status:"passed",
+const claim=domains=>({schema_version:1,head_sha:head,base_sha:base,run_id:12345,status:"passed",
  domains,files:selectedFiles(domains),executed_tests:4,provider_model_proof:false});
 test("known open feature PRs select every relevant, registered owner domain",()=>{
  const plans=[
@@ -78,13 +78,14 @@ test("Node TAP cannot hide failed, skipped, cancelled, zero or unexecuted tests"
 });
 test("exact-head domain proof fails on wrong SHA, missing tests or fake Luna identity",()=>{
  const domains=["supervisor","inventory"],ok=claim(domains);
- assert.equal(validateProof(ok,{head,domains}).status,"passed");
+ assert.equal(validateProof(ok,{head,base,runId:12345,domains}).status,"passed");
  for(const bad of [
-  {...ok,head_sha:base},{...ok,files:ok.files.slice(1)},
+  {...ok,head_sha:base},{...ok,base_sha:head},{...ok,run_id:23456},
+  {...ok,files:ok.files.slice(1)},
   {...ok,domains:["supervisor"]},{...ok,status:"skipped"},
   {...ok,provider_model_proof:true},{...ok,executed_tests:0},
- ])assert.throws(()=>validateProof(bad,{head,domains}),/owner_acceptance:/);
- assert.throws(()=>validateProof(ok,{head:"not-sha",domains}),/invalid_or_wrong_head_proof/);
+ ])assert.throws(()=>validateProof(bad,{head,base,runId:12345,domains}),/owner_acceptance:/);
+ assert.throws(()=>validateProof(ok,{head:"not-sha",base,runId:12345,domains}),/invalid_or_wrong_head_proof/);
 });
 
 test("Git-local CI classification retains the original docs, code, E2E and Supervisor gates",()=>{
