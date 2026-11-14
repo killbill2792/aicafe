@@ -21,13 +21,22 @@ describe("proactive priority ranking and source revision",()=>{
   it("keeps high-severity work above routine needs without inventing impact",()=>{
     const now=new Date("2026-11-11T00:00:00Z");
     const high={...base,sourceId:"high-risk",severity:"high" as const,
-      evidence:{quality:"partial"}};
+      evidence:{quality:"verified"}};
     const ordinary={...base,sourceId:"normal",
       sourceType:"operating_task" as const,kind:"review",status:"needs_owner",
       dueAt:"2026-11-01T00:00:00Z"};
     const ranked=choosePriorities([ordinary,high],now,2);
     expect(ranked[0].source.sourceId).toBe("high-risk");
     expect(ranked[0].reason).toBe("Actionable café alert needs review");
+  });
+  it("does not elevate an unverified critical outage above verified work",()=>{
+    const now=new Date("2026-11-11T00:00:00Z");
+    const outage={...base,sourceId:"outage",severity:"critical",
+      evidence:{quality:"missing"}};
+    const verified={...base,sourceId:"verified",severity:"high",
+      evidence:{quality:"verified"}};
+    expect(choosePriorities([outage,verified],now,2).map(x=>x.source.sourceId))
+      .toEqual(["verified","outage"]);
   });
   it("does not generate a new notice for incidental poll/seen changes",()=>{
     expect(priorityRevision(base)).toBe(priorityRevision({
