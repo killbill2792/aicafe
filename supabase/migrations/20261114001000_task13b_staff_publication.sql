@@ -85,6 +85,9 @@ begin
     where m.business_id=p_business_id and m.user_id=p_owner_user_id
       and m.role='owner' and b.is_demo=false) then
     raise exception 'staff_owner_required' using errcode='42501'; end if;
+  -- Owner identity for the existing provenance/audit triggers, bound only
+  -- after independently verifying this service-side owner membership.
+  perform set_config('request.jwt.claim.sub',p_owner_user_id::text,true);
   perform pg_advisory_xact_lock(hashtextextended('olivia-'||p_business_id::text,0));
   lock table public.employees,public.scheduled_shifts in share row exclusive mode;
   select * into p from public.supervisor_proposals
@@ -474,8 +477,10 @@ begin
   ) then raise exception 'overlapping_correction_shifts' using errcode='P0001'; end if;
   attempt:=gen_random_uuid();
   insert into public.supervisor_effect_attempts(
-    attempt_key,business_id,proposal_id,effect_hash,authorization_kind,business_date,state)
-    values(attempt,p_business_id,p.id,p.effect_hash,'click',v_today,'verified');
+    attempt_key,business_id,proposal_id,effect_hash,authorization_kind,business_date,state,
+    verified_at,receipt_ref)
+    values(attempt,p_business_id,p.id,p.effect_hash,'click',v_today,'verified',
+      now(),attempt::text);
   update public.supervisor_proposals set status='committed',revision=revision+2,
     committed_at=now(),monitoring_start_date=v_today+1,updated_at=now()
     where id=p.id returning * into p;
