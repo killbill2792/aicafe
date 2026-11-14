@@ -266,7 +266,9 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/seed/generateSeedSql.mjs
-          supabase start -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          # Real private receipt upload requires the local Storage API; the
+          # database-only job above still excludes it. No hosted services.
+          supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
           supabase db reset --local --yes
           supabase status -o json > "$RUNNER_TEMP/e2e-supabase-status.json"
           node --input-type=module <<'NODE'
