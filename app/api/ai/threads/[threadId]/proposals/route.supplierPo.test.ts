@@ -14,7 +14,7 @@ const effect=()=>({supplierName:"Farm A",currency:"CAD",neededBy:"2026-11-17",
 const row=()=>({
   id:f.id,businessId:f.businessId,ownerUserId:f.ownerUserId,threadId:f.threadId,
   capabilityId:"maya.supplier_purchase_order.v1",capabilityVersion:1,
-  canonicalEffectPayload:effect(),effectHash:"test-effect-hash",
+  canonicalEffectPayload:effect(),effectHash:effectHash(effect()),
   baseline:{},monitorSpec:{durationDays:1,metricScope:"supplier_purchase_order"},
   revision:f.revision,status:f.status,locale:"en",monitoringStartDate:null,
   createdAt:"2026-11-14T00:00:00Z",
@@ -74,6 +74,7 @@ vi.mock("@/lib/ai/supervisor/loop/menuPriceChange.server",()=>({
 }));
 vi.mock("@/lib/data/proposalPrices.server",()=>({ownerMenuPrice:async()=>null}));
 vi.mock("@/lib/data/proposalEdits.server",()=>({latestEditedProposalId:async()=>null}));
+import {effectHash} from "@/lib/ai/supervisor/loop/engine";
 import {GET,POST} from "./route";
 const url="http://localhost:3000/api/ai/threads/"+f.threadId+"/proposals";
 const params={params:Promise.resolve({threadId:f.threadId})};
