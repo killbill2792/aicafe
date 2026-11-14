@@ -1,11 +1,31 @@
 import {createHash} from "node:crypto";
 import {proposalRequestKey} from "./requestKeys";
 
-/** Stable per-line idempotency across retries; a different batch is not the same retry. */
+/** Stable receipt-line idempotency is independent of model call boundaries
+ * and ordering. Duplicate physically identical lines in ONE call receive
+ * distinct occurrence identities; a repeat in a later call resolves to the
+ * first existing identity rather than silently creating another stock entry.
+ * A truly separate matching line in a later call needs owner review because
+ * the model did not supply verifiable physical source-row identity.
+ */
 export function purchaseBatchKeys(threadId:string,ownerMessageId:string,source:string,lines:readonly unknown[]){
- return lines.map((line,index)=>proposalRequestKey(threadId,JSON.stringify({
-  ownerMessageId,kind:"purchase",batch:lines,line,source,indexInBatch:index
- })));
+ const occurrences=new Map<string,number>();
+ return lines.map(line=>{
+  // Tool inputs are schema-validated before this helper is called.
+  const data=line as {ingredientId?:string|null;name?:string;quantity?:number;
+   unit?:string;costCents?:number|null;date?:string};
+  const text=(value:string|undefined)=>(value??"").normalize("NFKC").trim()
+   .toLocaleLowerCase().replace(/\s+/gu," ");
+  const fingerprint=JSON.stringify({
+   ingredient:data.ingredientId??text(data.name),quantity:data.quantity,
+   unit:text(data.unit),costCents:data.costCents??null,date:data.date
+  });
+  const occurrence=occurrences.get(fingerprint)??0;
+  occurrences.set(fingerprint,occurrence+1);
+  return proposalRequestKey(threadId,JSON.stringify({
+   ownerMessageId,kind:"purchase",source,fingerprint,occurrence
+  }));
+ });
 }
 
 /** Use the receipt-wide maximum, never an index relative to an individual tool call. */
