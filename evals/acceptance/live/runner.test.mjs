@@ -55,13 +55,25 @@ test("write receipts originate only from actually new local ledger rows",()=>{
  assert.equal(ledgerWrites(old,[...received,{...received[1],id:"receipt_2",
   line_id:"purchase_2"}],expected)[1].sourceLineId,"unexpected_1");
 });
+test("fractional receipt extraction preserves exact four-decimal precision",()=>{
+ const mk=quantity=>[{id:"draft",capability_id:"maya.inventory_purchase.v1",
+  created_at:"2026-11-13T10:00:00Z",
+  canonical_effect_payload:{name:"Whole milk",quantity,unit:"gal",costCents:500,
+   ingredientId:"ingredient_1",receiptLineIndex:0}}];
+ assert.deepEqual(proposalLines([],mk(1.25)),[{
+  lineId:"proposal_0",name:"Whole milk",quantity:12500,unit:"gal_x10000",
+  costCents:500,confidence:"verified"
+ }]);
+ assert.throws(()=>proposalLines([],mk(1.12345)),/live_capture:precision_not_canonical/);
+});
+
 test("proposal extraction never fabricates missing tool output",()=>{
  const one=[{id:"proposal_1",capability_id:"maya.inventory_purchase.v1",
   created_at:"2026-11-13T10:00:00Z",
   canonical_effect_payload:{name:"Whole milk",quantity:2,unit:"gal",
    costCents:1198,ingredientId:"ingredient_1",receiptLineIndex:0}}];
  assert.deepEqual(proposalLines([],one),[{
-  lineId:"proposal_0",name:"Whole milk",quantity:2,unit:"gal",
+  lineId:"proposal_0",name:"Whole milk",quantity:20000,unit:"gal_x10000",
   costCents:1198,confidence:"verified"
  }]);
  assert.deepEqual(proposalLines(one,one),[]);
@@ -130,7 +142,7 @@ test("only independently labeled purchase lines are approved through owner autho
  const expected={outcome:"updated",authorization:"owner_click",
   approvals:[{lineId:"proposal_0",sourceLineId:"line_1"}],
   writes:[{sourceLineId:"line_1",ingredient:"whole_milk",unit:"ml_x10000",delta:37854118,costCents:500}],
-  extracted:[{lineId:"proposal_0",name:"Whole milk",quantity:1,unit:"gal",
+  extracted:[{lineId:"proposal_0",name:"Whole milk",quantity:10000,unit:"gal_x10000",
    costCents:500,confidence:"verified"}]};
  assert.deepEqual(planOwnerApprovals({expected},[],observation),[
   {proposalId:p.id,revision:1}]);
