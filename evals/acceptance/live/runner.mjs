@@ -100,7 +100,12 @@ export function observedOutcome(saved,extracted,newProposals,clarifications){
 export function planOwnerApprovals(label,before,after){
  const expected=label.expected;
  const observed=proposalLines(before,after);
- const sorted=items=>[...items].sort((a,b)=>a.lineId.localeCompare(b.lineId));
+ const sorted=items=>items.map(x=>{
+  if(typeof x?.lineId!=="string"||!x.lineId||typeof x.name!=="string")
+   error("invalid_reviewed_extraction");
+  return {lineId:x.lineId,name:x.name,quantity:x.quantity??null,
+   unit:x.unit??null,costCents:x.costCents??null,confidence:x.confidence};
+ }).sort((a,b)=>a.lineId.localeCompare(b.lineId));
  if(JSON.stringify(sorted(observed))!==JSON.stringify(sorted(expected.extracted)))
   error("proposal_mismatch_before_approval");
  if(expected.authorization!=="owner_click")return [];
