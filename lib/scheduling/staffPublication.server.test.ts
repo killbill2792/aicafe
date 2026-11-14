@@ -19,7 +19,7 @@ const p={id:"publication-A",business_id:"cafe-A",owner_user_id:"owner-A",
 function dbFixture(status="prepared",explicit=true,upcomingPublished=true){
  const operations:Array<Record<string,unknown>>=[];
  const calls:Array<{table:string;column:string;value:unknown}>=[];
- const rpc=vi.fn(async(name:string)=>{
+ const rpc=vi.fn(async(name:string):Promise<{data:unknown;error:Error|null}>=>{
   if(name==="staff_schedule_publish")return {data:{id:p.id,week,state:"published",replayed:true},error:null};
   if(name==="staff_schedule_claim_delivery")return {data:{
    deliveryId:"delivery-A",attemptToken:"token-A",to:"+14155550123"},error:null};
@@ -42,7 +42,7 @@ function dbFixture(status="prepared",explicit=true,upcomingPublished=true){
   q.select=()=>q;q.eq=(column:string,value:unknown)=>{
    calls.push({table,column,value});
    if(column==="status")statusFilter=value;return q;};
-  q.gte=()=>q;q.order=()=>q;q.neq=()=>q;
+  q.gte=()=>q;q.lte=()=>q;q.is=()=>q;q.order=()=>q;q.neq=()=>q;
   q.update=()=>q;
   q.limit=async()=>({data:table==="staff_schedule_publications"&&
     statusFilter==="cancelled"?[]:rows(),error:null});
