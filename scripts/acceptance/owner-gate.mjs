@@ -12,7 +12,9 @@ export const SUITES=Object.freeze({
  inventory:["lib/ai/agent/tools/purchases.test.ts","lib/inventory/recordPurchases.server.test.ts"],
  staffing:["lib/ai/agent/tools/staffProposals.test.ts","lib/ai/supervisor/loop/staffProposals.partialWages.test.ts"],
  gmail:["lib/ai/agent/tools/gmail.test.ts","lib/connectors/gmail/oauth.test.ts","app/api/connectors/gmail/routes.test.ts"],
- routines:["lib/ai/agent/tools/routines.test.ts","lib/ai/supervisor/routines/dispatch.test.ts"],
+ routines:["lib/ai/agent/tools/routines.test.ts","lib/ai/supervisor/routines/dispatch.test.ts",
+  "lib/ai/supervisor/routines/investigation.test.ts",
+  "lib/ai/supervisor/routines/investigation.server.test.ts"],
  memory:["lib/ai/agent/memory.test.ts","lib/ai/agent/persist.memory.test.ts"],
  pos:["lib/ai/agent/tools/dataQuery.pos0e.test.ts","lib/ai/agent/tools/dataQuery.registered.test.ts"],
  acceptance:["scripts/acceptance/owner-gate.test.mjs"]
