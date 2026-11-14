@@ -102,10 +102,16 @@ try{
  check((await supersede())?.decision==="superseded","replayed correction is idempotent");
  const drafts=await db.query("select id,status,baseline from public.supervisor_proposals where id=any($1::uuid[])",
   [[oldDraft,correctedDraft]]);
+ const replacements=await db.query(
+  "select business_id,previous_id,replacement_id,owner_user_id from public.supplier_po_draft_replacements"+
+  " where business_id=$1 and previous_id=$2",[a.cafe,oldDraft]);
  check(drafts.rows.find(x=>x.id===oldDraft)?.status==="rejected"&&
   drafts.rows.find(x=>x.id===correctedDraft)?.status==="draft"&&
-  drafts.rows.find(x=>x.id===correctedDraft)?.baseline.editedFrom===oldDraft,
-  "old approval card is retired and follows the corrected draft");
+  replacements.rows.length===1&&replacements.rows[0].previous_id===oldDraft&&
+  replacements.rows[0].replacement_id===correctedDraft&&
+  replacements.rows[0].owner_user_id===a.owner&&
+  Object.keys(drafts.rows.find(x=>x.id===correctedDraft)?.baseline??{}).length===0,
+  "old card is atomically rejected; immutable replacement linkage is persisted");
  await fails(()=>asRole(a.owner,()=>supersede()),/permission denied|service_role_only/);
  // Fresh negative supplier evidence must invalidate an old quote at the
  // database commit boundary, not only during model planning.
