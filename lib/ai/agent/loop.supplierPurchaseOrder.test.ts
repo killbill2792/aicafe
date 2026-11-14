@@ -105,8 +105,7 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
    subtotalCents:900,lines:[{...plan.offers[0].lines[0],ingredientId:flourId,
      itemName:"Flour",neededBaseQuantity:10000,baseUnit:"g",
      packs:10,packQuantity:1,packUnit:"kg",priceCents:90,lineSubtotalCents:900}]}]};
-  const ctx=({...baseContext,purchasing:{inspect:vi.fn(async()=>flourPlan),propose,list}})
-    as unknown as AgentToolContext;
+  const ctx={...baseContext,purchasing:{inspect:vi.fn(async()=>flourPlan),propose,list}} as unknown as AgentToolContext;
   const {provider}=playback([
    [call("get_supplier_purchase_orders","{}","list-before-new"),completed],
    [call("inspect_supplier_purchase",flourArgs,"inspect-separate"),completed],
