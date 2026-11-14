@@ -37,6 +37,8 @@ describe("explicit owner-turn purchase authority",()=>{
   expect(check("I bought 10 gallons of milk for $45.00",null)).toBe(false);
   expect(check("I bought 10 gallons of milk for $45.00",4500,today,2)).toBe(false);
   expect(check("I bought 10 gallons of milk for $45.00",4500,today,1,"CAD")).toBe(false);
+  expect(check("I bought 10 gallons of milk for CA$45.00",4500,today,1,"CAD")).toBe(true);
+  expect(check("I bought 10 gallons of milk for €45.00",4500,today,1,"EUR")).toBe(true);
   expect(check("I bought 10 gallons of milk for $45 each",4500)).toBe(false);
   expect(check("I bought 10 gallons of milk and 2 lb beans for $45",4500,today,2)).toBe(false);
   expect(check("I bought 10 gallons of milk, paid 45",null)).toBe(false);
