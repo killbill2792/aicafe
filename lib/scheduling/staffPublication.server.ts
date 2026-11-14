@@ -24,6 +24,23 @@ export async function publishApprovedStaffSchedule(scope:Scope,proposalId:string
   expectedRecipients?:number;eligibleRecipients?:number};
 }
 
+/** Explicit authenticated owner cancellation, never a model-triggered action.
+ * Provider-accepted or in-flight messages cannot be unsent; report that count. */
+export async function cancelStaffPublication(scope:Scope,proposalId:string){
+ const db=createAdminSupabaseClient();
+ const publication=await db.from("staff_schedule_publications")
+  .select("id").eq("business_id",scope.businessId)
+  .eq("owner_user_id",scope.ownerUserId).eq("proposal_id",proposalId).maybeSingle();
+ if(publication.error||!publication.data)result(publication.error);
+ const {data,error}=await db.rpc("staff_schedule_cancel_publication",{
+  p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+  p_publication_id:publication.data.id,
+ });
+ if(error||!data||data.state!=="cancelled")result(error);
+ return data as {state:"cancelled";publicationId:string;
+  revision:number;inFlight:number;alreadyAccepted:number};
+}
+
 export async function recordSignedStaffScheduleStatus(event:{
  wamid:string;state:"sent"|"delivered"|"read"|"failed"}):Promise<void>{
  const {error}=await createAdminSupabaseClient().rpc("staff_schedule_record_provider_status",{
@@ -50,6 +67,19 @@ async function attemptEmployee(db:SupabaseClient,p:Publication,d:Delivery):Promi
  if(claimed.error)throw new Error("staff_send_authorization_changed");
  if(!claimed.data)return "skipped";
  const claim=claimed.data as {deliveryId:string;attemptToken:string;to:string};
+ // Owner cancellation or staff opt-out after the queued claim must still
+ // prevent dispatch. A provider request is never made on unknown auth state.
+ const fresh=await db.rpc("staff_schedule_can_send",{
+  p_delivery_id:claim.deliveryId,p_attempt_token:claim.attemptToken,
+ });
+ if(fresh.error||fresh.data!==true){
+  const rejected=await db.rpc("staff_schedule_finish_delivery",{
+   p_delivery_id:claim.deliveryId,p_attempt_token:claim.attemptToken,
+   p_state:"failed",p_wamid:null,p_error:"revoked_before_send",
+  });
+  if(rejected.error||rejected.data!==true)throw new Error("staff_revocation_receipt_uncertain");
+  return "failed";
+ }
  const receipt=await sendStaffScheduleTemplate(claim.to,message);
  const state=receipt.state==="accepted"?"sent":
   receipt.state==="failed"?"failed":"uncertain";
