@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkNumbers, compactEvidence, numberProvenance } from "./checkNumbers";
 import { statusFromResults } from "./status";
-import { executeAgentTool, agentToolDefinitions, type AgentToolContext, requestedPeriod } from "./tools";
+import { executeAgentTool, agentToolDefinitions, gmailToolDefinitions, agentForTool, type AgentToolContext, requestedPeriod } from "./tools";
 import {newResolveState} from "./resolve";
 
 const base = { source: "profitability", period: null, missing: [],
@@ -20,7 +20,42 @@ describe("registered inventory dispatch", () => {
     expect(response).toMatchObject({source:"inventory",missing:["inventoryReaderUnavailable"]});
   });
 });
+describe("Task 11/12/13A/14A integrated Supervisor registry",()=>{
+  it("keeps inventory, stock actions, staff planning and absence previews in one strict tool registry",()=>{
+    const publicNames=agentToolDefinitions.map(x=>x.name);
+    for(const name of ["get_inventory","get_usage_variance","get_staff","get_labor",
+      "draft_week_schedule","simulate_staff_absence","propose_purchases"]){
+      expect(publicNames).toContain(name);
+      expect(agentToolDefinitions.find(x=>x.name===name)?.strict).toBe(true);
+    }
+    expect(agentForTool("draft_week_schedule")).toBe("olivia");
+    expect(agentForTool("simulate_staff_absence")).toBe("olivia");
+    expect(agentForTool("propose_purchases")).toBe("maya");
+  });
+  it("does not silently make Gmail or standing routines public to unconnected owners",()=>{
+    const visible=new Set(agentToolDefinitions.map(x=>x.name));
+    const gated=gmailToolDefinitions.map(x=>x.name);
+    for(const name of ["search_gmail","read_gmail","read_gmail_thread","propose_gmail_action"]){
+      expect(gated).toContain(name);
+      expect(visible.has(name)).toBe(false);
+    }
+    expect(visible.has("manage_routine")).toBe(false);
+    expect(visible.has("remember_cafe_fact")).toBe(false);
+    expect(gmailToolDefinitions.every(x=>x.strict)).toBe(true);
+  });
+});
+
 describe("numbers, statuses, and strict tool contracts", () => {
+  it("publishes a strict but nullable weekly staff exclusion field for native model tool calls",()=>{
+    const tool=agentToolDefinitions.find(t=>t.name==="draft_week_schedule");
+    expect(tool).toMatchObject({strict:true});
+    const p=tool?.parameters as {required?:string[];
+      properties?:Record<string,unknown>}|undefined;
+    expect(p?.required).toEqual(expect.arrayContaining([
+      "week_start","purpose","temporary_absence"]));
+    expect(JSON.stringify(p?.properties?.temporary_absence)).toContain("null");
+  });
+
   it("keeps an owner's stated sales when recorded profitability is unavailable without inventing profit",async()=>{
     const ctx:AgentToolContext={timezone:"America/Los_Angeles",asOf:"2026-10-24",locale:"en",tools:{
       getSalesTrend:async()=>({available:false,value:null,quality:{level:"low",missingInputs:["noCoveredSalesRows"],estimatedInputs:[],staleInputs:[]}}),
@@ -131,7 +166,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
       "get_staff","get_schedule","get_labor","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
       "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
-      "get_item_sales","get_price_recommendation","get_today_so_far","draft_week_schedule","suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","propose_price_change","propose_price_experiment","get_price_monitor_status","propose_goal","record_checkin","get_goal_status",
+      "get_item_sales","get_price_recommendation","get_today_so_far","draft_week_schedule","simulate_staff_absence","suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","propose_price_change","propose_price_experiment","get_price_monitor_status","propose_goal","record_checkin","get_goal_status",
       "propose_schedule","propose_shift_change","propose_add_staff","propose_staff_change",
       "propose_availability_change","propose_rule_change","propose_send_schedule","propose_purchases","get_nearby_events","get_events","propose_event_plan","inspect_public_page","web_search","manage_commitment"]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);

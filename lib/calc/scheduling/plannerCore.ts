@@ -1,7 +1,22 @@
 import { effectiveAvailabilityForLocation, compensationProvenance } from "./availability";
+import {OPEN_HOURS_DAY_KEYS, type OpenHours} from "@/lib/business/openHours";
 import { hourlyWageCentsFromSalary } from "../staff";
 import { civilDateAdd, localParts, parseUtcInstant, weekday, wallToUtc, windowUtc } from "./plannerClock";
 import type { PlannerEmployee, PlannerInput, PlannerLocation, PlannerGapReason, PlannerShift } from "./plannerTypes";
+
+/** Regular hours cannot override confirmed setup/closing shifts. */
+function hoursEvidence(hours:OpenHours|null|undefined,day:number,start:string,end:string,overnight:boolean):"unknown"|"within"|"outside"{
+  if(!hours)return "unknown";
+  const key=OPEN_HOURS_DAY_KEYS[day];
+  if(!Object.prototype.hasOwnProperty.call(hours,key))return "unknown";
+  const minute=(text:string)=>{const [h,m]=text.slice(0,5).split(":").map(Number);return h*60+m;};
+  const from=minute(start),to=minute(end)+(overnight?1440:0);
+  for(const [open,close] of hours[key]??[]){
+    const a=minute(open),b=minute(close);
+    if(from>=a&&to<=b+(b<=a?1440:0))return "within";
+  }
+  return "outside";
+}
 
 export type DemandUnit = {
   id: string; coverageId: string; locationId: string;
@@ -82,6 +97,7 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
     input.burden.rate>=0 && input.burden.rate<=1, "payroll_burden");
 
   const warnings:string[]=[];
+  const hourCaveats=new Set<string>();
   const units:DemandUnit[]=[];
   for(const coverage of input.coverage){
     const location=locations.get(coverage.locationId);
@@ -107,6 +123,10 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
         coverage.dayOfWeek!==weekday(date) ||
         (coverage.effectiveFrom!=null&&date<coverage.effectiveFrom) ||
         (coverage.effectiveTo!=null&&date>coverage.effectiveTo)) continue;
+      const hourState=hoursEvidence(location.openHours,weekday(date),coverage.start_local,
+        coverage.end_local,coverage.overnight);
+      if(hourState==="unknown")hourCaveats.add(`Regular café hours are unverified for location ${location.id}; confirmed coverage is kept unchanged`);
+      if(hourState==="outside")hourCaveats.add(`Confirmed coverage ${coverage.id} may include work outside regular opening hours; review prep/close or exceptions`);
       let interval:{startAt:number;endAt:number};
       try {interval=windowUtc(date,coverage.start_local,coverage.end_local,
         coverage.overnight,location.timezone);}
@@ -185,6 +205,7 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
       }
     }
   }
+  warnings.push(...hourCaveats);
   if(input.coverage.every(c=>c.priority==="advisory"))
     warnings.push("Coverage requirements are advisory; no hard demand was supplied");
   if(!input.ruleProfile?.verified)

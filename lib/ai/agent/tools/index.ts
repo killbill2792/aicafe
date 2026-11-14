@@ -56,6 +56,8 @@ export type AgentToolResult = {
 export type AgentToolContext = {
   /** Ephemeral per-turn schedule approval; prevents a second card if the model retries via propose_schedule. */
   scheduleProposalCreated?:{proposalId:string;revision:number;capabilityId:string};
+  /** Same-turn verified draft roster identity; never attach changed shifts to a prior approval. */
+  scheduleProposalKey?:string;
   tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
   timezone:string;
   /** Authenticated ISO 4217 currency; absent only in legacy test contexts. */
@@ -226,6 +228,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     catch{return {source:"canonical_data",period:null,missing:["source_read_failed"],rows:[],empty:true};}
   }
   if(name==="draft_week_schedule")return draftScheduleTools.draft_week_schedule.execute(raw,ctx);
+  if(name==="simulate_staff_absence")return draftScheduleTools.simulate_staff_absence.execute(raw,ctx);
   if(name==="suggest_new_item_price")return newItemPriceTools.suggest_new_item_price.execute(raw,ctx);
   if(name==="milk_swap_price")return milkSwapTools.milk_swap_price.execute(raw,ctx);
   if(name==="simulate_scenario")return scenarioTools.simulate_scenario.execute(raw,ctx);

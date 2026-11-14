@@ -1,21 +1,47 @@
 import {z} from "zod";
 import {oliviaProposalShifts} from "@/lib/calc/scheduling/oliviaProposalShifts";
 import type {AgentToolContext,AgentToolResult} from "./index";
+import {scheduleCardKey} from "./staffProposals";
 import {nextMonday} from "@/lib/scheduling/staffScheduleLinks";
-import {previewOliviaWeek,previewOliviaOwnerSavings} from "@/lib/actions/oliviaPlanning";
+import {previewOliviaWeek,previewOliviaOwnerSavings,previewOliviaAbsenceWhatIf} from "@/lib/actions/oliviaPlanning";
 
 const monday=z.iso.date().refine(v=>new Date(v+"T12:00:00Z").getUTCDay()===1,"Must be a Monday");
-const schema=z.strictObject({week_start:monday.nullable(),purpose:z.enum(["draft","owner_savings"])});
+const schema=z.strictObject({week_start:monday.nullable(),purpose:z.enum([
+ "draft","owner_savings","cash_cost","owner_time","balanced",
+ "compare_only","cash_preview","owner_time_preview",
+]),temporary_absence:z.strictObject({
+ employee_name:z.string().trim().min(1).max(80),
+ weekday:z.number().int().min(0).max(6),
+}).nullable().optional()});
+const absenceSchema=z.strictObject({week_start:monday.nullable(),
+ employee_name:z.string().trim().min(1).max(80),
+ weekday:z.number().int().min(0).max(6)});
+const selectedObjectiveLabel=(objective:"cash"|"owner_time"|"balanced"|null)=>objective??"default";
+/** Choice cards require unique labels, even for identically named staff.
+ * Use sourced employee UUID suffixes only to disambiguate, not to create IDs. */
+const employeeChoiceCandidates=(candidates:ReadonlyArray<{id:string;name:string}>)=>
+ candidates.slice(0,5).map((e,i)=>({id:e.id,
+  // A stable position plus a sourced suffix distinguishes even colliding
+  // UUID suffixes. The owner must still choose the actual verified record.
+  label:e.name.slice(0,39)+" — "+String(i+1)+" ("+e.id.slice(-8)+")",
+  detail:"Team member",
+ }));
+
 
 /** Supervisor is the only conversation entry point; Olivia is the only optimizer.
  * The preview is inert. Existing propose_schedule handles the approval card.
  */
 export const draftScheduleTools={draft_week_schedule:{
  agentId:"olivia",schema,
- description:"Use Olivia's canonical scheduler. purpose=draft prepares the next week's roster and ONE existing approval card, so never call propose_schedule after it. purpose=owner_savings models where the unpaid owner could replace paid staff and returns the wage evidence and cost comparison WITHOUT creating a card. Hypothetical owner certification and opportunity costs are not assumed. Never say a preview was published.",
+ description:"Use the one Olivia optimizer for natural staffing instructions. For 'schedule next week, Sarah off Tuesday' pass temporary_absence={employee_name:'Sarah',weekday:2} with purpose=draft (Sunday=0), so the requested exception affects the actual roster while the employee's saved availability stays unchanged. With no named weekly exclusion pass temporary_absence=null; if identity ambiguous ask the owner to choose. draft makes a full proposed roster; cash_cost asks for the low modeled cash-wage candidate (not guaranteed global minimum); owner_time asks for fewer owner-shift minutes; balanced uses the balanced candidate. These create ONE inert owner card only if all required coverage is feasible. For 'what if', 'compare', 'explain cost' or 'show me the cheaper option first', use compare_only, cash_preview or owner_time_preview: they NEVER create a card. owner_savings is another read-only what-if. For 'what if Sarah is off Tuesday' use simulate_staff_absence, not saved availability edits. Actual saved availability/rule changes use the existing propose_availability_change/propose_rule_change gateway. Do not claim saved, published, messaged, or guaranteed demand prediction.",
  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-  const {week_start,purpose}=schema.parse(raw);
+  const {week_start,purpose,temporary_absence}=schema.parse(raw);
   const start=week_start??nextMonday(ctx.asOf);
+  // An unpaid-owner replacement calculation is a different scenario and
+  // must never silently ignore an owner-specified employee exclusion.
+  if(purpose==="owner_savings"&&temporary_absence)return {
+   source:"olivia_owner_what_if",period:null,agentId:"olivia",saved:false,
+   missing:["temporaryAbsenceNotSupportedForOwnerSavings"]};
   if(purpose==="owner_savings"){
    const whatIf=await previewOliviaOwnerSavings({week:start});
    if(!whatIf.ok)return {source:"olivia_owner_what_if",period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
@@ -29,35 +55,133 @@ export const draftScheduleTools={draft_week_schedule:{
     replacementRows:whatIf.replacementRows,assumptions:whatIf.assumptions,
     warnings:whatIf.warnings,notices:whatIf.notices,locations:whatIf.locations};
   }
-  const result=await previewOliviaWeek({week:start});
-  if(!result.ok)return {source:"olivia_schedule",period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
-   agentId:"olivia",draft:true,saved:false,missing:[result.error,...(result.blockers??[]).map(b=>b.code)]};
-  const best=result.plan.best;
+  const selectedEmployeeIds=[...(ctx.resolveState?.chosenIds??[])]
+    .filter(id=>z.uuid().safeParse(id).success).slice(0,10);
+  const result=await previewOliviaWeek(temporary_absence?{
+   week:start,temporaryAbsence:{
+    employeeName:temporary_absence.employee_name,
+    weekday:temporary_absence.weekday,selectedEmployeeIds,
+   },
+  }:{week:start});
+  if(!result.ok)return {source:"olivia_schedule",
+   period:{from:start,to:new Date(Date.parse(start+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)},
+   agentId:"olivia",draft:true,saved:false,
+   missing:[...(result.error==="employee_ambiguous"?["ownerChoiceRequired"]:[]),
+    result.error,...(result.blockers??[]).map(b=>b.code)],
+   ...(result.error==="employee_ambiguous"&&result.candidates?.length?{
+    needsOwnerChoice:true,candidates:employeeChoiceCandidates(result.candidates)}:{}),
+  };
+  // The requested business objective chooses among already-validated
+  // deterministic solver candidates; a missing/infeasible alternative may
+  // not override a valid default schedule.
+  const requestedObjective=purpose==="cash_cost"||purpose==="cash_preview"?"cash":
+   purpose==="owner_time"||purpose==="owner_time_preview"?"owner_time":
+   purpose==="balanced"?"balanced":null;
+  const previewOnly=["compare_only","cash_preview","owner_time_preview"].includes(purpose);
+  const requestedCandidate=requestedObjective?
+   result.plan.scenarios?.find(s=>s.objective===requestedObjective&&
+     s.completeCoverage&&s.hardConstraintsSatisfied):null;
+  const best=requestedCandidate??result.plan.best;
   if(!best)return {source:"olivia_schedule",period:null,agentId:"olivia",draft:true,saved:false,missing:["noPlannerScenario"]};
   const proposedShifts=oliviaProposalShifts(best.shifts,result.locations);
-  const canPropose=proposedShifts.length>0&&proposedShifts.length<=60&&
+  const canPropose=result.plan.status==="feasible"&&best.completeCoverage!==false&&
+   best.hardConstraintsSatisfied!==false&&proposedShifts.length>0&&proposedShifts.length<=60&&
    proposedShifts.every(s=>s.break_minutes<=240&&s.start!==s.end);
   let approval: {proposalId:string;revision:number;capabilityId:string}|null=null;
   let approvalError:string|null=null;
-  if(canPropose&&ctx.scheduleProposalCreated)approval=ctx.scheduleProposalCreated;
-  else if(canPropose&&ctx.proposals?.proposeStaff){
-   try {
-    // The existing authorized proposal writer creates ONE inert owner card.
-    // Only the owner's approval click may write dated draft shifts.
-    approval=await ctx.proposals.proposeStaff({name:"propose_schedule",
-     input:{week_start:start,shifts:proposedShifts}});
-    ctx.scheduleProposalCreated=approval;
-   }catch{approvalError="approvalProposalUnavailable";}
+  const cardKey=scheduleCardKey(start,proposedShifts);
+  if(!previewOnly&&canPropose){
+   if(ctx.scheduleProposalCreated){
+    if(ctx.scheduleProposalKey===cardKey)approval=ctx.scheduleProposalCreated;
+    else approvalError="existingScheduleCardDiffers";
+   }else if(ctx.proposals?.proposeStaff){
+    try {
+     // Only the owner can approve a real write; preview itself is inert.
+     approval=await ctx.proposals.proposeStaff({name:"propose_schedule",
+      input:{week_start:start,shifts:proposedShifts}});
+     ctx.scheduleProposalCreated=approval;
+     ctx.scheduleProposalKey=cardKey;
+    }catch{approvalError="approvalProposalUnavailable";}
+   }else approvalError="approvalProposalUnavailable";
   }
+  // The hourly rollup groups orders by their CLOSE hour, not customer arrival.
+  // This is observed comparable history, never an inferred worker count.
+  const demand=result.demandEvidence;
+  const demandSummary=demand?{
+   status:demand.status,source:demand.source,basis:demand.basis,
+   historicalPeriod:demand.historicalPeriod,readAt:demand.readAt,
+   sourceUpdatedAt:demand.sourceUpdatedAt,
+   availableComparableHours:demand.totalComparableHours,
+   returnedComparableHours:demand.hours.length,truncated:demand.truncated,
+   // Keep the full comparable count while bounding model input tokens.
+   sampledHours:demand.hours.slice().sort((a,b)=>
+     b.observedAverageOrders-a.observedAverageOrders||
+     a.targetDate.localeCompare(b.targetDate)||a.hourLocal-b.hourLocal).slice(0,30),
+   missing:demand.missing,
+   note:"Historical order close-hour observations only; not a customer arrival forecast or an automatic staffing requirement",
+  }:null;
+  // The solver supplies exact comparable scenarios, not the language model.
+  // Null costs remain unknown; two alternatives need not be globally optimal.
+  const alternatives=(result.plan.scenarios??[]).slice(0,3).map(scenario=>({
+   objective:scenario.objective,staffShiftCount:scenario.shifts.length,
+   completeCoverage:scenario.completeCoverage,hardConstraintsSatisfied:scenario.hardConstraintsSatisfied,
+   gapCount:scenario.gaps.length,ownerMinutes:scenario.ownerMinutes,
+   cashWagesCents:scenario.cost.cashWagesCents,
+   loadedPayrollCents:scenario.cost.loadedPayrollCents,
+   costState:scenario.cost.costState,
+   missingWageEmployeeIds:scenario.cost.missingWageEmployeeIds,
+   legalReview:scenario.legalReview,
+  }));
   return {source:"olivia_schedule",period:{from:start,to:result.plan.horizonEnd},
    agentId:"olivia",draft:true,saved:false,
-   missing:[...result.notices.map(n=>n.code),...(approvalError?[approvalError]:[]),
-    ...(!canPropose?["approvalShiftLimitOrInvalidShift"]:[])],
+   missing:[...result.notices.map(n=>n.code),
+    ...(demand?.missing??[]),
+    ...(approvalError?[approvalError]:[]),
+    ...(!canPropose&&!previewOnly?["approvalShiftLimitOrInvalidShift"]:[])],
    plannerStatus:result.plan.status,completeCoverage:best.completeCoverage,
+   demandEvidence:demandSummary,
    laborCost:best.cost,gaps:best.gaps,warnings:result.plan.warnings,
+   ...(result.temporaryConstraint?{temporaryConstraint:result.temporaryConstraint,
+    note:"This employee was excluded for this proposed week's roster only; the saved availability record was not changed"}:{}),
+   scenarioAlternatives:alternatives,solverProof:result.plan.proof,
+   requestedObjective:selectedObjectiveLabel(requestedObjective),
+   selectedObjective:best.objective,
+   requestedObjectiveMet:requestedObjective===null||best.objective===requestedObjective,
+   explanationScope:"Based on owner-confirmed coverage and recorded availability; POS close-hour history is informational, not an inferred staffing requirement; scheduled wages are not actual payroll",
    proposedShifts,
    proposedShiftCount:proposedShifts.length,
-   proposalReady:canPropose, ...(approval??{}),
+   proposalReady:canPropose&&!previewOnly&&approvalError!=="existingScheduleCardDiffers",previewOnly, ...(approval??{}),
    approvalTool:approval?"existing_card_created":"not_created",weekStart:start};
  }
-}} as const;
+ },
+ simulate_staff_absence:{
+  agentId:"olivia",schema:absenceSchema,
+  description:"Answer a read-only hypothetical like 'What if Sarah cannot work Tuesday next week?' using the same verified Olivia scheduling solver, without saving anything or creating a proposal card. week_start=null means next business-local week. employee_name is the owner's actual name or unique first name; weekday is Sunday=0 through Saturday=6. Ambiguous/missing employees are reported rather than guessed. If the owner explicitly asks to SAVE an absence, use existing propose_availability_change instead.",
+  execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
+   const {week_start,employee_name,weekday}=absenceSchema.parse(raw);
+   const week=week_start??nextMonday(ctx.asOf);
+   const selectedEmployeeIds=[...(ctx.resolveState?.chosenIds??[])]
+     .filter(id=>z.uuid().safeParse(id).success).slice(0,10);
+   const result=await previewOliviaAbsenceWhatIf({
+     week,employeeName:employee_name,weekday,selectedEmployeeIds});
+   if(!result.ok)return {source:"olivia_hypothetical_absence",
+    agentId:"olivia",period:null,draft:false,saved:false,
+    missing:[...(result.error==="employee_ambiguous"?["ownerChoiceRequired"]:[]),result.error],
+    ...(result.error==="employee_ambiguous"?{
+     needsOwnerChoice:true,candidates:employeeChoiceCandidates(result.candidates??[]),
+    }:{})};
+   return {source:"olivia_hypothetical_absence",agentId:"olivia",
+    period:result.period,draft:false,saved:false,missing:[],
+    hypothetical:true,employeeName:result.employeeName,
+    absentDate:result.absentDate,
+    baseline:result.baseline,alternative:result.alternative,
+    changeInModeledCashWagesCents:result.changeInModeledCashWagesCents,
+    rosterChanges:result.rosterChanges,
+    laborCostDifferenceKnown:result.laborCostDifferenceKnown,
+    comparisonCompleteCoverage:result.comparisonCompleteCoverage,
+    assumptions:result.assumptions,warnings:result.warnings,
+    note:"Read-only owner hypothetical; employee availability and published rosters are unchanged",
+   };
+  },
+ }
+} as const;

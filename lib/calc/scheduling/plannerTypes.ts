@@ -1,3 +1,4 @@
+import type {OpenHours} from "@/lib/business/openHours";
 /**
  * Olivia PR 2 pure planner contract. All inputs are owner-reviewed snapshots,
  * never model-issued commands or instructions to write payroll/published shifts.
@@ -10,7 +11,11 @@ import type {
 
 export type PlannerDate = string;
 export type PlannerWindow = { start_local: string; end_local: string; overnight: boolean };
-export type PlannerLocation = { id: string; timezone: string };
+export type PlannerLocation = { id: string; timezone: string;
+  /** Source-recorded regular trading hours; null means unknown, not closed.
+   * Coverage outside regular hours may be approved prep/close work. */
+  openHours?: OpenHours | null;
+};
 export type PlannerCoverage = PlannerWindow & {
   id: string; locationId: string; dayOfWeek?: number | null;
   localDate?: string | null; effectiveFrom?: string | null; effectiveTo?: string | null;

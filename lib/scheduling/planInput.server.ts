@@ -1,5 +1,6 @@
 import "server-only";
 import {formatInTimeZone} from "date-fns-tz";
+import {normalizeOpenHours} from "@/lib/business/openHours";
 import {readToastPlannedShifts} from "@/lib/data/toastScheduledShifts.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 
@@ -27,7 +28,7 @@ export type OliviaNotice = { code:
 export type OliviaBlocker = {code: "no_location" | "no_coverage" | "conflicting_limits"; employeeName?: string};
 
 export type OliviaInputResult =
-  | { ok: true; input: PlannerInput; businessId: string; sourceFingerprint: string; sourceToken: string; locationNames: Record<string, string>; warnings: string[]; notices: OliviaNotice[]; blockers: OliviaBlocker[] }
+  | { ok: true; input: PlannerInput; businessId: string; cafeTimezone: string; sourceFingerprint: string; sourceToken: string; locationNames: Record<string, string>; warnings: string[]; notices: OliviaNotice[]; blockers: OliviaBlocker[] }
   | { ok: false; error: "disabled" | "unauthorized" | "invalid_week" | "storage_unavailable" };
 
 const PAGE = 300;
@@ -285,6 +286,9 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
 
     const locations: PlannerLocation[] = rows.locations.map(r => ({
       id: str(r.id), timezone: nullable(r.timezone) || str(business.data.timezone),
+      // This is advisory regular trading time, not a substitute for owner-confirmed
+      // preparation/closure staffing coverage or date-specific holiday hours.
+      openHours: normalizeOpenHours(r.open_hours),
     }));
     if (!locations.length) blockers.push({code:"no_location"});
     const locationNames = Object.fromEntries(rows.locations.map(r => [str(r.id), str(r.name)]));
@@ -458,7 +462,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
           (c.minOverlapMinutes??0)%slot===0;
       }))??5;
     return {
-      ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage, historicalSeed,
+      ok: true, businessId, cafeTimezone: timezone, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage, historicalSeed,
         ...(ruleProfile ? {ruleProfile} : {}),
         pinned: [], startedPublishedShifts, historicalShiftWageRates, replanAsOf,
         slotMinutes, maxNodes: 12000, beamWidth: 24 },
