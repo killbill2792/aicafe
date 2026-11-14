@@ -5,6 +5,7 @@ import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/ca
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
 import {withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
+import {readActionablePriorities} from "./dispatch.server";
 import {investigationPrompt,investigationReadTools,verifyInvestigationTurn,
   type InvestigationCheckpoint,type SourceSynopsis} from "./investigation";
 
@@ -181,4 +182,27 @@ export async function processDueInvestigations(db:SupabaseClient,now:Date,maxSte
       sum[key]+=step[key];
   }
   return sum;
+}
+
+/** A verified owner scan on the existing refresh scheduler installs durable
+ * work regardless of whether its initial notice was previously delivered.
+ * Per-source scope and current owner access are rechecked by the SQL enqueue. */
+export async function enqueueInvestigationsForOwner(db:SupabaseClient,
+  scope:{businessId:string;ownerUserId:string;threadId:string;localDate:string},
+  now:Date):Promise<number>{
+  const pending=await readActionablePriorities(db,scope,now,
+    {includeNotified:true,limit:25});
+  let enqueued=0;
+  for(const decision of pending){
+    const {data,error}=await db.rpc("supervisor_enqueue_investigation",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+      p_thread_id:scope.threadId,p_source_type:decision.source.sourceType,
+      p_source_id:decision.source.sourceId,
+      p_revision_hash:decision.revisionHash,p_stable_key:decision.stableKey,
+      p_now:now.toISOString(),
+    });
+    if(error)throw new Error("investigation_enqueue_failed");
+    if(data===true)enqueued++;
+  }
+  return enqueued;
 }
