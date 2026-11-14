@@ -75,6 +75,9 @@ try{
   " values($1,$2,$3,$4,$5,'maya.supplier_purchase_order.v1',1,"+
   " $6::jsonb,$7,'{}'::jsonb,'{\"durationDays\":1,\"metricScope\":\"supplier_purchase_order\"}'::jsonb,'en','executing',3)",
  [a.proposal,a.cafe,a.owner,a.thread,id(),JSON.stringify(effect),hash]);
+ // Runtime RPCs execute under the service JWT only after the gateway claim.
+ await db.query("SET LOCAL ROLE service_role");
+ await db.query("select set_config(\'request.jwt.claim.role\',\'service_role\',true)");
  const invoke=(cafe=a.cafe,owner=a.owner,thread=a.thread,proposal=a.proposal)=>
   one("select public.supervisor_commit_supplier_po($1,$2,$3,$4,$5) as result",
    [cafe,owner,thread,proposal,hash]);
