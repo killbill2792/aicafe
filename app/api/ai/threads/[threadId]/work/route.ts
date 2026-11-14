@@ -29,8 +29,8 @@ export async function GET(_request: Request, context: RouteContext) {
         .eq("thread_id", id).order("updated_at", { ascending: false }).limit(20),
       client.from("ai_agent_jobs")
         .select("id,owner_message_id,status,reply_message_id,error_code,attempt,heartbeat_at,created_at")
-        .eq("business_id", scope.businessId).eq("thread_id", id)
-        .order("created_at", { ascending: false }).limit(12),
+        .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
+        .eq("thread_id", id).order("created_at", { ascending: false }).limit(12),
       client.from("supervisor_proposals")
         .select("id,status,capability_id,effect_hash,updated_at")
         .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)

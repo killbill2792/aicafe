@@ -5,7 +5,7 @@
  */
 export type OwnerWorkStatus =
   | "queued" | "running" | "retrying" | "approval_required"
-  | "uncertain" | "failed" | "answer_ready" | "verified_complete";
+  | "uncertain" | "failed" | "cancelled" | "answer_ready" | "verified_complete";
 
 export type OwnerWorkItem = {
   id: string;
@@ -69,6 +69,9 @@ export function projectOwnerWork(input: {
       id: "run:" + run.id, kind: "durable_run", status, title: "Supervisor work",
       detail: status === "answer_ready"
         ? "Supervisor saved an answer. This does not verify any external action."
+        : status === "uncertain" ? "A saved step needs reconciliation; its outcome is not known."
+        : status === "failed" ? "Supervisor stopped while carrying out a saved step."
+        : status === "queued" ? "The saved plan is waiting for its worker."
         : next ? (stepNames[next.step_key] ?? "Working through the saved plan")
         : "Checking the saved work",
       nextStep: status === "uncertain" ? "Waiting for evidence or safe reconciliation; no blind retry."
@@ -83,7 +86,11 @@ export function projectOwnerWork(input: {
       proposalId: null,
     });
   }
+  const ownerRuns = new Set(input.runs.map(run => run.request_key));
   for (const job of input.jobs) {
+    // The durable run already represents this same owner turn. Never show a
+    // second status card for the underlying per-turn job.
+    if (ownerRuns.has(job.owner_message_id)) continue;
     // A missing heartbeat is UNKNOWN, not proof the worker failed or the
     // external effect was rolled back. The durable run/receipt may still exist.
     const heartbeat = Date.parse(job.heartbeat_at);
@@ -119,7 +126,8 @@ export function projectOwnerWork(input: {
     const status: OwnerWorkStatus = p.status === "draft" ? "approval_required"
       : effect?.state === "uncertain" || (succeeded && !hasReceipt) ? "uncertain"
       : succeeded && hasReceipt ? "verified_complete"
-      : ["rejected", "expired", "stale"].includes(p.status) ? "failed"
+      : ["rejected", "expired"].includes(p.status) ? "cancelled"
+      : p.status === "stale" ? "failed"
       : p.status === "manual_pending" ? "uncertain" : "running";
     work.push({
       id: "proposal:" + p.id, kind: "approval", status,
@@ -127,12 +135,14 @@ export function projectOwnerWork(input: {
       detail: status === "approval_required" ? "A proposed action is waiting for your decision."
         : status === "verified_complete" ? "An authorized effect has a verified receipt."
         : status === "uncertain" ? "The action has no verified final receipt; do not send it again."
+        : status === "cancelled" ? "The proposal was declined or expired."
         : status === "failed" ? "The proposal is no longer executable as written."
         : "The approved action is awaiting its verified outcome.",
       nextStep: status === "approval_required"
         ? "Review the existing proposal card in this conversation."
         : status === "verified_complete" ? "The saved effect receipt is available."
         : status === "uncertain" ? "Reconcile the effect using the existing authorization gateway."
+        : status === "cancelled" ? "No action will be taken on this proposal."
         : status === "failed" ? "Ask Supervisor to investigate the exception."
         : "Supervisor will report the actual outcome when it is verified.",
       updatedAt: p.updated_at, ownerMessageId: null,
@@ -142,7 +152,7 @@ export function projectOwnerWork(input: {
     });
   }
   const priority = (s: OwnerWorkStatus) =>
-    ["uncertain", "failed", "approval_required", "retrying", "running", "queued", "verified_complete", "answer_ready"].indexOf(s);
+    ["uncertain", "failed", "approval_required", "retrying", "running", "queued", "verified_complete", "answer_ready", "cancelled"].indexOf(s);
   return work.sort((a, b) => priority(a.status) - priority(b.status)
     || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0)
     || a.id.localeCompare(b.id)).slice(0, 18);

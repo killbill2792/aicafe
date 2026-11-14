@@ -51,7 +51,8 @@ describe("GET /work owner isolation and receipt verification", () => {
       ]));
     }
     expect(filters.ai_agent_jobs).toEqual(expect.arrayContaining([
-      ["eq", "business_id", "cafe-a"], ["eq", "thread_id", thread],
+      ["eq", "business_id", "cafe-a"], ["eq", "owner_user_id", "owner-a"],
+      ["eq", "thread_id", thread],
     ]));
     expect(filters.supervisor_run_steps).toBeUndefined();
     expect(filters.supervisor_effect_attempts).toBeUndefined();

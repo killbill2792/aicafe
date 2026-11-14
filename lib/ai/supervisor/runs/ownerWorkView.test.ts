@@ -61,6 +61,16 @@ describe("Task 16B persisted agentic work", () => {
     expect(view({ jobs: [{ ...job, status: "failed", error_code: "timeout" }] })[0].status).toBe("failed");
     expect(view({ jobs: [{ ...job, status: "done", reply_message_id: "answer" }] })[0].status).toBe("answer_ready");
   });
+  it("never describes owner rejection as a failed effect", () => {
+    const item = view({ proposals: [{ ...proposal, status: "rejected" }] })[0];
+    expect(item.status).toBe("cancelled");
+    expect(item.proof).toBeNull();
+  });
+  it("deduplicates a durable run and its underlying per-turn job", () => {
+    const items = view({ runs: [run], steps: [step], jobs: [job] });
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("durable_run");
+  });
   it("does not treat approval or a manual pending handoff as a completed effect", () => {
     expect(view({ proposals: [{ ...proposal, status: "manual_pending" }] })[0].status).toBe("uncertain");
     expect(view({ proposals: [{ ...proposal, status: "approved" }] })[0].status).toBe("running");

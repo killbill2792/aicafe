@@ -12,6 +12,7 @@
       "approval_required": "Your approval needed",
       "uncertain": "Outcome not yet verified",
       "failed": "Work blocked",
+      "cancelled": "Not proceeding",
       "answer_ready": "Answer saved",
       "verified_complete": "Effect verified"
     }
