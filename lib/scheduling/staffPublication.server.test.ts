@@ -79,6 +79,17 @@ describe("Task 13B existing-Supervisor durability and receipt boundary",()=>{
   expect(f.rpc).toHaveBeenCalledWith("staff_schedule_record_provider_status",{
    p_wamid:"wamid.worker-a",p_status:"delivered"});
  });
+ it("keeps approval-specific publication failure visible across refreshes without a new owner prompt",async()=>{
+  const f=dbFixture();mocks.admin.mockReturnValue(f.db);
+  f.rpc.mockResolvedValueOnce({data:null,error:new Error("schedule_source_changed")});
+  await followUpStaffPublicationForBusiness(f.db,"cafe-A",week);
+  expect(f.operations).toContainEqual(expect.objectContaining({
+    kind:"staff_schedule_publication_exception",status:"needs_owner",
+    owner_user_id:"owner-A",entity_id:"proposal-A",
+    payload:expect.objectContaining({verified:"no",week}),
+  }));
+  expect(mocks.send).toHaveBeenCalledTimes(1); // independent already-published receipts still progress
+ });
  it("does not ever replay old copy-ready send proposals",async()=>{
   const f=dbFixture("prepared",false);mocks.admin.mockReturnValue(f.db);
   mocks.blockers.mockReturnValue(["WHATSAPP_STAFF_TEMPLATE_APPROVED"]);
