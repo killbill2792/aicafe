@@ -7,7 +7,7 @@ const call=(name:string,args:string,id:string)=>({type:"response.output_item.don
  item:{type:"function_call",name,arguments:args,call_id:id}});
 const text=(delta:string)=>({type:"response.output_text.delta",delta});
 const ingredientId="11111111-1111-4111-8111-111111111111";
-const args=quantity=>JSON.stringify({items:[{
+const args=(quantity:number)=>JSON.stringify({items:[{
  ingredientId,itemName:"Milk",quantity,unit:"gal"}],
  neededBy:"2026-11-17",preferredSupplier:null});
 const plan={offers:[{supplierName:"Farm A",currency:"CAD",subtotalCents:2250,
@@ -63,7 +63,7 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
  });
  it("owner correction is a fresh bounded read+proposal, not auto-approval or silent inventory write",async()=>{
   const count:number[]=[];
-  const propose=vi.fn(async input=>{
+  const propose=vi.fn(async (input:{items:Array<{quantity:number}>})=>{
    count.push(input.items[0].quantity);
    return {proposalId:"44444444-4444-4444-8444-444444444444",
     revision:1,supplierName:"Farm A",subtotalCents:3150,currency:"CAD"};
