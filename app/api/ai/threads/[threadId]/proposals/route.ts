@@ -62,7 +62,7 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
   // Follow immutable edit ancestry so an old chat block always opens the latest draft.
   // Every child has the same owner/business/thread scope; never use an unscoped lookup.
   for(let depth=0;p.status==="rejected"&&depth<20;depth++){
-    const childId=await latestEditedProposalId(scope,p.id);
+    const childId=await latestEditedProposalId(scope,p.id,p.capabilityId);
     if(!childId)break;
     p=await repo.load(scope,childId);
     assertProposalScope(scope,p);
