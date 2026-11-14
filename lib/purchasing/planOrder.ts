@@ -85,7 +85,8 @@ export function planSupplierOrder(input:{
       reason="availability_stale";
     else if(input.neededBy&&(!quote.delivery_on||quote.delivery_on>input.neededBy))
       reason="delivery_not_confirmed";
-    const perPack=packBaseQuantity(quote.package_count,quote.package_unit,need.base);
+    const perPack=packBaseQuantity(quote.package_count,
+     quote.package_unit==="liter"?"l":quote.package_unit,need.base);
     if(perPack===null)reason="package_conversion_missing";
     if(reason){missing.add(reason+":"+group.name+":"+need.ingredient.name);continue;}
     const packs=Math.ceil(need.quantityBase/perPack!);

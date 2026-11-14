@@ -32,6 +32,12 @@ describe("Task 14B deterministic purchasing decisions",()=>{
    {...quote,delivery_on:"2026-11-19"}
   ])expect(plan({quotes:[candidate]}).offers).toHaveLength(0);
  });
+ it("normalizes supplier litre packs to the canonical metric unit without a density guess",()=>{
+  const p=plan({needs:[{ingredientId:ingredient.id,itemName:"Milk",quantity:10,unit:"l"}],
+   quotes:[{...quote,price_cents:200,package_unit:"liter",package_count:2}]});
+  expect(p.offers).toHaveLength(1);
+  expect(p.offers[0]).toMatchObject({subtotalCents:1000,lines:[{packs:5,packUnit:"liter"}]});
+ });
  it("never guesses how many ingredients are in a case",()=>{
   expect(plan({quotes:[{...quote,package_unit:"case",package_count:12}]}).offers).toHaveLength(0);
  });
