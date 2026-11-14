@@ -139,6 +139,30 @@ BEGIN
   RAISE EXCEPTION '13B opt-out not durably blocked'; END IF;
 END $test$;
 
+-- A click-authenticated cancellation blocks new claims and preserves previously
+-- accepted truth. A correction needs a new proposal and an incremented revision.
+DO $test$
+DECLARE r jsonb; renewed jsonb;
+BEGIN
+ r:=public.staff_schedule_cancel_publication(
+  current_setting('test.t13b.cafe')::uuid,current_setting('test.t13b.owner')::uuid,
+  current_setting('test.t13b.pub')::uuid);
+ IF r->>'state'<>'cancelled' OR (r->>'alreadyAccepted')::int<1 THEN
+  RAISE EXCEPTION '13B cancellation pretended accepted sends can be unsent'; END IF;
+ IF public.staff_schedule_claim_delivery(current_setting('test.t13b.pub')::uuid,
+    current_setting('test.t13b.worker_b')::uuid) IS NOT NULL THEN
+  RAISE EXCEPTION '13B cancellation allowed a new send claim'; END IF;
+ IF (SELECT status FROM public.staff_schedule_publications
+     WHERE id=current_setting('test.t13b.pub')::uuid)<>'cancelled' THEN
+  RAISE EXCEPTION '13B cancellation not persisted'; END IF;
+ renewed:=public.staff_schedule_publish(current_setting('test.t13b.cafe')::uuid,
+  current_setting('test.t13b.owner')::uuid,current_setting('test.t13b.second')::uuid);
+ IF renewed->>'state'<>'published' OR (renewed->>'publicationRevision')::int<>2
+ OR (SELECT count(*) FROM public.staff_schedule_publications
+    WHERE business_id=current_setting('test.t13b.cafe')::uuid)<>2 THEN
+  RAISE EXCEPTION '13B fresh approval did not create a distinct correction revision'; END IF;
+END $test$;
+
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.role','authenticated',true);
 SELECT set_config('request.jwt.claim.sub',:'owner_b',true);
