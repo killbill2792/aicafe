@@ -1,6 +1,6 @@
 import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
-import {supplierPurchaseInputSchema} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import {supplierPurchaseInputSchema,supplierPurchaseProposalToolInputSchema} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 
 /** Two deliberate steps: investigate read-only evidence, then create a durable
  * approval proposal using the SAME server-bound Supervisor planner. A model
@@ -8,15 +8,17 @@ import {supplierPurchaseInputSchema} from "@/lib/ai/supervisor/loop/purchaseOrde
 export const supplierPurchasingTools={
  get_supplier_purchase_orders:{
   agentId:"maya",schema:z.strictObject({}),
-  description:"Follow through on actual prepared supplier POs by reading the real scoped order and line snapshots. approved_for_ordering does NOT mean a supplier was contacted or goods received; do not infer delivery or payment. Use for owner follow-up status questions instead of starting another order.",
+  description:"Read saved, owner-scoped purchase-order drafts AND actual prepared POs before editing an existing draft or answering status questions. A correction must use the exact draft ID returned here; a separate new order must not replace any draft. approved_for_ordering does NOT mean a supplier was contacted or goods received; do not infer delivery or payment. Use for owner follow-up status questions instead of starting another order.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    z.strictObject({}).parse(raw);
    if(!ctx.purchasing)return {source:"purchase_orders",period:null,agentId:"maya",
     missing:["purchasing_unavailable"],orders:[]};
    const result=await ctx.purchasing.list();
    return {source:"purchase_orders",period:null,agentId:"maya",
-    missing:result.truncated?["purchase_order_history_truncated"]:[],
-    orders:result.orders,truncated:result.truncated};
+    missing:[...(result.truncated?["purchase_order_history_truncated"]:[]),
+      ...(result.draftsTruncated?["supplier_po_draft_history_truncated"]:[])],
+    orders:result.orders,truncated:result.truncated,
+    drafts:result.drafts,draftsTruncated:result.draftsTruncated};
   }
  },
  inspect_supplier_purchase:{
@@ -32,10 +34,10 @@ export const supplierPurchasingTools={
   }
  },
  propose_supplier_purchase_order:{
-  agentId:"maya",schema:supplierPurchaseInputSchema,
-  description:"After inspecting supplier quotations, autonomously prepare and SAVE an owner-approval purchase order for FUTURE supplies. Do not confuse with propose_purchases (that records ALREADY RECEIVED stock). Server recomputes actual ingredient, availability, currency, quote, package, freight/tax uncertainty; model cannot set price or authorize execution. The returned proposal is a DRAFT; only the owner's specific approval click makes it ready for ordering. This does NOT contact suppliers, update stock or create an expense.",
+  agentId:"maya",schema:supplierPurchaseProposalToolInputSchema,
+  description:"After inspecting supplier quotations, autonomously prepare and SAVE an owner-approval purchase order for FUTURE supplies. Do not confuse with propose_purchases (that records ALREADY RECEIVED stock). Server recomputes actual ingredient, availability, currency, quote, package, freight/tax uncertainty; model cannot set price or authorize execution. Set replaceProposalId=null for a NEW order, including a separate order while another draft is pending. For a correction of a saved draft, FIRST read get_supplier_purchase_orders, verify which exact draft the owner wants changed, then set replaceProposalId to its returned UUID. Never choose a draft to cancel merely because the owner uses words like increase/change; ask when the target is ambiguous. Server checks same owner, café, thread and immutable revision. The returned proposal is a DRAFT; only the owner's specific approval click makes it ready for ordering. This does NOT contact suppliers, update stock or create an expense.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-   const input=supplierPurchaseInputSchema.parse(raw);
+   const input=supplierPurchaseProposalToolInputSchema.parse(raw);
    if(!ctx.purchasing)return {source:"supplier_purchase_proposal",period:null,agentId:"maya",missing:["purchasing_unavailable"],draft:false,saved:false};
    const result=await ctx.purchasing.propose(input);
    return {source:"supplier_purchase_proposal",period:null,agentId:"maya",missing:[],
