@@ -180,10 +180,31 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
   if(cancelled.has(p.id)||effect?.payload?.publish_and_notify!==true||
     typeof effect.payload.week_start!=="string"||
     effect.payload.week_start<addDay(localDate,-6))continue;
+  const exceptionId="staff-publication-pending:"+p.id;
   try{
    const done=await publishApprovedStaffSchedule({businessId,ownerUserId:p.owner_user_id},p.id);
    if(!done.replayed)state.published++;
-  }catch{state.blocked++;}
+   // A previous ambiguous/failed publication is now independently verified.
+   const closed=await db.from("operating_tasks").update({
+     status:"handled",resolved_at:new Date().toISOString(),
+   }).eq("business_id",businessId).eq("id",exceptionId)
+     .neq("status","handled");
+   if(closed.error)result(closed.error);
+  }catch{
+   state.blocked++;
+   const pending=await db.from("operating_tasks").upsert({
+    business_id:businessId,id:exceptionId,agent_id:"olivia",
+    owner_user_id:p.owner_user_id,kind:"staff_schedule_publication_exception",
+    entity_type:"schedule",entity_id:p.id,status:"needs_owner",confidence:"high",
+    payload:{title:"Supervisor: approved schedule publication needs verification",
+      week:effect.payload.week_start,proposalId:p.id,
+      nextAction:"Review stale roster, approval or storage evidence; Supervisor will safely reconcile",
+      verified:"no"},
+    evidence:[{source:"supervisor_proposals",
+      facts:{id:p.id,week:effect.payload.week_start,status:"committed"}}],
+   },{onConflict:"business_id,id"});
+   if(pending.error)result(pending.error);
+  }
  }
  const publications=await db.from("staff_schedule_publications")
   .select("id,business_id,owner_user_id,proposal_id,week_start,snapshot,status")
