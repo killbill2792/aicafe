@@ -236,10 +236,11 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
   const missing=[...possible].filter(id=>!present.has(id)).length;
   const failures=receiptRows.filter(x=>["failed","uncertain","sending"].includes(x.status)).length;
   const pending=receiptRows.filter(x=>["prepared","sent"].includes(x.status)).length;
-  const delivered=receiptRows.filter(x=>["delivered","read","sent_by_owner"].includes(x.status)).length;
-  const complete=errors===0&&missing===0&&failures===0&&pending===0;
+  const delivered=receiptRows.filter(x=>["delivered","read"].includes(x.status)).length;
+  const manuallyOpened=receiptRows.filter(x=>x.status==="sent_by_owner").length;
+  const complete=errors===0&&missing===0&&failures===0&&pending===0&&manuallyOpened===0;
   const evidence={week:p.week_start,publicationId:p.id,
-   eligible:receiptRows.length,delivered,missing,failures,pending,
+   eligible:receiptRows.length,delivered,manuallyOpened,missing,failures,pending,
    providerEnabled:blockers.length===0};
   const taskId="staff-publication:"+p.id;
   const t=await db.from("operating_tasks").upsert({
