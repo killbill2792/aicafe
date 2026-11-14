@@ -394,61 +394,74 @@ revoke all on public.supplier_po_draft_replacements from public,anon,authenticat
 grant select on public.supplier_po_draft_replacements to authenticated;
 grant all on public.supplier_po_draft_replacements to service_role;
 
--- A correction must not leave the old proposal independently approvable.
--- This service-only CAS links the immutable replacement while retiring the
--- original within one DB transaction; old approval cards follow editedFrom.
-create function public.supervisor_supersede_supplier_draft(
+-- Atomic replacement of a saved PO draft on an authenticated owner correction.
+-- It is essential to create the replacement IN THE SAME TRANSACTION that
+-- invalidates the prior approval card. A crash cannot leave both approvable.
+-- Reuse the existing Supervisor proposal table and immutable-effect trigger.
+create function public.supervisor_replace_supplier_draft(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
- p_previous_id uuid,p_previous_revision integer,p_new_id uuid
-) returns text
+ p_previous_id uuid,p_previous_revision integer,p_request_key uuid,
+ p_effect jsonb,p_effect_hash text,p_baseline jsonb,p_monitor_spec jsonb
+) returns jsonb
 language plpgsql security definer set search_path=public as $$
 declare old_p public.supervisor_proposals; new_p public.supervisor_proposals;
 begin
  if auth.role() is distinct from 'service_role' then
   raise exception 'service_role_only' using errcode='42501'; end if;
- if p_previous_id=p_new_id then
-  raise exception 'same_purchase_draft' using errcode='P0001'; end if;
- if not exists(select 1 from public.memberships m where m.business_id=p_business_id
-    and m.user_id=p_owner_user_id and m.role='owner')
+ if not exists(select 1 from public.memberships m
+   where m.business_id=p_business_id and m.user_id=p_owner_user_id and m.role='owner')
  then raise exception 'proposal_owner_required' using errcode='42501'; end if;
  select * into old_p from public.supervisor_proposals
   where business_id=p_business_id and owner_user_id=p_owner_user_id
-    and thread_id=p_thread_id and id=p_previous_id
-    and capability_id='maya.supplier_purchase_order.v1' for update;
+   and thread_id=p_thread_id and id=p_previous_id
+   and capability_id='maya.supplier_purchase_order.v1'
+   and capability_version=1 for update;
+ if old_p.id is null then raise exception 'supplier_draft_not_found' using errcode='42501'; end if;
+ -- Replayed owner messages return the SAME replacement and do not replace it.
  select * into new_p from public.supervisor_proposals
   where business_id=p_business_id and owner_user_id=p_owner_user_id
-    and thread_id=p_thread_id and id=p_new_id
-    and capability_id='maya.supplier_purchase_order.v1' for update;
- if old_p.id is null or new_p.id is null then
-  raise exception 'supplier_draft_not_found' using errcode='42501'; end if;
- if old_p.status='rejected' and new_p.status='draft'
-   and exists(select 1 from public.supplier_po_draft_replacements link
-     where link.business_id=p_business_id
-       and link.owner_user_id=p_owner_user_id
-       and link.previous_id=old_p.id and link.replacement_id=new_p.id)
- then return 'superseded'; end if;
- if new_p.status<>'draft' then
-  raise exception 'replacement_not_draft' using errcode='P0001'; end if;
- if old_p.status<>'draft' or old_p.revision<>p_previous_revision then
-  -- A stale or newly approved old card cannot be silently replaced. The new
-  -- unapproved row must not remain independently actionable after this race.
-  update public.supervisor_proposals set status='rejected',
-   revision=revision+1,updated_at=now()
-   where id=new_p.id and status='draft';
-  return 'previous_no_longer_editable';
+    and thread_id=p_thread_id and request_key=p_request_key;
+ if new_p.id is not null then
+  if new_p.capability_id='maya.supplier_purchase_order.v1'
+    and new_p.effect_hash=p_effect_hash and new_p.status='draft'
+    and exists(select 1 from public.supplier_po_draft_replacements r
+       where r.business_id=p_business_id and r.previous_id=old_p.id
+        and r.replacement_id=new_p.id and r.owner_user_id=p_owner_user_id)
+  then return jsonb_build_object('proposal',to_jsonb(new_p)); end if;
+  raise exception 'supplier_draft_replay_conflict' using errcode='P0001';
  end if;
+ if old_p.status<>'draft' or old_p.revision<>p_previous_revision then
+  raise exception 'supplier_draft_revision_conflict' using errcode='P0001'; end if;
+ if jsonb_typeof(p_effect)<>'object'
+   or jsonb_typeof(p_effect->'lines')<>'array'
+   or jsonb_array_length(p_effect->'lines') not between 1 and 10
+   or nullif(btrim(p_effect->>'supplierName'),'') is null
+   or p_effect->>'currency' !~ '^[A-Z]{3}$'
+   or p_effect_hash !~ '^[a-f0-9]{64}$'
+   or jsonb_typeof(p_baseline)<>'object'
+   or jsonb_typeof(p_monitor_spec)<>'object'
+ then raise exception 'invalid_supplier_draft_replacement' using errcode='P0001'; end if;
  update public.supervisor_proposals set status='rejected',revision=revision+1,
-   updated_at=now() where id=old_p.id and status='draft'
-   and revision=p_previous_revision;
- insert into public.supplier_po_draft_replacements
-   (business_id,previous_id,replacement_id,owner_user_id)
-   values(p_business_id,old_p.id,new_p.id,p_owner_user_id);
- return 'superseded';
+  updated_at=now() where id=old_p.id;
+ insert into public.supervisor_proposals(
+  business_id,owner_user_id,thread_id,request_key,
+  capability_id,capability_version,canonical_effect_payload,effect_hash,
+  baseline,monitor_spec,locale
+ ) values(p_business_id,p_owner_user_id,p_thread_id,p_request_key,
+  'maya.supplier_purchase_order.v1',1,p_effect,p_effect_hash,
+  p_baseline||jsonb_build_object('editedByOwner',true,'editedFrom',old_p.id::text),
+  p_monitor_spec,old_p.locale) returning * into new_p;
+ insert into public.supplier_po_draft_replacements(
+  business_id,previous_id,replacement_id,owner_user_id
+ ) values(p_business_id,old_p.id,new_p.id,p_owner_user_id);
+ return jsonb_build_object('proposal',to_jsonb(new_p));
 end $$;
-revoke all on function public.supervisor_supersede_supplier_draft(uuid,uuid,uuid,uuid,integer,uuid)
- from public,anon,authenticated;
-grant execute on function public.supervisor_supersede_supplier_draft(uuid,uuid,uuid,uuid,integer,uuid)
- to service_role;
+revoke all on function public.supervisor_replace_supplier_draft(
+ uuid,uuid,uuid,uuid,integer,uuid,jsonb,text,jsonb,jsonb
+) from public,anon,authenticated;
+grant execute on function public.supervisor_replace_supplier_draft(
+ uuid,uuid,uuid,uuid,integer,uuid,jsonb,text,jsonb,jsonb
+) to service_role;
 
 
 -- Recovery fairness state belongs on the existing gateway's attempt ledger,
