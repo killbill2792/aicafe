@@ -161,6 +161,15 @@ describe("Task 13B existing-Supervisor durability and receipt boundary",()=>{
    expect(mocks.send).not.toHaveBeenCalled();
   }
  });
+ it("manual owner composer-open is never counted as delivered or closed work",async()=>{
+  const f=dbFixture("sent_by_owner");mocks.admin.mockReturnValue(f.db);
+  await followUpStaffPublicationForBusiness(f.db,"cafe-A",week);
+  expect(mocks.send).not.toHaveBeenCalled();
+  expect(f.operations).toContainEqual(expect.objectContaining({
+    kind:"staff_schedule_delivery",status:"needs_owner",
+    payload:expect.objectContaining({delivered:0,manuallyOpened:1}),
+  }));
+ });
  it("an ambiguous network outcome records uncertain and never fabricates delivery",async()=>{
   const f=dbFixture();mocks.admin.mockReturnValue(f.db);
   mocks.send.mockResolvedValue({state:"uncertain",reason:"network_or_timeout_ambiguous"});
