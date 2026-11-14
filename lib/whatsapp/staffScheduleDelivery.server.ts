@@ -1,5 +1,5 @@
 import "server-only";
-import {TEST_PHONE_NUMBER_ID} from "./transport";
+
 import {metaRejection,type SendResult} from "./transport.server";
 
 export function staffProviderBlockers():string[] {
@@ -13,10 +13,18 @@ export function staffProviderBlockers():string[] {
  if(!process.env.META_WHATSAPP_TOKEN&&!process.env.WHATSAPP_TOKEN)missing.push("META_WHATSAPP_TOKEN");
  if(!/^[a-z][a-z0-9_]{0,100}$/.test(process.env.WHATSAPP_STAFF_SCHEDULE_TEMPLATE??""))
    missing.push("WHATSAPP_STAFF_SCHEDULE_TEMPLATE");
- // Existing signed webhook authenticates ONLY the developer test sender.
- // A real production sender needs its own independently reviewed webhook contract.
- if((process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID)!==TEST_PHONE_NUMBER_ID)
-   missing.push("approved staff webhook sender");
+ // Employee messaging requires an independently approved sender identity;
+ // the owner-only developer sender is not silently borrowed as staff transport.
+ const sender=process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID??"";
+ if(!/^[0-9]{8,25}$/.test(sender)||
+    sender===(process.env.WHATSAPP_PHONE_NUMBER_ID??""))
+   missing.push("WHATSAPP_STAFF_PHONE_NUMBER_ID");
+ if(!enabled("WHATSAPP_STAFF_SENDER_APPROVED"))
+   missing.push("WHATSAPP_STAFF_SENDER_APPROVED");
+ // The webhook must authenticate Meta callbacks for this sender before sends
+ // may be enabled; an HTTP 200 accepted alone is not a delivery proof.
+ if(!process.env.WHATSAPP_APP_SECRET||!process.env.WHATSAPP_VERIFY_TOKEN)
+   missing.push("staff_signed_webhook_configuration");
  return missing;
 }
 /** Meta acceptance is NOT proof of delivery. An uncertain response cannot retry.
@@ -32,7 +40,7 @@ export async function sendStaffScheduleTemplate(to:string,message:string,
  const token=process.env.META_WHATSAPP_TOKEN||process.env.WHATSAPP_TOKEN;
  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
  try {
-  const response=await send(`https://graph.facebook.com/${version}/${TEST_PHONE_NUMBER_ID}/messages`,{
+  const response=await send(`https://graph.facebook.com/${version}/${process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID}/messages`,{
    method:"POST",signal:controller.signal,
    headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
    body:JSON.stringify({messaging_product:"whatsapp",to:to.slice(1),type:"template",
