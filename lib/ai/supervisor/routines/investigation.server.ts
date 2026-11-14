@@ -28,11 +28,13 @@ const isOpen=(c:Claimed,status:string)=>c.source_type==="alert"?
 /** Small source-shaped summaries, never source text as owner instructions.
  * Model tool calls read canonical café facts through the shared Supervisor path. */
 async function collectSource(db:SupabaseClient,c:Claimed):Promise<SourceSynopsis>{
-  const table=c.source_type==="alert"?"alerts":"operating_tasks";
-  const query=db.from(table).select(c.source_type==="alert"?
-    "kind,status,payload":"kind,status,owner_user_id,confidence,evidence")
-    .eq("business_id",c.business_id).eq("id",c.source_id);
-  const {data,error}=await query.maybeSingle();
+  // Keep literal schema select projections: dynamic strings defeat generated
+  // Supabase types and can conceal a missing column at compile time.
+  const {data,error}=c.source_type==="alert"?
+    await db.from("alerts").select("kind,status,payload")
+      .eq("business_id",c.business_id).eq("id",c.source_id).maybeSingle():
+    await db.from("operating_tasks").select("kind,status,owner_user_id,confidence,evidence")
+      .eq("business_id",c.business_id).eq("id",c.source_id).maybeSingle();
   if(error||!data)throw new Error("source_unavailable");
   const row=data as Record<string,unknown>;
   if(!isOpen(c,String(row.status)))throw new Error("source_unavailable");
@@ -95,7 +97,7 @@ async function fail(db:SupabaseClient,c:Claimed,error:unknown,now:Date):Promise<
 function previousCheckpoint(c:Claimed):InvestigationCheckpoint|null{
   const e=object(c.evidence);
   if(!e||!object(e.source)||typeof e.collectedAt!=="string")return null;
-  return e as InvestigationCheckpoint;
+  return e as unknown as InvestigationCheckpoint;
 }
 /** One bounded step from the SAME 15-minute cron. Each step is reentrant and
  * leased at the database. There is never a synthetic owner instruction, and
