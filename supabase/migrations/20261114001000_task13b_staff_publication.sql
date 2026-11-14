@@ -177,7 +177,10 @@ begin
     where business_id=pub.business_id and id=p_employee_id and active for share;
   if not found or e.phone_e164 is distinct from d.recipient_e164
     or e.phone_e164 !~ '^\+[1-9][0-9]{1,14}$'
-    or e.whatsapp_opt_in is distinct from true then
+    or e.whatsapp_opt_in is distinct from true
+    or e.preferred_schedule_channel is distinct from 'whatsapp'
+    or d.channel is distinct from 'whatsapp'
+    or e.preferred_language not in ('en') then
     update public.staff_schedule_deliveries set status='failed',error_code='recipient_revoked',
       updated_at=now() where id=d.id;
     return null;
@@ -318,6 +321,8 @@ begin
         and a.owner_user_id=pub.owner_user_id and a.effect_hash=prop.effect_hash
         and a.authorization_kind='click')
     and e.active and e.whatsapp_opt_in
+    and e.preferred_schedule_channel='whatsapp' and d.channel='whatsapp'
+    and (e.preferred_language is null or e.preferred_language='en')
     and e.phone_e164=d.recipient_e164);
 end $$;
 revoke all on function public.staff_schedule_can_send(uuid,uuid)
