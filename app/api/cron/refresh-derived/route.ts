@@ -4,6 +4,7 @@ import {verifyBearer} from "@/lib/security/bearer";
 import {refreshDerivedForBusiness} from "@/lib/alerts/refreshDerived.server";
 import {deliverPendingCommitments} from "@/lib/operating/commitments.server";
 import {dispatchRoutinesForBusiness} from "@/lib/ai/supervisor/routines/dispatch.server";
+import {enqueueInvestigationsForOwner,processDueInvestigations} from "@/lib/ai/supervisor/routines/investigation.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=300;
@@ -16,7 +17,7 @@ export async function GET(request:Request){
     return respond(401,{error:"unauthorized"});
   const db=createAdminSupabaseClient();
   let checked=0,refreshed=0,failed=0;
-  const routines={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0};
+  const routines={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const now=new Date();
   // Separate task capability, same authorized cron. Failures remain visible and
   // the database keeps unfinished commitments pending for the next invocation.
@@ -43,16 +44,24 @@ export async function GET(request:Request){
         }
         // Independent source-change triage follows the authoritative alert refresh.
         try{
-          const outcome=await dispatchRoutinesForBusiness(db,business.id,business.timezone,now);
+          const outcome=await dispatchRoutinesForBusiness(db,business.id,business.timezone,now,
+            enqueueInvestigationsForOwner);
           routines.routinesChecked+=outcome.routinesChecked;
           routines.runs+=outcome.runs;
           routines.notices+=outcome.notices;
           routines.failed+=outcome.failed;
           routines.evidenceChecks+=outcome.evidenceChecks;
+          routines.investigationsQueued+=outcome.investigationsQueued;
         }catch{routines.failed++;}
       }));
     }
     if(rows.length<pageSize)break;
   }
-  return respond(failed||commitments.failed||routines.failed?207:200,{checked,refreshed,failed,commitments,routines});
+  // A global fair, bounded slice across all cafés, not paid model calls per
+  // business. The existing cron remains the only schedule for this capability.
+  let investigations={processed:0,collected:0,investigated:0,followUps:0,failed:0};
+  try{investigations=await processDueInvestigations(db,now,2);}
+  catch{investigations.failed++;}
+  return respond(failed||commitments.failed||routines.failed||investigations.failed?207:200,
+    {checked,refreshed,failed,commitments,routines,investigations});
 }
