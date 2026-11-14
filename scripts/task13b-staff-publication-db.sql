@@ -238,27 +238,120 @@ BEGIN
 END $test$;
 
 -- A click-authenticated cancellation blocks new claims and preserves previously
--- accepted truth. A correction needs a new proposal and an incremented revision.
+-- accepted truth. Codex P1 requires an actual changed roster to be accepted
+-- under a FRESH owner click, not merely re-publishing the same frozen snapshot.
 DO $test$
-DECLARE r jsonb; renewed jsonb;
+DECLARE
+ r jsonb; correction jsonb; renewed jsonb; v_scope jsonb; effect jsonb;
+ new_id uuid:=gen_random_uuid();new_send uuid:=gen_random_uuid();
+ cafe uuid:=current_setting('test.t13b.cafe')::uuid;
+ owner_id uuid:=current_setting('test.t13b.owner')::uuid;
+ old_pub uuid:=current_setting('test.t13b.pub')::uuid;
+ worker_a uuid:=current_setting('test.t13b.worker_a')::uuid;
+ worker_b uuid:=current_setting('test.t13b.worker_b')::uuid;
+ week date; token text; thread uuid;
 BEGIN
- r:=public.staff_schedule_cancel_publication(
-  current_setting('test.t13b.cafe')::uuid,current_setting('test.t13b.owner')::uuid,
-  current_setting('test.t13b.pub')::uuid);
+ SELECT week_start into week from public.staff_schedule_publications WHERE id=old_pub;
+ SELECT thread_id into thread from public.supervisor_proposals
+   WHERE id=current_setting('test.t13b.proposal')::uuid;
+ r:=public.staff_schedule_cancel_publication(cafe,owner_id,old_pub);
  IF r->>'state'<>'cancelled' OR (r->>'alreadyAccepted')::int<1 THEN
   RAISE EXCEPTION '13B cancellation pretended accepted sends can be unsent'; END IF;
- IF public.staff_schedule_claim_delivery(current_setting('test.t13b.pub')::uuid,
-    current_setting('test.t13b.worker_b')::uuid) IS NOT NULL THEN
+ IF public.staff_schedule_claim_delivery(old_pub,worker_b) IS NOT NULL THEN
   RAISE EXCEPTION '13B cancellation allowed a new send claim'; END IF;
- IF (SELECT status FROM public.staff_schedule_publications
-     WHERE id=current_setting('test.t13b.pub')::uuid)<>'cancelled' THEN
+ IF (SELECT status FROM public.staff_schedule_publications WHERE id=old_pub)<>'cancelled' THEN
   RAISE EXCEPTION '13B cancellation not persisted'; END IF;
- renewed:=public.staff_schedule_publish(current_setting('test.t13b.cafe')::uuid,
-  current_setting('test.t13b.owner')::uuid,current_setting('test.t13b.second')::uuid);
+ IF NOT EXISTS(SELECT 1 FROM public.scheduled_shifts
+  WHERE business_id=cafe AND status='sent' AND deleted_at is null
+    AND local_date=week) THEN
+  RAISE EXCEPTION '13B sent history was erased after accepting provider message'; END IF;
+ v_scope:=jsonb_build_object('version',2,'kind','schedule',
+   'weekStart',week,'staffIds',(
+    SELECT jsonb_agg(e.id::text ORDER BY e.id) FROM public.employees e
+    WHERE e.id IN (worker_a,worker_b)));
+ token:=public.supervisor_staff_scoped_token(cafe,v_scope);
+ effect:=jsonb_build_object(
+   'operation','propose_schedule','scopeVersion',2,
+   'dependencyScope',v_scope,'expectedToken',token,
+   'preview',jsonb_build_array(jsonb_build_object(
+     'field','schedule:correction','label','Approved correction',
+     'before',jsonb_build_object('kind','text','text','09:00–15:00'),
+     'after',jsonb_build_object('kind','text','text','08:00–15:00'))),
+   'payload',jsonb_build_object('week_start',week,
+      'correct_cancelled_publication',true,'shifts',
+      jsonb_build_array(jsonb_build_object(
+         'employee_id',worker_a,'date',week,'start','08:00',
+         'end','15:00','break_minutes',0),
+       jsonb_build_object(
+         'employee_id',worker_b,'date',week,'start','10:00',
+         'end','16:00','break_minutes',0))));
+ INSERT INTO public.supervisor_proposals
+  (id,business_id,owner_user_id,thread_id,request_key,capability_id,
+   capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,
+   locale,status,revision)
+ VALUES(new_id,cafe,owner_id,thread,gen_random_uuid(),
+   'olivia.staff_propose_schedule.v2',2,effect,repeat('d',64),
+   '{}','{}','en','approved',2);
+ -- Direct privileged effects without the matching explicit click MUST fail.
+ BEGIN
+   PERFORM public.supervisor_gateway_commit_staff_correction(
+    cafe,owner_id,thread,new_id,2);
+   RAISE EXCEPTION '13B correction was accepted without owner click';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+ INSERT INTO public.supervisor_approvals
+   (business_id,proposal_id,owner_user_id,approved_revision,effect_hash,authorization_kind)
+ VALUES (cafe,new_id,owner_id,1,repeat('d',64),'click');
+ correction:=public.supervisor_gateway_commit_staff_correction(
+    cafe,owner_id,thread,new_id,2);
+ IF correction->>'state'<>'applied' OR
+     (correction->'proposal'->>'status')<>'committed' THEN
+   RAISE EXCEPTION '13B fresh approved correction did not commit'; END IF;
+ IF (SELECT count(*) FROM public.scheduled_shifts
+      WHERE business_id=cafe AND deleted_at is null
+       AND local_date=week AND status='draft')<>2
+    OR NOT EXISTS(SELECT 1 FROM public.scheduled_shifts
+       WHERE business_id=cafe AND employee_id=worker_a AND local_date=week
+       AND deleted_at is null AND start_local='08:00'::time)
+    OR NOT EXISTS(SELECT 1 FROM public.scheduled_shifts
+       WHERE business_id=cafe AND employee_id=worker_a AND local_date=week
+       AND deleted_at is not null AND start_local='09:00'::time)
+ THEN RAISE EXCEPTION '13B published roster correction lost old history or failed replacement'; END IF;
+ IF (SELECT status FROM public.staff_schedule_deliveries
+       WHERE publication_id=old_pub AND employee_id=worker_a)<>'read'
+ THEN RAISE EXCEPTION '13B correction rewrote immutable old delivered/read receipt'; END IF;
+ -- A second, NEW approval must explicitly authorize the revised publication
+ -- and its independent employee recipient ledger; the old send is not replayed.
+ INSERT INTO public.supervisor_proposals
+  (id,business_id,owner_user_id,thread_id,request_key,capability_id,
+   capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,
+   locale,status)
+ VALUES(new_send,cafe,owner_id,thread,gen_random_uuid(),
+   'olivia.staff_propose_send_schedule.v2',2,
+   jsonb_build_object('operation','propose_send_schedule',
+      'payload',jsonb_build_object('week_start',week,'publish_and_notify',true)),
+   repeat('e',64),'{}','{}','en','committed');
+ INSERT INTO public.supervisor_approvals
+  (business_id,proposal_id,owner_user_id,approved_revision,effect_hash,authorization_kind)
+ VALUES (cafe,new_send,owner_id,1,repeat('e',64),'click');
+ INSERT INTO public.staff_schedule_handoff_snapshots
+   (business_id,proposal_id,week_start,shifts)
+ VALUES(cafe,new_send,week,public.staff_handoff_week_shifts(cafe,week));
+ INSERT INTO public.staff_schedule_deliveries
+   (business_id,proposal_id,employee_id,recipient_e164,status)
+ VALUES(cafe,new_send,worker_a,'+14155550123','prepared'),
+       (cafe,new_send,worker_b,'+14155550124','prepared');
+ renewed:=public.staff_schedule_publish(cafe,owner_id,new_send);
  IF renewed->>'state'<>'published' OR (renewed->>'publicationRevision')::int<>2
  OR (SELECT count(*) FROM public.staff_schedule_publications
-    WHERE business_id=current_setting('test.t13b.cafe')::uuid)<>2 THEN
-  RAISE EXCEPTION '13B fresh approval did not create a distinct correction revision'; END IF;
+    WHERE business_id=cafe)<>2
+ OR NOT EXISTS(SELECT 1 FROM public.staff_schedule_publications
+    WHERE id=(renewed->>'id')::uuid AND snapshot @> jsonb_build_array(
+      jsonb_build_object('employee_id',worker_a,'date',week,
+        'start','08:00','end','15:00','break_minutes',0)))
+ THEN RAISE EXCEPTION '13B reapproval failed to publish corrected distinct revision'; END IF;
+ IF (SELECT status FROM public.staff_schedule_publications WHERE id=old_pub)<>'cancelled'
+ THEN RAISE EXCEPTION '13B correction resurrected cancelled historical publication'; END IF;
 END $test$;
 
 SET LOCAL ROLE authenticated;
