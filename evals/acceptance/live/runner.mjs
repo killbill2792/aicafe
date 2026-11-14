@@ -182,7 +182,7 @@ async function upload(context,thread,file){
 }
 /** The same authenticated approval endpoint used by the one-screen owner card.
  * This uses only explicitly labeled expected proposal IDs on disposable cafés. */
-async function approveExpectedPurchases(context,thread,steps){
+export async function approveExpectedPurchases(context,thread,steps){
  for(const step of steps){
   const response=await checked(await context.request.post(
    "/api/ai/threads/"+thread+"/proposals",{
