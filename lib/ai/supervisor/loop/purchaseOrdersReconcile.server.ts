@@ -2,7 +2,6 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {OwnerLoopScope} from "./engine";
 import {SupervisorEffectGateway} from "./effectGateway.server";
-import {supplierPurchaseOrderCapabilityId} from "./purchaseOrders.server";
 
 type ScopedRecovery=Pick<SupervisorEffectGateway,"reconcileSupplierPurchaseOrder">;
 type PendingRow={id:string;business_id:string;owner_user_id:string;thread_id:string;
@@ -18,12 +17,10 @@ export async function reconcilePendingSupplierPurchaseOrders(
  now:Date=new Date()
 ):Promise<PurchaseOrderRecovery>{
  const cutoff=new Date(now.getTime()-5*60_000).toISOString();
- const read=await db.from("supervisor_proposals")
+ const read=await db.from("supplier_po_recovery_due")
   .select("id,business_id,owner_user_id,thread_id,revision,locale,status,updated_at")
-  .eq("capability_id",supplierPurchaseOrderCapabilityId)
-  .eq("status","executing")
   .lte("updated_at",cutoff)
-  .order("monitor_checked_at",{ascending:true,nullsFirst:true})
+  .order("checked_at",{ascending:true,nullsFirst:true})
   .order("id",{ascending:true}).limit(25);
  if(read.error)throw new Error("supplier_po_reconciliation_queue_unavailable");
  const result:PurchaseOrderRecovery={checked:(read.data??[]).length,verified:0,uncertain:0,failed:0};
@@ -39,10 +36,9 @@ export async function reconcilePendingSupplierPurchaseOrders(
   }finally{
    // A missing receipt is NOT authorization to retry the supplier PO effect.
    // Cursor rotation gives new and other café attempts a bounded opportunity.
-   const rotated=await db.from("supervisor_proposals")
-    .update({monitor_checked_at:now.toISOString()})
-    .eq("business_id",row.business_id).eq("owner_user_id",row.owner_user_id)
-    .eq("id",row.id).eq("revision",row.revision).eq("status","executing");
+   const rotated=await db.from("supplier_po_recovery_marks")
+    .upsert({business_id:row.business_id,proposal_id:row.id,
+      checked_at:now.toISOString()},{onConflict:"business_id,proposal_id"});
    if(rotated.error)result.failed++;
   }
  }
