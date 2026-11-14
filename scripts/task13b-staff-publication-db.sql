@@ -140,6 +140,7 @@ BEGIN
 END $test$;
 
 SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
 SELECT set_config('request.jwt.claim.sub',:'owner_b',true);
 DO $test$
 DECLARE denied boolean:=false;
