@@ -11,20 +11,22 @@ import {dispatchRoutinesForBusiness,readActionablePriorities} from "./dispatch.s
 import {choosePriorities} from "./priority";
 function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}[];
   threads?:{id:string;owner_user_id:string}[];alerts?:Record<string,unknown>[];
-  tasks?:Record<string,unknown>[]}) {
+  tasks?:Record<string,unknown>[];proposals?:Record<string,unknown>[]}) {
   const rows:Record<string,Record<string,unknown>[]>={
     memberships:params?.owners??[{user_id:"owner"}],
     ai_threads:params?.threads??[{id:"thread",owner_user_id:"owner"}],
     supervisor_routines:params?.routines??[],
     alerts:params?.alerts??[],
     operating_tasks:params?.tasks??[],
+    supervisor_proposals:params?.proposals??[],
   };
   return {from:(table:string)=>{
     let selected=rows[table];
     const builder={
       select(){return builder},
       eq(field:string,value:unknown){
-        if(table==="operating_tasks"&&(field==="kind"||field==="owner_user_id"))
+        if((table==="operating_tasks"&&(field==="kind"||field==="owner_user_id"))||
+          (table==="supervisor_proposals"&&["business_id","owner_user_id","capability_id","status"].includes(field)))
           selected=selected.filter(row=>row[field]===value);
         return builder;
       },
@@ -45,6 +47,11 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
         return builder;
       },
       or(){return builder},order(){return builder},
+      lte(field:string,value:string){
+        if(table==="supervisor_proposals")
+          selected=selected.filter(row=>typeof row[field]==="string"&&String(row[field])<=value);
+        return builder;
+      },
       async limit(){return {data:selected,error:null}},
     };
     return builder;
@@ -121,6 +128,28 @@ describe("bounded independent routine dispatch",()=>{
     expect(result.notices).toBe(1);
     expect(mocks.notice).toHaveBeenCalledTimes(1);
     expect(mocks.notice.mock.calls[0][2].source.sourceId).toBe("alert-3");
+  });
+  it("proactively notifies a verified pending PO in its original owner thread, never a fresh or foreign draft",async()=>{
+    mocks.notice.mockReset().mockResolvedValue("posted");
+    const now=new Date("2026-11-14T08:00:00Z");
+    const old={id:"po-old",business_id:"cafe",owner_user_id:"owner",
+      thread_id:"original-thread",capability_id:"maya.supplier_purchase_order.v1",
+      status:"draft",revision:2,created_at:"2026-11-13T00:00:00Z"};
+    const fresh={...old,id:"po-fresh",created_at:"2026-11-14T07:30:00Z"};
+    const foreign={...old,id:"po-foreign",owner_user_id:"other"};
+    const rows=db({proposals:[old,fresh,foreign]});
+    const decisions=await readActionablePriorities(rows,{
+      businessId:"cafe",ownerUserId:"owner",threadId:"latest-thread",localDate:"2026-11-14"},now);
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].source).toMatchObject({
+      sourceType:"supplier_po",sourceId:"po-old",sourceThreadId:"original-thread",status:"draft"
+    });
+    expect(decisions[0].reason).toBe("Supplier purchase-order draft needs your approval");
+    const outcome=await dispatchRoutinesForBusiness(rows,"cafe","America/Los_Angeles",now);
+    expect(outcome.notices).toBe(1);
+    expect(mocks.notice).toHaveBeenCalledWith(expect.anything(),
+      expect.objectContaining({threadId:"original-thread"}),
+      expect.objectContaining({source:expect.objectContaining({sourceType:"supplier_po"})}),now);
   });
   it("does not mix private tasks across owners",async()=>{
     const decisions=await readActionablePriorities(db({tasks:[
