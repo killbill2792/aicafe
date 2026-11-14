@@ -8,6 +8,9 @@ import {createHash} from "node:crypto";
 const issue=(reason)=>{throw new Error("acceptance_integrity:"+reason);};
 const requireThat=(condition,reason)=>{if(!condition)issue(reason);};
 const isId=value=>typeof value==="string"&&/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(value);
+// Provider model names (for example gpt-4.1-mini or openai/gpt-4.1-mini)
+// are not internal run IDs. Keep their validation explicit and bounded.
+const isProviderModelId=value=>typeof value==="string"&&/^[a-zA-Z0-9][a-zA-Z0-9._/:+-]{0,127}$/.test(value);
 const hash=value=>createHash("sha256").update(value).digest("hex");
 const jsonEqual=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const positiveOrZero=value=>Number.isSafeInteger(value)&&value>=0;
@@ -117,7 +120,7 @@ export function scoreAcceptance(truth,report,{mode="calibration",minReceipts=50,
   "wrong_capture_mode");
  if(mode==="live"){
   requireThat(/^[a-f0-9]{40}$/.test(report.capture.headSha??""),"missing_head_sha");
-  requireThat(isId(report.capture.runId)&&isId(report.capture.modelId),
+  requireThat(isId(report.capture.runId)&&isProviderModelId(report.capture.modelId),
    "missing_real_model_identity");
  }
  const expected=new Map(),actual=new Map();
