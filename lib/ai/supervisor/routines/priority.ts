@@ -45,8 +45,16 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
   // Severity is a class, not a small bonus: a verified critical café issue
   // must never lose to an ordinary overdue administrative task.
   // Within a class, age, owner action and confidence provide stable ordering.
-  const severityClass=source.severity==="critical"?300:
-    source.severity==="high"?200:100;
+  // Source severity is only actionable as critical when the evidence itself is
+  // verified. An outage or incomplete provider snapshot is not a proven loss.
+  const evidence=source.evidence;
+  const record=evidence&&typeof evidence==="object"&&!Array.isArray(evidence)?
+    evidence as Record<string,unknown>:null;
+  const unverified=source.confidence==="unknown"||source.confidence==="low"||
+    record?.quality==="partial"||record?.quality==="missing"||
+    record?.quality==="stale"||record?.verified===false;
+  const severityClass=!unverified&&source.severity==="critical"?300:
+    !unverified&&source.severity==="high"?200:100;
   let priority=severityClass+(ownerAction?25:source.sourceType==="alert"?15:10);
   if(overdue)priority+=20;
   if(source.confidence==="high")priority+=5;
