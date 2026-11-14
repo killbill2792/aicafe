@@ -187,7 +187,61 @@ try{
   " $5::date,'CAD',$6,'unavailable',null,now()+interval '1 second')",
  [unavailableQuote,a.cafe,a.owner,id(),today,a.ingredient]);
  await fails(()=>invoke(),/supplier_quote_superseded/);
+ // New P1: PostgREST's confirmed SQL validation rollback MUST be finalized
+ // as stale through the EXISTING effect gateway. No PO writer can run again
+ // for that stale approval; a fresh proposal can still be created.
+ const createExecutingAttempt=async pid=>{
+  await db.query("insert into public.supervisor_proposals"+
+   " (id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,"+
+   " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision)"+
+   " select $1,business_id,owner_user_id,thread_id,$2,capability_id,capability_version,"+
+   " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,'executing',3"+
+   " from public.supervisor_proposals where id=$3",[pid,id(),a.proposal]);
+  await db.query("insert into public.supervisor_effect_attempts"+
+   " (business_id,proposal_id,effect_hash,authorization_kind,business_date,state)"+
+   " values($1,$2,$3,'click',$4,'executing')",[a.cafe,pid,hash,today]);
+ };
+ const finishKnownStale=async(pid,reason)=>{
+  await fails(()=>invoke(a.cafe,a.owner,a.thread,pid),new RegExp(reason));
+  const attemptBefore=await one("select attempt_key from public.supervisor_effect_attempts"+
+    " where business_id=$1 and proposal_id=$2",[a.cafe,pid]);
+  check(Boolean(attemptBefore?.attempt_key),"known rejection had a real gateway attempt");
+  const row=await one("select status,revision from public.supervisor_finish_effect_attempt("+
+   "$1,$2,$3,$4,$5,3,'stale',null,null)",
+   [a.cafe,a.owner,a.thread,pid,attemptBefore.attempt_key]);
+  check(row?.status==="stale"&&row.revision===4,
+   "confirmed "+reason+" leaves terminal stale proposal, not executing");
+  const state=await one("select state from public.supervisor_effect_attempts"+
+   " where business_id=$1 and proposal_id=$2",[a.cafe,pid]);
+  check(state?.state==="stale","gateway audit marks the known rejection stale");
+  check((await one("select count(*)::int as n from public.purchase_orders"+
+    " where business_id=$1 and proposal_id=$2",[a.cafe,pid]))?.n===0,
+   "known rejection cannot create a PO");
+  await fails(()=>invoke(a.cafe,a.owner,a.thread,pid),/gateway_click_required/);
+  await fails(()=>one("select * from public.supervisor_finish_effect_attempt("+
+   "$1,$2,$3,$4,$5,3,'stale',null,null)",
+   [a.cafe,a.owner,a.thread,pid,attemptBefore.attempt_key]),/effect_attempt_conflict/);
+ };
+ const supersededProposal=id();
+ await createExecutingAttempt(supersededProposal);
+ await finishKnownStale(supersededProposal,"supplier_quote_superseded");
  await db.query("delete from public.ai_supplier_quotes where id=$1",[unavailableQuote]);
+ // Expired evidence is also a transactionally rejected attempt, not a lost
+ // response. Restore evidence after the negative, so subsequent valid PO and
+ // independent genuinely uncertain recovery tests continue to execute.
+ await db.query("update public.ai_supplier_quotes set valid_until=$1::date"+
+  " where business_id=$2 and id=$3",[date(-1),a.cafe,a.quote]);
+ const expiredProposal=id();
+ await createExecutingAttempt(expiredProposal);
+ await finishKnownStale(expiredProposal,"supplier_source_stale_or_mismatched");
+ await db.query("update public.ai_supplier_quotes set valid_until=$1::date"+
+  " where business_id=$2 and id=$3",[until,a.cafe,a.quote]);
+ const freshDraftAfterStale=id();
+ await createDraft(freshDraftAfterStale);
+ check((await one("select status from public.supervisor_proposals where id=$1",
+  [freshDraftAfterStale]))?.status==="draft",
+  "owner can prepare a separate refreshed draft after a stale approval");
+
  const before=await one("select (select count(*)::int from public.pantry_stock_purchases where business_id=$1) as stock,"+
   " (select count(*)::int from public.expenses where business_id=$1) as expenses",[a.cafe]);
  const first=(await invoke())?.result;
