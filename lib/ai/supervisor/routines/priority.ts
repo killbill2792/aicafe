@@ -42,10 +42,13 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     source.dueAt!==null&&source.dueAt!==undefined&&
     Number.isFinite(Date.parse(source.dueAt))&&Date.parse(source.dueAt)<=now.getTime();
   const ownerAction=source.status==="needs_owner";
-  let priority=source.sourceType==="alert"?65:ownerAction?90:75;
+  // Severity is a class, not a small bonus: a verified critical café issue
+  // must never lose to an ordinary overdue administrative task.
+  // Within a class, age, owner action and confidence provide stable ordering.
+  const severityClass=source.severity==="critical"?300:
+    source.severity==="high"?200:100;
+  let priority=severityClass+(ownerAction?25:source.sourceType==="alert"?15:10);
   if(overdue)priority+=20;
-  if(source.severity==="critical")priority+=20;
-  else if(source.severity==="high")priority+=10;
   if(source.confidence==="high")priority+=5;
   const revisionHash=priorityRevision(source);
   // This hash encodes scope and source identity, unlike a text-title dedupe.
