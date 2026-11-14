@@ -66,6 +66,29 @@ export function assertLiveManifest(manifest,{assetRoot,allowedOwners,minReceipts
    fail("update_without_expected_purchase");
   if(item.expected.outcome!=="updated"&&item.expected.writes.length>0)
    fail("unapproved_expected_purchase");
+  const expected=item.expected;
+  if(!["none","owner_click","direct_authorized"].includes(expected.authorization)||
+     !Array.isArray(expected.approvals))
+   fail("missing_approval_authority_label");
+  if(expected.outcome==="updated"&&expected.authorization==="none"||
+     expected.outcome!=="updated"&&expected.authorization!=="none")
+   fail("unapproved_expected_purchase");
+  if(expected.authorization==="owner_click"){
+   if(expected.approvals.length!==expected.writes.length||expected.approvals.length===0)
+    fail("approval_lines_do_not_match_writes");
+   const seenLines=new Set(),seenSources=new Set();
+   for(const approval of expected.approvals){
+    if(!/^proposal_(?:0|[1-9][0-9]*)$/.test(approval?.lineId??"")||
+       !validId(approval?.sourceLineId)||
+       seenLines.has(approval.lineId)||seenSources.has(approval.sourceLineId)||
+       !expected.extracted.some(line=>line.lineId===approval.lineId&&
+        line.confidence==="verified")||
+       !expected.writes.some(line=>line.sourceLineId===approval.sourceLineId))
+     fail("untrusted_approval_selection");
+    seenLines.add(approval.lineId);seenSources.add(approval.sourceLineId);
+   }
+  }else if(expected.approvals.length!==0)fail("unexpected_owner_approval");
+
   for(const write of item.expected.writes){
    if(!validId(write.sourceLineId)||!validId(write.ingredient)||
     !/^(g|ml|each)_x10000$/.test(write.unit)||
