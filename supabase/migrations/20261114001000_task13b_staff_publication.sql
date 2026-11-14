@@ -7,6 +7,7 @@ create table public.staff_schedule_publications (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references public.businesses(id) on delete cascade,
   proposal_id uuid not null,
+  publication_revision integer not null default 1 check (publication_revision>0),
   owner_user_id uuid not null references auth.users(id),
   week_start date not null check (extract(isodow from week_start)=1),
   snapshot jsonb not null check (jsonb_typeof(snapshot)='array' and jsonb_array_length(snapshot)>0),
@@ -14,6 +15,7 @@ create table public.staff_schedule_publications (
   published_at timestamptz not null default now(),
   cancelled_at timestamptz,
   unique (business_id,proposal_id),
+  unique (business_id,week_start,publication_revision),
   unique (id,business_id),
   foreign key (business_id,proposal_id)
     references public.supervisor_proposals(business_id,id) on delete cascade
@@ -63,7 +65,7 @@ create function public.staff_schedule_publish(
 declare p public.supervisor_proposals%rowtype;
   s public.staff_schedule_handoff_snapshots%rowtype;
   pub public.staff_schedule_publications%rowtype;
-  expected_count integer; prepared_count integer;
+  expected_count integer; prepared_count integer; next_revision integer;
 begin
   if auth.role() is distinct from 'service_role' then
     raise exception 'service_role_only' using errcode='42501'; end if;
@@ -102,6 +104,9 @@ begin
   if exists(select 1 from public.staff_schedule_publications
      where business_id=p_business_id and week_start=s.week_start and status='published') then
     raise exception 'already_published_different_approval' using errcode='P0001'; end if;
+  select coalesce(max(publication_revision),0)+1 into next_revision
+    from public.staff_schedule_publications
+    where business_id=p_business_id and week_start=s.week_start;
   -- The same transaction that issues the publication receipt changes the
   -- canonical dated roster from draft to published legacy status. No attendance
   -- records or duplicate schedules are created. The immutable snapshot omits
@@ -110,8 +115,8 @@ begin
     where business_id=p_business_id and deleted_at is null
       and local_date between s.week_start and s.week_start+6 and status='draft';
   insert into public.staff_schedule_publications
-    (business_id,proposal_id,owner_user_id,week_start,snapshot)
-    values (p_business_id,p.id,p_owner_user_id,s.week_start,s.shifts) returning * into pub;
+    (business_id,proposal_id,owner_user_id,week_start,snapshot,publication_revision)
+    values (p_business_id,p.id,p_owner_user_id,s.week_start,s.shifts,next_revision) returning * into pub;
   update public.staff_schedule_deliveries set publication_id=pub.id,updated_at=now()
     where business_id=p_business_id and proposal_id=p.id and publication_id is null
       and status='prepared';
@@ -228,3 +233,78 @@ begin
 end $$;
 revoke all on function public.staff_schedule_record_provider_status(text,text) from public,anon,authenticated;
 grant execute on function public.staff_schedule_record_provider_status(text,text) to service_role;
+
+-- An explicit owner cancellation is one more service-only effect. It prevents
+-- all new send claims; messages already accepted by Meta cannot be unsent.
+-- A later corrected roster needs a NEW owner approval and publication revision.
+create function public.staff_schedule_cancel_publication(
+  p_business_id uuid,p_owner_user_id uuid,p_publication_id uuid
+) returns jsonb language plpgsql security definer set search_path=public as $$
+declare pub public.staff_schedule_publications%rowtype;
+  in_flight integer;accepted integer;
+begin
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'service_role_only' using errcode='42501'; end if;
+  if not exists(select 1 from public.memberships m join public.businesses b
+     on b.id=m.business_id where m.business_id=p_business_id
+      and m.user_id=p_owner_user_id and m.role='owner' and b.is_demo=false) then
+    raise exception 'staff_owner_required' using errcode='42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('olivia-'||p_business_id::text,0));
+  select * into pub from public.staff_schedule_publications
+    where id=p_publication_id and business_id=p_business_id
+      and owner_user_id=p_owner_user_id for update;
+  if not found then raise exception 'publication_not_owned' using errcode='42501'; end if;
+  select count(*) filter(where status='sending'),
+     count(*) filter(where status in ('sent','delivered','read','sent_by_owner'))
+    into in_flight,accepted from public.staff_schedule_deliveries
+    where publication_id=pub.id and business_id=pub.business_id;
+  if pub.status='published' then
+    update public.staff_schedule_publications
+      set status='cancelled',cancelled_at=now() where id=pub.id;
+    update public.staff_schedule_deliveries
+      set status='failed',error_code='publication_cancelled',updated_at=now()
+      where business_id=pub.business_id and publication_id=pub.id
+        and status='prepared';
+    if in_flight=0 and accepted=0 and
+      pub.snapshot=public.staff_handoff_week_shifts(pub.business_id,pub.week_start) then
+      update public.scheduled_shifts set status='draft',updated_at=now()
+        where business_id=pub.business_id and status='sent' and deleted_at is null
+          and local_date between pub.week_start and pub.week_start+6;
+    end if;
+  end if;
+  return jsonb_build_object('state','cancelled','publicationId',pub.id,
+    'revision',pub.publication_revision,'inFlight',in_flight,'alreadyAccepted',accepted);
+end $$;
+revoke all on function public.staff_schedule_cancel_publication(uuid,uuid,uuid)
+ from public,anon,authenticated;
+grant execute on function public.staff_schedule_cancel_publication(uuid,uuid,uuid)
+ to service_role;
+
+-- In-flight attempts require a LAST-MOMENT authorization check just before
+-- the network call. This cannot retract packets already sent to Meta, but
+-- cancellation/opt-out between claim and request must prevent a new request.
+create function public.staff_schedule_can_send(
+ p_delivery_id uuid,p_attempt_token uuid
+) returns boolean language plpgsql security definer set search_path=public as $$
+declare d public.staff_schedule_deliveries%rowtype;
+begin
+ if auth.role() is distinct from 'service_role' then
+   raise exception 'service_role_only' using errcode='42501'; end if;
+ select * into d from public.staff_schedule_deliveries
+   where id=p_delivery_id and attempt_token=p_attempt_token and status='sending';
+ if not found then return false; end if;
+ return exists(select 1 from public.staff_schedule_publications pub
+   join public.supervisor_proposals prop
+     on prop.business_id=pub.business_id and prop.id=pub.proposal_id
+   join public.memberships owner
+     on owner.business_id=pub.business_id and owner.user_id=pub.owner_user_id
+   join public.employees e
+     on e.business_id=d.business_id and e.id=d.employee_id
+   where pub.id=d.publication_id and pub.status='published'
+    and prop.status='committed' and owner.role='owner'
+    and e.active and e.whatsapp_opt_in
+    and e.phone_e164=d.recipient_e164);
+end $$;
+revoke all on function public.staff_schedule_can_send(uuid,uuid)
+ from public,anon,authenticated;
+grant execute on function public.staff_schedule_can_send(uuid,uuid) to service_role;
