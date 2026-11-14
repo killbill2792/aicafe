@@ -514,3 +514,119 @@ revoke all on function public.supervisor_claim_supplier_po_recovery(integer,time
  from public,anon,authenticated;
 grant execute on function public.supervisor_claim_supplier_po_recovery(integer,timestamptz)
  to service_role;
+
+
+-- Task14B has no second scheduler or inbox: saved drafts are validated as
+-- another source for Task 7's existing owner-only priority-notice writer.
+-- Proposals younger than two hours never generate unsolicited reminders.
+create or replace function public.post_supervisor_priority_notice(
+  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
+  p_source_type text,p_source_id text,p_revision_hash text,
+  p_stable_key text,p_reason text,p_as_of timestamptz,
+  p_routine_id uuid default null,p_run_id uuid default null,p_lease_token uuid default null
+) returns boolean
+language plpgsql security definer set search_path=public as $$
+declare v_task_id text;v_msg_id uuid;v_hash text;v_found boolean;
+        v_inserted_task_id text;v_o public.supervisor_routine_occurrences;
+        v_r public.supervisor_routines;
+begin
+  if coalesce(auth.role(),'')<>'service_role'
+  then raise exception 'Service role required' using errcode='42501'; end if;
+  if not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+  then raise exception 'Owner or thread revoked' using errcode='42501'; end if;
+  if p_source_type not in ('alert','operating_task','supplier_po') or p_source_id is null
+    or length(p_source_id) not between 1 and 256
+    or p_revision_hash !~ '^[a-f0-9]{64}$' or p_stable_key !~ '^[a-f0-9]{64}$'
+    or p_reason not in ('Overdue item needs review','Actionable café alert needs review',
+      'Owner task needs review','Task response needs review',
+      'Supplier purchase-order draft needs your approval') or p_as_of is null
+  then raise exception 'Invalid priority evidence' using errcode='22023'; end if;
+  if p_routine_id is not null then
+    if p_run_id is null or p_lease_token is null
+    then raise exception 'Incomplete routine lease' using errcode='42501'; end if;
+    select * into v_r from public.supervisor_routines
+      where business_id=p_business_id and id=p_routine_id for update;
+    select * into v_o from public.supervisor_routine_occurrences
+      where business_id=p_business_id and routine_id=p_routine_id and run_id=p_run_id for update;
+    if v_r.status<>'active' or v_o.state<>'running' or
+      v_o.revision<>v_r.revision or v_o.lease_token is distinct from p_lease_token
+      or v_o.lease_until<=p_as_of then
+      raise exception 'Routine lease revoked or expired' using errcode='42501'; end if;
+    if v_r.owner_user_id<>p_owner_user_id or v_r.thread_id<>p_thread_id
+    then raise exception 'Routine owner mismatch' using errcode='42501'; end if;
+  elsif p_run_id is not null or p_lease_token is not null
+  then raise exception 'Invalid independent notice lease' using errcode='42501'; end if;
+  if p_source_type='alert' then
+    select exists(select 1 from public.alerts a where a.business_id=p_business_id
+      and a.id::text=p_source_id and a.status in ('new','seen')) into v_found;
+  elsif p_source_type='supplier_po' then
+    select exists(select 1 from public.supervisor_proposals p
+      where p.business_id=p_business_id and p.id::text=p_source_id
+        and p.owner_user_id=p_owner_user_id and p.thread_id=p_thread_id
+        and p.capability_id='maya.supplier_purchase_order.v1'
+        and p.status='draft'
+        and p.created_at<=p_as_of-interval '2 hours') into v_found;
+  else
+    select exists(select 1 from public.operating_tasks t where t.business_id=p_business_id
+      and t.id=p_source_id and t.kind not in
+        ('priority_notice','commitment','event_plan','event_change','event_report')
+      and t.status in ('needs_owner','needs_response')
+      and (t.owner_user_id is null or t.owner_user_id=p_owner_user_id)) into v_found;
+  end if;
+  if not v_found then return false; end if;
+  v_task_id:='priority:'||p_stable_key;
+  insert into public.operating_tasks
+    (business_id,id,owner_user_id,agent_id,kind,status,payload,confidence,evidence,
+      entity_type,dedupe_key)
+  values(p_business_id,v_task_id,p_owner_user_id,
+    case when p_source_type='supplier_po' then 'maya' else 'leo' end,
+    'priority_notice','needs_owner',
+    jsonb_build_object('title',p_reason,'threadId',p_thread_id::text,
+      'sourceType',p_source_type,'sourceId',p_source_id,
+      'priorityReason',p_reason,'asOf',p_as_of::text),
+    'high',jsonb_build_array(jsonb_build_object('source',p_source_type,
+      'facts',jsonb_build_object('sourceId',p_source_id,
+        'revisionHash',p_revision_hash,'asOf',p_as_of::text))),
+    'priority_source',p_stable_key)
+  on conflict do nothing returning id into v_inserted_task_id;
+  v_hash:=md5('priority-notice:'||p_business_id::text||':'||p_owner_user_id::text||':'||v_task_id);
+  v_msg_id:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
+    substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
+  insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,
+    content_type,structured_content,grounding)
+  values(v_msg_id,p_business_id,p_thread_id,p_owner_user_id,'supervisor','blocks',
+    jsonb_build_array(jsonb_build_object('type','text','text',p_reason)),
+    jsonb_build_object('status','verified','intent','priority_notice',
+      'evidence',jsonb_build_array(jsonb_build_object('source',p_source_type,
+        'identifier',p_source_id,'asOf',p_as_of::text))))
+  on conflict(id) do nothing;
+  return v_inserted_task_id is not null;
+end $$;
+revoke all on function public.post_supervisor_priority_notice(uuid,uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,uuid)
+  from public,anon,authenticated;
+grant execute on function public.post_supervisor_priority_notice(uuid,uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,uuid)
+  to service_role;
+
+-- When a PO leaves draft (approved, rejected, expired, etc.), the original
+-- proposal's status is the authority. Close previously posted reminders.
+create function public.settle_supplier_po_priority_notices()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if old.capability_id='maya.supplier_purchase_order.v1'
+   and old.status='draft' and new.status<>'draft' then
+   update public.operating_tasks set status='handled',resolved_at=now(),
+     updated_at=now()
+     where business_id=new.business_id
+       and kind='priority_notice' and status='needs_owner'
+       and owner_user_id=new.owner_user_id
+       and payload->>'sourceType'='supplier_po'
+       and payload->>'sourceId'=new.id::text;
+ end if;
+ return new;
+end $$;
+revoke all on function public.settle_supplier_po_priority_notices()
+ from public,anon,authenticated;
+create trigger settle_supplier_po_priority_notice_on_status
+ after update of status on public.supervisor_proposals
+ for each row when (old.status is distinct from new.status)
+ execute function public.settle_supplier_po_priority_notices();
