@@ -38,9 +38,14 @@ function dbFixture(status="prepared",explicit=true,upcomingPublished=true){
    table==="employees"?[{id:"worker-A"}]:
    table==="scheduled_shifts"?[{id:"shift-A"}]:
    table==="memberships"?[{user_id:"owner-A"}]:[];
-  const q:Record<string,unknown>={};
-  q.select=()=>q;q.eq=(column:string,value:unknown)=>{calls.push({table,column,value});return q;};
-  q.gte=()=>q;q.order=()=>q;q.limit=async()=>({data:rows(),error:null});
+  const q:Record<string,unknown>={};let statusFilter:unknown=null;
+  q.select=()=>q;q.eq=(column:string,value:unknown)=>{
+   calls.push({table,column,value});
+   if(column==="status")statusFilter=value;return q;};
+  q.gte=()=>q;q.order=()=>q;q.neq=()=>q;
+  q.update=()=>q;
+  q.limit=async()=>({data:table==="staff_schedule_publications"&&
+    statusFilter==="cancelled"?[]:rows(),error:null});
   q.maybeSingle=async()=>({data:table==="employees"?{
     id:"worker-A",display_name:"Ari",preferred_language:"en",
    }:table==="staff_schedule_publications"&&upcomingPublished?p:null,error:null});
