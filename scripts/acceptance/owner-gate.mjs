@@ -34,7 +34,7 @@ export function domainsForPaths(paths){
    fail("unknown_connector_contract");
   if(sharedConnector)found.add("gmail");
   if(/^scripts\/acceptance\/|^evals\/acceptance\/|^\.github\/workflows\/ai-cafe-pr-baseline\.yml$/.test(p))
-   found.add("acceptance");
+   {found.add("acceptance");found.add("supervisor");}
   const app=/^(?:app\/api\/|app\/\[locale\]\/|components\/)/.test(p);
   const backend=/^(?:lib\/|supabase\/migrations\/)/.test(p);
   if(!app&&!backend)continue;
