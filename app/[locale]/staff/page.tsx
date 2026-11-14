@@ -37,9 +37,9 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
    focusContact={fix==="phone"||fix==="consent"?fix:undefined} focusRule={isStaffRuleKey(fix)?fix:undefined} focusClock={validShiftClock(clock??"")?clock:undefined} teamExtras={<TeamLegacyMetrics/>}
    initialAlerts={alerts.ok?[...alerts.alerts]:[]} alertError={alerts.ok?null:alerts.error}/>
   {!useFixture&&<StaffPublicationStatus week={selected}/>}
-  {(showSendFixture||!useFixture&&proposalId)&&<OwnerScheduleSendPanel
-    {...!useFixture&&proposalId?{proposalId}:{week:selected}}
-    locale={locale==="ar"?"ar":locale==="es"?"es":"en"}/> }
+  {(showSendFixture||(!useFixture&&Boolean(proposalId)))&&<OwnerScheduleSendPanel
+    {...(!useFixture&&proposalId?{proposalId}:{week:selected})}
+    locale={locale==="ar"?"ar":locale==="es"?"es":"en"}/>}
   </>:
   <div className="p-6 text-fg"><h1>{t("schedule")}</h1><p role="alert">{t("loadError")} ({result.error}).</p></div>}</PageShell>;
 }
