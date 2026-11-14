@@ -174,7 +174,10 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       }
       const blocked=await admin.query("select phase,last_error,failure_count from public.supervisor_investigations where business_id=$1 and owner_user_id=$2 and source_type='operating_task' and source_id=$3",
         [cafes[0],owners[0],taskId]);
-      expect(blocked.rows).toEqual([{phase:"blocked",last_error:"model_incomplete",failure_count:5}]);
+      expect(blocked.rows).toHaveLength(1);
+      expect(blocked.rows[0]).toMatchObject({phase:"blocked",last_error:"model_incomplete"});
+      // pg returns bigint counters as strings. Check the exact numeric value.
+      expect(Number(blocked.rows[0].failure_count)).toBe(5);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_exception'",
         [cafes[0],threads[0]])).rows[0].n).toBe(1);
       expect(await rpc(a,"supervisor_claim_investigation",[stamp(now,120)])).toBeNull();
