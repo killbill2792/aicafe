@@ -224,6 +224,7 @@ begin
      or q.available_checked_at is null
      or q.available_checked_at>local_day or q.available_checked_at<local_day-7
      or q.quoted_on>local_day or q.valid_until<local_day
+     or (q.valid_until is null and q.quoted_on<local_day-30)
      or lower(btrim(q.supplier_name))<>lower(btrim(supplier_name))
      or lower(btrim(q.item_name))<>lower(btrim(ingredient.name))
      or q.ingredient_id is distinct from ingredient.id and q.ingredient_id is not null

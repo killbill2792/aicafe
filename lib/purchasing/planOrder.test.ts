@@ -28,6 +28,7 @@ describe("Task 14B deterministic purchasing decisions",()=>{
    {...quote,available_status:"unknown"},
    {...quote,available_checked_at:"2026-10-01"},
    {...quote,valid_until:"2026-11-11"},
+   {...quote,valid_until:null,quoted_on:"2026-01-01"},
    {...quote,source_kind:"public_listing"},
    {...quote,delivery_on:"2026-11-19"}
   ])expect(plan({quotes:[candidate]}).offers).toHaveLength(0);

@@ -78,6 +78,8 @@ export function planSupplierOrder(input:{
     else if(quote.source_kind==="public_listing")reason="unverified_public_listing";
     else if(quote.quoted_on>input.today||quote.valid_until&&quote.valid_until<input.today)
       reason="quote_expired_or_future";
+    else if(!quote.valid_until&&ageDays(input.today,quote.quoted_on)>30)
+      reason="quote_price_stale_without_expiry";
     else if(quote.available_status!=="confirmed"||!quote.available_checked_at)
       reason="availability_unconfirmed";
     else if(quote.available_checked_at>input.today||
