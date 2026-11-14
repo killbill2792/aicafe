@@ -90,20 +90,31 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
   expect(propose).toHaveBeenCalledOnce();
   expect(Object.hasOwn(ctx,"approve")).toBe(false);
  });
- it("a SEPARATE order containing 'increase' creates an independent draft, not a correction",async()=>{
+ it("a SEPARATE flour order containing 'increase' leaves a pending milk draft untouched",async()=>{
+  const flourId="77777777-7777-4777-8777-777777777777";
+  const flourArgs=JSON.stringify({items:[{ingredientId:flourId,itemName:"Flour",
+   quantity:10,unit:"kg"}],neededBy:"2026-11-17",preferredSupplier:null});
+  const flourProposal=JSON.stringify({...JSON.parse(flourArgs),replaceProposalId:null});
   const propose=vi.fn(async()=>({proposalId:"66666666-6666-4666-8666-666666666666",
    revision:1,supplierName:"Farm B",subtotalCents:900,currency:"CAD"}));
-  const ctx={...baseContext,purchasing:{inspect:vi.fn(async()=>plan),propose,
-   list:vi.fn(async()=>({orders:[],truncated:false,drafts:[{
+  const list=vi.fn(async()=>({orders:[],truncated:false,drafts:[{
     id:"55555555-5555-4555-8555-555555555555",revision:1,
     supplierName:"Farm A",itemNames:["Milk"],subtotalCents:2250,currency:"CAD"
-   }],draftsTruncated:false}))}} as unknown as AgentToolContext;
+   }],draftsTruncated:false}));
+  const flourPlan={...plan,offers:[{...plan.offers[0],supplierName:"Farm B",
+   subtotalCents:900,lines:[{...plan.offers[0].lines[0],ingredientId:flourId,
+     itemName:"Flour",neededBaseQuantity:10000,baseUnit:"g",
+     packs:10,packQuantity:1,packUnit:"kg",priceCents:90,lineSubtotalCents:900}]}]};
+  const ctx={...baseContext,purchasing:{inspect:vi.fn(async()=>flourPlan),propose,list}}
+   as unknown as AgentToolContext;
   const {provider}=playback([
-   [call("inspect_supplier_purchase",args(5),"inspect-separate"),completed],
-   [call("propose_supplier_purchase_order",proposalArgs(5,null),"propose-separate"),completed],
-   [text("I prepared a separate supplier order and left the earlier draft untouched."),completed]
+   [call("get_supplier_purchase_orders","{}","list-before-new"),completed],
+   [call("inspect_supplier_purchase",flourArgs,"inspect-separate"),completed],
+   [call("propose_supplier_purchase_order",flourProposal,"propose-separate"),completed],
+   [text("I prepared a separate flour order and left the milk draft untouched."),completed]
   ]);
   await runAgentTurn({ownerText:"Prepare a separate flour order to increase pastry production.",context:ctx,provider});
-  expect(propose).toHaveBeenCalledWith(JSON.parse(proposalArgs(5,null)));
+  expect(list).toHaveBeenCalledOnce();
+  expect(propose).toHaveBeenCalledWith(JSON.parse(flourProposal));
  });
 });
