@@ -14,7 +14,9 @@ const volatile=new Set(["lastCheckedAt","last_checked_at","polledAt","polled_at"
 function canonical(value:unknown):unknown{
   if(Array.isArray(value))return value.map(canonical);
   if(!value||typeof value!=="object")return value;
-  const out:Record<string,unknown>={};
+  // External alert/task JSON may include __proto__. A null-prototype
+  // accumulator preserves the key in the hash rather than mutating the object.
+  const out:Record<string,unknown>=Object.create(null);
   for(const key of Object.keys(value).sort()){
     if(volatile.has(key))continue;
     const v=(value as Record<string,unknown>)[key];
