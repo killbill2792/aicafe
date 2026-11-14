@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* Owner-authenticated real-model pilot on localhost; NEVER a fake provider. */
 import {randomUUID,createHash} from "node:crypto";
+import {execFileSync} from "node:child_process";
 import {readFileSync,writeFileSync,realpathSync} from "node:fs";
 import {resolve,dirname,isAbsolute,sep} from "node:path";
 import {pathToFileURL} from "node:url";
@@ -10,6 +11,11 @@ import {assertLocalLiveEnvironment,assertLiveManifest} from "./preflight.mjs";
 
 const error=code=>{throw new Error("live_capture:"+code);};
 const slug=s=>String(s).toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+export function verifyCheckoutHead(expected,readHead=()=>execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).trim()){
+ if(!/^[a-f0-9]{40}$/.test(expected??"")||readHead()!==expected)
+  error("checkout_does_not_match_attested_head");
+ return expected;
+}
 export function toScaled(value){
  const s=String(value);
  if(!/^-?\d+(?:\.\d{1,4})?$/.test(s))error("precision_not_canonical");
@@ -257,7 +263,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   const args=process.argv.slice(2);
   if(args.length!==6||args[0]!=="--labels"||args[2]!=="--assets"||args[4]!=="--output")
    error("usage_labels_assets_output");
-  if(!/^[a-f0-9]{40}$/.test(process.env.HEAD_SHA??""))error("exact_head_required");
+  verifyCheckoutHead(process.env.HEAD_SHA);
   const manifest=JSON.parse(readFileSync(resolve(args[1]),"utf8"));
   const owners=new Map(TEST_CAFES.map(c=>[c.businessId,c.owner.userId]));
   const prepared=assertLiveManifest(manifest,{assetRoot:resolve(args[3]),allowedOwners:owners});
