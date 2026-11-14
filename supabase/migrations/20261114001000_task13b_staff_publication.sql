@@ -308,6 +308,12 @@ begin
      on e.business_id=d.business_id and e.id=d.employee_id
    where pub.id=d.publication_id and pub.status='published'
     and prop.status='committed' and owner.role='owner'
+    and prop.canonical_effect_payload->'payload'->>'publish_and_notify'='true'
+    and pub.snapshot=public.staff_handoff_week_shifts(pub.business_id,pub.week_start)
+    and exists(select 1 from public.supervisor_approvals a
+      where a.business_id=pub.business_id and a.proposal_id=prop.id
+        and a.owner_user_id=pub.owner_user_id and a.effect_hash=prop.effect_hash
+        and a.authorization_kind='click')
     and e.active and e.whatsapp_opt_in
     and e.phone_e164=d.recipient_e164);
 end $$;
