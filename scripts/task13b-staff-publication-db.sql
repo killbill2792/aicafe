@@ -143,6 +143,29 @@ BEGIN
    RAISE EXCEPTION '13B signed status demoted a read receipt'; END IF;
 END $test$;
 
+-- A WhatsApp opt-in does not override SMS channel preference or
+-- Spanish-language preference when only an English template is approved.
+UPDATE public.employees SET preferred_schedule_channel='sms' WHERE id=:'worker_b';
+DO $test$
+BEGIN
+ IF public.staff_schedule_claim_delivery(current_setting('test.t13b.pub')::uuid,
+  current_setting('test.t13b.worker_b')::uuid) IS NOT NULL THEN
+   RAISE EXCEPTION '13B SMS-preferred employee was messaged through WhatsApp'; END IF;
+END $test$;
+UPDATE public.employees SET preferred_schedule_channel='whatsapp',
+ preferred_language='es' WHERE id=:'worker_b';
+UPDATE public.staff_schedule_deliveries SET status='prepared',error_code=null
+ WHERE publication_id=:'publication_id' AND employee_id=:'worker_b';
+DO $test$
+BEGIN
+ IF public.staff_schedule_claim_delivery(current_setting('test.t13b.pub')::uuid,
+  current_setting('test.t13b.worker_b')::uuid) IS NOT NULL THEN
+   RAISE EXCEPTION '13B Spanish-preferred employee got unsupported English template'; END IF;
+END $test$;
+UPDATE public.employees SET preferred_language='en' WHERE id=:'worker_b';
+UPDATE public.staff_schedule_deliveries SET status='prepared',error_code=null
+ WHERE publication_id=:'publication_id' AND employee_id=:'worker_b';
+
 -- Live consent or roster edits revoke pending recipient effects.
 UPDATE public.employees SET whatsapp_opt_in=false WHERE id=:'worker_b';
 DO $test$
