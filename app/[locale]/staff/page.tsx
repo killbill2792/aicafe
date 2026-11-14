@@ -6,6 +6,7 @@ import {getWeekSchedule} from "@/lib/actions/schedule";
 import StaffWorkspace from "@/components/staff/StaffWorkspace";
 import PosImportReviewPanel from "@/components/staff/PosImportReviewPanel";
 import OwnerScheduleSendPanel from "@/components/staff/OwnerScheduleSendPanel";
+import StaffPublicationStatus from "@/components/staff/StaffPublicationStatus";
 import PageShell from "@/components/shared/PageShell";
 import TeamLegacyMetrics from "@/components/staff/TeamLegacyMetrics";
 import {createStaffScreenshotFixture} from "@/lib/calc/scheduling/staffScreenshotFixture";
@@ -16,9 +17,9 @@ import {isStaffRuleKey} from "@/lib/calc/scheduling/ruleFixPreview";
 import {syncStaffRuleAlerts} from "@/lib/scheduling/ruleAlerts.server";
 import {timeReader} from "@/lib/perf/timeReader.server";
 export const dynamic="force-dynamic";
-export default async function StaffPage({params,searchParams}:{params:Promise<{locale:string}>;searchParams:Promise<{tab?:string;week?:string;date?:string;employee?:string;fix?:string;clock?:string;fixture?:string;sendFixture?:string}>}){
+export default async function StaffPage({params,searchParams}:{params:Promise<{locale:string}>;searchParams:Promise<{tab?:string;week?:string;date?:string;employee?:string;fix?:string;clock?:string;fixture?:string;sendFixture?:string;proposalId?:string}>}){
  await timeReader("Staff","requireOwnBusiness",()=>requireOwnBusiness());
- const [{locale},{tab,week,date,employee,fix,clock,fixture,sendFixture}]=await Promise.all([params,searchParams]);
+ const [{locale},{tab,week,date,employee,fix,clock,fixture,sendFixture,proposalId}]=await Promise.all([params,searchParams]);
  const [scope,t]=await Promise.all([timeReader("Staff","staffReadScope",()=>staffReadScope()),getTranslations("StaffSchedule")]);
  const selected=scheduleWeekForDate(date,week,mondayOfLocalDate(scope.ok?scope.today:formatInTimeZone(new Date(),(await getCafeProfile()).timezone,"yyyy-MM-dd")));
  const useFixture=process.env.NODE_ENV==="development"&&process.env.STAFF_VISUAL_FIXTURES==="true"&&fixture==="1";
@@ -35,7 +36,10 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
    focusDate={validScheduleDate(date)?date:undefined} focusEmployee={employee}
    focusContact={fix==="phone"||fix==="consent"?fix:undefined} focusRule={isStaffRuleKey(fix)?fix:undefined} focusClock={validShiftClock(clock??"")?clock:undefined} teamExtras={<TeamLegacyMetrics/>}
    initialAlerts={alerts.ok?[...alerts.alerts]:[]} alertError={alerts.ok?null:alerts.error}/>
-  {showSendFixture&&<OwnerScheduleSendPanel week={selected} locale={locale==="ar"?"ar":locale==="es"?"es":"en"}/>}
+  {!useFixture&&<StaffPublicationStatus week={selected}/>}
+  {(showSendFixture||(!useFixture&&Boolean(proposalId)))&&<OwnerScheduleSendPanel
+    {...(!useFixture&&proposalId?{proposalId}:{week:selected})}
+    locale={locale==="ar"?"ar":locale==="es"?"es":"en"}/>}
   </>:
   <div className="p-6 text-fg"><h1>{t("schedule")}</h1><p role="alert">{t("loadError")} ({result.error}).</p></div>}</PageShell>;
 }

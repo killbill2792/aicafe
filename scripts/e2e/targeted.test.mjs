@@ -5,6 +5,7 @@ import {classifyPaths, parseNameStatus, selectedScenarios, summarizeReport} from
 test("real Home, Staff, Menu, Money and Gmail changes select only relevant journeys", () => {
   assert.deepEqual(classifyPaths(["app/[locale]/page.tsx"]).scenarios, ["home"]);
   assert.deepEqual(classifyPaths(["components/staff/StaffWorkspace.tsx"]).scenarios, ["staff"]);
+  assert.deepEqual(classifyPaths(["components/staff/StaffPublicationStatus.tsx"]).scenarios, ["staff"]);
   assert.deepEqual(classifyPaths(["app/[locale]/menu/page.tsx"]).scenarios, ["menu"]);
   assert.deepEqual(classifyPaths(["app/[locale]/money/page.tsx"]).scenarios, ["money"]);
   assert.deepEqual(classifyPaths(["app/[locale]/more/gmail/page.tsx"]).scenarios, ["gmail"]);

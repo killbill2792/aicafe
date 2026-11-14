@@ -19,6 +19,10 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string;
     receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
   ingredientOptions?:Array<{id:string;name:string;base_unit:string}>;
+  publishAndNotify?:boolean;
+  publication?:{state:"pending"|"published"|"cancelled";week?:string;expected?:number;
+    accepted?:number;delivered?:number;read?:number;pending?:number;
+    failed?:number;uncertain?:number;missing?:number};
   gmail?:{operation:string;action:string|null;from:string;to:string[];cc:string[];bcc:string[];
     subject:string;body:string;messageId:string|null;threadId:string|null;labelId:string|null;labelName:string|null};};
 const dict={en,es,ar} as const;
@@ -125,7 +129,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
     },3000);
     return ()=>{alive=false;clearInterval(interval);};
   },[endpoint,proposalId,value?.state]);
-  const invoke=async(action:"approve"|"cancel"|"edit"|"reconcile")=>{
+  const invoke=async(action:"approve"|"cancel"|"cancel_publication"|"edit"|"reconcile")=>{
     if(!value||busy)return;
     const cents=priceInputCents(price);
     if(action==="edit"&&cents===null){
@@ -297,12 +301,43 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       {value.subjectName&&<p className="mt-2 break-words text-lg font-bold">{value.subjectName}</p>}
       <p className="mt-2 text-[17px] text-ink-muted">{staffCopy.reviewNotice}</p>
       <BeforeAfterRows rows={value.preview??[]} locale={locale} currency={value.currency??"USD"}/>
-      {value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true&&value.state!=="applied"&&
+      {value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true&&
+        !value.publishAndNotify&&value.state!=="applied"&&
         <p className="mt-3 text-[17px]">{staffCopy.preparedOnly}</p>}
-      {value.state==="applied"&&(
+      {value.publishAndNotify&&value.state==="applying"&&
+        <p role="status" className="mt-3 text-[17px]">{en.StaffApprovalCard.agenticPublishing}</p>}
+      {value.publishAndNotify&&value.publication?.state==="published"&&
+        <div role="status" aria-label="Schedule publication delivery results"
+          className="mt-3 rounded-xl border border-line bg-surface2 p-3 text-[16px]">
+          <p className="font-semibold">{en.StaffApprovalCard.agenticPublished
+            .replace("{week}",value.publication.week??"")}</p>
+          <dl className="mt-2 grid grid-cols-2 gap-2">
+            {([
+              [en.StaffApprovalCard.agenticAccepted,value.publication.accepted??0],
+              [en.StaffApprovalCard.agenticDelivered,value.publication.delivered??0],
+              [en.StaffApprovalCard.agenticRead,value.publication.read??0],
+              [en.StaffApprovalCard.agenticPending,value.publication.pending??0],
+              [en.StaffApprovalCard.agenticFailed,value.publication.failed??0],
+              [en.StaffApprovalCard.agenticUncertain,value.publication.uncertain??0],
+              [en.StaffApprovalCard.agenticMissing,value.publication.missing??0],
+            ] as const).map(([label,count])=><div key={label}>
+              <dt className="text-ink-muted">{label}</dt><dd className="font-semibold">{count}</dd>
+            </div>)}
+          </dl>
+          <p className="mt-2 text-sm text-ink-muted">{en.StaffApprovalCard.agenticNext}</p>
+          <button type="button" className="mt-3 min-h-12 rounded-xl border border-line px-4 font-bold"
+            disabled={busy} onClick={()=>void invoke("cancel_publication")}>
+            {en.StaffApprovalCard.agenticCancel}
+          </button>
+          <p className="mt-1 text-sm text-ink-muted">{en.StaffApprovalCard.agenticCancelWarning}</p>
+        </div>}
+      {value.publishAndNotify&&value.publication?.state==="cancelled"&&
+        <p role="status" className="mt-3 text-[17px]">{en.StaffApprovalCard.agenticCancelled}</p>}
+      {value.state==="applied"&&!value.publishAndNotify&&(
         value.capabilityId?.startsWith("olivia.staff_propose_schedule.v")===true||
         value.capabilityId?.startsWith("olivia.staff_propose_send_schedule.v")===true)&&
-        <><p className="mt-3 text-[17px]">{scheduleApprovalReply(locale)}</p><OwnerScheduleSendPanel key={proposalId} proposalId={proposalId} locale={locale}/></>}
+        <><p className="mt-3 text-[17px]">{scheduleApprovalReply(locale)}</p>
+          <OwnerScheduleSendPanel key={proposalId} proposalId={proposalId} locale={locale}/></>}
 
       {(pending||retry)&&<div className="mt-4 flex flex-wrap gap-2">
         <button type="button" disabled={busy} className={button+" bg-accent text-on-accent"}

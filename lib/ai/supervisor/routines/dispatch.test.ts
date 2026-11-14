@@ -2,11 +2,15 @@ import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   claim:vi.fn(),finish:vi.fn(),notice:vi.fn(),
+  staff:vi.fn(async()=>({published:0,attempted:0,blocked:0})),
 }));
 vi.mock("./repository.server",()=>({
   claimRoutineOccurrence:mocks.claim,finishRoutineOccurrence:mocks.finish,
 }));
 vi.mock("./notices.server",()=>({postPriorityNotice:mocks.notice}));
+vi.mock("@/lib/scheduling/staffPublication.server",()=>({
+  followUpStaffPublicationForBusiness:mocks.staff,
+}));
 import {dispatchRoutinesForBusiness,readActionablePriorities} from "./dispatch.server";
 import {choosePriorities} from "./priority";
 function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}[];
@@ -78,6 +82,7 @@ describe("bounded independent routine dispatch",()=>{
       owners:[{user_id:"owner"},{user_id:"no-thread"}],
     }),"cafe","America/Los_Angeles",new Date("2026-11-11T18:00:00Z"));
     expect(result.failed).toBe(1);
+    expect(mocks.staff).toHaveBeenCalledWith(expect.anything(),"cafe","2026-11-11");
   });
   it("excludes already-delivered commitments and generated notices, keeping independent work",async()=>{
     const decisions=await readActionablePriorities(db({tasks:[

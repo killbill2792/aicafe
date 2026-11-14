@@ -2,6 +2,7 @@ import {MAX_WEBHOOK_BYTES,parseWebhook,verifyChallenge,verifySignature} from "@/
 import {TEST_PHONE_NUMBER_ID} from "@/lib/whatsapp/transport";
 import {acceptSignedMessage} from "@/lib/whatsapp/identity.server";
 import {recordSignedStatus} from "@/lib/whatsapp/queue.server";
+import {recordSignedStaffScheduleStatus} from "@/lib/scheduling/staffPublication.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const headers={"Cache-Control":"no-store"};
@@ -49,7 +50,13 @@ export async function POST(request:Request):Promise<Response>{
   try{
     for(const event of events){
       if(event.type==="message")await acceptSignedMessage(event);
-      else await recordSignedStatus(event);
+      else {
+        await recordSignedStatus(event);
+        // Additive staff status ledger is opt-in: a pre-migration rollout
+        // must not break the existing owner WhatsApp webhook.
+        if(process.env.WHATSAPP_STAFF_SCHEDULE_SEND_ENABLED==="true")
+          await recordSignedStaffScheduleStatus(event);
+      }
     }
   }catch {
     // If earlier changes were inserted, their unique wamid makes a replay safe.
