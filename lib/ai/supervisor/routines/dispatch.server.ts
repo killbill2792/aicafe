@@ -4,6 +4,7 @@ import {localDateAt,dueScheduleOnDate} from "./calendar";
 import {choosePriorities} from "./priority";
 import {claimRoutineOccurrence,finishRoutineOccurrence} from "./repository.server";
 import {postPriorityNotice} from "./notices.server";
+import {followUpStaffPublicationForBusiness} from "@/lib/scheduling/staffPublication.server";
 import type {PriorityDecision,PrioritySource,RoutineRecord} from "./contracts";
 
 export type RoutineDispatchResult={
@@ -128,6 +129,11 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       threads.set(row.owner_user_id,row.id);
   }
   const routines=((routineRows.data??[]) as RoutineRow[]).map(parseRoutine);
+  // Task 13B uses THIS existing refresh tick: reconcile approved publication,
+  // safe single-attempt staff delivery and durable owner-visible exceptions.
+  // The priority writer below then proactively surfaces changed evidence.
+  try{await followUpStaffPublicationForBusiness(db,businessId,localDate);}
+  catch{result.failed++;}
   // Source-change notices remain independent from the due schedule.
   for(const ownerUserId of owners){
     const threadId=threads.get(ownerUserId);
