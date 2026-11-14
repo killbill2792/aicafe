@@ -22,7 +22,7 @@ import {milkSwapTools} from "./milkSwap";
 import {proposalTools} from "./proposals";
 import {purchasesTools,purchaseToolInput} from "./purchases";
 import {supplierPurchasingTools} from "./supplierPurchasing";
-import type {SupplierPurchaseInput} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import type {SupplierPurchaseInput,SupplierPurchaseProposalInput} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import type {PurchasePlan} from "@/lib/purchasing/planOrder";
 import type {SupplierOrderStatus} from "@/lib/data/supplierPurchasing.server";
 import {priceExperimentTools} from "./priceExperiment";
@@ -96,9 +96,11 @@ export type AgentToolContext = {
     propose(input:import("@/lib/ai/supervisor/loop/gmail.server").GmailProposalInput):Promise<{proposalId:string;revision:number;account:string}>};
   /** Owner-scoped purchasing capability in the ONE Supervisor. No model-supplied café IDs or approvals. */
   purchasing?:{
-    list():Promise<{orders:SupplierOrderStatus[];truncated:boolean}>;
+    list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
+      drafts:Array<{id:string;revision:number;supplierName:string;itemNames:string[];
+        subtotalCents:number;currency:string}>;draftsTruncated:boolean}>;
     inspect(input:SupplierPurchaseInput):Promise<PurchasePlan>;
-    propose(input:SupplierPurchaseInput):Promise<{proposalId:string;revision:number;
+    propose(input:SupplierPurchaseProposalInput):Promise<{proposalId:string;revision:number;
       supplierName:string;currency:string;subtotalCents:number}>;
   };
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
