@@ -49,6 +49,7 @@ language plpgsql security definer set search_path=public as $$
 declare p public.supervisor_proposals; m public.ai_messages;
  local_day date; typed_day date; attempt_id uuid;
  claimed_cost bigint; dollars bigint; cents integer; price_pattern text;
+ currency_code text; currency_glyph text; currency_pattern text;
 begin
  if auth.role() is distinct from 'service_role'
  then raise exception 'service_role_only' using errcode='42501'; end if;
@@ -120,6 +121,368 @@ begin
       or position(p.canonical_effect_payload->>'date' in m.text_content)>0
     )
   then raise exception 'typed_purchase_date_not_grounded' using errcode='42501'; end if;
+  -- The café's configured ISO currency is authoritative; do not assume USD.
+  -- Common glyph aliases are selected by that currency, not by the model.
+  select b.currency into currency_code from public.businesses b
+    where b.id=p_business_id;
+  if currency_code is null or currency_code !~ '^[A-Z]{3}
+    claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
+    if claimed_cost<0 then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+    dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
+    price_pattern:='(^|[^[:alnum:]])'||currency_pattern||'[[:space:]]*'||dollars::text||
+      case when cents=0 then '(\.00)?'
+           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+    if m.text_content !~* price_pattern then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+  end if;
+ end if;
+
+ insert into public.supervisor_approvals(
+  business_id,proposal_id,owner_user_id,approved_revision,effect_hash,
+  authorization_kind,owner_message_id
+ ) values (
+  p_business_id,p.id,p_owner_user_id,p.revision,p.effect_hash,
+  'owner_message',p_owner_message_id
+ );
+ update public.supervisor_proposals set status='approved',approved_at=now(),
+  approved_by=p_owner_user_id,revision=revision+1,updated_at=now()
+  where id=p.id returning * into p;
+
+ attempt_id:=gen_random_uuid();
+ insert into public.supervisor_effect_attempts(
+  attempt_key,business_id,proposal_id,effect_hash,authorization_kind,
+  owner_message_id,business_date,state
+ ) values (
+  attempt_id,p_business_id,p.id,p.effect_hash,'owner_message',
+  p_owner_message_id,local_day,'reserved'
+ );
+ update public.supervisor_proposals set status='executing',
+  revision=revision+1,updated_at=now() where id=p.id returning * into p;
+ update public.supervisor_effect_attempts set state='executing'
+  where attempt_key=attempt_id and state='reserved';
+ return jsonb_build_object('proposal',to_jsonb(p),'attempt_key',attempt_id,
+  'business_date',local_day,'authorization_kind','owner_message');
+end $$;
+revoke all on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ to service_role;
+ then
+    raise exception 'cafe_currency_unavailable' using errcode='42501';
+  end if;
+  currency_glyph:=case currency_code
+    when 'USD' then '
+    claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
+    if claimed_cost<0 then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+    dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
+    price_pattern:='(\$|USD[[:space:]]*)[[:space:]]*'||dollars::text||
+      case when cents=0 then '(\.00)?'
+           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+    if m.text_content !~* price_pattern then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+  end if;
+ end if;
+
+ insert into public.supervisor_approvals(
+  business_id,proposal_id,owner_user_id,approved_revision,effect_hash,
+  authorization_kind,owner_message_id
+ ) values (
+  p_business_id,p.id,p_owner_user_id,p.revision,p.effect_hash,
+  'owner_message',p_owner_message_id
+ );
+ update public.supervisor_proposals set status='approved',approved_at=now(),
+  approved_by=p_owner_user_id,revision=revision+1,updated_at=now()
+  where id=p.id returning * into p;
+
+ attempt_id:=gen_random_uuid();
+ insert into public.supervisor_effect_attempts(
+  attempt_key,business_id,proposal_id,effect_hash,authorization_kind,
+  owner_message_id,business_date,state
+ ) values (
+  attempt_id,p_business_id,p.id,p.effect_hash,'owner_message',
+  p_owner_message_id,local_day,'reserved'
+ );
+ update public.supervisor_proposals set status='executing',
+  revision=revision+1,updated_at=now() where id=p.id returning * into p;
+ update public.supervisor_effect_attempts set state='executing'
+  where attempt_key=attempt_id and state='reserved';
+ return jsonb_build_object('proposal',to_jsonb(p),'attempt_key',attempt_id,
+  'business_date',local_day,'authorization_kind','owner_message');
+end $$;
+revoke all on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ to service_role;
+ when 'GBP' then '£' when 'EUR' then '€'
+    when 'CAD' then 'CA
+    claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
+    if claimed_cost<0 then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+    dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
+    price_pattern:='(\$|USD[[:space:]]*)[[:space:]]*'||dollars::text||
+      case when cents=0 then '(\.00)?'
+           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+    if m.text_content !~* price_pattern then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+  end if;
+ end if;
+
+ insert into public.supervisor_approvals(
+  business_id,proposal_id,owner_user_id,approved_revision,effect_hash,
+  authorization_kind,owner_message_id
+ ) values (
+  p_business_id,p.id,p_owner_user_id,p.revision,p.effect_hash,
+  'owner_message',p_owner_message_id
+ );
+ update public.supervisor_proposals set status='approved',approved_at=now(),
+  approved_by=p_owner_user_id,revision=revision+1,updated_at=now()
+  where id=p.id returning * into p;
+
+ attempt_id:=gen_random_uuid();
+ insert into public.supervisor_effect_attempts(
+  attempt_key,business_id,proposal_id,effect_hash,authorization_kind,
+  owner_message_id,business_date,state
+ ) values (
+  attempt_id,p_business_id,p.id,p.effect_hash,'owner_message',
+  p_owner_message_id,local_day,'reserved'
+ );
+ update public.supervisor_proposals set status='executing',
+  revision=revision+1,updated_at=now() where id=p.id returning * into p;
+ update public.supervisor_effect_attempts set state='executing'
+  where attempt_key=attempt_id and state='reserved';
+ return jsonb_build_object('proposal',to_jsonb(p),'attempt_key',attempt_id,
+  'business_date',local_day,'authorization_kind','owner_message');
+end $$;
+revoke all on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ to service_role;
+ when 'AUD' then 'A
+    claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
+    if claimed_cost<0 then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+    dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
+    price_pattern:='(\$|USD[[:space:]]*)[[:space:]]*'||dollars::text||
+      case when cents=0 then '(\.00)?'
+           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+    if m.text_content !~* price_pattern then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+  end if;
+ end if;
+
+ insert into public.supervisor_approvals(
+  business_id,proposal_id,owner_user_id,approved_revision,effect_hash,
+  authorization_kind,owner_message_id
+ ) values (
+  p_business_id,p.id,p_owner_user_id,p.revision,p.effect_hash,
+  'owner_message',p_owner_message_id
+ );
+ update public.supervisor_proposals set status='approved',approved_at=now(),
+  approved_by=p_owner_user_id,revision=revision+1,updated_at=now()
+  where id=p.id returning * into p;
+
+ attempt_id:=gen_random_uuid();
+ insert into public.supervisor_effect_attempts(
+  attempt_key,business_id,proposal_id,effect_hash,authorization_kind,
+  owner_message_id,business_date,state
+ ) values (
+  attempt_id,p_business_id,p.id,p.effect_hash,'owner_message',
+  p_owner_message_id,local_day,'reserved'
+ );
+ update public.supervisor_proposals set status='executing',
+  revision=revision+1,updated_at=now() where id=p.id returning * into p;
+ update public.supervisor_effect_attempts set state='executing'
+  where attempt_key=attempt_id and state='reserved';
+ return jsonb_build_object('proposal',to_jsonb(p),'attempt_key',attempt_id,
+  'business_date',local_day,'authorization_kind','owner_message');
+end $$;
+revoke all on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ to service_role;
+ when 'NZD' then 'NZ
+    claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
+    if claimed_cost<0 then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+    dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
+    price_pattern:='(\$|USD[[:space:]]*)[[:space:]]*'||dollars::text||
+      case when cents=0 then '(\.00)?'
+           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+    if m.text_content !~* price_pattern then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+  end if;
+ end if;
+
+ insert into public.supervisor_approvals(
+  business_id,proposal_id,owner_user_id,approved_revision,effect_hash,
+  authorization_kind,owner_message_id
+ ) values (
+  p_business_id,p.id,p_owner_user_id,p.revision,p.effect_hash,
+  'owner_message',p_owner_message_id
+ );
+ update public.supervisor_proposals set status='approved',approved_at=now(),
+  approved_by=p_owner_user_id,revision=revision+1,updated_at=now()
+  where id=p.id returning * into p;
+
+ attempt_id:=gen_random_uuid();
+ insert into public.supervisor_effect_attempts(
+  attempt_key,business_id,proposal_id,effect_hash,authorization_kind,
+  owner_message_id,business_date,state
+ ) values (
+  attempt_id,p_business_id,p.id,p.effect_hash,'owner_message',
+  p_owner_message_id,local_day,'reserved'
+ );
+ update public.supervisor_proposals set status='executing',
+  revision=revision+1,updated_at=now() where id=p.id returning * into p;
+ update public.supervisor_effect_attempts set state='executing'
+  where attempt_key=attempt_id and state='reserved';
+ return jsonb_build_object('proposal',to_jsonb(p),'attempt_key',attempt_id,
+  'business_date',local_day,'authorization_kind','owner_message');
+end $$;
+revoke all on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ to service_role;
+
+    when 'JPY' then '¥' when 'INR' then '₹' when 'KRW' then '₩'
+    when 'CNY' then 'CN¥' when 'BRL' then 'R
+    claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
+    if claimed_cost<0 then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+    dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
+    price_pattern:='(\$|USD[[:space:]]*)[[:space:]]*'||dollars::text||
+      case when cents=0 then '(\.00)?'
+           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+    if m.text_content !~* price_pattern then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+  end if;
+ end if;
+
+ insert into public.supervisor_approvals(
+  business_id,proposal_id,owner_user_id,approved_revision,effect_hash,
+  authorization_kind,owner_message_id
+ ) values (
+  p_business_id,p.id,p_owner_user_id,p.revision,p.effect_hash,
+  'owner_message',p_owner_message_id
+ );
+ update public.supervisor_proposals set status='approved',approved_at=now(),
+  approved_by=p_owner_user_id,revision=revision+1,updated_at=now()
+  where id=p.id returning * into p;
+
+ attempt_id:=gen_random_uuid();
+ insert into public.supervisor_effect_attempts(
+  attempt_key,business_id,proposal_id,effect_hash,authorization_kind,
+  owner_message_id,business_date,state
+ ) values (
+  attempt_id,p_business_id,p.id,p.effect_hash,'owner_message',
+  p_owner_message_id,local_day,'reserved'
+ );
+ update public.supervisor_proposals set status='executing',
+  revision=revision+1,updated_at=now() where id=p.id returning * into p;
+ update public.supervisor_effect_attempts set state='executing'
+  where attempt_key=attempt_id and state='reserved';
+ return jsonb_build_object('proposal',to_jsonb(p),'attempt_key',attempt_id,
+  'business_date',local_day,'authorization_kind','owner_message');
+end $$;
+revoke all on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ to service_role;
+ else null end;
+  currency_pattern:='('||currency_code
+    ||case when currency_glyph is null then ''
+      else '|'||replace(currency_glyph,'
+    claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
+    if claimed_cost<0 then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+    dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
+    price_pattern:='(\$|USD[[:space:]]*)[[:space:]]*'||dollars::text||
+      case when cents=0 then '(\.00)?'
+           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+    if m.text_content !~* price_pattern then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+  end if;
+ end if;
+
+ insert into public.supervisor_approvals(
+  business_id,proposal_id,owner_user_id,approved_revision,effect_hash,
+  authorization_kind,owner_message_id
+ ) values (
+  p_business_id,p.id,p_owner_user_id,p.revision,p.effect_hash,
+  'owner_message',p_owner_message_id
+ );
+ update public.supervisor_proposals set status='approved',approved_at=now(),
+  approved_by=p_owner_user_id,revision=revision+1,updated_at=now()
+  where id=p.id returning * into p;
+
+ attempt_id:=gen_random_uuid();
+ insert into public.supervisor_effect_attempts(
+  attempt_key,business_id,proposal_id,effect_hash,authorization_kind,
+  owner_message_id,business_date,state
+ ) values (
+  attempt_id,p_business_id,p.id,p.effect_hash,'owner_message',
+  p_owner_message_id,local_day,'reserved'
+ );
+ update public.supervisor_proposals set status='executing',
+  revision=revision+1,updated_at=now() where id=p.id returning * into p;
+ update public.supervisor_effect_attempts set state='executing'
+  where attempt_key=attempt_id and state='reserved';
+ return jsonb_build_object('proposal',to_jsonb(p),'attempt_key',attempt_id,
+  'business_date',local_day,'authorization_kind','owner_message');
+end $$;
+revoke all on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ to service_role;
+, '\
+    claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
+    if claimed_cost<0 then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+    dollars:=claimed_cost/100;cents:=(claimed_cost%100)::integer;
+    price_pattern:='(\$|USD[[:space:]]*)[[:space:]]*'||dollars::text||
+      case when cents=0 then '(\.00)?'
+           else '\.'||lpad(cents::text,2,'0') end||'([^0-9.]|$)';
+    if m.text_content !~* price_pattern then
+      raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
+  end if;
+ end if;
+
+ insert into public.supervisor_approvals(
+  business_id,proposal_id,owner_user_id,approved_revision,effect_hash,
+  authorization_kind,owner_message_id
+ ) values (
+  p_business_id,p.id,p_owner_user_id,p.revision,p.effect_hash,
+  'owner_message',p_owner_message_id
+ );
+ update public.supervisor_proposals set status='approved',approved_at=now(),
+  approved_by=p_owner_user_id,revision=revision+1,updated_at=now()
+  where id=p.id returning * into p;
+
+ attempt_id:=gen_random_uuid();
+ insert into public.supervisor_effect_attempts(
+  attempt_key,business_id,proposal_id,effect_hash,authorization_kind,
+  owner_message_id,business_date,state
+ ) values (
+  attempt_id,p_business_id,p.id,p.effect_hash,'owner_message',
+  p_owner_message_id,local_day,'reserved'
+ );
+ update public.supervisor_proposals set status='executing',
+  revision=revision+1,updated_at=now() where id=p.id returning * into p;
+ update public.supervisor_effect_attempts set state='executing'
+  where attempt_key=attempt_id and state='reserved';
+ return jsonb_build_object('proposal',to_jsonb(p),'attempt_key',attempt_id,
+  'business_date',local_day,'authorization_kind','owner_message');
+end $$;
+revoke all on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_claim_owner_purchase_effect(uuid,uuid,uuid,uuid,integer,uuid)
+ to service_role;
+) end||')';
+  if p.canonical_effect_payload->>'costCents' is null and
+     m.text_content ~* ('(^|[^[:alnum:]])'||currency_pattern||'[[:space:]]*[0-9]')
+  then raise exception 'typed_purchase_cost_not_grounded' using errcode='42501'; end if;
   if p.canonical_effect_payload->>'costCents' is not null then
     claimed_cost:=(p.canonical_effect_payload->>'costCents')::bigint;
     if claimed_cost<0 then
