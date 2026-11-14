@@ -82,7 +82,8 @@ export function proposalLines(before,after){
    if(!e||typeof e!=="object")error("invalid_observed_proposal");
    // Observed identifiers must NEVER come from human expected labels.
    return {lineId:"proposal_"+i,
-     name:e.name??"",quantity:e.quantity??null,unit:e.unit??null,
+     name:e.name??"",quantity:e.quantity==null?null:toScaled(e.quantity),
+     unit:e.unit==null?null:slug(e.unit)+"_x10000",
      costCents:e.costCents??null,confidence:e.ingredientId?"verified":"needs_review"};
   });
 }
