@@ -41,6 +41,17 @@ describe("explicit owner-turn purchase authority",()=>{
   expect(check("I bought 10 gallons of milk for €45.00",4500,today,1,"EUR")).toBe(true);
   expect(check("I bought 10 gallons of milk for $45 each",4500)).toBe(false);
   expect(check("I bought 10 gallons of milk and 2 lb beans for $45",4500,today,2)).toBe(false);
+  // The model can split one owner utterance into two ONE-line tool calls.
+  // A shared total must not be applied to either line regardless of batching.
+  expect(check("I bought 10 gallons of milk and 2 lb beans for $45 total",4500,today,1)).toBe(false);
+  expect(check("I bought 10 gallons of milk and 2 lb beans for $45 total",4500,today,2)).toBe(false);
+  // Never parse a prefix of a grouped amount ($1,000) as $1.
+  expect(check("I bought 10 gallons of milk for $1,000",100)).toBe(false);
+  expect(check("I bought 10 gallons of milk for $1,000",100000)).toBe(false);
+  expect(check("I bought 10 gallons of milk for $1,000.00",100)).toBe(false);
+  expect(check("I bought 10 gallons of milk for $1,000.00",100000)).toBe(false);
+  expect(check("I bought 10 gallons of milk for $45.00",4500)).toBe(true);
+
   expect(check("I bought 10 gallons of milk, paid 45",null)).toBe(false);
  });
  it("accepts clear owner instructions, no repeat click",()=>{
