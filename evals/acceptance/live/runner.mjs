@@ -177,6 +177,14 @@ function ownerLabel(caseLabel,before,otherBefore){
     after:expectedAfter(before,caseLabel.expected.writes),
     otherTenant:{before:otherBefore,after:otherBefore}}};
 }
+export function failureCode(cause){
+ if(cause instanceof Error&&/^(?:live_capture|live_preflight|acceptance_integrity):[a-z0-9_]+$/.test(cause.message))
+  return cause.message;
+ return "live_capture:unclassified_failure";
+}
+export function allCasesAccountedFor(expected,observed,failures){
+ return Number.isSafeInteger(expected)&&observed===expected&&failures.length===0;
+}
 export async function runLive(manifest,prepared,env,outputPath){
  // The no-secret evaluator-integrity job deliberately does not run npm ci.
  // Only real paid execution loads the pinned browser and DB dependencies.
@@ -184,7 +192,7 @@ export async function runLive(manifest,prepared,env,outputPath){
  const db=new pg.Client({connectionString:env.ACCEPTANCE_DATABASE_URL,
   options:"-c default_transaction_read_only=on"});
  const browser=await chromium.launch({headless:true});
- const contexts=new Map(),threads=new Map();
+ const contexts=new Map(),threads=new Map(),failures=[];
  const truth={schemaVersion:1,suiteId:manifest.suiteId,
   datasetKind:"human-labeled-holdout",cases:[]};
  const observation={schemaVersion:1,suiteId:manifest.suiteId,
@@ -194,6 +202,7 @@ export async function runLive(manifest,prepared,env,outputPath){
  await db.connect();
  try{
   for(const {label,file} of prepared){
+   try{
    const cafe=cafes.get(label.actor.businessId);
    const other=TEST_CAFES.find(x=>x.businessId!==label.actor.businessId);
    if(!cafe||!other)error("unknown_seed_cafe");
@@ -241,16 +250,26 @@ export async function runLive(manifest,prepared,env,outputPath){
     modelRequestId:"agentlog_"+model.id.replaceAll("-",""),
     auditModel:model.model,auditEvidenceType:"agent_turn_log_not_provider_request_id"
    });
+   }catch(cause){
+    failures.push({id:label.id,code:failureCode(cause)});
+   }
   }
-  const score=scoreAcceptance(truth,observation,{mode:"live"});
+  let score=null,scoreError=null;
+  if(allCasesAccountedFor(manifest.cases.length,observation.cases.length,failures)){
+   try{score=scoreAcceptance(truth,observation,{mode:"live"});}
+   catch(cause){scoreError=failureCode(cause);}
+  }else scoreError="live_capture:cases_missing_or_failed";
   const repo=realpathSync(process.cwd()),folder=realpathSync(dirname(outputPath));
   if(!isAbsolute(outputPath)||folder===repo||folder.startsWith(repo+sep))
    error("private_output_outside_git_required");
   writeFileSync(outputPath,JSON.stringify({truth,observations:observation,score,
+   failureSummary:{casesRequested:manifest.cases.length,casesCaptured:observation.cases.length,
+    failures,scoreError},
    limitations:["Before-baselines from independent local SQL, expected deltas from human labels",
     "Agent-turn audit ID is not external provider request ID",
     "Subjective human ratings and competitor comparison require separate review"]},null,2),
    {mode:0o600,flag:"wx"});
+  if(!score)error("live_acceptance_failed_private_report_written");
   return {status:score.status,cases:score.cases,latencyMs:score.latencyMs};
  }finally{
   await Promise.all([...contexts.values()].map(x=>x.context.close().catch(()=>{})));
