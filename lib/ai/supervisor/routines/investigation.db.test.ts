@@ -76,7 +76,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         enqueue(0,"alert",alerts[0]))).toBe(true);
       // A repeat must keep the same progress rather than starting over.
       expect(await rpc(a,"supervisor_enqueue_investigation",
-        enqueue(0,"alert",alerts[0]))).toBe(true);
+        enqueue(0,"alert",alerts[0]))).toBe(false);
       const [first,duplicate]=await Promise.all([
         rpc(a,"supervisor_claim_investigation",[anchor]),
         rpc(b,"supervisor_claim_investigation",[anchor]),
