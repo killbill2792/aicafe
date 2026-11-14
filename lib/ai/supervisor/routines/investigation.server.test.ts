@@ -170,6 +170,17 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args.p_error)
       .toBe("source_unavailable");
   });
+  it("blocks owner-visible results if entitlement is revoked during a model step",async()=>{
+    mocks.access.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("revoked"));
+    const d=db([{...investigating}]);
+    expect(await processNextInvestigation(d.client,now)).toMatchObject({
+      processed:1,investigated:0,failed:1,
+    });
+    expect(mocks.model).toHaveBeenCalledOnce();
+    expect(mocks.notify).not.toHaveBeenCalled();
+    expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args.p_error)
+      .toBe("authorization_revoked");
+  });
   it("does not bypass authorization, pretend model availability or create an owner message",async()=>{
     mocks.access.mockRejectedValue(new Error("denied"));
     const d=db([{...investigating}]);
