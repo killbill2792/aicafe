@@ -264,15 +264,19 @@ begin
     or v.lease_until<=p_now then return false; end if;
   v_count:=least(5,v.failure_count+1);
   update public.supervisor_investigations set
-    failure_count=v_count,phase=case when v_count=5 then 'blocked' else phase end,
+    -- A transient provider failure cannot permanently abandon owner work.
+    -- Retry with a long cooldown after the first five attempts; keep the
+    -- investigation visible until verified recovery or source resolution.
+    failure_count=v_count,
     last_error=p_error,lease_token=null,lease_until=null,
-    next_retry_at=p_now+(interval '1 minute'*least(60,power(2,v_count)::integer)),
+    next_retry_at=case when v_count=5 then p_now+interval '6 hours'
+      else p_now+(interval '1 minute'*least(60,power(2,v_count)::integer)) end,
     updated_at=p_now
   where business_id=p_business_id and owner_user_id=p_owner_user_id
     and source_type=p_source_type and source_id=p_source_id;
   -- Repeated failure is owner-visible, not silently abandoned. No message is
   -- attempted after membership/thread revocation, and no effect is retried.
-  if v_count=5 and public.supervisor_routine_owner_authorized(
+  if v_count=5 and v.failure_count<5 and public.supervisor_routine_owner_authorized(
     v.business_id,v.owner_user_id,v.thread_id) then
     v_hash:=md5('investigation-blocked:'||v.business_id::text||':'||v.owner_user_id::text||
       ':'||v.source_type||':'||v.source_id||':'||v.revision_hash);
@@ -282,7 +286,7 @@ begin
       content_type,structured_content,grounding)
     values(v_msg,v.business_id,v.thread_id,v.owner_user_id,'supervisor','blocks',
       jsonb_build_array(jsonb_build_object('type','text','text',
-        'Investigation update: I could not verify the café issue after repeated checks. I have paused this investigation; the original attention item remains available. No external action was taken. I will re-examine it if its source evidence changes.')),
+        'Investigation update: I could not verify the café issue after repeated checks. I have slowed automatic retries to every six hours; the original attention item remains available. No external action was taken. I will re-examine new source evidence sooner.')),
       jsonb_build_object('status','verified','intent','priority_investigation_exception',
         'evidence',jsonb_build_array(jsonb_build_object('source',v.source_type,
           'identifier',v.source_id,'asOf',p_now::text))))
