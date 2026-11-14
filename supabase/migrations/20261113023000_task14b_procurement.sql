@@ -365,6 +365,35 @@ revoke all on function public.supervisor_reconcile_supplier_po(uuid,uuid,uuid,uu
 grant execute on function public.supervisor_reconcile_supplier_po(uuid,uuid,uuid,uuid,integer)
  to service_role;
 
+-- Immutable, café-scoped link between replacement and rejected draft. Do NOT
+-- edit supervisor_proposals.baseline: its existing trigger forbids it.
+create table public.supplier_po_draft_replacements(
+ business_id uuid not null references public.businesses(id) on delete cascade,
+ previous_id uuid not null,
+ replacement_id uuid not null,
+ owner_user_id uuid not null references auth.users(id),
+ created_at timestamptz not null default now(),
+ primary key(business_id,previous_id),
+ unique(business_id,replacement_id),
+ check(previous_id<>replacement_id),
+ foreign key(business_id,previous_id)
+  references public.supervisor_proposals(business_id,id),
+ foreign key(business_id,replacement_id)
+  references public.supervisor_proposals(business_id,id)
+);
+-- Reason: This is a brand-new private owner table with no legacy data.
+-- squawk-ignore ban-alter-row-level-security
+alter table public.supplier_po_draft_replacements enable row level security;
+create policy "owner reads supplier draft replacement" on public.supplier_po_draft_replacements
+ for select to authenticated using(
+  owner_user_id=(select auth.uid()) and exists(
+   select 1 from public.memberships m
+   where m.business_id=supplier_po_draft_replacements.business_id
+    and m.user_id=(select auth.uid()) and m.role='owner'));
+revoke all on public.supplier_po_draft_replacements from public,anon,authenticated;
+grant select on public.supplier_po_draft_replacements to authenticated;
+grant all on public.supplier_po_draft_replacements to service_role;
+
 -- A correction must not leave the old proposal independently approvable.
 -- This service-only CAS links the immutable replacement while retiring the
 -- original within one DB transaction; old approval cards follow editedFrom.
@@ -393,7 +422,10 @@ begin
  if old_p.id is null or new_p.id is null then
   raise exception 'supplier_draft_not_found' using errcode='42501'; end if;
  if old_p.status='rejected' and new_p.status='draft'
-   and new_p.baseline->>'editedFrom'=old_p.id::text
+   and exists(select 1 from public.supplier_po_draft_replacements link
+     where link.business_id=p_business_id
+       and link.owner_user_id=p_owner_user_id
+       and link.previous_id=old_p.id and link.replacement_id=new_p.id)
  then return 'superseded'; end if;
  if new_p.status<>'draft' then
   raise exception 'replacement_not_draft' using errcode='P0001'; end if;
@@ -408,10 +440,9 @@ begin
  update public.supervisor_proposals set status='rejected',revision=revision+1,
    updated_at=now() where id=old_p.id and status='draft'
    and revision=p_previous_revision;
- update public.supervisor_proposals set
-   baseline=jsonb_set(coalesce(baseline,'{}'::jsonb),'{editedFrom}',
-     to_jsonb(old_p.id::text)),updated_at=now()
-   where id=new_p.id and status='draft';
+ insert into public.supplier_po_draft_replacements
+   (business_id,previous_id,replacement_id,owner_user_id)
+   values(p_business_id,old_p.id,new_p.id,p_owner_user_id);
  return 'superseded';
 end $$;
 revoke all on function public.supervisor_supersede_supplier_draft(uuid,uuid,uuid,uuid,integer,uuid)
