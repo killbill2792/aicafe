@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,verifyCheckoutHead,allCasesAccountedFor,failureCode} from "./runner.mjs";
+import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
 
 const milk={name:"Whole milk",base_unit:"ml",quantity_base:"5.2500"};
 const beans={name:"Espresso beans",base_unit:"g",quantity_base:"12.5000"};
@@ -75,6 +75,16 @@ test("live results cannot be attributed to a different checkout SHA",()=>{
  assert.equal(verifyCheckoutHead(sha,()=>sha),sha);
  assert.throws(()=>verifyCheckoutHead(sha,()=> "b".repeat(40)),/checkout_does_not_match_attested_head/);
  assert.throws(()=>verifyCheckoutHead("bad",()=>sha),/checkout_does_not_match_attested_head/);
+});
+
+test("live Luna evidence rejects fallback even when a real turn produced tokens",()=>{
+ assert.equal(requireObservedProductionModel("gpt-6-luna","gpt-6-luna"),"gpt-6-luna");
+ for(const actual of ["gpt-4.1-mini","gpt-6-luna-v2","unknown",null]){
+  assert.throws(()=>requireObservedProductionModel(actual,"gpt-6-luna"),
+   /live_capture:unexpected_runtime_model/);
+ }
+ assert.throws(()=>requireObservedProductionModel("gpt-6-luna",null),
+  /live_capture:unexpected_runtime_model/);
 });
 
 test("a live report cannot pass by ignoring failed cases",()=>{
