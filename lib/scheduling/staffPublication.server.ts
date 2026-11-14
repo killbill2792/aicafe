@@ -50,7 +50,7 @@ export async function recordSignedStaffScheduleStatus(event:{
  if(error)result(error);
 }
 
-async function attemptEmployee(db:SupabaseClient,p:Publication,d:Delivery):Promise<"sent"|"failed"|"uncertain"|"skipped">{
+async function attemptEmployee(db:SupabaseClient,p:Publication,d:Delivery):Promise<"sent"|"failed"|"uncertain"|"retry"|"skipped">{
  const people=await db.from("employees").select("id,display_name,preferred_language")
   .eq("business_id",p.business_id).eq("id",d.employee_id).maybeSingle();
  if(people.error||!people.data)return "failed";
@@ -83,7 +83,7 @@ async function attemptEmployee(db:SupabaseClient,p:Publication,d:Delivery):Promi
  }
  const receipt=await sendStaffScheduleTemplate(claim.to,message);
  const state=receipt.state==="accepted"?"sent":
-  receipt.state==="failed"?"failed":"uncertain";
+  receipt.state==="failed"?"failed":receipt.state==="retry"?"retry":"uncertain";
  const finished=await db.rpc("staff_schedule_finish_delivery",{
   p_delivery_id:claim.deliveryId,p_attempt_token:claim.attemptToken,
   p_state:state,p_wamid:receipt.state==="accepted"?receipt.wamid:null,
@@ -232,7 +232,7 @@ export async function followUpStaffPublicationForBusiness(db:SupabaseClient,
     if(d.status!=="prepared")continue;
     try{
      const attempt=await attemptEmployee(db,p,d);
-     if(attempt==="sent"||attempt==="failed"||attempt==="uncertain")state.attempted++;
+     if(attempt==="sent"||attempt==="failed"||attempt==="uncertain"||attempt==="retry")state.attempted++;
      if(attempt!=="sent")errors++;
     }catch{errors++;}
   }
