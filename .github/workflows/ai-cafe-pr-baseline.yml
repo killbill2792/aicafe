@@ -348,11 +348,31 @@ jobs:
           if [ -f "$RUNNER_TEMP/e2e-next.pid" ]; then kill "$(cat "$RUNNER_TEMP/e2e-next.pid")" || true; fi
           supabase stop --no-backup || true
 
+  evaluator-integrity:
+    # Always-on zero-cost checks for the *test itself*. No provider key,
+    # customer data, or browser/DB service. Recorded calibration != live proof.
+    needs: changes
+    if: ${{ always() && github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || (needs.changes.result == 'success' && needs.changes.outputs.code == 'true')) }}
+    name: Acceptance evaluator integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Kill-test the evaluator with known bad observations
+        run: node --test evals/acceptance/evidence.test.mjs
+      - name: Verify independent synthetic calibration is not live proof
+        run: node evals/acceptance/cli.mjs
+
   baseline:
     # Preserve the branch-protection check, even for docs-only pull requests.
     name: AI CAFE PR baseline
     if: ${{ always() && github.event_name != 'push' }}
-    needs: [changes, quality, regressions, production-build, supervisor-evals, guards, db, browser]
+    needs: [changes, quality, regressions, production-build, supervisor-evals, evaluator-integrity, guards, db, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -368,6 +388,7 @@ jobs:
           TEST_RESULT: ${{ needs.regressions.result }}
           BUILD_RESULT: ${{ needs.production-build.result }}
           EVAL_RESULT: ${{ needs.supervisor-evals.result }}
+          EVALUATOR_RESULT: ${{ needs.evaluator-integrity.result }}
           GUARDS_RESULT: ${{ needs.guards.result }}
           DB_RESULT: ${{ needs.db.result }}
           BROWSER_REQUIRED: ${{ needs.changes.outputs.browser_required }}
@@ -376,6 +397,7 @@ jobs:
         run: |
           echo "Changes: $CHANGES_RESULT; code=$CODE_CHANGED; e2e=$E2E_CHANGED; supervisor=$SUPERVISOR_CHANGED; docs-only=$DOCS_ONLY"
           echo "Quality: $QUALITY_RESULT; Vitest: $TEST_RESULT; build: $BUILD_RESULT; database: $DB_RESULT; Supervisor: $EVAL_RESULT; guards: $GUARDS_RESULT; browser-required: $BROWSER_REQUIRED; browser: $BROWSER_RESULT"
+          echo "Evaluator integrity: $EVALUATOR_RESULT (synthetic only; not live-model acceptance)"
           test "$GUARDS_RESULT" = success
           if [ "$EVENT_NAME" = pull_request ]; then
             test "$CHANGES_RESULT" = success
@@ -393,11 +415,13 @@ jobs:
             test "$E2E_CHANGED" = false
           fi
           if [ "$CODE_CHANGED" = true ] || [ "$EVENT_NAME" = workflow_dispatch ]; then
+            test "$EVALUATOR_RESULT" = success
             test "$QUALITY_RESULT" = success
             test "$TEST_RESULT" = success
             test "$BUILD_RESULT" = success
             test "$DB_RESULT" = success
           else
+            test "$EVALUATOR_RESULT" = skipped
             test "$QUALITY_RESULT" = skipped
             test "$TEST_RESULT" = skipped
             test "$BUILD_RESULT" = skipped

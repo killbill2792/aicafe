@@ -1,0 +1,399 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "aicafe_operator_acceptance_v1",
+  "datasetKind": "synthetic-calibration",
+  "note": "Human-inspected synthetic calibration only, no live model, no real invoice or DB. Never use as product acceptance.",
+  "cases": [
+    {
+      "id": "typed_milk",
+      "category": "conversation",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "input": {
+        "text": "I bought 10 gallons of milk today. Update inventory.",
+        "assetSha256": null
+      },
+      "expected": {
+        "outcome": "updated",
+        "maxClarifications": 0,
+        "before": [
+          {
+            "ingredient": "milk",
+            "quantity": 100,
+            "unit": "gal"
+          }
+        ],
+        "after": [
+          {
+            "ingredient": "milk",
+            "quantity": 110,
+            "unit": "gal"
+          }
+        ],
+        "writes": [
+          {
+            "sourceLineId": "typed_milk_1",
+            "ingredient": "milk",
+            "delta": 10,
+            "unit": "gal"
+          }
+        ],
+        "extracted": [
+          {
+            "lineId": "typed_milk_1",
+            "name": "milk",
+            "quantity": 10,
+            "unit": "gal",
+            "costCents": null,
+            "confidence": "verified"
+          }
+        ]
+      }
+    },
+    {
+      "id": "receipt_two_lines",
+      "category": "receipt",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "input": {
+        "text": "Please add the attached supermarket receipt to stock.",
+        "assetSha256": "2524ee37aed5432418cf9019ab25b28f42310de7d316144a530e23e013f1706c"
+      },
+      "expected": {
+        "outcome": "updated",
+        "maxClarifications": 0,
+        "before": [
+          {
+            "ingredient": "milk",
+            "quantity": 20,
+            "unit": "gal"
+          },
+          {
+            "ingredient": "beans",
+            "quantity": 100,
+            "unit": "lb"
+          }
+        ],
+        "after": [
+          {
+            "ingredient": "milk",
+            "quantity": 21,
+            "unit": "gal"
+          },
+          {
+            "ingredient": "beans",
+            "quantity": 102,
+            "unit": "lb"
+          }
+        ],
+        "writes": [
+          {
+            "sourceLineId": "receipt_line_1",
+            "ingredient": "milk",
+            "delta": 1,
+            "unit": "gal"
+          },
+          {
+            "sourceLineId": "receipt_line_2",
+            "ingredient": "beans",
+            "delta": 2,
+            "unit": "lb"
+          }
+        ],
+        "extracted": [
+          {
+            "lineId": "receipt_line_1",
+            "name": "milk",
+            "quantity": 1,
+            "unit": "gal",
+            "costCents": 400,
+            "confidence": "verified"
+          },
+          {
+            "lineId": "receipt_line_2",
+            "name": "beans",
+            "quantity": 2,
+            "unit": "lb",
+            "costCents": 2000,
+            "confidence": "verified"
+          }
+        ]
+      }
+    },
+    {
+      "id": "blurry_photo",
+      "category": "receipt",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "input": {
+        "text": "Here is the blurry receipt; review it.",
+        "assetSha256": "5ace75dcbda9c89f95cf9df424cc257a08249ff60cfda735c7979c9db3841958"
+      },
+      "expected": {
+        "outcome": "needs_review",
+        "maxClarifications": 1,
+        "before": [
+          {
+            "ingredient": "milk",
+            "quantity": 30,
+            "unit": "gal"
+          }
+        ],
+        "after": [
+          {
+            "ingredient": "milk",
+            "quantity": 30,
+            "unit": "gal"
+          }
+        ],
+        "writes": [],
+        "extracted": [
+          {
+            "lineId": "blurry_line_1",
+            "name": "milk",
+            "quantity": null,
+            "unit": null,
+            "costCents": null,
+            "confidence": "needs_review"
+          }
+        ]
+      }
+    },
+    {
+      "id": "undelivered_order",
+      "category": "receipt",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "input": {
+        "text": "This purchase order has not been delivered. Do not update inventory.",
+        "assetSha256": "b965e59ff8527c21d05563cc3e1c1de9a08d7b4c3e7a89701caba18e92f08c02"
+      },
+      "expected": {
+        "outcome": "no_action",
+        "maxClarifications": 0,
+        "before": [
+          {
+            "ingredient": "beans",
+            "quantity": 100,
+            "unit": "lb"
+          }
+        ],
+        "after": [
+          {
+            "ingredient": "beans",
+            "quantity": 100,
+            "unit": "lb"
+          }
+        ],
+        "writes": [],
+        "extracted": [
+          {
+            "lineId": "po_line_1",
+            "name": "beans",
+            "quantity": 5,
+            "unit": "lb",
+            "costCents": 5000,
+            "confidence": "verified"
+          }
+        ]
+      }
+    },
+    {
+      "id": "replayed_receipt",
+      "category": "receipt",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "input": {
+        "text": "Here is the same receipt again. Please record it.",
+        "assetSha256": "2524ee37aed5432418cf9019ab25b28f42310de7d316144a530e23e013f1706c"
+      },
+      "expected": {
+        "outcome": "no_action",
+        "maxClarifications": 0,
+        "before": [
+          {
+            "ingredient": "milk",
+            "quantity": 21,
+            "unit": "gal"
+          },
+          {
+            "ingredient": "beans",
+            "quantity": 102,
+            "unit": "lb"
+          }
+        ],
+        "after": [
+          {
+            "ingredient": "milk",
+            "quantity": 21,
+            "unit": "gal"
+          },
+          {
+            "ingredient": "beans",
+            "quantity": 102,
+            "unit": "lb"
+          }
+        ],
+        "writes": [],
+        "extracted": [
+          {
+            "lineId": "receipt_line_1",
+            "name": "milk",
+            "quantity": 1,
+            "unit": "gal",
+            "costCents": 400,
+            "confidence": "verified"
+          },
+          {
+            "lineId": "receipt_line_2",
+            "name": "beans",
+            "quantity": 2,
+            "unit": "lb",
+            "costCents": 2000,
+            "confidence": "verified"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cross_cafe_denied",
+      "category": "conversation",
+      "actor": {
+        "businessId": "business_beta",
+        "ownerId": "owner_beta"
+      },
+      "input": {
+        "text": "Can you read another cafe's stock?",
+        "assetSha256": null
+      },
+      "expected": {
+        "outcome": "no_action",
+        "maxClarifications": 0,
+        "before": [
+          {
+            "ingredient": "beans",
+            "quantity": 80,
+            "unit": "lb"
+          }
+        ],
+        "after": [
+          {
+            "ingredient": "beans",
+            "quantity": 80,
+            "unit": "lb"
+          }
+        ],
+        "otherTenant": {
+          "before": [
+            {
+              "ingredient": "milk",
+              "quantity": 100,
+              "unit": "gal"
+            }
+          ],
+          "after": [
+            {
+              "ingredient": "milk",
+              "quantity": 100,
+              "unit": "gal"
+            }
+          ]
+        },
+        "writes": [],
+        "extracted": []
+      }
+    },
+    {
+      "id": "correction_review",
+      "category": "conversation",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "input": {
+        "text": "Actually I meant 8 gallons, not 10. Correct the prior purchase.",
+        "assetSha256": null
+      },
+      "expected": {
+        "outcome": "needs_review",
+        "maxClarifications": 1,
+        "before": [
+          {
+            "ingredient": "milk",
+            "quantity": 110,
+            "unit": "gal"
+          }
+        ],
+        "after": [
+          {
+            "ingredient": "milk",
+            "quantity": 110,
+            "unit": "gal"
+          }
+        ],
+        "writes": [],
+        "extracted": [
+          {
+            "lineId": "prior_milk_1",
+            "name": "milk",
+            "quantity": 8,
+            "unit": "gal",
+            "costCents": null,
+            "confidence": "verified"
+          }
+        ]
+      }
+    },
+    {
+      "id": "invoice_without_delivery",
+      "category": "receipt",
+      "actor": {
+        "businessId": "business_alpha",
+        "ownerId": "owner_alpha"
+      },
+      "input": {
+        "text": "The invoice arrived; add goods to inventory",
+        "assetSha256": null
+      },
+      "expected": {
+        "outcome": "needs_review",
+        "maxClarifications": 1,
+        "before": [
+          {
+            "ingredient": "beans",
+            "quantity": 100,
+            "unit": "lb"
+          }
+        ],
+        "after": [
+          {
+            "ingredient": "beans",
+            "quantity": 100,
+            "unit": "lb"
+          }
+        ],
+        "writes": [],
+        "extracted": [
+          {
+            "lineId": "invoice_line_1",
+            "name": "beans",
+            "quantity": 5,
+            "unit": "lb",
+            "costCents": 5000,
+            "confidence": "verified"
+          }
+        ]
+      }
+    }
+  ]
+}
