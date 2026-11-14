@@ -19,6 +19,7 @@ import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadines
 import {gmailCapabilityId,gmailEffectSchema} from "@/lib/ai/supervisor/loop/gmail.server";
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
+import {publishApprovedStaffSchedule} from "@/lib/scheduling/staffPublication.server";
 /** The loop refused a second active proposal on the same item (engine ProposalOverlapError). */
 function runningOverlap(error:unknown):{proposalId:string;status:string;endsOn:string|null}|null{
   if(!(error instanceof Error)||error.name!=="ProposalOverlapError"||!("running" in error))return null;
@@ -278,6 +279,22 @@ export async function POST(request:Request,{params}:Params){
     }
     if(staff){
       if(p.capabilityVersion===1)return conversationJson({state:"stale",proposal:await view(scope,repo,p)},409);
+      // Task 13B: only a NEW approval with explicit publish_and_notify
+      // can publish/send. Historic copy-ready approvals never acquire consent.
+      const staffEffect=p.canonicalEffectPayload as {operation?:string;
+        payload?:{publish_and_notify?:boolean}};
+      const needsPublish=staffEffect.operation==="propose_send_schedule"&&
+        staffEffect.payload?.publish_and_notify===true;
+      if(p.status==="committed"&&needsPublish){
+        try{
+          const publication=await publishApprovedStaffSchedule(scope,p.id);
+          return conversationJson({state:"published",publication,
+            proposal:await view(scope,repo,p)});
+        }catch{
+          return conversationJson({state:"awaiting_publication",
+            error:"publication_verification_pending",proposal:await view(scope,repo,p)},409);
+        }
+      }
       if(input.action==="edit")return conversationJson({error:"staff_edits_require_new_proposal"},422);
       if(p.revision!==input.revision||!["draft","approved"].includes(p.status))
         return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
@@ -293,14 +310,38 @@ export async function POST(request:Request,{params}:Params){
       try{
         const approved=p.status==="draft"?await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry):p;
         const result=await repo.commitStaff(scope,p.id,approved.revision);
+        if(result.state==="applied"&&needsPublish){
+          try{
+            const publication=await publishApprovedStaffSchedule(scope,p.id);
+            return conversationJson({state:"published",publication,
+              proposal:await view(scope,repo,result.proposal)});
+          }catch{
+            // The approval may already be committed; a routine reconciles
+            // publication using its durable proposal receipt. Never retry
+            // the staff proposal as a fresh effect.
+            return conversationJson({state:"awaiting_publication",
+              error:"publication_verification_pending",
+              proposal:await view(scope,repo,result.proposal)},409);
+          }
+        }
         return conversationJson({state:result.state,proposal:await view(scope,repo,result.proposal)},
           result.state==="stale"?409:200);
       }catch{
         const latest=await repo.load(scope,p.id);
         // A lost HTTP response after a committed SQL transaction is not a
         // failed write. Read the durable ledger before showing Retry.
-        if(latest.status==="committed")
+        if(latest.status==="committed"){
+          if(needsPublish){
+            try{
+              const publication=await publishApprovedStaffSchedule(scope,p.id);
+              return conversationJson({state:"published",publication,
+                proposal:await view(scope,repo,latest)});
+            }catch{return conversationJson({state:"awaiting_publication",
+              error:"publication_verification_pending",
+              proposal:await view(scope,repo,latest)},409);}
+          }
           return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
+        }
         if(latest.status==="stale")
           return conversationJson({state:"stale",proposal:await view(scope,repo,latest)},409);
         if(latest.status==="approved")
