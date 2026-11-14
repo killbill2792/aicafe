@@ -88,6 +88,14 @@ export function proposalLines(before,after){
 }
 /** Gate any simulated owner click on independently pre-reviewed exact effects.
  * Never approve a model-suggested extra line or mismatched cost/ingredient. */
+/** A pending owner approval is not no-action merely because an ingredient was identified. */
+export function observedOutcome(saved,extracted,newProposals,clarifications){
+ if(saved.length>0)return "updated";
+ if(clarifications>0||extracted.some(x=>x.confidence==="needs_review")||
+    newProposals.some(x=>["draft","approved","executing","manual_pending"].includes(x.status)))
+  return "needs_review";
+ return "no_action";
+}
 export function planOwnerApprovals(label,before,after){
  const expected=label.expected;
  const observed=proposalLines(before,after);
@@ -307,8 +315,8 @@ export async function runLive(manifest,prepared,env,outputPath){
    const extracted=proposalLines(oldProposals,newProposals);
    const blocks=actual.done?.reply?.blocks??[];
    const clarifications=blocks.filter(x=>x.type==="clarify").length;
-   const status=saved.length?"updated":
-    (clarifications>0||extracted.some(x=>x.confidence==="needs_review"))?"needs_review":"no_action";
+   const status=observedOutcome(saved,extracted,
+    newPurchaseProposals(oldProposals,newProposals),clarifications);
    truth.cases.push(ownerLabel(label,before,otherBefore));
    observation.cases.push({
     id:label.id,actor:label.actor,executed:true,
