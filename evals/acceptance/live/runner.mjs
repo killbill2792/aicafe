@@ -68,14 +68,16 @@ export function ledgerWrites(before,after,expectedWrites){
     ingredient,unit,delta,receiptId:r.id,status:"committed"};
   });
 }
-export function proposalLines(before,after){
+export function newPurchaseProposals(before,after){
  const ids=new Set(before.map(x=>x.id));
  return after.filter(x=>!ids.has(x.id)&&x.capability_id==="maya.inventory_purchase.v1")
-  .sort((a,b)=>Number(a.canonical_effect_payload.receiptLineIndex??999)-
-    Number(b.canonical_effect_payload.receiptLineIndex??999)||
+  .sort((a,b)=>Number(a.canonical_effect_payload?.receiptLineIndex??999)-
+    Number(b.canonical_effect_payload?.receiptLineIndex??999)||
     String(a.created_at).localeCompare(String(b.created_at))||
-    String(a.id).localeCompare(String(b.id)))
-  .map((p,i)=>{
+    String(a.id).localeCompare(String(b.id)));
+}
+export function proposalLines(before,after){
+ return newPurchaseProposals(before,after).map((p,i)=>{
    const e=p.canonical_effect_payload;
    if(!e||typeof e!=="object")error("invalid_observed_proposal");
    // Observed identifiers must NEVER come from human expected labels.
@@ -83,6 +85,28 @@ export function proposalLines(before,after){
      name:e.name??"",quantity:e.quantity??null,unit:e.unit??null,
      costCents:e.costCents??null,confidence:e.ingredientId?"verified":"needs_review"};
   });
+}
+/** Gate any simulated owner click on independently pre-reviewed exact effects.
+ * Never approve a model-suggested extra line or mismatched cost/ingredient. */
+export function planOwnerApprovals(label,before,after){
+ const expected=label.expected;
+ const observed=proposalLines(before,after);
+ const sorted=items=>[...items].sort((a,b)=>a.lineId.localeCompare(b.lineId));
+ if(JSON.stringify(sorted(observed))!==JSON.stringify(sorted(expected.extracted)))
+  error("proposal_mismatch_before_approval");
+ if(expected.authorization!=="owner_click")return [];
+ const proposals=newPurchaseProposals(before,after);
+ return expected.approvals.map(selection=>{
+  const n=Number(selection.lineId.slice("proposal_".length));
+  const p=proposals[n],write=expected.writes.find(x=>x.sourceLineId===selection.sourceLineId);
+  const data=p?.canonical_effect_payload;
+  const cost=Object.hasOwn(write??{},"costCents")?write.costCents:null;
+  if(!p||!write||p.status!=="draft"||!Number.isSafeInteger(p.revision)||p.revision<1||
+     !/^[0-9a-f-]{36}$/i.test(p.id??"")||!data?.ingredientId||
+     slug(data.name)!==write.ingredient||data.costCents!==cost)
+   error("unreviewed_proposal_cannot_be_approved");
+  return {proposalId:p.id,revision:p.revision};
+ });
 }
 const stockSql="select i.name,i.base_unit,coalesce(sum(p.quantity_base) filter (where p.voided_at is null),0)::text quantity_base "+
  "from public.ingredients i left join public.pantry_stock_purchases p "+
@@ -92,7 +116,7 @@ const ledgerSql="select p.id::text,p.line_id::text,p.quantity_base::text,p.creat
  "p.voided_at::text,p.cost_cents,i.name,i.base_unit from public.pantry_stock_purchases p "+
  "join public.ingredients i on i.id=p.ingredient_id and i.business_id=p.business_id "+
  "where p.business_id=$1 order by p.created_at,p.line_id";
-const proposalSql="select id::text,capability_id,canonical_effect_payload,created_at::text "+
+const proposalSql="select id::text,capability_id,canonical_effect_payload,revision,status,created_at::text "+
  "from public.supervisor_proposals where business_id=$1 and thread_id=$2 order by created_at,id";
 async function rows(db,sql,params){return (await db.query(sql,params)).rows}
 async function stock(db,id){return stockRows(await rows(db,stockSql,[id]))}
@@ -147,6 +171,22 @@ async function upload(context,thread,file){
    mimeType:file.mime,buffer:file.raw}},timeout:45_000}),"receipt_upload",201);
  if(!/^[0-9a-f-]{36}$/i.test(x.attachment?.id??""))error("attachment_missing");
  return x.attachment.id;
+}
+/** The same authenticated approval endpoint used by the one-screen owner card.
+ * This uses only explicitly labeled expected proposal IDs on disposable cafés. */
+async function approveExpectedPurchases(context,thread,steps){
+ for(const step of steps){
+  const response=await checked(await context.request.post(
+   "/api/ai/threads/"+thread+"/proposals",{
+    headers:{Origin:"http://127.0.0.1:3000"},
+    data:{action:"approve",proposalId:step.proposalId,revision:step.revision},
+    timeout:45_000
+   }),"purchase_owner_approval",200);
+  if(response?.proposal?.proposalId!==step.proposalId||
+     response.proposal?.state!=="applied")
+   error("approved_effect_not_committed");
+ }
+ return steps.length;
 }
 /** Measure actual streamed bytes, not a model-reported latency. */
 async function actualTurn(page,thread,text,attachmentIds,clientMessageId){
@@ -244,8 +284,12 @@ export async function runLive(manifest,prepared,env,outputPath){
     stock(db,cafe.businessId),stock(db,other.businessId),ledger(db,cafe.businessId),
     proposals(db,cafe.businessId,thread)]);
    const attachmentIds=file?[await upload(session.context,thread,file)]:[];
-   const msgId=randomUUID();
+   const msgId=randomUUID(),turnStarted=Date.now();
    const actual=await actualTurn(session.page,thread,label.input.text,attachmentIds,msgId);
+   requireCompletedTurn(actual);
+   const proposalsAfterModel=await proposals(db,cafe.businessId,thread);
+   const approvalSteps=planOwnerApprovals(label,oldProposals,proposalsAfterModel);
+   const approvalsApplied=await approveExpectedPurchases(session.context,thread,approvalSteps);
    const [after,otherAfter,newLedger,newProposals,ownerMessages]=await Promise.all([
     stock(db,cafe.businessId),stock(db,other.businessId),ledger(db,cafe.businessId),
     proposals(db,cafe.businessId,thread),
@@ -274,7 +318,9 @@ export async function runLive(manifest,prepared,env,outputPath){
     dbBefore:before,dbAfter:after,otherTenantBefore:otherBefore,otherTenantAfter:otherAfter,
     receiptWrites:saved,extracted,outcome:status,
     reply:textFromReply(actual.done?.reply),clarifications,
-    latency:{firstUsefulMs:actual.firstUsefulMs,completedMs:actual.completedMs},
+    approvalPath:label.expected.authorization,approvedPurchaseLines:approvalsApplied,
+    latency:{firstUsefulMs:actual.firstUsefulMs,
+     completedMs:Math.max(actual.firstUsefulMs,Date.now()-turnStarted)},
     // A durable backend audit row, NOT an OpenAI request ID; provenance
     // remains an explicit limitation in scorer's live-mode status.
     modelRequestId:"usage_"+model.id.replaceAll("-",""),
