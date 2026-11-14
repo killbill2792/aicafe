@@ -379,6 +379,9 @@ begin
   if v_today is null or not exists(select 1 from public.memberships m
     where m.business_id=p_business_id and m.user_id=p_owner_user_id and m.role='owner')
     then raise exception 'staff_correction_owner_required' using errcode='42501'; end if;
+  -- Existing staff audit writers require the owner provenance; bind the
+  -- owner claim only after verifying real membership, never from model data.
+  perform set_config('request.jwt.claim.sub',p_owner_user_id::text,true);
   perform pg_advisory_xact_lock(hashtextextended('olivia-'||p_business_id::text,0));
   lock table public.employees,public.scheduled_shifts in share row exclusive mode;
   select * into p from public.supervisor_proposals
