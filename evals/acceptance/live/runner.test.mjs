@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
+import {toScaled,stockRows,expectedAfter,ledgerWrites,proposalLines,readPersistedModelUsage,requireCompletedTurn,verifyCheckoutHead,requireObservedProductionModel,allCasesAccountedFor,failureCode} from "./runner.mjs";
 
 const milk={name:"Whole milk",base_unit:"ml",quantity_base:"5.2500"};
 const beans={name:"Espresso beans",base_unit:"g",quantity_base:"12.5000"};
@@ -60,14 +60,14 @@ test("proposal extraction never fabricates missing tool output",()=>{
   created_at:"2026-11-13T10:00:00Z",
   canonical_effect_payload:{name:"Whole milk",quantity:2,unit:"gal",
    costCents:1198,ingredientId:"ingredient_1",receiptLineIndex:0}}];
- const gold=[{lineId:"human_1"}];
- assert.deepEqual(proposalLines([],one,gold),[{
-  lineId:"human_1",name:"Whole milk",quantity:2,unit:"gal",
+ assert.deepEqual(proposalLines([],one),[{
+  lineId:"proposal_0",name:"Whole milk",quantity:2,unit:"gal",
   costCents:1198,confidence:"verified"
  }]);
- assert.deepEqual(proposalLines(one,one,gold),[]);
- const unmapped=proposalLines([],one,[]);
- assert.equal(unmapped[0].lineId,"unexpected_0");
+ assert.deepEqual(proposalLines(one,one),[]);
+ assert.equal(proposalLines([],one)[0].lineId,"proposal_0");
+ // Ground truth cannot manufacture an observed proposal's identity.
+ assert.equal(proposalLines([],one,[{lineId:"forged_label"}])[0].lineId,"proposal_0");
 });
 
 test("live results cannot be attributed to a different checkout SHA",()=>{
@@ -93,4 +93,30 @@ test("a live report cannot pass by ignoring failed cases",()=>{
  assert.equal(allCasesAccountedFor(80,80,[{id:"case_17",code:"live_capture:timeout"}]),false);
  assert.equal(failureCode(new Error("live_capture:agent_timeout")),"live_capture:agent_timeout");
  assert.equal(failureCode(new Error("token=secret owner@example.com")),"live_capture:unclassified_failure");
+});
+
+test("live audit reads existing ai_usage_events, never a nonexistent agent log",async()=>{
+ const businessId="cafe_test",ownerMessageId="owner_message_test";
+ const id="11111111-1111-4111-8111-111111111111";
+ const valid={id,provider:"openai",model:"gpt-6-luna",input_tokens:140,model_call_count:1};
+ const db=record=>({query:async(sql,args)=>{
+  assert.match(sql,/from public\.ai_usage_events/);
+  assert.doesNotMatch(sql,/agent_turn_logs/);
+  assert.deepEqual(args,[businessId,ownerMessageId]);
+  return {rows:record?[record]:[]};
+ }});
+ assert.deepEqual(await readPersistedModelUsage(db(valid),businessId,ownerMessageId,{attempts:1}),valid);
+ for(const bad of [{provider:"fake"},{model:"unknown"},{input_tokens:0},{model_call_count:0},{id:"bad"}])
+  await assert.rejects(readPersistedModelUsage(db({...valid,...bad}),businessId,ownerMessageId,{attempts:1}),/live_capture:model_usage_unverified/);
+ await assert.rejects(readPersistedModelUsage(db(null),businessId,ownerMessageId,{attempts:1}),/live_capture:model_usage_not_persisted/);
+});
+test("an ack, incomplete turn or failed model response cannot count as done",()=>{
+ const good={error:null,done:{endReason:"complete",reply:{
+  id:"11111111-1111-4111-8111-111111111111",blocks:[{type:"text",text:"Confirmed"}]}}};
+ assert.deepEqual(requireCompletedTurn(good),good.done);
+ for(const item of [{error:"timeout",done:good.done},{done:null},
+  {done:{...good.done,endReason:"timeout"}},
+  {done:{...good.done,reply:{...good.done.reply,id:null}}},
+  {done:{...good.done,reply:{...good.done.reply,blocks:[]}}}])
+  assert.throws(()=>requireCompletedTurn(item),/live_capture:agent_turn_not_complete/);
 });
