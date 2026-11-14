@@ -88,3 +88,15 @@ node evals/acceptance/cli.mjs --mode live --truth /secure/labels.json --observat
 ```
 
 See `AGENTS.md` and `docs/rules/tests.md` for existing owner approvals, merge and no-production rules.
+
+---
+
+## Task 17a — required automatic owner-domain regression on every code PR
+
+The existing `AI CAFE PR baseline` now requires the **Owner journey acceptance** job for every code PR, including stacked drafts. It uses `scripts/acceptance/owner-gate.mjs` to inspect the actual Git merge-base through exact PR base/head SHAs, including moved/renamed files, and select fixed registered test files for Supervisor, inventory, staffing, Gmail, routines, memory, POS and acceptance infrastructure. Changes under unknown connector families fail classification until an explicit domain contract is added. Docs-only changes do not pay a provider or run unrelated browser tests. `workflow_dispatch` requests all registered domains and must fail if any registered test does not exist or is skipped.
+
+The job does not trust a PR description's “tests passed” claim. It runs selected Vitest and Node tests on an exact-head candidate checkout, checks actual per-file assertions and zero failures/skips/pending/todos, writes a redacted `test-results/acceptance/owner-journey-proof.json` and verifies its **base SHA, head SHA, GitHub Actions run ID**, selected domains and actual execution count. Any missing or failing job fails the existing required baseline aggregate. Unknown/new domains must be mapped to a real registered suite with at least one passing and one rejecting regression; a passing unrelated suite cannot substitute for that contract. The existing `scripts/e2e/targeted.mjs` still separately controls real authenticated browser proof for UI changes, and full database/other Vitest jobs remain mandatory.
+
+**Important distinction:** this is automatic **deterministic domain regression**, not an invented successful real `gpt-6-luna` inference, supplier email, stock mutation, one-screen cross-domain conversation, or Grok/Muse benchmark. The proof explicitly sets `provider_model_proof:false`. The real paid 50-receipt/30-conversation private holdout still uses #478's local-only runner, a disposable migrated database, independently reviewed original receipt labels and separate owner-approved budget-limited credentials. Never inject real provider keys into untrusted `pull_request` code. Once a trusted model-test environment and private approved fixtures exist, extend the same existing gate with independently authenticated live proof; without that infrastructure, a domain-regression green job cannot certify model-capability or release acceptance.
+
+**Current feature integration:** #471 inventory, #473 file/photo action, #474 staffing, #472 Gmail must update to latest main and execute their selected domain suites. The focused suite proves those existing registered regressions execute; feature-specific new scenarios and full live owner effect proof still belong to each PR's acceptance report. Nothing in this gate waives CI/Codex, code-review owner approval, POS0e/POS0f, effect-gateway authorization or multi-day Task 17b–17e evidence.
