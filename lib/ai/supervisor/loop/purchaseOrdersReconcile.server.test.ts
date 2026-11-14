@@ -16,6 +16,7 @@ const row=(id:string)=>({
 function fakeStore(rows:ReturnType<typeof row>[],queryError=false){
  const updates:Array<Record<string,unknown>>=[];
  const selected:string[]=[];
+ const tables:string[]=[];
  const reads={
   select:(_columns:string)=>reads,
   eq:(name:string,_value:unknown)=>{selected.push(name);return reads;},
@@ -27,14 +28,13 @@ function fakeStore(rows:ReturnType<typeof row>[],queryError=false){
   }
  };
  const write={
-  update:(value:Record<string,unknown>)=>{updates.push(value);return write;},
-  eq:(_name:string,_value:unknown)=>write,
-  then:(resolve:(value:{error:null})=>unknown,reject:(err:unknown)=>unknown)=>
-    Promise.resolve({error:null}).then(resolve,reject)
+  upsert:async(value:Record<string,unknown>)=>{
+   updates.push(value);return {error:null};
+  }
  };
- return {db:{from:(_table:string)=>({
-  select:reads.select,update:write.update,
- })} as unknown as SupabaseClient,selected,updates};
+ return {db:{from:(table:string)=>{
+  tables.push(table);return {select:reads.select,upsert:write.upsert};
+ }} as unknown as SupabaseClient,selected,updates,tables};
 }
 describe("Task14B existing-worker proof-based PO recovery",()=>{
  it("recovers a single scoped verified PO without repeating the purchase effect",async()=>{
@@ -48,9 +48,10 @@ describe("Task14B existing-worker proof-based PO recovery",()=>{
    businessId:row(id).business_id,ownerUserId:row(id).owner_user_id,
    threadId:row(id).thread_id,locale:"en"
   },id,3);
-  expect(store.selected).toEqual(expect.arrayContaining(["capability_id","status","updated_at"]));
+  expect(store.selected).toEqual(expect.arrayContaining(["updated_at"]));
+  expect(store.tables).toEqual(["supplier_po_recovery_due","supplier_po_recovery_marks"]);
   expect(store.updates).toHaveLength(1);
-  expect(store.updates[0].monitor_checked_at).toBe("2026-11-14T06:00:00.000Z");
+  expect(store.updates[0].checked_at).toBe("2026-11-14T06:00:00.000Z");
  });
  it("keeps uncertainty visible and rotates failed attempts rather than resending",async()=>{
   const store=fakeStore([row("44444444-4444-4444-8444-444444444444"),
