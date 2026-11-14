@@ -10,6 +10,8 @@ import {parseNameStatus} from "../e2e/targeted.mjs";
 export const SUITES=Object.freeze({
  supervisor:["lib/ai/agent/loop.server.test.ts","lib/ai/agent/tools/dataQuery.registered.test.ts"],
  inventory:["lib/ai/agent/tools/purchases.test.ts","lib/inventory/recordPurchases.server.test.ts"],
+ purchasing:["lib/purchasing/planOrder.test.ts","lib/ai/agent/tools/supplierPurchasing.test.ts",
+   "lib/ai/supervisor/loop/purchaseOrders.server.test.ts"],
  staffing:["lib/ai/agent/tools/staffProposals.test.ts","lib/ai/supervisor/loop/staffProposals.partialWages.test.ts"],
  gmail:["lib/ai/agent/tools/gmail.test.ts","lib/connectors/gmail/oauth.test.ts","app/api/connectors/gmail/routes.test.ts"],
  routines:["lib/ai/agent/tools/routines.test.ts","lib/ai/supervisor/routines/dispatch.test.ts"],
@@ -42,6 +44,10 @@ export function domainsForPaths(paths){
   if(/^lib\/ai\/|^app\/api\/ai\/|^components\/home\/Supervisor|^supabase\/migrations\//.test(p))found.add("supervisor");
   if(includes(p,/gmail/))found.add("gmail");
   if(includes(p,/inventor|pantry|purchas|receipt|suppl|recipe|attach|fileevidence/))found.add("inventory");
+  // Task14B gets its OWN executable suite: stock receipt tests do not prove
+  // supplier quotes, owner approval or purchase-order immutability.
+  if(/^lib\/purchasing\/|^lib\/data\/supplierPurchasing|^lib\/ai\/agent\/tools\/supplierPurchasing|^lib\/ai\/supervisor\/loop\/purchaseOrders|^lib\/ai\/suppliers\/|^lib\/calc\/supplierQuotes|^app\/api\/ai\/suppliers\/quotes\/|^components\/operations\/SupplierEvidenceManager|^app\/\[locale\]\/operations\/suppliers\/|^supabase\/migrations\/.*task14b_procurement/i.test(p))
+   found.add("purchasing");
   if(includes(p,/staff|schedul|labor|shift|availability|demand|olivia/))found.add("staffing");
   if(includes(p,/routine|morning.?brief|briefing|proactive/))found.add("routines");
   if(includes(p,/memory|ownerfact|savedfact/))found.add("memory");

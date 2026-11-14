@@ -10,7 +10,7 @@ test("real Home, Staff, Menu, Money and Gmail changes select only relevant journ
   assert.deepEqual(classifyPaths(["app/[locale]/more/gmail/page.tsx"]).scenarios, ["gmail"]);
   assert.deepEqual(classifyPaths(["components/more/GmailConnectionPanel.tsx"]).scenarios, ["gmail"]);
   assert.deepEqual(classifyPaths(["app/[locale]/layout.tsx"]).scenarios,
-    ["home", "staff", "menu", "money", "gmail"]);
+    ["home", "staff", "menu", "money", "gmail", "purchasing"]);
 });
 
 test("backend and docs are not delayed by unrelated browser jobs", () => {
@@ -89,4 +89,12 @@ test("every selected journey needs its own actually executed case", () => {
   assert.equal(summarizeReport(report([
     ["home", "passed"], ["home", "skipped"],
   ]), ["home"]).status, "failed");
+});
+
+test("Task14B supplier UI and approval card require actual purchasing browser proof",()=>{
+ assert.deepEqual(classifyPaths(["components/operations/SupplierEvidenceManager.tsx"]).scenarios,["purchasing"]);
+ assert.deepEqual(classifyPaths(["app/[locale]/operations/suppliers/page.tsx"]).scenarios,["purchasing"]);
+ assert.deepEqual(classifyPaths(["components/home/SupervisorProposalCard.tsx"]).scenarios,
+  ["gmail","purchasing"]);
+ assert.equal(summarizeReport(report([["home","passed"]]),["purchasing"]).status,"failed");
 });
