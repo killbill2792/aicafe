@@ -72,7 +72,7 @@ try{
   "create table public.memberships(business_id uuid not null references businesses(id),user_id uuid not null references auth.users(id),role text not null,primary key(business_id,user_id))",
   "create table public.ai_threads(id uuid primary key,business_id uuid not null references businesses(id),owner_user_id uuid not null references auth.users(id),unique(business_id,id,owner_user_id))",
   "create table public.locations(id uuid primary key,business_id uuid not null references businesses(id))",
-  "create table public.pantry_stock_purchases(id uuid primary key default gen_random_uuid(),business_id uuid not null,ingredient_id uuid not null,line_id uuid not null,purchase_date date not null,entered_quantity numeric not null,entered_unit text not null,cost_cents bigint,source text not null,voided_at timestamptz,unique(business_id,line_id))",
+  "create table public.pantry_stock_purchases(id uuid primary key default gen_random_uuid(),business_id uuid not null,ingredient_id uuid not null,line_id uuid not null,purchase_date date not null,entered_quantity numeric not null,entered_unit text not null,cost_cents bigint,source text not null,source_ref text,voided_at timestamptz,unique(business_id,line_id))",
   "create table public.menu_price_history(id uuid primary key default gen_random_uuid(),business_id uuid not null,menu_item_id uuid not null,old_price_cents bigint not null,new_price_cents bigint not null,source_type text not null,source_provider text,changed_at timestamptz not null default now())",
   "create table public.menu_items(id uuid primary key,business_id uuid not null,price_cents bigint not null)",
   "alter table public.menu_price_history enable row level security",
@@ -193,6 +193,26 @@ try{
  await seedProposal(B,OWNER,THREAD,alteredCostId,"maya.inventory_purchase.v1",
   {...purchasedEffect,costCents:450});
  await expectError(()=>claimIntent(alteredCostIntent,alteredCostId),"42501");
+ // Independently test the original utterance, not model-controlled tool batch
+ // lengths: two one-line calls cannot each claim the shared $45 total.
+ const sharedTotal=await intentRow("I bought 10 gallons of milk and 2 lb beans for $45 total");
+ for(const purchaseLine of [
+  {...purchasedEffect,costCents:4500},
+  {...purchasedEffect,name:"Beans",ingredientId:randomUUID(),quantity:2,unit:"lb",costCents:4500}
+ ]){
+  const attempt=randomUUID();
+  await seedProposal(B,OWNER,THREAD,attempt,"maya.inventory_purchase.v1",purchaseLine);
+  await expectError(()=>claimIntent(sharedTotal,attempt),"42501");
+ }
+ // A grouped owner price must not be interpreted as the prefix '$1'.
+ const groupedMoney=await intentRow("I bought 10 gallons of milk for $1,000");
+ for(const costCents of [100,100000]){
+  const id=randomUUID();
+  await seedProposal(B,OWNER,THREAD,id,"maya.inventory_purchase.v1",
+   {...purchasedEffect,costCents});
+  await expectError(()=>claimIntent(groupedMoney,id),"42501");
+ }
+
 
 
  // One photographed receipt can contain two separate identical stock lines.
