@@ -17,6 +17,10 @@ import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceCha
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
+import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
+import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
+import {gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
 import {readMenuPriceEvidence} from "@/lib/data/menuPriceEvidence.server";
@@ -173,6 +177,21 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         list:async()=>listOwnerRoutines({scope,threadId:id,client:await getDb()}),
         change:async input=>changeOwnerRoutine(input,{scope,threadId:id,client:await getDb()}),
       },
+      gmail:{
+        labels:()=>gmailListLabels(scope),
+        search:(query,limit)=>gmailSearch(scope,query,limit),
+        read:messageId=>gmailRead(scope,messageId),
+        thread:threadId=>gmailReadThread(scope,threadId),
+        attachment:(messageId,attachmentId)=>gmailReadAttachment(scope,messageId,attachmentId),
+        propose:async(input:GmailProposalInput)=>{
+          // The authenticated turn binds the specific owner, thread, and message.
+          const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,gmail:input}));
+          const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
+            new SupabaseLoopRepository(),gmailCapabilityId,input,key);
+          const effect=proposal.canonicalEffectPayload as {from:string};
+          return {proposalId:proposal.id,revision:proposal.revision,account:effect.from};
+        }
+      },
       threadId:id,ownerMessageId:owner.id,
       ...(memory ? { memory: memory.port } : {}),
       eventPlans:{propose:async(input)=>{
@@ -282,6 +301,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           supervisorLoopRegistry,new SupabaseLoopRepository(),staffCapabilityId(name),input,requestKey);
         return {proposalId:proposal.id,revision:proposal.revision,capabilityId:proposal.capabilityId};
       }} };
+    // Only expose Gmail tools after owner+café account authorization.
+    const gmailAccount=await getConnectorAccount(scope).catch(()=>null);
+    const gmailAvailable=allowsGmail(gmailAccount,"read");
     const location=await context.cafeLocation?.().catch(()=>null);
     const cafeProfile="Café profile (authenticated, not owner message): "+JSON.stringify({
       name:identity.cafeName,city:location?.city??null,region:location?.region??null,
@@ -305,7 +327,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(memory ? { memoryFacts: memory.facts } : {}),
       // Both the routine tool and optional café memory are offered only after
       // the authenticated owner/thread context has been established.
-      extraTools:[routineToolDefinition,...(memory?[memory.tool]:[])],
+      extraTools:[routineToolDefinition,...(gmailAvailable?gmailToolDefinitions:[]),...(memory?[memory.tool]:[])],
       ...(job && jobs ? {
         takeFollowUps: async(max: number):Promise<OwnerFollowUp[]> => {
            // A second question always receives its own serialized turn, on

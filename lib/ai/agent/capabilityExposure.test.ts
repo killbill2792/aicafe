@@ -1,6 +1,7 @@
 import {describe,it,expect} from "vitest";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
-import {agentToolDefinitions} from "./tools";
+import {agentToolDefinitions,gmailToolDefinitions} from "./tools";
+import {gmailCapabilityId} from "@/lib/ai/supervisor/loop/gmail.server";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {staffProposalInputs} from "./tools/staffProposals";
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
@@ -20,9 +21,10 @@ describe("loop capability exposure",()=>{
    [purchaseCapabilityId,"propose_purchases"],
    [goalCapabilityId,"propose_goal"],
    [eventReadinessCapabilityId,"propose_event_plan"],
+   [gmailCapabilityId,"propose_gmail_action"],
    ...Object.keys(staffProposalInputs).map(name=>[staffCapabilityId(name as keyof typeof staffProposalInputs),name] as [string,string]),
   ]);
-  const tools=new Set(agentToolDefinitions.map(tool=>tool.name));
+  const tools=new Set([...agentToolDefinitions,...gmailToolDefinitions].map(tool=>tool.name));
   for(const capabilityId of supervisorLoopRegistry.list()){
    expect(exposed.has(capabilityId)||Boolean(notAgentExposed[capabilityId])).toBe(true);
    if(exposed.has(capabilityId))expect(tools.has(exposed.get(capabilityId)!)).toBe(true);
