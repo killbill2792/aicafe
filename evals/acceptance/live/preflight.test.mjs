@@ -23,7 +23,7 @@ function example(){
     actor:{businessId:"business_alpha",ownerId:"owner_alpha"},
     input:{text:"Add my purchases.",assetPath:"bill.png",assetSha256:digest},
     expected:{outcome:"updated",maxClarifications:0,
-     writes:[{sourceLineId:"line_1",ingredient:"whole_milk",delta:10000,unit:"ml_x10000"}],extracted:[]}},
+     writes:[{sourceLineId:"line_1",ingredient:"whole_milk",delta:10000,unit:"ml_x10000",costCents:300}],extracted:[]}},
    {id:"case_chat",threadKey:"thread_b",category:"conversation",
     actor:{businessId:"business_beta",ownerId:"owner_beta"},
     input:{text:"Check if I already purchased milk.",assetSha256:null},
