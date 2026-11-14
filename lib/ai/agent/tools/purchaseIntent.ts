@@ -87,7 +87,7 @@ export function ownerTextSupportsTypedFinancials(
     .formatToParts(1).find(part=>part.type==="currency")?.value??null;
   }catch{return false;}
  }
- const escape=(value:string)=>value.replace(/[.*+?^{}()|[\]\\]/gu,"\\$&");
+ const escape=(value:string)=>value.replace(/[.*+?^${}()|[\]\\]/gu,"\\$&");
  const amountPattern=currencyValid&&symbol?
    new RegExp("(?:"
      +escape(symbol)+"|\\b"+escape(currency!.toLocaleLowerCase())+"\\s*)"
