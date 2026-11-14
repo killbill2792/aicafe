@@ -28,6 +28,7 @@ test("Task14B shared proactive dispatcher preserves mandatory purchasing coverag
  const files=selectedFiles(domain);
  for(const required of [
   "lib/purchasing/planOrder.test.ts",
+  "app/api/ai/threads/[threadId]/proposals/route.supplierPo.test.ts",
   "lib/ai/agent/loop.supplierPurchaseOrder.test.ts",
   "lib/ai/supervisor/loop/purchaseOrdersReconcile.server.test.ts",
   "lib/ai/supervisor/routines/dispatch.test.ts",
