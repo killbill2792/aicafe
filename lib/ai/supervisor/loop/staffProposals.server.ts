@@ -214,7 +214,7 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const eligible=people.filter(p=>p.active&&week.some(s=>s.employee_id===p.id));
    ensure(week.length>0,"No shifts scheduled for this week");
 
-   item("schedule",copy.week+" "+d.week_start,null,text((d.publish_and_notify===true?"Owner approval will publish this frozen roster and attempt template WhatsApp delivery to consented staff (provider acceptance is not delivery).":"Copy-ready only; no publication or send.")+": "+eligible.map(p=>p.display_name).join(", ")+
+   item("schedule",copy.week+" "+d.week_start,null,text((d.publish_and_notify===true?"Owner approval will publish this frozen dated roster and attempt template WhatsApp delivery to consented staff. Verify Task 13A coverage, labor and legal evidence first; this send approval does not certify that evidence. Provider acceptance is not delivery.":"Copy-ready only; no publication or send.")+": "+eligible.map(p=>p.display_name).join(", ")+
      "\n"+week.filter(x=>eligible.some(p=>p.id===x.employee_id)).map(x=>shown(x.employee_id)+" "+fmtShift(x)).join("\n")));
    payload={week_start:d.week_start,publish_and_notify:d.publish_and_notify===true};break;
   }
