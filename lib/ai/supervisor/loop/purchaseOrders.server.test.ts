@@ -2,7 +2,9 @@ import {beforeEach,describe,it,expect,vi} from "vitest";
 import {readSupplierPurchasingEvidence} from "@/lib/data/supplierPurchasing.server";
 import {simulationOwnerReader} from "./simulationOwner.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {supplierPurchaseOrderCapability,supplierPurchaseOrderCapabilityId} from "./purchaseOrders.server";
+import {supplierPurchaseOrderCapability,supplierPurchaseOrderCapabilityId,
+ StaleSupplierPurchaseOrderError,definiteSupplierPoRejection} from "./purchaseOrders.server";
+import {commitLoop,loopRegistry,effectHash,type LoopProposal,type LoopRepository} from "./engine";
 vi.mock("server-only",()=>({}));
 vi.mock("./simulationOwner.server",()=>({simulationOwnerReader:vi.fn()}));
 vi.mock("@/lib/data/supplierPurchasing.server",()=>({readSupplierPurchasingEvidence:vi.fn()}));
@@ -56,6 +58,95 @@ describe("Task14B Supervisor PO: independently investigates, then prepares a dur
   expect(rpc).toHaveBeenCalledWith("supervisor_commit_supplier_po",
    expect.objectContaining({p_business_id:scope.businessId,
     p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,p_proposal_id:proposalId}));
+ });
+ it("only exact transactional PostgREST validation rejections are definite",()=>{
+  for(const reason of [
+    "cafe_context_unavailable","supplier_currency_or_name_changed","supplier_lines_missing",
+    "delivery_date_stale","supplier_quote_superseded","supplier_source_stale_or_mismatched",
+    "supplier_delivery_unverified","supplier_line_math_invalid","supplier_subtotal_invalid"
+  ]){
+    expect(definiteSupplierPoRejection({code:"P0001",message:reason})).toBe(reason);
+    expect(definiteSupplierPoRejection({code:"503",message:reason})).toBe(null);
+  }
+  for(const error of [
+    {code:"P0001",message:"other_sql_exception"},
+    {code:"PGRST301",message:"supplier_quote_superseded"},
+    new Error("supplier_quote_superseded"),null,"supplier_quote_superseded"
+  ])expect(definiteSupplierPoRejection(error)).toBe(null);
+ });
+ it.each([
+  {reason:"delivery_date_stale"},
+  {reason:"supplier_quote_superseded"},
+  {reason:"supplier_source_stale_or_mismatched"}
+ ])("turns a definite $reason rejection into a typed stale outcome",async({reason})=>{
+  const plan=await supplierPurchaseOrderCapability.simulate(scope,input);
+  const rpc=vi.fn().mockResolvedValue({data:null,error:{code:"P0001",message:reason}});
+  vi.mocked(createAdminSupabaseClient).mockReturnValue({rpc} as never);
+  await expect(supplierPurchaseOrderCapability.commit(scope,plan.effect,proposalId))
+   .rejects.toMatchObject({name:"StaleProposalError",reason});
+  expect(rpc).toHaveBeenCalledOnce();
+ });
+ it.each([
+  {description:"transport error",failure:{code:"PGRST301",message:"supplier_quote_superseded"}},
+  {description:"unrecognized SQL error",failure:{code:"P0001",message:"unrecognized_exception"}},
+  {description:"ambiguous HTTP error",failure:{code:"503",message:"supplier_source_stale_or_mismatched"}}
+ ])("does not mark $description as a definite stale result",async({failure})=>{
+  const plan=await supplierPurchaseOrderCapability.simulate(scope,input);
+  vi.mocked(createAdminSupabaseClient).mockReturnValue({rpc:vi.fn().mockResolvedValue({
+    data:null,error:failure,
+  })} as never);
+  await expect(supplierPurchaseOrderCapability.commit(scope,plan.effect,proposalId))
+    .rejects.toMatchObject({message:"supplier_po_save_unverified"});
+ });
+ it("shared gateway closes a definite rejected PO as stale, but never retries a write",async()=>{
+  const simulation=await supplierPurchaseOrderCapability.simulate(scope,input);
+  const p:LoopProposal={
+   id:proposalId,businessId:scope.businessId,ownerUserId:scope.ownerUserId,
+   threadId:scope.threadId,capabilityId:supplierPurchaseOrderCapabilityId,
+   capabilityVersion:1,canonicalEffectPayload:simulation.effect,
+   effectHash:effectHash(simulation.effect),baseline:simulation.baseline,
+   monitorSpec:simulation.monitorSpec,locale:scope.locale,status:"approved",
+   revision:2,monitoringStartDate:null,createdAt:"2026-11-14T00:00:00Z",
+  };
+  const claim={proposal:{...p,status:"executing" as const,revision:3},
+   attemptKey:"99999999-9999-4999-8999-999999999999",
+   businessDate:"2026-11-14",authorizationKind:"click" as const};
+  const finishEffect=vi.fn(async (_scope:unknown,_claim:unknown,_revision:number,state:string)=>({
+   ...claim.proposal,status:state==="stale"?"stale":"executing",revision:state==="stale"?4:3,
+  }));
+  const repo={load:vi.fn(async()=>p),claimEffect:vi.fn(async()=>claim),finishEffect}
+   as unknown as LoopRepository;
+  const rpc=vi.fn().mockResolvedValue({data:null,
+   error:{code:"P0001",message:"supplier_quote_superseded"}});
+  vi.mocked(createAdminSupabaseClient).mockReturnValue({rpc} as never);
+  await expect(commitLoop(scope,loopRegistry(supplierPurchaseOrderCapability),repo,p.id,p.revision))
+   .rejects.toBeInstanceOf(StaleSupplierPurchaseOrderError);
+  expect(finishEffect).toHaveBeenCalledOnce();
+  expect(finishEffect).toHaveBeenCalledWith(scope,claim,3,"stale");
+  expect(rpc).toHaveBeenCalledOnce();
+ });
+ it("shared gateway reserves uncertainty for a lost/unknown RPC response",async()=>{
+  const simulation=await supplierPurchaseOrderCapability.simulate(scope,input);
+  const p:LoopProposal={
+   id:proposalId,businessId:scope.businessId,ownerUserId:scope.ownerUserId,
+   threadId:scope.threadId,capabilityId:supplierPurchaseOrderCapabilityId,
+   capabilityVersion:1,canonicalEffectPayload:simulation.effect,
+   effectHash:effectHash(simulation.effect),baseline:simulation.baseline,
+   monitorSpec:simulation.monitorSpec,locale:scope.locale,status:"approved",
+   revision:2,monitoringStartDate:null,createdAt:"2026-11-14T00:00:00Z",
+  };
+  const claim={proposal:{...p,status:"executing" as const,revision:3},
+   attemptKey:"99999999-9999-4999-8999-999999999999",
+   businessDate:"2026-11-14",authorizationKind:"click" as const};
+  const finishEffect=vi.fn(async()=>claim.proposal);
+  const repo={load:vi.fn(async()=>p),claimEffect:vi.fn(async()=>claim),finishEffect}
+   as unknown as LoopRepository;
+  const rpc=vi.fn().mockRejectedValue(new Error("connection closed after request"));
+  vi.mocked(createAdminSupabaseClient).mockReturnValue({rpc} as never);
+  await expect(commitLoop(scope,loopRegistry(supplierPurchaseOrderCapability),repo,p.id,p.revision))
+   .rejects.toThrow("connection closed after request");
+  expect(finishEffect).toHaveBeenCalledWith(scope,claim,3,"uncertain");
+  expect(rpc).toHaveBeenCalledOnce();
  });
  it("never claims saved from missing or mismatched receipts",async()=>{
   const proposal=await supplierPurchaseOrderCapability.simulate(scope,input);
