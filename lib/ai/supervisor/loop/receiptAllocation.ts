@@ -41,6 +41,27 @@ export function allocateReceiptIndexes(keys:readonly string[],existing:readonly 
  });
 }
 
+/** Model retries may change quantity/cost/units of a receipt ingredient.
+ * We cannot prove whether such a later batch describes a second physical
+ * line or a changed extraction. Never auto-post it; request owner review.
+ * Distinct equal lines in ONE batch are handled by occurrence-based keys.
+ */
+export function ambiguousEarlierReceiptIngredient(
+ previous:readonly {
+  request_key:string;status:string;canonical_effect_payload:unknown
+ }[],requestKey:string,line:{ingredientId:string|null;name:string}
+):boolean{
+ const active=new Set(["approved","executing","committed","monitored","manual_pending"]);
+ const norm=(s:string)=>s.normalize("NFKC").trim().toLocaleLowerCase();
+ return previous.some(row=>{
+  if(row.request_key===requestKey||!active.has(row.status))return false;
+  const effect=row.canonical_effect_payload as {ingredientId?:string|null;name?:string}|null;
+  if(!effect)return false;
+  return line.ingredientId?effect.ingredientId===line.ingredientId:
+   typeof effect.name==="string"&&norm(effect.name)===norm(line.name);
+ });
+}
+
 /** One stable source identity across repeat uploads of byte-identical evidence.
  * The original bytes never leave private storage except the authenticated read. */
 export function receiptEvidenceGroupId(businessId:string,ownerId:string,contentSha256:string):string{
