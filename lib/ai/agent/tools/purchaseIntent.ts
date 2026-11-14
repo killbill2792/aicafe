@@ -91,7 +91,7 @@ export function ownerTextSupportsTypedFinancials(
  const amountPattern=currencyValid&&symbol?
    new RegExp("(?:"
      +escape(symbol)+"|\\b"+escape(currency!.toLocaleLowerCase())+"\\s*)"
-     +"(\\d{1,7})(?:\\.(\\d{1,2}))?(?![\\d.])","gu"):null;
+     +"(\\d{1,7})(?:\\.(\\d{1,2}))?(?![\\d.])","giu"):null;
  const amounts=amountPattern?[...text.matchAll(amountPattern)]:[];
  const hasOtherMoney=/\p{Sc}/u.test(text)&&amounts.length===0;
  // No owner-provided price: a model may not fill in a fabricated cost.
