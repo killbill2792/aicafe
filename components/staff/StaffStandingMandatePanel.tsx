@@ -1,6 +1,11 @@
 "use client";
 import {useEffect,useState} from "react";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
+import english from "@/messages/en.json";
+
+// Task13B is English-only. Existing es/ar catalogs and locale resolution
+// remain untouched; all new user-visible words live in messages/en.json.
+const copy=english.StaffStandingMandate;
 
 type StaffMandate={id:string;revision:number;capability_id:string;
  staff_week_start:string|null;limit_value:number;expires_at:string;
@@ -18,7 +23,7 @@ export default function StaffStandingMandatePanel({week,businessId}:{
  const [code,setCode]=useState("");
  const [challenge,setChallenge]=useState<Challenge|null>(null);
  const [mandate,setMandate]=useState<StaffMandate|null>(null);
- const [message,setMessage]=useState("Loading verified phone factor and owner mandates");
+ const [message,setMessage]=useState(copy.loading);
  const [busy,setBusy]=useState(false);
  useEffect(()=>{
   let live=true;
@@ -37,8 +42,8 @@ export default function StaffStandingMandatePanel({week,businessId}:{
     const found=factors.data?.phone?.find(x=>x.status==="verified");
     const currentThread=threads.data?.[0]?.id??"";
     if(!found||!currentThread){
-     setMessage(!found?"Verify a phone MFA factor on your account first":
-       "Start a Supervisor conversation for this café before granting a mandate");
+     setMessage(!found?copy.phoneFactorRequired:
+       copy.conversationRequired);
      return;
     }
     setFactor(found.id);setThread(currentThread);
@@ -53,9 +58,9 @@ export default function StaffStandingMandatePanel({week,businessId}:{
      m.staff_week_start===week&&!m.revoked_at&&!m.superseded_at&&
      Date.parse(m.expires_at)>Date.now());
     setMandate(active??null);
-    setMessage(active?"Week-scoped authority verified. You can revoke it immediately.":
-      "No standing authority for this week. Supervisor will require an individual owner click.");
-   }catch{if(live)setMessage("Staff mandate verification unavailable. No permission was granted.");}
+    setMessage(active?copy.authorityVerified:
+      copy.authorityMissing);
+   }catch{if(live)setMessage(copy.verificationUnavailable);}
   }
   void load();
   return()=>{live=false;};
@@ -71,7 +76,7 @@ export default function StaffStandingMandatePanel({week,businessId}:{
  };
  const start=async()=>{
   if(!factor||busy)return;
-  setBusy(true);setMessage("Requesting a real phone verification challenge");
+  setBusy(true);setMessage(copy.challengeRequesting);
   try{
    const expiry=new Date(Date.parse(week+"T00:00:00Z")+6*86400000).toISOString();
    const response=await request({action:"staff_challenge",factorId:factor,
@@ -79,8 +84,8 @@ export default function StaffStandingMandatePanel({week,businessId}:{
    if(!response.challenge?.challengeId)throw new Error("Missing challenge receipt");
    setChallenge(response.challenge);
    setCode("");
-   setMessage("Enter the one-time code sent by your verified phone MFA provider.");
-  }catch{setMessage("Phone challenge rejected; no staff permission was granted.");}
+   setMessage(copy.challengeInstructions);
+  }catch{setMessage(copy.challengeRejected);}
   finally{setBusy(false);}
  };
  const verify=async()=>{
@@ -92,8 +97,8 @@ export default function StaffStandingMandatePanel({week,businessId}:{
       response.mandate.staff_week_start!==week)
     throw new Error("Wrong mandate receipt");
    setMandate(response.mandate);setChallenge(null);setCode("");
-   setMessage("Phone-verified mandate granted for this week only. Supervisor will still check every recipient and source before sending.");
-  }catch{setMessage("Phone verification failed; no mandate was granted.");}
+   setMessage(copy.grantConfirmed);
+  }catch{setMessage(copy.grantRejected);}
   finally{setBusy(false);}
  };
  const revoke=async()=>{
@@ -103,36 +108,33 @@ export default function StaffStandingMandatePanel({week,businessId}:{
    const response=await request({action:"revoke",mandateId:mandate.id,revision:mandate.revision});
    if(!response.mandate?.revoked_at)throw new Error("No revocation receipt");
    setMandate(null);setChallenge(null);setCode("");
-   setMessage("Revoked. No further staff sends may start under this mandate; already provider-accepted messages cannot be recalled.");
-  }catch{setMessage("Revocation could not be verified; contact the owner before any further sends.");}
+   setMessage(copy.revokeConfirmed);
+  }catch{setMessage(copy.revokeRejected);}
   finally{setBusy(false);}
  };
  return <section className="mt-4 rounded-2xl border border-line bg-surface p-4"
-  aria-label="Supervisor staff standing mandate">
-  <h3 className="text-lg font-semibold">Supervisor · optional staff schedule authority</h3>
-  <p className="mt-2 text-[17px]">Week of {week}. Grant up to one publication
-   for this specific week, limited to a maximum number of distinct employees.
-   The owner must verify a registered phone MFA factor. No other staff, payroll,
-   inventory, or payment permissions are granted.</p>
+  aria-label={copy.regionLabel}>
+  <h3 className="text-lg font-semibold">{copy.title}</h3>
+  <p className="mt-2 text-[17px]">{copy.weekOf} {week}. {copy.scopeDescription}</p>
   <p className="mt-2 text-sm text-ink-muted" role="status">{message}</p>
   {mandate?<div className="mt-3">
-   <p className="text-[17px]">Active: up to {mandate.limit_value} staff, expiring {mandate.expires_at}</p>
+   <p className="text-[17px]">{copy.activeStart} {mandate.limit_value} {copy.activeEnd} {mandate.expires_at}</p>
    <button type="button" disabled={busy} onClick={()=>void revoke()}
     className="mt-2 min-h-12 rounded-xl border border-line px-4 font-semibold">
-    Revoke standing staff authority
+    {copy.revokeButton}
    </button>
   </div>:challenge?<div className="mt-3 flex flex-wrap items-end gap-3">
-   <label className="text-[17px]">Phone verification code
+   <label className="text-[17px]">{copy.phoneCode}
     <input type="text" autoComplete="one-time-code" inputMode="numeric"
      value={code} onChange={event=>setCode(event.target.value)}
      maxLength={32} className="mt-1 block min-h-12 rounded-xl border border-line bg-surface p-3"/>
    </label>
    <button type="button" disabled={busy||!code.trim()} onClick={()=>void verify()}
     className="min-h-12 rounded-xl border border-line px-4 font-semibold">
-    Verify and grant this week
+    {copy.verifyButton}
    </button>
   </div>:thread&&factor?<div className="mt-3 flex flex-wrap items-end gap-3">
-   <label className="text-[17px]">Maximum employees
+   <label className="text-[17px]">{copy.maxEmployees}
     <select value={recipients} onChange={event=>setRecipients(Number(event.target.value))}
      className="mt-1 block min-h-12 rounded-xl border border-line bg-surface p-3">
      {capacityOptions.map(n=><option value={n} key={n}>{n}</option>)}
@@ -140,13 +142,9 @@ export default function StaffStandingMandatePanel({week,businessId}:{
    </label>
    <button type="button" disabled={busy} onClick={()=>void start()}
     className="min-h-12 rounded-xl border border-line px-4 font-semibold">
-    Request phone-verified weekly authority
+    {copy.challengeButton}
    </button>
   </div>:null}
-  <p className="mt-3 text-sm text-ink-muted">
-   Provider delivery still requires independently approved Meta sender/template,
-   recipient WhatsApp consent and a verified delivery receipt. Approval alone
-   never proves a worker received or acknowledged a schedule.
-  </p>
+  <p className="mt-3 text-sm text-ink-muted">{copy.providerNotice}</p>
  </section>;
 }
