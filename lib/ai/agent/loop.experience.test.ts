@@ -34,6 +34,23 @@ function inbox(batches: OwnerFollowUp[][]) {
   return { asked, take: async (max: number) => { asked.push(max); return (batches.shift() ?? []).slice(0, max); } };
 }
 
+describe("Task14B trusted broker request-shape preflight (zero provider cost)",()=>{
+  it("the complete unfiltered café Supervisor tool contract fits the tested 120KB bound",async()=>{
+    const {requests,provider}=recording([[text("Investigating."),completed]]);
+    await runAgentTurn({ownerText:"Investigate real supplier quotes for milk and prepare an owner-approval draft.",
+      context,provider});
+    expect(requests).toHaveLength(1);
+    expect((requests[0].tools as Array<{name:string}>).map(t=>t.name))
+      .toContain("inspect_supplier_purchase");
+    expect((requests[0].tools as Array<{name:string}>).map(t=>t.name))
+      .toContain("propose_supplier_purchase_order");
+    // The trusted host broker blocks oversized requests BEFORE any paid call.
+    // This is the full production tool list, not a narrowed test-only shortcut.
+    const byteCount=Buffer.byteLength(JSON.stringify(requests[0]),"utf8");
+    expect(byteCount).toBeLessThanOrEqual(120_000);
+  });
+});
+
 describe("answer style ()", () => {
   it("adds the style rules with a new cache key when on", async () => {
     const { requests, provider } = recording([[text("Hi."), completed]]);
