@@ -72,7 +72,9 @@ describe("WhatsApp route",()=>{
     expect(mocks.staffStatus).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       phoneId:"1555999888777666",wamid:"wamid.staff",state:"delivered",
     }));
-    expect(mocks.status).not.toHaveBeenCalled();
+    expect(mocks.status).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      wamid:"wamid.staff",state:"delivered",
+    }));
     expect(mocks.ingest).not.toHaveBeenCalled();
     value.messages=[{
       from:"15556506570",id:"wamid.inbound",timestamp:"1793462400",
@@ -81,6 +83,7 @@ describe("WhatsApp route",()=>{
     expect((await POST(request(staffEvent))).status).toBe(422);
     expect(mocks.ingest).not.toHaveBeenCalled();
     expect(mocks.staffStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.status).toHaveBeenCalledTimes(1);
     process.env.WHATSAPP_STAFF_SENDER_APPROVED="false";
     expect((await POST(request(staffEvent))).status).toBe(403);
     expect(mocks.staffStatus).toHaveBeenCalledTimes(1);
