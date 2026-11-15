@@ -251,7 +251,9 @@ begin
     insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,
       content_type,structured_content,grounding)
     values(v_msg,p_business_id,p_thread_id,p_owner_user_id,'supervisor','blocks',
-      jsonb_build_array(jsonb_build_object('type','text','text',btrim(p_narrative))),
+      jsonb_build_array(jsonb_build_object('type','text','text',btrim(p_narrative)),
+        jsonb_build_object('type','text','text',
+          'This investigation performed no external action. Any POS, staffing, supplier, payment or message change requires the existing owner approval gateway and a separate verified receipt.')),
       jsonb_build_object('status',case
           when p_evidence->'source'->>'quality' in ('partial','missing','stale')
             or (p_evidence ? 'missing' and p_evidence->'missing'<>'[]'::jsonb)
@@ -260,7 +262,8 @@ begin
         'evidence',jsonb_build_array(jsonb_build_object('source',p_source_type,
           'identifier',p_source_id,'revisionHash',p_revision_hash,
           'asOf',p_now::text)),
-        'agentMetadata',jsonb_build_object('phase',v_phase,'stepVersion',v.step_version+1)))
+        'agentMetadata',jsonb_build_object('phase',v_phase,'stepVersion',v.step_version+1,
+          'externalEffects','not_attempted','effectReceipt',null)))
     on conflict(id) do nothing;
   end if;
   return true;
