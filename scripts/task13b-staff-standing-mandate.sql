@@ -43,7 +43,7 @@ do $mandate$
 declare scope jsonb; token text; proposal_id uuid:=current_setting('test.mandate.proposal')::uuid;
 begin
  scope:=jsonb_build_object('version',2,'kind','send_schedule',
- 'weekStart',current_setting('test.mandate.week')::date,'staffIds',jsonb_build_array(current_setting('test.mandate.staff_a')::text,current_setting('test.mandate.staff_b')::text));
+ 'weekStart',current_setting('test.mandate.week')::date,'staffIds',jsonb_build_array(current_setting('test.mandate.staff_a')::uuid::text,current_setting('test.mandate.staff_b')::uuid::text));
  -- Actual source token must be computed from saved canonical staff data.
  token:=public.supervisor_staff_scoped_token(current_setting('test.mandate.cafe')::uuid,scope);
  insert into public.supervisor_proposals(
@@ -101,12 +101,12 @@ declare count_attempts integer;
 begin
  if current_setting('test.mandate.applied_state')<>'applied' then raise exception '13B mandated staff proposal did not commit'; end if;
  select count(*) into count_attempts from public.supervisor_effect_attempts
- where proposal_id=current_setting('test.mandate.proposal') and authorization_kind='mandate'
-   and state='verified' and mandate_id=current_setting('test.mandate.mandate') and mandate_revision=1;
+ where proposal_id=current_setting('test.mandate.proposal')::uuid and authorization_kind='mandate'
+   and state='verified' and mandate_id=current_setting('test.mandate.mandate')::uuid and mandate_revision=1;
  if count_attempts<>1 then raise exception '13B mandate effect audit missing'; end if;
  if not exists(select 1 from public.supervisor_approvals
-  where proposal_id=current_setting('test.mandate.proposal') and authorization_kind='mandate' and
-    mandate_id=current_setting('test.mandate.mandate') and mandate_revision=1) then
+  where proposal_id=current_setting('test.mandate.proposal')::uuid and authorization_kind='mandate' and
+    mandate_id=current_setting('test.mandate.mandate')::uuid and mandate_revision=1) then
     raise exception '13B mandate approval provenance missing'; end if;
 end $mandate$;
 select public.staff_schedule_publish(:'cafe',:'owner',:'proposal')->>'id' as publication \gset
@@ -120,7 +120,7 @@ begin
  if not public.staff_schedule_can_send(current_setting('test.mandate.delivery')::uuid,current_setting('test.mandate.token')::uuid) then
   raise exception '13B authorized scoped staff delivery was blocked'; end if;
  if not exists(select 1 from public.staff_schedule_publications
-  where id=current_setting('test.mandate.publication') and business_id=current_setting('test.mandate.cafe') and owner_user_id=current_setting('test.mandate.owner')) then
+  where id=current_setting('test.mandate.publication')::uuid and business_id=current_setting('test.mandate.cafe')::uuid and owner_user_id=current_setting('test.mandate.owner')::uuid) then
   raise exception '13B mandated publication receipt missing'; end if;
 end $mandate$;
 -- Revocation is immediate even AFTER publication and AFTER a send claim:
@@ -134,7 +134,7 @@ begin
  if public.staff_schedule_claim_delivery(current_setting('test.mandate.publication')::uuid,current_setting('test.mandate.staff_b')::uuid) is not null then
   raise exception '13B revoked mandate allowed a fresh worker send'; end if;
  if not exists(select 1 from public.supervisor_mandates
-  where id=current_setting('test.mandate.mandate') and revision=2 and revoked_at is not null) then
+  where id=current_setting('test.mandate.mandate')::uuid and revision=2 and revoked_at is not null) then
   raise exception '13B revocation did not persist immutable policy revision'; end if;
  begin perform public.staff_schedule_publish(current_setting('test.mandate.cafe')::uuid,current_setting('test.mandate.owner')::uuid,current_setting('test.mandate.proposal')::uuid);
  exception when others then denied:=true; end;
