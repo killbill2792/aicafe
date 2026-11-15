@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OperatingTask } from "@/lib/operating/tasks";
 
 /** One café fixture read by every surface that states a Needs-you count or picks a Needs-you item. */
 const TODAY = "2026-11-04";
-const now = Date.now();
+// The fixture is a café snapshot for TODAY; keep its clock at that day so
+// a rolling 14-day handled-history cutoff cannot turn a correct test flaky.
+const now = Date.parse(TODAY + "T12:00:00Z");
 const iso = (daysAgo: number) => new Date(now - daysAgo * 86_400_000).toISOString();
 const base = { businessId: "cafe", confidence: "high" as const, evidence: [] };
 const review = (id: string, item: string, over: Partial<OperatingTask> = {}): OperatingTask => ({ ...base, id, agentId: "alex",
@@ -69,10 +71,14 @@ import { GET as teamAlerts } from "@/app/api/cron/team-alerts/route";
 import { createOwnerScopedCafeTools } from "@/lib/ai/cafeTools.server";
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(now));
   fixture.stored = stored; fixture.derived = derived; fixture.readCalls = [];
   alerts.reserved = []; alerts.deliver.mockReset().mockResolvedValue({ sent: true, providerId: "p1" });
   process.env.CRON_SECRET = "secret";
 });
+
+afterEach(() => vi.useRealTimers());
 
 describe("one Needs-you count for the same café on every surface", () => {
   it("Inbox, Home, chat tool, morning brief and WhatsApp alert all agree", async () => {
