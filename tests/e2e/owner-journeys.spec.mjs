@@ -528,10 +528,18 @@ test("@purchasing proactive notice → owner-approved real PO → reopened statu
     expect(priority.rows).toHaveLength(1);
     expect(priority.rows[0]).toMatchObject({status:"needs_owner",agent_id:"maya"});
     expect(priority.rows[0].payload.threadId).toBe(id.thread);
-    const messages=await db.query("select id from public.ai_messages"+
+    // Other actionable alerts may legitimately post in the SAME thread.
+    // Exactly one notice must exist for THIS canonical supplier proposal,
+    // never a duplicate and never another source masquerading as its notice.
+    const messages=await db.query("select id,grounding from public.ai_messages"+
       " where business_id=$1 and thread_id=$2 and role='supervisor'"+
-      " and grounding->>'intent'='priority_notice'",[own.businessId,id.thread]);
+      " and grounding->>'intent'='priority_notice'"+
+      " and grounding #>> '{evidence,0,source}'='supplier_po'"+
+      " and grounding #>> '{evidence,0,identifier}'=$3",
+      [own.businessId,id.thread,id.proposal]);
     expect(messages.rows).toHaveLength(1);
+    expect(messages.rows[0].grounding).toMatchObject({status:"verified",intent:"priority_notice",
+      evidence:[{source:"supplier_po",identifier:id.proposal}]});
     // Reopened owner chat must show the real cron-generated notice.
     await page.reload();
     await expect(page.getByText("Supplier purchase-order draft needs your approval",{exact:false}).first())
