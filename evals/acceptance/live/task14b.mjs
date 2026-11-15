@@ -207,14 +207,32 @@ async function measure(){
   if(link.length!==1||link[0].replacement_id!==corrected.id)
    fail("original_approval_not_retired");
   await connection.page.goto("/en?thread="+encodeURIComponent(thread));
-  const approval=connection.page.getByRole("button",{name:"Approve purchase order"});
-  await approval.first().waitFor({timeout:30_000});
-  if(await approval.count()!==1)fail("ambiguous_owner_click");
+  // The real provider created TWO durable assistant approval cards on two
+  // separate turns. The original historical card MUST remain cancelled.
+  // Never select an approval by global first() or by a text guess: a previous
+  // redirect bug could turn both messages into buttons for the same order.
+  const cards=connection.page.getByRole("region",{name:"Supplier purchase-order approval"});
+  await cards.nth(1).waitFor({state:"visible",timeout:30_000});
+  if(await cards.count()!==2)fail("two_persisted_cards_not_visible");
+  const historical=cards.nth(0),correctedCard=cards.nth(1);
+  if(!(await historical.innerText()).toLowerCase().includes("cancelled"))
+   fail("replaced_card_not_cancelled");
+  if(await historical.getByRole("button",{name:"Approve purchase order"}).count()!==0)
+   fail("historical_card_still_actionable");
+  const approval=correctedCard.getByRole("button",{name:"Approve purchase order"});
+  await approval.waitFor({state:"visible",timeout:30_000});
+  if(await approval.count()!==1||
+     await connection.page.getByRole("button",{name:"Approve purchase order"}).count()!==1)
+   fail("ambiguous_owner_click");
   const awaited=connection.page.waitForResponse(response=>
     new URL(response.url()).pathname==="/api/ai/threads/"+thread+"/proposals"&&
     response.request().method()==="POST");
   await approval.click();const clicked=await awaited;
   if(clicked.status()!==200)fail("owner_click_not_applied");
+  await correctedCard.getByText("Approved for ordering — NOT sent to supplier",{exact:false})
+   .first().waitFor({timeout:30_000});
+  if(await historical.getByRole("button",{name:"Approve purchase order"}).count()!==0)
+   fail("historical_card_reactivated_after_approval");
   const order=await query(db,"select id,status,subtotal_cents,currency_code"+
    " from public.purchase_orders where business_id=$1 and proposal_id=$2",
    [cafe.businessId,corrected.id]);
@@ -240,7 +258,9 @@ async function measure(){
    model:usage1.model,passed:true,parityWithGrokMuse:"unverified_no_competitor_sessions",
    checks:{firstLiveTools:firstTrace,correctionLiveTools:secondTrace,
     usageModelCalls:[usage1.modelCalls,usage2.modelCalls,usage3.modelCalls],
-    exactSavedProposal:true,savedOwnerApprovalCards:true,retiredOldDraft:true,authenticatedOwnerClick:true,
+    exactSavedProposal:true,savedOwnerApprovalCards:true,
+    historicalCardCancelled:true,correctedCardOnlyActionable:true,
+    retiredOldDraft:true,authenticatedOwnerClick:true,
     persistedPO:true,reopenedOwnerCard:true,crossCafeDenied:true,
     unapprovedStockAndExpenseEffects:0,canonicalStatusTool:true},
    conclusion:"Objective real-model purchasing smoke only. Human quality grading, independent provider attestation, off-turn proactivity and same-task Grok/Muse comparison remain separate gates."};
