@@ -39,7 +39,7 @@ test("pre-reserves exactly 18 paid attempts, including unknown/failing transport
 });
 test("cannot repeat a request after $0.18 cumulative pretransport reservation",()=>{
  const b=new PaidReservation(head);
- const large=Buffer.from(JSON.stringify({...params,input:"x".repeat(90_000)}));
+ const large=Buffer.from(JSON.stringify({...params,input:"x".repeat(118_000)}));
  for(let i=0;i<18;i++){
   try{b.reserve(large)}catch(e){
    assert.match(String(e),/approved_budget_exhausted/);
