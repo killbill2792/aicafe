@@ -189,7 +189,15 @@ describe("Task14B owner approval: confirmed stale quote is recoverable, unknown 
     expect(uncertain.status).toBe(409);
     expect(await uncertain.json()).toMatchObject({
       state:"uncertain",error:"effect_outcome_uncertain",
-      proposal:{state:"uncertain",revision:3},
+      // The effect-attempt CAS COMMITTED, but the gateway response was lost.
+      // Its durable status is "executing", so the canonical card remains
+      // non-actionable "applying" pending receipt-only reconciliation. The
+      // top-level uncertain state warns the owner; no duplicate PO is safe.
+      proposal:{state:"applying",revision:3},
+    });
+    const visible=await GET(new Request(url+"?ids="+f.id),params);
+    expect((await visible.json()).cards[0]).toMatchObject({
+      state:"applying",revision:3,
     });
     const click=await POST(action("approve",2),params);
     const cancel=await POST(action("cancel",2),params);
