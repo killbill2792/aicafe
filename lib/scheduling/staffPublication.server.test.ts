@@ -43,7 +43,7 @@ function dbFixture(status="prepared",explicit=true,upcomingPublished=true){
   q.select=()=>q;q.eq=(column:string,value:unknown)=>{
    calls.push({table,column,value});
    if(column==="status")statusFilter=value;return q;};
-  q.gte=()=>q;q.lte=()=>q;q.is=()=>q;q.order=()=>q;q.neq=()=>q;
+  q.gte=()=>q;q.gt=()=>q;q.lte=()=>q;q.is=()=>q;q.order=()=>q;q.neq=()=>q;
   q.update=(row:Record<string,unknown>)=>{updates.push({table,row});return q;};
   q.limit=async()=>({data:table==="staff_schedule_publications"&&
     statusFilter==="cancelled"?[]:rows(),error:null});
