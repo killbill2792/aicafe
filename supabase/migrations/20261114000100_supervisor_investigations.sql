@@ -11,6 +11,9 @@ create table public.supervisor_investigations (
   source_id text not null,
   revision_hash text not null check (revision_hash ~ '^[a-f0-9]{64}$'),
   stable_key text not null check (stable_key ~ '^[a-f0-9]{64}$'),
+  -- A repeated source with unchanged revision begins a NEW owner-facing
+  -- episode, while retries and rechecks keep the same episode identity.
+  episode_id uuid not null default gen_random_uuid(),
   priority bigint not null default 0 check (priority between 0 and 400),
   phase text not null default 'collect' check
     (phase in ('collect','investigate','awaiting_owner','resolved','blocked')),
@@ -90,7 +93,8 @@ begin
   values(p_business_id,p_owner_user_id,p_thread_id,p_source_type,p_source_id,
     p_revision_hash,p_stable_key,p_priority,p_now)
   on conflict (business_id,owner_user_id,source_type,source_id)
-  do update set revision_hash=excluded.revision_hash,stable_key=excluded.stable_key,
+  do update set episode_id=gen_random_uuid(),
+    revision_hash=excluded.revision_hash,stable_key=excluded.stable_key,
     priority=excluded.priority,
     thread_id=excluded.thread_id,phase='collect',step_version=0,
     failure_count=0,lease_token=null,lease_until=null,next_retry_at=p_now,
@@ -187,6 +191,7 @@ begin
   return jsonb_build_object('business_id',v.business_id,'owner_user_id',v.owner_user_id,
     'thread_id',v.thread_id,'source_type',v.source_type,'source_id',v.source_id,
     'revision_hash',v.revision_hash,'stable_key',v.stable_key,
+    'episode_id',v.episode_id,
     'phase',v.phase,'evidence',v.evidence,'narrative',v.narrative,
     'last_error',v.last_error,'step_version',v.step_version,
     'lease_token',v_token);
@@ -239,7 +244,8 @@ begin
       and source_type=p_source_type and source_id=p_source_id;
   if p_outcome in ('investigated','followed_up') then
     v_hash:=md5('investigation:'||p_business_id::text||':'||p_owner_user_id::text||
-      ':'||p_source_type||':'||p_source_id||':'||p_revision_hash||':'||(v.step_version+1)::text);
+      ':'||p_source_type||':'||p_source_id||':'||p_revision_hash||':'||
+      v.episode_id::text||':'||(v.step_version+1)::text);
     v_msg:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
       substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
     insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,
@@ -297,7 +303,7 @@ begin
   if v_count=5 and v.failure_count<5 and public.supervisor_routine_owner_authorized(
     v.business_id,v.owner_user_id,v.thread_id) then
     v_hash:=md5('investigation-blocked:'||v.business_id::text||':'||v.owner_user_id::text||
-      ':'||v.source_type||':'||v.source_id||':'||v.revision_hash);
+      ':'||v.source_type||':'||v.source_id||':'||v.revision_hash||':'||v.episode_id::text);
     v_msg:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
       substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
     insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,
@@ -346,7 +352,7 @@ begin
     if not public.supervisor_routine_owner_authorized(
       v.business_id,v.owner_user_id,v.thread_id) then continue; end if;
     v_hash:=md5('investigation-resolved:'||v.business_id::text||':'||v.owner_user_id::text||
-      ':'||v.source_type||':'||v.source_id||':'||v.revision_hash);
+      ':'||v.source_type||':'||v.source_id||':'||v.revision_hash||':'||v.episode_id::text);
     v_msg:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
       substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
     insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,
