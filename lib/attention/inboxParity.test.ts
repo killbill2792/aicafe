@@ -3,7 +3,8 @@ import type { OperatingTask } from "@/lib/operating/tasks";
 
 /** One café fixture read by every surface that states a Needs-you count or picks a Needs-you item. */
 const TODAY = "2026-11-04";
-// Freeze the scenario clock; a fixed November 2026 subject day must not age\n// out of its 14-day history simply because CI runs in a later month.\nconst now = Date.parse("2026-11-04T18:00:00Z");
+// Freeze the scenario clock; a fixed November 2026 subject day must not age
+// out of its 14-day history simply because CI runs in a later month.\nconst now = Date.parse("2026-11-04T18:00:00Z");
 const iso = (daysAgo: number) => new Date(now - daysAgo * 86_400_000).toISOString();
 const base = { businessId: "cafe", confidence: "high" as const, evidence: [] };
 const review = (id: string, item: string, over: Partial<OperatingTask> = {}): OperatingTask => ({ ...base, id, agentId: "alex",
@@ -69,6 +70,8 @@ import { GET as teamAlerts } from "@/app/api/cron/team-alerts/route";
 import { createOwnerScopedCafeTools } from "@/lib/ai/cafeTools.server";
 
 beforeEach(() => {
+  vi.useFakeTimers({toFake:["Date"]});
+  vi.setSystemTime(new Date(now));
   fixture.stored = stored; fixture.derived = derived; fixture.readCalls = [];
   alerts.reserved = []; alerts.deliver.mockReset().mockResolvedValue({ sent: true, providerId: "p1" });
   process.env.CRON_SECRET = "secret";
