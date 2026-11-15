@@ -11,6 +11,7 @@ export const SUITES=Object.freeze({
  supervisor:["lib/ai/agent/loop.server.test.ts","lib/ai/agent/tools/dataQuery.registered.test.ts"],
  inventory:["lib/ai/agent/tools/purchases.test.ts","lib/inventory/recordPurchases.server.test.ts"],
  purchasing:["lib/purchasing/planOrder.test.ts","lib/ai/agent/tools/supplierPurchasing.test.ts",
+   "lib/ai/agent/persist.server.test.ts",
    "app/api/ai/threads/[threadId]/proposals/route.supplierPo.test.ts",
    "lib/ai/supervisor/loop/purchaseOrders.server.test.ts",
    "lib/ai/agent/loop.supplierPurchaseOrder.test.ts",
