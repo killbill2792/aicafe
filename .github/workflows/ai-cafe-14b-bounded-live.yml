@@ -24,8 +24,8 @@ jobs:
       github.event.pull_request.head.ref == 'task14b-agentic-supervisor-procurement' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.changes.body.from != null &&
-      !contains(github.event.changes.body.from, '<!-- aicafe-task14b-trusted-paid-run ') &&
-      contains(github.event.pull_request.body, '<!-- aicafe-task14b-trusted-paid-run ')
+      !contains(github.event.changes.body.from, '<!-- aicafe-task14b-trusted-paid-run-v2 ') &&
+      contains(github.event.pull_request.body, '<!-- aicafe-task14b-trusted-paid-run-v2 ')
     permissions:
       contents: read
       issues: write
@@ -45,7 +45,7 @@ jobs:
           import {readFileSync,appendFileSync} from "node:fs";
           const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
           const pr=event.pull_request,sha=pr?.head?.sha;
-          const prefix="<!-- aicafe-task14b-trusted-paid-run ";
+          const prefix="<!-- aicafe-task14b-trusted-paid-run-v2 ";
           const marker=prefix+sha+" -->";
           const old=event.changes?.body?.from;
           if(event.action!=="edited"||event.sender?.login!=="killbill2792"||
@@ -59,7 +59,7 @@ jobs:
              !/^[a-f0-9]{40}$/.test(sha??"")||
              typeof old!=="string"||old.includes(prefix)||
              !pr.body?.includes(marker)||
-             (pr.body.match(/<!-- aicafe-task14b-trusted-paid-run /g)||[]).length!==1)
+             (pr.body.split(prefix).length!==2))
              throw Error("Fresh exact-head owner approval required");
           const headers={"authorization":"Bearer "+process.env.GH_TOKEN,
             accept:"application/vnd.github+json",
@@ -71,7 +71,9 @@ jobs:
           if(latest.head?.sha!==sha||latest.base?.ref!=="main"||
              !latest.body?.includes(marker)||latest.state!=="open")
              throw Error("Approval not for current Task14B PR head");
-          const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v1 -->";
+          // pilot-v1 was already consumed and is intentionally NOT eligible to replay.
+          // pilot-v2 is a distinct owner-approved grant, not a reset of v1.
+          const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v2 -->";
           let endReached=false;
           for(let page=1;page<=100;page++){
            const res=await fetch(api+"/issues/482/comments?per_page=100&page="+page,{headers});
@@ -244,6 +246,35 @@ jobs:
               test "$ready" -eq 1
               timeout 12m node evals/acceptance/live/task14b.mjs --output /proof/task14b-live-proof.json
             '
+      - name: Redacted host broker failure diagnostics (no prompts, keys or provider body)
+        if: failure()
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,existsSync} from "node:fs";
+          const path=process.env.RUNNER_TEMP+"/task14b-host-audit.json";
+          if(!existsSync(path)){
+            console.log("task14b_host_failure",JSON.stringify({audit:"unavailable",providerAttempts:"unknown"}));
+          }else{
+            const a=JSON.parse(readFileSync(path,"utf8"));
+            const terminals=new Set(["attempted","completed","provider_rejected",
+              "provider_failed","transport_unknown","incomplete","unpriced_or_wrong_provider"]);
+            const receipts=Array.isArray(a.receipts)?a.receipts:[];
+            const safe=receipts.map(r=>({
+              ordinal:Number.isSafeInteger(r.ordinal)?r.ordinal:null,
+              httpStatus:Number.isSafeInteger(r.upstreamStatus)?r.upstreamStatus:null,
+              terminal:terminals.has(r.terminal)?r.terminal:"unknown",
+              inputTokens:Number.isSafeInteger(r.actualInputTokens)?r.actualInputTokens:null,
+              outputTokens:Number.isSafeInteger(r.actualOutputTokens)?r.actualOutputTokens:null
+            }));
+            console.log("task14b_host_failure",JSON.stringify({
+              head:typeof a.head==="string"&&/^[a-f0-9]{40}$/.test(a.head)?a.head:null,
+              providerAttempts:Number.isSafeInteger(a.attempts)?a.attempts:null,
+              reservedUpperUSD:Number.isSafeInteger(a.reservedMicros)?a.reservedMicros/1_000_000:null,
+              receipts:safe
+            }));
+          }
+          NODE
       - name: TRUSTED host attestation of provider receipts, budget and candidate outcome
         shell: bash
         run: |
