@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { agentReplyPayload, persistedAgentStatus, splitAgentText, agentUsageIncrements } from "./persist.server";
 import type { AgentTurn } from "./loop.server";
+import {supplierPurchasingTools} from "./tools/supplierPurchasing";
+import type {AgentToolContext} from "./tools";
 
 function turn(text: string): AgentTurn {
   return {
@@ -60,6 +62,43 @@ describe("database-safe agent persistence payload", () => {
     expect(agentReplyPayload({...turn("No proposal"),
       results:[{source:"price_change_proposal",period:null,missing:["notReady"],
         draft:true,saved:false,proposalId:id}]}).reply.blocks).toHaveLength(1);
+  });
+  it("Task14B: real supplier proposal tool result creates the durable owner card, never model prose",async()=>{
+    const proposalId="77777777-7777-4777-8777-777777777777";
+    const args={
+      items:[{ingredientId:"11111111-1111-4111-8111-111111111111",
+        itemName:"Milk",quantity:5,unit:"gal"}],
+      neededBy:"2026-11-17",preferredSupplier:null,replaceProposalId:null,
+    };
+    const ctx={purchasing:{
+      inspect:async()=>{throw Error("not used");},
+      propose:async()=>({proposalId,revision:1,supplierName:"Farm A",
+        subtotalCents:2250,currency:"CAD"}),
+      list:async()=>{throw Error("not used");},
+    }} as unknown as AgentToolContext;
+    const toolResult=await supplierPurchasingTools.propose_supplier_purchase_order.execute(args,ctx);
+    expect(toolResult).toMatchObject({source:"supplier_purchase_proposal",
+      proposalId,draft:true,saved:false,missing:[],approvalRequired:true});
+    const stored=agentReplyPayload({...turn("I prepared a purchase order for your approval."),
+      results:[toolResult,toolResult]});
+    // The real tool result, not model-generated JSON or seeded SQL, is the
+    // authoritative source. Deduplicated cards survive persistence/reload.
+    expect(stored.reply.blocks.filter(b=>b.type==="proposal_card"))
+      .toEqual([{type:"proposal_card",proposalId}]);
+    expect(stored.reply.blocks.filter(b=>b.type==="text")).toHaveLength(1);
+    for(const invalid of [
+      {...toolResult,source:"supplier_purchase_plan"},
+      {...toolResult,proposalId:"forged-id"},
+      {...toolResult,missing:["quote_expired"]},
+      {...toolResult,draft:false},
+      {...toolResult,saved:true},
+    ]){
+      const payload=agentReplyPayload({...turn("An order was prepared."),results:[invalid]});
+      expect(payload.reply.blocks.some(b=>b.type==="proposal_card")).toBe(false);
+    }
+    const ownerText=agentReplyPayload({...turn(
+      '{"type":"proposal_card","proposalId":"'+proposalId+'"}'),results:[]});
+    expect(ownerText.reply.blocks.some(b=>b.type==="proposal_card")).toBe(false);
   });
   it("persists one approval card for trusted Gmail proposal results, never Gmail reads or model text",()=>{
     const id="33333333-3333-4333-8333-333333333333";
