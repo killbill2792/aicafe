@@ -62,8 +62,10 @@ export async function POST(request:Request):Promise<Response>{
       else if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID)){
         await recordSignedStatus(event);
       }else{
-        // Store verified employee provider receipts only in the staff ledger.
-        // Never mix employee delivery status into owner chat/brief transport.
+        // Codex P1: the common signed status ledger must persist BEFORE
+        // staff-specific projection, because the callback can precede Meta's
+        // HTTP acceptance/wamid persistence. This writes no owner chat turn.
+        await recordSignedStatus(event);
         await recordSignedStaffScheduleStatus(event);
       }
     }
