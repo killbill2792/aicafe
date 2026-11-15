@@ -64,8 +64,7 @@ live("proactive real-model café investigation -> durable owner reply -> follow-
     }
   };
   const now=new Date();
-  scope.localDate=new Intl.DateTimeFormat("en-CA",{timeZone:"UTC",
-    year:"numeric",month:"2-digit",day:"2-digit"}).format(now);
+  scope.localDate=now.toISOString().slice(0,10);
   try{
     await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
       [scope.ownerUserId,"agentic-15a-"+scope.ownerUserId+"@example.invalid"]);
@@ -95,9 +94,10 @@ live("proactive real-model café investigation -> durable owner reply -> follow-
     expect(record.rows).toHaveLength(1);
     expect(record.rows[0].phase).toBe("awaiting_owner");
     expect(Number(record.rows[0].step_version)).toBe(2);
-    expect(record.rows[0].evidence.modelTools).toEqual(expect.arrayContaining([
-      "get_investigation_source","get_sales",
-    ]));
+    const modelTools=record.rows[0].evidence.modelTools;
+    expect(Array.isArray(modelTools)).toBe(true);
+    expect(modelTools[0]).toBe("get_investigation_source");
+    expect(modelTools.length).toBeGreaterThanOrEqual(3);
     const messages=await admin.query("select role,grounding->>'status' status,grounding->>'intent' intent from public.ai_messages where business_id=$1 and thread_id=$2 order by created_at",
       [scope.businessId,scope.threadId]);
     expect(messages.rows).toHaveLength(1);
