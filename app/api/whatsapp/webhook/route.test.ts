@@ -80,13 +80,15 @@ describe("WhatsApp route",()=>{
       from:"15556506570",id:"wamid.inbound",timestamp:"1793462400",
       type:"text",text:{body:"Approve the next shift"},
     }];
-    expect((await POST(request(staffEvent))).status).toBe(422);
+    expect((await POST(request(staffEvent))).status).toBe(200);
     expect(mocks.ingest).not.toHaveBeenCalled();
-    expect(mocks.staffStatus).toHaveBeenCalledTimes(1);
-    expect(mocks.status).toHaveBeenCalledTimes(1);
+    // The signed employee inbound message never becomes an owner command,
+    // but the co-batched genuine delivery callback MUST still be stored.
+    expect(mocks.staffStatus).toHaveBeenCalledTimes(2);
+    expect(mocks.status).toHaveBeenCalledTimes(2);
     process.env.WHATSAPP_STAFF_SENDER_APPROVED="false";
     expect((await POST(request(staffEvent))).status).toBe(403);
-    expect(mocks.staffStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.staffStatus).toHaveBeenCalledTimes(2);
   });
   it("refuses unverified staff callback signatures before any receipt write",async()=>{
     process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID="1555999888777666";
