@@ -88,7 +88,7 @@ test("candidate shim forwards only local proxy authorization; raw bearer is neve
  assert.equal(ordinary.url,"https://example.org/no-secret");
 });
 test("trusted SSE receipt records real model-selected tools but never arguments",()=>{
- const event=usageFromSseFrame('event: response.output_item.added\\ndata: '+JSON.stringify({
+ const event=usageFromSseFrame('event: response.output_item.added\ndata: '+JSON.stringify({
   type:"response.output_item.added",item:{type:"function_call",
    name:"propose_supplier_purchase_order",arguments:"super_private_supplier"}}));
  assert.deepEqual(event,{event:"function_call",name:"propose_supplier_purchase_order"});
