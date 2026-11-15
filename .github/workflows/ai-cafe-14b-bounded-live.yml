@@ -29,6 +29,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      pull-requests: write # scoped only to trusted pre-spend job
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -86,7 +87,16 @@ jobs:
             body:JSON.stringify({body:consumed+"\nOwner-authorized, one-shot "+
               "disposable Task14B provider pilot reserved at SHA "+sha+
               ". A failed or partial run also consumes this authorization."})});
-          if(response.status!==201)throw Error("Failed to durably consume approval");
+          if(response.status!==201){
+            // Never print secrets or raw request bodies. Record only the
+            // GitHub HTTP status and a bounded public API error message.
+            let detail="unknown";
+            try{const e=await response.json();
+              if(typeof e.message==="string")detail=e.message.slice(0,140)}
+            catch{}
+            throw Error("Failed to durably consume approval (HTTP "+response.status+
+              ", GitHub: "+detail+")");
+          }
           appendFileSync(process.env.GITHUB_OUTPUT,"head="+sha+"\n");
           NODE
   paid-pilot:
