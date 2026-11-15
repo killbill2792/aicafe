@@ -36,13 +36,16 @@ const mealBreak = (id: string, date: string) => ({ id, kind: "meal_break", impac
   payload: { employeeName: "Sam", employeeId: "e1", date }, createdAt: date + "T20:00:00Z" });
 
 beforeEach(() => {
+  vi.useFakeTimers({toFake:["Date"]});
+  vi.setSystemTime(new Date("2026-11-04T18:00:00Z"));
   vi.clearAllMocks();
   mocks.operations.mockReturnValue({ needsYou: [], handled: [], watching: [] });
   mocks.stored.mockResolvedValue([plan("2026-10-31"), plan("2026-11-05"), plan("2026-11-11"), report]);
   mocks.alerts.mockResolvedValue([mealBreak("old", "2026-10-28"), mealBreak("new", "2026-11-03")]);
 });
 
-afterEach(()=>vi.useRealTimers());\ndescribe("one inbox reader for Home, chat and Operations", () => {
+afterEach(()=>vi.useRealTimers());
+describe("one inbox reader for Home, chat and Operations", () => {
   it("counts only open decisions, and the team cards and tabs add up to Home's count", async () => {
     const args = { snapshot: snapshot as never, menu: [] as never, locale: "en" as const };
     const [home, inbox] = await Promise.all([getAttentionItems(args), readInbox(args)]);
