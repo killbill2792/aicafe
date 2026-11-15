@@ -1,4 +1,4 @@
-# Trusted main-branch workflow. OWNER edit on PR #484 (not PR code) is the
+# Trusted main-branch workflow. OWNER edit on PR #488 (not PR code) is the
 # only paid-trigger capability. Never attach provider secrets to ordinary CI.
 name: AI CAFE Task 15A Live Agentic Acceptance
 # Never permit reruns: any paid repeat requires a fresh owner body edit.
@@ -17,10 +17,10 @@ jobs:
       github.actor == 'killbill2792' &&
       github.triggering_actor == 'killbill2792' &&
       github.run_attempt == 1 &&
-      github.event.pull_request.number == 484 &&
+      github.event.pull_request.number == 488 &&
       github.event.pull_request.user.login == 'killbill2792' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'task/15a-agentic-operating-escalation' &&
+      github.event.pull_request.head.ref == 'task/15a-agentic-main-sync-20261114' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.changes.body.from != null &&
       contains(github.event.pull_request.body, '<!-- aicafe-15a-live-run ')
@@ -43,10 +43,10 @@ jobs:
             process.env.GITHUB_TRIGGERING_ACTOR!=='killbill2792'||
             event.action!=='edited'||event.sender?.login!=='killbill2792'||
             event.repository?.full_name!=='killbill2792/aicafe'||
-            pr?.number!==484||pr.user?.login!=='killbill2792'||
+            pr?.number!==488||pr.user?.login!=='killbill2792'||
             pr.base?.ref!=='main'||
             pr.head?.repo?.full_name!=='killbill2792/aicafe'||
-            pr.head?.ref!=='task/15a-agentic-operating-escalation'||
+            pr.head?.ref!=='task/15a-agentic-main-sync-20261114'||
             !/^[a-f0-9]{40}$/.test(head??'')||
             head!==process.env.EXPECTED_HEAD||
             typeof previous!=='string'||
