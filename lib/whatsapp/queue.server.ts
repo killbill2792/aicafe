@@ -23,7 +23,7 @@ export function stableOwnerClientMessageId(wamid:string):string {
   const h=bytes.toString("hex");
   return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
 }
-export async function recordSignedStatus(event:Extract<Incoming,{type:"status"}>):Promise<void> {
+export async function recordSignedStatus(event:Pick<Extract<Incoming,{type:"status"}>,"wamid"|"state">):Promise<void> {
   const {error}=await db().rpc("whatsapp_record_status",{
     p_wamid:event.wamid,p_state:event.state,
   });
