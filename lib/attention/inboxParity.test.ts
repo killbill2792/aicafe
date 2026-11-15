@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OperatingTask } from "@/lib/operating/tasks";
 
 /** One café fixture read by every surface that states a Needs-you count or picks a Needs-you item. */
 const TODAY = "2026-11-04";
-const now = Date.now();
+// Freeze the scenario clock; a fixed November 2026 subject day must not age\n// out of its 14-day history simply because CI runs in a later month.\nconst now = Date.parse("2026-11-04T18:00:00Z");
 const iso = (daysAgo: number) => new Date(now - daysAgo * 86_400_000).toISOString();
 const base = { businessId: "cafe", confidence: "high" as const, evidence: [] };
 const review = (id: string, item: string, over: Partial<OperatingTask> = {}): OperatingTask => ({ ...base, id, agentId: "alex",
@@ -74,7 +74,7 @@ beforeEach(() => {
   process.env.CRON_SECRET = "secret";
 });
 
-describe("one Needs-you count for the same café on every surface", () => {
+afterEach(()=>vi.useRealTimers());\ndescribe("one Needs-you count for the same café on every surface", () => {
   it("Inbox, Home, chat tool, morning brief and WhatsApp alert all agree", async () => {
     const scope = { client: {} as never, businessId: "cafe" };
     const inbox = await readInbox({ locale: "en" });
