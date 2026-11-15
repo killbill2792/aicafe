@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OperatingTask } from "@/lib/operating/tasks";
 
 const mocks = vi.hoisted(() => ({ stored: vi.fn(), alerts: vi.fn(), operations: vi.fn() }));
@@ -42,7 +42,7 @@ beforeEach(() => {
   mocks.alerts.mockResolvedValue([mealBreak("old", "2026-10-28"), mealBreak("new", "2026-11-03")]);
 });
 
-describe("one inbox reader for Home, chat and Operations", () => {
+afterEach(()=>vi.useRealTimers());\ndescribe("one inbox reader for Home, chat and Operations", () => {
   it("counts only open decisions, and the team cards and tabs add up to Home's count", async () => {
     const args = { snapshot: snapshot as never, menu: [] as never, locale: "en" as const };
     const [home, inbox] = await Promise.all([getAttentionItems(args), readInbox(args)]);
