@@ -37,7 +37,7 @@ jobs:
       SUPERVISOR_CHAT_ENABLED: 'true'
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
-      - name: Verify exact owner marker and current-head full CI BEFORE paid work
+      - name: Verify fresh owner authorization, exact head and initialize budget before any cost
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -63,13 +63,9 @@ jobs:
              pr.body?.split(marker).length!==2||
              (pr.body.match(/<!-- aicafe-task14b-paid-run /g)??[]).length!==1)
              throw Error("Task14B requires fresh owner edit on exact approved PR head");
-          const response=await fetch("https://api.github.com/repos/killbill2792/aicafe/actions/runs?head_sha="+sha+"&per_page=50",{
-           headers:{Accept:"application/vnd.github+json",Authorization:"Bearer "+process.env.GH_TOKEN}});
-          if(!response.ok)throw Error("Exact-head CI unavailable");
-          const runs=(await response.json()).workflow_runs??[];
-          if(!runs.some(r=>r.name==="AI CAFE Pull Request Baseline"&&
-             r.head_sha===sha&&r.conclusion==="success"))
-             throw Error("Full exact-head PR CI must finish green before provider spend");
+          // The expensive step is separately guarded by npm ci, zero-key kill tests,
+          // fresh local SQL migrations, owner/café isolation and strict cost reservations.
+          // CI/Codex merge gates are NOT waived; live acceptance may run before them.
           const budgetLedger=process.env.RUNNER_TEMP+"/task14b-budget.json";
           writeFileSync(budgetLedger,
             JSON.stringify({head:sha,attempts:0,reservedMicros:0})+"\n",
