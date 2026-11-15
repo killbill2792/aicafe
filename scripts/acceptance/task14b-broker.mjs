@@ -112,6 +112,53 @@ export function reservationForRequest(body) {
  return {serializedBytes:body.length,reservedMicros:
   Math.ceil(body.length*0.10+p.max_output_tokens*0.50),params:{...p,input}};
 }
+/** The provider error body is untrusted. Audit only fixed categories and an
+ * already submitted tool name; NEVER persist provider prose or raw content. */
+export function safeProviderRejection(raw,tools=[]){
+ const unknown={type:"unknown",code:"unknown",param:"unknown",toolName:null};
+ if(typeof raw!=="string"||raw.length>4096)return unknown;
+ let data;try{data=JSON.parse(raw)}catch{return unknown}
+ const e=data?.error;
+ if(!isObject(e))return unknown;
+ const types=new Set(["invalid_request_error","authentication_error",
+  "permission_error","rate_limit_error","server_error"]);
+ const codes=new Set(["invalid_function_parameters","invalid_request_error",
+  "unsupported_parameter","unsupported_value","model_not_found","invalid_model",
+  "invalid_service_tier","context_length_exceeded","invalid_api_key",
+  "insufficient_quota","permission_denied","invalid_prompt","invalid_value"]);
+ const type=types.has(e.type)?e.type:"unknown";
+ const code=codes.has(e.code)?e.code:"unknown";
+ const allowedParams=new Set(["model","service_tier","tools","input",
+  "instructions","tool_choice","max_output_tokens","prompt_cache_key",
+  "stream","response_format"]);
+ let param=allowedParams.has(e.param)?e.param:"unknown";
+ const m=typeof e.param==="string"?
+  /^tools\[(\d{1,3})\](?:\.(parameters|strict|name|description)(?:\..*)?)?$/.exec(e.param):null;
+ if(m)param="tools["+m[1]+"]"+(m[2]?"."+m[2]:"");
+ const names=new Set((Array.isArray(tools)?tools:[]).map(t=>t?.name)
+  .filter(n=>typeof n==="string"&&inlineName(n)));
+ const match=typeof e.message==="string"&&e.message.length<=4096?
+  /Invalid schema for function ['"]([a-z][a-z0-9_]{1,79})['"]/.exec(e.message):null;
+ const toolName=match&&names.has(match[1])?match[1]:null;
+ return {type,code,param,toolName};
+}
+async function boundedErrorText(body){
+ if(!body)return "";
+ const reader=body.getReader(),chunks=[];
+ let size=0;
+ try{
+  while(size<4096){
+   const part=await reader.read();
+   if(part.done)break;
+   const chunk=Buffer.from(part.value);
+   const taken=chunk.subarray(0,4096-size);
+   chunks.push(taken);size+=taken.length;
+   if(taken.length<chunk.length)break;
+  }
+ }catch{return ""}finally{await reader.cancel().catch(()=>{});reader.releaseLock()}
+ return Buffer.concat(chunks).toString("utf8");
+}
+
 export class PaidReservation {
  constructor(head){if(!/^[a-f0-9]{40}$/.test(head))fail("bad_head");
   this.head=head;this.attempts=0;this.reservedMicros=0;this.receipts=[]}
@@ -217,7 +264,9 @@ export function startTrustedBroker({
    }
    receipt.upstreamStatus=upstream.status;
    if(!upstream.ok||!upstream.body){
-    receipt.terminal="provider_rejected";saveAudit(auditFile,reserved);
+    receipt.terminal="provider_rejected";
+    receipt.rejection=safeProviderRejection(await boundedErrorText(upstream.body),params.tools);
+    saveAudit(auditFile,reserved);
     res.writeHead(502);res.end();return;
    }
    res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8",
