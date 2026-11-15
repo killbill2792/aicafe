@@ -96,6 +96,9 @@ begin
     failure_count=0,lease_token=null,lease_until=null,next_retry_at=p_now,
     evidence='{}'::jsonb,narrative=null,last_error=null,updated_at=p_now
   where (public.supervisor_investigations.revision_hash<>excluded.revision_hash
+      -- A formerly resolved task can recur with byte-identical evidence.
+      -- The live source check above gates this restart, never an active retry.
+      or public.supervisor_investigations.phase='resolved'
       or (public.supervisor_investigations.phase='blocked'
         and public.supervisor_investigations.last_error='source_missing'))
     and (public.supervisor_investigations.lease_until is null
@@ -160,10 +163,10 @@ begin
       where t.business_id=v.business_id and t.id=v.source_id) into v_exists;
     select exists(select 1 from public.operating_tasks t
       where t.business_id=v.business_id and t.id=v.source_id
-        and t.status in ('needs_owner','needs_response')) into v_status_open;
+        and t.status in ('needs_owner','needs_response','watching')) into v_status_open;
     select exists(select 1 from public.operating_tasks t
       where t.business_id=v.business_id and t.id=v.source_id
-        and t.status in ('needs_owner','needs_response')
+        and t.status in ('needs_owner','needs_response','watching')
         and (t.owner_user_id is null or t.owner_user_id=v.owner_user_id)) into v_open;
   end if;
   if not v_open then
@@ -324,7 +327,9 @@ begin
     if new.status in ('new','seen') then return new; end if;
     v_type:='alert';
   else
-    if new.kind='priority_notice' or new.status in ('needs_owner','needs_response')
+    -- Owner intent or snooze is not an applied change. A watching task is
+    -- open until a trusted status transition actually handles/expires it.
+    if new.kind='priority_notice' or new.status in ('needs_owner','needs_response','watching')
     then return new; end if;
     v_type:='operating_task';
   end if;
