@@ -7,7 +7,7 @@ import {randomUUID} from "node:crypto";
 import {setTimeout as sleep} from "node:timers/promises";
 import {isAbsolute} from "node:path";
 
-export const TASK14B_MAX_RESERVED_MICROS=180_000; // $0.18, below $0.80 owner maximum
+export const TASK14B_MAX_RESERVED_MICROS=180_000; // eighteen-cent reserve under the owner's spending ceiling
 export const TASK14B_MAX_PAID_CALLS=18;
 export const TASK14B_MAX_REQUEST_BYTES=120_000;
 export const TASK14B_MAX_RESPONSE_TOKENS=1_200;
@@ -28,7 +28,7 @@ export function paidRequestReservation(params:Record<string,unknown>,json:string
  if(bytes<=0||bytes>TASK14B_MAX_REQUEST_BYTES)
   throw Error("task14b_budget:input_limit");
  // Conservative token upper bound: one token per serialized UTF-8 byte;
- // standard Luna input $0.10/M and output $0.50/M, no cache discount.
+ // standard Luna token rates 0.10 input and 0.50 output per million, no cache discount.
  // Microunits: bytes * 0.10 + output tokens * 0.50.
  return {bytes,reservedMicros:Math.ceil(bytes*0.10+Number(output)*0.50)};
 }
