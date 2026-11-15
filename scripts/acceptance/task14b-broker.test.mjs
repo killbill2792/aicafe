@@ -11,6 +11,9 @@ import {
 } from "./task14b-broker.mjs";
 const head="a".repeat(40),key="sk-this_is_only_a_mocked_key";
 const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
+ instructions:"Only grounded café evidence. No external writes.",
+ tool_choice:"auto",prompt_cache_key:"cafe-agent-test",
+ input:[{role:"user",content:"Compare supplier quotes for milk."}],
  tools:[{type:"function",name:"inspect_supplier_purchase",parameters:{
   type:"object",properties:{},additionalProperties:false}}]};
 const body=Buffer.from(JSON.stringify(params));
@@ -30,6 +33,46 @@ test("allows only priced foreground Luna Responses calls and reserves worst-case
  assert.throws(()=>reservationForRequest(Buffer.from("x".repeat(120001))),
    /request_size/);
 });
+test("rejects provider-expanded history, prompts, remote files and images before cost reservation",()=>{
+ const blocked=[
+  {...params,previous_response_id:"resp_stored_history"},
+  {...params,conversation:"conv_stored_history"},
+  {...params,prompt:{id:"prompt_stored"}},
+  {...params,store:true},
+  {...params,input:[{type:"reasoning",id:"rs_unpriced",summary:[]}]},
+  {...params,input:[{role:"user",content:[{type:"input_image",image_url:"https://remote.example/image.jpg"}]}]},
+  {...params,input:[{role:"user",content:[{type:"input_file",file_id:"file_unpriced"}]}]},
+  {...params,input:[{role:"user",content:[{type:"input_text",text:"Hi",file_id:"file_unpriced"}]}]},
+  {...params,input:[{role:"user",content:[{type:"input_text",text:"Hi",url:"https://remote.example/data"}]}]},
+  {...params,input:[{type:"message",role:"assistant",id:"msg_opaque"}]},
+ ];
+ for(const [i,p] of blocked.entries()){
+  assert.throws(()=>reservationForRequest(Buffer.from(JSON.stringify(p))),
+    /task14b_trusted_broker:/,"remote reference index "+i);
+ }
+ const b=new PaidReservation(head);
+ for(const p of blocked)assert.throws(()=>b.reserve(Buffer.from(JSON.stringify(p))));
+ assert.equal(b.attempts,0);
+ assert.equal(b.reservedMicros,0);
+});
+test("normalizes only self-contained function-tool history and strips provider item IDs",()=>{
+ const request={...params,input:[
+  {role:"developer",content:"Grounded procurement only"},
+  {role:"user",content:[{type:"input_text",text:"Compare quotes"}]},
+  {type:"function_call",id:"fc_opaque",status:"completed",
+   name:"inspect_supplier_purchase",call_id:"call_1",arguments:'{"item":"milk"}'},
+  {type:"function_call_output",call_id:"call_1",output:'{"available":true}'},
+  {type:"message",id:"msg_opaque",status:"completed",
+   role:"assistant",content:[{type:"output_text",text:"Two verified quotes.",annotations:[]}]}
+ ]};
+ const r=reservationForRequest(Buffer.from(JSON.stringify(request)));
+ assert.equal(r.params.input.length,5);
+ assert.equal(r.params.input[2].call_id,"call_1");
+ assert.equal(r.params.input[2].id,undefined);
+ assert.equal(r.params.input[4].id,undefined);
+ assert.equal(JSON.stringify(r.params).includes("fc_opaque"),false);
+ assert.equal(JSON.stringify(r.params).includes("msg_opaque"),false);
+});
 test("pre-reserves exactly 18 paid attempts, including unknown/failing transports",()=>{
  const b=new PaidReservation(head);
  for(let i=0;i<MAX_CALLS;i++)b.reserve(body);
@@ -40,7 +83,7 @@ test("pre-reserves exactly 18 paid attempts, including unknown/failing transport
 });
 test("cannot repeat a request after $0.18 cumulative pretransport reservation",()=>{
  const b=new PaidReservation(head);
- const large=Buffer.from(JSON.stringify({...params,input:"x".repeat(118_000)}));
+ const large=Buffer.from(JSON.stringify({...params,input:[{role:"user",content:"x".repeat(118_000)}]}));
  for(let i=0;i<18;i++){
   try{b.reserve(large)}catch(e){
    assert.match(String(e),/approved_budget_exhausted/);
