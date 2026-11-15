@@ -132,6 +132,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
   const startedAt = Date.now();
   const auditSteps: AgentAuditStep[] = [];
   let completedTurn: AgentTurn | undefined;
+  // Only fixed stage labels are permitted in the disposable live-pilot diagnostic.
+  let failureStage: "setup" | "model" | "persist" | "finish" = "setup";
   let steps: Promise<void> = Promise.resolve();
   try {
     const external=p.externalClient!==undefined;
@@ -485,6 +487,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ?await recordedWhatsAppImageIds(scope,id,owner.id):null;
     const selected=await readOwnerAttachments(scope,id,recordedIds??p.attachmentIds??[],p.externalClient);
     selectedContentSha256=selected.contentSha256;
+    failureStage = "model";
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
        history, context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
@@ -512,6 +515,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         onFollowUp: (count: number) => emit("followup", { count }),
       } : {}) });
     completedTurn = result;
+    failureStage = "persist";
     let reply: Awaited<ReturnType<typeof persistAgentReply>>;
     try {
       if (!result.text.trim()) throw new AgentEmptyReplyError();
@@ -529,6 +533,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         ...(style ? { sentences: style.sentences, styleTooLong: style.tooLong, styleFiller: style.filler } : {})});
       logged=true;
     }
+    failureStage = "finish";
     await steps;
     scheduleTurnAudit({ scope, owner, startedAt, endedAt: Date.now(), replyId: reply.id,
       answer: result.text, turn: result, steps: auditSteps,
@@ -547,7 +552,17 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     scheduleTurnAudit({ scope, owner, startedAt, endedAt: Date.now(), turn: completedTurn,
       answer: completedTurn?.text, steps: auditSteps,
       status: completedTurn?.endReason === "timeout" ? "timeout" : "failed", error: code });
-    emit("error", { code, ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),
+    // The isolated paid pilot needs to distinguish a provider-empty turn from
+    // authentication/setup and persistence failures. No raw error, model text,
+    // supplier facts, SQL or credentials leave this boundary.
+    const localDiagnostic = process.env.AI_CAFE_LIVE_ACCEPTANCE === "OWNER_APPROVED_LOCAL_ONLY" &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL === "http://127.0.0.1:54321"
+      ? { diagnosticStage: failureStage,
+          ...(completedTurn ? { diagnosticEndReason: completedTurn.endReason,
+            diagnosticModelCalls: completedTurn.usage.modelCalls } : {}) }
+      : {};
+    emit("error", { code, ...localDiagnostic,
+      ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),
       ...(job ? { jobId: job.id } : {}) });
     return { errorCode: code };
   } finally { await steps.catch(() => undefined); }
