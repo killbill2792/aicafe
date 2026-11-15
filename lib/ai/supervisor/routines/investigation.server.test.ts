@@ -33,9 +33,18 @@ const following={...base,phase:"awaiting_owner",step_version:2,
   evidence:{source:synopsis,collectedAt:now.toISOString()}};
 const agentResult=(patch:Record<string,unknown>={})=>({
   text:"I checked sales and labor coverage. Staffing remains uncertain. Review the owner approval card before any change; I will check again.",
-  endReason:"complete",tools:["get_sales","get_labor"],unverified:[],
-  results:[{source:"sales",period:null,missing:[]},
+  endReason:"complete",tools:["get_investigation_source","get_sales","get_labor"],unverified:[],
+  results:[{source:"investigation_source",period:null,missing:[],
+      sourceType:"alert",sourceId:"alert-a",incidentKind:"sales_anomaly"},
+    {source:"sales",period:null,missing:[]},
     {source:"labor",period:null,missing:["unverifiedWages"]}],
+  toolInvocations:[
+    {name:"get_investigation_source",result:{source:"investigation_source",
+      period:null,missing:[],sourceType:"alert",sourceId:"alert-a",
+      incidentKind:"sales_anomaly"}},
+    {name:"get_sales",result:{source:"sales",period:null,missing:[]}},
+    {name:"get_labor",result:{source:"labor",period:null,missing:["unverifiedWages"]}},
+  ],
   usage:{modelCalls:2,toolCalls:2,inputTokens:100,outputTokens:100,cachedTokens:0,latencyMs:200},
   ...patch,
 });
@@ -119,15 +128,22 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     const modelInput=mocks.model.mock.calls[0][0];
     expect(modelInput.ownerText).toContain("SYSTEM-INITIATED");
     expect(modelInput.ownerText).toContain("TWO relevant independent");
+    expect(modelInput.toolNames).toContain("get_investigation_source");
     expect(modelInput.toolNames).toContain("get_sales");
     expect(modelInput.toolNames).toContain("get_labor");
     expect(modelInput.toolNames).not.toContain("propose_staff_change");
     expect(modelInput.toolNames).not.toContain("propose_gmail_action");
+    // The model may only inspect the SQL-claimed café/owner/source.
+    const exact=await modelInput.context.investigation.read();
+    expect(exact).toMatchObject({
+      source:"investigation_source",sourceType:"alert",sourceId:"alert-a",
+      incidentKind:"sales_anomaly",sourceStatus:"new",
+    });
     expect(mocks.notify).toHaveBeenCalledOnce();
     const saved=d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args;
     expect(saved?.p_outcome).toBe("investigated");
     expect(saved?.p_narrative).toBe(agentResult().text);
-    expect(saved?.p_evidence).toMatchObject({modelTools:["get_sales","get_labor"],
+    expect(saved?.p_evidence).toMatchObject({modelTools:["get_investigation_source","get_sales","get_labor"],
       missing:["unverifiedWages"]});
   });
   it("reenters unresolved work after a restart without inventing owner consent",async()=>{
@@ -155,13 +171,31 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
         p_evidence:expect.objectContaining({unchangedChecks:1})});
   });
   it("does not silently publish a one-tool answer as a multi-step investigation",async()=>{
-    mocks.model.mockResolvedValue(agentResult({tools:["get_sales"]}));
+    mocks.model.mockResolvedValue(agentResult({toolInvocations:[
+      {name:"get_sales",result:{source:"sales",period:null,missing:[]}},
+    ]}));
     const d=db([{...investigating}]);
     expect(await processNextInvestigation(d.client,now)).toMatchObject({failed:1,investigated:0});
     expect(mocks.notify).not.toHaveBeenCalled();
     expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args.p_error)
       .toBe("evidence_incomplete");
     expect(d.calls.some(x=>x.name==="supervisor_finish_investigation")).toBe(false);
+  });
+  it("does not accept a plausible model answer about a different incident",async()=>{
+    mocks.model.mockResolvedValue(agentResult({toolInvocations:[
+      {name:"get_investigation_source",result:{source:"investigation_source",
+        period:null,missing:[],sourceType:"alert",sourceId:"other-alert",
+        incidentKind:"sales_anomaly"}},
+      {name:"get_sales",result:{source:"sales",period:null,missing:[]}},
+      {name:"get_labor",result:{source:"labor",period:null,missing:[]}},
+    ]}));
+    const d=db([{...investigating}]);
+    expect(await processNextInvestigation(d.client,now)).toMatchObject({
+      processed:1,investigated:0,failed:1,
+    });
+    expect(mocks.notify).not.toHaveBeenCalled();
+    expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args.p_error)
+      .toBe("evidence_incomplete");
   });
   it("recovers from temporary reader failure through durable fenced backoff",async()=>{
     const d=db([{...collected}],{sourceError:true});
