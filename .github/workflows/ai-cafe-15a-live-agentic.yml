@@ -1,0 +1,126 @@
+# Trusted main-branch workflow. OWNER edit on PR #484 (not PR code) is the
+# only paid-trigger capability. Never attach provider secrets to ordinary CI.
+name: AI CAFE Task 15A Live Agentic Acceptance
+# Never permit reruns: any paid repeat requires a fresh owner body edit.
+# pull_request_target always loads the trusted default-branch workflow, NOT
+# PR merge-commit YAML. This is mandatory before granting a paid provider key.
+on:
+  pull_request_target:
+    types: [edited]
+permissions:
+  contents: read
+jobs:
+  task-15a-owner-live:
+    name: Owner-authorized paid real Supervisor agentic acceptance
+    if: >-
+      github.event.action == 'edited' &&
+      github.actor == 'killbill2792' &&
+      github.triggering_actor == 'killbill2792' &&
+      github.run_attempt == 1 &&
+      github.event.pull_request.number == 484 &&
+      github.event.pull_request.user.login == 'killbill2792' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'task/15a-agentic-operating-escalation' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.changes.body.from != null &&
+      contains(github.event.pull_request.body, '<!-- aicafe-15a-live-run ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Prove owner fresh authorization and exact commit before paid work
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));
+          const pr=event.pull_request,head=pr?.head?.sha;
+          const previous=event.changes?.body?.from;
+          const marker='<!-- aicafe-15a-live-run '+head+' -->';
+          if(process.env.GITHUB_RUN_ATTEMPT!=='1'||
+            process.env.GITHUB_TRIGGERING_ACTOR!=='killbill2792'||
+            event.action!=='edited'||event.sender?.login!=='killbill2792'||
+            event.repository?.full_name!=='killbill2792/aicafe'||
+            pr?.number!==484||pr.user?.login!=='killbill2792'||
+            pr.base?.ref!=='main'||
+            pr.head?.repo?.full_name!=='killbill2792/aicafe'||
+            pr.head?.ref!=='task/15a-agentic-operating-escalation'||
+            !/^[a-f0-9]{40}$/.test(head??'')||
+            head!==process.env.EXPECTED_HEAD||
+            typeof previous!=='string'||
+            previous.includes('<!-- aicafe-15a-live-run ')||
+            !pr.body?.includes(marker)||
+            (pr.body.match(/<!-- aicafe-15a-live-run /g)??[]).length!==1)
+            throw Error('Task 15A paid live proof requires fresh owner GitHub body edit and exact head marker');
+          appendFileSync(process.env.GITHUB_OUTPUT??'/dev/null','approved=true\n');
+          NODE
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install exactly locked candidate code (no provider secret)
+        run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Start disposable local Supabase with API and PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          supabase start -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase db reset --local --yes
+          pg_isready -q -h 127.0.0.1 -p 54322 -U postgres
+      - name: Load ONLY disposable Supabase key into masked CI memory
+        shell: bash
+        run: |
+          set -euo pipefail
+          local_env="$(mktemp)"
+          trap 'rm -f "$local_env"' EXIT
+          supabase status -o env > "$local_env"
+          node --input-type=module - "$local_env" <<'NODE'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          const path=process.argv[2],out=process.env.GITHUB_ENV;
+          const line=readFileSync(path,'utf8').split(/\r?\n/).find(s=>s.startsWith('SERVICE_ROLE_KEY='));
+          const key=line?.slice('SERVICE_ROLE_KEY='.length).replace(/^["']|["']$/g,'');
+          if(!key||key.length<32||!out)throw Error('Local disposable service role key unavailable');
+          process.stdout.write('::add-mask::'+key+'\n');
+          appendFileSync(out,'SUPABASE_SERVICE_ROLE_KEY='+key+'\n');
+          NODE
+      - name: Execute actual OpenAI-backed autonomous work, follow-up and evidence
+        timeout-minutes: 12
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
+          AICAFE_15A_AGENTIC_LIVE: '1'
+          AICAFE_15A_LOCAL_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          AICAFE_15A_LIVE_HEAD: ${{ github.event.pull_request.head.sha }}
+          SUPERVISOR_OPENAI_MODEL: gpt-6-luna
+          SUPERVISOR_OPENAI_FALLBACK_MODEL: gpt-4.1-mini
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$AICAFE_15A_LIVE_HEAD"
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Existing OPENAI_API_KEYS secret unavailable: no provider-backed Task 15A acceptance performed"
+            exit 1
+          fi
+          timeout 10m npx vitest run lib/ai/supervisor/routines/investigation.live.test.ts --reporter=verbose
+      - name: Upload exact-head sanitized live acceptance proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-15a-live-agentic-proof
+          path: test-results/acceptance/15a-live-proof.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Destroy disposable database and its secrets
+        if: always()
+        shell: bash
+        run: supabase stop --no-backup || true
