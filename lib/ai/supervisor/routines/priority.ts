@@ -69,12 +69,13 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     ownerAction?"Owner task needs review":"Task response needs review";
   return {source,revisionHash,priority,reason,stableKey};
 }
-export function choosePriorities(sources:readonly PrioritySource[],now:Date,limit=3):
-  PriorityDecision[]{
+export function choosePriorities(sources:readonly PrioritySource[],now:Date,limit=3,
+  options?:{includeWatching?:boolean}):PriorityDecision[]{
   const candidates=sources.filter(s=>
     (s.sourceType==="alert"&&(s.status==="new"||s.status==="seen"))||
     (s.sourceType==="operating_task"&&!alreadyNotifiedTaskKinds.has(s.kind)&&
-      (s.status==="needs_owner"||s.status==="needs_response")))
+      (s.status==="needs_owner"||s.status==="needs_response"||
+       (options?.includeWatching===true&&s.status==="watching"))))
     .map(s=>rankPriority(s,now));
   return candidates.sort((a,b)=>b.priority-a.priority||
     a.source.createdAt.localeCompare(b.source.createdAt)||
