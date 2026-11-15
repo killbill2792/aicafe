@@ -59,7 +59,7 @@ jobs:
              !/^[a-f0-9]{40}$/.test(sha??"")||
              typeof old!=="string"||old.includes(prefix)||
              !pr.body?.includes(marker)||
-             (pr.body.match(/<!-- aicafe-task14b-trusted-paid-run /g)||[]).length!==1)
+             (pr.body.split(prefix).length!==2))
              throw Error("Fresh exact-head owner approval required");
           const headers={"authorization":"Bearer "+process.env.GH_TOKEN,
             accept:"application/vnd.github+json",
