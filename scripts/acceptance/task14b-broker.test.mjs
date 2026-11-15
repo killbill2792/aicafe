@@ -94,6 +94,26 @@ test("trusted SSE receipt records real model-selected tools but never arguments"
  assert.deepEqual(event,{event:"function_call",name:"propose_supplier_purchase_order"});
  assert.equal(JSON.stringify(event).includes("super_private_supplier"),false);
 });
+test("trusted host and candidate shim use one canonical ephemeral token name",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"task14b-env-broker-"));
+ const auditFile=join(root,"audit.json");
+ const previous=process.env.AICAFE_14B_BROKER_TOKEN;
+ process.env.AICAFE_14B_BROKER_TOKEN="z".repeat(64);
+ let server;
+ try{
+  ({server}=startTrustedBroker({apiKey:key,head,auditFile,port:0,
+   fetchUpstream:async()=>{throw Error("no paid transport in env test")}}));
+  await once(server,"listening");
+  const r=await fetch("http://127.0.0.1:"+server.address().port+"/healthz");
+  assert.equal(r.status,200);
+  assert.equal(JSON.parse(readFileSync(auditFile,"utf8")).attempts,0);
+ }finally{
+  if(server)await new Promise(resolve=>server.close(resolve));
+  if(previous===undefined)delete process.env.AICAFE_14B_BROKER_TOKEN;
+  else process.env.AICAFE_14B_BROKER_TOKEN=previous;
+  rmSync(root,{recursive:true,force:true});
+ }
+});
 test("only trusted broker calls real-key transport and never exposes the key",async()=>{
  const root=mkdtempSync(join(tmpdir(),"task14b-host-audit-")),auditFile=join(root,"audit.json");
  let called=0;
