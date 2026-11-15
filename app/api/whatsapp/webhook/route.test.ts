@@ -86,9 +86,60 @@ describe("WhatsApp route",()=>{
     // but the co-batched genuine delivery callback MUST still be stored.
     expect(mocks.staffStatus).toHaveBeenCalledTimes(2);
     expect(mocks.status).toHaveBeenCalledTimes(2);
+    // A sender policy pause does NOT revoke already issued Meta wamids.
+    // Outbound effects stop; authenticated delayed receipts still reconcile.
     process.env.WHATSAPP_STAFF_SENDER_APPROVED="false";
-    expect((await POST(request(staffEvent))).status).toBe(403);
-    expect(mocks.staffStatus).toHaveBeenCalledTimes(2);
+    process.env.WHATSAPP_STAFF_SCHEDULE_SEND_ENABLED="false";
+    expect((await POST(request(staffEvent))).status).toBe(200);
+    expect(mocks.staffStatus).toHaveBeenCalledTimes(3);
+    expect(mocks.status).toHaveBeenCalledTimes(3);
+  });
+  it("reconciles delivery when signed worker voice notes and foreign button payloads are co-batched",async()=>{
+    process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID="1555999888777666";
+    process.env.WHATSAPP_STAFF_SCHEDULE_SEND_ENABLED="false";
+    process.env.WHATSAPP_STAFF_SENDER_APPROVED="false";
+    const e=event("wamid.ignored","1555999888777666");
+    const value=e.entry[0].changes[0].value as Record<string,unknown>;
+    value.messages=[{
+      from:"15556506570",id:"wamid.voice",timestamp:"1793462400",
+      type:"audio",audio:{id:"voice-file"},
+    },{
+      from:"15556506570",id:"wamid.worker-button",timestamp:"1793462400",
+      type:"button",button:{payload:"worker_shift_acknowledged",text:"ok"},
+    }];
+    value.statuses=[{id:"wamid.real",status:"delivered"},{id:"wamid.second",status:"read"}];
+    expect((await POST(request(e))).status).toBe(200);
+    expect(mocks.ingest).not.toHaveBeenCalled();
+    expect(mocks.status.mock.calls.map(args=>args[0].wamid)).toEqual([
+      "wamid.real","wamid.second",
+    ]);
+    expect(mocks.staffStatus.mock.calls.map(args=>args[0].state)).toEqual([
+      "delivered","read",
+    ]);
+  });
+  it("preserves owner and staff receipts in a signed mixed-sender batch while sends are disabled",async()=>{
+    process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID="1555999888777666";
+    const staff=event("wamid.incoming","1555999888777666");
+    const value=staff.entry[0].changes[0].value as Record<string,unknown>;
+    value.messages=[{
+      from:"15556506570",id:"wamid.worker-sticker",timestamp:"1793462400",
+      type:"sticker",sticker:{id:"sticker-id"},
+    }];
+    value.statuses=[{id:"wamid.employee-delivered",status:"delivered"}];
+    const owner=event("wamid.owner-message");
+    const combined={
+      object:"whatsapp_business_account",
+      entry:[{changes:[...staff.entry[0].changes,...owner.entry[0].changes]}],
+    };
+    expect((await POST(request(combined))).status).toBe(200);
+    expect(mocks.ingest).toHaveBeenCalledOnce();
+    expect(mocks.ingest.mock.calls[0][0]).toMatchObject({wamid:"wamid.owner-message"});
+    expect(mocks.staffStatus).toHaveBeenCalledOnce();
+    expect(mocks.status).toHaveBeenCalledOnce();
+    expect(mocks.status.mock.calls[0][0]).toMatchObject({wamid:"wamid.employee-delivered"});
+    // A configured sender identity is still exact: different/forged phone fails.
+    const stranger=event("wamid.attacker","1555999888777667");
+    expect((await POST(request(stranger))).status).toBe(403);
   });
   it("refuses unverified staff callback signatures before any receipt write",async()=>{
     process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID="1555999888777666";
