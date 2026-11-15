@@ -1,8 +1,10 @@
 # Trusted main-branch workflow. OWNER edit on PR #484 (not PR code) is the
 # only paid-trigger capability. Never attach provider secrets to ordinary CI.
 name: AI CAFE Task 15A Live Agentic Acceptance
+# pull_request_target always loads the trusted default-branch workflow, NOT
+# PR merge-commit YAML. This is mandatory before granting a paid provider key.
 on:
-  pull_request:
+  pull_request_target:
     types: [edited]
 permissions:
   contents: read
