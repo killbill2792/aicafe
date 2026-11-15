@@ -17,6 +17,69 @@ export const MAX_CALLS=18;
 export const MAX_BODY_BYTES=120_000;
 export const MAX_OUTPUT_TOKENS=1_200;
 const fail=(code)=>{throw new Error("task14b_trusted_broker:"+code);};
+const isObject=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
+const onlyKeys=(obj,keys)=>Object.keys(obj).every(key=>keys.includes(key));
+const inlineId=x=>typeof x==="string"&&/^[A-Za-z0-9_-]{1,128}$/.test(x);
+const inlineName=x=>typeof x==="string"&&/^[a-z][a-z0-9_]{1,79}$/.test(x);
+/**
+ * Never forward provider-stored context: previous_response_id, conversation,
+ * prompt IDs, reasoning references, file IDs/URLs, image URLs or attachments.
+ * Canonicalize recorded Responses output to self-contained text/function items.
+ * Provider can bill only for text/tool JSON physically in this request.
+ */
+export function normalizeInlineContext(items){
+ if(!Array.isArray(items)||items.length<1||items.length>256)
+  fail("inline_input_required");
+ return items.map(item=>{
+  if(!isObject(item))fail("non_inline_input");
+  if(["developer","user","assistant"].includes(item.role)){
+   if(!onlyKeys(item,["role","content"]))fail("remote_message_metadata_forbidden");
+   if(typeof item.content==="string")
+    return {role:item.role,content:item.content};
+   if(item.role!=="user"||!Array.isArray(item.content)||
+      !item.content.length)fail("unsupported_message_content");
+   const content=item.content.map(part=>{
+    if(!isObject(part)||!onlyKeys(part,["type","text"])||
+       part.type!=="input_text"||typeof part.text!=="string")
+      fail("remote_or_nontext_attachment_forbidden");
+    return {type:"input_text",text:part.text};
+   });
+   return {role:"user",content};
+  }
+  if(item.type==="function_call"){
+   if(!onlyKeys(item,["type","id","status","name","call_id","arguments"])||
+      !inlineName(item.name)||!inlineId(item.call_id)||
+      typeof item.arguments!=="string")fail("non_inline_function_call");
+   // Remove provider-generated opaque item IDs; preserve the inline call
+   // name+arguments and call_id needed for the function output correlation.
+   return {type:"function_call",name:item.name,
+    call_id:item.call_id,arguments:item.arguments};
+  }
+  if(item.type==="function_call_output"){
+   if(!onlyKeys(item,["type","call_id","output"])||
+      !inlineId(item.call_id)||typeof item.output!=="string")
+    fail("non_inline_function_output");
+   return {type:"function_call_output",call_id:item.call_id,output:item.output};
+  }
+  if(item.type==="message"){
+   if(!onlyKeys(item,["type","id","status","role","content"])||
+      item.role!=="assistant"||!Array.isArray(item.content))
+    fail("non_inline_assistant_message");
+   const content=item.content.map(part=>{
+    if(!isObject(part)||!onlyKeys(part,["type","text","annotations"])||
+       part.type!=="output_text"||typeof part.text!=="string"||
+       (part.annotations!==undefined&&
+        (!Array.isArray(part.annotations)||part.annotations.length!==0)))
+      fail("remote_assistant_content_forbidden");
+    return {type:"output_text",text:part.text,annotations:[]};
+   });
+   return {type:"message",role:"assistant",content};
+  }
+  // Reasoning IDs, remote file/image parts and all other opaque provider
+  // item classes can expand to unbounded hidden/remote context.
+  fail("opaque_or_remote_context_forbidden");
+ });
+}
 export function reservationForRequest(body) {
  if(!Buffer.isBuffer(body)||body.length<2||body.length>MAX_BODY_BYTES)
   fail("request_size");
@@ -24,6 +87,15 @@ export function reservationForRequest(body) {
  try{p=JSON.parse(body.toString("utf8"))}catch{fail("invalid_json")}
  if(p===null||typeof p!=="object"||Array.isArray(p))
   fail("not_a_response_request");
+ const allowed=["model","instructions","tools","tool_choice","stream",
+  "max_output_tokens","prompt_cache_key","input","service_tier"];
+ if(!onlyKeys(p,allowed))fail("provider_expanded_context_forbidden");
+ if(typeof p.instructions!=="string"||!p.instructions.trim()||
+    (p.prompt_cache_key!==undefined&&
+      (typeof p.prompt_cache_key!=="string"||p.prompt_cache_key.length>128))||
+    !["none","auto"].includes(p.tool_choice))
+  fail("unsupported_provider_request_shape");
+ const input=normalizeInlineContext(p.input);
  if(p.model!=="gpt-6-luna")fail("unexpected_model");
  if(!Number.isSafeInteger(p.max_output_tokens)||p.max_output_tokens<1||
     p.max_output_tokens>MAX_OUTPUT_TOKENS)fail("output_cap");
@@ -38,7 +110,7 @@ export function reservationForRequest(body) {
  // Current standard Luna rates $0.10/M input, $0.50/M output; no cache discount.
  // Multiplying tokens by dollar-per-million gives USD millionths ("micros").
  return {serializedBytes:body.length,reservedMicros:
-  Math.ceil(body.length*0.10+p.max_output_tokens*0.50),params:p};
+  Math.ceil(body.length*0.10+p.max_output_tokens*0.50),params:{...p,input}};
 }
 export class PaidReservation {
  constructor(head){if(!/^[a-f0-9]{40}$/.test(head))fail("bad_head");
