@@ -49,7 +49,7 @@ begin
  insert into public.supervisor_proposals(
  id,business_id,owner_user_id,thread_id,request_key,capability_id,
  capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status)
- values(proposal_id,current_setting('test.mandate.cafe'),current_setting('test.mandate.owner'),current_setting('test.mandate.thread'),gen_random_uuid(),
+ values(proposal_id,current_setting('test.mandate.cafe')::uuid,current_setting('test.mandate.owner')::uuid,current_setting('test.mandate.thread')::uuid,gen_random_uuid(),
  'olivia.staff_propose_send_schedule.v2',2,jsonb_build_object(
  'operation','propose_send_schedule','scopeVersion',2,'dependencyScope',scope,
  'expectedToken',token,'preview',jsonb_build_array(jsonb_build_object(
