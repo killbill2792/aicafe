@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {verifyTask14bToolTrace,verifyTask14bScope} from "./task14b.mjs";
+import {verifyTask14bToolTrace,verifyTask14bScope,verifyTask14bSavedCard} from "./task14b.mjs";
 
 test("Task14B real-agent trace requires a source read BEFORE owner proposal",()=>{
  const proof=verifyTask14bToolTrace([
@@ -36,4 +36,19 @@ test("Task14B paid acceptance cannot claim another café or thread's proposal",(
   thread_id:"thread-b",capability_id:"maya.inventory_purchase.v1"
  }))assert.throws(()=>verifyTask14bScope({...data,[key]:value},scope),
   /task14b_live:unverified_saved_owner_scope/);
+});
+
+test("Task14B paid acceptance rejects text-only or forged proposal rows without owner card",()=>{
+ const id="88888888-8888-4888-8888-888888888888";
+ assert.equal(verifyTask14bSavedCard({
+   structured_content:[{type:"text",text:"Prepared"}, {type:"proposal_card",proposalId:id}],
+ },id),true);
+ for(const message of [
+   {structured_content:[{type:"text",text:'{"proposal_card":"'+id+'"}'}]},
+   {structured_content:[{type:"proposal_card",proposalId:"99999999-9999-4999-8999-999999999999"}]},
+   {structured_content:null},null,
+ ]){
+   assert.throws(()=>verifyTask14bSavedCard(message,id),
+     /task14b_live:model_proposal_card_not_persisted/);
+ }
 });
