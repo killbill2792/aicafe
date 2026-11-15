@@ -446,7 +446,8 @@ test("@purchasing proactive notice → owner-approved real PO → reopened statu
   const own=seededCafe(0),other=seededCafe(1);
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
     user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
-  const id={ingredient:randomUUID(),quote:randomUUID(),thread:randomUUID(),proposal:randomUUID()};
+  const id={ingredient:randomUUID(),quote:randomUUID(),thread:randomUUID(),
+    proposal:randomUUID(),replacedProposal:randomUUID()};
   const now=new Date();
   const parts=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{
     timeZone:own.timezone,year:"numeric",month:"2-digit",day:"2-digit"
@@ -495,11 +496,31 @@ test("@purchasing proactive notice → owner-approved real PO → reopened statu
       " $6::jsonb,$7,'{}'::jsonb,$8::jsonb,'en',now()-interval '3 hours')",
       [id.proposal,own.businessId,own.owner.userId,id.thread,randomUUID(),
         JSON.stringify(effect),hash,JSON.stringify({durationDays:1,metricScope:"supplier_purchase_order"})]);
+    // Two REAL saved assistant cards: original rejected approval + replacement.
+    // They share one thread but must NEVER display two action buttons.
+    await db.query("insert into public.supervisor_proposals("+
+      " id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,"+
+      " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision,created_at)"+
+      " values($1,$2,$3,$4,$5,'maya.supplier_purchase_order.v1',1,"+
+      " $6::jsonb,$7,'{}'::jsonb,$8::jsonb,'en','rejected',2,now()-interval '4 hours')",
+      [id.replacedProposal,own.businessId,own.owner.userId,id.thread,randomUUID(),
+        JSON.stringify(effect),hash,JSON.stringify({durationDays:1,metricScope:"supplier_purchase_order"})]);
+    await db.query("insert into public.supplier_po_draft_replacements("+
+      " business_id,previous_id,replacement_id,owner_user_id) values($1,$2,$3,$4)",
+      [own.businessId,id.replacedProposal,id.proposal,own.owner.userId]);
     await db.query("insert into public.ai_messages("+
       " business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id)"+
       " values($1,$2,$3,$3,'owner','text',$4,$5)",
       [own.businessId,id.thread,own.owner.userId,
         "Compare milk quotes and prepare an order. Do not send it.",randomUUID()]);
+    await db.query("insert into public.ai_messages("+
+      " business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content,grounding)"+
+      " values($1,$2,$3,null,'supervisor','blocks',$4::jsonb,$5::jsonb)",
+      [own.businessId,id.thread,own.owner.userId,
+        JSON.stringify([{type:"text",text:"The earlier order was replaced after your correction."},
+          {type:"proposal_card",proposalId:id.replacedProposal}]),
+        JSON.stringify({status:"verified",intent:"operating_tasks",
+          evidence:[{source:"owner_rules",identifier:"replaced-supplier-approval",asOf:today}]})]);
     await db.query("insert into public.ai_messages("+
       " business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content,grounding)"+
       " values($1,$2,$3,null,'supervisor','blocks',$4::jsonb,$5::jsonb)",
@@ -544,7 +565,12 @@ test("@purchasing proactive notice → owner-approved real PO → reopened statu
     await page.reload();
     await expect(page.getByText("Supplier purchase-order draft needs your approval",{exact:false}).first())
       .toBeVisible({timeout:30_000});
-    const card=page.getByRole("region",{name:"Supplier purchase-order approval"});
+    const cards=page.getByRole("region",{name:"Supplier purchase-order approval"});
+    await expect(cards).toHaveCount(2,{timeout:30_000});
+    const historical=cards.first(),card=cards.last();
+    await expect(historical).toContainText("cancelled");
+    await expect(historical.getByRole("button",{name:"Approve purchase order"})).toHaveCount(0);
+    await expect(page.getByRole("button",{name:"Approve purchase order"})).toHaveCount(1);
     await expect(card).toBeVisible({timeout:30_000});
     await expect(card).toContainText(supplier);
     await expect(card).toContainText(name);
@@ -573,8 +599,12 @@ test("@purchasing proactive notice → owner-approved real PO → reopened statu
     expect(nowStock.rows[0].n).toBe(oldStock.rows[0].n);
     expect(nowExpense.rows[0].n).toBe(oldExpense.rows[0].n);
     await page.reload();
-    await expect(page.getByRole("region",{name:"Supplier purchase-order approval"}))
-      .toContainText("Approved for ordering — NOT sent to supplier",{timeout:30_000});
+    const reopened=page.getByRole("region",{name:"Supplier purchase-order approval"});
+    await expect(reopened).toHaveCount(2,{timeout:30_000});
+    await expect(reopened.first()).toContainText("cancelled");
+    await expect(reopened.last()).toContainText("Approved for ordering — NOT sent to supplier",
+      {timeout:30_000});
+    await expect(page.getByRole("button",{name:"Approve purchase order"})).toHaveCount(0);
     const foreignPage=await second.newPage();
     await login(foreignPage,other);
     const denied=await second.request.get("/api/ai/threads/"+id.thread+"/proposals?ids="+id.proposal);
@@ -583,6 +613,8 @@ test("@purchasing proactive notice → owner-approved real PO → reopened statu
     await second.close();await first.close();
     if(connected){
       const queries=[
+        ["delete from public.supplier_po_draft_replacements where business_id=$1 and previous_id=$2",
+          [own.businessId,id.replacedProposal]],
         ["delete from public.purchase_order_events where business_id=$1 and proposal_id=$2",
           [own.businessId,id.proposal]],
         ["delete from public.purchase_order_lines where business_id=$1 and purchase_order_id in"+
@@ -601,6 +633,8 @@ test("@purchasing proactive notice → owner-approved real PO → reopened statu
           [own.businessId,id.proposal]],
         ["delete from public.supervisor_proposals where business_id=$1 and id=$2",
           [own.businessId,id.proposal]],
+        ["delete from public.supervisor_proposals where business_id=$1 and id=$2",
+          [own.businessId,id.replacedProposal]],
         ["delete from public.ai_messages where business_id=$1 and thread_id=$2",
           [own.businessId,id.thread]],
         ["delete from public.ai_threads where business_id=$1 and id=$2",
