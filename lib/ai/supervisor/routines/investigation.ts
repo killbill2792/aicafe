@@ -11,7 +11,6 @@ export const investigationReadTools=[
   "get_peak_hours","get_payroll_facts","get_schedule","get_week_schedule",
   "get_coverage_gaps","get_inventory","get_usage_variance","calculate",
 ] as const satisfies readonly AgentToolName[];
-const evidenceTools=new Set<string>(investigationReadTools.filter(name=>name!=="calculate"));
 /** Requiring kind-specific independent corroboration keeps an agent from
  * reading two irrelevant sales/expense totals for an employee incident. */
 const relevantByKind:Record<string,readonly AgentToolName[]>={
