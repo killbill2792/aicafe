@@ -89,7 +89,10 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const d=input as z.infer<typeof staffProposalInputs.propose_schedule> & {week_start:string};
    ensure(isoDay(d.week_start)===1&&d.week_start>=localDate,"Choose a future Monday");
    const last=add(d.week_start,6),old=shifts.filter(x=>x.local_date>=d.week_start&&x.local_date<=last);
-   ensure(old.every(x=>x.status==="draft"),"Sent shifts cannot be replaced");
+   if(d.correct_cancelled_publication===true)
+     ensure(old.some(x=>x.status==="sent")&&old.every(x=>["sent","draft"].includes(x.status)),
+       "Correction requires a previously sent roster; owner must cancel the published revision before approving");
+   else ensure(old.every(x=>x.status==="draft"),"Sent shifts cannot be replaced");
    // Replacement keeps adjacent-week shifts; include those to catch overnight
    // overlaps on both Monday and Sunday (the week itself is replaced).
    const retained=shifts.filter(x=>x.local_date<d.week_start||x.local_date>last)
@@ -112,7 +115,11 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
      p.wage_amount_cents===null&&(p.wage_period!=="hour"||p.default_hourly_wage_cents==null));
    if(unknown.length)item("labor:partial","Labor estimate",null,
      text("Partial: wages missing for "+unknown.length+" staff"));
-   payload={week_start:d.week_start,shifts:d.shifts};break;
+   if(d.correct_cancelled_publication===true)
+     item("publication:correction",copy.week+" "+d.week_start,null,
+       text("CORRECTION: Replaces the previously sent full-week roster only after owner cancels the publication. Previously accepted staff messages cannot be recalled. A fresh approval to notify employees of these changes is required."));
+   payload={week_start:d.week_start,shifts:d.shifts,
+     ...(d.correct_cancelled_publication===true?{correct_cancelled_publication:true}:{})};break;
   }
   case "propose_shift_change":{
    const d=input as z.infer<typeof staffProposalInputs.propose_shift_change>;
@@ -214,9 +221,9 @@ async function prepare(scope:OwnerLoopScope,name:StaffProposalName,raw:unknown){
    const eligible=people.filter(p=>p.active&&week.some(s=>s.employee_id===p.id));
    ensure(week.length>0,"No shifts scheduled for this week");
 
-   item("schedule",copy.week+" "+d.week_start,null,text(copy.preparedNotSent+": "+eligible.map(p=>p.display_name).join(", ")+
+   item("schedule",copy.week+" "+d.week_start,null,text((d.publish_and_notify===true?"Owner approval will publish this frozen dated roster and attempt template WhatsApp delivery to consented staff. Verify Task 13A coverage, labor and legal evidence first; this send approval does not certify that evidence. Provider acceptance is not delivery.":"Copy-ready only; no publication or send.")+": "+eligible.map(p=>p.display_name).join(", ")+
      "\n"+week.filter(x=>eligible.some(p=>p.id===x.employee_id)).map(x=>shown(x.employee_id)+" "+fmtShift(x)).join("\n")));
-   payload={week_start:d.week_start};break;
+   payload={week_start:d.week_start,publish_and_notify:d.publish_and_notify===true};break;
   }
  }
  const dependencyScope=staffDependencySchema.parse(staffDependencyScope(name,payload));

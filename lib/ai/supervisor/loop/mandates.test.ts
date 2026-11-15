@@ -2,7 +2,8 @@ import {beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 vi.mock("./goal.server",()=>({goalCapabilityId:"leo.goal.v1",
  goalMandatePolicy:{limitKind:"count",limitValue:5,periodKind:"cafe_day"}}));
-import {createMandateChallenge,mandatePolicyHash,verifyMandateChallenge} from "./mandates.server";
+import {createMandateChallenge,createStaffScheduleMandateChallenge,
+  staffScheduleMandatePolicyHash,mandatePolicyHash,verifyMandateChallenge} from "./mandates.server";
 import {goalMandatePolicy} from "./goal.server";
 const owner="22222222-2222-4222-8222-222222222222";
 const scope={businessId:"11111111-1111-4111-8111-111111111111",ownerUserId:owner};
@@ -40,6 +41,71 @@ const gateway=()=>({
   created_at:"2026-11-11T22:00:00.000Z"})),
 });
 beforeEach(()=>vi.clearAllMocks());
+describe("phone-MFA-bound staff schedule standing mandates",()=>{
+ const week="2026-11-23",expiresAt="2026-11-28T12:00:00.000Z";
+ it("binds the exact future Monday and recipient ceiling to existing owner phone-MFA",async()=>{
+  const client=makeClient(),g=gateway();
+  const staffChallenge={...challenge,capability_id:"olivia.staff_propose_send_schedule.v2",
+    capability_version:2,staff_week_start:week,limit_value:2,period_kind:"staff_week"};
+  const create=vi.fn(async(_scope:unknown,input:Record<string,unknown>)=>({
+    ...staffChallenge,id:input.id,policy_hash:input.policyHash,
+    mandate_id:input.mandateId,mandate_expires_at:input.mandateExpiresAt,
+    factor_id:input.factorId,provider_challenge_id:input.providerChallengeId,
+    expires_at:input.challengeExpiresAt,
+  }));
+  const result=await createStaffScheduleMandateChallenge(scope,client as never,{
+    factorId:challenge.factor_id,limitValue:2,weekStart:week,expiresAt,
+  },{...g,createStaffMandateChallenge:create} as never);
+  expect(result).toMatchObject({capabilityId:"olivia.staff_propose_send_schedule.v2",
+    weekStart:week,limitValue:2,periodKind:"staff_week"});
+  expect(client.auth.mfa.challenge).toHaveBeenCalledWith({factorId:challenge.factor_id});
+  expect(create).toHaveBeenCalledWith(scope,expect.objectContaining({
+    weekStart:week,limitValue:2,action:"grant",mandateRevision:0,
+    policyHash:staffScheduleMandatePolicyHash({weekStart:week,limitValue:2,expiresAt}),
+  }));
+ });
+ it("refuses wrong weekday, over-ceiling, expired policy, and unverified phone BEFORE provider challenge",async()=>{
+  const client=makeClient(),g=gateway();
+  const opts={factorId:challenge.factor_id,limitValue:2,weekStart:week,expiresAt};
+  await expect(createStaffScheduleMandateChallenge(scope,client as never,
+   {...opts,weekStart:"2026-11-24"},g as never)).rejects.toThrow("staff_mandate_monday_required");
+  await expect(createStaffScheduleMandateChallenge(scope,client as never,
+   {...opts,limitValue:31},g as never)).rejects.toThrow("staff_mandate_recipient_limit_invalid");
+  await expect(createStaffScheduleMandateChallenge(scope,client as never,
+   {...opts,expiresAt:"2026-12-02T00:00:00Z"},g as never))
+   .rejects.toThrow("staff_mandate_expires_after_week");
+  expect(client.auth.mfa.challenge).not.toHaveBeenCalled();
+  client.auth.mfa.listFactors.mockResolvedValue({data:{phone:[]},error:null} as never);
+  await expect(createStaffScheduleMandateChallenge(scope,client as never,opts,g as never))
+   .rejects.toThrow("verified_phone_factor_required");
+  expect(client.auth.mfa.challenge).not.toHaveBeenCalled();
+ });
+ it("uses only the provider's successful OTP verification to persist staff authority",async()=>{
+  const client=makeClient(),g=gateway();
+  const staffChallenge={...challenge,capability_id:"olivia.staff_propose_send_schedule.v2",
+    capability_version:2,staff_week_start:week,limit_value:2,period_kind:"staff_week"};
+  g.loadMandateChallenge.mockResolvedValue(staffChallenge as never);
+  client.auth.mfa.verify.mockRejectedValueOnce(new Error("wrong code"));
+  await expect(verifyMandateChallenge(scope,client as never,{
+   challengeId:challenge.id,code:"000000",
+  },g as never)).rejects.toThrow();
+  expect(g.completeMandateChallenge).not.toHaveBeenCalled();
+  await verifyMandateChallenge(scope,client as never,{
+   challengeId:challenge.id,code:"123456",
+  },g as never);
+  expect(client.auth.mfa.verify).toHaveBeenCalledWith({
+    factorId:challenge.factor_id,challengeId:challenge.provider_challenge_id,code:"123456",
+  });
+  expect(g.completeMandateChallenge).toHaveBeenCalledOnce();
+ });
+ it("policy changes to week, recipient cap or expiry change its cryptographic hash",()=>{
+  const digest=staffScheduleMandatePolicyHash({weekStart:week,limitValue:2,expiresAt});
+  expect(staffScheduleMandatePolicyHash({weekStart:week,limitValue:3,expiresAt})).not.toBe(digest);
+  expect(staffScheduleMandatePolicyHash({weekStart:"2026-11-30",limitValue:2,expiresAt})).not.toBe(digest);
+  expect(staffScheduleMandatePolicyHash({weekStart:week,limitValue:2,expiresAt:"2026-11-29T00:00:00Z"}))
+    .not.toBe(digest);
+ });
+});
 describe("phone-MFA-bound goal mandates",()=>{
  it("binds the Auth challenge to owner, café, capability, exact cap and expiry",async()=>{
   const client=makeClient(),g=gateway();

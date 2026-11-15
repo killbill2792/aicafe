@@ -3,7 +3,7 @@ import {authenticatedConversationContext} from "@/lib/ai/conversations/auth.serv
 import {conversationError,conversationJson,parseInput,readBoundedJson,requireSameOrigin}
   from "@/lib/ai/conversations/http.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
-import {createMandateChallenge,readMandates,revokeMandate,verifyMandateChallenge}
+import {createMandateChallenge,createStaffScheduleMandateChallenge,readMandates,revokeMandate,verifyMandateChallenge}
   from "@/lib/ai/supervisor/loop/mandates.server";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 type Params={params:Promise<{threadId:string}>};
@@ -11,6 +11,10 @@ const uuid=z.uuid(),revision=z.number().int().positive();
 const actions=z.discriminatedUnion("action",[
  z.strictObject({action:z.literal("challenge"),factorId:uuid,
   limitValue:z.literal(5),
+  expiresAt:z.iso.datetime({offset:true}),mandateId:uuid.optional(),revision:revision.optional()})
+  .refine(v=>Boolean(v.mandateId)===Boolean(v.revision),{message:"mandate_revision_required"}),
+ z.strictObject({action:z.literal("staff_challenge"),factorId:uuid,
+  limitValue:z.number().int().min(1).max(30),weekStart:z.iso.date(),
   expiresAt:z.iso.datetime({offset:true}),mandateId:uuid.optional(),revision:revision.optional()})
   .refine(v=>Boolean(v.mandateId)===Boolean(v.revision),{message:"mandate_revision_required"}),
  z.strictObject({action:z.literal("verify"),challengeId:uuid,code:z.string().trim().min(1).max(32)}),
@@ -39,6 +43,14 @@ export async function POST(request:Request,{params}:Params){
    const challenge=await createMandateChallenge(scope,client,{
     factorId:input.factorId,limitValue:input.limitValue,expiresAt:input.expiresAt,
     ...(input.mandateId?{mandateId:input.mandateId,revision:input.revision}:{}),
+   });
+   return conversationJson({challenge});
+  }
+  if(input.action==="staff_challenge"){
+   const challenge=await createStaffScheduleMandateChallenge(scope,client,{
+    factorId:input.factorId,limitValue:input.limitValue,weekStart:input.weekStart,
+    expiresAt:input.expiresAt,...(input.mandateId?
+     {mandateId:input.mandateId,revision:input.revision}:{}),
    });
    return conversationJson({challenge});
   }

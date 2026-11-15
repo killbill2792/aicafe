@@ -33,10 +33,11 @@ describe("redesign 16 cleanup integration", () => {
     });
   }
 
-  it("keeps existing translation keys in sync while allowing Task 11 English-only Gmail copy", () => {
+  it("keeps existing translation keys in sync while allowing explicitly approved Task 11 and Task 13B English-only copy", () => {
     // AGENTS.md currently forbids new es/ar copy. Preserve strict parity for
-    // every pre-existing key; only the new Gmail namespaces are English-only.
-    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect)$/;
+    // every pre-existing key; only the owner-approved Gmail and Task13B agentic keys are English-only.
+    // Task13B mandate's 25 exact keys are separately enforced by StaffStandingMandatePanel.test.ts.
+    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect|StaffApprovalCard\.agentic[A-Z][^.]*|StaffStandingMandate\.[^.]+)$/;
     const keys = (locale: string) => {
       const messages = localeMessages(locale);
       return Object.entries(messages)

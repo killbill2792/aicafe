@@ -348,7 +348,9 @@ jobs:
         with:
           node-version: 22
       - name: Kill-test the evaluator with known bad observations
-        run: node --test evals/acceptance/evidence.test.mjs
+        run: node --test evals/acceptance/*.test.mjs
+      - name: Kill-test trusted Task14B broker, redaction and cumulative budget at zero provider cost
+        run: node --test scripts/acceptance/task14b-broker.test.mjs
       - name: Task14B live agentic procurement trace and scope integrity (no key)
         run: node --test evals/acceptance/live/task14b.test.mjs
       - name: Verify independent synthetic calibration is not live proof

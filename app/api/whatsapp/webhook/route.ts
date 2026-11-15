@@ -2,6 +2,7 @@ import {MAX_WEBHOOK_BYTES,parseWebhook,verifyChallenge,verifySignature} from "@/
 import {TEST_PHONE_NUMBER_ID} from "@/lib/whatsapp/transport";
 import {acceptSignedMessage} from "@/lib/whatsapp/identity.server";
 import {recordSignedStatus} from "@/lib/whatsapp/queue.server";
+import {recordSignedStaffScheduleStatus} from "@/lib/scheduling/staffPublication.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const headers={"Cache-Control":"no-store"};
@@ -39,17 +40,42 @@ export async function POST(request:Request):Promise<Response>{
     process.env.WHATSAPP_APP_SECRET))return answer(401,"Unauthorized");
   let events:ReturnType<typeof parseWebhook>;
   try {
-    const phoneId=process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID;
-    // This PR is wired only for the supplied Meta developer test sender.
-    if(phoneId!==TEST_PHONE_NUMBER_ID)return answer(503,"Not configured");
-    events=parseWebhook(bytes,phoneId);
+    const ownerPhoneId=process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID;
+    // Preserve the original owner-only webhook boundary: it is wired to the
+    // Meta developer test sender, NEVER to a production employee sender.
+    if(ownerPhoneId!==TEST_PHONE_NUMBER_ID)return answer(503,"Not configured");
+    const staffPhoneId=process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID??"";
+    // Receipt reconciliation survives sender send-disable, policy pause and
+    // template suspension: these switches block NEW HTTP sends, not Meta's
+    // already accepted delayed delivered/read callbacks. Authenticated status
+    // callbacks must still be accepted for the configured, distinct staff ID.
+    const staffCallbackConfigured=/^[0-9]{8,25}$/.test(staffPhoneId)&&
+      staffPhoneId!==ownerPhoneId;
+    events=parseWebhook(bytes,
+      staffCallbackConfigured?[ownerPhoneId,staffPhoneId]:ownerPhoneId,
+      staffCallbackConfigured?staffPhoneId:undefined);
+    // Task13B worker inbound is intentionally not an owner command. The
+    // parser skips it BEFORE owner command validation, preserving co-batched
+    // verified worker delivery statuses. Task13C owns worker responses.
   }catch(error){
     return answer(error instanceof Error&&error.message==="wrong_sender"?403:422,"Invalid event");
   }
   try{
     for(const event of events){
-      if(event.type==="message")await acceptSignedMessage(event);
-      else await recordSignedStatus(event);
+      if(event.type==="message"){
+        if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID))
+          await acceptSignedMessage(event);
+        // Employee messages require Task13C authorization and must never be
+        // dispatched as owner commands or suppress other signed status events.
+      }else if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID)){
+        await recordSignedStatus(event);
+      }else{
+        // Codex P1: the common signed status ledger must persist BEFORE
+        // staff-specific projection, because the callback can precede Meta's
+        // HTTP acceptance/wamid persistence. This writes no owner chat turn.
+        await recordSignedStatus(event);
+        await recordSignedStaffScheduleStatus(event);
+      }
     }
   }catch {
     // If earlier changes were inserted, their unique wamid makes a replay safe.
