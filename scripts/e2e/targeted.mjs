@@ -42,6 +42,7 @@ export function scenariosForPath(path) {
       path === "components/staff/StaffWorkspace.tsx" ||
       path === "components/staff/StaffPublicationStatus.tsx" ||
       path === "components/staff/StaffStandingMandatePanel.tsx" ||
+      path === "components/staff/StaffStandingMandatePanel.test.ts" ||
       path.startsWith("lib/calc/scheduling/") ||
       path === "scripts/staff-pr155-screenshots.mjs" ||
       path === ".github/workflows/staff-pr155-screenshots.yml")
