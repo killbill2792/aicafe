@@ -61,7 +61,7 @@ test("broker token is timing-safe and response usage is metadata-only",()=>{
    service_tier:"standard",usage:{input_tokens:5000,output_tokens:180},
    output:[{type:"message",content:[{type:"output_text",text:"secret"}]}]}}));
  assert.deepEqual(trace,{event:"response.completed",input:5000,output:180,
-  observedModel:"gpt-6-luna",serviceTier:"standard"});
+  observedModel:"gpt-6-luna",serviceTier:"standard",toolNames:[]});
  assert.equal(JSON.stringify(trace).includes("secret"),false);
 });
 
@@ -87,6 +87,13 @@ test("candidate shim forwards only local proxy authorization; raw bearer is neve
  assert.equal(JSON.stringify(proxied).includes("raw_candidate_must_never_escape"),false);
  assert.equal(ordinary.url,"https://example.org/no-secret");
 });
+test("trusted SSE receipt records real model-selected tools but never arguments",()=>{
+ const event=usageFromSseFrame('event: response.output_item.added\\ndata: '+JSON.stringify({
+  type:"response.output_item.added",item:{type:"function_call",
+   name:"propose_supplier_purchase_order",arguments:"super_private_supplier"}}));
+ assert.deepEqual(event,{event:"function_call",name:"propose_supplier_purchase_order"});
+ assert.equal(JSON.stringify(event).includes("super_private_supplier"),false);
+});
 test("only trusted broker calls real-key transport and never exposes the key",async()=>{
  const root=mkdtempSync(join(tmpdir(),"task14b-host-audit-")),auditFile=join(root,"audit.json");
  let called=0;
@@ -95,8 +102,9 @@ test("only trusted broker calls real-key transport and never exposes the key",as
   assert.equal(url,"https://api.openai.com/v1/responses");
   assert.equal(opts.headers.Authorization,"Bearer "+key);
   const response=JSON.stringify({type:"response.completed",response:{
-   model:"gpt-6-luna",service_tier:"standard",
-   usage:{input_tokens:100,output_tokens:50}}});
+   model:"gpt-6-luna",service_tier:"default",
+   usage:{input_tokens:100,output_tokens:50},
+   output:[{type:"function_call",name:"inspect_supplier_purchase",arguments:"private"}]}});
   return new Response("event: response.completed\ndata: "+response+"\n\n",{
    status:200,headers:{"content-type":"text/event-stream"}
   });
@@ -118,6 +126,7 @@ test("only trusted broker calls real-key transport and never exposes the key",as
   assert.equal(audit.attempts,1);
   assert.equal(audit.receipts[0].terminal,"completed");
   assert.equal(audit.receipts[0].actualOutputTokens,50);
+  assert.deepEqual(audit.receipts[0].toolNames,["inspect_supplier_purchase"]);
   assert.equal(JSON.stringify(audit).includes(key),false);
   assert.equal(JSON.stringify(audit).includes("secret"),false);
  }finally{await new Promise(resolve=>server.close(resolve));
