@@ -1,6 +1,7 @@
 # Trusted main-branch workflow. OWNER edit on PR #484 (not PR code) is the
 # only paid-trigger capability. Never attach provider secrets to ordinary CI.
 name: AI CAFE Task 15A Live Agentic Acceptance
+# Never permit reruns: any paid repeat requires a fresh owner body edit.
 # pull_request_target always loads the trusted default-branch workflow, NOT
 # PR merge-commit YAML. This is mandatory before granting a paid provider key.
 on:
@@ -14,6 +15,8 @@ jobs:
     if: >-
       github.event.action == 'edited' &&
       github.actor == 'killbill2792' &&
+      github.triggering_actor == 'killbill2792' &&
+      github.run_attempt == 1 &&
       github.event.pull_request.number == 484 &&
       github.event.pull_request.user.login == 'killbill2792' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -36,7 +39,9 @@ jobs:
           const pr=event.pull_request,head=pr?.head?.sha;
           const previous=event.changes?.body?.from;
           const marker='<!-- aicafe-15a-live-run '+head+' -->';
-          if(event.action!=='edited'||event.sender?.login!=='killbill2792'||
+          if(process.env.GITHUB_RUN_ATTEMPT!=='1'||
+            process.env.GITHUB_TRIGGERING_ACTOR!=='killbill2792'||
+            event.action!=='edited'||event.sender?.login!=='killbill2792'||
             event.repository?.full_name!=='killbill2792/aicafe'||
             pr?.number!==484||pr.user?.login!=='killbill2792'||
             pr.base?.ref!=='main'||
