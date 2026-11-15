@@ -43,10 +43,10 @@ test("actual trusted authorization JavaScript accepts one v2-only marker and rej
    const outputFile=join(root,label+"-output.txt");
    writeFileSync(eventFile,JSON.stringify(event));
    const live={head:{sha},base:{ref:"main"},body,state:"open"};
-   const prelude="const live="+JSON.stringify(live)+";\n"+
+   const prelude="const mockedPull="+JSON.stringify(live)+";\n"+
     'globalThis.fetch=async(url,opts={})=>{\n'+
     ' const u=String(url);\n'+
-    ' if(u.endsWith("/pulls/482"))return new Response(JSON.stringify(live),{status:200});\n'+
+    ' if(u.endsWith("/pulls/482"))return new Response(JSON.stringify(mockedPull),{status:200});\n'+
     ' if(u.includes("/issues/482/comments?"))return new Response("[]",{status:200});\n'+
     ' if(u.endsWith("/issues/482/comments")&&opts.method==="POST")return new Response("{}",{status:201});\n'+
     ' throw Error("Unexpected network access in mock");\n};\n';
