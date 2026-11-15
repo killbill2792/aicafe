@@ -36,7 +36,6 @@ jobs:
       SUPABASE_PROJECT_REF: ''
       SUPERVISOR_CHAT_ENABLED: 'true'
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      AICAFE_TASK14B_BUDGET_LEDGER: ${{ runner.temp }}/task14b-budget.json
     steps:
       - name: Verify exact owner marker and current-head full CI BEFORE paid work
         shell: bash
@@ -71,9 +70,13 @@ jobs:
           if(!runs.some(r=>r.name==="AI CAFE Pull Request Baseline"&&
              r.head_sha===sha&&r.conclusion==="success"))
              throw Error("Full exact-head PR CI must finish green before provider spend");
-          writeFileSync(process.env.AICAFE_TASK14B_BUDGET_LEDGER,
+          const budgetLedger=process.env.RUNNER_TEMP+"/task14b-budget.json";
+          writeFileSync(budgetLedger,
             JSON.stringify({head:sha,attempts:0,reservedMicros:0})+"\n",
             {flag:"wx",mode:0o600});
+          const {appendFileSync}=await import("node:fs");
+          appendFileSync(process.env.GITHUB_ENV,
+            "AICAFE_TASK14B_BUDGET_LEDGER="+budgetLedger+"\n");
           NODE
       - uses: actions/checkout@v4
         with:
