@@ -19,8 +19,6 @@ globalThis.fetch=async function task14bTrustedFetch(input,init){
  if(target.protocol!=="https:"||target.pathname!=="/v1/responses"||
     target.search||target.hash)
   throw Error("task14b_provider_endpoint_not_authorized");
- // Caller could forge arbitrary OpenAI headers; NEVER transmit candidate
- // bearer credentials to trusted process other than this ephemeral proxy token.
  const base=input instanceof Request?input:null;
  const method=(init?.method??base?.method??"GET").toUpperCase();
  if(method!=="POST")throw Error("task14b_provider_method_not_authorized");
