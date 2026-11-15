@@ -31,7 +31,11 @@ export type Incoming={
   type:"message";phoneId:string;waId:string;wamid:string;kind:"text"|"button"|"image"|"document";
   text:string|null;payload:string|null;mediaId:string|null;providerAt:string;
 }|{type:"status";phoneId:string;wamid:string;state:"sent"|"delivered"|"read"|"failed"};
-export function parseWebhook(bytes:Buffer,expectedPhoneId:string|readonly string[]):Incoming[] {
+/** Employee sender callbacks are status-only in Task 13B. A signed worker
+ * voice note, sticker, or foreign button payload is not an owner command and
+ * must not invalidate independent delivered/read events in the same batch. */
+export function parseWebhook(bytes:Buffer,expectedPhoneId:string|readonly string[],
+  staffStatusOnlyPhoneId?:string):Incoming[] {
   if(!bytes.length||bytes.length>MAX_WEBHOOK_BYTES)throw new Error("invalid_size");
   let data:unknown;
   try{data=JSON.parse(bytes.toString("utf8"));}catch{throw new Error("malformed_event");}
@@ -48,7 +52,10 @@ export function parseWebhook(bytes:Buffer,expectedPhoneId:string|readonly string
       if(!object(value.metadata)||typeof value.metadata.phone_number_id!=="string"||
         !allowedIds.has(value.metadata.phone_number_id))throw new Error("wrong_sender");
       const phoneId=value.metadata.phone_number_id;
-      for(const msg of array(value.messages??[],100)){
+      // Validate the array's bound even for ignored staff inbound messages;
+      // parse owner commands only for their individually authenticated sender.
+      const messages=array(value.messages??[],100);
+      if(phoneId!==staffStatusOnlyPhoneId)for(const msg of messages){
         if(!object(msg))throw new Error("malformed_event");
         const wamid=string(msg.id,250);
         const waId=string(msg.from,16);
