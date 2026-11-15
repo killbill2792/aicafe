@@ -1,6 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import {runAgentTurn,type AgentProvider} from "./loop.server";
 import type {AgentToolContext} from "./tools";
+import {agentReplyPayload} from "./persist.server";
 const completed={type:"response.completed",response:{usage:{
  input_tokens:100,output_tokens:25,input_tokens_details:{cached_tokens:0}}}};
 const call=(name:string,args:string,id:string)=>({type:"response.output_item.done",
@@ -57,6 +58,10 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
   expect(inspect).toHaveBeenCalledWith(JSON.parse(args(5)));
   expect(propose).toHaveBeenCalledWith(JSON.parse(proposalArgs(5)));
   expect(result.text).toContain("owner approval");
+  // Full recorded model loop -> trusted tool output -> actual persistence
+  // payload. The seeded UI test alone previously missed this essential link.
+  expect(agentReplyPayload(result).reply.blocks)
+   .toContainEqual({type:"proposal_card",proposalId:"33333333-3333-4333-8333-333333333333"});
   expect((requests[2].input as unknown[]).length).toBeGreaterThan(1);
   expect(requests[0].tools).toEqual(expect.arrayContaining([
    expect.objectContaining({name:"inspect_supplier_purchase",strict:true}),
@@ -83,7 +88,9 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
    [call("propose_supplier_purchase_order",proposalArgs(7,oldId),"propose-corrected"),completed],
    [text("I replaced only the selected milk draft with seven gallons. It remains unapproved."),completed],
   ]);
-  await runAgentTurn({ownerText:"Change that milk draft to seven gallons.",context:ctx,provider});
+  const corrected=await runAgentTurn({ownerText:"Change that milk draft to seven gallons.",context:ctx,provider});
+  expect(agentReplyPayload(corrected).reply.blocks)
+   .toContainEqual({type:"proposal_card",proposalId:"44444444-4444-4444-8444-444444444444"});
   expect(requests).toHaveLength(4);
   expect(list).toHaveBeenCalledOnce();
   expect(proposed).toEqual([{quantity:7,replaceProposalId:oldId}]);
