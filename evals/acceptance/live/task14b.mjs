@@ -71,7 +71,16 @@ async function createdThread(context){
 export function task14bSafeTurnFailure(result){
  if(result?.error){
   const raw=String(result.error);
-  return /^[a-z][a-z0-9_-]{0,50}$/.test(raw)?"sse_"+raw:"sse_unknown";
+  const code=/^[a-z][a-z0-9_-]{0,50}$/.test(raw)?"sse_"+raw:"sse_unknown";
+  if(raw!=="agent_turn_failed")return code;
+  const stage=["setup","model","persist","finish"].includes(result.diagnosticStage)
+    ?result.diagnosticStage:"unknown";
+  const end=["complete","budget","timeout","provider_error","tool_errors"].includes(result.diagnosticEndReason)
+    ?result.diagnosticEndReason:"unknown";
+  const calls=Number.isSafeInteger(result.diagnosticModelCalls)&&
+    result.diagnosticModelCalls>=0&&result.diagnosticModelCalls<=6
+    ?result.diagnosticModelCalls:"unknown";
+  return `${code}_stage_${stage}_end_${end}_calls_${calls}`;
  }
  if(!result?.done)return "missing_done_event";
  const reason=result.done.endReason;
@@ -88,6 +97,7 @@ async function ownerTurn(page,thread,text){
  const result=await page.evaluate(async input=>{
   const stop=new AbortController(),timeout=setTimeout(()=>stop.abort(),180_000);
   const names=[];let done=null,error=null,buffer="";
+  let diagnosticStage=null,diagnosticEndReason=null,diagnosticModelCalls=null;
   try{
    const response=await fetch("/api/ai/threads/"+input.thread+"/agent",{
     method:"POST",credentials:"same-origin",signal:stop.signal,
@@ -107,11 +117,18 @@ async function ownerTurn(page,thread,text){
      let data=null;try{data=JSON.parse(dataLine?.slice(6)??"null")}catch{}
      if(event==="tool"&&typeof data?.name==="string")names.push(data.name);
      if(event==="done"){done=data;break}
-     if(event==="error"){error=data?.code??"agent_error";break}
+     if(event==="error"){
+    error=data?.code??"agent_error";
+    diagnosticStage=data?.diagnosticStage??null;
+    diagnosticEndReason=data?.diagnosticEndReason??null;
+    diagnosticModelCalls=data?.diagnosticModelCalls??null;
+    break;
+   }
     }
    }
    await reader.cancel().catch(()=>{});
-   return {names,done,error:error??(done?null:"missing_completed_turn")};
+   return {names,done,error:error??(done?null:"missing_completed_turn"),
+    diagnosticStage,diagnosticEndReason,diagnosticModelCalls};
   }finally{clearTimeout(timeout)}
  },{thread,text,clientMessageId});
  const failure=task14bSafeTurnFailure(result);
