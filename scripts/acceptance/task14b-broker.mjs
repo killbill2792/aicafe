@@ -52,7 +52,7 @@ export class PaidReservation {
   const receipt={ordinal:this.attempts,model:"gpt-6-luna",
    requestBytes:serializedBytes,reservedMicros,
    upstreamStatus:null,actualInputTokens:null,actualOutputTokens:null,
-   terminal:"attempted"};
+   toolNames:[],terminal:"attempted"};
   this.receipts.push(receipt);
   return {receipt,params};
  }
@@ -70,13 +70,25 @@ export function usageFromSseFrame(frame) {
  const line=frame.split(/\r?\n/).find(v=>v.startsWith("data: "));
  if(!line||line==="data: [DONE]")return null;
  let obj;try{obj=JSON.parse(line.slice(6))}catch{return null}
+ if(obj?.type==="response.output_item.added"){
+  const item=obj.item;
+  if(item?.type==="function_call"&&typeof item.name==="string"&&
+      /^[a-z][a-z0-9_]{1,79}$/.test(item.name))
+    return {event:"function_call",name:item.name};
+  return null;
+ }
  if(obj?.type!=="response.completed"&&obj?.type!=="response.failed")
   return null;
  const u=obj.response?.usage;
+ const toolNames=Array.isArray(obj.response?.output)?
+  obj.response.output.filter(x=>x?.type==="function_call"&&
+   typeof x.name==="string"&&/^[a-z][a-z0-9_]{1,79}$/.test(x.name))
+    .map(x=>x.name).slice(0,30):[];
  return {event:obj.type,input:Number.isSafeInteger(u?.input_tokens)?u.input_tokens:null,
   output:Number.isSafeInteger(u?.output_tokens)?u.output_tokens:null,
   observedModel:typeof obj.response?.model==="string"?obj.response.model:null,
-  serviceTier:typeof obj.response?.service_tier==="string"?obj.response.service_tier:null};
+  serviceTier:typeof obj.response?.service_tier==="string"?obj.response.service_tier:null,
+  toolNames};
 }
 function saveAudit(file,reservations) {
  const tmp=file+"."+randomUUID()+".tmp";
@@ -151,13 +163,20 @@ export function startTrustedBroker({
       // Do not store content or raw full request; only usage and model identity.
       const usage=usageFromSseFrame(frame);
       if(usage){
-       receipt.terminal=usage.event==="response.completed"?"completed":"provider_failed";
-       receipt.actualInputTokens=usage.input;
-       receipt.actualOutputTokens=usage.output;
-       if(usage.observedModel!=="gpt-6-luna"||
-         (usage.serviceTier&&
-           !["standard","default","auto"].includes(usage.serviceTier)))
-        receipt.terminal="unpriced_or_wrong_provider";
+       if(usage.event==="function_call"){
+        if(receipt.toolNames.length<30)receipt.toolNames.push(usage.name);
+       }else{
+        receipt.terminal=usage.event==="response.completed"?"completed":"provider_failed";
+        receipt.actualInputTokens=usage.input;
+        receipt.actualOutputTokens=usage.output;
+        // Some providers omit output_item.added. A completed response's
+        // function_call item names still attest tool selection without args.
+        if(receipt.toolNames.length===0)receipt.toolNames.push(...usage.toolNames);
+        if(usage.observedModel!=="gpt-6-luna"||
+          (usage.serviceTier&&
+            !["standard","default","auto"].includes(usage.serviceTier)))
+         receipt.terminal="unpriced_or_wrong_provider";
+       }
       }
       if(remaining.length>1_000_000)remaining=remaining.slice(-4096);
      }
