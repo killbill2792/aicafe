@@ -29,7 +29,8 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
     db.from("operating_tasks")
       .select("id,kind,status,due_at,confidence,evidence,created_at,owner_user_id")
       .eq("business_id",scope.businessId)
-      .in("status",["needs_owner","needs_response"])
+      .in("status",options?.includeNotified?["needs_owner","needs_response","watching"]:
+        ["needs_owner","needs_response"])
       .not("kind","in","(priority_notice,commitment,event_plan,event_change,event_report)")
       .or("owner_user_id.is.null,owner_user_id.eq."+scope.ownerUserId)
       .order("created_at",{ascending:false}).limit(batchLimit),
@@ -64,7 +65,8 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
   // Rank the whole bounded source batch before applying the fresh-notice cap.
   // An existing notice is a receipt for that exact revision, not a reason to
   // starve later actionable sources while the first three stay open.
-  const ranked=choosePriorities(sources,now,batchLimit*2);
+  const ranked=choosePriorities(sources,now,batchLimit*2,
+    {includeWatching:options?.includeNotified===true});
   if(ranked.length===0)return [];
   // Durable autonomous investigation must examine known unresolved issues even
   // when an earlier generic notice was already delivered. The notice path
