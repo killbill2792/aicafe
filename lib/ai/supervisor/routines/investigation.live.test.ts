@@ -16,6 +16,7 @@
  * does NOT claim competitive parity or an actual approved external POS effect.
  */
 import {randomUUID} from "node:crypto";
+import {mkdirSync,writeFileSync} from "node:fs";
 import {Client} from "pg";
 import {createClient} from "@supabase/supabase-js";
 import {it,expect,vi} from "vitest";
@@ -38,6 +39,9 @@ const requireLocal=(value:string|undefined,kind:"db"|"api"):string=>{
 live("proactive real-model café investigation -> durable owner reply -> follow-up -> verified closure",async()=>{
   if(!process.env.OPENAI_API_KEY)
     throw new Error("LIVE ACCEPTANCE BLOCKED: trusted OpenAI provider credential unavailable");
+  const head=process.env.AICAFE_15A_LIVE_HEAD;
+  if(!/^[a-f0-9]{40}$/.test(head??""))
+    throw new Error("LIVE ACCEPTANCE BLOCKED: exact PR head SHA is required");
   const dbUrl=requireLocal(process.env.AICAFE_15A_LOCAL_DB_URL,"db");
   const apiUrl=requireLocal(process.env.NEXT_PUBLIC_SUPABASE_URL,"api");
   const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -128,6 +132,27 @@ live("proactive real-model café investigation -> durable owner reply -> follow-
     expect(after.rows.every(r=>r.role==="supervisor")).toBe(true);
     // Report bounded transport counts without printing café facts, model
     // prompts, tool arguments, provider text, identities, or secrets.
+    const proof={
+      schema_version:1,task:"15A",head_sha:head,
+      run_id:Number(process.env.GITHUB_RUN_ID)||null,
+      status:"passed",provider:"openai_responses",
+      dataset:"disposable_local_migrated_supabase_synthetic_cafe",
+      // This is actual provider execution, not a mock. It does not establish
+      // real café production or independently measured competitor parity.
+      provider_backed:true,production_cafe_proven:false,competitor_parity_proven:false,
+      actual_owner_effect_proven:false,
+      scenarios:["unprompted_source_detection","exact_incident_multi_domain_tools",
+        "persisted_owner_update","unchanged_user_no_impersonation",
+        "proactive_25h_follow_up","watching_not_false_resolution",
+        "verified_source_closure"],
+      tool_names:modelTools,
+      provider_completions:providerCompletions,
+      paid_calls:totalCalls,serialized_request_bytes:totalBytes,
+      supervisor_messages:after.rows.length,
+    };
+    mkdirSync("test-results/acceptance",{recursive:true});
+    writeFileSync("test-results/acceptance/15a-live-proof.json",
+      JSON.stringify(proof,null,2)+"\n",{mode:0o600});
     console.log("15A trusted LIVE acceptance: provider completions",providerCompletions,
       "model transport calls",totalCalls,
       "transport request bytes",totalBytes,
