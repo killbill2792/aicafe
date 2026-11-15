@@ -144,6 +144,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm --network host --pids-limit 512 --cap-drop ALL \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
             --security-opt no-new-privileges \
             -v "$GITHUB_WORKSPACE/candidate:/candidate" -w /candidate \
             mcr.microsoft.com/playwright:v1.58.2-noble \
@@ -222,6 +223,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/task14b-candidate-proof"
           docker run --rm --network host --pids-limit 512 --cap-drop ALL \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
             --security-opt no-new-privileges \
             -v "$GITHUB_WORKSPACE/candidate:/candidate" \
             -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/task14b-fetch-shim.cjs:/trusted/task14b-fetch-shim.cjs:ro" \
