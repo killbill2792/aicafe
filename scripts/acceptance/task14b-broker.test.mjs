@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {mkdtempSync,readFileSync,rmSync} from "node:fs";
+import {mkdtempSync,readFileSync,writeFileSync,rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawnSync} from "node:child_process";
@@ -17,6 +17,52 @@ const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
  tools:[{type:"function",name:"inspect_supplier_purchase",parameters:{
   type:"object",properties:{},additionalProperties:false}}]};
 const body=Buffer.from(JSON.stringify(params));
+
+test("actual trusted authorization JavaScript accepts one v2-only marker and rejects duplicate v2",()=>{
+ const yaml=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
+ const match=yaml.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/);
+ assert.ok(match,"owner authorization block must be discoverable");
+ const block=match[1].split("\n").map(line=>line.replace(/^ {10}/,"")).join("\n");
+ const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v2 ";
+ const marker=prefix+sha+" -->";
+ const root=mkdtempSync(join(tmpdir(),"task14b-owner-auth-"));
+ try{
+  for(const [label,body,expected] of [
+   ["single-v2", "Owner acceptance\n"+marker,0],
+   ["duplicate-v2","Owner acceptance\n"+marker+"\n"+marker,1],
+   ["old-v1-only","<!-- aicafe-task14b-trusted-paid-run "+sha+" -->",1]
+  ]){
+   const event={action:"edited",sender:{login:"killbill2792"},
+    repository:{full_name:"killbill2792/aicafe"},
+    changes:{body:{from:"Owner acceptance"}},
+    pull_request:{number:482,user:{login:"killbill2792"},
+     head:{sha,ref:"task14b-agentic-supervisor-procurement",
+      repo:{full_name:"killbill2792/aicafe"}},
+     base:{ref:"main"},body}};
+   const eventFile=join(root,label+"-event.json");
+   const outputFile=join(root,label+"-output.txt");
+   writeFileSync(eventFile,JSON.stringify(event));
+   const live={head:{sha},base:{ref:"main"},body,state:"open"};
+   const prelude="const live="+JSON.stringify(live)+";\n"+
+    'globalThis.fetch=async(url,opts={})=>{\n'+
+    ' const u=String(url);\n'+
+    ' if(u.endsWith("/pulls/482"))return new Response(JSON.stringify(live),{status:200});\n'+
+    ' if(u.includes("/issues/482/comments?"))return new Response("[]",{status:200});\n'+
+    ' if(u.endsWith("/issues/482/comments")&&opts.method==="POST")return new Response("{}",{status:201});\n'+
+    ' throw Error("Unexpected network access in mock");\n};\n';
+   const child=spawnSync(process.execPath,["--input-type=module"],{
+    input:prelude+block,encoding:"utf8",
+    env:{...process.env,GH_TOKEN:"mock-owner-token",
+     GITHUB_EVENT_PATH:eventFile,GITHUB_OUTPUT:outputFile,
+     GITHUB_RUN_ATTEMPT:"1",GITHUB_TRIGGERING_ACTOR:"killbill2792"}
+   });
+   assert.equal(child.status,expected,label+": "+child.stderr);
+   if(expected===0)assert.equal(readFileSync(outputFile,"utf8"),"head="+sha+"\n");
+   else assert.match(child.stderr,/Fresh exact-head owner approval required/);
+  }
+ }finally{rmSync(root,{recursive:true,force:true})}
+});
+
 test("trusted workflow uses a NEW owner-only v2 grant, never replays consumed v1",()=>{
  const workflow=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
  assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v2 "/);
