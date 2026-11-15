@@ -97,7 +97,7 @@ select public.supervisor_gateway_commit_staff_mandate(
  :'cafe',:'owner',:'thread',:'proposal',1)->>'state' as applied_state \gset
 select set_config('test.mandate.applied_state',:'applied_state',true);
 do $mandate$
-declare count_attempts integer; 
+declare count_attempts integer;
 begin
  if current_setting('test.mandate.applied_state')<>'applied' then raise exception '13B mandated staff proposal did not commit'; end if;
  select count(*) into count_attempts from public.supervisor_effect_attempts
@@ -131,8 +131,13 @@ declare denied boolean:=false;
 begin
  if public.staff_schedule_can_send(current_setting('test.mandate.delivery')::uuid,current_setting('test.mandate.token')::uuid) then
   raise exception '13B revoked mandate allowed in-flight external send'; end if;
- if public.staff_schedule_claim_delivery(current_setting('test.mandate.publication')::uuid,current_setting('test.mandate.staff_b')::uuid) is not null then
-  raise exception '13B revoked mandate allowed a fresh worker send'; end if;
+ denied:=false;
+ begin
+   perform public.staff_schedule_claim_delivery(current_setting('test.mandate.publication')::uuid,current_setting('test.mandate.staff_b')::uuid);
+ exception when others then
+   denied:=SQLERRM='publication_authorization_or_roster_revoked';
+ end;
+ if not denied then raise exception '13B revoked mandate allowed a fresh worker send'; end if;
  if not exists(select 1 from public.supervisor_mandates
   where id=current_setting('test.mandate.mandate')::uuid and revision=2 and revoked_at is not null) then
   raise exception '13B revocation did not persist immutable policy revision'; end if;
