@@ -3,6 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
 import {runAgentTurn} from "@/lib/ai/agent/loop.server";
+import type {AgentToolResult} from "@/lib/ai/agent/tools";
 import {withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {readActionablePriorities} from "./dispatch.server";
@@ -25,7 +26,7 @@ const stringField=(v:unknown,max=80)=>typeof v==="string"?v.slice(0,max):"unknow
 const object=(v:unknown):Record<string,unknown>|null=>
   v&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:null;
 const isOpen=(c:Claimed,status:string)=>c.source_type==="alert"?
-  status==="new"||status==="seen":status==="needs_owner"||status==="needs_response";
+  status==="new"||status==="seen":status==="needs_owner"||status==="needs_response"||status==="watching";
 
 /** Small source-shaped summaries, never source text as owner instructions.
  * Model tool calls read canonical café facts through the shared Supervisor path. */
@@ -35,7 +36,7 @@ async function collectSource(db:SupabaseClient,c:Claimed):Promise<SourceSynopsis
   const {data,error}=c.source_type==="alert"?
     await db.from("alerts").select("kind,status,payload")
       .eq("business_id",c.business_id).eq("id",c.source_id).maybeSingle():
-    await db.from("operating_tasks").select("kind,status,owner_user_id,confidence,evidence")
+    await db.from("operating_tasks").select("kind,status,owner_user_id,confidence,evidence,payload,entity_type,entity_id")
       .eq("business_id",c.business_id).eq("id",c.source_id).maybeSingle();
   if(error||!data)throw new Error("source_unavailable");
   const row=data as Record<string,unknown>;
@@ -51,7 +52,7 @@ async function collectSource(db:SupabaseClient,c:Claimed):Promise<SourceSynopsis
     db.from("alerts").select("kind,status").eq("business_id",c.business_id)
       .in("status",["new","seen"]).order("created_at",{ascending:false}).limit(8),
     db.from("operating_tasks").select("kind,status,owner_user_id")
-      .eq("business_id",c.business_id).in("status",["needs_owner","needs_response"])
+      .eq("business_id",c.business_id).in("status",["needs_owner","needs_response","watching"])
       .or("owner_user_id.is.null,owner_user_id.eq."+c.owner_user_id)
       .order("created_at",{ascending:false}).limit(8),
   ]);
@@ -65,6 +66,72 @@ async function collectSource(db:SupabaseClient,c:Claimed):Promise<SourceSynopsis
     relatedAlerts:(alerts.data??[]).map(row=>stringField(row.kind,60)),
     relatedTasks:relatedTasks.map(row=>stringField(row.kind,60)),
   };
+}
+/** Read the EXACT incident the database leased, never a model-selected ID.
+ * Opaque external text is not forwarded; selectors are allowlisted. For
+ * timecard alerts, corroborate the claimed selector with a second, tenant
+ * scoped canonical timecard read before showing it to the model. */
+async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
+  Promise<AgentToolResult>{
+  const {data,error}=c.source_type==="alert"?
+    await db.from("alerts").select("kind,status,payload")
+      .eq("business_id",c.business_id).eq("id",c.source_id).maybeSingle():
+    await db.from("operating_tasks")
+      .select("kind,status,payload,entity_type,entity_id,owner_user_id")
+      .eq("business_id",c.business_id).eq("id",c.source_id).maybeSingle();
+  if(error||!data)throw new Error("source_unavailable");
+  const row=data as Record<string,unknown>;
+  if(!isOpen(c,String(row.status)))throw new Error("source_unavailable");
+  if(c.source_type==="operating_task"&&row.owner_user_id&&
+    row.owner_user_id!==c.owner_user_id)throw new Error("authorization_revoked");
+  const raw=object(row.payload);
+  const selected:Record<string,string|boolean|null>={};
+  const textKeys=["timecardId","employeeId","date","categoryCode",
+    "monthKey","ownerChoice","snoozeUntil","suggestedPriceSource"];
+  const booleanKeys=["awaitingPriceApplication","priceAppliedToPos",
+    "scheduleApplied","ownerApproved","coverageConfirmed"];
+  for(const key of textKeys){
+    const value=raw?.[key];
+    if(typeof value==="string"&&value.length<=128&&
+      !/[\\r\\n<>]/u.test(value))selected[key]=value;
+  }
+  for(const key of booleanKeys)
+    if(typeof raw?.[key]==="boolean")selected[key]=raw[key] as boolean;
+  if(typeof row.entity_type==="string"&&row.entity_type.length<=64)
+    selected.entityType=row.entity_type;
+  if(typeof row.entity_id==="string"&&row.entity_id.length<=128)
+    selected.entityId=row.entity_id;
+  const missing:string[]=[];
+  let linkedTimecard:Record<string,unknown>|null=null;
+  if(c.source_type==="alert"&&row.kind==="meal_break"){
+    const timecardId=selected.timecardId;
+    if(typeof timecardId!=="string"||
+      !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(timecardId)){
+      missing.push("timecard_selector_unavailable");
+    }else{
+      const linked=await db.from("timecards")
+        .select("id,employee_id,clock_in,clock_out,breaks")
+        .eq("business_id",c.business_id).eq("id",timecardId).maybeSingle();
+      if(linked.error)throw new Error("source_unavailable");
+      if(!linked.data||linked.data.employee_id!==selected.employeeId){
+        missing.push("timecard_not_verified");
+      }else{
+        linkedTimecard={id:linked.data.id,employeeId:linked.data.employee_id,
+          clockIn:linked.data.clock_in,clockOut:linked.data.clock_out,
+          breaks:Array.isArray(linked.data.breaks)?
+            linked.data.breaks.slice(0,12).map(b=>{
+              const value=object(b);
+              return {start:typeof value?.start==="string"?value.start:null,
+                end:typeof value?.end==="string"?value.end:null};
+            }):[]};
+      }
+    }
+  }
+  return {source:"investigation_source",period:null,agentId:"alex",
+    sourceType:c.source_type,sourceId:c.source_id,
+    incidentKind:stringField(row.kind),sourceStatus:stringField(row.status,24),
+    selectors:selected,linkedTimecard,
+    missing};
 }
 async function finish(db:SupabaseClient,c:Claimed,now:Date,
   outcome:"collected"|"investigated"|"followed_up"|"rechecked",
@@ -160,6 +227,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date):
       tools:createOwnerScopedCafeTools(scope,db),locale:"en" as const,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db,businessId:c.business_id}),
+      investigation:{read:()=>readIncidentEvidence(db,c)},
     };
     const turn=await withWorkerBudget({
       maxElapsedMs:55_000,maxModelCalls:4,maxToolCalls:7,
@@ -170,7 +238,9 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date):
       context,toolNames:investigationReadTools,businessId:c.business_id,
       requestId:c.stable_key,
     }));
-    const verified=verifyInvestigationTurn(turn);
+    const verified=verifyInvestigationTurn(turn,{
+      sourceType:c.source_type,sourceId:c.source_id,kind:synopsis.kind,
+    });
     if(!verified.ok)throw new Error(verified.reason);
     // Entitlement can change while a paid model call is running. Recheck
     // before submitting a verified owner-facing report; SQL independently
