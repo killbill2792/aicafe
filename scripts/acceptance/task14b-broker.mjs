@@ -98,7 +98,7 @@ function saveAudit(file,reservations) {
 }
 export function startTrustedBroker({
  apiKey=process.env.OPENAI_API_KEY,
- token=process.env.AICAFE_TASK14B_BROKER_TOKEN,
+ token=process.env.AICAFE_14B_BROKER_TOKEN,
  head=process.env.HEAD_SHA,
  auditFile=process.env.AICAFE_TASK14B_HOST_AUDIT,
  port=8788,
