@@ -23,7 +23,7 @@ export type AgentProvider = (params: Record<string, unknown>, signal: AbortSigna
 export type AgentAuditStep = { kind: "model_call" | "tool_call" | "approval_card" | "memory"; toolName?: string;
   inputSummary?: string; outputSummary?: string; durationMs: number; error?: string };
 export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType<typeof statusFromResults>;
-  unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; evidence?: NumericEvidence[]; explain?:ExplainLine[]; tools?:string[]; agentIds?:string[];
+  unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; toolInvocations?:{name:string;result:AgentToolResult}[]; evidence?: NumericEvidence[]; explain?:ExplainLine[]; tools?:string[]; agentIds?:string[];
   usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number; model?:string };
   /** Owner messages sent while this turn ran and read by the model before a later step. */
   absorbedOwnerMessageIds?: string[] };
@@ -544,7 +544,8 @@ export async function runAgentTurn(args: {
     provenance:numberProvenance(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence,finalUnverified),
     evidence,explain,
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
-    results:toolResults, usage,
+    results:toolResults,
+    toolInvocations:results.map(r=>({name:r.name,result:r.result})),usage,
     ...(deliveredIds.size ? { absorbedOwnerMessageIds: [...deliveredIds] } : {}) };
 }
 
