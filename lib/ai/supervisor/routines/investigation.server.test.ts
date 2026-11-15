@@ -48,8 +48,13 @@ const agentResult=(patch:Record<string,unknown>={})=>({
   usage:{modelCalls:2,toolCalls:2,inputTokens:100,outputTokens:100,cachedTokens:0,latencyMs:200},
   ...patch,
 });
-function db(claims:Record<string,unknown>[],options?:{sourceError?:boolean;sourceStatus?:string}){
+function db(claims:Record<string,unknown>[],options?:{
+  sourceError?:boolean;sourceStatus?:string;sourceKind?:string;
+  alertPayload?:Record<string,unknown>;timecard?:Record<string,unknown>|null;
+  taskStatus?:string;
+}){
   const calls:Array<{name:string;args:Record<string,unknown>}>=[];
+  const reads:Array<{table:string;column:string;value:unknown}>=[];
   const client={
     rpc:vi.fn(async(name:string,args:Record<string,unknown>)=>{
       calls.push({name,args});
@@ -57,20 +62,27 @@ function db(claims:Record<string,unknown>[],options?:{sourceError?:boolean;sourc
     }),
     from:(table:string)=>{
       const builder={
-        select(){return builder},eq(){return builder},in(){return builder},
+        select(){return builder},eq(column:string,value:unknown){reads.push({table,column,value});return builder},in(){return builder},
         or(){return builder},order(){return builder},
         async maybeSingle(){return options?.sourceError?
           {data:null,error:new Error("source offline")}:
-          {data:table==="alerts"?{...source,status:options?.sourceStatus??"new"}:
-            {kind:"data_quality",status:"needs_owner",owner_user_id:"owner-a",
-              confidence:"high",evidence:[]},error:null};},
+          {data:table==="alerts"?{
+            ...source,kind:options?.sourceKind??source.kind,
+            payload:options?.alertPayload??source.payload,
+            status:options?.sourceStatus??"new",
+          }:table==="timecards"?options?.timecard??null:{
+            kind:"data_quality",status:options?.taskStatus??"needs_owner",
+            owner_user_id:"owner-a",confidence:"high",evidence:[],
+            payload:{awaitingPriceApplication:true,priceAppliedToPos:false},
+            entity_type:"menu_item",entity_id:"item-a",
+          },error:null};},
         async limit(){return {data:table==="alerts"?
           [{kind:"sales_anomaly",status:"new"}]:
           [{kind:"data_quality",status:"needs_owner",owner_user_id:"owner-a"}],error:null};},
       };return builder;
     },
   };
-  return {client:client as never,calls};
+  return {client:client as never,calls,reads};
 }
 const previousKey=process.env.OPENAI_API_KEY;
 beforeEach(()=>{
@@ -169,6 +181,67 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args)
       .toMatchObject({p_outcome:"rechecked",p_narrative:null,
         p_evidence:expect.objectContaining({unchangedChecks:1})});
+  });
+  it("reads and corroborates the exact employee timecard in the claimed café",async()=>{
+    const timecardId="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const employeeId="bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+    const payload={timecardId,employeeId,date:"2026-11-14",
+      employeeName:"Employee A",reasonCode:"NO_QUALIFYING_30_MIN_BREAK_BY_HOUR_5"};
+    const timecard={id:timecardId,employee_id:employeeId,
+      clock_in:"2026-11-14T08:00:00Z",clock_out:"2026-11-14T16:00:00Z",
+      breaks:[{start:"2026-11-14T12:00:00Z",end:"2026-11-14T12:10:00Z"}]};
+    const meal={kind:"meal_break",status:"new",quality:"verified",severity:"high",
+      relatedAlerts:["meal_break"],relatedTasks:["data_quality"]};
+    const claim={...investigating,source_id:"meal-break-claim",
+      evidence:{source:meal,collectedAt:now.toISOString()}};
+    const d=db([claim],{sourceKind:"meal_break",alertPayload:payload,timecard});
+    mocks.model.mockImplementation(async(args:Record<string,unknown>)=>{
+      const context=(args.context as Record<string,unknown>).investigation as
+        {read:()=>Promise<Record<string,unknown>>};
+      const exact=await context.read();
+      expect(exact).toMatchObject({source:"investigation_source",
+        sourceId:"meal-break-claim",incidentKind:"meal_break",
+        selectors:{timecardId,employeeId,date:"2026-11-14"},
+        linkedTimecard:{id:timecardId,employeeId,clockIn:timecard.clock_in},
+        missing:[]});
+      expect(JSON.stringify(exact)).not.toContain("NO_QUALIFYING"); // untrusted code is not a command
+      expect(d.reads).toEqual(expect.arrayContaining([
+        {table:"alerts",column:"business_id",value:"cafe-a"},
+        {table:"timecards",column:"business_id",value:"cafe-a"},
+        {table:"timecards",column:"id",value:timecardId},
+      ]));
+      return agentResult({toolInvocations:[
+        {name:"get_investigation_source",result:exact},
+        {name:"get_labor",result:{source:"labor_and_attendance",period:null,missing:[]}},
+        {name:"get_payroll_facts",result:{source:"payroll_facts",period:null,missing:[]}},
+      ]});
+    });
+    expect(await processNextInvestigation(d.client,now))
+      .toMatchObject({investigated:1,failed:0});
+    expect(mocks.notify).toHaveBeenCalledOnce();
+  });
+  it("fails closed on an alert pointing to a different employee's timecard",async()=>{
+    const timecardId="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const employeeId="bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+    const meal={kind:"meal_break",status:"new",quality:"verified",severity:"high",
+      relatedAlerts:["meal_break"],relatedTasks:[]};
+    const d=db([{...investigating,source_id:"meal-break-claim",
+      evidence:{source:meal,collectedAt:now.toISOString()}}],
+      {sourceKind:"meal_break",alertPayload:{timecardId,employeeId},
+        timecard:{id:timecardId,employee_id:"other-employee",clock_in:"",clock_out:"",breaks:[]}});
+    mocks.model.mockImplementation(async(args:Record<string,unknown>)=>{
+      const exact=await ((args.context as Record<string,unknown>).investigation as
+        {read:()=>Promise<Record<string,unknown>>}).read();
+      expect(exact).toMatchObject({missing:["timecard_not_verified"],linkedTimecard:null});
+      return agentResult({toolInvocations:[
+        {name:"get_investigation_source",result:exact},
+        {name:"get_labor",result:{source:"labor_and_attendance",period:null,missing:[]}},
+        {name:"get_payroll_facts",result:{source:"payroll_facts",period:null,missing:[]}},
+      ]});
+    });
+    expect(await processNextInvestigation(d.client,now))
+      .toMatchObject({investigated:0,failed:1});
+    expect(mocks.notify).not.toHaveBeenCalled();
   });
   it("does not silently publish a one-tool answer as a multi-step investigation",async()=>{
     mocks.model.mockResolvedValue(agentResult({toolInvocations:[
