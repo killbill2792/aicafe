@@ -103,9 +103,6 @@ jobs:
           supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
           supabase db reset --local --yes
           supabase status -o json > "$RUNNER_TEMP/task14b-supabase.json"
-          node --input-type=module <<'NODE'
-          import {readFileSync,appendFileSync,randomBytes} from "node:fs";
-          NODE
       - name: Configure local Supabase Auth (no provider secret)
         shell: bash
         run: |
