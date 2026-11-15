@@ -4,6 +4,7 @@ const f=vi.hoisted(()=>({
   ownerUserId:"22222222-2222-4222-8222-222222222222",
   threadId:"33333333-3333-4333-8333-333333333333",
   id:"44444444-4444-4444-8444-444444444444",
+  oldId:"55555555-5555-4555-8555-555555555555",replacementLookups:0,
   status:"draft",revision:1,
   failure:"stale" as "stale"|"transport"|"none",
   writes:0,states:[] as string[],
@@ -31,7 +32,10 @@ vi.mock("@/lib/ai/conversations/auth.server",()=>({
 vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:async()=>{}}));
 vi.mock("@/lib/ai/supervisor/loop/supabase.server",()=>({
   SupabaseLoopRepository:class{
-    async load(_scope:unknown,id:string){if(id!==f.id)throw Error("not_found");return row();}
+    async load(_scope:unknown,id:string){
+      if(id===f.oldId)return {...row(),id:f.oldId,status:"rejected",revision:2};
+      if(id!==f.id)throw Error("not_found");return row();
+    }
     async transition(_scope:unknown,_id:string,revision:number,action:string){
       if(revision!==f.revision||action!=="approve"||f.status!=="draft")throw Error("revision_conflict");
       f.status="approved";f.revision++;return row();
@@ -73,7 +77,9 @@ vi.mock("@/lib/ai/supervisor/loop/menuPriceChange.server",()=>({
   StaleProposalError:class extends Error{},
 }));
 vi.mock("@/lib/data/proposalPrices.server",()=>({ownerMenuPrice:async()=>null}));
-vi.mock("@/lib/data/proposalEdits.server",()=>({latestEditedProposalId:async()=>null}));
+vi.mock("@/lib/data/proposalEdits.server",()=>({latestEditedProposalId:async()=>{
+  f.replacementLookups++;return f.id;
+}}));
 import {effectHash} from "@/lib/ai/supervisor/loop/engine";
 import {GET,POST} from "./route";
 const url="http://localhost:3000/api/ai/threads/"+f.threadId+"/proposals";
@@ -82,8 +88,31 @@ const action=(name:string,revision:number=1)=>new Request(url,{
   method:"POST",headers:{"content-type":"application/json",origin:"http://localhost:3000"},
   body:JSON.stringify({action:name,proposalId:f.id,revision}),
 });
-beforeEach(()=>{f.status="draft";f.revision=1;f.failure="stale";f.writes=0;f.states=[];});
+beforeEach(()=>{f.status="draft";f.revision=1;f.failure="stale";f.writes=0;f.states=[];f.replacementLookups=0;});
 describe("Task14B owner approval: confirmed stale quote is recoverable, unknown write is not retried",()=>{
+  it("two persisted original/replacement cards keep only the corrected draft approvable",async()=>{
+    // The original persisted assistant block keeps oldId. A later model turn
+    // saved a replacement block with id. GET is precisely what BOTH real
+    // SupervisorChatComposer cards fetch after the owner reopens the thread.
+    const result=await GET(new Request(url+"?ids="+f.oldId+","+f.id),params);
+    expect(result.status).toBe(200);
+    const data=await result.json();
+    expect(data.cards).toHaveLength(2);
+    expect(data.cards.map((card:{proposalId:string;state:string})=>({
+      id:card.proposalId,state:card.state
+    }))).toEqual([{id:f.oldId,state:"cancelled"},{id:f.id,state:"pending"}]);
+    expect(data.cards.filter((card:{state:string})=>card.state==="pending")).toHaveLength(1);
+    expect(f.replacementLookups).toBe(0);
+    // Neither reloading nor an explicit old-card click can re-authorize it.
+    const again=await GET(new Request(url+"?ids="+f.oldId),params);
+    expect((await again.json()).cards[0]).toMatchObject({proposalId:f.oldId,state:"cancelled"});
+    const post=new Request(url,{method:"POST",
+      headers:{"content-type":"application/json",origin:"http://localhost:3000"},
+      body:JSON.stringify({action:"approve",proposalId:f.oldId,revision:2})});
+    const declined=await POST(post,params);
+    expect(declined.status).toBe(409);
+    expect(f.writes).toBe(0);
+  });
   it("returns terminal stale to the owner after a confirmed database rejection",async()=>{
     const response=await POST(action("approve"),params);
     expect(response.status).toBe(409);
