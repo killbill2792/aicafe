@@ -75,7 +75,7 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
   assertProposalScope(scope,p);
   if(p.capabilityId===supplierPurchaseOrderCapabilityId){
     const effect=supervisorLoopRegistry.get(supplierPurchaseOrderCapabilityId).parseEffect(p.canonicalEffectPayload);
-    return {...card(p,p.status==="executing"?executionState:undefined),
+    return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
       productName:"Supplier PO · "+effect.supplierName,currency:effect.currency,
       purchaseOrder:effect};
   }
@@ -270,8 +270,31 @@ export async function POST(request:Request,{params}:Params){
       }
     }
     if(supplierPO){
-      // The owner's specific click approves the immutable quote snapshot.
-      // NEVER route through the owner-message inventory write exception.
+      // A persisted approved row with no effect attempt is a recoverable,
+      // already-authorized owner click. An HTTP response can be lost AFTER
+      // the approval transaction, BEFORE the effect claim; keep the original
+      // revision eligible for an explicit second click, never auto-run a PO.
+      const commitApproved=async(approvedRevision:number)=>{
+        try{
+          const finished=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approvedRevision,"click");
+          return conversationJson({proposal:await view(scope,repo,finished.proposal)});
+        }catch{
+          const latest=await repo.load(scope,p.id);
+          if(latest.status==="committed")
+            return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
+          if(latest.status==="stale")
+            return conversationJson({state:"stale",error:"supplier_po_evidence_stale",
+              proposal:await view(scope,repo,latest)},409);
+          // Only a truly claimed effect may be uncertain. An approved row
+          // did NOT execute the supplier writer and may be clicked/cancelled.
+          if(latest.status==="approved")
+            return conversationJson({state:"retryable",error:"supplier_po_approval_interrupted",
+              proposal:await view(scope,repo,latest)},409);
+          return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
+            error:latest.status==="executing"?"effect_outcome_uncertain":"supplier_po_approval_failed",
+            proposal:await view(scope,repo,latest)},409);
+        }
+      };
       if(input.action==="edit"||input.action==="edit_purchase")
         return conversationJson({error:"supplier_po_edits_need_new_proposal"},422);
       if(p.status==="committed")return conversationJson({state:"applied",proposal:await view(scope,repo,p)});
@@ -281,6 +304,26 @@ export async function POST(request:Request,{params}:Params){
       if(p.status==="executing")
         return conversationJson({state:"uncertain",error:"effect_outcome_uncertain",
           proposal:await view(scope,repo,p)},409);
+      if(p.status==="approved"){
+        // Both the persisted approval revision and its original owner-click
+        // revision are valid recovery references. The effect gateway itself
+        // uses the CURRENT approved revision in one atomic CAS claim. A
+        // competing click/cancel cannot cause a second supplier PO.
+        if(input.revision!==p.revision&&input.revision!==p.revision-1)
+          return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+        if(input.action==="approve")return commitApproved(p.revision);
+        if(input.action==="cancel"){
+          try{return conversationJson({state:"cancelled",proposal:await view(scope,repo,
+            await repo.transition(scope,p.id,p.revision,"reject"))});}
+          catch{
+            const latest=await repo.load(scope,p.id);
+            return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
+              error:latest.status==="executing"?"effect_outcome_uncertain":"supplier_po_cancel_conflict",
+              proposal:await view(scope,repo,latest)},409);
+          }
+        }
+        return conversationJson({error:"supplier_po_action_not_supported"},422);
+      }
       if(p.revision!==input.revision||p.status!=="draft")
         return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
       if(input.action==="cancel"){
@@ -291,16 +334,16 @@ export async function POST(request:Request,{params}:Params){
       if(input.action!=="approve")return conversationJson({error:"supplier_po_action_not_supported"},422);
       try{
         const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
-        const finished=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approved.revision,"click");
-        return conversationJson({proposal:await view(scope,repo,finished.proposal)});
+        return commitApproved(approved.revision);
       }catch{
         const latest=await repo.load(scope,p.id);
         if(latest.status==="committed")
           return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
-        // A definite stale source is safe to refresh with a NEW owner draft;
-        // don't misreport it as an unknown supplier write or generic conflict.
         if(latest.status==="stale")
           return conversationJson({state:"stale",error:"supplier_po_evidence_stale",
+            proposal:await view(scope,repo,latest)},409);
+        if(latest.status==="approved")
+          return conversationJson({state:"retryable",error:"supplier_po_approval_interrupted",
             proposal:await view(scope,repo,latest)},409);
         return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
           error:latest.status==="executing"?"effect_outcome_uncertain":"supplier_po_approval_failed",
