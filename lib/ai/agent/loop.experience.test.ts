@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { agentInstructions, agentPromptCacheKey, runAgentTurn, type AgentProvider, type OwnerFollowUp } from "./loop.server";
 import { STYLE_RULES } from "./style";
 import { memoryToolDefinition } from "./tools/memory";
+import { routineToolDefinition } from "./tools/routines";
 import type { AgentToolContext } from "./tools";
 
 const context: AgentToolContext = {
@@ -48,6 +49,41 @@ describe("Task14B trusted broker request-shape preflight (zero provider cost)",(
     // This is the full production tool list, not a narrowed test-only shortcut.
     const byteCount=Buffer.byteLength(JSON.stringify(requests[0]),"utf8");
     expect(byteCount).toBeLessThanOrEqual(120_000);
+  });
+  it("validates every function schema in the REAL authenticated request including memory/routine",async()=>{
+    const {requests,provider}=recording([[text("Investigating."),completed]]);
+    await runAgentTurn({ownerText:"Investigate current supplier quotes for milk and save an inert owner order draft.",
+      context,provider,extraTools:[routineToolDefinition,memoryToolDefinition]});
+    expect(requests).toHaveLength(1);
+    const tools=requests[0].tools as Array<{type:string;name:string;strict:boolean;
+      parameters:Record<string,unknown>}>;
+    expect(tools.map(t=>t.name)).toContain("manage_routine");
+    expect(tools.map(t=>t.name)).toContain("remember_cafe_fact");
+    expect(tools.length).toBeLessThanOrEqual(128);
+    expect(new Set(tools.map(t=>t.name)).size).toBe(tools.length);
+    const schemaObject=(value:unknown):value is Record<string,unknown> =>
+      value!==null&&typeof value==="object"&&!Array.isArray(value);
+    const assertStrict=(schema:unknown,path:string):void=>{
+      if(Array.isArray(schema)){schema.forEach((v,i)=>assertStrict(v,path+"["+i+"]"));return;}
+      if(!schemaObject(schema))return;
+      const props=schemaObject(schema.properties)?schema.properties:{};
+      if(schema.type==="object"||Object.hasOwn(schema,"properties")){
+        expect(schema.additionalProperties,path+": additionalProperties must be false").toBe(false);
+        const required=schema.required;
+        expect(Array.isArray(required),path+": required list missing").toBe(true);
+        expect([...(required as string[])].sort(),path+": required must match every property")
+          .toEqual(Object.keys(props).sort());
+      }
+      for(const [key,entry] of Object.entries(schema))
+        if(key!=="description"&&key!=="examples")assertStrict(entry,path+"."+key);
+    };
+    for(const tool of tools){
+      expect(tool.type,tool.name).toBe("function");
+      expect(tool.strict,tool.name).toBe(true);
+      expect(tool.name.length,tool.name).toBeLessThanOrEqual(64);
+      assertStrict(tool.parameters,tool.name+".parameters");
+    }
+    expect(Buffer.byteLength(JSON.stringify(requests[0]),"utf8")).toBeLessThanOrEqual(120_000);
   });
 });
 
