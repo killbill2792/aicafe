@@ -61,9 +61,12 @@ const card=(p:LoopProposal,state?:string)=>({
 async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopProposal){
   const attempt=p.status==="executing"?await repo.effectAttempt(scope,p.id).catch(()=>null):null;
   const executionState=attempt?.state==="executing"?"applying":"uncertain";
-  // Follow immutable edit ancestry so an old chat block always opens the latest draft.
-  // Every child has the same owner/business/thread scope; never use an unscoped lookup.
-  for(let depth=0;p.status==="rejected"&&depth<20;depth++){
+  // For supplier POs, an old corrected draft is CLOSED and must stay
+  // non-actionable in its historical chat message. Redirecting it to the new
+  // draft makes two Approve buttons appear for the same pending order.
+  // Existing non-supplier edit ancestry retains its prior redirect behavior.
+  for(let depth=0;p.capabilityId!==supplierPurchaseOrderCapabilityId&&
+      p.status==="rejected"&&depth<20;depth++){
     const childId=await latestEditedProposalId(scope,p.id,p.capabilityId);
     if(!childId)break;
     p=await repo.load(scope,childId);
