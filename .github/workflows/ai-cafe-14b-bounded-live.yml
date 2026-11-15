@@ -123,10 +123,11 @@ jobs:
         with:
           version: 2.121.0
       - name: Trusted broker policy kill tests, no key and no candidate execution
+        working-directory: coordinator
         run: |
           set -euo pipefail
-          node --test coordinator/scripts/acceptance/task14b-broker.test.mjs
-          test "$(git -C candidate rev-parse HEAD)" = "$HEAD_SHA"
+          node --test scripts/acceptance/task14b-broker.test.mjs
+          test "$(git -C ../candidate rev-parse HEAD)" = "$HEAD_SHA"
           docker version >/dev/null
       - name: Run candidate installation, zero-secret integrity tests and seed ONLY inside Docker
         shell: bash
