@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {mkdtempSync,readFileSync,rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {spawnSync} from "node:child_process";
 import {once} from "node:events";
 import {
   reservationForRequest,PaidReservation,constantTimeEqual,usageFromSseFrame,
@@ -62,6 +63,29 @@ test("broker token is timing-safe and response usage is metadata-only",()=>{
  assert.deepEqual(trace,{event:"response.completed",input:5000,output:180,
   observedModel:"gpt-6-luna",serviceTier:"standard"});
  assert.equal(JSON.stringify(trace).includes("secret"),false);
+});
+
+test("candidate shim forwards only local proxy authorization; raw bearer is never forwarded",()=>{
+ const script=`
+  globalThis.fetch=async(url,init)=>({url,init});
+  require("./scripts/acceptance/task14b-fetch-shim.cjs");
+  Promise.all([
+    fetch("https://api.openai.com/v1/responses",{method:"POST",
+      headers:{Authorization:"Bearer sk-raw_candidate_must_never_escape"},
+      body:'{"model":"gpt-6-luna","stream":true}'}),
+    fetch("https://example.org/no-secret",{method:"GET"})
+  ]).then(rows=>console.log(JSON.stringify(rows))).catch(e=>{
+    console.error(e.message);process.exitCode=1});
+ `;
+ const child=spawnSync(process.execPath,["-e",script],{
+  cwd:process.cwd(),encoding:"utf8",
+  env:{...process.env,AICAFE_14B_BROKER_TOKEN:"z".repeat(64)}});
+ assert.equal(child.status,0,child.stderr);
+ const [proxied,ordinary]=JSON.parse(child.stdout.trim());
+ assert.equal(proxied.url,"http://127.0.0.1:8788/v1/responses");
+ assert.equal(proxied.init.headers.authorization,"Bearer "+"z".repeat(64));
+ assert.equal(JSON.stringify(proxied).includes("raw_candidate_must_never_escape"),false);
+ assert.equal(ordinary.url,"https://example.org/no-secret");
 });
 test("only trusted broker calls real-key transport and never exposes the key",async()=>{
  const root=mkdtempSync(join(tmpdir(),"task14b-host-audit-")),auditFile=join(root,"audit.json");
