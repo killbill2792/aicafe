@@ -93,7 +93,7 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
   for(const key of textKeys){
     const value=raw?.[key];
     if(typeof value==="string"&&value.length<=128&&
-      !/[\\r\\n<>]/u.test(value))selected[key]=value;
+      !/[\r\n<>]/u.test(value))selected[key]=value;
   }
   for(const key of booleanKeys)
     if(typeof raw?.[key]==="boolean")selected[key]=raw[key] as boolean;
@@ -106,7 +106,7 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
   if(c.source_type==="alert"&&row.kind==="meal_break"){
     const timecardId=selected.timecardId;
     if(typeof timecardId!=="string"||
-      !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/iu.test(timecardId)){
+      !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(timecardId)){
       missing.push("timecard_selector_unavailable");
     }else{
       const linked=await db.from("timecards")
