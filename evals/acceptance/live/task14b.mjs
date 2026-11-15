@@ -2,7 +2,6 @@
 /** Task14B paid REAL-model purchasing pilot. Never runs on CI or hosted cafés.
  * Objective operational smoke only: competitor comparison/human grading are separate. */
 import {randomUUID} from "node:crypto";
-import {execFileSync} from "node:child_process";
 import {existsSync,realpathSync,writeFileSync} from "node:fs";
 import {resolve,dirname,sep} from "node:path";
 import {pathToFileURL} from "node:url";
