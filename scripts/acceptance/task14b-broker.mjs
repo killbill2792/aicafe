@@ -32,7 +32,7 @@ export function normalizeInlineContext(items){
   fail("inline_input_required");
  return items.map(item=>{
   if(!isObject(item))fail("non_inline_input");
-  if(["developer","user","assistant"].includes(item.role)){
+  if(item.type===undefined&&["developer","user","assistant"].includes(item.role)){
    if(!onlyKeys(item,["role","content"]))fail("remote_message_metadata_forbidden");
    if(typeof item.content==="string")
     return {role:item.role,content:item.content};
