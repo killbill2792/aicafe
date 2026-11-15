@@ -163,6 +163,11 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     const result=await processDueInvestigations(d.client,now,2);
     expect(result).toMatchObject({processed:2,investigated:1,followUps:1,failed:0});
     expect(mocks.model).toHaveBeenCalledTimes(2);
+    // Same cron invocation can immediately continue work after a persisted
+    // collect step; repeated frozen timestamps would delay it 15 minutes.
+    const claims=d.calls.filter(x=>x.name==="supervisor_claim_investigation");
+    expect(Date.parse(String(claims[1].args.p_now)))
+      .toBeGreaterThan(Date.parse(String(claims[0].args.p_now)));
     expect(mocks.model.mock.calls[1][0].ownerText).toContain("persistent follow-up");
     expect(mocks.model.mock.calls[1][0].ownerText).toContain("Previous owner-visible plan");
     expect(d.calls.filter(x=>x.name==="supervisor_finish_investigation")
