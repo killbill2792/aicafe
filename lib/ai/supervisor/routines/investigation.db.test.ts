@@ -281,6 +281,15 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       const watching=await admin.query("select phase from public.supervisor_investigations where business_id=$1 and source_id=$2",
         [business,taskId]);
       expect(watching.rows).toEqual([{phase:"investigate"}]);
+      // A task already in Watching before the first cron observation is
+      // eligible for autonomous monitoring; no fresh generic notice is sent.
+      const lateWatching="price_review:watching:"+randomUUID();
+      await admin.query("insert into public.operating_tasks(business_id,id,agent_id,kind,status,payload,confidence,evidence,owner_user_id) values ($1,$2,'leo','price_review','watching',$3,'high','[]',$4)",
+        [business,lateWatching,JSON.stringify(decisionPayload),owner]);
+      expect(await rpc(service,"supervisor_enqueue_investigation",[
+        business,owner,thread,"operating_task",lateWatching,
+        hex("4"),hex("5"),0,stamp(now,4),
+      ])).toBe(true);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and grounding->>'intent'='priority_investigation_resolution'",
         [business])).rows[0].n).toBe(0);
       // The existing lease/claim path must still investigate watching work.
