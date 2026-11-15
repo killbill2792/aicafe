@@ -2,7 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {createOwnerScopedCafeTools,readSupervisorCafeIdentity} from "@/lib/ai/cafeTools.server";
-import {runAgentTurn} from "@/lib/ai/agent/loop.server";
+import {runAgentTurn,type AgentProvider} from "@/lib/ai/agent/loop.server";
 import type {AgentToolResult} from "@/lib/ai/agent/tools";
 import {withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
@@ -171,7 +171,8 @@ function previousCheckpoint(c:Claimed):InvestigationCheckpoint|null{
 /** One bounded step from the SAME 15-minute cron. Each step is reentrant and
  * leased at the database. There is never a synthetic owner instruction, and
  * system-initiated model calls have ONLY registered read-only tools. */
-export async function processNextInvestigation(db:SupabaseClient,now:Date):
+export async function processNextInvestigation(db:SupabaseClient,now:Date,
+  provider?:AgentProvider):
   Promise<InvestigationTick>{
   if(!Number.isFinite(now.getTime()))throw new Error("Invalid investigation clock");
   const {data,error}=await db.rpc("supervisor_claim_investigation",{p_now:now.toISOString()});
@@ -233,7 +234,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date):
       maxElapsedMs:55_000,maxModelCalls:4,maxToolCalls:7,
       maxInputTokens:24_000,maxOutputTokens:3200,
     },()=>runAgentTurn({
-      ownerText:investigationPrompt(synopsis,c.phase==="awaiting_owner",
+      provider,ownerText:investigationPrompt(synopsis,c.phase==="awaiting_owner",
         c.narrative??null),
       context,toolNames:investigationReadTools,businessId:c.business_id,
       requestId:c.stable_key,
@@ -272,7 +273,8 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date):
   }
   return result;
 }
-export async function processDueInvestigations(db:SupabaseClient,now:Date,maxSteps=2):
+export async function processDueInvestigations(db:SupabaseClient,now:Date,maxSteps=2,
+  provider?:AgentProvider):
   Promise<InvestigationTick>{
   if(!Number.isSafeInteger(maxSteps)||maxSteps<0||maxSteps>4)
     throw new Error("Invalid investigation budget");
@@ -283,7 +285,7 @@ export async function processDueInvestigations(db:SupabaseClient,now:Date,maxSte
     // reusing the initial tick timestamp otherwise stalls every two-step
     // investigation until the next 15-minute cron invocation.
     const stepNow=i===0?now:new Date(Math.max(now.getTime()+i,Date.now()));
-    const step=await processNextInvestigation(db,stepNow);
+    const step=await processNextInvestigation(db,stepNow,provider);
     if(!step.processed)break;
     for(const key of ["processed","collected","investigated","followUps","rechecked","failed"] as const)
       sum[key]+=step[key];
