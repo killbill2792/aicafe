@@ -239,4 +239,77 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       await admin.end();
     }
   },120_000);
+  (sandbox?it:it.skip)("Codex P1: watching is NOT an applied effect; resolved identical source must reactivate",async()=>{
+    const admin=await connect("postgres");
+    let service:Client|undefined;
+    const owner=randomUUID(),business=randomUUID(),thread=randomUUID();
+    const taskId="price_review:"+randomUUID();
+    const now=new Date(),revision=hex("9"),stable=hex("b");
+    const input=(at:number)=>[business,owner,thread,"operating_task",taskId,
+      revision,stable,235,stamp(now,at)];
+    const decisionPayload={
+      suggestedPriceCents:540,ownerChoice:"use_price",
+      awaitingPriceApplication:true,priceAppliedToPos:false,
+    };
+    try{
+      await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
+        [owner,"investigation-watch-"+owner+"@example.invalid"]);
+      await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Watch transition café','America/Los_Angeles',false)",[business]);
+      await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
+        [business,owner]);
+      await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
+        [thread,business,owner,randomUUID()]);
+      await admin.query("insert into public.operating_tasks(business_id,id,agent_id,kind,status,payload,confidence,evidence,owner_user_id) values ($1,$2,'leo','price_review','needs_owner',$3,'high','[]',$4)",
+        [business,taskId,JSON.stringify(decisionPayload),owner]);
+      service=await connect("service");
+      expect(await rpc(service,"supervisor_enqueue_investigation",input(1))).toBe(true);
+      const claim=await rpc(service,"supervisor_claim_investigation",
+        [stamp(now,2)]) as Record<string,unknown>;
+      expect(claim.source_id).toBe(taskId);
+      expect(claim.phase).toBe("collect");
+      const checkpoint={source:{kind:"price_review",status:"needs_owner",
+        severity:null,quality:"high",relatedAlerts:[],relatedTasks:["price_review"]},
+        collectedAt:stamp(now,2)};
+      const saved=await rpc(service,"supervisor_finish_investigation",[
+        business,owner,thread,"operating_task",taskId,revision,
+        claim.lease_token,"collected",JSON.stringify(checkpoint),null,stamp(now,3),
+      ]);
+      expect(saved).toBe(true);
+      // Owner accepted a recommendation but the POS has not applied it.
+      await admin.query("update public.operating_tasks set status='watching',payload=$3 where business_id=$1 and id=$2",
+        [business,taskId,JSON.stringify(decisionPayload)]);
+      const watching=await admin.query("select phase from public.supervisor_investigations where business_id=$1 and source_id=$2",
+        [business,taskId]);
+      expect(watching.rows).toEqual([{phase:"investigate"}]);
+      expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and grounding->>'intent'='priority_investigation_resolution'",
+        [business])).rows[0].n).toBe(0);
+      // The existing lease/claim path must still investigate watching work.
+      const unfinished=await rpc(service,"supervisor_claim_investigation",
+        [stamp(now,4)]) as Record<string,unknown>;
+      expect(unfinished.source_id).toBe(taskId);
+      expect(unfinished.phase).toBe("investigate");
+      await admin.query("update public.operating_tasks set status='handled' where business_id=$1 and id=$2",
+        [business,taskId]);
+      const closed=await admin.query("select phase,last_error from public.supervisor_investigations where business_id=$1 and source_id=$2",
+        [business,taskId]);
+      expect(closed.rows).toEqual([{phase:"resolved",last_error:"source_closed"}]);
+      expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and grounding->>'intent'='priority_investigation_resolution'",
+        [business])).rows[0].n).toBe(1);
+      // Deterministic source recurrence may have EXACTLY the same hash.
+      await admin.query("update public.operating_tasks set status='needs_owner' where business_id=$1 and id=$2",
+        [business,taskId]);
+      expect(await rpc(service,"supervisor_enqueue_investigation",input(5))).toBe(true);
+      const restarted=await rpc(service,"supervisor_claim_investigation",
+        [stamp(now,6)]) as Record<string,unknown>;
+      expect(restarted.source_id).toBe(taskId);
+      expect(restarted.phase).toBe("collect");
+      expect(restarted.step_version).toBe(0);
+      expect(await rpc(service,"supervisor_enqueue_investigation",input(7))).toBe(false);
+    }finally{
+      await service?.end();
+      await admin.query("delete from public.businesses where id=$1",[business]);
+      await admin.query("delete from auth.users where id=$1",[owner]);
+      await admin.end();
+    }
+  },120_000);
 });
