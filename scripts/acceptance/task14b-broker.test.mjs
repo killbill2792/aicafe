@@ -180,6 +180,13 @@ test("only trusted broker calls real-key transport and never exposes the key",as
   const unauthorized=await fetch(url+"/v1/responses",{
     method:"POST",body,headers:{authorization:"Bearer bad"}});
   assert.equal(unauthorized.status,403);
+  const remote=await fetch(url+"/v1/responses",{
+    method:"POST",
+    body:JSON.stringify({...params,previous_response_id:"resp_hidden_history"}),
+    headers:{authorization:"Bearer "+"z".repeat(64)}});
+  assert.equal(remote.status,400);
+  assert.equal(called,0,"expanded history may never reach the paid provider");
+  assert.equal(JSON.parse(readFileSync(auditFile,"utf8")).attempts,0);
   const permitted=await fetch(url+"/v1/responses",{
     method:"POST",body,headers:{authorization:"Bearer "+"z".repeat(64)}});
   assert.equal(permitted.status,200);
