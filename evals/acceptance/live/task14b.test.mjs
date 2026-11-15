@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {verifyTask14bToolTrace,verifyTask14bScope,verifyTask14bSavedCard} from "./task14b.mjs";
+import {verifyTask14bToolTrace,verifyTask14bScope,verifyTask14bSavedCard,task14bSafeTurnFailure} from "./task14b.mjs";
 
 test("Task14B real-agent trace requires a source read BEFORE owner proposal",()=>{
  const proof=verifyTask14bToolTrace([
@@ -51,4 +51,17 @@ test("Task14B paid acceptance rejects text-only or forged proposal rows without 
    assert.throws(()=>verifyTask14bSavedCard(message,id),
      /task14b_live:model_proposal_card_not_persisted/);
  }
+});
+
+test("Task14B real paid pilot reports only safe status codes, never prompt/provider text",()=>{
+ const reply={id:"11111111-1111-4111-8111-111111111111"};
+ assert.equal(task14bSafeTurnFailure({done:{endReason:"complete",reply}}),null);
+ assert.equal(task14bSafeTurnFailure({error:"agent_http_503",done:null}),"sse_agent_http_503");
+ assert.equal(task14bSafeTurnFailure({error:"provider_error"}),"sse_provider_error");
+ assert.equal(task14bSafeTurnFailure({done:{endReason:"tool_errors",reply}}),"end_tool_errors");
+ assert.equal(task14bSafeTurnFailure({done:{endReason:"complete",reply:{id:"bad"}}}),
+  "missing_persisted_reply");
+ assert.equal(task14bSafeTurnFailure({error:"Secret supplier note: do not log!"}),
+  "sse_unknown");
+ assert.equal(task14bSafeTurnFailure({done:null}),"missing_done_event");
 });
