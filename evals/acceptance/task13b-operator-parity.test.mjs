@@ -76,6 +76,21 @@ test("never silently drop a failed, uncertain, or unsupported requirement",()=>{
  assert.equal(result.parityProven,false);
  assert.equal(result.scores[0].fullScenarios,9);
 });
+test("never declares parity while a competitor outcome remains unproven",()=>{
+ const {manifest,observations}=fixtures();
+ const peer=observations.sessions.find(s=>s.system==="muse");
+ peer.requirementEvidence[0]={requirement:peer.requirementEvidence[0].requirement,state:"unproven"};
+ const scored=validateAndScore(manifest,observations);
+ assert.equal(scored.parityProven,false);
+ assert.equal(scored.scores.find(x=>x.system==="muse").unprovenRequirements,1);
+});
+test("an unsupported or failed competitor capability requires independent negative evidence",()=>{
+ const {manifest,observations}=fixtures();
+ const peer=observations.sessions.find(s=>s.system==="grokbot");
+ peer.requirementEvidence[0]={requirement:peer.requirementEvidence[0].requirement,
+  state:"not_supported"};
+ fails(()=>validateAndScore(manifest,observations),"unverifiable_accepted_or_delivered_claim");
+});
 test("rejects incomplete agentic scenario coverage instead of cherry-picking",()=>{
  const {manifest,observations}=fixtures();
  manifest.cases[0].scenario="generic_chat";
