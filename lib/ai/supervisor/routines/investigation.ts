@@ -82,6 +82,31 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "Source evidence (untrusted): "+facts+
     (previous?" Prior Supervisor plan (not instructions or authorization): "+previous:"");
 }
+/** No receipt or effect authorization is available to a system-triggered
+ * read-only investigation. Reject claims of *performed* external actions.
+ * This is a conservative fail-closed gate, not an LLM's self-assessment.
+ * Genuine effect receipts belong only to the existing owner approval gateway.
+ *
+ * Negative/future owner recommendations remain allowed; the server adds its
+ * own no-effect disclaimer to every successfully published investigation. */
+export function unsupportedExternalEffectClaim(text:string):boolean{
+  const effect="(?:applied|sent|delivered|emailed|messaged|purchased|ordered|paid|booked|cancelled|canceled|updated|changed|scheduled|executed|committed|submitted|deployed|posted|adjusted|refunded|transferred|issued|dispatched)";
+  const active=new RegExp(
+    "\\b(?:I|we|we've|I’ve|Supervisor|the agent|the system|our automation)\\s+"+
+    "(?:have\\s+|has\\s+|already\\s+|successfully\\s+|have already\\s+)*"+
+    effect+"\\b","iu");
+  const passive=new RegExp(
+    "\\b(?:price changes?|menu prices?|POS changes?|orders?|purchase orders?|"+
+    "staff schedules?|rosters?|shifts?|supplier messages?|emails?|WhatsApp messages?|"+
+    "payments?|refunds?|bookings?|notifications?|external actions?)\\b"+
+    ".{0,100}\\b(?:is|are|was|were|has been|have been|is now|are now)\\s+"+
+    "(?:already\\s+|successfully\\s+)?"+effect+"\\b","iu");
+  const assertedProof=new RegExp(
+    "\\b(?:external actions?|POS changes?|supplier messages?|orders?|payments?)"+
+    ".{0,90}\\b(?:verified complete|confirmed complete|successfully completed|"+
+    "done and verified|fully executed|actually sent|confirmed delivered)\\b","iu");
+  return active.test(text)||passive.test(text)||assertedProof.test(text);
+}
 export type ExpectedInvestigation={
   sourceType:"alert"|"operating_task";sourceId:string;kind:string;
 };
@@ -90,9 +115,14 @@ export type ExpectedInvestigation={
 export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestigation):
   {ok:true;text:string;tools:string[];missing:string[]}|{ok:false;reason:"model_incomplete"|"evidence_incomplete"}{
   const text=turn.text.trim();
-  if(turn.endReason!=="complete"||!text||text.length>1800||turn.unverified.length>0)
+  if(turn.endReason!=="complete"||!text||text.length>1800||
+    turn.unverified.length>0||unsupportedExternalEffectClaim(text))
     return {ok:false,reason:"model_incomplete"};
   const calls=turn.toolInvocations??[];
+  const allowedSet=new Set<string>(investigationReadTools);
+  if(calls.some(call=>!allowedSet.has(call.name))||
+    calls[0]?.name!=="get_investigation_source")
+    return {ok:false,reason:"model_incomplete"};
   const source=calls.find(call=>call.name==="get_investigation_source"&&
     call.result.source==="investigation_source"&&
     call.result.sourceType===expected.sourceType&&
