@@ -64,22 +64,24 @@ export function validateAndScore(manifest,observations){
       !unique(proofs.map(p=>p.requirement))||
       !task.requirements.every(req=>proofs.some(p=>p.requirement===req)))
      error("unscored_requirement:"+task.id+":"+system);
-   let passed=0;
+   let passed=0,unproven=0;
    for(const proof of proofs){
     if(!["verified","failed","not_supported","unproven"].includes(proof.state))
       error("invalid_result_state");
-    if(proof.state==="verified"){
-     if(typeof proof.externalReceiptRef!=="string"||proof.externalReceiptRef.length<8||
+    if(proof.state==="unproven"){unproven++;continue;}
+    // Independently observed failures and unsupported competitor operations
+    // need external proof too. Unsupported cannot be self-declared to
+    // manufacture a lower competitor score or a false parity win.
+    if(typeof proof.externalReceiptRef!=="string"||proof.externalReceiptRef.length<8||
        !validSha(proof.evidenceSha256)||!validTime(proof.verifiedAt)||
        Date.parse(proof.verifiedAt)<Date.parse(run.startedAt)||
        typeof proof.evidenceKind!=="string"||
        !["provider_receipt","signed_webhook","database_observer",
          "independent_operator_log"].includes(proof.evidenceKind))
        error("unverifiable_accepted_or_delivered_claim:"+task.id+":"+system);
-     passed++;
-    }
+    if(proof.state==="verified")passed++;
    }
-   sessions.push({system,passed,total:task.requirements.length,
+   sessions.push({system,passed,unproven,total:task.requirements.length,
     allVerified:passed===task.requirements.length});
   }
   results.push({scenario:task.scenario,sessions});
@@ -88,11 +90,13 @@ export function validateAndScore(manifest,observations){
   const score=results.flatMap(r=>r.sessions.filter(s=>s.system===system));
   return {system,verifiedRequirements:score.reduce((n,s)=>n+s.passed,0),
    totalRequirements:score.reduce((n,s)=>n+s.total,0),
+   unprovenRequirements:score.reduce((n,s)=>n+s.unproven,0),
    fullScenarios:score.filter(s=>s.allVerified).length};
  });
  const a=scores[0],peers=scores.slice(1);
  const parityProven=a.fullScenarios===requiredScenarios.length&&
-   peers.every(p=>a.verifiedRequirements>=p.verifiedRequirements);
+   peers.every(p=>p.unprovenRequirements===0&&
+     a.verifiedRequirements>=p.verifiedRequirements);
  return {suiteId:manifest.suiteId,independentReviewerId:reviewer.independentReviewerId,
   results,scores,parityProven,limit:"Recorded externally reviewed operations; real provider receipts must be attached, never inferred"};
 }
