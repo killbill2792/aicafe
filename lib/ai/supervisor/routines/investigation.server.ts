@@ -13,7 +13,7 @@ import {investigationPrompt,investigationReadTools,verifyInvestigationTurn,
 type Claimed={
   business_id:string;owner_user_id:string;thread_id:string;
   source_type:"alert"|"operating_task";source_id:string;revision_hash:string;
-  stable_key:string;phase:"collect"|"investigate"|"awaiting_owner";
+  stable_key:string;episode_id:string;phase:"collect"|"investigate"|"awaiting_owner";
   step_version:number;lease_token:string;evidence:unknown;
   narrative?:string|null;last_error?:string|null;
 };
@@ -182,7 +182,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
   const result=empty();result.processed=1;
   try{
     if(!c.business_id||!c.owner_user_id||!c.thread_id||
-      !c.lease_token||!c.source_id||!c.revision_hash||
+      !c.lease_token||!c.source_id||!c.revision_hash||!c.episode_id||
       !["collect","investigate","awaiting_owner"].includes(c.phase))
       throw new Error("storage_failed");
     if(c.phase==="collect"){
@@ -260,7 +260,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     const notice=await notifyOwner(db,{
       businessId:c.business_id,ownerUserId:c.owner_user_id,
       threadId:c.thread_id,kind:"priority_investigation",
-      taskId:"investigation:"+c.stable_key+":"+(c.step_version+1),
+      taskId:"investigation:"+c.stable_key+":"+c.episode_id+":"+(c.step_version+1),
       localDate:identity.asOf,important:true,
     },()=>finish(db,c,new Date(),outcome,next,verified.text));
     if(notice.decision!=="posted"||notice.result!==true)
