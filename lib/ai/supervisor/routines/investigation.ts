@@ -120,8 +120,13 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     return {ok:false,reason:"model_incomplete"};
   const calls=turn.toolInvocations??[];
   const allowedSet=new Set<string>(investigationReadTools);
-  if(calls.some(call=>!allowedSet.has(call.name))||
-    calls[0]?.name!=="get_investigation_source")
+  if(calls.some(call=>!allowedSet.has(call.name)))
+    return {ok:false,reason:"model_incomplete"};
+  // Missing the required source read means insufficient evidence; attempting
+  // it after unrelated calls is a protocol violation, not a valid scan.
+  if(!calls.some(call=>call.name==="get_investigation_source"))
+    return {ok:false,reason:"evidence_incomplete"};
+  if(calls[0]?.name!=="get_investigation_source")
     return {ok:false,reason:"model_incomplete"};
   const source=calls.find(call=>call.name==="get_investigation_source"&&
     call.result.source==="investigation_source"&&
