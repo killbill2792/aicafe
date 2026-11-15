@@ -7,6 +7,7 @@ import StaffWorkspace from "@/components/staff/StaffWorkspace";
 import PosImportReviewPanel from "@/components/staff/PosImportReviewPanel";
 import OwnerScheduleSendPanel from "@/components/staff/OwnerScheduleSendPanel";
 import StaffPublicationStatus from "@/components/staff/StaffPublicationStatus";
+import StaffStandingMandatePanel from "@/components/staff/StaffStandingMandatePanel";
 import PageShell from "@/components/shared/PageShell";
 import TeamLegacyMetrics from "@/components/staff/TeamLegacyMetrics";
 import {createStaffScreenshotFixture} from "@/lib/calc/scheduling/staffScreenshotFixture";
@@ -36,6 +37,8 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
    focusDate={validScheduleDate(date)?date:undefined} focusEmployee={employee}
    focusContact={fix==="phone"||fix==="consent"?fix:undefined} focusRule={isStaffRuleKey(fix)?fix:undefined} focusClock={validShiftClock(clock??"")?clock:undefined} teamExtras={<TeamLegacyMetrics/>}
    initialAlerts={alerts.ok?[...alerts.alerts]:[]} alertError={alerts.ok?null:alerts.error}/>
+  {!useFixture&&scope.ok&&!scope.readOnly&&
+    <StaffStandingMandatePanel week={selected} businessId={scope.businessId}/>}
   {!useFixture&&<StaffPublicationStatus week={selected}/>}
   {(showSendFixture||(!useFixture&&Boolean(proposalId)))&&<OwnerScheduleSendPanel
     {...(!useFixture&&proposalId?{proposalId}:{week:selected})}
