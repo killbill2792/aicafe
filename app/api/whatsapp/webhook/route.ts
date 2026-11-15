@@ -45,13 +45,18 @@ export async function POST(request:Request):Promise<Response>{
     // Meta developer test sender, NEVER to a production employee sender.
     if(ownerPhoneId!==TEST_PHONE_NUMBER_ID)return answer(503,"Not configured");
     const staffPhoneId=process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID??"";
-    const staffEnabled=process.env.WHATSAPP_STAFF_SCHEDULE_SEND_ENABLED==="true"&&
-      process.env.WHATSAPP_STAFF_SENDER_APPROVED==="true"&&
-      /^[0-9]{8,25}$/.test(staffPhoneId)&&staffPhoneId!==ownerPhoneId;
-    events=parseWebhook(bytes,staffEnabled?[ownerPhoneId,staffPhoneId]:ownerPhoneId);
-    // Worker inbound messages are not owner commands (Task 13C separately).
-    // They must not prevent independent signed status receipts in the same
-    // Meta batch from being persisted; acknowledge without dispatching AI.
+    // Receipt reconciliation survives sender send-disable, policy pause and
+    // template suspension: these switches block NEW HTTP sends, not Meta's
+    // already accepted delayed delivered/read callbacks. Authenticated status
+    // callbacks must still be accepted for the configured, distinct staff ID.
+    const staffCallbackConfigured=/^[0-9]{8,25}$/.test(staffPhoneId)&&
+      staffPhoneId!==ownerPhoneId;
+    events=parseWebhook(bytes,
+      staffCallbackConfigured?[ownerPhoneId,staffPhoneId]:ownerPhoneId,
+      staffCallbackConfigured?staffPhoneId:undefined);
+    // Task13B worker inbound is intentionally not an owner command. The
+    // parser skips it BEFORE owner command validation, preserving co-batched
+    // verified worker delivery statuses. Task13C owns worker responses.
   }catch(error){
     return answer(error instanceof Error&&error.message==="wrong_sender"?403:422,"Invalid event");
   }
