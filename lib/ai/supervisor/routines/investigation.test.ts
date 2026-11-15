@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import {investigationPrompt,investigationReadTools,verifyInvestigationTurn,
-  relevantInvestigationTools,type SourceSynopsis} from "./investigation";
+  relevantInvestigationTools,unsupportedExternalEffectClaim,type SourceSynopsis} from "./investigation";
 const source:SourceSynopsis={
   kind:"labor_variance",status:"new",severity:"high",quality:"partial",
   relatedAlerts:["missing_bill"],relatedTasks:["staff_coverage"],
@@ -98,6 +98,41 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     }};
     expect(verifyInvestigationTurn(turn({toolInvocations:[taskSource,sales,labor]}),price))
       .toEqual({ok:false,reason:"evidence_incomplete"});
+  });
+  it("refuses unsupported effect/receipt claims even after three genuine read tools",()=>{
+    const claims=[
+      "I applied the approved price change in Toast and sent the supplier message. Both external actions are verified complete.",
+      "The price change has been applied successfully in POS.",
+      "We have already emailed the supplier, and the order is now done.",
+      "Supplier messages were delivered successfully.",
+      "External actions are verified complete.",
+      "I posted the WhatsApp notification.",
+    ];
+    for(const claim of claims){
+      expect(unsupportedExternalEffectClaim(claim),claim).toBe(true);
+      expect(verifyInvestigationTurn(turn({text:claim}),expected)).toEqual({
+        ok:false,reason:"model_incomplete",
+      });
+    }
+    // Future recommendations, uncertainty and explicit denials are not
+    // fabricated effect receipts; owners still receive usable next steps.
+    const safe=[
+      "I recommend that you approve the price change; no POS change has been made.",
+      "After owner approval, ask the supplier to confirm the order.",
+      "I have not sent any message; the supplier must be contacted by the owner.",
+      "The recorded data are incomplete. I will recheck once the imports arrive.",
+    ];
+    for(const text of safe)expect(unsupportedExternalEffectClaim(text),text).toBe(false);
+  });
+  it("rejects any unapproved write-capable tool in the recorded invocation trace",()=>{
+    expect(verifyInvestigationTurn(turn({toolInvocations:[
+      ...evidence,{name:"propose_staff_change",result:{
+        source:"staff_change",period:null,missing:[],
+      }},
+    ]}),expected)).toEqual({ok:false,reason:"model_incomplete"});
+    expect(verifyInvestigationTurn(turn({toolInvocations:[
+      sales,sourceRead,labor,
+    ]}),expected)).toEqual({ok:false,reason:"model_incomplete"});
   });
   it("never publishes an incomplete, unsafe or fabricated-number report",()=>{
     expect(verifyInvestigationTurn(turn({endReason:"timeout"}),expected)).toMatchObject({ok:false});
