@@ -49,17 +49,20 @@ export async function POST(request:Request):Promise<Response>{
       process.env.WHATSAPP_STAFF_SENDER_APPROVED==="true"&&
       /^[0-9]{8,25}$/.test(staffPhoneId)&&staffPhoneId!==ownerPhoneId;
     events=parseWebhook(bytes,staffEnabled?[ownerPhoneId,staffPhoneId]:ownerPhoneId);
-    // Worker numbers are a status-only channel in 13B. A signed inbound
-    // employee message is not an authorized owner command or chat turn.
-    if(events.some(e=>e.type==="message"&&e.phoneId!==ownerPhoneId))
-      return answer(422,"Unsupported staff inbound message");
+    // Worker inbound messages are not owner commands (Task 13C separately).
+    // They must not prevent independent signed status receipts in the same
+    // Meta batch from being persisted; acknowledge without dispatching AI.
   }catch(error){
     return answer(error instanceof Error&&error.message==="wrong_sender"?403:422,"Invalid event");
   }
   try{
     for(const event of events){
-      if(event.type==="message")await acceptSignedMessage(event);
-      else if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID)){
+      if(event.type==="message"){
+        if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID))
+          await acceptSignedMessage(event);
+        // Employee messages require Task13C authorization and must never be
+        // dispatched as owner commands or suppress other signed status events.
+      }else if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID)){
         await recordSignedStatus(event);
       }else{
         // Codex P1: the common signed status ledger must persist BEFORE
