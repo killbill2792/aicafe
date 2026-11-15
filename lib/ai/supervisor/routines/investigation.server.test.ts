@@ -23,7 +23,8 @@ const now=new Date("2026-11-14T17:00:00Z");
 const base={
   business_id:"cafe-a",owner_user_id:"owner-a",thread_id:"thread-a",
   source_type:"alert",source_id:"alert-a",revision_hash:"a".repeat(64),
-  stable_key:"b".repeat(64),step_version:0,lease_token:"lease-a",
+  stable_key:"b".repeat(64),episode_id:"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  step_version:0,lease_token:"lease-a",
 };
 const collected={...base,phase:"collect",evidence:{}};
 const investigating={...base,phase:"investigate",step_version:1,
@@ -152,6 +153,7 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       incidentKind:"sales_anomaly",sourceStatus:"new",
     });
     expect(mocks.notify).toHaveBeenCalledOnce();
+    expect(mocks.notify.mock.calls[0][1].taskId).toContain("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     const saved=d.calls.find(x=>x.name==="supervisor_finish_investigation")?.args;
     expect(saved?.p_outcome).toBe("investigated");
     expect(saved?.p_narrative).toBe(agentResult().text);
