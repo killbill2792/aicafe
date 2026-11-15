@@ -22,6 +22,15 @@ export function verifyTask14bToolTrace(names,{correction=false}={}){
  }
  return {required,toolCalls:names.length};
 }
+/** A model's text or a seeded proposal row is not proof that the owner can
+ * approve it. Read the actual persisted assistant blocks and demand the card. */
+export function verifyTask14bSavedCard(message,proposalId){
+ const blocks=message?.structured_content;
+ if(!Array.isArray(blocks)||!blocks.some(b=>b?.type==="proposal_card"&&
+     b.proposalId===proposalId))
+  fail("model_proposal_card_not_persisted");
+ return true;
+}
 export function verifyTask14bScope(candidate,scope){
  if(candidate?.business_id!==scope.businessId||
     candidate?.owner_user_id!==scope.ownerUserId||
@@ -101,6 +110,13 @@ async function savedProposals(db,scope){
   " where business_id=$1 and thread_id=$2 and capability_id='maya.supplier_purchase_order.v1'"+
   " order by created_at,id",[scope.businessId,scope.threadId]);
 }
+async function savedModelCard(db,scope,turn,proposalId){
+ const messages=await query(db,"select structured_content from public.ai_messages"+
+  " where business_id=$1 and thread_id=$2 and id=$3 and role='supervisor'",
+  [scope.businessId,scope.threadId,turn.done.reply.id]);
+ if(messages.length!==1)fail("model_reply_not_persisted");
+ verifyTask14bSavedCard(messages[0],proposalId);
+}
 async function modelUsage(db,scope,turn){
  const owners=await query(db,"select id::text from public.ai_messages"+
   " where business_id=$1 and thread_id=$2 and client_message_id=$3 and role='owner'",
@@ -164,6 +180,7 @@ async function measure(){
   let rows=await savedProposals(db,scope);
   if(rows.length!==1||rows[0].status!=="draft")fail("model_did_not_save_one_approval_draft");
   const original=verifyTask14bScope(rows[0],scope);
+  await savedModelCard(db,scope,first,original.id);
   const validEffect=(p,quantity)=>p.canonical_effect_payload?.supplierName===supplierA&&
    p.canonical_effect_payload?.currency===cafe.currency&&
    p.canonical_effect_payload?.subtotalCents===quantity*450&&
@@ -184,6 +201,7 @@ async function measure(){
   if(rows.length!==2||rows.find(x=>x.id===original.id)?.status!=="rejected"||
     !corrected||!validEffect(corrected,7))fail("owner_correction_not_durable_atomic");
   verifyTask14bScope(corrected,scope);
+  await savedModelCard(db,scope,second,corrected.id);
   const link=await query(db,"select previous_id,replacement_id from public.supplier_po_draft_replacements"+
    " where business_id=$1 and previous_id=$2",[cafe.businessId,original.id]);
   if(link.length!==1||link[0].replacement_id!==corrected.id)
@@ -222,7 +240,7 @@ async function measure(){
    model:usage1.model,passed:true,parityWithGrokMuse:"unverified_no_competitor_sessions",
    checks:{firstLiveTools:firstTrace,correctionLiveTools:secondTrace,
     usageModelCalls:[usage1.modelCalls,usage2.modelCalls,usage3.modelCalls],
-    exactSavedProposal:true,retiredOldDraft:true,authenticatedOwnerClick:true,
+    exactSavedProposal:true,savedOwnerApprovalCards:true,retiredOldDraft:true,authenticatedOwnerClick:true,
     persistedPO:true,reopenedOwnerCard:true,crossCafeDenied:true,
     unapprovedStockAndExpenseEffects:0,canonicalStatusTool:true},
    conclusion:"Objective real-model purchasing smoke only. Human quality grading, independent provider attestation, off-turn proactivity and same-task Grok/Muse comparison remain separate gates."};
