@@ -1,0 +1,177 @@
+# Trusted main-branch OWNER-authorized paid acceptance. pull_request_target
+# reads this YAML from main, never from untrusted PR candidate code.
+# Reuses POS0E / Task15A's existing local disposable Supabase and OPENAI_API_KEYS.
+# No hosted Supabase, no Vercel preview, no automatic rerun, no supplier send.
+name: AI CAFE Task 14B Bounded Real-Model Acceptance
+on:
+  pull_request_target:
+    types: [edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  owner-paid-task14b:
+    name: Owner-approved local Luna purchasing pilot (max $0.18 reserved)
+    if: >-
+      github.event.action == 'edited' &&
+      github.actor == 'killbill2792' &&
+      github.triggering_actor == 'killbill2792' &&
+      github.run_attempt == 1 &&
+      github.event.pull_request.number == 482 &&
+      github.event.pull_request.user.login == 'killbill2792' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'task14b-agentic-supervisor-procurement' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.changes.body.from != null &&
+      !contains(github.event.changes.body.from, '<!-- aicafe-task14b-trusted-paid-run ') &&
+      contains(github.event.pull_request.body, '<!-- aicafe-task14b-trusted-paid-run ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      VERCEL_ENV: ''
+      VERCEL_URL: ''
+      SUPABASE_PROJECT_REF: ''
+      SUPERVISOR_CHAT_ENABLED: 'true'
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Verify fresh owner authorization, exact head and initialize budget before any cost
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from "node:fs";
+          const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
+          const pr=event.pull_request,sha=pr?.head?.sha;
+          const marker="<!-- aicafe-task14b-trusted-paid-run "+sha+" -->";
+          const previous=event.changes?.body?.from;
+          if(event.action!=="edited"||event.sender?.login!=="killbill2792"||
+             process.env.GITHUB_RUN_ATTEMPT!=="1"||
+             process.env.GITHUB_TRIGGERING_ACTOR!=="killbill2792"||
+             event.repository?.full_name!=="killbill2792/aicafe"||
+             pr?.number!==482||pr.user?.login!=="killbill2792"||
+             pr.base?.ref!=="main"||
+             pr.head?.ref!=="task14b-agentic-supervisor-procurement"||
+             pr.head?.repo?.full_name!=="killbill2792/aicafe"||
+             !/^[a-f0-9]{40}$/.test(sha??"")||sha!==process.env.HEAD_SHA||
+             typeof previous!=="string"||
+             previous.includes("<!-- aicafe-task14b-trusted-paid-run ")||
+             pr.body?.split(marker).length!==2||
+             (pr.body.match(/<!-- aicafe-task14b-trusted-paid-run /g)??[]).length!==1)
+             throw Error("Task14B requires fresh owner edit on exact approved PR head");
+          // The expensive step is separately guarded by npm ci, zero-key kill tests,
+          // fresh local SQL migrations, owner/café isolation and strict cost reservations.
+          // CI/Codex merge gates are NOT waived; live acceptance may run before them.
+          const budgetLedger=process.env.RUNNER_TEMP+"/task14b-budget.json";
+          writeFileSync(budgetLedger,
+            JSON.stringify({head:sha,attempts:0,reservedMicros:0})+"\n",
+            {flag:"wx",mode:0o600});
+          const {appendFileSync}=await import("node:fs");
+          appendFileSync(process.env.GITHUB_ENV,
+            "AICAFE_TASK14B_BUDGET_LEDGER="+budgetLedger+"\n");
+          NODE
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Install locked app and Chromium dependencies (no provider key)
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          npm ci
+          npx playwright install --with-deps chromium
+          node --test evals/acceptance/live/task14b.test.mjs
+          npx vitest run lib/ai/agent/task14bPaidBudget.server.test.ts
+      - name: Start disposable two-café Supabase and validate local keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/seed/generateSeedSql.mjs
+          supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase db reset --local --yes
+          supabase status -o json > "$RUNNER_TEMP/task14b-supabase.json"
+      - name: Configure local Supabase Auth (no provider secret)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from "node:fs";
+          const data=JSON.parse(readFileSync(process.env.RUNNER_TEMP+"/task14b-supabase.json","utf8"));
+          const anon=data.ANON_KEY??data.anon_key;
+          const service=data.SERVICE_ROLE_KEY??data.service_role_key;
+          if(!anon||!service)throw Error("Disposable Supabase keys unavailable");
+          for(const key of [anon,service])console.log("::add-mask::"+key);
+          appendFileSync(process.env.GITHUB_ENV,
+           "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\n"+
+           "NEXT_PUBLIC_SUPABASE_ANON_KEY="+anon+"\n"+
+           "SUPABASE_SERVICE_ROLE_KEY="+service+"\n");
+          NODE
+      - name: Real provider-backed multi-turn approval pilot (strict paid reservation)
+        timeout-minutes: 16
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
+          AI_CAFE_LIVE_ACCEPTANCE: OWNER_APPROVED_LOCAL_ONLY
+          APP_URL: http://127.0.0.1:3000
+          ACCEPTANCE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+          SUPERVISOR_OPENAI_MODEL: gpt-6-luna
+          SUPERVISOR_OPENAI_FALLBACK_MODEL: gpt-4.1-mini
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::OPENAI_API_KEYS unavailable: no paid execution occurred"
+            exit 1
+          fi
+          cleanup() {
+            if [ -n "${NEXT_PID:-}" ]; then kill "$NEXT_PID" 2>/dev/null || true; fi
+          }
+          trap cleanup EXIT
+          npm run dev -- --webpack --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/task14b-next.log" 2>&1 &
+          NEXT_PID=$!
+          ready=0
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3000/en/login -o /dev/null; then ready=1;break;fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+          timeout 12m node evals/acceptance/live/task14b.mjs --output "$RUNNER_TEMP/task14b-live-proof.json"
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from "node:fs";
+          const state=JSON.parse(readFileSync(process.env.AICAFE_TASK14B_BUDGET_LEDGER,"utf8"));
+          const proof=JSON.parse(readFileSync(process.env.RUNNER_TEMP+"/task14b-live-proof.json","utf8"));
+          if(proof.passed!==true||proof.headSha!==state.head||
+             !Number.isSafeInteger(state.attempts)||state.attempts<1||
+             !Number.isSafeInteger(state.reservedMicros)||state.reservedMicros>180_000)
+             throw Error("Task14B paid proof invalid or outside budget");
+          const result={head:state.head,providerCalls:state.attempts,
+            upperCostReservationUSD:state.reservedMicros/1_000_000,
+            objectiveChecks:proof.checks,model:proof.model,
+            competitorParity:"NOT_PROVEN"};
+          writeFileSync(process.env.RUNNER_TEMP+"/task14b-sanitary-result.json",
+            JSON.stringify(result,null,2)+"\n",{mode:0o600});
+          NODE
+      - name: Upload redacted proof and bounded spend, never raw prompts/secrets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-task14b-paid-local-proof
+          path: ${{ runner.temp }}/task14b-sanitary-result.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Tear down disposable database without backups
+        if: always()
+        run: supabase stop --no-backup || true
