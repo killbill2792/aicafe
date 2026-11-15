@@ -297,6 +297,18 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
         [stamp(now,4)]) as Record<string,unknown>;
       expect(unfinished.source_id).toBe(taskId);
       expect(unfinished.phase).toBe("investigate");
+      // First episode publishes a genuine owner-facing analysis, so a second
+      // episode that resets step_version MUST NOT silently dedupe this message.
+      expect(await rpc(service,"supervisor_finish_investigation",[
+        business,owner,thread,"operating_task",taskId,revision,
+        unfinished.lease_token,"investigated",JSON.stringify(checkpoint),
+        "First episode: price application remains unverified; ask owner to confirm POS receipt.",
+        stamp(now,5),
+      ])).toBe(true);
+      const firstMessages=await admin.query(
+        "select id from public.ai_messages where business_id=$1 and grounding->>'intent'='priority_investigation'",
+        [business]);
+      expect(firstMessages.rows).toHaveLength(1);
       await admin.query("update public.operating_tasks set status='handled' where business_id=$1 and id=$2",
         [business,taskId]);
       const closed=await admin.query("select phase,last_error from public.supervisor_investigations where business_id=$1 and source_id=$2",
@@ -313,7 +325,34 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(restarted.source_id).toBe(taskId);
       expect(restarted.phase).toBe("collect");
       expect(restarted.step_version).toBe(0);
+      expect(restarted.episode_id).not.toBe(claim.episode_id);
       expect(await rpc(service,"supervisor_enqueue_investigation",input(7))).toBe(false);
+      expect(await rpc(service,"supervisor_finish_investigation",[
+        business,owner,thread,"operating_task",taskId,revision,
+        restarted.lease_token,"collected",JSON.stringify(checkpoint),null,stamp(now,7),
+      ])).toBe(true);
+      const recheck=await rpc(service,"supervisor_claim_investigation",
+        [stamp(now,8)]) as Record<string,unknown>;
+      expect(recheck.source_id).toBe(taskId);
+      expect(recheck.episode_id).toBe(restarted.episode_id);
+      expect(await rpc(service,"supervisor_finish_investigation",[
+        business,owner,thread,"operating_task",taskId,revision,
+        recheck.lease_token,"investigated",JSON.stringify(checkpoint),
+        "Second episode: this same price issue recurred. POS application is still unverified.",
+        stamp(now,9),
+      ])).toBe(true);
+      const episodeMessages=await admin.query(
+        "select id from public.ai_messages where business_id=$1 and grounding->>'intent'='priority_investigation'",
+        [business]);
+      expect(episodeMessages.rows).toHaveLength(2);
+      expect(new Set(episodeMessages.rows.map(row=>row.id)).size).toBe(2);
+      await admin.query("update public.operating_tasks set status='handled' where business_id=$1 and id=$2",
+        [business,taskId]);
+      const resolutionMessages=await admin.query(
+        "select id from public.ai_messages where business_id=$1 and grounding->>'intent'='priority_investigation_resolution'",
+        [business]);
+      expect(resolutionMessages.rows).toHaveLength(2);
+      expect(new Set(resolutionMessages.rows.map(row=>row.id)).size).toBe(2);
     }finally{
       await service?.end();
       await admin.query("delete from public.businesses where id=$1",[business]);
