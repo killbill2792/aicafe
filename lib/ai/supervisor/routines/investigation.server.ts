@@ -278,7 +278,12 @@ export async function processDueInvestigations(db:SupabaseClient,now:Date,maxSte
     throw new Error("Invalid investigation budget");
   const sum=empty();
   for(let i=0;i<maxSteps;i++){
-    const step=await processNextInvestigation(db,now);
+    // A just-collected incident is due immediately on its first continuation.
+    // Reuse the SAME cron but advance the claim clock to real elapsed time;
+    // reusing the initial tick timestamp otherwise stalls every two-step
+    // investigation until the next 15-minute cron invocation.
+    const stepNow=i===0?now:new Date(Math.max(now.getTime()+i,Date.now()));
+    const step=await processNextInvestigation(db,stepNow);
     if(!step.processed)break;
     for(const key of ["processed","collected","investigated","followUps","rechecked","failed"] as const)
       sum[key]+=step[key];
