@@ -96,6 +96,55 @@ try{
   " select $1,business_id,owner_user_id,thread_id,$2,capability_id,capability_version,"+
   " canonical_effect_payload,effect_hash,'{}'::jsonb,monitor_spec,locale,'draft',1"+
   " from public.supervisor_proposals where id=$3",[pid,id(),a.proposal]);
+ // P1: the owner's APPROVE RPC can COMMIT in PostgreSQL and lose its HTTP
+ // response before the effect gateway claims a PO. Persisted 'approved' must
+ // remain owner-cancellable or explicitly retryable; NEVER synthesize an
+ // effect attempt or claim a PO from a read/background worker.
+ const approvalLost=id();await createDraft(approvalLost);
+ const approveProposal=pid=>one(
+  "select status,revision from public.supervisor_transition_proposal("+
+  "$1,$2,$3,1,'approve',null)",[a.cafe,a.owner,pid]);
+ const cancelProposal=(pid,rev)=>one(
+  "select status,revision from public.supervisor_transition_proposal("+
+  "$1,$2,$3,$4,'reject',null)",[a.cafe,a.owner,pid,rev]);
+ const lost=await approveProposal(approvalLost);
+ check(lost.status==="approved"&&lost.revision===2,
+  "approval durable even if its HTTP reply is lost before claim");
+ check((await one("select count(*)::int as n from public.supervisor_effect_attempts"+
+  " where business_id=$1 and proposal_id=$2",[a.cafe,approvalLost])).n===0,
+  "unclaimed approved proposal has NO outbound effect attempt");
+ const cancelled=await cancelProposal(approvalLost,2);
+ check(cancelled.status==="rejected"&&cancelled.revision===3,
+  "owner can cancel an approved but unclaimed PO in one CAS transition");
+ await fails(()=>one("select public.supervisor_claim_effect("+
+  "$1,$2,$3,$4,2,'click')",[a.cafe,a.owner,a.thread,approvalLost]),
+  /proposal_revision_conflict/);
+ check((await one("select count(*)::int as n from public.purchase_orders"+
+  " where business_id=$1 and proposal_id=$2",[a.cafe,approvalLost])).n===0,
+  "cancelled pre-claim approval never places an order");
+
+ const approvalRetry=id();await createDraft(approvalRetry);
+ const persisted=await approveProposal(approvalRetry);
+ check(persisted.status==="approved"&&persisted.revision===2,
+  "another lost approval reply leaves the same canonical approved revision");
+ const claimed=(await one("select public.supervisor_claim_effect("+
+  "$1,$2,$3,$4,2,'click') as result",
+  [a.cafe,a.owner,a.thread,approvalRetry]))?.result;
+ check(claimed?.proposal?.status==="executing"&&claimed.proposal.revision===3&&
+  claimed.authorization_kind==="click"&&Boolean(claimed.attempt_key),
+  "explicit owner retry reserves exactly one effect through the gateway");
+ await fails(()=>one("select public.supervisor_claim_effect("+
+  "$1,$2,$3,$4,2,'click')",
+  [a.cafe,a.owner,a.thread,approvalRetry]),/proposal_revision_conflict/);
+ await fails(()=>cancelProposal(approvalRetry,3),
+  /invalid_supervisor_proposal_transition/);
+ check((await one("select count(*)::int as n from public.supervisor_effect_attempts"+
+   " where business_id=$1 and proposal_id=$2",[a.cafe,approvalRetry])).n===1,
+  "an executing approval cannot be reclaimed or cancelled into a second write");
+ check((await one("select count(*)::int as n from public.purchase_orders"+
+   " where business_id=$1 and proposal_id=$2",[a.cafe,approvalRetry])).n===0,
+  "claim without executing domain writer never fabricates a saved PO");
+
  await createDraft(oldDraft);
  const replacementKey=id();
  const supersede=()=>one("select public.supervisor_replace_supplier_draft("+
