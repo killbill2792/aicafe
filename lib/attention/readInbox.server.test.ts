@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OperatingTask } from "@/lib/operating/tasks";
 
 const mocks = vi.hoisted(() => ({ stored: vi.fn(), alerts: vi.fn(), operations: vi.fn() }));
@@ -28,6 +28,8 @@ import { getAttentionItems, readInbox } from "./getAttentionItems.server";
 import { needsYouFromAttention } from "@/lib/viewmodels/operationsTeam";
 
 const snapshot = { business: { id: "cafe" }, todayDateStr: "2026-11-04" };
+// All inbox expiry assertions are relative to this café-local snapshot day.
+const snapshotNow = new Date(snapshot.todayDateStr + "T12:00:00Z");
 const plan = (day: string): OperatingTask => ({ id: "event-plan:" + day, businessId: "cafe", agentId: "alex", kind: "event_plan",
   entityType: "event_day", entityId: day, status: "needs_owner", payload: { needsApproval: true, businessDate: day, threadId: "t" },
   confidence: "high", evidence: [], createdAt: "2026-11-01T15:00:00Z" });
@@ -36,11 +38,15 @@ const mealBreak = (id: string, date: string) => ({ id, kind: "meal_break", impac
   payload: { employeeName: "Sam", employeeId: "e1", date }, createdAt: date + "T20:00:00Z" });
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(snapshotNow);
   vi.clearAllMocks();
   mocks.operations.mockReturnValue({ needsYou: [], handled: [], watching: [] });
   mocks.stored.mockResolvedValue([plan("2026-10-31"), plan("2026-11-05"), plan("2026-11-11"), report]);
   mocks.alerts.mockResolvedValue([mealBreak("old", "2026-10-28"), mealBreak("new", "2026-11-03")]);
 });
+
+afterEach(() => vi.useRealTimers());
 
 describe("one inbox reader for Home, chat and Operations", () => {
   it("counts only open decisions, and the team cards and tabs add up to Home's count", async () => {
