@@ -90,6 +90,18 @@ describe("proactive priority ranking and source revision",()=>{
       sourceId:"unrelated-review",kind:"data_quality",status:"needs_owner"}],now,10)
       .map(x=>x.source.sourceId)).toEqual(["unrelated-review"]);
   });
+  it("does not generate a fresh generic owner notice for watching tasks but does re-investigate them",()=>{
+    const now=new Date("2026-11-11T00:00:00Z");
+    const watching:PrioritySource={...base,sourceType:"operating_task",
+      kind:"price_review",sourceId:"price-latte",status:"watching",
+      evidence:{awaitingPriceApplication:true,priceAppliedToPos:false}};
+    expect(choosePriorities([watching],now)).toEqual([]);
+    const proactive=choosePriorities([watching],now,3,{includeWatching:true});
+    expect(proactive.map(d=>d.source.sourceId)).toEqual(["price-latte"]);
+    expect(proactive[0].revisionHash).not.toBe(priorityRevision({
+      ...watching,status:"needs_owner",
+    }));
+  });
   it("ignores closed tasks and differs by owner/café",()=>{
     const now=new Date("2026-11-11T00:00:00Z");
     expect(choosePriorities([{...base,status:"resolved"}],now)).toEqual([]);
