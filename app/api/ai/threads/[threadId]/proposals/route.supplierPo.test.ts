@@ -7,6 +7,7 @@ const f=vi.hoisted(()=>({
   oldId:"55555555-5555-4555-8555-555555555555",replacementLookups:0,
   status:"draft",revision:1,
   failure:"stale" as "stale"|"transport"|"none",
+  approvalResponseLost:false,claimResponseLost:false,
   writes:0,states:[] as string[],
 }));
 const effect=()=>({supplierName:"Farm A",currency:"CAD",neededBy:"2026-11-17",
@@ -37,13 +38,25 @@ vi.mock("@/lib/ai/supervisor/loop/supabase.server",()=>({
       if(id!==f.id)throw Error("not_found");return row();
     }
     async transition(_scope:unknown,_id:string,revision:number,action:string){
-      if(revision!==f.revision||action!=="approve"||f.status!=="draft")throw Error("revision_conflict");
-      f.status="approved";f.revision++;return row();
+      if(revision!==f.revision)throw Error("revision_conflict");
+      if(action==="reject"&&(f.status==="draft"||f.status==="approved")){
+        f.status="rejected";f.revision++;return row();
+      }
+      if(action!=="approve"||f.status!=="draft")throw Error("revision_conflict");
+      // Simulates COMMITTED database transaction whose HTTP response was lost.
+      f.status="approved";f.revision++;
+      if(f.approvalResponseLost){
+        f.approvalResponseLost=false;throw Error("connection_closed_after_approval");
+      }
+      return row();
     }
     async claimEffect(_scope:unknown,id:string,revision:number,authorizationKind:string){
       if(id!==f.id||revision!==f.revision||f.status!=="approved"||authorizationKind!=="click")
         throw Error("not_approved");
       f.status="executing";f.revision++;
+      if(f.claimResponseLost){
+        f.claimResponseLost=false;throw Error("connection_closed_after_claim");
+      }
       return {proposal:row(),attemptKey:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         businessDate:"2026-11-14",authorizationKind:"click"};
     }
@@ -88,7 +101,8 @@ const action=(name:string,revision:number=1)=>new Request(url,{
   method:"POST",headers:{"content-type":"application/json",origin:"http://localhost:3000"},
   body:JSON.stringify({action:name,proposalId:f.id,revision}),
 });
-beforeEach(()=>{f.status="draft";f.revision=1;f.failure="stale";f.writes=0;f.states=[];f.replacementLookups=0;});
+beforeEach(()=>{f.status="draft";f.revision=1;f.failure="stale";f.writes=0;f.states=[];f.replacementLookups=0;
+  f.approvalResponseLost=false;f.claimResponseLost=false;});
 describe("Task14B owner approval: confirmed stale quote is recoverable, unknown write is not retried",()=>{
   it("two persisted original/replacement cards keep only the corrected draft approvable",async()=>{
     // The original persisted assistant block keeps oldId. A later model turn
@@ -126,6 +140,71 @@ describe("Task14B owner approval: confirmed stale quote is recoverable, unknown 
     expect((await read.json()).cards[0]).toMatchObject({proposalId:f.id,state:"stale"});
     const retry=await POST(action("approve",4),params);
     expect((await retry.json()).state).toBe("stale");
+    expect(f.writes).toBe(1);
+  });
+  it("recovers an approval committed before the HTTP response was lost, with ONE authorized effect",async()=>{
+    f.failure="none";f.approvalResponseLost=true;
+    const first=await POST(action("approve",1),params);
+    expect(first.status).toBe(409);
+    expect(await first.json()).toMatchObject({
+      state:"retryable",error:"supplier_po_approval_interrupted",
+      proposal:{proposalId:f.id,state:"pending",revision:2},
+    });
+    expect(f.status).toBe("approved");expect(f.writes).toBe(0);
+    const refreshed=await GET(new Request(url+"?ids="+f.id),params);
+    expect((await refreshed.json()).cards[0]).toMatchObject({
+      state:"pending",proposalId:f.id,revision:2,
+    });
+    // Owner can retry with either the original card revision (a lost
+    // response) or the reloaded revision. Both use the CURRENT approved CAS.
+    const recovered=await POST(action("approve",1),params);
+    expect(recovered.status).toBe(200);
+    expect(await recovered.json()).toMatchObject({
+      proposal:{proposalId:f.id,state:"applied",revision:4},
+    });
+    expect(f.writes).toBe(1);expect(f.states).toEqual(["verified"]);
+    const replay=await POST(action("approve",2),params);
+    expect((await replay.json()).state).toBe("applied");
+    expect(f.writes).toBe(1);
+  });
+  it("lets owner CANCEL a persisted pre-claim approval, never sends a PO",async()=>{
+    f.failure="none";f.approvalResponseLost=true;
+    await POST(action("approve",1),params);
+    const cancel=await POST(action("cancel",1),params);
+    expect(cancel.status).toBe(200);
+    expect(await cancel.json()).toMatchObject({
+      state:"cancelled",proposal:{state:"cancelled",revision:3},
+    });
+    const again=await GET(new Request(url+"?ids="+f.id),params);
+    expect((await again.json()).cards[0]).toMatchObject({state:"cancelled"});
+    const prohibited=await POST(action("approve",3),params);
+    expect(prohibited.status).toBe(409);
+    expect(f.writes).toBe(0);
+  });
+  it("never reclaims an effect whose database claim might have committed",async()=>{
+    f.failure="none";f.approvalResponseLost=true;
+    await POST(action("approve",1),params);
+    f.claimResponseLost=true;
+    const uncertain=await POST(action("approve",2),params);
+    expect(uncertain.status).toBe(409);
+    expect(await uncertain.json()).toMatchObject({
+      state:"uncertain",error:"effect_outcome_uncertain",
+      proposal:{state:"uncertain",revision:3},
+    });
+    const click=await POST(action("approve",2),params);
+    const cancel=await POST(action("cancel",2),params);
+    expect((await click.json()).state).toBe("uncertain");
+    expect((await cancel.json()).state).toBe("uncertain");
+    expect(f.writes).toBe(0);
+  });
+  it("rejects unrelated stale revisions even on recoverable approved state",async()=>{
+    f.failure="none";f.approvalResponseLost=true;
+    await POST(action("approve",1),params);
+    const wrong=await POST(action("approve",5),params);
+    expect(wrong.status).toBe(409);
+    expect(f.writes).toBe(0);
+    const fresh=await POST(action("approve",2),params);
+    expect(fresh.status).toBe(200);
     expect(f.writes).toBe(1);
   });
   it("retains an unknown transport outcome as uncertain and blocks another PO write",async()=>{
