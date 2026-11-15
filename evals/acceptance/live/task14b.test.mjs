@@ -58,6 +58,12 @@ test("Task14B real paid pilot reports only safe status codes, never prompt/provi
  assert.equal(task14bSafeTurnFailure({done:{endReason:"complete",reply}}),null);
  assert.equal(task14bSafeTurnFailure({error:"agent_http_503",done:null}),"sse_agent_http_503");
  assert.equal(task14bSafeTurnFailure({error:"provider_error"}),"sse_provider_error");
+ assert.equal(task14bSafeTurnFailure({error:"agent_turn_failed",diagnosticStage:"persist",
+   diagnosticEndReason:"provider_error",diagnosticModelCalls:1}),
+   "sse_agent_turn_failed_stage_persist_end_provider_error_calls_1");
+ assert.equal(task14bSafeTurnFailure({error:"agent_turn_failed",diagnosticStage:"Secret",
+   diagnosticEndReason:"private_text",diagnosticModelCalls:999}),
+   "sse_agent_turn_failed_stage_unknown_end_unknown_calls_unknown");
  assert.equal(task14bSafeTurnFailure({done:{endReason:"tool_errors",reply}}),"end_tool_errors");
  assert.equal(task14bSafeTurnFailure({done:{endReason:"complete",reply:{id:"bad"}}}),
   "missing_persisted_reply");
