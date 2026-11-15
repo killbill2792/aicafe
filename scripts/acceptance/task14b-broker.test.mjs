@@ -17,6 +17,18 @@ const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
  tools:[{type:"function",name:"inspect_supplier_purchase",parameters:{
   type:"object",properties:{},additionalProperties:false}}]};
 const body=Buffer.from(JSON.stringify(params));
+test("trusted workflow uses a NEW owner-only v2 grant, never replays consumed v1",()=>{
+ const workflow=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
+ assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v2 "/);
+ assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v2 -->"/);
+ assert.match(workflow,/github\.actor == 'killbill2792'/);
+ assert.match(workflow,/github\.run_attempt == 1/);
+ assert.match(workflow,/event\.changes\?\.body\?\.from/);
+ assert.match(workflow,/if\(comments\.some\(c=>String\(c\.body\|\|""\)\.includes\(consumed\)\)\)/);
+ assert.match(workflow,/task14b_host_failure/);
+ assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v1 -->"/);
+});
+
 test("allows only priced foreground Luna Responses calls and reserves worst-case bytes",()=>{
  const r=reservationForRequest(body);
  assert.ok(r.reservedMicros>600);
