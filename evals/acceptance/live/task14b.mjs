@@ -66,6 +66,22 @@ async function createdThread(context){
  if(!/^[0-9a-f-]{36}$/i.test(data.thread?.id??""))fail("thread_identity_missing");
  return data.thread.id;
 }
+/** Emit only finite, allowlisted failure metadata, never the reply, tool args,
+ * request text, provider body, or owner information on a failed paid pilot. */
+export function task14bSafeTurnFailure(result){
+ if(result?.error){
+  const raw=String(result.error);
+  return /^[a-z][a-z0-9_-]{0,50}$/.test(raw)?"sse_"+raw:"sse_unknown";
+ }
+ if(!result?.done)return "missing_done_event";
+ const reason=result.done.endReason;
+ if(reason!=="complete")
+  return typeof reason==="string"&&/^[a-z][a-z0-9_-]{0,40}$/.test(reason)?
+    "end_"+reason:"end_unknown";
+ if(!/^[0-9a-f-]{36}$/i.test(result.done.reply?.id??""))
+  return "missing_persisted_reply";
+ return null;
+}
 /** Consume the actual owner /agent stream. No replay/canned completion accepted. */
 async function ownerTurn(page,thread,text){
  const clientMessageId=randomUUID();
@@ -98,9 +114,8 @@ async function ownerTurn(page,thread,text){
    return {names,done,error:error??(done?null:"missing_completed_turn")};
   }finally{clearTimeout(timeout)}
  },{thread,text,clientMessageId});
- if(result.error||result.done?.endReason!=="complete"||
-   !/^[0-9a-f-]{36}$/i.test(result.done?.reply?.id??""))
-  fail("real_agent_turn_failed");
+ const failure=task14bSafeTurnFailure(result);
+ if(failure)fail("real_agent_turn_"+failure);
  return {...result,clientMessageId};
 }
 async function query(db,sql,args){return (await db.query(sql,args)).rows}
