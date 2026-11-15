@@ -343,7 +343,7 @@ jobs:
         with:
           node-version: 22
       - name: Kill-test the evaluator with known bad observations
-        run: node --test evals/acceptance/evidence.test.mjs
+        run: node --test evals/acceptance/*.test.mjs
       - name: Verify independent synthetic calibration is not live proof
         run: node evals/acceptance/cli.mjs
 

@@ -165,6 +165,70 @@ test("@staff seeded owner can open actual schedule and Team view", async ({page}
     .toBeVisible();
 });
 
+test("@staff owner sees durable published/accepted/delivered status, isolated by café",async({browser})=>{
+ test.setTimeout(100_000);
+ const own=seededCafe(0),other=seededCafe(1);
+ const week="2026-12-07"; // only disposable seeded local database, no real sender
+ const threadId=randomUUID(),proposalId=randomUUID(),publicationId=randomUUID(),deliveryId=randomUUID();
+ const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+   user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+ const a=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+ const b=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+ let connected=false,employeeId=null;
+ try{
+  await db.connect();connected=true;
+  const worker=await db.query("select id from public.employees where business_id=$1 order by id limit 1",
+   [own.businessId]);expect(worker.rows).toHaveLength(1);employeeId=worker.rows[0].id;
+  await db.query(`insert into public.ai_threads
+    (id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)`,
+    [threadId,own.businessId,own.owner.userId,randomUUID()]);
+  await db.query(`insert into public.supervisor_proposals
+    (id,business_id,owner_user_id,thread_id,request_key,capability_id,
+     capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status)
+    values ($1,$2,$3,$4,$5,'olivia.staff_propose_send_schedule.v2',2,
+      $6::jsonb,$7,'{}','{}','en','committed')`,
+    [proposalId,own.businessId,own.owner.userId,threadId,randomUUID(),
+      JSON.stringify({operation:"propose_send_schedule",payload:{
+        week_start:week,publish_and_notify:true}}),"b".repeat(64)]);
+  const snapshot=[{employee_id:employeeId,date:week,start:"09:00",end:"15:00"}];
+  await db.query(`insert into public.staff_schedule_publications
+    (id,business_id,owner_user_id,proposal_id,week_start,snapshot)
+    values($1,$2,$3,$4,$5,$6::jsonb)`,
+    [publicationId,own.businessId,own.owner.userId,proposalId,week,JSON.stringify(snapshot)]);
+  await db.query(`insert into public.staff_schedule_deliveries
+    (id,business_id,proposal_id,publication_id,employee_id,recipient_e164,status,meta_message_id)
+    values($1,$2,$3,$4,$5,'+14155550123','sent',$6)`,
+    [deliveryId,own.businessId,proposalId,publicationId,employeeId,
+      "wamid.disposable."+randomUUID()]);
+  const page=await a.newPage();
+  await login(page,own);
+  await openOwnedPage(page,own,"staff?week="+week);
+  const status=page.getByRole("region",{name:"Supervisor schedule publication status"});
+  await expect(status).toBeVisible();
+  await expect(status.getByText("1 provider-accepted, awaiting delivery")).toBeVisible();
+  await expect(status.getByText("0 delivered")).toBeVisible();
+  await db.query(`update public.staff_schedule_deliveries
+    set status='delivered',delivered_at=now() where id=$1`,[deliveryId]);
+  await page.reload();
+  await expect(status.getByText("1 delivered")).toBeVisible();
+  await expect(status.getByText("0 provider-accepted, awaiting delivery")).toBeVisible();
+  const otherPage=await b.newPage();
+  await login(otherPage,other);
+  await openOwnedPage(otherPage,other,"staff?week="+week);
+  await expect(otherPage.getByRole("region",{name:"Supervisor schedule publication status"}))
+    .toHaveCount(0);
+ }finally{
+  await a.close();await b.close();
+  if(connected){
+   await db.query("delete from public.staff_schedule_deliveries where id=$1",[deliveryId]).catch(()=>{});
+   await db.query("delete from public.staff_schedule_publications where id=$1",[publicationId]).catch(()=>{});
+   await db.query("delete from public.supervisor_proposals where id=$1",[proposalId]).catch(()=>{});
+   await db.query("delete from public.ai_threads where id=$1",[threadId]).catch(()=>{});
+  }
+  await db.end().catch(()=>{});
+ }
+});
+
 test("@menu seeded owner searches real stored products", async ({page}) => {
   const own = seededCafe(0);
   await login(page, own);

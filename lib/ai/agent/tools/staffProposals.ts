@@ -20,14 +20,15 @@ const rules=[
  "coverage_enabled","min_headcount","prep_minutes_before_open","prep_minutes_after_close"
 ] as const;
 export const staffProposalInputs={
- propose_schedule:z.strictObject({week_start:date.nullable(),shifts:z.array(shift).max(60)}),
+ propose_schedule:z.strictObject({week_start:date.nullable(),shifts:z.array(shift).max(60),
+  correct_cancelled_publication:z.boolean().optional()}),
  propose_shift_change:z.strictObject({shift_id:uuid.nullable(),shift,remove:z.boolean()}),
  propose_add_staff:person,
  propose_staff_change:z.strictObject({employee_id:uuid, ...person.shape,active:z.boolean()}),
  propose_availability_change:z.strictObject({instruction:z.string().trim().min(5).max(400)}),
  propose_rule_change:z.strictObject({rule:z.enum(rules),boolean_value:z.boolean().nullable(),
   number_value:z.number().int().min(0).max(50000).nullable()}),
- propose_send_schedule:z.strictObject({week_start:date}),
+ propose_send_schedule:z.strictObject({week_start:date,publish_and_notify:z.boolean().optional()}),
 } as const;
 /** Exactly which draft week/rows an ephemeral approval card represents.
  * This is a turn-local identity guard, not persisted authorization or a DB key. */
@@ -39,13 +40,13 @@ export type StaffProposalName=keyof typeof staffProposalInputs;
 export const isStaffProposalName=(value:string):value is StaffProposalName=>
  Object.hasOwn(staffProposalInputs,value);
 const descriptions:Record<StaffProposalName,string>={
- propose_schedule:"Prepare an owner approval card to replace DRAFT shifts in a specific week. For 'next week' pass week_start null (resolved to next café-local Monday); ask only if truly ambiguous. Include staff UUIDs, dates, local start/end and breaks. Never claim saved.",
+ propose_schedule:"Prepare an owner approval card to replace DRAFT shifts in a specific week. For 'next week' pass week_start null (resolved to next café-local Monday); ask only if truly ambiguous. Include staff UUIDs, dates, local start/end and breaks. For a PREVIOUSLY PUBLISHED roster cancelled after notification, set correct_cancelled_publication:true ONLY after owner requests a full-week corrected roster and a new explicit approval. Never change sent shifts in place; old delivery receipts remain historical. Never claim saved.",
  propose_shift_change:"Prepare a card to add, edit or remove a dated staff shift. Use an existing shift_id for edits; null for creates. No write before approval.",
  propose_add_staff:"Prepare an owner approval card to add a staff member with hourly wage in cents; never directly add.",
  propose_staff_change:"Prepare a card to change an existing staff member's name, role, hourly wage, phone or active status; provide the complete desired profile.",
  propose_availability_change:"Use when owner requests recurring availability or a day off in plain language, e.g. 'Maria can only work Mon, Wed, Fri mornings' or 'Sam is off next Tuesday'. Review before save.",
  propose_rule_change:"Prepare a card to change one team rule. Provide exactly one of boolean_value or number_value based on the rule type.",
- propose_send_schedule:"Prepare an owner approval card for COPY-READY staff schedule messages. WhatsApp transport is not connected to this tool; never claim sent.",
+ propose_send_schedule:"Prepare an owner approval card to PUBLISH the current dated roster and NOTIFY opted-in staff only after explicit review. This message-preparation tool does NOT independently certify legal coverage or labor-policy compliance; request review of the Task 13A evidence. Set publish_and_notify:true ONLY when the owner wants publication and automated employee messaging. Otherwise false means copy-ready text ONLY. The authorization gateway, not this tool, performs approved publication; report provider accepted/delivered only after real receipts.",
 };
 export const staffProposalTools=Object.fromEntries(
  (Object.keys(staffProposalInputs) as StaffProposalName[]).map(name=>[name,{

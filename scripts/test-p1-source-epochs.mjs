@@ -247,20 +247,27 @@ try{
  await b.query("SET LOCAL ROLE authenticated");
  await b.query("SELECT set_config('request.jwt.claim.sub',$1,true)",[ownerA]);
  await b.query("SET LOCAL statement_timeout='5000ms'");
+ // Attach both outcomes *before* releasing the competing writer's lock.
+ // On Node 22 a valid PostgreSQL stale-source rejection can settle between
+ // a.commit() and the later await; leaving it temporarily unhandled crashes
+ // the process instead of testing the expected rollback/retry contract.
+ // Keep the same allowed conflict, unchanged fail-closed check, and retry.
  const duringRename=b.query("SELECT public.pantry_apply_sized_recipes($1,$2,$3::jsonb) AS result",
-   [A,latte12,JSON.stringify(recipes)]);
+   [A,latte12,JSON.stringify(recipes)]).then(
+   output=>({ok:true,output}),
+   error=>({ok:false,error})
+ );
  await new Promise(resolve=>setTimeout(resolve,80));
  await a.query("COMMIT");
- let staleRename=false;
- try{
-   const output=await duringRename;
-   check(output.rows[0].result.itemIds.length===4,
+ const renameOutcome=await duringRename;
+ if(renameOutcome.ok){
+   check(renameOutcome.output.rows[0].result.itemIds.length===4,
      "template succeeds if its identity was read after grouped rename");
    await b.query("COMMIT");
- }catch(error){
-   staleRename=String(error.message).includes("product changed");
+ }else{
    await b.query("ROLLBACK");
-   check(staleRename,"concurrent rename conflicts safely instead of deadlocking");
+   check(String(renameOutcome.error.message).includes("product changed"),
+     "concurrent rename conflicts safely instead of deadlocking");
  }
  // Retry after any expected old-base conflict: the renamed product remains usable.
  await b.query("BEGIN");
