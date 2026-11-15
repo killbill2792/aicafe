@@ -38,7 +38,8 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
    focusContact={fix==="phone"||fix==="consent"?fix:undefined} focusRule={isStaffRuleKey(fix)?fix:undefined} focusClock={validShiftClock(clock??"")?clock:undefined} teamExtras={<TeamLegacyMetrics/>}
    initialAlerts={alerts.ok?[...alerts.alerts]:[]} alertError={alerts.ok?null:alerts.error}/>
   {!useFixture&&scope.ok&&!scope.readOnly&&
-    <StaffStandingMandatePanel week={selected} businessId={scope.businessId}/>}
+    <StaffStandingMandatePanel key={`${scope.businessId}:${selected}`}
+     week={selected} businessId={scope.businessId}/>}
   {!useFixture&&<StaffPublicationStatus week={selected}/>}
   {(showSendFixture||(!useFixture&&Boolean(proposalId)))&&<OwnerScheduleSendPanel
     {...(!useFixture&&proposalId?{proposalId}:{week:selected})}
