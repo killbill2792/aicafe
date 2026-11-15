@@ -374,11 +374,11 @@ test("@purchasing real supplier quote entry preserves currency and denies cross-
 });
 
 
-test("@purchasing owner approves real PO from the Supervisor screen, reopens status and proves no receiving",async({browser})=>{
+test("@purchasing proactive notice → owner-approved real PO → reopened status with no receiving",async({browser})=>{
   // This verifies the real owner/browser/database portion of the workflow.
   // Recorded model tests separately prove the multi-tool sequence; a sentinel
   // provider cannot be passed off as live-model or proactive parity evidence.
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   const own=seededCafe(0),other=seededCafe(1);
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
     user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
@@ -426,9 +426,9 @@ test("@purchasing owner approves real PO from the Supervisor screen, reopens sta
       [id.thread,own.businessId,own.owner.userId,randomUUID()]);
     await db.query("insert into public.supervisor_proposals("+
       " id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,"+
-      " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale)"+
+      " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,created_at)"+
       " values($1,$2,$3,$4,$5,'maya.supplier_purchase_order.v1',1,"+
-      " $6::jsonb,$7,'{}'::jsonb,$8::jsonb,'en')",
+      " $6::jsonb,$7,'{}'::jsonb,$8::jsonb,'en',now()-interval '3 hours')",
       [id.proposal,own.businessId,own.owner.userId,id.thread,randomUUID(),
         JSON.stringify(effect),hash,JSON.stringify({durationDays:1,metricScope:"supplier_purchase_order"})]);
     await db.query("insert into public.ai_messages("+
@@ -450,6 +450,28 @@ test("@purchasing owner approves real PO from the Supervisor screen, reopens sta
     const page=await first.newPage();
     await login(page,own);
     await openOwnedPage(page,own,"?thread="+encodeURIComponent(id.thread));
+    // Verify the existing scheduled dispatcher, not a test-inserted notice.
+    // Runner provides a fresh random local cron bearer; no provider key here.
+    if(!process.env.CRON_SECRET)throw Error("Task14B local cron credential unavailable");
+    const proactive=await first.request.get("/api/cron/refresh-derived",{
+      headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000,
+    });
+    expect([200,207]).toContain(proactive.status());
+    const priority=await db.query("select id,status,agent_id,payload from public.operating_tasks"+
+      " where business_id=$1 and owner_user_id=$2 and kind='priority_notice'"+
+      " and payload->>'sourceType'='supplier_po' and payload->>'sourceId'=$3",
+      [own.businessId,own.owner.userId,id.proposal]);
+    expect(priority.rows).toHaveLength(1);
+    expect(priority.rows[0]).toMatchObject({status:"needs_owner",agent_id:"maya"});
+    expect(priority.rows[0].payload.threadId).toBe(id.thread);
+    const messages=await db.query("select id from public.ai_messages"+
+      " where business_id=$1 and thread_id=$2 and role='supervisor'"+
+      " and grounding->>'intent'='priority_notice'",[own.businessId,id.thread]);
+    expect(messages.rows).toHaveLength(1);
+    // Reopened owner chat must show the real cron-generated notice.
+    await page.reload();
+    await expect(page.getByText("Supplier purchase-order draft needs your approval",{exact:false}).first())
+      .toBeVisible({timeout:30_000});
     const card=page.getByRole("region",{name:"Supplier purchase-order approval"});
     await expect(card).toBeVisible({timeout:30_000});
     await expect(card).toContainText(supplier);
@@ -468,6 +490,9 @@ test("@purchasing owner approves real PO from the Supervisor screen, reopens sta
     expect(order.rows).toHaveLength(1);
     expect(order.rows[0]).toMatchObject({status:"approved_for_ordering",
       subtotal_cents:"450",currency_code:own.currency});
+    const settled=await db.query("select status from public.operating_tasks where business_id=$1 and id=$2",
+      [own.businessId,priority.rows[0].id]);
+    expect(settled.rows[0].status).toBe("handled");
     const count=await db.query("select count(*)::int as n from public.purchase_order_lines"+
       " where business_id=$1 and purchase_order_id=$2",[own.businessId,order.rows[0].id]);
     expect(count.rows[0].n).toBe(1);
@@ -495,6 +520,9 @@ test("@purchasing owner approves real PO from the Supervisor screen, reopens sta
           [own.businessId,id.proposal]],
         ["delete from public.cafe_suppliers where business_id=$1 and display_name=$2",
           [own.businessId,supplier]],
+        ["delete from public.operating_tasks where business_id=$1 and kind='priority_notice'"+
+          " and payload->>'sourceType'='supplier_po' and payload->>'sourceId'=$2",
+          [own.businessId,id.proposal]],
         ["delete from public.supervisor_effect_attempts where business_id=$1 and proposal_id=$2",
           [own.businessId,id.proposal]],
         ["delete from public.supervisor_approvals where business_id=$1 and proposal_id=$2",
