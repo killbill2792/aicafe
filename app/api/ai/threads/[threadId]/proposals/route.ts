@@ -75,9 +75,33 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
   assertProposalScope(scope,p);
   if(p.capabilityId===supplierPurchaseOrderCapabilityId){
     const effect=supervisorLoopRegistry.get(supplierPurchaseOrderCapabilityId).parseEffect(p.canonicalEffectPayload);
+    // Task14C: approved internal PO != vendor send. Rehydrate the actual
+    // source-backed provider status for the existing saved owner approval card.
+    let vendorDispatch:{state:string;purchaseOrderId:string|null;providerVerified:boolean}|undefined;
+    if(p.status==="committed"){
+      try{
+        const db=await createServerSupabaseClient();
+        const po=await db.from("purchase_orders").select("id")
+          .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+          .eq("proposal_id",p.id).maybeSingle();
+        if(po.error||!po.data)throw new Error("supplier_po_receipt_not_readable");
+        const dispatch=await db.from("purchase_order_dispatches")
+          .select("state,provider_receipt_id").eq("business_id",scope.businessId)
+          .eq("owner_user_id",scope.ownerUserId)
+          .eq("purchase_order_id",po.data.id).maybeSingle();
+        if(dispatch.error)throw new Error("supplier_send_receipt_not_readable");
+        vendorDispatch={purchaseOrderId:po.data.id,
+          state:dispatch.data?.state==="reserved"?"send_uncertain":
+            dispatch.data?.state??"not_prepared",
+          providerVerified:dispatch.data?.state==="provider_accepted"&&
+            Boolean(dispatch.data?.provider_receipt_id)};
+      }catch{
+        vendorDispatch={state:"status_unavailable",purchaseOrderId:null,providerVerified:false};
+      }
+    }
     return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
       productName:"Supplier PO · "+effect.supplierName,currency:effect.currency,
-      purchaseOrder:effect};
+      purchaseOrder:effect,...(vendorDispatch?{vendorDispatch}:{})};
   }
   if(p.capabilityId===purchaseCapabilityId){
     const effect=supervisorLoopRegistry.get(purchaseCapabilityId).parseEffect(p.canonicalEffectPayload);
