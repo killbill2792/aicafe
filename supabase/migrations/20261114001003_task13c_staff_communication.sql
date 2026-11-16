@@ -196,6 +196,18 @@ begin
  if char_length(coalesce(v_body,''))>2000 or
    (p_response in ('report','message') and v_body is null) then
   raise exception 'invalid_message' using errcode='22023'; end if;
+ -- Idempotent retries must succeed EVEN AFTER a prior response closes the
+ -- request or the shift changes. Check exact nonce first, then source status.
+ select * into previous from public.staff_communication_messages m
+  where m.business_id=emp.business_id and m.employee_id=emp.id
+    and m.client_nonce=p_nonce;
+ if found then
+  if previous.request_id is distinct from p_request_id or
+     previous.response_code is distinct from p_response or
+     previous.body is distinct from v_body or previous.channel<>'web'
+  then raise exception 'nonce_conflict' using errcode='40900'; end if;
+  return jsonb_build_object('id',previous.id,'replayed',true);
+ end if;
  if p_request_id is null then
   if p_response<>'report' then raise exception 'request_required' using errcode='22023'; end if;
  else
@@ -219,16 +231,7 @@ begin
      and s.updated_at::text=req.source_revision
   ) then raise exception 'shift_changed' using errcode='40900'; end if;
  end if;
- select * into previous from public.staff_communication_messages m
-  where m.business_id=emp.business_id and m.employee_id=emp.id
-    and m.client_nonce=p_nonce;
- if found then
-  if previous.request_id is distinct from p_request_id or
-     previous.response_code is distinct from p_response or
-     previous.body is distinct from v_body or previous.channel<>'web'
-  then raise exception 'nonce_conflict' using errcode='40900'; end if;
-  return jsonb_build_object('id',previous.id,'replayed',true);
- end if;
+
  insert into public.staff_communication_messages
  (business_id,employee_id,request_id,actor,response_code,body,channel,client_nonce)
  values(emp.business_id,emp.id,p_request_id,'employee',p_response,v_body,'web',p_nonce)
