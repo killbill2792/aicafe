@@ -12,6 +12,18 @@
 
 **Single delivery prompt (no separate copy/paste template):** Actual authorized assignments are constructed by `scripts/dev-dispatcher/run.mjs` using `scripts/dev-dispatcher/delivery.mjs#createDelivery`, the approved machine queue and this task's exact anchor. Read the current `AGENTS.md` → binding POS rules → #398 decision record → this brief+queue → actual code → executable acceptance. The old short coding-prompt example was superseded; do not paste or concatenate it with the generated prompt, reassign an existing chat because of documentation edits, or turn D4A/D4B architectural approval into runtime authorization. Owner's coding-delivery switch is OFF during POS0a closeout despite issue/queue tracking; do not deliver POS0b–f coding instructions without explicit owner activation. Manual PR-body comment reconciliation suffices for this phase; no new automation gate.
 
+## BINDING OWNER APPROVAL — autonomous coding tasks and staged gates (Nov 16, 2026)
+
+**Every implementation task below must build toward the same first-party, proactive, multi-step AI CAFE Supervisor.** Not a question-answer chatbot, synthetic notice, cosmetic progress bar, extra persona/queue or a model that only promises to act. Each task records: exact business goal and owner outcome; owner-delegated or unattended source trigger; actual model-selected registered tools and canonical data/metric authority; durable work/step/owner progress in the existing chat/inbox; permissions, revocation and necessary owner approval; verified effect/source readback; idempotent retries and interrupted-work recovery; eventual proactive next step or source-verified closeout. A read-only foundation may truthfully be a dependency toward that outcome, but must not claim autonomy from UI mocks alone.
+
+**Each AI feature PR is individually testable and mergeable:** actual `gpt-6-luna` on the real registered Supervisor, with source-backed tool selection, local migrated disposable Supabase and independently checked owner/tenant DB/effect/UI results; test meaningful correction, unknowns, unauthorized actions, duplicate writes and relevant failures. Real provider transport proof plus exact behavior-code attestation, final full CI, clean Codex code/security review, resolved threads and approved code/dependency scope are all mandatory. Green CI, recorded replay, HTTP200 and a fluent answer are not substitutes. A pure documentation/model-free infrastructure PR must disclose that real Luna is not applicable to its changed code and still pass all standard checks. Do not trigger paid inference automatically in untrusted PR CI; use the separately owner-approved bounded trusted runner, without reusing consumed grants.
+
+**Stages do not hold unrelated work hostage:** `feature_proven` = that PR's own real behavior/data/safety checked and eligible to merge; `integrated_proven` = 17B/17C complete combined-tree capability and autonomous workflow tests; `released_proven` = 17D/17E owner UX, live pilot and safe release authorization. An integrated failure blocks product release and full-autonomy claims, not the validity of previously attested feature tests. Every deferred integration condition remains an explicit executable case with named task owner, dependency and `NOT_PROVEN` status, never an erased requirement.
+
+**Task17B must cover ALL registered modules, tools, metrics, screens, owner question families, experiments and approved actions** through an automatically checked registry census; missing test mapping is a release-gate failure. Task17C must use real Luna to prove unattended multi-domain reasoning, durable work, genuine process restart, owner authorization, verified effects and follow-up. 17D owner-facing isolated GitHub browser; 17E authorized final release. Grok/Muse describes the expected AI CAFE behavior, **not** API integration or required third-party comparison. Details and required evidence are in [the binding acceptance rules](../rules/acceptance-quality.md).
+
+**PR evidence columns:** `exact_head_CI`, `Codex_and_security`, `real_Luna_feature`, `canonical_data_and_effect`, `autonomous_integrated_17B_17C`, `released_17E`, each PASS/FAIL/NOT_PROVEN with exact run/artifact/code SHA; no one green status represents all six. Existing task architecture approvals and signed queue state remain unchanged by this policy amendment.
+
 ## Priority zero — finish ALL permitted Toast Standard API data before E2 / PR6–PR17
 
 **Owner decision, November 6, 2026:** These six small implementation tasks now lead the **existing**
@@ -356,6 +368,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 14b: Supplier/quote/PO domain lifecycle
 
+- **Owner-accepted purchasing milestone:** PR #482 merged after actual Luna model-directed supplier sourcing, multi-turn corrected draft, authenticated owner click, exactly one durable PO, tenant/financial safety, exact-head CI and Codex. This does not mean full unprompted purchasing is proven. The connected Task15A → Task14B → Task16B independent purchasing investigation/approval/real worker restart/follow-up is mandatory in Task17B/17C. Task14B does not send a real vendor order; that's Task14C.
+
 - **Depends:** 14a, 10 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Vendor quotes and purchase order lifecycle.
 - **Scope to verify/assign:** existing purchasing/bills records; vendor quote and PO domain contract. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -387,6 +401,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, db, security; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `vitest`, `supabase`, `pr`.
 
 ## Task 15a: Operating priority and anomaly escalation
+
+- **Mandatory first-party proactive behavior:** PR #488 owns unprompted source detection, model-chosen canonical multi-domain tools, checkpointed incident/work, useful owner-private inbox/chat report, delayed follow-up and verified source closure. It must pass its own actual Luna, quota, security, final-head CI/Codex and persistence tests before merge; every-module coverage is separately Task17B/17C, not claimed from a single incident.
 
 - **Depends:** 7, 9 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Prioritization and alert escalation using one inbox.
@@ -427,6 +443,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** e2e, security, preview; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `playwright-cli`, `e2e-testing-patterns`, `web-design-guidelines`, `pr`.
 
 ## Task 16b: Owner-visible durable work, results, exceptions
+
+- **Durable visibility toward real autonomy:** PR #485 owns truthful read-only progress/receipt projection and owner reconnect from the existing durable worker. A status UI or seeded database fixture alone is not a new autonomous model executor. Verify applicable real Luna integration with work ID/steps/owner UI and record missing actual process restart under Task17C. Do not duplicate worker, approval card, action gateway or queue.
 
 - **Depends:** 6, 9 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Chat progress, retries and receipts.
