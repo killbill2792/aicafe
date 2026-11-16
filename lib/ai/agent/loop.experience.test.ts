@@ -36,10 +36,10 @@ function inbox(batches: OwnerFollowUp[][]) {
 }
 
 describe("Task14B trusted broker request-shape preflight (zero provider cost)",()=>{
-  it("replays a real multi-step tool turn without opaque provider context or narrowed tools",async()=>{
+  it("replays original-order encrypted reasoning with function call and tool result, without narrowing tools",async()=>{
     const {requests,provider}=recording([
       [{type:"response.output_item.done",item:{type:"reasoning",
-        id:"rs_private_remote_reasoning",summary:[]}},
+        id:"rs_local_issued",status:"completed",summary:[],encrypted_content:"U".repeat(512)}},
        call("get_supplier_purchase_orders","{}","call_purchase_1"),completed],
       [text("The saved purchasing history is empty."),completed]
     ]);
@@ -60,26 +60,34 @@ describe("Task14B trusted broker request-shape preflight (zero provider cost)",(
     }finally{vi.unstubAllEnvs();}
     expect(requests).toHaveLength(2);
     const next=requests[1].input as Array<Record<string,unknown>>;
-    expect(next.some(x=>x.type==="reasoning")).toBe(false);
+    expect(requests[0].store).toBe(false);
+    expect(requests[1].store).toBe(false);
+    const history=next.filter(x=>["reasoning","function_call","function_call_output"].includes(String(x.type)));
+    expect(history.map(x=>x.type)).toEqual(["reasoning","function_call","function_call_output"]);
+    expect(history[0]).toEqual({type:"reasoning",id:"rs_local_issued",
+      status:"completed",summary:[],encrypted_content:"U".repeat(512)});
     expect(next).toContainEqual({type:"function_call",name:"get_supplier_purchase_orders",
       arguments:"{}",call_id:"call_purchase_1"});
     expect(next.some(x=>x.type==="function_call_output"&&x.call_id==="call_purchase_1")).toBe(true);
-    expect(JSON.stringify(requests[1])).not.toContain("rs_private_remote_reasoning");
+    expect(JSON.stringify(requests[1])).toContain("rs_local_issued");
+    expect(JSON.stringify(requests[1])).not.toContain("fc_opaque_remote");
     expect(Buffer.byteLength(JSON.stringify(requests[1]),"utf8")).toBeLessThanOrEqual(120_000);
     const names=(requests[1].tools as Array<{name:string}>).map(x=>x.name);
     expect(names).toContain("get_supplier_purchase_orders");
     expect(names).toContain("inspect_supplier_purchase");
     expect(names).toContain("propose_supplier_purchase_order");
   });
-  it("keeps self-contained call IDs while stripping opaque provider output",()=>{
+  it("keeps self-contained encrypted reasoning, call IDs and strips other opaque IDs",()=>{
     expect(task14bInlineContinuation([
-      {type:"reasoning",id:"rs_remote",summary:[]},
+      {type:"reasoning",id:"rs_local_issued",status:"completed",summary:[],encrypted_content:"U".repeat(512)},
       {type:"function_call",id:"fc_opaque",status:"completed",
         name:"inspect_supplier_purchase",call_id:"call_2",arguments:'{"items":[]}'},
       {type:"message",id:"msg_opaque",role:"assistant",content:[
         {type:"output_text",text:"A source-backed result.",annotations:[{url:"https://secret.test"}]}
       ]}
     ])).toEqual([
+      {type:"reasoning",id:"rs_local_issued",status:"completed",
+        summary:[],encrypted_content:"U".repeat(512)},
       {type:"function_call",name:"inspect_supplier_purchase",call_id:"call_2",arguments:'{"items":[]}'},
       {type:"message",role:"assistant",content:[
         {type:"output_text",text:"A source-backed result.",annotations:[]}
@@ -87,6 +95,10 @@ describe("Task14B trusted broker request-shape preflight (zero provider cost)",(
     ]);
     expect(()=>task14bInlineContinuation([{type:"function_call",name:"inspect_supplier_purchase",
       call_id:"bad call id",arguments:"{}"}])).toThrow("task14b_invalid_inline_function_call");
+    expect(()=>task14bInlineContinuation([{type:"reasoning",id:"rs_untrusted",
+      summary:[]}])).toThrow("task14b_invalid_inline_reasoning");
+    expect(()=>task14bInlineContinuation([{type:"reasoning",id:"rs_untrusted",
+      summary:[],encrypted_content:"x".repeat(48_001)}])).toThrow("task14b_invalid_inline_reasoning");
   });
 
   it("the complete unfiltered café Supervisor tool contract fits the tested 120KB bound",async()=>{
