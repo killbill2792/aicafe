@@ -11,7 +11,7 @@ import {readMuseNotes} from './muse-local-notes.mjs';
 
 const millis=t=>{const n=Date.parse(t||'');return Number.isFinite(n)?n:null;};
 const identity=a=>createHash('sha256').update(JSON.stringify(a)).digest('hex').slice(0,24);
-const CHAT_ACTIONS=new Set(['fix_ci','fix_codex','verify_merge','continue_chat']);
+
 const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
  repository(owner:$owner,name:$repo){
   pullRequests(states:OPEN,first:70,orderBy:{field:UPDATED_AT,direction:DESC}){
@@ -96,7 +96,7 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
  }
  if(!fresh)return {fresh:false,actions,blocked:[{reason:'github_evidence_stale_or_unavailable'}]};
  for(const entry of Object.values(records)){
-  if(!entry.pr_number||entry.stage==='waiting_owner'||entry.stage==='paused')continue;
+  if(!entry.pr_number||['waiting_owner','paused'].includes(entry.stage))continue;
   const p=byPr.get(entry.pr_number);
   if(!p)continue;
   const head=p.head_sha;
@@ -105,7 +105,8 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
   else if(p.codex==='findings'){kind='fix_codex';reason='Address exact-head Codex findings and retest';}
   else if(!p.draft&&p.ci==='observed_green'&&p.codex==='clean'){
    kind='verify_merge';reason='Verify required CI, approval, security and acceptance gates; merge only if eligible';
-  }else if((millis(p.committed_at)!==null&&clock-millis(p.committed_at)>=idleMinutes*60000)&&
+  }else if(entry.stage!=='ready_review'&&
+    (millis(p.committed_at)!==null&&clock-millis(p.committed_at)>=idleMinutes*60000)&&
     p.ci!=='pending'&&p.codex!=='pending'){
    kind='continue_chat';reason='No recent commit; inspect actual work and continue if not actively running';
   }
@@ -138,9 +139,7 @@ export function reserveMuseActions(existing,planned,now){
   newly.push(a);
  }
  // Keep bounded history, retain pending records; do not silently allow duplicate sends.
- const old=Object.entries(next.events).sort((a,b)=>
-  String(b[1].created_at).localeCompare(String(a[1].created_at)));
- next.events=Object.fromEntries(old.slice(0,1000));
+ if(Object.keys(next.events).length>1000)throw Error('Muse event history full; review before archival');
  return {state:next,new_actions:newly};
 }
 export async function runMuseLite({repo,token,home=join(homedir(),'.local','state','aicafe-muse'),
@@ -151,7 +150,7 @@ export async function runMuseLite({repo,token,home=join(homedir(),'.local','stat
  let facts,error=null;
  try{facts=await fetchGithubFacts({repo,token,fetchImpl,now});}
  catch(e){facts=previous;error=String(e.message||e);}
- const result=museActions(facts,previous,notes,{now});
+ const result=museActions(error?null:facts,previous,notes,{now});
  const prior=existsSync(events)?JSON.parse(readFileSync(events,'utf8')):null;
  const reserved=reserveMuseActions(prior,result,now);
  atomicJson(events,reserved.state);
