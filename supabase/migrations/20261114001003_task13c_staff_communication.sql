@@ -177,6 +177,46 @@ end $$;
 revoke all on function public.staff_channel_sync_shift_requests(uuid) from public,anon,authenticated;
 grant execute on function public.staff_channel_sync_shift_requests(uuid) to service_role;
 
+-- An unanswered imminent published shift creates one durable owner action,
+-- not a chat-only reminder. Missing response is NOT a decline or attendance.
+create function public.staff_channel_escalate_unanswered(p_business_id uuid)
+ returns integer language plpgsql security definer set search_path=public,pg_temp as $$
+declare today date; count_rows integer;
+begin
+ if auth.role() is distinct from 'service_role' then
+  raise exception 'service_role_only' using errcode='42501'; end if;
+ select (now() at time zone b.timezone)::date into today
+  from public.businesses b where b.id=p_business_id;
+ if today is null then raise exception 'missing_timezone' using errcode='22023'; end if;
+ insert into public.operating_tasks
+ (business_id,id,owner_user_id,agent_id,kind,entity_type,entity_id,
+  status,payload,confidence,evidence)
+ select r.business_id,'staff-unanswered:'||r.id::text||':'||m.user_id::text,
+   m.user_id,'olivia','staff_coverage','scheduled_shift',r.source_id,
+   'needs_owner',jsonb_build_object(
+    'title','Staff shift confirmation needs follow-up',
+    'requestId',r.id,'shiftId',r.source_id,
+    'shiftDate',s.local_date,'response','none_verified',
+    'nextAction','Investigate the actual shift and request authorized employee follow-up'),
+   'high',jsonb_build_array(jsonb_build_object('source','staff_communication_requests',
+    'facts',jsonb_build_object('requestId',r.id,'sourceRevision',r.source_revision,
+     'status','open','date',s.local_date)))
+ from public.staff_communication_requests r
+ join public.scheduled_shifts s
+  on s.business_id=r.business_id and s.id::text=r.source_id
+  and s.employee_id=r.employee_id and s.updated_at::text=r.source_revision
+  and s.deleted_at is null and s.status='sent'
+ join public.memberships m on m.business_id=r.business_id and m.role='owner'
+ where r.business_id=p_business_id and r.kind='shift_confirmation'
+  and r.source_type='scheduled_shift' and r.status='open'
+  and s.local_date between today and today+1
+ on conflict (business_id,id) do nothing;
+ get diagnostics count_rows=row_count;
+ return count_rows;
+end $$;
+revoke all on function public.staff_channel_escalate_unanswered(uuid) from public,anon,authenticated;
+grant execute on function public.staff_channel_escalate_unanswered(uuid) to service_role;
+
 -- Writes are via a verified authenticated employee's login, never client-supplied
 -- business/employee ID. A text-only reply to an assigned request is always allowed.
 create function public.staff_channel_submit(
