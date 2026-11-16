@@ -249,8 +249,12 @@ begin
      or q.quoted_on::text is distinct from line->>'quotedOn'
      or q.delivery_on::text is distinct from line->>'deliveryOn'
   then raise exception 'supplier_source_stale_or_mismatched' using errcode='P0001'; end if;
-  if (p.canonical_effect_payload->>'neededBy') is not null
-     and (q.delivery_on is null or q.delivery_on>(p.canonical_effect_payload->>'neededBy')::date)
+  -- A current price is not evidence that an elapsed delivery can satisfy
+  -- a future order. Recheck the café-local date at the owner-click boundary.
+  if (q.delivery_on is not null and q.delivery_on<local_day)
+     or ((p.canonical_effect_payload->>'neededBy') is not null
+       and (q.delivery_on is null or
+         q.delivery_on>(p.canonical_effect_payload->>'neededBy')::date))
   then raise exception 'supplier_delivery_unverified' using errcode='P0001'; end if;
   if (line->>'packs')::integer not between 1 and 100000
      or (line->>'neededBaseQuantity')::numeric<=0

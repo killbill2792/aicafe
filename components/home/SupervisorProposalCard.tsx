@@ -172,41 +172,40 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const staffCopy=dict[locale].StaffApprovalCard;
   if(supplierPO&&value.purchaseOrder){
     const po=value.purchaseOrder;
+    const poCopy=en.SupplierPurchaseOrderCard;
     const pending=value.state==="pending";
-    return <section aria-label="Supplier purchase-order approval" dir={locale==="ar"?"rtl":"ltr"}
+    return <section aria-label={poCopy.ariaLabel} dir={locale==="ar"?"rtl":"ltr"}
       className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
-      <p className="text-sm font-semibold text-ink-muted">Supervisor · agentic purchasing</p>
-      <h3 className="mt-2 break-words text-xl font-bold">Purchase order · {po.supplierName}</h3>
+      <p className="text-sm font-semibold text-ink-muted">{poCopy.agentLabel}</p>
+      <h3 className="mt-2 break-words text-xl font-bold">{poCopy.titlePrefix} {po.supplierName}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?
-        "Approved for ordering — NOT sent to supplier":value.state==="pending"?
-        "Awaiting owner's approval":value.state==="applying"?"Checking saved approval":value.state}</p>
-      <p className="mt-2 text-base">Requested by: {po.neededBy??"Not specified"}</p>
+        poCopy.approved:value.state==="pending"?
+        poCopy.pending:value.state==="applying"?poCopy.applying:value.state}</p>
+      <p className="mt-2 text-base">{poCopy.requestedBy} {po.neededBy??poCopy.unspecified}</p>
       <ul className="mt-3 space-y-2">{po.lines.map((line,i)=><li key={line.quoteId+":"+i}
        className="rounded-xl border border-line p-3">
        <strong>{line.itemName}</strong>
-       <p>{line.packs} × {line.packQuantity} {line.packUnit} at {money(line.priceCents)} per pack</p>
-       <p>Line subtotal: {money(line.lineSubtotalCents)} · Quoted: {line.quotedOn}</p>
-       <p>Delivery: {line.deliveryOn??"Unconfirmed"} · Source quote: {line.quoteId}</p>
+       <p>{line.packs} × {line.packQuantity} {line.packUnit} {poCopy.at} {money(line.priceCents)} {poCopy.perPack}</p>
+       <p>{poCopy.lineSubtotal} {money(line.lineSubtotalCents)} · {poCopy.quoted} {line.quotedOn}</p>
+       <p>{poCopy.delivery} {line.deliveryOn??poCopy.unconfirmed} · {poCopy.sourceQuote} {line.quoteId}</p>
       </li>)}</ul>
-      <p className="mt-3 text-lg font-bold">Items subtotal: {money(po.subtotalCents)} {po.currency}</p>
-      <p className="mt-1 text-base text-ink-muted">Shipping, tax and full landed total: unknown.
-       Only the saved item subtotals have been compared; this is not a verified cheapest landed offer.</p>
-      <p className="mt-2 text-base text-ink-muted">Owner-reported source evidence. Approval stores a PO ready
-       for Task 14C ordering. It does NOT send any order, record an expense or receive stock.</p>
+      <p className="mt-3 text-lg font-bold">{poCopy.itemsSubtotal} {money(po.subtotalCents)} {po.currency}</p>
+      <p className="mt-1 text-base text-ink-muted">{poCopy.subtotalNotice}</p>
+      <p className="mt-2 text-base text-ink-muted">{poCopy.ownerNotice}</p>
       {pending&&<div className="mt-4 flex flex-wrap gap-3">
         <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
          className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">
-         Approve purchase order</button>
+         {poCopy.approve}</button>
         <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
          className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">
-         Decline</button>
+         {poCopy.decline}</button>
       </div>}
-      {value.state==="applying"&&<p className="mt-3" role="status">Checking canonical approval receipt…</p>}
+      {value.state==="applying"&&<p className="mt-3" role="status">{poCopy.checkingReceipt}</p>}
       {value.state==="uncertain"&&<button type="button" disabled={busy}
         onClick={()=>void invoke("reconcile")}
         className="mt-3 min-h-12 rounded-xl border border-line px-5 font-bold">
-        Check saved order — do not submit twice</button>}
-      {error&&<p role="alert" className="mt-3 text-neg">Approval could not be confirmed. Check the saved order status.</p>}
+        {poCopy.reconcile}</button>}
+      {error&&<p role="alert" className="mt-3 text-neg">{poCopy.approvalError}</p>}
     </section>;
   }
   if(gmail&&value.gmail){

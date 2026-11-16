@@ -239,13 +239,14 @@ try{
  // New P1: PostgREST's confirmed SQL validation rollback MUST be finalized
  // as stale through the EXISTING effect gateway. No PO writer can run again
  // for that stale approval; a fresh proposal can still be created.
- const createExecutingAttempt=async pid=>{
+ const createExecutingAttempt=async(pid,overrideEffect=null)=>{
   await db.query("insert into public.supervisor_proposals"+
    " (id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,"+
    " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision)"+
    " select $1,business_id,owner_user_id,thread_id,$2,capability_id,capability_version,"+
-   " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,'executing',3"+
-   " from public.supervisor_proposals where id=$3",[pid,id(),a.proposal]);
+   " coalesce($4::jsonb,canonical_effect_payload),effect_hash,baseline,monitor_spec,locale,'executing',3"+
+   " from public.supervisor_proposals where id=$3",
+  [pid,id(),a.proposal,overrideEffect?JSON.stringify(overrideEffect):null]);
   await db.query("insert into public.supervisor_effect_attempts"+
    " (business_id,proposal_id,effect_hash,authorization_kind,business_date,state)"+
    " values($1,$2,$3,'click',$4,'executing')",[a.cafe,pid,hash,today]);
@@ -285,6 +286,17 @@ try{
  await finishKnownStale(expiredProposal,"supplier_source_stale_or_mismatched");
  await db.query("update public.ai_supplier_quotes set quoted_on=$1::date,valid_until=$2::date"+
   " where business_id=$3 and id=$4",[today,until,a.cafe,a.quote]);
+ // Reproduce current available quote with a historical delivery date.
+ // Even an exact matching draft must be rejected at the commit boundary.
+ const elapsedDelivery=date(-2);
+ await db.query("update public.ai_supplier_quotes set delivery_on=$1::date"+
+   " where business_id=$2 and id=$3",[elapsedDelivery,a.cafe,a.quote]);
+ const elapsedProposal=id();
+ await createExecutingAttempt(elapsedProposal,{...effect,
+   lines:[{...line,deliveryOn:elapsedDelivery}]});
+ await finishKnownStale(elapsedProposal,"supplier_delivery_unverified");
+ await db.query("update public.ai_supplier_quotes set delivery_on=$1::date"+
+   " where business_id=$2 and id=$3",[delivery,a.cafe,a.quote]);
  const freshDraftAfterStale=id();
  await createDraft(freshDraftAfterStale);
  check((await one("select status from public.supervisor_proposals where id=$1",

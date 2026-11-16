@@ -97,7 +97,8 @@ export function planSupplierOrder(input:{
     else if(quote.available_checked_at>input.today||
       ageDays(input.today,quote.available_checked_at)>7)
       reason="availability_stale";
-    else if(input.neededBy&&(!quote.delivery_on||quote.delivery_on>input.neededBy))
+    else if((quote.delivery_on!==null&&quote.delivery_on<input.today)||
+      (input.neededBy&&(!quote.delivery_on||quote.delivery_on>input.neededBy)))
       reason="delivery_not_confirmed";
     const perPack=packBaseQuantity(quote.package_count,
      quote.package_unit==="liter"?"l":quote.package_unit,need.base);

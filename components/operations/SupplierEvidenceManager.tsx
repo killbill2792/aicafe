@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useRef,useState,type FormEvent} from "react";
 import {useLocale} from "next-intl";
+import en from "@/messages/en.json";
 import {parseSupplierDollars,compareSupplierQuotePrices} from "@/lib/calc/supplierQuotes";
 import type {PublicSource} from "@/lib/ai/suppliers/contracts";
 type Quote={id:string;supplierName:string;itemName:string;priceCents:number;
@@ -18,6 +19,7 @@ const field="min-h-12 w-full rounded-xl border border-line bg-surface p-3 text-[
 async function read<T>(resp:Response):Promise<T>{if(!resp.ok)throw new Error();return resp.json() as Promise<T>;}
 export default function SupplierEvidenceManager({copy,today,currency}:{copy:SupplierCopy;today:string;currency:string|null}){
   const locale=useLocale();
+  const extra=en.SupplierEvidenceExtras;
   const formatPrice=(cents:number,quoteCurrency:string|null)=>quoteCurrency?
     new Intl.NumberFormat(locale,{style:"currency",currency:quoteCurrency}).format(cents/100):
     new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100)+" ("+copy.currencyMissing+")";
@@ -101,21 +103,21 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
     <label className="text-[17px] font-semibold text-ink">{copy.unit}
      <select className={field+" mt-1"} value={unit} onChange={e=>{setUnit(e.target.value);requestId.current=null;}}>
       {["each","oz","lb","kg","gal","liter","case"].map(x=><option key={x}>{x}</option>)}</select></label>
-    <label className="text-[17px] font-semibold text-ink">Quote currency (ISO 4217)
+    <label className="text-[17px] font-semibold text-ink">{extra.quoteCurrency}
      <input className={field+" mt-1"} required maxLength={3} pattern="[A-Z]{3}"
       value={quoteCurrency} onChange={e=>{setQuoteCurrency(e.target.value.toUpperCase());requestId.current=null;}}/></label>
-    <label className="text-[17px] font-semibold text-ink">Supplier availability
+    <label className="text-[17px] font-semibold text-ink">{extra.availability}
      <select className={field+" mt-1"} value={availability}
       onChange={e=>{setAvailability(e.target.value as typeof availability);requestId.current=null;}}>
-      <option value="unknown">Not confirmed</option><option value="confirmed">Owner-confirmed</option>
-      <option value="unavailable">Unavailable</option></select></label>
-    {availability==="confirmed"&&<label className="text-[17px] font-semibold text-ink">Availability checked on
+      <option value="unknown">{extra.notConfirmed}</option><option value="confirmed">{extra.ownerConfirmed}</option>
+      <option value="unavailable">{extra.unavailable}</option></select></label>
+    {availability==="confirmed"&&<label className="text-[17px] font-semibold text-ink">{extra.availabilityCheckedOn}
      <input className={field+" mt-1"} type="date" required max={today} value={availableCheckedAt}
       onChange={e=>{setAvailableCheckedAt(e.target.value);requestId.current=null;}}/></label>}
-    <label className="text-[17px] font-semibold text-ink">Offer expires (optional)
+    <label className="text-[17px] font-semibold text-ink">{extra.expires}
      <input className={field+" mt-1"} type="date" min={quotedOn||undefined} value={validUntil}
       onChange={e=>{setValidUntil(e.target.value);requestId.current=null;}}/></label>
-    <label className="text-[17px] font-semibold text-ink">Confirmed delivery date (optional)
+    <label className="text-[17px] font-semibold text-ink">{extra.deliveryDate}
      <input className={field+" mt-1"} type="date" value={deliveryOn}
       onChange={e=>{setDeliveryOn(e.target.value);requestId.current=null;}}/></label>
     <label className="text-[17px] font-semibold text-ink">{copy.sourceKind}
@@ -142,8 +144,8 @@ export default function SupplierEvidenceManager({copy,today,currency}:{copy:Supp
     className="rounded-xl border border-line p-3 text-[17px] text-ink">
     <strong>{q.itemName} · {formatPrice(q.priceCents,q.currencyCode)}</strong>
     <p>{q.supplierName} · {q.packageCount} {q.packageUnit} · {q.quotedOn}</p>
-    <p className="text-ink-muted">{copy.notVerified} · {q.sourceKind} · {q.availableStatus} · {q.availableCheckedAt??"date unknown"}</p>
-    <p className="text-ink-muted">Delivery: {q.deliveryOn??"unknown"} · Expires: {q.validUntil??"unknown"}</p>
+    <p className="text-ink-muted">{copy.notVerified} · {q.sourceKind} · {q.availableStatus} · {q.availableCheckedAt??extra.dateUnknown}</p>
+    <p className="text-ink-muted">{extra.delivery} {q.deliveryOn??extra.unknown} · {extra.expiry} {q.validUntil??extra.unknown}</p>
     {q.sourceUrl&&<a href={q.sourceUrl} rel="noopener noreferrer" target="_blank"
      className="underline">{copy.sourceUrl}</a>}
    </li>)}</ul>

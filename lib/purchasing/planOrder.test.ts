@@ -33,6 +33,15 @@ describe("Task 14B deterministic purchasing decisions",()=>{
    {...quote,delivery_on:"2026-11-19"}
   ])expect(plan({quotes:[candidate]}).offers).toHaveLength(0);
  });
+ it("never accepts elapsed supplier delivery evidence for a new order",()=>{
+  const elapsed={...quote,delivery_on:"2026-11-14"};
+  const withDeadline=plan({today:"2026-11-16",neededBy:"2026-11-17",quotes:[elapsed]});
+  expect(withDeadline.offers).toHaveLength(0);
+  expect(withDeadline.missing).toContain("delivery_not_confirmed:Farm A:Milk");
+  expect(plan({today:"2026-11-16",neededBy:null,quotes:[elapsed]}).offers).toHaveLength(0);
+  expect(plan({today:"2026-11-16",neededBy:"2026-11-17",
+   quotes:[{...quote,delivery_on:"2026-11-16"}]}).offers).toHaveLength(1);
+ });
  it("normalizes supplier litre packs to the canonical metric unit without a density guess",()=>{
   const p=plan({needs:[{ingredientId:ingredient.id,itemName:"Milk",quantity:10,unit:"l"}],
    quotes:[{...quote,price_cents:200,package_unit:"liter",package_count:2}]});
