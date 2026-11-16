@@ -227,6 +227,13 @@ export async function runAgentTurn(args: {
   // A hosted web search is another Responses model request, not a free data read.
   // Account for it within the same six-call budget and protect the final answer slot.
   // Use a per-turn context copy so retries/shared test contexts cannot stack wrappers.
+  // Explicit future orders can require evidence investigation before an owner
+  // draft. Allow two extra bounded rounds; unchanged eight-tool and sixty-
+  // second limits, and host spending, remain independently binding.
+  const explicitSupplierDraftIntent=/\b(?:prepare|draft|create|correct|correction|replace|change)\b[\s\S]{0,160}\b(?:purchase order|supplier order|order)\b/i.test(args.ownerText);
+  const correctionIntent=/\b(?:correct|correction|replace|change)\b/i.test(args.ownerText);
+  const maxModelToolCalls=explicitSupplierDraftIntent?7:5;
+  const maxModelRounds=maxModelToolCalls;
   const underlyingWebSearch=args.context.webSearch;
   args.context.ownerText=args.ownerText;
   args.context.turnResults=()=>results.filter(r=>r.name!=="calculate").map(r=>({name:r.name,result:r.result}));
@@ -238,7 +245,7 @@ export async function runAgentTurn(args: {
       try{
         const result=await underlyingWebSearch(query,{
           reserveModelCall:()=>{
-            if(usage.modelCalls>=5||now()>=workDeadline||budgetStop())return false;
+            if(usage.modelCalls>=maxModelToolCalls||now()>=workDeadline||budgetStop())return false;
             usage.modelCalls++;
             reserved=true;
             return true;
@@ -266,11 +273,27 @@ export async function runAgentTurn(args: {
     process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321" &&
     typeof process.env.AICAFE_14B_BROKER_TOKEN==="string" &&
     process.env.AICAFE_14B_BROKER_TOKEN.length>=40;
+  // Prioritize directly relevant tools, but preserve the FULL domain registry
+  // and model-selected tool_choice; never force a purchase or skip evidence.
+  const fullToolRegistry=[...agentToolDefinitions.filter(t=>!args.toolNames||args.toolNames.includes(t.name as AgentToolName)),
+    ...(args.toolNames?[]:args.extraTools??[])];
+  const preferredProcurementNames=correctionIntent?
+    ["get_supplier_purchase_orders","inspect_supplier_purchase","propose_supplier_purchase_order"]:
+    ["inspect_supplier_purchase","propose_supplier_purchase_order","get_supplier_purchase_orders"];
+  const requestTools=explicitSupplierDraftIntent?
+    [...fullToolRegistry].sort((a,b)=>{
+      const rank=(name:string)=>{
+        const index=preferredProcurementNames.indexOf(name);
+        return index<0?preferredProcurementNames.length:index;
+      };
+      return rank(a.name)-rank(b.name);
+    }):fullToolRegistry;
+  const procurementFocus=explicitSupplierDraftIntent?
+    "\nOWNER-SCOPED SUPPLIER ORDER WORK: The owner requested a FUTURE purchase-order approval draft. Inspect current canonical quotes using inspect_supplier_purchase and compare feasible offers. If valid evidence exists, call propose_supplier_purchase_order to SAVE one owner-approval draft, not merely promise to prepare it. For a correction FIRST read get_supplier_purchase_orders and target only the verified active draft; otherwise use replaceProposalId=null. Never invent prices, delivery, or total landed cost; if evidence is missing explain the exact gap instead of proposing. All other domain tools remain available. Never send an order, add stock, or record expense." : "";
   const request = (final: boolean) => ({
-    model, instructions: agentInstructions(),
+    model, instructions: agentInstructions()+procurementFocus,
     ...(approvedLocalTask14b?{store:false as const}:{}),
-    tools: [...agentToolDefinitions.filter(t=>!args.toolNames||args.toolNames.includes(t.name as AgentToolName)),
-      ...(args.toolNames?[]:args.extraTools??[])],
+    tools: requestTools,
     tool_choice: final ? "none" : "auto", stream: true,
     max_output_tokens: Math.max(1,Math.min(1200,workerBudget ? workerBudget.maxOutputTokens - usage.outputTokens : 1200)), prompt_cache_key: agentPromptCacheKey(), input,
   });
@@ -331,12 +354,12 @@ export async function runAgentTurn(args: {
     }
   };
   try {
-    for (let round = 0; round < 5; round++) {
+    for (let round = 0; round < maxModelRounds; round++) {
       if (now() >= workDeadline) { endReason = "timeout"; break; }
       const cap = budgetStop();
       if (cap) { endReason = cap; break; }
       if (round > 0) await readFollowUps();
-      if(usage.modelCalls>=5){endReason="budget";break;}
+      if(usage.modelCalls>=maxModelToolCalls){endReason="budget";break;}
       let calls: ToolCall[];
       try { calls = await call(false); }
       catch { endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
@@ -345,7 +368,7 @@ export async function runAgentTurn(args: {
         if (cap) { endReason = cap; break; }
         // The owner added something while this answer streamed: answer it in the
         // same reply (one extra bounded call) instead of silently dropping it.
-        if (round < 4 && usage.modelCalls < 5 && await readFollowUps()) {
+        if (round < maxModelRounds-1 && usage.modelCalls < maxModelToolCalls && await readFollowUps()) {
           if (text && !text.endsWith("\n")) { text += "\n\n"; // allowed: separator between model responses to live follow-ups
              args.onDelta?.("\n\n"); }
           continue;
@@ -511,10 +534,10 @@ export async function runAgentTurn(args: {
       if(askedQuestion){if(!text.trim()){text=askedQuestion; // allowed: empty-reply fill
        }break;}
       if (endReason !== "complete") break;
-      if (round === 4 || usage.modelCalls>=5 || usage.toolCalls >= 8 || budgetStop()) { endReason = budgetStop() ?? "budget"; break; }
+      if (round === maxModelRounds-1 || usage.modelCalls>=maxModelToolCalls || usage.toolCalls >= 8 || budgetStop()) { endReason = budgetStop() ?? "budget"; break; }
     }
     if (!finished && endReason === "complete") endReason = "budget";
-    if (!finished && usage.modelCalls < 6 && now() < deadline && !budgetStop()) {
+    if (!finished && usage.modelCalls < maxModelToolCalls+1 && now() < deadline && !budgetStop()) {
       await readFollowUps();
       // Exactly one final no-tool request; never allow another model tool call.
       // Recovery is bounded even after provider disconnect/incomplete response.
