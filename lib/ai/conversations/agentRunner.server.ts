@@ -22,7 +22,8 @@ import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceCha
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
-import {readSupplierPurchaseOrders} from "@/lib/data/supplierPurchasing.server";
+import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
+import {proposeApprovedSupplierEmail} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -244,10 +245,26 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
               recovery:row.status==="approved"&&!attempt
                 ?"owner_retry_or_cancel" as const:"receipt_only" as const};
           }));
+          const [communications,mailbox]=await Promise.all([
+            readSupplierOrderCommunications(client,scope.businessId,scope.ownerUserId,
+              orders.orders.map(o=>o.id)),
+            getConnectorAccount({businessId:scope.businessId,ownerUserId:scope.ownerUserId})
+              .catch(()=>null)
+          ]);
           return {...orders,drafts,draftsTruncated:draftRows.length>20,
-            unresolvedApprovals,unresolvedApprovalsTruncated:unresolvedRows.length>20};
+            unresolvedApprovals,unresolvedApprovalsTruncated:unresolvedRows.length>20,
+            vendorCommunications:communications,
+            gmailConnection:{connected:mailbox?.status==="active",
+              canSend:allowsGmail(mailbox,"send"),
+              canRead:allowsGmail(mailbox,"read")}};
         },
         inspect:input=>investigateSupplierPurchase(proposalScope,input),
+        proposeVendorSend:async({purchaseOrderId})=>{
+          const key=proposalRequestKey(id,JSON.stringify({
+            ownerMessageId:owner.id,supplierVendorEmail:purchaseOrderId
+          }));
+          return proposeApprovedSupplierEmail(proposalScope,purchaseOrderId,key);
+        },
         propose:async input=>{
           // ONLY an explicitly bound proposal ID can authorize a replacement.
           // Keywords in owner text must NEVER cancel an unrelated PO approval.
