@@ -109,7 +109,7 @@ export type AgentToolContext = {
         providerVerified:boolean;ownerQuestion:string|null}>;
       gmailConnection?:{connected:boolean;canSend:boolean;canRead:boolean}}>;
     inspect(input:SupplierPurchaseInput):Promise<PurchasePlan>;
-    proposeVendorSend(input:{purchaseOrderId:string}):Promise<{
+    proposeVendorSend?(input:{purchaseOrderId:string}):Promise<{
       proposalId:string;revision:number;purchaseOrderId:string;
       supplierName:string;recipient:string;account:string;note:string
     }>;
