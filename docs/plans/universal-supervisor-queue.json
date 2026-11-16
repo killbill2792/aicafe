@@ -403,10 +403,7 @@
         "READ-ONLY A1 official current Toast Standard GET-operation and complete recursively nested response-field inventory, with official family/version/source SHA, operation/path/field provenance, documented scope and exclusion of Analytics ERA/Menus V3/no-GET families. No hardcoded historical endpoint/field count or fabricated official response success.",
         "Each official field has a documented expected type/object identity and an existing source→writer/key→stored current fact→canonical reader/describe_data/query_data→app screen/registered Supervisor chain WHERE ACTUALLY VERIFIED; else explicit GAP/NOT_COLLECTED/READER_MISSING/NOT_TESTED. Record consumer/privacy/cadence/freshness/status and proposed POS0e vs POS0b/c/d vs POS0f implementation owner for every gap. This is an auditable DESIGN MAP, not assertion that downstream retention/registered answers already work.",
         "For each observed cafe API permission/response, record exact read-only observation/source/date and distinguish 200-with-values, 200-empty, 204, 403, missing GUID, missing entitlement, stale, not configured, failed, and not tested. Do not require permission tests not safely available or invent response/field access; explicitly mark unverified café grants. Reconcile live current operational order/staff evidence versus October diagnostic snapshots and list existing actual SQL/reader defects for future POS0e/0f.",
-        "Provide a reproducible READ-ONLY official-schema/registry audit command with executed same-head test result; owner-reviewable source → current OR missing stored object → shared-reader/one Supervisor/screen implementation plan, exclusive files/SQL/test dependencies proposed for future PRs, baseline/preservation/rollback conditions, and exact unresolved facts. Owner field-contract approval permits separate task authorization after the existing gate; actual POS0e/b/c/d implementations and POS0f final migrated-DB end-to-end proof are later acceptance, not prerequisites to authorizing their PRs.",
-        "2026-11-16 owner autonomous implementation target: Architecture must enumerate every permitted/missing source field → writer → reader → Supervisor/screen, with each gap owned; no runtime proof claimed by documents.",
-        "Architecture/design-only task: do not claim a runtime Luna pass or authorize code; the later implementing PRs must prove real model behavior.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Provide a reproducible READ-ONLY official-schema/registry audit command with executed same-head test result; owner-reviewable source → current OR missing stored object → shared-reader/one Supervisor/screen implementation plan, exclusive files/SQL/test dependencies proposed for future PRs, baseline/preservation/rollback conditions, and exact unresolved facts. Owner field-contract approval permits separate task authorization after the existing gate; actual POS0e/b/c/d implementations and POS0f final migrated-DB end-to-end proof are later acceptance, not prerequisites to authorizing their PRs."
       ],
       "test_kinds": [
         "docs",
@@ -478,10 +475,7 @@
         "One object per business+restaurant+Toast object GUID; repeated unchanged data makes no new snapshot/history; modified wage, break, tip or clock edit updates exactly once and produces before/after change evidence.",
         "Attendance and planned shifts refresh on appropriate bounded operational cadence with modified cursor/backfill, timezone and overnight coverage; failures and stale/permission gaps remain visible, never zero or owner questions.",
         "Existing Staff, scheduling, payroll and Money screen projections and certified labor cents remain unchanged or parity-proven; existing order import tests remain green.",
-        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots.",
-        "2026-11-16 owner autonomous implementation target: Proactively investigate source-backed staff/timecard/payroll changes and present safe owner action with exact actor/time coverage.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots."
       ],
       "test_kinds": [
         "unit",
@@ -556,10 +550,7 @@
         "Operational deltas are refreshed at bounded POS-safe intervals; no unapproved blanket 30-minute polling, duplicated objects, or assumption of stock zero / kitchen-ready from absent evidence.",
         "Idempotent changed/unchanged/reordered responses and recoverable 429/5xx/timeout/partial/café-isolation are verified on disposable migrated DB; no new competing POS writer or financial totals.",
         "Existing sales, cash, stock, kitchen and orders consumers remain compatible; screen and Supervisor source parity is proved wherever those screens exist.",
-        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots.",
-        "2026-11-16 owner autonomous implementation target: Investigate cash/stock/kitchen source exceptions, distinguish incomplete data and follow up from one current-object writer.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "At least one real source-shaped payload per newly ingested family passes existing writer→current-object→describe_data→query_data→normal one-agent Supervisor answer; conflicting diagnostic-only records are invisible to Supervisor/screens. Empty/missing scope/late data never replaced by sample snapshots."
       ],
       "test_kinds": [
         "unit",
@@ -648,10 +639,7 @@
         "Owner-approved current Option A: recipe/ingredient/cost enrichment on VERIFIED Toast-linked item+size only; optional unambiguous proven association, NO forced transfer of old manual test recipes, connected legacy review tab, local Add Item or draft. Ambiguous historical source GUID/variant evidence stays unresolved/grouped for separately approved Option B adjudication, not current Menu promotion. Spec 0001 SQL/UX implementation remains In Review.",
         "Published Toast price versus proposed target: local Menu edit/manual_done cannot update source-owned price or activate an experiment; require version-consistent exact cafe/restaurant/item/size published source evidence and the existing experiment owner. Spec 0002 remains In Review, exact ownership and migrated DB/Menu/Supervisor/Experiments proof pending.",
         "Source-verified price experiment activation must deliver truthful source effective/observed time; owner approved N rolling 24 elapsed-hour windows and separately labeled final trading until actual cafe close if later. Reuse actual published Toast change, native per-order timestamps and authoritative cafe hours; daily business_date totals alone cannot prove exact window. DST, provider lag, cancellation and insufficient_evidence must be tested by later authorized implementation owner.",
-        "Separate from owner experiments: a verified real Toast published item+size price DELTA, even without request, must trigger one proactive Supervisor owner notice plus 7-day OBSERVATIONAL watch, DAILY day1-7 source-qualified insights and cumulative report. Test wrong-cafe/size/version/context, stale menu, closed days, source lag, actual order timestamps, partial money/COGS, comparison caveats and correlation not causation; change/revert creates separate truthful price segments, idempotent dedup owner digests. No new watcher/scheduler/price store or runtime approval.",
-        "2026-11-16 owner autonomous implementation target: Explain source-verified menu/variant/price changes and initiate safe monitoring or owner approval with retained history.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Separate from owner experiments: a verified real Toast published item+size price DELTA, even without request, must trigger one proactive Supervisor owner notice plus 7-day OBSERVATIONAL watch, DAILY day1-7 source-qualified insights and cumulative report. Test wrong-cafe/size/version/context, stale menu, closed days, source lag, actual order timestamps, partial money/COGS, comparison caveats and correlation not causation; change/revert creates separate truthful price segments, idempotent dedup owner digests. No new watcher/scheduler/price store or runtime approval."
       ],
       "test_kinds": [
         "unit",
@@ -721,10 +709,7 @@
         "Final migrated disposable Supabase defines toast_records_for / all current cv_* operational views with ZERO direct/indirect dependencies on toast_raw_samples or toast_raw_samples_latest; obsolete diagnostic fixtures cannot affect Supervisor/screens; no stale fallback after provider failure.",
         "Existing redactor retains customer and employee names, allowed contact/loyalty/stable IDs and other permitted fields, excluding PAN/CVV/track and reusable payment/security secrets; partial null/missing cannot block unrelated data; tenant/role scope enforced.",
         "describe_data lists every permitted field using versioned Standard schema plus actual retained sources even if unseen in newest 30/35-day/200-path samples; query_data can filter/aggregate over all relevant current records without dumping full raw rows into model context; bounded response and safe stable-ID lookup.",
-        "Real registered one-agent Supervisor-turn proof with seeded current source facts (staff, cash, stock, orders) and conflicting diagnostic-only values; named customer/employee answer, safe numbers, screen parity and negative cross-cafe test; final-head SQL/agent CI and Codex clean.",
-        "2026-11-16 owner autonomous implementation target: One verified current-only source reader so the same Supervisor can investigate authorized Toast facts without sample fallback or invented money.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Real registered one-agent Supervisor-turn proof with seeded current source facts (staff, cash, stock, orders) and conflicting diagnostic-only values; named customer/employee answer, safe numbers, screen parity and negative cross-cafe test; final-head SQL/agent CI and Codex clean."
       ],
       "test_kinds": [
         "unit",
@@ -800,10 +785,7 @@
         "D4C independent final proof: real unpublished and republished same-GUID menu transitions preserve owner recipes, historic orders/options/prices and stable identities; invalid/partial/wrong-version menu cannot retire anything; registered Supervisor/screen agree with retained current published-source state across cafés on migrated disposable DB.",
         "Final independently executed migrated-DB parity for Toast-only connected published Menu, NO connected legacy review/draft/Add Item UI, Toast Web guidance and verified Toast-linked recipe enrichment, Option A unambiguous recipe association, source actual versus proposed price, authenticated source-triggered experiment start, and +2h/next-morning max-two-per-day notification dedup. Real registered Supervisor, Menu, Experiments, negative cross-cafe/stale/ambiguous size and historical sales proofs required.",
         "Owner-approved experiment rolling 24-hour measurement: exact verified-source start, N elapsed windows, separate same-last-day trading-until-close extension; registered Supervisor, real order-time reader and Menu/Experiments agree on dates/prices/sales and missing-evidence flags. Test DST, overnight/early closing, stale verification, cancel/revert, wrong cafe, no calendar-day synthetic allocation, same source as-of and no invented clock.",
-        "FINAL one-Supervisor/Menu/Experiments/owner-channel parity for unrequested published Toast price change: an authenticated same-cafe real price delta triggers observational 7-day watch without any experiment, initial notice, DAILY day1-7 updates and final cumulative report; revert/second change keeps source-backed exposure segments, no duplicate watches/spam, partial COGS and attribution honest. Distinguish from separately requested published-target experiments and at-most-two pending reminders. Migrated disposable DB, tenant isolation, actual order times, rollback, source error and delivery idempotence proof required.",
-        "2026-11-16 owner autonomous implementation target: Independently prove every eligible Toast source field reaches the real one-Supervisor tool and matching screen; missing source never guessed.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "FINAL one-Supervisor/Menu/Experiments/owner-channel parity for unrequested published Toast price change: an authenticated same-cafe real price delta triggers observational 7-day watch without any experiment, initial notice, DAILY day1-7 updates and final cumulative report; revert/second change keeps source-backed exposure segments, no duplicate watches/spam, partial COGS and attribution honest. Distinguish from separately requested published-target experiments and at-most-two pending reminders. Migrated disposable DB, tenant isolation, actual order times, rollback, source error and delivery idempotence proof required."
       ],
       "test_kinds": [
         "unit",
@@ -846,10 +828,7 @@
       "acceptance": [
         "A changed UI/browser flow runs its real targeted Playwright scenario in GitHub Actions with recorded executed job/artifact link",
         "Backend-only changes are not delayed by irrelevant browser or screenshots; missing/skipped required proof is not passed",
-        "No production accounts or effects, Vercel preview builds or preview deployments",
-        "2026-11-16 owner autonomous implementation target: Run real authenticated owner journeys for changed domains in local browser/DB; no decorative-only or Vercel-preview proof.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "No production accounts or effects, Vercel preview builds or preview deployments"
       ],
       "test_kinds": [
         "db",
@@ -904,10 +883,7 @@
       "acceptance": [
         "Two workers cannot claim the same step",
         "Restart resumes after verified earlier steps without repeating effects",
-        "Timeout/budget/cancel retains a truthful persisted status",
-        "2026-11-16 owner autonomous implementation target: Persist a single authorized model-led run/steps/receipts and continue safely after interruption, without duplicate writes.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Timeout/budget/cancel retains a truthful persisted status"
       ],
       "test_kinds": [
         "unit",
@@ -944,10 +920,7 @@
       "acceptance": [
         "One routine occurrence makes one run across retries/DST",
         "Owner may pause and revoke without stopping unrelated routine work",
-        "New evidence can trigger independent prioritization and owner notice",
-        "2026-11-16 owner autonomous implementation target: Supervisor proactively initiates evidence-driven useful work from canonical source events, not a fixed alert-only script.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "New evidence can trigger independent prioritization and owner notice"
       ],
       "test_kinds": [
         "unit",
@@ -985,10 +958,7 @@
         "No duplicate runs or notices",
         "Old cron disabled only after verified parity and rollback",
         "Toast-connected experiment: only fresh authenticated exact Toast item/size/context published target activates existing monitoring; owner Done/local edit does not. First pending reminder about +2h, at most two per owner/experiment/cafe-local day including next morning, idempotent and stopped on confirmation/cancel/supersession; stale source status unverified. Owner-approved measurement: N exact rolling 24-hour windows beginning at verified source event (not next morning), then separately report any final-day trading until actual cafe closing if later; test UTC/DST, actual order timestamps, true close, cancellation, insufficient evidence. Timestamp/SQL/ownership detail requires separate approval.",
-        "Distinct APPROVED OUTCOME, not implementation authorization: even without an experiment, an independently verified Toast-published cafe/restaurant/item+size price delta triggers ONE Supervisor notification plus seven rolling 24h observational days with DAILY reports all 7 and cumulative analysis; segment reverts/second changes, preserve prior price as-of, partial cost, no false causality or duplicate watches. Reuse existing operating/experiment notification delivery; exact files/SQL/state/owner remain separately unapproved.",
-        "2026-11-16 owner autonomous implementation target: Proactively handle source-confirmed price experiments, time-window metrics, monitoring, reverts and final reports.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Distinct APPROVED OUTCOME, not implementation authorization: even without an experiment, an independently verified Toast-published cafe/restaurant/item+size price delta triggers ONE Supervisor notification plus seven rolling 24h observational days with DAILY reports all 7 and cumulative analysis; segment reverts/second changes, preserve prior price as-of, partial cost, no false causality or duplicate watches. Reuse existing operating/experiment notification delivery; exact files/SQL/state/owner remain separately unapproved."
       ],
       "test_kinds": [
         "unit",
@@ -1024,10 +994,7 @@
       "acceptance": [
         "Events research/observation/report parity across current local day boundaries",
         "Only one authoritative event monitor and notice writer",
-        "A missing/research-failed event is not called absent",
-        "2026-11-16 owner autonomous implementation target: Proactively investigate city/cafe events, produce evidence-backed preparation and follow-up with one canonical monitor.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "A missing/research-failed event is not called absent"
       ],
       "test_kinds": [
         "unit",
@@ -1063,10 +1030,7 @@
       "acceptance": [
         "One brief per verified owner/café-local day and preopening deadline",
         "Provider failure remains visible/retriable",
-        "No duplicate sends or silent skips",
-        "2026-11-16 owner autonomous implementation target: Build actual source-backed morning briefs, proactive delivery and correction/receipt truth in one owner channel.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "No duplicate sends or silent skips"
       ],
       "test_kinds": [
         "unit",
@@ -1104,10 +1068,7 @@
       "acceptance": [
         "Remember decisions/preferences across a reopened thread",
         "No cached business money in summary, reread authoritative data",
-        "Forget/change and tenant isolation verified",
-        "2026-11-16 owner autonomous implementation target: Carry owner goals/context across multi-step tasks without stale numeric memory or repeated owner questions.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Forget/change and tenant isolation verified"
       ],
       "test_kinds": [
         "unit",
@@ -1145,10 +1106,7 @@
       "acceptance": [
         "Individual approval and matching standing authorization both pass same effect gateway",
         "Phone step-up binds exact owner/café/action/limit/revision; replay/expiry/revocation fail",
-        "Effect receipt uncertain state cannot be double committed",
-        "2026-11-16 owner autonomous implementation target: Model proposes work, owner deliberately authorizes, sole gateway verifies effect receipt and enforces revocation/uncertainty.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Effect receipt uncertain state cannot be double committed"
       ],
       "test_kinds": [
         "unit",
@@ -1185,10 +1143,7 @@
       "acceptance": [
         "Authorize/connect/disconnect Gmail and respect scopes",
         "Draft/read/send only through permitted action with provider receipt",
-        "Timed-out send reconciles before retry; token not model-visible",
-        "2026-11-16 owner autonomous implementation target: Supervisor reads scoped Gmail, investigates and drafts/sends only authorized work, verifies actual provider delivery receipt.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Timed-out send reconciles before retry; token not model-visible"
       ],
       "test_kinds": [
         "unit",
@@ -1225,10 +1180,7 @@
       "acceptance": [
         "Read a permitted CSV/XLSX/PDF with column provenance and bounded data",
         "Browser can inspect a permitted site but webpage instructions cannot change authority",
-        "Write attempt requires gateway permission and verified receipt",
-        "2026-11-16 owner autonomous implementation target: Supervisor understands owner text/photo/PDF/spreadsheet evidence and safely completes authorized writes with exact readback.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Write attempt requires gateway permission and verified receipt"
       ],
       "test_kinds": [
         "unit",
@@ -1266,10 +1218,7 @@
       "acceptance": [
         "Staff availability and projected demand produce valid schedule with canonical labor cost",
         "No available staff/partial timecards truthfully handled",
-        "Exact parity to Staff view",
-        "2026-11-16 owner autonomous implementation target: Model investigates labor/schedule constraints and produces one useful, source-backed staffing plan, not static advice.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Exact parity to Staff view"
       ],
       "test_kinds": [
         "unit",
@@ -1308,10 +1257,7 @@
       "acceptance": [
         "Owner approval or valid mandate publishes one correct schedule",
         "Authorized staff messages have verified delivery attempts",
-        "Mandate revoke before send prevents effect",
-        "2026-11-16 owner autonomous implementation target: Complete authorized schedule publication with worker/status updates and real staff delivery receipts, not claimed sends.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Mandate revoke before send prevents effect"
       ],
       "test_kinds": [
         "unit",
@@ -1349,10 +1295,7 @@
       "acceptance": [
         "Staff accepts/declines and coverage state updates once",
         "No silent status success on a sent-only message",
-        "Missing staff coverage escalates without duplicate notices",
-        "2026-11-16 owner autonomous implementation target: Follow up on staff shift replies, missing coverage and absences through safe owner/staff authorization and source closure.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Missing staff coverage escalates without duplicate notices"
       ],
       "test_kinds": [
         "unit",
@@ -1391,10 +1334,7 @@
       "acceptance": [
         "Vacancy/interview/onboarding pipeline uses actual evidence, not presumed consent",
         "No prohibited autonomous hiring/firing",
-        "Candidate data isolation and retention respected",
-        "2026-11-16 owner autonomous implementation target: Coordinate recruitment/leave/onboarding workflows with verified state and explicit human decisions.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Candidate data isolation and retention respected"
       ],
       "test_kinds": [
         "unit",
@@ -1431,10 +1371,7 @@
       "acceptance": [
         "Stock/recipe and consumption evidence retain source + freshness",
         "Unknown quantity never becomes zero",
-        "No duplicate count from repeated source records",
-        "2026-11-16 owner autonomous implementation target: Independently identify stock or recipe demand signals, quantify source uncertainty and propose evidence-backed replenishment.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "No duplicate count from repeated source records"
       ],
       "test_kinds": [
         "unit",
@@ -1471,10 +1408,7 @@
       "acceptance": [
         "Vendor quotes with units/currency/date are comparable or labeled incomplete",
         "One PO state per key, history and duplicate protection",
-        "Owner approval boundary present",
-        "2026-11-16 owner autonomous implementation target: Real Luna sources quotes, corrects saved drafts, gets owner approval and writes exactly one PO; later 15A→14B→16B tests unprompted work.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Owner approval boundary present"
       ],
       "test_kinds": [
         "unit",
@@ -1512,10 +1446,7 @@
       "acceptance": [
         "Only authorized vendor action executes",
         "Provider timeout enters uncertain state; no duplicate order",
-        "Approval expires/revokes without further sends",
-        "2026-11-16 owner autonomous implementation target: Complete an approved vendor action through the connector with authentic send receipt and safe unknown/retry state.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Approval expires/revokes without further sends"
       ],
       "test_kinds": [
         "unit",
@@ -1551,10 +1482,7 @@
       "acceptance": [
         "Partial receipt and mismatched invoice remain open exceptions",
         "Duplicate invoice rejected",
-        "Expense/money parity with canonical metrics",
-        "2026-11-16 owner autonomous implementation target: Follow actual receiving/invoice mismatches and reopen unresolved exceptions until source-receipt closure.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Expense/money parity with canonical metrics"
       ],
       "test_kinds": [
         "unit",
@@ -1591,10 +1519,7 @@
       "acceptance": [
         "Bills and cash needs accurately sourced, known vs projected labeled",
         "Payments stay preparation-only absent explicit authorized lawful integration",
-        "No unverified settlement reported paid",
-        "2026-11-16 owner autonomous implementation target: Investigate verified bills/cash constraints and prepare safe payable options; never invent settlement or spend funds.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "No unverified settlement reported paid"
       ],
       "test_kinds": [
         "unit",
@@ -1631,10 +1556,7 @@
       "acceptance": [
         "Supervisor initiates priority work from events and operational evidence",
         "One attention/inbox lifecycle and suppressed duplicates",
-        "High urgency and missing evidence escalated truthfully",
-        "2026-11-16 owner autonomous implementation target: Real Luna independently detects scoped incidents, chooses multi-domain tools, persists owner inbox/chat and source-verified follow-up.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "High urgency and missing evidence escalated truthfully"
       ],
       "test_kinds": [
         "unit",
@@ -1672,10 +1594,7 @@
       "acceptance": [
         "Maintenance incident assigned to authorized staff/vendor and tracked",
         "Request sent is not repair completed",
-        "Late or unverified resolution remains visible",
-        "2026-11-16 owner autonomous implementation target: Proactively coordinate equipment issues while distinguishing request sent from repair actually verified.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Late or unverified resolution remains visible"
       ],
       "test_kinds": [
         "unit",
@@ -1714,10 +1633,7 @@
       "acceptance": [
         "Concurrent cafés progress under fairness/budget caps",
         "Stalled lease and missed routine recover once",
-        "Owner offline doesn't freeze permitted work",
-        "2026-11-16 owner autonomous implementation target: Maintain fair multi-cafe autonomous execution and truthful owner progress through worker lease/outage/recovery.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Owner offline doesn't freeze permitted work"
       ],
       "test_kinds": [
         "unit",
@@ -1756,10 +1672,7 @@
       "acceptance": [
         "Untrusted email/website prompts cannot authorize actions",
         "Revoked connector/café access stops new effects",
-        "No cross-tenant leakage/secret logs",
-        "2026-11-16 owner autonomous implementation target: Resist malicious external instructions and stop work under revoked permissions/identity, without leaking tenant data.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "No cross-tenant leakage/secret logs"
       ],
       "test_kinds": [
         "unit",
@@ -1796,10 +1709,7 @@
       "acceptance": [
         "Owner deliberately grants/revokes scoped mandate with step-up",
         "Individual approval still works; chat phrase alone cannot grant",
-        "Mobile errors/expired code visible",
-        "2026-11-16 owner autonomous implementation target: Owner sees/verifies scoped mandate, OTP step-up, revocation and resulting actual gateway authorization state.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Mobile errors/expired code visible"
       ],
       "test_kinds": [
         "e2e",
@@ -1837,10 +1747,7 @@
       "acceptance": [
         "Owner sees queued/running/approval/failed/completed run with true receipts",
         "Refresh/reconnect shows persisted state",
-        "No duplicated approval card on resume",
-        "2026-11-16 owner autonomous implementation target: Show one durable truthful work/step/effect receipt lifecycle across chat refresh and owner reconnect, no duplicate approvals.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "No duplicated approval card on resume"
       ],
       "test_kinds": [
         "e2e",
@@ -1877,10 +1784,7 @@
       "acceptance": [
         "Owner can link/revoke and understand scope of external access",
         "Revocation reflected before new work",
-        "Safe file/browser error and retry displayed",
-        "2026-11-16 owner autonomous implementation target: Owner understands, grants and revokes actual browser/connector scope; Supervisor respects it before every action.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Safe file/browser error and retry displayed"
       ],
       "test_kinds": [
         "e2e",
@@ -1919,10 +1823,7 @@
       "acceptance": [
         "390px mobile and desktop owner journeys work with keyboard/tap targets",
         "No second required dashboard",
-        "Conditional screenshots/traces only for changed UI flows",
-        "2026-11-16 owner autonomous implementation target: Owner can complete the same grounded autonomous work from accessible phone/desktop and see correct progress.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Conditional screenshots/traces only for changed UI flows"
       ],
       "test_kinds": [
         "e2e",
@@ -1960,10 +1861,7 @@
       "acceptance": [
         "Required CI acceptance recognizes actual test execution vs skip",
         "Branch protection accurately reflects available checks",
-        "No irrelevant browser gate for backend-only PR",
-        "2026-11-16 owner autonomous implementation target: Maintain existing merged #479 exact-head domain CI execution guard, and distinguish no-provider checks from real Luna proof.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "No irrelevant browser gate for backend-only PR"
       ],
       "test_kinds": [
         "e2e",
@@ -2007,10 +1905,7 @@
       "acceptance": [
         "Unfamiliar café questions combine canonical data with exact numbers",
         "Staff/supply/finance/events/brief owner journeys verify real state transitions",
-        "Permissions and missing data negatives covered",
-        "2026-11-16 owner autonomous implementation target: Dynamic exhaustive all-registered-capability, relevant business-metric, owner-question, experiment, effect and screen coverage matrix with real Luna where applicable; unknown/missing rows fail.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Permissions and missing data negatives covered"
       ],
       "test_kinds": [
         "db",
@@ -2050,10 +1945,7 @@
       "acceptance": [
         "Multi-day unattended run recovers worker/provider failures",
         "Standing mandate and individual approval both exercised",
-        "No duplicate side effects across retries",
-        "2026-11-16 owner autonomous implementation target: Real first-party Luna unattended cross-module investigation, actual worker restart, owner approval, source/receipt verified closure, no duplicates.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "No duplicate side effects across retries"
       ],
       "test_kinds": [
         "failure",
@@ -2090,10 +1982,7 @@
       "acceptance": [
         "Seeded isolated preview runs owner-facing scenario",
         "Preview never touches production systems",
-        "Required evidence URLs/artifacts exist for UI changes",
-        "2026-11-16 owner autonomous implementation target: Real authenticated phone/desktop UI complete supported Supervisor journeys with correct state/source/privacy, GitHub local only.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Required evidence URLs/artifacts exist for UI changes"
       ],
       "test_kinds": [
         "preview",
@@ -2130,10 +2019,7 @@
       "acceptance": [
         "Owner-authorized pilot verifies live sources and actions",
         "Rollback, audit and incident procedures exercised",
-        "Actual release readiness distinguished from merged code",
-        "2026-11-16 owner autonomous implementation target: Owner-controlled final live pilot verifies every combined 17B/17C/17D gate and rollback before production effects or release.",
-        "Owner-approved individual feature gate: If this coding task adds or changes AI-executed behavior, verify actual gpt-6-luna through the registered Supervisor and source-backed tools on disposable migrated café, with independent persisted result/owner approval/effect readback, negative safety/security, exact executable code provenance, all applicable CI and final-head Codex. Green CI or simulated model alone is NOT PASS. Pure model-free infrastructure must say Luna N/A with exact scope; no paid inference on untrusted PR CI.",
-        "Mandatory later system verification: Task17B dynamically tests EVERY supported registered capability, metric, question intent, action, experiment, monitor and relevant UI; Task17C tests real Luna unattended multi-module execution, worker restart, approval, effect receipt, follow-up and recovery; Task17D/17E cover owner UX and authorized release. Assign each missing scenario as NOT_PROVEN to its named owner; never infer completeness from an individual feature merge."
+        "Actual release readiness distinguished from merged code"
       ],
       "test_kinds": [
         "pilot",
