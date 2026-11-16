@@ -235,6 +235,18 @@ begin
         and p.status='draft'
         and p.created_at<=p_as_of-interval '2 hours'
         for share) into v_found;
+  elsif p_source_type='supplier_dispatch' then
+    select exists(select 1 from public.purchase_orders po
+      join public.supervisor_proposals origin on origin.business_id=po.business_id
+        and origin.id=po.proposal_id
+      where po.business_id=p_business_id and po.owner_user_id=p_owner_user_id
+        and po.id::text=p_source_id and origin.thread_id=p_thread_id
+        and po.status='approved_for_ordering'
+        and po.approved_at<=p_as_of-interval '2 hours'
+        and not exists(select 1 from public.purchase_order_channel_reports r
+          where r.business_id=po.business_id and r.purchase_order_id=po.id
+            and r.outcome in ('supplier_accepted','supplier_declined'))
+      for share) into v_found;
   else
     select exists(select 1 from public.operating_tasks t where t.business_id=p_business_id
       and t.id=p_source_id and t.kind not in
