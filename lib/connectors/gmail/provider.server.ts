@@ -243,11 +243,27 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
      proposal.effect_hash!==effectHash||bound?.accountId!==effect.accountId||
      bound.generation!==effect.generation||bound.from!==effect.from)
     throw new Error("gmail_gateway_proposal_required");
+  // Task14C reuses this provider; supplier orders require an additional
+  // unique, source-backed PO reservation before any outbound provider POST.
+  const vendor=await db.from("purchase_order_dispatches")
+    .select("id,purchase_order_id,contact_id,recipient_email")
+    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+    .eq("proposal_id",proposalId).maybeSingle();
+  if(vendor.error)throw new Error("supplier_send_status_unavailable");
+  if(vendor.data&&effect.operation!=="send")throw new Error("supplier_send_operation_invalid");
   const {data:attempt,error:attemptError}=await db.from("supervisor_effect_attempts")
     .select("state,authorization_kind").eq("business_id",scope.businessId)
     .eq("proposal_id",proposalId).eq("effect_hash",effectHash).maybeSingle();
   if(attemptError||attempt?.state!=="executing"||attempt.authorization_kind!=="click")
     throw new Error("gmail_gateway_owner_click_required");
+  if(vendor.data){
+    const reservation=await db.rpc("supervisor_reserve_supplier_gmail_send",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+      p_proposal_id:proposalId,p_effect_hash:effectHash
+    });
+    if(reservation.error||reservation.data!==true)
+      throw new Error("supplier_send_reservation_failed");
+  }
   const rfc=effect.operation==="send"?gmailRfcId(proposalId,effect.from):null;
   const receipt={account_id:account.id,business_id:scope.businessId,owner_user_id:scope.ownerUserId,
     proposal_id:proposalId,effect_hash:effectHash,account_generation:account.generation,
@@ -279,6 +295,23 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     const threadId=effect.messageId?verifiedThreadId:effect.threadId;
     if(effect.operation==="send"){
       await ensureLive();
+      if(vendor.data){
+        // Revalidate contact/PO immediately before irreversible transport.
+        const [po,contact,dispatch]=await Promise.all([
+          db.from("purchase_orders").select("status,supplier_id").eq("business_id",scope.businessId)
+            .eq("owner_user_id",scope.ownerUserId).eq("id",vendor.data.purchase_order_id).maybeSingle(),
+          db.from("cafe_supplier_order_contacts").select("channel,email,revoked_at,supplier_id")
+            .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+            .eq("id",vendor.data.contact_id).maybeSingle(),
+          db.from("purchase_order_dispatches").select("state").eq("business_id",scope.businessId)
+            .eq("id",vendor.data.id).maybeSingle()
+        ]);
+        if(po.error||contact.error||dispatch.error||po.data?.status!=="approved_for_ordering"||
+          contact.data?.channel!=="gmail"||contact.data.revoked_at||
+          contact.data.email?.toLowerCase()!==vendor.data.recipient_email.toLowerCase()||
+          contact.data.supplier_id!==po.data?.supplier_id||dispatch.data?.state!=="reserved")
+          throw new Error("supplier_send_authorization_revoked_before_post");
+      }
       response=await gmailApi(token,"/messages/send",{method:"POST",body:{
         raw,...(threadId?{threadId}:{})}}) as {id?:string;threadId?:string};
     }else{
