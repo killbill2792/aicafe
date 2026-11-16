@@ -159,9 +159,29 @@ async function boundedErrorText(body){
  return Buffer.concat(chunks).toString("utf8");
 }
 
+// Every audit category here is a fixed broker code, never request content.
+// Candidate text and arbitrary exception messages must NEVER enter host receipts.
+const SAFE_POLICY_DENIALS=new Set([
+ "inline_input_required","non_inline_input","remote_message_metadata_forbidden",
+ "unsupported_message_content","remote_or_nontext_attachment_forbidden",
+ "non_inline_function_call","non_inline_function_output",
+ "non_inline_assistant_message","remote_assistant_content_forbidden",
+ "opaque_or_remote_context_forbidden","request_size","invalid_json",
+ "not_a_response_request","provider_expanded_context_forbidden",
+ "unsupported_provider_request_shape","unexpected_model","output_cap",
+ "unpriced_service_tier","must_stream_foreground","unpriced_cache_storage",
+ "provider_built_in_tools_forbidden","approved_budget_exhausted"
+]);
+export function safePolicyDenial(error){
+ const code=error instanceof Error?
+   /^task14b_trusted_broker:([a-z0-9_]{1,64})$/.exec(error.message)?.[1]:null;
+ return code&&SAFE_POLICY_DENIALS.has(code)?code:"unknown";
+}
+
 export class PaidReservation {
  constructor(head){if(!/^[a-f0-9]{40}$/.test(head))fail("bad_head");
-  this.head=head;this.attempts=0;this.reservedMicros=0;this.receipts=[]}
+  this.head=head;this.attempts=0;this.reservedMicros=0;this.receipts=[];
+  this.deniedCount=0;this.policyDenials=[]}
  reserve(body){
   const {serializedBytes,reservedMicros,params}=reservationForRequest(body);
   if(this.attempts>=MAX_CALLS||
@@ -175,8 +195,13 @@ export class PaidReservation {
   this.receipts.push(receipt);
   return {receipt,params};
  }
+ recordDenial(error){
+  this.deniedCount++;
+  if(this.policyDenials.length<20)this.policyDenials.push(safePolicyDenial(error));
+ }
  snapshot(){return {head:this.head,attempts:this.attempts,
   reservedMicros:this.reservedMicros,receipts:this.receipts.map(r=>({...r})),
+  deniedCount:this.deniedCount,policyDenials:[...this.policyDenials],
   objectiveCompetitorParity:"NOT_ATTESTED"}}
 }
 export function constantTimeEqual(a,b) {
@@ -307,9 +332,13 @@ export function startTrustedBroker({
     saveAudit(auditFile,reserved);
     res.end();
    }
-  }catch{
-   // A forbidden request never reaches upstream. No raw errors returned.
-   res.writeHead(400);res.end();
+  }catch(error){
+   // A forbidden request is pre-transport: capture only the allowlisted code.
+   // Failure to save audit must not disclose any raw request or error body.
+   reserved.recordDenial(error);
+   try{saveAudit(auditFile,reserved)}catch{}
+   if(!res.headersSent)res.writeHead(400);
+   res.end();
   }
  });
  server.listen(port,"127.0.0.1");
