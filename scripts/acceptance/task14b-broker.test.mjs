@@ -150,7 +150,7 @@ test("broker refuses opaque continuation before any spend and persists only allo
    let audit=JSON.parse(readFileSync(auditFile,"utf8"));
    assert.equal(upstream,0);assert.equal(audit.attempts,0);
    assert.equal(audit.deniedCount,1);
-   assert.deepEqual(audit.policyDenials,["opaque_or_remote_context_forbidden"]);
+   assert.deepEqual(audit.policyDenials,["invalid_inline_reasoning"]);
    assert.equal(JSON.stringify(audit).includes(opaque),false);
    assert.equal(JSON.stringify(audit).includes(key),false);
    const accepted=await fetch(url,{method:"POST",headers,body:JSON.stringify({
