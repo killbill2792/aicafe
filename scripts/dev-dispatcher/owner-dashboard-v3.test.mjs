@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
 import {ownerDashboardHandler} from './owner-dashboard-v3.mjs';
 import {applyOwnerDashboardEdit} from './owner-controls-v3.mjs';
 import {applyMuseNote} from './muse-local-notes.mjs';
@@ -120,4 +122,35 @@ test('local notes still work when the GitHub-backed ledger cannot be read',async
   assert.equal(notes.status,200);
   assert.match(await notes.text(),/Offline work allowed/);
  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test('Muse direct PR monitor is private and works without legacy ledger',async()=>{
+ const facts={version:1,observed_at:'2026-11-16T20:00:00Z',
+  prs:[{number:488,head_sha:'a'.repeat(40),ci:'observed_green',codex:'clean'}],
+  merged_prs:[]};
+ const handler=ownerDashboardHandler({ownerPassword:password,
+  musePassword:'muse-only-password',readFacts:async()=>facts,
+  readState:async()=>{throw Error('No GitHub Actions ledger');},
+  editState:async()=>{throw Error('not called');},
+  readNotes:async()=>({version:1,entries:{}}),
+  saveNote:async()=>({version:1,entries:{}})});
+ const server=http.createServer((req,res)=>handler(req,res));
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try{
+  const url='http://127.0.0.1:'+server.address().port;
+  assert.equal((await fetch(url+'/api/muse-status')).status,401);
+  const r=await fetch(url+'/api/muse-status',{headers:{
+   Authorization:auth('muse','muse-only-password')}});
+  assert.equal(r.status,200);
+  assert.equal((await r.json()).prs[0].number,488);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});
+test('private dashboard script remains syntactically valid after adding Muse fields',()=>{
+ const html=readFileSync(new URL('./owner-dashboard-v3.html',import.meta.url),'utf8');
+ const script=html.match(/<script>([\s\S]*?)<\/script>/);
+ assert.ok(script);
+ assert.doesNotThrow(()=>new vm.Script(script[1]));
+ assert.match(html,/id="muse-chat"/);
+ assert.match(html,/id="muse-note"/);
+ assert.match(html,/id="muse-prs"/);
 });
