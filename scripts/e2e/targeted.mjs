@@ -33,6 +33,7 @@ export function scenariosForPath(path) {
       path === "components/more/GmailConnectionPanel.test.tsx")
     return path === "components/home/SupervisorProposalCard.tsx" ? ["gmail","purchasing"] : ["gmail"];
   if (path === "components/operations/SupplierEvidenceManager.tsx" ||
+      path === "components/operations/SupplierVendorCommunicationManager.tsx" ||
       path === "app/[locale]/operations/suppliers/page.tsx")
     return ["purchasing"];
   if (path.startsWith("components/home/")) return ["home"];
