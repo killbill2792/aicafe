@@ -249,14 +249,17 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             readSupplierOrderCommunications(client,scope.businessId,scope.ownerUserId,
               orders.orders.map(o=>o.id)),
             getConnectorAccount({businessId:scope.businessId,ownerUserId:scope.ownerUserId})
-              .catch(()=>null)
+              .then(account=>({account,unavailable:false as const}))
+              .catch(()=>({account:null,unavailable:true as const}))
           ]);
           return {...orders,drafts,draftsTruncated:draftRows.length>20,
             unresolvedApprovals,unresolvedApprovalsTruncated:unresolvedRows.length>20,
             vendorCommunications:communications,
-            gmailConnection:{connected:mailbox?.status==="active",
-              canSend:allowsGmail(mailbox,"send"),
-              canRead:allowsGmail(mailbox,"read")}};
+            gmailConnection:{status:mailbox.unavailable?"status_unavailable":
+                mailbox.account?.status??"not_connected",
+              connected:mailbox.account?.status==="active",
+              canSend:allowsGmail(mailbox.account,"send"),
+              canRead:allowsGmail(mailbox.account,"read")}};
         },
         inspect:input=>investigateSupplierPurchase(proposalScope,input),
         proposeVendorSend:async({purchaseOrderId})=>{
