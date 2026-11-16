@@ -268,7 +268,9 @@ jobs:
               "remote_message_metadata_forbidden","remote_or_nontext_attachment_forbidden",
               "unsupported_message_content","non_inline_input","inline_input_required",
               "provider_expanded_context_forbidden","unsupported_provider_request_shape",
-              "request_size","approved_budget_exhausted","unknown"]);
+              "request_size","approved_budget_exhausted","invalid_inline_reasoning",
+              "unissued_reasoning_context","reasoning_replay_limit",
+              "remote_store_forbidden","stateless_reasoning_required","unknown"]);
             const policyDenials=Array.isArray(a.policyDenials)?a.policyDenials.slice(0,20)
               .map(x=>policyNames.has(x)?x:"unknown"):[];
             const types=new Set(["invalid_request_error","authentication_error",
