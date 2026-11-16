@@ -260,6 +260,17 @@ jobs:
             const terminals=new Set(["attempted","completed","provider_rejected",
               "provider_failed","transport_unknown","incomplete","unpriced_or_wrong_provider"]);
             const receipts=Array.isArray(a.receipts)?a.receipts:[];
+            // Only literal allowlisted broker-denial IDs are printed; not
+            // rejected payloads, function arguments, owner or provider data.
+            const policyNames=new Set(["opaque_or_remote_context_forbidden",
+              "non_inline_function_call","non_inline_function_output",
+              "non_inline_assistant_message","remote_assistant_content_forbidden",
+              "remote_message_metadata_forbidden","remote_or_nontext_attachment_forbidden",
+              "unsupported_message_content","non_inline_input","inline_input_required",
+              "provider_expanded_context_forbidden","unsupported_provider_request_shape",
+              "request_size","approved_budget_exhausted","unknown"]);
+            const policyDenials=Array.isArray(a.policyDenials)?a.policyDenials.slice(0,20)
+              .map(x=>policyNames.has(x)?x:"unknown"):[];
             const types=new Set(["invalid_request_error","authentication_error",
               "permission_error","rate_limit_error","server_error"]);
             const codes=new Set(["invalid_function_parameters","invalid_request_error",
@@ -289,6 +300,8 @@ jobs:
               head:typeof a.head==="string"&&/^[a-f0-9]{40}$/.test(a.head)?a.head:null,
               providerAttempts:Number.isSafeInteger(a.attempts)?a.attempts:null,
               reservedUpperUSD:Number.isSafeInteger(a.reservedMicros)?a.reservedMicros/1_000_000:null,
+              deniedCount:Number.isSafeInteger(a.deniedCount)?a.deniedCount:null,
+              policyDenials,
               receipts:safe
             }));
           }
