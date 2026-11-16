@@ -19,25 +19,26 @@ const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
   type:"object",properties:{},additionalProperties:false}}]};
 const body=Buffer.from(JSON.stringify(params));
 
-test("actual trusted authorization JavaScript accepts one v8-only marker and rejects duplicate v8",()=>{
+test("actual trusted authorization JavaScript accepts one v9-only marker and rejects duplicate v9",()=>{
  const yaml=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
  const match=yaml.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/);
  assert.ok(match,"owner authorization block must be discoverable");
  const block=match[1].split("\n").map(line=>line.replace(/^ {10}/,"")).join("\n");
- const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v8 ";
+ const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v9 ";
  const marker=prefix+sha+" -->";
  const root=mkdtempSync(join(tmpdir(),"task14b-owner-auth-"));
  try{
   for(const [label,body,expected] of [
-   ["single-v8", "Owner acceptance\n"+marker,0],
-   ["duplicate-v8","Owner acceptance\n"+marker+"\n"+marker,1],
+   ["single-v9", "Owner acceptance\n"+marker,0],
+   ["duplicate-v9","Owner acceptance\n"+marker+"\n"+marker,1],
    ["old-v1-only","<!-- aicafe-task14b-trusted-paid-run "+sha+" -->",1],
    ["old-v2-only","<!-- aicafe-task14b-trusted-paid-run-v2 "+sha+" -->",1],
    ["old-v3-only","<!-- aicafe-task14b-trusted-paid-run-v3 "+sha+" -->",1],
    ["old-v4-only","<!-- aicafe-task14b-trusted-paid-run-v4 "+sha+" -->",1],
    ["old-v5-only","<!-- aicafe-task14b-trusted-paid-run-v5 "+sha+" -->",1],
    ["old-v6-only","<!-- aicafe-task14b-trusted-paid-run-v6 "+sha+" -->",1],
-    ["old-v7-only","<!-- aicafe-task14b-trusted-paid-run-v7 "+sha+" -->",1]
+    ["old-v7-only","<!-- aicafe-task14b-trusted-paid-run-v7 "+sha+" -->",1],
+    ["old-v8-only","<!-- aicafe-task14b-trusted-paid-run-v8 "+sha+" -->",1]
   ]){
    const event={action:"edited",sender:{login:"killbill2792"},
     repository:{full_name:"killbill2792/aicafe"},
@@ -70,10 +71,10 @@ test("actual trusted authorization JavaScript accepts one v8-only marker and rej
  }finally{rmSync(root,{recursive:true,force:true})}
 });
 
-test("trusted workflow uses a NEW owner-only v8 grant, never replays consumed v1-v7",()=>{
+test("trusted workflow uses a NEW owner-only v9 grant, never replays consumed v1-v8",()=>{
  const workflow=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
- assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v8 "/);
- assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v8 -->"/);
+ assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v9 "/);
+ assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v9 -->"/);
  assert.match(workflow,/github\.actor == 'killbill2792'/);
  assert.match(workflow,/github\.run_attempt == 1/);
  assert.match(workflow,/event\.changes\?\.body\?\.from/);
@@ -86,6 +87,7 @@ test("trusted workflow uses a NEW owner-only v8 grant, never replays consumed v1
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v5 -->"/);
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v6 -->"/);
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v7 -->"/);
+ assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v8 -->"/);
  assert.match(workflow,/policyDenials/);
 });
 
