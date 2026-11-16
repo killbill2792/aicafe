@@ -43,7 +43,7 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     Number.isFinite(Date.parse(source.dueAt))&&Date.parse(source.dueAt)<=now.getTime();
   const ownerAction=source.status==="needs_owner";
   let priority=source.sourceType==="alert"?65:
-    source.sourceType==="supplier_po"?90:ownerAction?90:75;
+    source.sourceType==="supplier_po"||source.sourceType==="supplier_dispatch"?90:ownerAction?90:75;
   if(overdue)priority+=20;
   if(source.severity==="critical")priority+=20;
   else if(source.severity==="high")priority+=10;
@@ -54,6 +54,8 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     source.sourceType+":"+source.sourceId+":"+revisionHash);
   const reason=source.sourceType==="supplier_po"?
     "Supplier purchase-order draft needs your approval":
+    source.sourceType==="supplier_dispatch"?
+    "Approved supplier order needs communication or follow-up":
     overdue?"Overdue item needs review":
     source.sourceType==="alert"?"Actionable café alert needs review":
     ownerAction?"Owner task needs review":"Task response needs review";
@@ -65,7 +67,8 @@ export function choosePriorities(sources:readonly PrioritySource[],now:Date,limi
     (s.sourceType==="alert"&&(s.status==="new"||s.status==="seen"))||
     (s.sourceType==="operating_task"&&!alreadyNotifiedTaskKinds.has(s.kind)&&
       (s.status==="needs_owner"||s.status==="needs_response"))||
-    (s.sourceType==="supplier_po"&&s.status==="draft"))
+    (s.sourceType==="supplier_po"&&s.status==="draft")||
+    (s.sourceType==="supplier_dispatch"&&s.status==="approved_for_ordering"))
     .map(s=>rankPriority(s,now));
   return candidates.sort((a,b)=>b.priority-a.priority||
     a.source.createdAt.localeCompare(b.source.createdAt)||
