@@ -473,6 +473,7 @@ test("@purchasing owner verifies a supplier phone/portal channel and a Gmail add
     const outsider=await second.newPage();
     await login(outsider,other);
     const wrongCafe=await second.request.post("/api/ai/suppliers/contacts",{
+      headers:{origin:"http://127.0.0.1:3000"},
       data:{action:"verify_contact",supplierId,channel:"gmail",
         email:"attacker@example.com",details:null}});
     expect(wrongCafe.status()).toBe(404);
@@ -481,6 +482,7 @@ test("@purchasing owner verifies a supplier phone/portal channel and a Gmail add
     expect((await otherRead.json()).suppliers.some(s=>s.id===supplierId)).toBe(false);
     // Explicit contact revocation blocks future sends; it does not create one.
     const revoked=await first.request.post("/api/ai/suppliers/contacts",{
+      headers:{origin:"http://127.0.0.1:3000"},
       data:{action:"revoke_contact",supplierId}});
     expect(revoked.status()).toBe(200);
     const state=await db.query("select revoked_at from public.cafe_supplier_order_contacts"+
