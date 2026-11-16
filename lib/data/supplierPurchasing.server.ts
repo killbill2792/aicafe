@@ -63,3 +63,52 @@ export async function readSupplierPurchaseOrders(db:SupabaseClient,businessId:st
   sentToSupplier:false as const,receivedIntoInventory:false as const,
  })),truncated:(result.data??[]).length>40};
 }
+
+/** The ONLY communication-status reader for those same saved POs. A reserved
+ * Gmail POST with no verified receipt is uncertain, never "not sent". Off-Gmail
+ * claims remain explicitly owner-reported and cannot prove provider delivery. */
+export async function readSupplierOrderCommunications(
+ db:SupabaseClient,businessId:string,ownerUserId:string,orderIds:string[]
+):Promise<Array<{purchaseOrderId:string;state:string;channel:string|null;
+ recipient:string|null;contactVerified:boolean;ownerReportedOutcome:string|null;
+ providerVerified:boolean;ownerQuestion:string|null}>>{
+ if(orderIds.length===0)return [];
+ if(orderIds.length>40)throw new Error("vendor_order_scope_too_large");
+ const orders=await db.from("purchase_orders").select("id,supplier_id")
+   .eq("business_id",businessId).eq("owner_user_id",ownerUserId).in("id",orderIds);
+ if(orders.error||orders.data?.length!==orderIds.length)
+   throw new Error("vendor_order_status_unavailable");
+ const supplierIds=[...new Set((orders.data??[]).map(o=>o.supplier_id))];
+ const [contacts,dispatches,reports]=await Promise.all([
+  db.from("cafe_supplier_order_contacts")
+   .select("supplier_id,channel,email,verified_at,revoked_at")
+   .eq("business_id",businessId).eq("owner_user_id",ownerUserId).in("supplier_id",supplierIds),
+  db.from("purchase_order_dispatches").select("purchase_order_id,state,recipient_email,provider_receipt_id")
+   .eq("business_id",businessId).eq("owner_user_id",ownerUserId).in("purchase_order_id",orderIds),
+  db.from("purchase_order_channel_reports").select("purchase_order_id,outcome,reported_at")
+   .eq("business_id",businessId).eq("owner_user_id",ownerUserId)
+   .in("purchase_order_id",orderIds).order("reported_at",{ascending:false}).limit(400),
+ ]);
+ if(contacts.error||dispatches.error||reports.error)
+   throw new Error("vendor_communication_status_unavailable");
+ return (orders.data??[]).map(order=>{
+  const contact=(contacts.data??[]).find(c=>c.supplier_id===order.supplier_id);
+  const dispatch=(dispatches.data??[]).find(d=>d.purchase_order_id===order.id);
+  const report=(reports.data??[]).find(r=>r.purchase_order_id===order.id);
+  const current=Boolean(contact?.verified_at&&!contact?.revoked_at);
+  const state=dispatch?.state==="reserved"?"send_uncertain":dispatch?.state??"not_prepared";
+  const question=!current?
+   "Which channel do you use for this supplier: Gmail, phone, portal or something else? Please confirm the ordering contact.":
+   contact?.channel!=="gmail"?
+   "This supplier uses "+contact?.channel+". Was the order placed there, and what did they confirm?":
+   state==="not_prepared"?"Shall I prepare this saved order as a Gmail send for your separate approval?":
+   state==="prepared"?"The vendor email is drafted. Please approve it before any send.":
+   state==="send_uncertain"?"Gmail outcome is uncertain. Please check the original email or help reconcile; I will not resend.":
+   report?.outcome==="supplier_accepted"?null:"Gmail accepted the message, but did the supplier actually accept the order?";
+  return {purchaseOrderId:order.id,state,channel:current?contact!.channel:null,
+   recipient:current&&contact?.channel==="gmail"?contact.email:null,
+   contactVerified:current,ownerReportedOutcome:report?.outcome??null,
+   providerVerified:state==="provider_accepted"&&Boolean(dispatch?.provider_receipt_id),
+   ownerQuestion:question};
+ });
+}
