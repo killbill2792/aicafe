@@ -110,7 +110,7 @@ Where an older line in this file conflicts with these rules, these rules win.
     and metrics, durable steps/owner update, authorization, verified effect receipt, safe retries,
     closure/follow-up, and explicitly owned future integration cases.
     **Before an AI-behavior feature PR merges**, execute a real production-configured
-    \`gpt-6-luna\` journey with the actual registered Supervisor on disposable migrated local
+    `gpt-6-luna` journey with the actual registered Supervisor on disposable migrated local
     Supabase; record provider/tool evidence, independently observed scoped DB/owner-screen/effect
     results, positive and negative cases and exact code provenance. Real Luna acceptance is
     separate from complete current-head CI, Codex code/security review, dependency/owner
@@ -120,9 +120,9 @@ Where an older line in this file conflicts with these rules, these rules win.
     Pure docs/config or deterministic-only infrastructure PRs must state why no model-executed
     behavior changed; they still need normal CI/review/security and may not claim Luna proof.
     **Three separately verified milestones:** a domain feature can merge after its own true
-    \`feature_proven\` gates; \`integrated_proven\` requires final Task17B exhaustive registry,
+    `feature_proven` gates; `integrated_proven` requires final Task17B exhaustive registry,
     metric and owner-question coverage plus Task17C real Luna off-turn/restart/approval/effect
-    recovery on the combined system; \`released_proven\` requires Task17D owner-screen and
+    recovery on the combined system; `released_proven` requires Task17D owner-screen and
     Task17E owner-authorized release proof. Missing later cross-module tests block **release**
     rather than every independent proven domain merge. Every deferral names an executable
     scenario, task owner and unproven state; none is marked passed by reassignment.
