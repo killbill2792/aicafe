@@ -1,6 +1,6 @@
 # Task 14B — Agentic Supervisor purchasing implementation contract
 
-> **OWNER NON-NEGOTIABLE:** AI CAFE is **not a Q&A chatbot**. Supervisor is one persistent, proactive, multi-step agent that takes purchasing work off the café owner. It must investigate evidence, plan, execute authorized steps, verify outcomes, remember pending work and reach out when attention is needed. Do not declare Grokbot/Muse operational parity without a separately executed side-by-side benchmark. Passing deterministic CI alone is not parity proof.
+> **OWNER NON-NEGOTIABLE:** AI CAFE is **not a Q&A chatbot**. Supervisor is one persistent, proactive, multi-step agent that takes purchasing work off the café owner. It must investigate evidence, plan, execute authorized steps, verify outcomes, remember pending work and reach out when attention is needed. Grokbot/Muse-level means this Supervisor's own proactive, persistent, independently verified operational competence, NOT a third-party integration or vendor comparison. Prove a real unprompted investigation, durable work, recovery, useful owner follow-up, and authorized, receipted effects; passing deterministic CI or a single owner-initiated pilot alone is not that proof.
 
 ## Owner-approved flow
 1. An owner's natural-language supply goal or an authorized operational signal starts work inside the **existing Supervisor**, not a separate purchasing bot.
@@ -26,7 +26,7 @@
 - Owner approval → gateway receipt → exactly one approved PO with immutable line/history and exact currency; second click, concurrent retry or replays do not duplicate.
 - Missing/stale/ambiguous supplier evidence **blocks** unsupported confident recommendation. No public search snippet is treated as a confirmed quote.
 - Never increment stock, record an expense, or send a supplier message in 14B. Cross-café IDs and untrusted document instructions cannot approve effects.
-- Task 17A selection executes real purchasing regression tests; real database, browser and recorded agentic acceptance are separate, visible gates. Report executed proof by SHA, and explicitly mark unavailable live-model/provider parity as unverified.
+- Task 17A selection executes real purchasing regression tests; real database, browser and recorded agentic acceptance are separate, visible gates. Report executed proof by SHA, and explicitly mark any missing first-party autonomous/off-turn/recovery/runtime evidence as unproven. The owner does not require external Grok/Muse sessions.
 
 ## Rollback
 Additive tables/columns only; leave existing quote API and inventory behavior unchanged until new capability is proven. Disable new tool exposure on validation failure; retain durable order and gateway history for reconciliation. Production release/migrations require separately authorized rollout.
