@@ -204,7 +204,7 @@ begin
     or p_reason not in ('Overdue item needs review','Actionable café alert needs review',
       'Owner task needs review','Task response needs review',
       'Supplier purchase-order draft needs your approval',
-       'Approved supplier order needs communication or follow-up') or p_as_of is null
+       'Approved order unresolved: was the supplier contacted by Gmail, phone or portal, and what did they confirm?') or p_as_of is null
   then raise exception 'Invalid priority evidence' using errcode='22023'; end if;
   if p_routine_id is not null then
     if p_run_id is null or p_lease_token is null
