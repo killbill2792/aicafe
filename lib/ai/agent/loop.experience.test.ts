@@ -81,6 +81,29 @@ describe("Task14B trusted broker request-shape preflight (zero provider cost)",(
       expect(tool.type,tool.name).toBe("function");
       expect(tool.strict,tool.name).toBe(true);
       expect(tool.name.length,tool.name).toBeLessThanOrEqual(64);
+      // OpenAI's strict function contract requires an object at the root;
+      // valid nested anyOf alternatives must each meet the same object rules.
+      expect(tool.parameters.type,tool.name+": root parameter schema").toBe("object");
+      expect(Object.hasOwn(tool.parameters,"anyOf"),tool.name+": root anyOf is forbidden").toBe(false);
+      let propertyCount=0, maxObjectDepth=0;
+      const inspect=(node:unknown,depth:number):void=>{
+        if(Array.isArray(node)){node.forEach(entry=>inspect(entry,depth));return;}
+        if(!schemaObject(node))return;
+        for(const forbidden of ["allOf","not","dependentRequired","dependentSchemas","if","then","else"])
+          expect(Object.hasOwn(node,forbidden),tool.name+": unsupported "+forbidden).toBe(false);
+        const properties=schemaObject(node.properties)?node.properties:{};
+        if(node.type==="object"){
+          maxObjectDepth=Math.max(maxObjectDepth,depth);
+          propertyCount+=Object.keys(properties).length;
+        }
+        for(const [key,value] of Object.entries(node))
+          if(key==="properties"){
+            for(const entry of Object.values(properties))inspect(entry,depth+1);
+          }else if(key!=="description"&&key!=="examples")inspect(value,depth);
+      };
+      inspect(tool.parameters,1);
+      expect(propertyCount,tool.name+": max schema properties").toBeLessThanOrEqual(5000);
+      expect(maxObjectDepth,tool.name+": max object nesting").toBeLessThanOrEqual(10);
       assertStrict(tool.parameters,tool.name+".parameters");
     }
     expect(Buffer.byteLength(JSON.stringify(requests[0]),"utf8")).toBeLessThanOrEqual(120_000);
