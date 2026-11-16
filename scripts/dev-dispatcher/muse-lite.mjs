@@ -149,12 +149,23 @@ export async function runMuseLite({repo,token,home=join(homedir(),'.local','stat
  const notes=readMuseNotes(join(home,'notes.json'));
  const cache=join(home,'github-facts.json'),events=join(home,'events.json');
  const previous=existsSync(cache)?JSON.parse(readFileSync(cache,'utf8')):null;
- let facts,error=null;
- try{facts=await fetchGithubFacts({repo,token,fetchImpl,now});}
- catch(e){facts=previous;error=String(e.message||e);}
- const result=museActions(error?null:facts,previous,notes,{now});
  const prior=existsSync(events)?JSON.parse(readFileSync(events,'utf8')):null;
+ const blockedUntil=millis(prior?.github_backoff_until);
+ let facts,error=null;
+ if(blockedUntil!==null&&blockedUntil>millis(now)){
+  error='GitHub read backoff until '+prior.github_backoff_until;
+  facts=previous;
+ }else{
+  try{facts=await fetchGithubFacts({repo,token,fetchImpl,now});}
+  catch(e){facts=previous;error=String(e.message||e);}
+ }
+ const result=museActions(error?null:facts,previous,notes,{now});
  const reserved=reserveMuseActions(prior,result,now);
+ if(error){
+  const minutes=/HTTP 429|HTTP 403|HTTP 401/.test(error)?30:5;
+  reserved.state.github_backoff_until=blockedUntil!==null&&blockedUntil>millis(now)
+   ?prior.github_backoff_until:new Date(millis(now)+minutes*60000).toISOString();
+ }else delete reserved.state.github_backoff_until;
  atomicJson(events,reserved.state);
  if(!error)atomicJson(cache,facts);
  return {observed_at:now,github_read:error?'unavailable':'verified',
