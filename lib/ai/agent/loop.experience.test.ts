@@ -51,7 +51,9 @@ describe("Task14B trusted broker request-shape preflight (zero provider cost)",(
     vi.stubEnv("AI_CAFE_LIVE_ACCEPTANCE","OWNER_APPROVED_LOCAL_ONLY");
     vi.stubEnv("APP_URL","http://127.0.0.1:3000");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL","http://127.0.0.1:54321");
-    vi.stubEnv("AICAFE_TASK14B_BUDGET_LEDGER","/tmp/disposable-unit-ledger");
+    // Exact Docker environment: candidate gets a proxy token but NEVER host ledger.
+    vi.stubEnv("AICAFE_TASK14B_BUDGET_LEDGER","");
+    vi.stubEnv("AICAFE_14B_BROKER_TOKEN","z".repeat(64));
     try{
       const result=await runAgentTurn({ownerText:"Read my saved supplier purchase orders.",
         context:ctx,provider});
@@ -76,6 +78,21 @@ describe("Task14B trusted broker request-shape preflight (zero provider cost)",(
     expect(names).toContain("get_supplier_purchase_orders");
     expect(names).toContain("inspect_supplier_purchase");
     expect(names).toContain("propose_supplier_purchase_order");
+  });
+  it("does not enable stateless pilot mode without the isolated host broker token",async()=>{
+    const {requests,provider}=recording([[text("No supplier change."),completed]]);
+    vi.stubEnv("AI_CAFE_LIVE_ACCEPTANCE","OWNER_APPROVED_LOCAL_ONLY");
+    vi.stubEnv("APP_URL","http://127.0.0.1:3000");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL","http://127.0.0.1:54321");
+    vi.stubEnv("AICAFE_TASK14B_BUDGET_LEDGER","/tmp/misleading-host-only-ledger");
+    vi.stubEnv("AICAFE_14B_BROKER_TOKEN","");
+    try{
+      const result=await runAgentTurn({ownerText:"Tell me about ordering milk.",
+        context,provider});
+      expect(result.endReason).toBe("complete");
+    }finally{vi.unstubAllEnvs();}
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).not.toHaveProperty("store");
   });
   it("keeps self-contained encrypted reasoning, call IDs and strips other opaque IDs",()=>{
     expect(task14bInlineContinuation([
