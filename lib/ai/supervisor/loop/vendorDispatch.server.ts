@@ -45,7 +45,9 @@ export async function proposeApprovedSupplierEmail(scope:OwnerLoopScope,
    .eq("owner_user_id",scope.ownerUserId).maybeSingle(),
   client.from("purchase_order_dispatches").select("id,proposal_id,state")
    .eq("business_id",scope.businessId).eq("purchase_order_id",po.id).maybeSingle(),
-  getConnectorAccount({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
+  getConnectorAccount({businessId:scope.businessId,ownerUserId:scope.ownerUserId})
+   .catch(()=>ask("gmail_status_unavailable",
+      "I could not check the Gmail connection right now. Did you communicate with this supplier in Gmail, by phone, or by portal? Please tell me how and whether the order was accepted.")),
  ]);
  if(lines.error||contacts.error||existing.error)throw new Error("vendor_order_evidence_unavailable");
  if(existing.data)ask("supplier_order_already_prepared",
