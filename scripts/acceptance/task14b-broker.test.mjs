@@ -5,6 +5,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawnSync} from "node:child_process";
 import {once} from "node:events";
+import {createHash} from "node:crypto";
 import {
   reservationForRequest,PaidReservation,constantTimeEqual,usageFromSseFrame,
   safeProviderRejection,startTrustedBroker,safePolicyDenial,MAX_CALLS,MAX_RESERVATION_MICROS
@@ -164,6 +165,87 @@ test("broker refuses opaque continuation before any spend and persists only allo
    assert.equal(upstream,1);assert.equal(audit.attempts,1);
    assert.equal(audit.deniedCount,1);
    assert.equal(audit.receipts[0].terminal,"completed");
+ }finally{
+   await new Promise(resolve=>server.close(resolve));
+   rmSync(root,{recursive:true,force:true});
+ }
+});
+
+test("v5: one provider-issued encrypted reasoning item is replayed with function outputs, at bounded cost",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"task14b-provenance-"));
+ const auditFile=join(root,"audit.json");
+ const origin={type:"reasoning",id:"rs_local_test_1",status:"completed",summary:[],
+   encrypted_content:"U".repeat(512)};
+ const event=(type,value)=>"event: "+type+"\ndata: "+JSON.stringify({type,...value})+"\n\n";
+ const calls=[];
+ const {server}=startTrustedBroker({apiKey:key,token:"z".repeat(64),head,auditFile,port:0,
+   fetchUpstream:async(url,init)=>{
+     calls.push(JSON.parse(init.body));
+     assert.equal(url,"https://api.openai.com/v1/responses");
+     assert.equal(JSON.parse(init.body).store,false,"trusted host never stores a remote response");
+     const frames=calls.length===1?[
+       event("response.output_item.done",{item:origin}),
+       event("response.output_item.done",{item:{type:"function_call",
+         name:"inspect_supplier_purchase",call_id:"call_1",arguments:"{}"}}),
+       event("response.completed",{response:{model:"gpt-6-luna",service_tier:"default",
+         usage:{input_tokens:200,output_tokens:120}}})
+     ]:[
+       event("response.completed",{response:{model:"gpt-6-luna",service_tier:"default",
+         usage:{input_tokens:300,output_tokens:30}}})
+     ];
+     return new Response(frames.join(""),{
+       status:200,headers:{"content-type":"text/event-stream"}});
+   }});
+ try{
+   await once(server,"listening");
+   const url="http://127.0.0.1:"+server.address().port+"/v1/responses";
+   const headers={authorization:"Bearer "+"z".repeat(64)};
+   const first=await fetch(url,{method:"POST",headers,body:JSON.stringify({...params,store:false})});
+   assert.equal(first.status,200);
+   await first.text();
+   const replay=[
+     {role:"user",content:"Investigate purchase."},
+     origin,
+     {type:"function_call",name:"inspect_supplier_purchase",
+       call_id:"call_1",arguments:"{}"},
+     {type:"function_call_output",call_id:"call_1",output:"{\"offers\":[]}"},
+   ];
+   const invalid=await fetch(url,{method:"POST",headers,body:JSON.stringify({
+     ...params,store:false,input:replay.map(x=>
+       x===origin?{...origin,encrypted_content:"V".repeat(512)}:x),
+   })});
+   assert.equal(invalid.status,400,"candidate cannot substitute remote reasoning");
+   assert.equal(await invalid.text(),"");
+   const missingStore=await fetch(url,{method:"POST",headers,body:JSON.stringify({
+     ...params,input:replay
+   })});
+   assert.equal(missingStore.status,400,"encrypted replay needs explicit store:false");
+   const secondBody=Buffer.from(JSON.stringify({...params,store:false,input:replay}));
+   const second=await fetch(url,{method:"POST",headers,body:secondBody});
+   assert.equal(second.status,200);
+   await second.text();
+   assert.equal(calls.length,2,"invalid reasoning never reaches paid transport");
+   assert.equal(calls[1].input[1].id,origin.id);
+   assert.equal(calls[1].input[1].encrypted_content,origin.encrypted_content);
+   assert.equal(calls[1].input[2].call_id,"call_1");
+   assert.equal(calls[1].input[3].call_id,"call_1");
+   const audit=JSON.parse(readFileSync(auditFile,"utf8"));
+   assert.equal(audit.attempts,2);
+   assert.equal(audit.deniedCount,2);
+   assert.deepEqual(audit.policyDenials,[
+     "unissued_reasoning_context","stateless_reasoning_required"]);
+   const base=reservationForRequest(secondBody,
+     new Map([[createHash("sha256").update(origin.id+"\n"+origin.encrypted_content)
+       .digest("hex"),{id:origin.id,outputCeiling:1200}]]));
+   assert.ok(base.reservedMicros>=
+     Math.ceil(secondBody.length*0.10+1200*0.10+1200*0.50));
+   assert.equal(audit.reservedMicros,
+     reservationForRequest(Buffer.from(JSON.stringify({...params,store:false}))).reservedMicros+
+     base.reservedMicros);
+   const serial=JSON.stringify(audit);
+   assert.equal(serial.includes(origin.encrypted_content),false);
+   assert.equal(serial.includes(origin.id),false);
+   assert.equal(serial.includes(key),false);
  }finally{
    await new Promise(resolve=>server.close(resolve));
    rmSync(root,{recursive:true,force:true});
