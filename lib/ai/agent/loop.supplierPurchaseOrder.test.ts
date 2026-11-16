@@ -92,13 +92,39 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
   expect(steps).toEqual(["inspect","inspect","inspect","inspect","inspect","propose"]);
   expect(agentReplyPayload(result).reply.blocks)
    .toContainEqual({type:"proposal_card",proposalId:"33333333-3333-4333-8333-333333333333"});
-  expect((requests[0].tools as Array<{name:string}>).map(t=>t.name).slice(0,3))
-   .toEqual(["inspect_supplier_purchase","propose_supplier_purchase_order","get_supplier_purchase_orders"]);
+  expect(requests[0].tools).toEqual(expect.arrayContaining([
+   expect.objectContaining({name:"inspect_supplier_purchase"}),
+   expect.objectContaining({name:"propose_supplier_purchase_order"}),
+   expect.objectContaining({name:"get_supplier_purchase_orders"})
+  ]));
   expect((requests[0].tools as unknown[]).length).toBeGreaterThan(30);
   expect(requests.every(r=>r.tool_choice==="auto")).toBe(true);
   expect(requests[6].input).toEqual(expect.arrayContaining([
    expect.objectContaining({type:"function_call_output",call_id:"propose-6"})
   ]));
+ });
+ it("negative draft intent and unrelated wording never trigger hardcoded proposal routing",async()=>{
+  const propose=vi.fn();
+  const inspect=vi.fn(async()=>plan);
+  const ctx={...baseContext,purchasing:{inspect,propose}} as unknown as AgentToolContext;
+  const readOnly=playback([
+   [call("inspect_supplier_purchase",args(5),"read-only-1"),completed],
+   [text("The two saved quotes can be compared, but no draft was requested."),completed]
+  ]);
+  const compared=await runAgentTurn({ownerText:"Do not create a purchase order; just compare the quotes.",
+   context:ctx,provider:readOnly.provider});
+  expect(readOnly.requests).toHaveLength(2);
+  expect(inspect).toHaveBeenCalledOnce();
+  expect(propose).not.toHaveBeenCalled();
+  expect(agentReplyPayload(compared).reply.blocks).not.toContainEqual(
+   expect.objectContaining({type:"proposal_card"}));
+  const unrelated=playback([[text("I can explain how menu items are sorted."),completed]]);
+  await runAgentTurn({ownerText:"Explain how to change the display order of menu items.",
+   context:{...baseContext} as AgentToolContext,provider:unrelated.provider});
+  expect(unrelated.requests).toHaveLength(1);
+  expect(unrelated.requests[0].instructions).toEqual(readOnly.requests[0].instructions);
+  expect(unrelated.requests[0].tools).toEqual(readOnly.requests[0].tools);
+  expect(unrelated.requests[0].tool_choice).toBe("auto");
  });
  it("explicit owner correction lists saved drafts then targets ONLY the selected proposal",async()=>{
   const oldId="55555555-5555-4555-8555-555555555555";
