@@ -32,7 +32,7 @@ export type SupplierOrderStatus={
  subtotalCents:number;neededBy:string|null;approvedAt:string;
  lines:Array<{itemName:string;packs:number;packUnit:string;packQuantity:number;
   lineSubtotalCents:number;quotedOn:string}>;
- sentToSupplier:false;receivedIntoInventory:false;
+ sentToSupplier:boolean;receivedIntoInventory:false;
 };
 /** The same authenticated read path used by Supervisor: no separate owner PO store.
  * Approved-for-ordering means prepared internally, never sent or delivered. */
@@ -51,6 +51,10 @@ export async function readSupplierPurchaseOrders(db:SupabaseClient,businessId:st
   .order("ordinal",{ascending:true}).limit(401);
  if(lines.error)throw new Error("supplier_purchase_order_lines_unavailable");
  if((lines.data??[]).length>400)throw new Error("supplier_purchase_order_lines_truncated");
+ const dispatches=await db.from("purchase_order_dispatches")
+   .select("purchase_order_id,state,provider_receipt_id").eq("business_id",businessId)
+   .eq("owner_user_id",ownerUserId).in("purchase_order_id",orders.map(x=>x.id)).limit(41);
+ if(dispatches.error)throw new Error("supplier_purchase_dispatch_status_unavailable");
  return {orders:orders.map(row=>({
   id:row.id,status:row.status,revision:row.revision,supplierName:row.supplier_name_snapshot,
   currency:row.currency_code,subtotalCents:row.subtotal_cents,neededBy:row.needed_by,
@@ -60,7 +64,9 @@ export async function readSupplierPurchaseOrders(db:SupabaseClient,businessId:st
    packUnit:line.pack_unit,packQuantity:line.pack_quantity,
    lineSubtotalCents:line.subtotal_cents,quotedOn:line.quoted_on
   })),
-  sentToSupplier:false as const,receivedIntoInventory:false as const,
+  sentToSupplier:(dispatches.data??[]).some(d=>d.purchase_order_id===row.id&&
+    d.state==="provider_accepted"&&Boolean(d.provider_receipt_id)),
+  receivedIntoInventory:false as const,
  })),truncated:(result.data??[]).length>40};
 }
 
