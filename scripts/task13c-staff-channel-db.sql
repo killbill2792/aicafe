@@ -119,7 +119,7 @@ DECLARE r jsonb; rejected boolean:=false;
 BEGIN
  r:=public.staff_channel_submit(current_setting('test.task13c.req_a')::uuid,'decline',
   'I cannot work 7 to 2; I can arrive at 8 instead.',current_setting('test.task13c.nonce_a')::uuid);
- IF r->>'replayed'<>'true' or r->>'id'<>current_setting('test.task13c.msg_a')::uuid
+ IF r->>'replayed'<>'true' or r->>'id'<>current_setting('test.task13c.msg_a')
  THEN RAISE EXCEPTION 'idempotent staff response replay not confirmed'; END IF;
  BEGIN
   PERFORM public.staff_channel_submit(current_setting('test.task13c.req_b')::uuid,'confirm',null,gen_random_uuid());
