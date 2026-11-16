@@ -24,8 +24,8 @@ jobs:
       github.event.pull_request.head.ref == 'task14b-agentic-supervisor-procurement' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.changes.body.from != null &&
-      !contains(github.event.changes.body.from, '<!-- aicafe-task14b-trusted-paid-run-v4 ') &&
-      contains(github.event.pull_request.body, '<!-- aicafe-task14b-trusted-paid-run-v4 ')
+      !contains(github.event.changes.body.from, '<!-- aicafe-task14b-trusted-paid-run-v5 ') &&
+      contains(github.event.pull_request.body, '<!-- aicafe-task14b-trusted-paid-run-v5 ')
     permissions:
       contents: read
       issues: write
@@ -45,7 +45,7 @@ jobs:
           import {readFileSync,appendFileSync} from "node:fs";
           const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
           const pr=event.pull_request,sha=pr?.head?.sha;
-          const prefix="<!-- aicafe-task14b-trusted-paid-run-v4 ";
+          const prefix="<!-- aicafe-task14b-trusted-paid-run-v5 ";
           const marker=prefix+sha+" -->";
           const old=event.changes?.body?.from;
           if(event.action!=="edited"||event.sender?.login!=="killbill2792"||
@@ -71,9 +71,9 @@ jobs:
           if(latest.head?.sha!==sha||latest.base?.ref!=="main"||
              !latest.body?.includes(marker)||latest.state!=="open")
              throw Error("Approval not for current Task14B PR head");
-          // pilot-v1, pilot-v2 and pilot-v3 have been consumed: NEVER replay those grants.
-          // pilot-v4 is one fresh owner-only authorization, not a reset of any earlier grant.
-          const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v4 -->";
+          // pilot-v1 through pilot-v4 are consumed: NEVER replay those approvals.
+          // pilot-v5 is a new, distinct one-shot owner grant, not a retry/reset.
+          const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v5 -->";
           let endReached=false;
           for(let page=1;page<=100;page++){
            const res=await fetch(api+"/issues/482/comments?per_page=100&page="+page,{headers});
