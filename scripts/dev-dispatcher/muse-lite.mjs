@@ -18,7 +18,7 @@ const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
    pageInfo{hasNextPage}
    nodes{number title url isDraft headRefOid
     headRef{target{... on Commit{committedDate statusCheckRollup{state}}}}
-    comments(last:100){nodes{body createdAt}}
+    comments(last:100){nodes{body createdAt author{login}}}
    }
   }
   recentlyMerged:pullRequests(states:MERGED,first:25,orderBy:{field:UPDATED_AT,direction:DESC}){
@@ -27,8 +27,9 @@ const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
  }
 }`;
 function codexStatus(comments,head){
- const matches=(comments||[]).map(c=>c.body||'')
-  .filter(b=>b.includes('codex-review-state:v1'));
+ const matches=(comments||[])
+  .filter(c=>['chatgpt-codex-connector[bot]','codex[bot]'].includes(c.author?.login))
+  .map(c=>c.body||'').filter(b=>b.includes('codex-review-state:v1'));
  for(let i=matches.length-1;i>=0;i--){
   const m=matches[i].match(/<!-- codex-review-state:v1 (\{[^\n]*\}) -->/);
   if(!m)continue;
@@ -91,7 +92,8 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
  for(const [task,entry] of Object.entries(records)){
   if(entry.stage==='waiting_owner'&&millis(entry.updated_at)!==null&&
    clock-millis(entry.updated_at)>=ownerReminderMinutes*60000)
-   emit('remind_owner',task,entry.pr_number,null,null,'Review the proposed architecture in the existing chat',
+   emit('remind_owner',task,entry.pr_number,null,entry.chat_url||null,
+     'Review the proposed architecture in the existing chat',
      String(entry.revision));
  }
  if(!fresh)return {fresh:false,actions,blocked:[{reason:'github_evidence_stale_or_unavailable'}]};
