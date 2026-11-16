@@ -103,6 +103,36 @@ Where an older line in this file conflicts with these rules, these rules win.
     and real café data (chat answer, screen, stored rows, scheduled job), not only unit tests or a few
     happy paths. The PR lists each scenario with pass or fail. Partial passes are not done. Keep CI fast:
     if a check gets slow or flaky, fix it or split it rather than waiting.
+17a. **Owner-approved autonomous feature work and staged acceptance (Nov 16, 2026).**
+    Every coding task affecting Supervisor builds one **proactive, persistent, multi-step café operator**,
+    not a chatbot, static reminder, cosmetic progress card, duplicate agent or separate cron. A task
+    states its exact delegated/off-turn trigger, model-selected registered tools, canonical sources
+    and metrics, durable steps/owner update, authorization, verified effect receipt, safe retries,
+    closure/follow-up, and explicitly owned future integration cases.
+    **Before an AI-behavior feature PR merges**, execute a real production-configured
+    \`gpt-6-luna\` journey with the actual registered Supervisor on disposable migrated local
+    Supabase; record provider/tool evidence, independently observed scoped DB/owner-screen/effect
+    results, positive and negative cases and exact code provenance. Real Luna acceptance is
+    separate from complete current-head CI, Codex code/security review, dependency/owner
+    gates. Mock/recorded tests, HTTP200, plausible prose or green CI cannot substitute.
+    Use only separately owner-authorized one-shot bounded private trusted provider runs;
+    never spend automatically in untrusted PR CI, replay consumed grants, or touch production.
+    Pure docs/config or deterministic-only infrastructure PRs must state why no model-executed
+    behavior changed; they still need normal CI/review/security and may not claim Luna proof.
+    **Three separately verified milestones:** a domain feature can merge after its own true
+    \`feature_proven\` gates; \`integrated_proven\` requires final Task17B exhaustive registry,
+    metric and owner-question coverage plus Task17C real Luna off-turn/restart/approval/effect
+    recovery on the combined system; \`released_proven\` requires Task17D owner-screen and
+    Task17E owner-authorized release proof. Missing later cross-module tests block **release**
+    rather than every independent proven domain merge. Every deferral names an executable
+    scenario, task owner and unproven state; none is marked passed by reassignment.
+    Task17B must discover **all** supported Supervisor tools, domain capabilities, business
+    metrics, monitors, experiments, authorized effects and matching screens, failing on missing
+    test coverage rather than calling untested features N/A. No external Grok/Muse API or
+    competitor benchmark is required; the requirement is first-party operational behavior.
+    Follow [binding acceptance](docs/rules/acceptance-quality.md) and
+    [task briefs](docs/plans/universal-supervisor-task-briefs.md), preserving all existing
+    safety, source, privacy, owner approval and merge restrictions.
 18. **Use an existing skill first.** Before building anything, check for an official Anthropic/OpenAI skill or a repository skill that already does the job; reuse it instead of rebuilding it.
     The list, with pinned sources and the AI Cafe rules for each, is `docs/rules/skills.md`; Claude Code
     loads them from `.claude/skills/`, other agents open a skill's `SKILL.md` by path.
