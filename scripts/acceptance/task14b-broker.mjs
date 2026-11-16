@@ -10,7 +10,7 @@
  */
 import {createServer} from "node:http";
 import {readFileSync,writeFileSync,renameSync} from "node:fs";
-import {randomUUID,timingSafeEqual} from "node:crypto";
+import {randomUUID,timingSafeEqual,createHash} from "node:crypto";
 
 export const MAX_RESERVATION_MICROS=180_000;
 export const MAX_CALLS=18;
@@ -21,13 +21,30 @@ const isObject=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
 const onlyKeys=(obj,keys)=>Object.keys(obj).every(key=>keys.includes(key));
 const inlineId=x=>typeof x==="string"&&/^[A-Za-z0-9_-]{1,128}$/.test(x);
 const inlineName=x=>typeof x==="string"&&/^[a-z][a-z0-9_]{1,79}$/.test(x);
+// Stateless encrypted reasoning is self-contained ONLY when it was issued in
+// this same trusted-broker process. The host stores SHA-256 fingerprints, not
+// plaintext, ciphertext, provider IDs or reasoning content in audit files.
+const MAX_REASONING_ITEMS=8,MAX_REASONING_BYTES=48_000,MAX_REASONING_REGISTRY=144;
+function validEncryptedReasoning(item){
+ return isObject(item)&&item.type==="reasoning"&&
+  onlyKeys(item,["type","id","status","summary","encrypted_content"])&&
+  typeof item.id==="string"&&/^rs_[A-Za-z0-9_-]{1,120}$/.test(item.id)&&
+  (item.status===undefined||item.status==="completed")&&
+  Array.isArray(item.summary)&&item.summary.length===0&&
+  typeof item.encrypted_content==="string"&&
+  item.encrypted_content.length>=32&&item.encrypted_content.length<=MAX_REASONING_BYTES&&
+  /^[A-Za-z0-9_+/=.:-]+$/.test(item.encrypted_content);
+}
+function encryptedReasoningKey(item){
+ return createHash("sha256").update(item.id+"\n"+item.encrypted_content).digest("hex");
+}
 /**
  * Never forward provider-stored context: previous_response_id, conversation,
  * prompt IDs, reasoning references, file IDs/URLs, image URLs or attachments.
  * Canonicalize recorded Responses output to self-contained text/function items.
  * Provider can bill only for text/tool JSON physically in this request.
  */
-export function normalizeInlineContext(items){
+export function normalizeInlineContext(items,reasoningRegistry=new Map(),stats={reasoningItems:0,replayOutputCeiling:0,reasoningBytes:0}){
  if(!Array.isArray(items)||items.length<1||items.length>256)
   fail("inline_input_required");
  return items.map(item=>{
@@ -45,6 +62,20 @@ export function normalizeInlineContext(items){
     return {type:"input_text",text:part.text};
    });
    return {role:"user",content};
+  }
+  if(item.type==="reasoning"){
+   if(!validEncryptedReasoning(item))fail("invalid_inline_reasoning");
+   const prior=reasoningRegistry.get(encryptedReasoningKey(item));
+   if(!prior||prior.id!==item.id)fail("unissued_reasoning_context");
+   stats.reasoningItems++;
+   stats.reasoningBytes+=item.encrypted_content.length;
+   stats.replayOutputCeiling+=prior.outputCeiling;
+   if(stats.reasoningItems>MAX_REASONING_ITEMS||
+      stats.reasoningBytes>MAX_REASONING_BYTES)
+     fail("reasoning_replay_limit");
+   return {type:"reasoning",id:item.id,
+    ...(item.status?{status:"completed"}:{}),
+    summary:[],encrypted_content:item.encrypted_content};
   }
   if(item.type==="function_call"){
    if(!onlyKeys(item,["type","id","status","name","call_id","arguments"])||
@@ -80,7 +111,7 @@ export function normalizeInlineContext(items){
   fail("opaque_or_remote_context_forbidden");
  });
 }
-export function reservationForRequest(body) {
+export function reservationForRequest(body,reasoningRegistry=new Map()) {
  if(!Buffer.isBuffer(body)||body.length<2||body.length>MAX_BODY_BYTES)
   fail("request_size");
  let p;
@@ -88,14 +119,17 @@ export function reservationForRequest(body) {
  if(p===null||typeof p!=="object"||Array.isArray(p))
   fail("not_a_response_request");
  const allowed=["model","instructions","tools","tool_choice","stream",
-  "max_output_tokens","prompt_cache_key","input","service_tier"];
+  "max_output_tokens","prompt_cache_key","input","service_tier","store"];
  if(!onlyKeys(p,allowed))fail("provider_expanded_context_forbidden");
  if(typeof p.instructions!=="string"||!p.instructions.trim()||
     (p.prompt_cache_key!==undefined&&
       (typeof p.prompt_cache_key!=="string"||p.prompt_cache_key.length>128))||
     !["none","auto"].includes(p.tool_choice))
   fail("unsupported_provider_request_shape");
- const input=normalizeInlineContext(p.input);
+ if(p.store!==undefined&&p.store!==false)fail("remote_store_forbidden");
+ const stats={reasoningItems:0,replayOutputCeiling:0,reasoningBytes:0};
+ const input=normalizeInlineContext(p.input,reasoningRegistry,stats);
+ if(stats.reasoningItems>0&&p.store!==false)fail("stateless_reasoning_required");
  if(p.model!=="gpt-6-luna")fail("unexpected_model");
  if(!Number.isSafeInteger(p.max_output_tokens)||p.max_output_tokens<1||
     p.max_output_tokens>MAX_OUTPUT_TOKENS)fail("output_cap");
@@ -110,7 +144,10 @@ export function reservationForRequest(body) {
  // Current standard Luna rates $0.10/M input, $0.50/M output; no cache discount.
  // Multiplying tokens by dollar-per-million gives USD millionths ("micros").
  return {serializedBytes:body.length,reservedMicros:
-  Math.ceil(body.length*0.10+p.max_output_tokens*0.50),params:{...p,input}};
+  // Charge the originating response's ENTIRE output-token cap as extra input
+  // each time encrypted reasoning is replayed, even if the ciphertext is short.
+  Math.ceil(body.length*0.10+stats.replayOutputCeiling*0.10+
+    p.max_output_tokens*0.50),params:{...p,input,store:false}};
 }
 /** The provider error body is untrusted. Audit only fixed categories and an
  * already submitted tool name; NEVER persist provider prose or raw content. */
@@ -170,7 +207,9 @@ const SAFE_POLICY_DENIALS=new Set([
  "not_a_response_request","provider_expanded_context_forbidden",
  "unsupported_provider_request_shape","unexpected_model","output_cap",
  "unpriced_service_tier","must_stream_foreground","unpriced_cache_storage",
- "provider_built_in_tools_forbidden","approved_budget_exhausted"
+ "provider_built_in_tools_forbidden","approved_budget_exhausted",
+ "invalid_inline_reasoning","unissued_reasoning_context",
+ "reasoning_replay_limit","remote_store_forbidden","stateless_reasoning_required"
 ]);
 export function safePolicyDenial(error){
  const code=error instanceof Error?
@@ -182,8 +221,8 @@ export class PaidReservation {
  constructor(head){if(!/^[a-f0-9]{40}$/.test(head))fail("bad_head");
   this.head=head;this.attempts=0;this.reservedMicros=0;this.receipts=[];
   this.deniedCount=0;this.policyDenials=[]}
- reserve(body){
-  const {serializedBytes,reservedMicros,params}=reservationForRequest(body);
+ reserve(body,reasoningRegistry=new Map()){
+  const {serializedBytes,reservedMicros,params}=reservationForRequest(body,reasoningRegistry);
   if(this.attempts>=MAX_CALLS||
     this.reservedMicros+reservedMicros>MAX_RESERVATION_MICROS)
    fail("approved_budget_exhausted");
@@ -210,6 +249,14 @@ export function constantTimeEqual(a,b) {
  return x.length===y.length&&x.length>20&&timingSafeEqual(x,y);
 }
 /** Streaming receipt captures only provider usage, never response text/tools. */
+// Trusted-host memory only; ciphertext is never stored in the audit file.
+function encryptedReasoningFromSseFrame(frame){
+ const line=frame.split(/\r?\n/).find(v=>v.startsWith("data: "));
+ if(!line||line==="data: [DONE]")return null;
+ let event;try{event=JSON.parse(line.slice(6))}catch{return null}
+ if(event?.type!=="response.output_item.done")return null;
+ return validEncryptedReasoning(event.item)?event.item:null;
+}
 export function usageFromSseFrame(frame) {
  const line=frame.split(/\r?\n/).find(v=>v.startsWith("data: "));
  if(!line||line==="data: [DONE]")return null;
@@ -253,6 +300,8 @@ export function startTrustedBroker({
  if(typeof token!=="string"||token.length<40)fail("broker_token_missing");
  if(typeof auditFile!=="string"||!auditFile.startsWith("/"))fail("audit_path_missing");
  const reserved=new PaidReservation(head);
+ // Provenance belongs only to this broker run; never persists ciphertext.
+ const trustedReasoning=new Map();
  saveAudit(auditFile,reserved);
  const server=createServer(async(req,res)=>{
   if(req.method==="GET"&&req.url==="/healthz"){
@@ -271,7 +320,7 @@ export function startTrustedBroker({
     parts.push(chunk);
    }
    const body=Buffer.concat(parts);
-   const {receipt,params}=reserved.reserve(body);
+   const {receipt,params}=reserved.reserve(body,trustedReasoning);
    // Write the reservation synchronously BEFORE opening billable transport.
    saveAudit(auditFile,reserved);
    parts=[];
@@ -280,7 +329,7 @@ export function startTrustedBroker({
     upstream=await fetchUpstream("https://api.openai.com/v1/responses",{
      method:"POST",headers:{
       Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},
-     body:JSON.stringify({...params,service_tier:"default"}),
+     body:JSON.stringify({...params,service_tier:"default",store:false}),
      signal:AbortSignal.timeout(180_000),
     });
    }catch{
@@ -297,6 +346,7 @@ export function startTrustedBroker({
    res.writeHead(200,{"content-type":"text/event-stream; charset=utf-8",
     "cache-control":"no-store","x-accel-buffering":"no"});
    const decoder=new TextDecoder();let remaining="";
+   const issuedReasoning=[];
    try{
     for await(const chunk of upstream.body){
      if(res.destroyed)break;
@@ -306,7 +356,11 @@ export function startTrustedBroker({
      while((match=/\r?\n\r?\n/.exec(remaining))!==null){
       const frame=remaining.slice(0,match.index);
       remaining=remaining.slice(match.index+match[0].length);
-      // Do not store content or raw full request; only usage and model identity.
+      // Only encrypted output issued by the real provider may be trusted later.
+      const reason=encryptedReasoningFromSseFrame(frame);
+      if(reason&&issuedReasoning.length<MAX_REASONING_ITEMS)
+       issuedReasoning.push(reason);
+      // Never save or log reasoning, prompts, arguments or raw response.
       const usage=usageFromSseFrame(frame);
       if(usage){
        if(usage.event==="function_call"){
@@ -329,6 +383,17 @@ export function startTrustedBroker({
     }
    }finally{
     if(receipt.terminal==="attempted")receipt.terminal="incomplete";
+    if(receipt.terminal==="completed"){
+     for(const item of issuedReasoning){
+      const fingerprint=encryptedReasoningKey(item);
+      // Trust ONLY after completed upstream response. Reserve its full
+      // output cap as replayable hidden input tokens on every later request.
+      trustedReasoning.set(fingerprint,{
+       id:item.id,outputCeiling:params.max_output_tokens});
+      while(trustedReasoning.size>MAX_REASONING_REGISTRY)
+       trustedReasoning.delete(trustedReasoning.keys().next().value);
+     }
+    }
     saveAudit(auditFile,reserved);
     res.end();
    }
