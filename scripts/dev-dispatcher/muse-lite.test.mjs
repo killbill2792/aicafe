@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions} from './muse-lite.mjs';
+import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions,runMuseLite} from './muse-lite.mjs';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 const now='2026-11-16T20:00:00Z',sha='a'.repeat(40);
 const c=(head=sha,hasFindings=false)=>({body:
  '<!-- codex-review-state:v1 '+JSON.stringify({code_review:{commit_sha:head,
@@ -99,4 +102,21 @@ test('API failure is not a green status; token only performs read-only GraphQL',
  assert.equal(v.prs[0].codex,'clean');
  await assert.rejects(fetchGithubFacts({repo:'killbill2792/aicafe',token:'token',now,
   fetchImpl:async()=>({ok:false,status:429})}),/GitHub read unavailable/);
+});
+
+test('one GitHub outage creates local cooldown, preserves state and suppresses repeated reads',async()=>{
+ const home=mkdtempSync(join(tmpdir(),'muse-watch-'));
+ try{
+  let calls=0;
+  const fake=async()=>{calls++;return {ok:false,status:429};};
+  const first=await runMuseLite({repo:'killbill2792/aicafe',token:'read-only-token',
+   home,now,fetchImpl:fake});
+  assert.equal(first.github_read,'unavailable');
+  assert.equal(first.actions.length,0);
+  assert.equal(first.holds[0].reason,'github_evidence_stale_or_unavailable');
+  const second=await runMuseLite({repo:'killbill2792/aicafe',token:'read-only-token',
+   home,now:'2026-11-16T20:05:00Z',fetchImpl:fake});
+  assert.equal(second.github_read,'unavailable');
+  assert.equal(calls,1,'local cooldown must suppress repeat GitHub API calls');
+ }finally{rmSync(home,{recursive:true,force:true});}
 });
