@@ -42,7 +42,8 @@ function roleFor(req,ownerPassword,musePassword){
 export function ownerDashboardHandler({readState,editState,readNotes,saveNote,readFacts,ownerPassword,musePassword,
  html=readFileSync(new URL('./owner-dashboard-v3.html',import.meta.url),'utf8')}={}){
  if(typeof readState!=='function'||typeof editState!=='function'||
-   typeof ownerPassword!=='string'||ownerPassword.length<16)
+   typeof ownerPassword!=='string'||ownerPassword.length<16||
+   (musePassword!=null&&(typeof musePassword!=='string'||musePassword.length<16)))
    throw Error('Private state, authenticated edits and strong owner password required');
  return async (req,res)=>{
   const role=roleFor(req,ownerPassword,musePassword);
