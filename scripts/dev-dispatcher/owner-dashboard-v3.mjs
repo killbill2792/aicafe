@@ -4,6 +4,9 @@
 // Mutations use the SAME Git-backed CAS ledger, not a new authority.
 import http from 'node:http';
 import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {homedir} from 'node:os';
+import {readMuseNotes,writeMuseNote} from './muse-local-notes.mjs';
 import {timingSafeEqual} from 'node:crypto';
 import {GitHubLedger} from './ledger.mjs';
 import {settings} from './settings.mjs';
@@ -36,7 +39,7 @@ function roleFor(req,ownerPassword,musePassword){
  if(user==='muse'&&musePassword&&safeEqual(password,musePassword))return 'muse';
  return null;
 }
-export function ownerDashboardHandler({readState,editState,ownerPassword,musePassword,
+export function ownerDashboardHandler({readState,editState,readNotes,saveNote,ownerPassword,musePassword,
  html=readFileSync(new URL('./owner-dashboard-v3.html',import.meta.url),'utf8')}={}){
  if(typeof readState!=='function'||typeof editState!=='function'||
    typeof ownerPassword!=='string'||ownerPassword.length<16)
@@ -50,6 +53,29 @@ export function ownerDashboardHandler({readState,editState,ownerPassword,musePas
   try{
    if(req.method==='GET'&&req.url==='/')
     return reply(res,200,'text/html; charset=utf-8',html);
+   // Muse's coordination notes are locally readable even when GitHub or the ledger is down.
+   if(req.method==='GET'&&req.url==='/api/notes'){
+    if(!readNotes)return reply(res,503,'application/json',JSON.stringify({error:'Notes unavailable'}));
+    return reply(res,200,'application/json',JSON.stringify(await readNotes()));
+   }
+   if(req.method==='POST'&&req.url==='/api/notes'){
+    if(!saveNote)return reply(res,503,'application/json',JSON.stringify({error:'Notes unavailable'}));
+    const origin=req.headers.origin;
+    if(origin&&!/^http:\\/\\/(?:127\\.0\\.0\\.1|localhost):[0-9]{2,5}$/.test(origin))
+      return reply(res,403,'application/json',JSON.stringify({error:'Cross-origin edit refused'}));
+    if(!(req.headers['content-type']||'').startsWith('application/json'))
+      return reply(res,415,'application/json',JSON.stringify({error:'JSON required'}));
+    let text='';
+    for await(const chunk of req){
+     text+=chunk;
+     if(text.length>4096)return reply(res,413,'application/json',JSON.stringify({error:'Request too large'}));
+    }
+    let edit;try{edit=JSON.parse(text);}catch{
+      return reply(res,400,'application/json',JSON.stringify({error:'Invalid JSON'}));}
+    const next=await saveNote(edit,{role});
+    return reply(res,200,'application/json',JSON.stringify({saved:true,
+      entry:next.entries[edit.task_id]}));
+   }
    if(req.method==='GET'&&req.url==='/api/state'){
     const state=await readState();
     if(state?.version!==1||!state.tasks||!state.actions)throw Error('Invalid private ledger');
@@ -96,12 +122,15 @@ export function ownerDashboardHandler({readState,editState,ownerPassword,musePas
  };
 }
 export function startOwnerDashboard({ownerPassword,musePassword,ledger,port=7359,
-   readTransport='git'}={}){
+   readTransport='git',notesPath=process.env.MUSE_LOCAL_NOTES_PATH||
+     join(homedir(),'.local','state','aicafe-muse','notes.json')}={}){
  if(!ledger)throw Error('Private ledger client required');
  const handler=ownerDashboardHandler({
   readState:async()=>readTransport==='git'
     ?readLedgerViaGit({repo:ledger.repo,token:ledger.token})
     :(await ledger.verifyPrivate(),(await ledger.load()).state),
+  readNotes:async()=>readMuseNotes(notesPath),
+  saveNote:async(edit,opts)=>writeMuseNote(notesPath,edit,opts),
   editState:async(edit,opts)=>{
    const result=await ledger.transaction(state=>{
     const updated=applyOwnerDashboardEdit(state,edit,opts);
