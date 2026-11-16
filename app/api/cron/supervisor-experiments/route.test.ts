@@ -1,5 +1,9 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
+// Task14B recovery uses the same cron; legacy monitoring tests keep their own scoped fixture.
+vi.mock("@/lib/ai/supervisor/loop/purchaseOrdersReconcile.server",()=>({
+ reconcilePendingSupplierPurchaseOrders:async()=>({checked:0,verified:0,uncertain:0,failed:0})
+}));
 const mocks=vi.hoisted(()=>({
   events:[] as string[],
   seen:vi.fn(),

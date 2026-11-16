@@ -30,6 +30,13 @@ export function taskSubjectDate(task: OperatingTask): string | null {
 /** Final event-day reports and mid-run notes are written into an event_plan task. */
 export const isEventReport = (task: OperatingTask) => task.kind === "event_plan" && task.payload.needsApproval !== true;
 
+/** Task 7's generic priority receipts are not second actionable sources; the
+ * supplier-PO source is different: its original proposal lives in chat, not
+ * in operating_tasks, so its owner-private receipt IS the one inbox action. */
+export function retainActionablePrioritySource(task:OperatingTask):boolean{
+  return String(task.kind)!=="priority_notice"||task.payload.sourceType==="supplier_po";
+}
+
 /** Items with nothing for the owner to decide. They belong in Watching, never Needs you. */
 export function isInformational(task: OperatingTask): boolean {
   return task.kind === "daily_brief" || task.payload.midRun === true || isEventReport(task);

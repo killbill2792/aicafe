@@ -27,7 +27,7 @@ import {isSupabaseConfigured} from "@/lib/supabase/client";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
 import { EXPENSE_CATEGORY_CODES, RUNNING_COST_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import type { AgentId, OperatingTask } from "@/lib/operating/tasks";
-import { formatInboxDay, isEventReport, isStaleShiftAlert, settleInboxTasks, taskSubjectDate } from "@/lib/operating/inboxLifecycle";
+import { formatInboxDay, isEventReport, isStaleShiftAlert, settleInboxTasks, taskSubjectDate, retainActionablePrioritySource } from "@/lib/operating/inboxLifecycle";
 type HomeTaskPreviewItem={id:string;agentId:AgentId;agentName:string;title:string;href:string;subjectDate:string|null;createdAt:string};
 type DatedAttentionItem=HomeAttentionItem&{subjectDate?:string|null;createdAt?:string|null};
 const alertDay=(payload:Record<string,unknown>)=>{
@@ -152,7 +152,7 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
   // Rendering the original also preserves its specific repair link and details,
   // and prevents a resolved source leaving a generic orphan notice on Home.
   const team=projectOperatingTasks(settleInboxTasks(
-    stored.filter(task=>!isPriorityNoticeTask(task)),derived,new Date(),today));
+    stored.filter(retainActionablePrioritySource),derived,new Date(),today));
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");

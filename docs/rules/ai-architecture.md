@@ -34,7 +34,7 @@ One conversational agent with ONE streaming tool-calling loop per owner turn (Op
 ### Budget (enforced in code and tested)
 - Stable prefix first (system prompt + tools), `prompt_cache_key = "cafe-agent-v{N}"`. No dates, ids or
   per-turn data in the prefix.
-- ≤ 6 model calls and ≤ 8 tool calls per turn. Stop after 2 consecutive tool errors. 60s turn deadline.
+- Ordinary turns: ≤ 6 model calls (5 tool rounds + 1 final). When the model actually chooses and executes a supplier-investigation or saved-order-read function, it may use one additional bounded tool round (≤ 7 total model calls including final) to complete the owner\u2019s purchasing workflow; keyword matches and request text must never grant an exception. All turns: ≤ 8 tool executions, stop after 2 consecutive tool errors, and a 60s deadline. The isolated paid pilot also has its separate hard $0.18/18-transport authorization cap.
 - `max_output_tokens` ≤ 1200 per call. Target ≤ 25k input tokens for a typical question.
 - Main model from `SUPERVISOR_OPENAI_MODEL`; a small model for summaries and titles only.
 - Log per turn: calls, tool calls, input/cached/output tokens, latency, end reason. Never log prompt text.

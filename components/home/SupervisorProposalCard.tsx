@@ -18,6 +18,11 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null;
   purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string;
     receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
+  purchaseOrder?:{supplierName:string;currency:string;neededBy:string|null;
+   subtotalCents:number;totalCents:null;shippingCents:null;taxCents:null;
+   limitations:string[];lines:Array<{itemName:string;packs:number;packQuantity:number;
+    packUnit:string;priceCents:number;lineSubtotalCents:number;quoteId:string;
+    quotedOn:string;deliveryOn:string|null}>};
   ingredientOptions?:Array<{id:string;name:string;base_unit:string}>;
   publishAndNotify?:boolean;
   publication?:{state:"pending"|"published"|"cancelled";week?:string;expected?:number;
@@ -157,6 +162,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   };
   if(!value)return error?<p role="alert">{copy.error}</p>:<p role="status">{copy.loading}</p>;
   const money=(cents:number)=>formatCardValue({kind:"money",cents},locale,value.currency??"USD");
+  const supplierPO=value.capabilityId==="maya.supplier_purchase_order.v1";
   const gmail=value.capabilityId==="alex.gmail_effect.v1";
   const staff=value.capabilityId?.startsWith("olivia.staff_")===true;
   const purchase=value.capabilityId==="maya.inventory_purchase.v1";
@@ -164,6 +170,44 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const goal=value.capabilityId==="leo.goal.v1";
   const eventPlan=value.capabilityId==="alex.event_readiness.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
+  if(supplierPO&&value.purchaseOrder){
+    const po=value.purchaseOrder;
+    const poCopy=en.SupplierPurchaseOrderCard;
+    const pending=value.state==="pending";
+    return <section aria-label={poCopy.ariaLabel} dir={locale==="ar"?"rtl":"ltr"}
+      className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      <p className="text-sm font-semibold text-ink-muted">{poCopy.agentLabel}</p>
+      <h3 className="mt-2 break-words text-xl font-bold">{poCopy.titlePrefix} {po.supplierName}</h3>
+      <p role="status" className="mt-2 font-semibold">{value.state==="applied"?
+        poCopy.approved:value.state==="pending"?
+        poCopy.pending:value.state==="applying"?poCopy.applying:value.state}</p>
+      <p className="mt-2 text-base">{poCopy.requestedBy} {po.neededBy??poCopy.unspecified}</p>
+      <ul className="mt-3 space-y-2">{po.lines.map((line,i)=><li key={line.quoteId+":"+i}
+       className="rounded-xl border border-line p-3">
+       <strong>{line.itemName}</strong>
+       <p>{line.packs} × {line.packQuantity} {line.packUnit} {poCopy.at} {money(line.priceCents)} {poCopy.perPack}</p>
+       <p>{poCopy.lineSubtotal} {money(line.lineSubtotalCents)} · {poCopy.quoted} {line.quotedOn}</p>
+       <p>{poCopy.delivery} {line.deliveryOn??poCopy.unconfirmed} · {poCopy.sourceQuote} {line.quoteId}</p>
+      </li>)}</ul>
+      <p className="mt-3 text-lg font-bold">{poCopy.itemsSubtotal} {money(po.subtotalCents)} {po.currency}</p>
+      <p className="mt-1 text-base text-ink-muted">{poCopy.subtotalNotice}</p>
+      <p className="mt-2 text-base text-ink-muted">{poCopy.ownerNotice}</p>
+      {pending&&<div className="mt-4 flex flex-wrap gap-3">
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
+         className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">
+         {poCopy.approve}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
+         className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">
+         {poCopy.decline}</button>
+      </div>}
+      {value.state==="applying"&&<p className="mt-3" role="status">{poCopy.checkingReceipt}</p>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy}
+        onClick={()=>void invoke("reconcile")}
+        className="mt-3 min-h-12 rounded-xl border border-line px-5 font-bold">
+        {poCopy.reconcile}</button>}
+      {error&&<p role="alert" className="mt-3 text-neg">{poCopy.approvalError}</p>}
+    </section>;
+  }
   if(gmail&&value.gmail){
     const g=value.gmail;
     const c=en.GmailApprovalCard;

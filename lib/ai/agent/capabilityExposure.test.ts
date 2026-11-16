@@ -7,6 +7,7 @@ import {staffProposalInputs} from "./tools/staffProposals";
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
+import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 /** Intentional omissions require a safe owner-facing explanation here. */
@@ -19,6 +20,7 @@ describe("loop capability exposure",()=>{
    [menuPriceChangeCapabilityId,"propose_price_change"],
    [priceExperimentCapabilityId,"propose_price_experiment"],
    [purchaseCapabilityId,"propose_purchases"],
+   [supplierPurchaseOrderCapabilityId,"propose_supplier_purchase_order"],
    [goalCapabilityId,"propose_goal"],
    [eventReadinessCapabilityId,"propose_event_plan"],
    [gmailCapabilityId,"propose_gmail_action"],
