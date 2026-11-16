@@ -68,6 +68,38 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
    expect.objectContaining({name:"propose_supplier_purchase_order",strict:true})
   ]));
  });
+ it("persists a future PO after six model-directed tool steps without dropping any domain function",async()=>{
+  const steps:string[]=[];
+  const inspect=vi.fn(async()=>{steps.push("inspect");return plan;});
+  const propose=vi.fn(async()=>{steps.push("propose");return {
+   proposalId:"33333333-3333-4333-8333-333333333333",
+   revision:1,supplierName:"Farm A",subtotalCents:2250,currency:"CAD"};});
+  const ctx={...baseContext,purchasing:{inspect,propose}} as unknown as AgentToolContext;
+  const {requests,provider}=playback([
+   [call("inspect_supplier_purchase",args(5),"inspect-1"),completed],
+   [call("inspect_supplier_purchase",args(5),"inspect-2"),completed],
+   [call("inspect_supplier_purchase",args(5),"inspect-3"),completed],
+   [call("inspect_supplier_purchase",args(5),"inspect-4"),completed],
+   [call("inspect_supplier_purchase",args(5),"inspect-5"),completed],
+   [call("propose_supplier_purchase_order",proposalArgs(5),"propose-6"),completed],
+   [text("Saved one owner-approval PO draft; shipping and taxes are unknown."),completed]
+  ]);
+  const result=await runAgentTurn({ownerText:"Investigate current milk quotes, then prepare a purchase order for five gallons for my approval.",
+   context:ctx,provider});
+  expect(requests).toHaveLength(7);
+  expect(inspect).toHaveBeenCalledTimes(5);
+  expect(propose).toHaveBeenCalledOnce();
+  expect(steps).toEqual(["inspect","inspect","inspect","inspect","inspect","propose"]);
+  expect(agentReplyPayload(result).reply.blocks)
+   .toContainEqual({type:"proposal_card",proposalId:"33333333-3333-4333-8333-333333333333"});
+  expect((requests[0].tools as Array<{name:string}>).map(t=>t.name).slice(0,3))
+   .toEqual(["inspect_supplier_purchase","propose_supplier_purchase_order","get_supplier_purchase_orders"]);
+  expect((requests[0].tools as unknown[]).length).toBeGreaterThan(30);
+  expect(requests.every(r=>r.tool_choice==="auto")).toBe(true);
+  expect(requests[6].input).toEqual(expect.arrayContaining([
+   expect.objectContaining({type:"function_call_output",call_id:"propose-6"})
+  ]));
+ });
  it("explicit owner correction lists saved drafts then targets ONLY the selected proposal",async()=>{
   const oldId="55555555-5555-4555-8555-555555555555";
   const proposed:Array<{quantity:number;replaceProposalId:string|null}>=[];
