@@ -204,12 +204,12 @@ describe("answer style ()", () => {
   it("adds the style rules with a new cache key when on", async () => {
     const { requests, provider } = recording([[text("Hi."), completed]]);
     await runAgentTurn({ ownerText: "Hi", context, provider });
-    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v9-stale-po-recovery");
+    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v10-vendor-owner-resolution");
     expect(String(requests[0].instructions)).toContain(STYLE_RULES);
     expect(String(requests[0].instructions)).toContain("replaceProposalId=null");
     expect(String(requests[0].instructions)).toContain("NEVER infer replacement authority");
     expect(String(requests[0].instructions)).toContain("A genuinely uncertain result requires receipt-only reconciliation");
-    expect(agentPromptCacheKey()).toBe("cafe-agent-v9-stale-po-recovery");
+    expect(agentPromptCacheKey()).toBe("cafe-agent-v10-vendor-owner-resolution");
   });
 });
 
