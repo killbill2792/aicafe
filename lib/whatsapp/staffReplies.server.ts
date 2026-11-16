@@ -10,6 +10,12 @@ export async function acceptSignedStaffText(message:StaffText):Promise<"recorded
  if(message.kind!=="text"||!message.text)return "unmatched";
  const phone="+"+message.waId;
  const db=createAdminSupabaseClient();
+ // An originally unmatched event never becomes attributable to a different
+ // employee merely because someone later changed a phone or consent.
+ const priorUnmatched=await db.from("staff_communication_unmatched_inbound")
+  .select("provider_event_id").eq("provider_event_id",message.wamid).maybeSingle();
+ if(priorUnmatched.error)throw new Error("staff_unmatched_lookup_failed");
+ if(priorUnmatched.data)return "unmatched";
  const candidates=await db.from("employees").select("id,business_id")
   .eq("phone_e164",phone).eq("active",true).eq("whatsapp_opt_in",true).limit(2);
  if(candidates.error||!candidates.data)throw new Error("staff_identity_lookup_failed");
