@@ -12,6 +12,18 @@
 
 **Single delivery prompt (no separate copy/paste template):** Actual authorized assignments are constructed by `scripts/dev-dispatcher/run.mjs` using `scripts/dev-dispatcher/delivery.mjs#createDelivery`, the approved machine queue and this task's exact anchor. Read the current `AGENTS.md` → binding POS rules → #398 decision record → this brief+queue → actual code → executable acceptance. The old short coding-prompt example was superseded; do not paste or concatenate it with the generated prompt, reassign an existing chat because of documentation edits, or turn D4A/D4B architectural approval into runtime authorization. Owner's coding-delivery switch is OFF during POS0a closeout despite issue/queue tracking; do not deliver POS0b–f coding instructions without explicit owner activation. Manual PR-body comment reconciliation suffices for this phase; no new automation gate.
 
+## BINDING OWNER APPROVAL — autonomous coding tasks and staged gates (Nov 16, 2026)
+
+**Every implementation task below must build toward the same first-party, proactive, multi-step AI CAFE Supervisor.** Not a question-answer chatbot, synthetic notice, cosmetic progress bar, extra persona/queue or a model that only promises to act. Each task records: exact business goal and owner outcome; owner-delegated or unattended source trigger; actual model-selected registered tools and canonical data/metric authority; durable work/step/owner progress in the existing chat/inbox; permissions, revocation and necessary owner approval; verified effect/source readback; idempotent retries and interrupted-work recovery; eventual proactive next step or source-verified closeout. A read-only foundation may truthfully be a dependency toward that outcome, but must not claim autonomy from UI mocks alone.
+
+**Each AI feature PR is individually testable and mergeable:** actual `gpt-6-luna` on the real registered Supervisor, with source-backed tool selection, local migrated disposable Supabase and independently checked owner/tenant DB/effect/UI results; test meaningful correction, unknowns, unauthorized actions, duplicate writes and relevant failures. Real provider transport proof plus exact behavior-code attestation, final full CI, clean Codex code/security review, resolved threads and approved code/dependency scope are all mandatory. Green CI, recorded replay, HTTP200 and a fluent answer are not substitutes. A pure documentation/model-free infrastructure PR must disclose that real Luna is not applicable to its changed code and still pass all standard checks. Do not trigger paid inference automatically in untrusted PR CI; use the separately owner-approved bounded trusted runner, without reusing consumed grants.
+
+**Stages do not hold unrelated work hostage:** `feature_proven` = that PR's own real behavior/data/safety checked and eligible to merge; `integrated_proven` = 17B/17C complete combined-tree capability and autonomous workflow tests; `released_proven` = 17D/17E owner UX, live pilot and safe release authorization. An integrated failure blocks product release and full-autonomy claims, not the validity of previously attested feature tests. Every deferred integration condition remains an explicit executable case with named task owner, dependency and `NOT_PROVEN` status, never an erased requirement.
+
+**Task17B must cover ALL registered modules, tools, metrics, screens, owner question families, experiments and approved actions** through an automatically checked registry census; missing test mapping is a release-gate failure. Task17C must use real Luna to prove unattended multi-domain reasoning, durable work, genuine process restart, owner authorization, verified effects and follow-up. 17D owner-facing isolated GitHub browser; 17E authorized final release. Grok/Muse describes the expected AI CAFE behavior, **not** API integration or required third-party comparison. Details and required evidence are in [the binding acceptance rules](../rules/acceptance-quality.md).
+
+**PR evidence columns:** `exact_head_CI`, `Codex_and_security`, `real_Luna_feature`, `canonical_data_and_effect`, `autonomous_integrated_17B_17C`, `released_17E`, each PASS/FAIL/NOT_PROVEN with exact run/artifact/code SHA; no one green status represents all six. Existing task architecture approvals and signed queue state remain unchanged by this policy amendment.
+
 ## Priority zero — finish ALL permitted Toast Standard API data before E2 / PR6–PR17
 
 **Owner decision, November 6, 2026:** These six small implementation tasks now lead the **existing**
@@ -52,6 +64,8 @@ and stale record are distinct statuses.
 
 ## Task POS0a
 
+- **Owner-mandated autonomous outcome:** Produce the complete authoritative field-to-Supervisor gap map with explicit unverified access; do not call documents or simulated queries a working agent. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 **Title:** Current Toast Standard API contract and source-to-AI coverage matrix
 **Dependency:** none. **State:** architecture-approved **read-only inventory only**.
 **Owner-approved audit-only files:** `docs/plans/toast-standard-api-coverage-matrix.md`, `scripts/toast-standard-api-coverage.test.mjs` (deterministic read-only A1/A2/A4), and `docs/plans/toast-openapi-spec-snapshot.json` (pinned official OpenAPI downloads, URLs/versions/SHA). These are the **only** added file permissions from [PR #398 owner scope comment](https://github.com/killbill2792/aicafe/pull/398#issuecomment-6713567512). No runtime code, migrations, live provider writes or merge. **Same-chat dispatcher safety:** `queue.tasks.POS0a.exclusive_files` retains its original signed matrix path so the existing PR/chat is not silently reauthorized or replaced. The extra two owner-approved audit paths and authenticated comment are recorded under `dispatch_rules.pos0a_owner_approved_audit_scope_extension`; this is additional audited permission, not an implementation or merge gate release. Do not invent a second assignment/prompt. The earlier one-sample audit was inadequate: #398 now pins official Standard family/GET/nested-field schema provenance and executes read-only structural audit assertions; these do NOT establish real café permissions, present stored facts or actual registered Supervisor access. Reuse the repository's official operation inventory, current online Toast API
@@ -89,6 +103,8 @@ The [#398 D4 card](toast-standard-api-coverage-matrix.md#d4ad4b-approved-archite
 
 ## Task POS0b
 
+- **Owner-mandated autonomous outcome:** Enable Supervisor to detect labor/timecard changes, reason over real actor/time coverage and bring safe staffing action to the owner. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 **D4A-specific acceptance:** Test `modifiedStartDate`/`modifiedEndDate` time-entry revisions, missed windows, provider vs Test Café identities, unknown-wage status across Staff/Payroll/Supervisor, independent `last_success_at` and bounded recovery. Never treat the daily coordinator tick as a completed labor refresh.
 
 **Title:** Staff, jobs, shifts and time entries — all permitted fields, one current object
@@ -114,6 +130,8 @@ read, screen/agent parity, stale/permission failure; existing order regressions 
 
 ## Task POS0c
 
+- **Owner-mandated autonomous outcome:** Enable off-turn cash, inventory and kitchen exception investigation from the single current-source writer, with truthful unknowns. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 **D4A-specific acceptance:** For each actually permitted cash/stock/kitchen/availability operation, record source-native key, documented change signal or bounded validated fetch fallback, independent last-good/failure/204/403 status and no diagnostic-reader fallback. Prove no phantom stock zero, no duplicate cash, screen/Supervisor parity.
 
 **Title:** Cash, stock, kitchen and dynamic availability — current operational objects
@@ -135,6 +153,8 @@ unavailable reasons; current screen/card evidence agrees with canonical facts. *
 mock Standard API, changed/repeated/timeouts/429/403/204, multi-café isolation, agent parity.
 
 ## Task POS0d
+
+- **Owner-mandated autonomous outcome:** Enable Supervisor to investigate source-verified menu, item and price changes and initiate safe follow-up without inventing writes. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 
 
@@ -173,6 +193,8 @@ changes. Every unavailable field documents permission/provider reason and verifi
 
 ## Task POS0e
 
+- **Owner-mandated autonomous outcome:** Supply one authoritative permission-scoped read path so Supervisor can reason over current data without test/diagnostic fallback. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 **D4A/D4B shared-reader acceptance:** Actual provider `received/stored/provisional/reconciled/financially_verified/incomplete/stale` definitions and per-family freshness are shared with screen calculations, not fabricated from 10-minute ticks, incomplete days, or 77 separate cost-refresh retries.
 
 **Title:** Universal discover/query of all retained fields through ONE shared foundation
@@ -199,6 +221,8 @@ request for POS data. **Tests:** one SQL query reader/consumer contract, no cros
 field allowlists, invalid paths/SQL rejected, real agent loop with seeded data, dates/money parity.
 
 ## Task POS0f
+
+- **Owner-mandated autonomous outcome:** Independently validate every eligible Toast data field through the same registered Supervisor, matching screens and negative source lineage. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 **D4A/D4B final non-regression acceptance:** After all migrated SQL, rerun changed/unchanged/version/partial/failure family sync and 99+1 bad-SQL order tests, plus #189/#203/#264/#297 fairness, pacing, payment-gap and derivative cost-queue ownership. Real registered Supervisor and screens must show identical truthful coverage; no old diagnostic lineage.
 
@@ -236,6 +260,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task E2: E2 required seeded browser CI (GitHub Actions only; no Vercel preview)
 
+- **Owner-mandated autonomous outcome:** Execute authentic owner journeys on the local app/database and reject decorative or fabricated browser assertions. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** POS0f integrated proof, with E1 #369 and B2 #374 existing foundations. Not approved to dispatch until these gates are verified.
 - **Result:** Required targeted Playwright in GitHub Actions against a locally started Next.js app and disposable seeded Supabase database; record actual executed browser scenarios.
 - **Scope to verify/assign:** Existing CI/browser harness, disposable seeded auth and PR check integration; no preview deployment, no Vercel builds, no production connection. Assign exact exclusive files on current main before implementation.
@@ -243,6 +269,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** db, e2e, security and relevant browser artifact proof in GitHub Actions only. **Skills:** `supabase`, `supabase-postgres-best-practices`, `vitest`, `pr`, `playwright-cli`.
 
 ## Task 6: Durable worker and cross-turn execution
+
+- **Owner-mandated autonomous outcome:** Persist model-chosen tool steps and authorization/effect receipts so the same work resumes without duplicates after interruption. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 5 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Leased worker resumes one AI loop safely under budgets and authorization.
@@ -252,6 +280,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 7: Self-directed routines/prioritization
 
+- **Owner-mandated autonomous outcome:** Initiate owner-relevant model work from real source changes without repeatedly prompting the owner or creating another scheduler. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 6 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Self-managed schedules and proactive priority decisions with due-once triggers.
 - **Scope to verify/assign:** lib/ai/supervisor/routines/*; existing commitment/attention adapters. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -259,6 +289,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, db, failure; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `supabase`, `supabase-postgres-best-practices`, `vitest`, `pr`.
 
 ## Task 8a: Experiment cutover parity
+
+- **Owner-mandated autonomous outcome:** Autonomously monitor owner-approved source-confirmed experiments, actual daily result windows, revert and verified closure. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 7 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Experiments cutover with parity and single writer.
@@ -268,6 +300,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 8b: Events cutover parity
 
+- **Owner-mandated autonomous outcome:** Investigate source-backed events and propose timely staff, stock or operations preparation through the existing Supervisor. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 7 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Events cutover with parity and single writer.
 - **Scope to verify/assign:** existing lib/events/* lookahead cron. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -275,6 +309,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, db, acceptance; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `vitest`, `supabase`, `pr`.
 
 ## Task 8c: Morning brief cutover parity
+
+- **Owner-mandated autonomous outcome:** Generate grounded proactive morning reports and follow-up with truthful source freshness and delivery receipts. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 7 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Brief cutover with timezone/delivery parity and single writer.
@@ -284,6 +320,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 9: Rolling operational memory
 
+- **Owner-mandated autonomous outcome:** Preserve owner goals and unfinished tasks across turns without caching stale numeric evidence or making up memory. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 5 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Rolling thread memory with provenance and no cached financial facts.
 - **Scope to verify/assign:** lib/ai/agent/history.ts, memory.server.ts and ai_threads summary. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -291,6 +329,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, db, security; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `supabase`, `supabase-postgres-best-practices`, `vitest`, `pr`.
 
 ## Task 10: Individual approval and standing mandate gateway
+
+- **Owner-mandated autonomous outcome:** Prepare requested effects, wait for true owner authorization, execute once through the existing gateway and verify the source receipt. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 5 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** One effect gateway supporting individual approval and OTP-backed standing authorization.
@@ -300,6 +340,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 11: Gmail and reusable connector security boundary
 
+- **Owner-mandated autonomous outcome:** Investigate real authorized Gmail data and safely draft/send only approved communications with independent provider receipt. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 10 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Secure connector registry and Gmail end-to-end.
 - **Scope to verify/assign:** new integration adapter plus existing tools/approval gateway. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -307,6 +349,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, security, e2e; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `testing-api-security-with-owasp-top-10`, `playwright-cli`, `pr`.
 
 ## Task 12: General file/spreadsheet/browser/computer use
+
+- **Owner-mandated autonomous outcome:** Understand user-supplied images, PDFs and spreadsheets within the real agent and verify any authorized durable stock/data result. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 6, 10 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Files/spreadsheets/PDF/browser use with controlled external effects.
@@ -316,6 +360,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 13a: Canonical staff schedule/labor reads and planning
 
+- **Owner-mandated autonomous outcome:** Use actual labor and scheduling facts to reason, propose one effective plan and follow up without invented staff identities. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 6, 7 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Canonical scheduling reads and labor parity.
 - **Scope to verify/assign:** lib/scheduling/*; lib/ai/agent/tools/draftSchedule.ts; canonical Staff readers. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -323,6 +369,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, db, parity; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `vitest`, `supabase`, `e2e-testing-patterns`, `pr`.
 
 ## Task 13b: Mandate-controlled schedule publication and worker messaging
+
+- **Owner-mandated autonomous outcome:** Complete authorized schedule publication and track actual staff delivery/receipt, not a chatbot statement that it was sent. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 13a, 10, 11 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Mandate-controlled schedule publishing and messaging receipts.
@@ -332,6 +380,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 13c: Shift response/coverage lifecycle
 
+- **Owner-mandated autonomous outcome:** Proactively identify uncovered shifts, process staff responses and persist source-verified follow-up until resolved. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 13b (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Staff response, absences and shift coverage lifecycle.
 - **Scope to verify/assign:** existing Staff scheduling acceptance/response readers and records. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -339,6 +389,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, db, e2e; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `vitest`, `supabase`, `e2e-testing-patterns`, `pr`.
 
 ## Task 13d: Recruitment/leave/onboarding supported actions and human decision gates
+
+- **Owner-mandated autonomous outcome:** Coordinate recruitment, leave and onboarding with durable steps and required human decisions, avoiding autonomous personnel decisions. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 13a, 10, 11 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Recruitment, leave, onboarding and human decision gates.
@@ -348,6 +400,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 14a: Inventory/recipe/consumption evidence
 
+- **Owner-mandated autonomous outcome:** Independently investigate inventory/consumption signals, quantify uncertainty and prepare grounded replenishment options. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 6, 9 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Stock/recipe/consumption sources and uncertainty.
 - **Scope to verify/assign:** existing inventory/menu/recipe evidence readers; no duplicate ledger. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -355,6 +409,10 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, db, parity; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `vitest`, `supabase`, `pr`.
 
 ## Task 14b: Supplier/quote/PO domain lifecycle
+
+- **Owner-mandated autonomous outcome:** Real Luna investigates supplier offers, repairs saved PO drafts, obtains owner approval and verifies one local PO; integrated unprompted 15A→14B→16B is a separate mandatory 17C case. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
+- **Owner-accepted purchasing milestone:** PR #482 merged after actual Luna model-directed supplier sourcing, multi-turn corrected draft, authenticated owner click, exactly one durable PO, tenant/financial safety, exact-head CI and Codex. This does not mean full unprompted purchasing is proven. The connected Task15A → Task14B → Task16B independent purchasing investigation/approval/real worker restart/follow-up is mandatory in Task17B/17C. Task14B does not send a real vendor order; that's Task14C.
 
 - **Depends:** 14a, 10 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Vendor quotes and purchase order lifecycle.
@@ -364,6 +422,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 14c: Authorized vendor communication and ordering
 
+- **Owner-mandated autonomous outcome:** Carry owner-approved vendor action to actual provider receipt with safe uncertainty and no duplicate external sends. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 14b, 11, 12 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Vendor communications/order execution and receipts.
 - **Scope to verify/assign:** approved connector/browser action adapters and vendor receipt ledger. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -371,6 +431,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, e2e, receipt; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `vitest`, `supabase`, `pr`.
 
 ## Task 14d: Receiving/invoice matching and exception handling
+
+- **Owner-mandated autonomous outcome:** Track receiving/invoice discrepancies autonomously and close them only on actual source-backed receipt reconciliation. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 14c (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Deliveries and invoice reconciliation.
@@ -380,6 +442,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 14e: Cashflow/payables administration and payment boundary
 
+- **Owner-mandated autonomous outcome:** Investigate real cash/payable exposure and prepare owner choices while never reporting unverified payment completion. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 14d, 10 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Cash flow, bills and payable preparation with payment boundary.
 - **Scope to verify/assign:** existing financial readers and preparation workflow; no unapproved fund movement. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -387,6 +451,10 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, db, security; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `vitest`, `supabase`, `pr`.
 
 ## Task 15a: Operating priority and anomaly escalation
+
+- **Owner-mandated autonomous outcome:** Unpromptedly detect a source incident, let real Luna select multiple relevant tools, persist owner inbox/chat, revisit and verify closure. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
+- **Mandatory first-party proactive behavior:** PR #488 owns unprompted source detection, model-chosen canonical multi-domain tools, checkpointed incident/work, useful owner-private inbox/chat report, delayed follow-up and verified source closure. It must pass its own actual Luna, quota, security, final-head CI/Codex and persistence tests before merge; every-module coverage is separately Task17B/17C, not claimed from a single incident.
 
 - **Depends:** 7, 9 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Prioritization and alert escalation using one inbox.
@@ -396,6 +464,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 15b: Equipment/maintenance coordination with evidence
 
+- **Owner-mandated autonomous outcome:** Proactively recognize maintenance issues and coordinate approved staff/vendor tasks without mistaking a request for a completed repair. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 15a, 10, 11 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Maintenance and equipment coordination.
 - **Scope to verify/assign:** operating_tasks plus equipment/maintenance evidence adapters. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -403,6 +473,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, e2e, receipt; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `vitest`, `supabase`, `pr`.
 
 ## Task 15c: Fleet resilience/queue fairness/recovery operational proof
+
+- **Owner-mandated autonomous outcome:** Recover autonomous work fairly across cafés after genuine provider/worker outage and report truthful incomplete outcomes. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 6, 7, 10 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** System outages, concurrency, queue fairness and catch-up.
@@ -412,6 +484,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 15d: Untrusted external content/identity/revocation hardening
 
+- **Owner-mandated autonomous outcome:** Reject untrusted content instructions, revoked identities and cross-café work before any consequential effect. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 10, 11, 12 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Prompt-injection and provider/cafe access revocation.
 - **Scope to verify/assign:** connector and browser authorization/trust handling. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -419,6 +493,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** unit, security, e2e; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `supabase`, `testing-api-security-with-owasp-top-10`, `exploiting-idor-vulnerabilities`, `pr`.
 
 ## Task 16a: Owner mandate grant/revoke and OTP step-up experience
+
+- **Owner-mandated autonomous outcome:** Make the actual OTP/mandate authorization, revocation and owner approval boundary understandable and effective in Supervisor. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 10 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Owner approval and OTP mandate grant/revoke UI.
@@ -428,6 +504,10 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 16b: Owner-visible durable work, results, exceptions
 
+- **Owner-mandated autonomous outcome:** Show the real agent's durable work ID, steps, owner approvals and verified effects across reconnect; no UI-only autonomy claims. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
+- **Durable visibility toward real autonomy:** PR #485 owns truthful read-only progress/receipt projection and owner reconnect from the existing durable worker. A status UI or seeded database fixture alone is not a new autonomous model executor. Verify applicable real Luna integration with work ID/steps/owner UI and record missing actual process restart under Task17C. Do not duplicate worker, approval card, action gateway or queue.
+
 - **Depends:** 6, 9 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Chat progress, retries and receipts.
 - **Scope to verify/assign:** Supervisor chat/Operations status cards and runs reader. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -435,6 +515,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 - **Tests:** e2e, preview; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `playwright-cli`, `e2e-testing-patterns`, `web-design-guidelines`, `pr`.
 
 ## Task 16c: Owner connector and computer access controls
+
+- **Owner-mandated autonomous outcome:** Expose true connected-account/browser authority in the existing Supervisor and enforce revocation before resumed actions. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
 - **Depends:** 11, 12 (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Account, connector and browser permission controls.
@@ -444,6 +526,8 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 16d: Accessible responsive owner acceptance
 
+- **Owner-mandated autonomous outcome:** Make the entire supported autonomous owner workflow accessible and equivalent on mobile, desktop and reconnect. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
 - **Depends:** 16a, 16b, 16c (open prerequisite → stacked draft; merge after proven integration).
 - **Result:** Responsive accessible final owner UX.
 - **Scope to verify/assign:** existing responsive chat and operations screens; no new dashboard. Exclusive editable paths must be decided against current main and open PRs before coding.
@@ -452,41 +536,56 @@ evidence. All older PRs and the current order-storage design remain intact.
 
 ## Task 17a: Required CI E2E gate and evidence audit
 
-- **Depends:** E2, 16d (open prerequisite → stacked draft; merge after proven integration).
-- **Result:** Required E2E gate evidence and branch protection.
-- **Scope to verify/assign:** existing PR baseline/E2 targeted check wiring. Exclusive editable paths must be decided against current main and open PRs before coding.
-- **Must prove:** Required CI acceptance recognizes actual test execution vs skip; Branch protection accurately reflects available checks; No irrelevant browser gate for backend-only PR.
-- **Tests:** e2e, ci, security; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `playwright-cli`, `e2e-testing-patterns`, `gh-fix-ci`, `pr`.
+- **Owner-mandated autonomous outcome:** Require correctly selected tests, non-skipped exact-head CI and honest no-provider-versus-Luna proof for each changed domain. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
+- **Current code owner:** PR [#479](https://github.com/killbill2792/aicafe/pull/479) is merged. Preserve the actual required domain owner-journey CI guard; do not introduce a second test runner. Its current no-secret registered-domain tests **do not prove Luna behavior or exhaustive system coverage**.
+- **Must prove in any future 17A amendment:** correct source-path → domain test mapping; registered test executes on exact head; missing, skipped, fake, wrong-head and unknown sensitive family fail; full CI, Codex/security and existing branch-protection aggregate remain mandatory. Code-only/regression proof never pretends to be a paid model acceptance receipt.
+- **No-cost workflow:** normal PR CI uses deterministic/evaluator/DB/browser checks only. Every AI feature PR must independently attach its separately owner-authorized trusted real Luna result, while 17B checks missing coverage. No automatic paid calls in untrusted pull-request CI and no Vercel previews.
+- **Tests:** mutation/negative owner-domain mapping, security, CI integrity and current-head artifacts.
 
 ## Task 17b: Cross-domain deterministic business scenario suite
 
-- **Depends:** 8a, 8b, 8c, 13c, 13d, 14e, 15b, 16d (open prerequisite → stacked draft; merge after proven integration).
-- **Result:** Cross-domain deterministic acceptance suite.
-- **Scope to verify/assign:** cross-domain fixtures + existing golden eval suites. Exclusive editable paths must be decided against current main and open PRs before coding.
-- **Must prove:** Unfamiliar café questions combine canonical data with exact numbers; Staff/supply/finance/events/brief owner journeys verify real state transitions; Permissions and missing data negatives covered.
-- **Tests:** db, e2e, receipt, parity; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `playwright-cli`, `e2e-testing-patterns`, `gh-fix-ci`, `pr`.
+- **Owner-mandated autonomous outcome:** Dynamically census and test all supported tools, modules, metrics, owner questions, experiments, actions and screens with real Luna as applicable. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
+- **MANDATORY OWNER GOAL:** Complete the actual AI CAFE Supervisor acceptance for **EVERY supported tool, feature, canonical metric, relevant owner question family, monitor, experiment, effect and corresponding UI**. This is **NOT** a sample of a few business questions and not a chatbot benchmark. Be dynamically complete against the integrated registry, including newly added modules and metrics, not a static handwritten shortlist.
+- **Discovery/coverage contract:** Enumerate actual `agentToolDefinitions`, Supervisor capability/effect registry, canonical source field definitions and shared `lib/metrics/core` calculators, approved external connectors/actions, stored owner data and missing-data states, recurring routines/monitors and attention/inbox flows, experiment lifecycle stages, owner screens and published supported question/intent classes. Generate an exact-head, versioned **capability × metric × question-family × effect × surface** inventory, with unique IDs and linked task/module owners. New registered supported entries with no mapped executable scenario must fail the coverage guard; no silent N/A, no finite preset count such as 76 tools.
+- **Per-entry objective evidence:** Independently authored real café question/goal and expected answer, units/currency, source ID/as-of/freshness and calculation; actual model-selected registered tools and **real GPT-6 Luna receipt for model-dependent behavior**; authenticated same-café source → migrated DB → registered Supervisor chat answer → applicable UI agreement; authorization/consent and exact effect receipt, before/after rows, correction/idempotency and negative wrong-café/unknown/stale/partial/unsupported actions. Record code SHA, job/artifact and `PASS|FAIL|UNTESTED|UNSUPPORTED`; unsupported must fail closed and explain verified lack of access or implementation. Mutation tests must make bogus completed actions, missing cases, skipped calls, wrong numbers or cross-café rows fail.
+- **Coverage minimum, expanded automatically from registry:** Toast standard orders/settlements, sales/tips/fees/refunds/voids/discounts and all supported source fields; menu/variants/ingredient recipes, food cost/COGS/margins, inventory/stock/consumption; suppliers/quotes/**14B PO** drafts/corrections, vendor communication, receiving/invoices, bills/payables/cashflow and financial totals/profit/break-even; staff/roster/timecards/wages/scheduling, shift responses, absence/leave/recruitment; events and city-events, experiments across proposal/source-confirmed start/daily observation/revert/end, price monitoring and recommendations, owner goals, morning briefs; autonomous priority alerts, attention inbox, persisted work, memory, routines and notifications; customer/order identities and repeat-customer questions **only when source-backed and permission-approved**; Gmail and other implemented connectors, photo/file/PDF/spreadsheet/browser/computer tasks; all permission/revocation/cross-café/failed-source negative paths.
+- **Real questions and conversations:** For each supported owner intent class include unfamiliar natural phrasing, one-screen useful answer, multi-turn follow-up/changed owner intent, correction, negation (read-only versus effect), missing/ambiguous information, conflicting source, exact numbers and wrong action denial. This covers *all supported classes*, not every possible sentence string. Human-reviewed owner scenario labels/holdouts must be independent of model outputs; scores/latency p50/p95 and failures are reported honestly.
+- **Integration:** Execute all supported capability groups on the combined production-code tree with authenticated disposable data and real registered model where needed. Link existing immutable real provider results when executable behavior truly matches, and run uncovered combinations separately. Enumerate downstream effect receipts, not fluent claims, and screen parity. A green deterministic 17A job is not a replacement.
+- **Pass rule:** `integrated_proven` is **false** for any supported-but-untested, failing, fabricated, skipped or unregistered-but-used path. Unsupported cases require explicit independently verified explanation and safe denial; they are never success claims. Publish complete pass/fail/untested counts by *module, tool, metric, question class, effect and screen*, source/version, case links and exact CI/model proof.
+- **Dependencies:** 8A/8B/8C, 13C/13D, 14E, 15B, 16D and registered implemented domains; **build its registry census and harness in parallel now**, finish final combined-head proof after feature merges. Do not block independently verified feature code on the future whole-system suite.
+- **Tests:** live Luna, deterministic goldens, migrated disposable two-café SQL, registered actual Supervisor, external effect receipt negatives, authenticated browser parity, scenario mutation, Codex/security and exact-head full CI.
 
 ## Task 17c: Unattended multi-day outage/autonomy simulation
 
-- **Depends:** 17b, 15c, 15d (open prerequisite → stacked draft; merge after proven integration).
-- **Result:** Multi-day autonomous failure simulation.
-- **Scope to verify/assign:** disposable multi-day operations simulation. Exclusive editable paths must be decided against current main and open PRs before coding.
-- **Must prove:** Multi-day unattended run recovers worker/provider failures; Standing mandate and individual approval both exercised; No duplicate side effects across retries.
-- **Tests:** failure, db, e2e; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `playwright-cli`, `e2e-testing-patterns`, `gh-fix-ci`, `pr`.
+- **Owner-mandated autonomous outcome:** Independently prove real-Luna unattended model-led investigation, authorized effects, actual worker restart and source-verified follow-up. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
+- **MANDATORY OWNER GOAL:** Demonstrate the *entire* AI CAFE Supervisor acts autonomously like a proactive, persistent multi-step operator—actual first-party behavior, **no external Grok/Muse API**. Merely passing 17B numerical coverage or simulated clock cron is insufficient.
+- **Real unattended execution:** With **no new owner chat message**, generate an independently labeled operational signal from canonical source data; actual Luna model must select relevant registered multi-domain tools, investigate, persist plan/step/work IDs, and proactively deliver grounded owner-private inbox and durable chat update with next safe action. When an effect is necessary, it must go through an authenticated owner approval and the **single existing gateway**. Verify real data/provider receipts, don't accept model statements as completed actions. Later autonomous tick/source recheck must follow up and truthfully resolve or remain blocked.
+- **Named mandatory connected modules:** 15A → 14B stock/consumption signal → model quote investigation → grounded proposed PO → owner click → one saved PO/verified readback → **16B** durable work and repeat no-prompt closeout; 13B staff schedule/shift coverage follow-through and actual messaging receipts; source-confirmed pricing experiments and day-by-day/revert monitoring; revenue/labor/cash/expense exception investigations and correctly withheld payment actions; events/goals/morning briefs; all other currently registered enabled effectful and proactive modules discovered by 17B. Unimplemented supplier send/stock receiving cannot be invented as a real action.
+- **Authentic failure/restart tests:** Actually terminate and restart the worker/process, not just advance a fake 25h clock. Inject provider/timeouts, interrupted or missing receipt, lease expiration, stale quote or source change, revoked authorization, cross-café attempt, concurrent owners, offline/reconnected owner, duplicate cron and click. Resume the **same persisted work ID**; no second effects, notices, tenant leaks, unbounded spend or unsafe retry of uncertain writes. Persist visible error/blocked statuses and safe backoff. Measure simulated multi-day clock vs real elapsed time honestly.
+- **Evidence:** One trusted immutable exact-head model/tool/worker/owner UI/source DB timeline per scenario, including provider identity, model-selected tools, verified receipts, before/after, owner approval, restart identity, time/cost, follow-up and all negative controls. Fail on fake/mocked/prompted-only or skipped cases. Full exact-head CI, clean Codex/security, new distinct capped owner grant for paid runs; never replay consumed runs.
+- **Dependencies:** 17B, 15C and 15D full integration; build the reusable worker-restart/approval harness in parallel and do not introduce a duplicate queue/scheduler/agent.
+- **Tests:** real provider + disposable PostgreSQL and authenticated browser, process/lease and multi-day fault injection, source-confirmed closure, tenant and revocation denial.
 
 ## Task 17d: Isolated preview readiness and smoke acceptance
 
-- **Depends:** 17c (open prerequisite → stacked draft; merge after proven integration).
-- **Result:** Safe preview smoke and artifacts.
-- **Scope to verify/assign:** isolated preview/deployment smoke harness. Exclusive editable paths must be decided against current main and open PRs before coding.
-- **Must prove:** Seeded isolated preview runs owner-facing scenario; Preview never touches production systems; Required evidence URLs/artifacts exist for UI changes.
-- **Tests:** preview, e2e, security; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `playwright-cli`, `e2e-testing-patterns`, `gh-fix-ci`, `pr`.
+- **Owner-mandated autonomous outcome:** Test every integrated supported owner UI journey, notification and status through authenticated mobile/desktop browser evidence. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
+
+- **Result:** End-to-end **owner-facing** acceptance of every supported integrated Supervisor feature, not only a happy-path screenshot. Task17B's registry matrix drives which screens, buttons, status/receipts and questions must be visible in real desktop and 390px mobile views.
+- **Must prove:** one actual Supervisor chat, owner private inbox, truthful in-progress/retry/blocked/uncertain/verified status with source and exact work identity; correct approval and effect readback; keyboard/touch accessibility, mobile viewport, browser refresh, offline/return, multi-tab, wrong-café denial and truthful missing-source/error screens. Actual external notification delivery cannot be inferred from queued UI; no duplicate approval controls, phantom receipts or invented complete checks.
+- **Environment:** GitHub Actions locally started Next.js with disposable migrated seeded Supabase and authenticated Playwright. **No Vercel preview builds/deployment**. Real Luna behavior uses attested execution receipts; recorded UI replay is not called paid real-model acceptance.
+- **Dependencies:** integrated 17B/17C acceptance; author target browser cases in parallel, do final whole-tree execution afterward.
+- **Tests:** mobile/desktop Playwright, security, accessibility and source/receipt/screen parity, full current-head CI and Codex.
 
 ## Task 17e: Owner-authorized live pilot and final release evidence
 
-- **Depends:** 17d, 17a (open prerequisite → stacked draft; merge after proven integration).
-- **Result:** Owner-authorized live pilot and certified release.
-- **Scope to verify/assign:** owner-authorized pilot/release checklist and evidence. Exclusive editable paths must be decided against current main and open PRs before coding.
-- **Must prove:** Owner-authorized pilot verifies live sources and actions; Rollback, audit and incident procedures exercised; Actual release readiness distinguished from merged code.
-- **Tests:** pilot, release; optional targeted browser/preview only when relevant; required tests cannot be skipped. **Skills:** `playwright-cli`, `gh-fix-ci`, `pr`.
+- **Owner-mandated autonomous outcome:** Certify complete 17B/17C/17D evidence plus owner-authorized live pilot, rollback and no unsupported production effects. Its AI-dependent implementation PR requires a real registered GPT-6 Luna owner journey and independently verified source/effect result, full CI/Codex/security; integrated 17B/17C coverage remains separately required.
 
+- **Result:** Final **owner-authorized** AI CAFE autonomous Supervisor release and rollback certificate, separate from merge status or one successful test-café run.
+- **Must prove:** complete, automatically enumerated Task17B matrix (every supported metric/tool/question/experiment/domain/screen/effect is PASS or independently justified UNSUPPORTED); real Luna Task17C unattended model/tool/source/approval/restart/follow-up proof for every supported autonomous effect family; Task17D owner UI accuracy; exact deployed source/model/config, independent source/receipt verification, p50/p95 latency and cost, auth/tenant/revocation, safe rollback and alert/incident handling.
+- **Fail-closed release gate:** any supported untested/failed/misleading module or metric leaves `released_proven` false. Do not infer safe production actions from merged code or disposable simulated incidents; publish exact exceptions, owners and future recheck.
+- **Owner boundary:** a fresh explicit authorization is required for production migration/credentials, any real supplier send, payroll/payment, staff publication or other external owner/café effect. Run only the specifically approved live pilot; no hidden test spend, no Vercel preview and no third-party Grok/Muse integrations.
+- **Dependencies:** 17A merged enforcement, complete 17B, 17C, 17D with all corresponding module PRs; maintain one dispatcher/agent/authorization gateway.
+- **Tests:** independently witnessed owner-initiated live pilot, real source and readback, auth/security/rollback, immutable exact-version receipts and final Codex/release review.
