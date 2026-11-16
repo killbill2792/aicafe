@@ -3,6 +3,7 @@ import {TEST_PHONE_NUMBER_ID} from "@/lib/whatsapp/transport";
 import {acceptSignedMessage} from "@/lib/whatsapp/identity.server";
 import {recordSignedStatus} from "@/lib/whatsapp/queue.server";
 import {recordSignedStaffScheduleStatus} from "@/lib/scheduling/staffPublication.server";
+import {acceptSignedStaffText} from "@/lib/whatsapp/staffReplies.server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const headers={"Cache-Control":"no-store"};
@@ -54,9 +55,8 @@ export async function POST(request:Request):Promise<Response>{
     events=parseWebhook(bytes,
       staffCallbackConfigured?[ownerPhoneId,staffPhoneId]:ownerPhoneId,
       staffCallbackConfigured?staffPhoneId:undefined);
-    // Task13B worker inbound is intentionally not an owner command. The
-    // parser skips it BEFORE owner command validation, preserving co-batched
-    // verified worker delivery statuses. Task13C owns worker responses.
+    // Text from the distinct, signed staff sender can enter the restricted
+    // staff report channel; it NEVER becomes an owner command or AI turn.
   }catch(error){
     return answer(error instanceof Error&&error.message==="wrong_sender"?403:422,"Invalid event");
   }
@@ -65,8 +65,7 @@ export async function POST(request:Request):Promise<Response>{
       if(event.type==="message"){
         if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID))
           await acceptSignedMessage(event);
-        // Employee messages require Task13C authorization and must never be
-        // dispatched as owner commands or suppress other signed status events.
+        else await acceptSignedStaffText(event);
       }else if(event.phoneId===(process.env.WHATSAPP_PHONE_NUMBER_ID??TEST_PHONE_NUMBER_ID)){
         await recordSignedStatus(event);
       }else{
