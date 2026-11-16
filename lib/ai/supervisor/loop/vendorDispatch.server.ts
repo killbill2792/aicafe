@@ -30,8 +30,7 @@ export async function proposeApprovedSupplierEmail(scope:OwnerLoopScope,
  ).eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
   .eq("id",orderId).maybeSingle();
  if(order.error)throw new Error("vendor_order_source_unavailable");
- const po=order.data;
- if(!po)ask("supplier_order_missing",
+ const po=order.data??ask("supplier_order_missing",
    "I cannot find that approved purchase order for this café. Which order did you mean?");
  if(po.status!=="approved_for_ordering")
    ask("supplier_order_not_open","This purchase order is no longer approved for ordering. Should we prepare a new order?");
@@ -52,17 +51,20 @@ export async function proposeApprovedSupplierEmail(scope:OwnerLoopScope,
  if(lines.error||contacts.error||existing.error)throw new Error("vendor_order_evidence_unavailable");
  if(existing.data)ask("supplier_order_already_prepared",
    "There is already a saved send attempt or approval for this order. Please review its status before doing anything else; I will not send it twice.");
- const contact=contacts.data;
- if(!contact||contact.revoked_at||!contact.verified_at)
+ const contact=contacts.data??ask("supplier_channel_unknown",
+   "I could not verify how you normally contact this supplier. Do you use Gmail, phone, a supplier portal or another way? Please confirm the supplier's ordering address or tell me the channel.");
+ if(contact.revoked_at||!contact.verified_at)
    ask("supplier_channel_unknown",
-     "I could not verify how you normally contact this supplier. Do you use Gmail, phone, a supplier portal or another way? Please confirm the supplier's ordering address or tell me the channel.");
+     "The saved supplier contact is not currently verified. Which Gmail, phone, portal or other channel do you use? Please confirm the ordering contact.");
  if(contact.channel!=="gmail"||!contact.email)
    ask("supplier_uses_other_channel",
      "You told us this supplier uses "+contact.channel+". Is an order already in progress there? Please tell me whom you contacted and what they confirmed. I cannot place a portal or phone order without an approved connector.");
- if(!account||account.status!=="active")
+ const gmailAccount=account??ask("gmail_not_connected",
+   "I cannot find a Gmail connection for this café. Do you use Gmail, phone or a supplier portal to contact this supplier?");
+ if(gmailAccount.status!=="active")
    ask("gmail_not_connected",
      "I cannot use an active Gmail connection for this café. Do you want to connect Gmail, or do you contact this supplier another way?");
- if(!allowsGmail(account,"send"))
+ if(!allowsGmail(gmailAccount,"send"))
    ask("gmail_send_permission_missing",
      "Gmail is connected but sending is not authorized. Would you like to enable send permission, or handle this supplier through another channel?");
  if(lines.data?.length===0||(lines.data?.length??0)>10)
@@ -100,6 +102,6 @@ export async function proposeApprovedSupplierEmail(scope:OwnerLoopScope,
  }
  return {proposalId:proposal.id,revision:proposal.revision,
    purchaseOrderId:po.id,supplierName:po.supplier_name_snapshot,
-   recipient:contact.email,account:account.email,
+   recipient:contact.email,account:gmailAccount.email,
    note:"Gmail will be sent ONLY after a separate owner click. Supplier acceptance is not yet verified."};
 }
