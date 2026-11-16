@@ -7,7 +7,7 @@ import {spawnSync} from "node:child_process";
 import {once} from "node:events";
 import {
   reservationForRequest,PaidReservation,constantTimeEqual,usageFromSseFrame,
-  startTrustedBroker,MAX_CALLS,MAX_RESERVATION_MICROS
+  safeProviderRejection,startTrustedBroker,MAX_CALLS,MAX_RESERVATION_MICROS
 } from "./task14b-broker.mjs";
 const head="a".repeat(40),key="sk-this_is_only_a_mocked_key";
 const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
@@ -18,19 +18,20 @@ const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
   type:"object",properties:{},additionalProperties:false}}]};
 const body=Buffer.from(JSON.stringify(params));
 
-test("actual trusted authorization JavaScript accepts one v2-only marker and rejects duplicate v2",()=>{
+test("actual trusted authorization JavaScript accepts one v3-only marker and rejects duplicate v3",()=>{
  const yaml=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
  const match=yaml.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/);
  assert.ok(match,"owner authorization block must be discoverable");
  const block=match[1].split("\n").map(line=>line.replace(/^ {10}/,"")).join("\n");
- const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v2 ";
+ const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v3 ";
  const marker=prefix+sha+" -->";
  const root=mkdtempSync(join(tmpdir(),"task14b-owner-auth-"));
  try{
   for(const [label,body,expected] of [
-   ["single-v2", "Owner acceptance\n"+marker,0],
-   ["duplicate-v2","Owner acceptance\n"+marker+"\n"+marker,1],
-   ["old-v1-only","<!-- aicafe-task14b-trusted-paid-run "+sha+" -->",1]
+   ["single-v3", "Owner acceptance\n"+marker,0],
+   ["duplicate-v3","Owner acceptance\n"+marker+"\n"+marker,1],
+   ["old-v1-only","<!-- aicafe-task14b-trusted-paid-run "+sha+" -->",1],
+   ["old-v2-only","<!-- aicafe-task14b-trusted-paid-run-v2 "+sha+" -->",1]
   ]){
    const event={action:"edited",sender:{login:"killbill2792"},
     repository:{full_name:"killbill2792/aicafe"},
@@ -63,16 +64,58 @@ test("actual trusted authorization JavaScript accepts one v2-only marker and rej
  }finally{rmSync(root,{recursive:true,force:true})}
 });
 
-test("trusted workflow uses a NEW owner-only v2 grant, never replays consumed v1",()=>{
+test("trusted workflow uses a NEW owner-only v3 grant, never replays consumed v1",()=>{
  const workflow=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
- assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v2 "/);
- assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v2 -->"/);
+ assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v3 "/);
+ assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v3 -->"/);
  assert.match(workflow,/github\.actor == 'killbill2792'/);
  assert.match(workflow,/github\.run_attempt == 1/);
  assert.match(workflow,/event\.changes\?\.body\?\.from/);
  assert.match(workflow,/if\(comments\.some\(c=>String\(c\.body\|\|""\)\.includes\(consumed\)\)\)/);
  assert.match(workflow,/task14b_host_failure/);
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v1 -->"/);
+ assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v2 -->"/);
+});
+
+test("provider rejection audit retains only safe code, parameter family and known function",async()=>{
+ const raw=JSON.stringify({error:{
+  type:"invalid_request_error",code:"invalid_function_parameters",
+  param:"tools[0].parameters.properties.Private_Supplier_SSN",
+  message:"Invalid schema for function 'inspect_supplier_purchase': SECRET_PRIVATE_SUPPLIER_NOTE"
+ }});
+ const expected={type:"invalid_request_error",code:"invalid_function_parameters",
+  param:"tools[0].parameters",toolName:"inspect_supplier_purchase"};
+ assert.deepEqual(safeProviderRejection(raw,params.tools),expected);
+ assert.deepEqual(safeProviderRejection(JSON.stringify({error:{
+  type:"PRIVATE_OWNER_NAME",code:"SECRET_PRIVATE_SUPPLIER_NOTE",param:"owner_private_id",
+  message:"Invalid schema for function 'private_supplier_token': SECRET_PRIVATE_SUPPLIER_NOTE"
+ }}),params.tools),{type:"unknown",code:"unknown",param:"unknown",toolName:null});
+ assert.deepEqual(safeProviderRejection("x".repeat(4097),params.tools),
+  {type:"unknown",code:"unknown",param:"unknown",toolName:null});
+ const root=mkdtempSync(join(tmpdir(),"task14b-http400-redaction-")),auditFile=join(root,"audit.json");
+ let called=0;
+ const {server}=startTrustedBroker({apiKey:key,token:"z".repeat(64),head,auditFile,port:0,
+  fetchUpstream:async()=>{
+   called++;
+   return new Response(raw,{status:400,headers:{"content-type":"application/json"}});
+  }});
+ try{
+  await once(server,"listening");
+  const response=await fetch("http://127.0.0.1:"+server.address().port+"/v1/responses",{
+   method:"POST",body,headers:{authorization:"Bearer "+"z".repeat(64)}});
+  assert.equal(response.status,502);
+  assert.equal(await response.text(),"","provider body never forwarded to candidate");
+  const audit=JSON.parse(readFileSync(auditFile,"utf8"));
+  assert.equal(called,1);
+  assert.equal(audit.attempts,1);
+  assert.equal(audit.receipts[0].upstreamStatus,400);
+  assert.equal(audit.receipts[0].terminal,"provider_rejected");
+  assert.deepEqual(audit.receipts[0].rejection,expected);
+  assert.equal(JSON.stringify(audit).includes("SECRET_PRIVATE_SUPPLIER_NOTE"),false);
+  assert.equal(JSON.stringify(audit).includes("Private_Supplier_SSN"),false);
+  assert.equal(JSON.stringify(audit).includes(key),false);
+ }finally{await new Promise(resolve=>server.close(resolve));
+  rmSync(root,{recursive:true,force:true});}
 });
 
 test("allows only priced foreground Luna Responses calls and reserves worst-case bytes",()=>{
