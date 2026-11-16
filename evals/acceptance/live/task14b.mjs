@@ -17,7 +17,18 @@ export function verifyTask14bToolTrace(names,{correction=false}={}){
  let cursor=-1;
  for(const name of required){
   const at=names.indexOf(name,cursor+1);
-  if(at<0)fail("required_multistep_tool_missing_"+name);
+  if(at<0){
+   // Audit ONLY counts of fixed function-name categories, never arguments,
+   // model text, owner or supplier facts.
+   const counts={inspect:names.filter(x=>x==="inspect_supplier_purchase").length,
+    propose:names.filter(x=>x==="propose_supplier_purchase_order").length,
+    existing:names.filter(x=>x==="get_supplier_purchase_orders").length,
+    other:names.filter(x=>!["inspect_supplier_purchase",
+     "propose_supplier_purchase_order","get_supplier_purchase_orders"].includes(x)).length};
+   console.log("task14b_safe_tool_trace",JSON.stringify({stage:correction?"correction":"new_draft",
+    missing:name,counts}));
+   fail("required_multistep_tool_missing_"+name);
+  }
   cursor=at;
  }
  return {required,toolCalls:names.length};
