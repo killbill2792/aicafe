@@ -4,7 +4,8 @@ import {museActions,normalizeGithubFacts,fetchGithubFacts,reserveMuseActions} fr
 const now='2026-11-16T20:00:00Z',sha='a'.repeat(40);
 const c=(head=sha,hasFindings=false)=>({body:
  '<!-- codex-review-state:v1 '+JSON.stringify({code_review:{commit_sha:head,
-  has_any_findings:hasFindings,has_unresolved_findings:hasFindings,status:'completed'}})+' -->'});
+  has_any_findings:hasFindings,has_unresolved_findings:hasFindings,status:'completed'}})+' -->',
+ author:{login:'chatgpt-codex-connector[bot]'}});
 const github=(state='SUCCESS',comments=[c()])=>({data:{repository:{
  pullRequests:{pageInfo:{hasNextPage:false},nodes:[{
   number:488,title:'Proactive investigations',url:'https://github.com/killbill2792/aicafe/pull/488',
@@ -29,6 +30,8 @@ test('one read-only GraphQL response provides current PR and exact-head Codex st
  const old=normalizeGithubFacts(github('SUCCESS',[c('b'.repeat(40))]),now);
  assert.equal(old.prs[0].codex,'unknown');
  assert.equal(normalizeGithubFacts(github('FAILURE',[c(sha,true)]),now).prs[0].codex,'findings');
+ const spoof=c();spoof.author.login='untrusted-contributor';
+ assert.equal(normalizeGithubFacts(github('SUCCESS',[spoof]),now).prs[0].codex,'unknown');
 });
 test('incomplete PR pagination and GraphQL error cannot claim all checks green',()=>{
  const truncated=github();truncated.data.repository.pullRequests.pageInfo.hasNextPage=true;
@@ -71,6 +74,7 @@ test('missing chat URL blocks sending and GitHub outage keeps local owner remind
  const offline=museActions(null,previous,notes('waiting_owner'),{now});
  assert.equal(offline.fresh,false);
  assert.equal(offline.actions[0].kind,'remind_owner');
+ assert.equal(offline.actions[0].chat_url,'https://chatgpt.com/c/1234');
  assert.equal(offline.blocked[0].reason,'github_evidence_stale_or_unavailable');
 });
 test('newly verified merge is offered once; never infer merge from missing PR',()=>{
