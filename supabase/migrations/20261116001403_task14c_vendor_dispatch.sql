@@ -287,5 +287,3 @@ revoke all on function public.post_supervisor_priority_notice(uuid,uuid,uuid,tex
   from public,anon,authenticated;
 grant execute on function public.post_supervisor_priority_notice(uuid,uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,uuid)
   to service_role;
-
-
