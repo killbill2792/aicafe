@@ -562,7 +562,7 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
     expect(messages.rows[0].grounding).toMatchObject({status:"verified",intent:"priority_notice",
       evidence:[{source:"supplier_po",identifier:id.proposal}]});
     // A second real scheduler tick without another owner message must reuse
-    // the same persisted inbox/chat receipt, even after a worker restart.
+    // the same persisted inbox/chat receipt across independent cron invocations.
     const secondTick=await first.request.get("/api/cron/refresh-derived",{
       headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000,
     });
