@@ -21,14 +21,28 @@ export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
 type Event = { type: string; [key: string]: unknown };
 /** Disposable Task14B proxy only: carry forward self-contained model output.
- * Opaque reasoning item IDs are forbidden by the trusted host broker.
- * Tool calls and their call IDs remain intact for the full multi-step loop. */
+ * Reasoning-model tool calls require stateless encrypted reasoning in original
+ * order alongside their tool results. Only same-run trusted-host verified
+ * encrypted reasoning is replayable; remote response pointers remain banned. */
 export function task14bInlineContinuation(items:readonly unknown[]):unknown[]{
   const result:unknown[]=[];
   for(const raw of items){
     if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
     const item=raw as Record<string,unknown>;
-    if(item.type==="function_call"){
+    if(item.type==="reasoning"){
+      // Reasoning-model continuation REQUIRES these provider-issued items.
+      // Host verifies their SHA, source model, size and replay cost separately.
+      if(typeof item.id!=="string"||!/^rs_[A-Za-z0-9_-]{1,120}$/.test(item.id)||
+         typeof item.encrypted_content!=="string"||
+         item.encrypted_content.length<32||item.encrypted_content.length>48_000||
+         !/^[A-Za-z0-9_+/=.:-]+$/.test(item.encrypted_content)||
+         !Array.isArray(item.summary)||item.summary.length!==0||
+         (item.status!==undefined&&item.status!=="completed"))
+        throw new Error("task14b_invalid_inline_reasoning");
+      result.push({type:"reasoning",id:item.id,
+        ...(item.status?{status:"completed"}:{}),
+        summary:[],encrypted_content:item.encrypted_content});
+    }else if(item.type==="function_call"){
       if(typeof item.name!=="string"||!/^[a-z][a-z0-9_]{1,79}$/.test(item.name)||
          typeof item.call_id!=="string"||!/^[A-Za-z0-9_-]{1,128}$/.test(item.call_id)||
          typeof item.arguments!=="string")
@@ -46,7 +60,7 @@ export function task14bInlineContinuation(items:readonly unknown[]):unknown[]{
       });
       result.push({type:"message",role:"assistant",content});
     }
-    // Never forward provider-stored reasoning, IDs or remote opaque context.
+    // Unknown remote references or other opaque item classes are dropped.
   }
   return result;
 }
@@ -244,8 +258,13 @@ export async function runAgentTurn(args: {
       }
     },
   }:args.context;
+  const approvedLocalTask14b=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY" &&
+    process.env.APP_URL==="http://127.0.0.1:3000" &&
+    process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321" &&
+    Boolean(process.env.AICAFE_TASK14B_BUDGET_LEDGER);
   const request = (final: boolean) => ({
     model, instructions: agentInstructions(),
+    ...(approvedLocalTask14b?{store:false as const}:{}),
     tools: [...agentToolDefinitions.filter(t=>!args.toolNames||args.toolNames.includes(t.name as AgentToolName)),
       ...(args.toolNames?[]:args.extraTools??[])],
     tool_choice: final ? "none" : "auto", stream: true,
@@ -287,10 +306,6 @@ export async function runAgentTurn(args: {
         if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
       }
       if (!completed) throw new Error("provider_incomplete");
-      const approvedLocalTask14b=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY" &&
-        process.env.APP_URL==="http://127.0.0.1:3000" &&
-        process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321" &&
-        Boolean(process.env.AICAFE_TASK14B_BUDGET_LEDGER);
       input.push(...(approvedLocalTask14b?task14bInlineContinuation(output):output));
       // A tool-only response is not an answer. Keep those follow-ups unclaimed
       // until a completed text response can be persisted.
