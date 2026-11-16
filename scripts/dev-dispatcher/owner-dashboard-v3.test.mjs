@@ -3,16 +3,20 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import {ownerDashboardHandler} from './owner-dashboard-v3.mjs';
 import {applyOwnerDashboardEdit} from './owner-controls-v3.mjs';
+import {applyMuseNote} from './muse-local-notes.mjs';
 const password='correct-horse-battery-staple';
 const state={version:1,updated_at:'2026-11-11T10:00:00Z',
  tasks:{A:{approved:true}},actions:{secret:{delivery:{prompt:'PRIVATE PROMPT DO NOT EXPOSE'}}},
  owner_alerts:{q:{status:'planned'}},lifecycle_v3:{rows:{A:{task_id:'A',current_stage:'APPROVED'}}}};
 const auth=(user='owner',secret=password)=>'Basic '+Buffer.from(user+':'+secret).toString('base64');
 async function withServer(work){
- let current=structuredClone(state);
+ let current=structuredClone(state),notes={version:1,entries:{}};
  const handler=ownerDashboardHandler({
   ownerPassword:password,musePassword:'muse-only-password',
   readState:async()=>current,
+  readNotes:async()=>notes,
+  saveNote:async(edit,opts)=>{notes=applyMuseNote(notes,edit,{...opts,
+   now:'2026-11-11T10:00:00Z'});return notes;},
   editState:async(edit,opts)=>{current=applyOwnerDashboardEdit(current,edit,
    {...opts,now:'2026-11-11T10:00:00Z'});return current;}
  });
@@ -65,4 +69,55 @@ test('cross-origin writes and stale revision edits are refused',async()=>{
   const stale=await fetch(url+'/api/control',{method:'POST',headers,body});
   assert.equal(stale.status,409);
  });
+});
+
+test('Muse can register its known chat URL and note, but cannot edit CI or authorization',async()=>{
+ await withServer(async url=>{
+  const headers={Authorization:auth('muse','muse-only-password'),
+    'Content-Type':'application/json'};
+  const edit={task_id:'A',pr_number:488,chat_url:'https://chatgpt.com/c/1234abcd',
+    stage:'waiting_owner',note:'Please review architecture',expected_revision:0};
+  const saved=await fetch(url+'/api/notes',{method:'POST',headers,
+    body:JSON.stringify(edit)});
+  assert.equal(saved.status,200);
+  const read=await fetch(url+'/api/notes',{headers:{Authorization:headers.Authorization}});
+  const notes=await read.json();
+  assert.equal(notes.entries.A.chat_url,edit.chat_url);
+  assert.equal(notes.entries.A.stage,'waiting_owner');
+  const bad=await fetch(url+'/api/notes',{method:'POST',headers,
+    body:JSON.stringify({...edit,ci_state:'success',expected_revision:1})});
+  assert.equal(bad.status,400);
+  const stale=await fetch(url+'/api/notes',{method:'POST',headers,body:JSON.stringify(edit)});
+  assert.equal(stale.status,409);
+  const forbidden=await fetch(url+'/api/control',{method:'POST',headers,
+    body:JSON.stringify({task_id:'A',field:'note',value:'X',expected_revision:0})});
+  assert.equal(forbidden.status,403);
+ });
+});
+test('private local coordination notes reject anonymous and hostile-origin edits',async()=>{
+ await withServer(async url=>{
+  assert.equal((await fetch(url+'/api/notes')).status,401);
+  const headers={Authorization:auth('muse','muse-only-password'),
+   'Content-Type':'application/json',Origin:'https://evil.test'};
+  const r=await fetch(url+'/api/notes',{method:'POST',headers,
+   body:JSON.stringify({task_id:'A',stage:'working',expected_revision:0})});
+  assert.equal(r.status,403);
+ });
+});
+test('local notes still work when the GitHub-backed ledger cannot be read',async()=>{
+ const handler=ownerDashboardHandler({ownerPassword:password,
+  musePassword:'muse-only-password',readState:async()=>{throw Error('GitHub unavailable');},
+  editState:async()=>{throw Error('not called');},
+  readNotes:async()=>({version:1,entries:{A:{task_id:'A',note:'Offline work allowed'}}}),
+  saveNote:async()=>({version:1,entries:{}})});
+ const server=http.createServer((req,res)=>handler(req,res));
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try{
+  const url='http://127.0.0.1:'+server.address().port;
+  const headers={Authorization:auth('muse','muse-only-password')};
+  assert.equal((await fetch(url+'/api/state',{headers})).status,503);
+  const notes=await fetch(url+'/api/notes',{headers});
+  assert.equal(notes.status,200);
+  assert.match(await notes.text(),/Offline work allowed/);
+ }finally{await new Promise(resolve=>server.close(resolve));}
 });
