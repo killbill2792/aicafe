@@ -7,7 +7,7 @@ import {spawnSync} from "node:child_process";
 import {once} from "node:events";
 import {
   reservationForRequest,PaidReservation,constantTimeEqual,usageFromSseFrame,
-  safeProviderRejection,startTrustedBroker,MAX_CALLS,MAX_RESERVATION_MICROS
+  safeProviderRejection,startTrustedBroker,safePolicyDenial,MAX_CALLS,MAX_RESERVATION_MICROS
 } from "./task14b-broker.mjs";
 const head="a".repeat(40),key="sk-this_is_only_a_mocked_key";
 const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
@@ -18,21 +18,22 @@ const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
   type:"object",properties:{},additionalProperties:false}}]};
 const body=Buffer.from(JSON.stringify(params));
 
-test("actual trusted authorization JavaScript accepts one v4-only marker and rejects duplicate v4",()=>{
+test("actual trusted authorization JavaScript accepts one v5-only marker and rejects duplicate v5",()=>{
  const yaml=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
  const match=yaml.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/);
  assert.ok(match,"owner authorization block must be discoverable");
  const block=match[1].split("\n").map(line=>line.replace(/^ {10}/,"")).join("\n");
- const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v4 ";
+ const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v5 ";
  const marker=prefix+sha+" -->";
  const root=mkdtempSync(join(tmpdir(),"task14b-owner-auth-"));
  try{
   for(const [label,body,expected] of [
-   ["single-v4", "Owner acceptance\n"+marker,0],
-   ["duplicate-v4","Owner acceptance\n"+marker+"\n"+marker,1],
+   ["single-v5", "Owner acceptance\n"+marker,0],
+   ["duplicate-v5","Owner acceptance\n"+marker+"\n"+marker,1],
    ["old-v1-only","<!-- aicafe-task14b-trusted-paid-run "+sha+" -->",1],
    ["old-v2-only","<!-- aicafe-task14b-trusted-paid-run-v2 "+sha+" -->",1],
-   ["old-v3-only","<!-- aicafe-task14b-trusted-paid-run-v3 "+sha+" -->",1]
+   ["old-v3-only","<!-- aicafe-task14b-trusted-paid-run-v3 "+sha+" -->",1],
+   ["old-v4-only","<!-- aicafe-task14b-trusted-paid-run-v4 "+sha+" -->",1]
   ]){
    const event={action:"edited",sender:{login:"killbill2792"},
     repository:{full_name:"killbill2792/aicafe"},
@@ -65,10 +66,10 @@ test("actual trusted authorization JavaScript accepts one v4-only marker and rej
  }finally{rmSync(root,{recursive:true,force:true})}
 });
 
-test("trusted workflow uses a NEW owner-only v4 grant, never replays consumed v1",()=>{
+test("trusted workflow uses a NEW owner-only v5 grant, never replays consumed v1",()=>{
  const workflow=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
- assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v4 "/);
- assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v4 -->"/);
+ assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v5 "/);
+ assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v5 -->"/);
  assert.match(workflow,/github\.actor == 'killbill2792'/);
  assert.match(workflow,/github\.run_attempt == 1/);
  assert.match(workflow,/event\.changes\?\.body\?\.from/);
@@ -77,6 +78,8 @@ test("trusted workflow uses a NEW owner-only v4 grant, never replays consumed v1
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v1 -->"/);
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v2 -->"/);
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v3 -->"/);
+ assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v4 -->"/);
+ assert.match(workflow,/policyDenials/);
 });
 
 test("provider rejection audit retains only safe code, parameter family and known function",async()=>{
@@ -118,6 +121,53 @@ test("provider rejection audit retains only safe code, parameter family and know
   assert.equal(JSON.stringify(audit).includes(key),false);
  }finally{await new Promise(resolve=>server.close(resolve));
   rmSync(root,{recursive:true,force:true});}
+});
+
+test("broker refuses opaque continuation before any spend and persists only allowlisted denial code",async()=>{
+ const opaque="rs_DO_NOT_LOG_OWNER_PRIVATE_CONTEXT";
+ assert.equal(safePolicyDenial(new Error("task14b_trusted_broker:opaque_or_remote_context_forbidden")),
+   "opaque_or_remote_context_forbidden");
+ assert.equal(safePolicyDenial(new Error(opaque)),"unknown");
+ const root=mkdtempSync(join(tmpdir(),"task14b-local-rejection-")),auditFile=join(root,"audit.json");
+ let upstream=0;
+ const {server}=startTrustedBroker({apiKey:key,token:"z".repeat(64),head,auditFile,port:0,
+   fetchUpstream:async()=>{
+     upstream++;
+     return new Response("data: "+JSON.stringify({type:"response.completed",response:{
+       model:"gpt-6-luna",service_tier:"default",
+       usage:{input_tokens:40,output_tokens:12}}})+"\n\n",
+       {status:200,headers:{"content-type":"text/event-stream"}});
+   }});
+ try{
+   await once(server,"listening");
+   const url="http://127.0.0.1:"+server.address().port+"/v1/responses";
+   const headers={authorization:"Bearer "+"z".repeat(64)};
+   const denied=await fetch(url,{method:"POST",headers,body:JSON.stringify({
+     ...params,input:[{type:"reasoning",id:opaque,summary:[]}],
+   })});
+   assert.equal(denied.status,400);assert.equal(await denied.text(),"");
+   let audit=JSON.parse(readFileSync(auditFile,"utf8"));
+   assert.equal(upstream,0);assert.equal(audit.attempts,0);
+   assert.equal(audit.deniedCount,1);
+   assert.deepEqual(audit.policyDenials,["opaque_or_remote_context_forbidden"]);
+   assert.equal(JSON.stringify(audit).includes(opaque),false);
+   assert.equal(JSON.stringify(audit).includes(key),false);
+   const accepted=await fetch(url,{method:"POST",headers,body:JSON.stringify({
+     ...params,input:[
+       {role:"user",content:"Read my saved orders."},
+       {type:"function_call",name:"inspect_supplier_purchase",
+         call_id:"call_1",arguments:"{}"},
+       {type:"function_call_output",call_id:"call_1",output:"{}"}]
+   })});
+   assert.equal(accepted.status,200);await accepted.text();
+   audit=JSON.parse(readFileSync(auditFile,"utf8"));
+   assert.equal(upstream,1);assert.equal(audit.attempts,1);
+   assert.equal(audit.deniedCount,1);
+   assert.equal(audit.receipts[0].terminal,"completed");
+ }finally{
+   await new Promise(resolve=>server.close(resolve));
+   rmSync(root,{recursive:true,force:true});
+ }
 });
 
 test("allows only priced foreground Luna Responses calls and reserves worst-case bytes",()=>{
