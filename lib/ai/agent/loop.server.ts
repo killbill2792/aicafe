@@ -258,10 +258,14 @@ export async function runAgentTurn(args: {
       }
     },
   }:args.context;
+  // Docker receives only an ephemeral trusted-broker token, never the host's
+  // paid budget ledger or real API key. Match the actual disposable runtime.
+  // The trusted host broker independently enforces every paid budget cap.
   const approvedLocalTask14b=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY" &&
     process.env.APP_URL==="http://127.0.0.1:3000" &&
     process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321" &&
-    Boolean(process.env.AICAFE_TASK14B_BUDGET_LEDGER);
+    typeof process.env.AICAFE_14B_BROKER_TOKEN==="string" &&
+    process.env.AICAFE_14B_BROKER_TOKEN.length>=40;
   const request = (final: boolean) => ({
     model, instructions: agentInstructions(),
     ...(approvedLocalTask14b?{store:false as const}:{}),
