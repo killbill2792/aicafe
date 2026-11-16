@@ -58,7 +58,7 @@ export const supplierPurchasingTools={
   description:"For an ALREADY APPROVED saved purchase order only: first call get_supplier_purchase_orders and inspect vendorCommunications and Gmail connection status. Authorized Gmail history can inform the plan, but no matching messages is NOT proof that a supplier is unreachable. Saves a separate inert owner-click Gmail SEND approval card from the canonical PO and owner-verified recipient; never sends automatically. Missing verified contact, Gmail permission or a phone/portal workflow is an OWNER QUESTION: tell the owner exactly what is missing and use ask_owner to learn their normal channel, prior negotiation and outcome. Do not invent contact details, supplier acceptance or retries.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=vendorOrderSendInputSchema.parse(raw);
-   if(!ctx.purchasing)return {source:"supplier_vendor_dispatch",period:null,agentId:"maya",
+   if(!ctx.purchasing?.proposeVendorSend)return {source:"supplier_vendor_dispatch",period:null,agentId:"maya",
     missing:["purchasing_unavailable"],proposalCreated:false,
     ownerQuestion:"I cannot access the supplier order details. How do you normally contact this supplier?"};
    try{
