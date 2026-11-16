@@ -18,6 +18,7 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null;
   purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string;
     receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
+  vendorDispatch?:{state:string;purchaseOrderId:string|null;providerVerified:boolean};
   purchaseOrder?:{supplierName:string;currency:string;neededBy:string|null;
    subtotalCents:number;totalCents:null;shippingCents:null;taxCents:null;
    limitations:string[];lines:Array<{itemName:string;packs:number;packQuantity:number;
@@ -179,6 +180,11 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       <p className="text-sm font-semibold text-ink-muted">{poCopy.agentLabel}</p>
       <h3 className="mt-2 break-words text-xl font-bold">{poCopy.titlePrefix} {po.supplierName}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?
+        value.vendorDispatch?.state==="provider_accepted"&&value.vendorDispatch.providerVerified?
+          en.SupplierVendorCommunication.poSent:
+        value.vendorDispatch?.state==="send_uncertain"?en.SupplierVendorCommunication.poUncertain:
+        value.vendorDispatch?.state==="prepared"?en.SupplierVendorCommunication.poDraft:
+        value.vendorDispatch?.state==="status_unavailable"?en.SupplierVendorCommunication.poCannotVerify:
         poCopy.approved:value.state==="pending"?
         poCopy.pending:value.state==="applying"?poCopy.applying:value.state}</p>
       <p className="mt-2 text-base">{poCopy.requestedBy} {po.neededBy??poCopy.unspecified}</p>
@@ -191,7 +197,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       </li>)}</ul>
       <p className="mt-3 text-lg font-bold">{poCopy.itemsSubtotal} {money(po.subtotalCents)} {po.currency}</p>
       <p className="mt-1 text-base text-ink-muted">{poCopy.subtotalNotice}</p>
-      <p className="mt-2 text-base text-ink-muted">{poCopy.ownerNotice}</p>
+      <p className="mt-2 text-base text-ink-muted">{en.SupplierVendorCommunication.poOwnerNotice}</p>
       {pending&&<div className="mt-4 flex flex-wrap gap-3">
         <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
          className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">
