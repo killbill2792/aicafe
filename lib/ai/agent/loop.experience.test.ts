@@ -66,6 +66,14 @@ describe("Task14B trusted broker request-shape preflight (zero provider cost)",(
     const assertStrict=(schema:unknown,path:string):void=>{
       if(Array.isArray(schema)){schema.forEach((v,i)=>assertStrict(v,path+"["+i+"]"));return;}
       if(!schemaObject(schema))return;
+      // A single unsupported "uri" format caused the REAL v3 paid Supervisor
+      // turn to fail (provider HTTP400, tools[56] inspect_public_page).
+      // Check the complete emitted function registry, including extra tools.
+      if(Object.hasOwn(schema,"format")){
+        const allowed=new Set(["date-time","time","date","duration",
+          "email","hostname","ipv4","ipv6","uuid"]);
+        expect(allowed.has(String(schema.format)),path+": unsupported JSON format "+String(schema.format)).toBe(true);
+      }
       const props=schemaObject(schema.properties)?schema.properties:{};
       if(schema.type==="object"||Object.hasOwn(schema,"properties")){
         expect(schema.additionalProperties,path+": additionalProperties must be false").toBe(false);
