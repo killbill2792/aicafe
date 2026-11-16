@@ -1,0 +1,132 @@
+import "server-only";
+import {z} from "zod";
+import {createServerSupabaseClient} from "@/lib/supabase/server";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
+
+const uuid=z.uuid();
+const replySchema=z.strictObject({
+ requestId:uuid.nullable(),response:z.enum(["confirm","decline","complete","message","report"]),
+ body:z.string().max(2000).nullable(),nonce:uuid,
+});
+const linkSchema=z.strictObject({
+ employeeId:uuid,email:z.email().max(320).nullable(),
+});
+type EmployeeIdentity={id:string;businessId:string;name:string};
+export class StaffChannelError extends Error{
+ constructor(public code:"unauthorized"|"not_linked"|"invalid"|"storage"|"conflict"){super(code);}
+}
+/** Auth never comes from an employee-supplied business ID, email or phone.
+ * This is a service read of only the identity needed for worker isolation. */
+export async function currentStaffIdentity():Promise<EmployeeIdentity|null>{
+ const session=await createServerSupabaseClient();
+ const {data:{user},error}=await session.auth.getUser();
+ if(error||!user)return null;
+ const {data,error:lookupError}=await createAdminSupabaseClient().from("employees")
+  .select("id,business_id,display_name").eq("staff_auth_user_id",user.id)
+  .eq("active",true).limit(2);
+ if(lookupError||!data)throw new StaffChannelError("storage");
+ if(data.length>1)throw new StaffChannelError("conflict");
+ const employee=data[0];
+ return employee?{id:employee.id,businessId:employee.business_id,name:employee.display_name}:null;
+}
+export type StaffRequest={
+ id:string;kind:string;title:string;prompt:string;status:string;created_at:string;
+};
+export type StaffMessage={
+ id:string;request_id:string|null;response_code:string;body:string|null;
+ channel:string;received_at:string;employee_id?:string;
+};
+export async function getStaffInbox():Promise<{
+ name:string;requests:StaffRequest[];messages:StaffMessage[];
+}>{
+ const identity=await currentStaffIdentity();
+ if(!identity)throw new StaffChannelError("not_linked");
+ const admin=createAdminSupabaseClient();
+ const synced=await admin.rpc("staff_channel_sync_shift_requests",{
+  p_business_id:identity.businessId,
+ });
+ if(synced.error)throw new StaffChannelError("storage");
+ // RLS is enforced by the user's own session as well as explicit identity keys.
+ const db=await createServerSupabaseClient();
+ const [requestRows,messageRows]=await Promise.all([
+  db.from("staff_communication_requests")
+   .select("id,kind,title,prompt,status,created_at")
+   .eq("business_id",identity.businessId).eq("employee_id",identity.id)
+   .in("status",["open","responded"])
+   .order("created_at",{ascending:false}).limit(100),
+  db.from("staff_communication_messages")
+   .select("id,request_id,response_code,body,channel,received_at")
+   .eq("business_id",identity.businessId).eq("employee_id",identity.id)
+   .order("received_at",{ascending:false}).limit(60),
+ ]);
+ if(requestRows.error||messageRows.error)throw new StaffChannelError("storage");
+ return {name:identity.name,requests:requestRows.data??[],messages:messageRows.data??[]};
+}
+export async function submitStaffReply(raw:unknown){
+ const parsed=replySchema.safeParse(raw);
+ if(!parsed.success)throw new StaffChannelError("invalid");
+ if(!await currentStaffIdentity())throw new StaffChannelError("unauthorized");
+ const db=await createServerSupabaseClient();
+ const {data,error}=await db.rpc("staff_channel_submit",{
+  p_request_id:parsed.data.requestId,p_response:parsed.data.response,
+  p_body:parsed.data.body,p_nonce:parsed.data.nonce,
+ });
+ if(error){
+  if(error.code==="40900"||error.message.includes("changed")||
+     error.message.includes("unavailable_request"))throw new StaffChannelError("conflict");
+  throw new StaffChannelError("invalid");
+ }
+ if(!data||typeof data.id!=="string")throw new StaffChannelError("storage");
+ return data as {id:string;replayed:boolean};
+}
+export async function ownerStaffLoginList(){
+ const owner=await requireSchedulingOwner();
+ if(!owner)throw new StaffChannelError("unauthorized");
+ const {data,error}=await owner.supabase.from("employees")
+  .select("id,display_name,active,staff_auth_user_id")
+  .eq("business_id",owner.businessId)
+  .order("display_name").limit(201);
+ if(error||!data||data.length>200)throw new StaffChannelError("storage");
+ return data.map(e=>({id:e.id,name:e.display_name,active:e.active,linked:Boolean(e.staff_auth_user_id)}));
+}
+export async function ownerLinkExistingLogin(raw:unknown){
+ const parsed=linkSchema.safeParse(raw);
+ if(!parsed.success)throw new StaffChannelError("invalid");
+ const owner=await requireSchedulingOwner();
+ if(!owner)throw new StaffChannelError("unauthorized");
+ const {data,error}=await owner.supabase.rpc("staff_link_existing_login",{
+  p_business_id:owner.businessId,p_employee_id:parsed.data.employeeId,
+  p_email:parsed.data.email,
+ });
+ if(error||!data)throw new StaffChannelError(error?.code==="23505"?"conflict":"invalid");
+ return {linked:data.linked===true};
+}
+export async function readOwnerStaffMessages(limit=40):Promise<Array<StaffMessage&{
+ employee_name:string;request_title:string|null;request_status:string|null;
+}>>{
+ const owner=await requireSchedulingOwner();
+ if(!owner)throw new StaffChannelError("unauthorized");
+ const db=owner.supabase;
+ const {data,error}=await db.from("staff_communication_messages")
+  .select("id,employee_id,request_id,response_code,body,channel,received_at")
+  .eq("business_id",owner.businessId)
+  .order("received_at",{ascending:false}).limit(Math.min(limit,100));
+ if(error||!data)throw new StaffChannelError("storage");
+ if(!data.length)return [];
+ const empIds=[...new Set(data.map(x=>x.employee_id))];
+ const reqIds=[...new Set(data.flatMap(x=>x.request_id?[x.request_id]:[]))];
+ const [people,requests]=await Promise.all([
+  db.from("employees").select("id,display_name")
+   .eq("business_id",owner.businessId).in("id",empIds),
+  reqIds.length?db.from("staff_communication_requests")
+   .select("id,title,status").eq("business_id",owner.businessId).in("id",reqIds):
+   Promise.resolve({data:[] as Array<{id:string;title:string;status:string}>,error:null}),
+ ]);
+ if(people.error||requests.error)throw new StaffChannelError("storage");
+ const names=new Map((people.data??[]).map(p=>[p.id,p.display_name]));
+ const req=new Map((requests.data??[]).map(r=>[r.id,r]));
+ return data.map(m=>({...m,employee_name:names.get(m.employee_id)??"Staff member",
+  request_title:m.request_id?req.get(m.request_id)?.title??null:null,
+  request_status:m.request_id?req.get(m.request_id)?.status??null:null}));
+}
