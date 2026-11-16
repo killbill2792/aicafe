@@ -125,7 +125,7 @@ try{
  values($1,$2,$3,$4,'click',current_date,'executing')`,
  [id.attempt,id.business,id.gmailProposal,gmailHash]);
  await fails(()=>asRole("service_role",id.outsider,()=>one(sql,
-  [id.otherBusiness,id.outsider,id.gmailProposal,gmailHash])),
+  [id.business,id.outsider,id.gmailProposal,gmailHash])),
   "42501","Other café cannot reserve an outbound supplier send");
  const reserved=await asRole("service_role",id.owner,()=>one(sql,args));
  check(reserved.reserved===true,"Exact owner-click send reserves exactly one PO");
