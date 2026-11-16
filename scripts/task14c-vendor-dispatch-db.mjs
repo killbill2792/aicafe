@@ -167,6 +167,33 @@ try{
   "A phone negotiation stays explicitly owner-reported, not a Gmail receipt");
  check((await one("select count(*)::int as n from public.purchase_order_dispatches where purchase_order_id=$1",
  [id.po])).n===1,"Exactly one canonical PO dispatch row exists");
+ // Existing proactive routine must not silently drop a canonical approved PO
+ // simply because its supplier uses phone, a portal, or no Gmail history.
+ await db.query("update public.purchase_orders set approved_at=now()-interval '3 hours' where id=$1",[id.po]);
+ const sourceReason="Approved order unresolved: was the supplier contacted by Gmail, phone or portal, and what did they confirm?";
+ const noticeArgs=[id.business,id.owner,id.thread,"supplier_dispatch",id.po,
+   poHash,gmailHash,sourceReason,new Date().toISOString()];
+ const firstNotice=await asRole("service_role",id.owner,()=>one(
+   "select public.post_supervisor_priority_notice($1,$2,$3,$4,$5,$6,$7,$8,$9) as posted",noticeArgs));
+ check(firstNotice?.posted===true,
+   "Existing routine writes a real owner question for an unresolved 3-hour supplier PO");
+ const duplicateNotice=await asRole("service_role",id.owner,()=>one(
+   "select public.post_supervisor_priority_notice($1,$2,$3,$4,$5,$6,$7,$8,$9) as posted",noticeArgs));
+ check(duplicateNotice?.posted===false,
+   "Proactive vendor question is durable and deduplicated in the existing owner inbox");
+ const ownerNotice=await one("select id,payload from public.operating_tasks where business_id=$1 and id=$2",
+  [id.business,"priority:"+gmailHash]);
+ check(ownerNotice?.payload?.title===sourceReason,
+   "Owner-facing supplier question names Gmail, phone or portal rather than silently failing");
+ await asRole("authenticated",id.owner,()=>db.query(`
+   insert into public.purchase_order_channel_reports(business_id,purchase_order_id,owner_user_id,channel,outcome,note)
+   values($1,$2,$3,'phone','supplier_accepted','Owner confirmed by phone')`,
+   [id.business,id.po,id.owner]));
+ const noMore=await asRole("service_role",id.owner,()=>one(
+   "select public.post_supervisor_priority_notice($1,$2,$3,$4,$5,$6,$7,$8,$9) as posted",
+   [...noticeArgs.slice(0,6),"c".repeat(64),sourceReason,noticeArgs[8]]));
+ check(noMore?.posted===false,
+   "Once the owner reports supplier acceptance, old source cannot generate a new reminder");
  console.log("Task14C real migrated Postgres: "+count+" security, uncertainty, provider receipt and owner-channel checks passed");
 }finally{
  await db.query("ROLLBACK").catch(()=>{});
