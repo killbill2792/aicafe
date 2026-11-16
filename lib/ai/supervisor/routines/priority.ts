@@ -55,7 +55,7 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
   const reason=source.sourceType==="supplier_po"?
     "Supplier purchase-order draft needs your approval":
     source.sourceType==="supplier_dispatch"?
-    "Approved supplier order needs communication or follow-up":
+    "Approved order unresolved: was the supplier contacted by Gmail, phone or portal, and what did they confirm?":
     overdue?"Overdue item needs review":
     source.sourceType==="alert"?"Actionable café alert needs review":
     ownerAction?"Owner task needs review":"Task response needs review";
