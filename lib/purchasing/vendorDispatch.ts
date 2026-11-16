@@ -32,6 +32,7 @@ export function buildVendorOrderEmail(order:VendorOrderSnapshot):{subject:string
    "Hello "+supplier+",","",
    "Please review the following purchase order from our café.",
    "Purchase order ID: "+order.id,
+   "Currency: "+order.currency,
    ...(order.neededBy?["Requested delivery date: "+order.neededBy]:["Delivery date: please confirm"]),
    "","Items:",...lines,"",
    "Approved item subtotal: "+formatVendorMoney(order.subtotalCents,order.currency),
