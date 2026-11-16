@@ -1,5 +1,6 @@
 "use client";
 import {useEffect,useState} from "react";
+import Link from "next/link";
 type Employee={id:string;name:string;active:boolean;linked:boolean};
 export default function StaffLoginLinkPanel(){
  const [people,setPeople]=useState<Employee[]>([]);
@@ -11,7 +12,20 @@ export default function StaffLoginLinkPanel(){
   const body=await res.json() as {employees:Employee[]};
   setPeople(body.employees);setChosen(old=>old||body.employees.find(e=>e.active)?.id||"");
  }
- useEffect(()=>{void reload().catch(()=>setMessage("Staff accounts are unavailable."));},[]);
+ useEffect(()=>{
+  let active=true;
+  void fetch("/api/staff-channel/link",{cache:"no-store"})
+   .then(async res=>{
+    if(!res.ok)throw new Error("unavailable");
+    return res.json() as Promise<{employees:Employee[]}>;
+   }).then(body=>{
+    if(active){
+     setPeople(body.employees);
+     setChosen(body.employees.find(e=>e.active)?.id??"");
+    }
+   }).catch(()=>{if(active)setMessage("Staff accounts are unavailable.");});
+  return ()=>{active=false;};
+ },[]);
  async function update(unlink=false){
   if(!chosen||(!unlink&&!email.trim()))return;
   setBusy(true);setMessage("");
@@ -28,7 +42,7 @@ export default function StaffLoginLinkPanel(){
  const selected=people.find(p=>p.id===chosen);
  return <section className="mt-5 space-y-3 rounded-3xl border border-line bg-card p-5">
   <h2 className="text-xl font-semibold text-ink">Employee login access</h2>
-  <p className="text-sm text-ink-muted">Link an account you already created for this employee. Employees only see <a href="/crew/login" className="underline">their own work screen</a>—not the owner Supervisor or café data.</p>
+  <p className="text-sm text-ink-muted">Link an account you already created for this employee. Employees only see <Link href="/crew/login" className="underline">their own work screen</Link>—not the owner Supervisor or café data.</p>
   <label htmlFor="staff-account-person" className="block text-sm font-semibold">Employee</label>
   <select id="staff-account-person" value={chosen} onChange={e=>setChosen(e.target.value)}
    className="min-h-12 w-full rounded-xl border border-line bg-white p-3">
