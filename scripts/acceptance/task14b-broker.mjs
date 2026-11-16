@@ -14,7 +14,12 @@ import {randomUUID,timingSafeEqual,createHash} from "node:crypto";
 
 export const MAX_RESERVATION_MICROS=180_000;
 export const MAX_CALLS=18;
-export const MAX_BODY_BYTES=120_000;
+// Real owner-only v7 reached five completed provider tool turns, then a sixth
+// stateless continuation exceeded the original 120KB request envelope. The
+// complete domain registry and encrypted inline history MUST NOT be truncated.
+// This is a hard 192KB UTF-8 cap, still charged one billable input token PER
+// byte before transport under the unchanged $0.18 / 18-call total ceiling.
+export const MAX_BODY_BYTES=192_000;
 export const MAX_OUTPUT_TOKENS=1_200;
 const fail=(code)=>{throw new Error("task14b_trusted_broker:"+code);};
 const isObject=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
