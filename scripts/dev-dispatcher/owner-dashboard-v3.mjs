@@ -67,7 +67,7 @@ export function ownerDashboardHandler({readState,editState,readNotes,saveNote,re
    if(req.method==='POST'&&req.url==='/api/notes'){
     if(!saveNote)return reply(res,503,'application/json',JSON.stringify({error:'Notes unavailable'}));
     const origin=req.headers.origin;
-    if(origin&&!/^http:\\/\\/(?:127\\.0\\.0\\.1|localhost):[0-9]{2,5}$/.test(origin))
+    if(origin&&!/^http:\/\/(?:127\.0\.0\.1|localhost):[0-9]{2,5}$/.test(origin))
       return reply(res,403,'application/json',JSON.stringify({error:'Cross-origin edit refused'}));
     if(!(req.headers['content-type']||'').startsWith('application/json'))
       return reply(res,415,'application/json',JSON.stringify({error:'JSON required'}));
