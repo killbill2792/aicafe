@@ -3,8 +3,8 @@
 // Bind to loopback and access through an owner-controlled SSH tunnel.
 // Mutations use the SAME Git-backed CAS ledger, not a new authority.
 import http from 'node:http';
-import {readFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {readFileSync,existsSync} from 'node:fs';
+import {join,dirname} from 'node:path';
 import {homedir} from 'node:os';
 import {readMuseNotes,writeMuseNote} from './muse-local-notes.mjs';
 import {timingSafeEqual} from 'node:crypto';
@@ -39,7 +39,7 @@ function roleFor(req,ownerPassword,musePassword){
  if(user==='muse'&&musePassword&&safeEqual(password,musePassword))return 'muse';
  return null;
 }
-export function ownerDashboardHandler({readState,editState,readNotes,saveNote,ownerPassword,musePassword,
+export function ownerDashboardHandler({readState,editState,readNotes,saveNote,readFacts,ownerPassword,musePassword,
  html=readFileSync(new URL('./owner-dashboard-v3.html',import.meta.url),'utf8')}={}){
  if(typeof readState!=='function'||typeof editState!=='function'||
    typeof ownerPassword!=='string'||ownerPassword.length<16)
@@ -54,6 +54,12 @@ export function ownerDashboardHandler({readState,editState,readNotes,saveNote,ow
    if(req.method==='GET'&&req.url==='/')
     return reply(res,200,'text/html; charset=utf-8',html);
    // Muse's coordination notes are locally readable even when GitHub or the ledger is down.
+   if(req.method==='GET'&&req.url==='/api/muse-status'){
+    if(!readFacts)return reply(res,503,'application/json',JSON.stringify({error:'Muse monitor unavailable'}));
+    const facts=await readFacts();
+    if(facts?.version!==1||!Array.isArray(facts.prs))throw Error('Invalid Muse monitor snapshot');
+    return reply(res,200,'application/json',JSON.stringify(facts));
+   }
    if(req.method==='GET'&&req.url==='/api/notes'){
     if(!readNotes)return reply(res,503,'application/json',JSON.stringify({error:'Notes unavailable'}));
     return reply(res,200,'application/json',JSON.stringify(await readNotes()));
@@ -124,14 +130,24 @@ export function ownerDashboardHandler({readState,editState,readNotes,saveNote,ow
 export function startOwnerDashboard({ownerPassword,musePassword,ledger,port=7359,
    readTransport='git',notesPath=process.env.MUSE_LOCAL_NOTES_PATH||
      join(homedir(),'.local','state','aicafe-muse','notes.json')}={}){
- if(!ledger)throw Error('Private ledger client required');
+ // A read-only Muse PR cache and private notes remain usable when the old
+ // Git-backed dispatcher or its token is unavailable.
  const handler=ownerDashboardHandler({
-  readState:async()=>readTransport==='git'
+  readFacts:async()=>{
+   const path=join(dirname(notesPath),'github-facts.json');
+   if(!existsSync(path))throw Error('Muse monitor not yet run');
+   return JSON.parse(readFileSync(path,'utf8'));
+  },
+  readState:async()=>{
+   if(!ledger)throw Error('Legacy dispatcher ledger unavailable');
+   return readTransport==='git'
     ?readLedgerViaGit({repo:ledger.repo,token:ledger.token})
-    :(await ledger.verifyPrivate(),(await ledger.load()).state),
+    :(await ledger.verifyPrivate(),(await ledger.load()).state);
+  },
   readNotes:async()=>readMuseNotes(notesPath),
   saveNote:async(edit,opts)=>writeMuseNote(notesPath,edit,opts),
   editState:async(edit,opts)=>{
+   if(!ledger)throw Error('Legacy dispatcher ledger unavailable');
    const result=await ledger.transaction(state=>{
     const updated=applyOwnerDashboardEdit(state,edit,opts);
     return JSON.stringify(updated)===JSON.stringify(state)?null:updated;
@@ -148,13 +164,13 @@ export function startOwnerDashboard({ownerPassword,musePassword,ledger,port=7359
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
  const token=process.env.DISPATCH_LEDGER_TOKEN;
  const ownerPassword=process.env.DASHBOARD_OWNER_PASSWORD;
- if(!token||!ownerPassword){
-  console.error('Private ledger token and DASHBOARD_OWNER_PASSWORD required');
+ if(!ownerPassword){
+  console.error('DASHBOARD_OWNER_PASSWORD required');
   process.exitCode=1;
  }else{
   // Git transport is supported by the existing GitHubLedger transaction API.
   // Never use the public Pages site or a public HTTP bind for this service.
-  const ledger=new GitHubLedger({repo:settings.ledger.repo,token,path:settings.ledger.path});
+  const ledger=token?new GitHubLedger({repo:settings.ledger.repo,token,path:settings.ledger.path}):null;
   startOwnerDashboard({ledger,ownerPassword,
    musePassword:process.env.DASHBOARD_MUSE_PASSWORD,
    port:Number(process.env.DASHBOARD_PORT)||7359,
