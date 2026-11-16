@@ -98,7 +98,8 @@ describe("Task14B agentic purchasing: Supervisor works through a goal, not Q&A",
    expect.objectContaining({name:"get_supplier_purchase_orders"})
   ]));
   expect((requests[0].tools as unknown[]).length).toBeGreaterThan(30);
-  expect(requests.every(r=>r.tool_choice==="auto")).toBe(true);
+  expect(requests.slice(0,-1).every(r=>r.tool_choice==="auto")).toBe(true);
+  expect(requests.at(-1)?.tool_choice).toBe("none");
   expect(requests[6].input).toEqual(expect.arrayContaining([
    expect.objectContaining({type:"function_call_output",call_id:"propose-6"})
   ]));
