@@ -99,7 +99,8 @@ describe("WhatsApp route",()=>{
     expect((await POST(request(staffEvent))).status).toBe(200);
     expect(mocks.staffStatus).toHaveBeenCalledTimes(3);
     expect(mocks.status).toHaveBeenCalledTimes(3);
-    expect(mocks.staffInbound).toHaveBeenCalledTimes(3);
+    // Status-only first, text on the second and third callbacks: exactly two.
+    expect(mocks.staffInbound).toHaveBeenCalledTimes(2);
   });
   it("reconciles delivery when signed worker voice notes and foreign button payloads are co-batched",async()=>{
     process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID="1555999888777666";
