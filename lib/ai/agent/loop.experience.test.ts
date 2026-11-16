@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { agentInstructions, agentPromptCacheKey, runAgentTurn, type AgentProvider, type OwnerFollowUp } from "./loop.server";
+import { agentInstructions, agentPromptCacheKey, runAgentTurn, task14bInlineContinuation, type AgentProvider, type OwnerFollowUp } from "./loop.server";
 import { STYLE_RULES } from "./style";
 import { memoryToolDefinition } from "./tools/memory";
 import { routineToolDefinition } from "./tools/routines";
@@ -36,6 +36,59 @@ function inbox(batches: OwnerFollowUp[][]) {
 }
 
 describe("Task14B trusted broker request-shape preflight (zero provider cost)",()=>{
+  it("replays a real multi-step tool turn without opaque provider context or narrowed tools",async()=>{
+    const {requests,provider}=recording([
+      [{type:"response.output_item.done",item:{type:"reasoning",
+        id:"rs_private_remote_reasoning",summary:[]}},
+       call("get_supplier_purchase_orders","{}","call_purchase_1"),completed],
+      [text("The saved purchasing history is empty."),completed]
+    ]);
+    const ctx={...context,purchasing:{
+      list:async()=>({orders:[],truncated:false,drafts:[],draftsTruncated:false,
+        unresolvedApprovals:[],unresolvedApprovalsTruncated:false}),
+      inspect:vi.fn(),propose:vi.fn(),
+    }} as AgentToolContext;
+    vi.stubEnv("AI_CAFE_LIVE_ACCEPTANCE","OWNER_APPROVED_LOCAL_ONLY");
+    vi.stubEnv("APP_URL","http://127.0.0.1:3000");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL","http://127.0.0.1:54321");
+    vi.stubEnv("AICAFE_TASK14B_BUDGET_LEDGER","/tmp/disposable-unit-ledger");
+    try{
+      const result=await runAgentTurn({ownerText:"Read my saved supplier purchase orders.",
+        context:ctx,provider});
+      expect(result.endReason).toBe("complete");
+      expect(result.tools).toContain("get_supplier_purchase_orders");
+    }finally{vi.unstubAllEnvs();}
+    expect(requests).toHaveLength(2);
+    const next=requests[1].input as Array<Record<string,unknown>>;
+    expect(next.some(x=>x.type==="reasoning")).toBe(false);
+    expect(next).toContainEqual({type:"function_call",name:"get_supplier_purchase_orders",
+      arguments:"{}",call_id:"call_purchase_1"});
+    expect(next.some(x=>x.type==="function_call_output"&&x.call_id==="call_purchase_1")).toBe(true);
+    expect(JSON.stringify(requests[1])).not.toContain("rs_private_remote_reasoning");
+    expect(Buffer.byteLength(JSON.stringify(requests[1]),"utf8")).toBeLessThanOrEqual(120_000);
+    const names=(requests[1].tools as Array<{name:string}>).map(x=>x.name);
+    expect(names).toContain("get_supplier_purchase_orders");
+    expect(names).toContain("inspect_supplier_purchase");
+    expect(names).toContain("propose_supplier_purchase_order");
+  });
+  it("keeps self-contained call IDs while stripping opaque provider output",()=>{
+    expect(task14bInlineContinuation([
+      {type:"reasoning",id:"rs_remote",summary:[]},
+      {type:"function_call",id:"fc_opaque",status:"completed",
+        name:"inspect_supplier_purchase",call_id:"call_2",arguments:'{"items":[]}'},
+      {type:"message",id:"msg_opaque",role:"assistant",content:[
+        {type:"output_text",text:"A source-backed result.",annotations:[{url:"https://secret.test"}]}
+      ]}
+    ])).toEqual([
+      {type:"function_call",name:"inspect_supplier_purchase",call_id:"call_2",arguments:'{"items":[]}'},
+      {type:"message",role:"assistant",content:[
+        {type:"output_text",text:"A source-backed result.",annotations:[]}
+      ]}
+    ]);
+    expect(()=>task14bInlineContinuation([{type:"function_call",name:"inspect_supplier_purchase",
+      call_id:"bad call id",arguments:"{}"}])).toThrow("task14b_invalid_inline_function_call");
+  });
+
   it("the complete unfiltered café Supervisor tool contract fits the tested 120KB bound",async()=>{
     const {requests,provider}=recording([[text("Investigating."),completed]]);
     await runAgentTurn({ownerText:"Investigate real supplier quotes for milk and prepare an owner-approval draft.",
