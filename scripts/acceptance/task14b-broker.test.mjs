@@ -8,7 +8,7 @@ import {once} from "node:events";
 import {createHash} from "node:crypto";
 import {
   reservationForRequest,PaidReservation,constantTimeEqual,usageFromSseFrame,
-  safeProviderRejection,startTrustedBroker,safePolicyDenial,MAX_CALLS,MAX_RESERVATION_MICROS
+  safeProviderRejection,startTrustedBroker,safePolicyDenial,MAX_CALLS,MAX_RESERVATION_MICROS,MAX_BODY_BYTES
 } from "./task14b-broker.mjs";
 const head="a".repeat(40),key="sk-this_is_only_a_mocked_key";
 const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
@@ -19,24 +19,25 @@ const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
   type:"object",properties:{},additionalProperties:false}}]};
 const body=Buffer.from(JSON.stringify(params));
 
-test("actual trusted authorization JavaScript accepts one v7-only marker and rejects duplicate v7",()=>{
+test("actual trusted authorization JavaScript accepts one v8-only marker and rejects duplicate v8",()=>{
  const yaml=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
  const match=yaml.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/);
  assert.ok(match,"owner authorization block must be discoverable");
  const block=match[1].split("\n").map(line=>line.replace(/^ {10}/,"")).join("\n");
- const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v7 ";
+ const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v8 ";
  const marker=prefix+sha+" -->";
  const root=mkdtempSync(join(tmpdir(),"task14b-owner-auth-"));
  try{
   for(const [label,body,expected] of [
-   ["single-v7", "Owner acceptance\n"+marker,0],
-   ["duplicate-v7","Owner acceptance\n"+marker+"\n"+marker,1],
+   ["single-v8", "Owner acceptance\n"+marker,0],
+   ["duplicate-v8","Owner acceptance\n"+marker+"\n"+marker,1],
    ["old-v1-only","<!-- aicafe-task14b-trusted-paid-run "+sha+" -->",1],
    ["old-v2-only","<!-- aicafe-task14b-trusted-paid-run-v2 "+sha+" -->",1],
    ["old-v3-only","<!-- aicafe-task14b-trusted-paid-run-v3 "+sha+" -->",1],
    ["old-v4-only","<!-- aicafe-task14b-trusted-paid-run-v4 "+sha+" -->",1],
    ["old-v5-only","<!-- aicafe-task14b-trusted-paid-run-v5 "+sha+" -->",1],
-   ["old-v6-only","<!-- aicafe-task14b-trusted-paid-run-v6 "+sha+" -->",1]
+   ["old-v6-only","<!-- aicafe-task14b-trusted-paid-run-v6 "+sha+" -->",1],
+    ["old-v7-only","<!-- aicafe-task14b-trusted-paid-run-v7 "+sha+" -->",1]
   ]){
    const event={action:"edited",sender:{login:"killbill2792"},
     repository:{full_name:"killbill2792/aicafe"},
@@ -69,10 +70,10 @@ test("actual trusted authorization JavaScript accepts one v7-only marker and rej
  }finally{rmSync(root,{recursive:true,force:true})}
 });
 
-test("trusted workflow uses a NEW owner-only v7 grant, never replays consumed v1-v6",()=>{
+test("trusted workflow uses a NEW owner-only v8 grant, never replays consumed v1-v7",()=>{
  const workflow=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
- assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v7 "/);
- assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v7 -->"/);
+ assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v8 "/);
+ assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v8 -->"/);
  assert.match(workflow,/github\.actor == 'killbill2792'/);
  assert.match(workflow,/github\.run_attempt == 1/);
  assert.match(workflow,/event\.changes\?\.body\?\.from/);
@@ -84,6 +85,7 @@ test("trusted workflow uses a NEW owner-only v7 grant, never replays consumed v1
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v4 -->"/);
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v5 -->"/);
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v6 -->"/);
+ assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v7 -->"/);
  assert.match(workflow,/policyDenials/);
 });
 
@@ -175,7 +177,7 @@ test("broker refuses opaque continuation before any spend and persists only allo
  }
 });
 
-test("v7: completed provider-issued encrypted reasoning with nullable content replays without plaintext, at bounded cost",async()=>{
+test("v8: completed provider-issued encrypted reasoning with nullable content replays without plaintext, at bounded cost",async()=>{
  const root=mkdtempSync(join(tmpdir(),"task14b-provenance-"));
  const auditFile=join(root,"audit.json");
  const origin={type:"reasoning",id:"rs_local_test_1",status:"completed",summary:[],
@@ -274,8 +276,49 @@ test("allows only priced foreground Luna Responses calls and reserves worst-case
   {...params,prompt_cache_retention:"24h"},
  ])assert.throws(()=>reservationForRequest(Buffer.from(JSON.stringify(bad))),
    /task14b_trusted_broker:/);
- assert.throws(()=>reservationForRequest(Buffer.from("x".repeat(120001))),
+ assert.throws(()=>reservationForRequest(Buffer.from("x".repeat(MAX_BODY_BYTES+1))),
    /request_size/);
+});
+test("v8: full-registry five-step stateless continuation stays bounded and paid reservation is enforced",()=>{
+ const issued=new Map(),input=[{role:"user",content:"Prepare a grounded supplier PO."}];
+ for(let i=0;i<5;i++){
+  const reason={type:"reasoning",id:"rs_full_context_"+i,status:"completed",
+   summary:[],encrypted_content:"U".repeat(512)};
+  issued.set(createHash("sha256").update(reason.id+"\n"+reason.encrypted_content).digest("hex"),
+   {id:reason.id,outputCeiling:1200});
+  input.push(reason,{type:"function_call",name:"inspect_supplier_purchase",
+   call_id:"call_"+i,arguments:'{"item":"milk"}'},
+   {type:"function_call_output",call_id:"call_"+i,
+    output:JSON.stringify({verifiedEvidence:"E".repeat(4000)})});
+ }
+ // This deliberately matches the shape of the real v7 full domain
+ // + several encrypted reasoning/tool-result turns that exceeded 120KB.
+ const tools=Array.from({length:90},(_,i)=>({type:"function",name:"tool_"+i,
+  parameters:{type:"object",properties:{item:{type:"string",
+   description:"D".repeat(1000)}}}}));
+ const request=Buffer.from(JSON.stringify({...params,store:false,
+  instructions:"I".repeat(20000),input,tools}));
+ assert.ok(request.length>120_000,"reproduce v7 hard-stop envelope");
+ assert.ok(request.length<MAX_BODY_BYTES,"realistic bounded continuation");
+ const parsed=reservationForRequest(request,issued);
+ assert.equal(parsed.params.input.length,16,"all five reasoning/tool/output triples retained");
+ assert.equal(parsed.params.tools.length,90,"full domain registry retained");
+ assert.equal(parsed.params.input.filter(x=>x.type==="reasoning").length,5);
+ assert.ok(parsed.reservedMicros>=
+   Math.ceil(request.length*0.10+5*1200*0.10+1200*0.50),
+   "upper reservation charges every byte plus encrypted reasoning replay");
+ const paid=new PaidReservation(head);
+ for(let i=0;i<MAX_CALLS;i++){
+  try{paid.reserve(request,issued)}catch(error){
+   assert.match(String(error),/approved_budget_exhausted/);
+   break;
+  }
+ }
+ assert.ok(paid.attempts<MAX_CALLS,"larger legitimate calls exhaust budget earlier");
+ assert.ok(paid.reservedMicros<=MAX_RESERVATION_MICROS,
+  "unchanged hard $0.18 total remains authoritative");
+ assert.throws(()=>reservationForRequest(Buffer.alloc(MAX_BODY_BYTES+1)),
+  /request_size/,"oversized body rejected prior to parse or transport");
 });
 test("rejects provider-expanded history, prompts, remote files and images before cost reservation",()=>{
  const blocked=[
