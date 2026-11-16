@@ -438,7 +438,7 @@ test("@purchasing real supplier quote entry preserves currency and denies cross-
 });
 
 
-test("@purchasing proactive notice → owner-approved real PO → reopened status with no receiving",async({browser})=>{
+test("@purchasing proactive notice → repeated cron idempotency → owner-approved PO → resolved forever",async({browser})=>{
   // This verifies the real owner/browser/database portion of the workflow.
   // Recorded model tests separately prove the multi-tool sequence; a sentinel
   // provider cannot be passed off as live-model or proactive parity evidence.
@@ -561,6 +561,26 @@ test("@purchasing proactive notice → owner-approved real PO → reopened statu
     expect(messages.rows).toHaveLength(1);
     expect(messages.rows[0].grounding).toMatchObject({status:"verified",intent:"priority_notice",
       evidence:[{source:"supplier_po",identifier:id.proposal}]});
+    // A second real scheduler tick without another owner message must reuse
+    // the same persisted inbox/chat receipt, even after a worker restart.
+    const secondTick=await first.request.get("/api/cron/refresh-derived",{
+      headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000,
+    });
+    expect([200,207]).toContain(secondTick.status());
+    const dedupedPriority=await db.query("select id,status from public.operating_tasks"+
+      " where business_id=$1 and owner_user_id=$2 and kind='priority_notice'"+
+      " and payload->>'sourceType'='supplier_po' and payload->>'sourceId'=$3",
+      [own.businessId,own.owner.userId,id.proposal]);
+    expect(dedupedPriority.rows).toEqual([{
+      id:priority.rows[0].id,status:"needs_owner",
+    }]);
+    const dedupedMessages=await db.query("select id from public.ai_messages"+
+      " where business_id=$1 and thread_id=$2 and role='supervisor'"+
+      " and grounding->>'intent'='priority_notice'"+
+      " and grounding #>> '{evidence,0,source}'='supplier_po'"+
+      " and grounding #>> '{evidence,0,identifier}'=$3",
+      [own.businessId,id.thread,id.proposal]);
+    expect(dedupedMessages.rows).toEqual([{id:messages.rows[0].id}]);
     // Reopened owner chat must show the real cron-generated notice.
     await page.reload();
     await expect(page.getByText("Supplier purchase-order draft needs your approval",{exact:false}).first())
@@ -591,6 +611,18 @@ test("@purchasing proactive notice → owner-approved real PO → reopened statu
     const settled=await db.query("select status from public.operating_tasks where business_id=$1 and id=$2",
       [own.businessId,priority.rows[0].id]);
     expect(settled.rows[0].status).toBe("handled");
+    // Subsequent autonomous checks must not resurrect resolved owner work.
+    const afterDecision=await first.request.get("/api/cron/refresh-derived",{
+      headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000,
+    });
+    expect([200,207]).toContain(afterDecision.status());
+    const resolved=await db.query("select id,status from public.operating_tasks"+
+      " where business_id=$1 and owner_user_id=$2 and kind='priority_notice'"+
+      " and payload->>'sourceType'='supplier_po' and payload->>'sourceId'=$3",
+      [own.businessId,own.owner.userId,id.proposal]);
+    expect(resolved.rows).toEqual([{
+      id:priority.rows[0].id,status:"handled",
+    }]);
     const count=await db.query("select count(*)::int as n from public.purchase_order_lines"+
       " where business_id=$1 and purchase_order_id=$2",[own.businessId,order.rows[0].id]);
     expect(count.rows[0].n).toBe(1);
