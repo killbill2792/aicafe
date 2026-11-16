@@ -31,6 +31,13 @@ section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
 <div class="tablewrap"><table>
 <thead><tr><th>Task</th><th>Stage</th><th>Muse</th><th>PR</th><th>Last commit</th><th>CI</th><th>Codex requested</th><th>Codex result</th><th>Acceptance</th><th>Dependencies</th><th>Merge</th><th>Integration</th><th>Next action</th></tr></thead>
 <tbody id="rows"></tbody></table></div>
+<section>
+<h2>Muse's direct PR monitor</h2>
+<p id="muse-pr-freshness">Loading last read-only GitHub snapshot…</p>
+<div class="tablewrap"><table><thead><tr><th>PR</th><th>Last commit</th><th>Observed CI</th><th>Codex</th><th>ChatGPT</th></tr></thead><tbody id="muse-prs"></tbody></table></div>
+<div id="muse-merges"></div>
+<p>These are observed GitHub facts, not approval or guaranteed merge readiness. If monitoring fails, the last observation is labeled stale; local notes remain editable.</p>
+</section>
 <section id="detail"><b>Select a task to inspect every field and its evidence.</b></section>
 <section>
 <h2>Muse coordination notes</h2>
@@ -55,6 +62,24 @@ section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
 const el=id=>document.getElementById(id),esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const age=t=>{let n=Math.floor((Date.now()-Date.parse(t))/60000);return Number.isFinite(n)?Math.max(0,n)+'m ago':'unknown';};
 let snapshot=null,localNotes={version:1,entries:{}};
+async function refreshMusePrs(){
+ const response=await fetch('/api/muse-status',{cache:'no-store'});
+ if(!response.ok)throw Error('Monitor HTTP '+response.status);
+ const facts=await response.json(),stamp=facts.observed_at;
+ const ageMinutes=Math.floor((Date.now()-Date.parse(stamp))/60000);
+ const fresh=Number.isFinite(ageMinutes)&&ageMinutes>=0&&ageMinutes<=15;
+ el('muse-pr-freshness').textContent=(fresh?'Last GitHub observation: ':'STALE GitHub observation: ')+
+  (stamp||'unknown')+(fresh?'':' — do not assume current CI/Codex status');
+ el('muse-prs').innerHTML=(facts.prs||[]).map(p=>{
+  const matching=Object.values(localNotes.entries||{}).find(e=>e.pr_number===p.number);
+  return '<tr><td><a target="_blank" rel="noopener noreferrer" href="'+esc(p.url)+'">#'+esc(p.number)+'</a> '+esc(p.title)+'</td>'+
+    '<td>'+esc(p.head_sha?.slice(0,8))+' · '+age(p.committed_at)+'</td>'+
+    '<td>'+esc(p.ci)+(fresh?'':' (stale)')+'</td><td>'+esc(p.codex)+(fresh?'':' (stale)')+'</td>'+
+    '<td>'+(matching?.chat_url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(matching.chat_url)+'">Open saved chat</a>':'Not registered')+'</td></tr>';
+ }).join('')||'<tr><td colspan="5">No open PRs observed</td></tr>';
+ el('muse-merges').textContent='Recently merged (observed): '+
+  (facts.merged_prs||[]).slice(0,8).map(x=>'#'+x.number).join(', ');
+}
 async function refreshNotes(){
  const response=await fetch('/api/notes',{cache:'no-store'});
  if(!response.ok)throw Error('Notes HTTP '+response.status);
@@ -108,7 +133,7 @@ function detail(id){
  selectMuseNote(id);
 }
 el('search').oninput=()=>snapshot&&redraw();
-el('refresh').onclick=()=>{refresh().catch(e=>alert(e.message));refreshNotes().catch(e=>el('muse-saved').textContent=e.message);};
+el('refresh').onclick=()=>{refresh().catch(e=>alert(e.message));refreshNotes().catch(e=>el('muse-saved').textContent=e.message);refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);};
 el('muse-save').onclick=async()=>{
  const task_id=el('muse-task').value.trim(),prior=localNotes.entries?.[task_id];
  const prRaw=el('muse-pr').value.trim();
@@ -139,6 +164,7 @@ el('save').onclick=async()=>{
 };
 refresh().catch(e=>el('freshness').textContent='GitHub state unavailable: '+e.message);
 refreshNotes().catch(e=>el('muse-saved').textContent='Notes unavailable: '+e.message);
-setInterval(()=>{refresh().catch(()=>{});refreshNotes().catch(()=>{});},60000);
+refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);
+setInterval(()=>{refresh().catch(()=>{});refreshNotes().catch(()=>{});refreshMusePrs().catch(()=>{});},60000);
 </script>
 </body></html>
