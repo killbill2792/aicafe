@@ -4174,7 +4174,12 @@
     "saveOutcome": "Save your update",
     "outcomeSaved": "Your update is saved as owner-reported information, not Gmail proof.",
     "pending": "No approved purchase order yet",
-    "status": "The Supervisor will follow up if no outcome is confirmed."
+    "status": "The Supervisor will follow up if no outcome is confirmed.",
+    "poDraft": "Email prepared — waiting for separate owner send approval",
+    "poUncertain": "Gmail send outcome uncertain. Do not resend; ask Supervisor to reconcile.",
+    "poSent": "Gmail accepted the email. The supplier has NOT yet been verified as having accepted the order.",
+    "poCannotVerify": "Cannot verify supplier communication status right now. Ask Supervisor; do not resend.",
+    "poOwnerNotice": "Approval created the internal PO only. Any Gmail send requires another owner click; outside-channel claims remain owner-reported."
   },
   "SupplierEvidenceExtras": {
     "quoteCurrency": "Quote currency (ISO 4217)",
