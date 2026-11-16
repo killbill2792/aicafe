@@ -5,6 +5,41 @@ const input={items:[{ingredientId:"11111111-1111-4111-8111-111111111111",
  itemName:"Milk",quantity:5,unit:"gal"}],neededBy:"2026-11-17",preferredSupplier:null};
 const newProposal={...input,replaceProposalId:null};
 describe("Task14B: one agent, real purchasing work—not chat-only advice",()=>{
+ it("drafts one Gmail vendor send only from the approved-PO authority port",async()=>{
+  const id="77777777-7777-4777-8777-777777777777";
+  const proposeVendorSend=vi.fn().mockResolvedValue({
+    proposalId:"33333333-3333-4333-8333-333333333333",
+    revision:1,purchaseOrderId:id,supplierName:"Sample Dairy",
+    recipient:"verified@supplier.example",account:"owner@example.com",note:"Awaiting owner click"
+  });
+  const result=await supplierPurchasingTools.propose_supplier_vendor_email.execute(
+    {purchaseOrderId:id},{
+      purchasing:{proposeVendorSend}
+    } as unknown as AgentToolContext);
+  expect(proposeVendorSend).toHaveBeenCalledExactlyOnceWith({purchaseOrderId:id});
+  expect(result).toMatchObject({proposalCreated:true,sent:false,
+    approvalRequired:true,purchaseOrderId:id});
+ });
+ it("does not silently stop if Gmail is unavailable or supplier uses a portal",async()=>{
+  const id="77777777-7777-4777-8777-777777777777";
+  const noPort=await supplierPurchasingTools.propose_supplier_vendor_email.execute(
+    {purchaseOrderId:id},{} as AgentToolContext);
+  expect(noPort).toMatchObject({proposalCreated:false,
+    missing:["purchasing_unavailable"]});
+  expect(noPort.ownerQuestion).toContain("normally contact");
+ });
+ it("shows canonical channel, verified Gmail permissions and explicit owner question",async()=>{
+  const list=vi.fn().mockResolvedValue({orders:[],truncated:false,drafts:[],
+    draftsTruncated:false,unresolvedApprovals:[],unresolvedApprovalsTruncated:false,
+    vendorCommunications:[{purchaseOrderId:"a",state:"not_prepared",channel:"portal",
+      providerVerified:false,ownerQuestion:"Which portal did you use?"}],
+    gmailConnection:{connected:false,canSend:false,canRead:false}});
+  const result=await supplierPurchasingTools.get_supplier_purchase_orders.execute({},
+    {purchasing:{list}} as unknown as AgentToolContext);
+  expect(result.gmailConnection).toMatchObject({canSend:false});
+  expect(result.vendorCommunications).toMatchObject([
+    {state:"not_prepared",channel:"portal",providerVerified:false}]);
+ });
  it("investigates server-side evidence before a proposal and does not claim a full cost",async()=>{
   const inspect=vi.fn().mockResolvedValue({offers:[{
    supplierName:"Farm A",currency:"CAD",subtotalCents:2250,totalCents:null,
