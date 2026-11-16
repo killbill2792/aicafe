@@ -19,23 +19,24 @@ const params={model:"gpt-6-luna",stream:true,max_output_tokens:1200,
   type:"object",properties:{},additionalProperties:false}}]};
 const body=Buffer.from(JSON.stringify(params));
 
-test("actual trusted authorization JavaScript accepts one v6-only marker and rejects duplicate v6",()=>{
+test("actual trusted authorization JavaScript accepts one v7-only marker and rejects duplicate v7",()=>{
  const yaml=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
  const match=yaml.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/);
  assert.ok(match,"owner authorization block must be discoverable");
  const block=match[1].split("\n").map(line=>line.replace(/^ {10}/,"")).join("\n");
- const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v6 ";
+ const sha="a".repeat(40),prefix="<!-- aicafe-task14b-trusted-paid-run-v7 ";
  const marker=prefix+sha+" -->";
  const root=mkdtempSync(join(tmpdir(),"task14b-owner-auth-"));
  try{
   for(const [label,body,expected] of [
-   ["single-v6", "Owner acceptance\n"+marker,0],
-   ["duplicate-v6","Owner acceptance\n"+marker+"\n"+marker,1],
+   ["single-v7", "Owner acceptance\n"+marker,0],
+   ["duplicate-v7","Owner acceptance\n"+marker+"\n"+marker,1],
    ["old-v1-only","<!-- aicafe-task14b-trusted-paid-run "+sha+" -->",1],
    ["old-v2-only","<!-- aicafe-task14b-trusted-paid-run-v2 "+sha+" -->",1],
    ["old-v3-only","<!-- aicafe-task14b-trusted-paid-run-v3 "+sha+" -->",1],
    ["old-v4-only","<!-- aicafe-task14b-trusted-paid-run-v4 "+sha+" -->",1],
-   ["old-v5-only","<!-- aicafe-task14b-trusted-paid-run-v5 "+sha+" -->",1]
+   ["old-v5-only","<!-- aicafe-task14b-trusted-paid-run-v5 "+sha+" -->",1],
+   ["old-v6-only","<!-- aicafe-task14b-trusted-paid-run-v6 "+sha+" -->",1]
   ]){
    const event={action:"edited",sender:{login:"killbill2792"},
     repository:{full_name:"killbill2792/aicafe"},
@@ -68,10 +69,10 @@ test("actual trusted authorization JavaScript accepts one v6-only marker and rej
  }finally{rmSync(root,{recursive:true,force:true})}
 });
 
-test("trusted workflow uses a NEW owner-only v6 grant, never replays consumed v1",()=>{
+test("trusted workflow uses a NEW owner-only v7 grant, never replays consumed v1-v6",()=>{
  const workflow=readFileSync(".github/workflows/ai-cafe-14b-bounded-live.yml","utf8");
- assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v6 "/);
- assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v6 -->"/);
+ assert.match(workflow,/const prefix="<!-- aicafe-task14b-trusted-paid-run-v7 "/);
+ assert.match(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v7 -->"/);
  assert.match(workflow,/github\.actor == 'killbill2792'/);
  assert.match(workflow,/github\.run_attempt == 1/);
  assert.match(workflow,/event\.changes\?\.body\?\.from/);
@@ -82,6 +83,7 @@ test("trusted workflow uses a NEW owner-only v6 grant, never replays consumed v1
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v3 -->"/);
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v4 -->"/);
  assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v5 -->"/);
+ assert.doesNotMatch(workflow,/const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v6 -->"/);
  assert.match(workflow,/policyDenials/);
 });
 
@@ -173,11 +175,14 @@ test("broker refuses opaque continuation before any spend and persists only allo
  }
 });
 
-test("v5: one provider-issued encrypted reasoning item is replayed with function outputs, at bounded cost",async()=>{
+test("v7: completed provider-issued encrypted reasoning with nullable content replays without plaintext, at bounded cost",async()=>{
  const root=mkdtempSync(join(tmpdir(),"task14b-provenance-"));
  const auditFile=join(root,"audit.json");
  const origin={type:"reasoning",id:"rs_local_test_1",status:"completed",summary:[],
    encrypted_content:"U".repeat(512)};
+ // Actual Responses output_item.done includes content:null, but candidate
+ // safely drops it before replay; broker must register the same issued cipher.
+ const providerOrigin={...origin,content:null};
  const event=(type,value)=>"event: "+type+"\ndata: "+JSON.stringify({type,...value})+"\n\n";
  const calls=[];
  const {server}=startTrustedBroker({apiKey:key,token:"z".repeat(64),head,auditFile,port:0,
@@ -186,7 +191,7 @@ test("v5: one provider-issued encrypted reasoning item is replayed with function
      assert.equal(url,"https://api.openai.com/v1/responses");
      assert.equal(JSON.parse(init.body).store,false,"trusted host never stores a remote response");
      const frames=calls.length===1?[
-       event("response.output_item.done",{item:origin}),
+       event("response.output_item.done",{item:providerOrigin}),
        event("response.output_item.done",{item:{type:"function_call",
          name:"inspect_supplier_purchase",call_id:"call_1",arguments:"{}"}}),
        event("response.completed",{response:{model:"gpt-6-luna",service_tier:"default",
@@ -229,6 +234,8 @@ test("v5: one provider-issued encrypted reasoning item is replayed with function
    assert.equal(calls.length,2,"invalid reasoning never reaches paid transport");
    assert.equal(calls[1].input[1].id,origin.id);
    assert.equal(calls[1].input[1].encrypted_content,origin.encrypted_content);
+   assert.equal(calls[1].input[1].content,undefined,
+     "provider-only nullable content is never replayed to the model");
    assert.equal(calls[1].input[2].call_id,"call_1");
    assert.equal(calls[1].input[3].call_id,"call_1");
    const audit=JSON.parse(readFileSync(auditFile,"utf8"));

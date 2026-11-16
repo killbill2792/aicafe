@@ -255,7 +255,21 @@ function encryptedReasoningFromSseFrame(frame){
  if(!line||line==="data: [DONE]")return null;
  let event;try{event=JSON.parse(line.slice(6))}catch{return null}
  if(event?.type!=="response.output_item.done")return null;
- return validEncryptedReasoning(event.item)?event.item:null;
+ const item=event.item;
+ // The real Responses API can add provider-only `content: null` (or [])
+ // to a completed reasoning item. Candidate continuation deliberately strips
+ // that field. Validate the exact provider shape, then fingerprint ONLY the
+ // same canonical id + encrypted_content that the candidate will replay.
+ // Never register plaintext content or opaque/unknown provider metadata.
+ if(!isObject(item)||!onlyKeys(item,
+     ["type","id","status","summary","encrypted_content","content"])||
+    (item.content!==undefined&&item.content!==null&&
+     !(Array.isArray(item.content)&&item.content.length===0)))
+  return null;
+ const canonical={type:item.type,id:item.id,
+  ...(item.status!==undefined?{status:item.status}:{}),
+  summary:item.summary,encrypted_content:item.encrypted_content};
+ return validEncryptedReasoning(canonical)?canonical:null;
 }
 export function usageFromSseFrame(frame) {
  const line=frame.split(/\r?\n/).find(v=>v.startsWith("data: "));
