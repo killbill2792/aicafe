@@ -8,17 +8,22 @@ import {supplierPurchaseInputSchema,supplierPurchaseProposalToolInputSchema} fro
 export const supplierPurchasingTools={
  get_supplier_purchase_orders:{
   agentId:"maya",schema:z.strictObject({}),
-  description:"Read saved, owner-scoped purchase-order drafts AND actual prepared POs before editing an existing draft or answering status questions. A correction must use the exact draft ID returned here; a separate new order must not replace any draft. approved_for_ordering does NOT mean a supplier was contacted or goods received; do not infer delivery or payment. Use for owner follow-up status questions instead of starting another order.",
+  description:"Read owner-scoped EDITABLE drafts, UNRESOLVED approved/executing proposals and actual prepared POs. An approved or executing proposal without a PO receipt is NOT an absent order: report its saved ID, status and effect-attempt state instead of making another draft or claiming completion. Only draft IDs can be replaced. Approved with no attempt requires a NEW explicit owner retry/cancel; executing or uncertain effects are receipt-reconciliation-only, NEVER resent automatically. approved_for_ordering is NOT sent, received or paid.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    z.strictObject({}).parse(raw);
    if(!ctx.purchasing)return {source:"purchase_orders",period:null,agentId:"maya",
-    missing:["purchasing_unavailable"],orders:[],drafts:[],draftsTruncated:false};
+    missing:["purchasing_unavailable"],orders:[],drafts:[],draftsTruncated:false,
+    unresolvedApprovals:[],unresolvedApprovalsTruncated:false};
    const result=await ctx.purchasing.list();
    return {source:"purchase_orders",period:null,agentId:"maya",
     missing:[...(result.truncated?["purchase_order_history_truncated"]:[]),
-      ...(result.draftsTruncated?["supplier_po_draft_history_truncated"]:[])],
+      ...(result.draftsTruncated?["supplier_po_draft_history_truncated"]:[]),
+      ...(result.unresolvedApprovalsTruncated?["supplier_po_unresolved_history_truncated"]:[]),
+      ...(result.unresolvedApprovals.length?["supplier_po_approval_unresolved"]:[])],
     orders:result.orders,truncated:result.truncated,
-    drafts:result.drafts,draftsTruncated:result.draftsTruncated};
+    drafts:result.drafts,draftsTruncated:result.draftsTruncated,
+    unresolvedApprovals:result.unresolvedApprovals,
+    unresolvedApprovalsTruncated:result.unresolvedApprovalsTruncated};
   }
  },
  inspect_supplier_purchase:{

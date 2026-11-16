@@ -98,7 +98,12 @@ export type AgentToolContext = {
   purchasing?:{
     list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
       drafts:Array<{id:string;revision:number;supplierName:string;itemNames:string[];
-        subtotalCents:number;currency:string}>;draftsTruncated:boolean}>;
+        subtotalCents:number;currency:string}>;draftsTruncated:boolean;
+      unresolvedApprovals:Array<{id:string;revision:number;supplierName:string;
+        itemNames:string[];subtotalCents:number;currency:string;
+        status:"approved"|"executing";attemptState:"executing"|"verified"|"uncertain"|"stale"|null;
+        recovery:"owner_retry_or_cancel"|"receipt_only"}>;
+      unresolvedApprovalsTruncated:boolean}>;
     inspect(input:SupplierPurchaseInput):Promise<PurchasePlan>;
     propose(input:SupplierPurchaseProposalInput):Promise<{proposalId:string;revision:number;
       supplierName:string;currency:string;subtotalCents:number}>;

@@ -34,7 +34,7 @@ describe("Task14B: one agent, real purchasing work—not chat-only advice",()=>{
    sentToSupplier:false,receivedIntoInventory:false,subtotalCents:2250,currency:"CAD"}],
    truncated:false,drafts:[{id:"55555555-5555-4555-8555-555555555555",
      revision:1,supplierName:"Farm A",itemNames:["Milk"],subtotalCents:2250,currency:"CAD"}],
-   draftsTruncated:false});
+   draftsTruncated:false,unresolvedApprovals:[],unresolvedApprovalsTruncated:false});
   const result=await supplierPurchasingTools.get_supplier_purchase_orders.execute({},{
    purchasing:{inspect:vi.fn(),propose:vi.fn(),list}
   } as unknown as AgentToolContext);
@@ -42,6 +42,41 @@ describe("Task14B: one agent, real purchasing work—not chat-only advice",()=>{
   expect(result).toMatchObject({source:"purchase_orders",missing:[],
    orders:[{status:"approved_for_ordering",sentToSupplier:false,receivedIntoInventory:false}],
    drafts:[{id:"55555555-5555-4555-8555-555555555555",itemNames:["Milk"]}]});
+ });
+ it("reveals interrupted owner approvals separately from drafts and never invents a PO",async()=>{
+  const list=vi.fn().mockResolvedValue({
+    orders:[],truncated:false,drafts:[],draftsTruncated:false,
+    unresolvedApprovals:[
+      {id:"66666666-6666-4666-8666-666666666666",revision:2,
+       supplierName:"Farm A",itemNames:["Milk"],subtotalCents:2250,currency:"CAD",
+       status:"approved",attemptState:null,recovery:"owner_retry_or_cancel"},
+      {id:"88888888-8888-4888-8888-888888888888",revision:3,
+       supplierName:"Farm B",itemNames:["Flour"],subtotalCents:1350,currency:"CAD",
+       status:"executing",attemptState:"uncertain",recovery:"receipt_only"}
+    ],unresolvedApprovalsTruncated:false
+  });
+  const result=await supplierPurchasingTools.get_supplier_purchase_orders.execute({},{
+    purchasing:{inspect:vi.fn(),propose:vi.fn(),list}
+  } as unknown as AgentToolContext);
+  expect(result.orders).toEqual([]);
+  expect(result.drafts).toEqual([]);
+  expect(result.missing).toContain("supplier_po_approval_unresolved");
+  expect(result.unresolvedApprovals).toMatchObject([
+    {status:"approved",attemptState:null,recovery:"owner_retry_or_cancel"},
+    {status:"executing",attemptState:"uncertain",recovery:"receipt_only"}
+  ]);
+  expect(list).toHaveBeenCalledOnce();
+ });
+ it("reports truncated unresolved approval history rather than treating the list as complete",async()=>{
+  const list=vi.fn().mockResolvedValue({
+    orders:[],truncated:false,drafts:[],draftsTruncated:false,
+    unresolvedApprovals:[],unresolvedApprovalsTruncated:true
+  });
+  const result=await supplierPurchasingTools.get_supplier_purchase_orders.execute({},{
+    purchasing:{inspect:vi.fn(),propose:vi.fn(),list}
+  } as unknown as AgentToolContext);
+  expect(result.missing).toContain("supplier_po_unresolved_history_truncated");
+  expect(result.unresolvedApprovalsTruncated).toBe(true);
  });
  it("requires a nullable explicit replacement ID; never guesses from owner wording",async()=>{
   const propose=vi.fn().mockResolvedValue({proposalId:"33333333-3333-4333-8333-333333333333",

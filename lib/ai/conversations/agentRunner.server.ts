@@ -26,6 +26,7 @@ import {readSupplierPurchaseOrders} from "@/lib/data/supplierPurchasing.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
@@ -212,22 +213,39 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       purchasing:{
         list:async()=>{
           const {client}=await simulationOwnerReader(proposalScope);
-          const [orders,rows]=await Promise.all([
+          // Independently read editable drafts and interrupted approvals; a long
+          // draft history cannot mask a pending or uncertain effect.
+          const ownerScope={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
+          const [orders,draftRows,unresolvedRows]=await Promise.all([
             readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId),
-            readOwnerProposals(client,
-              {businessId:scope.businessId,ownerUserId:scope.ownerUserId},
+            readOwnerProposals(client,ownerScope,
               {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
-               statuses:["draft"],limit:21})
+               statuses:["draft"],limit:21}),
+            readOwnerProposals(client,ownerScope,
+              {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
+               statuses:["approved","executing"],limit:21}),
           ]);
-          // Reuse the canonical scoped proposal reader: every correction target
-          // is a real saved draft, not a guessed name or model-supplied café.
-          const drafts=rows.slice(0,20).map(row=>{
+          const identity=(row:(typeof draftRows)[number])=>{
             const effect=supplierPurchaseOrderEffectSchema.parse(row.canonical_effect_payload);
             return {id:row.id,revision:row.revision,supplierName:effect.supplierName,
               itemNames:effect.lines.map(line=>line.itemName),
               subtotalCents:effect.subtotalCents,currency:effect.currency};
-          });
-          return {...orders,drafts,draftsTruncated:rows.length>20};
+          };
+          // A proposal in approved/executing is NOT an editable draft, and
+          // no missing PO receipt authorizes a new order or a blind effect retry.
+          const drafts=draftRows.slice(0,20).map(identity);
+          const gateway=new SupervisorEffectGateway();
+          const unresolvedApprovals=await Promise.all(unresolvedRows.slice(0,20).map(async row=>{
+            // Reuse the canonical effect ledger reader: it reauthorizes this
+            // exact café/owner/thread before returning any effect attempt.
+            const attempt=await gateway.readAttempt(proposalScope,row.id);
+            return {...identity(row),status:row.status as "approved"|"executing",
+              attemptState:attempt?.state??null,
+              recovery:row.status==="approved"&&!attempt
+                ?"owner_retry_or_cancel" as const:"receipt_only" as const};
+          }));
+          return {...orders,drafts,draftsTruncated:draftRows.length>20,
+            unresolvedApprovals,unresolvedApprovalsTruncated:unresolvedRows.length>20};
         },
         inspect:input=>investigateSupplierPurchase(proposalScope,input),
         propose:async input=>{
