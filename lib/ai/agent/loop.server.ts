@@ -20,6 +20,36 @@ import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
 type Event = { type: string; [key: string]: unknown };
+/** Disposable Task14B proxy only: carry forward self-contained model output.
+ * Opaque reasoning item IDs are forbidden by the trusted host broker.
+ * Tool calls and their call IDs remain intact for the full multi-step loop. */
+export function task14bInlineContinuation(items:readonly unknown[]):unknown[]{
+  const result:unknown[]=[];
+  for(const raw of items){
+    if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
+    const item=raw as Record<string,unknown>;
+    if(item.type==="function_call"){
+      if(typeof item.name!=="string"||!/^[a-z][a-z0-9_]{1,79}$/.test(item.name)||
+         typeof item.call_id!=="string"||!/^[A-Za-z0-9_-]{1,128}$/.test(item.call_id)||
+         typeof item.arguments!=="string")
+        throw new Error("task14b_invalid_inline_function_call");
+      result.push({type:"function_call",name:item.name,call_id:item.call_id,arguments:item.arguments});
+    }else if(item.type==="message"&&item.role==="assistant"){
+      if(!Array.isArray(item.content))throw new Error("task14b_invalid_inline_message");
+      const content=(item.content as unknown[]).map(rawPart=>{
+        if(!rawPart||typeof rawPart!=="object"||Array.isArray(rawPart))
+          throw new Error("task14b_invalid_inline_message");
+        const part=rawPart as Record<string,unknown>;
+        if(part.type!=="output_text"||typeof part.text!=="string")
+          throw new Error("task14b_invalid_inline_message");
+        return {type:"output_text",text:part.text,annotations:[]};
+      });
+      result.push({type:"message",role:"assistant",content});
+    }
+    // Never forward provider-stored reasoning, IDs or remote opaque context.
+  }
+  return result;
+}
 export type AgentProvider = (params: Record<string, unknown>, signal: AbortSignal) => AsyncIterable<Event>;
 export type AgentAuditStep = { kind: "model_call" | "tool_call" | "approval_card" | "memory"; toolName?: string;
   inputSummary?: string; outputSummary?: string; durationMs: number; error?: string };
@@ -257,7 +287,11 @@ export async function runAgentTurn(args: {
         if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
       }
       if (!completed) throw new Error("provider_incomplete");
-      input.push(...output);
+      const approvedLocalTask14b=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY" &&
+        process.env.APP_URL==="http://127.0.0.1:3000" &&
+        process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321" &&
+        Boolean(process.env.AICAFE_TASK14B_BUDGET_LEDGER);
+      input.push(...(approvedLocalTask14b?task14bInlineContinuation(output):output));
       // A tool-only response is not an answer. Keep those follow-ups unclaimed
       // until a completed text response can be persisted.
       if (!calls.length && text.length > callTextStart)
