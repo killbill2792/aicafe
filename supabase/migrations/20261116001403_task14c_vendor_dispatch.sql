@@ -101,9 +101,15 @@ create index purchase_order_channel_reports_recent on public.purchase_order_chan
 alter table public.purchase_order_channel_reports enable row level security;
 create policy "owner reads own channel reports" on public.purchase_order_channel_reports for select to authenticated
  using(owner_user_id=(select auth.uid()) and exists(select 1 from public.memberships m
+  join public.purchase_orders po on po.business_id=m.business_id
+   and po.id=purchase_order_channel_reports.purchase_order_id
+   and po.owner_user_id=m.user_id
   where m.business_id=purchase_order_channel_reports.business_id and m.user_id=(select auth.uid()) and m.role='owner'));
 create policy "owner adds own channel reports" on public.purchase_order_channel_reports for insert to authenticated
  with check(owner_user_id=(select auth.uid()) and exists(select 1 from public.memberships m
+  join public.purchase_orders po on po.business_id=m.business_id
+   and po.id=purchase_order_channel_reports.purchase_order_id
+   and po.owner_user_id=m.user_id
   where m.business_id=purchase_order_channel_reports.business_id and m.user_id=(select auth.uid()) and m.role='owner'));
 revoke all on public.purchase_order_channel_reports from public,anon,authenticated;
 grant select,insert on public.purchase_order_channel_reports to authenticated;
