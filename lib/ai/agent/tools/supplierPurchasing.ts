@@ -15,10 +15,11 @@ export const supplierPurchasingTools={
    if(!ctx.purchasing)return {source:"purchase_orders",period:null,agentId:"maya",
     missing:["purchasing_unavailable"],orders:[],drafts:[],draftsTruncated:false,
     unresolvedApprovals:[],unresolvedApprovalsTruncated:false,
-    vendorCommunications:[],gmailConnection:{connected:false,canSend:false,canRead:false}};
+    vendorCommunications:[],gmailConnection:{status:"unavailable",connected:false,canSend:false,canRead:false}};
    const result=await ctx.purchasing.list();
    return {source:"purchase_orders",period:null,agentId:"maya",
-    missing:[...(result.truncated?["purchase_order_history_truncated"]:[]),
+    missing:[...(result.gmailConnection?.status==="status_unavailable"?["gmail_status_unavailable"]:[]),
+      ...(result.truncated?["purchase_order_history_truncated"]:[]),
       ...(result.draftsTruncated?["supplier_po_draft_history_truncated"]:[]),
       ...(result.unresolvedApprovalsTruncated?["supplier_po_unresolved_history_truncated"]:[]),
       ...(result.unresolvedApprovals.length?["supplier_po_approval_unresolved"]:[])],
@@ -27,7 +28,7 @@ export const supplierPurchasingTools={
     unresolvedApprovals:result.unresolvedApprovals,
     unresolvedApprovalsTruncated:result.unresolvedApprovalsTruncated,
     vendorCommunications:result.vendorCommunications??[],
-    gmailConnection:result.gmailConnection??{connected:false,canSend:false,canRead:false}};
+    gmailConnection:result.gmailConnection??{status:"unavailable",connected:false,canSend:false,canRead:false}};
   }
  },
  inspect_supplier_purchase:{
