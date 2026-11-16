@@ -21,6 +21,7 @@ create table public.cafe_supplier_order_contacts(
  foreign key(business_id,supplier_id) references public.cafe_suppliers(business_id,id),
  check ((channel='gmail' and email is not null) or (channel<>'gmail' and email is null))
 );
+-- Reason: New owner-scoped supplier communication table requires row-level policies from creation.
 -- squawk-ignore ban-alter-row-level-security
 alter table public.cafe_supplier_order_contacts enable row level security;
 create policy "owner reads supplier ordering contacts" on public.cafe_supplier_order_contacts
@@ -71,6 +72,7 @@ create table public.purchase_order_dispatches(
  or (state='provider_accepted' and reserved_at is not null and provider_receipt_id is not null
   and provider_accepted_at is not null))
 );
+-- Reason: New owner-scoped supplier communication table requires row-level policies from creation.
 -- squawk-ignore ban-alter-row-level-security
 alter table public.purchase_order_dispatches enable row level security;
 create policy "owner reads supplier dispatches" on public.purchase_order_dispatches for select to authenticated
@@ -97,6 +99,7 @@ create table public.purchase_order_channel_reports(
 );
 create index purchase_order_channel_reports_recent on public.purchase_order_channel_reports
  (business_id,purchase_order_id,reported_at desc);
+-- Reason: New owner-scoped supplier communication table requires row-level policies from creation.
 -- squawk-ignore ban-alter-row-level-security
 alter table public.purchase_order_channel_reports enable row level security;
 create policy "owner reads own channel reports" on public.purchase_order_channel_reports for select to authenticated
