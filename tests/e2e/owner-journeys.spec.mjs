@@ -438,6 +438,66 @@ test("@purchasing real supplier quote entry preserves currency and denies cross-
 });
 
 
+test("@purchasing owner verifies a supplier phone/portal channel and a Gmail address without sending",async({browser})=>{
+  test.setTimeout(100_000);
+  const own=seededCafe(0),other=seededCafe(1);
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const supplierId=randomUUID(),supplier="Task14C Vendor "+supplierId.slice(0,8);
+  let connected=false;
+  const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const second=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  try{
+    await db.connect();connected=true;
+    await db.query("insert into public.cafe_suppliers(id,business_id,display_name) values($1,$2,$3)",
+      [supplierId,own.businessId,supplier]);
+    const page=await first.newPage();
+    await login(page,own);
+    await openOwnedPage(page,own,"operations/suppliers");
+    const panel=page.getByRole("heading",{name:"Supplier ordering contacts and updates"}).locator("..");
+    await expect(panel).toBeVisible();
+    await panel.getByLabel("Supplier",{exact:true}).selectOption(supplierId);
+    await panel.getByLabel("How you contact this supplier").first().selectOption("phone");
+    await panel.getByLabel("Contact name, portal or notes (optional)").fill(
+      "We normally call our account manager; no Gmail history is expected.");
+    const saved=page.waitForResponse(r=>new URL(r.url()).pathname==="/api/ai/suppliers/contacts"&&
+      r.request().method()==="POST");
+    await panel.getByRole("button",{name:"Verify contact"}).click();
+    const result=await saved;
+    expect(result.status()).toBe(201);
+    expect(await result.json()).toMatchObject({saved:true,source:"owner_verified",sendApproved:false});
+    const phone=await db.query("select channel,email,revoked_at from public.cafe_supplier_order_contacts"+
+      " where business_id=$1 and supplier_id=$2",[own.businessId,supplierId]);
+    expect(phone.rows).toMatchObject([{channel:"phone",email:null,revoked_at:null}]);
+    // The other café cannot read or change the target supplier.
+    const outsider=await second.newPage();
+    await login(outsider,other);
+    const wrongCafe=await second.request.post("/api/ai/suppliers/contacts",{
+      data:{action:"verify_contact",supplierId,channel:"gmail",
+        email:"attacker@example.com",details:null}});
+    expect(wrongCafe.status()).toBe(404);
+    const otherRead=await second.request.get("/api/ai/suppliers/contacts");
+    expect(otherRead.status()).toBe(200);
+    expect((await otherRead.json()).suppliers.some(s=>s.id===supplierId)).toBe(false);
+    // Explicit contact revocation blocks future sends; it does not create one.
+    const revoked=await first.request.post("/api/ai/suppliers/contacts",{
+      data:{action:"revoke_contact",supplierId}});
+    expect(revoked.status()).toBe(200);
+    const state=await db.query("select revoked_at from public.cafe_supplier_order_contacts"+
+      " where business_id=$1 and supplier_id=$2",[own.businessId,supplierId]);
+    expect(state.rows[0].revoked_at).not.toBeNull();
+  }finally{
+    await second.close();await first.close();
+    if(connected){
+      await db.query("delete from public.cafe_supplier_order_contacts where business_id=$1 and supplier_id=$2",
+        [own.businessId,supplierId]).catch(()=>{});
+      await db.query("delete from public.cafe_suppliers where business_id=$1 and id=$2",
+        [own.businessId,supplierId]).catch(()=>{});
+      await db.end();
+    }
+  }
+});
+
 test("@purchasing proactive notice → repeated cron idempotency → owner-approved PO → resolved forever",async({browser})=>{
   // This verifies the real owner/browser/database portion of the workflow.
   // Recorded model tests separately prove the multi-tool sequence; a sentinel
