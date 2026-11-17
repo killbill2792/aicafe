@@ -245,7 +245,7 @@ grant execute on function public.staff_coordination_decide(uuid,uuid,int,text)
 create function public.staff_coordination_assign_checklist(
  p_business_id uuid,p_case_id uuid,p_revision int,p_nonce uuid,
  p_title text,p_prompt text
-) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare v_case public.staff_coordination_cases%rowtype;
  v_old public.staff_coordination_evidence%rowtype; v_response jsonb;
  v_request_id uuid;
