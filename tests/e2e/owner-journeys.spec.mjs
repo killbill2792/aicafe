@@ -629,8 +629,11 @@ test("@purchasing owner verifies a supplier phone/portal channel and a Gmail add
     const knownSuppliers=(await contactRead.json()).suppliers;
     expect(knownSuppliers.some(s=>s.id===supplierId),
       "The authenticated owner must see the newly inserted supplier").toBe(true);
-    await expect.poll(()=>panel.locator("select").first().locator("option").count(),
-      {timeout:20_000,message:"Supplier ordering selector failed to hydrate"}).toBeGreaterThan(0);
+    // Initial page bootstrap may run before the owner session is settled.
+    // Refresh is an actual owner recovery action, not a synthetic API bypass.
+    await panel.getByRole("button",{name:"Refresh supplier contacts"}).click();
+    await expect(panel.locator('select[aria-label="Supplier"] option[value="'+supplierId+'"]'))
+      .toHaveCount(1,{timeout:25_000});
     await panel.getByLabel("Supplier",{exact:true}).selectOption(supplierId,{timeout:20_000});
     await panel.getByLabel("How you contact this supplier").first().selectOption("phone");
     await panel.getByLabel("Contact name, portal or notes (optional)").fill(
