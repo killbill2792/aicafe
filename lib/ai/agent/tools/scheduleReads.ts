@@ -62,7 +62,7 @@ export const scheduleReadTools={
   execute:async(_raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const messages=ctx.staffMessages?await ctx.staffMessages.read():await readOwnerStaffMessages(40);
    return {source:"staff_communication_messages+staff_communication_requests",period:null,
-    agentId:"olivia",missing:[],messages:messages.map(m=>({
+    agentId:"olivia",missing:[],messages:messages.filter(m=>m.actor==="employee").map(m=>({
      id:m.id,employeeId:m.employee_id,employeeName:m.employee_name,
      requestId:m.request_id,requestTitle:m.request_title,
      requestStatus:m.request_status,reply:m.response_code,
