@@ -8,6 +8,7 @@ vi.mock("@/lib/scheduling/staffScope.server",()=>({
 }));
 import {getTeam,getShiftCost,getWeekSchedule} from "@/lib/actions/schedule";
 import {scheduleReadTools,localizedToastScheduleReadError} from "./scheduleReads";
+import {executeAgentTool} from "./index";
 import {aggregateCosts,shiftCost} from "@/lib/calc/scheduling/shiftCost";
 import {reconcileStaffCalendar} from "@/lib/calc/scheduling/calendarEntries";
 import {formatInTimeZone} from "date-fns-tz";
@@ -263,6 +264,32 @@ describe("overnight shift explanations",()=>{
 
 
 describe("shared staff communication evidence on the single Supervisor",()=>{
+ it("executes the actually registered get_staff_messages tool with independently corroboratable evidence",async()=>{
+   const read=vi.fn().mockResolvedValue([{
+     id:"verified-decline",actor:"employee",employee_id:"worker-1",
+     employee_name:"Ava",request_id:"confirmed-request",
+     request_title:"Confirm shift",request_status:"responded",
+     response_code:"decline",body:"Cannot start at seven",
+     channel:"web",received_at:"2026-11-17T10:00:00Z"
+   }]);
+   const ctx={staffMessages:{read}} as unknown as AgentToolContext;
+   const result=await executeAgentTool("get_staff_messages",{},ctx);
+   expect(read).toHaveBeenCalledOnce();
+   expect(result).toMatchObject({
+     source:"staff_communication_messages+staff_communication_requests",
+     missing:[],
+     messages:[{id:"verified-decline",reply:"decline",employeeId:"worker-1",
+       text:"Cannot start at seven",verifiedAs:"saved_employee_submission",
+       coverageApplied:false}],
+   });
+   expect((result.messages as unknown[])).toHaveLength(1);
+ });
+ it("fails closed if the real registered staff reader denies owner/cafe scope",async()=>{
+   const read=vi.fn().mockRejectedValue(new Error("unauthorized"));
+   const ctx={staffMessages:{read}} as unknown as AgentToolContext;
+   await expect(executeAgentTool("get_staff_messages",{},ctx)).rejects.toThrow("unauthorized");
+   expect(read).toHaveBeenCalledOnce();
+ });
  it("reads verified employee text from a server-bound port without owner cookies or model-supplied employee IDs",async()=>{
    const read=vi.fn().mockResolvedValue([
     {id:"staff-event-1",actor:"employee",employee_id:"employee-1",
