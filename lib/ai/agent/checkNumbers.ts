@@ -215,9 +215,14 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
     }
     // A failed schedule read is not an empty observed schedule. Clear an
     // existing window only if a successful reader explicitly returned shifts.
-    if(r.source==="recurring_schedule"&&Array.isArray(r.shifts)&&r.period?.from&&r.period?.to)
+    if((r.source==="recurring_schedule"||r.source==="scheduled_shifts"||
+        r.source==="employees+scheduled_shifts")&&Array.isArray(r.shifts)&&
+        r.period?.from&&r.period?.to)
       timeScope={kind:"schedule",from:r.period.from,to:r.period.to,
-        exhaustive:!r.missing.includes("scheduleResultTruncated")};
+        exhaustive:r.source==="recurring_schedule"?
+          !r.missing.includes("scheduleResultTruncated"):
+          r.source==="scheduled_shifts"&&
+          !r.missing.some(m=>["moreShifts","toastScheduleReadFailed"].includes(m))};
     const prices:MenuPrice[]=[];
     const invalidatedPriceIds:string[]=[];
     const priceUpdates:Array<{id:string;priceCents:number}>=[];
@@ -545,7 +550,7 @@ const DAY_MENTIONS = [
 type TimeRole = "open"|"close"|"shiftStart"|"shiftEnd";
 type ClockSpan = RegExpMatchArray & {index:number};
 type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;person:string|null;
-  validFrom?:string;validTo?:string};
+  validFrom?:string;validTo?:string;dated?:boolean};
 const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
 // The clock token includes the meridiem: dropping Arabic "مساءً" silently
 // turns a 5 PM closing claim into the wrong 05:00 morning assertion.
@@ -750,7 +755,38 @@ function observedHours(results:readonly AgentToolResult[]):VerifiedTime[] {
 }
 function observedShifts(results:readonly AgentToolResult[]):VerifiedTime[] {
   const known:VerifiedTime[]=[];
+  const clock=/^(?:[01]\\d|2[0-3]):[0-5]\\d$/u;
+  const calendar=/^\\d{4}-\\d{2}-\\d{2}$/u;
   for(const r of results){
+    // Dated, committed schedules use a different *typed* projection from
+    // recurring_schedule. Never promote the employee's free-text proposal,
+    // draft shifts, arbitrary source labels or a stale/failed reader into
+    // evidence of a real roster clock.
+    if((r.source==="scheduled_shifts"||r.source==="employees+scheduled_shifts")&&
+      Array.isArray(r.shifts)){
+      for(const raw of r.shifts){
+        if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
+        const shift=raw as Record<string,unknown>;
+        if(shift.source!=="app"&&shift.source!=="toast")continue;
+        if(typeof shift.id!=="string"||!shift.id||
+           typeof shift.date!=="string"||!calendar.test(shift.date))continue;
+        const parsed=new Date(shift.date+"T12:00:00Z");
+        if(Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==shift.date)continue;
+        if(!r.period||shift.date<r.period.from||shift.date>r.period.to)continue;
+        const day=DAY_MENTIONS[parsed.getUTCDay()]?.key;
+        if(!day)continue;
+        const person=typeof shift.employeeName==="string"&&
+          shift.employeeName.trim()&&shift.employeeName!=="Team member"?
+          shift.employeeName.trim().toLocaleLowerCase():null;
+        for(const [field,role] of [["start","shiftStart"],["end","shiftEnd"]] as const){
+          const time=shift[field];
+          if(typeof time==="string"&&clock.test(time))
+            known.push({day,time,role,complete:false,person,
+              validFrom:shift.date,validTo:shift.date,dated:true});
+        }
+      }
+      continue;
+    }
     if(r.source!=="recurring_schedule"||!Array.isArray(r.shifts))continue;
     for(const shift of r.shifts){
       if(!shift||typeof shift!=="object")continue;
@@ -1160,6 +1196,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         const person=role.startsWith("shift")?assertedShiftPerson(text,clock):{kind:"general" as const};
         const verified=dateAgrees&&person.kind!=="unresolved"&&(days.length?days:[null]).every(day=>observed.some(h=>
           h.time===canonical&&h.role===role&&(day===null?h.complete:h.day===day)&&
+          (!h.dated||(typeof claimedDate==="string"&&claimedDate===h.validFrom))&&
           (!claimedDate||h.day===calendarDay)&&
           (!claimedDate||(!h.validFrom||claimedDate>=h.validFrom)&&(!h.validTo||claimedDate<=h.validTo))&&
           (person.kind==="general"||(person.kind==="named"&&h.person===person.name))));
