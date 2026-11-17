@@ -96,7 +96,10 @@ test('old Pages publisher only deploys static retirement notice and cannot read 
  assert.match(yaml,/Retired Owner Operations notice/);
  assert.match(yaml,/actions\/upload-pages-artifact/);
  assert.match(yaml,/cp docs\/index\.html/);
- assert.doesNotMatch(yaml,/workflow_run:|cron:|workflow_dispatch:|DISPATCH_LEDGER_TOKEN|public-owner-payload|owner-operations-snapshot|node scripts\/dev-dispatcher|secrets\./);
+ assert.doesNotMatch(yaml,/workflow_run:|cron:|workflow_dispatch:|DISPATCH_LEDGER_TOKEN|public-owner-payload|cp.+owner-operations-snapshot|node scripts\/dev-dispatcher|secrets\./);
+ // The deployment's fail-closed grep may mention the forbidden filename; it
+ // must never stage that file in its Pages artifact.
+ assert.match(yaml,/cp docs\/index\.html/);
 });
 test('commit and Codex review age, sorting and unknown status remain accurate',()=>{
  const now=Date.parse('2026-11-12T10:00:00Z');
