@@ -121,7 +121,7 @@ grant all on public.purchase_order_channel_reports to service_role;
 -- Lock BEFORE insert, not in the AFTER-close trigger: a report must not commit
 -- between a notice writer's terminal-state check and the notice insert.
 create function public.supervisor_lock_vendor_order_on_report()
- returns trigger language plpgsql security definer set search_path=public as $
+ returns trigger language plpgsql security definer set search_path=public as $task14c_report$
 begin
  perform 1 from public.purchase_orders po where po.business_id=new.business_id
    and po.id=new.purchase_order_id and po.owner_user_id=new.owner_user_id
@@ -129,7 +129,7 @@ begin
  if not found then raise exception 'supplier_report_owner_po_missing'
    using errcode='42501';end if;
  return new;
-end $;
+end $task14c_report$;
 create trigger supplier_report_lock_parent_po
  before insert on public.purchase_order_channel_reports
  for each row execute function public.supervisor_lock_vendor_order_on_report();
