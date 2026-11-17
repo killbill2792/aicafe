@@ -4214,6 +4214,7 @@
     "title": "Supplier ordering contacts and updates",
     "intro": "If the supplier does not use Gmail, tell Supervisor how you actually contact them. This does not send an order.",
     "supplier": "Supplier",
+    "refresh": "Refresh supplier contacts",
     "channel": "How you contact this supplier",
     "gmail": "Gmail",
     "phone": "Phone",
