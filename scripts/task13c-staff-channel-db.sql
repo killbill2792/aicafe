@@ -183,6 +183,30 @@ BEGIN
  EXCEPTION WHEN OTHERS THEN denied:=true; END;
  IF NOT denied THEN RAISE EXCEPTION 'owner nonce replay silently changed message'; END IF;
 END $test$;
+-- The same channel supports later PRs' owner-issued checklists and tasks.
+SELECT gen_random_uuid() AS owner_assign_nonce \gset
+SELECT public.staff_channel_owner_assign(:'staff_a','checklist',
+ 'Check opening equipment','Inspect grinder and log any problems',:'owner_assign_nonce')->>'id'
+ AS owner_assign_id \gset
+SELECT set_config('test.task13c.owner_assign_nonce',:'owner_assign_nonce',true);
+SELECT set_config('test.task13c.owner_assign_id',:'owner_assign_id',true);
+DO $test$
+DECLARE receipt jsonb; denied boolean:=false;
+BEGIN
+ receipt:=public.staff_channel_owner_assign(
+  current_setting('test.task13c.staff_a')::uuid,'checklist',
+  'Check opening equipment','Inspect grinder and log any problems',
+  current_setting('test.task13c.owner_assign_nonce')::uuid);
+ IF receipt->>'replayed'<>'true' or receipt->>'id'<>
+   current_setting('test.task13c.owner_assign_id') THEN
+   RAISE EXCEPTION 'repeat owner assignment duplicated work'; END IF;
+ BEGIN PERFORM public.staff_channel_owner_assign(
+  current_setting('test.task13c.staff_a')::uuid,'task',
+  'Different title','Different work',
+  current_setting('test.task13c.owner_assign_nonce')::uuid);
+ EXCEPTION WHEN OTHERS THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'assignment nonce changed worker task'; END IF;
+END $test$;
 SELECT set_config('request.jwt.claim.sub',:'owner_b',true);
 DO $test$
 DECLARE denied boolean:=false;
@@ -206,6 +230,13 @@ BEGIN
   'Staff cannot impersonate owner',gen_random_uuid());
  EXCEPTION WHEN OTHERS THEN denied:=true; END;
  IF NOT denied THEN RAISE EXCEPTION 'staff could send messages as an owner'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.staff_communication_requests
+   WHERE id=current_setting('test.task13c.owner_assign_id')::uuid
+    AND kind='checklist' AND title='Check opening equipment')
+ THEN RAISE EXCEPTION 'employee cannot see their owner-issued checklist'; END IF;
+ IF public.staff_channel_submit(current_setting('test.task13c.owner_assign_id')::uuid,
+     'complete','Grinder inspected, everything looks okay',gen_random_uuid())->>'id' IS NULL
+ THEN RAISE EXCEPTION 'owner-issued checklist did not accept worker text'; END IF;
 END $test$;
 SELECT set_config('request.jwt.claim.sub',:'staff_user_b',true);
 DO $test$
@@ -213,6 +244,9 @@ BEGIN
  IF EXISTS(SELECT 1 FROM public.staff_communication_messages
   WHERE id=current_setting('test.task13c.owner_message')::uuid)
  THEN RAISE EXCEPTION 'another cafe staff saw private owner reply'; END IF;
+ IF EXISTS(SELECT 1 FROM public.staff_communication_requests
+   WHERE id=current_setting('test.task13c.owner_assign_id')::uuid)
+ THEN RAISE EXCEPTION 'foreign worker saw private task'; END IF;
 END $test$;
 
 -- Changed source must invalidate the old shift request, while exact retry
