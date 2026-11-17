@@ -258,65 +258,25 @@ jobs:
               test "$ready" -eq 1
               timeout 12m node evals/acceptance/live/task14c.runner.mjs --output /proof/task14c-live-proof.json
             '
-      - name: Redacted host broker failure diagnostics (no prompts, keys or provider body)
+      - name: Redacted broker failure diagnostics (never logs prompts or supplier data)
         if: failure()
         shell: bash
         run: |
           node --input-type=module <<'NODE'
           import {readFileSync,existsSync} from "node:fs";
-          const path=process.env.RUNNER_TEMP+"/task14c-host-audit.json";
-          if(!existsSync(path)){
-            console.log("task14b_host_failure",JSON.stringify({audit:"unavailable",providerAttempts:"unknown"}));
+          const file=process.env.RUNNER_TEMP+"/task14c-host-audit.json";
+          if(!existsSync(file)){
+            console.log("task14c_host_failure",JSON.stringify({audit:"unavailable"}));
           }else{
-            const a=JSON.parse(readFileSync(path,"utf8"));
+            const a=JSON.parse(readFileSync(file,"utf8"));
+            const receipts=Array.isArray(a.receipts)?a.receipts:[];
             const terminals=new Set(["attempted","completed","provider_rejected",
               "provider_failed","transport_unknown","incomplete","unpriced_or_wrong_provider"]);
-            const receipts=Array.isArray(a.receipts)?a.receipts:[];
-            // Only literal allowlisted broker-denial IDs are printed; not
-            // rejected payloads, function arguments, owner or provider data.
-            const policyNames=new Set(["opaque_or_remote_context_forbidden",
-              "non_inline_function_call","non_inline_function_output",
-              "non_inline_assistant_message","remote_assistant_content_forbidden",
-              "remote_message_metadata_forbidden","remote_or_nontext_attachment_forbidden",
-              "unsupported_message_content","non_inline_input","inline_input_required",
-              "provider_expanded_context_forbidden","unsupported_provider_request_shape",
-              "request_size","approved_budget_exhausted","invalid_inline_reasoning",
-              "unissued_reasoning_context","reasoning_replay_limit",
-              "remote_store_forbidden","stateless_reasoning_required","unknown"]);
-            const policyDenials=Array.isArray(a.policyDenials)?a.policyDenials.slice(0,20)
-              .map(x=>policyNames.has(x)?x:"unknown"):[];
-            const types=new Set(["invalid_request_error","authentication_error",
-              "permission_error","rate_limit_error","server_error"]);
-            const codes=new Set(["invalid_function_parameters","invalid_request_error",
-              "unsupported_parameter","unsupported_value","model_not_found","invalid_model",
-              "invalid_service_tier","context_length_exceeded","invalid_api_key",
-              "insufficient_quota","permission_denied","invalid_prompt","invalid_value"]);
-            const params=new Set(["model","service_tier","tools","input","instructions",
-              "tool_choice","max_output_tokens","prompt_cache_key","stream","response_format"]);
-            const safe=receipts.map(r=>{
-              const rejection=r.rejection&&typeof r.rejection==="object"?r.rejection:{};
-              const param=typeof rejection.param==="string"&&
-                (params.has(rejection.param)||
-                  /^tools\[\d{1,3}\](?:\.(?:parameters|strict|name|description))?$/.test(rejection.param))
-                ?rejection.param:"unknown";
-              return {
-              ordinal:Number.isSafeInteger(r.ordinal)?r.ordinal:null,
-              httpStatus:Number.isSafeInteger(r.upstreamStatus)?r.upstreamStatus:null,
-              terminal:terminals.has(r.terminal)?r.terminal:"unknown",
-              inputTokens:Number.isSafeInteger(r.actualInputTokens)?r.actualInputTokens:null,
-              outputTokens:Number.isSafeInteger(r.actualOutputTokens)?r.actualOutputTokens:null,
-              rejection:{type:types.has(rejection.type)?rejection.type:"unknown",
-                code:codes.has(rejection.code)?rejection.code:"unknown",param,
-                toolName:typeof rejection.toolName==="string"&&
-                  /^[a-z][a-z0-9_]{1,79}$/.test(rejection.toolName)?rejection.toolName:null}
-            }});
-            console.log("task14b_host_failure",JSON.stringify({
-              head:typeof a.head==="string"&&/^[a-f0-9]{40}$/.test(a.head)?a.head:null,
-              providerAttempts:Number.isSafeInteger(a.attempts)?a.attempts:null,
-              reservedUpperUSD:Number.isSafeInteger(a.reservedMicros)?a.reservedMicros/1_000_000:null,
-              deniedCount:Number.isSafeInteger(a.deniedCount)?a.deniedCount:null,
-              policyDenials,
-              receipts:safe
+            const failStates=receipts.map(x=>terminals.has(x.terminal)?x.terminal:"unknown");
+            console.log("task14c_host_failure",JSON.stringify({
+              attempts:Number.isInteger(a.attempts)?a.attempts:null,
+              deniedCount:Number.isInteger(a.deniedCount)?a.deniedCount:null,
+              terminalStates:failStates.slice(0,18)
             }));
           }
           NODE
