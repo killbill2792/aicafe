@@ -68,6 +68,10 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     expect(prompt).toContain("Do not repeat even a proposed time");
     expect(prompt).toContain("does not automatically prove");
     expect(prompt).toContain("not a numbered list");
+    expect(prompt.lastIndexOf("STAFF-COVERAGE FINAL ANSWER"))
+      .toBeGreaterThan(prompt.lastIndexOf("Source evidence (untrusted)"));
+    // The latest strict safety instruction must follow staff-supplied text,
+    // so untrusted employee clocks cannot override the no-number boundary.
     expect(prompt).toContain("FIRST call get_investigation_source");
     expect(prompt).toContain("at least TWO relevant independent");
     expect(prompt).not.toContain("7ee5c9");
