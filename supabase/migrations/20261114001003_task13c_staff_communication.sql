@@ -336,6 +336,46 @@ end $;
 revoke all on function public.staff_channel_owner_send(uuid,text,uuid) from public,anon;
 grant execute on function public.staff_channel_owner_send(uuid,text,uuid) to authenticated;
 
+-- Future owner checklist/task PRs share the SAME employee action channel.
+-- Only manually owner-approved, in-app assignments are exposed by this RPC;
+-- schedule changes and coverage offers remain gated by their own sources.
+create unique index staff_communication_owner_request_nonce
+ on public.staff_communication_requests(business_id,employee_id,source_id)
+ where source_type='owner_manual';
+create function public.staff_channel_owner_assign(
+ p_employee_id uuid,p_kind text,p_title text,p_prompt text,p_nonce uuid
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
+declare emp public.employees%rowtype; assignment public.staff_communication_requests%rowtype;
+ v_title text;v_prompt text;
+begin
+ select * into emp from public.employees where id=p_employee_id for share;
+ if not found or not emp.active or emp.staff_auth_user_id is null or
+  not public.scheduling_is_owner(emp.business_id) then
+   raise exception 'owner_target_required' using errcode='42501'; end if;
+ v_title:=nullif(btrim(coalesce(p_title,'')),'');
+ v_prompt:=nullif(btrim(coalesce(p_prompt,'')),'');
+ if p_nonce is null or p_kind not in ('checklist','task') or
+    v_title is null or char_length(v_title)>200 or
+    v_prompt is null or char_length(v_prompt)>2000 then
+    raise exception 'invalid_assignment' using errcode='22023'; end if;
+ select * into assignment from public.staff_communication_requests r
+  where r.business_id=emp.business_id and r.employee_id=emp.id
+   and r.source_type='owner_manual' and r.source_id=p_nonce::text for update;
+ if found then
+   if assignment.kind<>p_kind or assignment.title<>v_title or
+      assignment.prompt<>v_prompt then
+    raise exception 'assignment_nonce_conflict' using errcode='40900'; end if;
+   return jsonb_build_object('id',assignment.id,'replayed',true);
+ end if;
+ insert into public.staff_communication_requests
+  (business_id,employee_id,kind,source_type,source_id,source_revision,title,prompt)
+ values (emp.business_id,emp.id,p_kind,'owner_manual',p_nonce::text,'v1',v_title,v_prompt)
+ returning * into assignment;
+ return jsonb_build_object('id',assignment.id,'replayed',false);
+end $;
+revoke all on function public.staff_channel_owner_assign(uuid,text,text,text,uuid) from public,anon;
+grant execute on function public.staff_channel_owner_assign(uuid,text,text,text,uuid) to authenticated;
+
 -- Every *new* staff response produces one canonical owner inbox receipt in the
 -- SAME transaction. Staff text remains data, not an instruction or approval.
 create function public.staff_channel_notice() returns trigger
