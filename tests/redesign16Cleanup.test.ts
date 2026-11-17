@@ -70,6 +70,7 @@ const approvedTask14cEnglishOnly: Record<string, readonly string[]> = {
     "title",
     "intro",
     "supplier",
+    "refresh",
     "channel",
     "gmail",
     "phone",
