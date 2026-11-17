@@ -145,6 +145,27 @@ test('Muse direct PR monitor is private and works without legacy ledger',async()
   assert.equal((await r.json()).prs[0].number,488);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
+test('Muse can inspect pending suggestions locally without GitHub ledger writes',async()=>{
+ const handler=ownerDashboardHandler({ownerPassword:password,
+  musePassword:'muse-only-password',readState:async()=>{throw Error('Offline');},
+  editState:async()=>{throw Error('not called');},
+  readActions:async()=>({version:1,events:{
+   localEvent:{kind:'continue_chat',pr_number:488,created_at:'2026-11-16T20:00:00Z',
+    status:'suggested_unverified',chat_url:'https://chatgpt.com/c/1234'}
+  }})});
+ const server=http.createServer((req,res)=>handler(req,res));
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try{
+  const url='http://127.0.0.1:'+server.address().port;
+  assert.equal((await fetch(url+'/api/muse-actions')).status,401);
+  const response=await fetch(url+'/api/muse-actions',{headers:{
+   Authorization:auth('muse','muse-only-password')}});
+  assert.equal(response.status,200);
+  const body=await response.json();
+  assert.equal(body.events.length,1);
+  assert.equal(body.events[0].kind,'continue_chat');
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});
 test('private dashboard script remains syntactically valid after adding Muse fields',()=>{
  const html=readFileSync(new URL('./owner-dashboard-v3.html',import.meta.url),'utf8');
  const script=html.match(/<script>([\s\S]*?)<\/script>/);
