@@ -1,12 +1,10 @@
-# Trusted-main owner-only paid acceptance. Never execute candidate code with
-# OPENAI_API_KEYS or a write-capable GitHub token. No Vercel previews/hosted DB.
+# Trusted-main owner-gated paid acceptance; never pass provider keys/tokens to candidate.
 name: AI CAFE Task 14C Bounded Real-Model Acceptance
 on:
   pull_request:
     paths: ['.github/workflows/ai-cafe-14c-owner-live.yml', 'scripts/acceptance/task14c-*']
   pull_request_target:
     types: [edited]
-# A second edit/run cannot race another paid run.
 concurrency:
   group: aicafe-task14c-paid-pr502
   cancel-in-progress: false
@@ -249,6 +247,7 @@ jobs:
             -v "$GITHUB_WORKSPACE/candidate:/candidate" \
             -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/task14b-fetch-shim.cjs:/trusted/task14b-fetch-shim.cjs:ro" \
             -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/task14c-gmail-simulator.cjs:/trusted/task14c-gmail-simulator.cjs:ro" \
+            -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/task14c-live.mjs:/trusted/task14c-live.mjs:ro" \
             -v "$RUNNER_TEMP/task14c-candidate-proof:/proof" \
             -w /candidate \
             -e NODE_OPTIONS='--require=/trusted/task14b-fetch-shim.cjs --require=/trusted/task14c-gmail-simulator.cjs' \
@@ -271,6 +270,7 @@ jobs:
                 sleep 2
               done
               test "$ready" -eq 1
+              cp /trusted/task14c-live.mjs evals/acceptance/live/task14c.runner.mjs
               timeout 12m node evals/acceptance/live/task14c.runner.mjs --output /proof/task14c-live-proof.json
             '
       - name: Redacted broker failure diagnostics (never logs prompts or supplier data)
