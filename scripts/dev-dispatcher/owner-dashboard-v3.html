@@ -62,7 +62,7 @@ section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
 <script>
 const el=id=>document.getElementById(id),esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const age=t=>{let n=Math.floor((Date.now()-Date.parse(t))/60000);return Number.isFinite(n)?Math.max(0,n)+'m ago':'unknown';};
-let snapshot=null,localNotes={version:1,entries:{}};
+let snapshot=null,localNotes={version:1,entries:{}},editingMuse={task_id:null,revision:0};
 async function refreshMusePrs(){
  const response=await fetch('/api/muse-status',{cache:'no-store'});
  if(!response.ok)throw Error('Monitor HTTP '+response.status);
@@ -95,6 +95,9 @@ async function refreshNotes(){
  const response=await fetch('/api/notes',{cache:'no-store'});
  if(!response.ok)throw Error('Notes HTTP '+response.status);
  localNotes=await response.json();
+ if(editingMuse.task_id===el('muse-task').value.trim()&&
+  (localNotes.entries?.[editingMuse.task_id]?.revision??0)!==editingMuse.revision)
+  el('muse-saved').textContent='Changed elsewhere. Reload this task before saving.';
  el('muse-notes-list').innerHTML=Object.values(localNotes.entries||{}).sort((a,b)=>
   a.task_id.localeCompare(b.task_id)).map(e=>
   '<button type="button" data-muse-task="'+esc(e.task_id)+'">'+esc(e.task_id)+
@@ -105,6 +108,7 @@ async function refreshNotes(){
 }
 function selectMuseNote(id){
  const e=localNotes.entries?.[id];
+ editingMuse={task_id:id,revision:e?.revision??0};
  el('muse-task').value=id;
  el('muse-pr').value=e?.pr_number||'';
  el('muse-chat').value=e?.chat_url||'';
@@ -146,18 +150,19 @@ function detail(id){
 el('search').oninput=()=>snapshot&&redraw();
 el('refresh').onclick=()=>{refresh().catch(e=>alert(e.message));refreshNotes().catch(e=>el('muse-saved').textContent=e.message);refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);refreshMuseActions().catch(e=>el('muse-actions').textContent='Actions unavailable: '+e.message);};
 el('muse-save').onclick=async()=>{
- const task_id=el('muse-task').value.trim(),prior=localNotes.entries?.[task_id];
+ const task_id=el('muse-task').value.trim();
  const prRaw=el('muse-pr').value.trim();
  const edit={task_id,pr_number:prRaw?Number(prRaw):null,
   chat_url:el('muse-chat').value.trim(),stage:el('muse-stage').value,
-  note:el('muse-note').value,expected_revision:prior?.revision||0};
+  note:el('muse-note').value,expected_revision:
+   editingMuse.task_id===task_id?editingMuse.revision:0};
  el('muse-saved').textContent='Saving locally…';
  try{
   const r=await fetch('/api/notes',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify(edit)});
   if(!r.ok)throw Error((await r.json()).error||'HTTP '+r.status);
+  await refreshNotes();selectMuseNote(task_id);
   el('muse-saved').textContent='Saved on Muse host';
-  await refreshNotes();
  }catch(e){el('muse-saved').textContent='Not saved: '+e.message;}
 };
 el('save').onclick=async()=>{
