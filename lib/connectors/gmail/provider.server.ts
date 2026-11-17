@@ -286,6 +286,9 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     if(live?.status!=="active"||live.id!==account.id||live.generation!==account.generation)
       throw new Error(effect.operation==="send"?
         "gmail_connection_revoked_before_send":"gmail_connection_revoked_before_effect");
+    // Permission can be withdrawn without changing the account generation.
+    // Recheck the exact operation immediately before irreversible transport.
+    assertGmailCapability(live,required);
   };
   let response:{id?:string;threadId?:string};
   let referenceId:string|null=null;

@@ -116,6 +116,15 @@ describe("Gmail provider proof and no duplicate sends",()=>{
    expect(writes.map(x=>x.operation)).toEqual(["insert"]);
    expect(fetch).not.toHaveBeenCalled();
  });
+ it("prevents send if permission was revoked after the initial authorized read",async()=>{
+  db();
+  deps.getAccount.mockResolvedValueOnce(account)
+    .mockResolvedValueOnce({...account,enabled_operations:["read"]});
+  const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+  await expect(performGmailEffect(scope,effect,proposal,effectHash))
+    .rejects.toThrow();
+  expect(fetch).not.toHaveBeenCalled();
+ });
  it("prevents send if account was revoked after credentials were loaded",async()=>{
    db();deps.getAccount.mockResolvedValueOnce(account)
      .mockResolvedValueOnce({...account,status:"revoking",generation:2});
