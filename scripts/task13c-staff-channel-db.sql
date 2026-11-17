@@ -295,5 +295,28 @@ BEGIN
  IF NOT denied THEN RAISE EXCEPTION 'inactive worker submitted after revocation'; END IF;
 END $test$;
 
+-- The owner can revoke a linked login after deactivating the worker, but
+-- cannot reactivate that login link while the worker remains inactive.
+SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
+DO $test$
+DECLARE res jsonb; denied boolean:=false;
+BEGIN
+ res:=public.staff_link_existing_login(
+  current_setting('test.task13c.biz_a')::uuid,
+  current_setting('test.task13c.staff_a')::uuid,NULL);
+ IF res->>'linked'<>'false' or exists(
+  select 1 from public.employees e
+  where e.id=current_setting('test.task13c.staff_a')::uuid
+    and e.staff_auth_user_id is not null)
+ THEN RAISE EXCEPTION 'owner failed to disconnect disabled worker'; END IF;
+ BEGIN
+  PERFORM public.staff_link_existing_login(
+   current_setting('test.task13c.biz_a')::uuid,
+   current_setting('test.task13c.staff_a')::uuid,
+   '13c-worker-a@example.invalid');
+ EXCEPTION WHEN OTHERS THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'disabled employee was relinked'; END IF;
+END $test$;
+
 SELECT 'task13c employee isolation, free-text, dedupe, owner notice, stale revision PASS' AS proof;
 ROLLBACK;
