@@ -115,7 +115,7 @@ test('already-main child requests update without a second retarget; conflicts su
   assert.match(run,/updateChildAfterParentMerge/);
   assert.match(run,/main branch update will retry/);
   assert.doesNotMatch(run,/process\.env\.DISPATCH_BRANCH_MAINTENANCE/);
-  assert.doesNotMatch(workflow,/DISPATCH_BRANCH_MAINTENANCE/);
+  assert.doesNotMatch(workflow,/DISPATCH_BRANCH_MAINTENANCE|DISPATCH_LEDGER_TOKEN|GITHUB_TOKEN|reconcile:|wake:/);
 });
 
 test('all delivery steps stay under 2 KB and planning links concise Superpowers flow',()=>{
