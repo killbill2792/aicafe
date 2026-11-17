@@ -79,6 +79,11 @@ export default function SupplierVendorCommunicationManager(){
  return <section className="rounded-2xl bg-card p-4">
   <h2 className="font-headline text-2xl font-bold text-ink">{copy.title}</h2>
   <p className="mt-2 text-[17px] text-ink-muted">{copy.intro}</p>
+  <button type="button" disabled={busy}
+   className="mt-2 min-h-12 rounded-full border border-line px-5 text-ink disabled:opacity-50"
+   onClick={()=>void load().then(()=>setMessage("")).catch(()=>setMessage(copy.error))}>
+   {copy.refresh}
+  </button>
   <form className="mt-4 grid gap-3" onSubmit={verify}>
    <label className="text-[17px] font-semibold text-ink">{copy.supplier}
     <select aria-label={copy.supplier} className={field} value={supplierId}
