@@ -99,6 +99,49 @@ BEGIN
  EXCEPTION WHEN insufficient_privilege THEN denied:=true; END;
  IF NOT denied THEN RAISE EXCEPTION 'manager bypassed owner-only link RPC'; END IF;
 END $test$;
+-- An authenticated manager must NOT bypass the link RPC by creating a NEW
+-- employee already bound to the manager's or the café owner's login. These
+-- negative cases exercise real member INSERT and demand the trigger's error,
+-- not a fortuitous RLS denial or foreign-key failure.
+DO $test$
+DECLARE blocked boolean; linked_user uuid;
+BEGIN
+ FOREACH linked_user IN ARRAY ARRAY[
+   current_setting('test.task13c.manager_a')::uuid,
+   current_setting('test.task13c.owner_a')::uuid
+ ] LOOP
+  blocked:=false;
+  BEGIN
+   INSERT INTO public.employees(id,business_id,display_name,active,
+     wage_period,wage_amount_cents,staff_auth_user_id)
+   VALUES(gen_random_uuid(),current_setting('test.task13c.biz_a')::uuid,
+     '13c Injected Linked Worker',true,'hour',1800,linked_user);
+  EXCEPTION WHEN insufficient_privilege THEN
+   IF SQLERRM<>'staff_link_rpc_required' THEN RAISE; END IF;
+   blocked:=true;
+  END;
+  IF NOT blocked THEN
+   RAISE EXCEPTION 'manager inserted an employee linked to a management login';
+  END IF;
+ END LOOP;
+ IF EXISTS(SELECT 1 FROM public.employees
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid
+     AND display_name='13c Injected Linked Worker') THEN
+  RAISE EXCEPTION 'identity injection left a linked employee behind';
+ END IF;
+ -- The protection is column-specific: managers may still insert a normal
+ -- unlinked employee through their pre-existing members write policy.
+ INSERT INTO public.employees(id,business_id,display_name,active,
+   wage_period,wage_amount_cents,staff_auth_user_id)
+ VALUES(gen_random_uuid(),current_setting('test.task13c.biz_a')::uuid,
+   '13c Manager Unlinked Worker',true,'hour',1800,NULL);
+ IF NOT EXISTS(SELECT 1 FROM public.employees
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid
+     AND display_name='13c Manager Unlinked Worker'
+     AND staff_auth_user_id IS NULL) THEN
+  RAISE EXCEPTION 'identity trigger blocked ordinary employee creation';
+ END IF;
+END $test$;
 SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
 DO $test$
 DECLARE denied boolean:=false;
