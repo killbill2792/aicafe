@@ -235,16 +235,19 @@ begin
  end loop;
  for v_case in select * from public.staff_coordination_cases
    where business_id=p_business_id and case_kind='leave'
-     and state in ('approved','in_progress','waiting_evidence')
+     and state in ('approved','in_progress','waiting_evidence','completed')
      and decision='approve'
-     and next_check_at<=now() for update loop
+     and (next_check_at<=now() or state='completed') for update loop
   v_days:=v_case.to_date-v_case.from_date+1;
   select count(distinct a.local_date) into v_verified
    from public.staff_availability_exceptions a
    where a.business_id=v_case.business_id and a.employee_id=v_case.employee_id
      and a.exception_type='approved_leave' and a.confirmation='owner_confirmed'
+     -- An old unrelated leave row cannot certify that this owner decision was applied.
+     and a.confirmed_at>=v_case.decided_at
      and a.local_date between v_case.from_date and v_case.to_date;
   if v_days>0 and v_verified=v_days then
+   if v_case.state='completed' then continue; end if;
    update public.staff_coordination_cases set state='completed',
      next_check_at=null,revision=revision+1,updated_at=now()
     where business_id=p_business_id and id=v_case.id;
