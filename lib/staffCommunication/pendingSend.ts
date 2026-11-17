@@ -50,9 +50,9 @@ export function sameCrewOperation(current:PendingCrewSubmission|null,
 /** Bounded automatic retry: no new submission identity after lost HTTP ack.
  * An unconfirmed record remains in the tab's outbox until a real RPC receipt.
  * The UI keeps it visible and permits retry with the same identity later. */
-export async function deliverCrewWithRetry(
- pending:Readonly<PendingCrewSubmission>,
- post:(value:Readonly<PendingCrewSubmission>)=>Promise<unknown>,
+export async function deliverVerifiedReceiptWithRetry<T extends {nonce:string}>(
+ pending:Readonly<T>,
+ post:(value:Readonly<T>)=>Promise<unknown>,
  pause:(ms:number)=>Promise<void>=ms=>new Promise(resolve=>setTimeout(resolve,ms)),
 ):Promise<CrewDeliveryResult>{
  for(let i=0;i<3;i++){
@@ -72,3 +72,5 @@ export async function deliverCrewWithRetry(
  }
  return {status:"unconfirmed"};
 }
+/** Crew and owner interfaces use the same bounded, exact-nonce recovery. */
+export const deliverCrewWithRetry=deliverVerifiedReceiptWithRetry<PendingCrewSubmission>;
