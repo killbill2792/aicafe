@@ -11,9 +11,11 @@ const sourceRead={name:"get_investigation_source",result:{
   source:"investigation_source",period:null,missing:[],
   sourceType:"alert",sourceId:"alert-1",incidentKind:"labor_variance",
 }};
-const sales={name:"get_sales",result:{source:"daily_rollups",period:null,missing:[]}};
+const sales={name:"get_sales",result:{source:"daily_rollups",period:null,missing:[],
+  netSalesCents:12000,days:[{date:"2026-11-16",netSalesCents:12000}]}};
 const labor={name:"get_labor",result:{source:"labor_and_attendance",period:null,
-  missing:["laborDaysIncomplete"]}};
+  missing:["laborDaysIncomplete"],laborDays:[{date:"2026-11-16",wagesCents:2000,
+    staffTaxCents:null,loadedStaffCostCents:null,wageStatus:"missing"}]}};
 const evidence=[sourceRead,sales,labor];
 const turn=(patch:Record<string,unknown>={}):AgentTurn=>({
   text:"The source-specific labor and sales evidence is incomplete. Check the timecard, then prepare an owner-approved staffing option; I will recheck.",
@@ -96,6 +98,7 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     expect(verifyInvestigationTurn(turn({toolInvocations:[mealSource,labor,
       {name:"get_week_schedule",result:{
         source:"scheduled_shifts",period:null,missing:[],
+        scheduleSet:true,shifts:[{id:"week-shift",date:"2026-11-16"}],
       }},
     ]}),meal)).toMatchObject({ok:true});
     const price={sourceType:"operating_task" as const,sourceId:"price:latte",kind:"price_review"};
@@ -113,7 +116,8 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
       result:{...sourceRead.result,sourceType:"operating_task",
         sourceId:staff.sourceId,incidentKind:staff.kind}};
     const dated={name:"get_schedule",result:{
-      source:"scheduled_shifts+pos_scheduled_shifts",period:null,missing:[]}};
+      source:"scheduled_shifts+pos_scheduled_shifts",period:null,missing:[],
+      scheduleSet:true,shifts:[{id:"scheduled-shift",date:"2026-11-16"}]}};
     const week={name:"get_week_schedule",result:{
       source:"scheduled_shifts",period:null,missing:[]}};
     const gap={name:"get_coverage_gaps",result:{
@@ -138,8 +142,44 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     expect(verifyInvestigationTurn(turn({toolInvocations:[
       sourceRead,sales,{name:"get_expenses",result:{
         source:"expenses",period:null,missing:[],
+        recordedActualTotalCents:5000,
       }},
     ]}),expected)).toMatchObject({ok:true});
+  });
+  it("rejects unavailable source-labeled reads instead of treating them as independent facts",()=>{
+    const staff={sourceType:"operating_task" as const,
+      sourceId:"coverage:2026-11-16",kind:"staff_coverage"};
+    const claimed={...sourceRead,result:{...sourceRead.result,sourceType:"operating_task",
+      sourceId:staff.sourceId,incidentKind:staff.kind}};
+    const failedLabor={name:"get_labor",result:{source:"labor_and_attendance",
+      period:null,missing:["laborReaderUnavailable"],laborDays:null,attendance:null}};
+    const failedWeek={name:"get_week_schedule",result:{source:"scheduled_shifts",
+      period:null,missing:["scheduleReadFailed"],shifts:null,gaps:[]}};
+    expect(verifyInvestigationTurn(turn({toolInvocations:[
+      claimed,failedLabor,failedWeek,
+    ]}),staff)).toEqual({ok:false,reason:"evidence_incomplete"});
+    // A source label, explanatory note or failed-reader zero sentinel cannot
+    // masquerade as data even with a different canonical domain.
+    const emptyLabor={name:"get_labor",result:{source:"labor_and_attendance",
+      period:null,missing:[],dataNotes:["no observed labor facts"]}};
+    const fakeZero={name:"get_week_schedule",result:{source:"scheduled_shifts",
+      period:null,missing:["scheduleReaderUnavailable"],paidMinutes:0,
+      scheduleSet:false,gaps:[]}};
+    expect(verifyInvestigationTurn(turn({toolInvocations:[
+      claimed,emptyLabor,fakeZero,
+    ]}),staff)).toEqual({ok:false,reason:"evidence_incomplete"});
+    // A truly partial reader can still corroborate if it returned actual
+    // shift rows. The second domain must independently return observed labor.
+    const partialWeek={name:"get_week_schedule",result:{source:"scheduled_shifts",
+      period:null,missing:["toastScheduleReadFailed"],scheduleSet:true,
+      shifts:[{id:"verified-shift",date:"2026-11-16",start:"07:00"}]}};
+    const partialLabor={name:"get_labor",result:{source:"labor_and_attendance",
+      period:null,missing:["laborWageUnknown:2026-11-16"],
+      laborDays:[{date:"2026-11-16",wagesCents:null,wageStatus:"missing"}]}};
+    expect(verifyInvestigationTurn(turn({toolInvocations:[
+      claimed,partialLabor,partialWeek,
+    ]}),staff)).toMatchObject({ok:true,
+      missing:["laborWageUnknown:2026-11-16","toastScheduleReadFailed"]});
   });
   it("refuses unsupported effect/receipt claims even after three genuine read tools",()=>{
     const claims=[

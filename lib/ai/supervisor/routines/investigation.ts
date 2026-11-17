@@ -1,5 +1,5 @@
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
-import type {AgentToolName} from "@/lib/ai/agent/tools";
+import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
 
 /** Task 15A uses the SAME registered Supervisor model/tool loop, restricted to
  * evidence reads. Only a verified owner's later turn can reach the registered
@@ -44,6 +44,42 @@ const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
   get_menu_items:"menu_catalog",get_price_monitor_status:"price_monitor",
   get_profit:"profitability",
 };
+/** Read-only tool names and source labels do NOT establish evidence. Readers
+ * frequently return a valid source name with only missing/error reasons. A
+ * domain corroborates the incident only if its actual returned payload has
+ * observed facts; partial reads can still corroborate when rows survive. */
+const nonObservationKeys=new Set([
+  "source","period","agentId","missing","dataNotes","dataNote","href",
+  "posReviewHref","unit","scope","quantitySemantics","truncated","estimated",
+  "explain","coverageLabel","coverageFallback","error","message",
+]);
+function observedValue(value:unknown,depth=0):boolean{
+  if(typeof value==="number")return Number.isFinite(value);
+  if(Array.isArray(value))return value.some(row=>{
+    if(typeof row==="number")return Number.isFinite(row);
+    if(!row||typeof row!=="object"||Array.isArray(row))return false;
+    return Object.entries(row).some(([key,fact])=>
+      !nonObservationKeys.has(key)&&fact!==null&&fact!==undefined&&
+      typeof fact!=="function");
+  });
+  if(value&&typeof value==="object"&&depth<2)
+    return Object.entries(value).some(([key,fact])=>
+      !nonObservationKeys.has(key)&&observedValue(fact,depth+1));
+  return false;
+}
+function hasObservedEvidence(result:AgentToolResult):boolean{
+  if(!Array.isArray(result.missing))return false;
+  const readerFailed=result.missing.some(reason=>
+    /(?:unavailable|readfailed|readerfailed|readerror|unauthorized|denied)/iu.test(reason));
+  return Object.entries(result).some(([key,value])=>{
+    if(nonObservationKeys.has(key))return false;
+    // Verified zero is a real fact; a zero sentinel from a failed reader is not.
+    if(typeof value==="number")return !readerFailed&&Number.isFinite(value);
+    if(typeof value==="boolean")return !readerFailed&&value===true&&
+      ["scheduleSet","windowHasShifts","attendanceTracked"].includes(key);
+    return observedValue(value);
+  });
+}
 export function relevantInvestigationTools(kind:string):readonly AgentToolName[]{
   return relevantByKind[kind]??investigationReadTools.filter(
     name=>name!=="get_investigation_source"&&name!=="calculate");
@@ -160,7 +196,8 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
   const allowed=new Set<string>(relevantInvestigationTools(expected.kind));
   const corroborated=calls.filter(call=>allowed.has(call.name)&&
     call.result.source!=="investigation_source"&&
-    typeof call.result.source==="string"&&call.result.source.length>0);
+    typeof call.result.source==="string"&&call.result.source.length>0&&
+    hasObservedEvidence(call.result));
   const names=[...new Set(corroborated.map(c=>c.name))];
   // A result's display source may be "scheduled_shifts" versus
   // "scheduled_shifts+pos_scheduled_shifts" for the SAME canonical reader.
