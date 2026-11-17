@@ -61,8 +61,10 @@ create index staff_coordination_evidence_lookup on public.staff_coordination_evi
   (business_id,case_id,observed_at desc);
 
 -- This is strictly owner-readable; employees use their *own* 13C channel only.
+-- Reason: this brand-new owner-only cases table must enable RLS before any grants.
 -- squawk-ignore ban-alter-row-level-security
 alter table public.staff_coordination_cases enable row level security;
+-- Reason: this brand-new minimal source-evidence table must enable RLS before any grants.
 -- squawk-ignore ban-alter-row-level-security
 alter table public.staff_coordination_evidence enable row level security;
 create policy "owners read staff coordination" on public.staff_coordination_cases
