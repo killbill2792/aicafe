@@ -154,6 +154,14 @@ BEGIN
  IF (SELECT count(*) FROM public.operating_tasks
    WHERE id LIKE 'staff-response:%' AND business_id=current_setting('test.task13c.biz_a')::uuid)<>3
  THEN RAISE EXCEPTION 'owner did not get exactly one task per staff message'; END IF;
+ IF (SELECT count(*) FROM public.operating_tasks
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid AND
+    id LIKE 'staff-response:%' AND kind='staff_coverage')<>1
+ THEN RAISE EXCEPTION 'checklist/report incorrectly classified as staffing coverage'; END IF;
+ IF (SELECT count(*) FROM public.operating_tasks
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid AND
+    id LIKE 'staff-response:%' AND kind='data_quality')<>2
+ THEN RAISE EXCEPTION 'general staff work/report notices missing'; END IF;
  IF EXISTS(SELECT 1 FROM public.staff_communication_messages WHERE business_id=current_setting('test.task13c.biz_b')::uuid)
  THEN RAISE EXCEPTION 'owner read foreign cafe staff message'; END IF;
 END $test$;
