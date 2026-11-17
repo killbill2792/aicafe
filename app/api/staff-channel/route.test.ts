@@ -1,16 +1,18 @@
 import {describe,it,expect,vi,beforeEach} from "vitest";
 const mocks=vi.hoisted(()=>({
- inbox:vi.fn(),reply:vi.fn(),link:vi.fn(),links:vi.fn(),
+ inbox:vi.fn(),reply:vi.fn(),link:vi.fn(),links:vi.fn(),ownerSend:vi.fn(),
 }));
 vi.mock("@/lib/staffCommunication/channel.server",()=>({
  getStaffInbox:mocks.inbox,submitStaffReply:mocks.reply,
  ownerStaffLoginList:mocks.links,ownerLinkExistingLogin:mocks.link,
+ sendOwnerStaffMessage:mocks.ownerSend,
  StaffChannelError:class StaffChannelError extends Error{
   constructor(public code:string){super(code);}
  }
 }));
 import {GET as get,POST as post} from "./route";
 import {GET as getLinks,POST as postLinks} from "./link/route";
+import {POST as ownerPost} from "./owner-message/route";
 const origin="https://example.test";
 const url=origin+"/api/staff-channel";
 const req=(body:unknown,headers:Record<string,string>={})=>
@@ -24,6 +26,7 @@ beforeEach(()=>{
  Object.values(mocks).forEach(x=>x.mockReset());
  mocks.reply.mockResolvedValue({id:"33333333-3333-4333-8333-333333333333",replayed:false});
  mocks.link.mockResolvedValue({linked:true});
+ mocks.ownerSend.mockResolvedValue({id:"33333333-3333-4333-8333-333333333333",replayed:false});
  mocks.links.mockResolvedValue([]);
  mocks.inbox.mockResolvedValue({name:"Ava",requests:[],messages:[]});
 });
@@ -46,6 +49,17 @@ describe("restricted staff communication APIs",()=>{
   expect(mocks.inbox).toHaveBeenCalledTimes(1);
   mocks.inbox.mockRejectedValueOnce({code:"not_linked"});
   expect((await get()).status).toBe(503);
+ });
+ it("owner-click reply is routed only through checked owner port and preserves text",async()=>{
+  const input={employeeId:reply.requestId,body:"Can you start at eight?",
+    nonce:reply.nonce};
+  const ok=await ownerPost(req(input));
+  expect(ok.status).toBe(200);
+  expect(mocks.ownerSend).toHaveBeenCalledExactlyOnceWith(input);
+  expect((await ok.json()).replayed).toBe(false);
+  const attacker=await ownerPost(req(input,{Origin:"https://attacker.test"}));
+  expect(attacker.status).toBe(403);
+  expect(mocks.ownerSend).toHaveBeenCalledOnce();
  });
  it("owner link API reuses owner authorization service and checks origin",async()=>{
   expect((await getLinks()).status).toBe(200);
