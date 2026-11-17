@@ -45,7 +45,8 @@ export function scenariosForPath(path) {
   // owner-receipt @staff browser journey; unknown UI still fails closed.
   if (path.startsWith("app/crew/") || path.startsWith("components/crew/") ||
       path === "components/staff/StaffLoginLinkPanel.tsx" ||
-      path === "components/staff/StaffResponseInbox.tsx") return ["staff"];
+      path === "components/staff/StaffResponseInbox.tsx" ||
+      path === "components/staff/StaffReplyComposer.tsx") return ["staff"];
   if (path === "app/[locale]/staff/page.tsx" ||
       path === "components/staff/StaffWorkspace.tsx" ||
       path === "components/staff/StaffPublicationStatus.tsx" ||
