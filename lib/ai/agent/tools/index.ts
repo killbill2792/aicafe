@@ -286,6 +286,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
   if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
   if(name==="get_labor")return staffTools.get_labor.execute(raw,ctx);
+  if(name==="get_staff_messages")return scheduleReadTools.get_staff_messages.execute(raw,ctx);
   if(name==="get_team")return scheduleReadTools.get_team.execute(raw,ctx);
   if(name==="get_week_schedule")return scheduleReadTools.get_week_schedule.execute(raw,ctx);
   if(name==="get_labor_rules")return scheduleReadTools.get_labor_rules.execute(raw);
