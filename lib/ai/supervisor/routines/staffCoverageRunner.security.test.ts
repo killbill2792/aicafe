@@ -165,7 +165,7 @@ describe("Task13C owner-gated real Luna security behavior",()=>{
    mockCommand(root,"psql",
     'if [ "$FAIL_SQL_PREFLIGHT" = "1" ]; then exit 42; fi\nprintf "true\\n"');
    const run=(fail:boolean)=>spawnSync("bash",["-euo","pipefail","-c",
-    dbStep+"\nprintf BROKER_STARTED\\n"],{
+    dbStep+"\necho BROKER_STARTED"],{
     encoding:"utf8",env:{...process.env,PATH:bin+":"+process.env.PATH,
      FAIL_SQL_PREFLIGHT:fail?"1":"0",RUNNER_TEMP:root},
    });
