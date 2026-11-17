@@ -7,6 +7,7 @@ export type PendingCrewSubmission={
  nonce:string;
 };
 export type CrewSubmissionReceipt={id:string;replayed:boolean};
+export type CrewDeliveryResult={status:"confirmed";receipt:CrewSubmissionReceipt}|{status:"stale_request"}|{status:"unconfirmed"};
 export type CrewOutboxStorage={
  getItem(key:string):string|null;
  setItem(key:string,value:string):void;
@@ -16,6 +17,9 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const responses=new Set(["confirm","decline","complete","message","report"]);
 export function crewOutboxKey(authUserId:string):string{
  return "aicafe:crew:pending:v1:"+authUserId;
+}
+export function crewRejectedDraftKey(authUserId:string):string{
+ return "aicafe:crew:rejected-draft:v1:"+authUserId;
 }
 export function parseCrewPending(raw:string|null):PendingCrewSubmission|null{
  if(!raw)return null;
@@ -50,18 +54,21 @@ export async function deliverCrewWithRetry(
  pending:Readonly<PendingCrewSubmission>,
  post:(value:Readonly<PendingCrewSubmission>)=>Promise<unknown>,
  pause:(ms:number)=>Promise<void>=ms=>new Promise(resolve=>setTimeout(resolve,ms)),
-):Promise<CrewSubmissionReceipt|null>{
+):Promise<CrewDeliveryResult>{
  for(let i=0;i<3;i++){
   try{
    const value=await post(pending);
    if(value&&typeof value==="object"&&!Array.isArray(value)){
     const receipt=value as Record<string,unknown>;
+    // Only the server's explicit stale_request code is definitive; generic
+    // 409, invalid response, lost HTTP ack and nonce_conflict remain uncertain.
+    if(receipt.error==="stale_request")return {status:"stale_request"};
     if(typeof receipt.id==="string"&&uuid.test(receipt.id)&&
       typeof receipt.replayed==="boolean")
-     return {id:receipt.id,replayed:receipt.replayed};
+     return {status:"confirmed",receipt:{id:receipt.id,replayed:receipt.replayed}};
    }
   }catch{/* Network/HTTP receipt is uncertain. Keep the identical operation. */}
   if(i<2)await pause([400,1200][i]);
  }
- return null;
+ return {status:"unconfirmed"};
 }
