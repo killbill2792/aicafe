@@ -54,6 +54,16 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     const prompt=investigationPrompt(staff,false);
     expect(prompt).toContain("STAFF-COVERAGE FINAL ANSWER");
     expect(prompt).toContain("at most 700 characters");
+    expect(prompt).toContain("On EVERY initial investigation AND follow-up");
+    expect(prompt).toContain("get_staff_messages");
+    expect(prompt).toContain("get_week_schedule");
+    expect(prompt).toContain("NOT substitutes for a new staff message read");
+    expect(prompt).toContain("full, date-qualified shift-start");
+    const followUpPrompt=investigationPrompt(staff,true,
+      "Staff planned an 08:00 clock from their unverified report");
+    expect(followUpPrompt).toContain("persistent follow-up");
+    expect(followUpPrompt).toContain("get_staff_messages");
+    expect(followUpPrompt).not.toContain("08:00");
     expect(prompt).toContain("verified employee reply");
     expect(prompt).toContain("Independently check the actual dated schedule");
     expect(prompt).toContain("no shift change");
