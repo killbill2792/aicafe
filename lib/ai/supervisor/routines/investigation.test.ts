@@ -130,6 +130,7 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     expect(verifyInvestigationTurn(turn({toolInvocations:[
       source,dated,{name:"get_labor",result:{
         source:"labor_and_attendance",period:null,missing:["someWagesUnknown"],
+        laborDays:[{date:"2026-11-16",wagesCents:null,wageStatus:"missing"}],
       }},
     ]}),staff)).toMatchObject({ok:true});
   });
