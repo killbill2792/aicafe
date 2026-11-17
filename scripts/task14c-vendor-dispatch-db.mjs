@@ -286,6 +286,12 @@ try{
    insert into public.purchase_order_channel_reports(business_id,purchase_order_id,owner_user_id,channel,outcome,note)
    values($1,$2,$3,'phone','supplier_accepted','Owner confirmed by phone')`,
    [id.business,id.po,id.owner]));
+ const handledNotice=await one("select status,resolved_at,payload from public.operating_tasks"+
+   " where business_id=$1 and id=$2",[id.business,"priority:"+gmailHash]);
+ check(handledNotice?.status==="handled"&&handledNotice.resolved_at!==null&&
+   handledNotice.payload?.resolutionSource==="owner_reported"&&
+   handledNotice.payload?.ownerReportedOutcome==="supplier_accepted",
+   "Owner-confirmed outcome closes the exact saved Needs-you supplier question with attribution");
  const noMore=await asRole("service_role",id.owner,()=>one(
    "select public.post_supervisor_priority_notice($1,$2,$3,$4,$5,$6,$7,$8,$9) as posted",
    [...noticeArgs.slice(0,6),"c".repeat(64),sourceReason,noticeArgs[8]]));

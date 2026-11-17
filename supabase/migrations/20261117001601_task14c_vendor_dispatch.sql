@@ -117,6 +117,28 @@ create policy "owner adds own channel reports" on public.purchase_order_channel_
 revoke all on public.purchase_order_channel_reports from public,anon,authenticated;
 grant select,insert on public.purchase_order_channel_reports to authenticated;
 grant all on public.purchase_order_channel_reports to service_role;
+-- Owner-reported SUPPLIER acceptance/decline closes only the matching
+-- previously raised supplier-dispatch question. Gmail SENT alone never closes
+-- this task. This is a source-verified update, not an AI-generated success.
+create function public.supervisor_close_vendor_priority_on_report()
+ returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.outcome in ('supplier_accepted','supplier_declined') then
+  update public.operating_tasks t set
+   status='handled',resolved_at=now(),updated_at=now(),
+   payload=t.payload||jsonb_build_object(
+     'ownerReportedOutcome',new.outcome,'resolutionSource','owner_reported')
+  where t.business_id=new.business_id and t.owner_user_id=new.owner_user_id
+    and t.kind='priority_notice' and t.status='needs_owner'
+    and t.payload->>'sourceType'='supplier_dispatch'
+    and t.payload->>'sourceId'=new.purchase_order_id::text;
+ end if;
+ return new;
+end $$;
+create trigger supplier_priority_close_on_owner_report
+ after insert on public.purchase_order_channel_reports
+ for each row execute function public.supervisor_close_vendor_priority_on_report();
+
 
 -- This transaction is the one vendor-specific PRE-SEND gate, called from the
 -- EXISTING Gmail provider. A second vendor proposal for one PO cannot send.
