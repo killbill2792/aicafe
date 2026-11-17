@@ -124,6 +124,9 @@ export async function sendOwnerStaffMessage(raw:unknown){
   p_nonce:parsed.data.nonce,
  });
  if(error){
+  // A serialized, owner-authorized nonce lookup already proved no prior save.
+  if(error.message.includes("owner_target_unavailable"))
+   throw new StaffChannelError("stale_request");
   if(error.code==="42501")throw new StaffChannelError("unauthorized");
   if(error.code==="40900")throw new StaffChannelError("conflict");
   if(error.code==="22023")throw new StaffChannelError("invalid");
@@ -151,6 +154,9 @@ export async function assignOwnerStaffWork(raw:unknown){
   p_nonce:parsed.data.nonce,
  });
  if(error){
+  // A serialized, owner-authorized nonce lookup already proved no prior save.
+  if(error.message.includes("owner_target_unavailable"))
+   throw new StaffChannelError("stale_request");
   if(error.code==="42501")throw new StaffChannelError("unauthorized");
   if(error.code==="40900"||error.code==="23505")throw new StaffChannelError("conflict");
   if(error.code==="22023")throw new StaffChannelError("invalid");
