@@ -39,6 +39,8 @@ describe("13C paid Luna trusted-main broker boundaries",()=>{
   // Existing registered Supervisor emits store:false only under its exact
   // local trusted-broker switch, not merely from a dummy API key.
   expect(candidate).toContain("-e AI_CAFE_LIVE_ACCEPTANCE -e APP_URL");
+  expect(candidate).toContain("AICAFE_13C_HOST_ATTEST_DB='1'");
+  expect(candidate).toContain("cp test-results/acceptance/13c-live-scope.json /proof/13c-live-scope.json");
   expect(candidate).toContain("AICAFE_14B_BROKER_TOKEN=");
   expect(candidate).not.toContain("OPENAI_API_KEYS");
   expect(candidate).not.toContain("AICAFE_TASK14B_HOST_AUDIT");
@@ -55,6 +57,10 @@ describe("13C paid Luna trusted-main broker boundaries",()=>{
    "proof.cross_cafe_owner_denied!==true",
    "proof.persisted_followup!==true",
    "audit.receipts.some(r=>r.terminal!==\"completed\"||r.model!==\"gpt-6-luna\")",
-   "task13c-sanitized-result.json"])expect(workflow).toContain(guard);
+   "task13c-sanitized-result.json",
+   "13c-live-scope.json","const raw=execFileSync(\"psql\"",
+   "facts.currentAssignee!==scope.replacementEmployeeId",
+   "facts.investigationPhase!==\"resolved\"",
+   "Number(facts.completedQuota)!==audit.attempts"])expect(workflow).toContain(guard);
  });
 });
