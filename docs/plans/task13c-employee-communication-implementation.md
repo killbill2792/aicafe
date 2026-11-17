@@ -56,3 +56,14 @@ The owner must still authorize any changed published schedule or external worker
 
 ### Linked-worker owner-onboarding boundary (security addendum)
 The existing generic first-owner onboarding bootstrap uses a service-role client to create a café. A worker login is a valid auth account but has no owner membership, so an unguarded onboarding visit would bootstrap a business. 13C explicitly owns the necessary minimal access guards: lib/staffCommunication/identity.server.ts (single positive linked-employee identity check), lib/auth/requireUser.ts (owner page guard redirects linked employees to /crew), app/[locale]/onboarding/page.tsx (pre-render deny), and lib/actions/onboarding.ts (server action refuses service-role business creation). The seeded employee browser test proves a linked worker cannot enter onboarding or cause a new business row. This does not change unrelated new owner signup behavior.
+
+
+### Final owner-only access and credential revocation scope
+Linked staff accounts (including deactivated employees whose auth record remains linked) are barred from owner business pages, the owner More navigation, Pricing, and any first-owner onboarding bootstrap. Account self-service password-reset/deletion paths remain available, rather than treating employee status as a ban on privacy/self-service controls. The actual owner can explicitly unlink an inactive employee; a newly linked or relinked account must still belong to an active employee. The owner linking form refreshes the shared reply and checklist composer without a manual reload, and the composer derives a safe live selection when the first link arrives asynchronously. The original owner account ID in a signed in-app message is retained as historical provenance without creating a foreign-key restriction that prevents auth account deletion.
+
+Additional exact write-owned paths for those necessary boundaries and negative tests:
+- app/[locale]/more/page.tsx and app/[locale]/pricing/page.tsx — owner-only screens redirect linked staff, without making pricing or subscription data staff-visible
+- components/staff/StaffReplyComposer.tsx and components/staff/StaffLoginLinkPanel.tsx — current linked selection, owner unlink after deactivation, server refresh
+- lib/data/snapshotIdentity.test.ts — scoped legacy owner caching mock, not an exemption from the staff guard
+- scripts/e2e/targeted.mjs and scripts/e2e/targeted.test.mjs — real @staff browser proof required for onboarding, More and Pricing changes, unknown UI still fails closed
+- tests/e2e/staff-channel.spec.mjs and scripts/task13c-staff-channel-db.sql — actual browser/SQL negative cases for staff, disabled employee and owner unlink.
