@@ -260,15 +260,24 @@ begin
  if not found or v_case.case_kind<>'onboarding' or v_case.decision<>'approve'
    or v_case.state not in ('approved','in_progress','waiting_evidence') then
   raise exception 'onboarding_not_authorized' using errcode='40900'; end if;
- if v_case.revision<>p_revision then
-  raise exception 'stale_case' using errcode='40900'; end if;
  select * into v_old from public.staff_coordination_evidence
   where business_id=p_business_id and case_id=p_case_id
     and evidence_key='onboarding_checklist' for update;
  if found then
+  -- A lost HTTP reply must replay the exact original action, not emit another
+  -- assignment. A new nonce or changed text cannot adopt the old receipt.
+  if not exists(
+    select 1 from public.staff_communication_requests r
+     where r.business_id=p_business_id and r.id::text=v_old.source_id
+       and r.employee_id=v_case.employee_id and r.kind='checklist'
+       and r.source_type='owner_manual' and r.source_id=p_nonce::text
+       and r.title=btrim(p_title) and r.prompt=btrim(p_prompt)
+  ) then raise exception 'checklist_already_assigned' using errcode='40900'; end if;
   return jsonb_build_object('id',p_case_id,'requestId',v_old.source_id,
     'revision',v_case.revision,'state',v_case.state,'replayed',true);
  end if;
+ if v_case.revision<>p_revision then
+  raise exception 'stale_case' using errcode='40900'; end if;
  -- Existing Task13C owner-only assignment; nested function uses the same
  -- verified auth.uid(), not a synthesized owner or a model-selected employee.
  v_response:=public.staff_channel_owner_assign(v_case.employee_id,'checklist',
