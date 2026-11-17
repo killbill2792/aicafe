@@ -93,7 +93,8 @@ create table public.staff_communication_messages (
  employee_id uuid not null,
  request_id uuid,
  actor text not null check(actor in ('employee','supervisor','owner')),
- response_code text not null check(response_code in ('confirm','decline','complete','message','report')),
+ author_user_id uuid references auth.users(id) on delete set null,
+ response_code text not null check(response_code in ('confirm','decline','complete','message','report','owner_message')),
  body text check(body is null or char_length(body) between 1 and 2000),
  channel text not null check(channel in ('web','whatsapp')),
  client_nonce uuid not null,
@@ -104,9 +105,12 @@ create table public.staff_communication_messages (
  unique(channel,provider_event_id),
  foreign key(business_id,employee_id) references public.employees(business_id,id) on delete cascade,
  foreign key(business_id,request_id) references public.staff_communication_requests(business_id,id),
- check(response_code not in ('message','report') or body is not null),
- check((response_code='report' and request_id is null) or
-       (response_code<>'report' and request_id is not null)),
+ check(response_code not in ('message','report','owner_message') or body is not null),
+ check((response_code='report' and request_id is null and actor='employee') or
+       (response_code='owner_message' and request_id is null and actor='owner') or
+       (response_code not in ('report','owner_message') and request_id is not null)),
+ check((actor='owner' and author_user_id is not null) or
+       (actor<>'owner' and author_user_id is null)),
  check((channel='web' and provider_event_id is null) or
        (channel='whatsapp' and provider_event_id is not null))
 );
@@ -293,12 +297,53 @@ end $$;
 revoke all on function public.staff_channel_submit(uuid,text,text,uuid) from public,anon;
 grant execute on function public.staff_channel_submit(uuid,text,text,uuid) to authenticated;
 
+-- An explicit owner Send click writes to the employee's existing private web
+-- channel. It is an in-app record, NOT a WhatsApp delivery or read receipt.
+-- Future automated sends must use the separate effect gateway, not this RPC.
+create function public.staff_channel_owner_send(
+ p_employee_id uuid,p_body text,p_nonce uuid
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
+declare emp public.employees%rowtype;
+  previous public.staff_communication_messages%rowtype; created uuid;
+  v_body text; v_actor uuid;
+begin
+ v_actor:=(select auth.uid());
+ if v_actor is null then raise exception 'login_required' using errcode='42501'; end if;
+ select * into emp from public.employees where id=p_employee_id for share;
+ if not found or not emp.active or emp.staff_auth_user_id is null or
+    not public.scheduling_is_owner(emp.business_id) then
+   raise exception 'owner_target_required' using errcode='42501'; end if;
+ v_body:=nullif(btrim(coalesce(p_body,'')),'');
+ if p_nonce is null or v_body is null or char_length(v_body)>2000 then
+   raise exception 'invalid_owner_message' using errcode='22023'; end if;
+ select * into previous from public.staff_communication_messages m
+  where m.business_id=emp.business_id and m.employee_id=emp.id
+    and m.client_nonce=p_nonce;
+ if found then
+  if previous.actor<>'owner' or previous.author_user_id is distinct from v_actor or
+     previous.response_code<>'owner_message' or
+     previous.request_id is not null or previous.body is distinct from v_body then
+    raise exception 'owner_nonce_conflict' using errcode='40900'; end if;
+  return jsonb_build_object('id',previous.id,'replayed',true);
+ end if;
+ insert into public.staff_communication_messages
+ (business_id,employee_id,request_id,actor,author_user_id,
+  response_code,body,channel,client_nonce)
+ values(emp.business_id,emp.id,null,'owner',v_actor,
+  'owner_message',v_body,'web',p_nonce) returning id into created;
+ return jsonb_build_object('id',created,'replayed',false);
+end $;
+revoke all on function public.staff_channel_owner_send(uuid,text,uuid) from public,anon;
+grant execute on function public.staff_channel_owner_send(uuid,text,uuid) to authenticated;
+
 -- Every *new* staff response produces one canonical owner inbox receipt in the
 -- SAME transaction. Staff text remains data, not an instruction or approval.
 create function public.staff_channel_notice() returns trigger
  language plpgsql security definer set search_path=public,pg_temp as $$
 declare owner_row record; v_kind text;
 begin
+ -- Owner replies are visible to employees, never fake new staff events.
+ if new.actor<>'employee' then return new; end if;
  v_kind:=case when new.request_id is not null then 'staff_coverage' else 'data_quality' end;
  for owner_row in select m.user_id from public.memberships m
    where m.business_id=new.business_id and m.role='owner' loop
