@@ -34,12 +34,14 @@ globalThis.fetch=async function task14cGmailSimulator(input,init){
   if(typeof payload.raw!=="string"||payload.raw.length>30000)
    throw Error("task14c_simulator_invalid_mime");
   const mime=Buffer.from(payload.raw,"base64url").toString("utf8");
-  const field=(name)=>mime.match(new RegExp("^"+name+":\s*(.+)$","im"))?.[1]?.trim();
-  const to=field("To"),from=field("From"),subject=field("Subject"),rfc=field("Message-ID");
+  const field=(name)=>mime.match(new RegExp("^"+name+":\\s*(.+)$","im"))?.[1]?.trim();
+  const to=field("To"),from=field("From"),subjectHeader=field("Subject"),rfc=field("Message-ID");
+  const encoded=/^=\?UTF-8\?B\?([A-Za-z0-9+/=]+)\?=$/i.exec(subjectHeader??"");
+  const subject=encoded?Buffer.from(encoded[1],"base64").toString("utf8"):null;
   if(to!=="orders@task14c.example"||
     from!=="owner@task14c.example"||
     !/^Purchase order [0-9a-f-]{36}$/i.test(subject??"")||
-    !/^<[^<>\\r\\n]{1,240}>$/.test(rfc??""))
+    !/^<[^<>\r\n]{1,240}>$/.test(rfc??""))
    throw Error("task14c_simulator_rejects_non_disposable_envelope");
   writeFileSync(path,JSON.stringify({id:fakeId,rfc,subject,
    acceptedBy:"local_gmail_simulator_not_google",count:1})+"\n",{flag:"wx",mode:0o600});
