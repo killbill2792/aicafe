@@ -1,4 +1,4 @@
-import {beforeEach,describe,it,expect,vi} from "vitest";
+import {afterEach,beforeEach,describe,it,expect,vi} from "vitest";
 import {readSupplierPurchasingEvidence} from "@/lib/data/supplierPurchasing.server";
 import {simulationOwnerReader} from "./simulationOwner.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
@@ -22,6 +22,10 @@ const baseQuote={id:quoteId,supplier_name:"Farm A",item_name:"Milk",ingredient_i
  source_kind:"supplier_quote",quoted_on:"2026-11-12",valid_until:"2026-11-20",
  available_status:"confirmed",available_checked_at:"2026-11-13",delivery_on:"2026-11-16"};
 beforeEach(()=>{
+ // Keep the Task14B quote fixture relative to a fixed date. Production freshness
+ // rules remain strict; midnight must not make this known-good test go stale.
+ vi.useFakeTimers();
+ vi.setSystemTime(new Date("2026-11-14T12:00:00Z"));
  vi.mocked(simulationOwnerReader).mockReset().mockResolvedValue({client:{} as never,explicit:true});
  vi.mocked(readSupplierPurchasingEvidence).mockReset().mockResolvedValue({
   ingredients:[{id:ingredientId,name:"Milk",base_unit:"ml"}],
@@ -29,6 +33,7 @@ beforeEach(()=>{
  } as never);
  vi.mocked(createAdminSupabaseClient).mockReset();
 });
+afterEach(()=>vi.useRealTimers());
 describe("Task14B Supervisor PO: independently investigates, then prepares a durable proposal",()=>{
  it("uses the verified scoped reader and the same supplier evidence planner as the tool",async()=>{
   const p=await supplierPurchaseOrderCapability.simulate(scope,input);
