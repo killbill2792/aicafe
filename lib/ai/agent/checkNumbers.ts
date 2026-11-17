@@ -755,8 +755,8 @@ function observedHours(results:readonly AgentToolResult[]):VerifiedTime[] {
 }
 function observedShifts(results:readonly AgentToolResult[]):VerifiedTime[] {
   const known:VerifiedTime[]=[];
-  const clock=/^(?:[01]\\d|2[0-3]):[0-5]\\d$/u;
-  const calendar=/^\\d{4}-\\d{2}-\\d{2}$/u;
+  const clock=/^(?:[01]\d|2[0-3]):[0-5]\d$/u;
+  const calendar=/^\d{4}-\d{2}-\d{2}$/u;
   for(const r of results){
     // Dated, committed schedules use a different *typed* projection from
     // recurring_schedule. Never promote the employee's free-text proposal,
