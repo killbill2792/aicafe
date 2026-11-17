@@ -141,11 +141,12 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
    <p className="font-semibold">Unsent explanation from a changed work request</p>
    <p className="mt-2 whitespace-pre-wrap break-words">{rejectedDraft}</p>
    <div className="mt-3 flex flex-wrap gap-2">
-    <button type="button" disabled={pending} onClick={()=>{
-     setReport(text=>((text?text+"\n":"")+rejectedDraft).slice(0,2000));
+    <button type="button" disabled={pending||report.length+(report?1:0)+rejectedDraft.length>2000} onClick={()=>{
+     setReport(text=>(text?text+"\n":"")+rejectedDraft);
     }} className="min-h-12 rounded-full border border-line px-4 py-2 disabled:opacity-50">
      Add to report draft (not sent)
     </button>
+    {report.length+(report?1:0)+rejectedDraft.length>2000&&<p className="text-sm">The draft is too long to combine; copy the explanation before continuing.</p>}
     <button type="button" onClick={()=>{
      try{window.sessionStorage.removeItem(draftKey);}catch{}
      setRejectedDraft("");
