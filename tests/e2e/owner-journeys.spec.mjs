@@ -41,7 +41,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await page.setViewportSize({width:390,height:844});
       const work = page.getByRole("region",{name:"Supervisor work"});
       await expect(work).toBeVisible();
-      await expect(work.locator('[data-work-status="queued"]')).toBeVisible();
+      await expect(work.locator('[data-work-kind="durable_run"][data-work-status="queued"]')).toBeVisible();
       await expect(work.locator('[data-work-kind="investigation"][data-work-status="queued"]')).toBeVisible();
       const ownRead = await context.request.get("/api/ai/threads/"+threadId+"/work");
       expect(ownRead.status()).toBe(200);
