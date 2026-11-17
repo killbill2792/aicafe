@@ -3,14 +3,15 @@ import {useCallback,useEffect,useRef,useState} from "react";
 import {useRouter} from "next/navigation";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
 import type {StaffMessage,StaffRequest} from "@/lib/staffCommunication/channel.server";
-import {crewOutboxKey,loadCrewPending,saveCrewPending,sameCrewOperation,
+import {crewOutboxKey,crewRejectedDraftKey,loadCrewPending,saveCrewPending,sameCrewOperation,
  deliverCrewWithRetry,type PendingCrewSubmission} from "@/lib/staffCommunication/pendingSend";
 export default function CrewInbox({name,requests,messages,authUserId}:{
  name:string;requests:StaffRequest[];messages:StaffMessage[];authUserId:string;
 }){
  const router=useRouter(),sending=useRef(false);
  const pendingRef=useRef<PendingCrewSubmission|null>(null);
- const storageKey=crewOutboxKey(authUserId);
+ const storageKey=crewOutboxKey(authUserId),draftKey=crewRejectedDraftKey(authUserId);
+ const [rejectedDraft,setRejectedDraft]=useState("");
  const [pending,setPending]=useState(false);
  const [notes,setNotes]=useState<Record<string,string>>({});
  const [report,setReport]=useState("");
@@ -39,13 +40,40 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
      const res=await fetch("/api/staff-channel",{method:"POST",
       credentials:"same-origin",headers:{"Content-Type":"application/json"},
       body:JSON.stringify(value),signal:controller.signal});
+     if(res.status===409){
+      // Only a server-confirmed non-commit can release the outbox.
+      // Generic conflicts (including a nonce collision) remain uncertain.
+      const result=await res.json();
+      if(result?.error==="stale_request")return {error:"stale_request"};
+      throw new Error("Submission outcome uncertain");
+     }
      if(!res.ok)throw new Error("Submission receipt unavailable");
      return await res.json();
     }finally{clearTimeout(timeout);}
    });
-   if(!receipt){
+   if(receipt.status==="unconfirmed"){
     setFeedback("Delivery is not confirmed. Your original message is preserved in this tab. "+
      "Automatic retries used the same submission ID. Select Retry saved message to check again.");
+    return;
+   }
+   if(receipt.status==="stale_request"){
+    // Server verified that the *original* nonce has not committed and its
+    // target request is no longer current. Keep any explanation as a separate
+    // recoverable draft, but unblock the worker's other assignments.
+    if(operation.body){
+     try{window.sessionStorage.setItem(draftKey,operation.body);}catch{
+      // The rendered draft remains available for copying in this tab.
+     }
+     setRejectedDraft(operation.body);
+    }
+    try{window.sessionStorage.removeItem(storageKey);}catch{
+     // A stale record can only be retried idempotently on the same account.
+    }
+    pendingRef.current=null;
+    setPending(false);
+    setFeedback("That work request changed or closed. It was not saved. "+
+     "Your explanation is preserved below as a draft; please review the updated work.");
+    router.refresh();
     return;
    }
    try{window.sessionStorage.removeItem(storageKey);}catch{/* Replays stay idempotent. */}
@@ -56,7 +84,7 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
    setFeedback("Response saved. Your café supervisor can now review it.");
    router.refresh();
   }finally{sending.current=false;setBusy("");}
- },[router,storageKey,authUserId]);
+ },[router,storageKey,draftKey,authUserId]);
  useEffect(()=>{
   // Restore only in a scheduled callback, not synchronously inside React's
   // mount effect. The send handler independently checks storage before
@@ -64,6 +92,8 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
   const scheduled=window.setTimeout(()=>{
    if(pendingRef.current)return;
    try{
+    const draft=window.sessionStorage.getItem(draftKey);
+    if(draft&&draft.length<=2000)setRejectedDraft(draft);
     const saved=loadCrewPending(window.sessionStorage,storageKey);
     if(saved){
      pendingRef.current=saved;
@@ -76,7 +106,7 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
    }
   },0);
   return()=>window.clearTimeout(scheduled);
- },[retryPending,storageKey]);
+ },[retryPending,storageKey,draftKey]);
  function send(requestId:string|null,response:PendingCrewSubmission["response"],
   body:string|null){
   if(sending.current)return;
@@ -107,6 +137,23 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
   </header>
   <p className="rounded-2xl bg-card p-4 text-ink-muted">You can respond to work assigned to you and send a report. This is not the owner&apos;s AI chat.</p>
   {feedback&&<p role="status" className="rounded-xl border border-line bg-card p-3">{feedback}</p>}
+  {rejectedDraft&&<div className="rounded-xl border border-line bg-card p-3">
+   <p className="font-semibold">Unsent explanation from a changed work request</p>
+   <p className="mt-2 whitespace-pre-wrap break-words">{rejectedDraft}</p>
+   <div className="mt-3 flex flex-wrap gap-2">
+    <button type="button" disabled={pending} onClick={()=>{
+     setReport(text=>((text?text+"\n":"")+rejectedDraft).slice(0,2000));
+    }} className="min-h-12 rounded-full border border-line px-4 py-2 disabled:opacity-50">
+     Add to report draft (not sent)
+    </button>
+    <button type="button" onClick={()=>{
+     try{window.sessionStorage.removeItem(draftKey);}catch{}
+     setRejectedDraft("");
+    }} className="min-h-12 rounded-full border border-line px-4 py-2">
+     Dismiss saved explanation
+    </button>
+   </div>
+  </div>}
   {pending&&<div className="rounded-xl border border-line bg-card p-3">
    <p className="text-sm">A previously submitted message is awaiting confirmation. Other submissions are paused to prevent duplicates.</p>
    <button type="button" disabled={Boolean(busy)} onClick={()=>void retryPending()}
