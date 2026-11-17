@@ -85,6 +85,23 @@ describe("restricted staff communication APIs",()=>{
   expect((await ownerAssign(req(assignment,{Origin:"https://evil.test"}))).status).toBe(403);
   expect(mocks.assign).toHaveBeenCalledOnce();
  });
+ it("returns definitive unsent owner target rejection without pretending a receipt exists",async()=>{
+  const message={employeeId:reply.requestId,body:"Please check your shift",nonce:reply.nonce};
+  mocks.ownerSend.mockRejectedValueOnce(new StaffChannelError("stale_request"));
+  const staleMessage=await ownerPost(req(message));
+  expect(staleMessage.status).toBe(409);
+  expect(await staleMessage.json()).toEqual({error:"stale_request"});
+  const assignment={employeeId:reply.requestId,kind:"task",title:"Check supplies",
+   prompt:"Report any shortages",nonce:reply.nonce};
+  mocks.assign.mockRejectedValueOnce(new StaffChannelError("stale_request"));
+  const staleAssignment=await ownerAssign(req(assignment));
+  expect(staleAssignment.status).toBe(409);
+  expect(await staleAssignment.json()).toEqual({error:"stale_request"});
+  mocks.ownerSend.mockRejectedValueOnce(new StaffChannelError("conflict"));
+  const uncertain=await ownerPost(req(message));
+  expect(uncertain.status).toBe(409);
+  expect(await uncertain.json()).toEqual({error:"conflict"});
+ });
  it("owner link API reuses owner authorization service and checks origin",async()=>{
   expect((await getLinks()).status).toBe(200);
   expect(mocks.links).toHaveBeenCalledOnce();
