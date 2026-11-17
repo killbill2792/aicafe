@@ -25,7 +25,7 @@ This extends Task 13B on main, and does **not** create a second Supervisor, sche
 6. Future assigned staff tasks/checklists use the same `staff_communication_requests` and `staff_communication_messages`; they may not invent authorization by writing those tables from a client.
 
 ## File ownership
-New migration `supabase/migrations/20261114001003_task13c_staff_communication.sql`, service `lib/staffCommunication/channel.server.ts`, staff-only pages/components `app/crew/**`, `components/crew/**`, routes `app/api/staff-channel/**`, owner link UI `components/staff/StaffLoginLinkPanel.tsx`, targeted tests and SQL proof.
+New migration `supabase/migrations/20261117003000_task13c_staff_communication.sql`, service `lib/staffCommunication/channel.server.ts`, staff-only pages/components `app/crew/**`, `components/crew/**`, routes `app/api/staff-channel/**`, owner link UI `components/staff/StaffLoginLinkPanel.tsx`, targeted tests and SQL proof.
 Existing integrations: `app/[locale]/staff/page.tsx`, `proxy.ts`, `lib/ai/agent/tools/scheduleReads.ts`, `lib/ai/supervisor/routines/dispatch.server.ts`, `lib/whatsapp/webhook.ts` and `app/api/whatsapp/webhook/route.ts` as required. No edit to `PROGRESS.md` or dispatcher signed queue. No production deploy.
 
 ## Acceptance that is **not** a unit-test claim
