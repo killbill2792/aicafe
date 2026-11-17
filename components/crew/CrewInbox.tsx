@@ -1,31 +1,85 @@
 "use client";
-import {useRef,useState} from "react";
+import {useCallback,useEffect,useRef,useState} from "react";
 import {useRouter} from "next/navigation";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
 import type {StaffMessage,StaffRequest} from "@/lib/staffCommunication/channel.server";
-export default function CrewInbox({name,requests,messages}:{
- name:string;requests:StaffRequest[];messages:StaffMessage[];
+import {crewOutboxKey,loadCrewPending,saveCrewPending,sameCrewOperation,
+ deliverCrewWithRetry,type PendingCrewSubmission} from "@/lib/staffCommunication/pendingSend";
+export default function CrewInbox({name,requests,messages,authUserId}:{
+ name:string;requests:StaffRequest[];messages:StaffMessage[];authUserId:string;
 }){
  const router=useRouter(),sending=useRef(false);
+ const pendingRef=useRef<PendingCrewSubmission|null>(null);
+ const storageKey=crewOutboxKey(authUserId);
+ const [pending,setPending]=useState(false);
  const [notes,setNotes]=useState<Record<string,string>>({});
  const [report,setReport]=useState("");
  const [busy,setBusy]=useState(""),[feedback,setFeedback]=useState("");
- async function send(requestId:string|null,response:string,body:string|null){
-  if(sending.current)return;
-  sending.current=true;setBusy(requestId??"report");setFeedback("");
+ const retryPending=useCallback(async()=>{
+  const operation=pendingRef.current;
+  if(!operation||sending.current)return;
+  sending.current=true;
+  setBusy(operation.requestId??"report");
+  setFeedback("Checking the saved submission…");
   try{
-   const res=await fetch("/api/staff-channel",{method:"POST",credentials:"same-origin",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({requestId,response,body,nonce:crypto.randomUUID()})});
-   if(!res.ok)throw new Error("Send not confirmed");
-   if(requestId)setNotes(value=>({...value,[requestId]:""}));else setReport("");
+   // Each retry sends the *original* exact body, response and nonce. A
+   // previous commit whose HTTP acknowledgement was lost is replayed by SQL,
+   // never reported to the owner as a second staff incident.
+   const receipt=await deliverCrewWithRetry(operation,async value=>{
+    const res=await fetch("/api/staff-channel",{method:"POST",
+     credentials:"same-origin",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify(value)});
+    if(!res.ok)throw new Error("Submission receipt unavailable");
+    return res.json();
+   });
+   if(!receipt){
+    setFeedback("Delivery is not confirmed. Your original message is preserved in this tab. "+
+     "Automatic retries used the same submission ID. Select Retry saved message to check again.");
+    return;
+   }
+   try{window.sessionStorage.removeItem(storageKey);}catch{/* Replays stay idempotent. */}
+   pendingRef.current=null;
+   setPending(false);
+   if(operation.requestId)setNotes(value=>({...value,[operation.requestId!]:""}));
+   else setReport("");
    setFeedback("Response saved. Your café supervisor can now review it.");
    router.refresh();
-  }catch{
-   // A network timeout is ambiguous. Refresh rather than issuing a different
-   // nonce and silently duplicating the worker's report.
-   setFeedback("Could not verify the result. Refresh to check your messages before retrying.");
   }finally{sending.current=false;setBusy("");}
+ },[router,storageKey]);
+ useEffect(()=>{
+  // An ambiguous save survives a page reload *only in this authenticated
+  // user's browser tab*. Never carry an operation to a different login.
+  if(pendingRef.current)return;
+  try{
+   const saved=loadCrewPending(window.sessionStorage,storageKey);
+   if(saved){
+    pendingRef.current=saved;
+    setPending(true);
+    setFeedback("Recovering a previously unconfirmed message…");
+    void retryPending();
+   }
+  }catch{
+   setFeedback("This browser cannot access pending messages. No message was sent.");
+  }
+ },[retryPending,storageKey]);
+ function send(requestId:string|null,response:PendingCrewSubmission["response"],
+  body:string|null){
+  if(sending.current)return;
+  const proposed:PendingCrewSubmission={requestId,response,body,nonce:crypto.randomUUID()};
+  const operation=sameCrewOperation(pendingRef.current,proposed);
+  if(!pendingRef.current){
+   try{
+    // Fail closed if session recovery storage is blocked: a lost HTTP
+    // acknowledgement would otherwise generate a fresh identity on reload.
+    saveCrewPending(window.sessionStorage,storageKey,operation);
+   }catch{
+    setFeedback("Cannot safely save a recoverable message in this browser. No message was sent.");
+    return;
+   }
+   pendingRef.current=operation;
+   setPending(true);
+  }
+  void retryPending();
  }
  async function signOut(){
   await createBrowserSupabaseClient().auth.signOut();
@@ -39,6 +93,13 @@ export default function CrewInbox({name,requests,messages}:{
   </header>
   <p className="rounded-2xl bg-card p-4 text-ink-muted">You can respond to work assigned to you and send a report. This is not the owner&apos;s AI chat.</p>
   {feedback&&<p role="status" className="rounded-xl border border-line bg-card p-3">{feedback}</p>}
+  {pending&&<div className="rounded-xl border border-line bg-card p-3">
+   <p className="text-sm">A previously submitted message is awaiting confirmation. Other submissions are paused to prevent duplicates.</p>
+   <button type="button" disabled={Boolean(busy)} onClick={()=>void retryPending()}
+    className="mt-2 min-h-12 rounded-full border border-line px-5 py-2 text-sm font-semibold disabled:opacity-50">
+    Retry saved message
+   </button>
+  </div>}
   <section className="space-y-3" aria-labelledby="crew-assigned">
    <h2 id="crew-assigned" className="text-xl font-bold">Assigned to me</h2>
    {requests.length===0&&<p className="rounded-2xl bg-card p-4">No requests are waiting for you.</p>}
@@ -50,19 +111,19 @@ export default function CrewInbox({name,requests,messages}:{
     <label htmlFor={"note-"+req.id} className="block text-sm font-semibold">
      Add a message or explain your situation (optional with a button)
     </label>
-    <textarea id={"note-"+req.id} rows={2} maxLength={2000} value={notes[req.id]??""}
+    <textarea id={"note-"+req.id} rows={2} maxLength={2000} disabled={pending} value={notes[req.id]??""}
      onChange={e=>setNotes(v=>({...v,[req.id]:e.target.value}))}
      placeholder="For example: I can arrive at 8 AM, but not 7 AM."
      className="w-full rounded-xl border border-line bg-white p-3 text-ink"/>
     <div className="flex flex-wrap gap-2">
      {req.status==="open"&&(req.kind==="shift_confirmation"||req.kind==="coverage_offer"
-      ?<><button disabled={Boolean(busy)} onClick={()=>send(req.id,"confirm",notes[req.id]?.trim()||null)}
+      ?<><button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"confirm",notes[req.id]?.trim()||null)}
        className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">Confirm</button>
-       <button disabled={Boolean(busy)} onClick={()=>send(req.id,"decline",notes[req.id]?.trim()||null)}
+       <button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"decline",notes[req.id]?.trim()||null)}
         className="min-h-12 rounded-full border border-line px-5 py-2 font-semibold disabled:opacity-50">Cannot work</button></>
-      :<button disabled={Boolean(busy)} onClick={()=>send(req.id,"complete",notes[req.id]?.trim()||null)}
+      :<button disabled={Boolean(busy)||pending} onClick={()=>send(req.id,"complete",notes[req.id]?.trim()||null)}
         className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">Mark complete</button>)}
-     <button disabled={Boolean(busy)||!notes[req.id]?.trim()}
+     <button disabled={Boolean(busy)||pending||!notes[req.id]?.trim()}
       onClick={()=>send(req.id,"message",notes[req.id]?.trim()||null)}
       className="min-h-12 rounded-full border border-line px-5 py-2 font-semibold disabled:opacity-50">
       Send message
@@ -73,10 +134,10 @@ export default function CrewInbox({name,requests,messages}:{
   <section className="space-y-3 rounded-2xl border border-line bg-card p-5">
    <h2 className="text-xl font-bold">Report an issue</h2>
    <label htmlFor="crew-report" className="text-sm">Tell Supervisor about a problem or something you noticed at work.</label>
-   <textarea id="crew-report" rows={4} maxLength={2000} required value={report}
+   <textarea id="crew-report" rows={4} maxLength={2000} required disabled={pending} value={report}
     onChange={e=>setReport(e.target.value)} placeholder="Describe what you noticed…"
     className="w-full rounded-xl border border-line bg-white p-3 text-ink"/>
-   <button disabled={Boolean(busy)||!report.trim()}
+   <button disabled={Boolean(busy)||pending||!report.trim()}
     onClick={()=>send(null,"report",report.trim())}
     className="min-h-12 rounded-full bg-accent px-5 py-2 font-semibold text-on-accent disabled:opacity-50">Send report</button>
   </section>
