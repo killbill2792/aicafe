@@ -108,7 +108,7 @@ export default function StaffCoordinationPanel({people}:{people:Person[]}) {
    {item.role_needed&&<p>Role: {item.role_needed}</p>}
    {item.source_kind==="staff_message"&&<p className="text-fg-muted">Authenticated employee message; inspect the existing Staff reply inbox. It is not an approval.</p>}
    {item.state==="approved"&&<p className="text-fg-muted">Owner authorized the next step. A real effect and verified source receipt are still required.</p>}
-   {item.case_kind==="onboarding"&&item.state==="approved"&&<div className="space-y-2">
+   {item.case_kind==="onboarding"&&(item.state==="approved"||item.state==="waiting_evidence")&&<div className="space-y-2">
     <p className="text-fg-muted">Explicitly assign a checklist through the existing employee inbox. This does not create a login, hire the employee, or claim completion.</p>
     <label className="block">Checklist title
      <input className="w-full rounded-md border border-border bg-surface p-2"
