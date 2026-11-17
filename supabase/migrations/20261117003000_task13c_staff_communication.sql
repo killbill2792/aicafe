@@ -93,7 +93,9 @@ create table public.staff_communication_messages (
  employee_id uuid not null,
  request_id uuid,
  actor text not null check(actor in ('employee','supervisor','owner')),
- author_user_id uuid references auth.users(id) on delete set null,
+ -- Keep signed original owner ID even after account deletion; never
+ -- block user deletion or reattribute a retained historical message.
+ author_user_id uuid,
  response_code text not null check(response_code in ('confirm','decline','complete','message','report','owner_message')),
  body text check(body is null or char_length(body) between 1 and 2000),
  channel text not null check(channel in ('web','whatsapp')),
