@@ -37,8 +37,7 @@ describe("13D registered Supervisor evidence tool",()=>{
   expect(JSON.stringify(result)).not.toContain(caseRow.source_key);
  });
  it("never falls back to a session owner when the claimed off-turn reader is missing",async()=>{
-  const ctx={...base,investigation:{read:vi.fn(),weekSchedule:vi.fn()}}
-   as unknown as AgentToolContext;
+  const ctx={...base,investigation:{read:vi.fn(),weekSchedule:vi.fn()}} as unknown as AgentToolContext;
   const result=await staffCoordinationTools.get_staff_coordination_cases.execute({},ctx);
   expect(result.missing).toContain("staffCoordinationClaimedReaderUnavailable");
   expect(ownerRead).not.toHaveBeenCalled();
