@@ -9,20 +9,31 @@ alter table public.employees add column if not exists staff_auth_user_id uuid re
 create unique index if not exists employees_one_worker_login
   on public.employees(staff_auth_user_id) where staff_auth_user_id is not null;
 
--- Identity changes are privileged even though the older employees RLS grants
--- café managers general UPDATE rights. A direct authenticated UPDATE must
--- never turn a manager account into a staff-channel reader. SECURITY INVOKER
--- ensures current_user is the actual SQL invoker (the trusted owner-only
--- SECURITY DEFINER linking RPC executes as postgres; clients do not).
+-- Identity changes are privileged even though the legacy employees RLS
+-- allows café managers both INSERT and UPDATE. Prevent a manager from creating
+-- a new employee row linked to another account (even an owner's login), as
+-- well as changing an existing link. PostgreSQL functions are SECURITY INVOKER
+-- by default: current_user is the authenticated SQL role, while the separately
+-- owner-authorized SECURITY DEFINER linking RPC executes as postgres.
 create function public.staff_channel_protect_identity_link()
  returns trigger language plpgsql set search_path=public,pg_temp as $$
 begin
- if new.staff_auth_user_id is distinct from old.staff_auth_user_id
-   and current_user not in ('postgres','service_role') then
-  raise exception 'staff_link_rpc_required' using errcode='42501';
+ if tg_op='INSERT' then
+  if new.staff_auth_user_id is not null
+    and current_user not in ('postgres','service_role') then
+   raise exception 'staff_link_rpc_required' using errcode='42501';
+  end if;
+ else
+  if new.staff_auth_user_id is distinct from old.staff_auth_user_id
+    and current_user not in ('postgres','service_role') then
+   raise exception 'staff_link_rpc_required' using errcode='42501';
+  end if;
  end if;
  return new;
 end $$;
+create trigger staff_channel_protect_identity_link_insert
+ before insert on public.employees
+ for each row execute function public.staff_channel_protect_identity_link();
 create trigger staff_channel_protect_identity_link
  before update of staff_auth_user_id on public.employees
  for each row execute function public.staff_channel_protect_identity_link();
