@@ -10,6 +10,7 @@ vi.mock("@/lib/staffCommunication/channel.server",()=>({
   constructor(public code:string){super(code);}
  }
 }));
+import {StaffChannelError} from "@/lib/staffCommunication/channel.server";
 import {GET as get,POST as post} from "./route";
 import {GET as getLinks,POST as postLinks} from "./link/route";
 import {POST as ownerPost} from "./owner-message/route";
@@ -38,6 +39,16 @@ describe("restricted staff communication APIs",()=>{
   expect(r.status).toBe(200);
   expect(mocks.reply).toHaveBeenCalledExactlyOnceWith(reply);
   expect((await r.json()).replayed).toBe(false);
+ });
+ it("identifies only proven stale source request as a definitive non-commit",async()=>{
+  mocks.reply.mockRejectedValueOnce(new StaffChannelError("stale_request"));
+  const old=await post(req(reply));
+  expect(old.status).toBe(409);
+  expect(await old.json()).toEqual({error:"stale_request"});
+  mocks.reply.mockRejectedValueOnce(new StaffChannelError("conflict"));
+  const uncertain=await post(req(reply));
+  expect(uncertain.status).toBe(409);
+  expect(await uncertain.json()).toEqual({error:"conflict"});
  });
  it("forbids cross-origin and non-JSON writes before reaching service",async()=>{
   const forged=await post(req(reply,{Origin:"https://evil.test"}));
