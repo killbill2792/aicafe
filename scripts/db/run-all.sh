@@ -181,6 +181,7 @@ supabase_lane() {
   sql_step gmail-connector-security-db.sql "Task 11 Gmail: RLS, scoped owner, receipt-gated effect completion"
 
   group "Concurrent sessions"
+  check supabase "Task13C: concurrent authenticated staff, owner reply and assignment replay" env TASK13C_DISPOSABLE_DB_URL="$supabase_url" node scripts/task13c-concurrent-nonce-db.mjs
   check supabase "Olivia 1A: concurrent same-key creates" bash scripts/olivia-pr1a-create-concurrency.sh
   check supabase "Olivia 1B: concurrent co-owner batches" bash scripts/olivia-pr1b-create-concurrency.sh
   check supabase "Olivia 1B: concurrent coverage creates" python3 scripts/olivia-pr1b-coverage-concurrency.py
