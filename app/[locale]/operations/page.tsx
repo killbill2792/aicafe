@@ -113,6 +113,11 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
 }
 
 function taskHref(task: OperatingTask): string {
+  // Persisted Task15A investigation reports and Task14B approvals share the
+  // owner inbox. Both must open their originally authorized Supervisor thread.
+  if(task.kind==="priority_notice"&&typeof task.payload.threadId==="string"&&
+    task.payload.threadId.length>0)
+    return "/?thread="+encodeURIComponent(task.payload.threadId);
   if(task.kind==="price_experiment_report"){
     const threadId=task.payload.threadId,proposalId=task.payload.proposalId;
     if(typeof threadId==="string"&&typeof proposalId==="string")
@@ -190,6 +195,13 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
       case "staff_coverage": return { title: t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }), detail: t("staffTaskReason"), action: t("openStaff") };
       case "supply_check": return { title: t("mayaWatching"), detail: t("supplySignal"), action: t("openIngredientCosts") };
       case "money_update": return { title: t("homeMoneyUpdate"), detail: "", action: t("openBills") };
+      case "priority_notice": return {
+        // Use the persisted owner-visible report title, not fabricated
+        // business conclusions. This card is rendered by the SAME Operations
+        // inbox that carries pending supplier PO owner approvals.
+        title: String(task.payload.title ?? ""),detail:"",
+        action:t("openEventThread"),
+      };
       case "commitment": return { title: String(task.payload.title ?? ""), detail: "", action: t("openEventThread") };
       case "event_change": return { title: t("eventChangeReview", { event: String(task.payload.eventName ?? "") }), detail: t("eventChangeDetail"), action: t("eventChangeReviewAction") };
       case "event_plan":

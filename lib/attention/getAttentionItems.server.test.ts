@@ -104,6 +104,39 @@ describe("Home and chat attention reads",()=>{
     const resolved=await getAttentionItems({snapshot:snapshot as never,menu:menu as never,locale:"en"});
     expect(resolved).toEqual([]);
   });
+  it("shows a persisted unprompted investigation report in Home/Operations instead of suppressing it",async()=>{
+    mocks.pos.mockResolvedValue({status:"active",provider:"toast"});
+    mocks.match.mockResolvedValue([]);
+    mocks.alerts.mockResolvedValue([]);
+    mocks.stored.mockResolvedValue([{
+      id:"investigation:stable:episode:2",businessId:"business-a",agentId:"leo",
+      kind:"priority_notice",status:"needs_owner",confidence:"high",
+      payload:{title:"Inventory risk verified against sales and labor",
+        intent:"priority_investigation",threadId:"owner-thread",
+        episodeId:"episode",stepVersion:2,sourceType:"operating_task",
+        sourceId:"task-source"},
+      evidence:[],createdAt:"2026-10-29T10:00:00Z",
+    },{
+      id:"priority:generic",businessId:"business-a",agentId:"leo",
+      kind:"priority_notice",status:"needs_owner",confidence:"high",
+      payload:{title:"Generic delivery receipt",threadId:"owner-thread"},
+      evidence:[],createdAt:"2026-10-29T09:00:00Z",
+    }]);
+    mocks.project.mockImplementation((tasks:unknown[])=>({
+      needsYou:tasks,watching:[],handled:[],
+    }));
+    const items=await getAttentionItems({snapshot:snapshot as never,menu:menu as never,locale:"en"});
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id:"investigation:stable:episode:2",kind:"priority_notice",
+      agentId:"leo",source:"operating_tasks",
+      displayTitle:"Inventory risk verified against sales and labor",
+      href:"/?thread=owner-thread",
+    });
+    expect(mocks.project).toHaveBeenCalledWith([
+      expect.objectContaining({id:"investigation:stable:episode:2"}),
+    ]);
+  });
   it("keeps the original owner task action rather than a generic notice",async()=>{
     mocks.pos.mockResolvedValue({status:"active",provider:"toast"});
     mocks.match.mockResolvedValue([]);

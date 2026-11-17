@@ -32,6 +32,12 @@ export function scenariosForPath(path) {
       path === "components/home/SupervisorProposalCard.gmail.test.tsx" ||
       path === "components/more/GmailConnectionPanel.test.tsx")
     return path === "components/home/SupervisorProposalCard.tsx" ? ["gmail","purchasing"] : ["gmail"];
+  // Task15A's owner-facing Operations report must run through a REAL signed-in
+  // seeded browser, not merely a server-component/unit render. The @home
+  // owner-inbox journey verifies the persisted report and its original thread.
+  if(path==="app/[locale]/operations/page.tsx"||
+     path==="app/[locale]/operations/page.test.tsx")
+    return ["home"];
   if (path === "components/operations/SupplierEvidenceManager.tsx" ||
       path === "app/[locale]/operations/suppliers/page.tsx")
     return ["purchasing"];
