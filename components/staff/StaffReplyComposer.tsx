@@ -18,6 +18,9 @@ export default function StaffReplyComposer({people,ownerUserId,businessId}:{
  const confirmMessage=useCallback((operation:OwnerPending)=>{
   if(operation.type==="message")setBody("");
  },[]);
+ const rejectMessage=useCallback((operation:OwnerPending)=>{
+  if(operation.type==="message")setBody("");
+ },[]);
  const restoreAssignment=useCallback((operation:OwnerPending)=>{
   if(operation.type!=="assignment")return;
   setEmployeeId(operation.employeeId);setWorkKind(operation.workKind);
@@ -26,13 +29,16 @@ export default function StaffReplyComposer({people,ownerUserId,businessId}:{
  const confirmAssignment=useCallback((operation:OwnerPending)=>{
   if(operation.type==="assignment"){setWorkTitle("");setWorkPrompt("");}
  },[]);
+ const rejectAssignment=useCallback((operation:OwnerPending)=>{
+  if(operation.type==="assignment"){setWorkTitle("");setWorkPrompt("");}
+ },[]);
  const message=useOwnerStaffOutbox({
   type:"message",ownerUserId,businessId,endpoint:"/api/staff-channel/owner-message",
-  onRestored:restoreMessage,onConfirmed:confirmMessage,
+  onRestored:restoreMessage,onConfirmed:confirmMessage,onRejected:rejectMessage,
  });
  const assignment=useOwnerStaffOutbox({
   type:"assignment",ownerUserId,businessId,endpoint:"/api/staff-channel/owner-assignment",
-  onRestored:restoreAssignment,onConfirmed:confirmAssignment,
+  onRestored:restoreAssignment,onConfirmed:confirmAssignment,onRejected:rejectAssignment,
  });
  const pending=Boolean(message.pending||assignment.pending);
  const locked=pending||message.busy||assignment.busy;
@@ -59,7 +65,18 @@ export default function StaffReplyComposer({people,ownerUserId,businessId}:{
     Retry original message
    </button>
   </div>}
-  {message.status&&<p role="status" className="text-sm text-ink-muted">{message.status}</p>}
+  {message.rejectedDraft?.type==="message"&&<div className="space-y-2 rounded-xl border border-line p-3">
+   <p className="font-semibold">Unsent owner message saved as a draft</p>
+   <p className="text-sm">The original employee lost access before a new message could be saved. Choose an active employee before reusing the wording.</p>
+   <p className="whitespace-pre-wrap break-words">{message.rejectedDraft.body}</p>
+   <div className="flex flex-wrap gap-2">
+    <button type="button" disabled={locked} onClick={()=>{if(message.rejectedDraft?.type==="message")setBody(message.rejectedDraft.body);}}
+     className="min-h-12 rounded-full border border-line px-4 py-2 disabled:opacity-50">Use wording in a new draft (not sent)</button>
+    <button type="button" onClick={message.dismissDraft}
+     className="min-h-12 rounded-full border border-line px-4 py-2">Dismiss saved draft</button>
+   </div>
+  </div>}
+  {message.status&&<p role="status" className="text-sm text-ink-muted">{message.status}</p>
   {!people.length?<p className="text-sm text-ink-muted">Link an existing employee account before sending a message.</p>:<>
    <label className="block text-sm font-semibold" htmlFor="staff-reply-person">Employee</label>
    <select id="staff-reply-person" className="min-h-12 w-full rounded-xl border border-line bg-white p-3"
@@ -91,7 +108,26 @@ export default function StaffReplyComposer({people,ownerUserId,businessId}:{
      Retry original assignment
     </button>
    </div>}
-   {assignment.status&&<p role="status" className="text-sm text-ink-muted">{assignment.status}</p>}
+   {assignment.rejectedDraft?.type==="assignment"&&<div className="space-y-2 rounded-xl border border-line p-3">
+    <p className="font-semibold">Unsent owner assignment saved as a draft</p>
+    <p className="text-sm">The original employee lost access before new work could be assigned. Choose an active employee before reviewing a new assignment.</p>
+    <p className="font-medium">{assignment.rejectedDraft.title}</p>
+    <p className="whitespace-pre-wrap break-words">{assignment.rejectedDraft.prompt}</p>
+    <div className="flex flex-wrap gap-2">
+     <button type="button" disabled={locked} onClick={()=>{
+      if(assignment.rejectedDraft?.type==="assignment"){
+       setWorkKind(assignment.rejectedDraft.workKind);
+       setWorkTitle(assignment.rejectedDraft.title);
+       setWorkPrompt(assignment.rejectedDraft.prompt);
+      }
+     }} className="min-h-12 rounded-full border border-line px-4 py-2 disabled:opacity-50">
+      Use wording in a new draft (not sent)
+     </button>
+     <button type="button" onClick={assignment.dismissDraft}
+      className="min-h-12 rounded-full border border-line px-4 py-2">Dismiss saved draft</button>
+    </div>
+   </div>}
+   {assignment.status&&<p role="status" className="text-sm text-ink-muted">{assignment.status}</p>
    <label htmlFor="staff-work-kind" className="block text-sm font-semibold">Type</label>
    <select id="staff-work-kind" className="min-h-12 w-full rounded-xl border border-line bg-white p-3"
     disabled={locked} value={workKind} onChange={e=>setWorkKind(e.target.value as "task"|"checklist")}>
