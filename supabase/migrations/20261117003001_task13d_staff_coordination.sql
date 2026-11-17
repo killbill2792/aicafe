@@ -177,7 +177,7 @@ begin
       'sourceKind','owner_record','decisionVerified',false))))
  on conflict (business_id,id) do nothing;
  return jsonb_build_object('id',v_case.id,'revision',v_case.revision,'state',v_case.state);
-end $;
+end $$;
 revoke all on function public.staff_coordination_open(uuid,uuid,text,uuid,uuid,date,date,text)
  from public,anon;
 grant execute on function public.staff_coordination_open(uuid,uuid,text,uuid,uuid,date,date,text)
@@ -294,7 +294,7 @@ begin
    and entity_id=p_case_id::text and kind='staff_coordination';
  return jsonb_build_object('id',p_case_id,'requestId',v_request_id,
    'revision',v_case.revision,'state',v_case.state,'replayed',false);
-end $;
+end $$;
 revoke all on function public.staff_coordination_assign_checklist(uuid,uuid,int,uuid,text,text)
  from public,anon;
 grant execute on function public.staff_coordination_assign_checklist(uuid,uuid,int,uuid,text,text)
