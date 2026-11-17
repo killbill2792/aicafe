@@ -56,10 +56,16 @@ run("real Luna investigates verified employee decline, follows up without effect
  const provider:AgentProvider=async function*(params,signal){
   if(params.model!=="gpt-6-luna"||typeof params.max_output_tokens!=="number")
     throw Error("13c_live_unexpected_model");
+  // The existing trusted-main, secret-isolating 14B Responses broker caps
+  // every candidate request at 1,200 output tokens and enforces a separate
+  // $0.18 / 18-attempt hard ceiling. The production Supervisor's tool
+  // registry, prompt and durable worker are unchanged; only the opt-in paid
+  // transport request's output budget is lowered for this bounded pilot.
+  const paidParams={...params,max_output_tokens:Math.min(params.max_output_tokens,1200)};
   budget=reserveInvestigationLiveCall(
-   budget,Buffer.byteLength(JSON.stringify(params),"utf8"),
-   params.max_output_tokens,params.model);
-  for await(const event of openAIProvider(params,signal)){
+   budget,Buffer.byteLength(JSON.stringify(paidParams),"utf8"),
+   paidParams.max_output_tokens,paidParams.model);
+  for await(const event of openAIProvider(paidParams,signal)){
    if(event.type==="response.completed"){
     if((event.response as {model?:unknown}|undefined)?.model!=="gpt-6-luna")
      throw Error("13c_live_actual_model_mismatch");
