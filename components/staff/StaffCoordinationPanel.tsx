@@ -1,5 +1,5 @@
 "use client";
-import {useCallback,useEffect,useState} from "react";
+import {useCallback,useEffect,useRef,useState} from "react";
 import type {StaffCoordinationCase} from "@/lib/staffCoordination/cases.server";
 
 type Person={id:string;name:string};
@@ -22,6 +22,8 @@ export default function StaffCoordinationPanel({people}:{people:Person[]}) {
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
+ // Preserve idempotency keys after ambiguous HTTP failures, just like Task13C.
+ const pendingNonces=useRef(new Map<string,string>());
  const load=useCallback(async()=>{
   const response=await fetch("/api/staff-coordination",{cache:"no-store"});
   if(!response.ok)throw new Error("Cannot load staff coordination cases");
@@ -30,15 +32,20 @@ export default function StaffCoordinationPanel({people}:{people:Person[]}) {
  },[]);
  useEffect(()=>{void load().catch(()=>setError("Staff coordination is unavailable."));},[load]);
  async function post(body:Record<string,unknown>) {
+  const signature=JSON.stringify(body);
+  const needsNonce=body.action==="open"||body.action==="assign-checklist";
+  const nonce=needsNonce?(pendingNonces.current.get(signature)??crypto.randomUUID()):null;
+  if(needsNonce&&nonce)pendingNonces.current.set(signature,nonce);
   setBusy(true);setError("");setNotice("");
   try{
    const response=await fetch("/api/staff-coordination",{
     method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(body),cache:"no-store",
+    body:JSON.stringify(needsNonce?{...body,nonce}:body),cache:"no-store",
    });
    const result=await response.json() as SaveResult|{error?:string};
    if(!response.ok)throw new Error(("error" in result&&result.error)||"Save failed");
    await load();
+   if(needsNonce)pendingNonces.current.delete(signature);
    setNotice("Saved. Supervisor still needs source evidence before marking work complete.");
   }catch(e){setError(e instanceof Error?e.message:"Save failed");}
   finally{setBusy(false);}
@@ -52,7 +59,7 @@ export default function StaffCoordinationPanel({people}:{people:Person[]}) {
   </div>
   <form className="grid gap-3 sm:grid-cols-2" onSubmit={event=>{
    event.preventDefault();
-   void post({action:"open",nonce:crypto.randomUUID(),kind,
+   void post({action:"open",kind,
     employeeId:kind==="recruitment"?null:employee||null,locationId:null,
     from:kind==="leave"?from||null:null,to:kind==="leave"?to||null:null,
     role:kind==="recruitment"?role.trim()||null:null});
@@ -123,7 +130,7 @@ export default function StaffCoordinationPanel({people}:{people:Person[]}) {
     <button type="button" className="rounded-md border border-border px-3 py-2"
      disabled={busy||!onboardingTitle.trim()||!onboardingPrompt.trim()}
      onClick={()=>void post({action:"assign-checklist",caseId:item.id,
-      revision:item.revision,nonce:crypto.randomUUID(),
+      revision:item.revision,
       title:onboardingTitle.trim(),prompt:onboardingPrompt.trim()})}>
      Assign employee onboarding checklist
     </button>
