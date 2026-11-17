@@ -131,12 +131,13 @@ export type OwnerStaffMessage=StaffMessage&{
 };
 /** Read source-scoped staff records through the caller's verified DB scope.
  * Do not accept a café identifier from the model or a worker browser. */
-async function loadOwnerMessages(db:SupabaseClient,businessId:string,limit:number):
+async function loadOwnerMessages(db:SupabaseClient,businessId:string,limit:number,employeeOnly=false):
  Promise<OwnerStaffMessage[]>{
- const {data,error}=await db.from("staff_communication_messages")
+ const query=db.from("staff_communication_messages")
   .select("id,employee_id,request_id,response_code,body,channel,received_at,actor")
   .eq("business_id",businessId)
   .order("received_at",{ascending:false}).limit(Math.min(limit,100));
+ const {data,error}=await (employeeOnly?query.eq("actor","employee"):query);
  if(error||!data)throw new StaffChannelError("storage");
  if(!data.length)return [];
  const empIds=[...new Set(data.map(x=>x.employee_id))];
@@ -170,5 +171,5 @@ export async function readStaffMessagesForVerifiedOwner(
   .eq("business_id",businessId).eq("user_id",ownerUserId)
   .eq("role","owner").maybeSingle();
  if(error||!data)throw new StaffChannelError("unauthorized");
- return loadOwnerMessages(db,businessId,limit);
+ return loadOwnerMessages(db,businessId,limit,true);
 }
