@@ -103,8 +103,8 @@ jobs:
           NODE
   paid-pilot:
     needs: [consume-once]
-    if: needs.consume-once.result == 'success'
-    name: Real-model purchasing pilot with secret isolated from candidate
+    if: needs.consume-once.result == 'success' && github.run_attempt == 1
+    name: Real-model staff coverage pilot with secret isolated from candidate
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -116,6 +116,14 @@ jobs:
       VERCEL_ENV: ''
       SUPABASE_PROJECT_REF: ''
     steps:
+      - name: Fail closed on attempted paid job replay before any checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_RUN_ATTEMPT:-}" != "1" ]; then
+            echo "::error::Task13C one-shot paid grant cannot be replayed"
+            exit 1
+          fi
       - name: Checkout ONLY trusted broker from main, without write credentials
         uses: actions/checkout@v4
         with:
