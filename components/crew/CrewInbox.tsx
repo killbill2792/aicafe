@@ -26,6 +26,11 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
    // previous commit whose HTTP acknowledgement was lost is replayed by SQL,
    // never reported to the owner as a second staff incident.
    const receipt=await deliverCrewWithRetry(operation,async value=>{
+    // The browser may sign out or switch accounts while a prior HTTP attempt
+    // is uncertain. Never replay an old worker's saved report as a new user.
+    const session=await createBrowserSupabaseClient().auth.getUser();
+    if(session.error||session.data.user?.id!==authUserId)
+     throw new Error("Original staff session no longer verified");
     // A stalled HTTP response is also an ambiguous save. Abort the wait and
     // replay exactly the same database-deduped nonce after bounded backoff.
     const controller=new AbortController();
@@ -51,7 +56,7 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
    setFeedback("Response saved. Your café supervisor can now review it.");
    router.refresh();
   }finally{sending.current=false;setBusy("");}
- },[router,storageKey]);
+ },[router,storageKey,authUserId]);
  useEffect(()=>{
   // An ambiguous save survives a page reload *only in this authenticated
   // user's browser tab*. Never carry an operation to a different login.
