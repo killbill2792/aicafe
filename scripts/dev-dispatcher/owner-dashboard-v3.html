@@ -14,7 +14,7 @@ header{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
 table{border-collapse:collapse;width:100%;font-size:.85rem}
 td,th{border-bottom:1px solid #ddd;padding:9px;white-space:nowrap;text-align:left}
 th{background:#e9ecf0;position:sticky;top:0}
-button,input,select{font:inherit;padding:8px;border:1px solid #aeb5bb;border-radius:7px}
+button,input,select,textarea{font:inherit;padding:8px;border:1px solid #aeb5bb;border-radius:7px}
 button{cursor:pointer}label{display:inline-flex;flex-direction:column;margin:8px;gap:3px}
 .green{color:#137047}.red{color:#a52222}
 pre{white-space:pre-wrap;word-break:break-word;max-height:42vh;overflow:auto}
@@ -31,7 +31,26 @@ section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
 <div class="tablewrap"><table>
 <thead><tr><th>Task</th><th>Stage</th><th>Muse</th><th>PR</th><th>Last commit</th><th>CI</th><th>Codex requested</th><th>Codex result</th><th>Acceptance</th><th>Dependencies</th><th>Merge</th><th>Integration</th><th>Next action</th></tr></thead>
 <tbody id="rows"></tbody></table></div>
+<section>
+<h2>Muse's direct PR monitor</h2>
+<p id="muse-pr-freshness">Loading last read-only GitHub snapshot…</p>
+<div class="tablewrap"><table><thead><tr><th>PR</th><th>Last commit</th><th>Observed CI</th><th>Codex</th><th>ChatGPT</th></tr></thead><tbody id="muse-prs"></tbody></table></div>
+<div id="muse-merges"></div>
+<h3>Muse next suggested actions</h3><div id="muse-actions"></div>
+<p>These are observed GitHub facts, not approval or guaranteed merge readiness. If monitoring fails, the last observation is labeled stale; local notes remain editable.</p>
+</section>
 <section id="detail"><b>Select a task to inspect every field and its evidence.</b></section>
+<section>
+<h2>Muse coordination notes</h2>
+<p>Both Muse and the owner can register a ChatGPT URL, a note and an informal work stage here. These are NOT CI, Codex, owner approval or merge receipts. The notes stay on Muse's private host and can be edited even when GitHub Actions fails.</p>
+<div id="muse-notes-list"></div>
+<label>Task ID<input id="muse-task" placeholder="15a"></label>
+<label>PR number<input id="muse-pr" type="number" min="1" placeholder="488 (optional)"></label>
+<label>ChatGPT conversation URL<input id="muse-chat" type="url" placeholder="https://chatgpt.com/c/..."></label>
+<label>Stage<select id="muse-stage"><option value="unknown">Not specified</option><option value="working">Working</option><option value="waiting_owner">Waiting for owner</option><option value="ready_review">Reported ready for review</option><option value="incomplete">Not completed</option><option value="paused">Paused</option></select></label>
+<label>Message<textarea id="muse-note" rows="3" cols="45" placeholder="What Muse or the owner wants the coding chat to know"></textarea></label>
+<button id="muse-save">Save coordination note</button><span id="muse-saved"></span>
+</section>
 <section>
 <h2>Owner controls</h2><p>Editable: task notes, new-dispatch priority/pause and monitoring thresholds. Signed task scope, CI, Codex and merge proof are read-only.</p>
 <label>Task ID<input id="task" placeholder="7"></label>
@@ -43,7 +62,59 @@ section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
 <script>
 const el=id=>document.getElementById(id),esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const age=t=>{let n=Math.floor((Date.now()-Date.parse(t))/60000);return Number.isFinite(n)?Math.max(0,n)+'m ago':'unknown';};
-let snapshot=null;
+let snapshot=null,localNotes={version:1,entries:{}},editingMuse={task_id:null,revision:0};
+async function refreshMusePrs(){
+ const response=await fetch('/api/muse-status',{cache:'no-store'});
+ if(!response.ok)throw Error('Monitor HTTP '+response.status);
+ const facts=await response.json(),stamp=facts.observed_at;
+ const ageMinutes=Math.floor((Date.now()-Date.parse(stamp))/60000);
+ const fresh=Number.isFinite(ageMinutes)&&ageMinutes>=0&&ageMinutes<=15;
+ el('muse-pr-freshness').textContent=(fresh?'Last GitHub observation: ':'STALE GitHub observation: ')+
+  (stamp||'unknown')+(fresh?'':' — do not assume current CI/Codex status');
+ el('muse-prs').innerHTML=(facts.prs||[]).map(p=>{
+  const matching=Object.values(localNotes.entries||{}).find(e=>e.pr_number===p.number);
+  return '<tr><td><a target="_blank" rel="noopener noreferrer" href="'+esc(p.url)+'">#'+esc(p.number)+'</a> '+esc(p.title)+'</td>'+
+    '<td>'+esc(p.head_sha?.slice(0,8))+' · '+age(p.committed_at)+'</td>'+
+    '<td>'+esc(p.ci)+(fresh?'':' (stale)')+'</td><td>'+esc(p.codex)+(fresh?'':' (stale)')+'</td>'+
+    '<td>'+(matching?.chat_url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(matching.chat_url)+'">Open saved chat</a>':'Not registered')+'</td></tr>';
+ }).join('')||'<tr><td colspan="5">No open PRs observed</td></tr>';
+ el('muse-merges').textContent='Recently merged (observed): '+
+  (facts.merged_prs||[]).slice(0,8).map(x=>'#'+x.number).join(', ');
+}
+async function refreshMuseActions(){
+ const response=await fetch('/api/muse-actions',{cache:'no-store'});
+ if(!response.ok)throw Error('Actions HTTP '+response.status);
+ const value=await response.json();
+ el('muse-actions').innerHTML=(value.events||[]).slice(0,15).map(a=>
+  '<p>'+esc(a.kind)+' · '+esc(a.task_id||('PR #'+(a.pr_number||'—')))+
+  ' · '+esc(a.status)+' · '+esc(a.reason||'')+
+  (a.chat_url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(a.chat_url)+'"> Open chat</a>':'')+'</p>'
+ ).join('')||'<p>None recorded yet.</p>';
+}
+async function refreshNotes(){
+ const response=await fetch('/api/notes',{cache:'no-store'});
+ if(!response.ok)throw Error('Notes HTTP '+response.status);
+ localNotes=await response.json();
+ if(editingMuse.task_id===el('muse-task').value.trim()&&
+  (localNotes.entries?.[editingMuse.task_id]?.revision??0)!==editingMuse.revision)
+  el('muse-saved').textContent='Changed elsewhere. Reload this task before saving.';
+ el('muse-notes-list').innerHTML=Object.values(localNotes.entries||{}).sort((a,b)=>
+  a.task_id.localeCompare(b.task_id)).map(e=>
+  '<button type="button" data-muse-task="'+esc(e.task_id)+'">'+esc(e.task_id)+
+  '</button> · '+esc(e.stage)+' · '+(e.pr_number?'PR #'+esc(e.pr_number)+' · ':'')+
+  esc(e.note.slice(0,180))+(e.chat_url?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(e.chat_url)+'">Open saved chat</a>':'')+'<br>').join('')||'<p>No coordination notes yet.</p>';
+ for(const button of document.querySelectorAll('[data-muse-task]'))
+  button.onclick=()=>selectMuseNote(button.dataset.museTask);
+}
+function selectMuseNote(id){
+ const e=localNotes.entries?.[id];
+ editingMuse={task_id:id,revision:e?.revision??0};
+ el('muse-task').value=id;
+ el('muse-pr').value=e?.pr_number||'';
+ el('muse-chat').value=e?.chat_url||'';
+ el('muse-stage').value=e?.stage||'unknown';
+ el('muse-note').value=e?.note||'';
+}
 async function refresh(){
  const response=await fetch('/api/state',{cache:'no-store'});
  if(!response.ok)throw Error('State HTTP '+response.status);
@@ -74,9 +145,26 @@ function detail(id){
  (x.dispatch.verified_chat_url?'<p><a target="_blank" rel="noopener noreferrer" href="'+esc(x.dispatch.verified_chat_url)+'">Verified ChatGPT conversation</a></p>':'')+
  names.map(n=>'<details><summary>'+esc(n)+'</summary><pre>'+esc(JSON.stringify(x[n],null,2))+'</pre></details>').join('');
  el('task').value=id;
+ selectMuseNote(id);
 }
 el('search').oninput=()=>snapshot&&redraw();
-el('refresh').onclick=()=>refresh().catch(e=>alert(e.message));
+el('refresh').onclick=()=>{refresh().catch(e=>alert(e.message));refreshNotes().catch(e=>el('muse-saved').textContent=e.message);refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);refreshMuseActions().catch(e=>el('muse-actions').textContent='Actions unavailable: '+e.message);};
+el('muse-save').onclick=async()=>{
+ const task_id=el('muse-task').value.trim();
+ const prRaw=el('muse-pr').value.trim();
+ const edit={task_id,pr_number:prRaw?Number(prRaw):null,
+  chat_url:el('muse-chat').value.trim(),stage:el('muse-stage').value,
+  note:el('muse-note').value,expected_revision:
+   editingMuse.task_id===task_id?editingMuse.revision:0};
+ el('muse-saved').textContent='Saving locally…';
+ try{
+  const r=await fetch('/api/notes',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify(edit)});
+  if(!r.ok)throw Error((await r.json()).error||'HTTP '+r.status);
+  await refreshNotes();selectMuseNote(task_id);
+  el('muse-saved').textContent='Saved on Muse host';
+ }catch(e){el('muse-saved').textContent='Not saved: '+e.message;}
+};
 el('save').onclick=async()=>{
  const field=el('field').value,task_id=['stall_minutes','escalation_minutes'].includes(field)?'__global__':el('task').value.trim();
  const raw=el('value').value;let value=raw;
@@ -90,7 +178,9 @@ el('save').onclick=async()=>{
   el('saved').textContent='Saved';await refresh();
  }catch(e){el('saved').textContent='Not saved: '+e.message;}
 };
-refresh().catch(e=>el('freshness').textContent='Unavailable: '+e.message);
-setInterval(()=>refresh().catch(()=>{}),60000);
+refresh().catch(e=>el('freshness').textContent='GitHub state unavailable: '+e.message);
+refreshNotes().catch(e=>el('muse-saved').textContent='Notes unavailable: '+e.message);
+refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);
+setInterval(()=>{refresh().catch(()=>{});refreshNotes().catch(()=>{});refreshMusePrs().catch(()=>{});refreshMuseActions().catch(()=>{});},60000);
 </script>
 </body></html>
