@@ -20,13 +20,17 @@ begin
   raise exception 'staff_owner_required' using errcode='42501'; end if;
  select * into v_employee from public.employees
   where business_id=p_business_id and id=p_employee_id for update;
- if not found or not v_employee.active then
-  raise exception 'active_employee_not_found' using errcode='22023'; end if;
+ if not found then
+  raise exception 'employee_not_found' using errcode='22023'; end if;
+ -- Revocation must remain available after an employee is deactivated.
  if p_email is null then
   update public.employees set staff_auth_user_id=null
    where business_id=p_business_id and id=p_employee_id;
   return jsonb_build_object('linked',false);
  end if;
+ -- New links are only valid for currently active staff.
+ if not v_employee.active then
+  raise exception 'active_employee_required' using errcode='22023'; end if;
  if char_length(p_email)>320 or p_email !~ '^[^[:space:]@]+@[^[:space:]@]+$' then
   raise exception 'invalid_email' using errcode='22023'; end if;
  select u.id into v_user from auth.users u
