@@ -18,6 +18,8 @@ INSERT INTO public.memberships(business_id,user_id,role)
 VALUES (:'a',:'owner_a','owner'),(:'b',:'owner_b','owner');
 INSERT INTO public.employees(id,business_id,display_name,active,wage_period,wage_amount_cents)
 VALUES (:'worker',:'a','13D worker',true,'hour',1600);
+-- The owner already provisioned this test login; Task13D must not create accounts.
+UPDATE public.employees SET staff_auth_user_id=:'worker_user' WHERE id=:'worker';
 SELECT set_config('test.d.a',:'a',true);
 SELECT set_config('test.d.b',:'b',true);
 SELECT set_config('test.d.oa',:'owner_a',true);
@@ -147,7 +149,31 @@ BEGIN
 END $t$;
 SELECT public.staff_coordination_open(:'a',:'nonce_onboard','onboarding',:'worker',null,
  null,null,null)->>'id' AS onboard_id \gset
-SELECT public.staff_coordination_decide(:'a',:'onboard_id',1,'decline');
+SELECT set_config('test.d.onboard',:'onboard_id',true);
+SELECT public.staff_coordination_decide(:'a',:'onboard_id',1,'approve');
+SELECT public.staff_coordination_assign_checklist(
+ :'a',:'onboard_id',2,gen_random_uuid(),'New starter checklist',
+ 'Please complete your assigned onboarding checks.') ->>'requestId' AS onboard_request \gset
+SELECT set_config('test.d.onboard_request',:'onboard_request',true);
+DO $t$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.staff_coordination_cases c
+   JOIN public.staff_coordination_evidence e ON e.business_id=c.business_id
+     AND e.case_id=c.id AND e.evidence_key='onboarding_checklist'
+   JOIN public.staff_communication_requests r ON r.business_id=e.business_id
+     AND r.id::text=e.source_id AND r.employee_id=c.employee_id
+   WHERE c.id=current_setting('test.d.onboard')::uuid
+     AND c.state='in_progress' AND e.source_kind='staff_request'
+     AND r.kind='checklist' AND r.source_type='owner_manual')
+ THEN RAISE EXCEPTION 'owner checklist did not reuse 13C assignment in one transaction'; END IF;
+ IF (SELECT count(*) FROM public.staff_coordination_evidence
+   WHERE case_id=current_setting('test.d.onboard')::uuid
+   AND evidence_key='onboarding_checklist')<>1
+ THEN RAISE EXCEPTION 'duplicated onboarding checklist'; END IF;
+ IF EXISTS(SELECT 1 FROM public.staff_communication_messages
+   WHERE request_id=current_setting('test.d.onboard_request')::uuid)
+ THEN RAISE EXCEPTION 'owner assignment fabricated employee completion'; END IF;
+END $t$;
 SELECT public.staff_coordination_open(:'a',:'nonce_recruit','recruitment',null,null,
  null,null,'barista')->>'id' AS recruit_id \gset
 SELECT set_config('test.d.recruit',:'recruit_id',true);
@@ -178,6 +204,30 @@ INSERT INTO public.staff_availability_exceptions
   confirmation,confirmed_at,confirmed_by)
 VALUES
  (:'a',:'worker',current_date+2,'approved_leave','owner_direct','owner_confirmed',now(),:'owner_a');
+-- A staff reply is an independently authenticated source receipt, not
+-- a model, owner or outbound delivery assertion. The existing 13C function
+-- checks worker identity and the exact assigned checklist.
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT set_config('request.jwt.claim.sub',:'worker_user',true);
+SELECT public.staff_channel_submit(
+ current_setting('test.d.onboard_request')::uuid,
+ 'complete','I completed the assigned onboarding checks',gen_random_uuid());
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role','service_role',true);
+UPDATE public.staff_coordination_cases SET next_check_at=now()
+ WHERE business_id=:'a' AND id=current_setting('test.d.onboard')::uuid;
+SELECT public.staff_coordination_reconcile(:'a');
+DO $t$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.staff_coordination_cases c
+  JOIN public.operating_tasks t ON t.business_id=c.business_id
+   AND t.entity_type='staff_coordination_case' AND t.entity_id=c.id::text
+  WHERE c.id=current_setting('test.d.onboard')::uuid
+   AND c.state='completed' AND t.status='handled'
+   AND t.payload->>'staffAcceptanceVerified'='true')
+ THEN RAISE EXCEPTION 'saved employee completion was not independently verified'; END IF;
+END $t$;
 -- One confirmed day of two is NOT enough.
 UPDATE public.staff_coordination_cases SET next_check_at=now()
  WHERE business_id=:'a' AND id=current_setting('test.d.leave')::uuid;
