@@ -17,8 +17,8 @@ function harness(){
   }
  };
  const ctx={
-  process:{env:{AICAFE_14C_SIM_PATH:"/proof/task14c-simulator-receipt.json"}},
-  require:(module)=>{assert.equal(module,"node:fs");return fakeFs},
+  process:{env:{AICAFE_14C_SIM_PATH:"/proof/task14c-simulator-receipt.json"},
+   getBuiltinModule:(module)=>{assert.equal(module,"node:fs");return fakeFs}},
   Response,URL,Request,Buffer,
   globalThis:{fetch:async()=>{networkCalls++;throw Error("real network access denied")}}
  };
