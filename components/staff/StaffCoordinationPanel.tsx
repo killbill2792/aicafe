@@ -30,7 +30,17 @@ export default function StaffCoordinationPanel({people}:{people:Person[]}) {
   const result=await response.json() as CasesResult;
   setCases(result.cases);
  },[]);
- useEffect(()=>{void load().catch(()=>setError("Staff coordination is unavailable."));},[load]);
+ useEffect(()=>{
+  let mounted=true;
+  void fetch("/api/staff-coordination",{cache:"no-store"})
+   .then(async response=>{
+    if(!response.ok)throw new Error("Staff coordination unavailable");
+    return await response.json() as CasesResult;
+   })
+   .then(result=>{if(mounted)setCases(result.cases);})
+   .catch(()=>{if(mounted)setError("Staff coordination is unavailable.");});
+  return ()=>{mounted=false;};
+ },[]);
  async function post(body:Record<string,unknown>) {
   const signature=JSON.stringify(body);
   const needsNonce=body.action==="open"||body.action==="assign-checklist";
