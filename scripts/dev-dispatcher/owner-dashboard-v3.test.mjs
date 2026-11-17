@@ -175,3 +175,30 @@ test('private dashboard script remains syntactically valid after adding Muse fie
  assert.match(html,/id="muse-note"/);
  assert.match(html,/id="muse-prs"/);
 });
+
+test('form rejects a concurrent Muse edit instead of silently replacing its new stage and URL',async()=>{
+ const html=readFileSync(new URL('./owner-dashboard-v3.html',import.meta.url),'utf8');
+ const script=html.match(/<script>([\s\S]*?)<\/script>/)[1],elements=new Map();
+ const el=id=>{if(!elements.has(id))elements.set(id,{value:'',textContent:'',innerHTML:''});return elements.get(id);};
+ let note={task_id:'A',revision:1,stage:'working',chat_url:'https://chatgpt.com/c/1234',note:'Owner original',pr_number:488},post=null;
+ const fetchMock=async(url,opts={})=>{
+  if(url==='/api/notes'&&opts.method==='POST'){
+   post=JSON.parse(opts.body);
+   return {ok:false,status:409,json:async()=>({error:'Dashboard edit conflict'})};
+  }
+  const data=url==='/api/notes'?{version:1,entries:{A:note}}:
+   url==='/api/state'?{lifecycle:{},owner_controls:{}}:
+   url==='/api/muse-status'?{prs:[],merged_prs:[]}:{events:[]};
+  return {ok:true,json:async()=>data};
+ };
+ const ctx=vm.createContext({document:{getElementById:el,querySelectorAll:()=>[]},
+  fetch:fetchMock,setInterval:()=>{},alert:()=>{},Date});
+ vm.runInContext(script,ctx);await vm.runInContext('refreshNotes()',ctx);
+ vm.runInContext('selectMuseNote("A")',ctx);
+ note={...note,revision:2,stage:'paused',chat_url:'https://chatgpt.com/c/new'};
+ await vm.runInContext('refreshNotes()',ctx);
+ await el('muse-save').onclick();
+ assert.equal(post.expected_revision,1);
+ assert.equal(note.stage,'paused');
+ assert.match(el('muse-saved').textContent,/Not saved: Dashboard edit conflict/);
+});
