@@ -189,7 +189,11 @@ export function projectOwnerWork(input: {
   }
   const priority = (s: OwnerWorkStatus) =>
     ["uncertain", "failed", "approval_required", "retrying", "running", "queued", "verified_complete", "answer_ready", "source_resolved", "cancelled"].indexOf(s);
-  return work.sort((a, b) => priority(a.status) - priority(b.status)
+  const sorted = work.sort((a, b) => priority(a.status) - priority(b.status)
     || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0)
-    || a.id.localeCompare(b.id)).slice(0, 18);
+    || a.id.localeCompare(b.id));
+  const settled = (s: OwnerWorkStatus) =>
+    ["verified_complete","answer_ready","source_resolved","cancelled"].includes(s);
+  // Keep ALL unresolved work addressable; only confirmed past results are bounded.
+  return [...sorted.filter(x => !settled(x.status)), ...sorted.filter(x => settled(x.status)).slice(0,2)];
 }

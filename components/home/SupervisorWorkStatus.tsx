@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { AlertTriangle, CheckCircle2, CircleDot, Clock3, ShieldAlert } from "lucide-react";
 import type { OwnerWorkItem, OwnerWorkStatus } from "@/lib/ai/supervisor/runs/ownerWorkView";
 import en from "@/messages/en.json";
@@ -17,9 +18,10 @@ const statusIcon = (status: OwnerWorkStatus) => {
 export default function SupervisorWorkStatus({ items, unavailable }: {
   items: OwnerWorkItem[]; unavailable: boolean;
 }) {
+  const [shown, setShown] = useState(5);
   const active = items.filter(item => !["answer_ready", "verified_complete", "source_resolved", "cancelled"].includes(item.status));
   const recent = items.filter(item => ["answer_ready", "verified_complete", "source_resolved", "cancelled"].includes(item.status)).slice(0, 2);
-  const display = [...active.slice(0, 5), ...recent].slice(0, 6);
+  const display = [...active.slice(0, shown), ...recent].slice(0, shown + 2);
   if (!display.length && !unavailable) return null;
   return <section aria-label={en.SupervisorWork.heading}
     className="min-w-0 w-full space-y-2 rounded-2xl border border-line bg-surface p-3 sm:p-4">
@@ -45,8 +47,9 @@ export default function SupervisorWorkStatus({ items, unavailable }: {
         </p>}
       </article>)}
     </div>
-    {active.length > 5 && <p className="text-[13px] text-ink-muted">
+    {active.length > shown && <button type="button" onClick={() => setShown(n => n + 5)}
+      className="rounded-lg border border-line px-3 py-2 text-[13px] font-medium text-ink">
       {en.SupervisorWork.more}
-    </p>}
+    </button>}
   </section>;
 }

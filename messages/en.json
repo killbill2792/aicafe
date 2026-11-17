@@ -2,7 +2,7 @@
     "SupervisorWork": {
     "heading": "Supervisor work",
     "stale": "Current status cannot be verified. Saved work may still be running; no action has been repeated.",
-    "more": "More saved work is available in this conversation.",
+    "more": "Show more saved work",
     "effectReceipt": "Verified effect receipt:",
     "replyReceipt": "Saved reply reference (not an external effect):",
     "copy": {

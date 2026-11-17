@@ -47,6 +47,19 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       expect(ownRead.status()).toBe(200);
       expect((await ownRead.json()).work.some(item=>item.id==="run:"+runId)).toBe(true);
 
+      // More than five unresolved 15A episodes remain accessible, not silently
+      // hidden behind a recency limit or duplicate approval control.
+      for (let i=0;i<6;i++) {
+        const episode=randomUUID(), hash=episode.replaceAll("-","").repeat(2);
+        await db.query("insert into public.supervisor_investigations(business_id,owner_user_id,thread_id,source_type,source_id,revision_hash,stable_key,phase) values($1,$2,$3,'alert',$4,$5,$6,'collect')",
+          [own.businessId,own.owner.userId,threadId,episode,hash,hash]);
+      }
+      await page.reload();
+      const showMore = work.getByRole("button",{name:"Show more saved work"});
+      await expect(showMore).toBeVisible();
+      await showMore.click();
+      await expect(work.locator('[data-work-kind="investigation"]')).toHaveCount(7);
+
       // Durable worker retry is visible from the canonical lease attempt.
       await db.query("update public.supervisor_run_steps set status='leased',worker_id=$1,claim_token=$2,lease_until=now()+interval '10 minutes',attempts=2,updated_at=now() where run_id=$3",
         [randomUUID(),randomUUID(),runId]);

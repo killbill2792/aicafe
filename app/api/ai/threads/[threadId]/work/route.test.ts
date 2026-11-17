@@ -20,12 +20,57 @@ function database() {
     supervisor_proposals: [], supervisor_effect_attempts: [], supervisor_investigations: [],
   };
   const db = { from(table: string) {
+    const predicates: Array<(row: Record<string,unknown>) => boolean> = [];
+    let sort: {field: string; ascending: boolean} | null = null;
+    let limit = Infinity;
+    const rows = (from=0,to=Infinity) => {
+      let result = (source[table] ?? []).map(x => x as Record<string,unknown>).filter(row =>
+        predicates.every(predicate => predicate(row)));
+      if (sort) {
+        const {field,ascending} = sort;
+        result = result.sort((a,b) => String(a[field] ?? "").localeCompare(String(b[field] ?? "")) *
+          (ascending ? 1 : -1));
+      }
+      return { data: result.slice(from,Math.min(to+1,limit)), error: null };
+    };
     const query = {
       select() { return query; },
-      eq(field: string, value: unknown) { (filters[table] ??= []).push(["eq", field, value]); return query; },
-      in(field: string, value: unknown) { (filters[table] ??= []).push(["in", field, value]); return query; },
-      order() { return query; }, limit() { return query; },
-      then(resolve: (value: unknown) => unknown) { return Promise.resolve(resolve({ data: source[table] ?? [], error: null })); },
+      eq(field: string, value: unknown) {
+        (filters[table] ??= []).push(["eq",field,value]);
+        predicates.push(row => !(field in row) || row[field] === value);
+        return query;
+      },
+      neq(field: string, value: unknown) {
+        predicates.push(row => row[field] !== value); return query;
+      },
+      in(field: string, values: unknown[]) {
+        (filters[table] ??= []).push(["in",field,values]);
+        predicates.push(row => !(field in row) || values.includes(row[field]));
+        return query;
+      },
+      not(field: string, operator: string, value: string | null) {
+        if (operator === "in" && value) {
+          const statuses = value.slice(1,-1).split(",");
+          predicates.push(row => !statuses.includes(String(row[field])));
+        } else if (operator === "is") {
+          predicates.push(row => row[field] !== value);
+        } else throw new Error("Unexpected filter");
+        return query;
+      },
+      or(expression: string) {
+        if (expression === "status.neq.completed,final_report_ref.is.null")
+          predicates.push(row => row.status !== "completed" || row.final_report_ref == null);
+        else if (expression === "status.neq.done,reply_message_id.is.null")
+          predicates.push(row => row.status !== "done" || row.reply_message_id == null);
+        else throw new Error("Unexpected OR filter: " + expression);
+        return query;
+      },
+      order(field: string, options: {ascending?: boolean} = {}) {
+        sort = {field,ascending:options.ascending ?? true}; return query;
+      },
+      limit(n: number) { limit = n; return query; },
+      range(from: number,to: number) { return Promise.resolve(rows(from,to)); },
+      then(resolve: (value: unknown) => unknown) { return Promise.resolve(resolve(rows())); },
     };
     return query;
   } };
@@ -72,6 +117,44 @@ describe("GET /work owner isolation and receipt verification", () => {
     expect(filters.supervisor_effect_attempts).toEqual(expect.arrayContaining([
       ["eq", "business_id", "cafe-a"], ["in", "proposal_id", ["proposal-a"]],
     ]));
+  });
+  it("retains old unresolved approvals, runs, jobs and 15A investigations after 30 newer finished items", async () => {
+    const {db,source} = database();
+    const date = (n:number) => new Date(Date.parse("2026-11-01T00:00:00Z") + n*60_000).toISOString();
+    const own = { business_id:"cafe-a",owner_user_id:"owner-a",thread_id:thread };
+    source.supervisor_runs = [
+      {...own,id:"old-run",request_key:"old-request",status:"blocked",final_report_ref:null,updated_at:date(0),finished_at:null},
+      ...Array.from({length:30},(_,i) => ({...own,id:"completed-"+i,request_key:"message-"+i,
+        status:"completed",final_report_ref:"saved-"+i,updated_at:date(i+1),finished_at:date(i+1)})),
+    ];
+    source.ai_agent_jobs = [
+      {...own,id:"old-job",owner_message_id:"different",status:"running",reply_message_id:null,
+        heartbeat_at:date(0),created_at:date(0),attempt:1,error_code:null},
+      ...Array.from({length:30},(_,i) => ({...own,id:"job-"+i,owner_message_id:"completed-msg-"+i,
+        status:"done",reply_message_id:"reply-"+i,heartbeat_at:date(i+1),
+        created_at:date(i+1),attempt:1,error_code:null})),
+    ];
+    source.supervisor_proposals = [
+      {...own,id:"old-proposal",capability_id:"purchase",status:"draft",effect_hash:"h",updated_at:date(0)},
+      ...Array.from({length:30},(_,i) => ({...own,id:"rejected-"+i,capability_id:"purchase",
+        status:"rejected",effect_hash:"h",updated_at:date(i+1)})),
+    ];
+    source.supervisor_investigations = [
+      {...own,episode_id:"old-investigation",phase:"collect",failure_count:0,
+        lease_token:null,lease_until:null,last_error:null,updated_at:date(0)},
+      ...Array.from({length:30},(_,i) => ({...own,episode_id:"closed-"+i,
+        phase:"resolved",failure_count:0,lease_token:null,lease_until:null,
+        last_error:null,updated_at:date(i+1)})),
+      {...own,business_id:"foreign-cafe",episode_id:"foreign",phase:"collect",updated_at:date(99)},
+    ];
+    client.mockResolvedValue(db);
+    const response = await GET(new Request("https://example.org"),{params:Promise.resolve({threadId:thread})});
+    expect(response.status).toBe(200);
+    const work = (await response.json()).work;
+    for (const item of ["run:old-run","job:old-job","proposal:old-proposal","investigation:old-investigation"])
+      expect(work.map((w:{id:string})=>w.id)).toContain(item);
+    expect(work.some((w:{id:string})=>w.id==="investigation:foreign")).toBe(false);
+    expect(work.some((w:{proof?:{kind:string}|null})=>w.proof?.kind==="verified_effect")).toBe(false);
   });
   it("never leaks work after a thread lookup denies ownership", async () => {
     const { db } = database();
