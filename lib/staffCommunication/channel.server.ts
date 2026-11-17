@@ -126,6 +126,33 @@ export async function sendOwnerStaffMessage(raw:unknown){
  if(!data||typeof data.id!=="string")throw new StaffChannelError("storage");
  return data as {id:string;replayed:boolean};
 }
+const ownerAssignmentSchema=z.strictObject({
+ employeeId:uuid,kind:z.enum(["checklist","task"]),
+ title:z.string().trim().min(1).max(200),
+ prompt:z.string().trim().min(1).max(2000),nonce:uuid,
+});
+/** Shared task/checklist producer: owner click is its in-app authority.
+ * Future automated producers must obtain their own scope+approval and may
+ * NOT call this owner-session function with a synthetic identity. */
+export async function assignOwnerStaffWork(raw:unknown){
+ const parsed=ownerAssignmentSchema.safeParse(raw);
+ if(!parsed.success)throw new StaffChannelError("invalid");
+ const owner=await requireSchedulingOwner();
+ if(!owner)throw new StaffChannelError("unauthorized");
+ const {data,error}=await owner.supabase.rpc("staff_channel_owner_assign",{
+  p_employee_id:parsed.data.employeeId,p_kind:parsed.data.kind,
+  p_title:parsed.data.title,p_prompt:parsed.data.prompt,
+  p_nonce:parsed.data.nonce,
+ });
+ if(error){
+  if(error.code==="42501")throw new StaffChannelError("unauthorized");
+  if(error.code==="40900"||error.code==="23505")throw new StaffChannelError("conflict");
+  if(error.code==="22023")throw new StaffChannelError("invalid");
+  throw new StaffChannelError("storage");
+ }
+ if(!data||typeof data.id!=="string")throw new StaffChannelError("storage");
+ return data as {id:string;replayed:boolean};
+}
 export type OwnerStaffMessage=StaffMessage&{
  employee_name:string;request_title:string|null;request_status:string|null;
 };
