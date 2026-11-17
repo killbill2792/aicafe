@@ -3,6 +3,8 @@
 set lock_timeout='3s';
 set statement_timeout='30s';
 
+-- Reason: a nullable, initially empty identity mapping is essential to prevent staff role escalation; the existing employees table is small and this one-time FK is protected by a 3s lock timeout.
+-- squawk-ignore adding-foreign-key-constraint
 alter table public.employees add column if not exists staff_auth_user_id uuid references auth.users(id) on delete set null;
 create unique index if not exists employees_one_worker_login
   on public.employees(staff_auth_user_id) where staff_auth_user_id is not null;
@@ -117,6 +119,8 @@ create table public.staff_communication_unmatched_inbound (
  reason text not null check(reason in ('no_opted_in_employee','ambiguous_employee')),
  received_at timestamptz not null default now()
 );
+-- Reason: this newly created quarantine table must fail closed for anonymous and staff sessions before any insert, with no existing readers.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.staff_communication_unmatched_inbound enable row level security;
 revoke all on public.staff_communication_unmatched_inbound from public,anon,authenticated;
 grant all on public.staff_communication_unmatched_inbound to service_role;
@@ -124,7 +128,11 @@ grant all on public.staff_communication_unmatched_inbound to service_role;
 create index staff_communication_messages_worker
  on public.staff_communication_messages(business_id,employee_id,received_at desc);
 
+-- Reason: this brand-new staff requests table has no historic clients, and RLS must be enabled before any employee read grant.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.staff_communication_requests enable row level security;
+-- Reason: this brand-new free-text employee message table has no historic clients, and isolation RLS must be enabled before any employee read grant.
+-- squawk-ignore ban-alter-row-level-security
 alter table public.staff_communication_messages enable row level security;
 create policy "owner reads staff requests" on public.staff_communication_requests
  for select to authenticated using(public.scheduling_is_owner(business_id));
