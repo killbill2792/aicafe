@@ -77,35 +77,26 @@ test('failed public GitHub refresh visibly revokes healthy status rather than fa
  }
 });
 
-test('existing Pages has ONE Tasks and handoffs table with live sorting and no password panel',()=>{
+test('public old dashboard is replaced with noninteractive retirement notice',()=>{
  const html=readFileSync(new URL('../../docs/index.html',import.meta.url),'utf8');
- assert.equal((html.match(/id="task-rows"/g)||[]).length,1);
- assert.equal((html.match(/<table/g)||[]).length,1);
- assert.match(html,/id="task-sort"/);
- assert.match(html,/id="task-filter"/);
- assert.match(html,/id="task-order"/);
- for(const col of ['Last commit','CI / age','Codex / requested / reviewed / age',
-   'Dependencies','Muse handoff / owner notices','Merge blockers','Next actor'])
-   assert.ok(html.includes(col),col);
- assert.doesNotMatch(html,/private-unlock-form|private-passphrase|encrypted-private-view|private-lock/);
+ assert.match(html,/Previous development dashboard retired/);
+ assert.match(html,/Muse.*private/);
+ assert.match(html,/github\.com\/killbill2792\/aicafe\/pulls/);
+ assert.doesNotMatch(html,/owner-operations-snapshot|owner-dashboard\.mjs|<script|task-rows|api\.github\.com|DISPATCH_LEDGER_TOKEN/);
 });
-test('public Pages JavaScript reads only status snapshot and public GitHub comment',()=>{
+test('archived dashboard parser is retained only for audit, never loaded by the live page',()=>{
  const script=readFileSync(new URL('../../docs/owner-dashboard.mjs',import.meta.url),'utf8');
  assert.equal(PUBLIC_SNAPSHOT_URL,'./owner-operations-snapshot.json');
  assert.match(script,/owner-operations-snapshot\.json/);
- assert.match(script,/function renderOperations\(/);
- assert.doesNotMatch(script,/encrypted-owner-view|localStorage|sessionStorage|document\.cookie/);
- assert.doesNotMatch(script,/\/api\/control|method:\\s*['"]POST/);
- assert.doesNotMatch(script,/api\.github\.com\/repos\/killbill2792\/dave-task-queue/);
+ const html=readFileSync(new URL('../../docs/index.html',import.meta.url),'utf8');
+ assert.doesNotMatch(html,/owner-dashboard|owner-operations-snapshot/);
 });
-test('trusted Pages publication includes one public allowlisted operational artifact',()=>{
+test('old Pages publisher only deploys static retirement notice and cannot read ledger',()=>{
  const yaml=readFileSync(new URL('../../.github/workflows/ai-cafe-encrypted-owner-pages.yml',import.meta.url),'utf8');
- assert.match(yaml,/public-owner-payload\.mjs/);
- assert.match(yaml,/owner-operations-snapshot\.json/);
+ assert.match(yaml,/Retired Owner Operations notice/);
  assert.match(yaml,/actions\/upload-pages-artifact/);
- assert.match(yaml,/head_branch == 'main'/);
- assert.doesNotMatch(yaml,/OWNER_PAGES_PASSPHRASE|encrypted-owner-snapshot|cron:/);
- assert.doesNotMatch(yaml,/cp.*state\.json|cp.*receipts/);
+ assert.match(yaml,/cp docs\/index\.html/);
+ assert.doesNotMatch(yaml,/workflow_run:|cron:|workflow_dispatch:|DISPATCH_LEDGER_TOKEN|public-owner-payload|owner-operations-snapshot|node scripts\/dev-dispatcher|secrets\./);
 });
 test('commit and Codex review age, sorting and unknown status remain accurate',()=>{
  const now=Date.parse('2026-11-12T10:00:00Z');
