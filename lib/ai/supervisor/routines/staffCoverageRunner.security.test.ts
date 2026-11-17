@@ -124,7 +124,7 @@ describe("Task13C owner-gated real Luna security behavior",()=>{
    const distinct=simulateOwner(root,{body:"Fresh owner approval\\n"+
     grant.replace(nonce,distinctNonce)});
    expect(distinct.status,distinct.stderr).toBe(0);
-   expect(distinct.output).toBe("head="+sha+"\\n");
+   expect(distinct.output).toBe("head="+sha+"\n");
    const rejected=[
     {body:grant+"\n"+grant},
     {body:"Prior authorization only"},
