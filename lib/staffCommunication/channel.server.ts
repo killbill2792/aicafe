@@ -15,7 +15,7 @@ const linkSchema=z.strictObject({
 });
 type EmployeeIdentity={id:string;businessId:string;name:string};
 export class StaffChannelError extends Error{
- constructor(public code:"unauthorized"|"not_linked"|"invalid"|"storage"|"conflict"){super(code);}
+ constructor(public code:"unauthorized"|"not_linked"|"invalid"|"storage"|"conflict"|"stale_request"){super(code);}
 }
 /** Auth never comes from an employee-supplied business ID, email or phone.
  * This is a service read of only the identity needed for worker isolation. */
@@ -74,8 +74,14 @@ export async function submitStaffReply(raw:unknown){
   p_body:parsed.data.body,p_nonce:parsed.data.nonce,
  });
  if(error){
-  if(error.code==="40900"||error.message.includes("changed")||
-     error.message.includes("unavailable_request"))throw new StaffChannelError("conflict");
+  // The SQL RPC checks exact (worker,nonce,payload) replay BEFORE request
+  // status/revision. These specific errors prove the operation did NOT write.
+  // A nonce_conflict is different: a previous write may exist, so retain its
+  // uncertain outbox rather than labeling it definitively unsaved.
+  if(["shift_changed","unavailable_request","response_not_allowed"]
+   .some(reason=>error.message.includes(reason)))
+   throw new StaffChannelError("stale_request");
+  if(error.code==="40900")throw new StaffChannelError("conflict");
   throw new StaffChannelError("invalid");
  }
  if(!data||typeof data.id!=="string")throw new StaffChannelError("storage");
