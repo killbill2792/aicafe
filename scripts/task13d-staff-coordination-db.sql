@@ -109,7 +109,7 @@ BEGIN
  EXCEPTION WHEN OTHERS THEN blocked:=true; END;
  IF NOT blocked THEN RAISE EXCEPTION 'nonce payload collision accepted'; END IF;
 END $t$;
-SELECT public.staff_coordination_decide(:'a',:'leave_id',1,'approve')->>'revision' AS decided_revision \gset
+SELECT public.staff_coordination_decide(:'a',current_setting('test.d.leave')::uuid,1,'approve')->>'revision' AS decided_revision \gset
 DO $t$
 DECLARE blocked boolean:=false;
 BEGIN
@@ -129,7 +129,8 @@ SELECT public.staff_coordination_open(:'a',:'nonce_onboard','onboarding',:'worke
 SELECT public.staff_coordination_decide(:'a',:'onboard_id',1,'decline');
 SELECT public.staff_coordination_open(:'a',:'nonce_recruit','recruitment',null,null,
  null,null,'barista')->>'id' AS recruit_id \gset
-SELECT public.staff_coordination_decide(:'a',:'recruit_id',1,'approve');
+SELECT set_config('test.d.recruit',:'recruit_id',true);
+SELECT public.staff_coordination_decide(:'a',current_setting('test.d.recruit')::uuid,1,'approve');
 
 -- Reconciliation never executes as an employee/owner; only the existing worker.
 DO $t$
@@ -148,7 +149,7 @@ BEGIN
   WHERE id=current_setting('test.d.leave')::uuid)<>'waiting_evidence'
  THEN RAISE EXCEPTION 'owner approval falsely closed unverified leave'; END IF;
  IF (SELECT state FROM public.staff_coordination_cases
-  WHERE id=:'recruit_id')='completed'
+  WHERE id=current_setting('test.d.recruit')::uuid)='completed'
  THEN RAISE EXCEPTION 'recruitment falsely completed without applicant/receipt'; END IF;
 END $t$;
 INSERT INTO public.staff_availability_exceptions
@@ -158,11 +159,11 @@ VALUES
  (:'a',:'worker',current_date+2,'approved_leave','owner_direct','owner_confirmed',now(),:'owner_a');
 -- One confirmed day of two is NOT enough.
 UPDATE public.staff_coordination_cases SET next_check_at=now()
- WHERE business_id=:'a' AND id=:'leave_id';
+ WHERE business_id=:'a' AND id=current_setting('test.d.leave')::uuid;
 SELECT public.staff_coordination_reconcile(:'a');
 DO $t$
 BEGIN
- IF (SELECT state FROM public.staff_coordination_cases WHERE id=:'leave_id')='completed'
+ IF (SELECT state FROM public.staff_coordination_cases WHERE id=current_setting('test.d.leave')::uuid)='completed'
  THEN RAISE EXCEPTION 'partial leave treated as complete'; END IF;
 END $t$;
 INSERT INTO public.staff_availability_exceptions
@@ -171,28 +172,28 @@ INSERT INTO public.staff_availability_exceptions
 VALUES
  (:'a',:'worker',current_date+3,'approved_leave','owner_direct','owner_confirmed',now(),:'owner_a');
 UPDATE public.staff_coordination_cases SET next_check_at=now()
- WHERE business_id=:'a' AND id=:'leave_id';
+ WHERE business_id=:'a' AND id=current_setting('test.d.leave')::uuid;
 SELECT public.staff_coordination_reconcile(:'a');
 DO $t$
 BEGIN
- IF (SELECT state FROM public.staff_coordination_cases WHERE id=:'leave_id')<>'completed'
+ IF (SELECT state FROM public.staff_coordination_cases WHERE id=current_setting('test.d.leave')::uuid)<>'completed'
  THEN RAISE EXCEPTION 'canonical confirmed leave did not close case'; END IF;
  IF (SELECT count(*) FROM public.staff_coordination_evidence
-   WHERE case_id=:'leave_id' AND source_kind='availability_exception')<>1
+   WHERE case_id=current_setting('test.d.leave')::uuid AND source_kind='availability_exception')<>1
  THEN RAISE EXCEPTION 'confirmed leave lacks source evidence'; END IF;
 END $t$;
 -- Expiring candidate source references scrubs even if the owner said yes.
 UPDATE public.staff_coordination_cases SET retention_at=now()-interval '1 day'
- WHERE business_id=:'a' AND id=:'recruit_id';
+ WHERE business_id=:'a' AND id=current_setting('test.d.recruit')::uuid;
 SELECT public.staff_coordination_reconcile(:'a');
 DO $t$
 BEGIN
- IF (SELECT state FROM public.staff_coordination_cases WHERE id=:'recruit_id')<>'cancelled'
+ IF (SELECT state FROM public.staff_coordination_cases WHERE id=current_setting('test.d.recruit')::uuid)<>'cancelled'
  THEN RAISE EXCEPTION 'recruitment retention policy ignored'; END IF;
- IF (SELECT source_key FROM public.staff_coordination_cases WHERE id=:'recruit_id')
+ IF (SELECT source_key FROM public.staff_coordination_cases WHERE id=current_setting('test.d.recruit')::uuid)
    NOT LIKE 'expired:%'
  THEN RAISE EXCEPTION 'expired source reference retained'; END IF;
- IF EXISTS(SELECT 1 FROM public.staff_coordination_evidence WHERE case_id=:'recruit_id')
+ IF EXISTS(SELECT 1 FROM public.staff_coordination_evidence WHERE case_id=current_setting('test.d.recruit')::uuid)
  THEN RAISE EXCEPTION 'expired candidate evidence retained'; END IF;
 END $t$;
 ROLLBACK;
