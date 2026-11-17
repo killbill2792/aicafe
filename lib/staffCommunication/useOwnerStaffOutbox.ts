@@ -3,7 +3,7 @@ import {useCallback,useEffect,useRef,useState} from "react";
 import {useRouter} from "next/navigation";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
 import {deliverVerifiedReceiptWithRetry} from "./pendingSend";
-import {ownerPendingKey,parseOwnerPending,loadOwnerPending,saveOwnerPending,
+import {ownerPendingKey,parseOwnerPending,loadOwnerPending,saveOwnerPending,ownerPendingApiPayload,
  type OwnerPending} from "./ownerPending";
 
 /** One owner-authorized staff action per distinct tab outbox. Never issue a
@@ -33,7 +33,7 @@ export function useOwnerStaffOutbox(options:{
     const timer=window.setTimeout(()=>abort.abort(),20_000);
     try{
      const response=await fetch(endpoint,{method:"POST",credentials:"same-origin",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(ownerPendingApiPayload(payload)),
       signal:abort.signal});
      if(!response.ok)throw new Error("Receipt not established");
      return await response.json();
