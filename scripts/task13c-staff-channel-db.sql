@@ -279,5 +279,21 @@ BEGIN
  IF r->>'replayed'<>'true' THEN RAISE EXCEPTION 'retry receipt lost after source change'; END IF;
 END $test$;
 
+-- Revocation cannot let a disabled employee submit additional work.
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role','service_role',true);
+UPDATE public.employees SET active=false WHERE id=:'staff_a';
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT set_config('request.jwt.claim.sub',:'staff_user_a',true);
+DO $test$
+DECLARE denied boolean:=false;
+BEGIN
+ BEGIN PERFORM public.staff_channel_submit(NULL,'report',
+  'This account should no longer submit',gen_random_uuid());
+ EXCEPTION WHEN OTHERS THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'inactive worker submitted after revocation'; END IF;
+END $test$;
+
 SELECT 'task13c employee isolation, free-text, dedupe, owner notice, stale revision PASS' AS proof;
 ROLLBACK;
