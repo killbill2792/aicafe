@@ -160,8 +160,24 @@ begin
    raise exception 'nonce_conflict' using errcode='40900';
   end if;
  end if;
+ -- Every real owner-recorded case enters the EXISTING owner task and 15A
+ -- proactive investigation queue. This is source evidence, never consent,
+ -- a staff hire, a personnel effect or an external message.
+ insert into public.operating_tasks
+  (business_id,id,owner_user_id,agent_id,kind,entity_type,entity_id,
+   status,payload,confidence,evidence)
+ values(p_business_id,'staff-coordination:'||v_case.id::text||':'||(select auth.uid())::text,
+  (select auth.uid()),'olivia','staff_coordination','staff_coordination_case',v_case.id::text,
+  'needs_owner',jsonb_build_object(
+   'title','Staff coordination requires review','caseId',v_case.id,
+   'caseKind',v_case.case_kind,'caseRevision',v_case.revision,
+   'nextAction','Investigate verified staffing and request owner decision; no autonomous personnel change'),
+  'medium',jsonb_build_array(jsonb_build_object('source','staff_coordination_cases',
+    'facts',jsonb_build_object('caseId',v_case.id,'revision',v_case.revision,
+      'sourceKind','owner_record','decisionVerified',false))))
+ on conflict (business_id,id) do nothing;
  return jsonb_build_object('id',v_case.id,'revision',v_case.revision,'state',v_case.state);
-end $$;
+end $;
 revoke all on function public.staff_coordination_open(uuid,uuid,text,uuid,uuid,date,date,text)
  from public,anon;
 grant execute on function public.staff_coordination_open(uuid,uuid,text,uuid,uuid,date,date,text)
@@ -203,6 +219,18 @@ begin
    (business_id,case_id,evidence_key,source_kind,source_id,source_revision)
  values(p_business_id,p_case_id,'owner_decision:'||v_case.revision::text,
         'owner_decision',(select auth.uid())::text,v_case.revision::text);
+ -- Update the SAME existing task revision. An approval is only owner intent;
+ -- the follow-up remains active until independent source proof arrives.
+ update public.operating_tasks set
+   status=case when p_choice='decline' then 'handled'
+               when p_choice='approve' then 'watching'
+               else 'needs_owner' end,
+   resolved_at=case when p_choice='decline' then now() else null end,
+   payload=payload||jsonb_build_object('caseRevision',v_case.revision,
+     'decisionRecorded',p_choice,'effectApplied',false,'sourceVerified',false),
+   updated_at=now()
+ where business_id=p_business_id and id=
+  'staff-coordination:'||v_case.id::text||':'||(select auth.uid())::text;
  return jsonb_build_object('id',v_case.id,'state',v_case.state,
                            'revision',v_case.revision,'effectApplied',false);
 end $$;
@@ -233,6 +261,12 @@ begin
     decision=null,decided_by=null,decided_at=null,revision=revision+1,
     next_check_at=null,retention_at=null,updated_at=now()
    where business_id=p_business_id and id=v_case.id;
+  update public.operating_tasks
+    set status='expired',updated_at=now(),resolved_at=now(),
+     payload=payload||jsonb_build_object('caseState','cancelled',
+       'sourceVerified',false,'referenceExpired',true)
+   where business_id=p_business_id and entity_type='staff_coordination_case'
+     and entity_id=v_case.id::text and kind='staff_coordination';
   v_expired:=v_expired+1;
  end loop;
  for v_case in select * from public.staff_coordination_cases
@@ -260,12 +294,25 @@ begin
       'confirmed_days:'||v_verified::text||':'||v_case.from_date::text||':'||v_case.to_date::text)
     on conflict(business_id,case_id,evidence_key) do update
       set source_revision=excluded.source_revision,observed_at=now();
+   update public.operating_tasks
+    set status='handled',resolved_at=now(),updated_at=now(),
+     payload=payload||jsonb_build_object('caseState','completed',
+       'sourceVerified',true,'caseRevision',v_case.revision+1)
+    where business_id=p_business_id and entity_type='staff_coordination_case'
+      and entity_id=v_case.id::text and kind='staff_coordination';
    v_completed:=v_completed+1;
   else
    update public.staff_coordination_cases
     set state='waiting_evidence',revision=revision+1,updated_at=now(),
        next_check_at=now()+interval '1 hour'
     where business_id=p_business_id and id=v_case.id;
+   -- A changed/removed confirmed leave invalidates the old completion.
+   update public.operating_tasks
+     set status='watching',resolved_at=null,updated_at=now(),
+       payload=payload||jsonb_build_object('caseState','waiting_evidence',
+         'sourceVerified',false,'caseRevision',v_case.revision+1)
+    where business_id=p_business_id and entity_type='staff_coordination_case'
+      and entity_id=v_case.id::text and kind='staff_coordination';
   end if;
  end loop;
  return jsonb_build_object('completed',v_completed,'expired',v_expired);
