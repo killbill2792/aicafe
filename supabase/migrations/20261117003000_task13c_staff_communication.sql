@@ -357,8 +357,10 @@ begin
  -- response can overlap a retry with the same nonce; its receipt must be
  -- checked after the earlier transaction commits, not race the insert.
  select * into emp from public.employees where id=p_employee_id for update;
- if not found or not emp.active or emp.staff_auth_user_id is null or
-    not public.scheduling_is_owner(emp.business_id) then
+ -- Authorization comes first, before any prior receipt is revealed.
+ -- Deactivation or unlinked staff cannot receive NEW messages, but an
+ -- already-committed same-nonce owner message must remain recoverable.
+ if not found or not public.scheduling_is_owner(emp.business_id) then
    raise exception 'owner_target_required' using errcode='42501'; end if;
  v_body:=nullif(btrim(coalesce(p_body,'')),'');
  if p_nonce is null or v_body is null or char_length(v_body)>2000 then
@@ -373,6 +375,10 @@ begin
     raise exception 'owner_nonce_conflict' using errcode='40900'; end if;
   return jsonb_build_object('id',previous.id,'replayed',true);
  end if;
+ -- Only after serialized nonce lookup can a missing receipt be conclusively
+ -- rejected. The client keeps its unsent draft and releases its outbox lock.
+ if not emp.active or emp.staff_auth_user_id is null then
+  raise exception 'owner_target_unavailable' using errcode='40900'; end if;
  insert into public.staff_communication_messages
  (business_id,employee_id,request_id,actor,author_user_id,
   response_code,body,channel,client_nonce)
@@ -399,8 +405,9 @@ begin
  -- response can overlap a retry with the same nonce; its receipt must be
  -- checked after the earlier transaction commits, not race the insert.
  select * into emp from public.employees where id=p_employee_id for update;
- if not found or not emp.active or emp.staff_auth_user_id is null or
-  not public.scheduling_is_owner(emp.business_id) then
+ -- Do not reveal earlier assignment receipts to anyone except a
+ -- verified owner; then check prior nonce BEFORE current worker eligibility.
+ if not found or not public.scheduling_is_owner(emp.business_id) then
    raise exception 'owner_target_required' using errcode='42501'; end if;
  v_title:=nullif(btrim(coalesce(p_title,'')),'');
  v_prompt:=nullif(btrim(coalesce(p_prompt,'')),'');
@@ -417,6 +424,8 @@ begin
     raise exception 'assignment_nonce_conflict' using errcode='40900'; end if;
    return jsonb_build_object('id',assignment.id,'replayed',true);
  end if;
+ if not emp.active or emp.staff_auth_user_id is null then
+  raise exception 'owner_target_unavailable' using errcode='40900'; end if;
  insert into public.staff_communication_requests
   (business_id,employee_id,kind,source_type,source_id,source_revision,title,prompt)
  values (emp.business_id,emp.id,p_kind,'owner_manual',p_nonce::text,'v1',v_title,v_prompt)
