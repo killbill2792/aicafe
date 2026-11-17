@@ -35,16 +35,18 @@ function roleFor(req,ownerPassword,musePassword){
  const point=decoded.indexOf(':');
  if(point<0)return null;
  const user=decoded.slice(0,point),password=decoded.slice(point+1);
- if(user==='owner'&&safeEqual(password,ownerPassword))return 'owner';
+ if(user==='owner'&&ownerPassword&&safeEqual(password,ownerPassword))return 'owner';
  if(user==='muse'&&musePassword&&safeEqual(password,musePassword))return 'muse';
  return null;
 }
 export function ownerDashboardHandler({readState,editState,readNotes,saveNote,readFacts,readActions,ownerPassword,musePassword,
  html=readFileSync(new URL('./owner-dashboard-v3.html',import.meta.url),'utf8')}={}){
+ const strong=p=>typeof p==='string'&&p.length>=16;
  if(typeof readState!=='function'||typeof editState!=='function'||
-   typeof ownerPassword!=='string'||ownerPassword.length<16||
-   (musePassword!=null&&(typeof musePassword!=='string'||musePassword.length<16)))
-   throw Error('Private state, authenticated edits and strong owner password required');
+   (ownerPassword!=null&&!strong(ownerPassword))||
+   (musePassword!=null&&!strong(musePassword))||
+   (!strong(ownerPassword)&&!strong(musePassword)))
+   throw Error('Private state and a strong owner or Muse password required');
  return async (req,res)=>{
   const role=roleFor(req,ownerPassword,musePassword);
   if(!role){
@@ -92,6 +94,7 @@ export function ownerDashboardHandler({readState,editState,readNotes,saveNote,re
       entry:next.entries[edit.task_id]}));
    }
    if(req.method==='GET'&&req.url==='/api/state'){
+    if(!ownerPassword)return reply(res,503,'application/json',JSON.stringify({error:'Legacy dispatcher unavailable in Muse-only mode'}));
     const state=await readState();
     if(state?.version!==1||!state.tasks||!state.actions)throw Error('Invalid private ledger');
     return reply(res,200,'application/json',JSON.stringify({
@@ -109,6 +112,7 @@ export function ownerDashboardHandler({readState,editState,readNotes,saveNote,re
     }));
    }
    if(req.method==='POST'&&req.url==='/api/control'){
+    if(!ownerPassword)return reply(res,503,'application/json',JSON.stringify({error:'Legacy controls unavailable in Muse-only mode'}));
     if(role!=='owner')return reply(res,403,'application/json',JSON.stringify({error:'Owner-only controls'}));
     const origin=req.headers.origin;
     if(origin&&!/^http:\/\/(?:127\.0\.0\.1|localhost):[0-9]{2,5}$/.test(origin))
@@ -177,8 +181,8 @@ export function startOwnerDashboard({ownerPassword,musePassword,ledger,port=7359
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href){
  const token=process.env.DISPATCH_LEDGER_TOKEN;
  const ownerPassword=process.env.DASHBOARD_OWNER_PASSWORD;
- if(!ownerPassword){
-  console.error('DASHBOARD_OWNER_PASSWORD required');
+ if(!ownerPassword&&!process.env.DASHBOARD_MUSE_PASSWORD){
+  console.error('A strong DASHBOARD_OWNER_PASSWORD or DASHBOARD_MUSE_PASSWORD is required');
   process.exitCode=1;
  }else{
   // Git transport is supported by the existing GitHubLedger transaction API.
