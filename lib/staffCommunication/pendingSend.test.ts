@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from "vitest";
-import {crewOutboxKey,loadCrewPending,parseCrewPending,saveCrewPending,
+import {crewOutboxKey,crewRejectedDraftKey,loadCrewPending,parseCrewPending,saveCrewPending,
  sameCrewOperation,deliverCrewWithRetry,type PendingCrewSubmission,
  type CrewOutboxStorage} from "./pendingSend";
 const nonce="11111111-1111-4111-8111-111111111111";
@@ -23,7 +23,7 @@ describe("Task13C durable per-tab crew submission",()=>{
    if(records===0){records++;throw new Error("HTTP acknowledgement lost");}
    return {id,replayed:true};
   },pause);
-  expect(receipt).toEqual({id,replayed:true});
+  expect(receipt).toEqual({status:"confirmed",receipt:{id,replayed:true}});
   expect(records).toBe(1);
   expect(sent).toEqual([payload,payload]);
   expect(pause).toHaveBeenCalledTimes(1);
@@ -46,7 +46,7 @@ describe("Task13C durable per-tab crew submission",()=>{
    attempted.push({...original});
    throw new Error("network offline");
   },async ms=>{pauses.push(ms);});
-  expect(confirmed).toBeNull();
+  expect(confirmed).toEqual({status:"unconfirmed"});
   expect(attempted).toEqual([payload,payload,payload]);
   expect(pauses).toEqual([400,1200]);
   expect(loadCrewPending(storage,key)).toEqual(payload);
@@ -55,8 +55,33 @@ describe("Task13C durable per-tab crew submission",()=>{
  it("requires a complete database receipt, not a generic successful HTTP status",async()=>{
   const post=vi.fn().mockResolvedValue({ok:true});
   const result=await deliverCrewWithRetry(payload,post,async()=>{});
-  expect(result).toBeNull();
+  expect(result).toEqual({status:"unconfirmed"});
   expect(post).toHaveBeenCalledTimes(3);
+ });
+ it("frees definitive stale requests without retrying or changing the old nonce",async()=>{
+  const attempts:PendingCrewSubmission[]=[];
+  const pause=vi.fn();
+  const result=await deliverCrewWithRetry(payload,async value=>{
+   attempts.push({...value});
+   return {error:"stale_request"};
+  },pause);
+  expect(result).toEqual({status:"stale_request"});
+  expect(attempts).toEqual([payload]);
+  expect(pause).not.toHaveBeenCalled();
+  expect(crewRejectedDraftKey("user-a")).not.toBe(crewRejectedDraftKey("user-b"));
+  const storage=store();
+  storage.setItem(crewRejectedDraftKey("user-a"),payload.body!);
+  expect(storage.getItem(crewRejectedDraftKey("user-a"))).toBe(payload.body);
+  expect(storage.getItem(crewRejectedDraftKey("user-b"))).toBeNull();
+ });
+ it("does not unlock ambiguous nonce conflicts and keeps identical retry identity",async()=>{
+  const attempts:PendingCrewSubmission[]=[];
+  const result=await deliverCrewWithRetry(payload,async value=>{
+   attempts.push({...value});
+   throw new Error("409 nonce_conflict or response lost");
+  },async()=>{});
+  expect(result).toEqual({status:"unconfirmed"});
+  expect(attempts).toEqual([payload,payload,payload]);
  });
  it("never restores malformed, mismatched, or overlong outbox payloads",()=>{
   expect(parseCrewPending(null)).toBeNull();
