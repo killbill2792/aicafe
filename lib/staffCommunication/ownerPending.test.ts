@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 import {z} from "zod";
-import {ownerPendingKey,parseOwnerPending,loadOwnerPending,saveOwnerPending,ownerPendingApiPayload,
+import {ownerPendingKey,ownerRejectedDraftKey,parseOwnerPending,loadOwnerPending,saveOwnerPending,ownerPendingApiPayload,
  type OwnerPending,type OwnerPendingMessage,type OwnerPendingAssignment} from "./ownerPending";
 import {deliverVerifiedReceiptWithRetry,type CrewOutboxStorage} from "./pendingSend";
 const ownerA="11111111-1111-4111-8111-111111111111";
@@ -78,6 +78,21 @@ describe("Task13C owner outbox survives lost replies across reload",()=>{
   expect(loadOwnerPending(storage,ownerPendingKey(ownerB,cafeA,"message"),"message")).toBeNull();
   expect(loadOwnerPending(storage,ownerPendingKey(ownerA,cafeB,"message"),"message")).toBeNull();
   expect(loadOwnerPending(storage,ownerPendingKey(ownerA,cafeA,"message"),"message")).toEqual(message);
+ });
+ it("keeps definite unsent owner drafts separately from the blocking outbox",()=>{
+  const storage=store();
+  const work=ownerPendingKey(ownerA,cafeA,"assignment");
+  const draft=ownerRejectedDraftKey(ownerA,cafeA,"assignment");
+  saveOwnerPending(storage,work,assignment);
+  // Only after the server proves NO committed receipt is an operation
+  // promoted to a restorable, non-blocking draft.
+  saveOwnerPending(storage,draft,assignment);
+  storage.removeItem(work);
+  expect(loadOwnerPending(storage,work,"assignment")).toBeNull();
+  expect(loadOwnerPending(storage,draft,"assignment")).toEqual(assignment);
+  expect(loadOwnerPending(storage,ownerRejectedDraftKey(ownerB,cafeA,"assignment"),"assignment")).toBeNull();
+  expect(loadOwnerPending(storage,ownerRejectedDraftKey(ownerA,cafeB,"assignment"),"assignment")).toBeNull();
+  expect(loadOwnerPending(storage,ownerRejectedDraftKey(ownerA,cafeA,"message"),"message")).toBeNull();
  });
  it("keeps original payload and exact nonce after repeated unknown outcomes",async()=>{
   const storage=store(),key=ownerPendingKey(ownerA,cafeA,"assignment");
