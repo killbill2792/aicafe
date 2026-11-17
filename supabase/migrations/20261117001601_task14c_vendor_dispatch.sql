@@ -166,6 +166,97 @@ revoke all on function public.supervisor_reserve_supplier_gmail_send(uuid,uuid,u
  from public,anon,authenticated;
 grant execute on function public.supervisor_reserve_supplier_gmail_send(uuid,uuid,uuid,text) to service_role;
 
+-- A prepared approval is NOT an attempted send. The owner may correct its
+-- verified address or cancel its draft and request a NEW separate click. This
+-- transaction replaces only a provably unsent draft, never a reserved,
+-- uncertain, executing, approved or provider-accepted effect. Atomic locks
+-- serialize a competing owner click and prevent two actionable approval cards.
+create function public.supervisor_rebind_supplier_gmail_draft(
+ p_business_id uuid,p_owner_user_id uuid,p_purchase_order_id uuid,
+ p_new_proposal_id uuid
+) returns boolean language plpgsql security definer set search_path=public as $
+declare d public.purchase_order_dispatches; old_p public.supervisor_proposals;
+ new_p public.supervisor_proposals; po public.purchase_orders;
+ c public.cafe_supplier_order_contacts;
+begin
+ if auth.role() is distinct from 'service_role' then
+  raise exception 'service_role_only' using errcode='42501';end if;
+ if not exists(select 1 from public.memberships m where m.business_id=p_business_id
+   and m.user_id=p_owner_user_id and m.role='owner')
+ then raise exception 'supplier_owner_revoked' using errcode='42501';end if;
+ select * into d from public.purchase_order_dispatches
+  where business_id=p_business_id and owner_user_id=p_owner_user_id
+    and purchase_order_id=p_purchase_order_id for update;
+ if d.id is null or d.state<>'prepared' or d.reserved_at is not null
+    or d.provider_receipt_id is not null or d.provider_accepted_at is not null
+ then raise exception 'supplier_send_already_reserved_or_missing' using errcode='P0001';end if;
+ select * into old_p from public.supervisor_proposals
+  where business_id=p_business_id and owner_user_id=p_owner_user_id
+    and id=d.proposal_id for update;
+ if old_p.id is null or old_p.capability_id<>'alex.gmail_effect.v1'
+    or old_p.capability_version<>1 or old_p.status not in ('draft','rejected')
+    or exists(select 1 from public.supervisor_approvals a
+      where a.business_id=p_business_id and a.proposal_id=d.proposal_id)
+    or exists(select 1 from public.supervisor_effect_attempts a
+      where a.business_id=p_business_id and a.proposal_id=d.proposal_id)
+    or exists(select 1 from public.connector_provider_receipts r
+      where r.business_id=p_business_id and r.proposal_id=d.proposal_id)
+ then raise exception 'supplier_previous_send_not_proven_unsent' using errcode='P0001';end if;
+ select * into po from public.purchase_orders
+  where business_id=p_business_id and owner_user_id=p_owner_user_id
+   and id=p_purchase_order_id for share;
+ if po.id is null or po.status<>'approved_for_ordering'
+ then raise exception 'supplier_po_no_longer_approved' using errcode='P0001';end if;
+ select * into c from public.cafe_supplier_order_contacts
+  where business_id=p_business_id and owner_user_id=p_owner_user_id
+    and supplier_id=po.supplier_id for share;
+ if c.id is null or c.channel<>'gmail' or c.revoked_at is not null
+    or c.email is null or c.verified_at is null
+ then raise exception 'supplier_ordering_contact_unverified' using errcode='P0001';end if;
+ select * into new_p from public.supervisor_proposals
+  where business_id=p_business_id and owner_user_id=p_owner_user_id
+    and id=p_new_proposal_id for update;
+ if new_p.id is null or new_p.status<>'draft'
+   or new_p.capability_id<>'alex.gmail_effect.v1'
+   or new_p.capability_version<>1
+   or new_p.thread_id<>old_p.thread_id
+   or new_p.canonical_effect_payload->>'operation'<>'send'
+   or new_p.canonical_effect_payload->'to'<>jsonb_build_array(c.email)
+   or new_p.canonical_effect_payload->'cc'<>'[]'::jsonb
+   or new_p.canonical_effect_payload->'bcc'<>'[]'::jsonb
+   or exists(select 1 from public.supervisor_approvals a
+     where a.business_id=p_business_id and a.proposal_id=p_new_proposal_id)
+   or exists(select 1 from public.supervisor_effect_attempts a
+     where a.business_id=p_business_id and a.proposal_id=p_new_proposal_id)
+   or exists(select 1 from public.connector_provider_receipts r
+     where r.business_id=p_business_id and r.proposal_id=p_new_proposal_id)
+   or new_p.canonical_effect_payload->>'subject'<>('Purchase order '||po.id::text)
+ then raise exception 'supplier_new_draft_invalid' using errcode='P0001';end if;
+ if p_new_proposal_id=d.proposal_id then
+   -- Idempotent replay of the SAME saved draft only when the contact/snapshot
+   -- is unchanged. An updated recipient must use a new immutable effect.
+   if d.contact_id=c.id and d.recipient_email=c.email and
+     d.po_revision=po.revision and d.po_effect_hash=po.effect_hash
+   then return true;end if;
+   raise exception 'supplier_draft_replay_changed' using errcode='P0001';
+ end if;
+ if old_p.status='draft' then
+  update public.supervisor_proposals set status='rejected',
+    revision=old_p.revision+1,updated_at=now()
+   where business_id=p_business_id and id=old_p.id;
+ end if;
+ update public.purchase_order_dispatches
+  set proposal_id=new_p.id,contact_id=c.id,recipient_email=c.email,
+    po_revision=po.revision,po_effect_hash=po.effect_hash
+  where business_id=p_business_id and id=d.id and state='prepared';
+ return true;
+end $;
+revoke all on function public.supervisor_rebind_supplier_gmail_draft(uuid,uuid,uuid,uuid)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_rebind_supplier_gmail_draft(uuid,uuid,uuid,uuid)
+ to service_role;
+
+
 -- Independent Gmail readback is persisted by Task11. One trigger updates the
 -- same dispatch ledger only after the connector provider receipt is verified.
 create function public.supervisor_vendor_gmail_receipt_verified()

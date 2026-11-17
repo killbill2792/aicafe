@@ -42,15 +42,19 @@ export async function proposeApprovedSupplierEmail(scope:OwnerLoopScope,
   client.from("cafe_supplier_order_contacts").select("id,channel,email,verified_at,revoked_at,owner_user_id")
    .eq("business_id",scope.businessId).eq("supplier_id",po.supplier_id)
    .eq("owner_user_id",scope.ownerUserId).maybeSingle(),
-  client.from("purchase_order_dispatches").select("id,proposal_id,state")
+  client.from("purchase_order_dispatches").select("id,proposal_id,state,contact_id,recipient_email,po_revision,po_effect_hash")
    .eq("business_id",scope.businessId).eq("purchase_order_id",po.id).maybeSingle(),
   getConnectorAccount({businessId:scope.businessId,ownerUserId:scope.ownerUserId})
    .catch(()=>ask("gmail_status_unavailable",
       "I could not check the Gmail connection right now. Did you communicate with this supplier in Gmail, by phone, or by portal? Please tell me how and whether the order was accepted.")),
  ]);
  if(lines.error||contacts.error||existing.error)throw new Error("vendor_order_evidence_unavailable");
- if(existing.data)ask("supplier_order_already_prepared",
-   "There is already a saved send attempt or approval for this order. Please review its status before doing anything else; I will not send it twice.");
+ // A PREPARED draft has never been authorized or reserved for provider send.
+ // The secure SQL replacement below may retire it after a NEW owner request.
+ // Reserved/uncertain/accepted sends are never replaced or retried.
+ if(existing.data&&existing.data.state!=="prepared")
+   ask("supplier_order_already_prepared",
+     "There is already a reserved or accepted supplier send for this PO. Please review the saved receipt before doing anything else; I will not send it twice.");
  const contact=contacts.data??ask("supplier_channel_unknown",
    "I could not verify how you normally contact this supplier. Do you use Gmail, phone, a supplier portal or another way? Please confirm the supplier's ordering address or tell me the channel.");
  if(contact.revoked_at||!contact.verified_at)
@@ -85,20 +89,40 @@ export async function proposeApprovedSupplierEmail(scope:OwnerLoopScope,
  const proposal=await proposeLoop(scope,supervisorLoopRegistry,repo,gmailCapabilityId,input,requestKey);
  if(proposal.status!=="draft")throw new Error("supplier_gmail_approval_not_draft");
  const db=createAdminSupabaseClient();
- const saved=await db.from("purchase_order_dispatches").insert({
-   business_id:scope.businessId,purchase_order_id:po.id,owner_user_id:scope.ownerUserId,
-   contact_id:contact.id,proposal_id:proposal.id,po_revision:po.revision,
-   po_effect_hash:po.effect_hash,recipient_email:contact.email,state:"prepared"
- }).select("id,proposal_id").maybeSingle();
- if(saved.error||!saved.data){
-   const prior=await db.from("purchase_order_dispatches").select("proposal_id")
-     .eq("business_id",scope.businessId).eq("purchase_order_id",po.id).maybeSingle();
-   if(prior.error||prior.data?.proposal_id!==proposal.id){
-     // Orphan Gmail draft: reject it, never return an actionable approval card.
-     await repo.transition(scope,proposal.id,proposal.revision,"reject").catch(()=>{});
-     ask("supplier_order_already_prepared",
-       "The order could already have a prepared or uncertain vendor message. I will not create another send. Please review the saved order status.");
+ const rebind=async()=>{
+   // PostgreSQL row locks make the old draft rejection and the new recipient
+   // binding atomic. A competing owner click either wins (and we do NOT
+   // rebind) or loses (the old card is rejected before the click executes).
+   const result=await db.rpc("supervisor_rebind_supplier_gmail_draft",{
+     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+     p_purchase_order_id:po.id,p_new_proposal_id:proposal.id
+   });
+   return !result.error&&result.data===true;
+ };
+ let linked=false;
+ if(existing.data){
+   linked=await rebind();
+ }else{
+   const saved=await db.from("purchase_order_dispatches").insert({
+     business_id:scope.businessId,purchase_order_id:po.id,owner_user_id:scope.ownerUserId,
+     contact_id:contact.id,proposal_id:proposal.id,po_revision:po.revision,
+     po_effect_hash:po.effect_hash,recipient_email:contact.email,state:"prepared"
+   }).select("id,proposal_id").maybeSingle();
+   if(!saved.error&&saved.data?.proposal_id===proposal.id){
+     linked=true;
+   }else{
+     // Another owner turn may have prepared the same PO concurrently.
+     // The RPC is the ONLY allowed replacement and refuses any send attempt.
+     linked=await rebind();
    }
+ }
+ if(!linked){
+   // A failed rebind is not evidence of non-delivery. Never make another
+   // proposal actionable when an attempted send may already be uncertain.
+   if(!existing.data||existing.data.proposal_id!==proposal.id)
+     await repo.transition(scope,proposal.id,proposal.revision,"reject").catch(()=>{});
+   ask("supplier_order_send_state_unverified",
+     "I cannot safely replace the prior supplier email. It may already have an authorized or uncertain send. Please review its receipt and tell me whether the supplier was contacted; I will not resend.");
  }
  return {proposalId:proposal.id,revision:proposal.revision,
    purchaseOrderId:po.id,supplierName:po.supplier_name_snapshot,

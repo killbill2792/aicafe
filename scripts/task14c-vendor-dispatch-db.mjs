@@ -82,7 +82,8 @@ try{
  [id.oldProposal,id.gmailProposal,id.business,id.owner,id.thread,randomUUID(),
   poHash,randomUUID(),JSON.stringify({
    operation:"send",action:null,to:["orders@task14c.example"],cc:[],bcc:[],
-   subject:"Approved PO",body:"Please confirm",messageId:null,threadId:null,
+   subject:"Purchase order "+id.po,body:"Purchase order ID: "+id.po,
+   messageId:null,threadId:null,
    labelId:null,labelName:null,accountId:id.account,generation:1,from:"owner@task14c.example"
   }),gmailHash]);
  await db.query(`insert into public.purchase_orders(
@@ -112,6 +113,56 @@ try{
  po_effect_hash,recipient_email,state)
  values($1,$2,$3,$4,$5,$6,1,$7,'orders@task14c.example','prepared')`,
  [id.dispatch,id.business,id.po,id.owner,id.contact,id.gmailProposal,poHash]);
+ // The owner must be able to correct an UNSENT email without creating
+ // another PO or silently leaving the first approval actionable.
+ const rebindSql="select public.supervisor_rebind_supplier_gmail_draft($1,$2,$3,$4) as rebound";
+ const testRebind=async(scenario)=>{
+   const nextProposal=randomUUID(),nextEmail=scenario==="corrected_email"?
+     "corrected@task14c.example":"orders@task14c.example";
+   await db.query("SAVEPOINT task14c_rebind_case");
+   try{
+     await db.query("update public.supervisor_proposals set status=$1,revision=revision+1 where id=$2",
+       [scenario==="cancelled"?"rejected":"draft",id.gmailProposal]);
+     if(scenario==="corrected_email")await db.query(
+       "update public.cafe_supplier_order_contacts set email=$1 where id=$2",
+       [nextEmail,id.contact]);
+     await db.query(`insert into public.supervisor_proposals(
+       id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,
+       canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision)
+       values($1,$2,$3,$4,$5,'alex.gmail_effect.v1',1,$6::jsonb,$7,
+        '{}'::jsonb,'{"durationDays":1,"metricScope":"gmail_provider_receipt"}'::jsonb,
+        'en','draft',1)`,[nextProposal,id.business,id.owner,id.thread,randomUUID(),JSON.stringify({
+       operation:"send",action:null,to:[nextEmail],cc:[],bcc:[],
+       subject:"Purchase order "+id.po,body:"Purchase order ID: "+id.po,
+       messageId:null,threadId:null,labelId:null,labelName:null,
+       accountId:id.account,generation:1,from:"owner@task14c.example"
+     }),"c".repeat(64)]);
+     await fails(()=>asRole("authenticated",id.owner,()=>one(rebindSql,
+       [id.business,id.owner,id.po,nextProposal])),"42501",
+       "Only service-role gateway may atomically replace a supplier approval");
+     const rebound=await asRole("service_role",id.owner,()=>one(rebindSql,
+       [id.business,id.owner,id.po,nextProposal]));
+     check(rebound?.rebound===true,scenario+": provably unsent draft can be replaced");
+     const state=await one(`select d.proposal_id,d.state,d.recipient_email,p.status as old_status
+       from public.purchase_order_dispatches d
+       join public.supervisor_proposals p on p.id=$2
+       where d.id=$1`,[id.dispatch,id.gmailProposal]);
+     check(state.proposal_id===nextProposal&&state.recipient_email===nextEmail&&
+       state.state==="prepared"&&state.old_status==="rejected",
+       scenario+": old card revoked, one new draft, no provider send");
+     const replay=await asRole("service_role",id.owner,()=>one(rebindSql,
+       [id.business,id.owner,id.po,nextProposal]));
+     check(replay?.rebound===true,scenario+": identical saved draft replay is idempotent");
+     check((await one(`select count(*)::int as n from public.purchase_order_dispatches
+       where business_id=$1 and purchase_order_id=$2`,[id.business,id.po])).n===1,
+       scenario+": exactly one PO dispatch remains");
+   }finally{
+     await db.query("ROLLBACK TO SAVEPOINT task14c_rebind_case");
+     await db.query("RELEASE SAVEPOINT task14c_rebind_case");
+   }
+ };
+ await testRebind("cancelled");
+ await testRebind("corrected_email");
  await fails(()=>asRole("authenticated",id.owner,()=>one(sql,args)),
   "42501","Authenticated SQL caller cannot bypass the effect gateway");
  await fails(()=>asRole("service_role",id.owner,()=>one(sql,args)),
@@ -159,6 +210,9 @@ try{
  check(reserved.reserved===true,"Exact owner-click send reserves exactly one PO");
  await fails(()=>asRole("service_role",id.owner,()=>one(sql,args)),
   "P0001","Concurrent/replayed click cannot reserve this PO twice");
+ await fails(()=>asRole("service_role",id.owner,()=>one(rebindSql,
+   [id.business,id.owner,id.po,randomUUID()])),"P0001",
+   "Reserved or uncertain provider effect can never be rebound to a new approval");
  const pending=await one("select state,provider_accepted_at from public.purchase_order_dispatches where id=$1",[id.dispatch]);
  check(pending.state==="reserved"&&pending.provider_accepted_at===null,
   "A reserved or timed-out send is NOT a provider-confirmed sent message");
