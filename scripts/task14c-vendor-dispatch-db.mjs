@@ -127,6 +127,34 @@ try{
  await fails(()=>asRole("service_role",id.outsider,()=>one(sql,
   [id.business,id.outsider,id.gmailProposal,gmailHash])),
   "42501","Other café cannot reserve an outbound supplier send");
+ // Non-negotiable: a previously approved click cannot send if any canonical
+ // PO, contact or gateway evidence is changed by the time of reservation.
+ async function denyAfterChange(query,params,label){
+   await db.query("SAVEPOINT vendor_approval_mutation");
+   try{
+     await db.query(query,params);
+     await fails(()=>asRole("service_role",id.owner,()=>one(sql,args)),
+       "P0001",label);
+   }finally{
+     await db.query("ROLLBACK TO SAVEPOINT vendor_approval_mutation");
+     await db.query("RELEASE SAVEPOINT vendor_approval_mutation");
+   }
+ }
+ await denyAfterChange(
+   "update public.cafe_supplier_order_contacts set revoked_at=now() where id=$1",
+   [id.contact],"Revoked supplier contact blocks prior send approval");
+ await denyAfterChange(
+   "update public.cafe_supplier_order_contacts set email='wrong@task14c.example' where id=$1",
+   [id.contact],"Recipient change blocks stale approval");
+ await denyAfterChange(
+   "update public.purchase_orders set status='cancelled' where id=$1",
+   [id.po],"Cancelled PO cannot be sent using prior approval");
+ await denyAfterChange(
+   "update public.purchase_orders set revision=2 where id=$1",
+   [id.po],"Revised PO cannot be sent using prior approval");
+ await denyAfterChange(
+   "update public.supervisor_proposals set status='rejected' where id=$1",
+   [id.gmailProposal],"Revoked Gmail approval cannot authorize a vendor send");
  const reserved=await asRole("service_role",id.owner,()=>one(sql,args));
  check(reserved.reserved===true,"Exact owner-click send reserves exactly one PO");
  await fails(()=>asRole("service_role",id.owner,()=>one(sql,args)),
