@@ -16,6 +16,7 @@ export const investigationReadTools=[
 const relevantByKind:Record<string,readonly AgentToolName[]>={
   meal_break:["get_labor","get_payroll_facts","get_schedule","get_week_schedule"],
   staff_coverage:["get_staff_messages","get_staff_coordination_cases","get_labor","get_schedule","get_coverage_gaps","get_week_schedule"],
+  staff_coordination:["get_staff_coordination_cases","get_staff_messages","get_schedule","get_week_schedule","get_coverage_gaps"],
   price_review:["get_menu_items","get_product_costs","get_item_sales","get_price_monitor_status"],
   missing_bill:["get_expenses","get_bills","get_cost_summary"],
   voids:["get_sales","get_peak_hours","get_profit"],
