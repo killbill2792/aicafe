@@ -1,7 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import {z} from "zod";
 import {ownerPendingKey,parseOwnerPending,loadOwnerPending,saveOwnerPending,ownerPendingApiPayload,
- type OwnerPendingMessage,type OwnerPendingAssignment} from "./ownerPending";
+ type OwnerPending,type OwnerPendingMessage,type OwnerPendingAssignment} from "./ownerPending";
 import {deliverVerifiedReceiptWithRetry,type CrewOutboxStorage} from "./pendingSend";
 const ownerA="11111111-1111-4111-8111-111111111111";
 const ownerB="22222222-2222-4222-8222-222222222222";
@@ -31,7 +31,7 @@ describe("Task13C owner outbox survives lost replies across reload",()=>{
   const calls:unknown[]=[];
   let logicalCommits=0;
   const sleep=vi.fn().mockResolvedValue(undefined);
-  const result=await deliverVerifiedReceiptWithRetry(restored!,async original=>{
+  const result=await deliverVerifiedReceiptWithRetry<OwnerPending>(restored!,async original=>{
    // Exactly the same projected server request is retried; the extra outbox
    // discriminator is never transmitted to Zod strict APIs.
    calls.push(ownerPendingApiPayload(original));
