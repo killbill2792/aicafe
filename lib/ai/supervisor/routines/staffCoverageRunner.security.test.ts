@@ -57,16 +57,16 @@ function simulateOwner(root:string,options:{
  const latest={head:{sha:options.movedHead?"b".repeat(40):sha},
   base:{ref:"main"},body,state:"open"};
  const old=options.previousGrant?[{body:consumed}]:[];
- const prelude="const latest="+JSON.stringify(latest)+";\n"+
-  "const old="+JSON.stringify(old)+";\n"+
-  "const postStatus="+JSON.stringify(options.postStatus??201)+";\n"+
+ const prelude="const mockLatest="+JSON.stringify(latest)+";\n"+
+  "const mockOld="+JSON.stringify(old)+";\n"+
+  "const mockPostStatus="+JSON.stringify(options.postStatus??201)+";\n"+
   "globalThis.fetch=async(url,init={})=>{\n"+
   " const u=String(url);\n"+
-  " if(u.endsWith('/pulls/501'))return new Response(JSON.stringify(latest),{status:200});\n"+
-  " if(u.includes('/issues/501/comments?'))return new Response(JSON.stringify(old),{status:200});\n"+
+  " if(u.endsWith('/pulls/501'))return new Response(JSON.stringify(mockLatest),{status:200});\n"+
+  " if(u.includes('/issues/501/comments?'))return new Response(JSON.stringify(mockOld),{status:200});\n"+
   " if(u.endsWith('/issues/501/comments')&&init.method==='POST'){\n"+
   "  process.stdout.write('POST_CONSUMED\\n');\n"+
-  "  return new Response('{}',{status:postStatus});\n"+
+  "  return new Response('{}',{status:mockPostStatus});\n"+
   " }\n throw Error('Unexpected mocked GitHub request');\n};\n";
  const result=spawnSync(process.execPath,["--input-type=module"],{
   input:prelude+ownerScript(),encoding:"utf8",
@@ -88,7 +88,7 @@ describe("Task13C owner-gated real Luna security behavior",()=>{
   const root=temp();
   try{
    const good=simulateOwner(root);
-   expect(good.status).toBe(0);
+   expect(good.status,good.stderr).toBe(0);
    expect(good.output).toBe("head="+sha+"\n");
    expect(good.stdout).toContain("POST_CONSUMED");
    const rejected=[
