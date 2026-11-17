@@ -278,8 +278,13 @@ declare emp public.employees%rowtype; req public.staff_communication_requests%ro
 begin
  if (select auth.uid()) is null then
   raise exception 'login_required' using errcode='42501'; end if;
+ -- Serialize all operations for this verified worker before checking the
+ -- idempotency nonce. A timed-out first request can still be committing when
+ -- its retry arrives; a SHARED row lock allowed the retry to check an absent
+ -- nonce then wait for a request that the first transaction just completed.
+ -- FOR UPDATE ensures the retry sees the first commit BEFORE claiming stale.
  select * into emp from public.employees
-  where staff_auth_user_id=(select auth.uid()) and active=true for share;
+  where staff_auth_user_id=(select auth.uid()) and active=true for update;
  if not found then raise exception 'staff_login_required' using errcode='42501'; end if;
  if p_nonce is null or p_response not in ('confirm','decline','complete','message','report') then
   raise exception 'invalid_response' using errcode='22023'; end if;
@@ -348,7 +353,10 @@ declare emp public.employees%rowtype;
 begin
  v_actor:=(select auth.uid());
  if v_actor is null then raise exception 'login_required' using errcode='42501'; end if;
- select * into emp from public.employees where id=p_employee_id for share;
+ -- Serialize owner messages and assignments for this employee too. A lost
+ -- response can overlap a retry with the same nonce; its receipt must be
+ -- checked after the earlier transaction commits, not race the insert.
+ select * into emp from public.employees where id=p_employee_id for update;
  if not found or not emp.active or emp.staff_auth_user_id is null or
     not public.scheduling_is_owner(emp.business_id) then
    raise exception 'owner_target_required' using errcode='42501'; end if;
@@ -387,7 +395,10 @@ create function public.staff_channel_owner_assign(
 declare emp public.employees%rowtype; assignment public.staff_communication_requests%rowtype;
  v_title text;v_prompt text;
 begin
- select * into emp from public.employees where id=p_employee_id for share;
+ -- Serialize owner messages and assignments for this employee too. A lost
+ -- response can overlap a retry with the same nonce; its receipt must be
+ -- checked after the earlier transaction commits, not race the insert.
+ select * into emp from public.employees where id=p_employee_id for update;
  if not found or not emp.active or emp.staff_auth_user_id is null or
   not public.scheduling_is_owner(emp.business_id) then
    raise exception 'owner_target_required' using errcode='42501'; end if;
