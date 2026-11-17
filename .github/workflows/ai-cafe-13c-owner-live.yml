@@ -149,8 +149,10 @@ jobs:
             --user "$(id -u):$(id -g)" -e HOME=/tmp \
             --security-opt no-new-privileges \
             -v "$GITHUB_WORKSPACE/candidate:/candidate" -w /candidate \
+            -e HEAD_SHA \
             mcr.microsoft.com/playwright:v1.58.2-noble \
             bash -euo pipefail -c '
+              test "$(git rev-parse HEAD)" = "$HEAD_SHA"
               npm ci
               npx vitest run lib/ai/agent/tools/scheduleReads.test.ts \
                 lib/ai/supervisor/routines/investigation.test.ts \
@@ -164,6 +166,12 @@ jobs:
           supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
           supabase db reset --local --yes
           pg_isready -q -h 127.0.0.1 -p 54322 -U postgres
+          # Prove the trusted host can independently attest the real database
+          # BEFORE any paid broker starts or any provider token is exposed.
+          command -v psql >/dev/null
+          PGPASSWORD=postgres psql -X -q -t -A -h 127.0.0.1 -p 54322 \
+            -U postgres -d postgres -c "select json_build_object('ready',true)->>'ready'" \
+            | grep -qx true
           supabase status -o json > "$RUNNER_TEMP/task13c-local-supabase.json"
       - name: Load only disposable credentials and generate ephemeral proxy token
         shell: bash
