@@ -1,6 +1,7 @@
 import "server-only";
 import {z} from "zod";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
+import type {SupabaseClient} from "@supabase/supabase-js";
 
 const uuid=z.uuid();
 const caseType=z.enum(["leave","recruitment","onboarding"]);
@@ -51,6 +52,24 @@ function assertRpcResult(
 export async function listOwnerStaffCoordination(limit=40):Promise<StaffCoordinationCase[]> {
  const scope=await owner();
  const {data,error}=await scope.supabase.from("staff_coordination_cases")
+  .select("id,source_kind,source_key,case_kind,employee_id,location_id,role_needed,from_date,to_date,state,decision,revision,next_check_at,retention_at,created_at,updated_at")
+  .eq("business_id",scope.businessId)
+  .order("created_at",{ascending:false}).limit(Math.min(Math.max(1,limit),80));
+ if(error||!data)throw new StaffCoordinationError("storage");
+ return data as StaffCoordinationCase[];
+}
+/** SQL-claimed, off-turn read for the existing proactive Supervisor worker.
+ * Scope is never supplied by model arguments; verify owner still belongs to
+ * this café at read time, even if the investigation claim is stale. */
+export async function readClaimedStaffCoordination(
+ db:SupabaseClient,scope:{businessId:string;ownerUserId:string},
+ limit=40,
+):Promise<StaffCoordinationCase[]>{
+ const membership=await db.from("memberships").select("user_id")
+  .eq("business_id",scope.businessId).eq("user_id",scope.ownerUserId)
+  .eq("role","owner").maybeSingle();
+ if(membership.error||!membership.data)throw new StaffCoordinationError("unauthorized");
+ const {data,error}=await db.from("staff_coordination_cases")
   .select("id,source_kind,source_key,case_kind,employee_id,location_id,role_needed,from_date,to_date,state,decision,revision,next_check_at,retention_at,created_at,updated_at")
   .eq("business_id",scope.businessId)
   .order("created_at",{ascending:false}).limit(Math.min(Math.max(1,limit),80));
