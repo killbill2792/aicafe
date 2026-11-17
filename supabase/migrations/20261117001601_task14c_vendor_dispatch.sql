@@ -125,9 +125,7 @@ create function public.supervisor_close_vendor_priority_on_report()
 begin
  if new.outcome in ('supplier_accepted','supplier_declined') then
   update public.operating_tasks t set
-   status='handled',resolved_at=now(),updated_at=now(),
-   payload=t.payload||jsonb_build_object(
-     'ownerReportedOutcome',new.outcome,'resolutionSource','owner_reported')
+   status='handled',resolved_at=now(),updated_at=now()
   where t.business_id=new.business_id and t.owner_user_id=new.owner_user_id
     and t.kind='priority_notice' and t.status='needs_owner'
     and t.payload->>'sourceType'='supplier_dispatch'

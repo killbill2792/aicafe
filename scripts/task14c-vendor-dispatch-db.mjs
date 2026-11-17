@@ -288,10 +288,15 @@ try{
    [id.business,id.po,id.owner]));
  const handledNotice=await one("select status,resolved_at,payload from public.operating_tasks"+
    " where business_id=$1 and id=$2",[id.business,"priority:"+gmailHash]);
+ const ownerOutcome=await one("select business_id,owner_user_id,purchase_order_id,channel,outcome,note"+
+   " from public.purchase_order_channel_reports where business_id=$1 and purchase_order_id=$2"+
+   " order by reported_at desc limit 1",[id.business,id.po]);
  check(handledNotice?.status==="handled"&&handledNotice.resolved_at!==null&&
-   handledNotice.payload?.resolutionSource==="owner_reported"&&
-   handledNotice.payload?.ownerReportedOutcome==="supplier_accepted",
-   "Owner-confirmed outcome closes the exact saved Needs-you supplier question with attribution");
+   JSON.stringify(handledNotice.payload)===JSON.stringify(ownerNotice.payload)&&
+   ownerOutcome?.owner_user_id===id.owner&&ownerOutcome.purchase_order_id===id.po&&
+   ownerOutcome.channel==="phone"&&ownerOutcome.outcome==="supplier_accepted"&&
+   ownerOutcome.note==="Owner confirmed by phone",
+   "Owner-confirmed outcome closes exactly one Needs-you notice while preserving immutable notice evidence and separate owner attribution");
  const noMore=await asRole("service_role",id.owner,()=>one(
    "select public.post_supervisor_priority_notice($1,$2,$3,$4,$5,$6,$7,$8,$9) as posted",
    [...noticeArgs.slice(0,6),"c".repeat(64),sourceReason,noticeArgs[8]]));
