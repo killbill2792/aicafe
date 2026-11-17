@@ -1,4 +1,11 @@
-# Muse lightweight owner coordination — pilot
+# Muse lightweight owner coordination — GitHub legacy retired
+**Owner decision (November 17, 2026):** Muse's existing host monitor and private dashboard
+are the active development coordinator. The legacy GitHub cron/reconciler, Codex
+request/ready/merge writer, self-wake/failure publisher, landing PR-comment bot
+and public Owner Operations status dashboard are retired. Do not restart them.
+GitHub PR CI and real Codex review receipts remain evidence, not instructions.
+Past signed receipts and the private queue are audit history, not live coordination.
+
 **Goal:** Muse monitors GitHub PR facts and coordinates existing ChatGPT chats using its existing timer/browser. ChatGPT codes and verifies CI/Codex; the owner approves architecture. No new scheduler, database, code-effect authority or production action.
 ## Source and records
 - One read-only GitHub GraphQL query reads open PR heads, commit time, aggregate checks, exact-head Codex bot summaries and verified merges. Missing/stale/rate-limited data never counts as green; local 429/403/401 cooldown applies. Aggregate green is not merge clearance.
