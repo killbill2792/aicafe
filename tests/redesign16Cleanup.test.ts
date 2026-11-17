@@ -84,7 +84,7 @@ describe("redesign 16 cleanup integration", () => {
     // AGENTS.md currently forbids new es/ar copy. Preserve strict parity for
     // every pre-existing key; only the owner-approved Gmail, Task13B and exact Task14B keys are English-only.
     // Task13B mandate's 25 exact keys are separately enforced by StaffStandingMandatePanel.test.ts.
-    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect|StaffApprovalCard\.agentic[A-Z][^.]*|StaffStandingMandate\.[^.]+)$/;
+    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect|StaffApprovalCard\.agentic[A-Z][^.]*|StaffStandingMandate\.[^.]+|SupervisorWork\.(?:heading|stale|more|effectReceipt|replyReceipt|status|copy))$/;
     const keys = (locale: string) => {
       const messages = localeMessages(locale);
       return Object.entries(messages)
@@ -107,6 +107,40 @@ describe("redesign 16 cleanup integration", () => {
       }
       expect(es[namespace]).toBeUndefined();
       expect(ar[namespace]).toBeUndefined();
+    }
+  });
+
+  it("requires complete English-only Task 16B status copy rather than hiding missing keys", () => {
+    const work = localeMessages("en").SupervisorWork as unknown as {
+      heading: string; stale: string; more: string; effectReceipt: string;
+      replyReceipt: string; status: Record<string, string>; copy: Record<string, string>;
+    };
+    expect(Object.keys(work).sort()).toEqual([
+      "heading", "stale", "more", "effectReceipt", "replyReceipt", "status", "copy"
+    ].sort());
+    expect(Object.keys(work.status).sort()).toEqual([
+      "queued", "running", "retrying", "approval_required", "uncertain",
+      "failed", "cancelled", "answer_ready", "verified_complete", "source_resolved",
+    ].sort());
+    const requiredWorkCopyKeys = [
+      "stepAuthorizeOwner", "stepOwnerTurn", "stepVerifyReport", "runTitle", "runAnswerReady",
+      "runUncertain", "runFailed", "runQueued", "runGeneric", "runChecking",
+      "runUncertainNext", "runFailedNext", "runAnswerNext", "runActiveNext", "jobTitle",
+      "jobAnswerReady", "jobStale", "jobFailed", "jobRunning", "jobStaleNext",
+      "jobFailedNext", "jobAnswerNext", "jobActiveNext", "proposalTitle", "proposalDraft",
+      "proposalVerified", "proposalUncertain", "proposalCancelled", "proposalFailed", "proposalExecuting",
+      "proposalDraftNext", "proposalVerifiedNext", "proposalUncertainNext", "proposalCancelledNext", "proposalFailedNext",
+      "proposalExecutingNext", "investigationTitle", "investigationQueued", "investigationRunning", "investigationRetrying",
+      "investigationWatching", "investigationUncertain", "investigationFailed", "investigationResolved", "investigationNext",
+    ];
+    expect(Object.keys(work.copy).sort()).toEqual(requiredWorkCopyKeys.sort());
+    for (const [key, value] of Object.entries(work.copy)) {
+      expect(value, "SupervisorWork.copy." + key).toEqual(expect.any(String));
+      expect(value.trim().length).toBeGreaterThan(0);
+    }
+    for (const [key, value] of Object.entries(work.status)) {
+      expect(value, "SupervisorWork.status." + key).toEqual(expect.any(String));
+      expect(value.trim().length).toBeGreaterThan(0);
     }
   });
 

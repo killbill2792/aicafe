@@ -8,6 +8,120 @@ test.beforeEach(() => {
   assertDisposableEnvironment();
 });
 
+test("@home Task 16B persists real Supervisor work through reload, uncertainty and café isolation", async ({browser}) => {
+  test.setTimeout(120_000);
+  const own = seededCafe(0), other = seededCafe(1);
+  const threadId = randomUUID(), runId = randomUUID(), requestId = randomUUID();
+  const messageId = randomUUID(), answerId = randomUUID();
+  const investigationSourceId = randomUUID();
+  const db = new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  let connected = false;
+  try {
+    await db.connect();
+    connected = true;
+    // A real local Postgres run/step pair, not a mocked API payload.
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",
+      [threadId, own.businessId, own.owner.userId, requestId, "Task 16B persisted work"]);
+    await db.query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status) values($1,$2,$3,$4,$5,$6,'pending')",
+      [runId, own.businessId, own.owner.userId, threadId, messageId, "a".repeat(64)]);
+    await db.query("insert into public.supervisor_run_steps(business_id,run_id,step_key,step_index,retry_mode,status) values($1,$2,'owner_turn',1,'reconcile','pending')",
+      [own.businessId, runId]);
+    // The existing shared login helper asserts a desktop-visible nav label.
+    // Authenticate normally, then switch to the real mobile viewport for ALL
+    // status, reconnect, and horizontal-overflow assertions below.
+    // The newly merged 15A worker persists unprompted investigation episodes here.
+    await db.query("insert into public.supervisor_investigations(business_id,owner_user_id,thread_id,source_type,source_id,revision_hash,stable_key,phase) values($1,$2,$3,'alert',$4,$5,$6,'collect')",
+      [own.businessId,own.owner.userId,threadId,investigationSourceId,"b".repeat(64),"c".repeat(64)]);
+    const context = await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+    try {
+      const page = await context.newPage();
+      await login(page,own);
+      await openOwnedPage(page,own,"?thread="+threadId);
+      await page.setViewportSize({width:390,height:844});
+      const work = page.getByRole("region",{name:"Supervisor work"});
+      await expect(work).toBeVisible();
+      await expect(work.locator('[data-work-kind="durable_run"][data-work-status="queued"]')).toBeVisible();
+      await expect(work.locator('[data-work-kind="investigation"][data-work-status="queued"]')).toBeVisible();
+      const ownRead = await context.request.get("/api/ai/threads/"+threadId+"/work");
+      expect(ownRead.status()).toBe(200);
+      expect((await ownRead.json()).work.some(item=>item.id==="run:"+runId)).toBe(true);
+
+      // More than five unresolved 15A episodes remain accessible, not silently
+      // hidden behind a recency limit or duplicate approval control.
+      for (let i=0;i<6;i++) {
+        const episode=randomUUID(), hash=episode.replaceAll("-","").repeat(2);
+        await db.query("insert into public.supervisor_investigations(business_id,owner_user_id,thread_id,source_type,source_id,revision_hash,stable_key,phase) values($1,$2,$3,'alert',$4,$5,$6,'collect')",
+          [own.businessId,own.owner.userId,threadId,episode,hash,hash]);
+      }
+      await page.reload();
+      const showMore = work.getByRole("button",{name:"Show more saved work"});
+      await expect(showMore).toBeVisible();
+      await showMore.click();
+      await expect(work.locator('[data-work-kind="investigation"]')).toHaveCount(7);
+
+      // Durable worker retry is visible from the canonical lease attempt.
+      await db.query("update public.supervisor_run_steps set status='leased',worker_id=$1,claim_token=$2,lease_until=now()+interval '10 minutes',attempts=2,updated_at=now() where run_id=$3",
+        [randomUUID(),randomUUID(),runId]);
+      await db.query("update public.supervisor_runs set status='running',updated_at=now() where id=$1",[runId]);
+      await page.reload();
+      await expect(work.locator('[data-work-status="retrying"]')).toBeVisible();
+
+      // A dead reconciliation lease stays UNKNOWN rather than re-executing an effect.
+      await db.query("update public.supervisor_run_steps set status='blocked',worker_id=null,claim_token=null,lease_until=null,error_code='lease_expired',updated_at=now() where run_id=$1",
+        [runId]);
+      await db.query("update public.supervisor_runs set status='blocked',updated_at=now() where id=$1",[runId]);
+      await page.reload();
+      await expect(work.locator('[data-work-status="uncertain"]')).toContainText("Outcome not yet verified");
+      await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
+
+      // The other café's authenticated owner cannot enumerate this work.
+      const foreign = await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+      try {
+        const foreignPage = await foreign.newPage();
+        await login(foreignPage,other);
+        const response = await foreign.request.get("/api/ai/threads/"+threadId+"/work");
+        expect([401,403,404]).toContain(response.status());
+      } finally { await foreign.close(); }
+
+      // Saving the answer does not magically create a provider receipt.
+      await db.query("update public.supervisor_run_steps set status='completed',result_ref=$1,completed_at=now(),error_code=null,updated_at=now() where run_id=$2",
+        [answerId,runId]);
+      await db.query("update public.supervisor_runs set status='completed',final_report_ref=$1,finished_at=now(),updated_at=now() where id=$2",
+        [answerId,runId]);
+      await page.reload();
+      await expect(work.locator('[data-work-status="answer_ready"]')).toContainText("Answer saved");
+      await expect(work).toContainText("not an external effect");
+      await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
+
+      await db.query("update public.supervisor_investigations set phase='resolved',updated_at=now() where business_id=$1 and source_id=$2",
+        [own.businessId, investigationSourceId]);
+      await page.reload();
+      await expect(work.locator('[data-work-kind="investigation"][data-work-status="source_resolved"]')).toBeVisible();
+      await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
+
+      // An offline read is a stale status, not an action failure or success.
+      await page.route("**/api/ai/threads/"+threadId+"/work", route=>
+        route.fulfill({status:503,contentType:"application/json",body:'{"error":"unavailable"}'}));
+      await page.reload();
+      await expect(work).toContainText("Current status cannot be verified");
+      await page.unroute("**/api/ai/threads/"+threadId+"/work");
+      await page.reload();
+      await expect(work.locator('[data-work-status="answer_ready"]')).toBeVisible();
+      const bounds = await work.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds.x+ bounds.width).toBeLessThanOrEqual(391);
+    } finally { await context.close(); }
+  } finally {
+    if (connected) {
+      // Cascade cleans only this unique throwaway thread and its run/steps.
+      await db.query("delete from public.ai_threads where id=$1 and business_id=$2",
+        [threadId,own.businessId]).catch(()=>{});
+      await db.end();
+    }
+  }
+});
+
 test("@home real password sign-in isolates two cafés and ignores an unauthorized café cookie", async ({browser}) => {
   test.setTimeout(90_000); // Two real café sign-ins and protected Money routes.
   const first = seededCafe(0), second = seededCafe(1);
