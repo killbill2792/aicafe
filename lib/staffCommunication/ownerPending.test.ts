@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
-import {ownerPendingKey,parseOwnerPending,loadOwnerPending,saveOwnerPending,
+import {z} from "zod";
+import {ownerPendingKey,parseOwnerPending,loadOwnerPending,saveOwnerPending,ownerPendingApiPayload,
  type OwnerPendingMessage,type OwnerPendingAssignment} from "./ownerPending";
 import {deliverVerifiedReceiptWithRetry,type CrewOutboxStorage} from "./pendingSend";
 const ownerA="11111111-1111-4111-8111-111111111111";
@@ -31,18 +32,39 @@ describe("Task13C owner outbox survives lost replies across reload",()=>{
   let logicalCommits=0;
   const sleep=vi.fn().mockResolvedValue(undefined);
   const result=await deliverVerifiedReceiptWithRetry(restored!,async original=>{
-   calls.push({...original});
+   // Exactly the same projected server request is retried; the extra outbox
+   // discriminator is never transmitted to Zod strict APIs.
+   calls.push(ownerPendingApiPayload(original));
    if(logicalCommits===0){logicalCommits++;throw Error("lost HTTP acknowledgement");}
    return {id:receiptId,replayed:true};
   },sleep);
   expect(result).toEqual({status:"confirmed",receipt:{id:receiptId,replayed:true}});
-  expect(calls).toEqual([payload,payload]);
+  expect(calls).toEqual([ownerPendingApiPayload(payload),ownerPendingApiPayload(payload)]);
   expect(logicalCommits).toBe(1);
   expect(sleep).toHaveBeenCalledOnce();
   expect(sleep).toHaveBeenCalledWith(400);
   expect(loadOwnerPending(storage,key,kind)).toEqual(payload);
   storage.removeItem(key);
   expect(loadOwnerPending(storage,key,kind)).toBeNull();
+ });
+ it("serializes both outbox record types into the exact route-accepted strict schemas",()=>{
+  const messageRoute=z.strictObject({
+   employeeId:z.uuid(),body:z.string().trim().min(1).max(2000),nonce:z.uuid()});
+  const assignmentRoute=z.strictObject({
+   employeeId:z.uuid(),kind:z.enum(["task","checklist"]),title:z.string().trim().min(1).max(200),
+   prompt:z.string().trim().min(1).max(2000),nonce:z.uuid()});
+  const msg=ownerPendingApiPayload(message);
+  const work=ownerPendingApiPayload(assignment);
+  expect(msg).toEqual({employeeId:employee,body:message.body,nonce:nonceMessage});
+  expect(work).toEqual({employeeId:employee,kind:"checklist",
+   title:assignment.title,prompt:assignment.prompt,nonce:nonceAssignment});
+  expect(messageRoute.safeParse(msg).success).toBe(true);
+  expect(assignmentRoute.safeParse(work).success).toBe(true);
+  expect(messageRoute.safeParse(message).success).toBe(false);
+  expect(assignmentRoute.safeParse(assignment).success).toBe(false);
+  expect(message).toEqual({type:"message",employeeId:employee,
+   body:"Can you update me on the schedule?",nonce:nonceMessage});
+  expect(assignment.type).toBe("assignment");
  });
  it("stores independent message and assignment nonces, scoped to BOTH owner and cafe",()=>{
   const storage=store();
