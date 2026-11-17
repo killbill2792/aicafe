@@ -221,7 +221,7 @@ run("real Luna investigates recorded leave and staffing, follows up, and verifie
   await admin.query("insert into public.staff_availability_exceptions "+
    "(business_id,employee_id,local_date,exception_type,source,confirmation,"+
    "confirmed_at,confirmed_by) values ($1,$2,$3,'approved_leave','owner_direct',"+
-   "'owner_confirmed',now()+interval '2 seconds',$4)",
+   "'owner_confirmed',clock_timestamp(),$4)",
    [ids.business,ids.originalEmployee,date,ids.owner]);
   try{
    await admin.query("set role service_role");
