@@ -146,6 +146,8 @@ jobs:
           set -euo pipefail
           test "$(git -C candidate rev-parse HEAD)" = "${{ needs.consume-once.outputs.head }}"
           cp coordinator/scripts/acceptance/task14c-live.mjs candidate/evals/acceptance/live/task14c.runner.mjs
+          cp coordinator/scripts/acceptance/task14c-gmail-simulator.test.mjs candidate/scripts/acceptance/task14c-gmail-simulator.test.mjs
+          cp coordinator/scripts/acceptance/task14c-gmail-simulator.cjs candidate/scripts/acceptance/task14c-gmail-simulator.cjs
           test -s candidate/evals/acceptance/live/task14c.runner.mjs
       - name: Run candidate installation, zero-secret integrity tests and seed ONLY inside Docker
         shell: bash
