@@ -58,20 +58,24 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
   }finally{sending.current=false;setBusy("");}
  },[router,storageKey,authUserId]);
  useEffect(()=>{
-  // An ambiguous save survives a page reload *only in this authenticated
-  // user's browser tab*. Never carry an operation to a different login.
-  if(pendingRef.current)return;
-  try{
-   const saved=loadCrewPending(window.sessionStorage,storageKey);
-   if(saved){
-    pendingRef.current=saved;
-    setPending(true);
-    setFeedback("Recovering a previously unconfirmed message…");
-    void retryPending();
+  // Restore only in a scheduled callback, not synchronously inside React's
+  // mount effect. The send handler independently checks storage before
+  // generating a nonce, so a click during hydration cannot overwrite it.
+  const scheduled=window.setTimeout(()=>{
+   if(pendingRef.current)return;
+   try{
+    const saved=loadCrewPending(window.sessionStorage,storageKey);
+    if(saved){
+     pendingRef.current=saved;
+     setPending(true);
+     setFeedback("Recovering a previously unconfirmed message…");
+     void retryPending();
+    }
+   }catch{
+    setFeedback("This browser cannot access pending messages. No message was sent.");
    }
-  }catch{
-   setFeedback("This browser cannot access pending messages. No message was sent.");
-  }
+  },0);
+  return()=>window.clearTimeout(scheduled);
  },[retryPending,storageKey]);
  function send(requestId:string|null,response:PendingCrewSubmission["response"],
   body:string|null){
