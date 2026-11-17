@@ -5,6 +5,7 @@ SELECT gen_random_uuid() AS biz_a,gen_random_uuid() AS biz_b,
  gen_random_uuid() AS owner_a,gen_random_uuid() AS owner_b,
  gen_random_uuid() AS staff_user_a,gen_random_uuid() AS staff_user_b,
  gen_random_uuid() AS staff_a,gen_random_uuid() AS staff_b,
+ gen_random_uuid() AS staff_other,
  gen_random_uuid() AS shift_a,gen_random_uuid() AS shift_b,
  gen_random_uuid() AS nonce_a,gen_random_uuid() AS nonce_b,
  gen_random_uuid() AS nonce_report,gen_random_uuid() AS nonce_checklist
@@ -27,7 +28,8 @@ VALUES (:'biz_a',:'owner_a','owner'),(:'biz_b',:'owner_b','owner');
 INSERT INTO public.employees(id,business_id,display_name,active,wage_period,wage_amount_cents,phone_e164,whatsapp_opt_in)
 VALUES
  (:'staff_a',:'biz_a','13c Staff A',true,'hour',1700,'+14155550901',true),
- (:'staff_b',:'biz_b','13c Staff B',true,'hour',1800,'+442079460901',true);
+ (:'staff_b',:'biz_b','13c Staff B',true,'hour',1800,'+442079460901',true),
+ (:'staff_other',:'biz_a','13c Staff Other',true,'hour',1700,'+14155550902',false);
 INSERT INTO public.scheduled_shifts(id,business_id,employee_id,local_date,start_local,end_local,source,status)
 VALUES
  (:'shift_a',:'biz_a',:'staff_a',current_date+2,'07:00','14:00','owner','sent'),
@@ -36,6 +38,7 @@ VALUES
 SELECT set_config('test.task13c.biz_a',:'biz_a',true);
 SELECT set_config('test.task13c.biz_b',:'biz_b',true);
 SELECT set_config('test.task13c.staff_a',:'staff_a',true);
+SELECT set_config('test.task13c.staff_other',:'staff_other',true);
 SELECT set_config('test.task13c.staff_b',:'staff_b',true);
 SELECT set_config('test.task13c.owner_a',:'owner_a',true);
 SELECT set_config('test.task13c.owner_b',:'owner_b',true);
@@ -79,6 +82,23 @@ VALUES (:'biz_a',:'staff_a','checklist','owner_checklist','opening','revision-1'
  'Opening checklist','Please complete your assigned opening checks')
 RETURNING id AS req_checklist \gset
 SELECT set_config('test.task13c.req_checklist',:'req_checklist',true);
+
+-- Even a trusted service-role producer cannot attach another worker's
+-- report to a request assigned to a different employee at the same café.
+DO $test$
+DECLARE denied boolean:=false;
+BEGIN
+ BEGIN
+  INSERT INTO public.staff_communication_messages
+    (business_id,employee_id,request_id,actor,response_code,body,channel,client_nonce)
+  VALUES(current_setting('test.task13c.biz_a')::uuid,
+    current_setting('test.task13c.staff_other')::uuid,
+    current_setting('test.task13c.req_a')::uuid,
+    'employee','message','Wrong worker assignment','web',gen_random_uuid());
+ EXCEPTION WHEN foreign_key_violation THEN denied:=true; END;
+ IF NOT denied THEN
+  RAISE EXCEPTION 'same-cafe cross-employee assignment forged'; END IF;
+END $test$;
 
 -- A worker has no business membership, no owner power and no access to
 -- other cafés' records or messages; only their assigned request/message RLS.
