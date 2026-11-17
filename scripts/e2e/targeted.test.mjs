@@ -8,6 +8,9 @@ test("real Home, Staff, Menu, Money and Gmail changes select only relevant journ
   assert.deepEqual(classifyPaths(["components/staff/StaffPublicationStatus.tsx"]).scenarios, ["staff"]);
   assert.deepEqual(classifyPaths(["components/staff/StaffStandingMandatePanel.tsx"]).scenarios, ["staff"]);
   assert.deepEqual(classifyPaths(["components/staff/StaffStandingMandatePanel.test.ts"]).scenarios, ["staff"]);
+  assert.deepEqual(classifyPaths(["app/[locale]/onboarding/page.tsx"]).scenarios, ["staff"]);
+  assert.deepEqual(classifyPaths(["app/[locale]/more/page.tsx"]).scenarios, ["staff","gmail"]);
+  assert.deepEqual(classifyPaths(["app/[locale]/pricing/page.tsx"]).scenarios, ["staff"]);
   assert.deepEqual(classifyPaths(["app/[locale]/menu/page.tsx"]).scenarios, ["menu"]);
   assert.deepEqual(classifyPaths(["app/[locale]/money/page.tsx"]).scenarios, ["money"]);
   assert.deepEqual(classifyPaths(["app/[locale]/more/gmail/page.tsx"]).scenarios, ["gmail"]);
@@ -38,16 +41,16 @@ test("backend and docs are not delayed by unrelated browser jobs", () => {
 });
 
 test("unknown browser UI cannot silently skip required proof", () => {
-  const decision = classifyPaths(["app/[locale]/pricing/page.tsx", "components/UnknownWidget.tsx"]);
+  const decision = classifyPaths(["app/[locale]/pricing/unknown/page.tsx", "components/UnknownWidget.tsx"]);
   assert.equal(decision.required, true);
   assert.deepEqual(decision.unmapped,
-    ["app/[locale]/pricing/page.tsx", "components/UnknownWidget.tsx"]);
+    ["app/[locale]/pricing/unknown/page.tsx", "components/UnknownWidget.tsx"]);
   assert.deepEqual(decision.scenarios, []);
   const unexercised = classifyPaths([
     "app/[locale]/staff/rules/page.tsx",
     "app/[locale]/menu/new/page.tsx",
     "components/money/ProfitCostsView.tsx",
-    "app/[locale]/onboarding/page.tsx",
+    "app/[locale]/onboarding/new-flow/page.tsx",
   ]);
   assert.equal(unexercised.required, true);
   assert.deepEqual(unexercised.scenarios, []);

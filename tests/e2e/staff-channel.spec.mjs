@@ -37,6 +37,9 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await owner.locator("#staff-account-email").fill(created[0].email);
   await owner.getByRole("button",{name:"Link existing login"}).click();
   await expect(owner.getByText("Existing confirmed login linked.")).toBeVisible();
+  // Linking updates the owner reply selector without a manual page reload.
+  await expect(owner.locator('#staff-reply-person option[value="'+created[0].worker.id+'"]'))
+   .toHaveCount(1,{timeout:20_000});
 
   const otherCtx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
   contexts.push(otherCtx);
@@ -85,6 +88,11 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   expect(businessesAfter).toBe(businessesBefore);
   const privatePage=await staffCtx.request.get("/en/money?view=profit",{maxRedirects:0});
   expect([302,303,307,308,401,403]).toContain(privatePage.status());
+  for(const path of ["/en/more","/en/pricing"]){
+   const response=await staffCtx.request.get(path,{maxRedirects:0});
+   expect([302,303,307,308]).toContain(response.status());
+   expect(response.headers().location??"").toContain("/crew");
+  }
 
   await owner.reload();
   await expect(owner.getByRole("heading",{name:"Employee responses and reports"}))
@@ -121,9 +129,31 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
    [created[0].shiftId])).rows[0];
   expect(shift.status).toBe("sent");
   expect(String(shift.start_local).startsWith("07:00")).toBe(true);
+  // A former employee with a still-linked auth account must be denied all
+  // owner onboarding and owner data, not only active workers.
+  await db.query("update public.employees set active=false where id=$1",
+   [created[0].worker.id]);
+  const inactiveOnboarding=await staffCtx.request.get("/en/onboarding",{maxRedirects:0});
+  expect([302,303,307,308]).toContain(inactiveOnboarding.status());
+  expect(inactiveOnboarding.headers().location??"").toContain("/crew");
+  const inactiveInbox=await staffCtx.request.get("/api/staff-channel");
+  expect(inactiveInbox.status()).toBe(403);
+  // Inactivity must not trap owner-linked credentials. The real owner can
+  // disconnect an inactive worker without reactivating their job.
+  await owner.reload();
+  await owner.locator("#staff-account-person").selectOption(created[0].worker.id);
+  await owner.getByRole("button",{name:"Disconnect login"}).click();
+  await expect(owner.getByText("Staff login disconnected.")).toBeVisible({timeout:20_000});
+  const afterUnlink=(await db.query("select staff_auth_user_id from public.employees where id=$1",
+   [created[0].worker.id])).rows[0];
+  expect(afterUnlink.staff_auth_user_id).toBeNull();
+  await db.query("update public.employees set active=true where id=$1",
+   [created[0].worker.id]);
  }finally{
   for(const ctx of contexts)await ctx.close().catch(()=>{});
   if(connected)for(const item of created){
+   // Cleanup restores the existing seeded worker even after a failed assertion.
+   await db.query("update public.employees set active=true where id=$1",[item.worker.id]).catch(()=>{});
    await db.query("delete from public.operating_tasks where business_id=$1 and entity_type='staff_message' and entity_id in (select id::text from public.staff_communication_messages where business_id=$1 and employee_id=$2)",
     [item.cafe.businessId,item.worker.id]).catch(()=>{});
    await db.query("delete from public.staff_communication_messages where business_id=$1 and employee_id=$2",

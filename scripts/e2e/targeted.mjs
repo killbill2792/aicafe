@@ -25,8 +25,10 @@ export function scenariosForPath(path) {
       path.startsWith("lib/auth/") ||
       path.startsWith("lib/supabase/") ||
       path === "messages/en.json") return ALL;
-  if (path === "app/[locale]/more/page.tsx" ||
-      path === "app/[locale]/more/gmail/page.tsx" ||
+  // The owner More page contains Gmail controls and is a restricted owner
+  // navigation destination for workers. Require BOTH real browser journeys.
+  if (path === "app/[locale]/more/page.tsx") return ["staff","gmail"];
+  if (path === "app/[locale]/more/gmail/page.tsx" ||
       path === "components/more/GmailConnectionPanel.tsx" ||
       path === "components/home/SupervisorProposalCard.tsx" ||
       path === "components/home/SupervisorProposalCard.gmail.test.tsx" ||
@@ -52,8 +54,9 @@ export function scenariosForPath(path) {
   if (path.startsWith("app/crew/") || path.startsWith("components/crew/") ||
       path === "components/staff/StaffLoginLinkPanel.tsx" ||
       path === "components/staff/StaffResponseInbox.tsx" ||
-      path === "components/staff/StaffReplyComposer.tsx" ||
-      path === "components/staff/StaffCoordinationPanel.tsx") return ["staff"];
+      path === "components/staff/StaffReplyComposer.tsx") return ["staff"];
+  if (path === "app/[locale]/onboarding/page.tsx") return ["staff"];
+  if (path === "app/[locale]/pricing/page.tsx") return ["staff"];
   if (path === "app/[locale]/staff/page.tsx" ||
       path === "components/staff/StaffWorkspace.tsx" ||
       path === "components/staff/StaffPublicationStatus.tsx" ||

@@ -14,6 +14,12 @@ vi.mock("react",async importOriginal=>{
     }) as T;
   }};
 });
+// This test isolates per-request owner identity caching, not worker-login
+// authorization. The actual staff guard and revocation are exercised by the
+// migrated two-café and seeded browser tests.
+vi.mock("@/lib/staffCommunication/identity.server",()=>({
+  isLinkedStaffUser:vi.fn(async()=>false),
+}));
 vi.mock("next/headers",()=>({cookies:async()=>({
   get:()=>({value:"not-a-member"}),
 })}));

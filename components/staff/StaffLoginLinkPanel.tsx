@@ -1,8 +1,10 @@
 "use client";
 import {useEffect,useState} from "react";
 import Link from "next/link";
+import {useRouter} from "next/navigation";
 type Employee={id:string;name:string;active:boolean;linked:boolean};
 export default function StaffLoginLinkPanel(){
+ const router=useRouter();
  const [people,setPeople]=useState<Employee[]>([]);
  const [chosen,setChosen]=useState(""),[email,setEmail]=useState("");
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
@@ -36,6 +38,8 @@ export default function StaffLoginLinkPanel(){
    if(!res.ok)throw new Error("Account not linked");
    await reload();setEmail("");
    setMessage(unlink?"Staff login disconnected.":"Existing confirmed login linked.");
+   // Refresh the owner read surface and reply composer without a manual reload.
+   router.refresh();
   }catch{setMessage("Could not update the link. Check the login is already created and confirmed, and not in use.");}
   finally{setBusy(false);}
  }
@@ -46,14 +50,16 @@ export default function StaffLoginLinkPanel(){
   <label htmlFor="staff-account-person" className="block text-sm font-semibold">Employee</label>
   <select id="staff-account-person" value={chosen} onChange={e=>setChosen(e.target.value)}
    className="min-h-12 w-full rounded-xl border border-line bg-white p-3">
-   {people.filter(p=>p.active).map(p=><option key={p.id} value={p.id}>{p.name} {p.linked?"(linked)":""}</option>)}
+   {people.filter(p=>p.active||p.linked).map(p=><option key={p.id} value={p.id}>
+    {p.name} {p.linked?"(linked)":""} {!p.active?"(inactive)":""}
+   </option>)}
   </select>
   <label htmlFor="staff-account-email" className="block text-sm font-semibold">Existing confirmed login email</label>
   <input id="staff-account-email" type="email" value={email} onChange={e=>setEmail(e.target.value)}
    placeholder="Employee account email" autoComplete="off"
    className="min-h-12 w-full rounded-xl border border-line bg-white p-3"/>
   <div className="flex flex-wrap gap-2">
-   <button disabled={busy||!selected||!email.trim()} onClick={()=>update()}
+   <button disabled={busy||!selected?.active||!email.trim()} onClick={()=>update()}
     className="min-h-12 rounded-full bg-accent px-5 text-on-accent disabled:opacity-50">Link existing login</button>
    {selected?.linked&&<button disabled={busy} onClick={()=>update(true)}
     className="min-h-12 rounded-full border border-line px-5 disabled:opacity-50">Disconnect login</button>}

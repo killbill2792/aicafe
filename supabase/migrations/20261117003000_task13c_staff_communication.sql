@@ -20,13 +20,17 @@ begin
   raise exception 'staff_owner_required' using errcode='42501'; end if;
  select * into v_employee from public.employees
   where business_id=p_business_id and id=p_employee_id for update;
- if not found or not v_employee.active then
-  raise exception 'active_employee_not_found' using errcode='22023'; end if;
+ if not found then
+  raise exception 'employee_not_found' using errcode='22023'; end if;
+ -- Revocation must remain available after an employee is deactivated.
  if p_email is null then
   update public.employees set staff_auth_user_id=null
    where business_id=p_business_id and id=p_employee_id;
   return jsonb_build_object('linked',false);
  end if;
+ -- New links are only valid for currently active staff.
+ if not v_employee.active then
+  raise exception 'active_employee_required' using errcode='22023'; end if;
  if char_length(p_email)>320 or p_email !~ '^[^[:space:]@]+@[^[:space:]@]+$' then
   raise exception 'invalid_email' using errcode='22023'; end if;
  select u.id into v_user from auth.users u
@@ -81,6 +85,8 @@ create table public.staff_communication_requests (
  created_at timestamptz not null default now(),
  updated_at timestamptz not null default now(),
  unique(business_id,id),
+ -- Messages must reference the exact employee assigned to a request.
+ unique(business_id,id,employee_id),
  unique(business_id,employee_id,kind,source_type,source_id,source_revision),
  foreign key(business_id,employee_id) references public.employees(business_id,id) on delete cascade
 );
@@ -93,7 +99,9 @@ create table public.staff_communication_messages (
  employee_id uuid not null,
  request_id uuid,
  actor text not null check(actor in ('employee','supervisor','owner')),
- author_user_id uuid references auth.users(id) on delete set null,
+ -- Keep signed original owner ID even after account deletion; never
+ -- block user deletion or reattribute a retained historical message.
+ author_user_id uuid,
  response_code text not null check(response_code in ('confirm','decline','complete','message','report','owner_message')),
  body text check(body is null or char_length(body) between 1 and 2000),
  channel text not null check(channel in ('web','whatsapp')),
@@ -104,7 +112,8 @@ create table public.staff_communication_messages (
  unique(business_id,employee_id,client_nonce),
  unique(channel,provider_event_id),
  foreign key(business_id,employee_id) references public.employees(business_id,id) on delete cascade,
- foreign key(business_id,request_id) references public.staff_communication_requests(business_id,id),
+ foreign key(business_id,request_id,employee_id)
+  references public.staff_communication_requests(business_id,id,employee_id),
  check(response_code not in ('message','report','owner_message') or body is not null),
  check((response_code='report' and request_id is null and actor='employee') or
        (response_code='owner_message' and request_id is null and actor='owner') or
@@ -302,7 +311,7 @@ grant execute on function public.staff_channel_submit(uuid,text,text,uuid) to au
 -- Future automated sends must use the separate effect gateway, not this RPC.
 create function public.staff_channel_owner_send(
  p_employee_id uuid,p_body text,p_nonce uuid
-) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare emp public.employees%rowtype;
   previous public.staff_communication_messages%rowtype; created uuid;
   v_body text; v_actor uuid;
@@ -332,7 +341,7 @@ begin
  values(emp.business_id,emp.id,null,'owner',v_actor,
   'owner_message',v_body,'web',p_nonce) returning id into created;
  return jsonb_build_object('id',created,'replayed',false);
-end $;
+end $$;
 revoke all on function public.staff_channel_owner_send(uuid,text,uuid) from public,anon;
 grant execute on function public.staff_channel_owner_send(uuid,text,uuid) to authenticated;
 
@@ -344,7 +353,7 @@ create unique index staff_communication_owner_request_nonce
  where source_type='owner_manual';
 create function public.staff_channel_owner_assign(
  p_employee_id uuid,p_kind text,p_title text,p_prompt text,p_nonce uuid
-) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare emp public.employees%rowtype; assignment public.staff_communication_requests%rowtype;
  v_title text;v_prompt text;
 begin
@@ -372,7 +381,7 @@ begin
  values (emp.business_id,emp.id,p_kind,'owner_manual',p_nonce::text,'v1',v_title,v_prompt)
  returning * into assignment;
  return jsonb_build_object('id',assignment.id,'replayed',false);
-end $;
+end $$;
 revoke all on function public.staff_channel_owner_assign(uuid,text,text,text,uuid) from public,anon;
 grant execute on function public.staff_channel_owner_assign(uuid,text,text,text,uuid) to authenticated;
 

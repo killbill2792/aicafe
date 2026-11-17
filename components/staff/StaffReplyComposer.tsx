@@ -5,6 +5,8 @@ export default function StaffReplyComposer({people}:{
  people:readonly {id:string;name:string}[];
 }){
  const [employeeId,setEmployeeId]=useState(people[0]?.id??"");
+ // Server refresh can add the first link without remounting this composer.
+ const selectedEmployeeId=people.some(p=>p.id===employeeId)?employeeId:people[0]?.id??"";
  const [body,setBody]=useState(""),[status,setStatus]=useState("");
  const [busy,setBusy]=useState(false),nonce=useRef<string|null>(null);
  const [workKind,setWorkKind]=useState<"task"|"checklist">("task");
@@ -13,7 +15,7 @@ export default function StaffReplyComposer({people}:{
  const assignmentNonce=useRef<string|null>(null);
  const router=useRouter();
  async function send(){
-  if(!employeeId||!body.trim()||busy)return;
+  if(!selectedEmployeeId||!body.trim()||busy)return;
   setBusy(true);setStatus("");
   // If HTTP fails without a receipt, reuse the same nonce to avoid duplicate
   // employee notifications on a network replay.
@@ -23,7 +25,7 @@ export default function StaffReplyComposer({people}:{
    const response=await fetch("/api/staff-channel/owner-message",{
     method:"POST",credentials:"same-origin",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({employeeId,body:body.trim(),nonce:requestNonce}),
+    body:JSON.stringify({employeeId:selectedEmployeeId,body:body.trim(),nonce:requestNonce}),
    });
    if(!response.ok)throw new Error("unverified");
    nonce.current=null;setBody("");
@@ -33,7 +35,7 @@ export default function StaffReplyComposer({people}:{
   finally{setBusy(false);}
  }
  async function assignWork(){
-  if(!employeeId||!workTitle.trim()||!workPrompt.trim()||assignBusy)return;
+  if(!selectedEmployeeId||!workTitle.trim()||!workPrompt.trim()||assignBusy)return;
   setAssignBusy(true);setWorkStatus("");
   const requestNonce=assignmentNonce.current??crypto.randomUUID();
   assignmentNonce.current=requestNonce;
@@ -41,7 +43,7 @@ export default function StaffReplyComposer({people}:{
    const response=await fetch("/api/staff-channel/owner-assignment",{
     method:"POST",credentials:"same-origin",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({employeeId,kind:workKind,
+    body:JSON.stringify({employeeId:selectedEmployeeId,kind:workKind,
       title:workTitle.trim(),prompt:workPrompt.trim(),nonce:requestNonce}),
    });
    if(!response.ok)throw new Error("unverified");
@@ -53,11 +55,11 @@ export default function StaffReplyComposer({people}:{
  }
  return <section className="space-y-3 rounded-2xl border border-line p-4">
   <h3 className="font-semibold">Message an employee</h3>
-  <p className="text-sm text-ink-muted">Your Send click shares a message in the worker's private web inbox. This does not send WhatsApp or confirm staff attendance.</p>
+  <p className="text-sm text-ink-muted">Your Send click shares a message in the worker&apos;s private web inbox. This does not send WhatsApp or confirm staff attendance.</p>
   {!people.length?<p className="text-sm text-ink-muted">Link an existing employee account before sending a message.</p>:<>
    <label className="block text-sm font-semibold" htmlFor="staff-reply-person">Employee</label>
    <select id="staff-reply-person" className="min-h-12 w-full rounded-xl border border-line bg-white p-3"
-    value={employeeId} onChange={e=>{setEmployeeId(e.target.value);nonce.current=null;assignmentNonce.current=null;}}>
+    value={selectedEmployeeId} onChange={e=>{setEmployeeId(e.target.value);nonce.current=null;assignmentNonce.current=null;}}>
     {people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
    </select>
    <label className="block text-sm font-semibold" htmlFor="staff-reply-body">Message</label>
@@ -87,7 +89,7 @@ export default function StaffReplyComposer({people}:{
    <textarea id="staff-work-prompt" rows={3} maxLength={2000} value={workPrompt}
     onChange={e=>{setWorkPrompt(e.target.value);assignmentNonce.current=null;}}
     className="w-full rounded-xl border border-line bg-white p-3"/>
-   <button type="button" disabled={assignBusy||!employeeId||!workTitle.trim()||!workPrompt.trim()}
+   <button type="button" disabled={assignBusy||!selectedEmployeeId||!workTitle.trim()||!workPrompt.trim()}
     onClick={assignWork} className="min-h-12 rounded-full bg-accent px-5 font-semibold text-on-accent disabled:opacity-50">
     {assignBusy?"Saving…":"Assign work"}
    </button>
