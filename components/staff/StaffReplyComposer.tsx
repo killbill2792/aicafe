@@ -57,7 +57,7 @@ export default function StaffReplyComposer({people}:{
   {!people.length?<p className="text-sm text-ink-muted">Link an existing employee account before sending a message.</p>:<>
    <label className="block text-sm font-semibold" htmlFor="staff-reply-person">Employee</label>
    <select id="staff-reply-person" className="min-h-12 w-full rounded-xl border border-line bg-white p-3"
-    value={employeeId} onChange={e=>{setEmployeeId(e.target.value);nonce.current=null;}}>
+    value={employeeId} onChange={e=>{setEmployeeId(e.target.value);nonce.current=null;assignmentNonce.current=null;}}>
     {people.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
    </select>
    <label className="block text-sm font-semibold" htmlFor="staff-reply-body">Message</label>
