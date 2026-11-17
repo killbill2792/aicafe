@@ -4,6 +4,7 @@ BEGIN;
 SELECT gen_random_uuid() AS biz_a,gen_random_uuid() AS biz_b,
  gen_random_uuid() AS owner_a,gen_random_uuid() AS owner_b,
  gen_random_uuid() AS staff_user_a,gen_random_uuid() AS staff_user_b,
+ gen_random_uuid() AS manager_a,
  gen_random_uuid() AS staff_a,gen_random_uuid() AS staff_b,
  gen_random_uuid() AS staff_other,
  gen_random_uuid() AS shift_a,gen_random_uuid() AS shift_b,
@@ -19,12 +20,15 @@ VALUES
  (:'staff_user_a','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    '13c-worker-a@example.invalid',now(),'',now(),now()),
  (:'staff_user_b','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
-   '13c-worker-b@example.invalid',now(),'',now(),now());
+   '13c-worker-b@example.invalid',now(),'',now(),now()),
+ (:'manager_a','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+   '13c-manager-a@example.invalid',now(),'',now(),now());
 INSERT INTO public.businesses(id,name,timezone,currency,is_demo)
 VALUES (:'biz_a','13c disposable A','America/Los_Angeles','USD',false),
  (:'biz_b','13c disposable B','Europe/London','GBP',false);
 INSERT INTO public.memberships(business_id,user_id,role)
-VALUES (:'biz_a',:'owner_a','owner'),(:'biz_b',:'owner_b','owner');
+VALUES (:'biz_a',:'owner_a','owner'),(:'biz_b',:'owner_b','owner'),
+ (:'biz_a',:'manager_a','manager');
 INSERT INTO public.employees(id,business_id,display_name,active,wage_period,wage_amount_cents,phone_e164,whatsapp_opt_in)
 VALUES
  (:'staff_a',:'biz_a','13c Staff A',true,'hour',1700,'+14155550901',true),
@@ -42,6 +46,7 @@ SELECT set_config('test.task13c.staff_other',:'staff_other',true);
 SELECT set_config('test.task13c.staff_b',:'staff_b',true);
 SELECT set_config('test.task13c.owner_a',:'owner_a',true);
 SELECT set_config('test.task13c.owner_b',:'owner_b',true);
+SELECT set_config('test.task13c.manager_a',:'manager_a',true);
 SELECT set_config('test.task13c.staff_user_a',:'staff_user_a',true);
 SELECT set_config('test.task13c.staff_user_b',:'staff_user_b',true);
 SELECT set_config('test.task13c.nonce_a',:'nonce_a',true);
@@ -64,6 +69,51 @@ BEGIN
 END $test$;
 SELECT set_config('request.jwt.claim.sub',:'owner_b',true);
 SELECT public.staff_link_existing_login(:'biz_b',:'staff_b','13c-worker-b@example.invalid');
+
+-- A manager may edit ordinary employee details but cannot self-link to
+-- another worker by bypassing the owner-only RPC through the broad old RLS.
+SELECT set_config('request.jwt.claim.sub',:'manager_a',true);
+DO $test$
+DECLARE denied boolean:=false;
+BEGIN
+ BEGIN
+  UPDATE public.employees SET staff_auth_user_id=current_setting('test.task13c.manager_a')::uuid
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid
+    AND id=current_setting('test.task13c.staff_other')::uuid;
+ EXCEPTION WHEN insufficient_privilege THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'manager directly linked own login to another employee'; END IF;
+ IF public.staff_channel_is_employee(current_setting('test.task13c.biz_a')::uuid,
+   current_setting('test.task13c.staff_other')::uuid)
+ THEN RAISE EXCEPTION 'manager obtained private staff channel'; END IF;
+ UPDATE public.employees SET display_name='13c Staff Other Updated'
+  WHERE id=current_setting('test.task13c.staff_other')::uuid;
+ IF NOT EXISTS(SELECT 1 FROM public.employees
+  WHERE id=current_setting('test.task13c.staff_other')::uuid
+    AND display_name='13c Staff Other Updated')
+ THEN RAISE EXCEPTION 'guard blocked ordinary employee edits'; END IF;
+ denied:=false;
+ BEGIN
+  PERFORM public.staff_link_existing_login(
+    current_setting('test.task13c.biz_a')::uuid,
+    current_setting('test.task13c.staff_other')::uuid,'13c-manager-a@example.invalid');
+ EXCEPTION WHEN insufficient_privilege THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'manager bypassed owner-only link RPC'; END IF;
+END $test$;
+SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
+DO $test$
+DECLARE denied boolean:=false;
+BEGIN
+ BEGIN
+  UPDATE public.employees SET staff_auth_user_id=null
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid
+     AND id=current_setting('test.task13c.staff_a')::uuid;
+ EXCEPTION WHEN insufficient_privilege THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'owner bypassed audited link RPC'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.employees
+   WHERE id=current_setting('test.task13c.staff_a')::uuid
+     AND staff_auth_user_id=current_setting('test.task13c.staff_user_a')::uuid)
+ THEN RAISE EXCEPTION 'direct UPDATE changed a linked identity'; END IF;
+END $test$;
 
 -- Only the shared existing routine/service may issue requests.
 SET LOCAL ROLE service_role;
