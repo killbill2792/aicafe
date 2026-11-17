@@ -84,7 +84,7 @@ export default function CrewInbox({name,requests,messages}:{
    <h2 id="crew-history" className="text-xl font-bold">My messages</h2>
    {messages.length===0?<p className="text-ink-muted">You have not sent a message yet.</p>:
     <ul className="space-y-2">{messages.map(m=><li key={m.id} className="rounded-xl border border-line bg-card p-4">
-     <p className="text-sm font-semibold capitalize">{m.response_code.replace("_"," ")}</p>
+     <p className="text-sm font-semibold capitalize">{m.actor==="owner"?"Message from café owner":m.response_code.replace("_"," ")}</p>
      {m.body&&<p className="mt-1 whitespace-pre-wrap break-words">{m.body}</p>}
      <time className="mt-1 block text-xs text-ink-muted" dateTime={m.received_at}>{new Date(m.received_at).toLocaleString()}</time>
     </li>)}</ul>}
