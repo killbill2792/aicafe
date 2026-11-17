@@ -171,7 +171,6 @@ supabase_lane() {
   sql_step task13b-staff-publication-db.sql "Task13B agentic publication: approval, two-café RLS, opt-out, provider receipts and dedupe"
   sql_step task13b-staff-standing-mandate.sql "Task13B phone-MFA staff mandate: exact week, recipient cap, scope, revocation, receipt"
   sql_step task13c-staff-channel-db.sql "Task13C worker-auth two-cafe RLS, free text, idempotency and owner notices"
-  sql_step task13d-staff-coordination-db.sql "Task13D two-cafe intake, leave evidence, personnel decisions, RLS and retention"
   sql_step staff-approval-atomic.sql "Staff approvals: atomic, stale CAS, rollback"
   sql_step staff-approval-scoped.sql "Staff approvals: scoped CAS, independent approvals"
   sql_step ldi-e-db-contract.sql "Events (LDI E): canonical RPC and two-café RLS"
@@ -194,6 +193,8 @@ supabase_lane() {
     SUPERVISOR_RUN_DB_URL="$supabase_url" npx vitest run lib/ai/supervisor/runs/runs.db.test.ts --reporter=verbose
   check supabase "Task 7 routines: owner isolation, due-once lease, concurrent notice settlement" env SUPERVISOR_ROUTINES_DB_SANDBOX_ONLY=1 \
     SUPERVISOR_ROUTINES_DB_URL="$supabase_url" npx vitest run lib/ai/supervisor/routines/routines.db.test.ts --reporter=verbose
+  check supabase "Task 15A multi-step investigations: owner isolation, leases, recurrence and recovery" env SUPERVISOR_INVESTIGATION_DB_SANDBOX_ONLY=1 \
+    SUPERVISOR_INVESTIGATION_DB_URL="$supabase_url" npx vitest run lib/ai/supervisor/routines/investigation.db.test.ts --reporter=verbose
 
   group "Toast"
   lane_setup supabase "Rebuild the database (supabase db reset)" supabase db reset --local --yes

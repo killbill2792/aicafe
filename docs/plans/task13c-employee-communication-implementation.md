@@ -30,3 +30,29 @@ Existing integrations: `app/[locale]/staff/page.tsx`, `proxy.ts`, `lib/ai/agent/
 
 ## Acceptance that is **not** a unit-test claim
 Prove with two isolated cafés and owner-created employee logins: A cannot see B, employees cannot call owner APIs/tools or read owner data; structured + text response persists once; changed shifts invalidate old requests; checklist producer can reuse protocol; owner gets deduped task and real registered Supervisor tool evidence; Meta retries and cross-provider collisions dedupe; revocation before any external effect blocks; restarted durable worker resumes; real GPT-6 Luna registered journey, independent disposable migrated DB and owner screen receipts; current-head full CI, Codex and security. Task17B/C final integration and 17D/E release remain separate.
+
+
+## Shared channel implementation and proof boundaries (PR #501)
+
+### Employee and owner communication
+- Employee web sign-in uses the existing owner-created, confirmed auth login mapped by the owner to exactly one active employee. The isolated /crew page reveals only that employee's assignments, messages, and their own responses. There is no second agent or login provider.
+- The employee may confirm or decline a published shift, complete assigned work, attach a written explanation, send text without clicking either response, or report an independent issue. Text remains employee-authored evidence, not a command to Supervisor or a recorded roster change.
+- The signed staff WhatsApp sender accepts text from a uniquely matched opted-in employee and saves it as an unmatched-to-shift issue report. Unknown or ambiguous staff numbers get a durable hashed quarantine receipt without retaining the raw uncorrelated text. A provider wamid is a dedupe identity, not a delivered/read receipt.
+- The owner can explicitly send an in-app reply and assign work or a checklist from the Staff page, with dedicated owner-only authenticated database RPCs. The web response does not claim the employee has received or read the message. These endpoints never send WhatsApp and never update a roster.
+- Future task/checklist PRs reuse the same worker-specific request and message record protocol. New automated outbound effects must still use the existing approval and effect gateway; importing the channel does not grant approval or service-account authority.
+
+### Reuse of Task 15A's actual Supervisor
+Task 15A merged after the initial 13C draft. PR #501 now incorporates that latest main: the existing routine tick discovers changed published shifts and unanswered imminent confirmations; operating-task evidence is queued into the existing durable investigation worker. The registered Supervisor reads a claim-bound incident, verified employee-originated replies and independent roster or labor evidence. The off-turn read port authenticates the claimed owner and café from stored scope rather than a worker cookie. It cannot approve or perform an outbound effect while investigating.
+
+The owner must still authorize any changed published schedule or external worker outreach; an employee suggesting 8 AM instead of 7 AM is an unverified scheduling proposal, not a completed coverage change.
+
+### Explicit acceptance status (not a substitute for execution)
+- Migrated DB test source: scripts/task13c-staff-channel-db.sql, registered in scripts/db/run-all.sh. Includes two-café RLS, owner-created account linking, free-text/structured reply, nonce replay, owner reply, assigned checklist, stale-shift rejection, and denial for wrong identities.
+- Real seeded browser source: tests/e2e/staff-channel.spec.mjs, registered in the fail-closed @staff Playwright scenario; verifies a worker's real login and written decline, owner sees it, owner replies, checklist gets completed, and cross-café access is denied.
+- Provider parser/route, registered agent tool, and independent evidence domain negative tests are included in the same full regression suite.
+- Real GPT-6 Luna feature: NOT PROVEN until separately owner-authorized secret-isolated execution on this exact behavioral head proves tool-choice, persistent follow-up, independent source/owner UI and approval/receipt negative cases. Fake/recorded evaluator output is not equivalent.
+- Task17B/17C integrated autonomy: NOT PROVEN (combined registry completeness, genuinely unattended multi-domain restart and coverage closure). Task17D/E release: NOT PROVEN (no production effects).
+
+
+### Linked-worker owner-onboarding boundary (security addendum)
+The existing generic first-owner onboarding bootstrap uses a service-role client to create a café. A worker login is a valid auth account but has no owner membership, so an unguarded onboarding visit would bootstrap a business. 13C explicitly owns the necessary minimal access guards: lib/staffCommunication/identity.server.ts (single positive linked-employee identity check), lib/auth/requireUser.ts (owner page guard redirects linked employees to /crew), app/[locale]/onboarding/page.tsx (pre-render deny), and lib/actions/onboarding.ts (server action refuses service-role business creation). The seeded employee browser test proves a linked worker cannot enter onboarding or cause a new business row. This does not change unrelated new owner signup behavior.

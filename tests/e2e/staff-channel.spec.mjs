@@ -77,6 +77,12 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   expect(own.requests.some(r=>r.id)).toBe(true);
   expect(JSON.stringify(own)).not.toContain(created[1].worker.display_name);
   expect((await staffCtx.request.get("/api/staff-channel/link")).status()).toBe(403);
+  const businessesBefore=(await db.query("select count(*)::integer as n from public.businesses")).rows[0].n;
+  const onboarding=await staffCtx.request.get("/en/onboarding",{maxRedirects:0});
+  expect([302,303,307,308]).toContain(onboarding.status());
+  expect(onboarding.headers().location??"").toContain("/crew");
+  const businessesAfter=(await db.query("select count(*)::integer as n from public.businesses")).rows[0].n;
+  expect(businessesAfter).toBe(businessesBefore);
   const privatePage=await staffCtx.request.get("/en/money?view=profit",{maxRedirects:0});
   expect([302,303,307,308,401,403]).toContain(privatePage.status());
 
@@ -84,6 +90,31 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await expect(owner.getByRole("heading",{name:"Employee responses and reports"}))
    .toBeVisible({timeout:30_000});
   await expect(owner.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toBeVisible();
+  await owner.locator("#staff-reply-person").selectOption(created[0].worker.id);
+  await owner.locator("#staff-reply-body").fill("Thanks for the update. Can you confirm 8 AM?");
+  await owner.getByRole("button",{name:"Send to employee"}).click();
+  await expect(owner.getByText("Message saved to this employee's work inbox. Not a read or delivery receipt."))
+   .toBeVisible();
+  await staff.reload();
+  await expect(staff.getByText("Message from café owner")).toBeVisible();
+  await expect(staff.getByText("Thanks for the update. Can you confirm 8 AM?")).toBeVisible();
+  // The same channel accepts a task/checklist from any future authorized
+  // staff-workflow producer; the worker's completion is actual evidence.
+  await owner.locator("#staff-work-kind").selectOption("checklist");
+  await owner.locator("#staff-work-title").fill("Inspect opening grinder");
+  await owner.locator("#staff-work-prompt").fill("Check grinder noise before opening");
+  await owner.getByRole("button",{name:"Assign work"}).click();
+  await expect(owner.getByText("Assignment saved to this employee's work inbox."))
+   .toBeVisible({timeout:20_000});
+  await staff.reload();
+  const assigned=staff.getByRole("article").filter({hasText:"Inspect opening grinder"});
+  await expect(assigned).toBeVisible({timeout:20_000});
+  await assigned.getByRole("textbox",{name:/Add a message or explain/})
+   .fill("Checked grinder; minor noise remains.");
+  await assigned.getByRole("button",{name:"Mark complete"}).click();
+  await expect(staff.getByText("Checked grinder; minor noise remains.")).toBeVisible({timeout:20_000});
+  await owner.reload();
+  await expect(owner.getByText("Checked grinder; minor noise remains.")).toBeVisible({timeout:20_000});
   await otherOwner.reload();
   await expect(otherOwner.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toHaveCount(0);
   const shift=(await db.query("select start_local,status from public.scheduled_shifts where id=$1",

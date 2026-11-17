@@ -154,8 +154,107 @@ BEGIN
  IF (SELECT count(*) FROM public.operating_tasks
    WHERE id LIKE 'staff-response:%' AND business_id=current_setting('test.task13c.biz_a')::uuid)<>3
  THEN RAISE EXCEPTION 'owner did not get exactly one task per staff message'; END IF;
+ IF (SELECT count(*) FROM public.operating_tasks
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid AND
+    id LIKE 'staff-response:%' AND kind='staff_coverage')<>1
+ THEN RAISE EXCEPTION 'checklist/report incorrectly classified as staffing coverage'; END IF;
+ IF (SELECT count(*) FROM public.operating_tasks
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid AND
+    id LIKE 'staff-response:%' AND kind='data_quality')<>2
+ THEN RAISE EXCEPTION 'general staff work/report notices missing'; END IF;
  IF EXISTS(SELECT 1 FROM public.staff_communication_messages WHERE business_id=current_setting('test.task13c.biz_b')::uuid)
  THEN RAISE EXCEPTION 'owner read foreign cafe staff message'; END IF;
+END $test$;
+
+-- Owner's explicit in-app Send is a staff-private message, not a worker
+-- report, provider receipt, roster update or an implicit AI effect approval.
+SELECT public.staff_channel_owner_send(:'staff_a',
+ 'Thanks for explaining. Can you confirm an eight o''clock start?',:'nonce_b')->>'id'
+ AS owner_message \gset
+SELECT set_config('test.task13c.owner_message',:'owner_message',true);
+DO $test$
+DECLARE receipt jsonb; denied boolean:=false;
+BEGIN
+ IF (SELECT count(*) FROM public.operating_tasks WHERE business_id=current_setting('test.task13c.biz_a')::uuid
+   AND id LIKE 'staff-response:%')<>3
+ THEN RAISE EXCEPTION 'owner message falsely created a new staff-response notification'; END IF;
+ receipt:=public.staff_channel_owner_send(
+  current_setting('test.task13c.staff_a')::uuid,
+  'Thanks for explaining. Can you confirm an eight o''clock start?',
+  current_setting('test.task13c.nonce_b')::uuid);
+ IF receipt->>'replayed'<>'true' or receipt->>'id'<>
+  current_setting('test.task13c.owner_message')
+ THEN RAISE EXCEPTION 'owner retry sent duplicate staff message'; END IF;
+ BEGIN PERFORM public.staff_channel_owner_send(
+  current_setting('test.task13c.staff_a')::uuid,
+  'Different text on same nonce',current_setting('test.task13c.nonce_b')::uuid);
+ EXCEPTION WHEN OTHERS THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'owner nonce replay silently changed message'; END IF;
+END $test$;
+-- The same channel supports later PRs' owner-issued checklists and tasks.
+SELECT gen_random_uuid() AS owner_assign_nonce \gset
+SELECT public.staff_channel_owner_assign(:'staff_a','checklist',
+ 'Check opening equipment','Inspect grinder and log any problems',:'owner_assign_nonce')->>'id'
+ AS owner_assign_id \gset
+SELECT set_config('test.task13c.owner_assign_nonce',:'owner_assign_nonce',true);
+SELECT set_config('test.task13c.owner_assign_id',:'owner_assign_id',true);
+DO $test$
+DECLARE receipt jsonb; denied boolean:=false;
+BEGIN
+ receipt:=public.staff_channel_owner_assign(
+  current_setting('test.task13c.staff_a')::uuid,'checklist',
+  'Check opening equipment','Inspect grinder and log any problems',
+  current_setting('test.task13c.owner_assign_nonce')::uuid);
+ IF receipt->>'replayed'<>'true' or receipt->>'id'<>
+   current_setting('test.task13c.owner_assign_id') THEN
+   RAISE EXCEPTION 'repeat owner assignment duplicated work'; END IF;
+ BEGIN PERFORM public.staff_channel_owner_assign(
+  current_setting('test.task13c.staff_a')::uuid,'task',
+  'Different title','Different work',
+  current_setting('test.task13c.owner_assign_nonce')::uuid);
+ EXCEPTION WHEN OTHERS THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'assignment nonce changed worker task'; END IF;
+END $test$;
+SELECT set_config('request.jwt.claim.sub',:'owner_b',true);
+DO $test$
+DECLARE denied boolean:=false;
+BEGIN
+ BEGIN PERFORM public.staff_channel_owner_send(
+  current_setting('test.task13c.staff_a')::uuid,
+  'Foreign owner message',gen_random_uuid());
+ EXCEPTION WHEN OTHERS THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'foreign cafe owner sent a staff message'; END IF;
+END $test$;
+SELECT set_config('request.jwt.claim.sub',:'staff_user_a',true);
+DO $test$
+DECLARE denied boolean:=false;
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.staff_communication_messages
+   WHERE id=current_setting('test.task13c.owner_message')::uuid
+    AND actor='owner' and response_code='owner_message') THEN
+   RAISE EXCEPTION 'worker cannot read the verified owner reply'; END IF;
+ BEGIN PERFORM public.staff_channel_owner_send(
+  current_setting('test.task13c.staff_a')::uuid,
+  'Staff cannot impersonate owner',gen_random_uuid());
+ EXCEPTION WHEN OTHERS THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'staff could send messages as an owner'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.staff_communication_requests
+   WHERE id=current_setting('test.task13c.owner_assign_id')::uuid
+    AND kind='checklist' AND title='Check opening equipment')
+ THEN RAISE EXCEPTION 'employee cannot see their owner-issued checklist'; END IF;
+ IF public.staff_channel_submit(current_setting('test.task13c.owner_assign_id')::uuid,
+     'complete','Grinder inspected, everything looks okay',gen_random_uuid())->>'id' IS NULL
+ THEN RAISE EXCEPTION 'owner-issued checklist did not accept worker text'; END IF;
+END $test$;
+SELECT set_config('request.jwt.claim.sub',:'staff_user_b',true);
+DO $test$
+BEGIN
+ IF EXISTS(SELECT 1 FROM public.staff_communication_messages
+  WHERE id=current_setting('test.task13c.owner_message')::uuid)
+ THEN RAISE EXCEPTION 'another cafe staff saw private owner reply'; END IF;
+ IF EXISTS(SELECT 1 FROM public.staff_communication_requests
+   WHERE id=current_setting('test.task13c.owner_assign_id')::uuid)
+ THEN RAISE EXCEPTION 'foreign worker saw private task'; END IF;
 END $test$;
 
 -- Changed source must invalidate the old shift request, while exact retry

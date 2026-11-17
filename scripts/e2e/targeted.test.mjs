@@ -16,6 +16,19 @@ test("real Home, Staff, Menu, Money and Gmail changes select only relevant journ
     ["home", "staff", "menu", "money", "gmail", "purchasing"]);
 });
 
+test("Task15A Operations investigation reports require the signed-in @home browser journey",()=>{
+  const source=["app/[locale]/operations/page.tsx",
+    "app/[locale]/operations/page.test.tsx"];
+  for(const path of source){
+    const decision=classifyPaths([path]);
+    assert.equal(decision.required,true);
+    assert.deepEqual(decision.unmapped,[]);
+    assert.deepEqual(decision.scenarios,["home"]);
+    assert.equal(summarizeReport(report([["purchasing","passed"]]),["home"]).status,
+      "failed");
+  }
+});
+
 test("backend and docs are not delayed by unrelated browser jobs", () => {
   const decision = classifyPaths(["lib/ai/agent/loop.server.ts", "app/api/chat/route.ts", "docs/README.md"]);
   assert.equal(decision.required, false);

@@ -3,7 +3,6 @@ vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   claim:vi.fn(),finish:vi.fn(),notice:vi.fn(),
   staff:vi.fn(async()=>({published:0,attempted:0,blocked:0})),
-  reconcile:vi.fn(async()=>({data:{completed:0,expired:0},error:null})),
 }));
 vi.mock("./repository.server",()=>({
   claimRoutineOccurrence:mocks.claim,finishRoutineOccurrence:mocks.finish,
@@ -26,7 +25,6 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
     supervisor_proposals:params?.proposals??[],
   };
   return {rpc:async(name:string)=>{
-    if(name==="staff_coordination_reconcile")return mocks.reconcile();
     if(!["staff_channel_sync_shift_requests","staff_channel_escalate_unanswered"].includes(name))
       throw new Error("unexpected staff channel RPC "+name);
     return {data:0,error:null};
@@ -80,8 +78,23 @@ describe("bounded independent routine dispatch",()=>{
     }]}),"cafe","America/Los_Angeles",new Date("2026-11-11T16:00:00Z"));
     expect(result.notices).toBe(1);
     expect(result.runs).toBe(0);
-    expect(mocks.reconcile).toHaveBeenCalledTimes(1);
     expect(mocks.notice).toHaveBeenCalledTimes(1);
+  });
+  it("preserves Task 13B staff publication and Task 15A durable discovery in one cron",async()=>{
+    const now=new Date("2026-11-11T16:00:00Z");
+    const source=db({alerts:[{id:"alert",kind:"missing_bill",status:"new",
+      payload:{dedupeKey:"alert"},created_at:"2026-11-10T00:00:00Z"}]});
+    const enqueue=vi.fn(async()=>1);
+    mocks.staff.mockClear();mocks.notice.mockResolvedValue("posted");
+    const result=await dispatchRoutinesForBusiness(source,
+      "cafe","America/Los_Angeles",now,enqueue);
+    expect(mocks.staff).toHaveBeenCalledOnce();
+    expect(mocks.staff).toHaveBeenCalledWith(source,"cafe","2026-11-11");
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith(source,{
+      businessId:"cafe",ownerUserId:"owner",threadId:"thread",localDate:"2026-11-11",
+    },now);
+    expect(result).toMatchObject({notices:1,investigationsQueued:1,failed:0});
   });
   it("never starts another run after the DB rejects a duplicate claim",async()=>{
     mocks.claim.mockResolvedValue(null);
@@ -162,6 +175,33 @@ describe("bounded independent routine dispatch",()=>{
     expect(mocks.notice).toHaveBeenCalledWith(expect.anything(),
       expect.objectContaining({threadId:"original-thread"}),
       expect.objectContaining({source:expect.objectContaining({sourceType:"supplier_po"})}),now);
+  });
+  it("Task14B drafts remain actionable notices but cannot crowd out Task15A investigations",async()=>{
+    const now=new Date("2026-11-16T14:00:00Z");
+    const proposals=Array.from({length:90},(_,i)=>({
+      id:"saved-po-"+i,business_id:"cafe",owner_user_id:"owner",
+      thread_id:"original-po-thread",capability_id:"maya.supplier_purchase_order.v1",
+      status:"draft",revision:1,created_at:"2026-11-13T00:00:00Z",
+    }));
+    const src=db({proposals,alerts:[{
+      id:"urgent-alert",kind:"voids",status:"new",payload:{severity:"high"},
+      created_at:"2026-11-16T12:00:00Z",
+    }],tasks:[{
+      id:"watching-task",kind:"staff_coverage",status:"watching",
+      owner_user_id:"owner",created_at:"2026-11-16T11:00:00Z",
+      confidence:"high",evidence:[{source:"schedule"}],
+    }]});
+    const scope={businessId:"cafe",ownerUserId:"owner",
+      threadId:"owner-thread",localDate:"2026-11-16"};
+    const notices=await readActionablePriorities(src,scope,now);
+    expect(notices.some(x=>x.source.sourceType==="supplier_po")).toBe(true);
+    const investigations=await readActionablePriorities(src,scope,now,
+      {includeNotified:true,limit:2});
+    expect(investigations.map(x=>x.source.sourceType)).toEqual([
+      "alert","operating_task",
+    ]);
+    expect(investigations.map(x=>x.source.sourceId)).toContain("urgent-alert");
+    expect(investigations.map(x=>x.source.sourceId)).toContain("watching-task");
   });
   it("does not mix private tasks across owners",async()=>{
     const decisions=await readActionablePriorities(db({tasks:[

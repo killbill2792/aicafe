@@ -96,15 +96,21 @@ export async function assertOwnerAgentTurnAvailable(scope: ConversationScope, sc
   // allowed: UTC quota bucket. ai_usage_events.attempt_day is an existing UTC quota key,
   // not a café calendar date or a date shown to the owner.
   const utcQuotaBucketDay = new Date().toISOString().slice(0, 10);
-  const { data, error } = await session.from("ai_usage_events")
-    .select("model_call_count")
-    .eq("business_id", scope.businessId)
-    .eq("owner_user_id", scope.ownerUserId)
-    .eq("attempt_day", utcQuotaBucketDay);
-  if (error || !data) throw new ConversationApiError(503, "usage_unavailable");
-  // The ledger upserts repeated attempts under a single owner-message ID;
-  // model-call totals still include every retry (including failed answers).
-  const calls = data.reduce((total, entry) => total + entry.model_call_count, 0);
+  const [interactive,proactive] = await Promise.all([
+    session.from("ai_usage_events").select("model_call_count")
+      .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
+      .eq("attempt_day", utcQuotaBucketDay),
+    session.from("supervisor_system_usage_events").select("model_call_count")
+      .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
+      .eq("attempt_day", utcQuotaBucketDay),
+  ]);
+  if (interactive.error || proactive.error || !interactive.data || !proactive.data)
+    throw new ConversationApiError(503, "usage_unavailable");
+  // The owner daily quota covers BOTH user-requested turns and unprompted
+  // model calls. Attempts count even after a timeout/provider failure; they
+  // are reserved before transport, not erased by failed investigations.
+  const calls = [...interactive.data,...proactive.data]
+    .reduce((total, entry) => total + entry.model_call_count, 0);
   if (calls >= ownerModelCallsLimit())
     throw new ConversationApiError(429, "owner_usage_limit_reached");
 }
