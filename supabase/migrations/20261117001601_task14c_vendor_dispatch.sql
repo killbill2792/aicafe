@@ -148,10 +148,10 @@ begin
    or p.capability_version<>1 or p.effect_hash<>p_effect_hash
    or a.id is null or a.effect_hash<>p_effect_hash or a.state<>'executing'
    or a.authorization_kind<>'click'
-   or p.canonical_effect_payload->>'operation'<>'send'
-   or p.canonical_effect_payload->'to'<>jsonb_build_array(d.recipient_email)
-   or p.canonical_effect_payload->'cc'<>'[]'::jsonb
-   or p.canonical_effect_payload->'bcc'<>'[]'::jsonb
+   or p.canonical_effect_payload->>'operation' is distinct from 'send'
+   or p.canonical_effect_payload->'to' is distinct from jsonb_build_array(d.recipient_email)
+   or p.canonical_effect_payload->'cc' is distinct from '[]'::jsonb
+   or p.canonical_effect_payload->'bcc' is distinct from '[]'::jsonb
    or po.id is null or po.status<>'approved_for_ordering'
    or po.revision<>d.po_revision or po.effect_hash<>d.po_effect_hash
    or po.supplier_id<>c.supplier_id
@@ -220,17 +220,17 @@ begin
    or new_p.capability_id<>'alex.gmail_effect.v1'
    or new_p.capability_version<>1
    or new_p.thread_id<>old_p.thread_id
-   or new_p.canonical_effect_payload->>'operation'<>'send'
-   or new_p.canonical_effect_payload->'to'<>jsonb_build_array(c.email)
-   or new_p.canonical_effect_payload->'cc'<>'[]'::jsonb
-   or new_p.canonical_effect_payload->'bcc'<>'[]'::jsonb
+   or new_p.canonical_effect_payload->>'operation' is distinct from 'send'
+   or new_p.canonical_effect_payload->'to' is distinct from jsonb_build_array(c.email)
+   or new_p.canonical_effect_payload->'cc' is distinct from '[]'::jsonb
+   or new_p.canonical_effect_payload->'bcc' is distinct from '[]'::jsonb
    or exists(select 1 from public.supervisor_approvals a
      where a.business_id=p_business_id and a.proposal_id=p_new_proposal_id)
    or exists(select 1 from public.supervisor_effect_attempts a
      where a.business_id=p_business_id and a.proposal_id=p_new_proposal_id)
    or exists(select 1 from public.connector_provider_receipts r
      where r.business_id=p_business_id and r.proposal_id=p_new_proposal_id)
-   or new_p.canonical_effect_payload->>'subject'<>('Purchase order '||po.id::text)
+   or new_p.canonical_effect_payload->>'subject' is distinct from ('Purchase order '||po.id::text)
  then raise exception 'supplier_new_draft_invalid' using errcode='P0001';end if;
  if p_new_proposal_id=d.proposal_id then
    -- Idempotent replay of the SAME saved draft only when the contact/snapshot
