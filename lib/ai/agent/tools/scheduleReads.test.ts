@@ -375,7 +375,8 @@ describe("system-initiated schedule reads without a browser session",()=>{
    const result=await executeAgentTool("get_week_schedule",{week_start:null},ctx);
    expect(result).toMatchObject({source:"scheduled_shifts",missing:["unauthorized"]});
    expect(cookieScope).not.toHaveBeenCalled();
-   expect(weekSchedule).toHaveBeenCalledExactlyOnceWith("2026-10-19");
+   expect(weekSchedule).toHaveBeenCalledTimes(1);
+   expect(weekSchedule).toHaveBeenCalledWith("2026-10-19");
   }finally{cookieScope.mockReset();}
  });
 });
