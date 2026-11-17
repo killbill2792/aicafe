@@ -39,7 +39,7 @@ function roleFor(req,ownerPassword,musePassword){
  if(user==='muse'&&musePassword&&safeEqual(password,musePassword))return 'muse';
  return null;
 }
-export function ownerDashboardHandler({readState,editState,readNotes,saveNote,readFacts,ownerPassword,musePassword,
+export function ownerDashboardHandler({readState,editState,readNotes,saveNote,readFacts,readActions,ownerPassword,musePassword,
  html=readFileSync(new URL('./owner-dashboard-v3.html',import.meta.url),'utf8')}={}){
  if(typeof readState!=='function'||typeof editState!=='function'||
    typeof ownerPassword!=='string'||ownerPassword.length<16||
@@ -55,6 +55,14 @@ export function ownerDashboardHandler({readState,editState,readNotes,saveNote,re
    if(req.method==='GET'&&req.url==='/')
     return reply(res,200,'text/html; charset=utf-8',html);
    // Muse's coordination notes are locally readable even when GitHub or the ledger is down.
+   if(req.method==='GET'&&req.url==='/api/muse-actions'){
+    if(!readActions)return reply(res,503,'application/json',JSON.stringify({error:'Muse actions unavailable'}));
+    const value=await readActions();
+    if(value?.version!==1||!value.events||typeof value.events!=='object')
+      throw Error('Invalid Muse action history');
+    return reply(res,200,'application/json',JSON.stringify({version:1,
+      events:Object.values(value.events).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,50)}));
+   }
    if(req.method==='GET'&&req.url==='/api/muse-status'){
     if(!readFacts)return reply(res,503,'application/json',JSON.stringify({error:'Muse monitor unavailable'}));
     const facts=await readFacts();
@@ -144,6 +152,10 @@ export function startOwnerDashboard({ownerPassword,musePassword,ledger,port=7359
    return readTransport==='git'
     ?readLedgerViaGit({repo:ledger.repo,token:ledger.token})
     :(await ledger.verifyPrivate(),(await ledger.load()).state);
+  },
+  readActions:async()=>{
+   const path=join(dirname(notesPath),'events.json');
+   return existsSync(path)?JSON.parse(readFileSync(path,'utf8')):{version:1,events:{}};
   },
   readNotes:async()=>readMuseNotes(notesPath),
   saveNote:async(edit,opts)=>writeMuseNote(notesPath,edit,opts),
