@@ -9,7 +9,7 @@ test("real Home, Staff, Menu, Money and Gmail changes select only relevant journ
   assert.deepEqual(classifyPaths(["components/staff/StaffStandingMandatePanel.tsx"]).scenarios, ["staff"]);
   assert.deepEqual(classifyPaths(["components/staff/StaffStandingMandatePanel.test.ts"]).scenarios, ["staff"]);
   assert.deepEqual(classifyPaths(["app/[locale]/onboarding/page.tsx"]).scenarios, ["staff"]);
-  assert.deepEqual(classifyPaths(["app/[locale]/more/page.tsx"]).scenarios, ["staff"]);
+  assert.deepEqual(classifyPaths(["app/[locale]/more/page.tsx"]).scenarios, ["staff","gmail"]);
   assert.deepEqual(classifyPaths(["app/[locale]/pricing/page.tsx"]).scenarios, ["staff"]);
   assert.deepEqual(classifyPaths(["app/[locale]/menu/page.tsx"]).scenarios, ["menu"]);
   assert.deepEqual(classifyPaths(["app/[locale]/money/page.tsx"]).scenarios, ["money"]);
