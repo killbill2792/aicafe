@@ -232,12 +232,30 @@ run("real Luna investigates verified employee decline, follows up without effect
   mkdirSync("test-results/acceptance",{recursive:true});
   writeFileSync("test-results/acceptance/13c-live-proof.json",
    JSON.stringify(proof,null,2)+"\n",{mode:0o600});
+  // IDs are synthetic and NEVER uploaded. The trusted host broker runner
+  // reads this private candidate/host handoff to independently SQL-verify
+  // saved employee evidence, owner notice, true roster state and quota.
+  // Without the explicit disposable-only host flag, cleanup is immediate.
+  if(process.env.AICAFE_13C_HOST_ATTEST_DB==="1"){
+   writeFileSync("test-results/acceptance/13c-live-scope.json",
+    JSON.stringify({businessId:ids.business,foreignBusinessId:ids.foreignBusiness,
+     ownerUserId:ids.owner,foreignOwnerUserId:ids.foreignOwner,
+     threadId:ids.thread,originalEmployeeId:ids.originalEmployee,
+     replacementEmployeeId:ids.replacementEmployee,
+     shiftId:ids.shift,messageId:messages[0].id,
+     taskId:tasks[0].id,expectedProviderCalls:budget.calls},
+     null,2)+"\n",{mode:0o600});
+  }
  }finally{
   await admin.query("reset role").catch(()=>{});
-  for(const id of [ids.business,ids.foreignBusiness])
-   await admin.query("delete from public.businesses where id=$1",[id]).catch(()=>{});
-  for(const id of [ids.owner,ids.foreignOwner,ids.employeeUser])
-   await admin.query("delete from auth.users where id=$1",[id]).catch(()=>{});
+  if(process.env.AICAFE_13C_HOST_ATTEST_DB!=="1"){
+   for(const id of [ids.business,ids.foreignBusiness])
+    await admin.query("delete from public.businesses where id=$1",[id]).catch(()=>{});
+   for(const id of [ids.owner,ids.foreignOwner,ids.employeeUser])
+    await admin.query("delete from auth.users where id=$1",[id]).catch(()=>{});
+  }
+  // In the trusted host-gated test, the runner independently rereads this
+  // disposable DB and destroys its whole local instance immediately after.
   await admin.end();
  }
 },300_000);
