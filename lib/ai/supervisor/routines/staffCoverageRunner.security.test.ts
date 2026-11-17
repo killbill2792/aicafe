@@ -50,6 +50,8 @@ describe("13C paid Luna trusted-main broker boundaries",()=>{
  it("checks paid host receipts and real source evidence after migrated database",()=>{
   for(const guard of ["node --test scripts/acceptance/task14b-broker.test.mjs",
    "supabase db reset --local --yes",
+   "command -v psql >/dev/null",
+   "test \"$(git rev-parse HEAD)\" = \"$HEAD_SHA\"",
    "npx vitest run lib/ai/supervisor/routines/staffCoverage.live.test.ts",
    "task13c-host-audit.json","audit.reservedMicros>180_000","audit.attempts>18",
    "staffing=tools.includes(\"get_staff_messages\")",
