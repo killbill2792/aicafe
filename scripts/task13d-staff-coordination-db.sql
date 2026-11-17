@@ -182,6 +182,18 @@ BEGIN
    WHERE case_id=current_setting('test.d.leave')::uuid AND source_kind='availability_exception')<>1
  THEN RAISE EXCEPTION 'confirmed leave lacks source evidence'; END IF;
 END $t$;
+-- A later reversal invalidates the previously verified source. A closed case
+-- must reopen rather than keep displaying verified completion forever.
+DELETE FROM public.staff_availability_exceptions
+ WHERE business_id=:'a' AND employee_id=:'worker'
+   AND local_date=current_date+3 AND exception_type='approved_leave';
+SELECT public.staff_coordination_reconcile(:'a');
+DO $t$
+BEGIN
+ IF (SELECT state FROM public.staff_coordination_cases
+   WHERE id=current_setting('test.d.leave')::uuid)<>'waiting_evidence'
+ THEN RAISE EXCEPTION 'removed approved leave remained falsely completed'; END IF;
+END $t$;
 -- Expiring candidate source references scrubs even if the owner said yes.
 UPDATE public.staff_coordination_cases SET retention_at=now()-interval '1 day'
  WHERE business_id=:'a' AND id=current_setting('test.d.recruit')::uuid;
