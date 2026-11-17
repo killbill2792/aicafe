@@ -33,8 +33,8 @@ describe("Task 15B disposable migrated SQL: real source, tenant, repair and rece
   (sandbox?it:it.skip)("only an authenticated owner can report; no forged sends, closing without proof or cross-café writes",async()=>{
     const admin=await connect("admin");
     const cafes=[randomUUID(),randomUUID()];
-    const users=[randomUUID(),randomUUID()];
-    let owner:Client|undefined,other:Client|undefined;
+    const users=[randomUUID(),randomUUID(),randomUUID()];
+    let owner:Client|undefined,other:Client|undefined,member:Client|undefined;
     const stamp=new Date().toISOString();
     try{
       for(let i=0;i<2;i++){
@@ -47,8 +47,17 @@ describe("Task 15B disposable migrated SQL: real source, tenant, repair and rece
         await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
           [cafes[i],users[i]]);
       }
+      // A manager at the SAME café has broad legacy member SELECT grants.
+      // They must not see maintenance payload, evidence, or owner identity.
+      await admin.query(
+        "insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) "+
+        "values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
+        [users[2],"maintenance-member-"+users[2]+"@example.invalid"]);
+      await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'manager')",
+        [cafes[0],users[2]]);
       owner=await connect("owner",users[0]);
       other=await connect("owner",users[1]);
+      member=await connect("owner",users[2]);
       const nonce=randomUUID();
       const task=await callReport(owner,cafes[0],nonce,"Main espresso machine",stamp);
       expect(task).toBe("maintenance:"+nonce);
@@ -66,6 +75,25 @@ describe("Task 15B disposable migrated SQL: real source, tenant, repair and rece
       const reportEvents=await owner.query("select kind,source_kind from public.maintenance_case_events where business_id=$1 and task_id=$2",
         [cafes[0],task]);
       expect(reportEvents.rows).toEqual([{kind:"report",source_kind:"owner_report"}]);
+      expect((await member.query(
+        "select id,payload,evidence,owner_user_id from public.operating_tasks where business_id=$1 and id=$2",
+        [cafes[0],task])).rows).toHaveLength(0);
+      expect((await member.query(
+        "select id from public.maintenance_case_events where business_id=$1 and task_id=$2",
+        [cafes[0],task])).rows).toHaveLength(0);
+      await expect(callProgress(member,cafes[0],task,randomUUID(),
+        "repair_claim","Manager tried to forge a repair")).rejects.toThrow();
+      await expect(callReport(member,cafes[0],randomUUID(),
+        "Other machine",stamp)).rejects.toThrow();
+      // The restricted policy applies only to maintenance, not normal
+      // same-café operating task data previously readable by managers.
+      await admin.query(
+        "insert into public.operating_tasks (business_id,id,agent_id,kind,status,confidence) "+
+        "values ($1,$2,'leo','supply_check','watching','low')",
+        [cafes[0],"maintenance-test-public:"+nonce]);
+      expect((await member.query(
+        "select id from public.operating_tasks where business_id=$1 and id=$2",
+        [cafes[0],"maintenance-test-public:"+nonce])).rows).toHaveLength(1);
       expect((await other.query("select id from public.maintenance_case_events where business_id=$1",
         [cafes[0]])).rows).toHaveLength(0);
       // Legacy broad member policy must never allow a forged completion,
@@ -120,7 +148,7 @@ describe("Task 15B disposable migrated SQL: real source, tenant, repair and rece
       expect(reopened.rows[0].status).toBe("needs_owner");
       expect(reopened.rows[0].payload.repairVerified).toBe(false);
     }finally{
-      await owner?.end();await other?.end();
+      await owner?.end();await other?.end();await member?.end();
       // Account erasure must still cascade despite immutable-history policy.
       for(const cafe of cafes)await admin.query("delete from public.businesses where id=$1",[cafe]);
       for(const user of users)await admin.query("delete from auth.users where id=$1",[user]);
