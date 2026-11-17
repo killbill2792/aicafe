@@ -85,6 +85,8 @@ create table public.staff_communication_requests (
  created_at timestamptz not null default now(),
  updated_at timestamptz not null default now(),
  unique(business_id,id),
+ -- Messages must reference the exact employee assigned to a request.
+ unique(business_id,id,employee_id),
  unique(business_id,employee_id,kind,source_type,source_id,source_revision),
  foreign key(business_id,employee_id) references public.employees(business_id,id) on delete cascade
 );
@@ -110,7 +112,8 @@ create table public.staff_communication_messages (
  unique(business_id,employee_id,client_nonce),
  unique(channel,provider_event_id),
  foreign key(business_id,employee_id) references public.employees(business_id,id) on delete cascade,
- foreign key(business_id,request_id) references public.staff_communication_requests(business_id,id),
+ foreign key(business_id,request_id,employee_id)
+  references public.staff_communication_requests(business_id,id,employee_id),
  check(response_code not in ('message','report','owner_message') or body is not null),
  check((response_code='report' and request_id is null and actor='employee') or
        (response_code='owner_message' and request_id is null and actor='owner') or
