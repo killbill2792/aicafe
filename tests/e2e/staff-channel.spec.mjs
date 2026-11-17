@@ -121,9 +121,22 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
    [created[0].shiftId])).rows[0];
   expect(shift.status).toBe("sent");
   expect(String(shift.start_local).startsWith("07:00")).toBe(true);
+  // A former employee with a still-linked auth account must be denied all
+  // owner onboarding and owner data, not only active workers.
+  await db.query("update public.employees set active=false where id=$1",
+   [created[0].worker.id]);
+  const inactiveOnboarding=await staffCtx.request.get("/en/onboarding",{maxRedirects:0});
+  expect([302,303,307,308]).toContain(inactiveOnboarding.status());
+  expect(inactiveOnboarding.headers().location??"").toContain("/crew");
+  const inactiveInbox=await staffCtx.request.get("/api/staff-channel");
+  expect(inactiveInbox.status()).toBe(403);
+  await db.query("update public.employees set active=true where id=$1",
+   [created[0].worker.id]);
  }finally{
   for(const ctx of contexts)await ctx.close().catch(()=>{});
   if(connected)for(const item of created){
+   // Cleanup restores the existing seeded worker even after a failed assertion.
+   await db.query("update public.employees set active=true where id=$1",[item.worker.id]).catch(()=>{});
    await db.query("delete from public.operating_tasks where business_id=$1 and entity_type='staff_message' and entity_id in (select id::text from public.staff_communication_messages where business_id=$1 and employee_id=$2)",
     [item.cafe.businessId,item.worker.id]).catch(()=>{});
    await db.query("delete from public.staff_communication_messages where business_id=$1 and employee_id=$2",
