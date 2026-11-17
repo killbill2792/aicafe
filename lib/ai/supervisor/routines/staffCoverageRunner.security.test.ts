@@ -43,7 +43,7 @@ function event(body:string,patch:Record<string,unknown>={}){
  return {...data,...patch};
 }
 function simulateOwner(root:string,options:{
- previous?:string;body?:string;previousGrant?:boolean;currentSha?:string;
+ previous?:string;body?:string;previousGrant?:boolean;
  movedHead?:boolean;actor?:string;runAttempt?:string;triggeredBy?:string;
  eventPatch?:Record<string,unknown>;postStatus?:number;
 }={}){
@@ -52,6 +52,7 @@ function simulateOwner(root:string,options:{
  if(options.actor)ev.sender={login:options.actor};
  ev.changes={body:{from:options.previous??"Earlier safe body"}};
  const eventFile=join(root,"event.json"),outputFile=join(root,"output.txt");
+ rmSync(outputFile,{force:true});
  writeFileSync(eventFile,JSON.stringify(ev));
  const latest={head:{sha:options.movedHead?"b".repeat(40):sha},
   base:{ref:"main"},body,state:"open"};
