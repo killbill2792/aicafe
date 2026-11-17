@@ -33,6 +33,14 @@ test('one read-only GraphQL response provides current PR and exact-head Codex st
  const old=normalizeGithubFacts(github('SUCCESS',[c('b'.repeat(40))]),now);
  assert.equal(old.prs[0].codex,'unknown');
  assert.equal(normalizeGithubFacts(github('FAILURE',[c(sha,true)]),now).prs[0].codex,'findings');
+ for(const login of ['chatgpt-codex-connector','codex','codex[bot]']){
+  const bot=c();bot.author.login=login;
+  assert.equal(normalizeGithubFacts(github('SUCCESS',[bot]),now).prs[0].codex,'clean',login);
+  const finding=c(sha,true);finding.author.login=login;
+  assert.equal(normalizeGithubFacts(github('SUCCESS',[finding]),now).prs[0].codex,'findings',login);
+  const running=c();running.author.login=login;running.body=running.body.replace('"status":"completed"','"status":"running"');
+  assert.equal(normalizeGithubFacts(github('PENDING',[running]),now).prs[0].codex,'pending',login);
+ }
  const spoof=c();spoof.author.login='untrusted-contributor';
  assert.equal(normalizeGithubFacts(github('SUCCESS',[spoof]),now).prs[0].codex,'unknown');
 });
