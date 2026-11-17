@@ -167,6 +167,11 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
     const unanswered=await db.rpc("staff_channel_escalate_unanswered",{p_business_id:businessId});
     if(unanswered.error)result.failed++;
   }
+  // Task13D reuses this exact existing tick. It verifies approved leave against
+  // actual owner-confirmed availability rows and scrubs expired recruitment refs;
+  // it never acts on behalf of an employee or approves a personnel change.
+  const coordinated=await db.rpc("staff_coordination_reconcile",{p_business_id:businessId});
+  if(coordinated.error)result.failed++;
   // Source-change notices remain independent from the due schedule.
   for(const ownerUserId of owners){
     const threadId=threads.get(ownerUserId);
