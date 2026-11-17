@@ -8,6 +8,7 @@ import {homedir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {readMuseNotes} from './muse-local-notes.mjs';
+import {parseCodexReviewState} from './github.mjs';
 
 const millis=t=>{const n=Date.parse(t||'');return Number.isFinite(n)?n:null;};
 const identity=a=>createHash('sha256').update(JSON.stringify(a)).digest('hex').slice(0,24);
@@ -27,21 +28,13 @@ const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
  }
 }`;
 function codexStatus(comments,head){
- const matches=(comments||[])
+ // Use the same strict, head-bound Codex parser as the existing dispatcher.
+ // Only authenticated Codex bot-authored summary comments count.
+ const states=(comments||[])
   .filter(c=>['chatgpt-codex-connector[bot]','codex[bot]'].includes(c.author?.login))
-  .map(c=>c.body||'').filter(b=>b.includes('codex-review-state:v1'));
- for(let i=matches.length-1;i>=0;i--){
-  const m=matches[i].match(/<!-- codex-review-state:v1 (\{[^\n]*\}) -->/);
-  if(!m)continue;
-  try{
-   const state=JSON.parse(m[1]).code_review;
-   if(state?.commit_sha!==head)continue;
-   return state.status==='completed'&&state.has_unresolved_findings===false&&
-    state.has_any_findings===false?'clean':
-    state.has_any_findings===true?'findings':'pending';
-  }catch{}
- }
- return 'unknown';
+  .map(c=>parseCodexReviewState(c.body||'',head)?.state)
+  .filter(Boolean);
+ return states.at(-1)||'unknown';
 }
 export function normalizeGithubFacts(response,now=new Date().toISOString()){
  const repo=response?.data?.repository;
