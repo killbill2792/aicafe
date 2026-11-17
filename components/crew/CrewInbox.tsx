@@ -26,11 +26,17 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
    // previous commit whose HTTP acknowledgement was lost is replayed by SQL,
    // never reported to the owner as a second staff incident.
    const receipt=await deliverCrewWithRetry(operation,async value=>{
-    const res=await fetch("/api/staff-channel",{method:"POST",
-     credentials:"same-origin",headers:{"Content-Type":"application/json"},
-     body:JSON.stringify(value)});
-    if(!res.ok)throw new Error("Submission receipt unavailable");
-    return res.json();
+    // A stalled HTTP response is also an ambiguous save. Abort the wait and
+    // replay exactly the same database-deduped nonce after bounded backoff.
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),20_000);
+    try{
+     const res=await fetch("/api/staff-channel",{method:"POST",
+      credentials:"same-origin",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(value),signal:controller.signal});
+     if(!res.ok)throw new Error("Submission receipt unavailable");
+     return await res.json();
+    }finally{clearTimeout(timeout);}
    });
    if(!receipt){
     setFeedback("Delivery is not confirmed. Your original message is preserved in this tab. "+
@@ -65,21 +71,20 @@ export default function CrewInbox({name,requests,messages,authUserId}:{
  function send(requestId:string|null,response:PendingCrewSubmission["response"],
   body:string|null){
   if(sending.current)return;
-  const proposed:PendingCrewSubmission={requestId,response,body,nonce:crypto.randomUUID()};
-  const operation=sameCrewOperation(pendingRef.current,proposed);
-  if(!pendingRef.current){
-   try{
-    // Fail closed if session recovery storage is blocked: a lost HTTP
-    // acknowledgement would otherwise generate a fresh identity on reload.
-    saveCrewPending(window.sessionStorage,storageKey,operation);
-   }catch{
-    setFeedback("Cannot safely save a recoverable message in this browser. No message was sent.");
-    return;
-   }
+  try{
+   // Check the durable tab outbox synchronously too: a click that arrives
+   // before the mount recovery effect may NEVER overwrite an older nonce.
+   const saved=pendingRef.current??loadCrewPending(window.sessionStorage,storageKey);
+   const proposed:PendingCrewSubmission=saved??{
+    requestId,response,body,nonce:crypto.randomUUID()};
+   const operation=sameCrewOperation(saved,proposed);
+   if(!saved)saveCrewPending(window.sessionStorage,storageKey,operation);
    pendingRef.current=operation;
    setPending(true);
+   void retryPending();
+  }catch{
+   setFeedback("Cannot safely recover this browser's pending message. No new message was sent.");
   }
-  void retryPending();
  }
  async function signOut(){
   await createBrowserSupabaseClient().auth.signOut();
