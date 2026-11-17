@@ -95,6 +95,15 @@ SELECT public.staff_coordination_open(:'a',:'nonce_leave','leave',:'worker',null
   current_date+2,current_date+3,null)->>'id' AS leave_id \gset
 SELECT set_config('test.d.leave',:'leave_id',true);
 DO $t$
+BEGIN
+ IF (SELECT count(*) FROM public.operating_tasks
+    WHERE business_id=current_setting('test.d.a')::uuid
+    AND entity_type='staff_coordination_case'
+    AND entity_id=current_setting('test.d.leave')
+    AND kind='staff_coordination' AND status='needs_owner')<>1
+ THEN RAISE EXCEPTION 'owner leave case did not enter proactive task queue'; END IF;
+END $t$;
+DO $t$
 DECLARE r jsonb; blocked boolean:=false;
 BEGIN
  r:=public.staff_coordination_open(current_setting('test.d.a')::uuid,
@@ -108,6 +117,11 @@ BEGIN
     null,current_date+3,current_date+4,null);
  EXCEPTION WHEN OTHERS THEN blocked:=true; END;
  IF NOT blocked THEN RAISE EXCEPTION 'nonce payload collision accepted'; END IF;
+ IF (SELECT count(*) FROM public.operating_tasks
+    WHERE business_id=current_setting('test.d.a')::uuid
+    AND entity_type='staff_coordination_case'
+    AND entity_id=current_setting('test.d.leave'))<>1
+ THEN RAISE EXCEPTION 'replayed owner case created duplicate work'; END IF;
 END $t$;
 SELECT public.staff_coordination_decide(:'a',current_setting('test.d.leave')::uuid,1,'approve')->>'revision' AS decided_revision \gset
 DO $t$
@@ -123,6 +137,13 @@ BEGIN
   current_setting('test.d.a')::uuid,current_setting('test.d.leave')::uuid,1,'decline');
  EXCEPTION WHEN OTHERS THEN blocked:=true; END;
  IF NOT blocked THEN RAISE EXCEPTION 'stale owner decision overwritten'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.operating_tasks
+  WHERE business_id=current_setting('test.d.a')::uuid
+  AND entity_type='staff_coordination_case'
+  AND entity_id=current_setting('test.d.leave')
+  AND status='watching' AND payload->>'sourceVerified'='false'
+  AND payload->>'effectApplied'='false')
+ THEN RAISE EXCEPTION 'owner decision was misrepresented as applied effect'; END IF;
 END $t$;
 SELECT public.staff_coordination_open(:'a',:'nonce_onboard','onboarding',:'worker',null,
  null,null,null)->>'id' AS onboard_id \gset
@@ -178,6 +199,12 @@ DO $t$
 BEGIN
  IF (SELECT state FROM public.staff_coordination_cases WHERE id=current_setting('test.d.leave')::uuid)<>'completed'
  THEN RAISE EXCEPTION 'canonical confirmed leave did not close case'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.operating_tasks
+  WHERE business_id=current_setting('test.d.a')::uuid
+  AND entity_type='staff_coordination_case'
+  AND entity_id=current_setting('test.d.leave')
+  AND status='handled' AND payload->>'sourceVerified'='true')
+ THEN RAISE EXCEPTION 'verified leave was not closed in existing owner task'; END IF;
  IF (SELECT count(*) FROM public.staff_coordination_evidence
    WHERE case_id=current_setting('test.d.leave')::uuid AND source_kind='availability_exception')<>1
  THEN RAISE EXCEPTION 'confirmed leave lacks source evidence'; END IF;
@@ -193,6 +220,12 @@ BEGIN
  IF (SELECT state FROM public.staff_coordination_cases
    WHERE id=current_setting('test.d.leave')::uuid)<>'waiting_evidence'
  THEN RAISE EXCEPTION 'removed approved leave remained falsely completed'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.operating_tasks
+  WHERE business_id=current_setting('test.d.a')::uuid
+  AND entity_type='staff_coordination_case'
+  AND entity_id=current_setting('test.d.leave')
+  AND status='watching' AND payload->>'sourceVerified'='false')
+ THEN RAISE EXCEPTION 'reversed leave failed to reopen owner task'; END IF;
 END $t$;
 -- Expiring candidate source references scrubs even if the owner said yes.
 UPDATE public.staff_coordination_cases SET retention_at=now()-interval '1 day'
@@ -207,6 +240,12 @@ BEGIN
  THEN RAISE EXCEPTION 'expired source reference retained'; END IF;
  IF EXISTS(SELECT 1 FROM public.staff_coordination_evidence WHERE case_id=current_setting('test.d.recruit')::uuid)
  THEN RAISE EXCEPTION 'expired candidate evidence retained'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.operating_tasks
+  WHERE business_id=current_setting('test.d.a')::uuid
+  AND entity_type='staff_coordination_case'
+  AND entity_id=current_setting('test.d.recruit')
+  AND status='expired' AND payload->>'referenceExpired'='true')
+ THEN RAISE EXCEPTION 'expired candidate did not expire existing owner follow-up'; END IF;
 END $t$;
 ROLLBACK;
 \echo 'Task13D migrated DB assertions passed: auth/RLS, idempotency, decision/CAS, leave evidence, no automatic hire, retention'
