@@ -9,8 +9,8 @@ import {spawnSync} from "node:child_process";
  * actually executes and must exit before any GitHub grant is consumed. */
 const yaml=readFileSync(".github/workflows/ai-cafe-13c-owner-live.yml","utf8");
 const sha="a".repeat(40);
-const grant="<!-- aicafe-task13c-trusted-paid-run-v2 "+sha+" -->";
-const consumed="<!-- aicafe-task13c-authorization-consumed:pr501:pilot-v2 -->";
+const grant="<!-- aicafe-task13c-trusted-paid-run-v3 "+sha+" -->";
+const consumed="<!-- aicafe-task13c-authorization-consumed:pr501:pilot-v3 -->";
 function ownerScript(){
  const match=yaml.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/);
  if(!match)throw Error("Owner grant must execute actual trusted script");
@@ -122,6 +122,7 @@ describe("Task13C owner-gated real Luna security behavior",()=>{
     {body:"Prior authorization only"},
     // Old v1 authorization is historical; it never authorizes a v2 run.
     {body:"<!-- aicafe-task13c-trusted-paid-run-v1 "+sha+" -->"},
+     {body:"<!-- aicafe-task13c-trusted-paid-run-v2 "+sha+" -->"},
     {previous:"Older body\n"+grant},
     {actor:"untrusted-contributor"},
     {runAttempt:"2"},
