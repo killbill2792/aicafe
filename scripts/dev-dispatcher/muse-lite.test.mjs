@@ -80,6 +80,13 @@ test('missing chat URL blocks sending and GitHub outage keeps local owner remind
  assert.equal(offline.actions[0].chat_url,'https://chatgpt.com/c/1234');
  assert.equal(offline.blocked[0].reason,'github_evidence_stale_or_unavailable');
 });
+test('closed or missing PR stays visible as a coordination blocker',()=>{
+ const facts=normalizeGithubFacts(github(),now);
+ facts.prs=[];
+ const result=museActions(facts,previous,notes(),{now});
+ assert.equal(result.actions.length,0);
+ assert.equal(result.blocked[0].reason,'pr_missing_or_closed_unmerged_verify_github');
+});
 test('newly verified merge is offered once; never infer merge from missing PR',()=>{
  const facts=normalizeGithubFacts(github(),now);
  facts.prs=[];
