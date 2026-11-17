@@ -53,6 +53,19 @@ describe("raw WhatsApp webhook",()=>{
     expect(parsed[3]).toMatchObject({kind:"image",mediaId:"media-image-1"});
     expect(parsed[4]).toMatchObject({kind:"document",mediaId:"media-pdf-1"});
   });
+  it("accepts only signed staff TEXT and keeps co-batched statuses without owner commands",()=>{
+    const staffId="1555999888777666";
+    const raw=encoded([
+      msg("worker-text",{type:"text",text:{body:"I can arrive at 8, not 7"}}),
+      msg("worker-voice",{type:"audio",audio:{id:"voice-id"}}),
+      msg("worker-button",{type:"button",button:{payload:"worker_unknown"}}),
+    ],[{id:"wamid.staff-status",status:"read"}],staffId);
+    const events=parseWebhook(raw,[TEST_PHONE_NUMBER_ID,staffId],staffId);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({type:"message",phoneId:staffId,
+      wamid:"wamid.worker-text",kind:"text",text:"I can arrive at 8, not 7"});
+    expect(events[1]).toMatchObject({type:"status",state:"read"});
+  });
   it("rejects wrong sender, unknown button, malformed timestamp and excessive bytes",()=>{
     expect(()=>parseWebhook(encoded([msg("a",{type:"text",text:{body:"X"}})],[],"111111111"),TEST_PHONE_NUMBER_ID))
       .toThrow("wrong_sender");

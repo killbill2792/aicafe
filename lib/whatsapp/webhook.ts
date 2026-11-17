@@ -31,9 +31,9 @@ export type Incoming={
   type:"message";phoneId:string;waId:string;wamid:string;kind:"text"|"button"|"image"|"document";
   text:string|null;payload:string|null;mediaId:string|null;providerAt:string;
 }|{type:"status";phoneId:string;wamid:string;state:"sent"|"delivered"|"read"|"failed"};
-/** Employee sender callbacks are status-only in Task 13B. A signed worker
- * voice note, sticker, or foreign button payload is not an owner command and
- * must not invalidate independent delivered/read events in the same batch. */
+/** Staff sender text is a worker report, never an owner command.
+ * Non-text staff callbacks (including voice notes and foreign buttons) are
+ * ignored without suppressing any co-batched authenticated delivery receipt. */
 export function parseWebhook(bytes:Buffer,expectedPhoneId:string|readonly string[],
   staffStatusOnlyPhoneId?:string):Incoming[] {
   if(!bytes.length||bytes.length>MAX_WEBHOOK_BYTES)throw new Error("invalid_size");
@@ -52,10 +52,25 @@ export function parseWebhook(bytes:Buffer,expectedPhoneId:string|readonly string
       if(!object(value.metadata)||typeof value.metadata.phone_number_id!=="string"||
         !allowedIds.has(value.metadata.phone_number_id))throw new Error("wrong_sender");
       const phoneId=value.metadata.phone_number_id;
-      // Validate the array's bound even for ignored staff inbound messages;
-      // parse owner commands only for their individually authenticated sender.
+      // Parse staff TEXT only. Owner messages still use the strict owner
+      // command parser. Unsupported staff media/buttons must never erase
+      // independent status receipts in the same signed batch.
       const messages=array(value.messages??[],100);
-      if(phoneId!==staffStatusOnlyPhoneId)for(const msg of messages){
+      for(const msg of messages){
+        if(phoneId===staffStatusOnlyPhoneId){
+          if(!object(msg)||msg.type!=="text"||!object(msg.text))continue;
+          const wamid=string(msg.id,250),waId=string(msg.from,16);
+          const timestamp=string(msg.timestamp,12);
+          if(!idPattern.test(wamid)||!normalizeRecipient(waId)||
+             !/^[0-9]{9,12}$/.test(timestamp))throw new Error("malformed_event");
+          const body=string(msg.text.body,2000);
+          if(!body.trim())throw new Error("malformed_event");
+          const providerAt=new Date(Number(timestamp)*1000);
+          if(Number.isNaN(providerAt.getTime()))throw new Error("malformed_event");
+          result.push({type:"message",phoneId,waId,wamid,kind:"text",
+            text:body,payload:null,mediaId:null,providerAt:providerAt.toISOString()});
+          continue;
+        }
         if(!object(msg))throw new Error("malformed_event");
         const wamid=string(msg.id,250);
         const waId=string(msg.from,16);

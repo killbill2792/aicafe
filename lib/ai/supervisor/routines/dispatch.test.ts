@@ -24,7 +24,11 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
     operating_tasks:params?.tasks??[],
     supervisor_proposals:params?.proposals??[],
   };
-  return {from:(table:string)=>{
+  return {rpc:async(name:string)=>{
+    if(!["staff_channel_sync_shift_requests","staff_channel_escalate_unanswered"].includes(name))
+      throw new Error("unexpected staff channel RPC "+name);
+    return {data:0,error:null};
+  },from:(table:string)=>{
     let selected=rows[table];
     const builder={
       select(){return builder},
