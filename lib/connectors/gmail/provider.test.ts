@@ -89,6 +89,15 @@ describe("Gmail provider proof and no duplicate sends",()=>{
    expect(writes.map(x=>x.operation)).toEqual(["insert","update"]);
    expect((writes[1].data as {state:string}).state).toBe("verified");
  });
+ it("blocks an orphan vendor Gmail draft before its unique PO dispatch record exists",async()=>{
+  const writes=db();const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+  const attempted={...effect,subject:"Purchase order 77777777-7777-4777-8777-777777777777",
+    body:"Purchase order ID: 77777777-7777-4777-8777-777777777777"};
+  await expect(performGmailEffect(scope,attempted,proposal,effectHash))
+    .rejects.toThrow("supplier_dispatch_binding_missing");
+  expect(writes).toEqual([]);
+  expect(fetch).not.toHaveBeenCalled();
+ });
  it("cannot send without an existing owner-click claim in the single Task 10 gateway",async()=>{
    const writes=db(undefined,false,false);
    const fetch=vi.fn();

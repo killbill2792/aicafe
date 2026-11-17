@@ -81,14 +81,14 @@ export default function SupplierVendorCommunicationManager(){
   <p className="mt-2 text-[17px] text-ink-muted">{copy.intro}</p>
   <form className="mt-4 grid gap-3" onSubmit={verify}>
    <label className="text-[17px] font-semibold text-ink">{copy.supplier}
-    <select className={field} value={supplierId}
+    <select aria-label={copy.supplier} className={field} value={supplierId}
      onChange={event=>chooseSupplier(event.target.value)} required>
      {!loaded&&<option value="">...</option>}
      {data.suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
     </select>
    </label>
    <label className="text-[17px] font-semibold text-ink">{copy.channel}
-    <select className={field} value={channel}
+    <select aria-label={copy.channel} className={field} value={channel}
      onChange={event=>setChannel(event.target.value as typeof channel)}>
      {options.map(([value,key])=><option key={value} value={value}>{copy[key]}</option>)}
     </select>
@@ -120,7 +120,7 @@ export default function SupplierVendorCommunicationManager(){
     </select>
    </label>
    <label className="text-[17px] font-semibold text-ink">{copy.channel}
-    <select className={field} value={reportChannel}
+    <select aria-label={copy.channel} className={field} value={reportChannel}
      onChange={event=>setReportChannel(event.target.value)}>
      {options.map(([value,key])=><option key={value} value={value}>{copy[key]}</option>)}
     </select>

@@ -251,6 +251,14 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     .eq("proposal_id",proposalId).maybeSingle();
   if(vendor.error)throw new Error("supplier_send_status_unavailable");
   if(vendor.data&&effect.operation!=="send")throw new Error("supplier_send_operation_invalid");
+  // The PO approval card may be visible before its dispatch row is saved.
+  // Never let a PO-shaped Gmail proposal fall back to the ordinary Gmail
+  // sender in that gap. All Task14C messages have this fixed subject.
+  const namedPo=/^Purchase order ([a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/i.exec(effect.subject);
+  if(effect.operation==="send"&&namedPo&&!vendor.data)
+    throw new Error("supplier_dispatch_binding_missing");
+  if(vendor.data&&effect.subject!=="Purchase order "+vendor.data.purchase_order_id)
+    throw new Error("supplier_dispatch_subject_changed");
   const {data:attempt,error:attemptError}=await db.from("supervisor_effect_attempts")
     .select("state,authorization_kind").eq("business_id",scope.businessId)
     .eq("proposal_id",proposalId).eq("effect_hash",effectHash).maybeSingle();
