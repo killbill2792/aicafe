@@ -7,7 +7,11 @@
 const {readFileSync,writeFileSync,existsSync}=process.getBuiltinModule("node:fs");
 const upstream=globalThis.fetch.bind(globalThis);
 const path=process.env.AICAFE_14C_SIM_PATH;
-if(path!=="/proof/task14c-simulator-receipt.json")
+const relay=process.env.AICAFE_14C_SIM_MODE==="relay";
+if(relay){
+ if(process.env.AICAFE_14C_SIM_HOST!=="http://127.0.0.1:8790")
+  throw Error("task14c_trusted_host_sim_required");
+}else if(path!=="/proof/task14c-simulator-receipt.json")
  throw Error("task14c_local_sim_path_required");
 const fakeId="task14c-disposable-simulated-gmail-message";
 const json=(value)=>new Response(JSON.stringify(value),{
@@ -26,6 +30,16 @@ globalThis.fetch=async function task14cGmailSimulator(input,init){
  const token=init?.headers?.authorization??base?.headers?.get("authorization");
  if(token!=="Bearer disposable-task14c-not-a-real-google-token")
   throw Error("task14c_simulator_rejects_real_google_credential");
+ if(relay){
+  const allowed=(method==="GET"&&target.pathname==="/gmail/v1/users/me/messages")||
+   (method==="POST"&&target.pathname==="/gmail/v1/users/me/messages/send")||
+   (method==="GET"&&target.pathname==="/gmail/v1/users/me/messages/"+fakeId);
+  if(!allowed)throw Error("task14c_simulator_blocks_other_gmail_effect");
+  return upstream("http://127.0.0.1:8790"+target.pathname+target.search,{
+   ...(init??{}),method,headers:{...(init?.headers??{}),
+    authorization:"Bearer disposable-task14c-not-a-real-google-token"}
+  });
+ }
  if(method==="GET"&&target.pathname==="/gmail/v1/users/me/messages")
   return json({messages:[],resultSizeEstimate:0});
  if(method==="POST"&&target.pathname==="/gmail/v1/users/me/messages/send"){
