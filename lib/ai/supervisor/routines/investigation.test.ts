@@ -83,7 +83,7 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     expect(verifyInvestigationTurn(valid,staffTarget)).toMatchObject({ok:true});
     expect(verifyInvestigationTurn({...valid,text:"a".repeat(1801)},staffTarget))
       .toEqual({ok:false,reason:"model_incomplete"});
-    expect(verifyInvestigationTurn({...valid,unverified:[{reason:"unsourced time"}]},staffTarget))
+    expect(verifyInvestigationTurn({...valid,unverified:[{text:"unverified time",start:0,end:15,kind:"number"}]},staffTarget))
       .toEqual({ok:false,reason:"model_incomplete"});
     expect(verifyInvestigationTurn({...valid,text:"I have changed the staff schedule."},staffTarget))
       .toEqual({ok:false,reason:"model_incomplete"});
