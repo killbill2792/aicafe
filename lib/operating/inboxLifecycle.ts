@@ -38,8 +38,9 @@ export function retainActionablePrioritySource(task:OperatingTask):boolean{
   return String(task.kind)!=="priority_notice"||
     task.payload.sourceType==="supplier_po"||
     (task.payload.sourceType==="supplier_dispatch"&&
-      task.payload.intent==="priority_notice"&&
-      typeof task.payload.threadId==="string"&&task.payload.threadId.length>0);
+      typeof task.payload.threadId==="string"&&task.payload.threadId.length>0&&
+      typeof task.payload.sourceId==="string"&&
+      /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(task.payload.sourceId));
 }
 
 /** Items with nothing for the owner to decide. They belong in Watching, never Needs you. */
