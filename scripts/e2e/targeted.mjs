@@ -54,6 +54,8 @@ export function scenariosForPath(path) {
       path === "components/staff/StaffResponseInbox.tsx" ||
       path === "components/staff/StaffReplyComposer.tsx") return ["staff"];
   if (path === "app/[locale]/onboarding/page.tsx") return ["staff"];
+  if (path === "app/[locale]/more/page.tsx" ||
+      path === "app/[locale]/pricing/page.tsx") return ["staff"];
   if (path === "app/[locale]/staff/page.tsx" ||
       path === "components/staff/StaffWorkspace.tsx" ||
       path === "components/staff/StaffPublicationStatus.tsx" ||
