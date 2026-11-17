@@ -53,7 +53,7 @@ export default function StaffReplyComposer({people}:{
  }
  return <section className="space-y-3 rounded-2xl border border-line p-4">
   <h3 className="font-semibold">Message an employee</h3>
-  <p className="text-sm text-ink-muted">Your Send click shares a message in the worker's private web inbox. This does not send WhatsApp or confirm staff attendance.</p>
+  <p className="text-sm text-ink-muted">Your Send click shares a message in the worker&apos;s private web inbox. This does not send WhatsApp or confirm staff attendance.</p>
   {!people.length?<p className="text-sm text-ink-muted">Link an existing employee account before sending a message.</p>:<>
    <label className="block text-sm font-semibold" htmlFor="staff-reply-person">Employee</label>
    <select id="staff-reply-person" className="min-h-12 w-full rounded-xl border border-line bg-white p-3"
