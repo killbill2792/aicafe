@@ -1,6 +1,6 @@
 import { getLocale, getTranslations } from "next-intl/server";
 import { requireUser } from "@/lib/auth/requireUser";
-import {isLinkedActiveStaffUser} from "@/lib/staffCommunication/identity.server";
+import {isLinkedStaffUser} from "@/lib/staffCommunication/identity.server";
 import {redirect} from "next/navigation";
 import { ensureOwnBusiness } from "@/lib/actions/onboarding";
 import { isSquareConfigured } from "@/lib/pos/square/oauth";
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 
 export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ step?: string; error?: string }> }) {
   const user=await requireUser();
-  if(user&&await isLinkedActiveStaffUser(user.id))redirect("/crew");
+  if(user&&await isLinkedStaffUser(user.id))redirect("/crew");
   const { step: stepParam, error } = await searchParams;
   const step = Math.min(5, Math.max(1, Number(stepParam) || 1));
   const locale = await getLocale();
