@@ -152,9 +152,31 @@ SELECT public.staff_coordination_open(:'a',:'nonce_onboard','onboarding',:'worke
 SELECT set_config('test.d.onboard',:'onboard_id',true);
 SELECT public.staff_coordination_decide(:'a',:'onboard_id',1,'approve');
 SELECT public.staff_coordination_assign_checklist(
- :'a',:'onboard_id',2,gen_random_uuid(),'New starter checklist',
+ :'a',:'onboard_id',2,:'nonce_onboard','New starter checklist',
  'Please complete your assigned onboarding checks.') ->>'requestId' AS onboard_request \gset
 SELECT set_config('test.d.onboard_request',:'onboard_request',true);
+DO $t$
+DECLARE again jsonb; blocked boolean:=false;
+BEGIN
+ again:=public.staff_coordination_assign_checklist(
+  current_setting('test.d.a')::uuid,
+  current_setting('test.d.onboard')::uuid,2,
+  current_setting('test.d.no')::uuid,'New starter checklist',
+  'Please complete your assigned onboarding checks.');
+ IF again->>'replayed'<>'true' OR again->>'requestId'<>current_setting('test.d.onboard_request')
+ THEN RAISE EXCEPTION 'identical owner checklist retry lost receipt'; END IF;
+ BEGIN
+  PERFORM public.staff_coordination_assign_checklist(
+   current_setting('test.d.a')::uuid,current_setting('test.d.onboard')::uuid,2,
+   gen_random_uuid(),'Different checklist','Do different work');
+ EXCEPTION WHEN OTHERS THEN blocked:=true; END;
+ IF NOT blocked THEN RAISE EXCEPTION 'different checklist adopted first receipt'; END IF;
+ IF (SELECT count(*) FROM public.staff_communication_requests
+   WHERE business_id=current_setting('test.d.a')::uuid
+     AND employee_id=current_setting('test.d.w')::uuid
+     AND source_type='owner_manual')<>1
+ THEN RAISE EXCEPTION 'checklist retry emitted duplicate employee work'; END IF;
+END $t$;
 DO $t$
 BEGIN
  IF NOT EXISTS(SELECT 1 FROM public.staff_coordination_cases c
