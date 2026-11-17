@@ -643,7 +643,12 @@ test("@purchasing owner verifies a supplier phone/portal channel and a Gmail add
     await panel.getByRole("button",{name:"Verify contact"}).click();
     const result=await saved;
     expect(result.status()).toBe(201);
-    expect(await result.json()).toMatchObject({saved:true,source:"owner_verified",sendApproved:false});
+    // A real click must both persist the owner-verified contact AND show a
+    // durable success state. Do not wait on Playwright's response.json()
+    // after a 201 header: this has stalled on the local Next.js RSC server.
+    await expect(panel.getByRole("status")).toContainText(
+      "Contact saved. Every email send still needs your separate approval.",
+      {timeout:30_000});
     const phone=await db.query("select channel,email,revoked_at from public.cafe_supplier_order_contacts"+
       " where business_id=$1 and supplier_id=$2",[own.businessId,supplierId]);
     expect(phone.rows).toMatchObject([{channel:"phone",email:null,revoked_at:null}]);
