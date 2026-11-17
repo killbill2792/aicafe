@@ -1,5 +1,5 @@
 import {test, expect} from "@playwright/test";
-import {randomUUID} from "node:crypto";
+import {randomUUID,createHash} from "node:crypto";
 import pg from "pg";
 import {assertDisposableEnvironment, seededCafe, login, openOwnedPage}
   from "./seeded-auth.mjs";
@@ -13,6 +13,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
   const own = seededCafe(0), other = seededCafe(1);
   const threadId = randomUUID(), runId = randomUUID(), requestId = randomUUID();
   const messageId = randomUUID(), answerId = randomUUID();
+  const investigationSourceId = randomUUID();
   const db = new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
     user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
   let connected = false;
@@ -29,6 +30,9 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
     // The existing shared login helper asserts a desktop-visible nav label.
     // Authenticate normally, then switch to the real mobile viewport for ALL
     // status, reconnect, and horizontal-overflow assertions below.
+    // The newly merged 15A worker persists unprompted investigation episodes here.
+    await db.query("insert into public.supervisor_investigations(business_id,owner_user_id,thread_id,source_type,source_id,revision_hash,stable_key,phase) values($1,$2,$3,'alert',$4,$5,$6,'collect')",
+      [own.businessId,own.owner.userId,threadId,investigationSourceId,"b".repeat(64),"c".repeat(64)]);
     const context = await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
     try {
       const page = await context.newPage();
@@ -38,6 +42,7 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       const work = page.getByRole("region",{name:"Supervisor work"});
       await expect(work).toBeVisible();
       await expect(work.locator('[data-work-status="queued"]')).toBeVisible();
+      await expect(work.locator('[data-work-kind="investigation"][data-work-status="queued"]')).toBeVisible();
       const ownRead = await context.request.get("/api/ai/threads/"+threadId+"/work");
       expect(ownRead.status()).toBe(200);
       expect((await ownRead.json()).work.some(item=>item.id==="run:"+runId)).toBe(true);
@@ -74,6 +79,12 @@ test("@home Task 16B persists real Supervisor work through reload, uncertainty a
       await page.reload();
       await expect(work.locator('[data-work-status="answer_ready"]')).toContainText("Answer saved");
       await expect(work).toContainText("not an external effect");
+      await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
+
+      await db.query("update public.supervisor_investigations set phase='resolved',updated_at=now() where business_id=$1 and source_id=$2",
+        [own.businessId, investigationSourceId]);
+      await page.reload();
+      await expect(work.locator('[data-work-kind="investigation"][data-work-status="source_resolved"]')).toBeVisible();
       await expect(work.getByText("Effect verified",{exact:true})).toHaveCount(0);
 
       // An offline read is a stale status, not an action failure or success.
@@ -122,6 +133,58 @@ test("@home real password sign-in isolates two cafés and ignores an unauthorize
         .toBeVisible();
     } finally {
       await context.close();
+    }
+  }
+});
+
+test("@home Task15A persisted investigation opens in real Operations without leaking another café",async({browser})=>{
+  test.setTimeout(110_000);
+  const owner=seededCafe(0),foreign=seededCafe(1);
+  const id={thread:randomUUID(),task:"investigation:"+randomUUID()};
+  const title="Verified Supervisor inventory investigation "+id.task.slice(-8);
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",
+    serviceWorkers:"block"});
+  const other=await browser.newContext({baseURL:"http://127.0.0.1:3000",
+    serviceWorkers:"block"});
+  let connected=false;
+  try{
+    await db.connect();connected=true;
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",
+      [id.thread,owner.businessId,owner.owner.userId,randomUUID()]);
+    const payload={title,intent:"priority_investigation",
+      threadId:id.thread,sourceType:"operating_task",sourceId:"stock-review",
+      episodeId:randomUUID(),stepVersion:2,externalEffects:"not_attempted"};
+    await db.query("insert into public.operating_tasks("+
+      "business_id,id,owner_user_id,agent_id,kind,status,payload,confidence,"+
+      "evidence,entity_type,dedupe_key) values($1,$2,$3,'leo','priority_notice',"+
+      "'needs_owner',$4::jsonb,'high','[]'::jsonb,'priority_source',$5)",
+      [owner.businessId,id.task,owner.owner.userId,JSON.stringify(payload),id.task]);
+
+    const page=await first.newPage();
+    await login(page,owner);
+    await openOwnedPage(page,owner,"operations");
+    const card=page.locator('article[data-task-kind="priority_notice"]')
+      .filter({hasText:title});
+    await expect(card).toBeVisible({timeout:30_000});
+    await expect(card.getByRole("link",{name:/open in chat/i})).toHaveAttribute(
+      "href",new RegExp("thread="+id.thread));
+    await card.getByRole("link",{name:/open in chat/i}).click();
+    await expect(page).toHaveURL(new RegExp("thread="+id.thread));
+    const foreignPage=await other.newPage();
+    await login(foreignPage,foreign);
+    await openOwnedPage(foreignPage,foreign,"operations");
+    await expect(foreignPage.getByText(title,{exact:true})).toHaveCount(0);
+  }finally{
+    await other.close();
+    await first.close();
+    if(connected){
+      await db.query("delete from public.operating_tasks where business_id=$1 and id=$2",
+        [owner.businessId,id.task]).catch(()=>{});
+      await db.query("delete from public.ai_threads where business_id=$1 and id=$2",
+        [owner.businessId,id.thread]).catch(()=>{});
+      await db.end();
     }
   }
 });
@@ -253,6 +316,70 @@ test("@staff seeded owner can open actual schedule and Team view", async ({page}
   // Seeded team is real persisted local Postgres data, not a fixture flag.
   await expect(page.getByText(own.employees[0].name, {exact: true}).first())
     .toBeVisible();
+});
+
+test("@staff owner sees durable published/accepted/delivered status, isolated by café",async({browser})=>{
+ test.setTimeout(100_000);
+ const own=seededCafe(0),other=seededCafe(1);
+ const week="2026-12-07"; // only disposable seeded local database, no real sender
+ const threadId=randomUUID(),proposalId=randomUUID(),publicationId=randomUUID(),deliveryId=randomUUID();
+ const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+   user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+ const a=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+ const b=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+ let connected=false,employeeId=null;
+ try{
+  await db.connect();connected=true;
+  const worker=await db.query("select id from public.employees where business_id=$1 order by id limit 1",
+   [own.businessId]);expect(worker.rows).toHaveLength(1);employeeId=worker.rows[0].id;
+  await db.query(`insert into public.ai_threads
+    (id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)`,
+    [threadId,own.businessId,own.owner.userId,randomUUID()]);
+  await db.query(`insert into public.supervisor_proposals
+    (id,business_id,owner_user_id,thread_id,request_key,capability_id,
+     capability_version,canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status)
+    values ($1,$2,$3,$4,$5,'olivia.staff_propose_send_schedule.v2',2,
+      $6::jsonb,$7,'{}','{}','en','committed')`,
+    [proposalId,own.businessId,own.owner.userId,threadId,randomUUID(),
+      JSON.stringify({operation:"propose_send_schedule",payload:{
+        week_start:week,publish_and_notify:true}}),"b".repeat(64)]);
+  const snapshot=[{employee_id:employeeId,date:week,start:"09:00",end:"15:00"}];
+  await db.query(`insert into public.staff_schedule_publications
+    (id,business_id,owner_user_id,proposal_id,week_start,snapshot)
+    values($1,$2,$3,$4,$5,$6::jsonb)`,
+    [publicationId,own.businessId,own.owner.userId,proposalId,week,JSON.stringify(snapshot)]);
+  await db.query(`insert into public.staff_schedule_deliveries
+    (id,business_id,proposal_id,publication_id,employee_id,recipient_e164,status,meta_message_id)
+    values($1,$2,$3,$4,$5,'+14155550123','sent',$6)`,
+    [deliveryId,own.businessId,proposalId,publicationId,employeeId,
+      "wamid.disposable."+randomUUID()]);
+  const page=await a.newPage();
+  await login(page,own);
+  await openOwnedPage(page,own,"staff?week="+week);
+  const status=page.getByRole("region",{name:"Supervisor schedule publication status"});
+  await expect(status).toBeVisible();
+  await expect(status.getByText("1 provider-accepted, awaiting delivery")).toBeVisible();
+  await expect(status.getByText("0 delivered")).toBeVisible();
+  await db.query(`update public.staff_schedule_deliveries
+    set status='delivered',delivered_at=now() where id=$1`,[deliveryId]);
+  await page.reload();
+  await expect(status.getByText("1 delivered")).toBeVisible();
+  await expect(status.getByText("0 provider-accepted, awaiting delivery")).toBeVisible();
+  const otherPage=await b.newPage();
+  await login(otherPage,other);
+  await openOwnedPage(otherPage,other,"staff?week="+week);
+  await expect(otherPage.getByRole("region",{name:"Supervisor schedule publication status"}))
+    .toHaveCount(0);
+ }finally{
+  await a.close();await b.close();
+  if(connected){
+   await db.query("delete from public.staff_schedule_deliveries where id=$1",[deliveryId]).catch(()=>{});
+   await db.query("delete from public.staff_schedule_publications where id=$1",[publicationId]).catch(()=>{});
+   await db.query("delete from public.supervisor_proposals where id=$1",[proposalId]).catch(()=>{});
+   await db.query("delete from public.ai_threads where id=$1",[threadId]).catch(()=>{});
+  }
+  await db.end().catch(()=>{});
+ }
 });
 
 test("@menu seeded owner searches real stored products", async ({page}) => {
@@ -413,6 +540,296 @@ test("@menu Pantry retains confirmed zero and rejects historical Toast stock as 
         [own.businessId,restaurantId]).catch(()=>{});
       await db.query("delete from public.locations where id=$1",[locationId]).catch(()=>{});
       await db.query("delete from public.ingredients where id=$1",[ingredientId]).catch(()=>{});
+      await db.end();
+    }
+  }
+});
+
+
+test("@purchasing real supplier quote entry preserves currency and denies cross-café reads",async({browser})=>{
+  test.setTimeout(90_000);
+  const own=seededCafe(0),other=seededCafe(1);
+  const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const second=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const supplier="Task14B Supplier "+randomUUID().slice(0,8);
+  try{
+    const page=await first.newPage();
+    await login(page,own);
+    await openOwnedPage(page,own,"operations/suppliers");
+    const form=page.locator("form").first();
+    await expect(form.getByLabel("Quote currency (ISO 4217)")).toBeVisible();
+    await form.locator("input").nth(0).fill(supplier);
+    await form.locator("input").nth(1).fill("Milk");
+    await form.locator("input").nth(2).fill("7.25");
+    await form.locator("input").nth(3).fill("1");
+    await expect(form.getByLabel("Quote currency (ISO 4217)")).toHaveValue(own.currency);
+    await form.getByLabel("Supplier availability").selectOption("confirmed");
+    const date=await form.getByLabel("Availability checked on").getAttribute("max");
+    expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await form.getByLabel("Availability checked on").fill(date);
+    const saved=page.waitForResponse(response=>
+      new URL(response.url()).pathname==="/api/ai/suppliers/quotes"&&
+      response.request().method()==="POST");
+    await form.locator("button").last().click();
+    const response=await saved;
+    expect(response.status()).toBe(201);
+    const record=(await response.json()).quote;
+    expect(record).toMatchObject({supplierName:supplier,itemName:"Milk",priceCents:725,
+      currencyCode:own.currency,availableStatus:"confirmed",availableCheckedAt:date});
+    await page.reload();
+    await expect(page.getByText(supplier,{exact:false}).first()).toBeVisible();
+
+    const foreignPage=await second.newPage();
+    await login(foreignPage,other);
+    const denied=await second.request.get("/api/ai/suppliers/quotes");
+    expect(denied.status()).toBe(200);
+    expect((await denied.json()).items.some(q=>q.id===record.id)).toBe(false);
+  } finally {
+    await second.close();
+    await first.close();
+  }
+});
+
+
+test("@purchasing proactive notice → repeated cron idempotency → owner-approved PO → resolved forever",async({browser})=>{
+  // This verifies the real owner/browser/database portion of the workflow.
+  // Recorded model tests separately prove the multi-tool sequence; a sentinel
+  // provider cannot be passed off as live-model or proactive parity evidence.
+  test.setTimeout(240_000);
+  const own=seededCafe(0),other=seededCafe(1);
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const id={ingredient:randomUUID(),quote:randomUUID(),thread:randomUUID(),
+    proposal:randomUUID(),replacedProposal:randomUUID()};
+  const now=new Date();
+  const parts=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{
+    timeZone:own.timezone,year:"numeric",month:"2-digit",day:"2-digit"
+  }).formatToParts(now).map(x=>[x.type,x.value]));
+  const today=parts.year+"-"+parts.month+"-"+parts.day;
+  const shift=d=>{const date=new Date(today+"T12:00:00Z");date.setUTCDate(date.getUTCDate()+d);
+    return date.toISOString().slice(0,10)};
+  const name="Task14B Milk "+id.ingredient.slice(0,8);
+  const supplier="Task14B Farm "+id.quote.slice(0,8);
+  const effect={
+    supplierName:supplier,currency:own.currency,neededBy:shift(3),subtotalCents:450,
+    totalCents:null,shippingCents:null,taxCents:null,
+    limitations:["owner_reported_not_supplier_verified","shipping_unknown",
+      "tax_unknown","landed_total_not_comparable"],
+    lines:[{quoteId:id.quote,ingredientId:id.ingredient,itemName:name,
+      neededBaseQuantity:3785.411784,baseUnit:"ml",packs:1,
+      packQuantity:1,packUnit:"gal",priceCents:450,lineSubtotalCents:450,
+      quotedOn:today,deliveryOn:shift(2)}]
+  };
+  const canonical=value=>Array.isArray(value)?value.map(canonical):
+    value&&typeof value==="object"?Object.fromEntries(Object.entries(value)
+      .sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,canonical(v)])):value;
+  const hash=createHash("sha256").update(JSON.stringify(canonical(effect))).digest("hex");
+  let connected=false;
+  const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const second=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  try{
+    await db.connect();connected=true;
+    await db.query("insert into public.ingredients(id,business_id,name,base_unit) values($1,$2,$3,'ml')",
+      [id.ingredient,own.businessId,name]);
+    await db.query("insert into public.ai_supplier_quotes("+
+      " id,business_id,owner_user_id,client_request_id,supplier_name,item_name,ingredient_id,"+
+      " price_cents,package_count,package_unit,source_kind,quoted_on,currency_code,"+
+      " valid_until,available_status,available_checked_at,delivery_on)"+
+      " values($1,$2,$3,$4,$5,$6,$7,450,1,'gal','supplier_quote',"+
+      " $8::date,$9,$10::date,'confirmed',$8::date,$11::date)",
+      [id.quote,own.businessId,own.owner.userId,randomUUID(),supplier,name,id.ingredient,
+        today,own.currency,shift(5),shift(2)]);
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title)"+
+      " values($1,$2,$3,$4,'Task14B Purchase Acceptance')",
+      [id.thread,own.businessId,own.owner.userId,randomUUID()]);
+    await db.query("insert into public.supervisor_proposals("+
+      " id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,"+
+      " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,created_at)"+
+      " values($1,$2,$3,$4,$5,'maya.supplier_purchase_order.v1',1,"+
+      " $6::jsonb,$7,'{}'::jsonb,$8::jsonb,'en',now()-interval '3 hours')",
+      [id.proposal,own.businessId,own.owner.userId,id.thread,randomUUID(),
+        JSON.stringify(effect),hash,JSON.stringify({durationDays:1,metricScope:"supplier_purchase_order"})]);
+    // Two REAL saved assistant cards: original rejected approval + replacement.
+    // They share one thread but must NEVER display two action buttons.
+    await db.query("insert into public.supervisor_proposals("+
+      " id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,"+
+      " canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision,created_at)"+
+      " values($1,$2,$3,$4,$5,'maya.supplier_purchase_order.v1',1,"+
+      " $6::jsonb,$7,'{}'::jsonb,$8::jsonb,'en','rejected',2,now()-interval '4 hours')",
+      [id.replacedProposal,own.businessId,own.owner.userId,id.thread,randomUUID(),
+        JSON.stringify(effect),hash,JSON.stringify({durationDays:1,metricScope:"supplier_purchase_order"})]);
+    await db.query("insert into public.supplier_po_draft_replacements("+
+      " business_id,previous_id,replacement_id,owner_user_id) values($1,$2,$3,$4)",
+      [own.businessId,id.replacedProposal,id.proposal,own.owner.userId]);
+    await db.query("insert into public.ai_messages("+
+      " business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id)"+
+      " values($1,$2,$3,$3,'owner','text',$4,$5)",
+      [own.businessId,id.thread,own.owner.userId,
+        "Compare milk quotes and prepare an order. Do not send it.",randomUUID()]);
+    await db.query("insert into public.ai_messages("+
+      " business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content,grounding)"+
+      " values($1,$2,$3,null,'supervisor','blocks',$4::jsonb,$5::jsonb)",
+      [own.businessId,id.thread,own.owner.userId,
+        JSON.stringify([{type:"text",text:"The earlier order was replaced after your correction."},
+          {type:"proposal_card",proposalId:id.replacedProposal}]),
+        JSON.stringify({status:"verified",intent:"operating_tasks",
+          evidence:[{source:"owner_rules",identifier:"replaced-supplier-approval",asOf:today}]})]);
+    await db.query("insert into public.ai_messages("+
+      " business_id,thread_id,owner_user_id,author_user_id,role,content_type,structured_content,grounding)"+
+      " values($1,$2,$3,null,'supervisor','blocks',$4::jsonb,$5::jsonb)",
+      [own.businessId,id.thread,own.owner.userId,
+        JSON.stringify([{type:"text",text:"I checked the saved quote and prepared a purchase order for approval. It has NOT been sent."},
+          {type:"proposal_card",proposalId:id.proposal}]),
+        JSON.stringify({status:"estimated",intent:"operating_tasks",
+          evidence:[{source:"owner_rules",identifier:"task14b-e2e-proposal",asOf:today}]})]);
+    const oldStock=await db.query("select count(*)::int as n from public.pantry_stock_purchases where business_id=$1",[own.businessId]);
+    const oldExpense=await db.query("select count(*)::int as n from public.expenses where business_id=$1",[own.businessId]);
+
+    const page=await first.newPage();
+    await login(page,own);
+    await openOwnedPage(page,own,"?thread="+encodeURIComponent(id.thread));
+    // Verify the existing scheduled dispatcher, not a test-inserted notice.
+    // Runner provides a fresh random local cron bearer; no provider key here.
+    if(!process.env.CRON_SECRET)throw Error("Task14B local cron credential unavailable");
+    const proactive=await first.request.get("/api/cron/refresh-derived",{
+      headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000,
+    });
+    expect([200,207]).toContain(proactive.status());
+    const priority=await db.query("select id,status,agent_id,payload from public.operating_tasks"+
+      " where business_id=$1 and owner_user_id=$2 and kind='priority_notice'"+
+      " and payload->>'sourceType'='supplier_po' and payload->>'sourceId'=$3",
+      [own.businessId,own.owner.userId,id.proposal]);
+    expect(priority.rows).toHaveLength(1);
+    expect(priority.rows[0]).toMatchObject({status:"needs_owner",agent_id:"maya"});
+    expect(priority.rows[0].payload.threadId).toBe(id.thread);
+    // Other actionable alerts may legitimately post in the SAME thread.
+    // Exactly one notice must exist for THIS canonical supplier proposal,
+    // never a duplicate and never another source masquerading as its notice.
+    const messages=await db.query("select id,grounding from public.ai_messages"+
+      " where business_id=$1 and thread_id=$2 and role='supervisor'"+
+      " and grounding->>'intent'='priority_notice'"+
+      " and grounding #>> '{evidence,0,source}'='supplier_po'"+
+      " and grounding #>> '{evidence,0,identifier}'=$3",
+      [own.businessId,id.thread,id.proposal]);
+    expect(messages.rows).toHaveLength(1);
+    expect(messages.rows[0].grounding).toMatchObject({status:"verified",intent:"priority_notice",
+      evidence:[{source:"supplier_po",identifier:id.proposal}]});
+    // A second real scheduler tick without another owner message must reuse
+    // the same persisted inbox/chat receipt across independent cron invocations.
+    const secondTick=await first.request.get("/api/cron/refresh-derived",{
+      headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000,
+    });
+    expect([200,207]).toContain(secondTick.status());
+    const dedupedPriority=await db.query("select id,status from public.operating_tasks"+
+      " where business_id=$1 and owner_user_id=$2 and kind='priority_notice'"+
+      " and payload->>'sourceType'='supplier_po' and payload->>'sourceId'=$3",
+      [own.businessId,own.owner.userId,id.proposal]);
+    expect(dedupedPriority.rows).toEqual([{
+      id:priority.rows[0].id,status:"needs_owner",
+    }]);
+    const dedupedMessages=await db.query("select id from public.ai_messages"+
+      " where business_id=$1 and thread_id=$2 and role='supervisor'"+
+      " and grounding->>'intent'='priority_notice'"+
+      " and grounding #>> '{evidence,0,source}'='supplier_po'"+
+      " and grounding #>> '{evidence,0,identifier}'=$3",
+      [own.businessId,id.thread,id.proposal]);
+    expect(dedupedMessages.rows).toEqual([{id:messages.rows[0].id}]);
+    // Reopened owner chat must show the real cron-generated notice.
+    await page.reload();
+    await expect(page.getByText("Supplier purchase-order draft needs your approval",{exact:false}).first())
+      .toBeVisible({timeout:30_000});
+    const cards=page.getByRole("region",{name:"Supplier purchase-order approval"});
+    await expect(cards).toHaveCount(2,{timeout:30_000});
+    const historical=cards.first(),card=cards.last();
+    await expect(historical).toContainText("cancelled");
+    await expect(historical.getByRole("button",{name:"Approve purchase order"})).toHaveCount(0);
+    await expect(page.getByRole("button",{name:"Approve purchase order"})).toHaveCount(1);
+    await expect(card).toBeVisible({timeout:30_000});
+    await expect(card).toContainText(supplier);
+    await expect(card).toContainText(name);
+    await expect(card).toContainText("Shipping, tax and full landed total: unknown");
+    await expect(card.getByRole("button",{name:"Approve purchase order"})).toBeVisible();
+    const approved=page.waitForResponse(r=>new URL(r.url()).pathname===
+      "/api/ai/threads/"+id.thread+"/proposals"&&r.request().method()==="POST");
+    await card.getByRole("button",{name:"Approve purchase order"}).click();
+    const response=await approved;
+    expect(response.status()).toBe(200);
+    await expect(card).toContainText("Approved for ordering — NOT sent to supplier",
+      {timeout:30_000});
+    const order=await db.query("select id,status,subtotal_cents,currency_code from public.purchase_orders"+
+      " where business_id=$1 and proposal_id=$2",[own.businessId,id.proposal]);
+    expect(order.rows).toHaveLength(1);
+    expect(order.rows[0]).toMatchObject({status:"approved_for_ordering",
+      subtotal_cents:"450",currency_code:own.currency});
+    const settled=await db.query("select status from public.operating_tasks where business_id=$1 and id=$2",
+      [own.businessId,priority.rows[0].id]);
+    expect(settled.rows[0].status).toBe("handled");
+    // Subsequent autonomous checks must not resurrect resolved owner work.
+    const afterDecision=await first.request.get("/api/cron/refresh-derived",{
+      headers:{Authorization:"Bearer "+process.env.CRON_SECRET},timeout:100_000,
+    });
+    expect([200,207]).toContain(afterDecision.status());
+    const resolved=await db.query("select id,status from public.operating_tasks"+
+      " where business_id=$1 and owner_user_id=$2 and kind='priority_notice'"+
+      " and payload->>'sourceType'='supplier_po' and payload->>'sourceId'=$3",
+      [own.businessId,own.owner.userId,id.proposal]);
+    expect(resolved.rows).toEqual([{
+      id:priority.rows[0].id,status:"handled",
+    }]);
+    const count=await db.query("select count(*)::int as n from public.purchase_order_lines"+
+      " where business_id=$1 and purchase_order_id=$2",[own.businessId,order.rows[0].id]);
+    expect(count.rows[0].n).toBe(1);
+    const nowStock=await db.query("select count(*)::int as n from public.pantry_stock_purchases where business_id=$1",[own.businessId]);
+    const nowExpense=await db.query("select count(*)::int as n from public.expenses where business_id=$1",[own.businessId]);
+    expect(nowStock.rows[0].n).toBe(oldStock.rows[0].n);
+    expect(nowExpense.rows[0].n).toBe(oldExpense.rows[0].n);
+    await page.reload();
+    const reopened=page.getByRole("region",{name:"Supplier purchase-order approval"});
+    await expect(reopened).toHaveCount(2,{timeout:30_000});
+    await expect(reopened.first()).toContainText("cancelled");
+    await expect(reopened.last()).toContainText("Approved for ordering — NOT sent to supplier",
+      {timeout:30_000});
+    await expect(page.getByRole("button",{name:"Approve purchase order"})).toHaveCount(0);
+    const foreignPage=await second.newPage();
+    await login(foreignPage,other);
+    const denied=await second.request.get("/api/ai/threads/"+id.thread+"/proposals?ids="+id.proposal);
+    expect(denied.status()).not.toBe(200);
+  }finally{
+    await second.close();await first.close();
+    if(connected){
+      const queries=[
+        ["delete from public.supplier_po_draft_replacements where business_id=$1 and previous_id=$2",
+          [own.businessId,id.replacedProposal]],
+        ["delete from public.purchase_order_events where business_id=$1 and proposal_id=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.purchase_order_lines where business_id=$1 and purchase_order_id in"+
+          " (select id from public.purchase_orders where business_id=$1 and proposal_id=$2)",
+          [own.businessId,id.proposal]],
+        ["delete from public.purchase_orders where business_id=$1 and proposal_id=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.cafe_suppliers where business_id=$1 and display_name=$2",
+          [own.businessId,supplier]],
+        ["delete from public.operating_tasks where business_id=$1 and kind='priority_notice'"+
+          " and payload->>'sourceType'='supplier_po' and payload->>'sourceId'=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.supervisor_effect_attempts where business_id=$1 and proposal_id=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.supervisor_approvals where business_id=$1 and proposal_id=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.supervisor_proposals where business_id=$1 and id=$2",
+          [own.businessId,id.proposal]],
+        ["delete from public.supervisor_proposals where business_id=$1 and id=$2",
+          [own.businessId,id.replacedProposal]],
+        ["delete from public.ai_messages where business_id=$1 and thread_id=$2",
+          [own.businessId,id.thread]],
+        ["delete from public.ai_threads where business_id=$1 and id=$2",
+          [own.businessId,id.thread]],
+        ["delete from public.ai_supplier_quotes where business_id=$1 and id=$2",
+          [own.businessId,id.quote]],
+        ["delete from public.ingredients where business_id=$1 and id=$2",
+          [own.businessId,id.ingredient]]
+      ];
+      for(const [query,params] of queries)await db.query(query,params).catch(()=>{});
       await db.end();
     }
   }

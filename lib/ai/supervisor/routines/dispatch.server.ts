@@ -4,11 +4,12 @@ import {localDateAt,dueScheduleOnDate} from "./calendar";
 import {choosePriorities} from "./priority";
 import {claimRoutineOccurrence,finishRoutineOccurrence} from "./repository.server";
 import {postPriorityNotice} from "./notices.server";
+import {followUpStaffPublicationForBusiness} from "@/lib/scheduling/staffPublication.server";
 import type {PriorityDecision,PrioritySource,RoutineRecord} from "./contracts";
 
 export type RoutineDispatchResult={
   routinesChecked:number;runs:number;notices:number;failed:number;
-  evidenceChecks:number;
+  evidenceChecks:number;investigationsQueued:number;
 };
 type DbRow={id:string;[field:string]:unknown};
 const batchLimit=100;
@@ -21,20 +22,36 @@ function safeSeverity(payload:unknown):string|null{
 /** Read existing authoritative alert/task rows; do NOT use cached café money or
  * infer that a missing/failed provider is a verified zero. */
 export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
-  now:Date):Promise<PriorityDecision[]>{
-  const [alerts,tasks]=await Promise.all([
+  now:Date,options?:{includeNotified?:boolean;limit?:number}):Promise<PriorityDecision[]>{
+  const [alerts,tasks,purchaseDrafts]=await Promise.all([
     db.from("alerts").select("id,kind,status,payload,created_at")
       .eq("business_id",scope.businessId).in("status",["new","seen"])
       .order("created_at",{ascending:false}).limit(batchLimit),
     db.from("operating_tasks")
       .select("id,kind,status,due_at,confidence,evidence,created_at,owner_user_id")
       .eq("business_id",scope.businessId)
-      .in("status",["needs_owner","needs_response"])
+      .in("status",options?.includeNotified?["needs_owner","needs_response","watching"]:
+        ["needs_owner","needs_response"])
       .not("kind","in","(priority_notice,commitment,event_plan,event_change,event_report)")
       .or("owner_user_id.is.null,owner_user_id.eq."+scope.ownerUserId)
       .order("created_at",{ascending:false}).limit(batchLimit),
+    // The canonical approved-order proposal is the source; do not infer
+    // stockouts, create new purchase drafts, or invent owner authorization.
+    // Supplier purchase-order drafts belong to the approval notice lane.
+    // Do not read them for the investigation-only queue: SQL does not accept
+    // supplier_po, and a pending draft must never starve café incidents.
+    options?.includeNotified?Promise.resolve({data:[] as DbRow[],error:null}):
+      db.from("supervisor_proposals")
+      .select("id,thread_id,created_at,status,revision")
+      .eq("business_id",scope.businessId)
+      .eq("owner_user_id",scope.ownerUserId)
+      .eq("capability_id","maya.supplier_purchase_order.v1")
+      .eq("status","draft")
+      .lte("created_at",new Date(now.getTime()-2*60*60_000).toISOString())
+      .order("created_at",{ascending:true}).limit(batchLimit),
   ]);
-  if(alerts.error||tasks.error)throw alerts.error??tasks.error;
+  if(alerts.error||tasks.error||purchaseDrafts.error)
+    throw alerts.error??tasks.error??purchaseDrafts.error;
   const sources:PrioritySource[]=[];
   for(const raw of (alerts.data??[]) as DbRow[]){
     const payload=raw.payload as Record<string,unknown>|null;
@@ -61,11 +78,31 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
       createdAt:String(raw.created_at),evidence:raw.evidence??null,
     });
   }
+  for(const raw of (purchaseDrafts.data??[]) as DbRow[]){
+    if(typeof raw.id!=="string"||typeof raw.thread_id!=="string"||
+      typeof raw.created_at!=="string"||raw.status!=="draft")continue;
+    sources.push({
+      businessId:scope.businessId,ownerUserId:scope.ownerUserId,
+      sourceType:"supplier_po",sourceId:raw.id,sourceThreadId:raw.thread_id,
+      kind:"supplier_po_approval",status:"draft",createdAt:raw.created_at,
+      evidence:{revision:raw.revision,status:"draft"}
+    });
+  }
   // Rank the whole bounded source batch before applying the fresh-notice cap.
   // An existing notice is a receipt for that exact revision, not a reason to
   // starve later actionable sources while the first three stay open.
-  const ranked=choosePriorities(sources,now,batchLimit*2);
+  // Filter BEFORE the ranking/batch cap: >25 old purchase drafts cannot
+  // push urgent staff, inventory or revenue incidents out of the queue.
+  const eligible=options?.includeNotified?
+    sources.filter(source=>source.sourceType==="alert"||
+      source.sourceType==="operating_task"):sources;
+  const ranked=choosePriorities(eligible,now,batchLimit*2,
+    {includeWatching:options?.includeNotified===true});
   if(ranked.length===0)return [];
+  // Durable autonomous investigation must examine known unresolved issues even
+  // when an earlier generic notice was already delivered. The notice path
+  // below still excludes that revision and cannot spam duplicate inbox tasks.
+  if(options?.includeNotified)return ranked.slice(0,Math.max(0,Math.min(batchLimit,options.limit??25)));
   const {data:receipts,error:receiptError}=await db.from("operating_tasks")
     .select("dedupe_key").eq("business_id",scope.businessId)
     .eq("owner_user_id",scope.ownerUserId).eq("kind","priority_notice")
@@ -81,7 +118,11 @@ async function postForOwner(db:SupabaseClient,scope:Scope,now:Date,
   const priorities=await readActionablePriorities(db,scope,now);
   let posted=0;
   for(const decision of priorities){
-    const outcome=await postPriorityNotice(db,{...scope,...opts},decision,now);
+    // Purchasing approval belongs in the saved proposal's original chat,
+    // not an arbitrary latest owner thread. SQL rechecks both memberships.
+    const target=decision.source.sourceType==="supplier_po"?
+      decision.source.sourceThreadId??scope.threadId:scope.threadId;
+    const outcome=await postPriorityNotice(db,{...scope,...opts,threadId:target},decision,now);
     if(outcome==="posted")posted++;
   }
   return {posted,checked:priorities.length};
@@ -106,10 +147,12 @@ type OwnerScope={ownerUserId:string;threadId:string};
  * generation. Any owner with an existing thread receives change-driven notices,
  * even on dates where no routine is due. No new AI worker, event loop or inbox. */
 export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:string,
-  timezone:string,now:Date):Promise<RoutineDispatchResult>{
+  timezone:string,now:Date,
+  enqueueInvestigations?:(db:SupabaseClient,scope:Scope,now:Date)=>Promise<number>,
+):Promise<RoutineDispatchResult>{
   if(!Number.isFinite(now.getTime()))throw new Error("Invalid routine now");
   const localDate=localDateAt(now,timezone);
-  const result:RoutineDispatchResult={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0};
+  const result:RoutineDispatchResult={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const [ownerRows,threadRows,routineRows]=await Promise.all([
     db.from("memberships").select("user_id").eq("business_id",businessId)
       .eq("role","owner").order("user_id",{ascending:true}).limit(batchLimit),
@@ -128,6 +171,10 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       threads.set(row.owner_user_id,row.id);
   }
   const routines=((routineRows.data??[]) as RoutineRow[]).map(parseRoutine);
+  // Task 13B publication uses the same refresh tick; never omit existing
+  // approved staff delivery and owner-visible exception reconciliation.
+  try{await followUpStaffPublicationForBusiness(db,businessId,localDate);}
+  catch{result.failed++;}
   // Source-change notices remain independent from the due schedule.
   for(const ownerUserId of owners){
     const threadId=threads.get(ownerUserId);
@@ -137,6 +184,13 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       result.evidenceChecks+=done.checked;
       result.notices+=done.posted;
     }catch{result.failed++;}
+    // This is the SAME verified owner/thread selected for the notice scanner.
+    // A failed notice cannot prevent persistent investigation, and vice versa.
+    if(enqueueInvestigations){
+      try{result.investigationsQueued+=await enqueueInvestigations(db,
+        {businessId,ownerUserId,threadId,localDate},now);}
+      catch{result.failed++;}
+    }
   }
   for(const routine of routines){
     result.routinesChecked++;

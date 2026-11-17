@@ -14,11 +14,13 @@ import {menuPriceChangeCapabilityId,StaleProposalError}
   from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {isStaffCapabilityId,readStaffProposalToken} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
+import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {gmailCapabilityId,gmailEffectSchema} from "@/lib/ai/supervisor/loop/gmail.server";
 import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
+import {publishApprovedStaffSchedule,cancelStaffPublication} from "@/lib/scheduling/staffPublication.server";
 /** The loop refused a second active proposal on the same item (engine ProposalOverlapError). */
 function runningOverlap(error:unknown):{proposalId:string;status:string;endsOn:string|null}|null{
   if(!(error instanceof Error)||error.name!=="ProposalOverlapError"||!("running" in error))return null;
@@ -34,6 +36,7 @@ const actions=z.discriminatedUnion("action",[
   z.strictObject({action:z.literal("start"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("reconcile"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("cancel"),proposalId:uuid,revision}),
+  z.strictObject({action:z.literal("cancel_publication"),proposalId:uuid,revision}),
   z.strictObject({action:z.literal("edit"),proposalId:uuid,revision,newPriceCents:price}),
   z.strictObject({action:z.literal("edit_purchase"),proposalId:uuid,revision,
     ingredientId:uuid.nullable(),quantity:z.number().finite().positive().max(1e9),
@@ -58,15 +61,24 @@ const card=(p:LoopProposal,state?:string)=>({
 async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopProposal){
   const attempt=p.status==="executing"?await repo.effectAttempt(scope,p.id).catch(()=>null):null;
   const executionState=attempt?.state==="executing"?"applying":"uncertain";
-  // Follow immutable edit ancestry so an old chat block always opens the latest draft.
-  // Every child has the same owner/business/thread scope; never use an unscoped lookup.
-  for(let depth=0;p.status==="rejected"&&depth<20;depth++){
-    const childId=await latestEditedProposalId(scope,p.id);
+  // For supplier POs, an old corrected draft is CLOSED and must stay
+  // non-actionable in its historical chat message. Redirecting it to the new
+  // draft makes two Approve buttons appear for the same pending order.
+  // Existing non-supplier edit ancestry retains its prior redirect behavior.
+  for(let depth=0;p.capabilityId!==supplierPurchaseOrderCapabilityId&&
+      p.status==="rejected"&&depth<20;depth++){
+    const childId=await latestEditedProposalId(scope,p.id,p.capabilityId);
     if(!childId)break;
     p=await repo.load(scope,childId);
     assertProposalScope(scope,p);
   }
   assertProposalScope(scope,p);
+  if(p.capabilityId===supplierPurchaseOrderCapabilityId){
+    const effect=supervisorLoopRegistry.get(supplierPurchaseOrderCapabilityId).parseEffect(p.canonicalEffectPayload);
+    return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
+      productName:"Supplier PO · "+effect.supplierName,currency:effect.currency,
+      purchaseOrder:effect};
+  }
   if(p.capabilityId===purchaseCapabilityId){
     const effect=supervisorLoopRegistry.get(purchaseCapabilityId).parseEffect(p.canonicalEffectPayload);
     const db=await createServerSupabaseClient();
@@ -92,7 +104,39 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
         ).dependencyScope)!==effect.expectedToken)return {...data,state:"stale"};
       }catch{return {...data,state:"stale"};}
     }
-    return {...data,state:p.status==="approved"?"conflict":data.state};
+    const intent=p.canonicalEffectPayload as {operation?:string;
+      payload?:{publish_and_notify?:boolean}};
+    const publishAndNotify=intent.operation==="propose_send_schedule"&&
+      intent.payload?.publish_and_notify===true;
+    if(!publishAndNotify)return {...data,state:p.status==="approved"?"conflict":data.state};
+    if(p.status!=="committed")return {...data,publishAndNotify,
+      state:p.status==="approved"?"conflict":data.state};
+    const db=await createServerSupabaseClient();
+    const publication=await db.from("staff_schedule_publications")
+      .select("id,week_start,published_at,snapshot,status")
+      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+      .eq("proposal_id",p.id).maybeSingle();
+    if(publication.error||!publication.data)return {...data,publishAndNotify,
+      state:"applying",publication:{state:"pending"}};
+    if(publication.data.status==="cancelled")return {...data,publishAndNotify,
+      state:"cancelled",publication:{state:"cancelled",
+        week:publication.data.week_start}};
+    const receipts=await db.from("staff_schedule_deliveries")
+      .select("employee_id,status").eq("business_id",scope.businessId)
+      .eq("publication_id",publication.data.id).limit(201);
+    if(receipts.error||!receipts.data)return {...data,publishAndNotify,
+      state:"applying",publication:{state:"pending"}};
+    const shifts=publication.data.snapshot as Array<{employee_id:string}>;
+    const present=new Set(receipts.data.map(row=>row.employee_id));
+    const expected=new Set(shifts.map(s=>s.employee_id));
+    const counts=(status:string)=>receipts.data.filter(row=>row.status===status).length;
+    return {...data,publishAndNotify,state:"applied",publication:{
+      state:"published",week:publication.data.week_start,
+      expected:expected.size,missing:[...expected].filter(id=>!present.has(id)).length,
+      accepted:counts("sent"),delivered:counts("delivered"),read:counts("read"),
+      pending:counts("prepared")+counts("sending"),failed:counts("failed"),
+      uncertain:counts("uncertain")}};
+
   }
   if(p.capabilityId===gmailCapabilityId){
     const effect=gmailEffectSchema.parse(p.canonicalEffectPayload);
@@ -183,6 +227,8 @@ export async function POST(request:Request,{params}:Params){
       try{
         const reconciled=p.capabilityId===gmailCapabilityId?
           await new SupervisorEffectGateway().reconcileGmail(scope,p.id,p.revision):
+          p.capabilityId===supplierPurchaseOrderCapabilityId?
+          await new SupervisorEffectGateway().reconcileSupplierPurchaseOrder(scope,p.id,p.revision):
           await repo.reconcileEffect(scope,p.id,p.revision);
         return conversationJson({state:reconciled.status==="executing"?"uncertain":"applied",
           proposal:await view(scope,repo,reconciled)},reconciled.status==="executing"?409:200);
@@ -195,8 +241,11 @@ export async function POST(request:Request,{params}:Params){
     if(input.action==="start"&&p.capabilityId!==goalCapabilityId)
       return conversationJson({error:"standing_mandate_action_not_eligible"},403);
     const staff=isStaffCapabilityId(p.capabilityId);
+    if(input.action==="cancel_publication"&&!staff)
+      return conversationJson({error:"publication_cancellation_not_supported"},422);
     const purchase=p.capabilityId===purchaseCapabilityId;
-    if(!staff&&!purchase&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
+    const supplierPO=p.capabilityId===supplierPurchaseOrderCapabilityId;
+    if(!staff&&!purchase&&!supplierPO&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
       p.capabilityId!==goalCapabilityId&&p.capabilityId!==eventReadinessCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
     if(p.capabilityId===gmailCapabilityId){
@@ -217,6 +266,92 @@ export async function POST(request:Request,{params}:Params){
         const latest=await repo.load(scope,p.id);
         return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
           error:latest.status==="executing"?"gmail_outcome_uncertain":"gmail_action_failed",
+          proposal:await view(scope,repo,latest)},409);
+      }
+    }
+    if(supplierPO){
+      // A persisted approved row with no effect attempt is a recoverable,
+      // already-authorized owner click. An HTTP response can be lost AFTER
+      // the approval transaction, BEFORE the effect claim; keep the original
+      // revision eligible for an explicit second click, never auto-run a PO.
+      const commitApproved=async(approvedRevision:number)=>{
+        try{
+          const finished=await commitLoop(scope,supervisorLoopRegistry,repo,p.id,approvedRevision,"click");
+          return conversationJson({proposal:await view(scope,repo,finished.proposal)});
+        }catch{
+          const latest=await repo.load(scope,p.id);
+          if(latest.status==="committed")
+            return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
+          if(latest.status==="stale")
+            return conversationJson({state:"stale",error:"supplier_po_evidence_stale",
+              proposal:await view(scope,repo,latest)},409);
+          // Only a truly claimed effect may be uncertain. An approved row
+          // did NOT execute the supplier writer and may be clicked/cancelled.
+          if(latest.status==="approved")
+            return conversationJson({state:"retryable",error:"supplier_po_approval_interrupted",
+              proposal:await view(scope,repo,latest)},409);
+          return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
+            error:latest.status==="executing"?"effect_outcome_uncertain":"supplier_po_approval_failed",
+            proposal:latest.status==="executing"?
+              {...await view(scope,repo,latest),state:"uncertain"}:
+              await view(scope,repo,latest)},409);
+        }
+      };
+      if(input.action==="edit"||input.action==="edit_purchase")
+        return conversationJson({error:"supplier_po_edits_need_new_proposal"},422);
+      if(p.status==="committed")return conversationJson({state:"applied",proposal:await view(scope,repo,p)});
+      if(p.status==="stale")
+        return conversationJson({state:"stale",error:"supplier_po_evidence_stale",
+          proposal:await view(scope,repo,p)},409);
+      if(p.status==="executing")
+        return conversationJson({state:"uncertain",error:"effect_outcome_uncertain",
+          // A previous owner click has already CLAIMED this effect. If the
+          // write response was lost, never display a reassuring "applying"
+          // state on this explicit conflicting action. Receipt-only recovery.
+          proposal:{...await view(scope,repo,p),state:"uncertain"}},409);
+      if(p.status==="approved"){
+        // Both the persisted approval revision and its original owner-click
+        // revision are valid recovery references. The effect gateway itself
+        // uses the CURRENT approved revision in one atomic CAS claim. A
+        // competing click/cancel cannot cause a second supplier PO.
+        if(input.revision!==p.revision&&input.revision!==p.revision-1)
+          return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+        if(input.action==="approve")return commitApproved(p.revision);
+        if(input.action==="cancel"){
+          try{return conversationJson({state:"cancelled",proposal:await view(scope,repo,
+            await repo.transition(scope,p.id,p.revision,"reject"))});}
+          catch{
+            const latest=await repo.load(scope,p.id);
+            return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
+              error:latest.status==="executing"?"effect_outcome_uncertain":"supplier_po_cancel_conflict",
+              proposal:await view(scope,repo,latest)},409);
+          }
+        }
+        return conversationJson({error:"supplier_po_action_not_supported"},422);
+      }
+      if(p.revision!==input.revision||p.status!=="draft")
+        return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+      if(input.action==="cancel"){
+        try{return conversationJson({proposal:await view(scope,repo,
+          await repo.transition(scope,p.id,p.revision,"reject"))});}
+        catch{return conversationJson({state:"conflict",proposal:await view(scope,repo,await repo.load(scope,p.id))},409);}
+      }
+      if(input.action!=="approve")return conversationJson({error:"supplier_po_action_not_supported"},422);
+      try{
+        const approved=await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry);
+        return commitApproved(approved.revision);
+      }catch{
+        const latest=await repo.load(scope,p.id);
+        if(latest.status==="committed")
+          return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
+        if(latest.status==="stale")
+          return conversationJson({state:"stale",error:"supplier_po_evidence_stale",
+            proposal:await view(scope,repo,latest)},409);
+        if(latest.status==="approved")
+          return conversationJson({state:"retryable",error:"supplier_po_approval_interrupted",
+            proposal:await view(scope,repo,latest)},409);
+        return conversationJson({state:latest.status==="executing"?"uncertain":"conflict",
+          error:latest.status==="executing"?"effect_outcome_uncertain":"supplier_po_approval_failed",
           proposal:await view(scope,repo,latest)},409);
       }
     }
@@ -278,6 +413,36 @@ export async function POST(request:Request,{params}:Params){
     }
     if(staff){
       if(p.capabilityVersion===1)return conversationJson({state:"stale",proposal:await view(scope,repo,p)},409);
+      // Task 13B: only a NEW approval with explicit publish_and_notify
+      // can publish/send. Historic copy-ready approvals never acquire consent.
+      const staffEffect=p.canonicalEffectPayload as {operation?:string;
+        payload?:{publish_and_notify?:boolean;correct_cancelled_publication?:boolean}};
+      const needsPublish=staffEffect.operation==="propose_send_schedule"&&
+        staffEffect.payload?.publish_and_notify===true;
+      const needsCorrection=staffEffect.operation==="propose_schedule"&&
+        staffEffect.payload?.correct_cancelled_publication===true;
+      if(input.action==="cancel_publication"){
+        if(p.status!=="committed"||!needsPublish||p.revision!==input.revision)
+          return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
+        try{
+          const cancellation=await cancelStaffPublication(scope,p.id);
+          return conversationJson({state:"cancelled",cancellation,
+            proposal:await view(scope,repo,p)});
+        }catch{
+          return conversationJson({state:"uncertain",error:"publication_cancel_outcome_uncertain",
+            proposal:await view(scope,repo,p)},409);
+        }
+      }
+      if(p.status==="committed"&&needsPublish){
+        try{
+          const publication=await publishApprovedStaffSchedule(scope,p.id);
+          return conversationJson({state:"published",publication,
+            proposal:await view(scope,repo,p)});
+        }catch{
+          return conversationJson({state:"awaiting_publication",
+            error:"publication_verification_pending",proposal:await view(scope,repo,p)},409);
+        }
+      }
       if(input.action==="edit")return conversationJson({error:"staff_edits_require_new_proposal"},422);
       if(p.revision!==input.revision||!["draft","approved"].includes(p.status))
         return conversationJson({state:"conflict",proposal:await view(scope,repo,p)},409);
@@ -292,15 +457,41 @@ export async function POST(request:Request,{params}:Params){
       // The SQL function independently locks source and compares the token.
       try{
         const approved=p.status==="draft"?await approveLoop(scope,repo,p.id,p.revision,supervisorLoopRegistry):p;
-        const result=await repo.commitStaff(scope,p.id,approved.revision);
+        const result=needsCorrection
+          ?await new SupervisorEffectGateway().commitStaffCorrection(scope,p.id,approved.revision)
+          :await repo.commitStaff(scope,p.id,approved.revision);
+        if(result.state==="applied"&&needsPublish){
+          try{
+            const publication=await publishApprovedStaffSchedule(scope,p.id);
+            return conversationJson({state:"published",publication,
+              proposal:await view(scope,repo,result.proposal)});
+          }catch{
+            // The approval may already be committed; a routine reconciles
+            // publication using its durable proposal receipt. Never retry
+            // the staff proposal as a fresh effect.
+            return conversationJson({state:"awaiting_publication",
+              error:"publication_verification_pending",
+              proposal:await view(scope,repo,result.proposal)},409);
+          }
+        }
         return conversationJson({state:result.state,proposal:await view(scope,repo,result.proposal)},
           result.state==="stale"?409:200);
       }catch{
         const latest=await repo.load(scope,p.id);
         // A lost HTTP response after a committed SQL transaction is not a
         // failed write. Read the durable ledger before showing Retry.
-        if(latest.status==="committed")
+        if(latest.status==="committed"){
+          if(needsPublish){
+            try{
+              const publication=await publishApprovedStaffSchedule(scope,p.id);
+              return conversationJson({state:"published",publication,
+                proposal:await view(scope,repo,latest)});
+            }catch{return conversationJson({state:"awaiting_publication",
+              error:"publication_verification_pending",
+              proposal:await view(scope,repo,latest)},409);}
+          }
           return conversationJson({state:"applied",proposal:await view(scope,repo,latest)});
+        }
         if(latest.status==="stale")
           return conversationJson({state:"stale",proposal:await view(scope,repo,latest)},409);
         if(latest.status==="approved")

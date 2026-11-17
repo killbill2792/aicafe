@@ -1,0 +1,362 @@
+# Trusted-main owner-only paid acceptance. Never execute candidate code with
+# OPENAI_API_KEYS or a write-capable GitHub token. No Vercel previews/hosted DB.
+name: AI CAFE Task 14B Bounded Real-Model Acceptance
+on:
+  pull_request_target:
+    types: [edited]
+# A second edit/run cannot race another paid run.
+concurrency:
+  group: aicafe-task14b-paid-pr482
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  consume-once:
+    name: Atomically consume owner authorization before paid work
+    if: >-
+      github.event.action == 'edited' &&
+      github.actor == 'killbill2792' &&
+      github.triggering_actor == 'killbill2792' &&
+      github.run_attempt == 1 &&
+      github.event.pull_request.number == 482 &&
+      github.event.pull_request.user.login == 'killbill2792' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'task14b-agentic-supervisor-procurement' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.changes.body.from != null &&
+      !contains(github.event.changes.body.from, '<!-- aicafe-task14b-trusted-paid-run-v9 ') &&
+      contains(github.event.pull_request.body, '<!-- aicafe-task14b-trusted-paid-run-v9 ')
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write # scoped only to trusted pre-spend job
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      head: ${{ steps.authorize.outputs.head }}
+    steps:
+      - name: Validate fresh exact-head marker and durably consume approval
+        id: authorize
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from "node:fs";
+          const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
+          const pr=event.pull_request,sha=pr?.head?.sha;
+          const prefix="<!-- aicafe-task14b-trusted-paid-run-v9 ";
+          const marker=prefix+sha+" -->";
+          const old=event.changes?.body?.from;
+          if(event.action!=="edited"||event.sender?.login!=="killbill2792"||
+             process.env.GITHUB_RUN_ATTEMPT!=="1"||
+             process.env.GITHUB_TRIGGERING_ACTOR!=="killbill2792"||
+             event.repository?.full_name!=="killbill2792/aicafe"||
+             pr?.number!==482||pr.user?.login!=="killbill2792"||
+             pr.base?.ref!=="main"||
+             pr.head?.ref!=="task14b-agentic-supervisor-procurement"||
+             pr.head?.repo?.full_name!=="killbill2792/aicafe"||
+             !/^[a-f0-9]{40}$/.test(sha??"")||
+             typeof old!=="string"||old.includes(prefix)||
+             !pr.body?.includes(marker)||
+             (pr.body.split(prefix).length!==2))
+             throw Error("Fresh exact-head owner approval required");
+          const headers={"authorization":"Bearer "+process.env.GH_TOKEN,
+            accept:"application/vnd.github+json",
+            "x-github-api-version":"2022-11-28"};
+          const api="https://api.github.com/repos/killbill2792/aicafe";
+          const live=await fetch(api+"/pulls/482",{headers});
+          if(!live.ok)throw Error("Current PR head unavailable");
+          const latest=await live.json();
+          if(latest.head?.sha!==sha||latest.base?.ref!=="main"||
+             !latest.body?.includes(marker)||latest.state!=="open")
+             throw Error("Approval not for current Task14B PR head");
+          // pilot-v1 through pilot-v8 are irrevocably consumed: NEVER replay.
+          // pilot-v9 is a new distinct owner-only one-shot, never a reset/retry.
+          const consumed="<!-- aicafe-task14b-authorization-consumed:pr482:pilot-v9 -->";
+          let endReached=false;
+          for(let page=1;page<=100;page++){
+           const res=await fetch(api+"/issues/482/comments?per_page=100&page="+page,{headers});
+           if(!res.ok)throw Error("Cannot prove whether paid approval was consumed");
+           const comments=await res.json();
+           if(comments.some(c=>String(c.body||"").includes(consumed)))
+             throw Error("This paid Task14B authorization was already consumed");
+           if(comments.length<100){endReached=true;break}
+          }
+          if(!endReached)throw Error("Incomplete prior authorization history");
+          const response=await fetch(api+"/issues/482/comments",{
+            method:"POST",headers:{...headers,"content-type":"application/json"},
+            body:JSON.stringify({body:consumed+"\nOwner-authorized, one-shot "+
+              "disposable Task14B provider pilot reserved at SHA "+sha+
+              ". A failed or partial run also consumes this authorization."})});
+          if(response.status!==201){
+            // Never print secrets or raw request bodies. Record only the
+            // GitHub HTTP status and a bounded public API error message.
+            let detail="unknown";
+            try{const e=await response.json();
+              if(typeof e.message==="string")detail=e.message.slice(0,140)}
+            catch{}
+            throw Error("Failed to durably consume approval (HTTP "+response.status+
+              ", GitHub: "+detail+")");
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT,"head="+sha+"\n");
+          NODE
+  paid-pilot:
+    needs: [consume-once]
+    if: needs.consume-once.result == 'success'
+    name: Real-model purchasing pilot with secret isolated from candidate
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      HEAD_SHA: ${{ needs.consume-once.outputs.head }}
+      VERCEL_URL: ''
+      VERCEL_ENV: ''
+      SUPABASE_PROJECT_REF: ''
+    steps:
+      - name: Checkout ONLY trusted broker from main, without write credentials
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: coordinator
+          persist-credentials: false
+      - name: Checkout exact candidate, without GitHub credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.consume-once.outputs.head }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Trusted broker policy kill tests, no key and no candidate execution
+        working-directory: coordinator
+        run: |
+          set -euo pipefail
+          node --test scripts/acceptance/task14b-broker.test.mjs
+          test "$(git -C ../candidate rev-parse HEAD)" = "$HEAD_SHA"
+          docker version >/dev/null
+      - name: Run candidate installation, zero-secret integrity tests and seed ONLY inside Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network host --pids-limit 512 --cap-drop ALL \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            --security-opt no-new-privileges \
+            -v "$GITHUB_WORKSPACE/candidate:/candidate" -w /candidate \
+            mcr.microsoft.com/playwright:v1.58.2-noble \
+            bash -euo pipefail -c '
+              npm ci
+              node --test evals/acceptance/live/task14b.test.mjs
+              npx vitest run lib/ai/agent/task14bPaidBudget.server.test.ts
+              node scripts/seed/generateSeedSql.mjs
+            '
+      - name: Start and migrate ONLY disposable local two-café Supabase
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase db reset --local --yes
+          pg_isready -q -h 127.0.0.1 -p 54322 -U postgres
+          supabase status -o json > "$RUNNER_TEMP/task14b-local-supabase.json"
+      - name: Load only disposable credentials and generate ephemeral proxy token
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from "node:fs";
+          import {randomBytes} from "node:crypto";
+          const status=JSON.parse(readFileSync(process.env.RUNNER_TEMP+
+            "/task14b-local-supabase.json","utf8"));
+          const anon=status.ANON_KEY??status.anon_key;
+          const service=status.SERVICE_ROLE_KEY??status.service_role_key;
+          if(!anon||!service)throw Error("Disposable local auth keys unavailable");
+          const proxyToken=randomBytes(40).toString("hex");
+          for(const token of [anon,service,proxyToken])
+           process.stdout.write("::add-mask::"+token+"\n");
+          appendFileSync(process.env.GITHUB_ENV,
+            "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\n"+
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY="+anon+"\n"+
+            "SUPABASE_SERVICE_ROLE_KEY="+service+"\n"+
+            "AICAFE_14B_BROKER_TOKEN="+proxyToken+"\n");
+          NODE
+      - name: Start trusted host broker ONLY (real key never passed to candidate)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
+          AICAFE_TASK14B_HOST_AUDIT: ${{ runner.temp }}/task14b-host-audit.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Existing OPENAI_API_KEYS unavailable; no provider call made"
+            exit 1
+          fi
+          export AICAFE_TASK14B_HOST_AUDIT
+          RUNNER_TRACKING_ID="" nohup node coordinator/scripts/acceptance/task14b-broker.mjs \
+            > "$RUNNER_TEMP/task14b-broker.log" 2>&1 < /dev/null &
+          echo $! > "$RUNNER_TEMP/task14b-broker.pid"
+          ready=0
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8788/healthz >/dev/null; then ready=1;break;fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+      - name: Run actual candidate owner app and multi-turn pilot in Docker (NO real API key)
+        timeout-minutes: 16
+        shell: bash
+        env:
+          AI_CAFE_LIVE_ACCEPTANCE: OWNER_APPROVED_LOCAL_ONLY
+          APP_URL: http://127.0.0.1:3000
+          ACCEPTANCE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+          SUPERVISOR_OPENAI_MODEL: gpt-6-luna
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/task14b-candidate-proof"
+          docker run --rm --network host --pids-limit 512 --cap-drop ALL \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            --security-opt no-new-privileges \
+            -v "$GITHUB_WORKSPACE/candidate:/candidate" \
+            -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/task14b-fetch-shim.cjs:/trusted/task14b-fetch-shim.cjs:ro" \
+            -v "$RUNNER_TEMP/task14b-candidate-proof:/proof" \
+            -w /candidate \
+            -e NODE_OPTIONS='--require=/trusted/task14b-fetch-shim.cjs' \
+            -e OPENAI_API_KEY='sk-local_disposable_proxy_key_not_real' \
+            -e AICAFE_14B_BROKER_TOKEN="$AICAFE_14B_BROKER_TOKEN" \
+            -e AI_CAFE_LIVE_ACCEPTANCE -e APP_URL -e ACCEPTANCE_DATABASE_URL \
+            -e SUPERVISOR_OPENAI_MODEL \
+            -e SUPERVISOR_CHAT_ENABLED='true' \
+            -e HEAD_SHA -e NEXT_PUBLIC_SUPABASE_URL -e NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            -e SUPABASE_SERVICE_ROLE_KEY \
+            mcr.microsoft.com/playwright:v1.58.2-noble \
+            bash -euo pipefail -c '
+              npm run dev -- --webpack --hostname 127.0.0.1 --port 3000 > /proof/next.log 2>&1 &
+              next_pid=$!
+              trap "kill $next_pid 2>/dev/null || true" EXIT
+              ready=0
+              for i in $(seq 1 90); do
+                if curl -fsS http://127.0.0.1:3000/en/login >/dev/null; then ready=1;break;fi
+                sleep 2
+              done
+              test "$ready" -eq 1
+              timeout 12m node evals/acceptance/live/task14b.mjs --output /proof/task14b-live-proof.json
+            '
+      - name: Redacted host broker failure diagnostics (no prompts, keys or provider body)
+        if: failure()
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,existsSync} from "node:fs";
+          const path=process.env.RUNNER_TEMP+"/task14b-host-audit.json";
+          if(!existsSync(path)){
+            console.log("task14b_host_failure",JSON.stringify({audit:"unavailable",providerAttempts:"unknown"}));
+          }else{
+            const a=JSON.parse(readFileSync(path,"utf8"));
+            const terminals=new Set(["attempted","completed","provider_rejected",
+              "provider_failed","transport_unknown","incomplete","unpriced_or_wrong_provider"]);
+            const receipts=Array.isArray(a.receipts)?a.receipts:[];
+            // Only literal allowlisted broker-denial IDs are printed; not
+            // rejected payloads, function arguments, owner or provider data.
+            const policyNames=new Set(["opaque_or_remote_context_forbidden",
+              "non_inline_function_call","non_inline_function_output",
+              "non_inline_assistant_message","remote_assistant_content_forbidden",
+              "remote_message_metadata_forbidden","remote_or_nontext_attachment_forbidden",
+              "unsupported_message_content","non_inline_input","inline_input_required",
+              "provider_expanded_context_forbidden","unsupported_provider_request_shape",
+              "request_size","approved_budget_exhausted","invalid_inline_reasoning",
+              "unissued_reasoning_context","reasoning_replay_limit",
+              "remote_store_forbidden","stateless_reasoning_required","unknown"]);
+            const policyDenials=Array.isArray(a.policyDenials)?a.policyDenials.slice(0,20)
+              .map(x=>policyNames.has(x)?x:"unknown"):[];
+            const types=new Set(["invalid_request_error","authentication_error",
+              "permission_error","rate_limit_error","server_error"]);
+            const codes=new Set(["invalid_function_parameters","invalid_request_error",
+              "unsupported_parameter","unsupported_value","model_not_found","invalid_model",
+              "invalid_service_tier","context_length_exceeded","invalid_api_key",
+              "insufficient_quota","permission_denied","invalid_prompt","invalid_value"]);
+            const params=new Set(["model","service_tier","tools","input","instructions",
+              "tool_choice","max_output_tokens","prompt_cache_key","stream","response_format"]);
+            const safe=receipts.map(r=>{
+              const rejection=r.rejection&&typeof r.rejection==="object"?r.rejection:{};
+              const param=typeof rejection.param==="string"&&
+                (params.has(rejection.param)||
+                  /^tools\[\d{1,3}\](?:\.(?:parameters|strict|name|description))?$/.test(rejection.param))
+                ?rejection.param:"unknown";
+              return {
+              ordinal:Number.isSafeInteger(r.ordinal)?r.ordinal:null,
+              httpStatus:Number.isSafeInteger(r.upstreamStatus)?r.upstreamStatus:null,
+              terminal:terminals.has(r.terminal)?r.terminal:"unknown",
+              inputTokens:Number.isSafeInteger(r.actualInputTokens)?r.actualInputTokens:null,
+              outputTokens:Number.isSafeInteger(r.actualOutputTokens)?r.actualOutputTokens:null,
+              rejection:{type:types.has(rejection.type)?rejection.type:"unknown",
+                code:codes.has(rejection.code)?rejection.code:"unknown",param,
+                toolName:typeof rejection.toolName==="string"&&
+                  /^[a-z][a-z0-9_]{1,79}$/.test(rejection.toolName)?rejection.toolName:null}
+            }});
+            console.log("task14b_host_failure",JSON.stringify({
+              head:typeof a.head==="string"&&/^[a-f0-9]{40}$/.test(a.head)?a.head:null,
+              providerAttempts:Number.isSafeInteger(a.attempts)?a.attempts:null,
+              reservedUpperUSD:Number.isSafeInteger(a.reservedMicros)?a.reservedMicros/1_000_000:null,
+              deniedCount:Number.isSafeInteger(a.deniedCount)?a.deniedCount:null,
+              policyDenials,
+              receipts:safe
+            }));
+          }
+          NODE
+      - name: TRUSTED host attestation of provider receipts, budget and candidate outcome
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from "node:fs";
+          const dir=process.env.RUNNER_TEMP;
+          const audit=JSON.parse(readFileSync(dir+"/task14b-host-audit.json","utf8"));
+          const proof=JSON.parse(readFileSync(dir+"/task14b-candidate-proof/task14b-live-proof.json","utf8"));
+          const observedTools=audit.receipts.flatMap(r=>
+            Array.isArray(r.toolNames)?r.toolNames:[]);
+          if(!["inspect_supplier_purchase","propose_supplier_purchase_order",
+               "get_supplier_purchase_orders"].every(t=>observedTools.includes(t)))
+             throw Error("Trusted provider never selected the required multi-step tool chain");
+          if(audit.head!==process.env.HEAD_SHA||proof.headSha!==audit.head||
+             proof.passed!==true||audit.attempts<3||audit.attempts>18||
+             audit.reservedMicros<1||audit.reservedMicros>180_000||
+             audit.receipts.length!==audit.attempts||
+             audit.receipts.filter(r=>r.terminal==="completed"&&
+               Number.isSafeInteger(r.actualInputTokens)&&r.actualInputTokens>0&&
+               Number.isSafeInteger(r.actualOutputTokens)&&r.actualOutputTokens>=0).length<3||
+             audit.receipts.some(r=>r.terminal!=="completed"||r.model!=="gpt-6-luna"))
+            throw Error("Unverified Task14B real-model receipt / objective result");
+          const redacted={head:audit.head,model:"gpt-6-luna",
+            providerAttempts:audit.attempts,
+            upperCostReservationUSD:audit.reservedMicros/1_000_000,
+            actualInputTokens:audit.receipts.reduce((n,r)=>n+r.actualInputTokens,0),
+            actualOutputTokens:audit.receipts.reduce((n,r)=>n+r.actualOutputTokens,0),
+            providerSelectedTools:observedTools,
+            checks:proof.checks,realModelObjectivePassed:true,
+            independentGrokMuseParity:"NOT_ATTESTED"};
+          writeFileSync(dir+"/task14b-sanitized-result.json",
+            JSON.stringify(redacted,null,2)+"\n",{mode:0o600,flag:"wx"});
+          NODE
+      - name: Upload sanitized objective proof only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-task14b-host-attested-live-proof
+          path: ${{ runner.temp }}/task14b-sanitized-result.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Destroy broker and disposable database (NO backup)
+        if: always()
+        working-directory: candidate
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/task14b-broker.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/task14b-broker.pid")" 2>/dev/null || true
+          fi
+          supabase stop --no-backup || true

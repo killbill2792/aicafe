@@ -3,7 +3,7 @@ import {appendFileSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {dirname} from "node:path";
 import {pathToFileURL} from "node:url";
 
-export const SCENARIOS = Object.freeze(["home", "staff", "menu", "money", "gmail"]);
+export const SCENARIOS = Object.freeze(["home", "staff", "menu", "money", "gmail", "purchasing"]);
 const ALL = SCENARIOS;
 
 // Recognize real user journeys, not just *.spec.* changes. Unknown browser UI
@@ -31,7 +31,16 @@ export function scenariosForPath(path) {
       path === "components/home/SupervisorProposalCard.tsx" ||
       path === "components/home/SupervisorProposalCard.gmail.test.tsx" ||
       path === "components/more/GmailConnectionPanel.test.tsx")
-    return ["gmail"];
+    return path === "components/home/SupervisorProposalCard.tsx" ? ["gmail","purchasing"] : ["gmail"];
+  // Task15A's owner-facing Operations report must run through a REAL signed-in
+  // seeded browser, not merely a server-component/unit render. The @home
+  // owner-inbox journey verifies the persisted report and its original thread.
+  if(path==="app/[locale]/operations/page.tsx"||
+     path==="app/[locale]/operations/page.test.tsx")
+    return ["home"];
+  if (path === "components/operations/SupplierEvidenceManager.tsx" ||
+      path === "app/[locale]/operations/suppliers/page.tsx")
+    return ["purchasing"];
   if (path.startsWith("components/home/")) return ["home"];
   if (path === "app/[locale]/page.tsx" ||
       path.startsWith("lib/viewmodels/home") ||
@@ -40,6 +49,9 @@ export function scenariosForPath(path) {
     return ["home"];
   if (path === "app/[locale]/staff/page.tsx" ||
       path === "components/staff/StaffWorkspace.tsx" ||
+      path === "components/staff/StaffPublicationStatus.tsx" ||
+      path === "components/staff/StaffStandingMandatePanel.tsx" ||
+      path === "components/staff/StaffStandingMandatePanel.test.ts" ||
       path.startsWith("lib/calc/scheduling/") ||
       path === "scripts/staff-pr155-screenshots.mjs" ||
       path === ".github/workflows/staff-pr155-screenshots.yml")

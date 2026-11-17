@@ -5,12 +5,28 @@ import {classifyPaths, parseNameStatus, selectedScenarios, summarizeReport} from
 test("real Home, Staff, Menu, Money and Gmail changes select only relevant journeys", () => {
   assert.deepEqual(classifyPaths(["app/[locale]/page.tsx"]).scenarios, ["home"]);
   assert.deepEqual(classifyPaths(["components/staff/StaffWorkspace.tsx"]).scenarios, ["staff"]);
+  assert.deepEqual(classifyPaths(["components/staff/StaffPublicationStatus.tsx"]).scenarios, ["staff"]);
+  assert.deepEqual(classifyPaths(["components/staff/StaffStandingMandatePanel.tsx"]).scenarios, ["staff"]);
+  assert.deepEqual(classifyPaths(["components/staff/StaffStandingMandatePanel.test.ts"]).scenarios, ["staff"]);
   assert.deepEqual(classifyPaths(["app/[locale]/menu/page.tsx"]).scenarios, ["menu"]);
   assert.deepEqual(classifyPaths(["app/[locale]/money/page.tsx"]).scenarios, ["money"]);
   assert.deepEqual(classifyPaths(["app/[locale]/more/gmail/page.tsx"]).scenarios, ["gmail"]);
   assert.deepEqual(classifyPaths(["components/more/GmailConnectionPanel.tsx"]).scenarios, ["gmail"]);
   assert.deepEqual(classifyPaths(["app/[locale]/layout.tsx"]).scenarios,
-    ["home", "staff", "menu", "money", "gmail"]);
+    ["home", "staff", "menu", "money", "gmail", "purchasing"]);
+});
+
+test("Task15A Operations investigation reports require the signed-in @home browser journey",()=>{
+  const source=["app/[locale]/operations/page.tsx",
+    "app/[locale]/operations/page.test.tsx"];
+  for(const path of source){
+    const decision=classifyPaths([path]);
+    assert.equal(decision.required,true);
+    assert.deepEqual(decision.unmapped,[]);
+    assert.deepEqual(decision.scenarios,["home"]);
+    assert.equal(summarizeReport(report([["purchasing","passed"]]),["home"]).status,
+      "failed");
+  }
 });
 
 test("backend and docs are not delayed by unrelated browser jobs", () => {
@@ -89,4 +105,12 @@ test("every selected journey needs its own actually executed case", () => {
   assert.equal(summarizeReport(report([
     ["home", "passed"], ["home", "skipped"],
   ]), ["home"]).status, "failed");
+});
+
+test("Task14B supplier UI and approval card require actual purchasing browser proof",()=>{
+ assert.deepEqual(classifyPaths(["components/operations/SupplierEvidenceManager.tsx"]).scenarios,["purchasing"]);
+ assert.deepEqual(classifyPaths(["app/[locale]/operations/suppliers/page.tsx"]).scenarios,["purchasing"]);
+ assert.deepEqual(classifyPaths(["components/home/SupervisorProposalCard.tsx"]).scenarios,
+  ["gmail","purchasing"]);
+ assert.equal(summarizeReport(report([["home","passed"]]),["purchasing"]).status,"failed");
 });

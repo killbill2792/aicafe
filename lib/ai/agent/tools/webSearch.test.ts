@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import {createWebSearch,extractWebSearchAnswer} from "../webSearch.server";
-import {ownerPublicPage} from "./webSearch";
+import {ownerPublicPage,publicPageInput} from "./webSearch";
 import {agentToolDefinitions,executeAgentTool,type AgentToolContext} from "./index";
 
 const input={asOf:"2026-10-30",timezone:"America/Chicago",locale:"en"} as AgentToolContext;
@@ -11,6 +11,23 @@ const message=(text:string,annotations:unknown[]=[])=>
 const cited={type:"url_citation",title:"Official parade route",url:"https://city.example.org/parade"};
 
 describe("exact page inspection",()=>{
+ it("does not send unsupported URL schema format to OpenAI but still validates every URL at runtime",async()=>{
+   const def=agentToolDefinitions.find(t=>t.name==="inspect_public_page");
+   expect(def).toMatchObject({name:"inspect_public_page",type:"function",strict:true,
+     parameters:{type:"object",additionalProperties:false,required:["url"],
+       properties:{url:{type:"string",maxLength:500}}}});
+   const json=JSON.stringify(def?.parameters);
+   expect(json).not.toContain('"format":"uri"');
+   expect(() => publicPageInput.parse({url:"not-a-url"})).toThrow();
+   expect(() => publicPageInput.parse({url:"https://example.org",extra:"unsafe"})).toThrow();
+   expect(() => publicPageInput.parse({url:"https://example.org/"+"a".repeat(501)})).toThrow();
+   const webSearch=vi.fn();
+   const ctx={...input,ownerText:"Please read https://supplier.example.com/catalog",webSearch};
+   await expect(executeAgentTool("inspect_public_page",{url:"not-a-url"},ctx)).rejects.toThrow();
+   await expect(executeAgentTool("inspect_public_page",{url:"http://supplier.example.com/catalog"},ctx))
+     .resolves.toMatchObject({missing:["owner_public_page_required"]});
+   expect(webSearch).not.toHaveBeenCalled();
+ });
  it("never opens model-suggested or private URLs",()=>{
   expect(ownerPublicPage("http://supplier.example.com","http://supplier.example.com")).toBeNull();
   expect(ownerPublicPage("https://127.0.0.1/admin","https://127.0.0.1/admin")).toBeNull();

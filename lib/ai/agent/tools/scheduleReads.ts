@@ -31,6 +31,11 @@ async function localWeek(requested:string|null,ctx:AgentToolContext){
  return mondayOfLocalDate(today);
 }
 type WeekData=Extract<Awaited<ReturnType<typeof getWeekSchedule>>,{ok:true}>["data"];
+/** Same projection as interactive chat; scheduled runs bind the week reader
+ * to the database-claimed café/owner instead of depending on a session cookie. */
+const readWeek=(ws:string,ctx:AgentToolContext)=>
+ ctx.investigation?ctx.investigation.weekSchedule(ws):getWeekSchedule({weekStart:ws});
+
 /** Staff and chat use this exact same projection, never a separate union. */
 const visibleSchedule=(data:Pick<WeekData,"shifts"|"calendarEntries">)=>
  projectVisibleStaffWeek(data);
@@ -55,7 +60,7 @@ export const scheduleReadTools={
   description:"Read active team, individual weekly hours and wage estimate flags. Pass week_start as YYYY-MM-DD Monday or null for this business week.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=namedWeek.parse(raw),ws=await localWeek(input.week_start,ctx);
-   const result=await getWeekSchedule({weekStart:ws});
+   const result=await readWeek(ws,ctx);
    if(!result.ok)return fail("staff_week",null,result.error);
    const all=visibleSchedule(result.data).visible;
    let selected=result.data.team;
@@ -122,7 +127,7 @@ export const scheduleReadTools={
   description:"Read dated owner schedule for a business-local Monday-to-Sunday week, including estimated wages, shifts, totals and coverage gaps. Pass null for current week.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const p=week.parse(raw),ws=await localWeek(p.week_start,ctx);
-   const result=await getWeekSchedule({weekStart:ws});
+   const result=await readWeek(ws,ctx);
    if(!result.ok)return fail("scheduled_shifts",null,result.error);
    const data=result.data;
    const projection=visibleSchedule(data);
@@ -171,7 +176,7 @@ export const scheduleReadTools={
   description:"Check understaffed time ranges against configured café open hours and required headcount. A missing open-hours setup is not zero gaps.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const p=week.parse(raw),ws=await localWeek(p.week_start,ctx);
-   const whole=await getWeekSchedule({weekStart:ws});
+   const whole=await readWeek(ws,ctx);
    if(!whole.ok)return fail("coverage_gaps",null,whole.error);
    const data=whole.data;
    const projection=visibleSchedule(data);

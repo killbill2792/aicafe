@@ -14,7 +14,9 @@ const volatile=new Set(["lastCheckedAt","last_checked_at","polledAt","polled_at"
 function canonical(value:unknown):unknown{
   if(Array.isArray(value))return value.map(canonical);
   if(!value||typeof value!=="object")return value;
-  const out:Record<string,unknown>={};
+  // External alert/task JSON may include __proto__. A null-prototype
+  // accumulator preserves the key in the hash rather than mutating the object.
+  const out:Record<string,unknown>=Object.create(null);
   for(const key of Object.keys(value).sort()){
     if(volatile.has(key))continue;
     const v=(value as Record<string,unknown>)[key];
@@ -42,26 +44,43 @@ export function rankPriority(source:PrioritySource,now:Date):PriorityDecision{
     source.dueAt!==null&&source.dueAt!==undefined&&
     Number.isFinite(Date.parse(source.dueAt))&&Date.parse(source.dueAt)<=now.getTime();
   const ownerAction=source.status==="needs_owner";
-  let priority=source.sourceType==="alert"?65:ownerAction?90:75;
+  // Severity is a class, not a small bonus: a verified critical café issue
+  // must never lose to an ordinary overdue administrative task.
+  // Within a class, age, owner action and confidence provide stable ordering.
+  // Source severity is only actionable as critical when the evidence itself is
+  // verified. An outage or incomplete provider snapshot is not a proven loss.
+  const evidence=source.evidence;
+  const record=evidence&&typeof evidence==="object"&&!Array.isArray(evidence)?
+    evidence as Record<string,unknown>:null;
+  const unverified=source.confidence==="unknown"||source.confidence==="low"||
+    record?.quality==="partial"||record?.quality==="missing"||
+    record?.quality==="stale"||record?.verified===false;
+  const severityClass=!unverified&&source.severity==="critical"?300:
+    !unverified&&source.severity==="high"?200:100;
+  // An approved supplier draft is an owner-action item, never a generic cost anomaly.
+  let priority=severityClass+(source.sourceType==="supplier_po"?30:
+    ownerAction?25:source.sourceType==="alert"?15:10);
   if(overdue)priority+=20;
-  if(source.severity==="critical")priority+=20;
-  else if(source.severity==="high")priority+=10;
   if(source.confidence==="high")priority+=5;
   const revisionHash=priorityRevision(source);
   // This hash encodes scope and source identity, unlike a text-title dedupe.
   const stableKey=digest(source.businessId+":"+source.ownerUserId+":"+
     source.sourceType+":"+source.sourceId+":"+revisionHash);
-  const reason=overdue?"Overdue item needs review":
+  const reason=source.sourceType==="supplier_po"?
+    "Supplier purchase-order draft needs your approval":
+    overdue?"Overdue item needs review":
     source.sourceType==="alert"?"Actionable café alert needs review":
     ownerAction?"Owner task needs review":"Task response needs review";
   return {source,revisionHash,priority,reason,stableKey};
 }
-export function choosePriorities(sources:readonly PrioritySource[],now:Date,limit=3):
-  PriorityDecision[]{
+export function choosePriorities(sources:readonly PrioritySource[],now:Date,limit=3,
+  options?:{includeWatching?:boolean}):PriorityDecision[]{
   const candidates=sources.filter(s=>
     (s.sourceType==="alert"&&(s.status==="new"||s.status==="seen"))||
     (s.sourceType==="operating_task"&&!alreadyNotifiedTaskKinds.has(s.kind)&&
-      (s.status==="needs_owner"||s.status==="needs_response")))
+      (s.status==="needs_owner"||s.status==="needs_response"||
+       (options?.includeWatching===true&&s.status==="watching")))||
+    (s.sourceType==="supplier_po"&&s.status==="draft"))
     .map(s=>rankPriority(s,now));
   return candidates.sort((a,b)=>b.priority-a.priority||
     a.source.createdAt.localeCompare(b.source.createdAt)||

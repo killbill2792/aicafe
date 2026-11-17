@@ -168,6 +168,8 @@ supabase_lane() {
   sql_step staff-pr155-rls.sql "Staff workspace permissions and availability audit"
   sql_step staff-pr178-availability-rls.sql "Staff all-day availability and owner isolation"
   sql_step task13a-scheduling-db-integration.sql "Task13a migrated owner scheduling, missing timecards and hourly two-café RLS"
+  sql_step task13b-staff-publication-db.sql "Task13B agentic publication: approval, two-café RLS, opt-out, provider receipts and dedupe"
+  sql_step task13b-staff-standing-mandate.sql "Task13B phone-MFA staff mandate: exact week, recipient cap, scope, revocation, receipt"
   sql_step staff-approval-atomic.sql "Staff approvals: atomic, stale CAS, rollback"
   sql_step staff-approval-scoped.sql "Staff approvals: scoped CAS, independent approvals"
   sql_step ldi-e-db-contract.sql "Events (LDI E): canonical RPC and two-café RLS"
@@ -190,6 +192,8 @@ supabase_lane() {
     SUPERVISOR_RUN_DB_URL="$supabase_url" npx vitest run lib/ai/supervisor/runs/runs.db.test.ts --reporter=verbose
   check supabase "Task 7 routines: owner isolation, due-once lease, concurrent notice settlement" env SUPERVISOR_ROUTINES_DB_SANDBOX_ONLY=1 \
     SUPERVISOR_ROUTINES_DB_URL="$supabase_url" npx vitest run lib/ai/supervisor/routines/routines.db.test.ts --reporter=verbose
+  check supabase "Task 15A multi-step investigations: owner isolation, leases, recurrence and recovery" env SUPERVISOR_INVESTIGATION_DB_SANDBOX_ONLY=1 \
+    SUPERVISOR_INVESTIGATION_DB_URL="$supabase_url" npx vitest run lib/ai/supervisor/routines/investigation.db.test.ts --reporter=verbose
 
   group "Toast"
   lane_setup supabase "Rebuild the database (supabase db reset)" supabase db reset --local --yes
@@ -210,6 +214,8 @@ supabase_lane() {
   sql_step toast-one-object-sql-integration.sql "One record per staged object"
   sql_step pos0c-ops-sql-integration.sql "POS0c current operations, deltas, reader and tenant isolation"
   check supabase "Task 14a inventory: current vs historical, replay, two-café RLS and source receipts" env TASK14A_DISPOSABLE_DB=1 node scripts/task14a-inventory-evidence-db.mjs
+  check supabase "Task 14B agentic purchasing: owner click, one PO receipt, two-café RLS, no stock or bill" env TASK14B_DISPOSABLE_DB=1 node scripts/task14b-procurement-db.mjs
+  check supabase "Task14B purchasing: approved PO, dedupe, owner RLS and receipt recovery" env TASK14B_DISPOSABLE_DB=1 node scripts/test-task14b-procurement-db.mjs
   sql_step pos0d-menu-config-sql-integration.sql "POS0d verified published menu/price and non-destructive replay"
   sql_step pos0b-staff-labor-sql-integration.sql "POS0b labor revisions, RLS and tenant isolation"
   sql_step toast-messy-import-sql-integration.sql "Messy days store one clean import"

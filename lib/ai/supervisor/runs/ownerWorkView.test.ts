@@ -31,6 +31,19 @@ describe("Task 16B persisted agentic work", () => {
     expect(view({ runs: [r], steps: [{ ...step, status: "blocked", error_code: "lease_expired" }] })[0].status).toBe("uncertain");
     expect(view({ runs: [r], steps: [{ ...step, status: "blocked", error_code: "authorization_revoked" }] })[0].status).toBe("failed");
   });
+  it("shows persisted 15A monitoring and source closure without inventing an effect", () => {
+    const inv = { episode_id: "e", phase: "collect" as const, failure_count: 0,
+      lease_token: null, lease_until: null, last_error: null, updated_at: when };
+    expect(view({ investigations: [inv] })[0].status).toBe("queued");
+    expect(view({ investigations: [{ ...inv, phase: "investigate" }] })[0].status).toBe("running");
+    expect(view({ investigations: [{ ...inv, phase: "awaiting_owner" }] })[0].detail).toMatch(/monitoring/);
+    expect(view({ investigations: [{ ...inv, failure_count: 2 }] })[0].status).toBe("retrying");
+    const done = view({ investigations: [{ ...inv, phase: "resolved" }] })[0];
+    expect(done.status).toBe("source_resolved");
+    expect(done.proof).toBeNull();
+    expect(done.detail).toMatch(/does not prove an external effect/);
+    expect(view({ investigations: [{ ...inv, phase: "blocked", last_error: "source_missing" }] })[0].status).toBe("uncertain");
+  });
   it("never treats a saved model answer as a provider receipt", () => {
     const item = view({ runs: [{ ...run, status: "completed", final_report_ref: "reply", finished_at: when }] })[0];
     expect(item.status).toBe("answer_ready");
@@ -79,6 +92,8 @@ describe("Task 16B persisted agentic work", () => {
       steps: [step, { ...step, run_id: "blocked", status: "blocked", error_code: "lease_expired" }],
       jobs: [{ ...job, owner_message_id: "different" }],
       proposals: [proposal, { ...proposal, id: "failed", status: "stale" }],
+      investigations: [{ episode_id: "e", phase: "awaiting_owner", failure_count: 0,
+        lease_token: null, lease_until: null, last_error: null, updated_at: when }],
     });
     for (const item of representative) {
       for (const field of [item.title, item.detail, item.nextStep]) {

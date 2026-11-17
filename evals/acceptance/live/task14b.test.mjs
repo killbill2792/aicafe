@@ -1,0 +1,73 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {verifyTask14bToolTrace,verifyTask14bScope,verifyTask14bSavedCard,task14bSafeTurnFailure} from "./task14b.mjs";
+
+test("Task14B real-agent trace requires a source read BEFORE owner proposal",()=>{
+ const proof=verifyTask14bToolTrace([
+   "inspect_supplier_purchase","propose_supplier_purchase_order"]);
+ assert.equal(proof.toolCalls,2);
+ for(const calls of [
+   ["propose_supplier_purchase_order"],
+   ["propose_supplier_purchase_order","inspect_supplier_purchase"],
+   ["get_supplier_purchase_orders","propose_supplier_purchase_order"],
+   ["inspect_supplier_purchase"],
+   ["inspect_supplier_purchase","invented_approval"]
+ ])assert.throws(()=>verifyTask14bToolTrace(calls),/task14b_live:required_multistep_tool_missing/);
+});
+
+test("Task14B owner correction must independently read the saved original ID",()=>{
+ assert.deepEqual(verifyTask14bToolTrace([
+  "get_supplier_purchase_orders","inspect_supplier_purchase","propose_supplier_purchase_order"
+ ],{correction:true}).required,[
+  "get_supplier_purchase_orders","inspect_supplier_purchase","propose_supplier_purchase_order"
+ ]);
+ assert.throws(()=>verifyTask14bToolTrace([
+  "inspect_supplier_purchase","propose_supplier_purchase_order"
+ ],{correction:true}),/required_multistep_tool_missing_get_supplier_purchase_orders/);
+});
+
+test("Task14B paid acceptance cannot claim another café or thread's proposal",()=>{
+ const scope={businessId:"cafe-a",ownerUserId:"owner-a",threadId:"thread-a"};
+ const data={business_id:"cafe-a",owner_user_id:"owner-a",
+  thread_id:"thread-a",capability_id:"maya.supplier_purchase_order.v1"};
+ assert.equal(verifyTask14bScope(data,scope),data);
+ for(const [key,value] of Object.entries({
+  business_id:"cafe-b",owner_user_id:"owner-b",
+  thread_id:"thread-b",capability_id:"maya.inventory_purchase.v1"
+ }))assert.throws(()=>verifyTask14bScope({...data,[key]:value},scope),
+  /task14b_live:unverified_saved_owner_scope/);
+});
+
+test("Task14B paid acceptance rejects text-only or forged proposal rows without owner card",()=>{
+ const id="88888888-8888-4888-8888-888888888888";
+ assert.equal(verifyTask14bSavedCard({
+   structured_content:[{type:"text",text:"Prepared"}, {type:"proposal_card",proposalId:id}],
+ },id),true);
+ for(const message of [
+   {structured_content:[{type:"text",text:'{"proposal_card":"'+id+'"}'}]},
+   {structured_content:[{type:"proposal_card",proposalId:"99999999-9999-4999-8999-999999999999"}]},
+   {structured_content:null},null,
+ ]){
+   assert.throws(()=>verifyTask14bSavedCard(message,id),
+     /task14b_live:model_proposal_card_not_persisted/);
+ }
+});
+
+test("Task14B real paid pilot reports only safe status codes, never prompt/provider text",()=>{
+ const reply={id:"11111111-1111-4111-8111-111111111111"};
+ assert.equal(task14bSafeTurnFailure({done:{endReason:"complete",reply}}),null);
+ assert.equal(task14bSafeTurnFailure({error:"agent_http_503",done:null}),"sse_agent_http_503");
+ assert.equal(task14bSafeTurnFailure({error:"provider_error"}),"sse_provider_error");
+ assert.equal(task14bSafeTurnFailure({error:"agent_turn_failed",diagnosticStage:"persist",
+   diagnosticEndReason:"provider_error",diagnosticModelCalls:1}),
+   "sse_agent_turn_failed_stage_persist_end_provider_error_calls_1");
+ assert.equal(task14bSafeTurnFailure({error:"agent_turn_failed",diagnosticStage:"Secret",
+   diagnosticEndReason:"private_text",diagnosticModelCalls:999}),
+   "sse_agent_turn_failed_stage_unknown_end_unknown_calls_unknown");
+ assert.equal(task14bSafeTurnFailure({done:{endReason:"tool_errors",reply}}),"end_tool_errors");
+ assert.equal(task14bSafeTurnFailure({done:{endReason:"complete",reply:{id:"bad"}}}),
+  "missing_persisted_reply");
+ assert.equal(task14bSafeTurnFailure({error:"Secret supplier note: do not log!"}),
+  "sse_unknown");
+ assert.equal(task14bSafeTurnFailure({done:null}),"missing_done_event");
+});

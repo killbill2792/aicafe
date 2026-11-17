@@ -17,7 +17,7 @@ function database() {
   const filters: Record<string, Array<[string, string, unknown]>> = {};
   const source: Record<string, unknown[]> = {
     supervisor_runs: [], supervisor_run_steps: [], ai_agent_jobs: [],
-    supervisor_proposals: [], supervisor_effect_attempts: [],
+    supervisor_proposals: [], supervisor_effect_attempts: [], supervisor_investigations: [],
   };
   const db = { from(table: string) {
     const query = {
@@ -44,7 +44,7 @@ describe("GET /work owner isolation and receipt verification", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.work).toEqual([]);
-    for (const table of ["supervisor_runs", "supervisor_proposals"]) {
+    for (const table of ["supervisor_runs", "supervisor_proposals", "supervisor_investigations"]) {
       expect(filters[table]).toEqual(expect.arrayContaining([
         ["eq", "business_id", "cafe-a"], ["eq", "owner_user_id", "owner-a"],
         ["eq", "thread_id", thread],

@@ -13,13 +13,16 @@ export type EffectAuthorizationKind="click"|"mandate"|"owner_message";
 export type EffectClaim={proposal:LoopProposal;attemptKey:string;businessDate:string;
  authorizationKind:EffectAuthorizationKind};
 export type SupervisorMandate={id:string;revision:number;business_id:string;owner_user_id:string;
- capability_id:typeof goalCapabilityId;capability_version:1;policy_hash:string;limit_kind:"count";
- limit_value:typeof goalMandatePolicy.limitValue;currency:null;period_kind:"cafe_day";expires_at:string;
+ capability_id:typeof goalCapabilityId|"olivia.staff_propose_send_schedule.v2";capability_version:1|2;
+ policy_hash:string;limit_kind:"count";
+ limit_value:number;currency:null;period_kind:"cafe_day"|"staff_week";
+ staff_week_start:string|null;expires_at:string;
  revoked_at:string|null;superseded_at:string|null;verified_at:string;created_at:string};
 export type MandateChallenge={id:string;business_id:string;owner_user_id:string;
  action:"grant"|"revise";mandate_id:string;mandate_revision:number;
- capability_id:"leo.goal.v1";capability_version:1;policy_hash:string;limit_value:typeof goalMandatePolicy.limitValue;
- period_kind:"cafe_day";mandate_expires_at:string;factor_id:string;
+ capability_id:"leo.goal.v1"|"olivia.staff_propose_send_schedule.v2";
+ capability_version:1|2;policy_hash:string;limit_value:number;staff_week_start:string|null;
+ period_kind:"cafe_day"|"staff_week";mandate_expires_at:string;factor_id:string;
  provider_challenge_id:string;expires_at:string;consumed_at:string|null;created_at:string};
 const decode=(r:ProposalRow):LoopProposal=>({id:r.id,businessId:r.business_id,
  ownerUserId:r.owner_user_id,threadId:r.thread_id,capabilityId:r.capability_id,
@@ -76,6 +79,19 @@ export class SupervisorEffectGateway{
    proposal.ownerUserId!==scope.ownerUserId||proposal.threadId!==scope.threadId||
    !["executing","committed","manual_pending"].includes(proposal.status))
    throw new Error("Effect reconciliation returned an invalid scoped proposal");
+  return proposal;
+ }
+ /** Proof-based recovery for Task14B purchase orders through the one effect gateway.
+  * This only reads the durable PO and finishes the existing attempt; never orders twice. */
+ async reconcileSupplierPurchaseOrder(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
+  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_reconcile_supplier_po",{
+   p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:scope.threadId,
+   p_proposal_id:id,p_revision:revision});
+  if(error||!data)fail(error,"Purchase order reconciliation failed");
+  const proposal=decode(data as ProposalRow);
+  if(proposal.id!==id||proposal.businessId!==scope.businessId||proposal.ownerUserId!==scope.ownerUserId||
+   proposal.threadId!==scope.threadId||!["executing","committed"].includes(proposal.status))
+   throw new Error("Purchase order reconciliation returned an invalid scoped proposal");
   return proposal;
  }
  async reconcileGmail(scope:OwnerLoopScope,id:string,revision:number):Promise<LoopProposal>{
@@ -148,6 +164,49 @@ export class SupervisorEffectGateway{
    throw new Error("Staff effect gateway result outside scope");
   return {state:result.state,proposal,attemptKey:result.attempt_key};
  }
+ /** MFA-scoped staff publication uses the SAME proposal, approval and effect
+  * attempt ledger as a click. Never grant staff-data modifications or purchase. */
+ async commitStaffMandate(scope:OwnerLoopScope,id:string,revision:number):
+  Promise<{state:"applied"|"stale";proposal:LoopProposal;attemptKey:string}>{
+  const {data,error}=await createAdminSupabaseClient().rpc(
+    "supervisor_gateway_commit_staff_mandate",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+      p_thread_id:scope.threadId,p_proposal_id:id,p_revision:revision,
+    });
+  if(error||!data)fail(error,"Verified staff standing mandate not eligible");
+  const row=data as {state:string;proposal:ProposalRow;attempt_key:string;
+    authorization_kind:string;mandate_id:string};
+  if(!["applied","stale"].includes(row.state)||!row.proposal||
+    row.authorization_kind!=="mandate"||!row.mandate_id||!row.attempt_key)
+    throw new Error("Invalid scoped staff mandate receipt");
+  const proposal=decode(row.proposal);
+  if(proposal.id!==id||proposal.businessId!==scope.businessId||
+    proposal.ownerUserId!==scope.ownerUserId||proposal.threadId!==scope.threadId||
+    proposal.status!==(row.state==="applied"?"committed":"stale"))
+    throw new Error("Staff mandate result outside owner/café scope");
+  return {state:row.state as "applied"|"stale",proposal,attemptKey:row.attempt_key};
+ }
+ /** Same Supervisor gateway, distinct SQL transaction for correction of a
+  * CANCELLED, previously sent future-week roster. Existing accepted staff
+  * delivery receipts and approval ledger are never modified or replayed. */
+ async commitStaffCorrection(scope:OwnerLoopScope,id:string,revision:number):
+  Promise<{state:"applied"|"stale";proposal:LoopProposal;attemptKey:string}>{
+  const {data,error}=await createAdminSupabaseClient().rpc(
+    "supervisor_gateway_commit_staff_correction",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+      p_thread_id:scope.threadId,p_proposal_id:id,p_revision:revision,
+    });
+  if(error||!data)fail(error,"Staff correction gateway transaction failed");
+  const result=data as {state:string;proposal:ProposalRow;attempt_key:string};
+  if((result.state!=="applied"&&result.state!=="stale")||!result.proposal||!result.attempt_key)
+    throw new Error("Invalid staff correction gateway receipt");
+  const proposal=decode(result.proposal);
+  if(proposal.id!==id||proposal.businessId!==scope.businessId||
+   proposal.ownerUserId!==scope.ownerUserId||proposal.threadId!==scope.threadId||
+   proposal.status!==(result.state==="applied"?"committed":"stale"))
+    throw new Error("Staff correction gateway result outside owner scope");
+  return {state:result.state,proposal,attemptKey:result.attempt_key};
+ }
  async createMandateChallenge(scope:Pick<OwnerLoopScope,"businessId"|"ownerUserId">,
   input:{id:string;action:"grant"|"revise";mandateId:string;mandateRevision:number;
    policyHash:string;limitValue:typeof goalMandatePolicy.limitValue;mandateExpiresAt:string;factorId:string;
@@ -167,6 +226,30 @@ export class SupervisorEffectGateway{
    throw new Error("Mandate challenge persistence returned an invalid binding");
   return row;
  }
+ /** Exactly the same MFA/approval/attempt ledger, restricted to the supplied
+  * Monday and distinct-recipient ceiling; only one staff send capability. */
+ async createStaffMandateChallenge(scope:Pick<OwnerLoopScope,"businessId"|"ownerUserId">,
+  input:{id:string;action:"grant"|"revise";mandateId:string;mandateRevision:number;
+   policyHash:string;limitValue:number;weekStart:string;mandateExpiresAt:string;factorId:string;
+   providerChallengeId:string;challengeExpiresAt:string}):Promise<MandateChallenge>{
+  const {data,error}=await createAdminSupabaseClient().rpc("supervisor_create_staff_mandate_challenge",{
+   p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_challenge_id:input.id,
+   p_action:input.action,p_mandate_id:input.mandateId,p_mandate_revision:input.mandateRevision,
+   p_policy_hash:input.policyHash,p_limit_value:input.limitValue,
+   p_week_start:input.weekStart,p_mandate_expires_at:input.mandateExpiresAt,
+   p_factor_id:input.factorId,p_provider_challenge_id:input.providerChallengeId,
+   p_challenge_expires_at:input.challengeExpiresAt,
+  });
+  if(error||!data)fail(error,"Staff mandate challenge could not be saved");
+  const row=data as MandateChallenge;
+  if(row.id!==input.id||row.business_id!==scope.businessId||
+    row.owner_user_id!==scope.ownerUserId||row.capability_id!=="olivia.staff_propose_send_schedule.v2"||
+    row.capability_version!==2||row.staff_week_start!==input.weekStart||
+    row.limit_value!==input.limitValue||row.policy_hash!==input.policyHash||
+    row.factor_id!==input.factorId||row.provider_challenge_id!==input.providerChallengeId||
+    row.consumed_at!==null)throw new Error("Invalid staff mandate challenge binding");
+  return row;
+ }
  async loadMandateChallenge(scope:Pick<OwnerLoopScope,"businessId"|"ownerUserId">,id:string):Promise<MandateChallenge>{
   const {data,error}=await createAdminSupabaseClient().from("supervisor_mandate_challenges").select("*")
    .eq("id",id).eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).maybeSingle();
@@ -183,9 +266,11 @@ export class SupervisorEffectGateway{
   if(error||!data)fail(error,"Verified mandate could not be saved");
   const row=data as SupervisorMandate;
   if(row.business_id!==scope.businessId||row.owner_user_id!==scope.ownerUserId||
-   row.id!==challenge.mandate_id||row.capability_id!==goalCapabilityId||
+   row.id!==challenge.mandate_id||row.capability_id!==challenge.capability_id||
+   row.capability_version!==challenge.capability_version||
+   row.staff_week_start!==challenge.staff_week_start||
    row.limit_value!==challenge.limit_value||row.policy_hash!==challenge.policy_hash||
-   row.period_kind!=="cafe_day"||row.revoked_at!==null||row.superseded_at!==null)
+   row.period_kind!==challenge.period_kind||row.revoked_at!==null||row.superseded_at!==null)
    throw new Error("Mandate completion returned an invalid policy");
   return row;
  }

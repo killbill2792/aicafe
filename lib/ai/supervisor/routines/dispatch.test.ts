@@ -2,29 +2,35 @@ import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
   claim:vi.fn(),finish:vi.fn(),notice:vi.fn(),
+  staff:vi.fn(async()=>({published:0,attempted:0,blocked:0})),
 }));
 vi.mock("./repository.server",()=>({
   claimRoutineOccurrence:mocks.claim,finishRoutineOccurrence:mocks.finish,
 }));
 vi.mock("./notices.server",()=>({postPriorityNotice:mocks.notice}));
+vi.mock("@/lib/scheduling/staffPublication.server",()=>({
+  followUpStaffPublicationForBusiness:mocks.staff,
+}));
 import {dispatchRoutinesForBusiness,readActionablePriorities} from "./dispatch.server";
 import {choosePriorities} from "./priority";
 function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}[];
   threads?:{id:string;owner_user_id:string}[];alerts?:Record<string,unknown>[];
-  tasks?:Record<string,unknown>[]}) {
+  tasks?:Record<string,unknown>[];proposals?:Record<string,unknown>[]}) {
   const rows:Record<string,Record<string,unknown>[]>={
     memberships:params?.owners??[{user_id:"owner"}],
     ai_threads:params?.threads??[{id:"thread",owner_user_id:"owner"}],
     supervisor_routines:params?.routines??[],
     alerts:params?.alerts??[],
     operating_tasks:params?.tasks??[],
+    supervisor_proposals:params?.proposals??[],
   };
   return {from:(table:string)=>{
     let selected=rows[table];
     const builder={
       select(){return builder},
       eq(field:string,value:unknown){
-        if(table==="operating_tasks"&&(field==="kind"||field==="owner_user_id"))
+        if((table==="operating_tasks"&&(field==="kind"||field==="owner_user_id"))||
+          (table==="supervisor_proposals"&&["business_id","owner_user_id","capability_id","status"].includes(field)))
           selected=selected.filter(row=>row[field]===value);
         return builder;
       },
@@ -45,6 +51,11 @@ function db(params?:{routines?:Record<string,unknown>[];owners?:{user_id:string}
         return builder;
       },
       or(){return builder},order(){return builder},
+      lte(field:string,value:string){
+        if(table==="supervisor_proposals")
+          selected=selected.filter(row=>typeof row[field]==="string"&&String(row[field])<=value);
+        return builder;
+      },
       async limit(){return {data:selected,error:null}},
     };
     return builder;
@@ -65,6 +76,22 @@ describe("bounded independent routine dispatch",()=>{
     expect(result.runs).toBe(0);
     expect(mocks.notice).toHaveBeenCalledTimes(1);
   });
+  it("preserves Task 13B staff publication and Task 15A durable discovery in one cron",async()=>{
+    const now=new Date("2026-11-11T16:00:00Z");
+    const source=db({alerts:[{id:"alert",kind:"missing_bill",status:"new",
+      payload:{dedupeKey:"alert"},created_at:"2026-11-10T00:00:00Z"}]});
+    const enqueue=vi.fn(async()=>1);
+    mocks.staff.mockClear();mocks.notice.mockResolvedValue("posted");
+    const result=await dispatchRoutinesForBusiness(source,
+      "cafe","America/Los_Angeles",now,enqueue);
+    expect(mocks.staff).toHaveBeenCalledOnce();
+    expect(mocks.staff).toHaveBeenCalledWith(source,"cafe","2026-11-11");
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith(source,{
+      businessId:"cafe",ownerUserId:"owner",threadId:"thread",localDate:"2026-11-11",
+    },now);
+    expect(result).toMatchObject({notices:1,investigationsQueued:1,failed:0});
+  });
   it("never starts another run after the DB rejects a duplicate claim",async()=>{
     mocks.claim.mockResolvedValue(null);
     const result=await dispatchRoutinesForBusiness(db({routines:[routine]}),
@@ -78,6 +105,7 @@ describe("bounded independent routine dispatch",()=>{
       owners:[{user_id:"owner"},{user_id:"no-thread"}],
     }),"cafe","America/Los_Angeles",new Date("2026-11-11T18:00:00Z"));
     expect(result.failed).toBe(1);
+    expect(mocks.staff).toHaveBeenCalledWith(expect.anything(),"cafe","2026-11-11");
   });
   it("excludes already-delivered commitments and generated notices, keeping independent work",async()=>{
     const decisions=await readActionablePriorities(db({tasks:[
@@ -121,6 +149,55 @@ describe("bounded independent routine dispatch",()=>{
     expect(result.notices).toBe(1);
     expect(mocks.notice).toHaveBeenCalledTimes(1);
     expect(mocks.notice.mock.calls[0][2].source.sourceId).toBe("alert-3");
+  });
+  it("proactively notifies a verified pending PO in its original owner thread, never a fresh or foreign draft",async()=>{
+    mocks.notice.mockReset().mockResolvedValue("posted");
+    const now=new Date("2026-11-14T08:00:00Z");
+    const old={id:"po-old",business_id:"cafe",owner_user_id:"owner",
+      thread_id:"original-thread",capability_id:"maya.supplier_purchase_order.v1",
+      status:"draft",revision:2,created_at:"2026-11-13T00:00:00Z"};
+    const fresh={...old,id:"po-fresh",created_at:"2026-11-14T07:30:00Z"};
+    const foreign={...old,id:"po-foreign",owner_user_id:"other"};
+    const rows=db({proposals:[old,fresh,foreign]});
+    const decisions=await readActionablePriorities(rows,{
+      businessId:"cafe",ownerUserId:"owner",threadId:"latest-thread",localDate:"2026-11-14"},now);
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].source).toMatchObject({
+      sourceType:"supplier_po",sourceId:"po-old",sourceThreadId:"original-thread",status:"draft"
+    });
+    expect(decisions[0].reason).toBe("Supplier purchase-order draft needs your approval");
+    const outcome=await dispatchRoutinesForBusiness(rows,"cafe","America/Los_Angeles",now);
+    expect(outcome.notices).toBe(1);
+    expect(mocks.notice).toHaveBeenCalledWith(expect.anything(),
+      expect.objectContaining({threadId:"original-thread"}),
+      expect.objectContaining({source:expect.objectContaining({sourceType:"supplier_po"})}),now);
+  });
+  it("Task14B drafts remain actionable notices but cannot crowd out Task15A investigations",async()=>{
+    const now=new Date("2026-11-16T14:00:00Z");
+    const proposals=Array.from({length:90},(_,i)=>({
+      id:"saved-po-"+i,business_id:"cafe",owner_user_id:"owner",
+      thread_id:"original-po-thread",capability_id:"maya.supplier_purchase_order.v1",
+      status:"draft",revision:1,created_at:"2026-11-13T00:00:00Z",
+    }));
+    const src=db({proposals,alerts:[{
+      id:"urgent-alert",kind:"voids",status:"new",payload:{severity:"high"},
+      created_at:"2026-11-16T12:00:00Z",
+    }],tasks:[{
+      id:"watching-task",kind:"staff_coverage",status:"watching",
+      owner_user_id:"owner",created_at:"2026-11-16T11:00:00Z",
+      confidence:"high",evidence:[{source:"schedule"}],
+    }]});
+    const scope={businessId:"cafe",ownerUserId:"owner",
+      threadId:"owner-thread",localDate:"2026-11-16"};
+    const notices=await readActionablePriorities(src,scope,now);
+    expect(notices.some(x=>x.source.sourceType==="supplier_po")).toBe(true);
+    const investigations=await readActionablePriorities(src,scope,now,
+      {includeNotified:true,limit:2});
+    expect(investigations.map(x=>x.source.sourceType)).toEqual([
+      "alert","operating_task",
+    ]);
+    expect(investigations.map(x=>x.source.sourceId)).toContain("urgent-alert");
+    expect(investigations.map(x=>x.source.sourceId)).toContain("watching-task");
   });
   it("does not mix private tasks across owners",async()=>{
     const decisions=await readActionablePriorities(db({tasks:[

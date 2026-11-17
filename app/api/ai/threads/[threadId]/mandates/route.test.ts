@@ -1,7 +1,7 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 const f=vi.hoisted(()=>({businessId:"11111111-1111-4111-8111-111111111111",
  ownerUserId:"22222222-2222-4222-8222-222222222222",threadId:"33333333-3333-4333-8333-333333333333",
- denied:false,challengeCalls:0,verifyCalls:0,revokeCalls:0,readCalls:0}));
+ denied:false,challengeCalls:0,staffChallengeCalls:0,verifyCalls:0,revokeCalls:0,readCalls:0}));
 vi.mock("@/lib/ai/conversations/auth.server",()=>({
  ConversationApiError:class extends Error{constructor(public status:number,public code:string){super(code);}},
  authenticatedConversationContext:async()=>({scope:{businessId:f.businessId,ownerUserId:f.ownerUserId},
@@ -11,18 +11,19 @@ vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:async()=>({auth
 vi.mock("@/lib/ai/supervisor/loop/mandates.server",()=>({
  readMandates:vi.fn(async()=>{f.readCalls++;return [{id:"mandate-id",limit_value:5}];}),
  createMandateChallenge:vi.fn(async(_scope:unknown,_client:unknown,input:unknown)=>{f.challengeCalls++;return {challengeId:"challenge-id",...input as object};}),
+ createStaffScheduleMandateChallenge:vi.fn(async(_scope:unknown,_client:unknown,input:unknown)=>{f.staffChallengeCalls++;return {challengeId:"staff-challenge",...input as object};}),
  verifyMandateChallenge:vi.fn(async(_scope:unknown,_client:unknown,input:unknown)=>{f.verifyCalls++;return {id:"mandate-id",verified:true};}),
  revokeMandate:vi.fn(async()=>{f.revokeCalls++;return {id:"mandate-id",revoked_at:"2026-11-11T00:00:00Z"};}),
 }));
 import {GET,POST} from "./route";
-import {createMandateChallenge,revokeMandate,verifyMandateChallenge} from "@/lib/ai/supervisor/loop/mandates.server";
+import {createMandateChallenge,createStaffScheduleMandateChallenge,revokeMandate,verifyMandateChallenge} from "@/lib/ai/supervisor/loop/mandates.server";
 const url="http://localhost:3000/api/ai/threads/"+f.threadId+"/mandates";
 const params={params:Promise.resolve({threadId:f.threadId})};
 function post(body:Record<string,unknown>,origin=true){
  return POST(new Request(url,{method:"POST",headers:{"content-type":"application/json",
   ...(origin?{origin:"http://localhost:3000"}:{})},body:JSON.stringify(body)}),params);
 }
-beforeEach(()=>{f.denied=false;f.challengeCalls=0;f.verifyCalls=0;f.revokeCalls=0;f.readCalls=0;
+beforeEach(()=>{f.denied=false;f.challengeCalls=0;f.staffChallengeCalls=0;f.verifyCalls=0;f.revokeCalls=0;f.readCalls=0;
  vi.clearAllMocks();});
 describe("owner-scoped mandate route",()=>{
  it("reads only the authenticated thread owner's café mandates",async()=>{
@@ -50,6 +51,26 @@ describe("owner-scoped mandate route",()=>{
   expect(await response.json()).toMatchObject({challenge:{challengeId:"challenge-id",limitValue:5}});
   expect(vi.mocked(createMandateChallenge)).toHaveBeenCalledWith(
    {businessId:f.businessId,ownerUserId:f.ownerUserId},expect.anything(),expect.objectContaining({limitValue:5}));
+ });
+ it("requires same-origin and authenticated owner to grant a bounded week-specific staff mandate",async()=>{
+  const input={action:"staff_challenge",factorId:"55555555-5555-4555-8555-555555555555",
+    limitValue:2,weekStart:"2026-11-23",expiresAt:"2026-11-28T12:00:00Z"};
+  expect((await post(input,false)).status).toBe(403);
+  expect(f.staffChallengeCalls).toBe(0);
+  expect((await post({...input,limitValue:31})).status).toBe(422);
+  expect(f.staffChallengeCalls).toBe(0);
+  expect((await post({...input,weekStart:"not-a-date"})).status).toBe(422);
+  expect(f.staffChallengeCalls).toBe(0);
+  const res=await post(input);
+  expect(res.status).toBe(200);
+  expect(await res.json()).toMatchObject({challenge:{challengeId:"staff-challenge",
+    weekStart:"2026-11-23",limitValue:2}});
+  expect(vi.mocked(createStaffScheduleMandateChallenge)).toHaveBeenCalledWith(
+    {businessId:f.businessId,ownerUserId:f.ownerUserId},expect.anything(),
+    expect.objectContaining({weekStart:"2026-11-23",limitValue:2}));
+  f.denied=true;
+  expect((await post(input)).status).not.toBe(200);
+  expect(f.staffChallengeCalls).toBe(1);
  });
  it("forwards a code only to the server MFA verifier",async()=>{
   const response=await post({action:"verify",challengeId:"44444444-4444-4444-8444-444444444444",code:"123456"});

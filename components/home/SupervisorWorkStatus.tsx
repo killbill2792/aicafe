@@ -5,7 +5,7 @@ import en from "@/messages/en.json";
 
 const statusCopy: Record<OwnerWorkStatus, string> = en.SupervisorWork.status;
 const statusIcon = (status: OwnerWorkStatus) => {
-  if (status === "verified_complete") return <CheckCircle2 size={17} aria-hidden="true" className="text-good" />;
+  if (status === "verified_complete" || status === "source_resolved") return <CheckCircle2 size={17} aria-hidden="true" className="text-good" />;
   if (status === "uncertain" || status === "failed") return <ShieldAlert size={17} aria-hidden="true" className="text-ink-muted" />;
   if (status === "approval_required") return <AlertTriangle size={17} aria-hidden="true" className="text-ink-muted" />;
   if (status === "queued") return <Clock3 size={17} aria-hidden="true" className="text-ink-muted" />;
@@ -17,8 +17,8 @@ const statusIcon = (status: OwnerWorkStatus) => {
 export default function SupervisorWorkStatus({ items, unavailable }: {
   items: OwnerWorkItem[]; unavailable: boolean;
 }) {
-  const active = items.filter(item => !["answer_ready", "verified_complete", "cancelled"].includes(item.status));
-  const recent = items.filter(item => ["answer_ready", "verified_complete", "cancelled"].includes(item.status)).slice(0, 2);
+  const active = items.filter(item => !["answer_ready", "verified_complete", "source_resolved", "cancelled"].includes(item.status));
+  const recent = items.filter(item => ["answer_ready", "verified_complete", "source_resolved", "cancelled"].includes(item.status)).slice(0, 2);
   const display = [...active.slice(0, 5), ...recent].slice(0, 6);
   if (!display.length && !unavailable) return null;
   return <section aria-label={en.SupervisorWork.heading}

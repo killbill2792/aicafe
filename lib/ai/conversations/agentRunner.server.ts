@@ -13,7 +13,7 @@ import {getWeekSchedule} from "@/lib/actions/schedule";
 import {proposalRequestKey} from "@/lib/ai/supervisor/loop/requestKeys";
 import { historyContent } from "@/lib/ai/agent/history";
 import {allocateReceiptIndexes,purchaseBatchKeys,receiptEvidenceGroupId,ambiguousEarlierReceiptIngredient} from "@/lib/ai/supervisor/loop/receiptAllocation";
-import {proposeLoop,commitLoop} from "@/lib/ai/supervisor/loop/engine";
+import {proposeLoop,commitLoop,simulateLoop,effectHash} from "@/lib/ai/supervisor/loop/engine";
 import {authorizesInventoryWrite,ownerTextSupportsTypedLine,ownerTextSupportsTypedFinancials,receivedPurchaseDocument} from "@/lib/ai/agent/tools/purchaseIntent";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
@@ -21,7 +21,12 @@ import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperim
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
+import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import {readSupplierPurchaseOrders} from "@/lib/data/supplierPurchasing.server";
+import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
+import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.server";
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
 import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
@@ -128,6 +133,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
   const startedAt = Date.now();
   const auditSteps: AgentAuditStep[] = [];
   let completedTurn: AgentTurn | undefined;
+  // Only fixed stage labels are permitted in the disposable live-pilot diagnostic.
+  let failureStage: "setup" | "model" | "persist" | "finish" = "setup";
   let steps: Promise<void> = Promise.resolve();
   try {
     const external=p.externalClient!==undefined;
@@ -202,6 +209,97 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         }),
         list:async()=>listOwnerRoutines({scope,threadId:id,client:await getDb()}),
         change:async input=>changeOwnerRoutine(input,{scope,threadId:id,client:await getDb()}),
+      },
+      purchasing:{
+        list:async()=>{
+          const {client}=await simulationOwnerReader(proposalScope);
+          // Independently read editable drafts and interrupted approvals; a long
+          // draft history cannot mask a pending or uncertain effect.
+          const ownerScope={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
+          const [orders,draftRows,unresolvedRows]=await Promise.all([
+            readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId),
+            readOwnerProposals(client,ownerScope,
+              {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
+               statuses:["draft"],limit:21}),
+            readOwnerProposals(client,ownerScope,
+              {threadId:id,capabilityId:supplierPurchaseOrderCapabilityId,
+               statuses:["approved","executing"],limit:21}),
+          ]);
+          const identity=(row:(typeof draftRows)[number])=>{
+            const effect=supplierPurchaseOrderEffectSchema.parse(row.canonical_effect_payload);
+            return {id:row.id,revision:row.revision,supplierName:effect.supplierName,
+              itemNames:effect.lines.map(line=>line.itemName),
+              subtotalCents:effect.subtotalCents,currency:effect.currency};
+          };
+          // A proposal in approved/executing is NOT an editable draft, and
+          // no missing PO receipt authorizes a new order or a blind effect retry.
+          const drafts=draftRows.slice(0,20).map(identity);
+          const gateway=new SupervisorEffectGateway();
+          const unresolvedApprovals=await Promise.all(unresolvedRows.slice(0,20).map(async row=>{
+            // Reuse the canonical effect ledger reader: it reauthorizes this
+            // exact café/owner/thread before returning any effect attempt.
+            const attempt=await gateway.readAttempt(proposalScope,row.id);
+            return {...identity(row),status:row.status as "approved"|"executing",
+              attemptState:attempt?.state??null,
+              recovery:row.status==="approved"&&!attempt
+                ?"owner_retry_or_cancel" as const:"receipt_only" as const};
+          }));
+          return {...orders,drafts,draftsTruncated:draftRows.length>20,
+            unresolvedApprovals,unresolvedApprovalsTruncated:unresolvedRows.length>20};
+        },
+        inspect:input=>investigateSupplierPurchase(proposalScope,input),
+        propose:async input=>{
+          // ONLY an explicitly bound proposal ID can authorize a replacement.
+          // Keywords in owner text must NEVER cancel an unrelated PO approval.
+          const {replaceProposalId,...purchaseInput}=input;
+          const previous=replaceProposalId?(await readOwnerProposals(await getDb(),
+            {businessId:scope.businessId,ownerUserId:scope.ownerUserId},
+            {threadId:id,id:replaceProposalId,
+             capabilityId:supplierPurchaseOrderCapabilityId,limit:1}))[0]:undefined;
+          if(replaceProposalId&&(!previous||
+              !["draft","rejected"].includes(previous.status)))
+            throw new ToolError("validation",
+              "The selected purchase-order draft is not available for correction. Read the saved draft list and choose the exact active draft, or create a separate new order.");
+          const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,supplierPurchase:input}));
+          // A correction uses ONE PostgreSQL transaction. Retrying a rejected
+          // old ID is allowed ONLY if its original request key matches an
+          // already verified replacement; the DB enforces this replay rule.
+          let draft:{id:string;revision:number;status:string;canonicalEffectPayload:unknown};
+          if(previous){
+            const simulation=await simulateLoop(proposalScope,supervisorLoopRegistry,
+              supplierPurchaseOrderCapabilityId,purchaseInput);
+            const validated=supervisorLoopRegistry.get(supplierPurchaseOrderCapabilityId)
+              .parseEffect(simulation.effect);
+            const {data,error}=await createAdminSupabaseClient().rpc(
+              "supervisor_replace_supplier_draft",{
+               p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+               p_thread_id:id,p_previous_id:previous.id,p_previous_revision:previous.revision,
+               p_request_key:key,p_effect:validated,p_effect_hash:effectHash(validated),
+               p_baseline:simulation.baseline,p_monitor_spec:simulation.monitorSpec
+              });
+            const row=(data as {proposal?:{
+              id:string;business_id:string;owner_user_id:string;thread_id:string;
+              status:string;revision:number;canonical_effect_payload:unknown
+            }}|null)?.proposal;
+            if(error||!row||row.business_id!==scope.businessId||
+              row.owner_user_id!==scope.ownerUserId||row.thread_id!==id||
+              row.status!=="draft")
+              throw new ToolError("validation",
+                "Purchase-order correction was not saved. The original approval remains unchanged unless an atomic replacement is verified.");
+            draft={id:row.id,revision:row.revision,status:row.status,
+              canonicalEffectPayload:row.canonical_effect_payload};
+          }else{
+            // Null replacement ID means a NEW purchase request even if other
+            // unrelated drafts exist and the owner says 'increase production'.
+            draft=await proposeLoop(proposalScope,supervisorLoopRegistry,
+              new SupabaseLoopRepository(),supplierPurchaseOrderCapabilityId,purchaseInput,key);
+          }
+          if(draft.status!=="draft")throw new ToolError("validation","Purchase-order draft is no longer active.");
+          const effect=draft.canonicalEffectPayload as SupplierPurchaseOrderEffect;
+          return {proposalId:draft.id,revision:draft.revision,
+            supplierName:effect.supplierName,subtotalCents:effect.subtotalCents,
+            currency:effect.currency};
+        }
       },
       gmail:{
         labels:()=>gmailListLabels(scope),
@@ -407,6 +505,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ?await recordedWhatsAppImageIds(scope,id,owner.id):null;
     const selected=await readOwnerAttachments(scope,id,recordedIds??p.attachmentIds??[],p.externalClient);
     selectedContentSha256=selected.contentSha256;
+    failureStage = "model";
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
        history, context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
@@ -434,6 +533,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         onFollowUp: (count: number) => emit("followup", { count }),
       } : {}) });
     completedTurn = result;
+    failureStage = "persist";
     let reply: Awaited<ReturnType<typeof persistAgentReply>>;
     try {
       if (!result.text.trim()) throw new AgentEmptyReplyError();
@@ -451,6 +551,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         ...(style ? { sentences: style.sentences, styleTooLong: style.tooLong, styleFiller: style.filler } : {})});
       logged=true;
     }
+    failureStage = "finish";
     await steps;
     scheduleTurnAudit({ scope, owner, startedAt, endedAt: Date.now(), replyId: reply.id,
       answer: result.text, turn: result, steps: auditSteps,
@@ -469,7 +570,17 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     scheduleTurnAudit({ scope, owner, startedAt, endedAt: Date.now(), turn: completedTurn,
       answer: completedTurn?.text, steps: auditSteps,
       status: completedTurn?.endReason === "timeout" ? "timeout" : "failed", error: code });
-    emit("error", { code, ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),
+    // The isolated paid pilot needs to distinguish a provider-empty turn from
+    // authentication/setup and persistence failures. No raw error, model text,
+    // supplier facts, SQL or credentials leave this boundary.
+    const localDiagnostic = process.env.AI_CAFE_LIVE_ACCEPTANCE === "OWNER_APPROVED_LOCAL_ONLY" &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL === "http://127.0.0.1:54321"
+      ? { diagnosticStage: failureStage,
+          ...(completedTurn ? { diagnosticEndReason: completedTurn.endReason,
+            diagnosticModelCalls: completedTurn.usage.modelCalls } : {}) }
+      : {};
+    emit("error", { code, ...localDiagnostic,
+      ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),
       ...(job ? { jobId: job.id } : {}) });
     return { errorCode: code };
   } finally { await steps.catch(() => undefined); }

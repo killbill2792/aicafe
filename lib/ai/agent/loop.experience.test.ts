@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { agentInstructions, agentPromptCacheKey, runAgentTurn, type AgentProvider, type OwnerFollowUp } from "./loop.server";
+import { agentInstructions, agentPromptCacheKey, runAgentTurn, task14bInlineContinuation, type AgentProvider, type OwnerFollowUp } from "./loop.server";
 import { STYLE_RULES } from "./style";
 import { memoryToolDefinition } from "./tools/memory";
+import { routineToolDefinition } from "./tools/routines";
 import type { AgentToolContext } from "./tools";
 
 const context: AgentToolContext = {
@@ -34,13 +35,181 @@ function inbox(batches: OwnerFollowUp[][]) {
   return { asked, take: async (max: number) => { asked.push(max); return (batches.shift() ?? []).slice(0, max); } };
 }
 
+describe("Task14B trusted broker request-shape preflight (zero provider cost)",()=>{
+  it("replays original-order encrypted reasoning with function call and tool result, without narrowing tools",async()=>{
+    const {requests,provider}=recording([
+      [{type:"response.output_item.done",item:{type:"reasoning",
+        id:"rs_local_issued",status:"completed",summary:[],encrypted_content:"U".repeat(512)}},
+       call("get_supplier_purchase_orders","{}","call_purchase_1"),completed],
+      [text("The saved purchasing history is empty."),completed]
+    ]);
+    const ctx={...context,purchasing:{
+      list:async()=>({orders:[],truncated:false,drafts:[],draftsTruncated:false,
+        unresolvedApprovals:[],unresolvedApprovalsTruncated:false}),
+      inspect:vi.fn(),propose:vi.fn(),
+    }} as AgentToolContext;
+    vi.stubEnv("AI_CAFE_LIVE_ACCEPTANCE","OWNER_APPROVED_LOCAL_ONLY");
+    vi.stubEnv("APP_URL","http://127.0.0.1:3000");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL","http://127.0.0.1:54321");
+    // Exact Docker environment: candidate gets a proxy token but NEVER host ledger.
+    vi.stubEnv("AICAFE_TASK14B_BUDGET_LEDGER","");
+    vi.stubEnv("AICAFE_14B_BROKER_TOKEN","z".repeat(64));
+    try{
+      const result=await runAgentTurn({ownerText:"Read my saved supplier purchase orders.",
+        context:ctx,provider});
+      expect(result.endReason).toBe("complete");
+      expect(result.tools).toContain("get_supplier_purchase_orders");
+    }finally{vi.unstubAllEnvs();}
+    expect(requests).toHaveLength(2);
+    const next=requests[1].input as Array<Record<string,unknown>>;
+    expect(requests[0].store).toBe(false);
+    expect(requests[1].store).toBe(false);
+    const history=next.filter(x=>["reasoning","function_call","function_call_output"].includes(String(x.type)));
+    expect(history.map(x=>x.type)).toEqual(["reasoning","function_call","function_call_output"]);
+    expect(history[0]).toEqual({type:"reasoning",id:"rs_local_issued",
+      status:"completed",summary:[],encrypted_content:"U".repeat(512)});
+    expect(next).toContainEqual({type:"function_call",name:"get_supplier_purchase_orders",
+      arguments:"{}",call_id:"call_purchase_1"});
+    expect(next.some(x=>x.type==="function_call_output"&&x.call_id==="call_purchase_1")).toBe(true);
+    expect(JSON.stringify(requests[1])).toContain("rs_local_issued");
+    expect(JSON.stringify(requests[1])).not.toContain("fc_opaque_remote");
+    expect(Buffer.byteLength(JSON.stringify(requests[1]),"utf8")).toBeLessThanOrEqual(120_000);
+    const names=(requests[1].tools as Array<{name:string}>).map(x=>x.name);
+    expect(names).toContain("get_supplier_purchase_orders");
+    expect(names).toContain("inspect_supplier_purchase");
+    expect(names).toContain("propose_supplier_purchase_order");
+  });
+  it("does not enable stateless pilot mode without the isolated host broker token",async()=>{
+    const {requests,provider}=recording([[text("No supplier change."),completed]]);
+    vi.stubEnv("AI_CAFE_LIVE_ACCEPTANCE","OWNER_APPROVED_LOCAL_ONLY");
+    vi.stubEnv("APP_URL","http://127.0.0.1:3000");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL","http://127.0.0.1:54321");
+    vi.stubEnv("AICAFE_TASK14B_BUDGET_LEDGER","/tmp/misleading-host-only-ledger");
+    vi.stubEnv("AICAFE_14B_BROKER_TOKEN","");
+    try{
+      const result=await runAgentTurn({ownerText:"Tell me about ordering milk.",
+        context,provider});
+      expect(result.endReason).toBe("complete");
+    }finally{vi.unstubAllEnvs();}
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).not.toHaveProperty("store");
+  });
+  it("keeps self-contained encrypted reasoning, call IDs and strips other opaque IDs",()=>{
+    expect(task14bInlineContinuation([
+      {type:"reasoning",id:"rs_local_issued",status:"completed",summary:[],encrypted_content:"U".repeat(512)},
+      {type:"function_call",id:"fc_opaque",status:"completed",
+        name:"inspect_supplier_purchase",call_id:"call_2",arguments:'{"items":[]}'},
+      {type:"message",id:"msg_opaque",role:"assistant",content:[
+        {type:"output_text",text:"A source-backed result.",annotations:[{url:"https://secret.test"}]}
+      ]}
+    ])).toEqual([
+      {type:"reasoning",id:"rs_local_issued",status:"completed",
+        summary:[],encrypted_content:"U".repeat(512)},
+      {type:"function_call",name:"inspect_supplier_purchase",call_id:"call_2",arguments:'{"items":[]}'},
+      {type:"message",role:"assistant",content:[
+        {type:"output_text",text:"A source-backed result.",annotations:[]}
+      ]}
+    ]);
+    expect(()=>task14bInlineContinuation([{type:"function_call",name:"inspect_supplier_purchase",
+      call_id:"bad call id",arguments:"{}"}])).toThrow("task14b_invalid_inline_function_call");
+    expect(()=>task14bInlineContinuation([{type:"reasoning",id:"rs_untrusted",
+      summary:[]}])).toThrow("task14b_invalid_inline_reasoning");
+    expect(()=>task14bInlineContinuation([{type:"reasoning",id:"rs_untrusted",
+      summary:[],encrypted_content:"x".repeat(48_001)}])).toThrow("task14b_invalid_inline_reasoning");
+  });
+
+  it("the complete unfiltered café Supervisor tool contract fits the tested 120KB bound",async()=>{
+    const {requests,provider}=recording([[text("Investigating."),completed]]);
+    await runAgentTurn({ownerText:"Investigate real supplier quotes for milk and prepare an owner-approval draft.",
+      context,provider});
+    expect(requests).toHaveLength(1);
+    expect((requests[0].tools as Array<{name:string}>).map(t=>t.name))
+      .toContain("inspect_supplier_purchase");
+    expect((requests[0].tools as Array<{name:string}>).map(t=>t.name))
+      .toContain("propose_supplier_purchase_order");
+    // The trusted host broker blocks oversized requests BEFORE any paid call.
+    // This is the full production tool list, not a narrowed test-only shortcut.
+    const byteCount=Buffer.byteLength(JSON.stringify(requests[0]),"utf8");
+    expect(byteCount).toBeLessThanOrEqual(120_000);
+  });
+  it("validates every function schema in the REAL authenticated request including memory/routine",async()=>{
+    const {requests,provider}=recording([[text("Investigating."),completed]]);
+    await runAgentTurn({ownerText:"Investigate current supplier quotes for milk and save an inert owner order draft.",
+      context,provider,extraTools:[routineToolDefinition,memoryToolDefinition]});
+    expect(requests).toHaveLength(1);
+    const tools=requests[0].tools as Array<{type:string;name:string;strict:boolean;
+      parameters:Record<string,unknown>}>;
+    expect(tools.map(t=>t.name)).toContain("manage_routine");
+    expect(tools.map(t=>t.name)).toContain("remember_cafe_fact");
+    expect(tools.length).toBeLessThanOrEqual(128);
+    expect(new Set(tools.map(t=>t.name)).size).toBe(tools.length);
+    const schemaObject=(value:unknown):value is Record<string,unknown> =>
+      value!==null&&typeof value==="object"&&!Array.isArray(value);
+    const assertStrict=(schema:unknown,path:string):void=>{
+      if(Array.isArray(schema)){schema.forEach((v,i)=>assertStrict(v,path+"["+i+"]"));return;}
+      if(!schemaObject(schema))return;
+      // A single unsupported "uri" format caused the REAL v3 paid Supervisor
+      // turn to fail (provider HTTP400, tools[56] inspect_public_page).
+      // Check the complete emitted function registry, including extra tools.
+      if(Object.hasOwn(schema,"format")){
+        const allowed=new Set(["date-time","time","date","duration",
+          "email","hostname","ipv4","ipv6","uuid"]);
+        expect(allowed.has(String(schema.format)),path+": unsupported JSON format "+String(schema.format)).toBe(true);
+      }
+      const props=schemaObject(schema.properties)?schema.properties:{};
+      if(schema.type==="object"||Object.hasOwn(schema,"properties")){
+        expect(schema.additionalProperties,path+": additionalProperties must be false").toBe(false);
+        const required=schema.required;
+        expect(Array.isArray(required),path+": required list missing").toBe(true);
+        expect([...(required as string[])].sort(),path+": required must match every property")
+          .toEqual(Object.keys(props).sort());
+      }
+      for(const [key,entry] of Object.entries(schema))
+        if(key!=="description"&&key!=="examples")assertStrict(entry,path+"."+key);
+    };
+    for(const tool of tools){
+      expect(tool.type,tool.name).toBe("function");
+      expect(tool.strict,tool.name).toBe(true);
+      expect(tool.name.length,tool.name).toBeLessThanOrEqual(64);
+      // OpenAI's strict function contract requires an object at the root;
+      // valid nested anyOf alternatives must each meet the same object rules.
+      expect(tool.parameters.type,tool.name+": root parameter schema").toBe("object");
+      expect(Object.hasOwn(tool.parameters,"anyOf"),tool.name+": root anyOf is forbidden").toBe(false);
+      let propertyCount=0, maxObjectDepth=0;
+      const inspect=(node:unknown,depth:number):void=>{
+        if(Array.isArray(node)){node.forEach(entry=>inspect(entry,depth));return;}
+        if(!schemaObject(node))return;
+        for(const forbidden of ["allOf","not","dependentRequired","dependentSchemas","if","then","else"])
+          expect(Object.hasOwn(node,forbidden),tool.name+": unsupported "+forbidden).toBe(false);
+        const properties=schemaObject(node.properties)?node.properties:{};
+        if(node.type==="object"){
+          maxObjectDepth=Math.max(maxObjectDepth,depth);
+          propertyCount+=Object.keys(properties).length;
+        }
+        for(const [key,value] of Object.entries(node))
+          if(key==="properties"){
+            for(const entry of Object.values(properties))inspect(entry,depth+1);
+          }else if(key!=="description"&&key!=="examples")inspect(value,depth);
+      };
+      inspect(tool.parameters,1);
+      expect(propertyCount,tool.name+": max schema properties").toBeLessThanOrEqual(5000);
+      expect(maxObjectDepth,tool.name+": max object nesting").toBeLessThanOrEqual(10);
+      assertStrict(tool.parameters,tool.name+".parameters");
+    }
+    expect(Buffer.byteLength(JSON.stringify(requests[0]),"utf8")).toBeLessThanOrEqual(120_000);
+  });
+});
+
 describe("answer style ()", () => {
   it("adds the style rules with a new cache key when on", async () => {
     const { requests, provider } = recording([[text("Hi."), completed]]);
     await runAgentTurn({ ownerText: "Hi", context, provider });
-    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v6");
+    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v9-stale-po-recovery");
     expect(String(requests[0].instructions)).toContain(STYLE_RULES);
-    expect(agentPromptCacheKey()).toBe("cafe-agent-v6");
+    expect(String(requests[0].instructions)).toContain("replaceProposalId=null");
+    expect(String(requests[0].instructions)).toContain("NEVER infer replacement authority");
+    expect(String(requests[0].instructions)).toContain("A genuinely uncertain result requires receipt-only reconciliation");
+    expect(agentPromptCacheKey()).toBe("cafe-agent-v9-stale-po-recovery");
   });
 });
 

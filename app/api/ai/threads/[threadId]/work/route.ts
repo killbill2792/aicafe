@@ -3,7 +3,7 @@ import { threadIdInput } from "@/lib/ai/conversations/contracts";
 import { conversationError, conversationJson, parseInput } from "@/lib/ai/conversations/http.server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
-  projectOwnerWork, type RunRow, type StepRow, type ProposalRow, type AttemptRow, type JobRow,
+  projectOwnerWork, type RunRow, type StepRow, type ProposalRow, type AttemptRow, type JobRow, type InvestigationRow,
 } from "@/lib/ai/supervisor/runs/ownerWorkView";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ export async function GET(_request: Request, context: RouteContext) {
     const { scope, service } = await authenticatedConversationContext();
     await service.getThread(id); // 404 for a different owner's/café's thread
     const client = await createServerSupabaseClient();
-    const [runs, jobs, proposals] = await Promise.all([
+    const [runs, jobs, proposals, investigations] = await Promise.all([
       client.from("supervisor_runs")
         .select("id,request_key,status,final_report_ref,updated_at,finished_at")
         .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
@@ -35,8 +35,12 @@ export async function GET(_request: Request, context: RouteContext) {
         .select("id,status,capability_id,effect_hash,updated_at")
         .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
         .eq("thread_id", id).order("updated_at", { ascending: false }).limit(20),
+      client.from("supervisor_investigations")
+        .select("episode_id,phase,failure_count,lease_token,lease_until,last_error,updated_at")
+        .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
+        .eq("thread_id", id).order("updated_at", { ascending: false }).limit(12),
     ]);
-    if (runs.error || jobs.error || proposals.error) throw new Error("owner_work_read_failed");
+    if (runs.error || jobs.error || proposals.error || investigations.error) throw new Error("owner_work_read_failed");
     const runIds = (runs.data ?? []).map(row => row.id);
     const proposalIds = (proposals.data ?? []).map(row => row.id);
     // No empty IN clause, unscoped scan, admin bypass or cross-thread join.
@@ -57,6 +61,7 @@ export async function GET(_request: Request, context: RouteContext) {
       jobs: (jobs.data ?? []) as JobRow[],
       proposals: (proposals.data ?? []) as ProposalRow[],
       attempts: (attempts.data ?? []) as AttemptRow[],
+      investigations: (investigations.data ?? []) as InvestigationRow[],
     }) });
   } catch (error) {
     return conversationError(error);

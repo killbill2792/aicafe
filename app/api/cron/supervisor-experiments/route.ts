@@ -10,6 +10,7 @@ import {priceCapabilityIds,priceProposalCutoverMode,runVerifiedToastPriceTick,re
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {postGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
 import {goalEffectSchema,checkinDue} from "@/lib/calc/goals/goalSpec";
+import {reconcilePendingSupplierPurchaseOrders} from "@/lib/ai/supervisor/loop/purchaseOrdersReconcile.server";
 const isPendingPriceCapability=(id:string)=>
  (priceCapabilityIds as readonly string[]).includes(id);
 const sameWeekday=(a:string,b:string)=>new Date(a+"T12:00:00Z").getUTCDay()===new Date(b+"T12:00:00Z").getUTCDay();
@@ -32,6 +33,12 @@ export async function GET(request:Request){
  if(!secret||request.headers.get("authorization")!=="Bearer "+secret)
    return respond(401,{error:"unauthorized"});
  const db=createAdminSupabaseClient(),repo=new SupabaseLoopRepository();
+ // One existing authenticated worker, not an independent PO scheduler.
+ // Read-only postcondition recovery never invokes an external order or commit.
+ let poRecovery={checked:0,verified:0,uncertain:0,failed:0};
+ let poRecoveryUnavailable=false;
+ try{poRecovery=await reconcilePendingSupplierPurchaseOrders(db);}
+ catch{poRecoveryUnavailable=true;}
  const {data,error}=await db.from("supervisor_proposals").select("*")
    .in("status",["manual_confirmed","committed"]).not("monitoring_start_date","is",null)
    // Events are handled by the Events cron, not by this generic monitor.
@@ -150,5 +157,8 @@ export async function GET(request:Request){
    if(rotated.error)failed++;
   }
  }
- return respond(200,{checked:due.length,sampled,reported,failed});
+ return respond(poRecoveryUnavailable||poRecovery.failed?503:200,{
+  checked:due.length,sampled,reported,failed,
+  supplierPurchaseOrders:{...poRecovery,unavailable:poRecoveryUnavailable}
+ });
 }

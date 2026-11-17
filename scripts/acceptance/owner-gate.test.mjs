@@ -16,11 +16,25 @@ test("known open feature PRs select every relevant, registered owner domain",()=
   [["lib/ai/conversations/receiptDuplicate.ts","lib/ai/agent/tools/purchases.ts"],["supervisor","inventory"]],
   [["lib/ai/agent/tools/gmail.ts","lib/connectors/gmail/oauth.server.ts"],["supervisor","gmail"]],
   [["lib/ai/agent/loop.server.ts","lib/scheduling/planInput.server.ts"],["supervisor","staffing"]],
-  [["lib/ai/supervisor/routines/dispatch.server.ts","lib/ai/agent/memory.server.ts"],["supervisor","routines","memory"]],
+  [["lib/ai/supervisor/routines/dispatch.server.ts","lib/ai/agent/memory.server.ts"],["supervisor","purchasing","routines","memory"]],
   [["lib/ai/agent/tools/dataQuery.ts","lib/data/canonical/dictionary.ts"],["supervisor","pos"]]
  ];
  for(const [paths,expected] of plans)
   assert.deepEqual(domainsForPaths(paths),DOMAINS.filter(d=>expected.includes(d)));
+});
+test("Task14B shared proactive dispatcher preserves mandatory purchasing coverage",()=>{
+ const domain=domainsForPaths(["lib/ai/supervisor/routines/dispatch.server.ts"]);
+ assert.deepEqual(domain,["supervisor","purchasing","routines"]);
+ const files=selectedFiles(domain);
+ for(const required of [
+  "lib/purchasing/planOrder.test.ts",
+  "app/api/ai/threads/[threadId]/proposals/route.supplierPo.test.ts",
+  "lib/ai/agent/loop.supplierPurchaseOrder.test.ts",
+  "lib/ai/supervisor/loop/purchaseOrdersReconcile.server.test.ts",
+  "lib/ai/supervisor/routines/dispatch.test.ts",
+  "lib/operating/procurementPriority.test.ts",
+ ])assert.ok(files.includes(required),"missing mandatory domain coverage: "+required);
+ assert.equal(files.length,new Set(files).size,"shared suites must execute each test once");
 });
 test("owner-impacting infrastructure and migrations cannot silently escape the gate",()=>{
  assert.deepEqual(domainsForPaths(["app/api/ai/threads/route.ts"]),["supervisor"]);

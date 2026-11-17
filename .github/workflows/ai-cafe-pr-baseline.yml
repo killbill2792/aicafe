@@ -247,7 +247,7 @@ jobs:
       # test rejects both real credentials and a missing sentinel.
       OPENAI_API_KEY: 'aicafe-disposable-e2e-no-provider'
       VERCEL_URL: ''
-      BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money,gmail' || needs.changes.outputs.browser_scenarios }}
+      BROWSER_SCENARIOS: ${{ github.event_name == 'workflow_dispatch' && 'home,staff,menu,money,gmail,purchasing' || needs.changes.outputs.browser_scenarios }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -278,10 +278,15 @@ jobs:
           const service = data.SERVICE_ROLE_KEY ?? data.service_role_key;
           if (!anon || !service) throw Error("Disposable Supabase auth credentials missing");
           for (const key of [anon,service]) console.log("::add-mask::" + key);
+          // Authenticate the existing local refresh-derived cron in browser
+          // acceptance without distributing or hardcoding a reusable secret.
+          const {randomBytes}=await import("node:crypto");
+          const localCronSecret=randomBytes(32).toString("hex");
           appendFileSync(process.env.GITHUB_ENV,
             "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\n" +
             "NEXT_PUBLIC_SUPABASE_ANON_KEY=" + anon + "\n" +
-            "SUPABASE_SERVICE_ROLE_KEY=" + service + "\n");
+            "SUPABASE_SERVICE_ROLE_KEY=" + service + "\n" +
+            "CRON_SECRET=" + localCronSecret + "\n");
           NODE
       - name: Start locally bound Next.js and verify login route readiness
         run: |
@@ -343,7 +348,11 @@ jobs:
         with:
           node-version: 22
       - name: Kill-test the evaluator with known bad observations
-        run: node --test evals/acceptance/evidence.test.mjs
+        run: node --test evals/acceptance/*.test.mjs
+      - name: Kill-test trusted Task14B broker, redaction and cumulative budget at zero provider cost
+        run: node --test scripts/acceptance/task14b-broker.test.mjs
+      - name: Task14B live agentic procurement trace and scope integrity (no key)
+        run: node --test evals/acceptance/live/task14b.test.mjs
       - name: Verify independent synthetic calibration is not live proof
         run: node evals/acceptance/cli.mjs
 

@@ -30,13 +30,18 @@ export function verifySignature(bytes:Buffer,header:string|null,secret:string|un
 export type Incoming={
   type:"message";phoneId:string;waId:string;wamid:string;kind:"text"|"button"|"image"|"document";
   text:string|null;payload:string|null;mediaId:string|null;providerAt:string;
-}|{type:"status";wamid:string;state:"sent"|"delivered"|"read"|"failed"};
-export function parseWebhook(bytes:Buffer,expectedPhoneId:string):Incoming[] {
+}|{type:"status";phoneId:string;wamid:string;state:"sent"|"delivered"|"read"|"failed"};
+/** Employee sender callbacks are status-only in Task 13B. A signed worker
+ * voice note, sticker, or foreign button payload is not an owner command and
+ * must not invalidate independent delivered/read events in the same batch. */
+export function parseWebhook(bytes:Buffer,expectedPhoneId:string|readonly string[],
+  staffStatusOnlyPhoneId?:string):Incoming[] {
   if(!bytes.length||bytes.length>MAX_WEBHOOK_BYTES)throw new Error("invalid_size");
   let data:unknown;
   try{data=JSON.parse(bytes.toString("utf8"));}catch{throw new Error("malformed_event");}
   if(!object(data)||data.object!=="whatsapp_business_account")throw new Error("malformed_event");
   const result:Incoming[]=[];
+  const allowedIds=new Set(typeof expectedPhoneId==="string"?[expectedPhoneId]:expectedPhoneId);
   for(const entry of array(data.entry,20)){
     if(!object(entry))throw new Error("malformed_event");
     for(const change of array(entry.changes,20)){
@@ -44,9 +49,13 @@ export function parseWebhook(bytes:Buffer,expectedPhoneId:string):Incoming[] {
       const value=change.value;
       if(value.messaging_product!==undefined&&value.messaging_product!=="whatsapp")
         throw new Error("malformed_event");
-      if(!object(value.metadata)||value.metadata.phone_number_id!==expectedPhoneId)
-        throw new Error("wrong_sender");
-      for(const msg of array(value.messages??[],100)){
+      if(!object(value.metadata)||typeof value.metadata.phone_number_id!=="string"||
+        !allowedIds.has(value.metadata.phone_number_id))throw new Error("wrong_sender");
+      const phoneId=value.metadata.phone_number_id;
+      // Validate the array's bound even for ignored staff inbound messages;
+      // parse owner commands only for their individually authenticated sender.
+      const messages=array(value.messages??[],100);
+      if(phoneId!==staffStatusOnlyPhoneId)for(const msg of messages){
         if(!object(msg))throw new Error("malformed_event");
         const wamid=string(msg.id,250);
         const waId=string(msg.from,16);
@@ -70,7 +79,7 @@ export function parseWebhook(bytes:Buffer,expectedPhoneId:string):Incoming[] {
           normalizedKind!=="image"&&normalizedKind!=="document")throw new Error("unsupported_event");
         const providerAt=new Date(Number(timestamp)*1000);
         if(Number.isNaN(providerAt.getTime()))throw new Error("malformed_event");
-        result.push({type:"message",phoneId:expectedPhoneId,waId,wamid,kind:normalizedKind,
+        result.push({type:"message",phoneId,waId,wamid,kind:normalizedKind,
           text,payload,mediaId,providerAt:providerAt.toISOString()});
       }
       for(const s of array(value.statuses??[],100)){
@@ -78,7 +87,7 @@ export function parseWebhook(bytes:Buffer,expectedPhoneId:string):Incoming[] {
         const wamid=string(s.id,250);
         if(!idPattern.test(wamid)||!["sent","delivered","read","failed"].includes(String(s.status)))
           throw new Error("unsupported_event");
-        result.push({type:"status",wamid,state:s.status as "sent"|"delivered"|"read"|"failed"});
+        result.push({type:"status",phoneId,wamid,state:s.status as "sent"|"delivered"|"read"|"failed"});
       }
       if(result.length>200)throw new Error("invalid_size");
     }

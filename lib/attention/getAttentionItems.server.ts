@@ -27,7 +27,7 @@ import {isSupabaseConfigured} from "@/lib/supabase/client";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
 import { EXPENSE_CATEGORY_CODES, RUNNING_COST_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import type { AgentId, OperatingTask } from "@/lib/operating/tasks";
-import { formatInboxDay, isEventReport, isStaleShiftAlert, settleInboxTasks, taskSubjectDate } from "@/lib/operating/inboxLifecycle";
+import { formatInboxDay, isEventReport, isStaleShiftAlert, settleInboxTasks, taskSubjectDate, retainActionablePrioritySource } from "@/lib/operating/inboxLifecycle";
 type HomeTaskPreviewItem={id:string;agentId:AgentId;agentName:string;title:string;href:string;subjectDate:string|null;createdAt:string};
 type DatedAttentionItem=HomeAttentionItem&{subjectDate?:string|null;createdAt?:string|null};
 const alertDay=(payload:Record<string,unknown>)=>{
@@ -147,12 +147,21 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
   const derived=[...derivedTeam.needsYou,...derivedTeam.handled,...derivedTeam.watching];
   const today=snapshot.todayDateStr;
   // Same plan the old page-load sync wrote, applied in memory, plus collapse/expiry rules.
-  // A priority_notice is an immutable delivery receipt, not an independently
-  // actionable source. The authoritative alert/task lifecycle owns Needs you.
-  // Rendering the original also preserves its specific repair link and details,
-  // and prevents a resolved source leaving a generic orphan notice on Home.
+  // Generic priority notices are delivery receipts and must not duplicate
+  // the original alert or owner task. An INVESTIGATION REPORT is different:
+  // its owner-private episode/step contains new model-verified findings and a
+  // link to the actual Supervisor thread, so the shared inbox must show it.
+  // Keep only report receipts positively attested by the SQL step writer;
+  // unverified legacy/generic notices remain suppressed.
+  const isVerifiedInvestigationReport=(task:OperatingTask)=>
+    isPriorityNoticeTask(task)&&task.payload.intent==="priority_investigation"&&
+    typeof task.payload.threadId==="string"&&task.payload.threadId.length>0&&
+    typeof task.payload.episodeId==="string"&&task.payload.episodeId.length>0&&
+    typeof task.payload.stepVersion==="number"&&
+    Number.isSafeInteger(task.payload.stepVersion)&&task.payload.stepVersion>0;
   const team=projectOperatingTasks(settleInboxTasks(
-    stored.filter(task=>!isPriorityNoticeTask(task)),derived,new Date(),today));
+    stored.filter(task=>retainActionablePrioritySource(task)||isVerifiedInvestigationReport(task)),
+    derived,new Date(),today));
   const agentNames: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const taskPreview = (task: OperatingTask): HomeTaskPreviewItem => {
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");

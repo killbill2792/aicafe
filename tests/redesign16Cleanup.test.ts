@@ -21,6 +21,53 @@ const requiredKeys: Record<string, string[]> = {
   OliviaPlanning: ["revisionDraft", "publishError", "ruleLoadError", "invalidWallTime"],
 };
 
+// AGENTS.md requires new owner-facing strings only in messages/en.json. The
+// original localized keys retain strict three-locale parity; these exact
+// Task14B namespace+key pairs are deliberately English-only, never a wildcard.
+const approvedTask14bEnglishOnly: Record<string, readonly string[]> = {
+  "SupplierPurchaseOrderCard": [
+    "ariaLabel",
+    "agentLabel",
+    "titlePrefix",
+    "approved",
+    "pending",
+    "applying",
+    "requestedBy",
+    "unspecified",
+    "at",
+    "perPack",
+    "lineSubtotal",
+    "quoted",
+    "delivery",
+    "unconfirmed",
+    "sourceQuote",
+    "itemsSubtotal",
+    "subtotalNotice",
+    "ownerNotice",
+    "approve",
+    "decline",
+    "checkingReceipt",
+    "reconcile",
+    "approvalError"
+  ],
+  "SupplierEvidenceExtras": [
+    "quoteCurrency",
+    "availability",
+    "notConfirmed",
+    "ownerConfirmed",
+    "unavailable",
+    "availabilityCheckedOn",
+    "expires",
+    "deliveryDate",
+    "dateUnknown",
+    "delivery",
+    "expiry",
+    "unknown"
+  ]
+};
+const approvedTask14bSet = new Set(Object.entries(approvedTask14bEnglishOnly)
+  .flatMap(([namespace, keys]) => keys.map(key => namespace+"."+key)));
+
 describe("redesign 16 cleanup integration", () => {
   for (const locale of ["en", "es", "ar"]) {
     it(`keeps current owner-facing translations after cleanup in ${locale}`, () => {
@@ -33,20 +80,34 @@ describe("redesign 16 cleanup integration", () => {
     });
   }
 
-  it("keeps existing translation keys in sync while allowing only approved English-only domains", () => {
-    // AGENTS.md forbids new es/ar copy. Keep strict parity for ALL pre-existing
-    // keys; Task 11 Gmail and Task 16B work-status keys are the only exceptions.
-    // This is an exact key allowlist, NOT a blanket SupervisorWork namespace skip.
-    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect|SupervisorWork\.(?:heading|stale|more|effectReceipt|replyReceipt|status|copy))$/;
+  it("keeps existing translation keys in sync, allowing only exact Task 11, Task 13B and Task 14B English-only copy", () => {
+    // AGENTS.md currently forbids new es/ar copy. Preserve strict parity for
+    // every pre-existing key; only the owner-approved Gmail, Task13B and exact Task14B keys are English-only.
+    // Task13B mandate's 25 exact keys are separately enforced by StaffStandingMandatePanel.test.ts.
+    const englishOnly = /^(?:GmailConnect\.[^.]+|GmailApprovalCard\.[^.]+|More\.gmailConnect|StaffApprovalCard\.agentic[A-Z][^.]*|StaffStandingMandate\.[^.]+|SupervisorWork\.(?:heading|stale|more|effectReceipt|replyReceipt|status|copy))$/;
     const keys = (locale: string) => {
       const messages = localeMessages(locale);
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
-        .filter(key => !englishOnly.test(key))
+        .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));
     expect(keys("ar")).toEqual(keys("en"));
+  });
+
+  it("requires every Task 14B purchasing key in en and forbids silently expanding the exception", () => {
+    const en = localeMessages("en"), es = localeMessages("es"), ar = localeMessages("ar");
+    for (const [namespace, allowedKeys] of Object.entries(approvedTask14bEnglishOnly)) {
+      expect(Object.keys(en[namespace] ?? {}).sort(), namespace)
+        .toEqual([...allowedKeys].sort());
+      for (const key of allowedKeys) {
+        expect(en[namespace]?.[key], namespace+"."+key).toEqual(expect.any(String));
+        expect(en[namespace][key].trim().length).toBeGreaterThan(0);
+      }
+      expect(es[namespace]).toBeUndefined();
+      expect(ar[namespace]).toBeUndefined();
+    }
   });
 
   it("requires complete English-only Task 16B status copy rather than hiding missing keys", () => {
@@ -59,7 +120,7 @@ describe("redesign 16 cleanup integration", () => {
     ].sort());
     expect(Object.keys(work.status).sort()).toEqual([
       "queued", "running", "retrying", "approval_required", "uncertain",
-      "failed", "cancelled", "answer_ready", "verified_complete",
+      "failed", "cancelled", "answer_ready", "verified_complete", "source_resolved",
     ].sort());
     const requiredWorkCopyKeys = [
       "stepAuthorizeOwner",
@@ -97,7 +158,16 @@ describe("redesign 16 cleanup integration", () => {
       "proposalUncertainNext",
       "proposalCancelledNext",
       "proposalFailedNext",
-      "proposalExecutingNext"
+      "proposalExecutingNext",
+      "investigationTitle",
+      "investigationQueued",
+      "investigationRunning",
+      "investigationRetrying",
+      "investigationWatching",
+      "investigationUncertain",
+      "investigationFailed",
+      "investigationResolved",
+      "investigationNext",
     ];
     expect(Object.keys(work.copy).sort()).toEqual(requiredWorkCopyKeys.sort());
     for (const [key, value] of Object.entries(work.copy)) {

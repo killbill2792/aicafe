@@ -9,6 +9,7 @@ import {money,count} from "../explain";
 import { staffTools } from "./staff";
 import {localizeQualityNotes} from "./qualityNotes";
 import { attentionTools } from "./attention";
+import {incidentEvidenceTools} from "./incidentEvidence";
 import {scheduleReadTools} from "./scheduleReads";
 import { hoursTools } from "./hours";
 import { moneyTools } from "./money";
@@ -21,6 +22,10 @@ import {newItemPriceTools} from "./newItemPrice";
 import {milkSwapTools} from "./milkSwap";
 import {proposalTools} from "./proposals";
 import {purchasesTools,purchaseToolInput} from "./purchases";
+import {supplierPurchasingTools} from "./supplierPurchasing";
+import type {SupplierPurchaseInput,SupplierPurchaseProposalInput} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import type {PurchasePlan} from "@/lib/purchasing/planOrder";
+import type {SupplierOrderStatus} from "@/lib/data/supplierPurchasing.server";
 import {priceExperimentTools} from "./priceExperiment";
 import {priceMonitorTools} from "./priceMonitor";
 import {ownerInputsSchema,ownerAmountForPeriod,ownerConflict} from "./ownerInputs";
@@ -64,6 +69,13 @@ export type AgentToolContext = {
   currency?:string|null;
   /** Authenticated owner-scoped reader. Never populated from model arguments. */
   canonicalData?:()=>Promise<DataQueryContext>;
+  /** Only supplied for an SQL-claimed scheduled investigation; never owner/model input. */
+  investigation?:{
+    read:()=>Promise<AgentToolResult>;
+    /** Exact SQL-claimed café/owner, never a browser-session or model scope. */
+    weekSchedule:(weekStart:string)=>ReturnType<
+      typeof import("@/lib/data/staffSchedule.server").getWeekSchedule>;
+  };
   /** Prior owner utterances for verifying explicit pricing percentages. */
   ownerMessages?:readonly string[];
   ownerText?:string;
@@ -90,6 +102,20 @@ export type AgentToolContext = {
     thread(threadId:string):Promise<Record<string,unknown>>;
     attachment(messageId:string,attachmentId:string):Promise<Record<string,unknown>>;
     propose(input:import("@/lib/ai/supervisor/loop/gmail.server").GmailProposalInput):Promise<{proposalId:string;revision:number;account:string}>};
+  /** Owner-scoped purchasing capability in the ONE Supervisor. No model-supplied café IDs or approvals. */
+  purchasing?:{
+    list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
+      drafts:Array<{id:string;revision:number;supplierName:string;itemNames:string[];
+        subtotalCents:number;currency:string}>;draftsTruncated:boolean;
+      unresolvedApprovals:Array<{id:string;revision:number;supplierName:string;
+        itemNames:string[];subtotalCents:number;currency:string;
+        status:"approved"|"executing";attemptState:"executing"|"verified"|"uncertain"|"stale"|null;
+        recovery:"owner_retry_or_cancel"|"receipt_only"}>;
+      unresolvedApprovalsTruncated:boolean}>;
+    inspect(input:SupplierPurchaseInput):Promise<PurchasePlan>;
+    propose(input:SupplierPurchaseProposalInput):Promise<{proposalId:string;revision:number;
+      supplierName:string;currency:string;subtotalCents:number}>;
+  };
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
   /** Authenticated canonical screen read, bound to session membership rather than model args. */
@@ -127,8 +153,8 @@ const posReadTools={
   get_employee_sales:{schema:posPeriodSchema,description:"Read recorded employee-attributed sales for a date range."},
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
-export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...gmailTools } as const;
+export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...gmailTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -150,6 +176,8 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   // These fields describe NEW values, not names or IDs of existing records.
   propose_add_staff:["name"],propose_staff_change:["name"],
   suggest_new_item_price:["category"],
+  inspect_supplier_purchase:["items.itemName","preferredSupplier"],
+  propose_supplier_purchase_order:["items.itemName","preferredSupplier"],
   // A public web search phrase is not a café catalog identifier.
   web_search:["query"],
   // Free-form Gmail search is owner text, not an internal catalogue identity.
@@ -160,7 +188,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   manage_routine:["title","routine_id"]
 };
 
-export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools?"maya":"alex";}
+export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools||name in supplierPurchasingTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
@@ -192,8 +220,10 @@ const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name =
 // Routine management is a verified-owner-only additional function, rather
 // than a global public tool. Keep the existing baseline tool contract stable.
 export const agentToolDefinitions:Array<Omit<(typeof baseToolDefinitions)[number],"name">&{name:string}>=
-  baseToolDefinitions.filter(tool=>tool.name!=="manage_routine"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
+  baseToolDefinitions.filter(tool=>tool.name!=="get_investigation_source"&&tool.name!=="manage_routine"&&!["search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 /** Offered only for a verified connected owner. Default cafés keep their existing tools. */
+/** Offered only when a server-claimed autonomous run explicitly requests it. */
+export const investigationToolDefinition=baseToolDefinitions.find(t=>t.name==="get_investigation_source")!;
 export const gmailToolDefinitions=baseToolDefinitions.filter(tool=>["search_gmail","read_gmail","read_gmail_thread","read_gmail_attachment","propose_gmail_action"].includes(tool.name));
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
@@ -235,6 +265,9 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="calculate")return calculateTools.calculate.execute(raw,ctx);
   if(name==="propose_price_change")return proposalTools.propose_price_change.execute(raw,ctx);
    if(name==="propose_purchases")return purchasesTools.propose_purchases.execute(raw,ctx);
+  if(name==="get_supplier_purchase_orders")return supplierPurchasingTools.get_supplier_purchase_orders.execute(raw,ctx);
+  if(name==="inspect_supplier_purchase")return supplierPurchasingTools.inspect_supplier_purchase.execute(raw,ctx);
+  if(name==="propose_supplier_purchase_order")return supplierPurchasingTools.propose_supplier_purchase_order.execute(raw,ctx);
   if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);
   if(name==="get_price_monitor_status")return priceMonitorTools.get_price_monitor_status.execute(raw,ctx);
   if(name==="propose_goal")return goalTools.propose_goal.execute(raw,ctx);
@@ -243,6 +276,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="record_checkin")return goalTools.record_checkin.execute(raw,ctx);
   if(Object.hasOwn(staffProposalTools,name))return staffProposalTools[name as keyof typeof staffProposalTools].execute(raw,ctx);
   if(name==="get_attention_items")return attentionTools.get_attention_items.execute(raw,ctx);
+  if(name==="get_investigation_source")return incidentEvidenceTools.get_investigation_source.execute(raw,ctx);
   if(name==="manage_commitment")return commitmentTools.manage_commitment.execute(raw,ctx);
   if(name==="manage_routine")return routineTools.manage_routine.execute(raw,ctx);
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);

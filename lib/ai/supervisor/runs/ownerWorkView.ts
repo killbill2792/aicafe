@@ -7,11 +7,11 @@ import english from "@/messages/en.json";
  */
 export type OwnerWorkStatus =
   | "queued" | "running" | "retrying" | "approval_required"
-  | "uncertain" | "failed" | "cancelled" | "answer_ready" | "verified_complete";
+  | "uncertain" | "failed" | "cancelled" | "answer_ready" | "verified_complete" | "source_resolved";
 
 export type OwnerWorkItem = {
   id: string;
-  kind: "durable_run" | "agent_turn" | "approval";
+  kind: "durable_run" | "agent_turn" | "approval" | "investigation";
   status: OwnerWorkStatus;
   title: string;
   detail: string;
@@ -46,6 +46,13 @@ export type AttemptRow = {
   receipt_ref: string | null; verified_at: string | null;
 };
 
+export type InvestigationRow = {
+  episode_id: string;
+  phase: "collect" | "investigate" | "awaiting_owner" | "resolved" | "blocked";
+  failure_count: number; lease_token: string | null;
+  lease_until: string | null; last_error: string | null; updated_at: string;
+};
+
 // All owner-visible phrasing comes from the required English message catalog.
 // Never let a server or model-authored work state bypass this locale source.
 const copy = english.SupervisorWork.copy;
@@ -57,7 +64,7 @@ const stepNames: Record<string, string> = {
 };
 export function projectOwnerWork(input: {
   runs: RunRow[]; steps: StepRow[]; jobs: JobRow[];
-  proposals: ProposalRow[]; attempts: AttemptRow[];
+  proposals: ProposalRow[]; attempts: AttemptRow[]; investigations?: InvestigationRow[];
 }, nowMs = Date.now()): OwnerWorkItem[] {
   const work: OwnerWorkItem[] = [];
   const steps = new Map<string, StepRow[]>();
@@ -124,6 +131,29 @@ export function projectOwnerWork(input: {
       proposalId: null,
     });
   }
+  // 15A persisted investigations are scoped by the same owner and thread.
+  // Closing a source incident never proves an external supplier/staff effect.
+  for (const inv of input.investigations ?? []) {
+    const leased = !!inv.lease_token && !!inv.lease_until && Date.parse(inv.lease_until) > nowMs;
+    const missing = ["source_missing", "source_reassigned"].includes(inv.last_error ?? "");
+    const status: OwnerWorkStatus = inv.phase === "resolved" ? "source_resolved"
+      : inv.phase === "blocked" ? (missing ? "uncertain" : "failed")
+      : inv.failure_count > 0 && !leased ? "retrying"
+      : inv.phase === "collect" && !leased ? "queued" : "running";
+    work.push({
+      id: "investigation:" + inv.episode_id, kind: "investigation", status,
+      title: copy.investigationTitle,
+      detail: status === "source_resolved" ? copy.investigationResolved
+        : missing ? copy.investigationUncertain
+        : status === "failed" ? copy.investigationFailed
+        : status === "retrying" ? copy.investigationRetrying
+        : status === "queued" ? copy.investigationQueued
+        : inv.phase === "awaiting_owner" ? copy.investigationWatching : copy.investigationRunning,
+      nextStep: copy.investigationNext, updatedAt: inv.updated_at,
+      ownerMessageId: null, step: inv.phase, attempt: inv.failure_count || null,
+      errorCode: inv.last_error, proof: null, proposalId: null,
+    });
+  }
   const attempts = new Map(input.attempts.map(a => [a.proposal_id + ":" + a.effect_hash, a]));
   for (const p of input.proposals) {
     const effect = attempts.get(p.id + ":" + p.effect_hash);
@@ -158,7 +188,7 @@ export function projectOwnerWork(input: {
     });
   }
   const priority = (s: OwnerWorkStatus) =>
-    ["uncertain", "failed", "approval_required", "retrying", "running", "queued", "verified_complete", "answer_ready", "cancelled"].indexOf(s);
+    ["uncertain", "failed", "approval_required", "retrying", "running", "queued", "verified_complete", "answer_ready", "source_resolved", "cancelled"].indexOf(s);
   return work.sort((a, b) => priority(a.status) - priority(b.status)
     || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0)
     || a.id.localeCompare(b.id)).slice(0, 18);
