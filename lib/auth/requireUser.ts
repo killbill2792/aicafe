@@ -5,6 +5,7 @@ import { getLocale } from "next-intl/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { readActiveBusinessMemberships } from "@/lib/data/getActiveBusinessId";
+import {isLinkedActiveStaffUser} from "@/lib/staffCommunication/identity.server";
 
 /**
  * Server-side guard for every authenticated tab screen. Redirects to /login when signed out.
@@ -53,6 +54,8 @@ export const requireOwnBusiness=cache(async function requireOwnBusiness(){
   });
 
   if (!hasOwnBusiness) {
+    // Linked staff accounts cannot traverse owner onboarding or its data.
+    if(await isLinkedActiveStaffUser(user.id))redirect("/crew");
     const locale = await getLocale();
     redirect(`/${locale}/onboarding`);
   }
