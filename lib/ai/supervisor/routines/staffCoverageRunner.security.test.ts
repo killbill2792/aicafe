@@ -138,7 +138,9 @@ describe("Task13C owner-gated real Luna security behavior",()=>{
    });
    expect(ran.status,ran.stderr).toBe(0);
    const argv=readFileSync(capture,"utf8");
-   expect(argv).toContain("OPENAI_API_KEY=sk-local_disposable_proxy_key_not_real");
+   const providerEnv=argv.split("\n").filter(x=>
+    x==="OPENAI_API_KEY"||x.startsWith("OPENAI_API_KEY="));
+   expect(providerEnv).toEqual(["OPENAI_API_KEY=sk-local_disposable_proxy_key_not_real"]);
    expect(argv).toContain("task14b-fetch-shim.cjs:ro");
    expect(argv).toContain("--cap-drop");
    expect(argv).toContain("--security-opt");
@@ -147,6 +149,7 @@ describe("Task13C owner-gated real Luna security behavior",()=>{
    expect(argv).not.toContain(hostSecret);
    expect(argv).not.toContain("OPENAI_API_KEYS");
    expect(argv).not.toContain("task13c-host-audit.json");
+   expect(argv).not.toContain("--env-file");
    expect(argv).not.toContain("--privileged");
    expect(argv).not.toContain("--pid=host");
   }finally{rmSync(root,{recursive:true,force:true})}
@@ -161,15 +164,18 @@ describe("Task13C owner-gated real Luna security behavior",()=>{
    mockCommand(root,"pg_isready","exit 0");
    mockCommand(root,"psql",
     'if [ "$FAIL_SQL_PREFLIGHT" = "1" ]; then exit 42; fi\nprintf "true\\n"');
-   const run=(fail:boolean)=>spawnSync("bash",["-euo","pipefail","-c",dbStep],{
+   const run=(fail:boolean)=>spawnSync("bash",["-euo","pipefail","-c",
+    dbStep+"\nprintf BROKER_STARTED\\n"],{
     encoding:"utf8",env:{...process.env,PATH:bin+":"+process.env.PATH,
      FAIL_SQL_PREFLIGHT:fail?"1":"0",RUNNER_TEMP:root},
    });
    const fail=run(true);
    expect(fail.status).not.toBe(0);
    expect(fail.stderr).not.toContain("OPENAI");
+   expect(fail.stdout).not.toContain("BROKER_STARTED");
    const good=run(false);
    expect(good.status,good.stderr).toBe(0);
+   expect(good.stdout).toContain("BROKER_STARTED");
    expect(existsSync(join(root,"task13c-local-supabase.json"))).toBe(true);
    // The subsequent host-broker step is a separate trusted action. CI
    // executes it ONLY after preflight exits successfully; this negative
