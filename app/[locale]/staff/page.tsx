@@ -8,6 +8,8 @@ import PosImportReviewPanel from "@/components/staff/PosImportReviewPanel";
 import OwnerScheduleSendPanel from "@/components/staff/OwnerScheduleSendPanel";
 import StaffPublicationStatus from "@/components/staff/StaffPublicationStatus";
 import StaffStandingMandatePanel from "@/components/staff/StaffStandingMandatePanel";
+import StaffLoginLinkPanel from "@/components/staff/StaffLoginLinkPanel";
+import StaffResponseInbox from "@/components/staff/StaffResponseInbox";
 import PageShell from "@/components/shared/PageShell";
 import TeamLegacyMetrics from "@/components/staff/TeamLegacyMetrics";
 import {createStaffScreenshotFixture} from "@/lib/calc/scheduling/staffScreenshotFixture";
@@ -41,6 +43,10 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
     <StaffStandingMandatePanel key={`${scope.businessId}:${selected}`}
      week={selected} businessId={scope.businessId}/>}
   {!useFixture&&<StaffPublicationStatus week={selected}/>}
+  {!useFixture&&scope.ok&&!scope.readOnly&&<>
+    <StaffLoginLinkPanel/>
+    <StaffResponseInbox/>
+  </>}
   {(showSendFixture||(!useFixture&&Boolean(proposalId)))&&<OwnerScheduleSendPanel
     {...(!useFixture&&proposalId?{proposalId}:{week:selected})}
     locale={locale==="ar"?"ar":locale==="es"?"es":"en"}/>}

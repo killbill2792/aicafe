@@ -69,6 +69,10 @@ export type AgentToolContext = {
   currency?:string|null;
   /** Authenticated owner-scoped reader. Never populated from model arguments. */
   canonicalData?:()=>Promise<DataQueryContext>;
+  /** Owner-verified staff communication evidence for off-turn investigations,
+   * not a worker chat or model-supplied employee selector. */
+  staffMessages?:{read:()=>ReturnType<
+    typeof import("@/lib/staffCommunication/channel.server").readOwnerStaffMessages>;};
   /** Only supplied for an SQL-claimed scheduled investigation; never owner/model input. */
   investigation?:{
     read:()=>Promise<AgentToolResult>;

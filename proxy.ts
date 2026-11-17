@@ -6,8 +6,8 @@ import { refreshSupabaseSession } from "./lib/supabase/middleware";
 const intlMiddleware = createMiddleware(routing);
 
 export default async function proxy(request: NextRequest) {
-  // Admin has its own English-only root layout; never locale-rewrite /admin.
-  const response = request.nextUrl.pathname.startsWith("/admin")
+  // Admin and crew have separate root layouts; never locale-rewrite either.
+  const response = (request.nextUrl.pathname.startsWith("/admin") || request.nextUrl.pathname.startsWith("/crew"))
     ? NextResponse.next() : intlMiddleware(request);
   return refreshSupabaseSession(request, response);
 }

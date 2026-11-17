@@ -47,6 +47,13 @@ export function scenariosForPath(path) {
       path === "scripts/ldi-g-visual-check.mjs" ||
       path === ".github/workflows/ldi-g-events-visual.yml")
     return ["home"];
+  // Worker-only pages are covered by the real seeded employee-login and
+  // owner-receipt @staff browser journey; unknown UI still fails closed.
+  if (path.startsWith("app/crew/") || path.startsWith("components/crew/") ||
+      path === "components/staff/StaffLoginLinkPanel.tsx" ||
+      path === "components/staff/StaffResponseInbox.tsx" ||
+      path === "components/staff/StaffReplyComposer.tsx") return ["staff"];
+  if (path === "app/[locale]/onboarding/page.tsx") return ["staff"];
   if (path === "app/[locale]/staff/page.tsx" ||
       path === "components/staff/StaffWorkspace.tsx" ||
       path === "components/staff/StaffPublicationStatus.tsx" ||

@@ -134,6 +134,38 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
       }},
     ]}),staff)).toMatchObject({ok:true});
   });
+  it("uses real staff message evidence plus canonical schedule to investigate a shift decline",()=>{
+    const staff={sourceType:"operating_task" as const,sourceId:"staff-response:verified",kind:"staff_coverage"};
+    const claimed={...sourceRead,result:{...sourceRead.result,sourceType:"operating_task",
+      sourceId:staff.sourceId,incidentKind:staff.kind}};
+    const reply={name:"get_staff_messages",result:{
+      source:"staff_communication_messages+staff_communication_requests",
+      period:null,missing:[],messages:[{id:"reply-1",employeeId:"worker-1",
+        reply:"decline",text:"I can arrive at 8, not 7",
+        verifiedAs:"saved_employee_submission",coverageApplied:false}]}};
+    const schedule={name:"get_week_schedule",result:{
+      source:"scheduled_shifts",period:null,missing:[],
+      scheduleSet:true,shifts:[{id:"shift-1",employeeId:"worker-1",start:"07:00",end:"14:00"}]}};
+    expect(investigationReadTools).toContain("get_staff_messages");
+    expect(relevantInvestigationTools("staff_coverage")).toContain("get_staff_messages");
+    expect(verifyInvestigationTurn(turn({toolInvocations:[
+      claimed,reply,schedule,
+    ]}),staff)).toMatchObject({
+      ok:true,tools:["get_investigation_source","get_staff_messages","get_week_schedule"],
+    });
+    const unverified={name:"get_staff_messages",result:{
+      source:"staff_communication_messages",period:null,
+      missing:["staffReplyReaderUnavailable"],messages:[]}};
+    expect(verifyInvestigationTurn(turn({toolInvocations:[
+      claimed,unverified,schedule,
+    ]}),staff)).toEqual({ok:false,reason:"evidence_incomplete"});
+    // Two projections of the dated roster do not replace a staff reply.
+    expect(verifyInvestigationTurn(turn({toolInvocations:[
+      claimed,schedule,{name:"get_coverage_gaps",result:{
+        source:"coverage_gaps",period:null,missing:[],scheduleSet:true,
+        gaps:[{date:"2026-11-17",start:"07:00"}]}},
+    ]}),staff)).toEqual({ok:false,reason:"evidence_incomplete"});
+  });
   it("collapses other duplicate projections but accepts independent source families",()=>{
     expect(verifyInvestigationTurn(turn({toolInvocations:[
       sourceRead,sales,{name:"get_item_sales",result:{
