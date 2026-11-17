@@ -32,3 +32,15 @@ export function loadOwnerPending(storage:CrewOutboxStorage,key:string,
  type:OwnerPending["type"]){return parseOwnerPending(storage.getItem(key),type);}
 export function saveOwnerPending(storage:CrewOutboxStorage,key:string,
  pending:OwnerPending){storage.setItem(key,JSON.stringify(pending));}
+
+/** The durable record includes local-only discriminators. Strict API schemas
+ * DO NOT accept type/workKind. Project only the documented API inputs, never
+ * send the outbox record itself. The original stored record stays untouched. */
+export function ownerPendingApiPayload(operation:OwnerPending):
+ |{employeeId:string;body:string;nonce:string}
+ |{employeeId:string;kind:"task"|"checklist";title:string;prompt:string;nonce:string}{
+ if(operation.type==="message")return {
+  employeeId:operation.employeeId,body:operation.body,nonce:operation.nonce};
+ return {employeeId:operation.employeeId,kind:operation.workKind,
+  title:operation.title,prompt:operation.prompt,nonce:operation.nonce};
+}
