@@ -84,6 +84,32 @@ function mockCommand(root:string,name:string,script:string){
  return dir;
 }
 describe("Task13C owner-gated real Luna security behavior",()=>{
+ it("paid job itself rejects job-only rerun after successful owner consumption",()=>{
+  const root=temp();
+  try{
+   // Simulate a successful, already-consumed authorization from the first
+   // attempt. Rerunning only the paid job retains its successful dependency.
+   const authorized=simulateOwner(root);
+   expect(authorized.status,authorized.stderr).toBe(0);
+   expect(authorized.output).toBe("head="+sha+"\n");
+   const realPreflight=shellStep(
+    "Fail closed on attempted paid job replay before any checkout",
+    "Checkout ONLY trusted broker from main, without write credentials");
+   const attempt=(n:string)=>spawnSync("bash",["-euo","pipefail","-c",
+    realPreflight+"\necho BROKER_STARTED"],{
+    encoding:"utf8",
+    env:{...process.env,GITHUB_RUN_ATTEMPT:n},
+   });
+   const original=attempt("1");
+   expect(original.status,original.stderr).toBe(0);
+   expect(original.stdout).toContain("BROKER_STARTED");
+   for(const runAttempt of ["2","3",""]){
+    const denied=attempt(runAttempt);
+    expect(denied.status,denied.stderr).not.toBe(0);
+    expect(denied.stdout).not.toContain("BROKER_STARTED");
+   }
+  }finally{rmSync(root,{recursive:true,force:true})}
+ });
  it("real owner grant code consumes exactly one valid head, and rejects unsafe grants before posting",()=>{
   const root=temp();
   try{
