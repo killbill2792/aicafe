@@ -174,7 +174,7 @@ grant execute on function public.supervisor_reserve_supplier_gmail_send(uuid,uui
 create function public.supervisor_rebind_supplier_gmail_draft(
  p_business_id uuid,p_owner_user_id uuid,p_purchase_order_id uuid,
  p_new_proposal_id uuid
-) returns boolean language plpgsql security definer set search_path=public as $
+) returns boolean language plpgsql security definer set search_path=public as $$
 declare d public.purchase_order_dispatches; old_p public.supervisor_proposals;
  new_p public.supervisor_proposals; po public.purchase_orders;
  c public.cafe_supplier_order_contacts;
@@ -250,7 +250,7 @@ begin
     po_revision=po.revision,po_effect_hash=po.effect_hash
   where business_id=p_business_id and id=d.id and state='prepared';
  return true;
-end $;
+end $$;
 revoke all on function public.supervisor_rebind_supplier_gmail_draft(uuid,uuid,uuid,uuid)
  from public,anon,authenticated;
 grant execute on function public.supervisor_rebind_supplier_gmail_draft(uuid,uuid,uuid,uuid)
