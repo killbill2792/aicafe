@@ -16,6 +16,9 @@ export default function StaffCoordinationPanel({people}:{people:Person[]}) {
  const [from,setFrom]=useState("");
  const [to,setTo]=useState("");
  const [role,setRole]=useState("");
+ const [onboardingTitle,setOnboardingTitle]=useState("Complete onboarding checklist");
+ const [onboardingPrompt,setOnboardingPrompt]=useState(
+  "Please complete your assigned onboarding checklist and confirm when finished.");
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState("");
  const [notice,setNotice]=useState("");
@@ -105,6 +108,28 @@ export default function StaffCoordinationPanel({people}:{people:Person[]}) {
    {item.role_needed&&<p>Role: {item.role_needed}</p>}
    {item.source_kind==="staff_message"&&<p className="text-fg-muted">Authenticated employee message; inspect the existing Staff reply inbox. It is not an approval.</p>}
    {item.state==="approved"&&<p className="text-fg-muted">Owner authorized the next step. A real effect and verified source receipt are still required.</p>}
+   {item.case_kind==="onboarding"&&item.state==="approved"&&<div className="space-y-2">
+    <p className="text-fg-muted">Explicitly assign a checklist through the existing employee inbox. This does not create a login, hire the employee, or claim completion.</p>
+    <label className="block">Checklist title
+     <input className="w-full rounded-md border border-border bg-surface p-2"
+      value={onboardingTitle} onChange={e=>setOnboardingTitle(e.target.value)}
+      maxLength={200} disabled={busy}/>
+    </label>
+    <label className="block">Employee instructions
+     <textarea className="w-full rounded-md border border-border bg-surface p-2"
+      value={onboardingPrompt} onChange={e=>setOnboardingPrompt(e.target.value)}
+      maxLength={2000} rows={3} disabled={busy}/>
+    </label>
+    <button type="button" className="rounded-md border border-border px-3 py-2"
+     disabled={busy||!onboardingTitle.trim()||!onboardingPrompt.trim()}
+     onClick={()=>void post({action:"assign-checklist",caseId:item.id,
+      revision:item.revision,nonce:crypto.randomUUID(),
+      title:onboardingTitle.trim(),prompt:onboardingPrompt.trim()})}>
+     Assign employee onboarding checklist
+    </button>
+   </div>}
+   {item.case_kind==="onboarding"&&item.state==="in_progress"&&
+    <p className="text-fg-muted">Employee checklist assigned. Waiting for authenticated staff completion; a message send alone is not acceptance.</p>}
    {item.state==="needs_owner_decision"&&<div className="flex flex-wrap gap-2">
     <button type="button" disabled={busy}
      className="rounded-md border border-border px-3 py-1"
