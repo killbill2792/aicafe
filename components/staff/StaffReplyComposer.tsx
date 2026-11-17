@@ -76,7 +76,7 @@ export default function StaffReplyComposer({people,ownerUserId,businessId}:{
      className="min-h-12 rounded-full border border-line px-4 py-2">Dismiss saved draft</button>
    </div>
   </div>}
-  {message.status&&<p role="status" className="text-sm text-ink-muted">{message.status}</p>
+  {message.status&&<p role="status" className="text-sm text-ink-muted">{message.status}</p>}
   {!people.length?<p className="text-sm text-ink-muted">Link an existing employee account before sending a message.</p>:<>
    <label className="block text-sm font-semibold" htmlFor="staff-reply-person">Employee</label>
    <select id="staff-reply-person" className="min-h-12 w-full rounded-xl border border-line bg-white p-3"
@@ -127,7 +127,7 @@ export default function StaffReplyComposer({people,ownerUserId,businessId}:{
       className="min-h-12 rounded-full border border-line px-4 py-2">Dismiss saved draft</button>
     </div>
    </div>}
-   {assignment.status&&<p role="status" className="text-sm text-ink-muted">{assignment.status}</p>
+   {assignment.status&&<p role="status" className="text-sm text-ink-muted">{assignment.status}</p>}
    <label htmlFor="staff-work-kind" className="block text-sm font-semibold">Type</label>
    <select id="staff-work-kind" className="min-h-12 w-full rounded-xl border border-line bg-white p-3"
     disabled={locked} value={workKind} onChange={e=>setWorkKind(e.target.value as "task"|"checklist")}>
