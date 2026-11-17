@@ -32,6 +32,8 @@ export function validateMuseNote(edit){
   throw Error('Invalid PR number');
  if(Object.keys(edit).some(k=>!['task_id','expected_revision','chat_url','stage','note','pr_number'].includes(k)))
   throw Error('Unsupported note field');
+ if(!['chat_url','stage','note','pr_number'].some(k=>Object.hasOwn(edit,k)))
+  throw Error('At least one coordination field required');
  return true;
 }
 export function applyMuseNote(state,edit,{role,now=new Date().toISOString()}={}){
@@ -42,8 +44,13 @@ export function applyMuseNote(state,edit,{role,now=new Date().toISOString()}={})
   throw Error('Invalid Muse notes');
  const previous=state.entries[edit.task_id],revision=previous?.revision??0;
  if(revision!==edit.expected_revision)throw Error('Note edit conflict: refresh and retry');
- const entry={task_id:edit.task_id,pr_number:edit.pr_number??null,
-  chat_url:edit.chat_url??'',stage:edit.stage??'unknown',note:edit.note??'',
+ // Partial updates must not erase an already verified chat URL or another
+ // actor's note when Muse only changes the work stage.
+ const entry={task_id:edit.task_id,
+  pr_number:edit.pr_number!==undefined?edit.pr_number:previous?.pr_number??null,
+  chat_url:edit.chat_url!==undefined?edit.chat_url:previous?.chat_url??'',
+  stage:edit.stage!==undefined?edit.stage:previous?.stage??'unknown',
+  note:edit.note!==undefined?edit.note:previous?.note??'',
   revision:revision+1,updated_at:now,updated_by:role};
  return {...state,entries:{...state.entries,[edit.task_id]:entry}};
 }
