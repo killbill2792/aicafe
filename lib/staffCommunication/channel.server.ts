@@ -1,5 +1,6 @@
 import "server-only";
 import {z} from "zod";
+import type {SupabaseClient} from "@supabase/supabase-js";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
@@ -125,15 +126,16 @@ export async function sendOwnerStaffMessage(raw:unknown){
  if(!data||typeof data.id!=="string")throw new StaffChannelError("storage");
  return data as {id:string;replayed:boolean};
 }
-export async function readOwnerStaffMessages(limit=40):Promise<Array<StaffMessage&{
+export type OwnerStaffMessage=StaffMessage&{
  employee_name:string;request_title:string|null;request_status:string|null;
-}>>{
- const owner=await requireSchedulingOwner();
- if(!owner)throw new StaffChannelError("unauthorized");
- const db=owner.supabase;
+};
+/** Read source-scoped staff records through the caller's verified DB scope.
+ * Do not accept a café identifier from the model or a worker browser. */
+async function loadOwnerMessages(db:SupabaseClient,businessId:string,limit:number):
+ Promise<OwnerStaffMessage[]>{
  const {data,error}=await db.from("staff_communication_messages")
   .select("id,employee_id,request_id,response_code,body,channel,received_at,actor")
-  .eq("business_id",owner.businessId)
+  .eq("business_id",businessId)
   .order("received_at",{ascending:false}).limit(Math.min(limit,100));
  if(error||!data)throw new StaffChannelError("storage");
  if(!data.length)return [];
@@ -141,9 +143,9 @@ export async function readOwnerStaffMessages(limit=40):Promise<Array<StaffMessag
  const reqIds=[...new Set(data.flatMap(x=>x.request_id?[x.request_id]:[]))];
  const [people,requests]=await Promise.all([
   db.from("employees").select("id,display_name")
-   .eq("business_id",owner.businessId).in("id",empIds),
+   .eq("business_id",businessId).in("id",empIds),
   reqIds.length?db.from("staff_communication_requests")
-   .select("id,title,status").eq("business_id",owner.businessId).in("id",reqIds):
+   .select("id,title,status").eq("business_id",businessId).in("id",reqIds):
    Promise.resolve({data:[] as Array<{id:string;title:string;status:string}>,error:null}),
  ]);
  if(people.error||requests.error)throw new StaffChannelError("storage");
@@ -152,4 +154,21 @@ export async function readOwnerStaffMessages(limit=40):Promise<Array<StaffMessag
  return data.map(m=>({...m,employee_name:names.get(m.employee_id)??"Staff member",
   request_title:m.request_id?req.get(m.request_id)?.title??null:null,
   request_status:m.request_id?req.get(m.request_id)?.status??null:null}));
+}
+/** Owner interactive UI: require a real authenticated owner session. */
+export async function readOwnerStaffMessages(limit=40):Promise<OwnerStaffMessage[]>{
+ const owner=await requireSchedulingOwner();
+ if(!owner)throw new StaffChannelError("unauthorized");
+ return loadOwnerMessages(owner.supabase,owner.businessId,limit);
+}
+/** Existing off-turn Supervisor: the SQL-claimed owner/thread is verified
+ * again against memberships, rather than assuming a browser cookie exists. */
+export async function readStaffMessagesForVerifiedOwner(
+ db:SupabaseClient,businessId:string,ownerUserId:string,limit=40
+):Promise<OwnerStaffMessage[]>{
+ const {data,error}=await db.from("memberships").select("role")
+  .eq("business_id",businessId).eq("user_id",ownerUserId)
+  .eq("role","owner").maybeSingle();
+ if(error||!data)throw new StaffChannelError("unauthorized");
+ return loadOwnerMessages(db,businessId,limit);
 }
