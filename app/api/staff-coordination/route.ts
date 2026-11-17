@@ -1,5 +1,6 @@
 import {
  listOwnerStaffCoordination,openOwnerStaffCoordination,decideOwnerStaffCoordination,
+ assignOwnerOnboardingChecklist,
  StaffCoordinationError,
 } from "@/lib/staffCoordination/cases.server";
 
@@ -36,6 +37,10 @@ export async function POST(request:Request):Promise<Response>{
   if(input.action==="open")return Response.json(await openOwnerStaffCoordination({
    nonce:input.nonce,kind:input.kind,employeeId:input.employeeId,
    locationId:input.locationId,from:input.from,to:input.to,role:input.role,
+  }),{headers});
+  if(input.action==="assign-checklist")return Response.json(await assignOwnerOnboardingChecklist({
+   caseId:input.caseId,revision:input.revision,nonce:input.nonce,
+   title:input.title,prompt:input.prompt,
   }),{headers});
   if(input.action==="decide")return Response.json(await decideOwnerStaffCoordination({
    caseId:input.caseId,revision:input.revision,choice:input.choice,
