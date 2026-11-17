@@ -31,7 +31,7 @@ function codexStatus(comments,head){
  // Use the same strict, head-bound Codex parser as the existing dispatcher.
  // Only authenticated Codex bot-authored summary comments count.
  const states=(comments||[])
-  .filter(c=>['chatgpt-codex-connector[bot]','codex[bot]'].includes(c.author?.login))
+  .filter(c=>/^(?:chatgpt-codex-connector|codex)(?:\[bot\])?$/.test(c.author?.login||''))
   .map(c=>parseCodexReviewState(c.body||'',head)?.state)
   .filter(Boolean);
  return states.at(-1)||'unknown';
