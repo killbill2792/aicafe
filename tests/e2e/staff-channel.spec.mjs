@@ -77,6 +77,11 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   expect(own.requests.some(r=>r.id)).toBe(true);
   expect(JSON.stringify(own)).not.toContain(created[1].worker.display_name);
   expect((await staffCtx.request.get("/api/staff-channel/link")).status()).toBe(403);
+  const onboarding=await staffCtx.request.get("/en/onboarding",{maxRedirects:0});
+  expect([302,303,307,308]).toContain(onboarding.status());
+  expect(onboarding.headers().location??"").toContain("/crew");
+  const attemptedCafe=(await db.query("select count(*)::integer as n from public.businesses where name='My café'")).rows[0].n;
+  expect(attemptedCafe).toBe(0);
   const privatePage=await staffCtx.request.get("/en/money?view=profit",{maxRedirects:0});
   expect([302,303,307,308,401,403]).toContain(privatePage.status());
 
