@@ -9,6 +9,10 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function ownerPendingKey(ownerId:string,businessId:string,type:OwnerPending["type"]){
  return "aicafe:owner:staff-channel:pending:v1:"+ownerId+":"+businessId+":"+type;
 }
+/** A rejected non-commit keeps its text, separate from a blocking outbox. */
+export function ownerRejectedDraftKey(ownerId:string,businessId:string,type:OwnerPending["type"]){
+ return "aicafe:owner:staff-channel:unsent:v1:"+ownerId+":"+businessId+":"+type;
+}
 export function parseOwnerPending(raw:string|null,type:OwnerPending["type"]):OwnerPending|null{
  if(!raw)return null;
  try{
