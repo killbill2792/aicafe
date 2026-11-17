@@ -26,7 +26,8 @@ describe("Task13C durable per-tab crew submission",()=>{
   expect(receipt).toEqual({id,replayed:true});
   expect(records).toBe(1);
   expect(sent).toEqual([payload,payload]);
-  expect(pause).toHaveBeenCalledExactlyOnceWith(400);
+  expect(pause).toHaveBeenCalledTimes(1);
+  expect(pause).toHaveBeenCalledWith(400);
   // UI clears the outbox only after a valid real server receipt.
   expect(loadCrewPending(storage,key)).toEqual(payload);
   storage.removeItem(key);
@@ -37,7 +38,7 @@ describe("Task13C durable per-tab crew submission",()=>{
   saveCrewPending(storage,key,payload);
   const restored=loadCrewPending(storage,key);
   expect(restored).toEqual(payload);
-  const next={...payload,body:"A different report",nonce:crypto.randomUUID()};
+  const next={...payload,body:"A different report",nonce:"33333333-3333-4333-8333-333333333333"};
   expect(sameCrewOperation(restored,next)).toEqual(payload);
   const attempted:PendingCrewSubmission[]=[];
   const pauses:number[]=[];
