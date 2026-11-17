@@ -115,7 +115,7 @@ jobs:
           NODE
   paid-pilot:
     needs: [consume-once]
-    if: needs.consume-once.result == 'success'
+    if: needs.consume-once.result == 'success' && github.run_attempt == 1
     name: Real-model purchasing pilot with secret isolated from candidate
     permissions:
       contents: read
@@ -128,6 +128,8 @@ jobs:
       VERCEL_ENV: ''
       SUPABASE_PROJECT_REF: ''
     steps:
+      - name: Reject any job-only paid rerun before checkout
+        run: test "${GITHUB_RUN_ATTEMPT:-}" = "1"
       - name: Checkout ONLY trusted broker from main, without write credentials
         uses: actions/checkout@v4
         with:
