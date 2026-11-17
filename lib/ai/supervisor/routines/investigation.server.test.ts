@@ -41,14 +41,18 @@ const agentResult=(patch:Record<string,unknown>={})=>({
   endReason:"complete",tools:["get_investigation_source","get_sales","get_labor"],unverified:[],
   results:[{source:"investigation_source",period:null,missing:[],
       sourceType:"alert",sourceId:"alert-a",incidentKind:"sales_anomaly"},
-    {source:"sales",period:null,missing:[]},
-    {source:"labor",period:null,missing:["unverifiedWages"]}],
+    {source:"sales",period:null,missing:[],netSalesCents:12000,
+      days:[{date:"2026-11-14",netSalesCents:12000}]},
+    {source:"labor",period:null,missing:["unverifiedWages"],
+      laborDays:[{date:"2026-11-14",wagesCents:2000,wageStatus:"missing"}]}],
   toolInvocations:[
     {name:"get_investigation_source",result:{source:"investigation_source",
       period:null,missing:[],sourceType:"alert",sourceId:"alert-a",
       incidentKind:"sales_anomaly"}},
-    {name:"get_sales",result:{source:"sales",period:null,missing:[]}},
-    {name:"get_labor",result:{source:"labor",period:null,missing:["unverifiedWages"]}},
+    {name:"get_sales",result:{source:"sales",period:null,missing:[],
+      netSalesCents:12000,days:[{date:"2026-11-14",netSalesCents:12000}]}},
+    {name:"get_labor",result:{source:"labor",period:null,missing:["unverifiedWages"],
+      laborDays:[{date:"2026-11-14",wagesCents:2000,wageStatus:"missing"}]}},
   ],
   usage:{modelCalls:2,toolCalls:2,inputTokens:100,outputTokens:100,cachedTokens:0,latencyMs:200},
   ...patch,
@@ -303,10 +307,13 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
       ]));
       return agentResult({toolInvocations:[
         {name:"get_investigation_source",result:exact},
-        {name:"get_labor",result:{source:"labor_and_attendance",period:null,missing:[]}},
+        {name:"get_labor",result:{source:"labor_and_attendance",period:null,
+          missing:["wagesIncomplete"],laborDays:[{date:"2026-11-14",wagesCents:null,
+            wageStatus:"missing"}]}},
         // Dated shift schedule is independent of attendance/labor. Payroll
         // is a second labor projection and cannot corroborate itself.
-        {name:"get_week_schedule",result:{source:"scheduled_shifts",period:null,missing:[]}},
+        {name:"get_week_schedule",result:{source:"scheduled_shifts",period:null,
+          missing:[],scheduleSet:true,shifts:[{date:"2026-11-14",id:"shift-a"}]}},
       ]});
     });
     expect(await processNextInvestigation(d.client,now))
@@ -335,6 +342,24 @@ describe("Task 15A operational end-to-end orchestration (recorded source/model)"
     expect(await processNextInvestigation(d.client,now))
       .toMatchObject({investigated:0,failed:1});
     expect(mocks.notify).not.toHaveBeenCalled();
+  });
+  it("retries rather than reporting when two claimed domains only returned read failures",async()=>{
+    mocks.model.mockResolvedValue(agentResult({toolInvocations:[
+      {name:"get_investigation_source",result:{source:"investigation_source",
+        period:null,missing:[],sourceType:"alert",sourceId:"alert-a",
+        incidentKind:"sales_anomaly"}},
+      {name:"get_labor",result:{source:"labor_and_attendance",
+        period:null,missing:["laborReaderUnavailable"],laborDays:null}},
+      {name:"get_week_schedule",result:{source:"scheduled_shifts",
+        period:null,missing:["scheduleReadFailed"],shifts:null}},
+    ]}));
+    const d=db([{...investigating}]);
+    expect(await processNextInvestigation(d.client,now))
+      .toMatchObject({processed:1,failed:1,investigated:0});
+    expect(mocks.notify).not.toHaveBeenCalled();
+    expect(d.calls.find(x=>x.name==="supervisor_fail_investigation")?.args)
+      .toMatchObject({p_error:"evidence_incomplete"});
+    expect(d.calls.some(x=>x.name==="supervisor_finish_investigation")).toBe(false);
   });
   it("does not silently publish a one-tool answer as a multi-step investigation",async()=>{
     mocks.model.mockResolvedValue(agentResult({toolInvocations:[
