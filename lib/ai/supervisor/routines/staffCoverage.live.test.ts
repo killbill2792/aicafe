@@ -148,9 +148,15 @@ run("real Luna investigates verified employee decline, follows up without effect
   expect(await enqueueInvestigationsForOwner(db,scope,now)).toBe(1);
   const first=await processDueInvestigations(db,now,2,provider,(summary)=>{
    observations.push(summary);
+   // Redacted diagnostic fields identify *why* a real model answer was
+   // rejected without logging employee text, prompts, IDs or numeric facts.
    console.log("13C real-model proof metadata",JSON.stringify({
     model:"gpt-6-luna",verified:summary.verified,
-    toolNames:summary.toolNames,failureCode:summary.failureCode}));
+    endReason:summary.endReason,textLength:summary.textLength,
+    unverifiedCount:summary.unverifiedCount,
+    externalEffectClaim:summary.externalEffectClaim,
+    toolNames:summary.toolNames,resultDomains:summary.resultDomains,
+    failureCode:summary.failureCode}));
   });
   if(first.failed){
    const checkpoints=(await admin.query("select phase,last_error,failure_count from "+
