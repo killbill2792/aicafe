@@ -35,7 +35,7 @@ export type StaffRequest={
 };
 export type StaffMessage={
  id:string;request_id:string|null;response_code:string;body:string|null;
- channel:string;received_at:string;employee_id?:string;
+ channel:string;received_at:string;employee_id?:string;actor:string;
 };
 export async function getStaffInbox():Promise<{
  name:string;requests:StaffRequest[];messages:StaffMessage[];
@@ -56,7 +56,7 @@ export async function getStaffInbox():Promise<{
    .in("status",["open","responded"])
    .order("created_at",{ascending:false}).limit(100),
   db.from("staff_communication_messages")
-   .select("id,request_id,response_code,body,channel,received_at")
+   .select("id,request_id,response_code,body,channel,received_at,actor")
    .eq("business_id",identity.businessId).eq("employee_id",identity.id)
    .order("received_at",{ascending:false}).limit(60),
  ]);
@@ -102,6 +102,29 @@ export async function ownerLinkExistingLogin(raw:unknown){
  if(error||!data)throw new StaffChannelError(error?.code==="23505"?"conflict":"invalid");
  return {linked:data.linked===true};
 }
+const ownerMessageSchema=z.strictObject({
+ employeeId:uuid,body:z.string().trim().min(1).max(2000),nonce:uuid,
+});
+/** Owner click is the sole authority for direct in-app messaging. It does
+ * not send through Meta, create an employee login or mark any shift covered. */
+export async function sendOwnerStaffMessage(raw:unknown){
+ const parsed=ownerMessageSchema.safeParse(raw);
+ if(!parsed.success)throw new StaffChannelError("invalid");
+ const owner=await requireSchedulingOwner();
+ if(!owner)throw new StaffChannelError("unauthorized");
+ const {data,error}=await owner.supabase.rpc("staff_channel_owner_send",{
+  p_employee_id:parsed.data.employeeId,p_body:parsed.data.body,
+  p_nonce:parsed.data.nonce,
+ });
+ if(error){
+  if(error.code==="42501")throw new StaffChannelError("unauthorized");
+  if(error.code==="40900")throw new StaffChannelError("conflict");
+  if(error.code==="22023")throw new StaffChannelError("invalid");
+  throw new StaffChannelError("storage");
+ }
+ if(!data||typeof data.id!=="string")throw new StaffChannelError("storage");
+ return data as {id:string;replayed:boolean};
+}
 export async function readOwnerStaffMessages(limit=40):Promise<Array<StaffMessage&{
  employee_name:string;request_title:string|null;request_status:string|null;
 }>>{
@@ -109,7 +132,7 @@ export async function readOwnerStaffMessages(limit=40):Promise<Array<StaffMessag
  if(!owner)throw new StaffChannelError("unauthorized");
  const db=owner.supabase;
  const {data,error}=await db.from("staff_communication_messages")
-  .select("id,employee_id,request_id,response_code,body,channel,received_at")
+  .select("id,employee_id,request_id,response_code,body,channel,received_at,actor")
   .eq("business_id",owner.businessId)
   .order("received_at",{ascending:false}).limit(Math.min(limit,100));
  if(error||!data)throw new StaffChannelError("storage");
