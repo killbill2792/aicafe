@@ -30,6 +30,17 @@ test('Muse can write coordination-only fields; not approvals or CI',()=>{
  assert.throws(()=>applyMuseNote(state,edit,{role:'anonymous',now}),/Authenticated/);
  assert.throws(()=>applyMuseNote(updated,edit,{role:'muse',now}),/conflict/);
 });
+test('a Muse stage-only update preserves an already saved chat URL and owner note',()=>{
+ const before=applyMuseNote({version:1,entries:{}},edit,{role:'owner',now});
+ const after=applyMuseNote(before,{task_id:'15a',stage:'ready_review',
+  expected_revision:1},{role:'muse',now:'2026-11-16T20:10:00Z'});
+ assert.equal(after.entries['15a'].chat_url,link);
+ assert.equal(after.entries['15a'].pr_number,488);
+ assert.equal(after.entries['15a'].note,edit.note);
+ assert.equal(after.entries['15a'].stage,'ready_review');
+ assert.throws(()=>applyMuseNote(after,{task_id:'15a',expected_revision:2},
+  {role:'muse',now}),/At least one coordination field/);
+});
 test('malformed owner/auth claims cannot enter local status',()=>{
  for(const change of [
   {stage:'merged'},{stage:'approved'},{chat_url:'https://evil.test/a'},
