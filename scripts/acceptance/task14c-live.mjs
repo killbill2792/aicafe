@@ -6,6 +6,7 @@
  * NEVER real Google, real supplier, production data, or production release.
  */
 import {randomUUID,randomBytes,createCipheriv} from "node:crypto";
+import {createServer} from "node:http";
 import {existsSync,realpathSync,readFileSync,writeFileSync} from "node:fs";
 import {resolve,dirname,sep} from "node:path";
 import {pathToFileURL} from "node:url";
@@ -30,6 +31,61 @@ const encrypt=(plain)=>{
  const out=Buffer.concat([cipher.update(plain,"utf8"),cipher.final()]);
  return [iv,cipher.getAuthTag(),out].map(b=>b.toString("base64")).join(":");
 };
+
+/** Independent in-memory simulated Gmail provider in the trusted observer process.
+ * Its receipt directory is never mounted into the candidate application. */
+export async function startTrustedTask14cGmailSimulator(path){
+ if(path!=="/proof/task14c-simulator-receipt.json"||existsSync(path))
+  fail("host_only_fresh_simulator_receipt_required");
+ const id="task14c-disposable-simulated-gmail-message";
+ const secret="Bearer disposable-task14c-not-a-real-google-token";
+ const json=(res,status,obj)=>{
+  res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});
+  res.end(JSON.stringify(obj));
+ };
+ const server=createServer(async(req,res)=>{
+  try{
+   if(req.headers.authorization!==secret)throw Error("wrong_transport_token");
+   const route=new URL(req.url??"/","http://127.0.0.1:8790").pathname;
+   if(req.method==="GET"&&route==="/gmail/v1/users/me/messages")
+    return json(res,200,{messages:[],resultSizeEstimate:0});
+   if(req.method==="POST"&&route==="/gmail/v1/users/me/messages/send"){
+    if(existsSync(path))throw Error("duplicate_send");
+    let body="";for await(const chunk of req){
+     body+=chunk.toString("utf8");
+     if(body.length>32000)throw Error("oversized_mime");
+    }
+    const payload=JSON.parse(body);
+    if(typeof payload.raw!=="string"||payload.raw.length>30000)
+     throw Error("invalid_mime");
+    const mime=Buffer.from(payload.raw,"base64url").toString("utf8");
+    const field=(name)=>mime.match(new RegExp("^"+name+":\\s*(.+)$","im"))?.[1]?.trim();
+    const sender=field("From"),recipient=field("To"),header=field("Subject"),rfc=field("Message-ID");
+    const match=/^=\?UTF-8\?B\?([A-Za-z0-9+/=]+)\?=$/i.exec(header??"");
+    const subject=match?Buffer.from(match[1],"base64").toString("utf8"):"";
+    if(sender!=="owner@task14c.example"||recipient!=="orders@task14c.example"||
+       !/^Purchase order [0-9a-f-]{36}$/i.test(subject)||
+       !/^<[^<>\r\n]{1,240}>$/.test(rfc??""))
+     throw Error("wrong_disposable_envelope");
+    writeFileSync(path,JSON.stringify({id,rfc,subject,
+     acceptedBy:"local_gmail_simulator_not_google",count:1})+"\n",{flag:"wx",mode:0o600});
+    return json(res,200,{id,threadId:"task14c-disposable-thread"});
+   }
+   if(req.method==="GET"&&route==="/gmail/v1/users/me/messages/"+id){
+    if(!existsSync(path))throw Error("read_before_send");
+    const saved=JSON.parse(readFileSync(path,"utf8"));
+    return json(res,200,{id,threadId:"task14c-disposable-thread",
+     labelIds:["SENT"],payload:{headers:[{name:"Message-ID",value:saved.rfc}]}});
+   }
+   throw Error("operation_not_allowed");
+  }catch{json(res,403,{error:"disposable_gmail_transport_denied"})}
+ });
+ await new Promise((ok,no)=>{
+  server.once("error",no);server.listen(8790,"127.0.0.1",ok);
+ });
+ return server;
+}
+
 async function login(browser,cafe){
  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
  const page=await context.newPage();
@@ -120,8 +176,9 @@ async function main(){
  const item="Task14C milk "+id.ingredient.slice(0,8);
  const supplier="Task14C verified dairy "+id.supplier.slice(0,8);
  const today=day(new Date(),cafe.timezone),needed=shift(today,3),delivery=shift(today,2);
- let connection=null,foreign=null,thread=null;
+ let connection=null,foreign=null,thread=null,simServer=null;
  await db.connect();
+ simServer=await startTrustedTask14cGmailSimulator(env.AICAFE_14C_SIM_PATH);
  try{
   connection=await login(browser,cafe);
   thread=await createThread(connection.context);
@@ -303,6 +360,7 @@ async function main(){
   await connection?.context.close().catch(()=>{});
   await browser.close().catch(()=>{});
   await db.end().catch(()=>{});
+  if(simServer)await new Promise(done=>simServer.close(done));
  }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
