@@ -380,11 +380,16 @@ grant execute on function public.staff_channel_owner_assign(uuid,text,text,text,
 -- SAME transaction. Staff text remains data, not an instruction or approval.
 create function public.staff_channel_notice() returns trigger
  language plpgsql security definer set search_path=public,pg_temp as $$
-declare owner_row record; v_kind text;
+declare owner_row record; v_kind text; v_request_kind text;
 begin
  -- Owner replies are visible to employees, never fake new staff events.
  if new.actor<>'employee' then return new; end if;
- v_kind:=case when new.request_id is not null then 'staff_coverage' else 'data_quality' end;
+ if new.request_id is not null then
+  select kind into v_request_kind from public.staff_communication_requests r
+   where r.business_id=new.business_id and r.id=new.request_id;
+ end if;
+ v_kind:=case when v_request_kind in ('shift_confirmation','coverage_offer')
+  then 'staff_coverage' else 'data_quality' end;
  for owner_row in select m.user_id from public.memberships m
    where m.business_id=new.business_id and m.role='owner' loop
   insert into public.operating_tasks
