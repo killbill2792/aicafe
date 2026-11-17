@@ -153,6 +153,21 @@ try{
      const replay=await asRole("service_role",id.owner,()=>one(rebindSql,
        [id.business,id.owner,id.po,nextProposal]));
      check(replay?.rebound===true,scenario+": identical saved draft replay is idempotent");
+     // A privileged malformed proposal with NULL subject must not sneak
+     // through PostgreSQL three-valued OR checks.
+     const malformedId=randomUUID();
+     await db.query(`insert into public.supervisor_proposals(
+       id,business_id,owner_user_id,thread_id,request_key,capability_id,capability_version,
+       canonical_effect_payload,effect_hash,baseline,monitor_spec,locale,status,revision)
+       values($1,$2,$3,$4,$5,'alex.gmail_effect.v1',1,$6::jsonb,$7,
+        '{}'::jsonb,'{"durationDays":1,"metricScope":"gmail_provider_receipt"}'::jsonb,
+        'en','draft',1)`,[malformedId,id.business,id.owner,id.thread,
+       randomUUID(),JSON.stringify({operation:"send",action:null,to:[nextEmail],cc:[],bcc:[],
+         subject:null,body:"untrusted",messageId:null,threadId:null,labelId:null,labelName:null,
+         accountId:id.account,generation:1,from:"owner@task14c.example"}),"d".repeat(64)]);
+     await fails(()=>asRole("service_role",id.owner,()=>one(rebindSql,
+       [id.business,id.owner,id.po,malformedId])),"P0001",
+       "Malformed null-subject draft cannot be rebound to a supplier PO");
      check((await one(`select count(*)::int as n from public.purchase_order_dispatches
        where business_id=$1 and purchase_order_id=$2`,[id.business,id.po])).n===1,
        scenario+": exactly one PO dispatch remains");
