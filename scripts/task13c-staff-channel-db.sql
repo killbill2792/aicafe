@@ -431,5 +431,64 @@ BEGIN
  IF NOT denied THEN RAISE EXCEPTION 'disabled employee was relinked'; END IF;
 END $test$;
 
-SELECT 'task13c employee isolation, free-text, dedupe, owner notice, stale revision PASS' AS proof;
+-- A previously committed manual owner message and assignment MUST be
+-- retrievable by the same nonce even after staff deactivation/unlink. Only
+-- genuinely new work is a definitive non-commit (draft may be retained).
+DO $test$
+DECLARE receipt jsonb; blocked boolean; original_messages integer;original_assignments integer;
+BEGIN
+ receipt:=public.staff_channel_owner_send(
+  current_setting('test.task13c.staff_a')::uuid,
+  'Thanks for explaining. Can you confirm an eight o''clock start?',
+  current_setting('test.task13c.nonce_b')::uuid);
+ IF receipt->>'replayed'<>'true' OR receipt->>'id'<>current_setting('test.task13c.owner_message')
+ THEN RAISE EXCEPTION 'owner message receipt lost after employee unlinked'; END IF;
+ receipt:=public.staff_channel_owner_assign(
+  current_setting('test.task13c.staff_a')::uuid,'checklist',
+  'Check opening equipment','Inspect grinder and log any problems',
+  current_setting('test.task13c.owner_assign_nonce')::uuid);
+ IF receipt->>'replayed'<>'true' OR receipt->>'id'<>current_setting('test.task13c.owner_assign_id')
+ THEN RAISE EXCEPTION 'owner assignment receipt lost after employee unlinked'; END IF;
+ blocked:=false;
+ BEGIN
+  PERFORM public.staff_channel_owner_send(
+   current_setting('test.task13c.staff_a')::uuid,
+   'This is a new message to an unlinked worker',gen_random_uuid());
+ EXCEPTION WHEN SQLSTATE '40900' THEN
+  IF SQLERRM='owner_target_unavailable' THEN blocked:=true; ELSE RAISE; END IF;
+ END;
+ IF NOT blocked THEN RAISE EXCEPTION 'new owner message to revoked worker was allowed'; END IF;
+ blocked:=false;
+ BEGIN
+  PERFORM public.staff_channel_owner_assign(
+   current_setting('test.task13c.staff_a')::uuid,'task',
+   'New work to unlinked worker','This must not be assigned',gen_random_uuid());
+ EXCEPTION WHEN SQLSTATE '40900' THEN
+  IF SQLERRM='owner_target_unavailable' THEN blocked:=true; ELSE RAISE; END IF;
+ END;
+ IF NOT blocked THEN RAISE EXCEPTION 'new owner assignment to revoked worker was allowed'; END IF;
+ SELECT count(*) INTO original_messages FROM public.staff_communication_messages
+  WHERE employee_id=current_setting('test.task13c.staff_a')::uuid
+    AND actor='owner' AND client_nonce=current_setting('test.task13c.nonce_b')::uuid;
+ SELECT count(*) INTO original_assignments FROM public.staff_communication_requests
+  WHERE employee_id=current_setting('test.task13c.staff_a')::uuid
+    AND source_type='owner_manual'
+    AND source_id=current_setting('test.task13c.owner_assign_nonce');
+ IF original_messages<>1 OR original_assignments<>1
+ THEN RAISE EXCEPTION 'owner replay duplicated records after revocation'; END IF;
+END $test$;
+-- The foreign café owner must not be able to learn or replay old receipts.
+SELECT set_config('request.jwt.claim.sub',:'owner_b',true);
+DO $test$
+DECLARE denied boolean:=false;
+BEGIN
+ BEGIN PERFORM public.staff_channel_owner_send(
+  current_setting('test.task13c.staff_a')::uuid,
+  'Thanks for explaining. Can you confirm an eight o''clock start?',
+  current_setting('test.task13c.nonce_b')::uuid);
+ EXCEPTION WHEN insufficient_privilege THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'foreign owner replayed private reply'; END IF;
+END $test$;
+
+SELECT 'task13c employee isolation, free-text, dedupe, owner notice, stale revision and revoked owner receipt PASS' AS proof;
 ROLLBACK;
