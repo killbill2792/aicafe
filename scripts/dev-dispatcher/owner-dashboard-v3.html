@@ -36,6 +36,7 @@ section{margin-top:18px}details{padding:7px;border-bottom:1px solid #e2e2e2}
 <p id="muse-pr-freshness">Loading last read-only GitHub snapshot…</p>
 <div class="tablewrap"><table><thead><tr><th>PR</th><th>Last commit</th><th>Observed CI</th><th>Codex</th><th>ChatGPT</th></tr></thead><tbody id="muse-prs"></tbody></table></div>
 <div id="muse-merges"></div>
+<h3>Muse next suggested actions</h3><div id="muse-actions"></div>
 <p>These are observed GitHub facts, not approval or guaranteed merge readiness. If monitoring fails, the last observation is labeled stale; local notes remain editable.</p>
 </section>
 <section id="detail"><b>Select a task to inspect every field and its evidence.</b></section>
@@ -80,6 +81,16 @@ async function refreshMusePrs(){
  el('muse-merges').textContent='Recently merged (observed): '+
   (facts.merged_prs||[]).slice(0,8).map(x=>'#'+x.number).join(', ');
 }
+async function refreshMuseActions(){
+ const response=await fetch('/api/muse-actions',{cache:'no-store'});
+ if(!response.ok)throw Error('Actions HTTP '+response.status);
+ const value=await response.json();
+ el('muse-actions').innerHTML=(value.events||[]).slice(0,15).map(a=>
+  '<p>'+esc(a.kind)+' · '+esc(a.task_id||('PR #'+(a.pr_number||'—')))+
+  ' · '+esc(a.status)+' · '+esc(a.reason||'')+
+  (a.chat_url?'<a target="_blank" rel="noopener noreferrer" href="'+esc(a.chat_url)+'"> Open chat</a>':'')+'</p>'
+ ).join('')||'<p>None recorded yet.</p>';
+}
 async function refreshNotes(){
  const response=await fetch('/api/notes',{cache:'no-store'});
  if(!response.ok)throw Error('Notes HTTP '+response.status);
@@ -88,7 +99,7 @@ async function refreshNotes(){
   a.task_id.localeCompare(b.task_id)).map(e=>
   '<button type="button" data-muse-task="'+esc(e.task_id)+'">'+esc(e.task_id)+
   '</button> · '+esc(e.stage)+' · '+(e.pr_number?'PR #'+esc(e.pr_number)+' · ':'')+
-  esc(e.note.slice(0,180))+'<br>').join('')||'<p>No coordination notes yet.</p>';
+  esc(e.note.slice(0,180))+(e.chat_url?' · <a target="_blank" rel="noopener noreferrer" href="'+esc(e.chat_url)+'">Open saved chat</a>':'')+'<br>').join('')||'<p>No coordination notes yet.</p>';
  for(const button of document.querySelectorAll('[data-muse-task]'))
   button.onclick=()=>selectMuseNote(button.dataset.museTask);
 }
@@ -133,7 +144,7 @@ function detail(id){
  selectMuseNote(id);
 }
 el('search').oninput=()=>snapshot&&redraw();
-el('refresh').onclick=()=>{refresh().catch(e=>alert(e.message));refreshNotes().catch(e=>el('muse-saved').textContent=e.message);refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);};
+el('refresh').onclick=()=>{refresh().catch(e=>alert(e.message));refreshNotes().catch(e=>el('muse-saved').textContent=e.message);refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);refreshMuseActions().catch(e=>el('muse-actions').textContent='Actions unavailable: '+e.message);};
 el('muse-save').onclick=async()=>{
  const task_id=el('muse-task').value.trim(),prior=localNotes.entries?.[task_id];
  const prRaw=el('muse-pr').value.trim();
@@ -165,6 +176,6 @@ el('save').onclick=async()=>{
 refresh().catch(e=>el('freshness').textContent='GitHub state unavailable: '+e.message);
 refreshNotes().catch(e=>el('muse-saved').textContent='Notes unavailable: '+e.message);
 refreshMusePrs().catch(e=>el('muse-pr-freshness').textContent='Monitor unavailable: '+e.message);
-setInterval(()=>{refresh().catch(()=>{});refreshNotes().catch(()=>{});refreshMusePrs().catch(()=>{});},60000);
+setInterval(()=>{refresh().catch(()=>{});refreshNotes().catch(()=>{});refreshMusePrs().catch(()=>{});refreshMuseActions().catch(()=>{});},60000);
 </script>
 </body></html>
