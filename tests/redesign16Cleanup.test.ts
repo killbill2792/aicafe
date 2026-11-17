@@ -67,6 +67,9 @@ const approvedTask14bEnglishOnly: Record<string, readonly string[]> = {
 };
 const approvedTask14bSet = new Set(Object.entries(approvedTask14bEnglishOnly)
   .flatMap(([namespace, keys]) => keys.map(key => namespace+"."+key)));
+/** Exact Task 15B English-only copy; never silently exempt other namespaces. */
+const task15bMaintenanceKeys = ["block","caseTitle","claimHelp","critical","equipment","followUp","heading","high","intro","normal","notSent","note","openCase","problem","reopen","repairClaim","reportError","reportSaved","save","saving","severity","stage","stageAssigned","stageAwaiting","stageBlocked","stageClaimed","stageInvestigating","stageReopened","stageReported","stageSent","stageVerified","submit","submitting","unknown","updateError","updateSaved","verifyHelp","verifyWorking"];
+const approvedTask15bSet = new Set(task15bMaintenanceKeys.map(key=>"Maintenance."+key));
 
 describe("redesign 16 cleanup integration", () => {
   for (const locale of ["en", "es", "ar"]) {
@@ -80,7 +83,7 @@ describe("redesign 16 cleanup integration", () => {
     });
   }
 
-  it("keeps existing translation keys in sync, allowing only exact Task 11, Task 13B and Task 14B English-only copy", () => {
+  it("keeps existing translation keys in sync, allowing exact Task 11, Task 13B, Task 14B and Task 15B English-only copy", () => {
     // AGENTS.md currently forbids new es/ar copy. Preserve strict parity for
     // every pre-existing key; only the owner-approved Gmail, Task13B and exact Task14B keys are English-only.
     // Task13B mandate's 25 exact keys are separately enforced by StaffStandingMandatePanel.test.ts.
@@ -89,11 +92,22 @@ describe("redesign 16 cleanup integration", () => {
       const messages = localeMessages(locale);
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
-        .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key))
+        .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key) && !approvedTask15bSet.has(key))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));
     expect(keys("ar")).toEqual(keys("en"));
+  });
+
+  it("locks Task 15B equipment copy to English only without hiding existing locale parity errors", () => {
+    const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
+    expect(Object.keys(en.Maintenance??{}).sort()).toEqual([...task15bMaintenanceKeys].sort());
+    for(const key of task15bMaintenanceKeys){
+      expect(en.Maintenance[key],key).toEqual(expect.any(String));
+      expect(en.Maintenance[key].trim().length).toBeGreaterThan(0);
+    }
+    expect(es.Maintenance).toBeUndefined();
+    expect(ar.Maintenance).toBeUndefined();
   });
 
   it("requires every Task 14B purchasing key in en and forbids silently expanding the exception", () => {

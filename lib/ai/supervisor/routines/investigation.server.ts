@@ -102,7 +102,8 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
   const raw=object(row.payload);
   const selected:Record<string,string|boolean|null>={};
   const textKeys=["timecardId","employeeId","date","categoryCode",
-    "monthKey","ownerChoice","snoozeUntil","suggestedPriceSource"];
+    "monthKey","ownerChoice","snoozeUntil","suggestedPriceSource",
+    "equipmentLabel","maintenanceStage","reportedAt","severity"];
   const booleanKeys=["awaitingPriceApplication","priceAppliedToPos",
     "scheduleApplied","ownerApproved","coverageConfirmed"];
   for(const key of textKeys){
@@ -112,6 +113,10 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
   }
   for(const key of booleanKeys)
     if(typeof raw?.[key]==="boolean")selected[key]=raw[key] as boolean;
+  // This is a report from an authenticated café member, NOT a sensor reading.
+  // Treat its free text as hostile tool data, never as instructions.
+  if(row.kind==="maintenance_issue"&&typeof raw?.symptom==="string")
+    selected.symptom=raw.symptom.slice(0,600).replace(/[<>]/gu,"");
   if(typeof row.entity_type==="string"&&row.entity_type.length<=64)
     selected.entityType=row.entity_type;
   if(typeof row.entity_id==="string"&&row.entity_id.length<=128)
@@ -142,10 +147,24 @@ async function readIncidentEvidence(db:SupabaseClient,c:Claimed):
       }
     }
   }
+  let maintenanceHistory:Array<{kind:string;sourceKind:string;verifiedWorking:boolean;
+    occurredAt:string}>|null=null;
+  if(row.kind==="maintenance_issue"&&c.source_type==="operating_task"){
+    const events=await db.from("maintenance_case_events")
+      .select("kind,source_kind,working_confirmed,occurred_at")
+      .eq("business_id",c.business_id).eq("task_id",c.source_id)
+      .order("occurred_at",{ascending:false}).limit(12);
+    if(events.error)throw new Error("source_unavailable");
+    maintenanceHistory=(events.data??[]).map(e=>({
+      kind:e.kind,sourceKind:e.source_kind,verifiedWorking:e.working_confirmed===true,
+      occurredAt:e.occurred_at,
+    }));
+    if(!maintenanceHistory.length)missing.push("maintenance_report_receipt_missing");
+  }
   return {source:"investigation_source",period:null,agentId:"alex",
     sourceType:c.source_type,sourceId:c.source_id,
     incidentKind:stringField(row.kind),sourceStatus:stringField(row.status,24),
-    selectors:selected,linkedTimecard,
+    selectors:selected,linkedTimecard,maintenanceHistory,
     missing};
 }
 async function finish(db:SupabaseClient,c:Claimed,now:Date,

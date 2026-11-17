@@ -38,6 +38,11 @@ export function scenariosForPath(path) {
   if(path==="app/[locale]/operations/page.tsx"||
      path==="app/[locale]/operations/page.test.tsx")
     return ["home"];
+  // Maintenance intake and verification must run the signed-in, locally
+  // seeded owner Operations journey. Never classify new owner UI as backend.
+  if (path === "components/operations/MaintenanceCaseCard.tsx" ||
+      path === "components/operations/MaintenanceCaseCard.test.tsx")
+    return ["home"];
   if (path === "components/operations/SupplierEvidenceManager.tsx" ||
       path === "app/[locale]/operations/suppliers/page.tsx")
     return ["purchasing"];

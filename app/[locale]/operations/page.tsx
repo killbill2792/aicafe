@@ -25,6 +25,8 @@ import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.se
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
 import {staffScheduleHref} from "@/lib/scheduling/staffScheduleLinks";
+import MaintenanceCaseCard from "@/components/operations/MaintenanceCaseCard";
+import enMessages from "@/messages/en.json";
 
 export const dynamic = "force-dynamic";
 const parsePeriod = (value?: string): Period => value === "week" || value === "month" ? value : "today";
@@ -41,6 +43,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
     getTranslations("StaffSchedule"), getLocale(), authenticatedConversationContext().then(() => true).catch(() => false)]);
   // "Needs you" is the same shared attention list Home counts, for the period Home showed.
   // The page only reads: the inbox lifecycle runs in memory and nothing is written on load.
+  const maintenanceCopy = enMessages.Maintenance;
   const period = parsePeriod(periodParam);
   const [snapshot, menu] = await Promise.all([getSnapshot(period), getMenuControlCenter()]);
   const inbox = await readInbox({ period, menu, snapshot });
@@ -60,7 +63,8 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   const byAgent = <T,>(value: (agentId: AgentId) => T) => ({ alex: value("alex"), olivia: value("olivia"), maya: value("maya"), leo: value("leo") });
   const cards: TeamInboxCard[] = INBOX_STATUSES.flatMap((value) => rows[value].map((row) => ({ id: row.id, agentId: row.agentId, status: value,
     node: <TaskCard row={row} names={names} t={t} tExperiment={tExperiment} tBrief={tBrief} tGoals={tGoals} meta={meta}
-      category={(code) => tCategories(code as ExpenseCategoryCode)} selectedTaskId={selectedTaskId} /> })));
+      category={(code) => tCategories(code as ExpenseCategoryCode)} selectedTaskId={selectedTaskId}
+       maintenanceCopy={maintenanceCopy} /> })));
   const copy: TeamInboxCopy = {
     eyebrow: t("eyebrow"), title: t("title"), intro: t("intro"),
     focusedOn: byAgent((agentId) => t("focusedOn", { name: names[agentId], role: roles[agentId] })),
@@ -93,6 +97,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
         <Link href="/staff/rules" className="flex min-h-12 items-center self-start rounded-xl border border-line px-4 text-accent-text underline">{tStaffRules("rulesCard")}</Link>
       </div>}
       footer={<>
+        <MaintenanceCaseCard copy={maintenanceCopy} />
         {ownerCanSubscribe && <OwnerWhatsAppAlerts copy={{
           title: t("whatsAppAlertsTitle"), description: t("whatsAppAlertsDescription"),
           loading: t("whatsAppAlertsLoading"), saved: t("whatsAppAlertsSaved"),
@@ -133,6 +138,7 @@ function taskHref(task: OperatingTask): string {
   if (task.kind === "money_update") return "/more/bills";
   if ((task.kind === "commitment" || task.kind === "daily_brief" || task.kind === "goal_report" || task.kind === "goal_checkin" || task.kind === "event_plan" || task.kind === "event_change") && typeof task.payload.threadId === "string")
     return "/?thread=" + encodeURIComponent(task.payload.threadId);
+  if (task.kind === "maintenance_issue") return "/operations?agent=leo&status=" + (task.status === "handled" ? "handled" : "needs_you") + "&task=" + encodeURIComponent(task.id);
   if (task.kind === "supply_check") return "/more/uploads/ingredients";
   return "/operations";
 }
@@ -171,7 +177,7 @@ function firstLine(text: unknown): string {
   return typeof text === "string" ? (text.split("\n").map((line) => line.replace(/\*\*/g, "").trim()).find(Boolean) ?? "") : "";
 }
 
-function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, selectedTaskId, meta }: { row: OperatingTask | NeedsYouItem | ExpiredNeed; names: Record<AgentId, string>; t: OperationsT; tExperiment: Awaited<ReturnType<typeof getTranslations<"SupervisorExperiment">>>; tBrief: Awaited<ReturnType<typeof getTranslations<"DailyBrief">>>; tGoals: Awaited<ReturnType<typeof getTranslations<"Goals">>>; category: (code: string) => string; selectedTaskId: string|null; meta: CardMeta }) {
+function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, selectedTaskId, meta, maintenanceCopy }: { row: OperatingTask | NeedsYouItem | ExpiredNeed; names: Record<AgentId, string>; t: OperationsT; tExperiment: Awaited<ReturnType<typeof getTranslations<"SupervisorExperiment">>>; tBrief: Awaited<ReturnType<typeof getTranslations<"DailyBrief">>>; tGoals: Awaited<ReturnType<typeof getTranslations<"Goals">>>; category: (code: string) => string; selectedTaskId: string|null; meta: CardMeta; maintenanceCopy: typeof enMessages.Maintenance }) {
   const visual = agentVisuals[task.agentId];
   if (isNeed(task)) return <NeedCard item={task} name={names[task.agentId]} selected={task.id === selectedTaskId} t={t} meta={meta} />;
   const price = task.kind === "price_review";
@@ -195,6 +201,18 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
       case "staff_coverage": return { title: t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }), detail: t("staffTaskReason"), action: t("openStaff") };
       case "supply_check": return { title: t("mayaWatching"), detail: t("supplySignal"), action: t("openIngredientCosts") };
       case "money_update": return { title: t("homeMoneyUpdate"), detail: "", action: t("openBills") };
+      case "maintenance_issue": return {
+        title: maintenanceCopy.caseTitle + ": " + String(task.payload.equipmentLabel ?? ""),
+        detail: maintenanceCopy.stage + ": " +
+          String(maintenanceCopy[({
+            reported:"stageReported",investigating:"stageInvestigating",
+            awaiting_owner:"stageAwaiting",assigned:"stageAssigned",
+            request_sent:"stageSent",repair_claimed:"stageClaimed",
+            verified_repaired:"stageVerified",blocked:"stageBlocked",
+            reopened:"stageReopened",
+          } as Record<string,keyof typeof maintenanceCopy>)[String(task.payload.maintenanceStage)] ?? "stageReported"]),
+        action: maintenanceCopy.openCase,
+      };
       case "priority_notice": return {
         // Use the persisted owner-visible report title, not fabricated
         // business conclusions. This card is rendered by the SAME Operations
@@ -231,6 +249,10 @@ function TaskCard({ row: task, names, t, tExperiment, tBrief, tGoals, category, 
         task.payload.recommendation==="keep"?"keep":task.payload.recommendation==="revert"?"revert":"adjust")})}</p>}
       {!midRun&&<p className="text-ink-muted">{tExperiment(task.payload.outcomeStatus==="complete"?"reportCompletedCaveat":"reportUncertain")}</p>}
     </div>}
+    {task.kind==="maintenance_issue"&&<MaintenanceCaseCard copy={maintenanceCopy}
+      caseData={{taskId:task.id,equipmentLabel:String(task.payload.equipmentLabel??""),
+        stage:String(task.payload.maintenanceStage??"reported"),
+        symptom:String(task.payload.symptom??"")}} />}
     <Link href={taskHref(task)} className="mt-3 flex min-h-12 items-center justify-center rounded-full bg-accent px-4 text-center font-bold text-on-accent no-underline">{copy.action}</Link>
     {price && task.status === "needs_owner" && <PriceReviewActions taskId={task.id} keepLabel={t("keepCurrent")} laterLabel={t("later")} snoozeLabels={{ seven: t("remind7"), thirty: t("remind30"), change: t("remindChange") }} cancelLabel={t("cancel")} errorLabel={t("decisionError")} />}
     {experiment && task.status === "needs_owner" && <ExperimentReportActions taskId={task.id} acknowledgeLabel={tExperiment("reportAcknowledge")} errorLabel={tExperiment("reportAcknowledgeError")} />}

@@ -67,6 +67,9 @@ function scopedTranslations(locale:"en"|"es"|"ar"){
 function operatingTaskHref(task: OperatingTask): string {
   if((task.kind==="commitment"||isPriorityNoticeTask(task)||task.kind==="event_plan"||task.kind==="event_change") && typeof task.payload.threadId==="string")
     return "/?thread="+encodeURIComponent(task.payload.threadId);
+  if(task.kind==="maintenance_issue"){
+    return "/operations?agent=leo&status=needs_you&task="+encodeURIComponent(task.id);
+  }
   if(task.kind==="price_experiment_report"){
     const thread=task.payload.threadId,proposal=task.payload.proposalId;
     if(typeof thread==="string"&&typeof proposal==="string")
@@ -169,6 +172,8 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
 
     if(task.kind==="commitment"||isPriorityNoticeTask(task)){
       title=String(task.payload.title??"");
+    }else if(task.kind==="maintenance_issue"){
+      title=enMessages.Maintenance.caseTitle+": "+String(task.payload.equipmentLabel??"");
     }else if(task.kind==="price_experiment_report"){
       title=tExperiment("reportTask",{item:itemName});
     }else if(task.kind==="daily_brief"){
@@ -303,7 +308,10 @@ export async function readInbox(args:AttentionArgs={}):Promise<Inbox>{
     let params:Record<string,string|number>={};
     if(task){
       const itemName=String(task.payload.itemName??"").replace(" · "," ");
-      if(task.kind==="commitment"||isPriorityNoticeTask(task)){
+      if(task.kind==="maintenance_issue"){
+        key="operating_tasks.title";
+        params={title:enMessages.Maintenance.caseTitle+": "+String(task.payload.equipmentLabel??"")};
+      }else if(task.kind==="commitment"||isPriorityNoticeTask(task)){
         // Owner-authored reminders or verified source notices carry durable provenance.
         key="operating_tasks.title";params={title:String(task.payload.title??"")};
       }else if(task.kind==="price_experiment_report"){key=task.payload.midRun===true?"SupervisorExperiment.midRunTask":
