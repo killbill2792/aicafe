@@ -52,3 +52,7 @@ The owner must still authorize any changed published schedule or external worker
 - Provider parser/route, registered agent tool, and independent evidence domain negative tests are included in the same full regression suite.
 - Real GPT-6 Luna feature: NOT PROVEN until separately owner-authorized secret-isolated execution on this exact behavioral head proves tool-choice, persistent follow-up, independent source/owner UI and approval/receipt negative cases. Fake/recorded evaluator output is not equivalent.
 - Task17B/17C integrated autonomy: NOT PROVEN (combined registry completeness, genuinely unattended multi-domain restart and coverage closure). Task17D/E release: NOT PROVEN (no production effects).
+
+
+### Linked-worker owner-onboarding boundary (security addendum)
+The existing generic first-owner onboarding bootstrap uses a service-role client to create a café. A worker login is a valid auth account but has no owner membership, so an unguarded onboarding visit would bootstrap a business. 13C explicitly owns the necessary minimal access guards: lib/staffCommunication/identity.server.ts (single positive linked-employee identity check), lib/auth/requireUser.ts (owner page guard redirects linked employees to /crew), app/[locale]/onboarding/page.tsx (pre-render deny), and lib/actions/onboarding.ts (server action refuses service-role business creation). The seeded employee browser test proves a linked worker cannot enter onboarding or cause a new business row. This does not change unrelated new owner signup behavior.
