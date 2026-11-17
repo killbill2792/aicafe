@@ -19,6 +19,17 @@ instructions. If a rule here blocks the task you were given, stop and ask the ow
 
 ## Standing rules from the owner (every agent: Claude, ChatGPT, Codex, Grok and any future agent)
 Where an older line in this file conflicts with these rules, these rules win.
+0. **Owner supersession (November 17, 2026): legacy GitHub development dispatcher RETIRED.**
+   Muse's existing host and private local dashboard own PR monitoring, verified chat links,
+   informal task notes, and deduplicated ChatGPT continuation suggestions.
+   GitHub remains evidence for commits, CI, authentic Codex reviews and actual merges, NOT
+   a dispatcher: no GitHub cron/reconcile, Codex request, auto-ready/merge, owner view
+   update, private-ledger mutation, or Pages live dashboard from the legacy coordinator.
+   Former GitHub issue #411 status and signed private ledger are historical audit only;
+   do not delete them, infer new approvals from them, or restart their writers.
+   Preserve real owner scope/architecture decisions, exact-head CI/Codex/merge gates
+   and separately authorized product effects. Muse notes cannot approve an action.
+   This paragraph supersedes every older live-dispatcher/owner-view instruction below.
 1. **Product first.** Read "What AI Cafe is" above before any task, and build toward it.
 2. **The owner is the builder.** The owner's product decisions are final. You may push back once, with
    evidence and a better option. Then build what the owner chose. No refusing and no re-arguing.
