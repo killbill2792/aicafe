@@ -1195,7 +1195,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
           (!claimedDate||days.length===0||days.includes(calendarDay??""));
         const person=role.startsWith("shift")?assertedShiftPerson(text,clock):{kind:"general" as const};
         const verified=dateAgrees&&person.kind!=="unresolved"&&(days.length?days:[null]).every(day=>observed.some(h=>
-          h.time===canonical&&h.role===role&&(day===null?h.complete:h.day===day)&&
+          h.time===canonical&&h.role===role&&(day===null?(h.complete||(h.dated&&claimedDate===h.validFrom)):h.day===day)&&
           (!h.dated||(typeof claimedDate==="string"&&claimedDate===h.validFrom))&&
           (!claimedDate||h.day===calendarDay)&&
           (!claimedDate||(!h.validFrom||claimedDate>=h.validFrom)&&(!h.validTo||claimedDate<=h.validTo))&&
