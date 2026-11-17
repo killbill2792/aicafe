@@ -4,7 +4,7 @@
  * local owner acceptance. No real Google access, accounts or recipient sends.
  * The companion trusted OpenAI broker is installed before this shim.
  */
-const {readFileSync,writeFileSync,existsSync}=require("node:fs");
+const {readFileSync,writeFileSync,existsSync}=process.getBuiltinModule("node:fs");
 const upstream=globalThis.fetch.bind(globalThis);
 const path=process.env.AICAFE_14C_SIM_PATH;
 if(path!=="/proof/task14c-simulator-receipt.json")
