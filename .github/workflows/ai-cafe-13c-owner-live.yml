@@ -228,6 +228,7 @@ jobs:
             -e OPENAI_API_KEY='sk-local_disposable_proxy_key_not_real' \
             -e AICAFE_14B_BROKER_TOKEN="$AICAFE_14B_BROKER_TOKEN" \
             -e AI_CAFE_LIVE_ACCEPTANCE -e APP_URL \
+            -e AICAFE_13C_HOST_ATTEST_DB='1' \
             -e AICAFE_13C_AGENTIC_LIVE='1' \
             -e AICAFE_13C_LOCAL_DB_URL='postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
             -e AICAFE_13C_LIVE_HEAD="$HEAD_SHA" \
@@ -240,6 +241,7 @@ jobs:
               test "$(git rev-parse HEAD)" = "$HEAD_SHA"
               timeout 12m npx vitest run lib/ai/supervisor/routines/staffCoverage.live.test.ts --reporter=verbose
               cp test-results/acceptance/13c-live-proof.json /proof/13c-live-proof.json
+              cp test-results/acceptance/13c-live-scope.json /proof/13c-live-scope.json
             '
       - name: Redacted host broker failure diagnostics (no prompts, keys or provider body)
         if: failure()
@@ -312,6 +314,59 @@ jobs:
           const dir=process.env.RUNNER_TEMP;
           const audit=JSON.parse(readFileSync(dir+"/task13c-host-audit.json","utf8"));
           const proof=JSON.parse(readFileSync(dir+"/task13c-candidate-proof/13c-live-proof.json","utf8"));
+          const scope=JSON.parse(readFileSync(dir+"/task13c-candidate-proof/13c-live-scope.json","utf8"));
+          // Candidate prose and self-reported completion never count as DB
+          // truth. A host process with NO candidate code imports independently
+          // queries the local migrated PostgreSQL over its own CLI.
+          const uuid=(field)=>{
+            const value=scope[field];
+            if(typeof value!=="string"||
+               !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value))
+              throw Error("Invalid private host query scope");
+            return "'"+value+"'";
+          };
+          if(typeof scope.taskId!=="string"||
+             !/^[a-z0-9:_-]{1,220}$/i.test(scope.taskId)||
+             !Number.isSafeInteger(scope.expectedProviderCalls))
+            throw Error("Invalid durable incident identity");
+          const task="'"+scope.taskId+"'";
+          const business=uuid("businessId"),owner=uuid("ownerUserId");
+          const sql="select json_build_object("+
+           "'verifiedDecline',(select count(*) from public.staff_communication_messages "+
+             "where business_id="+business+" and id="+uuid("messageId")+
+             " and employee_id="+uuid("originalEmployeeId")+
+             " and actor='employee' and response_code='decline'),"+
+           "'ownerPosts',(select count(*) from public.ai_messages where "+
+             "business_id="+business+" and thread_id="+uuid("threadId")+
+             " and role='supervisor' and grounding->>'intent'='priority_investigation'),"+
+           "'currentAssignee',(select employee_id::text from public.scheduled_shifts "+
+             "where business_id="+business+" and id="+uuid("shiftId")+"),"+
+           "'taskStatus',(select status from public.operating_tasks "+
+             "where business_id="+business+" and id="+task+"),"+
+           "'investigationPhase',(select phase from public.supervisor_investigations "+
+             "where business_id="+business+" and source_id="+task+"),"+
+           "'completedQuota',(select count(*) from public.supervisor_system_usage_events "+
+             "where business_id="+business+" and owner_user_id="+owner+
+             " and model='gpt-6-luna' and status='completed'),"+
+           "'foreignOwnerMembership',(select count(*) from public.memberships where "+
+             "business_id="+business+" and user_id="+uuid("foreignOwnerUserId")+"))::text;";
+          const {execFileSync}=await import("node:child_process");
+          const raw=execFileSync("psql",
+            ["-X","-q","-t","-A","-h","127.0.0.1","-p","54322",
+             "-U","postgres","-d","postgres","-c",sql],
+            {encoding:"utf8",env:{...process.env,PGPASSWORD:"postgres"},
+             timeout:15000,maxBuffer:100000}).trim();
+          const facts=JSON.parse(raw);
+          if(Number(facts.verifiedDecline)!==1||
+             Number(facts.ownerPosts)<1||
+             facts.currentAssignee!==scope.replacementEmployeeId||
+             facts.taskStatus!=="handled"||
+             facts.investigationPhase!=="resolved"||
+             Number(facts.completedQuota)!==audit.attempts||
+             scope.expectedProviderCalls!==audit.attempts||
+             Number(facts.foreignOwnerMembership)!==0)
+            throw Error("Independent migrated DB/owner/source proof failed");
+
           const tools=audit.receipts.flatMap(r=>
             Array.isArray(r.toolNames)?r.toolNames:[]);
           const staffing=tools.includes("get_staff_messages");
