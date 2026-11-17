@@ -212,6 +212,8 @@ jobs:
         shell: bash
         env:
           SUPERVISOR_OPENAI_MODEL: gpt-6-luna
+          AI_CAFE_LIVE_ACCEPTANCE: OWNER_APPROVED_LOCAL_ONLY
+          APP_URL: http://127.0.0.1:3000
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/task13c-candidate-proof"
@@ -225,6 +227,7 @@ jobs:
             -e NODE_OPTIONS='--require=/trusted/task14b-fetch-shim.cjs' \
             -e OPENAI_API_KEY='sk-local_disposable_proxy_key_not_real' \
             -e AICAFE_14B_BROKER_TOKEN="$AICAFE_14B_BROKER_TOKEN" \
+            -e AI_CAFE_LIVE_ACCEPTANCE -e APP_URL \
             -e AICAFE_13C_AGENTIC_LIVE='1' \
             -e AICAFE_13C_LOCAL_DB_URL='postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
             -e AICAFE_13C_LIVE_HEAD="$HEAD_SHA" \
