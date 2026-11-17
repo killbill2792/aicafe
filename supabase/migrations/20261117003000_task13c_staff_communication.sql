@@ -15,14 +15,14 @@ create unique index if not exists employees_one_worker_login
 -- ensures current_user is the actual SQL invoker (the trusted owner-only
 -- SECURITY DEFINER linking RPC executes as postgres; clients do not).
 create function public.staff_channel_protect_identity_link()
- returns trigger language plpgsql set search_path=public,pg_temp as $
+ returns trigger language plpgsql set search_path=public,pg_temp as $$
 begin
  if new.staff_auth_user_id is distinct from old.staff_auth_user_id
    and current_user not in ('postgres','service_role') then
   raise exception 'staff_link_rpc_required' using errcode='42501';
  end if;
  return new;
-end $;
+end $$;
 create trigger staff_channel_protect_identity_link
  before update of staff_auth_user_id on public.employees
  for each row execute function public.staff_channel_protect_identity_link();
