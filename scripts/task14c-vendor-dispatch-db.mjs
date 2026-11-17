@@ -331,6 +331,25 @@ try{
      and payload->>'sourceId'=$3`,[id.business,id.owner,id.po]);
  check(activeAfterUpdate.n===1,
    "Exactly one unresolved supplier notice per café, owner and approved PO");
+ // A paused old worker can replay A after B was posted. Its already-handled
+ // receipt must not suppress B or leave the owner with zero Needs-you items.
+ const staleReplay=await asRole("service_role",id.owner,()=>one(
+   "select public.post_supervisor_priority_notice($1,$2,$3,$4,$5,$6,$7,$8,$9) as posted",
+   noticeArgs));
+ check(staleReplay?.posted===false,
+   "Replaying an old already-handled supplier revision is harmless");
+ const afterStaleReplay=await one(`select count(*)::int as n
+   from public.operating_tasks where business_id=$1 and owner_user_id=$2
+     and kind='priority_notice' and status='needs_owner'
+     and payload->>'sourceType'='supplier_dispatch'
+     and payload->>'sourceId'=$3`,[id.business,id.owner,id.po]);
+ check(afterStaleReplay.n===1,
+   "Stale replay cannot close the newer actionable owner notice");
+ const latestAfterReplay=await one(
+   "select status from public.operating_tasks where business_id=$1 and id=$2",
+   [id.business,"priority:"+latestKey]);
+ check(latestAfterReplay.status==="needs_owner",
+   "The latest supplier reminder remains actionable after older revision replay");
  const latestOwnerNotice=await one("select payload from public.operating_tasks where business_id=$1 and id=$2",
    [id.business,"priority:"+latestKey]);
  await asRole("authenticated",id.owner,()=>db.query(`

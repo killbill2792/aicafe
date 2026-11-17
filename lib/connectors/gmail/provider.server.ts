@@ -308,16 +308,24 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
       await ensureLive();
       if(vendor.data){
         // Revalidate contact/PO immediately before irreversible transport.
-        const [po,contact,dispatch]=await Promise.all([
+        const [po,contact,dispatch,terminalReports]=await Promise.all([
           db.from("purchase_orders").select("status,supplier_id").eq("business_id",scope.businessId)
             .eq("owner_user_id",scope.ownerUserId).eq("id",vendor.data.purchase_order_id).maybeSingle(),
           db.from("cafe_supplier_order_contacts").select("channel,email,revoked_at,supplier_id")
             .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
             .eq("id",vendor.data.contact_id).maybeSingle(),
           db.from("purchase_order_dispatches").select("state").eq("business_id",scope.businessId)
-            .eq("id",vendor.data.id).maybeSingle()
+            .eq("id",vendor.data.id).maybeSingle(),
+          // Terminal owner reports may arrive AFTER the SQL send reservation.
+          // Treat a committed acceptance/decline as revocation right up to the
+          // last provider POST preflight, not just when reservation was made.
+          db.from("purchase_order_channel_reports").select("id")
+            .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+            .eq("purchase_order_id",vendor.data.purchase_order_id)
+            .in("outcome",["supplier_accepted","supplier_declined"]).limit(1)
         ]);
-        if(po.error||contact.error||dispatch.error||po.data?.status!=="approved_for_ordering"||
+        if(po.error||contact.error||dispatch.error||terminalReports.error||
+          (terminalReports.data??[]).length!==0||po.data?.status!=="approved_for_ordering"||
           contact.data?.channel!=="gmail"||contact.data.revoked_at||
           contact.data.email?.toLowerCase()!==vendor.data.recipient_email.toLowerCase()||
           contact.data.supplier_id!==po.data?.supplier_id||dispatch.data?.state!=="reserved")

@@ -1,11 +1,11 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-const deps=vi.hoisted(()=>({getAccount:vi.fn(),dbFrom:vi.fn(),tokenRequest:vi.fn()}));
+const deps=vi.hoisted(()=>({getAccount:vi.fn(),dbFrom:vi.fn(),dbRpc:vi.fn(),tokenRequest:vi.fn()}));
 vi.mock("@/lib/connectors/registry.server",async()=>{
   const real=await vi.importActual<typeof import("@/lib/connectors/registry.server")>("@/lib/connectors/registry.server");
   return {...real,getConnectorAccount:deps.getAccount};
 });
-vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({from:deps.dbFrom})}));
+vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({from:deps.dbFrom,rpc:deps.dbRpc})}));
 vi.mock("@/lib/connectors/crypto.server",()=>({decryptToken:()=> "test-access",encryptToken:()=> "encrypted"}));
 vi.mock("./oauth.server",()=>({tokenRequest:deps.tokenRequest,GOOGLE_MODIFY_SCOPE:"https://www.googleapis.com/auth/gmail.modify"}));
 import {performGmailEffect,gmailMime,gmailRfcId,reconcileGmailReceipt,safeMessage,type GmailEffect} from "./provider.server";
@@ -48,7 +48,8 @@ function db(receipt?:Record<string,unknown>,duplicate=false,hasClaim=true){
  });
  return writes;
 }
-beforeEach(()=>{vi.clearAllMocks();vi.unstubAllGlobals();deps.getAccount.mockResolvedValue(account);});
+beforeEach(()=>{vi.clearAllMocks();vi.unstubAllGlobals();deps.getAccount.mockResolvedValue(account);
+ deps.dbRpc.mockResolvedValue({data:true,error:null});});
 describe("Gmail provider proof and no duplicate sends",()=>{
  it("generates a stable RFC ID and MIME without leaking credentials",()=>{
    const mid=gmailRfcId(proposal,account.email);
@@ -96,6 +97,50 @@ describe("Gmail provider proof and no duplicate sends",()=>{
   await expect(performGmailEffect(scope,attempted,proposal,effectHash))
     .rejects.toThrow("supplier_dispatch_binding_missing");
   expect(writes).toEqual([]);
+  expect(fetch).not.toHaveBeenCalled();
+ });
+ it("rechecks accepted/declined supplier reports after the one-shot PO reservation but before Gmail POST",async()=>{
+  const writes=db();
+  const original=deps.dbFrom.getMockImplementation() as (table:string)=>unknown;
+  const poId="77777777-7777-4777-8777-777777777777";
+  const contactId="88888888-8888-4888-8888-888888888888";
+  const dispatchId="99999999-9999-4999-8999-999999999999";
+  const stubSingle=(data:Record<string,unknown>)=>{
+    const chain={
+      select:vi.fn(()=>chain),eq:vi.fn(()=>chain),
+      maybeSingle:vi.fn(async()=>({data,error:null}))
+    };
+    return chain;
+  };
+  deps.dbFrom.mockImplementation((table:string)=>{
+    if(table==="purchase_order_dispatches")return stubSingle({
+      id:dispatchId,purchase_order_id:poId,contact_id:contactId,
+      recipient_email:"supplier@example.net",state:"reserved"
+    });
+    if(table==="purchase_orders")return stubSingle({
+      status:"approved_for_ordering",supplier_id:"supplier"
+    });
+    if(table==="cafe_supplier_order_contacts")return stubSingle({
+      channel:"gmail",email:"supplier@example.net",revoked_at:null,supplier_id:"supplier"
+    });
+    if(table==="purchase_order_channel_reports"){
+      const chain={
+        select:vi.fn(()=>chain),eq:vi.fn(()=>chain),in:vi.fn(()=>chain),
+        limit:vi.fn(async()=>({data:[{id:"accepted-by-owner"}],error:null}))
+      };
+      return chain;
+    }
+    return original(table);
+  });
+  const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+  const outbound={...effect,subject:"Purchase order "+poId,
+    body:"Purchase order ID: "+poId};
+  await expect(performGmailEffect(scope,outbound,proposal,effectHash))
+    .rejects.toThrow("supplier_send_authorization_revoked_before_post");
+  expect(deps.dbRpc).toHaveBeenCalledWith("supervisor_reserve_supplier_gmail_send",
+    expect.objectContaining({p_proposal_id:proposal}));
+  expect(writes.filter(x=>x.table==="connector_provider_receipts"&&x.operation==="insert"))
+    .toHaveLength(1);
   expect(fetch).not.toHaveBeenCalled();
  });
  it("cannot send without an existing owner-click claim in the single Task 10 gateway",async()=>{

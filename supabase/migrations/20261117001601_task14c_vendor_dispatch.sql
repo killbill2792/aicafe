@@ -396,6 +396,15 @@ begin
   if not v_found then return false; end if;
   v_task_id:='priority:'||p_stable_key;
   if p_source_type='supplier_dispatch' then
+    -- A previously published revision (even already handled/superseded) must
+    -- NEVER close the newest unresolved notice on a delayed retry. The PO
+    -- row is locked above, so this read and the following supersession are
+    -- serialized against all other vendor notice writers.
+    if exists(select 1 from public.operating_tasks t
+      where t.business_id=p_business_id and t.owner_user_id=p_owner_user_id
+        and t.id=v_task_id and t.kind='priority_notice') then
+      return false;
+    end if;
     -- Changes from not_prepared -> prepared -> Gmail-accepted alter the
     -- revision hash. Keep one owner action per PO, closing the superseded
     -- notice before inserting the new source revision in THIS transaction.
