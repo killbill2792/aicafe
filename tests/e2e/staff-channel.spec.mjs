@@ -84,6 +84,14 @@ test("@staff real worker login, shift explanation, cross-cafe and owner receipt"
   await expect(owner.getByRole("heading",{name:"Employee responses and reports"}))
    .toBeVisible({timeout:30_000});
   await expect(owner.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toBeVisible();
+  await owner.locator("#staff-reply-person").selectOption(created[0].worker.id);
+  await owner.locator("#staff-reply-body").fill("Thanks for the update. Can you confirm 8 AM?");
+  await owner.getByRole("button",{name:"Send to employee"}).click();
+  await expect(owner.getByText("Message saved to this employee's work inbox. Not a read or delivery receipt."))
+   .toBeVisible();
+  await staff.reload();
+  await expect(staff.getByText("Message from café owner")).toBeVisible();
+  await expect(staff.getByText("Thanks for the update. Can you confirm 8 AM?")).toBeVisible();
   await otherOwner.reload();
   await expect(otherOwner.getByText("I cannot work seven to two. I can arrive at 8 AM.")).toHaveCount(0);
   const shift=(await db.query("select start_local,status from public.scheduled_shifts where id=$1",
