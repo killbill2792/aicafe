@@ -36,6 +36,11 @@ describe("13C paid Luna trusted-main broker boundaries",()=>{
   expect(candidate).toContain("task14b-fetch-shim.cjs:ro");
   expect(candidate).toContain("--cap-drop ALL");
   expect(candidate).toContain("--security-opt no-new-privileges");
+  // Existing registered Supervisor emits store:false only under its exact
+  // local trusted-broker switch, not merely from a dummy API key.
+  expect(candidate).toContain("-e AI_CAFE_LIVE_ACCEPTANCE -e APP_URL");
+  expect(candidate).toContain("AICAFE_14B_BROKER_TOKEN=");
+  expect(candidate).not.toContain("OPENAI_API_KEYS");
   expect(candidate).not.toContain("AICAFE_TASK14B_HOST_AUDIT");
   expect(workflow).toContain("path: coordinator");
   expect(workflow).toContain("path: candidate");
