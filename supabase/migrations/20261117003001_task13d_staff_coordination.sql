@@ -48,7 +48,7 @@ create table public.staff_coordination_evidence (
   case_id uuid not null,
   evidence_key text not null check (length(evidence_key) between 1 and 160),
   source_kind text not null check (source_kind in
-    ('staff_message','scheduled_shift','availability_exception',
+    ('staff_message','staff_request','scheduled_shift','availability_exception',
      'coverage_requirement','owner_decision','provider_receipt')),
   source_id text not null check (length(source_id) between 1 and 200),
   source_revision text not null check (length(source_revision) between 1 and 200),
@@ -239,6 +239,67 @@ revoke all on function public.staff_coordination_decide(uuid,uuid,int,text)
 grant execute on function public.staff_coordination_decide(uuid,uuid,int,text)
  to authenticated;
 
+-- Explicit owner click reuses Task13C's existing assignment RPC in the
+-- SAME database transaction; no separate employee channel or auto-send.
+-- Its owner permission, employee login, nonce, and same-cafe checks still apply.
+create function public.staff_coordination_assign_checklist(
+ p_business_id uuid,p_case_id uuid,p_revision int,p_nonce uuid,
+ p_title text,p_prompt text
+) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $
+declare v_case public.staff_coordination_cases%rowtype;
+ v_old public.staff_coordination_evidence%rowtype; v_response jsonb;
+ v_request_id uuid;
+begin
+ if (select auth.uid()) is null or not public.scheduling_is_owner(p_business_id) then
+  raise exception 'staff_owner_required' using errcode='42501'; end if;
+ if p_nonce is null or p_revision is null or nullif(btrim(coalesce(p_title,'')),'') is null
+  or nullif(btrim(coalesce(p_prompt,'')),'') is null then
+  raise exception 'checklist_invalid' using errcode='22023'; end if;
+ select * into v_case from public.staff_coordination_cases
+  where business_id=p_business_id and id=p_case_id for update;
+ if not found or v_case.case_kind<>'onboarding' or v_case.decision<>'approve'
+   or v_case.state not in ('approved','in_progress','waiting_evidence') then
+  raise exception 'onboarding_not_authorized' using errcode='40900'; end if;
+ if v_case.revision<>p_revision then
+  raise exception 'stale_case' using errcode='40900'; end if;
+ select * into v_old from public.staff_coordination_evidence
+  where business_id=p_business_id and case_id=p_case_id
+    and evidence_key='onboarding_checklist' for update;
+ if found then
+  return jsonb_build_object('id',p_case_id,'requestId',v_old.source_id,
+    'revision',v_case.revision,'state',v_case.state,'replayed',true);
+ end if;
+ -- Existing Task13C owner-only assignment; nested function uses the same
+ -- verified auth.uid(), not a synthesized owner or a model-selected employee.
+ v_response:=public.staff_channel_owner_assign(v_case.employee_id,'checklist',
+   p_title,p_prompt,p_nonce);
+ v_request_id:=(v_response->>'id')::uuid;
+ if v_request_id is null or not exists(
+  select 1 from public.staff_communication_requests r
+   where r.business_id=p_business_id and r.id=v_request_id
+     and r.employee_id=v_case.employee_id and r.kind='checklist'
+ ) then raise exception 'staff_request_not_verified' using errcode='22023'; end if;
+ insert into public.staff_coordination_evidence
+   (business_id,case_id,evidence_key,source_kind,source_id,source_revision)
+ values(p_business_id,p_case_id,'onboarding_checklist','staff_request',
+   v_request_id::text,'v1');
+ update public.staff_coordination_cases
+  set state='in_progress',next_check_at=now(),revision=revision+1,updated_at=now()
+  where business_id=p_business_id and id=p_case_id returning * into v_case;
+ update public.operating_tasks set status='watching',updated_at=now(),
+   payload=payload||jsonb_build_object('caseState',v_case.state,
+     'caseRevision',v_case.revision,'staffChecklistId',v_request_id,
+     'staffAcceptanceVerified',false,'sourceVerified',false)
+  where business_id=p_business_id and entity_type='staff_coordination_case'
+   and entity_id=p_case_id::text and kind='staff_coordination';
+ return jsonb_build_object('id',p_case_id,'requestId',v_request_id,
+   'revision',v_case.revision,'state',v_case.state,'replayed',false);
+end $;
+revoke all on function public.staff_coordination_assign_checklist(uuid,uuid,int,uuid,text,text)
+ from public,anon;
+grant execute on function public.staff_coordination_assign_checklist(uuid,uuid,int,uuid,text,text)
+ to authenticated;
+
 -- SERVICE-ONLY source recheck. An owner approving a leave *request* is not
 -- sufficient to close it; only all matching, confirmed dated leave rows close.
 -- Other kinds stay open until independently verified source evidence is added.
@@ -314,6 +375,51 @@ begin
     where business_id=p_business_id and entity_type='staff_coordination_case'
       and entity_id=v_case.id::text and kind='staff_coordination';
   end if;
+ end loop;
+ -- A completed onboarding checklist is a saved, authenticated employee action,
+ -- not an owner assertion, sent message, job offer or automatic hire.
+ for v_case in select * from public.staff_coordination_cases
+   where business_id=p_business_id and case_kind='onboarding'
+     and decision='approve' and state in ('approved','in_progress','waiting_evidence','completed')
+     and (next_check_at<=now() or state='completed') for update loop
+   if exists(
+    select 1 from public.staff_coordination_evidence e
+      join public.staff_communication_requests r on r.business_id=e.business_id
+         and r.id::text=e.source_id and r.kind='checklist'
+         and r.employee_id=v_case.employee_id
+      join public.staff_communication_messages m on m.business_id=r.business_id
+         and m.request_id=r.id and m.employee_id=r.employee_id
+         and m.actor='employee' and m.response_code='complete'
+         and m.received_at>=v_case.decided_at
+      join public.employees person on person.business_id=r.business_id
+         and person.id=r.employee_id and person.active=true
+    where e.business_id=p_business_id and e.case_id=v_case.id
+      and e.evidence_key='onboarding_checklist' and e.source_kind='staff_request'
+   ) then
+    if v_case.state<>'completed' then
+     update public.staff_coordination_cases set state='completed',
+       next_check_at=null,revision=revision+1,updated_at=now()
+      where business_id=p_business_id and id=v_case.id;
+     update public.operating_tasks set status='handled',resolved_at=now(),
+       updated_at=now(),payload=payload||jsonb_build_object(
+        'caseState','completed','staffAcceptanceVerified',true,
+        'sourceVerified',true,'caseRevision',v_case.revision+1)
+      where business_id=p_business_id and entity_type='staff_coordination_case'
+       and entity_id=v_case.id::text and kind='staff_coordination';
+     v_completed:=v_completed+1;
+    end if;
+   elsif v_case.state<>'waiting_evidence' or v_case.next_check_at is null
+      or v_case.next_check_at<=now() then
+    update public.staff_coordination_cases set state='waiting_evidence',
+      next_check_at=now()+interval '1 hour',revision=revision+1,updated_at=now()
+     where business_id=p_business_id and id=v_case.id;
+    update public.operating_tasks set status='watching',resolved_at=null,
+     updated_at=now(),payload=payload||jsonb_build_object(
+      'caseState','waiting_evidence','staffAcceptanceVerified',false,
+      'sourceVerified',false,'caseRevision',v_case.revision+1)
+     where business_id=p_business_id and entity_type='staff_coordination_case'
+      and entity_id=v_case.id::text and kind='staff_coordination';
+   end if;
  end loop;
  return jsonb_build_object('completed',v_completed,'expired',v_expired);
 end $$;
