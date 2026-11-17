@@ -1,86 +1,19 @@
-# Existing AI CAFE development dispatcher. Never run untrusted PR-head code with secrets.
-# PRs run deterministic tests only. On trusted main, scheduled/push reconciliation
-# uses the SAME private ledger/CAS path; no other scheduler, browser or Vercel job.
-name: AI CAFE Development Dispatcher
+# Owner-directed retirement, 2026-11-17.
+# This is ONLY CI for Muse's local coordinator, not a GitHub dispatcher.
+# No cron, main push, workflow_run, comments, review events, repository_dispatch,
+# workflow_dispatch, privileged token, ledger write, owner-dashboard publication,
+# automated Codex review request, PR readiness change or merge.
+name: Muse coordination contract tests
 on:
-  # GitHub may delay/drop scheduled events. Keep one five-minute schedule but
-  # offset it from the crowded :00/:05/... boundaries.
-  schedule:
-    - cron: '3/5 * * * *'
-  # When main advances, reconcile the already-received courier receipts now,
-  # rather than waiting for a best-effort scheduled event. Not a new dispatcher.
-  push:
-    branches: [main]
-  # Existing baseline checks cover new commits, and Acceptance Evidence covers
-  # PR-body edits / owner-decision label changes even after code CI finished.
-  # The trusted runner checks out main only; no PR-head code or artifacts run with secrets.
-  workflow_run:
-    workflows: ['AI CAFE Pull Request Baseline', 'AI CAFE Acceptance Evidence', 'AI CAFE Integration Proof']
-    types: [completed]
-  # Owner questions can be published after the last PR commit. A trusted
-  # collaborator comment on a PR wakes the same reconciler, without a cron.
-  issue_comment:
-    types: [created]
-  # Do not subscribe to GitHub Actions' own check_run/check_suite completions:
-  # every dispatcher run creates checks and would recursively start another
-  # trusted dispatcher run. Named workflow_run completion already covers CI.
-  pull_request_review:
-    types: [submitted, dismissed]
-  repository_dispatch:
-    types: [dispatcher_receipt, dispatcher_owner_reply, dispatcher_owner_instruction, dispatcher_delayed, dispatcher_recovery, dispatcher_git_wake]
-  workflow_dispatch:
-    inputs:
-      persist_private_ledger:
-        type: boolean
-        description: 'Write coordination state only (no messages, no merges)'
-        required: false
-        default: false
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, edited, labeled, unlabeled, closed]
-    # Run deterministic PR-head tests only for dispatcher changes; privileged
-    # reconciliation always checks out main, not untrusted PR code.
-  # All credential-bearing events use code checked out from protected main.
-  # Raw pull_request events are still unprivileged tests only. For privileged
-  # workflow_run/issue_comment events, unit.if rejects forks and untrusted
-  # commenters before the reconciliation job may access the private ledger.
-
+    paths:
+      - 'scripts/dev-dispatcher/**'
+      - '.github/workflows/ai-cafe-dev-dispatcher.yml'
 permissions:
   contents: read
-  pull-requests: read
-  checks: read
-
-concurrency:
-  # PR-head deterministic tests must not compete with the single trusted-main
-  # ledger writer. Keep credential-bearing events serialized together.
-  group: ${{ github.event_name == 'pull_request' && format('aicafe-dispatcher-pr-{0}', github.event.pull_request.number) || 'aicafe-development-dispatcher-trusted' }}
-  cancel-in-progress: false
-
 jobs:
   unit:
-    name: Deterministic dispatcher tests
-    # workflow_run is permitted only for baseline checks on same-repo PRs.
-    # issue_comment is permitted only for trusted contributors on PRs.
-    # Other events use their existing guards and trusted checkout context.
-    if: >-
-      (github.event_name != 'workflow_run' ||
-       ((github.event.workflow_run.event == 'pull_request' ||
-         github.event.workflow_run.name == 'AI CAFE Integration Proof') &&
-        github.event.workflow_run.head_repository.full_name == github.repository)) &&
-      (github.event_name != 'pull_request_review' ||
-       (github.event.pull_request.head.repo.full_name == github.repository &&
-        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-                 github.event.review.author_association) ||
-        github.event.review.user && github.event.review.user.login == 'chatgpt-codex-connector[bot]' ||
-        github.event.review.user && github.event.review.user.login == 'codex[bot]')) &&
-      (github.event_name != 'issue_comment' ||
-       (github.event.issue.pull_request &&
-        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
-                 github.event.comment.author_association) ||
-        github.event.comment.user && github.event.comment.user.login == 'chatgpt-codex-connector[bot]' ||
-        github.event.comment.user && github.event.comment.user.login == 'codex[bot]') ||
-       (!github.event.issue.pull_request &&
-        github.event.issue.number == 411 &&
-        github.event.comment.user.login == github.repository_owner))
+    name: Muse and archived dispatcher safety tests (no effects)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -89,114 +22,3 @@ jobs:
         with:
           node-version: '22'
       - run: node --test scripts/dev-dispatcher/*.test.mjs scripts/dev-dispatcher/bridge/*.test.mjs
-
-  # This is not a second dispatcher: it sends ONE existing Muse owner notice
-  # only if trusted-main preflight failed before reconcile could run.
-  notify_preflight_failure:
-    name: Notify Muse if trusted dispatcher preflight failed
-    needs: unit
-    if: >-
-      always() &&
-      needs.unit.result == 'failure' &&
-      github.event_name != 'pull_request' &&
-      github.event_name != 'pull_request_target'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Queue existing Muse owner incident through Git (no REST)
-        env:
-          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-        run: node scripts/dev-dispatcher/emergency-report.mjs
-
-  reconcile:
-    name: GitHub state reconciliation (no effects)
-    env:
-      DISPATCH_LEDGER_GIT_WRITES: 'true'
-    # Never read secrets or execute PR code. All effects remain opt-in and
-    # all invocations use the same trusted-main coordinator and CAS ledger.
-    if: >-
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      github.event_name == 'workflow_run' ||
-      github.event_name == 'repository_dispatch' ||
-      github.event_name == 'issue_comment' ||
-      github.event_name == 'pull_request_review'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-      pull-requests: write
-      checks: read
-      actions: write
-      issues: write
-    needs: unit
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Reconcile on trusted main (persist only when explicitly enabled)
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
-          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
-          # Optional until the existing Muse host is provisioned. A signed
-          # Git command survives lost repository_dispatch wake events.
-          DISPATCH_MUSE_RECOVERY_KEY: ${{ secrets.DISPATCH_MUSE_RECOVERY_KEY }}
-          DISPATCH_INSTALL_TOKEN: ${{ secrets.DISPATCH_INSTALL_TOKEN }}
-          DISPATCH_COURIER_ACTORS: ${{ vars.DISPATCH_COURIER_ACTORS }}
-          # Owner opt-in Nov 9: only exact-head CI/Codex/actual-acceptance-proven PRs;
-          # an explicit repository variable 'false' overrides this default.
-          DISPATCH_AUTO_MERGE: ${{ vars.DISPATCH_AUTO_MERGE || 'true' }}
-          DISPATCH_TRANSIENT_CI_RETRY: ${{ vars.DISPATCH_TRANSIENT_CI_RETRY }}
-          DISPATCH_STALL_MINUTES: ${{ vars.DISPATCH_STALL_MINUTES || '10' }}
-          DISPATCH_CODEX_WATCH_MINUTES: ${{ vars.DISPATCH_CODEX_WATCH_MINUTES || '20' }}
-          # Existing GitHub issue is the owner's public-safe live status surface.
-          DISPATCH_OWNER_DASHBOARD_ISSUE: ${{ vars.DISPATCH_OWNER_DASHBOARD_ISSUE }}
-          PERSIST: ${{ (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'repository_dispatch' || github.event_name == 'issue_comment' || github.event_name == 'pull_request_review') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true') }}
-        run: |
-          if [ "$PERSIST" = "true" ]; then
-            node scripts/dev-dispatcher/run.mjs --commit
-          else
-            node scripts/dev-dispatcher/run.mjs
-          fi
-      - name: Publish opaque wake-up signal (only after private ledger persistence)
-        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'repository_dispatch' || github.event_name == 'issue_comment' || github.event_name == 'pull_request_review') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
-          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
-          DISPATCH_SIGNAL_SECRET: ${{ secrets.DISPATCH_SIGNAL_SECRET }}
-        run: node scripts/dev-dispatcher/signal.mjs
-      - name: Schedule Codex and Muse self-wake (no cron dependency)
-        if: (github.event_name == 'workflow_dispatch' && inputs.persist_private_ledger) || ((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_run' || github.event_name == 'repository_dispatch' || github.event_name == 'issue_comment' || github.event_name == 'pull_request_review') && vars.DISPATCH_LEDGER_AUTO_PERSIST == 'true')
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
-          DISPATCH_LEDGER_REPO: ${{ vars.DISPATCH_LEDGER_REPO }}
-        run: node scripts/dev-dispatcher/wake.mjs
-
-      - name: Emergency Muse queue fallback on dispatcher failure
-        if: ${{ failure() }}
-        env:
-          DISPATCH_LEDGER_TOKEN: ${{ secrets.DISPATCH_LEDGER_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-        run: node scripts/dev-dispatcher/emergency-report.mjs
