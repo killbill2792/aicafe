@@ -93,7 +93,12 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
  for(const entry of Object.values(records)){
   if(!entry.pr_number||['waiting_owner','paused'].includes(entry.stage))continue;
   const p=byPr.get(entry.pr_number);
-  if(!p)continue;
+  if(!p){
+   if(!(facts.merged_prs||[]).some(v=>v.number===entry.pr_number))
+    blocked.push({task_id:entry.task_id,pr_number:entry.pr_number,
+     reason:'pr_missing_or_closed_unmerged_verify_github'});
+   continue;
+  }
   const head=p.head_sha;
   let kind=null,reason=null;
   if(p.ci==='failure'){kind='fix_ci';reason='Investigate current-head failing checks and rerun';}
