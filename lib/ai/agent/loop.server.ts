@@ -5,7 +5,7 @@ import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
 import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
-import { agentToolDefinitions, agentLabelsPrompt, agentForTool, executeAgentTool, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
+import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, agentForTool, executeAgentTool, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
 import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
@@ -68,7 +68,7 @@ export type AgentProvider = (params: Record<string, unknown>, signal: AbortSigna
 export type AgentAuditStep = { kind: "model_call" | "tool_call" | "approval_card" | "memory"; toolName?: string;
   inputSummary?: string; outputSummary?: string; durationMs: number; error?: string };
 export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType<typeof statusFromResults>;
-  unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; evidence?: NumericEvidence[]; explain?:ExplainLine[]; tools?:string[]; agentIds?:string[];
+  unverified: ReturnType<typeof checkNumbers>; provenance?:ReturnType<typeof numberProvenance>; results: AgentToolResult[]; toolInvocations?:{name:string;result:AgentToolResult}[]; evidence?: NumericEvidence[]; explain?:ExplainLine[]; tools?:string[]; agentIds?:string[];
   usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number; model?:string };
   /** Owner messages sent while this turn ran and read by the model before a later step. */
   absorbedOwnerMessageIds?: string[] };
@@ -279,6 +279,8 @@ export async function runAgentTurn(args: {
     // The complete ordered registry is identical for every owner request.
     // The model itself decides whether a draft, an inspection or neither fits.
     tools: [...agentToolDefinitions.filter(t=>!args.toolNames||args.toolNames.includes(t.name as AgentToolName)),
+      ...(args.toolNames?.includes("get_investigation_source")&&args.context.investigation
+        ? [investigationToolDefinition] : []),
       ...(args.toolNames?[]:args.extraTools??[])],
     tool_choice: final ? "none" : "auto", stream: true,
     max_output_tokens: Math.max(1,Math.min(1200,workerBudget ? workerBudget.maxOutputTokens - usage.outputTokens : 1200)), prompt_cache_key: agentPromptCacheKey(), input,
@@ -611,7 +613,8 @@ export async function runAgentTurn(args: {
     provenance:numberProvenance(text,ownerStatements,verificationResults,args.context.locale,args.previousEvidence,finalUnverified),
     evidence,explain,
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
-    results:toolResults, usage,
+    results:toolResults,
+    toolInvocations:results.map(r=>({name:r.name,result:r.result})),usage,
     ...(deliveredIds.size ? { absorbedOwnerMessageIds: [...deliveredIds] } : {}) };
 }
 

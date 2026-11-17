@@ -192,6 +192,8 @@ supabase_lane() {
     SUPERVISOR_RUN_DB_URL="$supabase_url" npx vitest run lib/ai/supervisor/runs/runs.db.test.ts --reporter=verbose
   check supabase "Task 7 routines: owner isolation, due-once lease, concurrent notice settlement" env SUPERVISOR_ROUTINES_DB_SANDBOX_ONLY=1 \
     SUPERVISOR_ROUTINES_DB_URL="$supabase_url" npx vitest run lib/ai/supervisor/routines/routines.db.test.ts --reporter=verbose
+  check supabase "Task 15A multi-step investigations: owner isolation, leases, recurrence and recovery" env SUPERVISOR_INVESTIGATION_DB_SANDBOX_ONLY=1 \
+    SUPERVISOR_INVESTIGATION_DB_URL="$supabase_url" npx vitest run lib/ai/supervisor/routines/investigation.db.test.ts --reporter=verbose
 
   group "Toast"
   lane_setup supabase "Rebuild the database (supabase db reset)" supabase db reset --local --yes

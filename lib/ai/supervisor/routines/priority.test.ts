@@ -7,6 +7,47 @@ const base:PrioritySource={
   createdAt:"2026-11-09T01:00:00Z",evidence:{quality:"partial",lastCheckedAt:"before"},
 };
 describe("proactive priority ranking and source revision",()=>{
+  it("always ranks critical operational evidence above ordinary overdue owner work",()=>{
+    const now=new Date("2026-11-11T00:00:00Z");
+    const critical={...base,sourceId:"urgent-sales",severity:"critical" as const,
+      evidence:{verified:true,metric:"sales_drop"}};
+    const overdue={...base,sourceId:"ordinary-overdue",
+      sourceType:"operating_task" as const,kind:"review",
+      status:"needs_owner",dueAt:"2026-11-01T00:00:00Z",
+      confidence:"high",severity:null};
+    expect(choosePriorities([overdue,critical],now,2).map(x=>x.source.sourceId))
+      .toEqual(["urgent-sales","ordinary-overdue"]);
+  });
+  it("keeps high-severity work above routine needs without inventing impact",()=>{
+    const now=new Date("2026-11-11T00:00:00Z");
+    const high={...base,sourceId:"high-risk",severity:"high" as const,
+      evidence:{quality:"verified"}};
+    const ordinary={...base,sourceId:"normal",
+      sourceType:"operating_task" as const,kind:"review",status:"needs_owner",
+      dueAt:"2026-11-01T00:00:00Z"};
+    const ranked=choosePriorities([ordinary,high],now,2);
+    expect(ranked[0].source.sourceId).toBe("high-risk");
+    expect(ranked[0].reason).toBe("Actionable café alert needs review");
+  });
+  it("does not elevate an unverified critical outage above verified work",()=>{
+    const now=new Date("2026-11-11T00:00:00Z");
+    const outage={...base,sourceId:"outage",severity:"critical",
+      evidence:{quality:"missing"}};
+    const verified={...base,sourceId:"verified",severity:"high",
+      evidence:{quality:"verified"}};
+    expect(choosePriorities([outage,verified],now,2).map(x=>x.source.sourceId))
+      .toEqual(["verified","outage"]);
+  });
+  it("hashes untrusted __proto__ evidence instead of losing its revision",()=>{
+    const evilA=JSON.parse('{"__proto__":{"observed":"first"}}');
+    const evilB=JSON.parse('{"__proto__":{"observed":"changed"}}');
+    const a=choosePriorities([{...base,sourceId:"untrusted",evidence:evilA}],
+      new Date("2026-11-11T00:00:00Z"),1)[0];
+    const b=choosePriorities([{...base,sourceId:"untrusted",evidence:evilB}],
+      new Date("2026-11-11T00:00:00Z"),1)[0];
+    expect(a.revisionHash).not.toBe(b.revisionHash);
+    expect(a.stableKey).not.toBe(b.stableKey);
+  });
   it("does not generate a new notice for incidental poll/seen changes",()=>{
     expect(priorityRevision(base)).toBe(priorityRevision({
       ...base,status:"seen",evidence:{lastCheckedAt:"after",quality:"partial"},
@@ -48,6 +89,34 @@ describe("proactive priority ranking and source revision",()=>{
     expect(choosePriorities([...rows,{...base,sourceType:"operating_task",
       sourceId:"unrelated-review",kind:"data_quality",status:"needs_owner"}],now,10)
       .map(x=>x.source.sourceId)).toEqual(["unrelated-review"]);
+  });
+  it("preserves approved supplier PO draft priority while investigating verified critical café issues",()=>{
+    const now=new Date("2026-11-16T13:00:00Z");
+    const purchase:PrioritySource={...base,sourceType:"supplier_po",
+      sourceId:"saved-po-draft",kind:"supplier_po",status:"draft",
+      severity:null,confidence:"high",evidence:{quality:"verified"}};
+    const routine:PrioritySource={...base,sourceType:"operating_task",
+      sourceId:"routine-review",kind:"data_quality",status:"needs_owner",
+      severity:null,confidence:"high",evidence:{quality:"verified"}};
+    const critical:PrioritySource={...base,sourceId:"verified-stockout",
+      severity:"critical",confidence:"high",evidence:{quality:"verified"}};
+    const ranked=choosePriorities([routine,purchase,critical],now,3);
+    expect(ranked.map(v=>v.source.sourceId)).toEqual([
+      "verified-stockout","saved-po-draft","routine-review",
+    ]);
+    expect(ranked[1].reason).toBe("Supplier purchase-order draft needs your approval");
+  });
+  it("does not generate a fresh generic owner notice for watching tasks but does re-investigate them",()=>{
+    const now=new Date("2026-11-11T00:00:00Z");
+    const watching:PrioritySource={...base,sourceType:"operating_task",
+      kind:"price_review",sourceId:"price-latte",status:"watching",
+      evidence:{awaitingPriceApplication:true,priceAppliedToPos:false}};
+    expect(choosePriorities([watching],now)).toEqual([]);
+    const proactive=choosePriorities([watching],now,3,{includeWatching:true});
+    expect(proactive.map(d=>d.source.sourceId)).toEqual(["price-latte"]);
+    expect(proactive[0].revisionHash).not.toBe(priorityRevision({
+      ...watching,status:"needs_owner",
+    }));
   });
   it("ignores closed tasks and differs by owner/café",()=>{
     const now=new Date("2026-11-11T00:00:00Z");

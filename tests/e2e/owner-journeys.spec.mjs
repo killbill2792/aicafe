@@ -36,6 +36,58 @@ test("@home real password sign-in isolates two cafés and ignores an unauthorize
   }
 });
 
+test("@home Task15A persisted investigation opens in real Operations without leaking another café",async({browser})=>{
+  test.setTimeout(110_000);
+  const owner=seededCafe(0),foreign=seededCafe(1);
+  const id={thread:randomUUID(),task:"investigation:"+randomUUID()};
+  const title="Verified Supervisor inventory investigation "+id.task.slice(-8);
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const first=await browser.newContext({baseURL:"http://127.0.0.1:3000",
+    serviceWorkers:"block"});
+  const other=await browser.newContext({baseURL:"http://127.0.0.1:3000",
+    serviceWorkers:"block"});
+  let connected=false;
+  try{
+    await db.connect();connected=true;
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",
+      [id.thread,owner.businessId,owner.owner.userId,randomUUID()]);
+    const payload={title,intent:"priority_investigation",
+      threadId:id.thread,sourceType:"operating_task",sourceId:"stock-review",
+      episodeId:randomUUID(),stepVersion:2,externalEffects:"not_attempted"};
+    await db.query("insert into public.operating_tasks("+
+      "business_id,id,owner_user_id,agent_id,kind,status,payload,confidence,"+
+      "evidence,entity_type,dedupe_key) values($1,$2,$3,'leo','priority_notice',"+
+      "'needs_owner',$4::jsonb,'high','[]'::jsonb,'priority_source',$5)",
+      [owner.businessId,id.task,owner.owner.userId,JSON.stringify(payload),id.task]);
+
+    const page=await first.newPage();
+    await login(page,owner);
+    await openOwnedPage(page,owner,"operations");
+    const card=page.locator('article[data-task-kind="priority_notice"]')
+      .filter({hasText:title});
+    await expect(card).toBeVisible({timeout:30_000});
+    await expect(card.getByRole("link",{name:/open in chat/i})).toHaveAttribute(
+      "href",new RegExp("thread="+id.thread));
+    await card.getByRole("link",{name:/open in chat/i}).click();
+    await expect(page).toHaveURL(new RegExp("thread="+id.thread));
+    const foreignPage=await other.newPage();
+    await login(foreignPage,foreign);
+    await openOwnedPage(foreignPage,foreign,"operations");
+    await expect(foreignPage.getByText(title,{exact:true})).toHaveCount(0);
+  }finally{
+    await other.close();
+    await first.close();
+    if(connected){
+      await db.query("delete from public.operating_tasks where business_id=$1 and id=$2",
+        [owner.businessId,id.task]).catch(()=>{});
+      await db.query("delete from public.ai_threads where business_id=$1 and id=$2",
+        [owner.businessId,id.thread]).catch(()=>{});
+      await db.end();
+    }
+  }
+});
+
 test("@home owner uploads and reselects a private receipt while another café cannot read it", async ({browser}) => {
   test.setTimeout(90_000); // Two signed-in sessions, one real Storage upload and a reload.
   const owner = seededCafe(0), other = seededCafe(1);

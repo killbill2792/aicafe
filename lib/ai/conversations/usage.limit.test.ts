@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
   entries: [] as Array<{day:string;model_call_count:number}>,
+  systemEntries: [] as Array<{day:string;model_call_count:number}>,
   queriedBusiness: "", queriedOwner: "", queriedDay: "",
   failure: false,
 }));
@@ -14,7 +15,8 @@ vi.mock("@/lib/ai/conversations/auth.server", () => ({
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: async () => ({
     from: (name:string) => {
-      if (name !== "ai_usage_events") throw Error("Unexpected table");
+      if (!["ai_usage_events","supervisor_system_usage_events"].includes(name))
+        throw Error("Unexpected table");
       return {
         select: (column:string) => {
           if (column !== "model_call_count") throw Error("Missing model usage");
@@ -30,7 +32,8 @@ vi.mock("@/lib/supabase/server", () => ({
                       fake.queriedDay=value3;
                       return Promise.resolve(fake.failure
                         ? {data:null,error:{code:"query_failed"}}
-                        : {data:fake.entries.filter(e=>e.day===value3).map(e=>({
+                        : {data:(name==="ai_usage_events"?fake.entries:fake.systemEntries)
+                            .filter(e=>e.day===value3).map(e=>({
                             model_call_count:e.model_call_count,
                           })),error:null});
                     },
@@ -49,7 +52,7 @@ import { assertOwnerAgentTurnAvailable, MAX_OWNER_MODEL_CALLS_PER_DAY, ownerMode
 describe("owner daily model-call allowance", () => {
   const owner={businessId:"business-1",ownerUserId:"owner-1"};
   afterEach(()=>{
-    fake.failure=false; fake.entries=[];
+    fake.failure=false; fake.entries=[];fake.systemEntries=[];
     delete process.env.AI_OWNER_MAX_MODEL_CALLS_PER_DAY;
     vi.useRealTimers();
   });
@@ -66,6 +69,16 @@ describe("owner daily model-call allowance", () => {
     fake.entries=[{day,model_call_count:598}];
     await expect(assertOwnerAgentTurnAvailable(owner)).resolves.toBeUndefined();
     fake.entries[0].model_call_count+=2;
+    await expect(assertOwnerAgentTurnAvailable(owner)).rejects.toMatchObject({
+      status:429,code:"owner_usage_limit_reached",
+    });
+  });
+  it("counts scheduled attempts (including incomplete provider requests) in the SAME owner quota",async()=>{
+    const day=new Date().toISOString().slice(0,10);
+    fake.entries=[{day,model_call_count:598}];
+    fake.systemEntries=[{day,model_call_count:1}];
+    await expect(assertOwnerAgentTurnAvailable(owner)).resolves.toBeUndefined();
+    fake.systemEntries.push({day,model_call_count:1});
     await expect(assertOwnerAgentTurnAvailable(owner)).rejects.toMatchObject({
       status:429,code:"owner_usage_limit_reached",
     });
