@@ -109,6 +109,53 @@ describe("Operations inbox cards", () => {
     expect(tab("needs_you")).toHaveLength(2);
   });
 
+  it("renders an actual persisted Task15A report in the Operations owner inbox without crashing",async()=>{
+    const reportId="investigation:source:episode:2";
+    const originalThread="owner-supervisor-thread";
+    const report:OperatingTask={...base,id:reportId,agentId:"leo",
+      kind:"priority_notice",status:"needs_owner",
+      payload:{title:"Stock variance confirmed from canonical inventory",
+        intent:"priority_investigation",threadId:originalThread,
+        sourceType:"operating_task",sourceId:"inventory-alert",
+        episodeId:"episode",stepVersion:2}};
+    // This models readInbox() emitting the same verified report in both
+    // its shared attention list and persisted Operating Board task list.
+    // needsYouFromAttention replaces the attention representation with the
+    // persisted task, which was previously missing a TaskCard copy branch.
+    mocks.readInbox.mockResolvedValue({
+      items:[{...attention(reportId,"alex",null),agentId:"leo",
+        displayTitle:report.payload.title,href:"/?thread="+originalThread}],
+      tasks:{needsYou:[report],watching:[],handled:[]},
+      expiredAlerts:[],
+    });
+    const {tab,html}=await render();
+    const cards=tab("needs_you");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toContain("Stock variance confirmed from canonical inventory");
+    expect(cards[0]).toContain("Operations.openEventThread");
+    expect(cards[0]).toContain('href="/?thread=owner-supervisor-thread"');
+    expect(cards[0]).toContain('data-task-kind="priority_notice"');
+    expect(html).not.toContain("undefined");
+    expect(mocks.store).not.toHaveBeenCalled();
+    expect(mocks.sync).not.toHaveBeenCalled();
+  });
+
+  it("also renders a saved supplier-purchase approval notice in the same card renderer",async()=>{
+    const po:OperatingTask={...base,id:"priority:po-saved",agentId:"maya",
+      kind:"priority_notice",status:"needs_owner",
+      payload:{title:"Supplier purchase-order draft needs your approval",
+        sourceType:"supplier_po",sourceId:"po-saved",threadId:"po-original-thread"}};
+    mocks.readInbox.mockResolvedValue({
+      items:[{...attention(po.id,"alex",null),agentId:"maya",
+        displayTitle:po.payload.title,href:"/?thread=po-original-thread"}],
+      tasks:{needsYou:[po],watching:[],handled:[]},expiredAlerts:[],
+    });
+    const cards=(await render()).tab("needs_you");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toContain("Supplier purchase-order draft needs your approval");
+    expect(cards[0]).toContain('href="/?thread=po-original-thread"');
+  });
+
   it("links to the Experiments page", async () => {
     expect((await render()).html).toContain('href="/operations/experiments"');
   });

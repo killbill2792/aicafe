@@ -22,10 +22,10 @@ const baseQuote={id:quoteId,supplier_name:"Farm A",item_name:"Milk",ingredient_i
  source_kind:"supplier_quote",quoted_on:"2026-11-12",valid_until:"2026-11-20",
  available_status:"confirmed",available_checked_at:"2026-11-13",delivery_on:"2026-11-16"};
 beforeEach(()=>{
- // Keep the Task14B quote fixture relative to a fixed date. Production freshness
- // rules remain strict; midnight must not make this known-good test go stale.
- vi.useFakeTimers();
- vi.setSystemTime(new Date("2026-11-14T12:00:00Z"));
+ // Keep the real date-sensitive purchasing validation, but freeze this historical
+ // test scenario before its confirmed Nov 16 delivery expires on CI runners.
+ vi.useFakeTimers({toFake:["Date"]});
+ vi.setSystemTime(new Date("2026-11-16T12:00:00.000Z"));
  vi.mocked(simulationOwnerReader).mockReset().mockResolvedValue({client:{} as never,explicit:true});
  vi.mocked(readSupplierPurchasingEvidence).mockReset().mockResolvedValue({
   ingredients:[{id:ingredientId,name:"Milk",base_unit:"ml"}],
@@ -44,6 +44,11 @@ describe("Task14B Supervisor PO: independently investigates, then prepares a dur
    subtotalCents:2250,totalCents:null,shippingCents:null,taxCents:null,
    lines:[{quoteId,packs:5,priceCents:450}]});
   expect(p.monitorSpec).toMatchObject({durationDays:1,metricScope:"supplier_purchase_order"});
+ });
+ it("rejects a real quote whose confirmed delivery date has already passed",async()=>{
+  vi.setSystemTime(new Date("2026-11-17T12:00:00.000Z"));
+  await expect(supplierPurchaseOrderCapability.simulate(scope,input))
+   .rejects.toThrow(/No complete supplier quote/);
  });
  it("fails closed when the only supplier evidence is unconfirmed",async()=>{
   vi.mocked(readSupplierPurchasingEvidence).mockResolvedValue({

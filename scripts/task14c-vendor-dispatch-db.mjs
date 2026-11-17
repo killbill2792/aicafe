@@ -153,7 +153,7 @@ try{
    "update public.purchase_orders set revision=2 where id=$1",
    [id.po],"Revised PO cannot be sent using prior approval");
  await denyAfterChange(
-   "update public.supervisor_proposals set status='rejected' where id=$1",
+   "update public.supervisor_proposals set status='rejected',revision=revision+1 where id=$1",
    [id.gmailProposal],"Revoked Gmail approval cannot authorize a vendor send");
  const reserved=await asRole("service_role",id.owner,()=>one(sql,args));
  check(reserved.reserved===true,"Exact owner-click send reserves exactly one PO");
