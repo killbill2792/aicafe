@@ -7,6 +7,10 @@ export default function StaffReplyComposer({people}:{
  const [employeeId,setEmployeeId]=useState(people[0]?.id??"");
  const [body,setBody]=useState(""),[status,setStatus]=useState("");
  const [busy,setBusy]=useState(false),nonce=useRef<string|null>(null);
+ const [workKind,setWorkKind]=useState<"task"|"checklist">("task");
+ const [workTitle,setWorkTitle]=useState(""),[workPrompt,setWorkPrompt]=useState("");
+ const [workStatus,setWorkStatus]=useState(""),[assignBusy,setAssignBusy]=useState(false);
+ const assignmentNonce=useRef<string|null>(null);
  const router=useRouter();
  async function send(){
   if(!employeeId||!body.trim()||busy)return;
@@ -28,6 +32,25 @@ export default function StaffReplyComposer({people}:{
   }catch{setStatus("Unable to verify the send. Retry with the same message or refresh to check the record.");}
   finally{setBusy(false);}
  }
+ async function assignWork(){
+  if(!employeeId||!workTitle.trim()||!workPrompt.trim()||assignBusy)return;
+  setAssignBusy(true);setWorkStatus("");
+  const requestNonce=assignmentNonce.current??crypto.randomUUID();
+  assignmentNonce.current=requestNonce;
+  try{
+   const response=await fetch("/api/staff-channel/owner-assignment",{
+    method:"POST",credentials:"same-origin",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({employeeId,kind:workKind,
+      title:workTitle.trim(),prompt:workPrompt.trim(),nonce:requestNonce}),
+   });
+   if(!response.ok)throw new Error("unverified");
+   assignmentNonce.current=null;setWorkTitle("");setWorkPrompt("");
+   setWorkStatus("Assignment saved to this employee's work inbox.");
+   router.refresh();
+  }catch{setWorkStatus("Could not verify the assignment. Retry unchanged or check the employee's work inbox.");}
+  finally{setAssignBusy(false);}
+ }
  return <section className="space-y-3 rounded-2xl border border-line p-4">
   <h3 className="font-semibold">Message an employee</h3>
   <p className="text-sm text-ink-muted">Your Send click shares a message in the worker's private web inbox. This does not send WhatsApp or confirm staff attendance.</p>
@@ -48,5 +71,27 @@ export default function StaffReplyComposer({people}:{
    </button>
   </>}
   {status&&<p role="status" className="text-sm text-ink-muted">{status}</p>}
+  <div className="mt-5 space-y-3 border-t border-line pt-5">
+   <h3 className="font-semibold">Assign staff work</h3>
+   <p className="text-sm text-ink-muted">The same employee inbox can receive work and checklists from other approved café workflows. This records your instruction only; it is not a completion receipt.</p>
+   <label htmlFor="staff-work-kind" className="block text-sm font-semibold">Type</label>
+   <select id="staff-work-kind" className="min-h-12 w-full rounded-xl border border-line bg-white p-3"
+    value={workKind} onChange={e=>{setWorkKind(e.target.value as "task"|"checklist");assignmentNonce.current=null;}}>
+    <option value="task">Task</option><option value="checklist">Checklist</option>
+   </select>
+   <label htmlFor="staff-work-title" className="block text-sm font-semibold">Work title</label>
+   <input id="staff-work-title" maxLength={200} value={workTitle}
+    onChange={e=>{setWorkTitle(e.target.value);assignmentNonce.current=null;}}
+    className="min-h-12 w-full rounded-xl border border-line bg-white p-3"/>
+   <label htmlFor="staff-work-prompt" className="block text-sm font-semibold">What should they do?</label>
+   <textarea id="staff-work-prompt" rows={3} maxLength={2000} value={workPrompt}
+    onChange={e=>{setWorkPrompt(e.target.value);assignmentNonce.current=null;}}
+    className="w-full rounded-xl border border-line bg-white p-3"/>
+   <button type="button" disabled={assignBusy||!employeeId||!workTitle.trim()||!workPrompt.trim()}
+    onClick={assignWork} className="min-h-12 rounded-full bg-accent px-5 font-semibold text-on-accent disabled:opacity-50">
+    {assignBusy?"Saving…":"Assign work"}
+   </button>
+   {workStatus&&<p role="status" className="text-sm text-ink-muted">{workStatus}</p>}
+  </div>
  </section>;
 }
