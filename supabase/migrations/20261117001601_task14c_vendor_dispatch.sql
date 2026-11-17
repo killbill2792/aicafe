@@ -17,7 +17,7 @@ create table public.cafe_supplier_order_contacts(
  created_at timestamptz not null default now(),
  updated_at timestamptz not null default now(),
  unique(business_id,id),
- unique(business_id,supplier_id),
+ unique(business_id,supplier_id,owner_user_id),
  foreign key(business_id,supplier_id) references public.cafe_suppliers(business_id,id),
  check ((channel='gmail' and email is not null) or (channel<>'gmail' and email is null))
 );
@@ -117,6 +117,23 @@ create policy "owner adds own channel reports" on public.purchase_order_channel_
 revoke all on public.purchase_order_channel_reports from public,anon,authenticated;
 grant select,insert on public.purchase_order_channel_reports to authenticated;
 grant all on public.purchase_order_channel_reports to service_role;
+-- Serialize owner reports with proactive notice creation on the same PO.
+-- Lock BEFORE insert, not in the AFTER-close trigger: a report must not commit
+-- between a notice writer's terminal-state check and the notice insert.
+create function public.supervisor_lock_vendor_order_on_report()
+ returns trigger language plpgsql security definer set search_path=public as $
+begin
+ perform 1 from public.purchase_orders po where po.business_id=new.business_id
+   and po.id=new.purchase_order_id and po.owner_user_id=new.owner_user_id
+ for update;
+ if not found then raise exception 'supplier_report_owner_po_missing'
+   using errcode='42501';end if;
+ return new;
+end $;
+create trigger supplier_report_lock_parent_po
+ before insert on public.purchase_order_channel_reports
+ for each row execute function public.supervisor_lock_vendor_order_on_report();
+
 -- Owner-reported SUPPLIER acceptance/decline closes only the matching
 -- previously raised supplier-dispatch question. Gmail SENT alone never closes
 -- this task. This is a source-verified update, not an AI-generated success.
@@ -177,6 +194,9 @@ begin
    or po.supplier_id<>c.supplier_id
    or c.id is null or c.channel<>'gmail' or c.revoked_at is not null
    or lower(c.email)<>lower(d.recipient_email)
+   or exists(select 1 from public.purchase_order_channel_reports r
+     where r.business_id=p_business_id and r.purchase_order_id=po.id
+       and r.outcome in ('supplier_accepted','supplier_declined'))
  then raise exception 'supplier_send_authorization_changed' using errcode='P0001';end if;
  update public.purchase_order_dispatches set state='reserved',reserved_at=now()
  where id=d.id and state='prepared';
@@ -226,6 +246,9 @@ begin
   where business_id=p_business_id and owner_user_id=p_owner_user_id
    and id=p_purchase_order_id for share;
  if po.id is null or po.status<>'approved_for_ordering'
+   or exists(select 1 from public.purchase_order_channel_reports r
+     where r.business_id=p_business_id and r.purchase_order_id=po.id
+       and r.outcome in ('supplier_accepted','supplier_declined'))
  then raise exception 'supplier_po_no_longer_approved' using errcode='P0001';end if;
  select * into c from public.cafe_supplier_order_contacts
   where business_id=p_business_id and owner_user_id=p_owner_user_id
@@ -347,17 +370,22 @@ begin
         and p.created_at<=p_as_of-interval '2 hours'
         for share) into v_found;
   elsif p_source_type='supplier_dispatch' then
-    select exists(select 1 from public.purchase_orders po
+    -- The owner-report BEFORE INSERT trigger takes this identical PO lock.
+    -- Acquire it first, then read reports in a separate SQL statement:
+    -- READ COMMITTED must see a terminal report committed while we waited.
+    perform 1 from public.purchase_orders po
       join public.supervisor_proposals origin on origin.business_id=po.business_id
         and origin.id=po.proposal_id
       where po.business_id=p_business_id and po.owner_user_id=p_owner_user_id
         and po.id::text=p_source_id and origin.thread_id=p_thread_id
         and po.status='approved_for_ordering'
         and po.approved_at<=p_as_of-interval '2 hours'
-        and not exists(select 1 from public.purchase_order_channel_reports r
-          where r.business_id=po.business_id and r.purchase_order_id=po.id
-            and r.outcome in ('supplier_accepted','supplier_declined'))
-      for share) into v_found;
+      for update of po;
+    if not found then return false; end if;
+    select not exists(select 1 from public.purchase_order_channel_reports r
+      where r.business_id=p_business_id and r.purchase_order_id=p_source_id::uuid
+        and r.outcome in ('supplier_accepted','supplier_declined'))
+      into v_found;
   else
     select exists(select 1 from public.operating_tasks t where t.business_id=p_business_id
       and t.id=p_source_id and t.kind not in
@@ -367,6 +395,19 @@ begin
   end if;
   if not v_found then return false; end if;
   v_task_id:='priority:'||p_stable_key;
+  if p_source_type='supplier_dispatch' then
+    -- Changes from not_prepared -> prepared -> Gmail-accepted alter the
+    -- revision hash. Keep one owner action per PO, closing the superseded
+    -- notice before inserting the new source revision in THIS transaction.
+    -- The PO row lock also serializes concurrent revision writers/reports.
+    update public.operating_tasks t
+       set status='handled',resolved_at=now(),updated_at=now()
+     where t.business_id=p_business_id and t.owner_user_id=p_owner_user_id
+       and t.kind='priority_notice' and t.status='needs_owner'
+       and t.payload->>'sourceType'='supplier_dispatch'
+       and t.payload->>'sourceId'=p_source_id
+       and t.id<>v_task_id;
+  end if;
   insert into public.operating_tasks
     (business_id,id,owner_user_id,agent_id,kind,status,payload,confidence,evidence,
       entity_type,dedupe_key)

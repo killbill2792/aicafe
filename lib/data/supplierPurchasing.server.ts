@@ -70,6 +70,28 @@ export async function readSupplierPurchaseOrders(db:SupabaseClient,businessId:st
  })),truncated:(result.data??[]).length>40};
 }
 
+/** The owner-question answer is a projection of verified source and explicitly
+ * attributed owner reports. A terminal supplier outcome is final for this PO
+ * even if Gmail is disconnected or no provider dispatch was ever prepared. */
+export function supplierCommunicationOwnerQuestion(input:{
+ contactVerified:boolean;channel:string|null;state:string;
+ ownerReportedOutcome:string|null
+}):string|null{
+ const {contactVerified,channel,state,ownerReportedOutcome}=input;
+ if(ownerReportedOutcome==="supplier_accepted"||ownerReportedOutcome==="supplier_declined")return null;
+ if(!contactVerified)
+   return "Which channel do you use for this supplier: Gmail, phone, portal or something else? Please confirm the ordering contact.";
+ if(channel!=="gmail")
+   return "This supplier uses "+channel+". Was the order placed there, and what did they confirm?";
+ if(state==="not_prepared")
+   return "Shall I prepare this saved order as a Gmail send for your separate approval?";
+ if(state==="prepared")
+   return "The vendor email is drafted. Please approve it before any send.";
+ if(state==="send_uncertain")
+   return "Gmail outcome is uncertain. Please check the original email or help reconcile; I will not resend.";
+ return "Gmail accepted the message, but did the supplier actually accept the order?";
+}
+
 /** The ONLY communication-status reader for those same saved POs. A reserved
  * Gmail POST with no verified receipt is uncertain, never "not sent". Off-Gmail
  * claims remain explicitly owner-reported and cannot prove provider delivery. */
@@ -100,17 +122,17 @@ export async function readSupplierOrderCommunications(
  return (orders.data??[]).map(order=>{
   const contact=(contacts.data??[]).find(c=>c.supplier_id===order.supplier_id);
   const dispatch=(dispatches.data??[]).find(d=>d.purchase_order_id===order.id);
-  const report=(reports.data??[]).find(r=>r.purchase_order_id===order.id);
+  const ownerReports=(reports.data??[]).filter(r=>r.purchase_order_id===order.id);
+  // Terminal acceptance or decline must not be overwritten by later notes
+  // labeled unknown/acknowledged. A correction needs an explicit owner action.
+  const report=ownerReports.find(r=>r.outcome==="supplier_accepted"||r.outcome==="supplier_declined")
+    ??ownerReports[0];
   const current=Boolean(contact?.verified_at&&!contact?.revoked_at);
   const state=dispatch?.state==="reserved"?"send_uncertain":dispatch?.state??"not_prepared";
-  const question=!current?
-   "Which channel do you use for this supplier: Gmail, phone, portal or something else? Please confirm the ordering contact.":
-   contact?.channel!=="gmail"?
-   "This supplier uses "+contact?.channel+". Was the order placed there, and what did they confirm?":
-   state==="not_prepared"?"Shall I prepare this saved order as a Gmail send for your separate approval?":
-   state==="prepared"?"The vendor email is drafted. Please approve it before any send.":
-   state==="send_uncertain"?"Gmail outcome is uncertain. Please check the original email or help reconcile; I will not resend.":
-   report?.outcome==="supplier_accepted"?null:"Gmail accepted the message, but did the supplier actually accept the order?";
+  const question=supplierCommunicationOwnerQuestion({
+   contactVerified:current,channel:contact?.channel??null,state,
+   ownerReportedOutcome:report?.outcome??null
+  });
   return {purchaseOrderId:order.id,state,channel:current?contact!.channel:null,
    recipient:current&&contact?.channel==="gmail"?contact.email:null,
    contactVerified:current,ownerReportedOutcome:report?.outcome??null,

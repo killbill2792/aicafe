@@ -34,7 +34,7 @@ export async function proposeApprovedSupplierEmail(scope:OwnerLoopScope,
    "I cannot find that approved purchase order for this café. Which order did you mean?");
  if(po.status!=="approved_for_ordering")
    ask("supplier_order_not_open","This purchase order is no longer approved for ordering. Should we prepare a new order?");
- const [lines,contacts,existing,account]=await Promise.all([
+ const [lines,contacts,existing,terminalReports,account]=await Promise.all([
   client.from("purchase_order_lines").select(
     "item_name_snapshot,packs,pack_quantity,pack_unit,subtotal_cents,ordinal"
   ).eq("business_id",scope.businessId).eq("purchase_order_id",po.id)
@@ -44,11 +44,22 @@ export async function proposeApprovedSupplierEmail(scope:OwnerLoopScope,
    .eq("owner_user_id",scope.ownerUserId).maybeSingle(),
   client.from("purchase_order_dispatches").select("id,proposal_id,state,contact_id,recipient_email,po_revision,po_effect_hash")
    .eq("business_id",scope.businessId).eq("purchase_order_id",po.id).maybeSingle(),
+  client.from("purchase_order_channel_reports").select("outcome")
+   .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+   .eq("purchase_order_id",po.id)
+   .in("outcome",["supplier_accepted","supplier_declined"]).limit(1),
   getConnectorAccount({businessId:scope.businessId,ownerUserId:scope.ownerUserId})
    .catch(()=>ask("gmail_status_unavailable",
       "I could not check the Gmail connection right now. Did you communicate with this supplier in Gmail, by phone, or by portal? Please tell me how and whether the order was accepted.")),
  ]);
- if(lines.error||contacts.error||existing.error)throw new Error("vendor_order_evidence_unavailable");
+ if(lines.error||contacts.error||existing.error||terminalReports.error)
+   throw new Error("vendor_order_evidence_unavailable");
+ if(terminalReports.data?.length){
+   const accepted=terminalReports.data[0].outcome==="supplier_accepted";
+   ask("supplier_order_already_resolved",
+     accepted?"You already reported that this supplier accepted this purchase order. I will not prepare another supplier send. If that report was mistaken, tell me so we can review the order.":
+     "You already reported that this supplier declined this purchase order. I will not prepare another send for the same order. Should we review a new one?");
+ }
  // A PREPARED draft has never been authorized or reserved for provider send.
  // The secure SQL replacement below may retire it after a NEW owner request.
  // Reserved/uncertain/accepted sends are never replaced or retried.
