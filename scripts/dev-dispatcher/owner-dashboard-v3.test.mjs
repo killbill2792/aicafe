@@ -179,7 +179,7 @@ test('private dashboard script remains syntactically valid after adding Muse fie
 test('form rejects a concurrent Muse edit instead of silently replacing its new stage and URL',async()=>{
  const html=readFileSync(new URL('./owner-dashboard-v3.html',import.meta.url),'utf8');
  const script=html.match(/<script>([\s\S]*?)<\/script>/)[1],elements=new Map();
- const el=id=>{if(!elements.has(id))elements.set(id,{value:'',textContent:'',innerHTML:''});return elements.get(id);};
+ const el=id=>{if(!elements.has(id)){let value='';const e={textContent:'',innerHTML:''};Object.defineProperty(e,'value',{get:()=>value,set:v=>{value=String(v);}});elements.set(id,e);}return elements.get(id);};
  let note={task_id:'A',revision:1,stage:'working',chat_url:'https://chatgpt.com/c/1234',note:'Owner original',pr_number:488},post=null;
  const fetchMock=async(url,opts={})=>{
   if(url==='/api/notes'&&opts.method==='POST'){
