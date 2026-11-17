@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 const now='2026-11-16T20:00:00Z',sha='a'.repeat(40);
 const c=(head=sha,hasFindings=false)=>({body:
- '<!-- codex-review-state:v1 '+JSON.stringify({code_review:{commit_sha:head,
+ '<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 '+JSON.stringify({code_review:{commit_sha:head,
   has_any_findings:hasFindings,has_unresolved_findings:hasFindings,status:'completed'}})+' -->',
  author:{login:'chatgpt-codex-connector[bot]'}});
 const github=(state='SUCCESS',comments=[c()])=>({data:{repository:{
