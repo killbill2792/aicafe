@@ -1,6 +1,8 @@
 import {getTranslations,getLocale} from "next-intl/server";
 import {formatCents} from "@/lib/calc/money";
 import {requireUser} from "@/lib/auth/requireUser";
+import {isLinkedStaffUser} from "@/lib/staffCommunication/identity.server";
+import {redirect} from "next/navigation";
 import {pricingPlans} from "@/lib/access/plans";
 import {requireOwnerAccessScope} from "@/lib/access/access.server";
 import RedeemCodeForm from "@/components/access/RedeemCodeForm";
@@ -8,6 +10,8 @@ import PageShell from "@/components/shared/PageShell";
 export const dynamic="force-dynamic";
 export default async function PricingPage(){
  const user=await requireUser();
+  // The general owner navigation/pricing screen is not a worker portal.
+  if(user&&await isLinkedStaffUser(user.id))redirect("/crew");
  const t=await getTranslations("FreeAccess");
  const locale=await getLocale();
  const displayLocale=locale==="es"?"es-ES":locale==="ar"?"ar-EG":"en-US";
