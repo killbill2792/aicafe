@@ -1,11 +1,11 @@
 import {describe,it,expect,vi,beforeEach} from "vitest";
 const mocks=vi.hoisted(()=>({
- inbox:vi.fn(),reply:vi.fn(),link:vi.fn(),links:vi.fn(),ownerSend:vi.fn(),
+ inbox:vi.fn(),reply:vi.fn(),link:vi.fn(),links:vi.fn(),ownerSend:vi.fn(),assign:vi.fn(),
 }));
 vi.mock("@/lib/staffCommunication/channel.server",()=>({
  getStaffInbox:mocks.inbox,submitStaffReply:mocks.reply,
  ownerStaffLoginList:mocks.links,ownerLinkExistingLogin:mocks.link,
- sendOwnerStaffMessage:mocks.ownerSend,
+ sendOwnerStaffMessage:mocks.ownerSend,assignOwnerStaffWork:mocks.assign,
  StaffChannelError:class StaffChannelError extends Error{
   constructor(public code:string){super(code);}
  }
@@ -13,6 +13,7 @@ vi.mock("@/lib/staffCommunication/channel.server",()=>({
 import {GET as get,POST as post} from "./route";
 import {GET as getLinks,POST as postLinks} from "./link/route";
 import {POST as ownerPost} from "./owner-message/route";
+import {POST as ownerAssign} from "./owner-assignment/route";
 const origin="https://example.test";
 const url=origin+"/api/staff-channel";
 const req=(body:unknown,headers:Record<string,string>={})=>
@@ -27,6 +28,7 @@ beforeEach(()=>{
  mocks.reply.mockResolvedValue({id:"33333333-3333-4333-8333-333333333333",replayed:false});
  mocks.link.mockResolvedValue({linked:true});
  mocks.ownerSend.mockResolvedValue({id:"33333333-3333-4333-8333-333333333333",replayed:false});
+ mocks.assign.mockResolvedValue({id:"44444444-4444-4444-8444-444444444444",replayed:false});
  mocks.links.mockResolvedValue([]);
  mocks.inbox.mockResolvedValue({name:"Ava",requests:[],messages:[]});
 });
@@ -60,6 +62,17 @@ describe("restricted staff communication APIs",()=>{
   const attacker=await ownerPost(req(input,{Origin:"https://attacker.test"}));
   expect(attacker.status).toBe(403);
   expect(mocks.ownerSend).toHaveBeenCalledOnce();
+ });
+ it("reuses owner-scoped worker assignments for task/checklist without raw staff writes",async()=>{
+  const assignment={employeeId:reply.requestId,kind:"checklist",
+    title:"Opening checks",prompt:"Check the grinder and report any problem",
+    nonce:reply.nonce};
+  const accepted=await ownerAssign(req(assignment));
+  expect(accepted.status).toBe(200);
+  expect(mocks.assign).toHaveBeenCalledExactlyOnceWith(assignment);
+  expect((await accepted.json()).replayed).toBe(false);
+  expect((await ownerAssign(req(assignment,{Origin:"https://evil.test"}))).status).toBe(403);
+  expect(mocks.assign).toHaveBeenCalledOnce();
  });
  it("owner link API reuses owner authorization service and checks origin",async()=>{
   expect((await getLinks()).status).toBe(200);
