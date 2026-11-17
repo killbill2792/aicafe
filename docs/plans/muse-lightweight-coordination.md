@@ -1,49 +1,26 @@
-# Muse lightweight development coordination — reversible pilot
+# Muse lightweight development coordination — owner pilot
 
-**Goal:** Muse monitors PR facts and coordinates the existing ChatGPT coding chats, without GitHub Actions controlling ordinary coding. The owner reviews architecture; ChatGPT codes, tests, resolves Codex findings and merges under existing gates. No new scheduler, model, database or external effect.
+**Goal:** Muse observes GitHub PR facts and coordinates existing ChatGPT conversations using its existing timer/browser. ChatGPT codes and merges under real CI/Codex gates; the owner approves architecture. No new scheduler, DB, code-execution authority or production effect.
 
-## Source, records and controls
+## Actual sources and saved state
 
-| Input | Source / key | Use and trust |
-|---|---|---|
-| PR state | Read-only GitHub GraphQL: PR number, SHA, commit time, draft, aggregate checks, exact-head Codex bot summary, explicit merge | Observed facts only; aggregate green is **not** the required-check merge gate |
-| Muse task note | Local private `notes.json`, keyed by task ID, with PR number, verified full chat URL, stage, note, author, time and CAS revision | Informal coordination; never owner approval, CI, Codex or merge proof |
-| Snapshot | Local `github-facts.json` with observation timestamp | Stale/offline is **unknown**, not green |
-| Actions | Local `events.json`, one immutable event ID per situation/head | Suggested actions only; no automatic browser resend after uncertainty |
+- One **read-only** GitHub GraphQL query returns open PRs, head/commit time, aggregate CI, trusted exact-head Codex summary and recently merged PRs. Aggregate green is not final merge clearance. Incomplete, failed or stale reads **never count as green**; 429/403/401 get local cooldown.
+- Private Muse-host `notes.json` contains task-keyed PR number, real ChatGPT URL, informal stage, text, owner/Muse actor, timestamp and **CAS revision**. Concurrent edits must reject stale versions; local notes remain usable when GitHub or Actions fail.
+- Private `github-facts.json` retains the last timestamped observation; `events.json` retains deduplicated **suggestions**, not proof a browser message arrived. Existing loopback-only dashboard at `127.0.0.1:7359` exposes authenticated `GET/POST /api/notes`, and read-only `/api/muse-status` and `/api/muse-actions`. Muse cannot mutate `/api/control` approvals or CI/merge evidence.
 
-The existing loopback-only private dashboard exposes authenticated `GET/POST /api/notes` for **owner and Muse**, read-only `GET /api/muse-status` and `GET /api/muse-actions`. Muse cannot edit legacy `/api/control`, signed scopes, approvals or GitHub facts. Both local notes and pending actions remain readable when the legacy ledger or GitHub Actions fails. Protect private chat URLs: no public Pages view or publicly bound server.
-
-## One-shot Muse observer
+## Muse's existing timer
 
 ```bash
-export GITHUB_REPOSITORY=killbill2792/aicafe
-export GITHUB_TOKEN=<Muse-existing-read-only-token>
-export MUSE_COORDINATION_HOME="$HOME/.local/state/aicafe-muse"
-node scripts/dev-dispatcher/muse-lite.mjs
+GITHUB_REPOSITORY=killbill2792/aicafe GITHUB_TOKEN=<Muse-read-only-token> node scripts/dev-dispatcher/muse-lite.mjs
 ```
 
-Use Muse's **existing timer and browser courier**, never another scheduler. One GitHub read per successful poll; local cooldown after 429/403/401. A failed read must not stop local notes or owner reminders. Outputs are suggestions, **not confirmed browser sends**:
+One unchanged event produces at most one suggestion: after 10 minutes with no commit, on CI failure or exact-head Codex findings, on observed clean+green for **ChatGPT to verify** full gates, seven minutes after `waiting_owner`, or on an open→verified-merged PR for planning new tasks. Pending CI/review and owner holds suppress routine nudges. Uncertain browser delivery is **never resent blindly**; use Muse's existing courier and verify a real browser URL/message.
 
-- **10 minutes without commit:** suggest one same-chat continuation, provided owner is not waiting and checks/review are not in progress.
-- **Failed CI / Codex findings:** suggest an exact-PR/head investigation and repair.
-- **Observed green + clean:** suggest ChatGPT verify *all* actual gates and merge only if eligible.
-- **7 minutes after local `waiting_owner` stage:** remind owner to review architecture.
-- **PR observed open then explicitly merged:** suggest asking the planning chat for the next tasks.
+## Pilot required before disabling the old dispatcher
 
-An action is reserved before output to avoid duplicate browser delivery; the local pending-action panel preserves suggestions if output was missed. Muse must verify actual browser delivery and a full new-chat URL before claiming success. Do not replay an uncertain send.
+1. On Muse's existing host, compare real current PR heads/CI/Codex to its read-only dashboard; register a copied ChatGPT URL and note, restart, confirm they persist without GitHub Actions.
+2. Edit one note concurrently as Muse and owner. The owner's stale form **must get a conflict**, never overwrite the newer URL/status; reload should allow an intentional new edit.
+3. Use Muse's existing browser to send **one** same-chat continuation, confirm actual acceptance, and verify repeated polling doesn't duplicate it. Simulate API 429 and failed dispatcher Actions: local notes and owner reminders must still work with GitHub evidence marked stale.
+4. Confirm no owner approval or merge can be faked through note input, and a missing/closed PR remains visible as an unverified blocker.
 
-## Existing private dashboard
-
-Launch `owner-dashboard-v3.mjs` with a strong `DASHBOARD_OWNER_PASSWORD`, optional strong `DASHBOARD_MUSE_PASSWORD` and the same local notes home. It binds **127.0.0.1:7359**; access via an owner-controlled SSH tunnel. The legacy private-ledger token is optional for the new local monitor/notes; if absent its old sections report unavailable. Muse may paste the URL of an already-open chat and enter free-text notes without writing anything to GitHub.
-
-Direct ChatGPT-to-this-private-localhost writes are **not implemented**: ChatGPT can use its GitHub connection to write PR evidence, while Muse transcribes verified coordination details locally. A direct private write integration would require separately approved authenticated access; never expose the dashboard publicly merely to allow it.
-
-## Required live pilot before cutover
-
-1. On Muse's actual machine, read current open PRs and compare numbers, head SHA, CI/Codex and explicit merge to GitHub; confirm stale reads never claim green.
-2. Register a real copied ChatGPT URL and note, restart the process, and verify both remain accessible without a GitHub Actions run.
-3. Deliver **one** same-chat continuation through the existing Muse browser, verify the visible accepted message, restart/repoll and confirm no duplicate; test the missing/uncertain receipt case.
-4. Simulate an API rate limit and a failed GitHub Actions run; local edit, owner reminder and cached-with-stale-label display must still work.
-5. Verify no implied owner approval, no prompt delivery for absent URL, and correct next-planning suggestion after a verified merge.
-
-This code does **not** install the Muse host service, send chats, merge PRs or disable the old dispatcher. Keep the signed ledger, receipts and `DISPATCH_LEDGER_AUTO_PERSIST` untouched until the real pilot succeeds and the owner authorizes a separate cutover. All runtime and governance protections remain in effect.
+Run the existing private dashboard with strong `DASHBOARD_OWNER_PASSWORD`, optional strong `DASHBOARD_MUSE_PASSWORD`, and an SSH tunnel to loopback. ChatGPT cannot directly POST to private Muse localhost; Muse may register the real chat URL it observes. **Do not expose localhost publicly, install another scheduler, disable `DISPATCH_LEDGER_AUTO_PERSIST`, erase private receipts, or claim a live pilot before the owner/Muse confirms it.** See PR #503 for implementation and full acceptance evidence.
