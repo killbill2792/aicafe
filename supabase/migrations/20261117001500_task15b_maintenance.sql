@@ -43,6 +43,25 @@ revoke all on public.maintenance_case_events from public,anon,authenticated;
 grant select on public.maintenance_case_events to authenticated;
 grant all on public.maintenance_case_events to service_role;
 
+// Existing "members read" + "members write" policies on operating_tasks are
+// PERMISSIVE; they also authorize SELECT. Maintenance reports contain private
+// symptoms, owner identity, and repair evidence. A separate RESTRICTIVE SELECT
+// policy ANDs with those old grants without changing other operating tasks.
+// Supabase service_role / trusted privileged jobs still bypass RLS.
+create policy maintenance_case_canonical_owner_only
+  on public.operating_tasks as restrictive for select to authenticated
+  using (
+    kind <> 'maintenance_issue'
+    or (
+      owner_user_id = (select auth.uid())
+      and exists (
+        select 1 from public.memberships m
+        where m.business_id=operating_tasks.business_id
+          and m.user_id=(select auth.uid()) and m.role='owner'
+      )
+    )
+  );
+
 -- Existing operating_tasks has a broad member-write policy. Maintenance
 -- state must NOT be closable by direct member UPDATE/DELETE. Protect the
 -- existing row on every operation, including kind changes and insertion.
