@@ -2,6 +2,8 @@
 # OPENAI_API_KEYS or a write-capable GitHub token. No Vercel previews/hosted DB.
 name: AI CAFE Task 14C Bounded Real-Model Acceptance
 on:
+  pull_request:
+    paths: ['.github/workflows/ai-cafe-14c-owner-live.yml', 'scripts/acceptance/task14c-*']
   pull_request_target:
     types: [edited]
 # A second edit/run cannot race another paid run.
@@ -11,6 +13,17 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  simulator-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test scripts/acceptance/task14c-gmail-simulator.test.mjs
   consume-once:
     name: Atomically consume owner authorization before paid work
     if: >-
