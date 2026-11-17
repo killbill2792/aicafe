@@ -10,6 +10,11 @@ const openInput=z.strictObject({
   locationId:uuid.nullable(),from:z.iso.date().nullable(),to:z.iso.date().nullable(),
   role:z.string().trim().min(1).max(100).nullable(),
 });
+const checklistInput=z.strictObject({
+ caseId:uuid,revision:z.number().int().positive(),nonce:uuid,
+ title:z.string().trim().min(1).max(200),
+ prompt:z.string().trim().min(1).max(2000),
+});
 const decideInput=z.strictObject({
   caseId:uuid,revision:z.number().int().positive(),
   choice:z.enum(["approve","decline","defer"]),
@@ -97,4 +102,20 @@ export async function decideOwnerStaffCoordination(raw:unknown) {
   p_revision:p.revision,p_choice:p.choice,
  });
  return assertRpcResult(data,error);
+}
+
+/** Owner-approved in-app checklist via the existing 13C service. This is
+ * a task assignment, not proof of employment or of staff completion. */
+export async function assignOwnerOnboardingChecklist(raw:unknown){
+ const parsed=checklistInput.safeParse(raw);
+ if(!parsed.success)throw new StaffCoordinationError("invalid");
+ const p=parsed.data,scope=await owner();
+ const {data,error}=await scope.supabase.rpc("staff_coordination_assign_checklist",{
+  p_business_id:scope.businessId,p_case_id:p.caseId,
+  p_revision:p.revision,p_nonce:p.nonce,
+  p_title:p.title,p_prompt:p.prompt,
+ });
+ return assertRpcResult(data,error) as {
+  id:string;revision:number;state:string;requestId:string;replayed:boolean;
+ };
 }
