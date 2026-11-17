@@ -9,6 +9,25 @@ alter table public.employees add column if not exists staff_auth_user_id uuid re
 create unique index if not exists employees_one_worker_login
   on public.employees(staff_auth_user_id) where staff_auth_user_id is not null;
 
+-- Identity changes are privileged even though the older employees RLS grants
+-- café managers general UPDATE rights. A direct authenticated UPDATE must
+-- never turn a manager account into a staff-channel reader. SECURITY INVOKER
+-- ensures current_user is the actual SQL invoker (the trusted owner-only
+-- SECURITY DEFINER linking RPC executes as postgres; clients do not).
+create function public.staff_channel_protect_identity_link()
+ returns trigger language plpgsql security invoker set search_path=public,pg_temp as $
+begin
+ if new.staff_auth_user_id is distinct from old.staff_auth_user_id
+   and current_user not in ('postgres','service_role') then
+  raise exception 'staff_link_rpc_required' using errcode='42501';
+ end if;
+ return new;
+end $;
+create trigger staff_channel_protect_identity_link
+ before update of staff_auth_user_id on public.employees
+ for each row execute function public.staff_channel_protect_identity_link();
+revoke all on function public.staff_channel_protect_identity_link() from public,anon,authenticated;
+
 -- A café owner links an ALREADY CONFIRMED Supabase login to exactly one active
 -- employee. Exact email is matched only in trusted SQL; no public user directory.
 create function public.staff_link_existing_login(
