@@ -24,7 +24,7 @@ export function useOwnerStaffOutbox(options:{
   if(!operation||inFlight.current)return;
   inFlight.current=true;setBusy(true);setStatus("Verifying saved request…");
   try{
-   const outcome=await deliverVerifiedReceiptWithRetry(operation,async payload=>{
+   const outcome=await deliverVerifiedReceiptWithRetry<OwnerPending>(operation,async payload=>{
     // No replays under a different authenticated owner after an account switch.
     const auth=await createBrowserSupabaseClient().auth.getUser();
     if(auth.error||auth.data.user?.id!==ownerUserId)
