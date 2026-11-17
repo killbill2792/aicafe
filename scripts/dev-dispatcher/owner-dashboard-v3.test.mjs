@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import {readFileSync} from 'node:fs';
+import {readFileSync,mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import vm from 'node:vm';
-import {ownerDashboardHandler} from './owner-dashboard-v3.mjs';
+import {ownerDashboardHandler,startOwnerDashboard} from './owner-dashboard-v3.mjs';
 import {applyOwnerDashboardEdit} from './owner-controls-v3.mjs';
 import {applyMuseNote} from './muse-local-notes.mjs';
 const password='correct-horse-battery-staple';
@@ -201,4 +203,52 @@ test('form rejects a concurrent Muse edit instead of silently replacing its new 
  assert.equal(post.expected_revision,1);
  assert.equal(note.stage,'paused');
  assert.match(el('muse-saved').textContent,/Not saved: Dashboard edit conflict/);
+});
+
+test('Muse-only startup needs no owner password or private ledger token',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'aicafe-muse-local-'));
+ const server=startOwnerDashboard({musePassword:'muse-only-password',port:0,
+  notesPath:join(dir,'notes.json')});
+ try{
+  await new Promise(resolve=>server.listening?resolve():server.once('listening',resolve));
+  const url='http://127.0.0.1:'+server.address().port;
+  const museAuth=auth('muse','muse-only-password');
+  const headers={Authorization:museAuth};
+  assert.equal((await fetch(url+'/')).status,401);
+  assert.equal((await fetch(url+'/',{headers})).status,200);
+  assert.equal((await fetch(url+'/api/muse-actions',{headers})).status,200);
+  assert.equal((await fetch(url+'/api/notes',{headers})).status,200);
+  assert.equal((await fetch(url+'/api/muse-status',{headers})).status,503);
+  // The local-only host must never silently expose signed ledger or controls.
+  const state=await fetch(url+'/api/state',{headers});
+  assert.equal(state.status,503);
+  assert.match(await state.text(),/Muse-only mode/);
+  const control=await fetch(url+'/api/control',{method:'POST',
+   headers:{...headers,'Content-Type':'application/json'},
+   body:JSON.stringify({task_id:'A',field:'note',value:'forge',expected_revision:0})});
+  assert.equal(control.status,503);
+  assert.equal((await fetch(url+'/api/control',{
+   method:'POST',headers:{Authorization:auth('owner',''), 'Content-Type':'application/json'},
+   body:'{}'})).status,401,'empty owner password cannot authenticate');
+  assert.equal((await fetch(url+'/api/notes',{headers:{
+   Authorization:auth('muse','wrong-password')}})).status,401);
+  const edit={task_id:'15b',pr_number:505,chat_url:'https://chatgpt.com/c/12345',
+   stage:'working',note:'Muse verified link',expected_revision:0};
+  const saved=await fetch(url+'/api/notes',{method:'POST',
+   headers:{...headers,'Content-Type':'application/json'},
+   body:JSON.stringify(edit)});
+  assert.equal(saved.status,200);
+  const notes=await (await fetch(url+'/api/notes',{headers})).json();
+  assert.equal(notes.entries['15b'].chat_url,edit.chat_url);
+  assert.equal(notes.entries['15b'].revision,1);
+ }finally{await new Promise(resolve=>server.close(resolve));
+  rmSync(dir,{recursive:true,force:true});}
+});
+test('Muse-only mode rejects weak, empty, or missing dashboard credentials',()=>{
+ const readState=async()=>({}),editState=async()=>({});
+ const base={readState,editState};
+ assert.throws(()=>ownerDashboardHandler(base),/strong owner or Muse password/);
+ assert.throws(()=>ownerDashboardHandler({...base,musePassword:'short'}),/strong owner or Muse password/);
+ assert.throws(()=>ownerDashboardHandler({...base,ownerPassword:'',musePassword:'muse-only-password'}),/strong owner or Muse password/);
+ assert.doesNotThrow(()=>ownerDashboardHandler({...base,musePassword:'muse-only-password'}));
 });
