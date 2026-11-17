@@ -71,8 +71,8 @@ jobs:
           if(latest.head?.sha!==sha||latest.base?.ref!=="main"||
              !latest.body?.includes(marker)||latest.state!=="open")
              throw Error("Approval not for current Task13C PR head");
-          // pilot-v1 through pilot-v8 are irrevocably consumed: NEVER replay.
-          // pilot-v1 is a new distinct owner-only one-shot, never a reset/retry.
+          // An earlier or failed pilot-v1 attempt irrevocably consumes this
+          // exact owner grant. Never reset or replay uncertain approval.
           const consumed="<!-- aicafe-task13c-authorization-consumed:pr501:pilot-v1 -->";
           let endReached=false;
           for(let page=1;page<=100;page++){
@@ -234,7 +234,7 @@ jobs:
             -e SUPABASE_SERVICE_ROLE_KEY \
             mcr.microsoft.com/playwright:v1.58.2-noble \
             bash -euo pipefail -c '
-              test "$(git rev-parse HEAD 2>/dev/null || printf "%s" "$HEAD_SHA")" = "$HEAD_SHA"
+              test "$(git rev-parse HEAD)" = "$HEAD_SHA"
               timeout 12m npx vitest run lib/ai/supervisor/routines/staffCoverage.live.test.ts --reporter=verbose
               cp test-results/acceptance/13c-live-proof.json /proof/13c-live-proof.json
             '
