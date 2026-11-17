@@ -20,7 +20,7 @@ create table public.staff_coordination_cases (
   decision text check (decision is null or decision in ('approve','decline','defer')),
   decided_by uuid references auth.users(id),
   decided_at timestamptz,
-  revision int not null default 1 check (revision > 0),
+  revision bigint not null default 1 check (revision > 0),
   next_check_at timestamptz,
   retention_at timestamptz,
   created_by uuid references auth.users(id),
