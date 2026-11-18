@@ -24,6 +24,7 @@ import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
 import {proposeApprovedSupplierEmail} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
+import {recordOwnerSupplierOutcome} from "@/lib/purchasing/ownerSupplierOutcome.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -172,6 +173,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(external?{verifiedReadClient:p.externalClient}: {})};
     let selectedContentSha256:string|null=null;
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
+      ownerText:p.ownerText,
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
       readEconomics:async()=>readSupervisorEconomics(await getDb(),scope.businessId,identity.asOf),
@@ -262,6 +264,26 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
               canRead:allowsGmail(mailbox.account,"read")}};
         },
         inspect:input=>investigateSupplierPurchase(proposalScope,input),
+        recordOwnerOutcome:async input=>{
+          // Only the currently authenticated owner utterance, never a cron
+          // or model-generated task, can become an owner-reported outcome.
+          if(job||owner.role!=="owner"||!p.ownerText.trim()||
+             input.note!==p.ownerText.trim())
+            throw new ToolError("unauthorized","supplier_owner_statement_required");
+          const {client}=await simulationOwnerReader(proposalScope);
+          // A vague "this PO" cannot authorize an arbitrary model-selected
+          // order when the owner has more than one unresolved approved PO.
+          if(!p.ownerText.toLowerCase().includes(input.purchaseOrderId.toLowerCase())){
+            const candidates=await client.from("purchase_orders").select("id")
+              .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+              .eq("status","approved_for_ordering").limit(2);
+            if(candidates.error||candidates.data?.length!==1||
+               candidates.data[0].id!==input.purchaseOrderId)
+              throw new ToolError("validation",
+                "Please identify which saved purchase order the supplier responded to.");
+          }
+          return recordOwnerSupplierOutcome(client,scope,input);
+        },
         proposeVendorSend:async({purchaseOrderId})=>{
           const key=proposalRequestKey(id,JSON.stringify({
             ownerMessageId:owner.id,supplierVendorEmail:purchaseOrderId
