@@ -4,6 +4,44 @@ import type {AgentToolContext} from "./index";
 const input={items:[{ingredientId:"11111111-1111-4111-8111-111111111111",
  itemName:"Milk",quantity:5,unit:"gal"}],neededBy:"2026-11-17",preferredSupplier:null};
 const newProposal={...input,replaceProposalId:null};
+describe("Task14C: canonical owner-reported supplier outcomes from Supervisor chat",()=>{
+ const po="77777777-7777-4777-8777-777777777777";
+ const note="The supplier accepted this PO by phone.";
+ const payload={purchaseOrderId:po,channel:"phone",outcome:"supplier_accepted",note};
+ it("persists the current authenticated owner's explicit outcome through the canonical port",async()=>{
+  const recordOwnerOutcome=vi.fn().mockResolvedValue({
+    reportId:"66666666-6666-4666-8666-666666666666",
+    reportedAt:"2026-11-18T12:00:00Z",alreadyRecorded:false,
+    source:"owner_reported",providerVerified:false,outcome:"supplier_accepted"
+  });
+  const result=await supplierPurchasingTools.record_supplier_order_outcome.execute(payload,{
+    ownerText:note,purchasing:{recordOwnerOutcome}
+  } as unknown as AgentToolContext);
+  expect(recordOwnerOutcome).toHaveBeenCalledExactlyOnceWith(payload);
+  expect(result).toMatchObject({saved:true,source:"supplier_owner_report",
+    outcome:"supplier_accepted",supplierAcceptanceSource:"owner_reported",providerVerified:false});
+ });
+ it("rejects an outcome copied from earlier history or invented by the model",async()=>{
+  const recordOwnerOutcome=vi.fn();
+  const stale=await supplierPurchasingTools.record_supplier_order_outcome.execute(payload,{
+    ownerText:"Did the supplier accept this order?",purchasing:{recordOwnerOutcome}
+  } as unknown as AgentToolContext);
+  const negated=await supplierPurchasingTools.record_supplier_order_outcome.execute(
+    {...payload,note:"The supplier did not accept the PO."},{
+      ownerText:"The supplier did not accept the PO.",purchasing:{recordOwnerOutcome}
+    } as unknown as AgentToolContext);
+  expect(stale).toMatchObject({saved:false,missing:["explicit_current_owner_report_required"]});
+  expect(negated).toMatchObject({saved:false,missing:["explicit_current_owner_report_required"]});
+  expect(recordOwnerOutcome).not.toHaveBeenCalled();
+ });
+ it("requires a working canonical writer instead of claiming a chat-only save",async()=>{
+  const result=await supplierPurchasingTools.record_supplier_order_outcome.execute(payload,{
+    ownerText:note
+  } as unknown as AgentToolContext);
+  expect(result).toMatchObject({saved:false,missing:["owner_report_writer_unavailable"]});
+ });
+});
+
 describe("Task14B: one agent, real purchasing work—not chat-only advice",()=>{
  it("drafts one Gmail vendor send only from the approved-PO authority port",async()=>{
   const id="77777777-7777-4777-8777-777777777777";
