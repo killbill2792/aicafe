@@ -7,7 +7,7 @@ const newProposal={...input,replaceProposalId:null};
 describe("Task14C: canonical owner-reported supplier outcomes from Supervisor chat",()=>{
  const po="77777777-7777-4777-8777-777777777777";
  const note="The supplier accepted this PO by phone.";
- const payload={purchaseOrderId:po,channel:"phone",outcome:"supplier_accepted",note};
+ const payload={purchaseOrderId:po,channel:"phone",outcome:"supplier_accepted"};
  it("persists the current authenticated owner's explicit outcome through the canonical port",async()=>{
   const recordOwnerOutcome=vi.fn().mockResolvedValue({
     reportId:"66666666-6666-4666-8666-666666666666",
@@ -17,7 +17,7 @@ describe("Task14C: canonical owner-reported supplier outcomes from Supervisor ch
   const result=await supplierPurchasingTools.record_supplier_order_outcome.execute(payload,{
     ownerText:note,purchasing:{recordOwnerOutcome}
   } as unknown as AgentToolContext);
-  expect(recordOwnerOutcome).toHaveBeenCalledExactlyOnceWith(payload);
+  expect(recordOwnerOutcome).toHaveBeenCalledExactlyOnceWith({...payload,note});
   expect(result).toMatchObject({saved:true,source:"supplier_owner_report",
     outcome:"supplier_accepted",supplierAcceptanceSource:"owner_reported",providerVerified:false});
  });
@@ -27,7 +27,7 @@ describe("Task14C: canonical owner-reported supplier outcomes from Supervisor ch
     ownerText:"Did the supplier accept this order?",purchasing:{recordOwnerOutcome}
   } as unknown as AgentToolContext);
   const negated=await supplierPurchasingTools.record_supplier_order_outcome.execute(
-    {...payload,note:"The supplier did not accept the PO."},{
+    payload,{
       ownerText:"The supplier did not accept the PO.",purchasing:{recordOwnerOutcome}
     } as unknown as AgentToolContext);
   expect(stale).toMatchObject({saved:false,missing:["explicit_current_owner_report_required"]});
