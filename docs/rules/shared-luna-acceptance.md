@@ -23,19 +23,28 @@ independent host attestation. Candidates receive only a fake provider key,
 a disposable local DB and a limited proxy; never the real provider key,
 a write GitHub token, or access to production cafés.
 
-**Price guard:** existing trusted broker MAX_CALLS=18 and
-MAX_RESERVATION_MICROS=180000 per scenario; that is up to $0.18 reserved
-per scenario, and up to $3.60 reserved for a maximum 20-case ALL run.
-All cases run sequentially within one workflow run. Separate manual
-runs can still overlap: each has its own capped, isolated budget; the system
-does not yet promise a durable global cross-run queue. One owner manual
-dispatch authorizes one bounded run; GitHub reruns fail before provider
-access. A fresh manual dispatch is a fresh, explicitly owner-approved grant.
-Actual usage may be less. CI, Codex and browser tests continue free of
-provider access.
+**Price guard:** the trusted broker reserves at most $0.18 and
+18 provider calls **per scenario**. The manual workflow additionally has a
+required cumulative max_budget_usd input, defaulting to **$0.20**. A single
+13C or 14B test fits; selecting ALL on current main would require an explicit
+increase to at least $0.36 for two scenarios. At most 20 cases are supported,
+and any combined ceiling must be approved anew for that dispatch (maximum
+$3.60 for 20 cases). The host refuses an over-budget selection before any
+provider access. GitHub Actions serializes this workflow's paid launches in
+a single non-canceling FIFO concurrency group with queue: max; no overlapping
+paid jobs within this new runner. The GitHub queue can hold up to 100 waiting
+runs, and it is not a global finance budget across legacy workflow families.
+One owner manual dispatch authorizes one bounded run; reruns fail before
+provider access. Actual billed usage can be lower than the reserved ceiling.
+CI, Codex and browser tests remain free of provider calls.
 
 Source: current exact candidate Git tree. One record per scenario is a
-manifest at .github/luna/scenarios/<scenario-id>.json. Changing a feature
+manifest at .github/luna/scenarios/<scenario-id>.json. Before running any
+candidate install or test code, the trusted host snapshots that exact
+Git-committed manifest into a separate protected file. The candidate can only
+read the frozen copy; host attestation uses the very same snapshot even if
+the candidate later edits its checkout. The host refuses unexpected tracked
+source changes after the test. Changing a feature
 PR adds or changes only its own manifest + genuine live test. GitHub
 run ID + exact head + scenario and sanitized host artifact identify proof.
 No new database table or private-owner data store. Private prompts, source
@@ -146,11 +155,13 @@ remain required where relevant.
    the matching scenario manifest + live test. Normal CI can stay parallel.
 3. When the AI feature is stable and free CI/Codex are green, the owner opens
    GitHub Actions > AI CAFE Shared Owner-Gated Luna Scenarios > Run workflow
-   (select main). Supply current PR head SHA, PR number and scenario ID.
-   This is the single manual paid approval. The exact-head test runs.
+   (select main). Supply current PR head SHA, PR number, scenario ID,
+   and max_budget_usd (default 0.20). This is the single manual paid approval. The exact-head test runs.
 4. For **one coordinated run of every registered scenario already on
    merged main**, supply the CURRENT main SHA, pr_number=0 and
-   scenario=all. The runner discovers and executes all registered cases.
+   scenario=all, with max_budget_usd sufficient to cover all selected
+   scenarios (currently two cases require at least 0.36). The runner discovers
+   and executes all registered cases.
    Cases from PRs still unmerged are not in main and are NOT_PROVEN.
 5. A combined 13A/B/C/D journey is its own case using the entire app
    and tools; similarly for Task14 and cross-domain 13+14. ALL executes
