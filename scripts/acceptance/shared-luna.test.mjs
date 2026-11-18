@@ -446,7 +446,8 @@ test("shared live preflight actually executes trusted broker tests in split chec
     const command=matching[0].trim();
     // Execute the actual workflow command, not an assertion about its spelling.
     const ok=spawnSync("bash",["-e","-o","pipefail","-c",command],{
-      cwd:work,encoding:"utf8",timeout:30000});
+      cwd:work,encoding:"utf8",timeout:30000,
+      env:{...process.env,NODE_TEST_CONTEXT:undefined}});
     assert.equal(ok.status,0,"Live preflight broker tests failed in split checkout:\n"+
       (ok.stderr||"")+"\n"+(ok.stdout||"").slice(-1500));
     assert.match(ok.stdout,/# pass 16/,"Actual trusted broker suite must pass all 16 tests");
@@ -454,7 +455,8 @@ test("shared live preflight actually executes trusted broker tests in split chec
     // root cannot resolve their own .github/workflows or fetch shim fixture.
     const broken=spawnSync(process.execPath,["--test",
       "coordinator/scripts/acceptance/task14b-broker.test.mjs"],{
-        cwd:work,encoding:"utf8",timeout:30000});
+        cwd:work,encoding:"utf8",timeout:30000,
+        env:{...process.env,NODE_TEST_CONTEXT:undefined}});
     assert.notEqual(broken.status,0,"Broken workspace-root broker invocation unexpectedly passed");
     assert.match((broken.stderr||"")+(broken.stdout||""),/ENOENT|Cannot find module/);
   }finally{rmSync(work,{recursive:true,force:true})}
