@@ -115,16 +115,40 @@ async function api(url,token){
 }
 async function plan(){
   const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
-  ensure(process.env.GITHUB_EVENT_NAME==="workflow_dispatch"&&
-    process.env.GITHUB_ACTOR===OWNER&&process.env.GITHUB_TRIGGERING_ACTOR===OWNER&&
+  ensure(process.env.GITHUB_ACTOR===OWNER&&process.env.GITHUB_TRIGGERING_ACTOR===OWNER&&
     process.env.GITHUB_RUN_ATTEMPT==="1"&&
     event.repository?.full_name===REPO&&event.sender?.login===OWNER&&
     process.env.GITHUB_REF==="refs/heads/main","Explicit owner launch on trusted main required");
-  const inputs=event.inputs??{},head=inputs.head_sha,token=process.env.GH_TOKEN;
-  ensure(shaRe.test(head)&&token,"Pinned 40-hex target head and read token required");
+  const token=process.env.GH_TOKEN,base="https://api.github.com/repos/"+REPO;
+  ensure(typeof token==="string"&&token.length>0,"Read-only GitHub token required");
+  let inputs;
+  if(process.env.GITHUB_EVENT_NAME==="workflow_dispatch"){
+    inputs=event.inputs??{};
+  }else{
+    ensure(process.env.GITHUB_EVENT_NAME==="issue_comment"&&
+      event.action==="created"&&event.issue?.pull_request&&
+      event.comment?.user?.login===OWNER&&
+      Number.isSafeInteger(event.comment.id)&&event.comment.id>0,
+      "Only newly created owner-authored PR comment may authorize provider work");
+    const command=String(event.comment.body??"");
+    const match=/^\/aicafe-luna (pr|main) ([a-f0-9]{40}) (all|[a-z0-9][a-z0-9-]{0,31}) ((?:0|[1-3])\.[0-9]{2})$/.exec(command);
+    ensure(match,"Exact owner comment syntax required: /aicafe-luna pr|main HEAD_SHA SCENARIO MAX_USD");
+    // A deleted/edited command is a withdrawn grant; never use a stale event
+    // payload. Only read a comment, and never execute untrusted comment text.
+    const live=await api(base+"/issues/comments/"+event.comment.id,token);
+    ensure(live.body===command&&live.user?.login===OWNER&&
+      live.id===event.comment.id&&
+      live.updated_at===event.comment.updated_at,
+      "Owner comment changed or is no longer available");
+    const prValue=match[1]==="pr"?String(event.issue.number):"0";
+    inputs={head_sha:match[2],pr_number:prValue,
+      scenario:match[3],max_budget_usd:match[4]};
+  }
+  const head=inputs.head_sha;
+  ensure(shaRe.test(head),"Pinned 40-hex target head required");
   const prValue=String(inputs.pr_number??"0");
   ensure(/^(0|[1-9][0-9]{0,5})$/.test(prValue),"Invalid PR number");
-  const number=Number(prValue),base="https://api.github.com/repos/"+REPO;
+  const number=Number(prValue);
   if(number){
     const pr=await api(base+"/pulls/"+number,token);
     ensure(pr.state==="open"&&pr.head?.sha===head&&pr.head?.repo?.full_name===REPO,
