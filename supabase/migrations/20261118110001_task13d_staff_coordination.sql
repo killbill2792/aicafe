@@ -76,6 +76,24 @@ revoke all on public.staff_coordination_cases,public.staff_coordination_evidence
 grant select on public.staff_coordination_cases,public.staff_coordination_evidence to authenticated;
 grant all on public.staff_coordination_cases,public.staff_coordination_evidence to service_role;
 
+-- The existing broad member policies must not expose personnel tasks.
+-- The owner-only case RPCs are SECURITY DEFINER; the worker uses service_role.
+-- OLD and NEW must both be ordinary tasks for direct authenticated mutation.
+create policy staff_coordination_task_owner_read
+ on public.operating_tasks as restrictive for select to authenticated
+ using ((kind<>'staff_coordination' and entity_type is distinct from 'staff_coordination_case')
+        or public.scheduling_is_owner(business_id));
+create policy staff_coordination_task_no_direct_insert
+ on public.operating_tasks as restrictive for insert to authenticated
+ with check (kind<>'staff_coordination' and entity_type is distinct from 'staff_coordination_case');
+create policy staff_coordination_task_no_direct_update
+ on public.operating_tasks as restrictive for update to authenticated
+ using (kind<>'staff_coordination' and entity_type is distinct from 'staff_coordination_case')
+ with check (kind<>'staff_coordination' and entity_type is distinct from 'staff_coordination_case');
+create policy staff_coordination_task_no_direct_delete
+ on public.operating_tasks as restrictive for delete to authenticated
+ using (kind<>'staff_coordination' and entity_type is distinct from 'staff_coordination_case');
+
 -- Durable intake of a VERIFIED 13C employee message, exactly once.
 -- No free-text keyword classification, AI instructions or automatic approval.
 create function public.staff_coordination_from_staff_message()
@@ -166,8 +184,8 @@ begin
  insert into public.operating_tasks
   (business_id,id,owner_user_id,agent_id,kind,entity_type,entity_id,
    status,payload,confidence,evidence)
- values(p_business_id,'staff-coordination:'||v_case.id::text||':'||(select auth.uid())::text,
-  (select auth.uid()),'olivia','staff_coordination','staff_coordination_case',v_case.id::text,
+ values(p_business_id,'staff-coordination:'||v_case.id::text||':'||v_case.created_by::text,
+  v_case.created_by,'olivia','staff_coordination','staff_coordination_case',v_case.id::text,
   'needs_owner',jsonb_build_object(
    'title','Staff coordination requires review','caseId',v_case.id,
    'caseKind',v_case.case_kind,'caseRevision',v_case.revision,
@@ -229,8 +247,8 @@ begin
    payload=payload||jsonb_build_object('caseRevision',v_case.revision,
      'decisionRecorded',p_choice,'effectApplied',false,'sourceVerified',false),
    updated_at=now()
- where business_id=p_business_id and id=
-  'staff-coordination:'||v_case.id::text||':'||(select auth.uid())::text;
+ where business_id=p_business_id and entity_type='staff_coordination_case'
+   and entity_id=v_case.id::text and kind='staff_coordination';
  return jsonb_build_object('id',v_case.id,'state',v_case.state,
                            'revision',v_case.revision,'effectApplied',false);
 end $$;
@@ -351,6 +369,9 @@ begin
      and a.exception_type='approved_leave' and a.confirmation='owner_confirmed'
      -- An old unrelated leave row cannot certify that this owner decision was applied.
      and a.confirmed_at>=v_case.decided_at
+     -- Global leave covers every site; site-only leave cannot prove a global
+     -- request or leave at a different site.
+     and (a.location_id is null or a.location_id=v_case.location_id)
      and a.local_date between v_case.from_date and v_case.to_date;
   if v_days>0 and v_verified=v_days then
    if v_case.state='completed' then continue; end if;

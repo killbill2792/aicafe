@@ -5,17 +5,24 @@ SELECT gen_random_uuid() AS a, gen_random_uuid() AS b,
        gen_random_uuid() AS owner_a,gen_random_uuid() AS owner_b,
        gen_random_uuid() AS worker_user,gen_random_uuid() AS worker,
        gen_random_uuid() AS msg,gen_random_uuid() AS nonce_leave,
-       gen_random_uuid() AS nonce_recruit,gen_random_uuid() AS nonce_onboard \gset
+       gen_random_uuid() AS nonce_recruit,gen_random_uuid() AS nonce_onboard,
+       gen_random_uuid() AS co_owner,gen_random_uuid() AS manager_user,
+       gen_random_uuid() AS location_a,gen_random_uuid() AS location_b \gset
 INSERT INTO auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
 VALUES
  (:'owner_a','00000000-0000-0000-0000-000000000000','authenticated','authenticated','13d-owner-a@example.invalid','',now(),now()),
  (:'owner_b','00000000-0000-0000-0000-000000000000','authenticated','authenticated','13d-owner-b@example.invalid','',now(),now()),
- (:'worker_user','00000000-0000-0000-0000-000000000000','authenticated','authenticated','13d-worker@example.invalid','',now(),now());
+ (:'worker_user','00000000-0000-0000-0000-000000000000','authenticated','authenticated','13d-worker@example.invalid','',now(),now()),
+ (:'co_owner','00000000-0000-0000-0000-000000000000','authenticated','authenticated','13d-co-owner@example.invalid','',now(),now()),
+ (:'manager_user','00000000-0000-0000-0000-000000000000','authenticated','authenticated','13d-manager@example.invalid','',now(),now());
 INSERT INTO public.businesses(id,name,timezone,currency,is_demo)
 VALUES (:'a','13D isolated A','America/Los_Angeles','USD',false),
        (:'b','13D isolated B','Europe/London','GBP',false);
 INSERT INTO public.memberships(business_id,user_id,role)
-VALUES (:'a',:'owner_a','owner'),(:'b',:'owner_b','owner');
+VALUES (:'a',:'owner_a','owner'),(:'b',:'owner_b','owner'),
+ (:'a',:'co_owner','owner'),(:'a',:'manager_user','manager');
+INSERT INTO public.locations(id,business_id,name)
+VALUES (:'location_a',:'a','13D site A'),(:'location_b',:'a','13D site B');
 INSERT INTO public.employees(id,business_id,display_name,active,wage_period,wage_amount_cents)
 VALUES (:'worker',:'a','13D worker',true,'hour',1600);
 -- The owner already provisioned this test login; Task13D must not create accounts.
@@ -125,7 +132,84 @@ BEGIN
     AND entity_id=current_setting('test.d.leave'))<>1
  THEN RAISE EXCEPTION 'replayed owner case created duplicate work'; END IF;
 END $t$;
+-- Real non-owner membership, not merely an employee without membership.
+SELECT set_config('request.jwt.claim.sub',:'manager_user',true);
+DO $t$
+DECLARE n int; blocked boolean:=false;
+BEGIN
+ IF EXISTS(SELECT 1 FROM public.operating_tasks
+   WHERE business_id=current_setting('test.d.a')::uuid AND kind='staff_coordination')
+ THEN RAISE EXCEPTION 'manager read personnel task'; END IF;
+ UPDATE public.operating_tasks SET status='handled'
+  WHERE business_id=current_setting('test.d.a')::uuid AND entity_id=current_setting('test.d.leave');
+ GET DIAGNOSTICS n=ROW_COUNT;
+ IF n<>0 THEN RAISE EXCEPTION 'manager changed personnel task'; END IF;
+ DELETE FROM public.operating_tasks
+  WHERE business_id=current_setting('test.d.a')::uuid AND entity_id=current_setting('test.d.leave');
+ GET DIAGNOSTICS n=ROW_COUNT;
+ IF n<>0 THEN RAISE EXCEPTION 'manager removed personnel task'; END IF;
+ INSERT INTO public.operating_tasks(business_id,id,owner_user_id,agent_id,kind,status,confidence)
+ VALUES(current_setting('test.d.a')::uuid,'13d-ordinary-test',auth.uid(),'olivia','staff_coverage','watching','medium');
+ BEGIN
+  UPDATE public.operating_tasks SET kind='staff_coordination',
+    entity_type='staff_coordination_case' WHERE id='13d-ordinary-test';
+ EXCEPTION WHEN insufficient_privilege THEN blocked:=true; END;
+ IF NOT blocked THEN RAISE EXCEPTION 'manager converted ordinary task into personnel task'; END IF;
+ blocked:=false;
+ BEGIN
+  INSERT INTO public.operating_tasks(business_id,id,owner_user_id,agent_id,kind,status,confidence)
+  VALUES(current_setting('test.d.a')::uuid,'13d-forged-test',auth.uid(),'olivia','staff_coordination','watching','medium');
+ EXCEPTION WHEN insufficient_privilege THEN blocked:=true; END;
+ IF NOT blocked THEN RAISE EXCEPTION 'manager forged personnel task'; END IF;
+ DELETE FROM public.operating_tasks WHERE id='13d-ordinary-test';
+ GET DIAGNOSTICS n=ROW_COUNT;
+ IF n<>1 THEN RAISE EXCEPTION 'ordinary member task access regressed'; END IF;
+END $t$;
+-- Co-owner can decide and replay nonce without replacing the original task.
+SELECT set_config('request.jwt.claim.sub',:'co_owner',true);
+DO $t$
+DECLARE r jsonb; n int;
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.operating_tasks
+   WHERE business_id=current_setting('test.d.a')::uuid
+     AND entity_id=current_setting('test.d.leave') AND status='needs_owner')
+ THEN RAISE EXCEPTION 'co-owner cannot see personnel task'; END IF;
+ UPDATE public.operating_tasks SET status='handled'
+  WHERE business_id=current_setting('test.d.a')::uuid AND entity_id=current_setting('test.d.leave');
+ GET DIAGNOSTICS n=ROW_COUNT;
+ IF n<>0 THEN RAISE EXCEPTION 'owner directly changed personnel task'; END IF;
+ r:=public.staff_coordination_open(current_setting('test.d.a')::uuid,
+  current_setting('test.d.nl')::uuid,'leave',current_setting('test.d.w')::uuid,
+  null,current_date+2,current_date+3,null);
+ IF r->>'id'<>current_setting('test.d.leave') OR (SELECT count(*) FROM public.operating_tasks
+   WHERE business_id=current_setting('test.d.a')::uuid
+     AND entity_id=current_setting('test.d.leave'))<>1
+ THEN RAISE EXCEPTION 'co-owner nonce replay duplicated work'; END IF;
+END $t$;
 SELECT public.staff_coordination_decide(:'a',current_setting('test.d.leave')::uuid,1,'approve')->>'revision' AS decided_revision \gset
+DO $t$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.operating_tasks
+   WHERE business_id=current_setting('test.d.a')::uuid
+     AND entity_id=current_setting('test.d.leave')
+     AND owner_user_id=current_setting('test.d.oa')::uuid AND status='watching')
+ THEN RAISE EXCEPTION 'co-owner approval did not update original task'; END IF;
+END $t$;
+SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
+SELECT public.staff_coordination_open(:'a',gen_random_uuid(),'leave',:'worker',null,
+ current_date+15,current_date+15,null)->>'id' AS declined_id \gset
+SELECT set_config('test.d.declined',:'declined_id',true);
+SELECT set_config('request.jwt.claim.sub',:'co_owner',true);
+SELECT public.staff_coordination_decide(:'a',:'declined_id',1,'decline');
+DO $t$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.operating_tasks
+   WHERE business_id=current_setting('test.d.a')::uuid
+     AND entity_id=current_setting('test.d.declined') AND status='handled'
+     AND resolved_at is not null AND payload->>'decisionRecorded'='decline')
+ THEN RAISE EXCEPTION 'co-owner decline left original task actionable'; END IF;
+END $t$;
+SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
 DO $t$
 DECLARE blocked boolean:=false;
 BEGIN
@@ -299,6 +383,63 @@ BEGIN
   AND status='watching' AND payload->>'sourceVerified'='false')
  THEN RAISE EXCEPTION 'reversed leave failed to reopen owner task'; END IF;
 END $t$;
+-- Wrong-site leave is not global or exact-site proof; removal reopens only
+-- the case that lost its applicable confirmed source.
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
+SELECT public.staff_coordination_open(:'a',gen_random_uuid(),'leave',:'worker',:'location_a',
+ current_date+20,current_date+20,null)->>'id' AS site_case \gset
+SELECT public.staff_coordination_open(:'a',gen_random_uuid(),'leave',:'worker',null,
+ current_date+20,current_date+20,null)->>'id' AS global_case \gset
+SELECT set_config('test.d.site',:'site_case',true);
+SELECT set_config('test.d.global',:'global_case',true);
+SELECT public.staff_coordination_decide(:'a',:'site_case',1,'approve');
+SELECT public.staff_coordination_decide(:'a',:'global_case',1,'approve');
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.role','service_role',true);
+INSERT INTO public.staff_availability_exceptions
+ (business_id,employee_id,location_id,local_date,exception_type,source,confirmation,confirmed_at,confirmed_by)
+ VALUES(:'a',:'worker',:'location_b',current_date+20,'approved_leave','owner_direct','owner_confirmed',now(),:'owner_a');
+SELECT public.staff_coordination_reconcile(:'a');
+DO $t$
+BEGIN
+ IF (SELECT count(*) FROM public.staff_coordination_cases
+   WHERE id IN (current_setting('test.d.site')::uuid,current_setting('test.d.global')::uuid)
+     AND state='waiting_evidence')<>2
+ THEN RAISE EXCEPTION 'wrong site falsely completed leave'; END IF;
+END $t$;
+INSERT INTO public.staff_availability_exceptions
+ (business_id,employee_id,location_id,local_date,exception_type,source,confirmation,confirmed_at,confirmed_by)
+ VALUES(:'a',:'worker',:'location_a',current_date+20,'approved_leave','owner_direct','owner_confirmed',now(),:'owner_a');
+UPDATE public.staff_coordination_cases SET next_check_at=now() WHERE id IN (:'site_case',:'global_case');
+SELECT public.staff_coordination_reconcile(:'a');
+DO $t$
+BEGIN
+ IF (SELECT state FROM public.staff_coordination_cases WHERE id=current_setting('test.d.site')::uuid)<>'completed'
+ OR (SELECT state FROM public.staff_coordination_cases WHERE id=current_setting('test.d.global')::uuid)<>'waiting_evidence'
+ THEN RAISE EXCEPTION 'site-specific leave incorrectly matched café-wide case'; END IF;
+END $t$;
+INSERT INTO public.staff_availability_exceptions
+ (business_id,employee_id,local_date,exception_type,source,confirmation,confirmed_at,confirmed_by)
+ VALUES(:'a',:'worker',current_date+20,'approved_leave','owner_direct','owner_confirmed',now(),:'owner_a');
+UPDATE public.staff_coordination_cases SET next_check_at=now() WHERE id=:'global_case';
+SELECT public.staff_coordination_reconcile(:'a');
+DO $t$
+BEGIN
+ IF (SELECT state FROM public.staff_coordination_cases WHERE id=current_setting('test.d.global')::uuid)<>'completed'
+ THEN RAISE EXCEPTION 'global leave did not close café-wide case'; END IF;
+END $t$;
+DELETE FROM public.staff_availability_exceptions WHERE business_id=:'a'
+ AND employee_id=:'worker' AND local_date=current_date+20 AND location_id is null;
+SELECT public.staff_coordination_reconcile(:'a');
+DO $t$
+BEGIN
+ IF (SELECT state FROM public.staff_coordination_cases WHERE id=current_setting('test.d.global')::uuid)<>'waiting_evidence'
+ OR (SELECT state FROM public.staff_coordination_cases WHERE id=current_setting('test.d.site')::uuid)<>'completed'
+ THEN RAISE EXCEPTION 'scope-specific reversal failed'; END IF;
+END $t$;
+
 -- Expiring candidate source references scrubs even if the owner said yes.
 UPDATE public.staff_coordination_cases SET retention_at=now()-interval '1 day'
  WHERE business_id=:'a' AND id=current_setting('test.d.recruit')::uuid;
