@@ -408,10 +408,18 @@ test("@home Task15B owner reports a real maintenance incident and independently 
     // A sent message must never be fabricated by the UI or the SQL workflow.
     const latest=await getCase();
     expect(latest.payload.externalSent).toBe(false);
-    const bounds=await page.evaluate(()=>({
-      page:document.documentElement.scrollWidth,viewport:document.documentElement.clientWidth
-    }));
-    expect(bounds.page).toBeLessThanOrEqual(bounds.viewport+1);
+    // A router refresh can replace the execution context after the save.
+    // Retry the exact authenticated handled-case and viewport assertions
+    // together; neither a redirect nor a real overflow may pass.
+    await expect(async()=>{
+      await expect(page).toHaveURL(/\/operations\?.*status=handled/);
+      await expect(page.locator('article[data-task-kind="maintenance_issue"]').filter({hasText:label}))
+        .toContainText("Repair independently verified");
+      const bounds=await page.evaluate(()=>({
+        page:document.documentElement.scrollWidth,viewport:document.documentElement.clientWidth
+      }));
+      expect(bounds.page).toBeLessThanOrEqual(bounds.viewport+1);
+    }).toPass({timeout:25_000});
   }finally{
     await ownContext.close();await otherContext.close();
     if(connected&&taskId)await db.query(
