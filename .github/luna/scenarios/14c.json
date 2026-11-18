@@ -59,9 +59,6 @@
         },
         "status": {
           "eq": "draft"
-        },
-        "capability_id": {
-          "eq": "alex.gmail_effect.v1"
         }
       },
       "minCount": 1,
