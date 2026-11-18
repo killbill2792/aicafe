@@ -26,7 +26,9 @@ a write GitHub token, or access to production cafés.
 **Price guard:** existing trusted broker MAX_CALLS=18 and
 MAX_RESERVATION_MICROS=180000 per scenario; that is up to $0.18 reserved
 per scenario, and up to $3.60 reserved for a maximum 20-case ALL run.
-All cases run sequentially within one workflow run. One owner manual
+All cases run sequentially within one workflow run. Separate manual
+runs can still overlap: each has its own capped, isolated budget; the system
+does not yet promise a durable global cross-run queue. One owner manual
 dispatch authorizes one bounded run; GitHub reruns fail before provider
 access. A fresh manual dispatch is a fresh, explicitly owner-approved grant.
 Actual usage may be less. CI, Codex and browser tests continue free of
@@ -80,7 +82,9 @@ It must run **only** when AICAFE_SHARED_LUNA=1, with local disposable DB,
 and produce test-results/acceptance/<id>-proof.json containing
 head_sha, observed_model gpt-6-luna and status passed, plus
 test-results/acceptance/<id>-scope.json containing test-scoped IDs and
-expectedProviderCalls matching the host broker.
+expectedProviderCalls matching the host broker. Leave the disposable evidence
+rows in place until the independent host attester reads them; the workflow
+destroys the entire local database after verification.
 
 Add a manifest in the same PR. Example only (replace with feature-specific
 reviewed sources and expected results; NOT itself proof of any capability):
@@ -188,5 +192,7 @@ Run:
 - node --test scripts/acceptance/shared-luna.test.mjs
 - node --test scripts/acceptance/task14b-broker.test.mjs
 
-The new AI CAFE Luna Scenario Integrity workflow checks scenario changes
+The new AI CAFE Luna Scenario Integrity workflow runs
+node scripts/acceptance/shared-luna.mjs validate-all on every scenario
+change, rejecting missing test entrypoints, invalid manifests and symlinks,
 at zero provider cost. It never grants paid authority to PR CI.
