@@ -73,6 +73,18 @@ export function authenticatedSupplierOwnerTurn(input:{
      input.job.threadId===input.threadId));
 }
 
+/** Never assign a statement covering multiple POs to a model-selected
+ * target. An owner can report one canonical purchase order per message.
+ * A message with no UUID requires independent single-PO verification. */
+export function explicitSingleOwnerPurchaseOrder(text:string,targetId:string):boolean|null{
+ const found=[...new Set((text.match(
+   /[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/gi)??[])
+   .map(v=>v.toLowerCase()))];
+ if(found.length>1)return false;
+ if(found.length===1)return found[0]===targetId.toLowerCase();
+ return null;
+}
+
 /** A free-text turn can record a supplier outcome only when the owner
  * explicitly supplied the source statement in THIS authenticated message.
  * Conservative failures ask for clarification; never infer supplier acceptance
@@ -106,6 +118,12 @@ export function explicitOwnerSupplierOutcome(text:string,outcome:SupplierOutcome
    !/\b(?:supplier|vendor|purchase order|po)\b/i.test(t))return false;
  if((outcome==="supplier_accepted"||outcome==="supplier_declined")&&
    /\?/.test(t))return false;
+ // A single message containing incompatible terminal assertions needs an
+ // owner clarification before any one-way terminal SQL report is written.
+ if((outcome==="supplier_accepted"||outcome==="supplier_declined")&&
+   /\b(?:accepted|accepts|agreed to fulfill|agreed to supply)\b/i.test(t)&&
+   /\b(?:declin(?:ed|es)?|reject(?:ed|s)?|refus(?:ed|es)?)\b/i.test(t))
+   return false;
  // Negated, hypothetical, and unresolved statements are not terminal
  // owner assertions. Fail closed instead of making an irreversible report.
  const uncertain=/\b(?:not|never|no|didn't|doesn't|hasn't|haven't|wasn't|isn't|won't|wouldn't|can't|cannot|don't know|not sure|maybe|perhaps|might|may|possibly|pending|awaiting|uncertain|unconfirmed)\b.{0,75}\b(?:accepted|accepts|agreed|declined|reject(?:ed|s)?|refus(?:ed|es)?)\b/i;
