@@ -99,6 +99,12 @@ create table public.purchase_order_channel_reports(
 );
 create index purchase_order_channel_reports_recent on public.purchase_order_channel_reports
  (business_id,purchase_order_id,reported_at desc);
+-- A terminal owner observation is append-once for a PO, even when two chat
+-- turns race. Changing an accepted/declined outcome requires a separate,
+-- reviewed owner correction path; never silently overwrite the safety gate.
+create unique index purchase_order_channel_one_terminal_report
+ on public.purchase_order_channel_reports(business_id,purchase_order_id)
+ where outcome in ('supplier_accepted','supplier_declined');
 -- Reason: New owner-scoped supplier communication table requires row-level policies from creation.
 -- squawk-ignore ban-alter-row-level-security
 alter table public.purchase_order_channel_reports enable row level security;
