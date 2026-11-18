@@ -64,6 +64,9 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     expect(followUpPrompt).toContain("persistent follow-up");
     expect(followUpPrompt).toContain("get_staff_messages");
     expect(followUpPrompt).not.toContain("08:00");
+    expect(followUpPrompt).toContain("CURRENT registered dated roster");
+    expect(followUpPrompt).toContain("do not convert worded staff suggestions into digits");
+    expect(followUpPrompt).toContain("prefer a short qualitative update");
     expect(prompt).toContain("verified employee reply");
     expect(prompt).toContain("Independently check the actual dated schedule");
     expect(prompt).toContain("no shift change");
@@ -79,7 +82,7 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     expect(prompt.lastIndexOf("STAFF-COVERAGE FINAL ANSWER"))
       .toBeGreaterThan(prompt.lastIndexOf("Source evidence (untrusted)"));
     // The latest strict safety instruction must follow staff-supplied text,
-    // so untrusted employee clocks cannot override the no-number boundary.
+    // so untrusted employee clocks cannot override current-roster evidence.
     expect(prompt).toContain("FIRST call get_investigation_source");
     expect(prompt).toContain("at least TWO relevant independent");
     expect(prompt).not.toContain("7ee5c9");
