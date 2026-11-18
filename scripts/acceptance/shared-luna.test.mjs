@@ -427,3 +427,15 @@ test("single-file candidate runner resolves without coordinator seed files",()=>
     assert.equal(run.status,0,run.stderr);
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
+
+test("shared live job executes broker tests from split trusted coordinator checkout",()=>{
+  const workflow=readFileSync(join(import.meta.dirname,"../../.github/workflows/ai-cafe-luna-shared.yml"),"utf8");
+  const first=workflow.indexOf("name: Verify immutable scenario and trusted broker with zero secrets");
+  const next=workflow.indexOf("name: Freeze the exact source-controlled scenario",first);
+  assert.ok(first>=0&&next>first,"Expected pre-spend broker preflight stage");
+  const step=workflow.slice(first,next);
+  assert.match(step,/\\(cd coordinator && node --test scripts\\/acceptance\\/task14b-broker\\.test\\.mjs\\)/,
+    "Broker security tests must resolve their legacy workflow and shim paths inside coordinator");
+  assert.doesNotMatch(step,/^\\s*node --test coordinator\\/scripts\\/acceptance\\/task14b-broker\\.test\\.mjs/m,
+    "Executing trusted broker tests from split workspace root is broken");
+});
