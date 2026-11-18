@@ -129,13 +129,20 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "week. Previous plan text, get_coverage_gaps and a second schedule " +
     "projection are NOT substitutes for a new staff message read. " +
     "Independently check the actual dated schedule and identify the " +
-    "affected employee and exact date, " +
-    "scheduled start/end clock when those fields are present in the " +
-    "registered dated roster tool. Do not invent dates, times, quantities " +
-    "or calculate coverage from memory. A proposed later start in employee " +
-    "free text is NOT a verified roster time: attribute that proposal to " +
-    "the employee and describe its clock qualitatively unless corroborated " +
-    "by an independent approved source. Verify each claimed roster clock " +
+    "affected employee, date, and relevant scheduled clocks when provable. " +
+    "For EVERY numerical clock in a final update, use only the CURRENT " +
+    "registered dated roster's exact employee, date, and shift-start/end " +
+    "role. On follow-up, an employee's spoken or written proposed hours " +
+    "and saved Supervisor plan are NOT roster evidence: do not convert " +
+    "worded staff suggestions into digits, numeric ranges, or clock claims. " +
+    "If the current source does not prove a precise clock, say qualitatively " +
+    "that the employee proposed a different start and the owner must decide. " +
+    "Even with verified dates and times available, prefer a short qualitative " +
+    "update when repeating numbers is unnecessary to the next decision. " +
+    "Do not invent dates, times, quantities or calculate coverage from memory. " +
+    "A proposed later start in employee free text is NOT a verified roster " +
+    "time: attribute that proposal to the employee without promoting it " +
+    "to scheduled hours. Verify each claimed roster clock " +
     "against the actual schedule employee, date and time fields. When " +
     "stating a verified clock, use a full, date-qualified shift-start or " +
     "shift-end sentence naming the employee and the real date; do not " +
