@@ -128,6 +128,7 @@ async function candidate(){
     AICAFE_SHARED_LUNA_PROOF_DIR:dir,
     AI_CAFE_LIVE_ACCEPTANCE:"OWNER_APPROVED_LOCAL_ONLY",
     SUPERVISOR_OPENAI_MODEL:"gpt-6-luna",
+    SUPERVISOR_OPENAI_FALLBACK_MODEL:"gpt-4.1-mini",
     APP_URL:"http://127.0.0.1:3000",
     ACCEPTANCE_DATABASE_URL:"postgresql://postgres:postgres@127.0.0.1:54322/postgres"};
   if(id==="13c")env.AICAFE_13C_HOST_ATTEST_DB="1";
@@ -216,8 +217,10 @@ function attest(){
     note:"Scenario assertions are defined in the reviewed candidate PR; host independently executes SQL readbacks."};
   writeFileSync(dir+"/luna-sanitized-result.json",JSON.stringify(safe,null,2)+"\n",{mode:0o600,flag:"wx"});
 }
-const cmd=process.argv[2];
-if(cmd==="plan")await plan();
-else if(cmd==="candidate")await candidate();
-else if(cmd==="attest")attest();
-else if(cmd!=="library")throw Error("Unknown trusted Luna command");
+if(process.argv[1]&&import.meta.url===new URL("file://"+resolve(process.argv[1])).href){
+  const cmd=process.argv[2];
+  if(cmd==="plan")await plan();
+  else if(cmd==="candidate")await candidate();
+  else if(cmd==="attest")attest();
+  else throw Error("Unknown trusted Luna command");
+}
