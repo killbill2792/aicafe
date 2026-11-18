@@ -24,7 +24,7 @@ import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
 import {proposeApprovedSupplierEmail} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
-import {recordOwnerSupplierOutcome} from "@/lib/purchasing/ownerSupplierOutcome.server";
+import {recordOwnerSupplierOutcome,authenticatedSupplierOwnerTurn} from "@/lib/purchasing/ownerSupplierOutcome.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -270,11 +270,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           // than wrongly treating every non-null job as an autonomous cron.
           // Without a job (the documented fallback), owner provenance must
           // still be the same saved authenticated message, not model text.
-          if(owner.role!=="owner"||!p.ownerText.trim()||
-             owner.text?.trim()!==p.ownerText.trim()||
-             input.note!==p.ownerText.trim()||
-             (job&&(job.ownerMessageId!==owner.id||job.threadId!==id||
-               job.status!=="running")))
+          if(!authenticatedSupplierOwnerTurn({
+            owner,ownerText:p.ownerText,threadId:id,job
+          })||input.note!==p.ownerText.trim())
             throw new ToolError("unauthorized","supplier_owner_statement_required");
           const {client}=await simulationOwnerReader(proposalScope);
           // An explicit PO identifier always wins over a model-selected one.
