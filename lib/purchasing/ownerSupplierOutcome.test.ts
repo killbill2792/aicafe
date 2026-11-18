@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {recordOwnerSupplierOutcome,explicitOwnerSupplierOutcome} from "./ownerSupplierOutcome.server";
+import {recordOwnerSupplierOutcome,explicitOwnerSupplierOutcome,explicitOwnerSupplierChannel} from "./ownerSupplierOutcome.server";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
 const scope={businessId:"11111111-1111-4111-8111-111111111111",
@@ -71,5 +71,8 @@ describe("Task14C owner-reported outcome authority",()=>{
   expect(explicitOwnerSupplierOutcome("The supplier did not accept this PO.","supplier_accepted")).toBe(false);
   expect(explicitOwnerSupplierOutcome("Gmail says SENT.","supplier_accepted")).toBe(false);
   expect(explicitOwnerSupplierOutcome("The supplier declined this PO.","supplier_declined")).toBe(true);
+  expect(explicitOwnerSupplierChannel("The supplier accepted by phone.","phone")).toBe(true);
+  expect(explicitOwnerSupplierChannel("The supplier accepted by phone.","gmail")).toBe(false);
+  expect(explicitOwnerSupplierChannel("Accepted through the portal.","portal")).toBe(true);
  });
 });
