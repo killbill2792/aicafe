@@ -131,7 +131,12 @@ async function candidate(){
     SUPERVISOR_OPENAI_FALLBACK_MODEL:"gpt-4.1-mini",
     APP_URL:"http://127.0.0.1:3000",
     ACCEPTANCE_DATABASE_URL:"postgresql://postgres:postgres@127.0.0.1:54322/postgres"};
-  if(id==="13c")env.AICAFE_13C_HOST_ATTEST_DB="1";
+  if(id==="13c"){
+    env.AICAFE_13C_HOST_ATTEST_DB="1";
+    env.AICAFE_13C_AGENTIC_LIVE="1";
+    env.AICAFE_13C_LOCAL_DB_URL=env.ACCEPTANCE_DATABASE_URL;
+    env.AICAFE_13C_LIVE_HEAD=process.env.HEAD_SHA;
+  }
   if(id==="13d"){
     env.AICAFE_13D_HOST_ATTEST_DB="1";
     env.AICAFE_13D_AGENTIC_LIVE="1";
