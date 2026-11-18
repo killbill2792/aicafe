@@ -8,8 +8,7 @@
   "expectedTools": [
     "get_menu_items",
     "get_supplier_purchase_orders",
-    "web_search",
-    "search_gmail"
+    "web_search"
   ],
   "assertions": [
     {
