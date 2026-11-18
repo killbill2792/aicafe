@@ -33,6 +33,8 @@ jobs:
           node --check scripts/acceptance/luna-attest-13c.mjs
           node --check scripts/acceptance/luna-attest-14b.mjs
           node --check scripts/acceptance/luna-attest-13d.mjs
+      - name: Validate every registered feature PR scenario and its actual test path
+        run: node scripts/acceptance/shared-luna.mjs validate-all
       - name: Run fail-closed declarative scenario and one-shot replay tests
         run: node --test scripts/acceptance/shared-luna.test.mjs
       - name: Check unchanged key-isolated provider broker denial logic
