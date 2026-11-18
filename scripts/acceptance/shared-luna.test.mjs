@@ -461,3 +461,50 @@ test("shared live preflight actually executes trusted broker tests in split chec
     assert.match((broken.stderr||"")+(broken.stdout||""),/ENOENT|Cannot find module/);
   }finally{rmSync(work,{recursive:true,force:true})}
 });
+
+test("actual shared DB preflight rejects unavailable authenticated SQL before broker access",()=>{
+  const work=mkdtempSync(join(tmpdir(),"luna-db-preflight-"));
+  try{
+    const bin=join(work,"bin"),candidate=join(work,"candidate");
+    mkdirSync(bin);mkdirSync(candidate);
+    const yaml=readFileSync(join(import.meta.dirname,
+      "../../.github/workflows/ai-cafe-luna-shared.yml"),"utf8");
+    const a=yaml.indexOf("      - name: Migrate a fresh disposable local Supabase only\n");
+    const b=yaml.indexOf("      - name: Export masked disposable keys and a random capped proxy token\n",a);
+    const broker=yaml.indexOf("      - name: Start bounded trusted broker on host",b);
+    assert.ok(a>=0&&b>a&&broker>b,"actual DB step must precede paid broker");
+    const section=yaml.slice(a,b),mark="        run: |\n";
+    assert.ok(section.includes(mark));
+    const shell=section.slice(section.indexOf(mark)+mark.length).split("\n")
+      .map(line=>line.startsWith("          ")?line.slice(10):line).join("\n");
+    const mock=(name,body)=>{
+      const path=join(bin,name);writeFileSync(path,"#!/bin/sh\n"+body+"\n",{mode:0o700});
+    };
+    mock("supabase",'if [ "$1" = status ]; then printf "{}\\n"; fi\nif [ "$1" = db ] && [ "$MODE" = migration-fail ]; then exit 41; fi\nexit 0');
+    mock("pg_isready",'if [ "$MODE" = readiness-fail ]; then exit 42; fi\nexit 0');
+    const capture=join(work,"sql-invocation");
+    mock("psql",'printf "%s\\n" "$PGPASSWORD" "$PGOPTIONS" "$@" > "$SQL_CAPTURE"\nif [ "$MODE" = sql-fail ]; then printf "true\\n"; exit 43; fi\nif [ "$MODE" = wrong-output ]; then printf "false\\n"; else printf "true\\n"; fi');
+    const run=mode=>spawnSync("bash",["-euo","pipefail","-c",shell+"\necho BROKER_STARTED"],{
+      cwd:candidate,encoding:"utf8",env:{...process.env,
+        PATH:bin+":"+process.env.PATH,RUNNER_TEMP:work,MODE:mode,SQL_CAPTURE:capture}
+    });
+    for(const mode of ["migration-fail","readiness-fail","sql-fail","wrong-output"]){
+      rmSync(capture,{force:true});
+      const denied=run(mode);
+      assert.notEqual(denied.status,0,mode);
+      assert.doesNotMatch(denied.stdout,/BROKER_STARTED/);
+      assert.throws(()=>readFileSync(join(work,"luna-local-supabase.json")),{code:"ENOENT"});
+      if(mode==="sql-fail"||mode==="wrong-output")assert.match(readFileSync(capture,"utf8"),/ON_ERROR_STOP=1/);
+      else assert.throws(()=>readFileSync(capture),{code:"ENOENT"});
+    }
+    const ok=run("ok");
+    assert.equal(ok.status,0,ok.stderr);
+    assert.match(ok.stdout,/BROKER_STARTED/);
+    const args=readFileSync(capture,"utf8").trimEnd().split("\n");
+    assert.deepEqual(args,["postgres","-c default_transaction_read_only=on",
+      "-X","-q","-t","-A","-h","127.0.0.1","-p","54322","-U","postgres",
+      "-d","postgres","-v","ON_ERROR_STOP=1","-c","select json_build_object('ready',true)->>'ready'"]);
+    assert.equal(readFileSync(join(work,"luna-local-supabase.json"),"utf8"),"{}\n");
+    assert.throws(()=>readFileSync(join(work,"luna-host-audit.json")),{code:"ENOENT"});
+  }finally{rmSync(work,{recursive:true,force:true})}
+});
