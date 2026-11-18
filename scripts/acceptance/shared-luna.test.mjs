@@ -173,8 +173,8 @@ test("trusted owner launch selects all exact-head manifests without any model ca
       'const body=s.includes("/branches/main")?{commit:{sha:SHA}}:'+
       's.includes("/git/trees/")?'+JSON.stringify(tree)+':null;'+
       'return new Response(JSON.stringify(body),{status:body?200:404});};\n');
-    const execute=()=>spawnSync(process.execPath,["--import",preload,
-      join(import.meta.dirname,"shared-luna.mjs"),"plan"],{
+    const execute=(cmd="plan")=>spawnSync(process.execPath,["--import",preload,
+      join(import.meta.dirname,"shared-luna.mjs"),cmd],{
       encoding:"utf8",env:{...process.env,GITHUB_EVENT_PATH:eventFile,
         GITHUB_OUTPUT:output,GITHUB_RUN_ID:"9876",GH_TOKEN:"fake-read-only",
         GITHUB_EVENT_NAME:"workflow_dispatch",GITHUB_REF:"refs/heads/main",
@@ -236,7 +236,8 @@ test("exact owner PR comment authorizes one pinned scenario and rejects edited o
     const head="a".repeat(40),commentId=456789,updatedAt="2026-11-18T06:00:00Z";
     const body="/aicafe-luna pr "+head+" 13c 0.20";
     const eventFile=join(dir,"event.json"),output=join(dir,"out.txt");
-    const preload=join(dir,"mock-github.mjs"),stateFile=join(dir,"comment-state.json");
+    const preload=join(dir,"mock-github.mjs"),stateFile=join(dir,"comment-state.json"),
+      grantsFile=join(dir,"grants.json");
     const event={
       action:"created",repository:{full_name:"killbill2792/aicafe"},
       sender:{login:"killbill2792"},
@@ -246,12 +247,21 @@ test("exact owner PR comment authorizes one pinned scenario and rejects edited o
     const state={id:commentId,body,updated_at:updatedAt,user:{login:"killbill2792"}};
     writeFileSync(eventFile,JSON.stringify(event));
     writeFileSync(stateFile,JSON.stringify(state));
-    const api=String.raw`import {readFileSync} from "node:fs";
-const file=process.env.LUNA_TEST_COMMENT_STATE;
+    writeFileSync(grantsFile,"[]");
+    const api=String.raw`import {readFileSync,writeFileSync} from "node:fs";
+const file=process.env.LUNA_TEST_COMMENT_STATE,grants=process.env.LUNA_TEST_GRANTS;
 const sha="a".repeat(40);
-globalThis.fetch=async (url)=>{
+globalThis.fetch=async (url,options={})=>{
  const s=String(url);
+ if(s.includes("/issues/520/comments")&&options.method==="POST"){
+   const posted=JSON.parse(options.body);
+   const old=JSON.parse(readFileSync(grants,"utf8"));
+   old.push({body:posted.body,user:{login:"github-actions[bot]"}});
+   writeFileSync(grants,JSON.stringify(old));
+   return new Response(JSON.stringify({id:67890}),{status:201});
+ }
  const body=s.includes("/issues/comments/456789")?JSON.parse(readFileSync(file,"utf8")):
+  s.includes("/issues/520/comments?")?JSON.parse(readFileSync(grants,"utf8")):
   s.includes("/pulls/520")?{state:"open",head:{sha,repo:{full_name:"killbill2792/aicafe"}}}:
   s.includes("/git/trees/")?{truncated:false,tree:[
     {type:"blob",mode:"100644",path:".github/luna/scenarios/13c.json"}]}:null;
@@ -263,32 +273,49 @@ globalThis.fetch=async (url)=>{
       join(import.meta.dirname,"shared-luna.mjs"),"plan"],{
       encoding:"utf8",env:{...process.env,GITHUB_EVENT_PATH:eventFile,
         GITHUB_OUTPUT:output,GITHUB_RUN_ID:"999",GH_TOKEN:"fake-read-only",
-        LUNA_TEST_COMMENT_STATE:stateFile,GITHUB_EVENT_NAME:"issue_comment",
+        LUNA_TEST_COMMENT_STATE:stateFile,LUNA_TEST_GRANTS:grantsFile,
+        GITHUB_EVENT_NAME:"issue_comment",
         GITHUB_REF:"refs/heads/main",GITHUB_ACTOR:"killbill2792",
         GITHUB_TRIGGERING_ACTOR:"killbill2792",GITHUB_RUN_ATTEMPT:"1"}});
     writeFileSync(output,"");
     const valid=execute();
     assert.equal(valid.status,0,valid.stderr);
     assert.match(readFileSync(output,"utf8"),/matrix=\["13c"\]/);
+    const consumed=JSON.parse(readFileSync(grantsFile,"utf8"));
+    assert.equal(consumed.length,1);
+    assert.match(consumed[0].body,/aicafe-luna-consumed:owner-comment-456789:run-999/);
     writeFileSync(output,"");
+    const revalidated=execute("revalidate");
+    assert.equal(revalidated.status,0,revalidated.stderr);
+    assert.equal(JSON.parse(readFileSync(grantsFile,"utf8")).length,1);
+    writeFileSync(output,"");
+    const duplicate=execute("plan");
+    assert.notEqual(duplicate.status,0);
+    assert.match(duplicate.stderr,/already consumed/);
+    assert.equal(readFileSync(output,"utf8"),"");
     writeFileSync(stateFile,JSON.stringify({...state,body:body+" edited"}));
-    const edited=execute();
+    const edited=execute("revalidate");
     assert.notEqual(edited.status,0);
     assert.match(edited.stderr,/Owner comment changed/);
     assert.equal(readFileSync(output,"utf8"),"");
     writeFileSync(stateFile,JSON.stringify(state));
     writeFileSync(eventFile,JSON.stringify({...event,sender:{login:"attacker"}}));
-    const spoofed=execute();
+    const spoofed=execute("revalidate");
     assert.notEqual(spoofed.status,0);
     assert.match(spoofed.stderr,/Explicit owner launch/);
+    writeFileSync(eventFile,JSON.stringify(event));
+    writeFileSync(grantsFile,"[]");
+    const noGrant=execute("revalidate");
+    assert.notEqual(noGrant.status,0);
+    assert.match(noGrant.stderr,/not consumed by this one-shot run/);
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
 
 test("trusted workflow revalidates an owner comment after untrusted setup but before key access",()=>{
   const workflow=readFileSync(join(import.meta.dirname,"../../.github/workflows/ai-cafe-luna-shared.yml"),"utf8");
-  const at=workflow.indexOf("name: Reverify fresh owner grant and current SHA immediately before provider access");
+  const at=workflow.indexOf("name: Reverify consumed owner grant and current SHA immediately before provider access");
   const broker=workflow.indexOf("name: Start bounded trusted broker on host");
   assert.ok(at>0&&broker>at,"Paid workflow must recheck owner/current SHA after setup and before key");
-  assert.ok(workflow.slice(at,broker).includes("node scripts/acceptance/shared-luna.mjs plan"));
+  assert.ok(workflow.slice(at,broker).includes("node scripts/acceptance/shared-luna.mjs revalidate"));
   assert.ok(workflow.includes("queue: max")&&workflow.includes("cancel-in-progress: false"));
 });
