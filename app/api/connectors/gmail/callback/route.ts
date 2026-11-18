@@ -31,12 +31,25 @@ export async function GET(request:Request){
     if(!granted.includes(GOOGLE_MODIFY_SCOPE)||!tokens.refresh_token)throw new Error("scope_or_refresh_missing");
     const identity=await verifiedGoogleMailbox(tokens.access_token);
     const old=await getConnectorAccount(owner);
-    const {data:account,error:accountError}=await db.from("connector_accounts").upsert({
-      business_id:owner.businessId,owner_user_id:owner.ownerUserId,provider:"gmail",
+    // A previous owner revocation MUST win over a reconnect in flight.
+    // Existing records use a generation-and-status CAS and never overwrite
+    // enabled_operations. First connect uses INSERT, not an unsafe upsert.
+    const accountUpdate={
       provider_subject:identity.subject,email:identity.email,granted_scopes:granted,
-      enabled_operations:["read","draft","send","organize"],
-      status:"needs_reconnect",generation:(old?.generation??0)+1,updated_at:new Date().toISOString()
-    },{onConflict:"business_id,owner_user_id,provider"}).select("id,generation").single();
+      status:"needs_reconnect" as const,generation:(old?.generation??0)+1,
+      updated_at:new Date().toISOString()
+    };
+    const query=old
+      ?db.from("connector_accounts").update(accountUpdate)
+        .eq("id",old.id).eq("business_id",owner.businessId)
+        .eq("owner_user_id",owner.ownerUserId)
+        .eq("generation",old.generation).eq("status",old.status)
+      :db.from("connector_accounts").insert({
+        ...accountUpdate,business_id:owner.businessId,
+        owner_user_id:owner.ownerUserId,provider:"gmail",
+        enabled_operations:["read","draft","send","organize"]
+      });
+    const {data:account,error:accountError}=await query.select("id,generation").single();
     if(accountError||!account)throw new Error("gmail_account_save_failed");
     const credential=await db.from("connector_credentials").upsert({
       account_id:account.id,generation:account.generation,access_token_enc:encryptToken(tokens.access_token),

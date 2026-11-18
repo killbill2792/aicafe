@@ -53,6 +53,9 @@ function query(table:string){
    single:vi.fn(async()=>({data:{id:ACCOUNT.id,generation:5},error:null})),
    error:null
  };
+ if(table==="connector_accounts"){
+  q.insert=vi.fn(()=>q);
+ }
  if(table==="connector_credentials"){
   q.upsert=vi.fn(async()=>({error:null}));
   q.maybeSingle=vi.fn(async()=>({data:{refresh_token_enc:"cipher-refresh"},error:null}));
@@ -107,6 +110,38 @@ describe("Task 11 Gmail connector routes (fake Google, verified owner)",()=>{
    expect(credentials.upsert.mock.calls[0][0]).toMatchObject({
      access_token_enc:"encrypted:secret-access",refresh_token_enc:"encrypted:secret-refresh"});
    expect(res.headers.get("location")).not.toContain("secret-access");
+ });
+ it("preserves owner-disabled send on the next Gmail OAuth reconnect",async()=>{
+   mocks.account.mockResolvedValue({...ACCOUNT,enabled_operations:["read","draft"],generation:8});
+   const res=await callback(new Request(browserUrl+"callback?state=safe-random-state&code=one-time-code"));
+   expect(res.headers.get("location")).toContain("connected=1");
+   const accountQuery=mocks.dbFrom.mock.results
+     .find(x=>x.value?.update?.mock?.calls?.[0]?.[0]?.provider_subject==="google-subject")?.value;
+   const accountWrite=accountQuery?.update.mock.calls[0][0] as Record<string,unknown>;
+   expect(accountWrite).toMatchObject({generation:9,status:"needs_reconnect"});
+   expect(accountWrite).not.toHaveProperty("enabled_operations");
+   expect(accountQuery.eq).toHaveBeenCalledWith("generation",8);
+   expect(accountQuery.eq).toHaveBeenCalledWith("business_id",OWNER.businessId);
+   expect(accountQuery.eq).toHaveBeenCalledWith("owner_user_id",OWNER.ownerUserId);
+ });
+
+ it("cannot overwrite an owner revocation that races with a reconnect",async()=>{
+   mocks.account.mockResolvedValue({...ACCOUNT,enabled_operations:["read","draft"],generation:8});
+   const originalQuery=mocks.dbFrom.getMockImplementation()!;
+   mocks.dbFrom.mockImplementation((table:string)=>{
+     const q=originalQuery(table);
+     if(table==="connector_accounts")
+       q.single.mockResolvedValueOnce({data:null,error:{code:"PGRST116"}});
+     return q;
+   });
+   const res=await callback(new Request(browserUrl+"callback?state=safe-random-state&code=one-time-code"));
+   expect(res.headers.get("location")).toContain("connection_failed");
+   const accountQuery=mocks.dbFrom.mock.results
+     .find(x=>x.value?.update?.mock?.calls?.[0]?.[0]?.provider_subject==="google-subject")?.value;
+   expect(accountQuery.eq).toHaveBeenCalledWith("generation",8);
+   expect(accountQuery.update.mock.calls[0][0]).not.toHaveProperty("enabled_operations");
+   const creds=mocks.dbFrom.mock.calls.filter(([name])=>name==="connector_credentials");
+   expect(creds).toHaveLength(0);
  });
  it("status cannot leak credentials and shows capabilities from bound owner grants",async()=>{
    const res=await status();

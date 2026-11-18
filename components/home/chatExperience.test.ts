@@ -20,6 +20,18 @@ describe("chat experience helpers", () => {
     for (const locale of ["en", "es", "ar"] as const)
       for (const line of keys(chatExperienceCopy(locale))) expect(line.length).toBeGreaterThan(0);
   });
+  it("shows accurate permission-denial next steps without changing other locale key sets",()=>{
+    for(const code of [
+      "supervisor_file_access_revoked",
+      "supervisor_permission_status_unavailable",
+      "supervisor_owner_access_revoked",
+    ]){
+      const line=failureLine(code,copy);
+      expect(line).toMatch(/stopped/i);
+      expect(line).not.toEqual(copy.failures.agent_turn_failed);
+      expect(line).not.toContain("\\n");
+    }
+  });
   it("has a one-line failure for every code and a generic fallback", () => {
     for (const code of ["timeout", "agent_busy", "attempts_exhausted", "reply_storage_failed"])
       expect(failureLine(code, copy)).toBe((copy.failures as Record<string, string>)[code]);

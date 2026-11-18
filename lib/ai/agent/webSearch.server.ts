@@ -4,7 +4,7 @@ import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 /** Read-only public web lookup for the authenticated Supervisor chat. */
 export type WebSearchResult =
   | {available:true;answer:string;sources:Array<{title:string;url:string}>}
-  | {available:false;reason:"notConfigured"|"timeout"|"providerFailed"|"unreadable"|"budget"};
+  | {available:false;reason:"notConfigured"|"timeout"|"providerFailed"|"unreadable"|"budget"|"permissionDenied"|"permissionsUnavailable"};
 
 export type WebSearchUsage={inputTokens:number;cachedTokens:number;outputTokens:number};
 /** The outer agent reserves a model call before the request and records token usage. */

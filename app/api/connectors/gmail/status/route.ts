@@ -10,6 +10,9 @@ export async function GET(){
     try{oauthConfig();}catch{configured=false;}
     const status=account?.status??"disconnected";
     return NextResponse.json({status,configured,email:account?.email??null,
+      accountId:account?.id??null,generation:account?.generation??null,
+      enabledOperations:account?.enabled_operations??[],
+      googleScopeGranted:account?.granted_scopes.includes("https://www.googleapis.com/auth/gmail.modify")??false,
       permissions:{read:allowsGmail(account,"read"),draft:allowsGmail(account,"draft"),
         send:allowsGmail(account,"send"),organize:allowsGmail(account,"organize")}},
       {headers:{"cache-control":"no-store"}});

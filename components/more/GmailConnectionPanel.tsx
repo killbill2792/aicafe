@@ -4,7 +4,9 @@ import {Mail,ShieldCheck,CheckCircle2,AlertTriangle} from "lucide-react";
 import en from "@/messages/en.json";
 
 type Status={status:"active"|"needs_reconnect"|"revoking"|"disconnected";configured:boolean;
-  email:string|null;permissions:{read:boolean;draft:boolean;send:boolean;organize:boolean}};
+  email:string|null;accountId:string|null;generation:number|null;
+  enabledOperations:string[];googleScopeGranted:boolean;
+  permissions:{read:boolean;draft:boolean;send:boolean;organize:boolean}};
 export default function GmailConnectionPanel(){
   const copy=en.GmailConnect;
   const [data,setData]=useState<Status|null>(null);
@@ -33,8 +35,26 @@ export default function GmailConnectionPanel(){
     }catch{setError(copy.revokePending);}
     finally{setBusy(false);}
   };
+  const toggle=async(operation:"read"|"draft"|"send"|"organize")=>{
+    if(busy||data?.status!=="active"||!data.accountId||!data.generation)return;
+    const enabled=data.enabledOperations.includes(operation);
+    if(!enabled&&["send","organize"].includes(operation)&&!window.confirm(copy.enableOperationConfirm))return;
+    setBusy(true);setError("");
+    try{
+      const operations=enabled?data.enabledOperations.filter(x=>x!==operation):
+        [...data.enabledOperations,operation];
+      const response=await fetch("/api/connectors/gmail/permissions",{
+        method:"PATCH",credentials:"same-origin",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({accountId:data.accountId,generation:data.generation,operations}),
+      });
+      if(!response.ok)throw new Error("permission_change_unverified");
+      await load();
+    }catch{setError(copy.operationFailed);}
+    finally{setBusy(false);}
+  };
   const failure=typeof window!=="undefined"?new URLSearchParams(window.location.search).get("error"):null;
-  const connected=data?.status==="active"&&Object.values(data.permissions).every(Boolean);
+  const connected=data?.status==="active";
   return <section className="rounded-card-lg border border-line bg-card p-5 text-ink" aria-label={copy.title}>
     <div className="flex items-center gap-3">
       <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft"><Mail aria-hidden="true" size={25}/></span>
@@ -54,6 +74,22 @@ export default function GmailConnectionPanel(){
       <p>{copy.canDo}</p>
       <p>{copy.ownerApproves}</p>
     </div>
+    {connected&&data?.accountId&&<div className="mt-5 space-y-3">
+      <h3 className="text-[17px] font-semibold">{copy.operationHeading}</h3>
+      <p className="text-[15px] text-ink-muted">{copy.googleScopeNotice}</p>
+      {( [
+        ["read",copy.opRead],["draft",copy.opDraft],
+        ["send",copy.opSend],["organize",copy.opOrganize],
+      ] as const).map(([operation,label])=><div key={operation}
+        className="flex min-w-0 items-center justify-between gap-3 border-b border-line py-2">
+        <span className="min-w-0 text-[15px]">{label}</span>
+        <button type="button" role="switch" aria-checked={data.enabledOperations.includes(operation)}
+          aria-label={label} disabled={busy} onClick={()=>void toggle(operation)}
+          className="min-h-12 min-w-20 shrink-0 rounded-xl border border-line px-3 text-[15px] font-semibold disabled:opacity-50">
+          {busy?copy.operationSaving:data.enabledOperations.includes(operation)?copy.operationOn:copy.operationOff}
+        </button>
+      </div>)}
+    </div>}
     {(error||failure)&&<p role="alert" className="mt-4 flex gap-2 text-warn">
       <AlertTriangle size={18} className="shrink-0"/>{error||copy.connectionFailed}</p>}
     <div className="mt-6 flex flex-wrap gap-3">

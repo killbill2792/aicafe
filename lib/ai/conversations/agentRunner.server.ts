@@ -61,6 +61,7 @@ import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
+import {assertExternalAccess,assertSelectedAttachmentAccess,WEB_RESOURCE} from "@/lib/connectors/access.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
 import type {ConversationMessage, ConversationScope} from "@/lib/ai/conversations/contracts";
@@ -71,6 +72,12 @@ type Locale = "en"|"es"|"ar";
 type JobsModule = typeof import("@/lib/ai/agent/jobs.server");
 export function errorCode(error: unknown): string {
   return error instanceof ConversationApiError ? error.code :
+    error instanceof Error && ["file_read_access_revoked","attachment_access_revoked"]
+      .includes(error.message) ? "supervisor_file_access_revoked" :
+    error instanceof Error && ["external_access_unavailable","external_access_invalid"]
+      .includes(error.message) ? "supervisor_permission_status_unavailable" :
+    error instanceof Error && error.message==="connector_owner_access_revoked"
+      ? "supervisor_owner_access_revoked" :
     error instanceof AgentReplyTooLongError ? "reply_too_long" :
     error instanceof AgentReplyStorageError ? "reply_storage_failed" :
     "agent_turn_failed";
@@ -102,9 +109,13 @@ async function readOwnerAttachments(scope:ConversationScope,threadId:string,ids:
  for(const id of ids){
   const row=data.find(a=>a.id===id);
   if(!row||row.bytes<1||row.bytes>MAX_UPLOAD_BYTES)throw new ConversationApiError(422,"invalid_attachment");
+  await assertSelectedAttachmentAccess(scope,id);
   const {data:blob,error:downloadError}=await db.storage.from("ai-chat-private").download(row.object_path);
   if(downloadError||!blob||blob.size!==row.bytes)throw new ConversationApiError(503,"attachment_unavailable");
   const bytes=new Uint8Array(await blob.arrayBuffer());
+  // The permission may change while storage reads; revoked material is never
+  // appended to the model request after this check.
+  await assertSelectedAttachmentAccess(scope,id);
   if(!verifySignature(row.media_type,bytes))throw new ConversationApiError(422,"invalid_file_signature");
   fingerprint.update(row.media_type).update("\0").update(bytes).update("\0");
   const source="Attachment "+id+"; file "+JSON.stringify(row.original_name)+
@@ -188,7 +199,16 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
-      webSearch:async(query,budget)=>{await assertCafeAiAccess(scope.businessId);return searchWeb(query,budget);},
+      webSearch:async(query,budget)=>{
+        await assertCafeAiAccess(scope.businessId);
+        try{await assertExternalAccess(scope,"public_web",WEB_RESOURCE);}
+        catch(error){
+          return {available:false as const,reason:
+            error instanceof Error&&error.message==="public_web_access_revoked"?
+            "permissionDenied" as const:"permissionsUnavailable" as const};
+        }
+        return searchWeb(query,budget);
+      },
       savedEvents:async(from,to,options)=>readSavedEventTimeline(await getDb(),
         {businessId:scope.businessId,ownerUserId:scope.ownerUserId},from,to,options),
       readWeekSchedule:weekStart=>external?
@@ -503,13 +523,23 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       "If saved research is incomplete, say so; any web_search must include this café city.";
     const recordedIds=process.env.WHATSAPP_SUPERVISOR_ENABLED==="true"
       ?await recordedWhatsAppImageIds(scope,id,owner.id):null;
-    const selected=await readOwnerAttachments(scope,id,recordedIds??p.attachmentIds??[],p.externalClient);
+    const selectedIds=recordedIds??p.attachmentIds??[];
+    const selected=await readOwnerAttachments(scope,id,selectedIds,p.externalClient);
     selectedContentSha256=selected.contentSha256;
+    // Recheck on worker recovery and just before handing selected evidence
+    // to Luna; old saved turns are never independent file-access grants.
+    for(const attachmentId of selectedIds){
+      await assertSelectedAttachmentAccess(scope,attachmentId);
+    }
     failureStage = "model";
     const result = await runAgentTurn({ ownerText: p.ownerText, ownerImages:selected.images,
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
        history, context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
+       beforeProviderRequest:selectedIds.length?async()=>{
+         for(const attachmentId of selectedIds)
+           await assertSelectedAttachmentAccess(scope,attachmentId);
+       }:undefined,
       previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
       onTool:(name,agentId)=>{
         emit("tool",{name,agentId});

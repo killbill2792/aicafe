@@ -847,3 +847,106 @@ test("@purchasing proactive notice → repeated cron idempotency → owner-appro
     }
   }
 });
+
+
+test("@gmail Task16C owner revokes live external access across mobile reload and cafés",async({browser})=>{
+  test.setTimeout(120_000);
+  const own=seededCafe(0),other=seededCafe(1);
+  const attachmentId=randomUUID(),threadId=randomUUID(),accountId=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  // Authenticate with the existing desktop login helper first; it checks a
+  // desktop-only café-name nav. Then exercise the ENTIRE permission flow at
+  // the real 390px mobile viewport, including the second café.
+  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",
+    serviceWorkers:"block"});
+  const foreign=await browser.newContext({baseURL:"http://127.0.0.1:3000",
+    serviceWorkers:"block"});
+  let connected=false;
+  try{
+    await db.connect();connected=true;
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",
+      [threadId,own.businessId,own.owner.userId,randomUUID()]);
+    await db.query("insert into public.ai_attachments(id,business_id,owner_user_id,thread_id,object_path,original_name,media_type,bytes) values($1,$2,$3,$4,$5,'suppliers.csv','text/csv',12)",
+      [attachmentId,own.businessId,own.owner.userId,threadId,
+        [own.businessId,own.owner.userId,threadId,attachmentId,"suppliers.csv"].join("/")]);
+    await db.query("insert into public.connector_accounts(id,business_id,owner_user_id,provider,provider_subject,email,granted_scopes,enabled_operations,status) values($1,$2,$3,'gmail','disposable-only','fixture-owner@example.invalid',ARRAY['https://www.googleapis.com/auth/gmail.modify'],ARRAY['read','draft','send','organize'],'active')",
+      [accountId,own.businessId,own.owner.userId]);
+    await db.query("insert into public.connector_credentials(account_id,generation,access_token_enc,refresh_token_enc,token_expires_at) values($1,1,$2,$3,now()+interval '1 hour')",
+      [accountId,"c".repeat(64),"d".repeat(64)]);
+    const page=await context.newPage();
+    await login(page,own);
+    await openOwnedPage(page,own,"more/supervisor-access");
+    await page.setViewportSize({width:390,height:844});
+    await expect(page.getByRole("heading",{name:"Supervisor access"})).toBeVisible();
+    await expect(page.getByText("fixture-owner@example.invalid")).toBeVisible();
+    await expect(page.getByRole("heading",{name:"Website and computer control"})).toBeVisible();
+    await expect(page.getByText("suppliers.csv",{exact:true})).toBeVisible();
+    const publicWeb=page.getByRole("switch",{name:"Public web research"});
+    const fileReading=page.getByRole("switch",{name:"Use my selected files"});
+    await expect(publicWeb).toHaveAttribute("aria-checked","true");
+    await publicWeb.click();
+    await expect(publicWeb).toHaveAttribute("aria-checked","false");
+    let current=await db.query("select allowed,revision from public.supervisor_external_access where business_id=$1 and owner_user_id=$2 and kind='public_web' and resource_key='public'",
+      [own.businessId,own.owner.userId]);
+    expect(current.rows).toMatchObject([{allowed:false,revision:"1"}]);
+    await fileReading.click();
+    await expect(fileReading).toHaveAttribute("aria-checked","false");
+    page.once("dialog",dialog=>void dialog.accept());
+    const selectedFile=page.getByRole("group",{name:"suppliers.csv",exact:true});
+    await expect(selectedFile).toBeVisible();
+    await selectedFile.getByRole("button",{name:"Revoke future access"}).click();
+    await expect(page.getByText("Future Supervisor access revoked")).toBeVisible();
+    const accountSwitch=page.getByRole("switch",{name:"Send messages after your approval"});
+    await expect(accountSwitch).toHaveAttribute("aria-checked","true");
+    await accountSwitch.click();
+    await expect(accountSwitch).toHaveAttribute("aria-checked","false");
+    const gmail=await db.query("select generation,enabled_operations from public.connector_accounts where id=$1",[accountId]);
+    expect(Number(gmail.rows[0].generation)).toBe(2);
+    expect(gmail.rows[0].enabled_operations).not.toContain("send");
+    const secret=await db.query("select generation from public.connector_credentials where account_id=$1",[accountId]);
+    expect(Number(secret.rows[0].generation)).toBe(2);
+    const audits=await db.query("select kind,resource_key,allowed from public.supervisor_external_access_audit where business_id=$1 and owner_user_id=$2",
+      [own.businessId,own.owner.userId]);
+    expect(audits.rows).toHaveLength(3);
+    const gmailAudits=await db.query("select after_operations from public.connector_operation_change_receipts where account_id=$1",[accountId]);
+    expect(gmailAudits.rows).toHaveLength(1);
+    // Browser reload must display persistent owner-controlled permissions, not stale local UI state.
+    await page.reload();
+    await expect(publicWeb).toHaveAttribute("aria-checked","false");
+    await expect(fileReading).toHaveAttribute("aria-checked","false");
+    await expect(accountSwitch).toHaveAttribute("aria-checked","false");
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+    const otherPage=await foreign.newPage();
+    await login(otherPage,other);
+    await openOwnedPage(otherPage,other,"more/supervisor-access");
+    await otherPage.setViewportSize({width:390,height:844});
+    await expect(otherPage.getByText("suppliers.csv",{exact:true})).toHaveCount(0);
+    await expect(otherPage.getByText("fixture-owner@example.invalid",{exact:true})).toHaveCount(0);
+    const stolen=await foreign.request.post("/api/supervisor/access",{
+      headers:{origin:"http://127.0.0.1:3000"},
+      data:{kind:"attachment",enabled:false,attachmentId,revision:0}});
+    expect(stolen.status()).not.toBe(200);
+    // A broken permission endpoint cannot be shown as a successful switch.
+    await page.route("**/api/supervisor/access",route=>
+      route.request().method()==="POST"?route.fulfill({status:503,
+        contentType:"application/json",body:'{"error":"unavailable"}'}):route.continue());
+    await publicWeb.click();
+    await expect(page.getByRole("alert").filter({hasText:"Could not verify the change"}))
+      .toContainText("Could not verify the change");
+    await expect(publicWeb).toHaveAttribute("aria-checked","false");
+  }finally{
+    await context.close();await foreign.close();
+    if(connected){
+      await db.query("delete from public.supervisor_external_access_audit where business_id=$1 and owner_user_id=$2",
+        [own.businessId,own.owner.userId]).catch(()=>{});
+      await db.query("delete from public.supervisor_external_access where business_id=$1 and owner_user_id=$2",
+        [own.businessId,own.owner.userId]).catch(()=>{});
+      await db.query("delete from public.connector_operation_change_receipts where account_id=$1",[accountId]).catch(()=>{});
+      await db.query("delete from public.connector_accounts where id=$1",[accountId]).catch(()=>{});
+      await db.query("delete from public.ai_attachments where id=$1",[attachmentId]).catch(()=>{});
+      await db.query("delete from public.ai_threads where id=$1",[threadId]).catch(()=>{});
+      await db.end();
+    }
+  }
+});

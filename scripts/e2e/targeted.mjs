@@ -22,6 +22,7 @@ export function scenariosForPath(path) {
       path === "components/TabBar.tsx" ||
       path === "components/SideNav.tsx" ||
       path === "components/shared/PageShell.tsx" ||
+      path === "components/shared/BackHeader.tsx" ||
       path.startsWith("lib/auth/") ||
       path.startsWith("lib/supabase/") ||
       path === "messages/en.json") return ALL;
@@ -29,6 +30,8 @@ export function scenariosForPath(path) {
   // navigation destination for workers. Require BOTH real browser journeys.
   if (path === "app/[locale]/more/page.tsx") return ["staff","gmail"];
   if (path === "app/[locale]/more/gmail/page.tsx" ||
+      path === "app/[locale]/more/supervisor-access/page.tsx" ||
+      path === "components/more/SupervisorAccessPanel.tsx" ||
       path === "components/more/GmailConnectionPanel.tsx" ||
       path === "components/home/SupervisorProposalCard.tsx" ||
       path === "components/home/SupervisorProposalCard.gmail.test.tsx" ||

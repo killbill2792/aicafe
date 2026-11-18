@@ -65,6 +65,10 @@ const approvedTask14bEnglishOnly: Record<string, readonly string[]> = {
     "unknown"
   ]
 };
+// Task16C adds English-only owner controls. Enumerate exact keys so the
+// existing translation-parity guard still rejects every unexpected addition.
+const approvedTask16cEnglishOnly = ["title","subtitle","publicWeb","publicWebHelp","fileRead","fileReadHelp","fileList","fileListHelp","fileRevoked","filePaused","fileAllowed","revokeFile","revokeConfirm","loadMore","computer","computerUnavailable","loading","loadFailed","saveFailed","refresh","on","off","changePending","noFiles","gmailIntro","fileAccessRevokedMessage","statusUnavailableMessage","ownerAccessRevokedMessage"];
+const approvedTask16cSet = new Set(approvedTask16cEnglishOnly.map(key=>"SupervisorAccess."+key));
 const approvedTask14bSet = new Set(Object.entries(approvedTask14bEnglishOnly)
   .flatMap(([namespace, keys]) => keys.map(key => namespace+"."+key)));
 
@@ -89,11 +93,22 @@ describe("redesign 16 cleanup integration", () => {
       const messages = localeMessages(locale);
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
-        .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key))
+        .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key) && !approvedTask16cSet.has(key))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));
     expect(keys("ar")).toEqual(keys("en"));
+  });
+
+  it("requires exactly the authorized Task16C English keys without touching other locales",()=> {
+    const english=localeMessages("en"), spanish=localeMessages("es"), arabic=localeMessages("ar");
+    expect(Object.keys(english.SupervisorAccess??{}).sort()).toEqual([...approvedTask16cEnglishOnly].sort());
+    expect(spanish.SupervisorAccess).toBeUndefined();
+    expect(arabic.SupervisorAccess).toBeUndefined();
+    for(const key of approvedTask16cEnglishOnly){
+      expect(english.SupervisorAccess[key],key).toEqual(expect.any(String));
+      expect(english.SupervisorAccess[key].trim().length,key).toBeGreaterThan(0);
+    }
   });
 
   it("requires every Task 14B purchasing key in en and forbids silently expanding the exception", () => {
