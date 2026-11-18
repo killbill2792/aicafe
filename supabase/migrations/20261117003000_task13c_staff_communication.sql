@@ -9,6 +9,36 @@ alter table public.employees add column if not exists staff_auth_user_id uuid re
 create unique index if not exists employees_one_worker_login
   on public.employees(staff_auth_user_id) where staff_auth_user_id is not null;
 
+-- Identity changes are privileged even though the legacy employees RLS
+-- allows café managers both INSERT and UPDATE. Prevent a manager from creating
+-- a new employee row linked to another account (even an owner's login), as
+-- well as changing an existing link. PostgreSQL functions are SECURITY INVOKER
+-- by default: current_user is the authenticated SQL role, while the separately
+-- owner-authorized SECURITY DEFINER linking RPC executes as postgres.
+create function public.staff_channel_protect_identity_link()
+ returns trigger language plpgsql set search_path=public,pg_temp as $$
+begin
+ if tg_op='INSERT' then
+  if new.staff_auth_user_id is not null
+    and current_user not in ('postgres','service_role') then
+   raise exception 'staff_link_rpc_required' using errcode='42501';
+  end if;
+ else
+  if new.staff_auth_user_id is distinct from old.staff_auth_user_id
+    and current_user not in ('postgres','service_role') then
+   raise exception 'staff_link_rpc_required' using errcode='42501';
+  end if;
+ end if;
+ return new;
+end $$;
+create trigger staff_channel_protect_identity_link_insert
+ before insert on public.employees
+ for each row execute function public.staff_channel_protect_identity_link();
+create trigger staff_channel_protect_identity_link
+ before update of staff_auth_user_id on public.employees
+ for each row execute function public.staff_channel_protect_identity_link();
+revoke all on function public.staff_channel_protect_identity_link() from public,anon,authenticated;
+
 -- A café owner links an ALREADY CONFIRMED Supabase login to exactly one active
 -- employee. Exact email is matched only in trusted SQL; no public user directory.
 create function public.staff_link_existing_login(
@@ -248,8 +278,13 @@ declare emp public.employees%rowtype; req public.staff_communication_requests%ro
 begin
  if (select auth.uid()) is null then
   raise exception 'login_required' using errcode='42501'; end if;
+ -- Serialize all operations for this verified worker before checking the
+ -- idempotency nonce. A timed-out first request can still be committing when
+ -- its retry arrives; a SHARED row lock allowed the retry to check an absent
+ -- nonce then wait for a request that the first transaction just completed.
+ -- FOR UPDATE ensures the retry sees the first commit BEFORE claiming stale.
  select * into emp from public.employees
-  where staff_auth_user_id=(select auth.uid()) and active=true for share;
+  where staff_auth_user_id=(select auth.uid()) and active=true for update;
  if not found then raise exception 'staff_login_required' using errcode='42501'; end if;
  if p_nonce is null or p_response not in ('confirm','decline','complete','message','report') then
   raise exception 'invalid_response' using errcode='22023'; end if;
@@ -318,9 +353,14 @@ declare emp public.employees%rowtype;
 begin
  v_actor:=(select auth.uid());
  if v_actor is null then raise exception 'login_required' using errcode='42501'; end if;
- select * into emp from public.employees where id=p_employee_id for share;
- if not found or not emp.active or emp.staff_auth_user_id is null or
-    not public.scheduling_is_owner(emp.business_id) then
+ -- Serialize owner messages and assignments for this employee too. A lost
+ -- response can overlap a retry with the same nonce; its receipt must be
+ -- checked after the earlier transaction commits, not race the insert.
+ select * into emp from public.employees where id=p_employee_id for update;
+ -- Authorization comes first, before any prior receipt is revealed.
+ -- Deactivation or unlinked staff cannot receive NEW messages, but an
+ -- already-committed same-nonce owner message must remain recoverable.
+ if not found or not public.scheduling_is_owner(emp.business_id) then
    raise exception 'owner_target_required' using errcode='42501'; end if;
  v_body:=nullif(btrim(coalesce(p_body,'')),'');
  if p_nonce is null or v_body is null or char_length(v_body)>2000 then
@@ -335,6 +375,10 @@ begin
     raise exception 'owner_nonce_conflict' using errcode='40900'; end if;
   return jsonb_build_object('id',previous.id,'replayed',true);
  end if;
+ -- Only after serialized nonce lookup can a missing receipt be conclusively
+ -- rejected. The client keeps its unsent draft and releases its outbox lock.
+ if not emp.active or emp.staff_auth_user_id is null then
+  raise exception 'owner_target_unavailable' using errcode='40900'; end if;
  insert into public.staff_communication_messages
  (business_id,employee_id,request_id,actor,author_user_id,
   response_code,body,channel,client_nonce)
@@ -357,9 +401,13 @@ create function public.staff_channel_owner_assign(
 declare emp public.employees%rowtype; assignment public.staff_communication_requests%rowtype;
  v_title text;v_prompt text;
 begin
- select * into emp from public.employees where id=p_employee_id for share;
- if not found or not emp.active or emp.staff_auth_user_id is null or
-  not public.scheduling_is_owner(emp.business_id) then
+ -- Serialize owner messages and assignments for this employee too. A lost
+ -- response can overlap a retry with the same nonce; its receipt must be
+ -- checked after the earlier transaction commits, not race the insert.
+ select * into emp from public.employees where id=p_employee_id for update;
+ -- Do not reveal earlier assignment receipts to anyone except a
+ -- verified owner; then check prior nonce BEFORE current worker eligibility.
+ if not found or not public.scheduling_is_owner(emp.business_id) then
    raise exception 'owner_target_required' using errcode='42501'; end if;
  v_title:=nullif(btrim(coalesce(p_title,'')),'');
  v_prompt:=nullif(btrim(coalesce(p_prompt,'')),'');
@@ -376,6 +424,8 @@ begin
     raise exception 'assignment_nonce_conflict' using errcode='40900'; end if;
    return jsonb_build_object('id',assignment.id,'replayed',true);
  end if;
+ if not emp.active or emp.staff_auth_user_id is null then
+  raise exception 'owner_target_unavailable' using errcode='40900'; end if;
  insert into public.staff_communication_requests
   (business_id,employee_id,kind,source_type,source_id,source_revision,title,prompt)
  values (emp.business_id,emp.id,p_kind,'owner_manual',p_nonce::text,'v1',v_title,v_prompt)
