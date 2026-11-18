@@ -1,0 +1,143 @@
+{
+  "id": "14c",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task14c.mjs",
+  "proof": "14c-proof.json",
+  "scope": "14c-scope.json",
+  "expectedTools": [
+    "get_supplier_purchase_orders",
+    "propose_supplier_vendor_email"
+  ],
+  "assertions": [
+    {
+      "name": "canonical-approved-po",
+      "kind": "source",
+      "table": "public.purchase_orders",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "poId"
+        },
+        "status": {
+          "eq": "approved_for_ordering"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-verified-contact",
+      "kind": "source",
+      "table": "public.cafe_supplier_order_contacts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "contactId"
+        },
+        "channel": {
+          "eq": "gmail"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "inert-gmail-owner-proposal",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "proposalId"
+        },
+        "status": {
+          "eq": "draft"
+        },
+        "capability_id": {
+          "eq": "alex.gmail_effect.v1"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "prepared-not-sent-dispatch",
+      "kind": "source",
+      "table": "public.purchase_order_dispatches",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        },
+        "state": {
+          "eq": "prepared"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "durable-owner-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "replyId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-unapproved-gmail-provider-receipt",
+      "kind": "source",
+      "table": "public.connector_provider_receipts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-cafe-cannot-own-proposal",
+      "kind": "isolation",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
