@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from "node:fs";
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,chmodSync,rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawnSync} from "node:child_process";
@@ -73,5 +73,53 @@ test("run replay is denied before reaching GitHub or paid model secrets",()=>{
         GITHUB_RUN_ATTEMPT:"2",GITHUB_REF:"refs/heads/main",GH_TOKEN:"not-a-real-token"}});
     assert.notEqual(result.status,0);
     assert.match(result.stderr,/Explicit owner launch on trusted main required/);
+  }finally{rmSync(dir,{recursive:true,force:true})}
+});
+
+test("trusted generic host checks provider receipts and independently executes scoped SQL",()=>{
+  const dir=mkdtempSync(join(tmpdir(),"luna-attest-"));
+  try{
+    const root=join(dir,"candidate/.github/luna/scenarios");
+    const proofDir=join(dir,"luna-candidate-proof"),bin=join(dir,"bin");
+    mkdirSync(root,{recursive:true});mkdirSync(proofDir);mkdirSync(bin);
+    writeFileSync(join(root,"future-case.json"),JSON.stringify(good));
+    const head="a".repeat(40);
+    const businessId="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const otherCafeId="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    writeFileSync(join(proofDir,"future-case-proof.json"),JSON.stringify({
+      head_sha:head,observed_model:"gpt-6-luna",status:"passed"
+    }));
+    writeFileSync(join(proofDir,"future-case-scope.json"),JSON.stringify({
+      businessId,otherCafeId,taskId:"case-7",expectedProviderCalls:2
+    }));
+    const audit={
+      head,attempts:2,reservedMicros:20000,
+      receipts:[
+        {terminal:"completed",model:"gpt-6-luna",actualInputTokens:10,actualOutputTokens:5,
+          toolNames:["get_investigation_source"]},
+        {terminal:"completed",model:"gpt-6-luna",actualInputTokens:11,actualOutputTokens:3,
+          toolNames:["get_schedule"]}
+      ]
+    };
+    const auditFile=join(dir,"luna-host-audit.json");
+    writeFileSync(auditFile,JSON.stringify(audit));
+    const psql=join(bin,"psql");
+    writeFileSync(psql,'#!/usr/bin/env node\nconst query=process.argv.join(" ");console.log(query.includes("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")?"0":"1");\n');
+    chmodSync(psql,0o755);
+    const execute=()=>spawnSync(process.execPath,[join(import.meta.dirname,"shared-luna.mjs"),"attest"],{
+      encoding:"utf8",cwd:dir,
+      env:{...process.env,PATH:bin+":"+process.env.PATH,HEAD_SHA:head,
+        SCENARIO:"future-case",RUNNER_TEMP:dir,GITHUB_RUN_ATTEMPT:"1"}});
+    const pass=execute();
+    assert.equal(pass.status,0,pass.stderr);
+    const result=JSON.parse(readFileSync(join(dir,"luna-sanitized-result.json"),"utf8"));
+    assert.equal(result.realModelAndDatabaseProof,true);
+    assert.equal(result.independentOwnerUIAttestation,false);
+    assert.equal(result.independentDatabaseReadbacks.length,3);
+    audit.receipts[0].model="not-luna";
+    writeFileSync(auditFile,JSON.stringify(audit));
+    const fail=execute();
+    assert.notEqual(fail.status,0);
+    assert.match(fail.stderr,/Provider identity or bounded paid receipt unverified/);
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
