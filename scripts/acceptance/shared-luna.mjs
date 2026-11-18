@@ -118,7 +118,44 @@ async function api(url,token){
   ensure(response.ok,"GitHub preflight HTTP "+response.status);
   return response.json();
 }
-async function plan(){
+async function recordCommentGrant(event,token,revalidate){
+  const issue=event.issue.number,id=event.comment.id;
+  ensure(Number.isSafeInteger(issue)&&issue>0&&Number.isSafeInteger(id)&&id>0,
+    "Scoped PR comment grant required");
+  const runId=String(process.env.GITHUB_RUN_ID??"");
+  ensure(/^[1-9][0-9]{0,19}$/.test(runId),"Immutable workflow run ID missing");
+  const consumed="<!-- aicafe-luna-consumed:owner-comment-"+id+":run-"+runId+" -->";
+  const prefix="<!-- aicafe-luna-consumed:owner-comment-"+id+":";
+  const base="https://api.github.com/repos/"+REPO;
+  let found=null,complete=false;
+  for(let page=1;page<=100;page++){
+    const data=await api(base+"/issues/"+issue+"/comments?per_page=100&page="+page,token);
+    ensure(Array.isArray(data),"Incomplete consumed authorization history");
+    for(const comment of data){
+      if(comment.user?.login==="github-actions[bot]"&&
+         typeof comment.body==="string"&&comment.body.includes(prefix)){
+        ensure(found===null,"Duplicate owner authorization consumption markers");
+        found=comment.body;
+      }
+    }
+    if(data.length<100){complete=true;break}
+  }
+  ensure(complete,"Incomplete consumed authorization history");
+  if(revalidate){
+    ensure(found===consumed,"Owner authorization was not consumed by this one-shot run");
+    return;
+  }
+  ensure(found===null,"Owner comment authorization already consumed; use a new owner comment");
+  const response=await fetch(base+"/issues/"+issue+"/comments",{
+    method:"POST",
+    headers:{Authorization:"Bearer "+token,Accept:"application/vnd.github+json",
+      "X-GitHub-Api-Version":"2022-11-28","Content-Type":"application/json"},
+    body:JSON.stringify({body:consumed+"\nTrusted host reserved a single owner-approved "+
+      "disposable Luna run; a failed or partial attempt consumes this grant."})
+  });
+  ensure(response.status===201,"Failed to durably consume one-shot paid authorization");
+}
+async function plan({revalidate=false}={}){
   const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
   ensure(process.env.GITHUB_ACTOR===OWNER&&process.env.GITHUB_TRIGGERING_ACTOR===OWNER&&
     process.env.GITHUB_RUN_ATTEMPT==="1"&&
@@ -184,6 +221,8 @@ async function plan(){
   ensure(reservedCents<=authorizedCents,
     "Requested scenarios exceed manual owner budget authorization; choose fewer or approve more explicitly");
   const maxUSD=(reservedCents/100).toFixed(2);
+  if(process.env.GITHUB_EVENT_NAME==="issue_comment")
+    await recordCommentGrant(event,token,revalidate);
   console.log("Owner-approved one-shot run "+process.env.GITHUB_RUN_ID+
     " at "+head+", cases="+selected.join(",")+
     ", authorized USD="+budget+", cumulative worst-case reserved USD="+maxUSD+
@@ -317,6 +356,7 @@ function attest(){
 if(process.argv[1]&&import.meta.url===new URL("file://"+resolve(process.argv[1])).href){
   const cmd=process.argv[2];
   if(cmd==="plan")await plan();
+  else if(cmd==="revalidate")await plan({revalidate:true});
   else if(cmd==="candidate")await candidate();
   else if(cmd==="attest")attest();
   else if(cmd==="validate-all")validateAll();
