@@ -319,3 +319,86 @@ test("trusted workflow revalidates an owner comment after untrusted setup but be
   assert.ok(workflow.slice(at,broker).includes("node scripts/acceptance/shared-luna.mjs revalidate"));
   assert.ok(workflow.includes("queue: max")&&workflow.includes("cancel-in-progress: false"));
 });
+
+test("non-executing post-candidate source check blocks Git fsmonitor escape and accepts only 14B seed refresh",()=>{
+  const work=mkdtempSync(join(tmpdir(),"luna-fsmonitor-"));
+  try{
+    const root=join(work,"candidate"),source=join(root,"lib/ai/agent/loop.server.ts");
+    const seed=join(root,"supabase/seed.sql"),hook=join(work,"malicious-fsmonitor.sh");
+    const sentinel=join(work,"hook-executed");
+    mkdirSync(join(root,"lib/ai/agent"),{recursive:true});
+    mkdirSync(join(root,"supabase"),{recursive:true});
+    writeFileSync(source,"export const trusted = true;\n");
+    writeFileSync(seed,"-- original fixed seed\n");
+    const git=(...args)=>{
+      const r=spawnSync("git",["-C",root,...args],{encoding:"utf8"});
+      assert.equal(r.status,0,r.stderr);return r.stdout.trim();
+    };
+    git("init");git("config","user.email","fixture@example.invalid");
+    git("config","user.name","Test Fixture");
+    git("add",".");git("commit","-m","exact-head test");
+    const head=git("rev-parse","HEAD");
+    const command=(task,scenario,envDir=work)=>spawnSync(process.execPath,[
+      join(import.meta.dirname,"shared-luna.mjs"),task
+    ],{cwd:work,encoding:"utf8",env:{...process.env,HEAD_SHA:head,
+      SCENARIO:scenario,RUNNER_TEMP:envDir}});
+    assert.equal(command("snapshot-source","14b").status,0);
+    writeFileSync(seed,"-- intentionally refreshed rolling 14B seed\n");
+    const pre=command("verify-preflight","14b");
+    assert.equal(pre.status,0,pre.stderr);
+    // Simulate the P1 malicious candidate rewriting its writable local Git
+    // configuration. The trusted host MUST NEVER invoke Git after this point.
+    writeFileSync(hook,"#!/bin/sh\necho pwned > "+JSON.stringify(sentinel)+"\nexit 0\n");
+    chmodSync(hook,0o755);
+    const gitconfig=join(root,".git/config");
+    const oldConfig=readFileSync(gitconfig,"utf8");
+    writeFileSync(gitconfig,oldConfig+"\n[core]\n\tfsmonitor = "+hook+"\n");
+    const goodResult=command("verify-source","14b");
+    assert.equal(goodResult.status,0,goodResult.stderr);
+    assert.equal(readFileSync(seed,"utf8"),"-- intentionally refreshed rolling 14B seed\n");
+    assert.throws(()=>readFileSync(sentinel,"utf8"),{code:"ENOENT"});
+    writeFileSync(source,"export const trusted = false;\n");
+    const failResult=command("verify-source","14b");
+    assert.notEqual(failResult.status,0);
+    assert.match(failResult.stderr,/unexpected tracked source/);
+    assert.throws(()=>readFileSync(sentinel,"utf8"),{code:"ENOENT"});
+  }finally{rmSync(work,{recursive:true,force:true})}
+});
+test("a non-14B scenario cannot silently refresh the tracked SQL seed",()=>{
+  const work=mkdtempSync(join(tmpdir(),"luna-seed-deny-"));
+  try{
+    const root=join(work,"candidate"),seed=join(root,"supabase/seed.sql");
+    mkdirSync(join(root,"supabase"),{recursive:true});
+    writeFileSync(seed,"seed-before\n");
+    const git=(...args)=>{
+      const r=spawnSync("git",["-C",root,...args],{encoding:"utf8"});
+      assert.equal(r.status,0,r.stderr);return r.stdout.trim();
+    };
+    git("init");git("config","user.email","fixture@example.invalid");
+    git("config","user.name","Test Fixture");git("add",".");
+    git("commit","-m","seed source");
+    const head=git("rev-parse","HEAD");
+    const command=task=>spawnSync(process.execPath,[
+      join(import.meta.dirname,"shared-luna.mjs"),task
+    ],{cwd:work,encoding:"utf8",env:{...process.env,HEAD_SHA:head,
+      SCENARIO:"13c",RUNNER_TEMP:work}});
+    const first=command("snapshot-source");
+    assert.equal(first.status,0,first.stderr);
+    writeFileSync(seed,"seed-after\n");
+    const denied=command("verify-preflight");
+    assert.notEqual(denied.status,0);
+    assert.match(denied.stderr,/unexpected tracked source/);
+  }finally{rmSync(work,{recursive:true,force:true})}
+});
+test("shared paid workflow never executes Git against mutable candidate after container execution",()=>{
+  const yaml=readFileSync(join(import.meta.dirname,"../../.github/workflows/ai-cafe-luna-shared.yml"),"utf8");
+  const firstContainer=yaml.indexOf("name: Candidate installation and regression preflight");
+  const after=yaml.slice(firstContainer);
+  assert.ok(firstContainer>0);
+  assert.ok(!/git -C candidate\b/.test(after),"Host must never invoke Git against candidate after untrusted execution");
+  const mounts=yaml.match(/candidate\/\.git:\/candidate\/\.git:ro/g)||[];
+  assert.equal(mounts.length,2,"Both candidate Docker stages must make Git metadata read-only");
+  assert.ok(yaml.includes("shared-luna.mjs snapshot-source"));
+  assert.ok(yaml.includes("shared-luna.mjs verify-preflight"));
+  assert.ok(yaml.includes("shared-luna.mjs verify-source"));
+});
