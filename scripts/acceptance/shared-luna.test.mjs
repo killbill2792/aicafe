@@ -283,3 +283,12 @@ globalThis.fetch=async (url)=>{
     assert.match(spoofed.stderr,/Explicit owner launch/);
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
+
+test("trusted workflow revalidates an owner comment after untrusted setup but before key access",()=>{
+  const workflow=readFileSync(join(import.meta.dirname,"../../.github/workflows/ai-cafe-luna-shared.yml"),"utf8");
+  const at=workflow.indexOf("name: Reverify fresh owner grant and current SHA immediately before provider access");
+  const broker=workflow.indexOf("name: Start bounded trusted broker on host");
+  assert.ok(at>0&&broker>at,"Paid workflow must recheck owner/current SHA after setup and before key");
+  assert.ok(workflow.slice(at,broker).includes("node scripts/acceptance/shared-luna.mjs plan"));
+  assert.ok(workflow.includes("queue: max")&&workflow.includes("cancel-in-progress: false"));
+});
