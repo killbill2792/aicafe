@@ -190,6 +190,9 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
         {([["library",BookOpen,copy.library],["routines",Clock3,copy.routines],
           ["permissions",ShieldCheck,copy.permissions]] as const).map(([id,Icon,label])=>
           <button key={id} type="button" onClick={()=>{
+              // An active-tab click does not change the fetch dependencies.
+              // Keep its settled data and avoid an orphaned loading flag.
+              if(id===tab)return;
               if(id==="permissions"){setLoading(Boolean(mandateThreadId));setError("");}
               if(id==="routines"){setRoutinesLoading(true);setRoutineError("");}
               setTab(id);
