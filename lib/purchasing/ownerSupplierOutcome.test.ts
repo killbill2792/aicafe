@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {recordOwnerSupplierOutcome,explicitOwnerSupplierOutcome,explicitOwnerSupplierChannel} from "./ownerSupplierOutcome.server";
+import {recordOwnerSupplierOutcome,explicitOwnerSupplierOutcome,explicitOwnerSupplierChannel,authenticatedSupplierOwnerTurn} from "./ownerSupplierOutcome.server";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
 const scope={businessId:"11111111-1111-4111-8111-111111111111",
@@ -32,6 +32,20 @@ function fixture(options?:{order?:boolean;terminal?:Record<string,string>;error?
 
 describe("Task14C owner-reported outcome authority",()=>{
  beforeEach(()=>vi.clearAllMocks());
+ it("accepts a real job-backed authenticated owner turn, but not a different job or model text",()=>{
+  const owner={id:"99999999-9999-4999-8999-999999999999",role:"owner",
+    text:"The supplier accepted the PO by phone."};
+  const threadId="88888888-8888-4888-8888-888888888888";
+  const job={ownerMessageId:owner.id,threadId,status:"running"};
+  const verified={owner,ownerText:owner.text,threadId,job};
+  expect(authenticatedSupplierOwnerTurn(verified)).toBe(true);
+  expect(authenticatedSupplierOwnerTurn({...verified,job:null})).toBe(true);
+  expect(authenticatedSupplierOwnerTurn({...verified,job:{...job,ownerMessageId:input.purchaseOrderId}})).toBe(false);
+  expect(authenticatedSupplierOwnerTurn({...verified,job:{...job,threadId:input.purchaseOrderId}})).toBe(false);
+  expect(authenticatedSupplierOwnerTurn({...verified,job:{...job,status:"failed"}})).toBe(false);
+  expect(authenticatedSupplierOwnerTurn({...verified,ownerText:"The supplier accepted a different PO."})).toBe(false);
+  expect(authenticatedSupplierOwnerTurn({...verified,owner:{...owner,role:"supervisor"}})).toBe(false);
+ });
  it("writes exactly one canonical owner-scoped report and labels it owner-reported, never Gmail verified",async()=>{
   const f=fixture();
   const report=await recordOwnerSupplierOutcome(f.db,scope,input);
@@ -69,6 +83,10 @@ describe("Task14C owner-reported outcome authority",()=>{
  it("rejects unsupported/negated owner statements instead of inferring supplier acceptance",()=>{
   expect(explicitOwnerSupplierOutcome("The supplier accepted this PO by phone.","supplier_accepted")).toBe(true);
   expect(explicitOwnerSupplierOutcome("The supplier did not accept this PO.","supplier_accepted")).toBe(false);
+  expect(explicitOwnerSupplierOutcome("The supplier hasn’t accepted this PO by phone.","supplier_accepted")).toBe(false);
+  expect(explicitOwnerSupplierOutcome("The supplier hasn't accepted this PO by phone.","supplier_accepted")).toBe(false);
+  expect(explicitOwnerSupplierOutcome("The supplier may have accepted this PO by phone.","supplier_accepted")).toBe(false);
+  expect(explicitOwnerSupplierOutcome("The supplier hasn’t declined this PO by phone.","supplier_declined")).toBe(false);
   expect(explicitOwnerSupplierOutcome("Gmail says SENT.","supplier_accepted")).toBe(false);
   expect(explicitOwnerSupplierOutcome("The supplier declined this PO.","supplier_declined")).toBe(true);
   expect(explicitOwnerSupplierChannel("The supplier accepted by phone.","phone")).toBe(true);
