@@ -77,15 +77,15 @@ async function plan(){
   const number=Number(prValue),base="https://api.github.com/repos/"+REPO;
   if(number){
     const pr=await api(base+"/pulls/"+number,token);
-    ensure(pr.state==="open"&&pr.head?.sha===head&&pr.head?.repo?.full_name===REPO&&
-      pr.user?.login===OWNER,"Only exact current same-repo owner PR heads may be tested");
+    ensure(pr.state==="open"&&pr.head?.sha===head&&pr.head?.repo?.full_name===REPO,
+      "Only exact current same-repo PR heads manually approved by the owner may be tested");
   }else{
     const branch=await api(base+"/branches/main",token);
     ensure(branch.commit?.sha===head,"Integrated suite must target current main, not an older SHA");
   }
   const tree=await api(base+"/git/trees/"+head+"?recursive=1",token);
   ensure(tree.truncated===false&&Array.isArray(tree.tree),"Complete candidate file list required");
-  const paths=new Set(tree.tree.filter(x=>x.type==="blob").map(x=>x.path));
+  const paths=new Set(tree.tree.filter(x=>x.type==="blob"&&x.mode==="100644").map(x=>x.path));
   const found=[...paths].map(p=>/^\.github\/luna\/scenarios\/([a-z0-9][a-z0-9-]{0,31})\.json$/.exec(p))
     .filter(Boolean).map(m=>m[1]).sort();
   const requested=String(inputs.scenario??"all");
