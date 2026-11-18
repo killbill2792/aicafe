@@ -1,0 +1,333 @@
+"use client";
+
+import {useEffect,useRef,useState} from "react";
+import {BookOpen,Clock3,RefreshCcw,ShieldCheck,X} from "lucide-react";
+import {Link} from "@/i18n/navigation";
+import {createBrowserSupabaseClient} from "@/lib/supabase/client";
+import en from "@/messages/en.json";
+
+const copy=en.SupervisorMandateCenter;
+type Tab="library"|"routines"|"permissions";
+type Thread={id:string;title:string|null;lastMessageAt?:string|null;createdAt:string};
+type Routine={id:string;title:string;cadence:"daily"|"weekly";localTime:string;
+  status:"active"|"paused"|"revoked";weekdays:number[];timezone:string;revision:number};
+type Mandate={id:string;revision:number;capability_id:string;capability_version:number;
+  limit_kind:"count";limit_value:number;period_kind:string;staff_week_start:string|null;
+  expires_at:string;revoked_at:string|null;superseded_at:string|null;verified_at:string};
+type Challenge={challengeId:string;expiresAt:string;capabilityId:string;limitValue:number};
+type ActionResponse={challenge?:Challenge;mandate?:Mandate};
+
+const capabilityName=(id:string)=>id==="leo.goal.v1"?copy.goalName:
+  id==="olivia.staff_propose_send_schedule.v2"?copy.staffName:copy.unknownName;
+const mandateStatus=(m:Mandate,now:number)=>m.revoked_at?"revoked":
+  m.superseded_at?"superseded":Date.parse(m.expires_at)<=now?"expired":"active";
+const statusLabel=(status:string)=>status==="active"?copy.active:
+  status==="expired"?copy.expired:status==="revoked"?copy.revoked:copy.superseded;
+const humanTime=(date:string)=>new Date(date).toLocaleString();
+const validLocalExpiry=(value:string,clock:number)=>Boolean(value.trim())&&
+  Number.isFinite(new Date(value).valueOf())&&new Date(value).valueOf()>clock;
+
+export default function SupervisorMandatePanel({threadId,threads,approvals,onSelectThread,onClose}:{
+  threadId:string|null;threads:Thread[];approvals:Array<{id:string;title:string;detail:string}>;
+  onSelectThread:(id:string)=>void;onClose:()=>void;
+}){
+  const [tab,setTab]=useState<Tab>("permissions");
+  const [mandates,setMandates]=useState<Mandate[]>([]);
+  const [routines,setRoutines]=useState<Routine[]>([]);
+  const [loading,setLoading]=useState(Boolean(threadId??threads[0]?.id));
+  const [routinesLoading,setRoutinesLoading]=useState(false);
+  const [error,setError]=useState("");
+  const [routineError,setRoutineError]=useState("");
+  const [notice,setNotice]=useState("");
+  const [factor,setFactor]=useState<string|null>(null);
+  const [factorError,setFactorError]=useState(false);
+  const [expiry,setExpiry]=useState("");
+  const [code,setCode]=useState("");
+  const [challenge,setChallenge]=useState<Challenge|null>(null);
+  const [busy,setBusy]=useState(false);
+  const [now,setNow]=useState(0);
+  const [refresh,setRefresh]=useState(0);
+  const closeButton=useRef<HTMLButtonElement|null>(null);
+  const onCloseRef=useRef(onClose);
+  const mandateThreadId=threadId??threads[0]?.id??null;
+
+  useEffect(()=>{onCloseRef.current=onClose;},[onClose]);
+  useEffect(()=>{
+    closeButton.current?.focus();
+    const escape=(e:KeyboardEvent)=>{if(e.key==="Escape")onCloseRef.current();};
+    window.addEventListener("keydown",escape);
+    return()=>window.removeEventListener("keydown",escape);
+  },[]);
+  useEffect(()=>{
+    const initial=window.setTimeout(()=>setNow(Date.now()),0);
+    const tick=window.setInterval(()=>setNow(Date.now()),10_000);
+    return()=>{window.clearTimeout(initial);window.clearInterval(tick);};
+  },[]);
+
+  useEffect(()=>{
+    if(tab!=="permissions"||!mandateThreadId)return;
+    let live=true;
+    async function load(){
+      try{
+        const [response,sessionFactors]=await Promise.all([
+          fetch("/api/ai/threads/"+encodeURIComponent(mandateThreadId!)+"/mandates",
+            {credentials:"same-origin",cache:"no-store"}),
+          createBrowserSupabaseClient().auth.mfa.listFactors(),
+        ]);
+        if(!response.ok)throw new Error(response.status===401||response.status===403?
+          copy.ownerRequired:copy.permissionUnavailable);
+        const payload=await response.json() as {mandates?:Mandate[]};
+        if(!live)return;
+        if(!Array.isArray(payload.mandates))throw new Error(copy.permissionUnavailable);
+        setNow(Date.now());
+        setMandates(payload.mandates);
+        const found=sessionFactors.error?null:
+          sessionFactors.data?.phone?.find(item=>item.status==="verified")??null;
+        setFactor(found?.id??null);
+        setFactorError(Boolean(sessionFactors.error));
+      }catch(e){if(live){setError(e instanceof Error?e.message:copy.permissionUnavailable);
+        setFactor(null);setFactorError(true);}}
+      finally{if(live)setLoading(false);}
+    }
+    void load();
+    return()=>{live=false;};
+  },[tab,mandateThreadId,refresh]);
+
+  useEffect(()=>{
+    if(tab!=="routines")return;
+    let live=true;
+    void fetch("/api/ai/supervisor/routines",{credentials:"same-origin",cache:"no-store"})
+      .then(async response=>{
+        if(!response.ok)throw new Error(copy.routineUnavailable);
+        const data=await response.json() as {routines?:Routine[]};
+        if(!Array.isArray(data.routines))throw new Error(copy.routineUnavailable);
+        if(live)setRoutines(data.routines);
+      }).catch(()=>{if(live)setRoutineError(copy.routineUnavailable);})
+      .finally(()=>{if(live)setRoutinesLoading(false);});
+    return()=>{live=false;};
+  },[tab,refresh]);
+
+  async function post(body:Record<string,unknown>):Promise<ActionResponse>{
+    if(!mandateThreadId)throw new Error(copy.noThread);
+    const response=await fetch("/api/ai/threads/"+encodeURIComponent(mandateThreadId)+"/mandates",{
+      method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
+      cache:"no-store",body:JSON.stringify(body),
+    });
+    if(!response.ok)throw new Error(response.status===401||response.status===403?
+      copy.ownerRequired:response.status===409?copy.revisionConflict:copy.generalError);
+    return response.json() as Promise<ActionResponse>;
+  }
+  async function startChallenge(existing?:Mandate){
+    if(busy)return;
+    setError("");setNotice("");setChallenge(null);setCode("");
+    if(!factor){setError(copy.phoneRequired);return;}
+    if(!validLocalExpiry(expiry,Date.now())){setError(copy.chooseExpiry);return;}
+    setBusy(true);
+    try{
+      const result=await post({
+        action:"challenge",factorId:factor,limitValue:5,
+        expiresAt:new Date(expiry).toISOString(),
+        ...(existing?{mandateId:existing.id,revision:existing.revision}:{}),
+      });
+      if(!result.challenge||result.challenge.capabilityId!=="leo.goal.v1"||
+        result.challenge.limitValue!==5||Date.parse(result.challenge.expiresAt)<=Date.now())
+        throw new Error(copy.requestFailed);
+      setChallenge(result.challenge);setNotice(copy.challengeIssued);
+    }catch(e){setError(e instanceof Error&&e.message===copy.ownerRequired?copy.ownerRequired:copy.requestFailed);}
+    finally{setBusy(false);}
+  }
+  async function verify(){
+    if(!challenge||!code.trim()||busy)return;
+    if(Date.parse(challenge.expiresAt)<=Date.now()){
+      setChallenge(null);setCode("");setError(copy.challengeExpired);return;
+    }
+    setBusy(true);setError("");
+    try{
+      const result=await post({action:"verify",challengeId:challenge.challengeId,code:code.trim()});
+      if(!result.mandate||result.mandate.capability_id!=="leo.goal.v1"||
+        result.mandate.limit_value!==5||result.mandate.revoked_at||
+        Date.parse(result.mandate.expires_at)<=Date.now())
+        throw new Error(copy.verifyFailed);
+      setChallenge(null);setMandates(existing=>[
+        result.mandate!,...existing.filter(m=>m.id!==result.mandate!.id),
+      ]);
+      setNotice(copy.grantConfirmed);
+      setLoading(true);setRefresh(n=>n+1);
+    }catch(e){setError(e instanceof Error&&e.message===copy.ownerRequired?copy.ownerRequired:copy.verifyFailed);}
+    finally{setCode("");setBusy(false);}
+  }
+  async function revoke(m:Mandate){
+    if(busy)return;
+    setBusy(true);setError("");setNotice("");
+    try{
+      const result=await post({action:"revoke",mandateId:m.id,revision:m.revision});
+      if(!result.mandate||result.mandate.id!==m.id||
+        result.mandate.revision<=m.revision||!result.mandate.revoked_at)
+        throw new Error(copy.revokeFailed);
+      setMandates(rows=>rows.map(row=>row.id===m.id?result.mandate!:row));
+      setChallenge(null);setCode("");setNotice(copy.revokeConfirmed);
+      setLoading(true);setRefresh(n=>n+1);
+    }catch(e){setError(copy.revokeFailed+(e instanceof Error&&e.message===copy.revisionConflict?" "+copy.revisionConflict:""));}
+    finally{setBusy(false);}
+  }
+  const goal=mandates.find(m=>m.capability_id==="leo.goal.v1"&&
+    mandateStatus(m,now)==="active");
+  const expiredChallenge=Boolean(challenge&&Date.parse(challenge.expiresAt)<=now);
+
+  return <div className="absolute inset-0 z-40 flex justify-end">
+    <button type="button" aria-label={copy.close} onClick={onClose}
+      className="absolute inset-0 bg-fg/35"/>
+    <aside role="dialog" aria-modal="true" aria-label={copy.title}
+      className="relative z-10 flex h-full w-full max-w-[520px] flex-col border-s border-line bg-surface2 shadow-xl">
+      <header className="flex items-center justify-between border-b border-line px-4 py-3">
+        <h2 className="text-lg font-bold text-ink">{copy.title}</h2>
+        <button ref={closeButton} type="button" onClick={onClose} aria-label={copy.close}
+          className="flex h-12 w-12 items-center justify-center rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+          <X size={22} aria-hidden="true"/>
+        </button>
+      </header>
+      <nav aria-label={copy.title} className="grid grid-cols-3 gap-1 border-b border-line p-2">
+        {([["library",BookOpen,copy.library],["routines",Clock3,copy.routines],
+          ["permissions",ShieldCheck,copy.permissions]] as const).map(([id,Icon,label])=>
+          <button key={id} type="button" onClick={()=>{
+              // An active-tab click does not change the fetch dependencies.
+              // Keep its settled data and avoid an orphaned loading flag.
+              if(id===tab)return;
+              if(id==="permissions"){setLoading(Boolean(mandateThreadId));setError("");}
+              if(id==="routines"){setRoutinesLoading(true);setRoutineError("");}
+              setTab(id);
+            }}
+            aria-current={tab===id?"page":undefined}
+            className={"flex min-h-12 items-center justify-center gap-1.5 rounded-xl px-2 text-[14px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
+              (tab===id?"bg-pos-soft text-ink":"text-ink-muted hover:bg-surface")}>
+            <Icon size={17} aria-hidden="true"/><span>{label}</span>
+          </button>)}
+      </nav>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4" data-supervisor-controls={tab}>
+        {tab==="library"&&<section aria-label={copy.savedChats} className="space-y-2">
+          <h3 className="font-bold text-ink">{copy.savedChats}</h3>
+          {threads.length===0&&<p className="text-sm text-ink-muted">{copy.emptyChats}</p>}
+          {threads.map(thread=><button key={thread.id} type="button"
+            onClick={()=>{onSelectThread(thread.id);onClose();}}
+            aria-current={thread.id===threadId?"page":undefined}
+            className="block min-h-12 w-full rounded-xl border border-line bg-surface px-3 py-2 text-start text-[15px] font-medium text-ink hover:bg-pos-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+            {thread.title||copy.savedChats}
+          </button>)}
+        </section>}
+        {tab==="routines"&&<section aria-label={copy.routineTitle} className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-bold text-ink">{copy.routineTitle}</h3>
+            <button type="button" aria-label={copy.refresh} onClick={()=>{setRoutinesLoading(true);setRoutineError("");setRefresh(n=>n+1);}}
+              className="flex h-12 w-12 items-center justify-center rounded-lg border border-line">
+              <RefreshCcw size={17} aria-hidden="true"/>
+            </button>
+          </div>
+          <p className="text-sm text-ink-muted">{copy.routineHelp}</p>
+          {routinesLoading&&<p role="status" className="text-sm">{copy.loading}</p>}
+          {routineError&&<p role="alert" className="text-sm text-neg">{routineError}</p>}
+          {!routinesLoading&&!routineError&&routines.length===0&&<p>{copy.emptyRoutines}</p>}
+          {!routinesLoading&&!routineError&&routines.map(r=>
+            <article key={r.id} className="space-y-1 rounded-xl border border-line bg-surface p-3">
+              <div className="flex items-center justify-between gap-2">
+                <strong className="text-[15px]">{r.title}</strong>
+                <span className="text-xs text-ink-muted">{r.status}</span>
+              </div>
+              <p className="text-sm text-ink-muted">{r.cadence} · {r.localTime} · {r.timezone}</p>
+            </article>)}
+        </section>}
+        {tab==="permissions"&&<section aria-label={copy.permissionTitle} className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-bold text-ink">{copy.permissionTitle}</h3>
+            <button type="button" aria-label={copy.refresh} onClick={()=>{setLoading(Boolean(mandateThreadId));setError("");setRefresh(n=>n+1);}}
+              disabled={busy}
+              className="flex h-12 w-12 items-center justify-center rounded-lg border border-line disabled:opacity-50">
+              <RefreshCcw size={17} aria-hidden="true"/>
+            </button>
+          </div>
+          <p className="text-sm text-ink-muted">{copy.permissionHelp}</p>
+          <section aria-label={copy.oneTimeTitle} className="space-y-2 rounded-xl border border-line bg-surface p-3">
+            <h4 className="text-sm font-semibold">{copy.oneTimeTitle}</h4>
+            <p className="text-sm text-ink-muted">{copy.oneTimeHelp}</p>
+            {approvals.length===0?<p className="text-sm text-ink-muted">{copy.oneTimeEmpty}</p>:
+              approvals.map(a=><p key={a.id} className="text-sm">
+                <strong>{a.title}</strong> — {a.detail}
+              </p>)}
+          </section>
+          {!mandateThreadId&&<p role="status">{copy.noThread}</p>}
+          {loading&&<p role="status" className="text-sm">{copy.loading}</p>}
+          {error&&<p role="alert" className="rounded-lg bg-neg-soft p-3 text-sm text-neg">{error}</p>}
+          {notice&&<p role="status" className="rounded-lg bg-pos-soft p-3 text-sm text-ink">{notice}</p>}
+          {!loading&&!error&&mandateThreadId&&mandates.length===0&&
+            <p className="text-sm text-ink-muted">{copy.emptyPermissions}</p>}
+          {!loading&&!error&&mandates.map(m=>{
+            const status=mandateStatus(m,now);
+            return <article key={m.id+":"+m.revision}
+              className="space-y-2 rounded-xl border border-line bg-surface p-3">
+              <div className="flex items-center justify-between gap-2">
+                <strong className="text-[15px]">{capabilityName(m.capability_id)}</strong>
+                <span className="text-xs font-semibold text-ink-muted">{statusLabel(status)}</span>
+              </div>
+              <p className="text-sm text-ink-muted">
+                {copy.limit}: {m.limit_value} {m.period_kind==="cafe_day"?copy.goalDaily:copy.staffRecipients}
+              </p>
+              {m.staff_week_start&&<p className="text-sm text-ink-muted">{copy.week}: {m.staff_week_start}</p>}
+              <p className="text-sm text-ink-muted">{copy.expires}: {humanTime(m.expires_at)}</p>
+              {status==="active"&&<div className="flex flex-wrap gap-2">
+                {m.capability_id==="leo.goal.v1"&&<button type="button"
+                  onClick={()=>{setChallenge(null);setCode("");setNotice(copy.chooseExpiry);}}
+                  className="min-h-12 rounded-xl border border-line px-3 text-sm font-semibold">
+                  {copy.reviseGoal}
+                </button>}
+                <button type="button" disabled={busy} onClick={()=>void revoke(m)}
+                  className="min-h-12 rounded-xl border border-line px-3 text-sm font-semibold disabled:opacity-40">
+                  {copy.revoke}
+                </button>
+              </div>}
+            </article>;
+          })}
+          {mandateThreadId&&!loading&&!error&&<div className="space-y-3 rounded-xl border border-line bg-surface p-3">
+            <h4 className="font-semibold">{goal?copy.reviseGoal:copy.newGoal}</h4>
+            <p className="text-sm text-ink-muted">5 {copy.goalDaily}</p>
+            {factorError&&<p className="text-sm text-neg">{copy.factorUnavailable}</p>}
+            {!factor&&<p className="text-sm text-ink-muted">{copy.phoneRequired}</p>}
+            {factor&&<label className="block space-y-1 text-sm font-medium">
+              <span>{copy.chooseExpiry}</span>
+              <input type="datetime-local" value={expiry}
+                onChange={e=>setExpiry(e.target.value)}
+                className="min-h-12 w-full rounded-xl border border-line bg-surface2 p-3 text-base"/>
+            </label>}
+            {factor&&!challenge&&<button type="button" disabled={busy||!validLocalExpiry(expiry,now)}
+              onClick={()=>void startChallenge(goal)}
+              className="min-h-12 rounded-xl bg-accent px-4 text-sm font-semibold text-on-accent disabled:opacity-40">
+              {copy.requestCode}
+            </button>}
+            {factor&&challenge&&<div className="space-y-2">
+              <p className="text-sm text-ink-muted">{copy.challengeExpires}: {humanTime(challenge.expiresAt)}</p>
+              {expiredChallenge?<p role="alert" className="text-sm text-neg">{copy.challengeExpired}</p>:
+                <label className="block space-y-1 text-sm font-medium">
+                  <span>{copy.code}</span>
+                  <input type="text" inputMode="numeric" autoComplete="one-time-code"
+                    value={code} maxLength={32} onChange={e=>setCode(e.target.value)}
+                    className="min-h-12 w-full rounded-xl border border-line bg-surface2 p-3 text-base"/>
+                </label>}
+              {!expiredChallenge&&<button type="button" disabled={busy||!code.trim()}
+                onClick={()=>void verify()}
+                className="min-h-12 rounded-xl bg-accent px-4 text-sm font-semibold text-on-accent disabled:opacity-40">
+                {copy.verify}
+              </button>}
+              <button type="button" disabled={busy} onClick={()=>{setChallenge(null);setCode("");}}
+                className="min-h-12 rounded-xl border border-line px-4 text-sm font-semibold disabled:opacity-40">
+                {copy.requestCode}
+              </button>
+            </div>}
+          </div>}
+          <p className="text-sm text-ink-muted">{copy.staffHelp}</p>
+          <Link href="/staff" className="inline-flex min-h-12 items-center rounded-xl border border-line px-4 text-sm font-semibold text-ink">
+            {copy.staffGrant}
+          </Link>
+          <p className="text-sm text-ink-muted">{copy.notUnlimited}</p>
+        </section>}
+      </div>
+    </aside>
+  </div>;
+}

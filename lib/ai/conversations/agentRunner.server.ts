@@ -182,6 +182,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(external?{verifiedReadClient:p.externalClient}: {})};
     let selectedContentSha256:string|null=null;
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
+      readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
       readEconomics:async()=>readSupervisorEconomics(await getDb(),scope.businessId,identity.asOf),
