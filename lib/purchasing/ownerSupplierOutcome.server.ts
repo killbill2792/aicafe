@@ -72,7 +72,10 @@ export function explicitOwnerSupplierChannel(text:string,channel:SupplierOutcome
  return signals[channel].test(text);
 }
 export function explicitOwnerSupplierOutcome(text:string,outcome:SupplierOutcomeInput["outcome"]):boolean{
- const t=text.trim().toLowerCase();
+ // Normalize Unicode smart quotes and full-width apostrophes before
+ // checking a source report. "hasn’t accepted" must never become accepted.
+ const t=text.trim().toLowerCase().normalize("NFKC")
+   .replace(/[\u2018\u2019\u02bc\uff07]/g,"'").replace(/\s+/g," ");
  const patterns:Record<SupplierOutcomeInput["outcome"],RegExp>={
    supplier_accepted:/\b(?:accepted|accepts|agreed to fulfill|agreed to supply)\b/i,
    supplier_declined:/\b(?:declin(?:ed|es)?|reject(?:ed|s)?|refus(?:ed|es)?)\b/i,
@@ -86,11 +89,10 @@ export function explicitOwnerSupplierOutcome(text:string,outcome:SupplierOutcome
    !/\b(?:supplier|vendor|purchase order|po)\b/i.test(t))return false;
  if((outcome==="supplier_accepted"||outcome==="supplier_declined")&&
    /\?/.test(t))return false;
- if(outcome==="supplier_accepted"&&
-   /\b(?:not|never|no|didn't|hasn't|haven't|wasn't|isn't)\b.{0,45}\b(?:accept(?:ed|s)?|agreed|confirm(?:ed|s)?|approv(?:ed|es)?)\b/i.test(t))
-   return false;
- if(outcome==="supplier_declined"&&
-   /\b(?:not|never|no|didn't|hasn't|wasn't)\b.{0,45}\b(?:declin(?:ed|es)?|reject(?:ed|s)?|refus(?:ed|es)?)\b/i.test(t))
+ // Negated, hypothetical, and unresolved statements are not terminal
+ // owner assertions. Fail closed instead of making an irreversible report.
+ const uncertain=/\b(?:not|never|no|didn't|doesn't|hasn't|haven't|wasn't|isn't|won't|wouldn't|can't|cannot|don't know|not sure|maybe|perhaps|might|may|possibly|pending|awaiting|uncertain|unconfirmed)\b.{0,75}\b(?:accepted|accepts|agreed|declined|reject(?:ed|s)?|refus(?:ed|es)?)\b/i;
+ if((outcome==="supplier_accepted"||outcome==="supplier_declined")&&uncertain.test(t))
    return false;
  return true;
 }
