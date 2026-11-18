@@ -1,6 +1,6 @@
 // Trusted host only. This failure diagnostic is never an acceptance receipt.
-import {constants,openSync,fstatSync,readFileSync,closeSync,writeFileSync} from "node:fs";
-import {join,resolve} from "node:path";
+import {constants,openSync,fstatSync,readFileSync,closeSync,writeFileSync,realpathSync} from "node:fs";
+import {join} from "node:path";
 import {pathToFileURL} from "node:url";
 import {MAX_CALLS,MAX_RESERVATION_MICROS,safePolicyDenial,safeProviderRejection} from "./task14b-broker.mjs";
 
@@ -60,7 +60,7 @@ export function readFailureAudit(file,head){
   }catch(e){return failed(head,e?.code==="ENOENT"?"missing":"invalid")}
   finally{if(fd!==undefined)closeSync(fd)}
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href){
   const dir=process.env.RUNNER_TEMP,head=process.env.HEAD_SHA;
   if(!dir||!dir.startsWith("/")||!shaRe.test(head??"")||process.env.GITHUB_RUN_ATTEMPT!=="1")
     throw Error("Invalid trusted failure diagnostic context");
