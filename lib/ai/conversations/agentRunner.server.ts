@@ -24,7 +24,7 @@ import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
 import {proposeApprovedSupplierEmail} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
-import {recordOwnerSupplierOutcome,authenticatedSupplierOwnerTurn} from "@/lib/purchasing/ownerSupplierOutcome.server";
+import {recordOwnerSupplierOutcome,authenticatedSupplierOwnerTurn,explicitSingleOwnerPurchaseOrder} from "@/lib/purchasing/ownerSupplierOutcome.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -277,14 +277,14 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           const {client}=await simulationOwnerReader(proposalScope);
           // An explicit PO identifier always wins over a model-selected one.
           // An unrelated UUID must never be silently interpreted as "this PO".
-          const explicitIds=p.ownerText.match(
-            /[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/gi)??[];
-          if(explicitIds.length>0&&!explicitIds.some(value=>
-             value.toLowerCase()===input.purchaseOrderId.toLowerCase()))
-            throw new ToolError("validation","The owner's PO identifier does not match this report.");
-          // A vague "this PO" cannot authorize an arbitrary model-selected
-          // order when the owner has more than one unresolved approved PO.
-          if(!p.ownerText.toLowerCase().includes(input.purchaseOrderId.toLowerCase())){
+          const explicitPo=explicitSingleOwnerPurchaseOrder(
+            p.ownerText,input.purchaseOrderId);
+          if(explicitPo===false)
+            throw new ToolError("validation",
+              "This owner message names multiple or mismatched purchase orders; report one exact PO at a time.");
+          // Without an explicit ID, require independently verified ONE
+          // approved PO, never a guessed model-selected target.
+          if(explicitPo===null){
             const candidates=await client.from("purchase_orders").select("id")
               .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
               .eq("status","approved_for_ordering").limit(2);
