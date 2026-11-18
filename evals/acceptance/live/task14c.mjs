@@ -44,7 +44,8 @@ async function createThread(context){
  if(!/^[0-9a-f-]{36}$/i.test(data.thread?.id??""))fail("thread_identity_missing");
  return data.thread.id;
 }
-async function ownerTurn(page,thread,text){
+async function ownerTurn(page,thread,text,phase){
+ if(!["prepare_gmail","record_owner_outcome"].includes(phase))fail("invalid_turn_phase");
  const clientMessageId=randomUUID();
  const result=await page.evaluate(async({thread,text,clientMessageId})=>{
   const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),180000);
@@ -77,7 +78,8 @@ async function ownerTurn(page,thread,text){
    await reader.cancel().catch(()=>{});
    return {names,done,error:error??(done?null:"missing_completed_turn"),
     diagnosticStage,diagnosticEndReason,diagnosticModelCalls};
-  }finally{clearTimeout(timer)}
+  }catch{return {names,done,error:"transport_failed",diagnosticStage,diagnosticEndReason,diagnosticModelCalls}}
+  finally{clearTimeout(timer)}
  },{thread,text,clientMessageId});
  if(result.error||result.done?.endReason!=="complete"||
     !/^[0-9a-f-]{36}$/i.test(result.done?.reply?.id??"")){
@@ -89,7 +91,7 @@ async function ownerTurn(page,thread,text){
    endReason!=="unknown"&&endReason!=="complete"?endReason:"model_incomplete";
   const calls=result.done?.usage?.modelCalls??result.diagnosticModelCalls;
   console.log("task14c_safe_model_failure",JSON.stringify({
-   code,endReason,stage:["setup","model","persist","finish"].includes(result.diagnosticStage)?
+   phase,code,endReason,stage:["setup","model","persist","finish"].includes(result.diagnosticStage)?
      result.diagnosticStage:result.done?"completed_frame":"unknown",
    calls:Number.isSafeInteger(calls)&&calls>=0?calls:null,
    tools:result.names.filter(n=>[
@@ -192,7 +194,7 @@ async function main(){
    "This existing saved purchase order "+id.po+" is already approved internally. "+
    "Please read the saved supplier order and its verified Gmail contact, "+
    "then PREPARE a separate exact Gmail send approval for me. Do not send "+
-   "anything yet and do not create a new purchase order.");
+   "anything yet and do not create a new purchase order.","prepare_gmail");
   const required=["get_supplier_purchase_orders","propose_supplier_vendor_email"];
   let cursor=-1;for(const name of required){
    const at=turn.names.indexOf(name,cursor+1);
@@ -272,7 +274,7 @@ async function main(){
     " by phone today. I am explicitly reporting that supplier outcome as the owner. "+
     "Please save this as an owner-reported phone outcome for this exact PO and "+
     "do not send the prepared Gmail draft. Copy my complete message verbatim as the report note.";
-  const outcomeTurn=await ownerTurn(connection.page,thread,ownerReport);
+  const outcomeTurn=await ownerTurn(connection.page,thread,ownerReport,"record_owner_outcome");
   const outcomeRequired=["get_supplier_purchase_orders","record_supplier_order_outcome"];
   cursor=-1;for(const name of outcomeRequired){
     const at=outcomeTurn.names.indexOf(name,cursor+1);
