@@ -1,0 +1,39 @@
+# No provider key. Every feature PR can change its own scenario data without
+# editing or separately merging the trusted paid workflow.
+name: AI CAFE Luna Scenario Integrity (No Provider Spend)
+on:
+  pull_request:
+    paths:
+      - '.github/luna/scenarios/**'
+      - 'scripts/acceptance/shared-luna*.mjs'
+      - 'scripts/acceptance/luna-attest-*.mjs'
+      - '.github/workflows/ai-cafe-luna-*.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/luna/scenarios/**'
+      - 'scripts/acceptance/shared-luna*.mjs'
+      - 'scripts/acceptance/luna-attest-*.mjs'
+      - '.github/workflows/ai-cafe-luna-*.yml'
+permissions:
+  contents: read
+jobs:
+  integrity:
+    name: Source/scenario security invariants (zero Luna calls)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check trusted host scripts parse
+        run: |
+          node --check scripts/acceptance/shared-luna.mjs
+          node --check scripts/acceptance/luna-attest-13c.mjs
+          node --check scripts/acceptance/luna-attest-14b.mjs
+          node --check scripts/acceptance/luna-attest-13d.mjs
+      - name: Run fail-closed declarative scenario and one-shot replay tests
+        run: node --test scripts/acceptance/shared-luna.test.mjs
+      - name: Check unchanged key-isolated provider broker denial logic
+        run: node --test scripts/acceptance/task14b-broker.test.mjs
