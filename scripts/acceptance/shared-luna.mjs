@@ -4,7 +4,7 @@
  * disposable candidate container; only the trusted host runs "plan"/"attest".
  * No PR changes or arbitrary script parameters can grant provider credentials.
  */
-import {readFileSync,writeFileSync,appendFileSync,copyFileSync,mkdirSync,existsSync,openSync,closeSync} from "node:fs";
+import {readFileSync,writeFileSync,appendFileSync,copyFileSync,mkdirSync,existsSync,openSync,closeSync,readdirSync,lstatSync} from "node:fs";
 import {join,resolve} from "node:path";
 import {spawn,spawnSync} from "node:child_process";
 const REPO="killbill2792/aicafe", OWNER="killbill2792";
@@ -57,6 +57,21 @@ export function readScenario(root,id){
   const p=resolve(root,manifestPath(id));
   const m=JSON.parse(readFileSync(p,"utf8"));
   return validateScenario(m,id);
+}
+function validateAll(){
+  const root=process.cwd(),folder=resolve(root,".github/luna/scenarios");
+  const files=readdirSync(folder);
+  ensure(files.length>=1&&files.length<=20,"Scenario inventory must be nonempty and budget bounded");
+  for(const filename of files){
+    ensure(filename.endsWith(".json")&&idRe.test(filename.slice(0,-5)),
+      "Invalid registered scenario filename");
+    const id=filename.slice(0,-5),filepath=resolve(folder,filename);
+    ensure(lstatSync(filepath).isFile(),"Scenario manifest cannot be a symlink or directory");
+    const scenario=readScenario(root,id);
+    ensure(existsSync(resolve(root,scenario.entrypoint)),
+      "Registered live scenario executable missing: "+id);
+    console.log("Valid no-secret scenario: "+id);
+  }
 }
 async function api(url,token){
   const response=await fetch(url,{headers:{Authorization:"Bearer "+token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}});
@@ -229,5 +244,6 @@ if(process.argv[1]&&import.meta.url===new URL("file://"+resolve(process.argv[1])
   if(cmd==="plan")await plan();
   else if(cmd==="candidate")await candidate();
   else if(cmd==="attest")attest();
+  else if(cmd==="validate-all")validateAll();
   else throw Error("Unknown trusted Luna command");
 }
