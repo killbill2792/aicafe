@@ -217,7 +217,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C candidate rev-parse HEAD)" = "$HEAD_SHA"
-          git -C candidate diff --exit-code HEAD -- 
+          git -C candidate diff --exit-code HEAD --
           node coordinator/scripts/acceptance/shared-luna.mjs attest
       - name: Upload only the sanitized independent verdict
         if: always()
