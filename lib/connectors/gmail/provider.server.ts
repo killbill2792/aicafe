@@ -1,7 +1,7 @@
 import "server-only";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {decryptToken,encryptToken} from "@/lib/connectors/crypto.server";
-import {getConnectorAccount,assertGmailCapability,type ConnectorOwner,type ConnectorOperation,type ConnectorAccount} from "@/lib/connectors/registry.server";
+import {getConnectorAccount,assertGmailCapability,allowsGmail,type ConnectorOwner,type ConnectorOperation,type ConnectorAccount} from "@/lib/connectors/registry.server";
 import {tokenRequest,GOOGLE_MODIFY_SCOPE} from "./oauth.server";
 
 export type GmailAuthorized={account:ConnectorAccount;token:string};
@@ -15,6 +15,11 @@ export async function authorizedGmail(scope:ConnectorOwner,operation:ConnectorOp
   const expiry=Date.parse(secret.token_expires_at);
   if(!Number.isFinite(expiry))throw new Error("gmail_reconnect_required");
   if(expiry>Date.now()+60000)return {account,token:decryptToken(secret.access_token_enc)};
+  // Refresh is itself a Google operation: a stale worker or revoked owner
+  // must not refresh a token just because it read credentials earlier.
+  const beforeRefresh=await getConnectorAccount(scope);
+  if(beforeRefresh?.id!==account.id||beforeRefresh.generation!==account.generation||
+     !allowsGmail(beforeRefresh,operation))throw new Error("gmail_permission_changed");
   let refreshed;
   try{refreshed=await tokenRequest({grant_type:"refresh_token",refresh_token:decryptToken(secret.refresh_token_enc)});}
   catch(error){
@@ -33,7 +38,7 @@ export async function authorizedGmail(scope:ConnectorOwner,operation:ConnectorOp
   if(updated.error||!updated.data)throw new Error("gmail_refresh_conflict");
   // A concurrent owner disconnect may have invalidated the refreshed credentials.
   const still=await getConnectorAccount(scope);
-  if(still?.id!==account.id||still?.generation!==account.generation||still.status!=="active")
+  if(still?.id!==account.id||still?.generation!==account.generation||!allowsGmail(still,operation))
     throw new Error("gmail_connection_changed");
   return {account,token:refreshed.access_token};
 }
@@ -60,6 +65,25 @@ export async function gmailApi(token:string,path:string,init?:{method?:"GET"|"PO
     chunks.push(value);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+/** The source may be revoked while an async Gmail list, attachment or receipt
+ * is being fetched. Check the owner/café/account generation and exact operation
+ * before EACH new provider request, not only when the model selected the tool. */
+async function scopedGmailApi(scope:ConnectorOwner,account:ConnectorAccount,
+ operation:ConnectorOperation,token:string,path:string,
+ init?:{method?:"GET"|"POST"|"PUT"|"DELETE";body?:unknown}):Promise<unknown>{
+ const assertCurrent=async()=>{
+  const live=await getConnectorAccount(scope);
+  if(live?.id!==account.id||live.generation!==account.generation||!allowsGmail(live,operation))
+    throw new Error("gmail_permission_changed");
+ };
+ await assertCurrent();
+ const response=await gmailApi(token,path,init);
+ // A read that completed after revocation is never returned to the model.
+ // Writes already accepted by the provider remain subject to durable receipt
+ // reconciliation; do not erase an ambiguous provider effect.
+ if(!init?.method||init.method==="GET")await assertCurrent();
+ return response;
 }
 export type GmailMessage={id:string;threadId?:string;snippet?:string;internalDate?:string;
   payload?:{headers?:Array<{name:string;value:string}>;mimeType?:string;body?:{data?:string;size?:number};
@@ -97,9 +121,9 @@ export function safeMessage(message:GmailMessage){
 export async function gmailSearch(scope:ConnectorOwner,query:string,limit=12){
   const {token,account}=await authorizedGmail(scope,"read");
   const params=new URLSearchParams({maxResults:String(Math.max(1,Math.min(20,limit))),q:query.slice(0,200)});
-  const list=await gmailApi(token,"/messages?"+params) as {messages?:Array<{id:string;threadId:string}>;resultSizeEstimate?:number};
+  const list=await scopedGmailApi(scope,account,"read",token,"/messages?"+params) as {messages?:Array<{id:string;threadId:string}>;resultSizeEstimate?:number};
   const messages=await Promise.all((list.messages??[]).slice(0,20).map(async m=>{
-    const msg=await gmailApi(token,"/messages/"+encodeURIComponent(m.id)+"?format=full") as GmailMessage;
+    const msg=await scopedGmailApi(scope,account,"read",token,"/messages/"+encodeURIComponent(m.id)+"?format=full") as GmailMessage;
     return safeMessage(msg);
   }));
   return {account:account.email,source:"gmail",asOf:new Date().toISOString(),messages:messages.map(m=>({
@@ -107,7 +131,7 @@ export async function gmailSearch(scope:ConnectorOwner,query:string,limit=12){
 }
 export async function gmailListLabels(scope:ConnectorOwner){
   const {token,account}=await authorizedGmail(scope,"read");
-  const response=await gmailApi(token,"/labels") as {
+  const response=await scopedGmailApi(scope,account,"read",token,"/labels") as {
     labels?:Array<{id?:string;name?:string;type?:string;labelListVisibility?:string}>};
   const labels=(response.labels??[]).filter(l=>typeof l.id==="string"&&typeof l.name==="string")
     .slice(0,200).map(l=>({id:l.id!,name:l.name!.slice(0,160),type:l.type??"user"}));
@@ -116,13 +140,13 @@ export async function gmailListLabels(scope:ConnectorOwner){
 export async function gmailRead(scope:ConnectorOwner,messageId:string){
   if(!/^[a-zA-Z0-9_-]{8,100}$/.test(messageId))throw new Error("gmail_invalid_message_id");
   const {token,account}=await authorizedGmail(scope,"read");
-  const message=await gmailApi(token,"/messages/"+encodeURIComponent(messageId)+"?format=full") as GmailMessage;
+  const message=await scopedGmailApi(scope,account,"read",token,"/messages/"+encodeURIComponent(messageId)+"?format=full") as GmailMessage;
   return {account:account.email,source:"gmail",asOf:new Date().toISOString(),message:safeMessage(message)};
 }
 export async function gmailReadThread(scope:ConnectorOwner,threadId:string){
   if(!/^[a-zA-Z0-9_-]{8,100}$/.test(threadId))throw new Error("gmail_invalid_thread_id");
   const {token,account}=await authorizedGmail(scope,"read");
-  const result=await gmailApi(token,"/threads/"+encodeURIComponent(threadId)+"?format=full") as {id?:string;messages?:GmailMessage[]};
+  const result=await scopedGmailApi(scope,account,"read",token,"/threads/"+encodeURIComponent(threadId)+"?format=full") as {id?:string;messages?:GmailMessage[]};
   if(result.id!==threadId||!Array.isArray(result.messages))throw new Error("gmail_thread_unavailable");
   return {source:"gmail",account:account.email,asOf:new Date().toISOString(),threadId,
     messages:result.messages.slice(-12).map(safeMessage)};
@@ -131,7 +155,7 @@ export async function gmailReadAttachment(scope:ConnectorOwner,messageId:string,
   if(!/^[a-zA-Z0-9_-]{8,100}$/.test(messageId)||!/^[a-zA-Z0-9_-]{8,200}$/.test(attachmentId))
     throw new Error("gmail_invalid_attachment_id");
   const {token,account}=await authorizedGmail(scope,"read");
-  const message=await gmailApi(token,"/messages/"+encodeURIComponent(messageId)+"?format=full") as GmailMessage;
+  const message=await scopedGmailApi(scope,account,"read",token,"/messages/"+encodeURIComponent(messageId)+"?format=full") as GmailMessage;
   const parts:Array<{mimeType?:string;filename?:string;body?:{attachmentId?:string;size?:number};parts?:unknown[]}>= [];
   const walk=(node:NonNullable<GmailMessage["payload"]>,depth:number)=>{
     if(depth>6||parts.length>60)return;
@@ -144,7 +168,7 @@ export async function gmailReadAttachment(scope:ConnectorOwner,messageId:string,
     throw new Error("gmail_attachment_type_requires_file_capability");
   if(!Number.isFinite(match.body?.size)||(match.body?.size??0)>65536)
     throw new Error("gmail_attachment_too_large");
-  const payload=await gmailApi(token,"/messages/"+encodeURIComponent(messageId)+
+  const payload=await scopedGmailApi(scope,account,"read",token,"/messages/"+encodeURIComponent(messageId)+
     "/attachments/"+encodeURIComponent(attachmentId)) as {data?:string;size?:number};
   if(!payload.data||typeof payload.size!=="number"||!Number.isFinite(payload.size)||payload.size>65536)
     throw new Error("gmail_attachment_unavailable");
@@ -196,18 +220,26 @@ function labelChanges(e:GmailEffect):{addLabelIds:string[];removeLabelIds:string
 }
 function headersOf(msg:GmailMessage){return Object.fromEntries((msg.payload?.headers??[])
   .map(h=>[h.name.toLowerCase(),h.value]));}
-async function verifyReceipt(token:string,e:GmailEffect,returnedId:string,rfc:string|null):Promise<{messageId:string;threadId:string|null}>{
+/** Receipt verification is READ-ONLY. Once a provider accepts a write, a
+ * later operation switch must not erase that fact or reopen send authority. */
+async function verifyReceipt(scope:ConnectorOwner,account:ConnectorAccount,e:GmailEffect,returnedId:string,rfc:string|null):Promise<{messageId:string;threadId:string|null}>{
+  const current=await authorizedGmail(scope,"read");
+  if(current.account.id!==account.id||
+    current.account.provider_subject!==account.provider_subject||
+    current.account.email.toLowerCase()!==account.email.toLowerCase())
+    throw new Error("gmail_receipt_mailbox_changed");
+  const token=current.token,readAccount=current.account;
   if(e.operation==="create_label"){
-    const label=await gmailApi(token,"/labels/"+encodeURIComponent(returnedId)) as {id?:string;name?:string};
+    const label=await scopedGmailApi(scope,readAccount,"read",token,"/labels/"+encodeURIComponent(returnedId)) as {id?:string;name?:string};
     if(label.id!==returnedId||label.name!==e.labelName)throw new Error("gmail_label_receipt_unverified");
     return {messageId:returnedId,threadId:null};
   }
   if(e.operation==="draft"){
-    const draft=await gmailApi(token,"/drafts/"+encodeURIComponent(returnedId)) as {id?:string;message?:GmailMessage};
+    const draft=await scopedGmailApi(scope,readAccount,"read",token,"/drafts/"+encodeURIComponent(returnedId)) as {id?:string;message?:GmailMessage};
     if(draft.id!==returnedId||!draft.message?.id)throw new Error("gmail_draft_receipt_unverified");
     return {messageId:returnedId,threadId:draft.message.threadId??null};
   }
-  const msg=await gmailApi(token,"/messages/"+encodeURIComponent(returnedId)+"?format=metadata") as GmailMessage;
+  const msg=await scopedGmailApi(scope,readAccount,"read",token,"/messages/"+encodeURIComponent(returnedId)+"?format=metadata") as GmailMessage;
   if(msg.id!==returnedId)throw new Error("gmail_message_receipt_unverified");
   if(e.operation==="send"&&(!msg.labelIds?.includes("SENT")||headersOf(msg)["message-id"]!==rfc))
     throw new Error("gmail_send_receipt_unverified");
@@ -251,7 +283,8 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
   const rfc=effect.operation==="send"?gmailRfcId(proposalId,effect.from):null;
   const receipt={account_id:account.id,business_id:scope.businessId,owner_user_id:scope.ownerUserId,
     proposal_id:proposalId,effect_hash:effectHash,account_generation:account.generation,
-    operation:effect.operation,rfc_message_id:rfc,state:"pending"};
+    operation:effect.operation,rfc_message_id:rfc,
+    account_provider_subject:account.provider_subject,state:"pending"};
   const inserted=await db.from("connector_provider_receipts").insert(receipt).select("id").maybeSingle();
   if(inserted.error||!inserted.data){
     // A previously reserved send might already have reached Gmail. Never invoke it again.
@@ -259,7 +292,7 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
   }
   const ensureLive=async()=>{
     const live=await getConnectorAccount(scope);
-    if(live?.status!=="active"||live.id!==account.id||live.generation!==account.generation)
+    if(live?.id!==account.id||live.generation!==account.generation||!allowsGmail(live,required))
       throw new Error(effect.operation==="send"?
         "gmail_connection_revoked_before_send":"gmail_connection_revoked_before_effect");
   };
@@ -268,7 +301,7 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
   let verifiedThreadId:string|null=null;
   if(effect.operation==="send"||effect.operation==="draft"){
     if(effect.messageId){
-      const source=await gmailApi(token,"/messages/"+encodeURIComponent(effect.messageId)+"?format=metadata") as GmailMessage;
+      const source=await scopedGmailApi(scope,account,required,token,"/messages/"+encodeURIComponent(effect.messageId)+"?format=metadata") as GmailMessage;
       if(!source.id||!source.threadId)throw new Error("gmail_reply_source_unavailable");
       if(effect.threadId&&effect.threadId!==source.threadId)throw new Error("gmail_reply_thread_mismatch");
       verifiedThreadId=source.threadId;
@@ -279,28 +312,35 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     const threadId=effect.messageId?verifiedThreadId:effect.threadId;
     if(effect.operation==="send"){
       await ensureLive();
-      response=await gmailApi(token,"/messages/send",{method:"POST",body:{
+      response=await scopedGmailApi(scope,account,required,token,"/messages/send",{method:"POST",body:{
         raw,...(threadId?{threadId}:{})}}) as {id?:string;threadId?:string};
     }else{
       await ensureLive();
-      response=await gmailApi(token,"/drafts",{method:"POST",body:{message:{
+      response=await scopedGmailApi(scope,account,required,token,"/drafts",{method:"POST",body:{message:{
         raw,...(threadId?{threadId}:{})}}}) as {id?:string;threadId?:string};
     }
   }else if(effect.operation==="create_label"){
     await ensureLive();
-    response=await gmailApi(token,"/labels",{method:"POST",body:{
+    response=await scopedGmailApi(scope,account,required,token,"/labels",{method:"POST",body:{
       name:effect.labelName,labelListVisibility:"labelShow",messageListVisibility:"show"}}) as {id?:string};
   }else{
     if(!effect.messageId)throw new Error("gmail_message_required");
     await ensureLive();
     const id=encodeURIComponent(effect.messageId);
-    if(effect.operation==="trash")response=await gmailApi(token,"/messages/"+id+"/trash",{method:"POST"}) as {id?:string};
-    else if(effect.operation==="restore")response=await gmailApi(token,"/messages/"+id+"/untrash",{method:"POST"}) as {id?:string};
-    else response=await gmailApi(token,"/messages/"+id+"/modify",{method:"POST",body:labelChanges(effect)}) as {id?:string};
+    if(effect.operation==="trash")response=await scopedGmailApi(scope,account,required,token,"/messages/"+id+"/trash",{method:"POST"}) as {id?:string};
+    else if(effect.operation==="restore")response=await scopedGmailApi(scope,account,required,token,"/messages/"+id+"/untrash",{method:"POST"}) as {id?:string};
+    else response=await scopedGmailApi(scope,account,required,token,"/messages/"+id+"/modify",{method:"POST",body:labelChanges(effect)}) as {id?:string};
   }
   const returnedId=response?.id??"";
   if(!returnedId)throw new Error("gmail_provider_receipt_missing");
-  const checked=await verifyReceipt(token,effect,returnedId,rfc);
+  // Provider may already have accepted this write. Persist its ID before
+  // permission-sensitive readback so a send-in-flight revocation is recoverable.
+  const accepted=await db.from("connector_provider_receipts").update({
+    provider_message_id:returnedId,provider_thread_id:response.threadId??null,
+    updated_at:new Date().toISOString()
+  }).eq("id",inserted.data.id).eq("state","pending").select("id").maybeSingle();
+  if(accepted.error||!accepted.data)throw new Error("gmail_receipt_save_failed");
+  const checked=await verifyReceipt(scope,account,effect,returnedId,rfc);
   const updated=await db.from("connector_provider_receipts").update({
     state:"verified",provider_message_id:checked.messageId,
     provider_thread_id:checked.threadId,provider_accepted_at:new Date().toISOString(),
@@ -321,13 +361,22 @@ export async function reconcileGmailReceipt(scope:ConnectorOwner,effect:GmailEff
   if(effect.operation!=="send"||!record.rfc_message_id)return false;
   let authorized:GmailAuthorized;
   try{authorized=await authorizedGmail(scope,"read");}catch{return false;}
+  // Generation can advance due solely to owner operation switches. The
+  // receipt's original mailbox identity, not a mutable revision number,
+  // determines whether we may READ and reconcile the already-sent result.
   if(authorized.account.id!==record.account_id||
-     authorized.account.generation!==record.account_generation)return false;
+    authorized.account.email.toLowerCase()!==effect.from.toLowerCase()||
+    (record.account_provider_subject!==null&&
+     record.account_provider_subject!==undefined&&
+     authorized.account.provider_subject!==record.account_provider_subject))return false;
   const token=authorized.token;
   const q="rfc822msgid:"+record.rfc_message_id;
-  const found=await gmailApi(token,"/messages?"+new URLSearchParams({q,maxResults:"10"})) as {messages?:Array<{id:string}>};
+  const found=record.provider_message_id?
+    {messages:[{id:String(record.provider_message_id)}]}:
+    await scopedGmailApi(scope,authorized.account,"read",token,
+      "/messages?"+new URLSearchParams({q,maxResults:"10"})) as {messages?:Array<{id:string}>};
   for(const candidate of found.messages??[]){
-    const msg=await gmailApi(token,"/messages/"+encodeURIComponent(candidate.id)+"?format=metadata") as GmailMessage;
+    const msg=await scopedGmailApi(scope,authorized.account,"read",token,"/messages/"+encodeURIComponent(candidate.id)+"?format=metadata") as GmailMessage;
     if(msg.labelIds?.includes("SENT")&&headersOf(msg)["message-id"]===record.rfc_message_id){
       const saved=await db.from("connector_provider_receipts").update({
         state:"verified",provider_message_id:msg.id,provider_thread_id:msg.threadId??null,
