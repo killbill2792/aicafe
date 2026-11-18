@@ -83,6 +83,7 @@ test("trusted generic host checks provider receipts and independently executes s
     const proofDir=join(dir,"luna-candidate-proof"),bin=join(dir,"bin");
     mkdirSync(root,{recursive:true});mkdirSync(proofDir);mkdirSync(bin);
     writeFileSync(join(root,"future-case.json"),JSON.stringify(good));
+    writeFileSync(join(dir,"luna-locked-manifest.json"),JSON.stringify(good));
     const head="a".repeat(40);
     const businessId="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     const otherCafeId="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
@@ -116,6 +117,25 @@ test("trusted generic host checks provider receipts and independently executes s
     assert.equal(result.realModelAndDatabaseProof,true);
     assert.equal(result.independentOwnerUIAttestation,false);
     assert.equal(result.independentDatabaseReadbacks.length,3);
+    // Codex P1: malicious candidate code downgrades its writable manifest
+    // after the original immutable head was snapshotted by the trusted host.
+    // The attester MUST retain all three original independent readbacks.
+    const tampered=copy(good);
+    tampered.assertions=[
+      {name:"forged-source",kind:"source",table:"public.operating_tasks",
+        where:{business_id:{scope:"businessId"}},minCount:0,maxCount:100},
+      {name:"forged-owner",kind:"owner",table:"public.ai_messages",
+        where:{business_id:{scope:"businessId"}},minCount:0,maxCount:100},
+      {name:"forged-isolation",kind:"isolation",table:"public.ai_messages",
+        where:{business_id:{scope:"otherCafeId"}},minCount:0,maxCount:0}
+    ];
+    writeFileSync(join(root,"future-case.json"),JSON.stringify(tampered));
+    rmSync(join(dir,"luna-sanitized-result.json"));
+    const protectedResult=execute();
+    assert.equal(protectedResult.status,0,protectedResult.stderr);
+    const protectedProof=JSON.parse(readFileSync(join(dir,"luna-sanitized-result.json"),"utf8"));
+    assert.deepEqual(protectedProof.independentDatabaseReadbacks.map(x=>x.name),
+      ["source-case","owner-update","second-cafe-denied"]);
     audit.receipts[0].model="not-luna";
     writeFileSync(auditFile,JSON.stringify(audit));
     const fail=execute();
@@ -159,5 +179,35 @@ test("trusted owner launch selects all exact-head manifests without any model ca
     assert.equal(attrs.head,head);
     assert.match(result.stdout,/cumulative worst-case reserved USD=0.36/);
     assert.ok(!attrs.matrix.includes("untrusted-link"));
+  }finally{rmSync(dir,{recursive:true,force:true})}
+});
+
+test("trusted freeze denies modified Git checkout instead of trusting mutable manifest",()=>{
+  const dir=mkdtempSync(join(tmpdir(),"luna-freeze-"));
+  try{
+    const root=join(dir,"candidate"),manifest=join(root,".github/luna/scenarios/future-case.json");
+    mkdirSync(join(root,".github/luna/scenarios"),{recursive:true});
+    mkdirSync(join(root,"lib/ai/supervisor/routines"),{recursive:true});
+    writeFileSync(manifest,JSON.stringify(good)+"\n");
+    writeFileSync(join(root,good.entrypoint),'import {it} from "vitest";it("real",()=>{});\n');
+    const git=(...args)=>{
+      const r=spawnSync("git",["-C",root,...args],{encoding:"utf8"});
+      assert.equal(r.status,0,r.stderr);return r.stdout.trim();
+    };
+    git("init");git("config","user.email","fixture@example.invalid");
+    git("config","user.name","Test Fixture");
+    git("add",".");git("commit","-m","scenario");
+    const head=git("rev-parse","HEAD"),out=join(dir,"luna-locked-manifest.json");
+    const run=()=>spawnSync(process.execPath,[join(import.meta.dirname,"shared-luna.mjs"),"freeze"],{
+      cwd:dir,encoding:"utf8",
+      env:{...process.env,HEAD_SHA:head,SCENARIO:"future-case",RUNNER_TEMP:dir}
+    });
+    const goodResult=run();
+    assert.equal(goodResult.status,0,goodResult.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(out,"utf8")),good);
+    writeFileSync(manifest,JSON.stringify({...good,expectedTools:["get_schedule"]}));
+    const blocked=run();
+    assert.notEqual(blocked.status,0);
+    assert.match(blocked.stderr,/Working candidate manifest differs|Invalid|EEXIST/);
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
