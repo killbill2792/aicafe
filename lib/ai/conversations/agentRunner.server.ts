@@ -271,6 +271,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
              input.note!==p.ownerText.trim())
             throw new ToolError("unauthorized","supplier_owner_statement_required");
           const {client}=await simulationOwnerReader(proposalScope);
+          // An explicit PO identifier always wins over a model-selected one.
+          // An unrelated UUID must never be silently interpreted as "this PO".
+          const explicitIds=p.ownerText.match(
+            /[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/gi)??[];
+          if(explicitIds.length>0&&!explicitIds.some(value=>
+             value.toLowerCase()===input.purchaseOrderId.toLowerCase()))
+            throw new ToolError("validation","The owner's PO identifier does not match this report.");
           // A vague "this PO" cannot authorize an arbitrary model-selected
           // order when the owner has more than one unresolved approved PO.
           if(!p.ownerText.toLowerCase().includes(input.purchaseOrderId.toLowerCase())){
