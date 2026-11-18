@@ -99,6 +99,21 @@ async function measure(){
   if(upload.status()!==201)fail("authenticated_file_upload_failed");
   const attachment=(await upload.json()).attachment?.id;
   if(!uuid(attachment))fail("private_file_id_missing");
+  // A fake connected mailbox exists ONLY in the disposable database.
+  // Read will be disabled via the REAL owner API before any model Gmail tool.
+  const gmailAccountId=randomUUID();
+  await db.query("insert into public.connector_accounts "+
+   "(id,business_id,owner_user_id,provider,provider_subject,email,"+
+   "granted_scopes,enabled_operations,status) "+
+   "values($1,$2,$3,'gmail','task16c-disposable-google-sub',"+
+   "'task16c-disposable@example.invalid',"+
+   "ARRAY['https://www.googleapis.com/auth/gmail.modify'],"+
+   "ARRAY['read','draft','send','organize'],'active')",
+   [gmailAccountId,cafe.businessId,cafe.owner.userId]);
+  await db.query("insert into public.connector_credentials "+
+   "(account_id,generation,access_token_enc,refresh_token_enc,token_expires_at) "+
+   "values($1,1,$2,$3,now()+interval '1 hour')",
+   [gmailAccountId,"d".repeat(64),"e".repeat(64)]);
   const good=await turn(first.page,thread,
    "Please read the attached supplier quote and separately check the saved café menu "+
    "and existing supplier purchase orders for oat milk. Use the canonical menu and "+
@@ -115,6 +130,19 @@ async function measure(){
   requireObservedProductionModel(usage1.model,"gpt-6-luna");
   if(Number(usage1.model_call_count)<2)fail("genuine_multistep_provider_missing");
 
+  const changedGmail=await first.context.request.patch("/api/connectors/gmail/permissions",{
+   headers:{Origin:local},
+   data:{accountId:gmailAccountId,generation:1,operations:["draft","send","organize"]}
+  });
+  if(changedGmail.status()!==200||
+    (await changedGmail.json()).generation!==2)
+   fail("owner_gmail_read_revocation_not_saved");
+  const effective=await db.query("select generation,enabled_operations from public.connector_accounts "+
+    "where id=$1 and business_id=$2 and owner_user_id=$3",
+    [gmailAccountId,cafe.businessId,cafe.owner.userId]);
+  if(Number(effective.rows[0]?.generation)!==2||
+     effective.rows[0]?.enabled_operations?.includes("read"))
+   fail("gmail_read_still_authorized");
   const change=async body=>{
    const res=await first.context.request.post("/api/supervisor/access",{
     headers:{Origin:local},data:body});
@@ -134,16 +162,29 @@ async function measure(){
    "Make no changes.");
   if(denied.error||denied.done?.endReason!=="complete"||
      !denied.names.includes("web_search"))fail("model_did_not_attempt_blocked_web_search");
+  const deniedGmail=await turn(first.page,thread,
+   "Search my connected Gmail for the oat-milk supplier quote using search_gmail. "+
+   "I know the mailbox permission may be off; if denied, explain the limitation, "+
+   "and do not create a draft, send or change any mailbox message.");
+  if(deniedGmail.error||deniedGmail.done?.endReason!=="complete"||
+    !deniedGmail.names.includes("search_gmail"))
+   fail("model_did_not_attempt_blocked_gmail_search");
   const own2=await db.query("select id::text from public.ai_messages where "+
    "business_id=$1 and thread_id=$2 and client_message_id=$3 and role='owner'",
    [cafe.businessId,thread,denied.clientMessageId]);
   if(own2.rows.length!==1)fail("web_restriction_owner_turn_missing");
   const usage2=await readPersistedModelUsage(db,cafe.businessId,own2.rows[0].id);
   requireObservedProductionModel(usage2.model,"gpt-6-luna");
+  const gmailOwner=await db.query("select id::text from public.ai_messages where "+
+   "business_id=$1 and thread_id=$2 and client_message_id=$3 and role='owner'",
+   [cafe.businessId,thread,deniedGmail.clientMessageId]);
+  if(gmailOwner.rows.length!==1)fail("gmail_restriction_owner_turn_missing");
+  const usage3=await readPersistedModelUsage(db,cafe.businessId,gmailOwner.rows[0].id);
+  requireObservedProductionModel(usage3.model,"gpt-6-luna");
   const saved=await db.query("select id from public.ai_messages where "+
    "business_id=$1 and owner_user_id=$2 and thread_id=$3 and role='supervisor'",
    [cafe.businessId,cafe.owner.userId,thread]);
-  if(saved.rows.length<2)fail("owner_replies_not_persisted");
+  if(saved.rows.length<3)fail("owner_replies_not_persisted");
   // Other café's actual signed-in session cannot read or revoke this resource.
   second=await login(browser,foreign);
   const foreignRead=await second.context.request.get("/api/ai/threads/"+thread);
@@ -152,19 +193,27 @@ async function measure(){
    headers:{Origin:local},data:{kind:"attachment",enabled:false,
      attachmentId:attachment,revision:0}});
   if(foreignRevoke.status()===200)fail("cross_cafe_permission_write_leak");
+  const foreignGmail=await second.context.request.patch("/api/connectors/gmail/permissions",{
+   headers:{Origin:local},
+   data:{accountId:gmailAccountId,generation:2,operations:["read"]}
+  });
+  if(foreignGmail.status()===200)fail("cross_cafe_gmail_permission_leak");
   const effect=await db.query("select count(*)::int as n from public.connector_provider_receipts "+
     "where business_id=$1 and owner_user_id=$2",[cafe.businessId,cafe.owner.userId]);
   if(Number(effect.rows[0]?.n)!==0)fail("unapproved_external_effect_receipt");
   const proof={schema_version:1,task:"16c",head_sha:env.HEAD_SHA,
    status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",
-   model_calls:Number(usage1.model_call_count)+Number(usage2.model_call_count),
+   model_calls:Number(usage1.model_call_count)+Number(usage2.model_call_count)+
+     Number(usage3.model_call_count),
    selected_registered_tools:[...new Set([...good.names,...denied.names])].sort(),
    owner_selected_file_read:true,file_revoked_before_second_model:true,
-   public_web_revocation_observed:true,foreign_cafe_denied:true,
+   public_web_revocation_observed:true,gmail_read_revocation_observed:true,
+   foreign_cafe_denied:true,
    no_unapproved_external_effect:true,feature_proven:false,
    integrated_proven:false,released_proven:false};
   const scope={businessId:cafe.businessId,ownerUserId:cafe.owner.userId,
-    foreignBusinessId:foreign.businessId,threadId:thread,attachmentId:attachment,
+    foreignBusinessId:foreign.businessId,threadId:thread,
+    attachmentId:attachment,gmailAccountId,
     expectedProviderCalls:proof.model_calls};
   writeFileSync(files[0],JSON.stringify(proof)+"\n",{mode:0o600,flag:"wx"});
   writeFileSync(files[1],JSON.stringify(scope)+"\n",{mode:0o600,flag:"wx"});
