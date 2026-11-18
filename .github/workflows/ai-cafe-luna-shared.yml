@@ -215,6 +215,7 @@ jobs:
           test "$GITHUB_RUN_ATTEMPT" = 1
           node scripts/acceptance/shared-luna.mjs revalidate
       - name: Start bounded trusted broker on host (secret isolated from candidate)
+        id: luna-broker
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
           AICAFE_TASK14B_HOST_AUDIT: ${{ runner.temp }}/luna-host-audit.json
@@ -275,6 +276,17 @@ jobs:
           name: luna-${{ matrix.scenario }}-exact-head-host-proof
           path: ${{ runner.temp }}/luna-sanitized-result.json
           if-no-files-found: warn
+          retention-days: 14
+      - name: Record a failure-only sanitized trusted broker diagnostic
+        if: ${{ failure() && steps.luna-broker.outcome == 'success' }}
+        run: node coordinator/scripts/acceptance/shared-luna-failure.mjs
+      - name: Upload failure diagnostic separately from acceptance proof
+        if: ${{ failure() && steps.luna-broker.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: luna-${{ matrix.scenario }}-failure-diagnostic
+          path: ${{ runner.temp }}/luna-failure-diagnostic.json
+          if-no-files-found: error
           retention-days: 14
       - name: Destroy broker and the disposable database
         if: always()

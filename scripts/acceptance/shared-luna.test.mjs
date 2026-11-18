@@ -508,3 +508,112 @@ test("actual shared DB preflight rejects unavailable authenticated SQL before br
     assert.throws(()=>readFileSync(join(work,"luna-host-audit.json")),{code:"ENOENT"});
   }finally{rmSync(work,{recursive:true,force:true})}
 });
+
+test("shared failure projection comes from the real broker with only offline transport",async()=>{
+  const {once}=await import("node:events");
+  const {startTrustedBroker}=await import("./task14b-broker.mjs");
+  const {readFailureAudit}=await import("./shared-luna-failure.mjs");
+  const root=mkdtempSync(join(tmpdir(),"luna-failure-audit-")),auditFile=join(root,"audit.json");
+  const head="a".repeat(40),token="b".repeat(64),key="sk-"+ "c".repeat(64);
+  const privateMarker="private_marker_never_export";
+  let transports=0,server;
+  try{
+    ({server}=startTrustedBroker({apiKey:key,token,head,auditFile,port:0,fetchUpstream:async()=>{
+      transports++;
+      if(transports===2)throw Error(privateMarker);
+      return new Response(JSON.stringify({error:{type:"invalid_request_error",
+        code:"invalid_function_parameters",param:"tools[0].parameters."+privateMarker,
+        message:"Invalid schema for function 'private_marker_never_export'"}}),{status:400});
+    }}));
+    await once(server,"listening");
+    const url="http://127.0.0.1:"+server.address().port+"/v1/responses";
+    const request={model:"gpt-6-luna",instructions:privateMarker,tool_choice:"auto",
+      input:[{role:"user",content:privateMarker}],stream:true,max_output_tokens:100,
+      tools:[{type:"function",name:privateMarker,parameters:{type:"object"}}]};
+    const send=p=>fetch(url,{method:"POST",headers:{authorization:"Bearer "+token},
+      body:JSON.stringify(p)});
+    const denied=await send({...request,previous_response_id:"resp_private"});
+    assert.equal(denied.status,400);await denied.text();assert.equal(transports,0);
+    const rejected=await send(request);assert.equal(rejected.status,502);await rejected.text();
+    const unknown=await send(request);assert.equal(unknown.status,502);await unknown.text();
+    assert.equal(transports,2);
+    const proof=readFailureAudit(auditFile,head);
+    assert.equal(proof.result,"FAILED");assert.equal(proof.acceptanceProof,false);
+    assert.equal(proof.auditStatus,"available");assert.equal(proof.attempts,2);
+    assert.equal(proof.deniedCount,1);assert.deepEqual(proof.policyDenials,["provider_expanded_context_forbidden"]);
+    assert.ok(proof.reservedUpperMicros>0&&proof.reservedUpperMicros<=180000);
+    assert.deepEqual(proof.receipts,[
+      {ordinal:1,terminal:"provider_rejected",upstreamStatus:400,
+        rejection:{type:"invalid_request_error",code:"invalid_function_parameters",param:"tools[0].parameters"}},
+      {ordinal:2,terminal:"transport_unknown",upstreamStatus:null}]);
+    const out=JSON.stringify(proof);
+    for(const secret of [privateMarker,key,token,"resp_private","toolName","arguments"])
+      assert.ok(!out.includes(secret),"Unexpected diagnostic content");
+  }finally{
+    if(server)await new Promise(resolve=>server.close(resolve));
+    rmSync(root,{recursive:true,force:true});
+  }
+});
+
+test("failure diagnostics fail closed for missing, corrupt, stale, forged or oversized audit",async()=>{
+  const {readFailureAudit,projectFailureAudit}=await import("./shared-luna-failure.mjs");
+  const dir=mkdtempSync(join(tmpdir(),"luna-bad-audit-")),file=join(dir,"audit.json");
+  const head="a".repeat(40);
+  try{
+    const base={head,attempts:0,reservedMicros:0,deniedCount:0,policyDenials:[],receipts:[]};
+    const check=(proof,status)=>{
+      assert.equal(proof.result,"FAILED");assert.equal(proof.acceptanceProof,false);
+      assert.equal(proof.auditStatus,status);
+      assert.ok(!JSON.stringify(proof).includes("secret_raw"));
+    };
+    check(readFailureAudit(file,head),"missing");
+    writeFileSync(file,"secret_raw invalid JSON");
+    check(readFailureAudit(file,head),"invalid");
+    writeFileSync(file,JSON.stringify({...base,head:"b".repeat(40)}));
+    check(readFailureAudit(file,head),"invalid");
+    writeFileSync(file,JSON.stringify({...base,attempts:1}));
+    check(readFailureAudit(file,head),"invalid");
+    const forged={...base,attempts:1,reservedMicros:100,deniedCount:1,
+      policyDenials:["secret_raw"],receipts:[{ordinal:1,model:"gpt-6-luna",
+        terminal:"provider_rejected",upstreamStatus:400,reservedMicros:100,
+        rejection:{type:"secret_raw",code:"secret_raw",param:"secret_raw",toolName:"secret_raw"},
+        raw:"secret_raw"}]};
+    const clean=projectFailureAudit(forged,head);check(clean,"available");
+    assert.deepEqual(clean.policyDenials,["unknown"]);
+    assert.deepEqual(clean.receipts[0].rejection,{type:"unknown",code:"unknown",param:"unknown"});
+    check(projectFailureAudit({...forged,reservedMicros:101},head),"invalid");
+    check(projectFailureAudit({...forged,receipts:[{...forged.receipts[0],terminal:"secret_raw"}]},head),"invalid");
+    writeFileSync(file,"x".repeat(128*1024+1));
+    check(readFailureAudit(file,head),"invalid");
+    rmSync(file);symlinkSync("/dev/null",file);
+    check(readFailureAudit(file,head),"invalid");
+    rmSync(file);writeFileSync(file,JSON.stringify(base));
+    check(readFailureAudit(file,head),"available");
+  }finally{rmSync(dir,{recursive:true,force:true})}
+});
+
+test("actual shared workflow failure diagnostic emits a separate fail-only artifact",()=>{
+  const root=join(import.meta.dirname,"../..");
+  const yaml=readFileSync(join(root,".github/workflows/ai-cafe-luna-shared.yml"),"utf8");
+  const a=yaml.indexOf("      - name: Record a failure-only sanitized trusted broker diagnostic");
+  const b=yaml.indexOf("      - name: Upload failure diagnostic separately from acceptance proof",a);
+  const c=yaml.indexOf("      - name: Destroy broker and the disposable database",b);
+  assert.ok(a>yaml.indexOf("      - name: Independently verify model receipts")&&b>a&&c>b);
+  const section=yaml.slice(a,b),upload=yaml.slice(b,c);
+  assert.match(section,/failure\(\) && steps\.luna-broker\.outcome == 'success'/);
+  assert.match(upload,/failure\(\) && steps\.luna-broker\.outcome == 'success'/);
+  assert.match(upload,/path: .*luna-failure-diagnostic\.json/);
+  assert.doesNotMatch(upload,/luna-host-audit|next\.log|luna-sanitized-result/);
+  const command=section.split("\n").find(x=>x.trim().startsWith("run: ")).trim().slice(5);
+  const dir=mkdtempSync(join(tmpdir(),"luna-failure-workflow-"));
+  try{
+    symlinkSync(root,join(dir,"coordinator"),"dir");
+    const run=spawnSync("bash",["-euo","pipefail","-c",command],{cwd:dir,encoding:"utf8",
+      env:{...process.env,RUNNER_TEMP:dir,HEAD_SHA:"a".repeat(40),GITHUB_RUN_ATTEMPT:"1"}});
+    assert.equal(run.status,0,run.stderr);
+    const result=JSON.parse(readFileSync(join(dir,"luna-failure-diagnostic.json"),"utf8"));
+    assert.equal(result.result,"FAILED");assert.equal(result.acceptanceProof,false);
+    assert.equal(result.auditStatus,"missing");
+    assert.throws(()=>readFileSync(join(dir,"luna-sanitized-result.json")),{code:"ENOENT"});
+  }finally{rmSync(dir,{recursive:true,force:true})}
+});
