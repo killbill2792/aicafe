@@ -67,6 +67,10 @@ describe("Task 15A genuine multi-step agentic acceptance",()=>{
     expect(followUpPrompt).toContain("CURRENT registered dated roster");
     expect(followUpPrompt).toContain("do not convert worded staff suggestions into digits");
     expect(followUpPrompt).toContain("prefer a short qualitative update");
+    expect(followUpPrompt).toContain("unresolved decline BEFORE an owner-authorized roster correction");
+    expect(followUpPrompt).toContain("do not recite its numeric clocks");
+    expect(followUpPrompt).toContain("employee's quoted hours are NOT scheduled hours");
+    expect(followUpPrompt).toContain("Adapt that form to the actual source");
     expect(prompt).toContain("verified employee reply");
     expect(prompt).toContain("Independently check the actual dated schedule");
     expect(prompt).toContain("no shift change");
