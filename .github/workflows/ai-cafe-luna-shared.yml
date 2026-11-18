@@ -38,7 +38,11 @@ permissions:
   pull-requests: read
 jobs:
   authorize:
-    name: Verify fresh owner dispatch, exact SHA and known scenario inventory
+    name: Verify and consume one-shot owner grant before any provider access
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
     if: >-
       github.ref == 'refs/heads/main' &&
       github.actor == 'killbill2792' &&
@@ -78,6 +82,8 @@ jobs:
         scenario: ${{ fromJSON(needs.authorize.outputs.matrix) }}
     permissions:
       contents: read
+      pull-requests: read
+      issues: read
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -176,14 +182,14 @@ jobs:
             "SUPABASE_SERVICE_ROLE_KEY="+service+"\n"+
             "AICAFE_14B_BROKER_TOKEN="+token+"\n");
           NODE
-      - name: Reverify fresh owner grant and current SHA immediately before provider access
+      - name: Reverify consumed owner grant and current SHA immediately before provider access
         working-directory: coordinator
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test "$GITHUB_RUN_ATTEMPT" = 1
-          node scripts/acceptance/shared-luna.mjs plan
+          node scripts/acceptance/shared-luna.mjs revalidate
       - name: Start bounded trusted broker on host (secret isolated from candidate)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
