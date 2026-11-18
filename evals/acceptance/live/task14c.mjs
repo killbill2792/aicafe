@@ -81,12 +81,17 @@ async function ownerTurn(page,thread,text){
  },{thread,text,clientMessageId});
  if(result.error||result.done?.endReason!=="complete"||
     !/^[0-9a-f-]{36}$/i.test(result.done?.reply?.id??"")){
-  const code=/^[a-z][a-z0-9_-]{0,50}$/.test(String(result.error))?
-   result.error:"model_incomplete";
+  const reason=result.done?.endReason??result.diagnosticEndReason;
+  const endReason=["complete","timeout","budget","provider_error","tool_errors"].includes(reason)?
+   reason:"unknown";
+  const validCode=typeof result.error==="string"&&/^[a-z][a-z0-9_-]{0,50}$/.test(result.error);
+  const code=validCode?result.error:
+   endReason!=="unknown"&&endReason!=="complete"?endReason:"model_incomplete";
+  const calls=result.done?.usage?.modelCalls??result.diagnosticModelCalls;
   console.log("task14c_safe_model_failure",JSON.stringify({
-   code,stage:["setup","model","persist","finish"].includes(result.diagnosticStage)?
-     result.diagnosticStage:"unknown",
-   calls:Number.isInteger(result.diagnosticModelCalls)?result.diagnosticModelCalls:null,
+   code,endReason,stage:["setup","model","persist","finish"].includes(result.diagnosticStage)?
+     result.diagnosticStage:result.done?"completed_frame":"unknown",
+   calls:Number.isSafeInteger(calls)&&calls>=0?calls:null,
    tools:result.names.filter(n=>[
     "get_supplier_purchase_orders","propose_supplier_vendor_email","record_supplier_order_outcome"].includes(n))
   }));

@@ -110,6 +110,70 @@ const approvedTask14cSet = new Set(Object.entries(approvedTask14cEnglishOnly)
 const approvedTask14bSet = new Set(Object.entries(approvedTask14bEnglishOnly)
   .flatMap(([namespace, keys]) => keys.map(key => namespace+"."+key)));
 
+// Task16A: exact approved English-only namespace, pinned against accidental growth.
+const approvedTask16aKeys = [
+  "oneTimeTitle",
+  "oneTimeEmpty",
+  "oneTimeHelp",
+  "title",
+  "open",
+  "close",
+  "library",
+  "routines",
+  "permissions",
+  "savedChats",
+  "emptyChats",
+  "routineTitle",
+  "routineHelp",
+  "emptyRoutines",
+  "routineUnavailable",
+  "permissionTitle",
+  "permissionHelp",
+  "emptyPermissions",
+  "permissionUnavailable",
+  "noThread",
+  "goalName",
+  "staffName",
+  "unknownName",
+  "active",
+  "expired",
+  "revoked",
+  "superseded",
+  "expires",
+  "limit",
+  "week",
+  "status",
+  "goalDaily",
+  "staffRecipients",
+  "newGoal",
+  "reviseGoal",
+  "chooseExpiry",
+  "requestCode",
+  "code",
+  "verify",
+  "challengeIssued",
+  "challengeExpires",
+  "challengeExpired",
+  "phoneRequired",
+  "factorUnavailable",
+  "verifyFailed",
+  "requestFailed",
+  "grantConfirmed",
+  "revoke",
+  "revokeConfirmed",
+  "revokeFailed",
+  "refresh",
+  "loading",
+  "revokeBusy",
+  "generalError",
+  "ownerRequired",
+  "revisionConflict",
+  "staffGrant",
+  "staffHelp",
+  "notUnlimited",
+] as const;
+const approvedTask16aSet = new Set(approvedTask16aKeys.map(key => "SupervisorMandateCenter."+key));
+
 describe("redesign 16 cleanup integration", () => {
   for (const locale of ["en", "es", "ar"]) {
     it(`keeps current owner-facing translations after cleanup in ${locale}`, () => {
@@ -122,7 +186,7 @@ describe("redesign 16 cleanup integration", () => {
     });
   }
 
-  it("keeps existing translation keys in sync, allowing only exact Task 11, Task 13B and Task 14B English-only copy", () => {
+  it("keeps existing translation keys in sync, allowing only exact Task 11, Task 13B, Task 14B and Task 16A English-only copy", () => {
     // AGENTS.md currently forbids new es/ar copy. Preserve strict parity for
     // every pre-existing key; only the owner-approved Gmail, Task13B and exact Task14B keys are English-only.
     // Task13B mandate's 25 exact keys are separately enforced by StaffStandingMandatePanel.test.ts.
@@ -132,11 +196,23 @@ describe("redesign 16 cleanup integration", () => {
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key))
+          && !approvedTask14cSet.has(key) && !approvedTask16aSet.has(key))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));
     expect(keys("ar")).toEqual(keys("en"));
+  });
+
+  it("pins every Task 16A owner permission label without weakening translation parity", () => {
+    const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
+    const actual=en.SupervisorMandateCenter as Record<string,string> | undefined;
+    expect(Object.keys(actual ?? {}).sort()).toEqual([...approvedTask16aKeys].sort());
+    for(const key of approvedTask16aKeys){
+      expect(actual?.[key],key).toEqual(expect.any(String));
+      expect(actual?.[key].trim().length).toBeGreaterThan(0);
+    }
+    expect(es.SupervisorMandateCenter).toBeUndefined();
+    expect(ar.SupervisorMandateCenter).toBeUndefined();
   });
 
   it("requires ONLY the exact English-only Task 14C vendor communication copy", () => {
