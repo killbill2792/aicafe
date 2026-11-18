@@ -5,6 +5,7 @@ import { getLocale } from "next-intl/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { readActiveBusinessMemberships } from "@/lib/data/getActiveBusinessId";
+import {isLinkedStaffUser} from "@/lib/staffCommunication/identity.server";
 
 /**
  * Server-side guard for every authenticated tab screen. Redirects to /login when signed out.
@@ -44,6 +45,10 @@ export const requireUser=cache(async function requireUser(){
 export const requireOwnBusiness=cache(async function requireOwnBusiness(){
   const user = await requireUser();
   if (!isSupabaseConfigured() || !user) return user;
+
+  // Linked employee identities cannot reach owner routes, even if their
+  // employment has been disabled or a conflicting membership was later added.
+  if(await isLinkedStaffUser(user.id))redirect("/crew");
 
   const memberships = await readActiveBusinessMemberships(user.id);
   const hasOwnBusiness = memberships.some((m) => {

@@ -1,7 +1,7 @@
 import {settings} from './settings.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync,existsSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import {verifiedCodingConversation} from './verified-chat-v3.mjs';
 
@@ -276,27 +276,11 @@ test('actual reconciler preserves unsigned scope handoff and signed coding conti
 });
 
 
-test('delayed self-wake retains Git-backed emergency notice after a failed wake',()=>{
- const workflow=readFileSync(new URL('../../.github/workflows/dispatcher-delayed-wake.yml',import.meta.url),'utf8');
- assert.match(workflow,/if: failure\(\)/);
- assert.match(workflow,/node scripts\/dev-dispatcher\/emergency-report\.mjs/);
- assert.match(workflow,/secrets\.DISPATCH_LEDGER_TOKEN/);
+test('retired GitHub delayed wake and failure observer cannot reactivate',()=>{
+ for(const path of ['dispatcher-delayed-wake.yml','dispatcher-failure-observer.yml']){
+  assert.equal(existsSync(new URL('../../.github/workflows/'+path,import.meta.url)),false,path);
+ }
 });
-
-
-test('failed dispatcher run observer uses trusted main and existing Git-backed owner queue only',()=>{
- const watcher=readFileSync(new URL('../../.github/workflows/dispatcher-failure-observer.yml',import.meta.url),'utf8');
- assert.match(watcher,/workflow_run:/);
- assert.match(watcher,/AI CAFE Development Dispatcher/);
- assert.match(watcher,/Dispatcher delayed self-wake/);
- assert.match(watcher,/head_branch == 'main'/);
- assert.match(watcher,/ref: main/);
- assert.match(watcher,/persist-credentials: false/);
- assert.match(watcher,/DISPATCH_FAILED_RUN_ID:/);
- assert.match(watcher,/node scripts\/dev-dispatcher\/emergency-report\.mjs/);
- assert.doesNotMatch(watcher,/pull_request_target/);
-});
-
 
 test('new emergency observer remains owner-only infrastructure, while PR size guard stays intact',async()=>{
  const {isDispatcherMaintenanceChange,dispatcherOnlyFiles}=await import('./github.mjs');

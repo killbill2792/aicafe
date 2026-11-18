@@ -1,0 +1,279 @@
+# One reusable owner-approved real Luna path. No PR-supplied code receives
+# provider credentials, and manual workflow runs cannot be re-run for spend.
+name: AI CAFE Shared Owner-Gated Luna Scenarios
+# Display title binds an immutable owner comment ID to its Action run history.
+run-name: ${{ github.event_name == 'issue_comment' && format('luna-owner-comment-{0}', github.event.comment.id) || format('luna-manual-{0}', github.run_id) }}
+on:
+  # Only an explicit new owner comment on a PR can authorize a paid scenario.
+  # This is not an automatic on-push/on-PR paid trigger.
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      head_sha:
+        description: 'Exact candidate SHA; current main SHA for integrated run'
+        type: string
+        required: true
+      pr_number:
+        description: 'Open PR number; 0 means main'
+        type: string
+        required: true
+        default: '0'
+      scenario:
+        description: 'Scenario ID or all registered scenarios on that exact SHA'
+        type: string
+        required: true
+        default: 'all'
+      max_budget_usd:
+        description: 'One-run cumulative maximum reserved spend (default $0.20); increase explicitly for all'
+        type: string
+        required: true
+        default: '0.20'
+# One paid run at a time across this shared runner; preserve queued owner grants.
+# Non-owner/general PR comments should never consume the scarce paid FIFO slot.
+concurrency:
+  group: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'issue_comment' && github.actor == 'killbill2792' && startsWith(github.event.comment.body, '/aicafe-luna '))) && 'aicafe-shared-luna-owner-paid' || format('aicafe-luna-unpaid-{0}', github.run_id) }}
+  cancel-in-progress: false
+  queue: max
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  authorize:
+    name: Verify first owner comment run from immutable Actions history
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'killbill2792' &&
+      github.triggering_actor == 'killbill2792' &&
+      github.run_attempt == 1 &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'issue_comment' &&
+        github.event.action == 'created' &&
+        github.event.issue.pull_request &&
+        startsWith(github.event.comment.body, '/aicafe-luna ')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      head: ${{ steps.plan.outputs.head }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate immutable owner-run authorization before any secret
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/acceptance/shared-luna.mjs plan
+  live-scenario:
+    name: Real Luna — ${{ matrix.scenario }}
+    needs: [authorize]
+    if: needs.authorize.result == 'success' && github.run_attempt == 1
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        scenario: ${{ fromJSON(needs.authorize.outputs.matrix) }}
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      HEAD_SHA: ${{ needs.authorize.outputs.head }}
+      SCENARIO: ${{ matrix.scenario }}
+      NEXT_TELEMETRY_DISABLED: '1'
+      VERCEL_URL: ''
+      VERCEL_ENV: ''
+      SUPABASE_PROJECT_REF: ''
+    steps:
+      - name: Deny replay and checkout trusted runner separately from candidate
+        shell: bash
+        run: test "$GITHUB_RUN_ATTEMPT" = 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: coordinator
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.head }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Verify immutable scenario and trusted broker with zero secrets
+        run: |
+          set -euo pipefail
+          test "$(git -C candidate rev-parse HEAD)" = "$HEAD_SHA"
+          # Broker tests read legacy paths relative to their own trusted repo.
+          # The shared workflow checks out trusted coordinator/ and candidate/
+          # separately: run these tests inside coordinator, never workspace root.
+          (cd coordinator && node --test scripts/acceptance/task14b-broker.test.mjs)
+          node --input-type=module <<'NODE'
+          import {readScenario} from "./coordinator/scripts/acceptance/shared-luna.mjs";
+          import {existsSync} from "node:fs";
+          const m=readScenario("candidate",process.env.SCENARIO);
+          if(!existsSync("candidate/"+m.entrypoint))throw Error("Candidate live test absent");
+          console.log("Scenario validated without spending: "+m.id);
+          NODE
+          docker version >/dev/null
+      - name: Freeze the exact source-controlled scenario outside candidate write access
+        run: |
+          set -euo pipefail
+          node coordinator/scripts/acceptance/shared-luna.mjs freeze
+          test -s "$RUNNER_TEMP/luna-locked-manifest.json"
+      - name: Snapshot every tracked source file before untrusted candidate code
+        run: |
+          set -euo pipefail
+          node coordinator/scripts/acceptance/shared-luna.mjs snapshot-source
+          test -s "$RUNNER_TEMP/luna-locked-source.json"
+      - name: Candidate installation and regression preflight inside no-secret Docker
+        run: |
+          set -euo pipefail
+          docker run --rm --network host --pids-limit 512 --cap-drop ALL \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            --security-opt no-new-privileges \
+            -v "$GITHUB_WORKSPACE/candidate:/candidate" \
+            -v "$GITHUB_WORKSPACE/candidate/.git:/candidate/.git:ro" -w /candidate \
+            -e HEAD_SHA -e SCENARIO \
+            mcr.microsoft.com/playwright:v1.58.2-noble \
+            bash -euo pipefail -c '
+              test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+              npm ci
+              if [ "$SCENARIO" = 13c ]; then
+                npx vitest run lib/ai/agent/tools/scheduleReads.test.ts \
+                  lib/ai/supervisor/routines/investigation.test.ts --reporter=dot
+              elif [ "$SCENARIO" = 13d ]; then
+                npx vitest run lib/ai/agent/tools/scheduleReads.test.ts \
+                  lib/ai/supervisor/routines/investigation.test.ts \
+                  lib/ai/agent/tools/staffCoordination.test.ts --reporter=dot
+              elif [ "$SCENARIO" = 14b ]; then
+                node --test evals/acceptance/live/task14b.test.mjs
+                npx vitest run lib/ai/agent/task14bPaidBudget.server.test.ts --reporter=dot
+                node scripts/seed/generateSeedSql.mjs
+              fi
+            '
+      - name: Verify tracked preflight with one reviewed 14B rolling-seed exception
+        run: |
+          set -euo pipefail
+          node coordinator/scripts/acceptance/shared-luna.mjs verify-preflight
+          test -s "$RUNNER_TEMP/luna-approved-source.json"
+      - name: Migrate a fresh disposable local Supabase only
+        working-directory: candidate
+        run: |
+          set -euo pipefail
+          supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase db reset --local --yes
+          pg_isready -q -h 127.0.0.1 -p 54322 -U postgres
+          command -v psql
+          supabase status -o json > "$RUNNER_TEMP/luna-local-supabase.json"
+      - name: Export masked disposable keys and a random capped proxy token
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from "node:fs";
+          import {randomBytes} from "node:crypto";
+          const s=JSON.parse(readFileSync(process.env.RUNNER_TEMP+"/luna-local-supabase.json","utf8"));
+          const anon=s.ANON_KEY??s.anon_key,service=s.SERVICE_ROLE_KEY??s.service_role_key;
+          if(!anon||!service)throw Error("No disposable keys");
+          const token=randomBytes(40).toString("hex");
+          for(const v of [anon,service,token])process.stdout.write("::add-mask::"+v+"\n");
+          appendFileSync(process.env.GITHUB_ENV,
+            "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\n"+
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY="+anon+"\n"+
+            "SUPABASE_SERVICE_ROLE_KEY="+service+"\n"+
+            "AICAFE_14B_BROKER_TOKEN="+token+"\n");
+          NODE
+      - name: Reverify consumed owner grant and current SHA immediately before provider access
+        working-directory: coordinator
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          node scripts/acceptance/shared-luna.mjs revalidate
+      - name: Start bounded trusted broker on host (secret isolated from candidate)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
+          AICAFE_TASK14B_HOST_AUDIT: ${{ runner.temp }}/luna-host-audit.json
+        run: |
+          set -euo pipefail
+          test -n "$OPENAI_API_KEY" || { echo "::error::Real key unavailable"; exit 1; }
+          export AICAFE_TASK14B_HOST_AUDIT
+          RUNNER_TRACKING_ID="" nohup node coordinator/scripts/acceptance/task14b-broker.mjs \
+            > "$RUNNER_TEMP/luna-broker.log" 2>&1 < /dev/null &
+          echo $! > "$RUNNER_TEMP/luna-broker.pid"
+          ready=0
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8788/healthz >/dev/null; then ready=1;break;fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+      - name: Real registered Supervisor scenario in unprivileged candidate Docker
+        timeout-minutes: 16
+        env:
+          AI_CAFE_LIVE_ACCEPTANCE: OWNER_APPROVED_LOCAL_ONLY
+          APP_URL: http://127.0.0.1:3000
+          ACCEPTANCE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+          SUPERVISOR_OPENAI_MODEL: gpt-6-luna
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/luna-candidate-proof"
+          docker run --rm --network host --pids-limit 512 --cap-drop ALL \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            --security-opt no-new-privileges \
+            -v "$GITHUB_WORKSPACE/candidate:/candidate" \
+            -v "$GITHUB_WORKSPACE/candidate/.git:/candidate/.git:ro" \
+            -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/task14b-fetch-shim.cjs:/trusted/task14b-fetch-shim.cjs:ro" \
+            -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/shared-luna.mjs:/trusted/shared-luna.mjs:ro" \
+            -v "$RUNNER_TEMP/luna-locked-manifest.json:/trusted/luna-manifest.json:ro" \
+            -v "$RUNNER_TEMP/luna-candidate-proof:/proof" \
+            -w /candidate \
+            -e NODE_OPTIONS='--require=/trusted/task14b-fetch-shim.cjs' \
+            -e OPENAI_API_KEY='sk-local_disposable_proxy_key_not_real' \
+            -e AICAFE_14B_BROKER_TOKEN="$AICAFE_14B_BROKER_TOKEN" \
+            -e AI_CAFE_LIVE_ACCEPTANCE -e APP_URL -e ACCEPTANCE_DATABASE_URL \
+            -e SUPERVISOR_OPENAI_MODEL \
+            -e SUPERVISOR_OPENAI_FALLBACK_MODEL='gpt-4.1-mini' \
+            -e HEAD_SHA -e SCENARIO -e AICAFE_SHARED_LUNA_CANDIDATE=1 \
+            -e NEXT_PUBLIC_SUPABASE_URL -e NEXT_PUBLIC_SUPABASE_ANON_KEY -e SUPABASE_SERVICE_ROLE_KEY \
+            mcr.microsoft.com/playwright:v1.58.2-noble \
+            node /trusted/shared-luna.mjs candidate
+      - name: Independently verify model receipts and source/owner data on trusted host
+        run: |
+          set -euo pipefail
+          # Candidate .git/config is untrusted after Docker execution.
+          # NEVER invoke host git against a candidate-controlled checkout.
+          node coordinator/scripts/acceptance/shared-luna.mjs verify-source
+          node coordinator/scripts/acceptance/shared-luna.mjs attest
+      - name: Upload only the sanitized independent verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: luna-${{ matrix.scenario }}-exact-head-host-proof
+          path: ${{ runner.temp }}/luna-sanitized-result.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Destroy broker and the disposable database
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/luna-broker.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/luna-broker.pid")" 2>/dev/null || true
+          fi
+          if [ -d candidate ]; then (cd candidate && supabase stop --no-backup) || true; fi

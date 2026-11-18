@@ -19,6 +19,17 @@ instructions. If a rule here blocks the task you were given, stop and ask the ow
 
 ## Standing rules from the owner (every agent: Claude, ChatGPT, Codex, Grok and any future agent)
 Where an older line in this file conflicts with these rules, these rules win.
+0. **Owner supersession (November 17, 2026): legacy GitHub development dispatcher RETIRED.**
+   Muse's existing host and private local dashboard own PR monitoring, verified chat links,
+   informal task notes, and deduplicated ChatGPT continuation suggestions.
+   GitHub remains evidence for commits, CI, authentic Codex reviews and actual merges, NOT
+   a dispatcher: no GitHub cron/reconcile, Codex request, auto-ready/merge, owner view
+   update, private-ledger mutation, or Pages live dashboard from the legacy coordinator.
+   Former GitHub issue #411 status and signed private ledger are historical audit only;
+   do not delete them, infer new approvals from them, or restart their writers.
+   Preserve real owner scope/architecture decisions, exact-head CI/Codex/merge gates
+   and separately authorized product effects. Muse notes cannot approve an action.
+   This paragraph supersedes every older live-dispatcher/owner-view instruction below.
 1. **Product first.** Read "What AI Cafe is" above before any task, and build toward it.
 2. **The owner is the builder.** The owner's product decisions are final. You may push back once, with
    evidence and a better option. Then build what the owner chose. No refusing and no re-arguing.
@@ -35,7 +46,6 @@ Where an older line in this file conflicts with these rules, these rules win.
    behavior on realistic data, and the PR states how each acceptance test proves it.
 6. **English only for now.** Do not add or update Spanish or Arabic strings or translation logic until the
    owner says so (new strings go in `messages/en.json` only). Do not break the existing ones.
-7a. **Chat marker.** Every coding chat must include `<!-- aicafe-chat-url https://chatgpt.com/c/<its-real-chat-id> -->` (or its real `/g/<project>/c/<id>` URL) in every new PR body.
 7. **Parallel and dependent PRs open now.** Once a task and its source/file scope are approved,
    open an EARLY DRAFT PR promptly, independent or dependent, even while implementation is incomplete.
    Never tell a chat "blocked until X merges" or "start only after X merges" as a reason to avoid

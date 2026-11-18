@@ -1,10 +1,11 @@
 import {createHmac} from "node:crypto";
 import {beforeEach,afterEach,describe,it,expect,vi} from "vitest";
 import {GET,POST} from "./route";
-const mocks=vi.hoisted(()=>({ingest:vi.fn(),status:vi.fn(),staffStatus:vi.fn()}));
+const mocks=vi.hoisted(()=>({ingest:vi.fn(),status:vi.fn(),staffStatus:vi.fn(),staffInbound:vi.fn()}));
 vi.mock("@/lib/whatsapp/identity.server",()=>({acceptSignedMessage:mocks.ingest}));
 vi.mock("@/lib/whatsapp/queue.server",()=>({recordSignedStatus:mocks.status}));
 vi.mock("@/lib/scheduling/staffPublication.server",()=>({recordSignedStaffScheduleStatus:mocks.staffStatus}));
+vi.mock("@/lib/whatsapp/staffReplies.server",()=>({acceptSignedStaffText:mocks.staffInbound}));
 const url="https://example.test/api/whatsapp/webhook";
 const id="1322195347653883",secret="webhook-secret";
 const event=(wamid="wamid.first",phoneId=id)=>({
@@ -27,6 +28,7 @@ beforeEach(()=>{
   delete process.env.WHATSAPP_STAFF_SCHEDULE_SEND_ENABLED;
   delete process.env.WHATSAPP_STAFF_SENDER_APPROVED;
   mocks.staffStatus.mockReset().mockResolvedValue(undefined);
+  mocks.staffInbound.mockReset().mockResolvedValue("recorded");
   mocks.ingest.mockReset().mockResolvedValue("queued");
   mocks.status.mockReset().mockResolvedValue(undefined);
 });
@@ -82,6 +84,10 @@ describe("WhatsApp route",()=>{
     }];
     expect((await POST(request(staffEvent))).status).toBe(200);
     expect(mocks.ingest).not.toHaveBeenCalled();
+    expect(mocks.staffInbound).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      kind:"text",text:"Approve the next shift",wamid:"wamid.inbound",
+      phoneId:"1555999888777666",
+    }));
     // The signed employee inbound message never becomes an owner command,
     // but the co-batched genuine delivery callback MUST still be stored.
     expect(mocks.staffStatus).toHaveBeenCalledTimes(2);
@@ -93,6 +99,8 @@ describe("WhatsApp route",()=>{
     expect((await POST(request(staffEvent))).status).toBe(200);
     expect(mocks.staffStatus).toHaveBeenCalledTimes(3);
     expect(mocks.status).toHaveBeenCalledTimes(3);
+    // Status-only first, text on the second and third callbacks: exactly two.
+    expect(mocks.staffInbound).toHaveBeenCalledTimes(2);
   });
   it("reconciles delivery when signed worker voice notes and foreign button payloads are co-batched",async()=>{
     process.env.WHATSAPP_STAFF_PHONE_NUMBER_ID="1555999888777666";
@@ -110,6 +118,7 @@ describe("WhatsApp route",()=>{
     value.statuses=[{id:"wamid.real",status:"delivered"},{id:"wamid.second",status:"read"}];
     expect((await POST(request(e))).status).toBe(200);
     expect(mocks.ingest).not.toHaveBeenCalled();
+    expect(mocks.staffInbound).not.toHaveBeenCalled();
     expect(mocks.status.mock.calls.map(args=>args[0].wamid)).toEqual([
       "wamid.real","wamid.second",
     ]);
@@ -136,6 +145,7 @@ describe("WhatsApp route",()=>{
     expect(mocks.ingest.mock.calls[0][0]).toMatchObject({wamid:"wamid.owner-message"});
     expect(mocks.staffStatus).toHaveBeenCalledOnce();
     expect(mocks.status).toHaveBeenCalledOnce();
+    expect(mocks.staffInbound).not.toHaveBeenCalled();
     expect(mocks.status.mock.calls[0][0]).toMatchObject({wamid:"wamid.employee-delivered"});
     // A configured sender identity is still exact: different/forged phone fails.
     const stranger=event("wamid.attacker","1555999888777667");
@@ -151,6 +161,7 @@ describe("WhatsApp route",()=>{
     expect((await POST(request(staffEvent,false))).status).toBe(401);
     expect(mocks.staffStatus).not.toHaveBeenCalled();
     expect(mocks.status).not.toHaveBeenCalled();
+    expect(mocks.staffInbound).not.toHaveBeenCalled();
   });
   it("duplicate signed webhook remains 200 without a second queued owner turn",async()=>{
     const ids=new Set<string>();
