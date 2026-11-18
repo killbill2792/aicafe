@@ -207,41 +207,38 @@ async function api(url,token){
   ensure(response.ok,"GitHub preflight HTTP "+response.status);
   return response.json();
 }
-async function recordCommentGrant(event,token,revalidate){
-  const issue=event.issue.number,id=event.comment.id;
-  ensure(Number.isSafeInteger(issue)&&issue>0&&Number.isSafeInteger(id)&&id>0,
-    "Scoped PR comment grant required");
-  const runId=String(process.env.GITHUB_RUN_ID??"");
-  ensure(/^[1-9][0-9]{0,19}$/.test(runId),"Immutable workflow run ID missing");
-  const consumed="<!-- aicafe-luna-consumed:owner-comment-"+id+":run-"+runId+" -->";
-  const prefix="<!-- aicafe-luna-consumed:owner-comment-"+id+":";
-  const base="https://api.github.com/repos/"+REPO;
-  let found=null,complete=false;
+// GitHub Actions run history is a durable, read-only one-shot ledger.
+// The authorization job must NOT need GitHub issue-writing privileges:
+// some repositories reject bot comment writes even with issues:write.
+async function verifyOwnerCommentRun(event,token){
+  const id=event.comment?.id,runId=Number(process.env.GITHUB_RUN_ID);
+  ensure(Number.isSafeInteger(id)&&id>0&&
+    Number.isSafeInteger(runId)&&runId>0,
+    "Immutable owner comment and workflow run IDs required");
+  const title="luna-owner-comment-"+id;
+  let earliest=null,current=null,complete=false;
+  const url="https://api.github.com/repos/"+REPO+
+    "/actions/workflows/ai-cafe-luna-shared.yml/runs?event=issue_comment&per_page=100&page=";
+  // Enumerate all pages: finding the current run alone is not proof that
+  // an earlier duplicate was not already spent. Incomplete GitHub reads deny.
   for(let page=1;page<=100;page++){
-    const data=await api(base+"/issues/"+issue+"/comments?per_page=100&page="+page,token);
-    ensure(Array.isArray(data),"Incomplete consumed authorization history");
-    for(const comment of data){
-      if(comment.user?.login==="github-actions[bot]"&&
-         typeof comment.body==="string"&&comment.body.includes(prefix)){
-        ensure(found===null,"Duplicate owner authorization consumption markers");
-        found=comment.body;
-      }
+    const response=await api(url+page,token);
+    ensure(Array.isArray(response.workflow_runs),"Missing trusted paid-run history");
+    for(const run of response.workflow_runs){
+      if(run.display_title!==title)continue;
+      ensure(Number.isSafeInteger(run.id)&&run.event==="issue_comment"&&
+        run.actor?.login===OWNER,
+        "Malformed matching owner authorization run");
+      earliest=earliest===null?run.id:Math.min(earliest,run.id);
+      if(run.id===runId)current=run;
     }
-    if(data.length<100){complete=true;break}
+    if(response.workflow_runs.length<100){complete=true;break}
   }
-  ensure(complete,"Incomplete consumed authorization history");
-  if(revalidate){
-    ensure(found===consumed,"Owner authorization was not consumed by this one-shot run");
-    return;
-  }
-  ensure(found===null,"Owner comment authorization already consumed; use a new owner comment");
-  const response=await fetch(base+"/issues/"+issue+"/comments",{
-    method:"POST",
-    headers:{Authorization:"Bearer "+token,Accept:"application/vnd.github+json",
-      "X-GitHub-Api-Version":"2022-11-28","Content-Type":"application/json"},
-    body:JSON.stringify({body:consumed})
-  });
-  ensure(response.status===201,"Failed to durably consume one-shot paid authorization");
+  ensure(complete&&current!==null&&
+    current.run_attempt===1&&current.head_sha===process.env.GITHUB_SHA,
+    "Cannot independently verify this exact first-attempt owner-run history");
+  ensure(earliest===runId,
+    "Owner comment already consumed by an earlier workflow run; use a NEW owner comment");
 }
 async function plan({revalidate=false}={}){
   const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
@@ -310,7 +307,7 @@ async function plan({revalidate=false}={}){
     "Requested scenarios exceed manual owner budget authorization; choose fewer or approve more explicitly");
   const maxUSD=(reservedCents/100).toFixed(2);
   if(process.env.GITHUB_EVENT_NAME==="issue_comment")
-    await recordCommentGrant(event,token,revalidate);
+    await verifyOwnerCommentRun(event,token);
   console.log("Owner-approved one-shot run "+process.env.GITHUB_RUN_ID+
     " at "+head+", cases="+selected.join(",")+
     ", authorized USD="+budget+", cumulative worst-case reserved USD="+maxUSD+
