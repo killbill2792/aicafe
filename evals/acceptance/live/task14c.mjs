@@ -88,7 +88,7 @@ async function ownerTurn(page,thread,text){
      result.diagnosticStage:"unknown",
    calls:Number.isInteger(result.diagnosticModelCalls)?result.diagnosticModelCalls:null,
    tools:result.names.filter(n=>[
-    "get_supplier_purchase_orders","propose_supplier_vendor_email"].includes(n))
+    "get_supplier_purchase_orders","propose_supplier_vendor_email","record_supplier_order_outcome"].includes(n))
   }));
   fail("real_supervisor_"+code);
  }
@@ -260,22 +260,57 @@ async function main(){
    "where business_id=$1 and id=$2",[scope.businessId,id.po]);
   if(reports.length||po.length!==1||po[0].status!=="approved_for_ordering")
    fail("false_supplier_acceptance");
+  // Second genuine owner turn: a directly reported supplier phone outcome.
+  // The model must persist an owner-reported canonical row, not just answer
+  // in chat or assert Gmail delivery. No Gmail send/approval click happens.
+  const ownerReport="The supplier accepted purchase order "+id.po+
+    " by phone today. I am explicitly reporting that supplier outcome as the owner. "+
+    "Please save this as an owner-reported phone outcome for this exact PO and "+
+    "do not send the prepared Gmail draft. Copy my complete message verbatim as the report note.";
+  const outcomeTurn=await ownerTurn(connection.page,thread,ownerReport);
+  const outcomeRequired=["get_supplier_purchase_orders","record_supplier_order_outcome"];
+  cursor=-1;for(const name of outcomeRequired){
+    const at=outcomeTurn.names.indexOf(name,cursor+1);
+    if(at<0)fail("registered_supervisor_outcome_tool_missing_"+name);
+    cursor=at;
+  }
+  const secondOwner=await query(db,
+    "select id from public.ai_messages where business_id=$1 and thread_id=$2 "+
+    "and role='owner' and client_message_id=$3",
+    [scope.businessId,scope.threadId,outcomeTurn.clientMessageId]);
+  if(secondOwner.length!==1)fail("second_owner_turn_not_persisted");
+  const secondUsage=await readPersistedModelUsage(db,scope.businessId,secondOwner[0].id);
+  requireObservedProductionModel(secondUsage.model,"gpt-6-luna");
+  if(Number(secondUsage.model_call_count)<2||Number(secondUsage.input_tokens)<=0)
+    fail("real_owner_outcome_model_usage_missing");
+  const savedReports=await query(db,
+    "select id,owner_user_id,channel,outcome,note from public.purchase_order_channel_reports "+
+    "where business_id=$1 and purchase_order_id=$2",[scope.businessId,id.po]);
+  if(savedReports.length!==1||savedReports[0].owner_user_id!==scope.ownerUserId||
+    savedReports[0].channel!=="phone"||
+    savedReports[0].outcome!=="supplier_accepted"||
+    savedReports[0].note!==ownerReport)
+    fail("explicit_owner_chat_outcome_not_canonical");
+  const reportId=savedReports[0].id;
+  const realModelCalls=Number(usage.model_call_count)+Number(secondUsage.model_call_count);
   const after=await countSideEffects();
   if(before.stock!==after.stock||before.expenses!==after.expenses)
    fail("unauthorized_stock_or_expense_effect");
   const proof={schema_version:1,id:"14c",head_sha:env.HEAD_SHA,status:"passed",
-   observed_model:usage.model,modelCalls:Number(usage.model_call_count),
+   observed_model:usage.model,modelCalls:realModelCalls,
    gmailEffect:"not_authorized_not_sent",
    checks:{registeredToolsInOrder:required,sourceBoundSavedPO:true,
     ownerVisibleSeparateGmailApproval:true,foreignCafeDenied:true,
+    ownerOutcomeToolSequence:outcomeRequired,ownerReportedByPhone:true,
     providerCalls:0,stockEffects:0,expenseEffects:0}};
   const scoped={businessId:scope.businessId,otherCafeId:otherCafe.businessId,
    ownerUserId:scope.ownerUserId,threadId:thread,poId:id.po,
    contactId:id.contact,proposalId:proposal.id,
-   replyId:turn.done.reply.id,expectedProviderCalls:Number(usage.model_call_count)};
+   replyId:turn.done.reply.id,reportReplyId:outcomeTurn.done.reply.id,
+   reportId,expectedProviderCalls:realModelCalls};
   writeFileSync(file,JSON.stringify(proof,null,2)+"\n",{mode:0o600,flag:"wx"});
   writeFileSync(scopeFile,JSON.stringify(scoped,null,2)+"\n",{mode:0o600,flag:"wx"});
-  console.log("Task14C real-Luna model and owner approval-card evidence PASS; no Gmail send attempted.");
+  console.log("Task14C real-Luna saved Gmail approval card and explicit owner phone outcome; no Gmail send.");
  }finally{
   await foreign?.context.close().catch(()=>{});
   await connection?.context.close().catch(()=>{});
