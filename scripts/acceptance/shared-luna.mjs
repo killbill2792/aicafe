@@ -8,9 +8,6 @@ import {readFileSync,writeFileSync,appendFileSync,copyFileSync,mkdirSync,existsS
 import {join,resolve} from "node:path";
 import {createHash} from "node:crypto";
 import {spawn,spawnSync} from "node:child_process";
-// Always resolve from the coordinator's reviewed code, NEVER from candidate.
-import {TEST_CAFES} from "../seed/cafes.mjs";
-import {buildSeedSql,latestClosedDate} from "../seed/seedSql.mjs";
 const REPO="killbill2792/aicafe", OWNER="killbill2792";
 const shaRe=/^[0-9a-f]{40}$/, idRe=/^[a-z0-9][a-z0-9-]{0,31}$/;
 const manifestPath=id=>".github/luna/scenarios/"+id+".json";
@@ -124,7 +121,7 @@ function trackedSourceState(root,relative){
   ensure(stat.isFile(),"Tracked source is not a regular file or symlink");
   return {kind:"file",sha256:createHash("sha256").update(readFileSync(target)).digest("hex")};
 }
-function snapshotTrackedSource(){
+async function snapshotTrackedSource(){
   ensure(shaRe.test(process.env.HEAD_SHA)&&idRe.test(process.env.SCENARIO),
     "Trusted source snapshot requires approved exact head and scenario");
   const root=resolve("candidate");
@@ -141,10 +138,17 @@ function snapshotTrackedSource(){
   const tracked=Object.fromEntries(names.map(name=>[name,trackedSourceState(root,name)]));
   // Independent trusted-main generator. Candidate install/test code cannot
   // affect these imports or insert unexpected SQL into the approved seed.
-  const expected14bSeedSha256=process.env.SCENARIO==="14b"
-    ?createHash("sha256").update(buildSeedSql({
+  let expected14bSeedSha256=null;
+  if(process.env.SCENARIO==="14b"){
+    // Host-only lazy imports: the candidate Docker mounts JUST this runner
+    // and must never require these coordinator-only seed modules.
+    const [{TEST_CAFES},{buildSeedSql,latestClosedDate}]=await Promise.all([
+      import("../seed/cafes.mjs"),import("../seed/seedSql.mjs")
+    ]);
+    expected14bSeedSha256=createHash("sha256").update(buildSeedSql({
       cafes:TEST_CAFES,endDateStr:latestClosedDate(TEST_CAFES),days:14
-    })).digest("hex"):null;
+    })).digest("hex");
+  }
   writeFileSync(sourceInventoryFile(),JSON.stringify({
     head:process.env.HEAD_SHA,scenario:process.env.SCENARIO,tracked,
     expected14bSeedSha256
@@ -445,7 +449,7 @@ if(process.argv[1]&&import.meta.url===new URL("file://"+resolve(process.argv[1])
   else if(cmd==="attest")attest();
   else if(cmd==="validate-all")validateAll();
   else if(cmd==="freeze")freeze();
-  else if(cmd==="snapshot-source")snapshotTrackedSource();
+  else if(cmd==="snapshot-source")await snapshotTrackedSource();
   else if(cmd==="verify-preflight")verifyTrackedSource("preflight");
   else if(cmd==="verify-source")verifyTrackedSource("final");
   else throw Error("Unknown trusted Luna command");
