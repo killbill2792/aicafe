@@ -6,6 +6,8 @@ import { cookies } from "next/headers";
 import { parseThemeCookie, parseModeCookie } from "@/app/themes";
 import { ThemePicker } from "@/components/ui/ThemePicker";
 import { requireUser } from "@/lib/auth/requireUser";
+import {isLinkedStaffUser} from "@/lib/staffCommunication/identity.server";
+import {redirect} from "next/navigation";
 import { Link } from "@/i18n/navigation";
 import PageShell from "@/components/shared/PageShell";
 import SignOutButton from "@/components/more/SignOutButton";
@@ -43,6 +45,8 @@ function MoreGroup({ title, children }: { title: string; children: React.ReactNo
 
 export default async function MorePage() {
   const user = await requireUser();
+  // The general owner navigation/pricing screen is not a worker portal.
+  if(user&&await isLinkedStaffUser(user.id))redirect("/crew");
   const [cookieStore, t, locale, evidence, tCommon] = await Promise.all([
     cookies(), getTranslations("More"), getLocale(), timeReader("More", "getMoreBadgeInputs", () => getMoreBadgeInputs(user?.id)), getTranslations("Common"),
   ]);
