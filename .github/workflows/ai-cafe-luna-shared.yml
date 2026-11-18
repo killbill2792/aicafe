@@ -28,8 +28,9 @@ on:
         required: true
         default: '0.20'
 # One paid run at a time across this shared runner; preserve queued owner grants.
+# Non-owner/general PR comments should never consume the scarce paid FIFO slot.
 concurrency:
-  group: aicafe-shared-luna-owner-paid
+  group: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'issue_comment' && github.actor == 'killbill2792' && startsWith(github.event.comment.body, '/aicafe-luna '))) && 'aicafe-shared-luna-owner-paid' || format('aicafe-luna-unpaid-{0}', github.run_id) }}
   cancel-in-progress: false
   queue: max
 permissions:
