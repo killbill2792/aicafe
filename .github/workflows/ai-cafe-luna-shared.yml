@@ -18,6 +18,16 @@ on:
         type: string
         required: true
         default: 'all'
+      max_budget_usd:
+        description: 'One-run cumulative maximum reserved spend (default $0.20); increase explicitly for all'
+        type: string
+        required: true
+        default: '0.20'
+# One paid run at a time across this shared runner; preserve queued owner grants.
+concurrency:
+  group: aicafe-shared-luna-owner-paid
+  cancel-in-progress: false
+  queue: max
 permissions:
   contents: read
   pull-requests: read
