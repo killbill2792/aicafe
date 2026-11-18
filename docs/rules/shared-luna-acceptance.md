@@ -63,8 +63,17 @@ manifest at .github/luna/scenarios/<scenario-id>.json. Before running any
 candidate install or test code, the trusted host snapshots that exact
 Git-committed manifest into a separate protected file. The candidate can only
 read the frozen copy; host attestation uses the very same snapshot even if
-the candidate later edits its checkout. The host refuses unexpected tracked
-source changes after the test. Changing a feature
+the candidate later edits its checkout. Separately, before any untrusted
+candidate install/test executes, the trusted host records SHA-256 hashes and
+symlink targets for every Git-tracked source file. Later checks use only Node's
+non-executing file reads: **Git is never invoked by the trusted host on a
+candidate-controlled checkout after candidate execution**, so a malicious
+.git/config fsmonitor cannot execute on the host. Both candidate Docker
+stages mount their .git directory read-only. Changes to any tracked source
+fail closed, except the specifically approved Task14B rolling
+supabase/seed.sql regeneration during no-secret preflight; its new hash is
+frozen before any provider access and must remain unchanged through
+attestation. This exception never applies to another scenario. Changing a feature
 PR adds or changes only its own manifest + genuine live test. GitHub
 run ID + exact head + scenario and sanitized host artifact identify proof.
 No new database table or private-owner data store. Private prompts, source
