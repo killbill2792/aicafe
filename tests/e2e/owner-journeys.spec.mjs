@@ -54,13 +54,25 @@ test("@home Task16A authenticated mobile owner views library/routines/permission
     await expect(panel).toBeVisible();
     await panel.getByRole("button",{name:"Library",exact:true}).click();
     await expect(panel.getByRole("button",{name:"Task16A approval library"})).toBeVisible();console.info("[Task16A E2E] library from authenticated records");
-    await panel.getByRole("button",{name:"Routines",exact:true}).click();
-    await expect(panel.getByText("Daily source check")).toBeVisible();console.info("[Task16A E2E] canonical routine displayed");
+    const routinesTab=panel.getByRole("button",{name:"Routines",exact:true});
+    await routinesTab.click();
+    await expect(panel.getByText("Daily source check")).toBeVisible();
+    // Codex P2 regression: same-tab click must not trigger a loader with no fetch.
+    await routinesTab.click();
+    await expect(panel.getByText("Daily source check")).toBeVisible();
+    await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
+    console.info("[Task16A E2E] canonical routine remains after active-tab reselect");
     await panel.getByRole("button",{name:"Permissions",exact:true}).click();
     await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
     await expect(panel.getByText("Active",{exact:true})).toBeVisible();
     await expect(panel.getByText("Expired",{exact:true})).toBeVisible();console.info("[Task16A E2E] active and expired permissions visible");
     await expect(panel.getByText("5 goal starts per café-local day").first()).toBeVisible();
+    const permissionsTab=panel.getByRole("button",{name:"Permissions",exact:true});
+    await permissionsTab.click();
+    await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
+    await expect(panel.getByText("5 goal starts per café-local day").first()).toBeVisible();
+    await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
+    console.info("[Task16A E2E] canonical permission remains after active-tab reselect");
     // No verified phone MFA factor is installed in the seeded project:
     // a simulated grant cannot be shown as enabled.
     await expect(panel.getByRole("button",{name:"Request verification code"})).toHaveCount(0);
