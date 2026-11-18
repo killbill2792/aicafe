@@ -37,6 +37,15 @@ test("generic feature case can be added in the feature PR without changing the s
     assert.equal(readScenario(dir,"future-case").id,"future-case");
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
+test("generic owner-browser scenarios can use the same shared server runner",()=>{
+  const m=copy(good);
+  m.engine="node-server";
+  m.entrypoint="evals/acceptance/live/task14c.mjs";
+  assert.equal(validateScenario(m,"future-case").engine,"node-server");
+  m.entrypoint="evals/acceptance/../../scripts/unsafe.mjs";
+  assert.throws(()=>validateScenario(m,"future-case"),/Invalid generic test entrypoint/);
+});
+
 test("candidate cannot change trusted 13C entrypoint or host oracle",()=>{
   const m={id:"13c",mode:"legacy",engine:"vitest",
     entrypoint:"lib/ai/supervisor/routines/fake.live.test.ts",
