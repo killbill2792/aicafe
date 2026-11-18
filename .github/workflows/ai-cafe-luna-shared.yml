@@ -1,6 +1,8 @@
 # One reusable owner-approved real Luna path. No PR-supplied code receives
 # provider credentials, and manual workflow runs cannot be re-run for spend.
 name: AI CAFE Shared Owner-Gated Luna Scenarios
+# Display title binds an immutable owner comment ID to its Action run history.
+run-name: ${{ github.event_name == 'issue_comment' && format('luna-owner-comment-{0}', github.event.comment.id) || format('luna-manual-{0}', github.run_id) }}
 on:
   # Only an explicit new owner comment on a PR can authorize a paid scenario.
   # This is not an automatic on-push/on-PR paid trigger.
@@ -38,11 +40,12 @@ permissions:
   pull-requests: read
 jobs:
   authorize:
-    name: Verify and consume one-shot owner grant before any provider access
+    name: Verify first owner comment run from immutable Actions history
     permissions:
       contents: read
       pull-requests: read
-      issues: write
+      issues: read
+      actions: read
     if: >-
       github.ref == 'refs/heads/main' &&
       github.actor == 'killbill2792' &&
@@ -84,6 +87,7 @@ jobs:
       contents: read
       pull-requests: read
       issues: read
+      actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
