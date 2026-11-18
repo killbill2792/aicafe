@@ -120,6 +120,23 @@ test("Git-local CI classification retains the original docs, code, E2E and Super
  });
  assert.throws(()=>classifyBaselinePaths([]),/empty_pull_request_diff/);
 });
+test("Task16C allows only existing exact external-access infrastructure with mandatory tests",()=>{
+ const paths=[
+  "lib/connectors/access.server.ts","lib/connectors/access.test.ts",
+  "lib/connectors/registry.live.test.ts",
+  "supabase/migrations/20261118100000_supervisor_external_access.sql",
+ ];
+ const domains=domainsForPaths(paths);
+ assert.deepEqual(domains,["supervisor","gmail"]);
+ const files=selectedFiles(domains);
+ for(const file of [
+  "lib/connectors/access.test.ts","lib/connectors/registry.live.test.ts",
+  "lib/connectors/gmail/provider.test.ts",
+ ])assert.ok(files.includes(file),"Missing Task16C authenticated source/effect regression: "+file);
+ assert.throws(()=>domainsForPaths(["lib/connectors/accessArbitrary/provider.ts"]),
+   /unknown_connector_contract/);
+});
+
 test("shared connector boundary runs Gmail security tests; new unknown provider remains blocked",()=>{
  const domains=domainsForPaths(["lib/connectors/registry.server.ts","lib/connectors/crypto.server.ts",
   "lib/connectors/registry.test.ts"]);

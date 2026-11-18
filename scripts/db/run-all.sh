@@ -179,6 +179,7 @@ supabase_lane() {
   sql_step csv-import-rls.sql "CSV import: RLS, atomic promotion, wage review"
   sql_step commitments-db-acceptance.sql "Owner reminders: scope, dedupe, recovery, due once, DST"
   sql_step gmail-connector-security-db.sql "Task 11 Gmail: RLS, scoped owner, receipt-gated effect completion"
+  sql_step task16c-external-permissions-db.sql "Task16C: owner/café permission revoke, CAS, audit, Gmail generations"
 
   group "Concurrent sessions"
   check supabase "Task13C: concurrent authenticated staff, owner reply and assignment replay" env TASK13C_DISPOSABLE_DB_URL="$supabase_url" node scripts/task13c-concurrent-nonce-db.mjs
