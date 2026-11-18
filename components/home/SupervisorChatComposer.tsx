@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown } from "lucide-react";
+import { Clock3, History, Mic, Plus, Send, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown, ShieldCheck } from "lucide-react";
 import { AgentAvatar } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
 import { Link } from "@/i18n/navigation";
@@ -27,6 +27,7 @@ import {explainLineSchema} from "@/lib/ai/agent/explain";
 import {clarifyBlockSchema} from "@/lib/ai/conversations/contracts";
 import ChatJobProgress from "./ChatJobProgress";
 import SupervisorWorkStatus from "./SupervisorWorkStatus";
+import SupervisorMandatePanel from "./SupervisorMandatePanel";
 import { useSupervisorWork } from "./useSupervisorWork";
 import { useAgentJobWatcher } from "./useAgentJobWatcher";
 import { answeredOwnerMessageIds, shouldShowRunningJob, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
@@ -255,6 +256,7 @@ export default function SupervisorChatComposer({
   const [optimisticOwner, setOptimisticOwner] = useState<{ id: string; text: string; clientMessageId: string } | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [controlsOpen,setControlsOpen]=useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -930,7 +932,7 @@ export default function SupervisorChatComposer({
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
     <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-surface/85 px-4 py-3 md:px-5">
-      <button type="button" onClick={() => setHistoryOpen(true)} disabled={!enabled}
+      <button type="button" onClick={() => {setControlsOpen(false);setHistoryOpen(true);}} disabled={!enabled}
         aria-label={copy.historyTitle} title={copy.historyTitle}
         className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <History size={22} aria-hidden="true" />
@@ -938,6 +940,12 @@ export default function SupervisorChatComposer({
       <h2 className="min-w-0 flex-1 truncate text-center text-[16px] font-bold text-ink">
         {threadTitle || copy.supervisor}
       </h2>
+      <button type="button" onClick={()=>{setHistoryOpen(false);setControlsOpen(true);}}
+        aria-expanded={controlsOpen}
+        aria-label={en.SupervisorMandateCenter.open} title={en.SupervisorMandateCenter.open}
+        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+        <ShieldCheck size={21} aria-hidden="true"/>
+      </button>
       <Link href="/operations" title={copy.teamButton} aria-label={copy.teamButton}
         className="inline-flex min-h-12 items-center gap-1 rounded-xl px-2 text-[14px] font-bold text-ink no-underline hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
         <UsersRound size={19} aria-hidden="true" /><span className="hidden sm:inline">{copy.teamButton}</span>
@@ -1167,6 +1175,10 @@ export default function SupervisorChatComposer({
             : mediaNotice}
       </div>
     </div>
+    {controlsOpen && <SupervisorMandatePanel key={threadId??threads[0]?.id??"no-thread"} threadId={threadId} threads={threads}
+      approvals={supervisorWork.items.filter(item=>item.status==="approval_required")
+        .map(item=>({id:item.id,title:item.title,detail:item.detail}))}
+      onSelectThread={selectThread} onClose={()=>setControlsOpen(false)}/>}
     {historyOpen && <div className="absolute inset-0 z-30 flex" role="presentation">
       <button type="button" className="absolute inset-0 bg-fg/35" aria-label={copy.closeHistory}
         onClick={() => setHistoryOpen(false)} />

@@ -1,0 +1,101 @@
+{
+  "id": "16a",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task16a.mjs",
+  "proof": "16a-proof.json",
+  "scope": "16a-scope.json",
+  "expectedTools": [
+    "get_supervisor_permissions",
+    "manage_routine"
+  ],
+  "assertions": [
+    {
+      "name": "verified-owner-mandate",
+      "kind": "source",
+      "table": "public.supervisor_mandates",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "id": {
+          "scope": "mandateId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "verified-owner-routine",
+      "kind": "source",
+      "table": "public.supervisor_routines",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "id": {
+          "scope": "routineId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-saved-model-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-cafe-cannot-own-mandate",
+      "kind": "isolation",
+      "table": "public.supervisor_mandates",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "mandateId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-cafe-cannot-own-routine",
+      "kind": "isolation",
+      "table": "public.supervisor_routines",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "routineId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
