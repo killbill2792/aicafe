@@ -60,6 +60,7 @@ export function readScenario(root,id){
   return validateScenario(m,id);
 }
 function frozenFile(){
+  if(process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1")return "/trusted/luna-manifest.json";
   ensure(typeof process.env.RUNNER_TEMP==="string"&&process.env.RUNNER_TEMP.length>0,
     "Trusted runner temp path missing");
   return resolve(process.env.RUNNER_TEMP,"luna-locked-manifest.json");
