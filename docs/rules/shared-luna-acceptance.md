@@ -71,9 +71,16 @@ candidate-controlled checkout after candidate execution**, so a malicious
 .git/config fsmonitor cannot execute on the host. Both candidate Docker
 stages mount their .git directory read-only. Changes to any tracked source
 fail closed, except the specifically approved Task14B rolling
-supabase/seed.sql regeneration during no-secret preflight; its new hash is
-frozen before any provider access and must remain unchanged through
-attestation. This exception never applies to another scenario. Changing a feature
+supabase/seed.sql regeneration during no-secret preflight; the trusted
+coordinator independently derives the full expected SQL bytes from its own
+reviewed `scripts/seed/cafes.mjs` + `seedSql.mjs` sources, the canonical latest
+closed day, and the fixed 14-day window. The host compares SHA-256 of the
+candidate-generated seed against the independently generated SQL **before**
+approving the refresh. An arbitrary candidate-mutated generator's SQL is
+rejected even if it restores all tracked source files afterward. The approved
+exact byte hash is then frozen before any provider access and must remain
+unchanged through database reset and attestation. This exception never
+applies to another scenario. Changing a feature
 PR adds or changes only its own manifest + genuine live test. GitHub
 run ID + exact head + scenario and sanitized host artifact identify proof.
 No new database table or private-owner data store. Private prompts, source
