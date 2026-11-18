@@ -269,8 +269,8 @@ globalThis.fetch=async (url,options={})=>{
 };
 `;
     writeFileSync(preload,api);
-    const execute=()=>spawnSync(process.execPath,["--import",preload,
-      join(import.meta.dirname,"shared-luna.mjs"),"plan"],{
+    const execute=(cmd="plan")=>spawnSync(process.execPath,["--import",preload,
+      join(import.meta.dirname,"shared-luna.mjs"),cmd],{
       encoding:"utf8",env:{...process.env,GITHUB_EVENT_PATH:eventFile,
         GITHUB_OUTPUT:output,GITHUB_RUN_ID:"999",GH_TOKEN:"fake-read-only",
         LUNA_TEST_COMMENT_STATE:stateFile,LUNA_TEST_GRANTS:grantsFile,
