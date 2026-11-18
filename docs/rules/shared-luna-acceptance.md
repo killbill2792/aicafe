@@ -73,7 +73,9 @@ stages mount their .git directory read-only. Changes to any tracked source
 fail closed, except the specifically approved Task14B rolling
 supabase/seed.sql regeneration during no-secret preflight; the trusted
 coordinator independently derives the full expected SQL bytes from its own
-reviewed `scripts/seed/cafes.mjs` + `seedSql.mjs` sources, the canonical latest
+reviewed `scripts/seed/cafes.mjs` + `seedSql.mjs` sources, lazily imported
+**only by the trusted-host snapshot command** (not at module startup, since
+candidate Docker mounts only the shared runner file), the canonical latest
 closed day, and the fixed 14-day window. The host compares SHA-256 of the
 candidate-generated seed against the independently generated SQL **before**
 approving the refresh. An arbitrary candidate-mutated generator's SQL is
