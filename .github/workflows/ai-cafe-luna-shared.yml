@@ -101,6 +101,11 @@ jobs:
           console.log("Scenario validated without spending: "+m.id);
           NODE
           docker version >/dev/null
+      - name: Freeze the exact source-controlled scenario outside candidate write access
+        run: |
+          set -euo pipefail
+          node coordinator/scripts/acceptance/shared-luna.mjs freeze
+          test -s "$RUNNER_TEMP/luna-locked-manifest.json"
       - name: Candidate installation and regression preflight inside no-secret Docker
         run: |
           set -euo pipefail
@@ -185,6 +190,7 @@ jobs:
             -v "$GITHUB_WORKSPACE/candidate:/candidate" \
             -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/task14b-fetch-shim.cjs:/trusted/task14b-fetch-shim.cjs:ro" \
             -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/shared-luna.mjs:/trusted/shared-luna.mjs:ro" \
+            -v "$RUNNER_TEMP/luna-locked-manifest.json:/trusted/luna-manifest.json:ro" \
             -v "$RUNNER_TEMP/luna-candidate-proof:/proof" \
             -w /candidate \
             -e NODE_OPTIONS='--require=/trusted/task14b-fetch-shim.cjs' \
@@ -193,14 +199,15 @@ jobs:
             -e AI_CAFE_LIVE_ACCEPTANCE -e APP_URL -e ACCEPTANCE_DATABASE_URL \
             -e SUPERVISOR_OPENAI_MODEL \
             -e SUPERVISOR_OPENAI_FALLBACK_MODEL='gpt-4.1-mini' \
-            -e HEAD_SHA -e SCENARIO -e NEXT_PUBLIC_SUPABASE_URL \
-            -e NEXT_PUBLIC_SUPABASE_ANON_KEY -e SUPABASE_SERVICE_ROLE_KEY \
+            -e HEAD_SHA -e SCENARIO -e AICAFE_SHARED_LUNA_CANDIDATE=1 \
+            -e NEXT_PUBLIC_SUPABASE_URL -e NEXT_PUBLIC_SUPABASE_ANON_KEY -e SUPABASE_SERVICE_ROLE_KEY \
             mcr.microsoft.com/playwright:v1.58.2-noble \
             node /trusted/shared-luna.mjs candidate
       - name: Independently verify model receipts and source/owner data on trusted host
         run: |
           set -euo pipefail
           test "$(git -C candidate rev-parse HEAD)" = "$HEAD_SHA"
+          git -C candidate diff --exit-code HEAD -- 
           node coordinator/scripts/acceptance/shared-luna.mjs attest
       - name: Upload only the sanitized independent verdict
         if: always()
