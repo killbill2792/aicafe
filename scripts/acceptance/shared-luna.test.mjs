@@ -5,6 +5,8 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawnSync} from "node:child_process";
 import {validateScenario,readScenario} from "./shared-luna.mjs";
+import {TEST_CAFES} from "../seed/cafes.mjs";
+import {buildSeedSql,latestClosedDate} from "../seed/seedSql.mjs";
 const good={
   id:"future-case",mode:"generic",engine:"vitest",
   entrypoint:"lib/ai/supervisor/routines/futureCase.live.test.ts",
@@ -343,7 +345,17 @@ test("non-executing post-candidate source check blocks Git fsmonitor escape and 
     ],{cwd:work,encoding:"utf8",env:{...process.env,HEAD_SHA:head,
       SCENARIO:scenario,RUNNER_TEMP:envDir}});
     assert.equal(command("snapshot-source","14b").status,0);
-    writeFileSync(seed,"-- intentionally refreshed rolling 14B seed\n");
+    // Codex P1 regression: candidate-modified generator temporarily writes
+    // attacker SQL and restores its tracked source before verification.
+    writeFileSync(seed,"-- malicious replacement\ncreate table public.fake_approval_receipt(id int);\n");
+    const injected=command("verify-preflight","14b");
+    assert.notEqual(injected.status,0);
+    assert.match(injected.stderr,/unexpected tracked source/);
+    // Only the independent reviewed/coordinator generator may supply
+    // accepted bytes for the intentional 14B rolling-date seed refresh.
+    const trustedSeed=buildSeedSql({cafes:TEST_CAFES,
+      endDateStr:latestClosedDate(TEST_CAFES),days:14});
+    writeFileSync(seed,trustedSeed);
     const pre=command("verify-preflight","14b");
     assert.equal(pre.status,0,pre.stderr);
     // Simulate the P1 malicious candidate rewriting its writable local Git
@@ -355,7 +367,7 @@ test("non-executing post-candidate source check blocks Git fsmonitor escape and 
     writeFileSync(gitconfig,oldConfig+"\n[core]\n\tfsmonitor = "+hook+"\n");
     const goodResult=command("verify-source","14b");
     assert.equal(goodResult.status,0,goodResult.stderr);
-    assert.equal(readFileSync(seed,"utf8"),"-- intentionally refreshed rolling 14B seed\n");
+    assert.equal(readFileSync(seed,"utf8"),trustedSeed);
     assert.throws(()=>readFileSync(sentinel,"utf8"),{code:"ENOENT"});
     writeFileSync(source,"export const trusted = false;\n");
     const failResult=command("verify-source","14b");
