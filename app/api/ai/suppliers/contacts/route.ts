@@ -47,7 +47,9 @@ export async function POST(request:Request){
   const db=await createServerSupabaseClient();
   if(x.action==="report_outcome"){
    try{
-     const report=await recordOwnerSupplierOutcome(db,scope,x);
+     const report=await recordOwnerSupplierOutcome(db,scope,{
+       purchaseOrderId:x.purchaseOrderId,channel:x.channel,outcome:x.outcome,note:x.note
+     });
      return conversationJson({saved:true,source:report.source,
        providerVerified:report.providerVerified,reportId:report.reportId,
        reportedAt:report.reportedAt,alreadyRecorded:report.alreadyRecorded},
