@@ -9,6 +9,9 @@ export const supplierOutcomeInput=z.strictObject({
    "supplier_acknowledged","supplier_accepted","supplier_declined"]),
  note:z.string().trim().min(1).max(1000)
 });
+// The model does NOT author source attribution. The authenticated turn
+// supplies the exact current owner text as note on the trusted server.
+export const ownerSupplierOutcomeToolInput=supplierOutcomeInput.omit({note:true});
 export type SupplierOutcomeInput=z.infer<typeof supplierOutcomeInput>;
 export type SupplierOutcomeScope={businessId:string;ownerUserId:string};
 export type SupplierOwnerReport={
