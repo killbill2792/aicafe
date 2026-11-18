@@ -70,9 +70,8 @@ export const supplierPurchasingTools={
      return {source:"supplier_owner_report",period:null,agentId:"maya",
        saved:false,missing:["owner_report_writer_unavailable"]};
    const report=await ctx.purchasing.recordOwnerOutcome({...input,note:text});
-   return {source:"supplier_owner_report",period:null,agentId:"maya",
-     saved:true,missing:[],reported:true,providerVerified:false,
-     supplierAcceptanceSource:"owner_reported",...report};
+   return {...report,source:"supplier_owner_report",period:null,agentId:"maya",
+     saved:true,missing:[],reported:true,supplierAcceptanceSource:"owner_reported"};
   }
  },
  propose_supplier_vendor_email:{
