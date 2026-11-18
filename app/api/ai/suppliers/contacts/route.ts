@@ -3,6 +3,7 @@ import {authenticatedConversationContext,ConversationApiError} from "@/lib/ai/co
 import {conversationError,conversationJson,parseInput,readBoundedJson,requireSameOrigin}
  from "@/lib/ai/conversations/http.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
+import {recordOwnerSupplierOutcome} from "@/lib/purchasing/ownerSupplierOutcome.server";
 
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const uuid=z.uuid();
@@ -45,19 +46,19 @@ export async function POST(request:Request){
   const {scope}=await authenticatedConversationContext();
   const db=await createServerSupabaseClient();
   if(x.action==="report_outcome"){
-   const order=await db.from("purchase_orders").select("id,status")
-     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
-     .eq("id",x.purchaseOrderId).maybeSingle();
-   if(order.error)throw order.error;
-   if(!order.data)throw new ConversationApiError(404,"supplier_order_not_found");
-   // An owner's outside-channel report is evidence about THAT order only.
-   const saved=await db.from("purchase_order_channel_reports").insert({
-     business_id:scope.businessId,owner_user_id:scope.ownerUserId,
-     purchase_order_id:x.purchaseOrderId,channel:x.channel,outcome:x.outcome,note:x.note
-   }).select("id,reported_at").single();
-   if(saved.error)throw saved.error;
-   return conversationJson({saved:true,source:"owner_reported",providerVerified:false,
-     reportId:saved.data.id,reportedAt:saved.data.reported_at},201);
+   try{
+     const report=await recordOwnerSupplierOutcome(db,scope,x);
+     return conversationJson({saved:true,source:report.source,
+       providerVerified:report.providerVerified,reportId:report.reportId,
+       reportedAt:report.reportedAt,alreadyRecorded:report.alreadyRecorded},
+       report.alreadyRecorded?200:201);
+   }catch(error){
+     if(error instanceof Error&&error.message==="supplier_order_not_found")
+       throw new ConversationApiError(404,error.message);
+     if(error instanceof Error&&error.message==="supplier_terminal_report_requires_owner_review")
+       throw new ConversationApiError(409,error.message);
+     throw error;
+   }
   }
   const supplier=await db.from("cafe_suppliers").select("id")
     .eq("business_id",scope.businessId).eq("id",x.supplierId).maybeSingle();
