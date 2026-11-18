@@ -121,6 +121,13 @@ export type AgentToolContext = {
         providerVerified:boolean;ownerQuestion:string|null}>;
       gmailConnection?:{status:string;connected:boolean;canSend:boolean;canRead:boolean}}>;
     inspect(input:SupplierPurchaseInput):Promise<PurchasePlan>;
+    /** Verified, latest-owner-message source report. Never an external Gmail receipt. */
+    recordOwnerOutcome?(input:{
+      purchaseOrderId:string;channel:"gmail"|"phone"|"portal"|"in_person"|"other";
+      outcome:"unknown"|"not_contacted"|"supplier_contacted"|"supplier_acknowledged"|"supplier_accepted"|"supplier_declined";
+      note:string
+    }):Promise<{reportId:string;reportedAt:string;alreadyRecorded:boolean;
+      source:"owner_reported";providerVerified:false;outcome:string}>;
     proposeVendorSend?(input:{purchaseOrderId:string}):Promise<{
       proposalId:string;revision:number;purchaseOrderId:string;
       supplierName:string;recipient:string;account:string;note:string
@@ -280,6 +287,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_supplier_purchase_orders")return supplierPurchasingTools.get_supplier_purchase_orders.execute(raw,ctx);
   if(name==="inspect_supplier_purchase")return supplierPurchasingTools.inspect_supplier_purchase.execute(raw,ctx);
   if(name==="propose_supplier_purchase_order")return supplierPurchasingTools.propose_supplier_purchase_order.execute(raw,ctx);
+  if(name==="record_supplier_order_outcome")return supplierPurchasingTools.record_supplier_order_outcome.execute(raw,ctx);
   if(name==="propose_supplier_vendor_email")return supplierPurchasingTools.propose_supplier_vendor_email.execute(raw,ctx);
   if(name==="propose_price_experiment")return priceExperimentTools.propose_price_experiment.execute(raw,ctx);
   if(name==="get_price_monitor_status")return priceMonitorTools.get_price_monitor_status.execute(raw,ctx);
