@@ -6,6 +6,7 @@
  */
 import {readFileSync,writeFileSync,appendFileSync,copyFileSync,mkdirSync,existsSync,openSync,closeSync,readdirSync,lstatSync} from "node:fs";
 import {join,resolve} from "node:path";
+import {createHash} from "node:crypto";
 import {spawn,spawnSync} from "node:child_process";
 const REPO="killbill2792/aicafe", OWNER="killbill2792";
 const shaRe=/^[0-9a-f]{40}$/, idRe=/^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -56,6 +57,39 @@ export function readScenario(root,id){
   ensure(idRe.test(id),"Invalid scenario ID");
   const p=resolve(root,manifestPath(id));
   const m=JSON.parse(readFileSync(p,"utf8"));
+  return validateScenario(m,id);
+}
+function frozenFile(){
+  ensure(typeof process.env.RUNNER_TEMP==="string"&&process.env.RUNNER_TEMP.length>0,
+    "Trusted runner temp path missing");
+  return resolve(process.env.RUNNER_TEMP,"luna-locked-manifest.json");
+}
+function freeze(){
+  ensure(shaRe.test(process.env.HEAD_SHA)&&idRe.test(process.env.SCENARIO),
+    "Frozen manifest requires validated exact SHA and scenario ID");
+  const root=resolve("candidate"),id=process.env.SCENARIO,p=manifestPath(id);
+  const rev=spawnSync("git",["-C",root,"rev-parse","HEAD"],{encoding:"utf8"});
+  ensure(rev.status===0&&rev.stdout.trim()===process.env.HEAD_SHA,
+    "Candidate HEAD does not match owner authorized SHA");
+  const mode=spawnSync("git",["-C",root,"ls-tree","HEAD","--",p],{encoding:"utf8"});
+  ensure(mode.status===0&&/^100644 blob [0-9a-f]{40}\t/.test(mode.stdout),
+    "Scenario must be a regular source-controlled blob, not a symlink");
+  const original=spawnSync("git",["-C",root,"show","HEAD:"+p],{
+    encoding:"utf8",maxBuffer:256000});
+  ensure(original.status===0&&original.stdout.length>0&&original.stdout.length<128000,
+    "Source-controlled scenario manifest unavailable");
+  const checkedOut=readFileSync(resolve(root,p),"utf8");
+  ensure(original.stdout===checkedOut,"Working candidate manifest differs from approved SHA");
+  const m=validateScenario(JSON.parse(original.stdout),id);
+  ensure(existsSync(resolve(root,m.entrypoint)),"Scenario source file missing");
+  const output=frozenFile();
+  writeFileSync(output,original.stdout,{mode:0o400,flag:"wx"});
+  const digest=createHash("sha256").update(original.stdout).digest("hex");
+  console.log("Locked exact-head scenario "+id+" sha256="+digest);
+}
+function readFrozen(id){
+  ensure(idRe.test(id),"Bad frozen scenario ID");
+  const m=JSON.parse(readFileSync(frozenFile(),"utf8"));
   return validateScenario(m,id);
 }
 function validateAll(){
@@ -133,7 +167,7 @@ function exec(bin,args,opts={}){
 }
 async function candidate(){
   checkHead();
-  const id=process.env.SCENARIO,manifest=readScenario("/candidate",id);
+  const id=process.env.SCENARIO,manifest=readFrozen(id);
   const dir="/proof";
   ensure(existsSync(dir),"Missing candidate proof mount");
   const env={...process.env,
@@ -197,7 +231,7 @@ function dbCount(table,where,scope){
 }
 function attest(){
   ensure(process.env.GITHUB_RUN_ATTEMPT==="1"&&shaRe.test(process.env.HEAD_SHA),"Immutable authorized attempt required");
-  const id=process.env.SCENARIO,manifest=readScenario(resolve("candidate"),id);
+  const id=process.env.SCENARIO,manifest=readFrozen(id);
   const dir=process.env.RUNNER_TEMP,source=dir+"/luna-candidate-proof/";
   const audit=JSON.parse(readFileSync(dir+"/luna-host-audit.json","utf8"));
   const proof=JSON.parse(readFileSync(source+manifest.proof,"utf8"));
@@ -245,5 +279,6 @@ if(process.argv[1]&&import.meta.url===new URL("file://"+resolve(process.argv[1])
   else if(cmd==="candidate")await candidate();
   else if(cmd==="attest")attest();
   else if(cmd==="validate-all")validateAll();
+  else if(cmd==="freeze")freeze();
   else throw Error("Unknown trusted Luna command");
 }
