@@ -99,8 +99,14 @@ and negative no-unapproved-effect cases.
 
 ## Add any new real-Luna feature scenario without a runner PR
 
-Place a genuine registered-Supervisor Vitest journey in the feature PR.
-It must run **only** when AICAFE_SHARED_LUNA=1, with local disposable DB,
+Place a genuine registered-Supervisor journey in the feature PR.
+The common runner accepts a Vitest .live.test.ts case (engine: vitest), or
+a localhost Next.js/owner-browser scenario in
+evals/acceptance/live/<name>.mjs (engine: node-server). Node-server cases
+receive --output /proof/<id>-proof.json and
+--scope-output /proof/<id>-scope.json; the real app runs in the same disposable
+Docker. Vitest cases write those files to test-results/acceptance/.
+Either mode must run **only** when AICAFE_SHARED_LUNA=1, with local disposable DB,
 and produce test-results/acceptance/<id>-proof.json containing
 head_sha, observed_model gpt-6-luna and status passed, plus
 test-results/acceptance/<id>-scope.json containing test-scoped IDs and
