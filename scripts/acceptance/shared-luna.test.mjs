@@ -319,6 +319,10 @@ test("trusted workflow revalidates an owner comment after untrusted setup but be
   assert.ok(at>0&&broker>at,"Paid workflow must recheck owner/current SHA after setup and before key");
   assert.ok(workflow.slice(at,broker).includes("node scripts/acceptance/shared-luna.mjs revalidate"));
   assert.ok(workflow.includes("queue: max")&&workflow.includes("cancel-in-progress: false"));
+  assert.ok(workflow.includes("run-name:")&&workflow.includes("luna-owner-comment-{0}"),
+    "Immutable comment ID must appear in Actions run title");
+  assert.ok(workflow.includes("actions: read")&&!workflow.includes("issues: write"),
+    "Owner-grant authorization must use read-only GitHub permissions");
 });
 
 test("non-executing post-candidate source check blocks Git fsmonitor escape and accepts only 14B seed refresh",()=>{
