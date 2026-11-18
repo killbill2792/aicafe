@@ -129,7 +129,7 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "week. Previous plan text, get_coverage_gaps and a second schedule " +
     "projection are NOT substitutes for a new staff message read. " +
     "Independently check the actual dated schedule and identify the " +
-    "affected employee, date, and relevant scheduled clocks when provable. " +
+    "affected employee, date, and relevant scheduled start/end clock when provable. " +
     "For EVERY numerical clock in a final update, use only the CURRENT " +
     "registered dated roster's exact employee, date, and shift-start/end " +
     "role. On follow-up, an employee's spoken or written proposed hours " +
