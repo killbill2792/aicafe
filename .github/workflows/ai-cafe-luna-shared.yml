@@ -176,6 +176,14 @@ jobs:
             "SUPABASE_SERVICE_ROLE_KEY="+service+"\n"+
             "AICAFE_14B_BROKER_TOKEN="+token+"\n");
           NODE
+      - name: Reverify fresh owner grant and current SHA immediately before provider access
+        working-directory: coordinator
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          node scripts/acceptance/shared-luna.mjs plan
       - name: Start bounded trusted broker on host (secret isolated from candidate)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEYS }}
