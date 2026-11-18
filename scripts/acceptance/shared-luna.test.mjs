@@ -434,8 +434,8 @@ test("shared live job executes broker tests from split trusted coordinator check
   const next=workflow.indexOf("name: Freeze the exact source-controlled scenario",first);
   assert.ok(first>=0&&next>first,"Expected pre-spend broker preflight stage");
   const step=workflow.slice(first,next);
-  assert.match(step,/\\(cd coordinator && node --test scripts\\/acceptance\\/task14b-broker\\.test\\.mjs\\)/,
+  assert.match(step,/\(cd coordinator && node --test scripts\/acceptance\/task14b-broker\.test\.mjs\)/,
     "Broker security tests must resolve their legacy workflow and shim paths inside coordinator");
-  assert.doesNotMatch(step,/^\\s*node --test coordinator\\/scripts\\/acceptance\\/task14b-broker\\.test\\.mjs/m,
+  assert.doesNotMatch(step,/^\s*node --test coordinator\/scripts\/acceptance\/task14b-broker\.test\.mjs/m,
     "Executing trusted broker tests from split workspace root is broken");
 });
