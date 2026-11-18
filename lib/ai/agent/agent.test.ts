@@ -167,7 +167,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
   });
   it("publishes exactly the registered strict functions", () => {
     expect(agentToolDefinitions.map(t=>t.name)).toEqual(["ask_owner","describe_data","query_data","get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items","get_profit","get_sales","get_menu_items",
-      "get_staff","get_schedule","get_labor","get_team","get_week_schedule","get_labor_rules",
+      "get_staff","get_schedule","get_labor","get_staff_messages","get_team","get_week_schedule","get_labor_rules",
       "get_coverage_gaps","get_shift_cost","get_business_hours","get_expenses","get_bills",
       "get_break_even","get_cost_summary","get_usage_variance","get_product_costs","get_ingredient_costs","get_inventory",
       "get_item_sales","get_price_recommendation","get_today_so_far","draft_week_schedule","simulate_staff_absence","suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","propose_price_change","propose_price_experiment","get_price_monitor_status","propose_goal","record_checkin","get_goal_status",

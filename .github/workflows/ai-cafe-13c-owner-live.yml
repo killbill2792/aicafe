@@ -1,6 +1,9 @@
+# Task13C reusable owner-paid acceptance. v1-v4 grants are consumed and cannot replay.
+# Each future attempt must add a fresh owner-created exact-head nonce marker;
+# the trusted workflow atomically records that nonce BEFORE any provider access.
 # Trusted-main owner-only paid acceptance. Never execute candidate code with
 # OPENAI_API_KEYS or a write-capable GitHub token. No Vercel previews/hosted DB.
-name: AI CAFE Task 13C Bounded Real-Model Acceptance
+name: AI CAFE Task 13C Reusable Bounded Real-Model Acceptance
 on:
   pull_request_target:
     types: [edited]
@@ -24,8 +27,7 @@ jobs:
       github.event.pull_request.head.ref == 'feat/task13c-employee-communication' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.changes.body.from != null &&
-      !contains(github.event.changes.body.from, '<!-- aicafe-task13c-trusted-paid-run-v1 ') &&
-      contains(github.event.pull_request.body, '<!-- aicafe-task13c-trusted-paid-run-v1 ')
+      contains(github.event.pull_request.body, '<!-- aicafe-task13c-trusted-paid-run-v5 ')
     permissions:
       contents: read
       issues: write
@@ -45,9 +47,12 @@ jobs:
           import {readFileSync,appendFileSync} from "node:fs";
           const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
           const pr=event.pull_request,sha=pr?.head?.sha;
-          const prefix="<!-- aicafe-task13c-trusted-paid-run-v1 ";
-          const marker=prefix+sha+" -->";
+          const prefix="<!-- aicafe-task13c-trusted-paid-run-v5 ";
           const old=event.changes?.body?.from;
+          const matches=typeof pr?.body==="string"?
+            [...pr.body.matchAll(/<!-- aicafe-task13c-trusted-paid-run-v5 ([a-f0-9]{40}) ([a-f0-9]{32}) -->/g)]:[];
+          const nonce=matches.length===1?matches[0][2]:null;
+          const marker=matches.length===1?matches[0][0]:null;
           if(event.action!=="edited"||event.sender?.login!=="killbill2792"||
              process.env.GITHUB_RUN_ATTEMPT!=="1"||
              process.env.GITHUB_TRIGGERING_ACTOR!=="killbill2792"||
@@ -58,7 +63,8 @@ jobs:
              pr.head?.repo?.full_name!=="killbill2792/aicafe"||
              !/^[a-f0-9]{40}$/.test(sha??"")||
              typeof old!=="string"||old.includes(prefix)||
-             !pr.body?.includes(marker)||
+             matches.length!==1||matches[0][1]!==sha||
+             !nonce||!pr.body?.includes(marker)||
              (pr.body.split(prefix).length!==2))
              throw Error("Fresh exact-head owner approval required");
           const headers={"authorization":"Bearer "+process.env.GH_TOKEN,
@@ -73,7 +79,9 @@ jobs:
              throw Error("Approval not for current Task13C PR head");
           // An earlier or failed pilot-v1 attempt irrevocably consumes this
           // exact owner grant. Never reset or replay uncertain approval.
-          const consumed="<!-- aicafe-task13c-authorization-consumed:pr501:pilot-v1 -->";
+          // The prior grant's exact 32-hex nonce stays permanently consumed,
+          // including on transport uncertainty, failure or canceled attempts.
+          const consumed="<!-- aicafe-task13c-authorization-consumed:pr501:nonce-"+nonce+" -->";
           let endReached=false;
           for(let page=1;page<=100;page++){
            const res=await fetch(api+"/issues/501/comments?per_page=100&page="+page,{headers});
@@ -87,7 +95,7 @@ jobs:
           const response=await fetch(api+"/issues/501/comments",{
             method:"POST",headers:{...headers,"content-type":"application/json"},
             body:JSON.stringify({body:consumed+"\nOwner-authorized, one-shot "+
-              "disposable Task13C provider pilot reserved at SHA "+sha+
+              "disposable Task13C provider pilot for nonce "+nonce+" reserved at SHA "+sha+
               ". A failed or partial run also consumes this authorization."})});
           if(response.status!==201){
             // Never print secrets or raw request bodies. Record only the

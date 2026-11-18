@@ -9,8 +9,9 @@ import {spawnSync} from "node:child_process";
  * actually executes and must exit before any GitHub grant is consumed. */
 const yaml=readFileSync(".github/workflows/ai-cafe-13c-owner-live.yml","utf8");
 const sha="a".repeat(40);
-const grant="<!-- aicafe-task13c-trusted-paid-run-v1 "+sha+" -->";
-const consumed="<!-- aicafe-task13c-authorization-consumed:pr501:pilot-v1 -->";
+const nonce="b".repeat(32);
+const grant="<!-- aicafe-task13c-trusted-paid-run-v5 "+sha+" "+nonce+" -->";
+const consumed="<!-- aicafe-task13c-authorization-consumed:pr501:nonce-"+nonce+" -->";
 function ownerScript(){
  const match=yaml.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/);
  if(!match)throw Error("Owner grant must execute actual trusted script");
@@ -117,9 +118,24 @@ describe("Task13C owner-gated real Luna security behavior",()=>{
    expect(good.status,good.stderr).toBe(0);
    expect(good.output).toBe("head="+sha+"\n");
    expect(good.stdout).toContain("POST_CONSUMED");
+   // Unlike versioned v1-v4 workflows, this runner can safely accept a NEW
+   // independently owner-authorized attempt without a code/runner PR.
+   const distinctNonce="c".repeat(32);
+   const distinct=simulateOwner(root,{body:"Fresh owner approval\\n"+
+    grant.replace(nonce,distinctNonce)});
+   expect(distinct.status,distinct.stderr).toBe(0);
+   expect(distinct.output).toBe("head="+sha+"\n");
    const rejected=[
     {body:grant+"\n"+grant},
     {body:"Prior authorization only"},
+    {body:grant.replace(nonce,"c".repeat(31))},
+    {body:grant.replace(sha,"c".repeat(40))},
+    {body:grant+"\\n"+grant.replace(nonce,"d".repeat(32))},
+    // Old v1 authorization is historical; it never authorizes a v2 run.
+    {body:"<!-- aicafe-task13c-trusted-paid-run-v1 "+sha+" -->"},
+     {body:"<!-- aicafe-task13c-trusted-paid-run-v2 "+sha+" -->"},
+     {body:"<!-- aicafe-task13c-trusted-paid-run-v3 "+sha+" -->"},
+     {body:"<!-- aicafe-task13c-trusted-paid-run-v4 "+sha+" -->"},
     {previous:"Older body\n"+grant},
     {actor:"untrusted-contributor"},
     {runAttempt:"2"},
@@ -135,7 +151,7 @@ describe("Task13C owner-gated real Luna security behavior",()=>{
     const denied=simulateOwner(root,scenario);
     expect(denied.status,"scenario "+index).not.toBe(0);
     expect(denied.output,"scenario "+index).toBe(null);
-    if(index!==11)expect(denied.stdout).not.toContain("POST_CONSUMED");
+    if(scenario.postStatus!==403)expect(denied.stdout).not.toContain("POST_CONSUMED");
    }
   }finally{rmSync(root,{recursive:true,force:true})}
  },30_000);

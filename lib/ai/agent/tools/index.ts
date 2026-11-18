@@ -69,6 +69,10 @@ export type AgentToolContext = {
   currency?:string|null;
   /** Authenticated owner-scoped reader. Never populated from model arguments. */
   canonicalData?:()=>Promise<DataQueryContext>;
+  /** Owner-verified staff communication evidence for off-turn investigations,
+   * not a worker chat or model-supplied employee selector. */
+  staffMessages?:{read:()=>ReturnType<
+    typeof import("@/lib/staffCommunication/channel.server").readOwnerStaffMessages>;};
   /** Only supplied for an SQL-claimed scheduled investigation; never owner/model input. */
   investigation?:{
     read:()=>Promise<AgentToolResult>;
@@ -291,6 +295,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
   if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
   if(name==="get_labor")return staffTools.get_labor.execute(raw,ctx);
+  if(name==="get_staff_messages")return scheduleReadTools.get_staff_messages.execute(raw,ctx);
   if(name==="get_team")return scheduleReadTools.get_team.execute(raw,ctx);
   if(name==="get_week_schedule")return scheduleReadTools.get_week_schedule.execute(raw,ctx);
   if(name==="get_labor_rules")return scheduleReadTools.get_labor_rules.execute(raw);

@@ -170,6 +170,7 @@ supabase_lane() {
   sql_step task13a-scheduling-db-integration.sql "Task13a migrated owner scheduling, missing timecards and hourly two-café RLS"
   sql_step task13b-staff-publication-db.sql "Task13B agentic publication: approval, two-café RLS, opt-out, provider receipts and dedupe"
   sql_step task13b-staff-standing-mandate.sql "Task13B phone-MFA staff mandate: exact week, recipient cap, scope, revocation, receipt"
+  sql_step task13c-staff-channel-db.sql "Task13C worker-auth two-cafe RLS, free text, idempotency and owner notices"
   sql_step staff-approval-atomic.sql "Staff approvals: atomic, stale CAS, rollback"
   sql_step staff-approval-scoped.sql "Staff approvals: scoped CAS, independent approvals"
   sql_step ldi-e-db-contract.sql "Events (LDI E): canonical RPC and two-café RLS"
@@ -180,6 +181,7 @@ supabase_lane() {
   sql_step gmail-connector-security-db.sql "Task 11 Gmail: RLS, scoped owner, receipt-gated effect completion"
 
   group "Concurrent sessions"
+  check supabase "Task13C: concurrent authenticated staff, owner reply and assignment replay" env TASK13C_DISPOSABLE_DB_URL="$supabase_url" node scripts/task13c-concurrent-nonce-db.mjs
   check supabase "Olivia 1A: concurrent same-key creates" bash scripts/olivia-pr1a-create-concurrency.sh
   check supabase "Olivia 1B: concurrent co-owner batches" bash scripts/olivia-pr1b-create-concurrency.sh
   check supabase "Olivia 1B: concurrent coverage creates" python3 scripts/olivia-pr1b-coverage-concurrency.py
