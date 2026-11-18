@@ -5,13 +5,150 @@
   "entrypoint": "evals/acceptance/live/task16c.mjs",
   "proof": "16c-proof.json",
   "scope": "16c-scope.json",
-  "expectedTools": ["get_menu_items", "get_supplier_purchase_orders", "web_search"],
+  "expectedTools": [
+    "get_menu_items",
+    "get_supplier_purchase_orders",
+    "web_search",
+    "search_gmail"
+  ],
   "assertions": [
-    {"name":"selected-owner-file","kind":"source","table":"public.ai_attachments","where":{"business_id":{"scope":"businessId"},"owner_user_id":{"scope":"ownerUserId"},"id":{"scope":"attachmentId"}},"minCount":1,"maxCount":1},
-    {"name":"file-revocation","kind":"source","table":"public.supervisor_external_access","where":{"business_id":{"scope":"businessId"},"owner_user_id":{"scope":"ownerUserId"},"kind":{"eq":"attachment"},"resource_key":{"scope":"attachmentId"},"allowed":{"eq":"false"}},"minCount":1,"maxCount":1},
-    {"name":"web-revocation","kind":"source","table":"public.supervisor_external_access","where":{"business_id":{"scope":"businessId"},"owner_user_id":{"scope":"ownerUserId"},"kind":{"eq":"public_web"},"resource_key":{"eq":"public"},"allowed":{"eq":"false"}},"minCount":1,"maxCount":1},
-    {"name":"persisted-owner-replies","kind":"owner","table":"public.ai_messages","where":{"business_id":{"scope":"businessId"},"owner_user_id":{"scope":"ownerUserId"},"thread_id":{"scope":"threadId"},"role":{"eq":"supervisor"}},"minCount":2,"maxCount":6},
-    {"name":"foreign-file-isolation","kind":"isolation","table":"public.ai_attachments","where":{"business_id":{"scope":"foreignBusinessId"},"id":{"scope":"attachmentId"}},"minCount":0,"maxCount":0},
-    {"name":"foreign-revocation-isolation","kind":"isolation","table":"public.supervisor_external_access","where":{"business_id":{"scope":"foreignBusinessId"},"resource_key":{"scope":"attachmentId"}},"minCount":0,"maxCount":0}
+    {
+      "name": "selected-owner-file",
+      "kind": "source",
+      "table": "public.ai_attachments",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "id": {
+          "scope": "attachmentId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "file-revocation",
+      "kind": "source",
+      "table": "public.supervisor_external_access",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "kind": {
+          "eq": "attachment"
+        },
+        "resource_key": {
+          "scope": "attachmentId"
+        },
+        "allowed": {
+          "eq": "false"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "web-revocation",
+      "kind": "source",
+      "table": "public.supervisor_external_access",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "kind": {
+          "eq": "public_web"
+        },
+        "resource_key": {
+          "eq": "public"
+        },
+        "allowed": {
+          "eq": "false"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "gmail-operation-revocation",
+      "kind": "source",
+      "table": "public.connector_operation_change_receipts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "account_id": {
+          "scope": "gmailAccountId"
+        },
+        "account_generation": {
+          "eq": "2"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "persisted-owner-replies",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 3,
+      "maxCount": 6
+    },
+    {
+      "name": "foreign-file-isolation",
+      "kind": "isolation",
+      "table": "public.ai_attachments",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "attachmentId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-revocation-isolation",
+      "kind": "isolation",
+      "table": "public.supervisor_external_access",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "resource_key": {
+          "scope": "attachmentId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
   ]
 }
