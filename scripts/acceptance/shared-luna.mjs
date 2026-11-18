@@ -4,7 +4,7 @@
  * disposable candidate container; only the trusted host runs "plan"/"attest".
  * No PR changes or arbitrary script parameters can grant provider credentials.
  */
-import {readFileSync,writeFileSync,appendFileSync,copyFileSync,mkdirSync,existsSync,openSync,closeSync,readdirSync,lstatSync} from "node:fs";
+import {readFileSync,writeFileSync,appendFileSync,copyFileSync,mkdirSync,existsSync,openSync,closeSync,readdirSync,lstatSync,readlinkSync} from "node:fs";
 import {join,resolve} from "node:path";
 import {createHash} from "node:crypto";
 import {spawn,spawnSync} from "node:child_process";
@@ -97,6 +97,78 @@ function readFrozen(id){
   ensure(idRe.test(id),"Bad frozen scenario ID");
   const m=JSON.parse(readFileSync(frozenFile(),"utf8"));
   return validateScenario(m,id);
+}
+/**
+ * Source-integrity snapshot is made on the trusted host BEFORE the first
+ * candidate process. After candidate execution, NEVER run git on its checkout:
+ * untrusted .git/config may register executable Git hooks/fsmonitor commands.
+ * Compare original tracked-path bytes with Node's non-executing read-only IO.
+ */
+function sourceInventoryFile(approved=false){
+  ensure(typeof process.env.RUNNER_TEMP==="string"&&process.env.RUNNER_TEMP.length>0,
+    "Missing trusted runner path for source integrity");
+  return resolve(process.env.RUNNER_TEMP,
+    approved?"luna-approved-source.json":"luna-locked-source.json");
+}
+function trackedSourceState(root,relative){
+  ensure(typeof relative==="string"&&relative.length>0&&!relative.includes("\0")&&
+    !relative.startsWith("/")&&!relative.split("/").includes(".."),
+    "Invalid tracked source path");
+  const target=resolve(root,relative);
+  ensure(target.startsWith(root+"/"),"Tracked path escaped checkout");
+  const stat=lstatSync(target);
+  if(stat.isSymbolicLink())return {kind:"symlink",target:readlinkSync(target)};
+  ensure(stat.isFile(),"Tracked source is not a regular file or symlink");
+  return {kind:"file",sha256:createHash("sha256").update(readFileSync(target)).digest("hex")};
+}
+function snapshotTrackedSource(){
+  ensure(shaRe.test(process.env.HEAD_SHA)&&idRe.test(process.env.SCENARIO),
+    "Trusted source snapshot requires approved exact head and scenario");
+  const root=resolve("candidate");
+  const rev=spawnSync("git",["-C",root,"rev-parse","HEAD"],{encoding:"utf8"});
+  ensure(rev.status===0&&rev.stdout.trim()===process.env.HEAD_SHA,
+    "Trusted source snapshot checkout head mismatch");
+  // The only Git index read: executed before any npm install or feature code.
+  const listed=spawnSync("git",["-C",root,"ls-files","-z"],{maxBuffer:64*1024*1024});
+  ensure(listed.status===0&&Buffer.isBuffer(listed.stdout),
+    "Cannot enumerate source-controlled files before candidate execution");
+  const names=listed.stdout.toString("utf8").split("\0").filter(Boolean);
+  ensure(names.length>0&&names.length<=50000&&new Set(names).size===names.length,
+    "Missing or ambiguous trusted tracked-file inventory");
+  const tracked=Object.fromEntries(names.map(name=>[name,trackedSourceState(root,name)]));
+  writeFileSync(sourceInventoryFile(),JSON.stringify({
+    head:process.env.HEAD_SHA,scenario:process.env.SCENARIO,tracked
+  }),{mode:0o400,flag:"wx"});
+  console.log("Trusted pre-execution source inventory locked: "+names.length+" paths");
+}
+function verifyTrackedSource(stage){
+  ensure(stage==="preflight"||stage==="final","Invalid tracked-source verification stage");
+  const approved=stage==="final";
+  const original=JSON.parse(readFileSync(sourceInventoryFile(approved),"utf8"));
+  ensure(original.head===process.env.HEAD_SHA&&
+    original.scenario===process.env.SCENARIO&&
+    original.tracked&&typeof original.tracked==="object"&&!Array.isArray(original.tracked),
+    "Trusted tracked source inventory invalid or wrong head");
+  const tracked=structuredClone(original.tracked),bad=[];
+  const root=resolve("candidate");
+  for(const [relative,before] of Object.entries(original.tracked)){
+    let after;
+    try{after=trackedSourceState(root,relative)}catch{bad.push(relative);continue}
+    if(JSON.stringify(after)!==JSON.stringify(before)){
+      // Old 14B acceptance intentionally regenerates its rolling seed before
+      // the paid run. Only this one file may change and ONLY during preflight.
+      if(stage==="preflight"&&process.env.SCENARIO==="14b"&&
+         relative==="supabase/seed.sql"&&before.kind==="file"&&after.kind==="file"){
+        tracked[relative]=after;
+      }else bad.push(relative);
+    }
+  }
+  ensure(bad.length===0,
+    "Candidate modified unexpected tracked source: "+bad.slice(0,5).join(", "));
+  if(stage==="preflight")writeFileSync(sourceInventoryFile(true),JSON.stringify({
+    head:original.head,scenario:original.scenario,tracked
+  }),{mode:0o400,flag:"wx"});
+  console.log("Trusted non-executing source hash verification passed: "+stage);
 }
 function validateAll(){
   const root=process.cwd(),folder=resolve(root,".github/luna/scenarios");
@@ -360,5 +432,8 @@ if(process.argv[1]&&import.meta.url===new URL("file://"+resolve(process.argv[1])
   else if(cmd==="attest")attest();
   else if(cmd==="validate-all")validateAll();
   else if(cmd==="freeze")freeze();
+  else if(cmd==="snapshot-source")snapshotTrackedSource();
+  else if(cmd==="verify-preflight")verifyTrackedSource("preflight");
+  else if(cmd==="verify-source")verifyTrackedSource("final");
   else throw Error("Unknown trusted Luna command");
 }
