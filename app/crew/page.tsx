@@ -15,5 +15,5 @@ export default async function CrewPage(){
   <Link className="underline" href="/crew/login">Sign in with a different account</Link>
  </section>;
  const data=await getStaffInbox();
- return <CrewInbox {...data}/>;
+ return <CrewInbox {...data} authUserId={user.id}/>;
 }

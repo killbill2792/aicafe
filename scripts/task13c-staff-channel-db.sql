@@ -4,6 +4,7 @@ BEGIN;
 SELECT gen_random_uuid() AS biz_a,gen_random_uuid() AS biz_b,
  gen_random_uuid() AS owner_a,gen_random_uuid() AS owner_b,
  gen_random_uuid() AS staff_user_a,gen_random_uuid() AS staff_user_b,
+ gen_random_uuid() AS manager_a,
  gen_random_uuid() AS staff_a,gen_random_uuid() AS staff_b,
  gen_random_uuid() AS staff_other,
  gen_random_uuid() AS shift_a,gen_random_uuid() AS shift_b,
@@ -19,12 +20,15 @@ VALUES
  (:'staff_user_a','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    '13c-worker-a@example.invalid',now(),'',now(),now()),
  (:'staff_user_b','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
-   '13c-worker-b@example.invalid',now(),'',now(),now());
+   '13c-worker-b@example.invalid',now(),'',now(),now()),
+ (:'manager_a','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+   '13c-manager-a@example.invalid',now(),'',now(),now());
 INSERT INTO public.businesses(id,name,timezone,currency,is_demo)
 VALUES (:'biz_a','13c disposable A','America/Los_Angeles','USD',false),
  (:'biz_b','13c disposable B','Europe/London','GBP',false);
 INSERT INTO public.memberships(business_id,user_id,role)
-VALUES (:'biz_a',:'owner_a','owner'),(:'biz_b',:'owner_b','owner');
+VALUES (:'biz_a',:'owner_a','owner'),(:'biz_b',:'owner_b','owner'),
+ (:'biz_a',:'manager_a','manager');
 INSERT INTO public.employees(id,business_id,display_name,active,wage_period,wage_amount_cents,phone_e164,whatsapp_opt_in)
 VALUES
  (:'staff_a',:'biz_a','13c Staff A',true,'hour',1700,'+14155550901',true),
@@ -42,6 +46,7 @@ SELECT set_config('test.task13c.staff_other',:'staff_other',true);
 SELECT set_config('test.task13c.staff_b',:'staff_b',true);
 SELECT set_config('test.task13c.owner_a',:'owner_a',true);
 SELECT set_config('test.task13c.owner_b',:'owner_b',true);
+SELECT set_config('test.task13c.manager_a',:'manager_a',true);
 SELECT set_config('test.task13c.staff_user_a',:'staff_user_a',true);
 SELECT set_config('test.task13c.staff_user_b',:'staff_user_b',true);
 SELECT set_config('test.task13c.nonce_a',:'nonce_a',true);
@@ -64,6 +69,94 @@ BEGIN
 END $test$;
 SELECT set_config('request.jwt.claim.sub',:'owner_b',true);
 SELECT public.staff_link_existing_login(:'biz_b',:'staff_b','13c-worker-b@example.invalid');
+
+-- A manager may edit ordinary employee details but cannot self-link to
+-- another worker by bypassing the owner-only RPC through the broad old RLS.
+SELECT set_config('request.jwt.claim.sub',:'manager_a',true);
+DO $test$
+DECLARE denied boolean:=false;
+BEGIN
+ BEGIN
+  UPDATE public.employees SET staff_auth_user_id=current_setting('test.task13c.manager_a')::uuid
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid
+    AND id=current_setting('test.task13c.staff_other')::uuid;
+ EXCEPTION WHEN insufficient_privilege THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'manager directly linked own login to another employee'; END IF;
+ IF public.staff_channel_is_employee(current_setting('test.task13c.biz_a')::uuid,
+   current_setting('test.task13c.staff_other')::uuid)
+ THEN RAISE EXCEPTION 'manager obtained private staff channel'; END IF;
+ UPDATE public.employees SET display_name='13c Staff Other Updated'
+  WHERE id=current_setting('test.task13c.staff_other')::uuid;
+ IF NOT EXISTS(SELECT 1 FROM public.employees
+  WHERE id=current_setting('test.task13c.staff_other')::uuid
+    AND display_name='13c Staff Other Updated')
+ THEN RAISE EXCEPTION 'guard blocked ordinary employee edits'; END IF;
+ denied:=false;
+ BEGIN
+  PERFORM public.staff_link_existing_login(
+    current_setting('test.task13c.biz_a')::uuid,
+    current_setting('test.task13c.staff_other')::uuid,'13c-manager-a@example.invalid');
+ EXCEPTION WHEN insufficient_privilege THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'manager bypassed owner-only link RPC'; END IF;
+END $test$;
+-- An authenticated manager must NOT bypass the link RPC by creating a NEW
+-- employee already bound to the manager's or the café owner's login. These
+-- negative cases exercise real member INSERT and demand the trigger's error,
+-- not a fortuitous RLS denial or foreign-key failure.
+DO $test$
+DECLARE blocked boolean; linked_user uuid;
+BEGIN
+ FOREACH linked_user IN ARRAY ARRAY[
+   current_setting('test.task13c.manager_a')::uuid,
+   current_setting('test.task13c.owner_a')::uuid
+ ] LOOP
+  blocked:=false;
+  BEGIN
+   INSERT INTO public.employees(id,business_id,display_name,active,
+     wage_period,wage_amount_cents,staff_auth_user_id)
+   VALUES(gen_random_uuid(),current_setting('test.task13c.biz_a')::uuid,
+     '13c Injected Linked Worker',true,'hour',1800,linked_user);
+  EXCEPTION WHEN insufficient_privilege THEN
+   IF SQLERRM<>'staff_link_rpc_required' THEN RAISE; END IF;
+   blocked:=true;
+  END;
+  IF NOT blocked THEN
+   RAISE EXCEPTION 'manager inserted an employee linked to a management login';
+  END IF;
+ END LOOP;
+ IF EXISTS(SELECT 1 FROM public.employees
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid
+     AND display_name='13c Injected Linked Worker') THEN
+  RAISE EXCEPTION 'identity injection left a linked employee behind';
+ END IF;
+ -- The protection is column-specific: managers may still insert a normal
+ -- unlinked employee through their pre-existing members write policy.
+ INSERT INTO public.employees(id,business_id,display_name,active,
+   wage_period,wage_amount_cents,staff_auth_user_id)
+ VALUES(gen_random_uuid(),current_setting('test.task13c.biz_a')::uuid,
+   '13c Manager Unlinked Worker',true,'hour',1800,NULL);
+ IF NOT EXISTS(SELECT 1 FROM public.employees
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid
+     AND display_name='13c Manager Unlinked Worker'
+     AND staff_auth_user_id IS NULL) THEN
+  RAISE EXCEPTION 'identity trigger blocked ordinary employee creation';
+ END IF;
+END $test$;
+SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
+DO $test$
+DECLARE denied boolean:=false;
+BEGIN
+ BEGIN
+  UPDATE public.employees SET staff_auth_user_id=null
+   WHERE business_id=current_setting('test.task13c.biz_a')::uuid
+     AND id=current_setting('test.task13c.staff_a')::uuid;
+ EXCEPTION WHEN insufficient_privilege THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'owner bypassed audited link RPC'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.employees
+   WHERE id=current_setting('test.task13c.staff_a')::uuid
+     AND staff_auth_user_id=current_setting('test.task13c.staff_user_a')::uuid)
+ THEN RAISE EXCEPTION 'direct UPDATE changed a linked identity'; END IF;
+END $test$;
 
 -- Only the shared existing routine/service may issue requests.
 SET LOCAL ROLE service_role;
@@ -338,5 +431,64 @@ BEGIN
  IF NOT denied THEN RAISE EXCEPTION 'disabled employee was relinked'; END IF;
 END $test$;
 
-SELECT 'task13c employee isolation, free-text, dedupe, owner notice, stale revision PASS' AS proof;
+-- A previously committed manual owner message and assignment MUST be
+-- retrievable by the same nonce even after staff deactivation/unlink. Only
+-- genuinely new work is a definitive non-commit (draft may be retained).
+DO $test$
+DECLARE receipt jsonb; blocked boolean; original_messages integer;original_assignments integer;
+BEGIN
+ receipt:=public.staff_channel_owner_send(
+  current_setting('test.task13c.staff_a')::uuid,
+  'Thanks for explaining. Can you confirm an eight o''clock start?',
+  current_setting('test.task13c.nonce_b')::uuid);
+ IF receipt->>'replayed'<>'true' OR receipt->>'id'<>current_setting('test.task13c.owner_message')
+ THEN RAISE EXCEPTION 'owner message receipt lost after employee unlinked'; END IF;
+ receipt:=public.staff_channel_owner_assign(
+  current_setting('test.task13c.staff_a')::uuid,'checklist',
+  'Check opening equipment','Inspect grinder and log any problems',
+  current_setting('test.task13c.owner_assign_nonce')::uuid);
+ IF receipt->>'replayed'<>'true' OR receipt->>'id'<>current_setting('test.task13c.owner_assign_id')
+ THEN RAISE EXCEPTION 'owner assignment receipt lost after employee unlinked'; END IF;
+ blocked:=false;
+ BEGIN
+  PERFORM public.staff_channel_owner_send(
+   current_setting('test.task13c.staff_a')::uuid,
+   'This is a new message to an unlinked worker',gen_random_uuid());
+ EXCEPTION WHEN SQLSTATE '40900' THEN
+  IF SQLERRM='owner_target_unavailable' THEN blocked:=true; ELSE RAISE; END IF;
+ END;
+ IF NOT blocked THEN RAISE EXCEPTION 'new owner message to revoked worker was allowed'; END IF;
+ blocked:=false;
+ BEGIN
+  PERFORM public.staff_channel_owner_assign(
+   current_setting('test.task13c.staff_a')::uuid,'task',
+   'New work to unlinked worker','This must not be assigned',gen_random_uuid());
+ EXCEPTION WHEN SQLSTATE '40900' THEN
+  IF SQLERRM='owner_target_unavailable' THEN blocked:=true; ELSE RAISE; END IF;
+ END;
+ IF NOT blocked THEN RAISE EXCEPTION 'new owner assignment to revoked worker was allowed'; END IF;
+ SELECT count(*) INTO original_messages FROM public.staff_communication_messages
+  WHERE employee_id=current_setting('test.task13c.staff_a')::uuid
+    AND actor='owner' AND client_nonce=current_setting('test.task13c.nonce_b')::uuid;
+ SELECT count(*) INTO original_assignments FROM public.staff_communication_requests
+  WHERE employee_id=current_setting('test.task13c.staff_a')::uuid
+    AND source_type='owner_manual'
+    AND source_id=current_setting('test.task13c.owner_assign_nonce');
+ IF original_messages<>1 OR original_assignments<>1
+ THEN RAISE EXCEPTION 'owner replay duplicated records after revocation'; END IF;
+END $test$;
+-- The foreign café owner must not be able to learn or replay old receipts.
+SELECT set_config('request.jwt.claim.sub',:'owner_b',true);
+DO $test$
+DECLARE denied boolean:=false;
+BEGIN
+ BEGIN PERFORM public.staff_channel_owner_send(
+  current_setting('test.task13c.staff_a')::uuid,
+  'Thanks for explaining. Can you confirm an eight o''clock start?',
+  current_setting('test.task13c.nonce_b')::uuid);
+ EXCEPTION WHEN insufficient_privilege THEN denied:=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'foreign owner replayed private reply'; END IF;
+END $test$;
+
+SELECT 'task13c employee isolation, free-text, dedupe, owner notice, stale revision and revoked owner receipt PASS' AS proof;
 ROLLBACK;

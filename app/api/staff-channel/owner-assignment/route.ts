@@ -19,6 +19,6 @@ export async function POST(request:Request):Promise<Response>{
  catch(e){
   const code=e instanceof StaffChannelError?e.code:"storage";
   return Response.json({error:code},
-   {status:code==="unauthorized"||code==="not_linked"?403:code==="invalid"?400:code==="conflict"?409:503,headers});
+   {status:code==="unauthorized"||code==="not_linked"?403:code==="invalid"?400:code==="conflict"||code==="stale_request"?409:503,headers});
  }
 }

@@ -10,6 +10,7 @@ vi.mock("@/lib/staffCommunication/channel.server",()=>({
   constructor(public code:string){super(code);}
  }
 }));
+import {StaffChannelError} from "@/lib/staffCommunication/channel.server";
 import {GET as get,POST as post} from "./route";
 import {GET as getLinks,POST as postLinks} from "./link/route";
 import {POST as ownerPost} from "./owner-message/route";
@@ -38,6 +39,16 @@ describe("restricted staff communication APIs",()=>{
   expect(r.status).toBe(200);
   expect(mocks.reply).toHaveBeenCalledExactlyOnceWith(reply);
   expect((await r.json()).replayed).toBe(false);
+ });
+ it("identifies only proven stale source request as a definitive non-commit",async()=>{
+  mocks.reply.mockRejectedValueOnce(new StaffChannelError("stale_request"));
+  const old=await post(req(reply));
+  expect(old.status).toBe(409);
+  expect(await old.json()).toEqual({error:"stale_request"});
+  mocks.reply.mockRejectedValueOnce(new StaffChannelError("conflict"));
+  const uncertain=await post(req(reply));
+  expect(uncertain.status).toBe(409);
+  expect(await uncertain.json()).toEqual({error:"conflict"});
  });
  it("forbids cross-origin and non-JSON writes before reaching service",async()=>{
   const forged=await post(req(reply,{Origin:"https://evil.test"}));
@@ -73,6 +84,23 @@ describe("restricted staff communication APIs",()=>{
   expect((await accepted.json()).replayed).toBe(false);
   expect((await ownerAssign(req(assignment,{Origin:"https://evil.test"}))).status).toBe(403);
   expect(mocks.assign).toHaveBeenCalledOnce();
+ });
+ it("returns definitive unsent owner target rejection without pretending a receipt exists",async()=>{
+  const message={employeeId:reply.requestId,body:"Please check your shift",nonce:reply.nonce};
+  mocks.ownerSend.mockRejectedValueOnce(new StaffChannelError("stale_request"));
+  const staleMessage=await ownerPost(req(message));
+  expect(staleMessage.status).toBe(409);
+  expect(await staleMessage.json()).toEqual({error:"stale_request"});
+  const assignment={employeeId:reply.requestId,kind:"task",title:"Check supplies",
+   prompt:"Report any shortages",nonce:reply.nonce};
+  mocks.assign.mockRejectedValueOnce(new StaffChannelError("stale_request"));
+  const staleAssignment=await ownerAssign(req(assignment));
+  expect(staleAssignment.status).toBe(409);
+  expect(await staleAssignment.json()).toEqual({error:"stale_request"});
+  mocks.ownerSend.mockRejectedValueOnce(new StaffChannelError("conflict"));
+  const uncertain=await ownerPost(req(message));
+  expect(uncertain.status).toBe(409);
+  expect(await uncertain.json()).toEqual({error:"conflict"});
  });
  it("owner link API reuses owner authorization service and checks origin",async()=>{
   expect((await getLinks()).status).toBe(200);

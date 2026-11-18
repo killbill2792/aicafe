@@ -27,6 +27,11 @@ const fail=(source:string,period:{from:string;to:string}|null,why:string):AgentT
 });
 async function localWeek(requested:string|null,ctx:AgentToolContext){
  if(requested)return mondayOfLocalDate(requested);
+ // A trusted system-initiated investigation has NO browser request/cookies.
+ // Its café-local asOf date comes from the previously verified owner scope,
+ // and the bound investigation.weekSchedule port independently enforces
+ // owner/café membership on every scheduled read. Never open a session here.
+ if(ctx.investigation)return mondayOfLocalDate(ctx.asOf);
  const scope=await staffReadScope();
  const today=scope.ok?scope.today:ctx.asOf;
  return mondayOfLocalDate(today);

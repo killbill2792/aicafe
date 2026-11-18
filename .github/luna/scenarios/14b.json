@@ -1,0 +1,7 @@
+{
+  "id": "14b",
+  "mode": "legacy",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task14b.mjs",
+  "proof": "task14b-live-proof.json"
+}

@@ -148,9 +148,15 @@ run("real Luna investigates verified employee decline, follows up without effect
   expect(await enqueueInvestigationsForOwner(db,scope,now)).toBe(1);
   const first=await processDueInvestigations(db,now,2,provider,(summary)=>{
    observations.push(summary);
+   // Redacted diagnostic fields identify *why* a real model answer was
+   // rejected without logging employee text, prompts, IDs or numeric facts.
    console.log("13C real-model proof metadata",JSON.stringify({
     model:"gpt-6-luna",verified:summary.verified,
-    toolNames:summary.toolNames,failureCode:summary.failureCode}));
+    endReason:summary.endReason,textLength:summary.textLength,
+    unverifiedCount:summary.unverifiedCount,
+    externalEffectClaim:summary.externalEffectClaim,
+    toolNames:summary.toolNames,resultDomains:summary.resultDomains,
+    failureCode:summary.failureCode}));
   });
   if(first.failed){
    const checkpoints=(await admin.query("select phase,last_error,failure_count from "+
@@ -194,6 +200,18 @@ run("real Luna investigates verified employee decline, follows up without effect
   const future=new Date(now.getTime()+25*60*60_000);
   const following=await processNextInvestigation(db,future,provider,
    (summary)=>observations.push(summary));
+  if(following.failed){
+   // Only allowlisted failure categories and tool names leave disposable CI.
+   // Never log the employee's reply, model prose, source IDs or private facts.
+   const checkpoints=(await admin.query("select phase,last_error,failure_count from "+
+    "public.supervisor_investigations where business_id=$1 and source_id=$2",
+    [ids.business,tasks[0].id])).rows;
+   console.error("13C bounded live follow-up proof failure",JSON.stringify({
+    result:following,model:observations[1]??null,
+    checkpoints:checkpoints.map(x=>({phase:x.phase,error:x.last_error,count:x.failure_count})),
+    completions:providerCompletions,attempted:budget.calls,
+   }));
+  }
   expect(following).toMatchObject({processed:1,followUps:1,failed:0});
   expect(observations).toHaveLength(2);
   expect(observations[1].verified).toBe(true);
