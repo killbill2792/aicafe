@@ -147,10 +147,17 @@ async function plan(){
     // after checkout and before starting any paid broker.
     ensure(paths.has(manifestPath(id)),"Scenario manifest missing");
   }
-  const maxUSD=(selected.length*0.18).toFixed(2);
+  const budget=String(inputs.max_budget_usd??"0.20");
+  ensure(/^(?:0|[1-3])\.[0-9]{2}$/.test(budget),
+    "Owner budget must be exact dollars/cents from $0.00 through $3.99");
+  const authorizedCents=Number(budget.replace(".",""));
+  const reservedCents=selected.length*18;
+  ensure(reservedCents<=authorizedCents,
+    "Requested scenarios exceed manual owner budget authorization; choose fewer or approve more explicitly");
+  const maxUSD=(reservedCents/100).toFixed(2);
   console.log("Owner-approved one-shot run "+process.env.GITHUB_RUN_ID+
     " at "+head+", cases="+selected.join(",")+
-    ", cumulative worst-case reserved USD="+maxUSD+
+    ", authorized USD="+budget+", cumulative worst-case reserved USD="+maxUSD+
     ". Reruns forbidden; a new manual dispatch is a new authorization.");
   const out=process.env.GITHUB_OUTPUT;
   ensure(out,"Missing Actions output file");
