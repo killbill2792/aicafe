@@ -172,9 +172,11 @@ function sqlLiteral(value){ensure(typeof value==="string"&&/^[A-Za-z0-9:_-]{1,15
 function dbCount(table,where,scope){
   const conditions=Object.entries(where).map(([col,val])=>
     '"'+col+'"='+sqlLiteral(Object.hasOwn(val,"scope")?scope[val.scope]:val.eq));
-  const query="BEGIN READ ONLY; SELECT count(*) FROM "+table+" WHERE "+conditions.join(" AND ")+"; COMMIT;";
+  const query="SELECT count(*) FROM "+table+" WHERE "+conditions.join(" AND ")+";";
+  // One SQL statement, one integer output. The session itself is read-only;
+  // a BEGIN/COMMIT string would make psql -c return the wrong final result.
   const r=spawnSync("psql",["-X","-q","-t","-A","-h","127.0.0.1","-p","54322","-U","postgres","-d","postgres","-v","ON_ERROR_STOP=1","-c",query],
-    {encoding:"utf8",env:{...process.env,PGPASSWORD:"postgres"},timeout:15000,maxBuffer:100000});
+    {encoding:"utf8",env:{...process.env,PGPASSWORD:"postgres",PGOPTIONS:"-c default_transaction_read_only=on"},timeout:15000,maxBuffer:100000});
   ensure(r.status===0&&/^[0-9]+$/.test(r.stdout.trim()),"Host SQL readback failed");
   return Number(r.stdout.trim());
 }
