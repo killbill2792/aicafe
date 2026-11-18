@@ -13,10 +13,23 @@ The single trusted entry point is GitHub Actions:
 **AI CAFE Shared Owner-Gated Luna Scenarios**
 (.github/workflows/ai-cafe-luna-shared.yml).
 
-One manual owner-only workflow_dispatch on trusted main selects an exact SHA
-and an individual scenario ID or ALL registered scenarios. For feature work,
-the SHA must be the **current head** of that same-repo open owner PR; for
-merged integration, it must be **current main**. Each scenario runs separately
+An owner can authorize a test by posting a NEW comment in the existing
+feature PR, without navigating to Actions or opening another testing PR:
+
+    /aicafe-luna pr <exact-40-hex-PR-head> 13d 0.20
+
+After merging, an owner can run a mainline scenario by commenting on any
+PR (including a merged PR):
+
+    /aicafe-luna main <exact-current-main-sha> 13c 0.20
+
+The trusted host checks the owner's GitHub identity, exact source head,
+live unchanged owner comment, and bounded price before authorizing any
+provider access. A deleted or edited comment is not usable. The original
+manual owner-only workflow_dispatch on trusted main is still supported.
+Both entry points use the same non-replayable, isolated runner. For PR work
+the SHA must be its current same-repo head; for merged integration,
+it must be current main. Each scenario runs separately
 with disposable local Supabase, a real registered Supervisor and
 gpt-6-luna Responses, the existing capped trusted host broker, and
 independent host attestation. Candidates receive only a fake provider key,
@@ -34,8 +47,8 @@ provider access. GitHub Actions serializes this workflow's paid launches in
 a single non-canceling FIFO concurrency group with queue: max; no overlapping
 paid jobs within this new runner. The GitHub queue can hold up to 100 waiting
 runs, and it is not a global finance budget across legacy workflow families.
-One owner manual dispatch authorizes one bounded run; reruns fail before
-provider access. Actual billed usage can be lower than the reserved ceiling.
+One fresh owner command or manual dispatch authorizes one bounded run;
+reruns fail before provider access. Actual billed usage can be lower than the reserved ceiling.
 CI, Codex and browser tests remain free of provider calls.
 
 Source: current exact candidate Git tree. One record per scenario is a
@@ -153,16 +166,18 @@ remain required where relevant.
    and clean Codex. Until then the new workflow is not available from main.
 2. A feature developer keeps working on their existing PR and adds only
    the matching scenario manifest + live test. Normal CI can stay parallel.
-3. When the AI feature is stable and free CI/Codex are green, the owner opens
-   GitHub Actions > AI CAFE Shared Owner-Gated Luna Scenarios > Run workflow
-   (select main). Supply current PR head SHA, PR number, scenario ID,
-   and max_budget_usd (default 0.20). This is the single manual paid approval. The exact-head test runs.
-4. For **one coordinated run of every registered scenario already on
-   merged main**, supply the CURRENT main SHA, pr_number=0 and
-   scenario=all, with max_budget_usd sufficient to cover all selected
-   scenarios (currently two cases require at least 0.36). The runner discovers
-   and executes all registered cases.
-   Cases from PRs still unmerged are not in main and are NOT_PROVEN.
+3. When the AI feature is stable and free CI is green, the owner posts
+   /aicafe-luna pr HEAD_SHA SCENARIO 0.20 on THAT SAME PR, or selects
+   GitHub Actions > AI CAFE Shared Owner-Gated Luna Scenarios > Run
+   workflow on main and supplies matching inputs. The owner comment
+   or manual dispatch is the paid approval. It must be independent of
+   untrusted candidate code. Codex final-head security review and verified
+   model evidence are both required before merging active AI behavior.
+4. For one coordinated run of all registered merged-main scenarios, use
+   /aicafe-luna main HEAD_SHA all 0.36 (currently two scenarios), or
+   manually dispatch with pr_number=0, scenario=all, and a sufficient
+   explicitly approved max_budget_usd. A $0.20 grant will NOT run
+   these two tests together. Unmerged or unregistered cases remain NOT_PROVEN.
 5. A combined 13A/B/C/D journey is its own case using the entire app
    and tools; similarly for Task14 and cross-domain 13+14. ALL executes
    the inventory, but is **not itself** an inter-feature scenario.
