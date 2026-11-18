@@ -131,13 +131,19 @@ jobs:
           set -euo pipefail
           node coordinator/scripts/acceptance/shared-luna.mjs freeze
           test -s "$RUNNER_TEMP/luna-locked-manifest.json"
+      - name: Snapshot every tracked source file before untrusted candidate code
+        run: |
+          set -euo pipefail
+          node coordinator/scripts/acceptance/shared-luna.mjs snapshot-source
+          test -s "$RUNNER_TEMP/luna-locked-source.json"
       - name: Candidate installation and regression preflight inside no-secret Docker
         run: |
           set -euo pipefail
           docker run --rm --network host --pids-limit 512 --cap-drop ALL \
             --user "$(id -u):$(id -g)" -e HOME=/tmp \
             --security-opt no-new-privileges \
-            -v "$GITHUB_WORKSPACE/candidate:/candidate" -w /candidate \
+            -v "$GITHUB_WORKSPACE/candidate:/candidate" \
+            -v "$GITHUB_WORKSPACE/candidate/.git:/candidate/.git:ro" -w /candidate \
             -e HEAD_SHA -e SCENARIO \
             mcr.microsoft.com/playwright:v1.58.2-noble \
             bash -euo pipefail -c '
@@ -156,6 +162,11 @@ jobs:
                 node scripts/seed/generateSeedSql.mjs
               fi
             '
+      - name: Verify tracked preflight with one reviewed 14B rolling-seed exception
+        run: |
+          set -euo pipefail
+          node coordinator/scripts/acceptance/shared-luna.mjs verify-preflight
+          test -s "$RUNNER_TEMP/luna-approved-source.json"
       - name: Migrate a fresh disposable local Supabase only
         working-directory: candidate
         run: |
@@ -221,6 +232,7 @@ jobs:
             --user "$(id -u):$(id -g)" -e HOME=/tmp \
             --security-opt no-new-privileges \
             -v "$GITHUB_WORKSPACE/candidate:/candidate" \
+            -v "$GITHUB_WORKSPACE/candidate/.git:/candidate/.git:ro" \
             -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/task14b-fetch-shim.cjs:/trusted/task14b-fetch-shim.cjs:ro" \
             -v "$GITHUB_WORKSPACE/coordinator/scripts/acceptance/shared-luna.mjs:/trusted/shared-luna.mjs:ro" \
             -v "$RUNNER_TEMP/luna-locked-manifest.json:/trusted/luna-manifest.json:ro" \
@@ -239,8 +251,9 @@ jobs:
       - name: Independently verify model receipts and source/owner data on trusted host
         run: |
           set -euo pipefail
-          test "$(git -C candidate rev-parse HEAD)" = "$HEAD_SHA"
-          git -C candidate diff --exit-code HEAD --
+          # Candidate .git/config is untrusted after Docker execution.
+          # NEVER invoke host git against a candidate-controlled checkout.
+          node coordinator/scripts/acceptance/shared-luna.mjs verify-source
           node coordinator/scripts/acceptance/shared-luna.mjs attest
       - name: Upload only the sanitized independent verdict
         if: always()
