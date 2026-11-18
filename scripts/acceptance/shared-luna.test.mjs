@@ -220,3 +220,57 @@ test("trusted freeze denies modified Git checkout instead of trusting mutable ma
     assert.match(blocked.stderr,/Working candidate manifest differs|Invalid|EEXIST/);
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
+
+test("exact owner PR comment authorizes one pinned scenario and rejects edited or spoofed grants",()=>{
+  const dir=mkdtempSync(join(tmpdir(),"luna-comment-"));
+  try{
+    const head="a".repeat(40),commentId=456789,updatedAt="2026-11-18T06:00:00Z";
+    const body="/aicafe-luna pr "+head+" 13c 0.20";
+    const eventFile=join(dir,"event.json"),output=join(dir,"out.txt");
+    const preload=join(dir,"mock-github.mjs"),stateFile=join(dir,"comment-state.json");
+    const event={
+      action:"created",repository:{full_name:"killbill2792/aicafe"},
+      sender:{login:"killbill2792"},
+      issue:{number:520,pull_request:{url:"https://api.github.com/repos/killbill2792/aicafe/pulls/520"}},
+      comment:{id:commentId,body,updated_at:updatedAt,user:{login:"killbill2792"}}
+    };
+    const state={id:commentId,body,updated_at:updatedAt,user:{login:"killbill2792"}};
+    writeFileSync(eventFile,JSON.stringify(event));
+    writeFileSync(stateFile,JSON.stringify(state));
+    const api=String.raw`import {readFileSync} from "node:fs";
+const file=process.env.LUNA_TEST_COMMENT_STATE;
+const sha="a".repeat(40);
+globalThis.fetch=async (url)=>{
+ const s=String(url);
+ const body=s.includes("/issues/comments/456789")?JSON.parse(readFileSync(file,"utf8")):
+  s.includes("/pulls/520")?{state:"open",head:{sha,repo:{full_name:"killbill2792/aicafe"}}}:
+  s.includes("/git/trees/")?{truncated:false,tree:[
+    {type:"blob",mode:"100644",path:".github/luna/scenarios/13c.json"}]}:null;
+ return new Response(JSON.stringify(body),{status:body?200:404});
+};
+`;
+    writeFileSync(preload,api);
+    const execute=()=>spawnSync(process.execPath,["--import",preload,
+      join(import.meta.dirname,"shared-luna.mjs"),"plan"],{
+      encoding:"utf8",env:{...process.env,GITHUB_EVENT_PATH:eventFile,
+        GITHUB_OUTPUT:output,GITHUB_RUN_ID:"999",GH_TOKEN:"fake-read-only",
+        LUNA_TEST_COMMENT_STATE:stateFile,GITHUB_EVENT_NAME:"issue_comment",
+        GITHUB_REF:"refs/heads/main",GITHUB_ACTOR:"killbill2792",
+        GITHUB_TRIGGERING_ACTOR:"killbill2792",GITHUB_RUN_ATTEMPT:"1"}});
+    writeFileSync(output,"");
+    const valid=execute();
+    assert.equal(valid.status,0,valid.stderr);
+    assert.match(readFileSync(output,"utf8"),/matrix=\["13c"\]/);
+    writeFileSync(output,"");
+    writeFileSync(stateFile,JSON.stringify({...state,body:body+" edited"}));
+    const edited=execute();
+    assert.notEqual(edited.status,0);
+    assert.match(edited.stderr,/Owner comment changed/);
+    assert.equal(readFileSync(output,"utf8"),"");
+    writeFileSync(stateFile,JSON.stringify(state));
+    writeFileSync(eventFile,JSON.stringify({...event,sender:{login:"attacker"}}));
+    const spoofed=execute();
+    assert.notEqual(spoofed.status,0);
+    assert.match(spoofed.stderr,/Explicit owner launch/);
+  }finally{rmSync(dir,{recursive:true,force:true})}
+});
