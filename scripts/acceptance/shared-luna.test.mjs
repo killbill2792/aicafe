@@ -123,3 +123,41 @@ test("trusted generic host checks provider receipts and independently executes s
     assert.match(fail.stderr,/Provider identity or bounded paid receipt unverified/);
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
+
+test("trusted owner launch selects all exact-head manifests without any model call",()=>{
+  const dir=mkdtempSync(join(tmpdir(),"luna-plan-"));
+  try{
+    const head="a".repeat(40),eventFile=join(dir,"event.json");
+    const output=join(dir,"output.txt"),preload=join(dir,"mock-github.mjs");
+    writeFileSync(output,"");
+    const event={repository:{full_name:"killbill2792/aicafe"},sender:{login:"killbill2792"},
+      inputs:{head_sha:head,pr_number:"0",scenario:"all"}};
+    writeFileSync(eventFile,JSON.stringify(event));
+    const tree={truncated:false,tree:[
+      {type:"blob",mode:"100644",path:".github/luna/scenarios/14b.json"},
+      {type:"blob",mode:"100644",path:".github/luna/scenarios/13c.json"},
+      {type:"blob",mode:"120000",path:".github/luna/scenarios/untrusted-link.json"}
+    ]};
+    const prefix='const SHA='+JSON.stringify(head)+';\n';
+    writeFileSync(preload,prefix+
+      'globalThis.fetch=async (url)=>{const s=String(url);'+
+      'const body=s.includes("/branches/main")?{commit:{sha:SHA}}:'+
+      's.includes("/git/trees/")?'+JSON.stringify(tree)+':null;'+
+      'return new Response(JSON.stringify(body),{status:body?200:404});};\n');
+    const execute=()=>spawnSync(process.execPath,["--import",preload,
+      join(import.meta.dirname,"shared-luna.mjs"),"plan"],{
+      encoding:"utf8",env:{...process.env,GITHUB_EVENT_PATH:eventFile,
+        GITHUB_OUTPUT:output,GITHUB_RUN_ID:"9876",GH_TOKEN:"fake-read-only",
+        GITHUB_EVENT_NAME:"workflow_dispatch",GITHUB_REF:"refs/heads/main",
+        GITHUB_ACTOR:"killbill2792",GITHUB_TRIGGERING_ACTOR:"killbill2792",
+        GITHUB_RUN_ATTEMPT:"1"}});
+    const result=execute();
+    assert.equal(result.status,0,result.stderr);
+    const attrs=Object.fromEntries(readFileSync(output,"utf8").trim().split("\n")
+      .map(line=>{const i=line.indexOf("=");return [line.slice(0,i),line.slice(i+1)]}));
+    assert.deepEqual(JSON.parse(attrs.matrix),["13c","14b"]);
+    assert.equal(attrs.head,head);
+    assert.match(result.stdout,/cumulative worst-case reserved USD=0.36/);
+    assert.ok(!attrs.matrix.includes("untrusted-link"));
+  }finally{rmSync(dir,{recursive:true,force:true})}
+});
