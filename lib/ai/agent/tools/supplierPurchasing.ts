@@ -2,7 +2,7 @@ import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {supplierPurchaseInputSchema,supplierPurchaseProposalToolInputSchema} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {vendorOrderSendInputSchema,VendorOrderOwnerInputRequired} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
-import {ownerSupplierOutcomeToolInput,explicitOwnerSupplierOutcome} from "@/lib/purchasing/ownerSupplierOutcome.server";
+import {ownerSupplierOutcomeToolInput,explicitOwnerSupplierOutcome,explicitOwnerSupplierChannel} from "@/lib/purchasing/ownerSupplierOutcome.server";
 
 /** Two deliberate steps: investigate read-only evidence, then create a durable
  * approval proposal using the SAME server-bound Supervisor planner. A model
@@ -61,7 +61,8 @@ export const supplierPurchasingTools={
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=ownerSupplierOutcomeToolInput.parse(raw);
    const text=ctx.ownerText?.trim();
-   if(!text||text.length>1000||!explicitOwnerSupplierOutcome(text,input.outcome))
+   if(!text||text.length>1000||!explicitOwnerSupplierOutcome(text,input.outcome)||
+      !explicitOwnerSupplierChannel(text,input.channel))
      return {source:"supplier_owner_report",period:null,agentId:"maya",
        saved:false,missing:["explicit_current_owner_report_required"],
        ownerQuestion:"Which exact purchase order did the supplier respond to, how did you contact them, and what did they confirm?"};
