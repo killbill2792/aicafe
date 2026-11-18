@@ -1,0 +1,8 @@
+{
+  "id": "13c",
+  "mode": "legacy",
+  "engine": "vitest",
+  "entrypoint": "lib/ai/supervisor/routines/staffCoverage.live.test.ts",
+  "proof": "13c-live-proof.json",
+  "scope": "13c-live-scope.json"
+}
