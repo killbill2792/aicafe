@@ -60,6 +60,17 @@ export async function recordOwnerSupplierOutcome(db:SupabaseClient,
  * explicitly supplied the source statement in THIS authenticated message.
  * Conservative failures ask for clarification; never infer supplier acceptance
  * from a Gmail sent receipt, an assistant claim, or a prior owner message. */
+/** A source channel is owner evidence too, never a model-selected default. */
+export function explicitOwnerSupplierChannel(text:string,channel:SupplierOutcomeInput["channel"]):boolean{
+ const signals:Record<SupplierOutcomeInput["channel"],RegExp>={
+   phone:/\b(?:phone|called|telephone|call with|by call)\b/i,
+   portal:/\b(?:portal|supplier website|vendor site)\b/i,
+   gmail:/\b(?:gmail|email|e-mail|emailed)\b/i,
+   in_person:/\b(?:in person|face to face|at the supplier|met with)\b/i,
+   other:/\b(?:whatsapp|text message|sms|other channel|other way)\b/i
+ };
+ return signals[channel].test(text);
+}
 export function explicitOwnerSupplierOutcome(text:string,outcome:SupplierOutcomeInput["outcome"]):boolean{
  const t=text.trim().toLowerCase();
  const patterns:Record<SupplierOutcomeInput["outcome"],RegExp>={
