@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {recordOwnerSupplierOutcome,explicitOwnerSupplierOutcome,explicitOwnerSupplierChannel,authenticatedSupplierOwnerTurn} from "./ownerSupplierOutcome.server";
+import {recordOwnerSupplierOutcome,explicitOwnerSupplierOutcome,explicitOwnerSupplierChannel,authenticatedSupplierOwnerTurn,explicitSingleOwnerPurchaseOrder} from "./ownerSupplierOutcome.server";
 import type {SupabaseClient} from "@supabase/supabase-js";
 
 const scope={businessId:"11111111-1111-4111-8111-111111111111",
@@ -32,6 +32,20 @@ function fixture(options?:{order?:boolean;terminal?:Record<string,string>;error?
 
 describe("Task14C owner-reported outcome authority",()=>{
  beforeEach(()=>vi.clearAllMocks());
+ it("never binds conflicting owner outcomes from two saved POs to one model-selected target",()=>{
+  const a="77777777-7777-4777-8777-777777777777";
+  const b="88888888-8888-4888-8888-888888888888";
+  const one="The supplier accepted purchase order "+a+" by phone.";
+  const two=one+" They declined purchase order "+b+".";
+  expect(explicitSingleOwnerPurchaseOrder(one,a)).toBe(true);
+  expect(explicitSingleOwnerPurchaseOrder(one,b)).toBe(false);
+  expect(explicitSingleOwnerPurchaseOrder("This PO was accepted by phone.",a)).toBe(null);
+  expect(explicitSingleOwnerPurchaseOrder(two,a)).toBe(false);
+  expect(explicitSingleOwnerPurchaseOrder(two,b)).toBe(false);
+  expect(explicitOwnerSupplierOutcome(two,"supplier_accepted")).toBe(false);
+  expect(explicitOwnerSupplierOutcome(two,"supplier_declined")).toBe(false);
+  expect(explicitSingleOwnerPurchaseOrder(one+" Again "+a,a)).toBe(true);
+ });
  it("accepts a real job-backed authenticated owner turn, but not a different job or model text",()=>{
   const owner={id:"99999999-9999-4999-8999-999999999999",role:"owner",
     text:"The supplier accepted the PO by phone."};
