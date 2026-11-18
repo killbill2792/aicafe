@@ -74,7 +74,7 @@ export function explicitOwnerSupplierChannel(text:string,channel:SupplierOutcome
 export function explicitOwnerSupplierOutcome(text:string,outcome:SupplierOutcomeInput["outcome"]):boolean{
  const t=text.trim().toLowerCase();
  const patterns:Record<SupplierOutcomeInput["outcome"],RegExp>={
-   supplier_accepted:/\b(?:accept(?:ed|s)?|agreed|confirm(?:ed|s)?|approv(?:ed|es)?)\b/i,
+   supplier_accepted:/\b(?:accepted|accepts|agreed to fulfill|agreed to supply)\b/i,
    supplier_declined:/\b(?:declin(?:ed|es)?|reject(?:ed|s)?|refus(?:ed|es)?)\b/i,
    supplier_acknowledged:/\b(?:acknowledg(?:ed|es)?|confirm(?:ed|s)? receipt)\b/i,
    supplier_contacted:/\b(?:contact(?:ed)?|call(?:ed)?|email(?:ed)?|messag(?:ed)?)\b/i,
@@ -82,6 +82,10 @@ export function explicitOwnerSupplierOutcome(text:string,outcome:SupplierOutcome
    unknown:/\b(?:unknown|not sure|don't know|uncertain)\b/i,
  };
  if(!patterns[outcome].test(t))return false;
+ if((outcome==="supplier_accepted"||outcome==="supplier_declined")&&
+   !/\b(?:supplier|vendor|purchase order|po)\b/i.test(t))return false;
+ if((outcome==="supplier_accepted"||outcome==="supplier_declined")&&
+   /\?/.test(t))return false;
  if(outcome==="supplier_accepted"&&
    /\b(?:not|never|no|didn't|hasn't|haven't|wasn't|isn't)\b.{0,45}\b(?:accept(?:ed|s)?|agreed|confirm(?:ed|s)?|approv(?:ed|es)?)\b/i.test(t))
    return false;
