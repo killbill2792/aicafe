@@ -7,7 +7,8 @@
   "scope": "14c-scope.json",
   "expectedTools": [
     "get_supplier_purchase_orders",
-    "propose_supplier_vendor_email"
+    "propose_supplier_vendor_email",
+    "record_supplier_order_outcome"
   ],
   "assertions": [
     {
@@ -131,6 +132,69 @@
         },
         "id": {
           "scope": "proposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "owner-chat-terminal-supplier-report",
+      "kind": "source",
+      "table": "public.purchase_order_channel_reports",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        },
+        "id": {
+          "scope": "reportId"
+        },
+        "channel": {
+          "eq": "phone"
+        },
+        "outcome": {
+          "eq": "supplier_accepted"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "durable-owner-outcome-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "reportReplyId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-cafe-cannot-own-outcome-report",
+      "kind": "isolation",
+      "table": "public.purchase_order_channel_reports",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "id": {
+          "scope": "reportId"
         }
       },
       "minCount": 0,
