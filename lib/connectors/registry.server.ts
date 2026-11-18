@@ -19,7 +19,16 @@ export async function requireConnectorOwner():Promise<ConnectorOwner>{
   if(error||membership?.role!=="owner")throw new Error("connector_owner_required");
   return {businessId,ownerUserId:user.id};
 }
+/** A durable worker's saved scope is not ongoing owner authorization.
+ * Verify current membership independently of the original chat/claim. */
+export async function assertConnectorOwnerLive(scope:ConnectorOwner):Promise<void>{
+  const {data,error}=await createAdminSupabaseClient().from("memberships")
+    .select("role").eq("business_id",scope.businessId)
+    .eq("user_id",scope.ownerUserId).maybeSingle();
+  if(error||data?.role!=="owner")throw new Error("connector_owner_access_revoked");
+}
 export async function getConnectorAccount(scope:ConnectorOwner):Promise<ConnectorAccount|null>{
+  await assertConnectorOwnerLive(scope);
   const {data,error}=await createAdminSupabaseClient().from("connector_accounts")
     .select("id,business_id,owner_user_id,provider,provider_subject,email,granted_scopes,enabled_operations,status,generation")
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)

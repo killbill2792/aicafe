@@ -8,6 +8,126 @@ test.beforeEach(() => {
   assertDisposableEnvironment();
 });
 
+test("@home Task16A authenticated mobile owner views library/routines/permissions and revokes a scoped mandate",async({browser})=>{
+  test.setTimeout(120_000);
+  const owner=seededCafe(0),foreign=seededCafe(1);
+  const id={thread:randomUUID(),routine:randomUUID(),active:randomUUID(),old:randomUUID()};
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const ctx=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  const other=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  let connected=false;
+  try{
+    await db.connect();connected=true;console.info("[Task16A E2E] connected disposable database");
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",
+      [id.thread,owner.businessId,owner.owner.userId,randomUUID(),"Task16A approval library"]);
+    // A disposable saved mandate fixture proves the real owner/API/RLS/UI path,
+    // NOT phone OTP delivery, which needs its own provider-backed acceptance.
+    await db.query("insert into public.supervisor_mandates("+
+      "id,revision,business_id,owner_user_id,capability_id,capability_version,"+
+      "policy_hash,limit_kind,limit_value,period_kind,expires_at,verified_at) "+
+      "values($1,1,$2,$3,'leo.goal.v1',1,$4,'count',5,'cafe_day',now()+interval '1 day',now())",
+      [id.active,owner.businessId,owner.owner.userId,"a".repeat(64)]);
+    await db.query("insert into public.supervisor_mandates("+
+      "id,revision,business_id,owner_user_id,capability_id,capability_version,"+
+      "policy_hash,limit_kind,limit_value,period_kind,created_at,expires_at,verified_at) "+
+      "values($1,1,$2,$3,'leo.goal.v1',1,$4,'count',5,'cafe_day',"+
+      "now()-interval '3 days',now()-interval '1 day',now()-interval '3 days')",
+      [id.old,owner.businessId,owner.owner.userId,"b".repeat(64)]);
+    await db.query("insert into public.supervisor_routines("+
+      "id,business_id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status)"+
+      " values($1,$2,$3,$4,'Daily source check','daily','{}'::integer[],'08:00',"+
+      "(select timezone from public.businesses where id=$2),'active')",
+      [id.routine,owner.businessId,owner.owner.userId,id.thread]);
+
+    console.info("[Task16A E2E] saved synthetic owner-scoped records");
+    const page=await ctx.newPage();
+    await login(page,owner);console.info("[Task16A E2E] first owner signed in");
+    await openOwnedPage(page,owner,"?thread="+id.thread);console.info("[Task16A E2E] opened real Supervisor chat");
+    await page.setViewportSize({width:390,height:844});
+    const controlsButton=page.getByRole("button",{name:"Library, routines and permissions"});
+    await expect(controlsButton).toBeVisible({timeout:20_000});
+    await expect(controlsButton).toBeEnabled({timeout:10_000});
+    await controlsButton.click();
+    console.info("[Task16A E2E] opened owner controls drawer");
+    const panel=page.getByRole("dialog",{name:"Supervisor controls"});
+    await expect(panel).toBeVisible();
+    await panel.getByRole("button",{name:"Library",exact:true}).click();
+    await expect(panel.getByRole("button",{name:"Task16A approval library"})).toBeVisible();console.info("[Task16A E2E] library from authenticated records");
+    const routinesTab=panel.getByRole("button",{name:"Routines",exact:true});
+    await routinesTab.click();
+    await expect(panel.getByText("Daily source check")).toBeVisible();
+    // Codex P2 regression: same-tab click must not trigger a loader with no fetch.
+    await routinesTab.click();
+    await expect(panel.getByText("Daily source check")).toBeVisible();
+    await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
+    console.info("[Task16A E2E] canonical routine remains after active-tab reselect");
+    await panel.getByRole("button",{name:"Permissions",exact:true}).click();
+    await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
+    await expect(panel.getByText("Active",{exact:true})).toBeVisible();
+    await expect(panel.getByText("Expired",{exact:true})).toBeVisible();console.info("[Task16A E2E] active and expired permissions visible");
+    await expect(panel.getByText("5 goal starts per café-local day").first()).toBeVisible();
+    const permissionsTab=panel.getByRole("button",{name:"Permissions",exact:true});
+    await permissionsTab.click();
+    await expect(panel.getByText("Goal tracking",{exact:true}).first()).toBeVisible();
+    await expect(panel.getByText("5 goal starts per café-local day").first()).toBeVisible();
+    await expect(panel.getByText("Checking saved permissions and routines")).toHaveCount(0);
+    console.info("[Task16A E2E] canonical permission remains after active-tab reselect");
+    // No verified phone MFA factor is installed in the seeded project:
+    // a simulated grant cannot be shown as enabled.
+    await expect(panel.getByRole("button",{name:"Request verification code"})).toHaveCount(0);
+    console.info("[Task16A E2E] invoking genuine owner revoke");
+    await panel.getByRole("button",{name:"Revoke permission"}).click();
+    await expect(panel.getByText("Permission revoked in the database")).toBeVisible();
+    const receipt=await db.query("select revision,revoked_at from public.supervisor_mandates "+
+      "where id=$1 order by revision desc limit 1",[id.active]);
+    expect(Number(receipt.rows[0].revision)).toBe(2);
+    expect(receipt.rows[0].revoked_at).not.toBeNull();console.info("[Task16A E2E] revision 2 database revocation receipt verified");
+    // Stale revision cannot revoke twice or silently renew the mandate.
+    const replay=await ctx.request.post("/api/ai/threads/"+id.thread+"/mandates",{
+      headers:{"origin":"http://127.0.0.1:3000"},
+      data:{action:"revoke",mandateId:id.active,revision:1},
+    });
+    expect(replay.status()).not.toBe(200);console.info("[Task16A E2E] stale owner revision rejected");
+    const viewport=await page.evaluate(()=>document.documentElement.scrollWidth);
+    expect(viewport).toBeLessThanOrEqual(391);
+    // A lost read is an explicit failure, never a fabricated empty grant list.
+    await panel.getByRole("button",{name:"Library",exact:true}).click();
+    await page.route("**/api/ai/threads/*/mandates",route=>{
+      if(route.request().method()==="GET")
+        return route.fulfill({status:503,contentType:"application/json",body:'{"error":"unavailable"}'});
+      return route.continue();
+    });
+    await panel.getByRole("button",{name:"Permissions",exact:true}).click();
+    await expect(panel.getByRole("alert")).toContainText("Permissions could not be verified");console.info("[Task16A E2E] unavailable permission read cannot claim no grants");
+    await page.unroute("**/api/ai/threads/*/mandates");
+    console.info("[Task16A E2E] local failure-state complete before switching accounts");
+    const foreignPage=await other.newPage();
+    await login(foreignPage,foreign);console.info("[Task16A E2E] other café owner signed in");
+    const denied=await other.request.get("/api/ai/threads/"+id.thread+"/mandates");
+    expect([401,403,404]).toContain(denied.status());
+    await openOwnedPage(foreignPage,foreign,"");
+    await foreignPage.setViewportSize({width:390,height:844});
+    await foreignPage.getByRole("button",{name:"Library, routines and permissions"}).click();
+    const foreignPanel=foreignPage.getByRole("dialog",{name:"Supervisor controls"});
+    await foreignPanel.getByRole("button",{name:"Routines",exact:true}).click();
+    await expect(foreignPanel.getByText("Daily source check")).toHaveCount(0);
+    await foreignPanel.getByRole("button",{name:"Permissions",exact:true}).click();
+    await expect(foreignPanel.getByText("Task16A approval library")).toHaveCount(0);console.info("[Task16A E2E] other-café isolation proved");
+
+  }finally{
+    await Promise.allSettled([ctx.close(),other.close()]);
+    if(connected){
+      await db.query("delete from public.supervisor_mandates where id=any($1::uuid[])",
+        [[id.active,id.old]]).catch(()=>{});
+      await db.query("delete from public.supervisor_routines where id=$1",[id.routine]).catch(()=>{});
+      await db.query("delete from public.ai_threads where id=$1 and business_id=$2",
+        [id.thread,owner.businessId]).catch(()=>{});
+      await db.end();
+    }
+  }
+});
+
 test("@home Task 16B persists real Supervisor work through reload, uncertainty and café isolation", async ({browser}) => {
   test.setTimeout(120_000);
   const own = seededCafe(0), other = seededCafe(1);

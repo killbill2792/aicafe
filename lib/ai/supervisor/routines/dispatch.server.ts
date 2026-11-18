@@ -175,6 +175,14 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   // approved staff delivery and owner-visible exception reconciliation.
   try{await followUpStaffPublicationForBusiness(db,businessId,localDate);}
   catch{result.failed++;}
+  // Reuse this existing refresh cycle: current published shifts become
+  // worker-scoped requests. A changed/removed shift cancels stale prompts.
+  const sync=await db.rpc("staff_channel_sync_shift_requests",{p_business_id:businessId});
+  if(sync.error)result.failed++;
+  else{
+    const unanswered=await db.rpc("staff_channel_escalate_unanswered",{p_business_id:businessId});
+    if(unanswered.error)result.failed++;
+  }
   // Source-change notices remain independent from the due schedule.
   for(const ownerUserId of owners){
     const threadId=threads.get(ownerUserId);

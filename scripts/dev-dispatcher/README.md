@@ -1,4 +1,9 @@
 # AI CAFE shared Muse/Dave development coordinator (PR #392)
+> **HISTORICAL / RETIRED — November 17, 2026:** The GitHub Actions
+> dispatcher, private-ledger updates, Codex requests, self-wakes and public
+> owner dashboard are disabled. Muse local coordination is current; use
+> `docs/plans/muse-lightweight-coordination.md`. Nothing below is live policy.
+
 
 This is the **development coordinator**, not café Supervisor. The approved 19-rule acceptance checklist is in PR #392. AGENTS.md, PROGRESS.md, the approved task queue and repository skills are binding. Code and simulated tests are not proof of live browser delivery.
 

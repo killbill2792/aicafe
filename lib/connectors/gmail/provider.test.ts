@@ -8,7 +8,7 @@ vi.mock("@/lib/connectors/registry.server",async()=>{
 vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({from:deps.dbFrom})}));
 vi.mock("@/lib/connectors/crypto.server",()=>({decryptToken:()=> "test-access",encryptToken:()=> "encrypted"}));
 vi.mock("./oauth.server",()=>({tokenRequest:deps.tokenRequest,GOOGLE_MODIFY_SCOPE:"https://www.googleapis.com/auth/gmail.modify"}));
-import {performGmailEffect,gmailMime,gmailRfcId,reconcileGmailReceipt,safeMessage,type GmailEffect} from "./provider.server";
+import {performGmailEffect,gmailMime,gmailRfcId,reconcileGmailReceipt,gmailSearch,safeMessage,type GmailEffect} from "./provider.server";
 const scope={businessId:"11111111-1111-4111-8111-111111111111",
  ownerUserId:"22222222-2222-4222-8222-222222222222"};
 const proposal="33333333-3333-4333-8333-333333333333",effectHash="e".repeat(64);
@@ -48,7 +48,10 @@ function db(receipt?:Record<string,unknown>,duplicate=false,hasClaim=true){
  });
  return writes;
 }
-beforeEach(()=>{vi.clearAllMocks();vi.unstubAllGlobals();deps.getAccount.mockResolvedValue(account);});
+beforeEach(()=>{
+ vi.clearAllMocks();vi.unstubAllGlobals();credentials.generation=1;
+ deps.getAccount.mockResolvedValue(account);
+});
 describe("Gmail provider proof and no duplicate sends",()=>{
  it("generates a stable RFC ID and MIME without leaking credentials",()=>{
    const mid=gmailRfcId(proposal,account.email);
@@ -86,8 +89,10 @@ describe("Gmail provider proof and no duplicate sends",()=>{
    expect(result.providerAccepted).toBe(true);
    expect(result.recipientDeliveryUnverified).toBe(true);
    expect(posted).toHaveLength(1);
-   expect(writes.map(x=>x.operation)).toEqual(["insert","update"]);
-   expect((writes[1].data as {state:string}).state).toBe("verified");
+   expect(writes.map(x=>x.operation)).toEqual(["insert","update","update"]);
+   expect((writes[1].data as {provider_message_id:string}).provider_message_id)
+     .toBe("provider-message-123");
+   expect((writes[2].data as {state:string}).state).toBe("verified");
  });
  it("cannot send without an existing owner-click claim in the single Task 10 gateway",async()=>{
    const writes=db(undefined,false,false);
@@ -130,7 +135,7 @@ describe("Gmail provider proof and no duplicate sends",()=>{
    const result=await performGmailEffect(scope,label,proposal,effectHash);
    expect(result.providerAccepted).toBe(true);
    expect(fetch).toHaveBeenCalledTimes(2);
-   expect(writes.map(x=>x.operation)).toEqual(["insert","update"]);
+   expect(writes.map(x=>x.operation)).toEqual(["insert","update","update"]);
  });
  it("treats mail body as bounded evidence, never an instruction for a provider effect",()=>{
    const m=safeMessage({id:"message123",snippet:"text",
@@ -156,4 +161,82 @@ describe("Gmail provider proof and no duplicate sends",()=>{
    expect(fetch.mock.calls.some(([url])=>String(url).includes("/messages/send"))).toBe(false);
    expect((writes[0].data as {state:string}).state).toBe("verified");
  });
+ it("can verify an accepted send after send permission is revoked in flight",async()=>{
+   const writes=db();
+   const restricted={...account,generation:2,
+     enabled_operations:["read","draft","organize"]};
+   const fetch=vi.fn(async(url:string)=>{
+     if(url.endsWith("/messages/send")){
+       credentials.generation=2;
+       deps.getAccount.mockResolvedValue(restricted);
+       return {ok:true,status:200,json:async()=>({id:"provider-message-123"})};
+     }
+     if(url.includes("/messages/provider-message-123"))
+       return {ok:true,status:200,json:async()=>({
+         id:"provider-message-123",labelIds:["SENT"],
+         payload:{headers:[{name:"Message-ID",value:gmailRfcId(proposal,account.email)}]}})};
+     throw Error("unexpected Gmail request");
+   });
+   vi.stubGlobal("fetch",fetch);
+   const result=await performGmailEffect(scope,effect,proposal,effectHash);
+   expect(result.providerAccepted).toBe(true);
+   expect(fetch.mock.calls.filter(([url])=>String(url).includes("/messages/send")))
+     .toHaveLength(1);
+   expect(writes.map(w=>w.operation)).toEqual(["insert","update","update"]);
+   expect((writes[1].data as {provider_message_id:string}).provider_message_id)
+     .toBe("provider-message-123");
+ });
+ it("reconciles a previously accepted send with read only on a later operation generation",async()=>{
+   const rfc=gmailRfcId(proposal,account.email);
+   const writes=db({id:"55555555-5555-4555-8555-555555555555",
+     account_id:account.id,account_generation:1,state:"pending",
+     account_provider_subject:account.provider_subject,
+     provider_message_id:"provider-message-123",rfc_message_id:rfc});
+   credentials.generation=3;
+   deps.getAccount.mockResolvedValue({...account,generation:3,
+     enabled_operations:["read","draft","organize"]});
+   const fetch=vi.fn(async(url:string)=>{
+     if(url.includes("/messages/provider-message-123"))
+       return {ok:true,status:200,json:async()=>({
+         id:"provider-message-123",labelIds:["SENT"],
+         payload:{headers:[{name:"Message-ID",value:rfc}]}})};
+     throw Error("reconciliation must be a read, not a new send");
+   });
+   vi.stubGlobal("fetch",fetch);
+   expect(await reconcileGmailReceipt(scope,effect,proposal,effectHash)).toBe(true);
+   expect(fetch).toHaveBeenCalledTimes(1);
+   expect((writes[0].data as {state:string}).state).toBe("verified");
+ });
+ it("rejects reconciliation after Google mailbox subject changes even with read enabled",async()=>{
+   db({id:"55555555-5555-4555-8555-555555555555",
+     account_id:account.id,account_generation:1,state:"pending",
+     account_provider_subject:account.provider_subject,
+     provider_message_id:"provider-message-123",
+     rfc_message_id:gmailRfcId(proposal,account.email)});
+   credentials.generation=3;
+   deps.getAccount.mockResolvedValue({...account,generation:3,provider_subject:"different"});
+   const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+   expect(await reconcileGmailReceipt(scope,effect,proposal,effectHash)).toBe(false);
+   expect(fetch).not.toHaveBeenCalled();
+ });
+ it("does not fetch the next message after an owner revokes Gmail read mid-search",async()=>{
+   db();
+   deps.getAccount.mockResolvedValueOnce(account).mockResolvedValueOnce(account)
+     .mockResolvedValueOnce({...account,enabled_operations:["draft","send","organize"]});
+   const fetch=vi.fn(async()=>({ok:true,status:200,json:async()=>({
+     messages:[{id:"message12345",threadId:"thread12345"}]})}));
+   vi.stubGlobal("fetch",fetch);
+   await expect(gmailSearch(scope,"supplier order",10)).rejects.toThrow("gmail_permission_changed");
+   expect(fetch).toHaveBeenCalledTimes(1);
+ });
+ it("blocks a previous owner's approved send after an internal operation switch",async()=>{
+   db();
+   deps.getAccount.mockResolvedValueOnce(account)
+     .mockResolvedValueOnce({...account,enabled_operations:["read","draft","organize"],generation:2});
+   const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
+   await expect(performGmailEffect(scope,effect,proposal,effectHash))
+     .rejects.toThrow("gmail_connection_revoked_before_send");
+   expect(fetch).not.toHaveBeenCalled();
+ });
+
 });

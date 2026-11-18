@@ -1,108 +1,25 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light dark">
-  <meta name="description" content="Read-only AI CAFE tasks, PRs, CI, Codex review ages, blockers and Muse handoff status in one live sortable table.">
-  <title>AI CAFE — Owner Control Center</title>
-  <link rel="stylesheet" href="./owner-dashboard.css">
-  <script type="module" src="./owner-dashboard.mjs"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>AI CAFE — Previous development dashboard retired</title>
+<style>
+:root{color-scheme:light dark;font-family:system-ui,sans-serif}
+body{max-width:42rem;margin:4rem auto;padding:0 1.2rem;line-height:1.6}
+h1{line-height:1.2}a{overflow-wrap:anywhere}
+aside{border-left:3px solid #888;padding:.7rem 1rem}
+</style>
 </head>
 <body>
-  <header>
-    <nav class="container" aria-label="Primary">
-      <div class="logo"><span class="logo-mark" aria-hidden="true">A</span><span>AI CAFE <span style="font-weight:400;color:var(--muted)">/ Owner Operations</span></span></div>
-      <div class="nav-links"><a href="https://github.com/killbill2792/aicafe/blob/main/docs/plans/owner-living-blueprint.md" target="_blank" rel="noopener noreferrer">Living blueprint</a><a href="https://github.com/killbill2792/aicafe/issues/411" target="_blank" rel="noopener noreferrer">GitHub control center</a></div>
-    </nav>
-  </header>
-  <main class="container">
-    <div class="hero">
-      <div>
-        <p class="eyebrow">GitHub dispatcher · Read-only</p>
-        <h1>Development operations</h1>
-        <p class="subtitle">See every task, last commit, CI, Codex review age, blockers and Muse handoff in one sortable table.</p>
-      </div>
-      <div id="freshness" class="health stale" role="status">Checking dispatcher…</div>
-    </div>
-    <p id="fetch-status" aria-live="polite">Checking GitHub…</p>
-    <section class="grid" aria-label="Task overview">
-      <article class="panel metric"><strong id="count-tasks">—</strong><span>Tracked PRs</span></article>
-      <article class="panel metric"><strong id="count-decisions">—</strong><span>Owner questions</span></article>
-      <article class="panel metric"><strong id="count-queued">—</strong><span>Delivery queued</span></article>
-    </section>
-    <section class="panel" aria-labelledby="map-heading">
-      <div class="box-head"><h2 id="map-heading">Approved architecture and PR dependencies</h2><a class="meta" href="https://github.com/killbill2792/aicafe/blob/main/docs/plans/owner-living-blueprint.md" target="_blank" rel="noopener noreferrer">Read the decisions</a></div>
-      <div id="architecture-map" class="architecture"><p class="empty">Loading approved map…</p></div>
-      <p class="panel-note">This map reflects the latest GitHub dispatcher record, not permission to code or proof that the product works.</p>
-    </section>
-    <section class="panel" aria-labelledby="pr-heading">
-      <div class="box-head"><div><h2 id="pr-heading">Tasks and handoffs</h2>
-        <p id="operations-source" class="meta">Checking public status snapshot…</p>
-      </div><span class="meta">One table · read-only · live refresh</span></div>
-      <div class="task-controls" role="group" aria-label="Task table sorting and filtering">
-        <label for="task-filter">Find task <input id="task-filter" type="search" placeholder="Task, PR, blocker or stage" autocomplete="off"></label>
-        <label for="task-sort">Sort by <select id="task-sort">
-          <option value="task">Task</option>
-          <option value="commit">Last commit time</option>
-          <option value="codex">Codex review time</option>
-          <option value="codex_requested">Codex requested time</option>
-          <option value="ci">CI status</option>
-          <option value="ci_at">CI last checked</option>
-          <option value="pr">PR</option>
-          <option value="stage">Stage</option>
-          <option value="next">Next action</option>
-          <option value="muse">Muse pending</option>
-        </select></label>
-        <label for="task-order">Order <select id="task-order">
-          <option value="desc">Newest / descending</option>
-          <option value="asc">Oldest / ascending</option>
-        </select></label>
-        <span class="meta" id="task-row-count" aria-live="polite"></span>
-      </div>
-      <div class="table-scroll">
-        <table id="tasks-and-handoffs">
-          <thead><tr>
-            <th scope="col">Task / Stage</th><th scope="col">PR / Head</th>
-            <th scope="col">Last commit / age</th><th scope="col">CI / age</th>
-            <th scope="col">Codex / requested / reviewed / age</th>
-            <th scope="col">Acceptance</th><th scope="col">Dependencies</th>
-            <th scope="col">Muse handoff / owner notices</th>
-            <th scope="col">Merge blockers</th><th scope="col">Integration</th>
-            <th scope="col">Next actor / step</th>
-          </tr></thead>
-          <tbody id="task-rows"><tr><td colspan="11">Loading the latest GitHub status…</td></tr></tbody>
-        </table>
-      </div>
-    </section>
-    <div class="two log-columns">
-      <section class="panel" aria-labelledby="merged-heading">
-        <div class="box-head"><h2 id="merged-heading">Recently merged PRs</h2><span id="merge-status" class="meta">Checking GitHub…</span></div>
-        <div id="merged-prs" class="record-list"><p class="empty">Loading actual merges…</p></div>
-      </section>
-      <section class="panel" aria-labelledby="history-heading">
-        <div class="box-head"><h2 id="history-heading">GitHub dispatcher history</h2><a id="dispatcher-run" class="meta" href="https://github.com/killbill2792/aicafe/actions" target="_blank" rel="noopener noreferrer">Latest run</a></div>
-        <div id="recent-actions" class="record-list"><p class="empty">Loading actions…</p></div>
-      </section>
-    </div>
-    <div class="owner-decisions">
-      <section class="panel" aria-labelledby="approval-heading">
-        <div class="box-head"><h2 id="approval-heading">Needs your decision</h2><span class="meta">Approval is never inferred</span></div>
-        <div id="decisions" class="decisions"><p class="empty">Loading owner questions…</p></div>
-      </section>
-
-    </div>
-    <section class="guide" aria-labelledby="guide-heading">
-      <h2 id="guide-heading">How to use AI CAFE development</h2>
-      <p>Discuss a fix or idea in ChatGPT, compare the existing architecture and agree the PR plan. Then ask your connected ChatGPT conversation to record your <strong>explicit approval in GitHub</strong> and confirm it was saved. Return here to see the execution, reviews, merges and pending owner decisions. Chat alone is not a GitHub approval.</p>
-    </section>
-    <div class="trust">
-      <strong>Last successful dispatcher reconciliation:</strong> <span id="heartbeat">Checking…</span>
-      <span aria-hidden="true"> · </span>
-      <strong>Last private state change:</strong> <span id="ledger">Checking…</span>
-      <p>Refreshing this page does not submit messages, approve requests or run the dispatcher. The browser checks the published task snapshot every 2 minutes; each row shows verified source timestamps. GitHub Actions schedules remain best-effort.</p>
-    </div>
-  </main>
-  <footer class="container">AI CAFE · One GitHub dispatcher · One development operations table · Read-only monitoring</footer>
+<main>
+<h1>Previous development dashboard retired</h1>
+<p>The GitHub-based AI CAFE development dispatcher and its public owner status display were retired by the owner on November 17, 2026. This page no longer shows live PRs, requests Codex reviews, publishes owner decisions, or sends ChatGPT instructions.</p>
+<p>The current development coordinator is Muse's <strong>private, local dashboard</strong> on its existing machine. The owner can open that dashboard through an authorized secure connection; it must not be exposed publicly.</p>
+<aside><strong>Historical information is not current.</strong> Existing GitHub issue comments, private queue records and signed receipts remain preserved as audit history, not as coordination instructions.</aside>
+<p><a href="https://github.com/killbill2792/aicafe/pulls">View current pull requests on GitHub</a></p>
+<p><a href="https://github.com/killbill2792/aicafe/blob/main/docs/plans/muse-lightweight-coordination.md">Muse's private dashboard setup and checks</a></p>
+</main>
 </body>
 </html>

@@ -40,6 +40,7 @@ import {eventPlanTools,type EventPlanPort} from "./eventPlan";
 import {webSearchTools} from "./webSearch";
 import {commitmentTools} from "./commitments";
 import {routineTools} from "./routines";
+import {permissionTools} from "./permissions";
 import type {RoutineRecord,RoutineSchedule} from "@/lib/ai/supervisor/routines/contracts";
 import type {SupervisorEconomicsRead} from "@/lib/data/supervisorEconomics.server";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
@@ -69,6 +70,10 @@ export type AgentToolContext = {
   currency?:string|null;
   /** Authenticated owner-scoped reader. Never populated from model arguments. */
   canonicalData?:()=>Promise<DataQueryContext>;
+  /** Owner-verified staff communication evidence for off-turn investigations,
+   * not a worker chat or model-supplied employee selector. */
+  staffMessages?:{read:()=>ReturnType<
+    typeof import("@/lib/staffCommunication/channel.server").readOwnerStaffMessages>;};
   /** Only supplied for an SQL-claimed scheduled investigation; never owner/model input. */
   investigation?:{
     read:()=>Promise<AgentToolResult>;
@@ -118,6 +123,8 @@ export type AgentToolContext = {
   };
   /** CHAT_MEMORY only: drafts a café fact for owner approval (RLS, owner-scoped). */
   memory?: CafeMemoryPort;
+  /** The live Task10 grant ledger, resolved by the server from authenticated owner/café scope. */
+  readPermissions?:()=>Promise<import("@/lib/ai/supervisor/loop/effectGateway.server").SupervisorMandate[]>;
   /** Authenticated canonical screen read, bound to session membership rather than model args. */
   readEconomics?:()=>Promise<SupervisorEconomicsRead>;
   /** Live, provisional read of today's POS orders for the session's café. */
@@ -154,7 +161,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...gmailTools } as const;
+  ...staffTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...permissionTools,...gmailTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -188,7 +195,7 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   manage_routine:["title","routine_id"]
 };
 
-export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools||name in supplierPurchasingTools?"maya":"alex";}
+export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name in permissionTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools||name in supplierPurchasingTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
@@ -279,9 +286,11 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_investigation_source")return incidentEvidenceTools.get_investigation_source.execute(raw,ctx);
   if(name==="manage_commitment")return commitmentTools.manage_commitment.execute(raw,ctx);
   if(name==="manage_routine")return routineTools.manage_routine.execute(raw,ctx);
+  if(name==="get_supervisor_permissions")return permissionTools.get_supervisor_permissions.execute(raw,ctx);
   if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
   if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
   if(name==="get_labor")return staffTools.get_labor.execute(raw,ctx);
+  if(name==="get_staff_messages")return scheduleReadTools.get_staff_messages.execute(raw,ctx);
   if(name==="get_team")return scheduleReadTools.get_team.execute(raw,ctx);
   if(name==="get_week_schedule")return scheduleReadTools.get_week_schedule.execute(raw,ctx);
   if(name==="get_labor_rules")return scheduleReadTools.get_labor_rules.execute(raw);

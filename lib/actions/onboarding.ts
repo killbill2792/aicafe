@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { DEFAULT_RECOVERY_ORDER } from "@/lib/constants";
+import {isLinkedStaffUser} from "@/lib/staffCommunication/identity.server";
 
 /**
  * Creates the signed-in user's own business on first visit to onboarding, if they don't have one
@@ -28,6 +29,10 @@ export async function ensureOwnBusiness(): Promise<{ businessId: string } | { er
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in first." };
+  // Service-role café creation must never be reachable through a worker
+  // login, even when invoked as a server action without rendering the page.
+  if(await isLinkedStaffUser(user.id))
+    return {error:"staff_account_restricted"};
 
   const { data: memberships } = await supabase.from("memberships").select("business_id, businesses(is_demo)").eq("user_id", user.id);
   const own = (memberships ?? []).find((m) => {

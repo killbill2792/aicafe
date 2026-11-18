@@ -41,14 +41,23 @@ export async function createOwnerRoutine(schedule:RoutineSchedule,turn:VerifiedR
   if(error||!data)throw error??new Error("Routine not saved");
   return asRoutine(data as RoutineRow);
 }
-export async function listOwnerRoutines(turn:VerifiedRoutineTurn):Promise<RoutineRecord[]>{
-  checkedTurn(turn);
-  const {data,error}=await turn.client.from("supervisor_routines")
-    .select("business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status,revision,created_at,updated_at")
-    .eq("business_id",turn.scope.businessId).eq("owner_user_id",turn.scope.ownerUserId)
-    .eq("thread_id",turn.threadId).order("created_at",{ascending:false}).limit(100);
+const routineReadFields="business_id,id,owner_user_id,thread_id,title,cadence,weekdays,local_time,timezone,status,revision,created_at,updated_at";
+/** One canonical RLS-backed reader for thread-only and café-wide owner views. */
+async function readOwnerRoutines(scope:VerifiedRoutineTurn["scope"],client:SupabaseClient,threadId?:string){
+  const base=client.from("supervisor_routines").select(routineReadFields)
+    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId);
+  const query=threadId?base.eq("thread_id",threadId):base;
+  const {data,error}=await query.order("created_at",{ascending:false}).limit(100);
   if(error)throw error;
   return ((data??[]) as RoutineRow[]).map(asRoutine);
+}
+export async function listOwnerRoutines(turn:VerifiedRoutineTurn):Promise<RoutineRecord[]>{
+  checkedTurn(turn);
+  return readOwnerRoutines(turn.scope,turn.client,turn.threadId);
+}
+export async function listOwnerRoutinesAcrossThreads(scope:VerifiedRoutineTurn["scope"],client:SupabaseClient):Promise<RoutineRecord[]>{
+  if(!scope.businessId||!scope.ownerUserId)throw new Error("Routine owner scope unavailable");
+  return readOwnerRoutines(scope,client);
 }
 export async function changeOwnerRoutine(input:{
   id:string;revision:number;status?:RoutineRecord["status"];
