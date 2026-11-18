@@ -8,6 +8,9 @@ import {readFileSync,writeFileSync,appendFileSync,copyFileSync,mkdirSync,existsS
 import {join,resolve} from "node:path";
 import {createHash} from "node:crypto";
 import {spawn,spawnSync} from "node:child_process";
+// Always resolve from the coordinator's reviewed code, NEVER from candidate.
+import {TEST_CAFES} from "../seed/cafes.mjs";
+import {buildSeedSql,latestClosedDate} from "../seed/seedSql.mjs";
 const REPO="killbill2792/aicafe", OWNER="killbill2792";
 const shaRe=/^[0-9a-f]{40}$/, idRe=/^[a-z0-9][a-z0-9-]{0,31}$/;
 const manifestPath=id=>".github/luna/scenarios/"+id+".json";
@@ -136,8 +139,15 @@ function snapshotTrackedSource(){
   ensure(names.length>0&&names.length<=50000&&new Set(names).size===names.length,
     "Missing or ambiguous trusted tracked-file inventory");
   const tracked=Object.fromEntries(names.map(name=>[name,trackedSourceState(root,name)]));
+  // Independent trusted-main generator. Candidate install/test code cannot
+  // affect these imports or insert unexpected SQL into the approved seed.
+  const expected14bSeedSha256=process.env.SCENARIO==="14b"
+    ?createHash("sha256").update(buildSeedSql({
+      cafes:TEST_CAFES,endDateStr:latestClosedDate(TEST_CAFES),days:14
+    })).digest("hex"):null;
   writeFileSync(sourceInventoryFile(),JSON.stringify({
-    head:process.env.HEAD_SHA,scenario:process.env.SCENARIO,tracked
+    head:process.env.HEAD_SHA,scenario:process.env.SCENARIO,tracked,
+    expected14bSeedSha256
   }),{mode:0o400,flag:"wx"});
   console.log("Trusted pre-execution source inventory locked: "+names.length+" paths");
 }
@@ -158,7 +168,10 @@ function verifyTrackedSource(stage){
       // Old 14B acceptance intentionally regenerates its rolling seed before
       // the paid run. Only this one file may change and ONLY during preflight.
       if(stage==="preflight"&&process.env.SCENARIO==="14b"&&
-         relative==="supabase/seed.sql"&&before.kind==="file"&&after.kind==="file"){
+         relative==="supabase/seed.sql"&&before.kind==="file"&&after.kind==="file"&&
+         /^[0-9a-f]{64}$/.test(original.expected14bSeedSha256??"")&&
+         after.sha256===original.expected14bSeedSha256){
+        // Only exact trusted-generator bytes qualify, not arbitrary PR SQL.
         tracked[relative]=after;
       }else bad.push(relative);
     }
