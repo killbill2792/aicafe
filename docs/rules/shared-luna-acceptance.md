@@ -25,7 +25,14 @@ PR (including a merged PR):
 
 The trusted host checks the owner's GitHub identity, exact source head,
 live unchanged owner comment, and bounded price before authorizing any
-provider access. A deleted or edited comment is not usable. The original
+provider access. For owner comments, a trusted GitHub-only authorization job
+first checks all existing consumption records, then writes one durable
+github-actions[bot] consumption marker tied to the original comment ID and
+exact workflow run ID. The paid job has **read-only GitHub permission** and
+verifies that exact marker and the live, unchanged owner comment again
+immediately before starting the key-isolated provider broker. Duplicate
+events, replayed runs, revoked comments, stale commits and failed or
+uncertain consumption are fail-closed. A deleted or edited comment is not usable. The original
 manual owner-only workflow_dispatch on trusted main is still supported.
 Both entry points use the same non-replayable, isolated runner. For PR work
 the SHA must be its current same-repo head; for merged integration,
