@@ -108,7 +108,7 @@ reviewed sources and expected results; NOT itself proof of any capability):
       "minCount": 1, "maxCount": 10
     },
     {
-      "name": "foreign-cafe-cannot-read-source", "kind": "isolation",
+      "name": "foreign-cafe-source-not-written", "kind": "isolation",
       "table": "public.operating_tasks",
       "where": {"business_id": {"scope": "otherCafeId"}, "id": {"scope": "taskId"}},
       "minCount": 0, "maxCount": 0
@@ -118,8 +118,12 @@ reviewed sources and expected results; NOT itself proof of any capability):
 ~~~
 
 Every generic scenario needs at least two actual model-selected registered
-tools and at least source, owner and isolation host SQL checks. Scope values
-are restricted to safe literals and SQL reads are performed by the trusted
+tools and at least source, owner and isolation host SQL checks. An isolation
+readback proving no source row was written for another cafe is NOT a
+cross-cafe RLS/access-denial test: the actual authenticated foreign-cafe
+denial must also be executed separately inside that feature's acceptance
+test and its negative receipt independently reviewed. Scope values are
+restricted to safe literals and SQL reads are performed by the trusted
 host against actual migrated local PostgreSQL, NOT by trusting the
 candidate's assertion that it checked the DB. Codex must review each new
 scenario oracle: an inadequate candidate-supplied expected result is NOT
