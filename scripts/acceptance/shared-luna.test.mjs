@@ -414,3 +414,13 @@ test("shared paid workflow never executes Git against mutable candidate after co
   assert.ok(yaml.includes("shared-luna.mjs verify-preflight"));
   assert.ok(yaml.includes("shared-luna.mjs verify-source"));
 });
+
+test("single-file candidate runner resolves without coordinator seed files",()=>{
+  const dir=mkdtempSync(join(tmpdir(),"luna-single-file-"));
+  try{
+    const file=join(dir,"shared-luna.mjs");
+    writeFileSync(file,readFileSync(join(import.meta.dirname,"shared-luna.mjs")));
+    const run=spawnSync(process.execPath,["--input-type=module","-e",`import(${JSON.stringify(file)})`],{encoding:"utf8",cwd:dir});
+    assert.equal(run.status,0,run.stderr);
+  }finally{rmSync(dir,{recursive:true,force:true})}
+});
