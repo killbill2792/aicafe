@@ -14,6 +14,7 @@ import {emptyInvestigationLiveLedger,reserveInvestigationLiveCall}
 vi.mock("server-only",()=>({}));
 import {openAIProvider,type AgentProvider} from "@/lib/ai/agent/loop.server";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
+import {investigationReadTools} from "./investigation";
 import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
 import {enqueueInvestigationsForOwner,processDueInvestigations,
  processNextInvestigation,type InvestigationModelProofSummary} from "./investigation.server";
@@ -53,6 +54,35 @@ run("real Luna investigates recorded leave and staffing, follows up, and verifie
   threadId:ids.thread,localDate:""};
  let budget=emptyInvestigationLiveLedger(),providerCompletions=0;
  const observations:InvestigationModelProofSummary[]=[];
+ // Only fixed, reviewed diagnostic categories/counts. Never print model text,
+ // provider errors, tool inputs, arbitrary source names or database identities.
+ const knownCodes=new Set(["source_unavailable","provider_unavailable",
+  "owner_quota_reached","model_incomplete","evidence_incomplete",
+  "authorization_revoked","time_exceeded","storage_failed"]);
+ const knownPhases=new Set(["collect","investigate","awaiting_owner","resolved","cancelled"]);
+ const safeCode=(value:unknown)=>value===null?null:
+  typeof value==="string"&&knownCodes.has(value)?value:"unclassified";
+ const recordObservation=(stage:"initial"|"followup",summary:InvestigationModelProofSummary)=>{
+  observations.push(summary);
+  console.log("13D real-model proof metadata",JSON.stringify({
+   stage,model:"gpt-6-luna",verified:summary.verified,
+   toolNames:summary.toolNames.filter(name=>(investigationReadTools as readonly string[]).includes(name)),
+   failureCode:safeCode(summary.failureCode),
+   completed:summary.endReason==="complete",unverifiedCount:summary.unverifiedCount,
+   externalEffectClaim:summary.externalEffectClaim}));
+ };
+ const failureCheckpoint=async(stage:"initial"|"followup",taskId:string,result:{failed:number})=>{
+  if(!result.failed)return;
+  const checkpoints=(await admin.query("select phase,last_error,failure_count from "+
+   "public.supervisor_investigations where business_id=$1 and source_id=$2",
+   [ids.business,taskId])).rows;
+  console.error("13D bounded live failure checkpoint",JSON.stringify({
+   stage,failed:result.failed,checkpoint:checkpoints.map(x=>({
+    phase:knownPhases.has(x.phase)?x.phase:"unclassified",error:safeCode(x.last_error),
+    count:Number.isSafeInteger(x.failure_count)?x.failure_count:null})),
+   completions:providerCompletions,attempted:budget.calls,
+   reservedMicros:budget.reservedMicros}));
+ };
  const provider:AgentProvider=async function*(params,signal){
   if(params.model!=="gpt-6-luna"||typeof params.max_output_tokens!=="number")
     throw Error("13d_live_unexpected_model");
@@ -139,21 +169,9 @@ run("real Luna investigates recorded leave and staffing, follows up, and verifie
   // A real source event (not a fake owner message) starts the SAME durable
   // existing Supervisor worker and actual registered read tools.
   expect(await enqueueInvestigationsForOwner(db,scope,now)).toBe(1);
-  const first=await processDueInvestigations(db,now,2,provider,(summary)=>{
-   observations.push(summary);
-   console.log("13D real-model proof metadata",JSON.stringify({
-    model:"gpt-6-luna",verified:summary.verified,
-    toolNames:summary.toolNames,failureCode:summary.failureCode}));
-  });
-  if(first.failed){
-   const checkpoints=(await admin.query("select phase,last_error,failure_count from "+
-    "public.supervisor_investigations where business_id=$1 and source_id=$2",
-    [ids.business,taskId])).rows;
-   console.error("13D bounded live failure checkpoint",JSON.stringify({
-    result:first,checkpoint:checkpoints.map(x=>({
-     phase:x.phase,error:x.last_error,count:x.failure_count})),
-    completions:providerCompletions,attempted:budget.calls}));
-  }
+  const first=await processDueInvestigations(db,now,2,provider,
+   summary=>recordObservation("initial",summary));
+  await failureCheckpoint("initial",taskId,first);
   expect(first).toMatchObject({processed:2,collected:1,investigated:1,failed:0});
   expect(observations).toHaveLength(1);
   expect(observations[0]).toMatchObject({verified:true,externalEffectClaim:false,
@@ -191,7 +209,8 @@ run("real Luna investigates recorded leave and staffing, follows up, and verifie
   // a duplicate request or a made-up successful coverage claim.
   const future=new Date(now.getTime()+25*60*60_000);
   const following=await processNextInvestigation(db,future,provider,
-   (summary)=>observations.push(summary));
+   summary=>recordObservation("followup",summary));
+  await failureCheckpoint("followup",taskId,following);
   expect(following).toMatchObject({processed:1,followUps:1,failed:0});
   expect(observations).toHaveLength(2);
   expect(observations[1].verified).toBe(true);
