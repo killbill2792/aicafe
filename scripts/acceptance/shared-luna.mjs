@@ -25,8 +25,13 @@ export function validateScenario(m,id){
     ensure(m.mode==="legacy"&&Object.keys(legacy[id]).every(k=>m[k]===legacy[id][k]),"Legacy oracle/entrypoint may not be overridden");
     return {...legacy[id],id,mode:"legacy"};
   }
-  ensure(m.mode==="generic"&&m.engine==="vitest","Generic scenarios must use the isolated Vitest contract");
-  ensure(cleanPath(m.entrypoint)&&m.entrypoint.endsWith(".live.test.ts"),"Invalid generic test entrypoint");
+  ensure(m.mode==="generic"&&["vitest","node-server"].includes(m.engine),
+    "Generic scenarios must use an isolated Vitest or local app server contract");
+  ensure(cleanPath(m.entrypoint)&&(
+    (m.engine==="vitest"&&m.entrypoint.endsWith(".live.test.ts"))||
+    (m.engine==="node-server"&&
+      /^evals\/acceptance\/live\/[a-zA-Z0-9_-]+\.mjs$/.test(m.entrypoint))),
+    "Invalid generic test entrypoint");
   ensure(m.proof===id+"-proof.json"&&m.scope===id+"-scope.json","Invalid proof filenames");
   ensure(Array.isArray(m.expectedTools)&&m.expectedTools.length>=2&&m.expectedTools.length<=20&&
     m.expectedTools.every(t=>typeof t==="string"&&/^[a-z][a-z0-9_]{1,79}$/.test(t)),"Real registered tool names required");
@@ -235,7 +240,11 @@ async function candidate(){
         await new Promise(r=>setTimeout(r,2000));
       }
       ensure(ready,"Disposable candidate web server did not start");
-      exec("node",[manifest.entrypoint,"--output",dir+"/"+manifest.proof],{env});
+      exec("node",[manifest.entrypoint,"--output",dir+"/"+manifest.proof,
+        ...(manifest.scope?["--scope-output",dir+"/"+manifest.scope]:[])],{env});
+      ensure(existsSync(dir+"/"+manifest.proof),"Missing exact-run local-server proof");
+      if(manifest.scope)ensure(existsSync(dir+"/"+manifest.scope),
+        "Missing exact-run local-server scoped proof");
     }finally{server.kill();closeSync(log)}
   }else{
     exec("npx",["vitest","run",manifest.entrypoint,"--reporter=verbose"],{env});
