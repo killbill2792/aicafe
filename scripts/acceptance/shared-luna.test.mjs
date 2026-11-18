@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,chmodSync,rmSync} from "node:fs";
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,chmodSync,rmSync,symlinkSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawnSync} from "node:child_process";
@@ -426,4 +426,38 @@ test("single-file candidate runner resolves without coordinator seed files",()=>
     const run=spawnSync(process.execPath,["--input-type=module","-e",`import(${JSON.stringify(file)})`],{encoding:"utf8",cwd:dir});
     assert.equal(run.status,0,run.stderr);
   }finally{rmSync(dir,{recursive:true,force:true})}
+});
+
+test("shared live preflight actually executes trusted broker tests in split checkout layout",()=>{
+  const work=mkdtempSync(join(tmpdir(),"luna-split-checkout-"));
+  try{
+    // Mimic the two checkouts created by GitHub Actions. The coordinator is
+    // linked to this exact source checkout; the candidate has no trusted files.
+    symlinkSync(join(import.meta.dirname,"../.."),join(work,"coordinator"),"dir");
+    mkdirSync(join(work,"candidate"));
+    const workflow=readFileSync(join(import.meta.dirname,
+      "../../.github/workflows/ai-cafe-luna-shared.yml"),"utf8");
+    const start=workflow.indexOf("name: Verify immutable scenario and trusted broker with zero secrets");
+    const end=workflow.indexOf("name: Freeze the exact source-controlled scenario",start);
+    assert.ok(start>0&&end>start,"No real paid-job preflight found");
+    const lines=workflow.slice(start,end).split("\n");
+    const matching=lines.filter(line=>line.includes("node --test"));
+    assert.equal(matching.length,1,"Expect one real broker security invocation in paid preflight");
+    const command=matching[0].trim();
+    // Execute the actual workflow command, not an assertion about its spelling.
+    const ok=spawnSync("bash",["-e","-o","pipefail","-c",command],{
+      cwd:work,encoding:"utf8",timeout:30000,
+      env:{...process.env,NODE_TEST_CONTEXT:undefined}});
+    assert.equal(ok.status,0,"Live preflight broker tests failed in split checkout:\n"+
+      (ok.stderr||"")+"\n"+(ok.stdout||"").slice(-1500));
+    assert.match(ok.stdout,/# pass 16/,"Actual trusted broker suite must pass all 16 tests");
+    // Historical regression: the same actual tests executed from workspace
+    // root cannot resolve their own .github/workflows or fetch shim fixture.
+    const broken=spawnSync(process.execPath,["--test",
+      "coordinator/scripts/acceptance/task14b-broker.test.mjs"],{
+        cwd:work,encoding:"utf8",timeout:30000,
+        env:{...process.env,NODE_TEST_CONTEXT:undefined}});
+    assert.notEqual(broken.status,0,"Broken workspace-root broker invocation unexpectedly passed");
+    assert.match((broken.stderr||"")+(broken.stdout||""),/ENOENT|Cannot find module/);
+  }finally{rmSync(work,{recursive:true,force:true})}
 });

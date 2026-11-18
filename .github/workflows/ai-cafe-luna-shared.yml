@@ -121,7 +121,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C candidate rev-parse HEAD)" = "$HEAD_SHA"
-          node --test coordinator/scripts/acceptance/task14b-broker.test.mjs
+          # Broker tests read legacy paths relative to their own trusted repo.
+          # The shared workflow checks out trusted coordinator/ and candidate/
+          # separately: run these tests inside coordinator, never workspace root.
+          (cd coordinator && node --test scripts/acceptance/task14b-broker.test.mjs)
           node --input-type=module <<'NODE'
           import {readScenario} from "./coordinator/scripts/acceptance/shared-luna.mjs";
           import {existsSync} from "node:fs";
