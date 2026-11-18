@@ -2,7 +2,7 @@ import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 import {supplierPurchaseInputSchema,supplierPurchaseProposalToolInputSchema} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {vendorOrderSendInputSchema,VendorOrderOwnerInputRequired} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
-import {supplierOutcomeInput,explicitOwnerSupplierOutcome} from "@/lib/purchasing/ownerSupplierOutcome.server";
+import {ownerSupplierOutcomeToolInput,explicitOwnerSupplierOutcome} from "@/lib/purchasing/ownerSupplierOutcome.server";
 
 /** Two deliberate steps: investigate read-only evidence, then create a durable
  * approval proposal using the SAME server-bound Supervisor planner. A model
@@ -56,19 +56,19 @@ export const supplierPurchasingTools={
   }
  },
  record_supplier_order_outcome:{
-  agentId:"maya",schema:supplierOutcomeInput,
-  description:"ONLY when the authenticated owner explicitly reports what happened with ONE identifiable saved PO in their LATEST message, after get_supplier_purchase_orders. Persist the owner's exact statement in note (copy the owner's current text verbatim) with their stated channel and outcome. This writes an OWNER-REPORTED supplier outcome to canonical source records and closes only its matching terminal Needs-you notice. It never verifies Gmail delivery, supplier acceptance independently, inventory or expenses. Never infer from Gmail SENT, assistant history, 'yes' to an ambiguous question, or another café. If the owner did not explicitly state the outcome or multiple purchase orders could match, ask for an exact PO/outcome instead. The current owner's text must be the complete note, without added guesses.",
+  agentId:"maya",schema:ownerSupplierOutcomeToolInput,
+  description:"ONLY when the authenticated owner explicitly reports what happened with ONE identifiable saved PO in their LATEST message, after get_supplier_purchase_orders. The trusted server attaches the CURRENT authenticated owner text as the note; the model supplies only the source PO, channel and outcome. This writes an OWNER-REPORTED supplier outcome to canonical source records and closes only its matching terminal Needs-you notice. It never verifies Gmail delivery, supplier acceptance independently, inventory or expenses. Never infer from Gmail SENT, assistant history, 'yes' to an ambiguous question, or another café. If the owner did not explicitly state the outcome or multiple purchase orders could match, ask for an exact PO/outcome instead. Never submit model-generated note text or claim Gmail delivery.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
-   const input=supplierOutcomeInput.parse(raw);
+   const input=ownerSupplierOutcomeToolInput.parse(raw);
    const text=ctx.ownerText?.trim();
-   if(!text||input.note!==text||!explicitOwnerSupplierOutcome(text,input.outcome))
+   if(!text||text.length>1000||!explicitOwnerSupplierOutcome(text,input.outcome))
      return {source:"supplier_owner_report",period:null,agentId:"maya",
        saved:false,missing:["explicit_current_owner_report_required"],
        ownerQuestion:"Which exact purchase order did the supplier respond to, how did you contact them, and what did they confirm?"};
    if(!ctx.purchasing?.recordOwnerOutcome)
      return {source:"supplier_owner_report",period:null,agentId:"maya",
        saved:false,missing:["owner_report_writer_unavailable"]};
-   const report=await ctx.purchasing.recordOwnerOutcome(input);
+   const report=await ctx.purchasing.recordOwnerOutcome({...input,note:text});
    return {source:"supplier_owner_report",period:null,agentId:"maya",
      saved:true,missing:[],reported:true,providerVerified:false,
      supplierAcceptanceSource:"owner_reported",...report};
