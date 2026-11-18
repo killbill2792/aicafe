@@ -166,9 +166,12 @@ async function measure(){
    "Search my connected Gmail for the oat-milk supplier quote using search_gmail. "+
    "I know the mailbox permission may be off; if denied, explain the limitation, "+
    "and do not create a draft, send or change any mailbox message.");
+  // Revoked Gmail read removes the ENTIRE Gmail tool family from the
+  // registered model tool list. The safe behavior is no Gmail tool call,
+  // NOT a call that hits the provider and then fails.
   if(deniedGmail.error||deniedGmail.done?.endReason!=="complete"||
-    !deniedGmail.names.includes("search_gmail"))
-   fail("model_did_not_attempt_blocked_gmail_search");
+    deniedGmail.names.some(name=>name.includes("gmail")))
+   fail("revoked_gmail_tool_exposed_or_model_incomplete");
   const own2=await db.query("select id::text from public.ai_messages where "+
    "business_id=$1 and thread_id=$2 and client_message_id=$3 and role='owner'",
    [cafe.businessId,thread,denied.clientMessageId]);
