@@ -56,6 +56,23 @@ export async function recordOwnerSupplierOutcome(db:SupabaseClient,
    alreadyRecorded:false,source:"owner_reported",providerVerified:false,outcome:input.outcome};
 }
 
+/** Normal authenticated browser/WhatsApp owner messages run through a
+ * durable AgentJob. A job is evidence of provenance if (and only if) its
+ * owner-message and thread match the persisted owner text; it is NOT an
+ * automatic reason to deny an otherwise authorized owner report. */
+export function authenticatedSupplierOwnerTurn(input:{
+ owner:{id:string;role:string;text?:string|null};
+ ownerText:string;threadId:string;
+ job:{ownerMessageId:string;threadId:string;status:string}|null;
+}):boolean{
+ const text=input.ownerText.trim();
+ return input.owner.role==="owner"&&text.length>0&&
+   input.owner.text?.trim()===text&&
+   (!input.job||(input.job.status==="running"&&
+     input.job.ownerMessageId===input.owner.id&&
+     input.job.threadId===input.threadId));
+}
+
 /** A free-text turn can record a supplier outcome only when the owner
  * explicitly supplied the source statement in THIS authenticated message.
  * Conservative failures ask for clarification; never infer supplier acceptance
