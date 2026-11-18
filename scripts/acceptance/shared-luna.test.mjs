@@ -151,7 +151,7 @@ test("trusted owner launch selects all exact-head manifests without any model ca
     const output=join(dir,"output.txt"),preload=join(dir,"mock-github.mjs");
     writeFileSync(output,"");
     const event={repository:{full_name:"killbill2792/aicafe"},sender:{login:"killbill2792"},
-      inputs:{head_sha:head,pr_number:"0",scenario:"all"}};
+      inputs:{head_sha:head,pr_number:"0",scenario:"all",max_budget_usd:"0.36"}};
     writeFileSync(eventFile,JSON.stringify(event));
     const tree={truncated:false,tree:[
       {type:"blob",mode:"100644",path:".github/luna/scenarios/14b.json"},
@@ -179,6 +179,15 @@ test("trusted owner launch selects all exact-head manifests without any model ca
     assert.equal(attrs.head,head);
     assert.match(result.stdout,/cumulative worst-case reserved USD=0.36/);
     assert.ok(!attrs.matrix.includes("untrusted-link"));
+    // The same request with the default $0.20 per-dispatch budget must
+    // fail before scheduling two scenarios whose combined reservation is $0.36.
+    writeFileSync(eventFile,JSON.stringify({...event,inputs:{
+      ...event.inputs,max_budget_usd:"0.20"}}));
+    writeFileSync(output,"");
+    const overBudget=execute();
+    assert.notEqual(overBudget.status,0);
+    assert.match(overBudget.stderr,/exceed manual owner budget authorization/);
+    assert.equal(readFileSync(output,"utf8"),"");
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
 
