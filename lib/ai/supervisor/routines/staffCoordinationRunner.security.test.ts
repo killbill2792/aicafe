@@ -160,7 +160,7 @@ describe("Task13D shared workflow isolation (no secrets, no provider)",()=>{
    }
   }finally{rmSync(root,{recursive:true,force:true})}
  });
- it("executes shared pre-spend migration and readiness denials before any broker launch",()=>{
+ it("executes shared pre-spend migration, readiness and SQL denials before any broker launch",()=>{
   const root=temp();
   try{
    const actual=sharedShellStep("Migrate a fresh disposable local Supabase only",
@@ -168,25 +168,24 @@ describe("Task13D shared workflow isolation (no secrets, no provider)",()=>{
    const bin=mockCommand(root,"supabase",
     'if [ "$1" = "status" ]; then printf "{}\\n"; fi\nif [ "$1" = "db" ] && [ "$FAIL_MIGRATION" = "1" ]; then exit 42; fi\nexit 0');
    mockCommand(root,"pg_isready",'if [ "$FAIL_READY" = "1" ]; then exit 43; fi\nexit 0');
-   mockCommand(root,"psql","exit 0");
-   const run=(migration:boolean,ready:boolean)=>spawnSync("bash",["-euo","pipefail","-c",
+   mockCommand(root,"psql",'if [ "$FAIL_SQL" = "1" ]; then exit 44; fi\nprintf "true\\n"');
+   const run=(migration:boolean,ready:boolean,sql:boolean)=>spawnSync("bash",["-euo","pipefail","-c",
     actual+"\necho BROKER_STARTED"],{encoding:"utf8",
     env:{...process.env,PATH:bin+":"+process.env.PATH,RUNNER_TEMP:root,
-     FAIL_MIGRATION:migration?"1":"0",FAIL_READY:ready?"1":"0"}});
-   for(const [migration,ready] of [[true,false],[false,true]]){
-    const denied=run(migration,ready);
+     FAIL_MIGRATION:migration?"1":"0",FAIL_READY:ready?"1":"0",FAIL_SQL:sql?"1":"0"}});
+   for(const [migration,ready,sql] of [[true,false,false],[false,true,false],[false,false,true]]){
+    const denied=run(migration,ready,sql);
     expect(denied.status).not.toBe(0);
     expect(denied.stdout).not.toContain("BROKER_STARTED");
     expect(existsSync(join(root,"luna-local-supabase.json"))).toBe(false);
    }
-   const good=run(false,false);
+   const good=run(false,false,false);
    expect(good.status,good.stderr).toBe(0);
    expect(good.stdout).toContain("BROKER_STARTED");
    expect(existsSync(join(root,"luna-local-supabase.json"))).toBe(true);
    expect(existsSync(join(root,"luna-host-audit.json"))).toBe(false);
-   // pg_isready does not prove an authenticated SQL query succeeds.
-   // The legacy direct psql readiness negative remains a separate
-   // shared-coordinator gap; do not claim this test replaces it.
+   // The shared coordinator also independently tests an invalid SQL result
+   // and a nonzero exit even when the result looks successful.
   }finally{rmSync(root,{recursive:true,force:true})}
  });
 });
