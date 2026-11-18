@@ -17,14 +17,17 @@ const expectedTools=["get_supervisor_permissions","manage_routine"];
 async function query(db,sql,params=[]){return (await db.query(sql,params)).rows;}
 
 async function login(browser,cafe){
+ // Authenticate with the desktop-visible café header first, then verify the
+ // actual Supervisor owner experience at a 390px mobile viewport.
  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",
-  viewport:{width:390,height:844},serviceWorkers:"block"});
+  serviceWorkers:"block"});
  const page=await context.newPage();
  await page.goto("/en/login");
  await page.locator("#email").fill(cafe.owner.email);
  await page.locator("#login-password").fill(cafe.owner.password);
  await page.locator("form button[type=submit]").click();
  await page.getByText(cafe.name,{exact:true}).first().waitFor({timeout:30_000});
+ await page.setViewportSize({width:390,height:844});
  return {context,page};
 }
 async function createThread(context){
