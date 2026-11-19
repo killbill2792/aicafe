@@ -198,6 +198,11 @@ begin
       return jsonb_build_object('kind','blocked');
     end if;
     if s.next_retry_at>v_now then return jsonb_build_object('kind','busy'); end if;
+    if s.step_key='owner_turn' and exists(select 1 from public.supervisor_runs earlier
+       where earlier.business_id=r.business_id and earlier.owner_user_id=r.owner_user_id
+         and earlier.thread_id=r.thread_id and earlier.execution_version=2
+         and earlier.status in ('pending','running') and (earlier.created_at,earlier.id)<(r.created_at,r.id))
+       then return jsonb_build_object('kind','busy'); end if;
   end if;
   if s.status = 'leased' and s.retry_mode = 'reconcile'
     and not (r.execution_version=2 and s.step_key='owner_turn'
@@ -353,8 +358,12 @@ begin
    and id is distinct from j.id for update;
  if found then
    -- Do not absorb another owner's message or revive an uncertain legacy turn.
-   if other.durable_run_id is not null or other.heartbeat_at>=clock_timestamp()-interval '180 seconds'
-      then return null; end if;
+   if other.durable_run_id is not null then
+     if exists(select 1 from public.supervisor_runs other_run where other_run.id=other.durable_run_id
+       and other_run.business_id=r.business_id and other_run.owner_user_id=r.owner_user_id
+       and other_run.thread_id=r.thread_id and other_run.status in ('pending','running'))
+       then return null; end if;
+   elsif other.heartbeat_at>=clock_timestamp()-interval '180 seconds' then return null; end if;
    update public.ai_agent_jobs set status='failed',error_code='timeout',finished_at=clock_timestamp(),
      updated_at=clock_timestamp() where id=other.id;
  end if;
@@ -575,3 +584,56 @@ begin
   return jsonb_build_object('job', to_jsonb(j),
     'continuation', case when next_job.id is null then null else to_jsonb(next_job) end);
 end $$;
+
+-- Final reply and job completion are one scoped transaction. A process killed
+-- after the insert cannot leave a canonical answer with an orphan job. Do not
+-- allow incomplete or ungrounded slices to occupy the immutable final reply.
+create function public.supervisor_publish_owner_reply_v2(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_run_id uuid,p_claim_token uuid,
+ p_job_id uuid,p_reply_id uuid,p_blocks jsonb,p_grounding jsonb
+) returns jsonb language plpgsql security invoker set search_path=public as $$
+declare r public.supervisor_runs;s public.supervisor_run_steps;j public.ai_agent_jobs;m public.ai_messages;
+begin
+ if coalesce(auth.role(),'')<>'service_role' or p_reply_id is null
+   or jsonb_typeof(p_blocks) is distinct from 'array' or jsonb_array_length(p_blocks) not between 1 and 30
+   or jsonb_typeof(p_grounding) is distinct from 'object'
+   or p_grounding->>'status' is distinct from 'verified'
+   or p_grounding#>>'{agentMetadata,endReason}' is distinct from 'complete'
+   or octet_length(p_blocks::text)>150000 or octet_length(p_grounding::text)>150000
+   then raise exception 'durable_reply_invalid' using errcode='22023'; end if;
+ select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
+   and owner_user_id=p_owner_user_id and thread_id=p_thread_id for update;
+ if not found or r.execution_version<>2 or r.status<>'running'
+   or p_grounding->>'ownerMessageId' is distinct from r.request_key::text
+   or p_grounding->>'durableRunId' is distinct from r.id::text
+   or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+   then raise exception 'durable_reply_scope_mismatch' using errcode='42501'; end if;
+ select * into s from public.supervisor_run_steps where business_id=r.business_id and run_id=r.id
+   and step_key='owner_turn' for update;
+ if not found or s.status<>'leased' or s.claim_token is distinct from p_claim_token
+   or s.lease_until<=clock_timestamp() or s.checkpoint_phase<>'ready'
+   then raise exception 'durable_job_lease_lost' using errcode='40001'; end if;
+ select * into j from public.ai_agent_jobs where id=p_job_id and durable_run_id=r.id
+   and durable_claim_token=p_claim_token and business_id=r.business_id and owner_user_id=r.owner_user_id
+   and thread_id=r.thread_id and owner_message_id=r.request_key for update;
+ if not found then raise exception 'durable_job_lease_lost' using errcode='40001'; end if;
+ if j.status='done' and j.reply_message_id is distinct from p_reply_id then
+   raise exception 'durable_reply_conflict'; end if;
+ if j.status not in ('running','done') then raise exception 'durable_job_lease_lost'; end if;
+ insert into public.ai_messages(id,business_id,owner_user_id,thread_id,role,content_type,
+   structured_content,grounding)
+ values(p_reply_id,r.business_id,r.owner_user_id,r.thread_id,'supervisor','blocks',p_blocks,p_grounding)
+ on conflict(id) do nothing;
+ select * into m from public.ai_messages where id=p_reply_id and business_id=r.business_id
+   and owner_user_id=r.owner_user_id and thread_id=r.thread_id and role='supervisor'
+   and grounding->>'ownerMessageId'=r.request_key::text
+   and grounding->>'durableRunId'=r.id::text and grounding->>'status'='verified'
+   and grounding#>>'{agentMetadata,endReason}'='complete';
+ if not found then raise exception 'durable_reply_conflict'; end if;
+ update public.ai_agent_jobs set status='done',reply_message_id=m.id,error_code=null,
+   finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp(),heartbeat_at=clock_timestamp()
+   where id=j.id;
+ return to_jsonb(m);
+end $$;
+revoke all on function public.supervisor_publish_owner_reply_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,jsonb,jsonb) from public,anon,authenticated;
+grant execute on function public.supervisor_publish_owner_reply_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,jsonb,jsonb) to service_role;
