@@ -107,6 +107,36 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
     ]));
   });
 
+  it("keeps complete historical cost coverage separate from recorded-versus-estimated provenance", () => {
+    const period={from:"2026-09-09",to:"2026-09-09"};
+    const source=fixture.monthActualDays.at(-1)!;
+    const base={...source,salesDataStatus:"actual" as const,laborWageStatus:"actual" as const,
+      staffTaxStatus:"actual" as const,cardFeesStatus:"actual" as const};
+    const run=(day:typeof source,extras=0)=>{
+      const historical={
+      ...fixture,ownerMonthlyPayrollExtrasCents:extras,monthActualDays:[day],monthRecordedDays:[day],
+      historicalPeriod:{days:[day],recorded:[day],monthlyAmounts:[{monthKey:"2026-09",
+        categoryCode:"rent",amountCents:600000,isEstimate:false,isMissing:false}],
+        missingExpenseCategories:[],estimatedExpenseCategories:[]},
+      periodItemSales:{period,covered:true,soldItems:[{id:"latte",units:1}],
+        historicalIngredientCostProof:{source:"historical_recomputation" as const,
+          days:[{date:day.date,ingredientsCents:day.ingredientsCents}]}},
+      };
+      return cafeStateFromSnapshot(historical,period);
+    };
+    const actual=run(base);
+    expect(actual.businessCosts.completeness).toBe("complete");
+    expect(actual.businessCosts.estimatedInputs).toEqual([]);
+    const estimated=run({...base,laborWageStatus:"estimate",staffTaxStatus:"estimated",cardFeesStatus:"estimated"},3000);
+    expect(estimated.businessCosts.completeness).toBe("complete");
+    const expected=["laborWageEstimate:2026-09-09","staffTax:2026-09-09","cardFees:2026-09-09","laborOwnerExtras"];
+    expect(estimated.businessCosts.estimatedInputs).toEqual(expect.arrayContaining(expected));
+    expect(estimated.profitability.quality.estimatedInputs).toEqual(expect.arrayContaining(expected));
+    // A fully participating day with legacy/untyped fees is still an estimate.
+    expect(run({...base,cardFeesStatus:undefined}).businessCosts.estimatedInputs)
+      .toContain("cardFees:derivedEstimate");
+  });
+
   it("blocks profitability when a sold item has unknown product cost", () => {
     const snapshot: BusinessSnapshot = {
       ...fixture,

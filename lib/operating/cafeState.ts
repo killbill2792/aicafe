@@ -147,7 +147,15 @@ export function cafeStateFromSnapshot(
       observed:{ingredients:days.length>0,loadedStaff:recorded.length>0,
         cardFees:days.length>0,runningCosts:historical.monthlyAmounts.some(row=>!row.isMissing)},
       missingInputs:historicalMissing,
-      estimatedInputs:[...expenseEstimated],
+      // Historical coverage certifies participation and observed totals, not
+      // actual payroll or processor charges. Preserve every estimate basis.
+      estimatedInputs:[
+        ...expenseEstimated,
+        ...recorded.filter(d=>d.laborWageStatus==="estimate").map(d=>"laborWageEstimate:"+d.date),
+        ...recorded.filter(d=>d.staffTaxStatus==="estimated").map(d=>"staffTax:"+d.date),
+        ...days.filter(d=>d.cardFeesStatus==="estimated").map(d=>"cardFees:"+d.date),
+        ...((snapshot as BusinessSnapshot&{ownerMonthlyPayrollExtrasCents?:number|null}).ownerMonthlyPayrollExtrasCents?["laborOwnerExtras"]:[]),
+      ],
       coverage:{...businessCosts.coverage,salesDays:observedDays,
         laborDays:new Set(recorded.map(day=>day.date)).size,expectedDays,historicalIngredientCostsProven:historicalProof},
     };
@@ -262,8 +270,13 @@ export function cafeStateFromSnapshot(
   // The chat's cost answer is the same total the Money screen shows: the profit
   // parts, with missing card fees estimated by the core fee rule (labelled below).
   if(businessCosts.completeness!=="unavailable"&&profitResult.profitCents!==null)businessCosts={...businessCosts,
-    estimatedInputs:feeResult.notes.includes("feeDefaultEstimateAskRate")
-      ?[...businessCosts.estimatedInputs,"cardFees:defaultRate"]:businessCosts.estimatedInputs,
+    estimatedInputs:[...new Set([
+      ...businessCosts.estimatedInputs,
+      ...(feeResult.notes.includes("feeDefaultEstimateAskRate")?["cardFees:defaultRate"]:[]),
+      // Owner-plan or legacy fees are computed estimates, not paid receipts.
+      ...(historical&&feeResult.estimatedDays>0&&feeResult.basis!=="actual"?
+        [feeResult.basis==="owner_plan"?"cardFees:ownerPlan":"cardFees:derivedEstimate"]:[]),
+    ])],
     knownTotalCents:Math.round(Object.values(profitResult.partsUsed).reduce((a,b)=>a+b,0)),
     components:{ingredientsCents:profitResult.partsUsed.productCostsCents,
       loadedStaffCents:profitResult.partsUsed.laborCents,
