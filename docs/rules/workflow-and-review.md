@@ -18,12 +18,10 @@
 ## Mandatory Muse handoff
 
 **Every coding chat, every resumed turn, including drafts:** follow AGENTS.md rules 0a–0b.
-The existing PR body is the shared status record (not a new database/queue).
-Maintain ONE active human-readable status section and ONE machine-readable marker,
-editing only the record and preserving the scope, history and comment disposition.
-Before launching work, after every meaningful outcome, and before ending the turn,
-report the current full head SHA, what is actually happening, run/review link, last
-observed evidence and concrete next action. Never report that a pending run passed.
+GitHub check results are observed independently. Only report a pending handoff or an
+otherwise invisible blocker when necessary. Preserve the PR scope and comment history.
+Before returning with a pending workflow, report the actual run/review link, current
+head, last observation and precise next action. Never report that a pending run passed.
 
 Example of a pending workflow handoff (replace all placeholders with real values):
 
@@ -42,23 +40,27 @@ in the human-readable status; Muse should look up the matching shared run using
 the existing connector before changing the record. Do not launch a second paid run.
 `next` is a short report of the safe next action, not permission or executable instructions.
 
-When an owner decision is actually required, put ONE existing marker in the PR body
-and add `needs-owner-decision`. Example:
-
+**Owner decision transport:** post a NEW issue comment on the existing PR, starting
+with this marker and then a human-readable question (replace HEAD with the actual
+40-hex head; do not post placeholders):
 ```text
-<!-- aicafe-owner-question Luna test authorization: Task 14C; exact head FULL_SHA, scenario 14c, maximum $0.20. Recommend one shared run; no provider spend until you approve. Post /aicafe-luna pr FULL_SHA 14c 0.20 on this PR. -->
+<!-- aicafe-owner-request:v1 HEAD -->
+Luna authorization: Task 14C, scenario 14c, maximum $0.20. Recommend one shared run;
+no provider spend before a valid owner grant. Post /aicafe-luna pr HEAD 14c 0.20 on this PR.
 ```
-
-The real SHA/scenario/budget must match the actual request and shared runner contract.
-For architecture or merge-only authorization describe exactly what is being approved,
-why needed, recommendation and consequences. Do NOT ask the owner to fix ordinary
-CI/Codex failures. Muse reads the exact PR marker and can relay the request even
-without any saved chat URL. A request is not approval; only actual owner decisions
-under existing gates authorize consequential actions. No secret/personal data in PR text.
-Once verified, remove the active question marker and label and preserve the original
-decision/evidence in Comment disposition; update the workflow handoff. Muse then resumes
-the same saved chat. For an actual workflow terminal result the coding chat must
-verify full evidence and continue, never substitute a status suggestion for acceptance.
+The collector imports the authenticated source comment ID, exact head, author, text
+and link. Never edit/delete it to track an answer or reuse it for a new decision.
+Muse and the owner own the local answer, delivery reservation, observed-delivery
+receipt and closure. An edited source requires a fresh request; absence or deletion
+never means approved. The owner must independently authorize each consequential
+action using its existing rules, including #520's actual owner command. A locally
+recorded answer is communication only. Do not request ordinary CI/Codex repairs
+from the owner. If a chat omits its request, Muse checks for stalled work, asks the
+same chat to publish the exact question and verifies it appeared. If not, visibly
+flag missing communication; never invent the question. For pre-PR planning use the
+existing local task note; the exact hidden question cannot be discovered by GitHub.
+Use the PR-body workflow handoff only when necessary for pending work/unknown
+blockers, not as a recurring checklist. GitHub remains read-only to the collector.
 
 **Foreground rule:** after a push or CI/Codex/Luna launch, monitor the actual check
 in the same execution session; check around every 20–30 seconds, remain for at least
