@@ -306,12 +306,12 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           const account=await getConnectorAccount(scope);
           if(contact.error||!contact.data?.email||!account||!allowsGmail(account,"read"))
             throw new ToolError("validation","invoice_supplier_contact_or_gmail_unavailable");
-          const message=await gmailRead(scope,gmailMessageId);
+          const message=await withGmailEvidence(()=>gmailRead(scope,gmailMessageId));
           const sender=message.message.headers.from??"";
           const address=(sender.match(/<([^<>]+)>\s*$/u)?.[1]??sender).trim().toLowerCase();
           const current=await getConnectorAccount(scope);
           if(message.message.id!==gmailMessageId||address!==String(contact.data.email).trim().toLowerCase()||
-            !current||current.id!==account.id||current.generation!==account.generation||!allowsGmail(current,"read"))
+            !current||current.id!==account.id||current.provider_subject!==account.provider_subject||current.generation!==account.generation||!allowsGmail(current,"read"))
             throw new ToolError("validation","invoice_document_identity_unverified");
           source={sourceKind:"gmail_message",sourceRef:"gmail:"+account.id+":"+account.generation+":"+gmailMessageId,
             sourceSha256:effectHash(message.message)};

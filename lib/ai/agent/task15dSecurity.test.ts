@@ -50,6 +50,8 @@ describe("Task15D deterministic adversarial Supervisor boundaries",()=>{
     .toMatchObject({missing:[],commitments:[]});
   expect(ctx.commitments.list).toHaveBeenCalledTimes(1);
   expect(blocksExternalControlMutation("propose_gmail_action",{},"Please draft an email for approval")).toBe(false);
+  expect(blocksExternalControlMutation("propose_gmail_action",{},"Summarize this invoice")).toBe(true);
+  expect(blocksExternalControlMutation("propose_gmail_action",{},"Read the invoice and draft a reply")).toBe(false);
  });
  it("keeps private model-generated search terms out of all public queries",()=>{
   const canary="cafe-b-confidential-93584";

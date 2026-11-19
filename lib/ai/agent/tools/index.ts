@@ -303,7 +303,9 @@ export function blocksExternalControlMutation(name:string,raw:unknown,ownerText:
  if(name==="record_checkin"||name==="remember_cafe_fact")return true;
  // A clear owner restriction is a deny, never a grant of authority.
  const readOnly=/\b(?:read|review|summarize|inspect|compare|explain)\s+only\b|\b(?:do not|don't|never|without)\s+(?:send|approve|change|create|order|record|update|save|modify|draft|make changes)\b/iu.test(ownerText);
- return readOnly&&(name.startsWith("propose_")||name==="draft_week_schedule"||
+ const simpleRead=/^\s*(?:please\s+)?(?:read|review|summarize|inspect|compare|explain|show|check)\b/iu.test(ownerText)&&
+   !/\b(?:and|then)\s+(?:draft|prepare|propose|send|create|record|update|change|order)\b/iu.test(ownerText);
+ return (readOnly||simpleRead)&&(name.startsWith("propose_")||name==="draft_week_schedule"||
    name==="record_supplier_order_outcome");
 }
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
