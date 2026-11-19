@@ -398,8 +398,8 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       await call(a,"supervisor_run_complete_step",[...scope,run.id,"authorize_owner",auth.step.claim_token,"owner:"+messageId]);
       const child=fork("scripts/acceptance/task15c-worker-child.mjs",[],{execArgv:[],stdio:["ignore","ignore","inherit","ipc"]});
       children.push(child);
-      const first=await invoke(child,"claim",[...scope,run.id,randomUUID(),2]);
-      expect(first).toMatchObject({ok:true,pid:child.pid,result:{kind:"claimed",step:{step_key:"owner_turn",attempts:1}}});
+      const first=await invoke(child,"claim",[...scope,run.id,randomUUID(),5]);
+      expect(first.toMatchObject({ok:true,pid:child.pid,result:{kind:"claimed",step:{step_key:"owner_turn",attempts:1}}});
       const oldToken=first.result!.step!.claim_token;
       const job=await call(a,"supervisor_start_owner_job_v2",[...scope,run.id,oldToken]);
       expect(job).toMatchObject({owner_message_id:messageId,durable_run_id:run.id,status:"running"});
@@ -434,7 +434,7 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       expect(await call(b,"supervisor_stop_durable_run",[...scope,run.id,"cancelled","owner_turn",token])).toBe(true);
       await expect(call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(token,5,effect,"complete",null,"effect:"+randomUUID()))).rejects.toThrow("checkpoint_run_unavailable");
       const saved=await admin.query("select r.status,s.checkpoint_seq,s.checkpoint_phase,s.checkpoint_receipts from public.supervisor_runs r join public.supervisor_run_steps s on s.run_id=r.id and s.business_id=r.business_id where r.id=$1 and s.step_key='owner_turn'",[run.id]);
-      expect(saved.rows).toMatchObject([{status:"blocked",checkpoint_seq:5,checkpoint_phase:"effect_pending",checkpoint_receipts:[{operation,receipt},{operation:providerOp}]}]);
+      expect(saved.rows).toMatchObject([{status:"blocked",checkpoint_seq:"5",checkpoint_phase:"effect_pending",checkpoint_receipts:[{operation,receipt},{operation:providerOp}]}]);
     }finally{
       for(const child of children)if(child.exitCode===null&&child.signalCode===null)await killAndConfirm(child);
       await Promise.all([a?.end(),b?.end(),denied?.end()]);
