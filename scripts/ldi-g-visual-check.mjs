@@ -51,7 +51,7 @@ function response(url){
   const page=Number(search.get("cityPage")??0);
   const size=Number(search.get("cityPageSize")??50);
   const records=cities.filter(item=>(!kind||item.kind===kind)&&
-    (!query||item.name.toLowerCase().includes(query)));
+    (!query||[item.name,item.venue,item.venueAddress].some(value=>value?.toLowerCase().includes(query))));
   return {...timeline,cityCatalog:{available:true,missing:null,page,pageSize:size,
     total:records.length,hasMore:(page+1)*size<records.length,
     items:records.slice(page*size,(page+1)*size)}};
@@ -104,6 +104,15 @@ try{
    assert.equal(await catalog.locator("ul > li").count(),25,key+" first page");
    assert.equal(await page.getByTestId("events-visual-handoff").count(),0,key+" auto-sent");
    await page.screenshot({path:join(out,key+"-city-page1.png"),animations:"disabled"});
+   // Search from page one must find an event originally on page two.
+   await catalog.getByRole("searchbox").fill("cIvIc ExPo 37");
+   await click(page,catalog.getByRole("button",{name:t.searchButton,exact:true}));
+   await catalog.getByRole("button").filter({hasText:"Civic Expo 37"}).waitFor();
+   assert.equal(await catalog.getByRole("button",{name:t.nextPage}).isDisabled(),true);
+   await catalog.getByRole("searchbox").fill("");
+   await click(page,catalog.getByRole("button",{name:t.searchButton,exact:true}));
+   await catalog.getByRole("button",{name:t.nextPage}).waitFor();
+   await page.waitForFunction(()=>Array.from(document.querySelectorAll('[data-testid="city-events-catalog"] button')).some(b=>b.textContent?.includes("City Event 0")));
    await click(page,catalog.getByRole("button",{name:t.nextPage}));
    await catalog.getByText("Civic Expo 37").waitFor();
    assert.equal(await catalog.locator("ul > li").count(),25,key+" second page");

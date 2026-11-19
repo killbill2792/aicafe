@@ -422,7 +422,7 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
         beginRefresh();setSearchInput("");setSearch("");setPage(0);setSelected(null);setRetry(v=>v+1);
       }}>{locale==="en"?t("clearEventSearch"):t("all")}</button>}
     </form>
-    {coverage&&<div role="status" className="rounded-xl bg-surface2 p-3 text-[15px]">
+    {coverage&&!loading&&!error&&<div role="status" className="rounded-xl bg-surface2 p-3 text-[15px]">
       <p className="font-semibold">{t(coverage.status==="complete"?"cityCoverageRecorded":"cityCoverageIncomplete")}</p>
       <p>{t("cityCoverageCounts",{checked:coverage.researchedSourceWindows,
         failed:coverage.failedSourceWindows+coverage.partialSourceWindows+

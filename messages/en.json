@@ -4149,7 +4149,7 @@
     "noCafeOutlook": "No saved café-specific outlook yet. City events may have been discovered without a reason to alert you.",
     "cafeSelectedHint": "Only events the Supervisor selected for this café appear here.",
     "cityCatalogScope": "Discovered public events for the selected month, not a complete inventory of every city event. Move between months to see other saved dates.",
-    "searchEvents": "Search event names",
+    "searchEvents": "Search events by name or venue",
     "clearEventSearch": "Clear search",
     "eventStarting": "Starting today",
     "eventOngoing": "Ongoing",

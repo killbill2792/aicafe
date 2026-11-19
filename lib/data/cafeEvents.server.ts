@@ -169,8 +169,14 @@ export async function readCityEventCatalog(db:SupabaseClient,businessId:string,
       throw new Error("invalid_city_event_id");
     query=query.eq("id",options.cityEventId);
   }
-  // Escape LIKE wildcards so user input is a literal name fragment.
-  if(search)query=query.ilike("name","%"+search.replace(/[%_\\]/g,match=>"\\"+match)+"%");
+  // Search the whole city window before counting/paging, not just the loaded page.
+  // Quote the PostgREST filter value and escape SQL LIKE metacharacters separately.
+  // The user cannot inject an OR clause, column, or wildcard.
+  if(search){
+    const pattern="%"+search.replace(/[%_\\]/g,match=>"\\"+match)+"%";
+    query=query.or(["name","venue","venue_address"].map(field=>
+      field+".ilike."+JSON.stringify(pattern)).join(","));
+  }
   const {data,count,error}=await query.order("start_date",{ascending:true})
     .order("id",{ascending:true}).range(page*pageSize,(page+1)*pageSize-1);
   if(missingSchema(error))return empty("migration_pending");
