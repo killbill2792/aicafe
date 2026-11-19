@@ -42,6 +42,12 @@ Explain what runs when, what owns each responsibility, and what can affect in-fl
 - **Targeted browser/preview** (only for changed UI/browser flow): screenshot/trace/preview URL or N/A reason:
 - Test commands/results, blockers and skipped checks:
 
+## Live development handoff — mandatory (update throughout the PR)
+- Current full head, stage, last actual observation, run/review URL and next action:
+- Exact pending owner decision (if any; otherwise none):
+- Follow AGENTS.md 0a–0b and docs/rules/workflow-and-review.md#mandatory-muse-handoff. Replace the active record rather than adding another. Do not leave placeholder markers.
+- Monitor pushed CI, Codex and authorized shared Luna in the same session (20–30 second poll intervals; at least 60 seconds while pending where available). Before returning, record the exact handoff on this PR. A chat-only status or owner question is insufficient.
+
 ## Review and merge readiness
 - [ ] PR diff and size reviewed; one concern and scoped changes (explain large mechanical moves)
 - [ ] Latest main incorporated before merge; migration numbers and parallel dependencies rechecked; if prerequisite merged mid-PR, rebase/retarget stacked PR and verify actual integration
