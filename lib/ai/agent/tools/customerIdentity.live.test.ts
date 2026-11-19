@@ -72,7 +72,7 @@ live("retained customer identity or observed trend, real model investigation, is
    // observed once in each complete closed week. No generated alert is seeded.
    const run=randomUUID(),product=randomUUID();
    const ids=Array.from({length:35},()=>randomUUID());
-   const receipts:Array<{day:string;order:string;check:string;guest:string;line:string;current:boolean}>=[];
+   const receipts:Array<{day:string;order:string;check:string;guest:string;line:string;current:boolean;preference:boolean}>=[];
    await admin.query("insert into public.toast_sync_runs(id,business_id,restaurant_guid,kind,state) values($1,$2,$3,'backfill','running')",[run,businessId,restaurant]);
    await admin.query("insert into public.menu_items(business_id,name,base_name,price_cents,pos_item_id) values($1,'Fixture latte','Fixture latte',700,$2)",[businessId,"toast:"+restaurant+":"+product]);
    for(let offset=-14;offset<0;offset++){
@@ -80,10 +80,12 @@ live("retained customer identity or observed trend, real model investigation, is
     await admin.query("insert into public.toast_day_status(business_id,restaurant_guid,business_date,import_state,recon_state,coverage_complete,unparsed_count,last_import_run_id) values($1,$2,$3,'imported','checked_internal',true,0,$4)",[businessId,restaurant,day,run]);
     for(let k=0;k<5;k++){
      const guest=ids[((offset+14)%7)*5+k],order=randomUUID(),check=randomUUID(),line=randomUUID();
-     const payload={guid:order,source:"POS",checks:[{guid:check,amount:7,customer:{guid:guest,firstName:"Fixture",lastName:"Guest"},payments:[],selections:[{guid:line,item:{guid:product},displayName:"Fixture latte",quantity:1,price:7}]}]};
+     // Synthetic optional future provider field, deliberately absent from the typed dictionary.
+     const preference=offset< -7&&k===0;
+     const payload={guid:order,source:"POS",checks:[{guid:check,amount:7,customer:{guid:guest,firstName:"Fixture",lastName:"Guest",...(preference?{visitPreference:{favoriteDrink:"fixture-latte"}}:{})},payments:[],selections:[{guid:line,item:{guid:product},displayName:"Fixture latte",quantity:1,price:7}]}]};
      const text=JSON.stringify(payload);
      await admin.query("insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key,run_id) values($1,$2,'order',$3,$4,$5,$6,$7)",[businessId,restaurant,day,text,createHash("sha256").update(text).digest("hex"),"trend:"+order,run]);
-     receipts.push({day,order,check,guest,line,current:offset>=-7});
+     receipts.push({day,order,check,guest,line,current:offset>=-7,preference});
     }
     // Independent business-domain evidence for the worker, not a customer
     // trend inferred from the synthetic menu price or staffing alone.
@@ -96,7 +98,9 @@ live("retained customer identity or observed trend, real model investigation, is
    expect(previous.size).toBe(35);expect(current).toHaveLength(35);
    expect(current.filter(r=>previous.has(r.guest))).toHaveLength(35);
    const expected={references:new Set(receipts.map(r=>r.guest)).size,visits:receipts.length,
-    returning:current.filter(r=>previous.has(r.guest)).length,net:receipts.length*700};
+    returning:current.filter(r=>previous.has(r.guest)).length,net:receipts.length*700,
+    preference:receipts.filter(r=>r.preference).length};
+   expect(expected.preference).toBe(7);
    const records=await admin.query("select count(*)::int n from public.toast_raw_records where business_id=$1 and entity='order'",[businessId]);
    expect(records.rows[0].n).toBe(expected.visits);
    // The real registered Supervisor model uses an actual scoped owner JWT,
@@ -122,6 +126,17 @@ live("retained customer identity or observed trend, real model investigation, is
     expect(match?.[1]&&Number(match[1].replace(/,/g,""))).toBe(value);
    }
    expect(turn.text).toMatch(/observed|linked|reference/i);
+   // No canonical field for this optional retained property exists. Exercise
+   // discovery and actual registered query, not an answer from the first turn.
+   const fallback=await runAgentTurn({context,provider,toolNames:["describe_data","query_data"],
+    ownerText:"From "+date(-14)+" through "+date(-1)+", discover whether the retained check customer object has a nested visitPreference field, then count eligible checks where its favoriteDrink value is fixture-latte. Use the raw retained named data path if no dedicated canonical view has this property. Answer with exact integer label Preference checks, and explain that this is an observed check subtotal, not a customer count."});
+   expect(fallback.endReason).toBe("complete");
+   expect(fallback.tools??[]).toContain("describe_data");
+   expect(fallback.tools??[]).toContain("query_data");
+   const fallbackMatch=fallback.text.match(/Preference checks[\s*]*[:=][\s*]*([0-9,]+)/i);
+   expect(fallbackMatch?.[1]&&Number(fallbackMatch[1].replace(/,/g,""))).toBe(expected.preference);
+   expect(fallback.toolInvocations?.some(call=>call.name==="query_data"&&
+    JSON.stringify(call.result).includes(expected.preference.toString())&&call.result.customerEvidence===true)).toBe(true);
    const foreignOrder=randomUUID(),foreignPayload=JSON.stringify({guid:foreignOrder,checks:[{guid:randomUUID(),amount:5,customer:{guid:randomUUID()}}]});
    await admin.query("insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key) values($1,$2,'order',$3,$4,$5,$6)",[foreignBusinessId,foreignRestaurant,date(-3),foreignPayload,createHash("sha256").update(foreignPayload).digest("hex"),"live:"+foreignOrder]);
    expect((await admin.query("select count(*)::int n from public.customer_visits_for($1,$2,$3)",[foreignBusinessId,date(-14),date(-1)])).rows[0].n).toBe(1);
@@ -168,9 +183,9 @@ live("retained customer identity or observed trend, real model investigation, is
    const after=(await admin.query("select episode_id from public.supervisor_investigations where business_id=$1 and source_id=$2",[businessId,sourceId])).rows;
    expect(after).toEqual([{episode_id:episode.episode_id}]);
    expect((await admin.query("select count(*)::int n from public.supervisor_effect_attempts where business_id=$1",[businessId])).rows[0].n).toBe(0);
-   const toolNames=[...new Set([...turnTools,...workerTools])];
+   const toolNames=[...new Set([...turnTools,...(fallback.tools??[]),...workerTools])];
    expect(providerCompletions).toBe(ledger.calls);expect(ledger.calls).toBeGreaterThanOrEqual(3);
-   const proof={schema_version:1,task:scenario,head_sha:head,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",provider_calls:ledger.calls,provider_completions:providerCompletions,tool_names:toolNames,actual_source_detector:true,authenticated_scope:true,independent_oracle:true,source_corrected:true,no_unapproved_effect:true,feature_proven:false,integrated_proven:false,released_proven:false};
+   const proof={schema_version:1,task:scenario,head_sha:head,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",provider_calls:ledger.calls,provider_completions:providerCompletions,tool_names:toolNames,actual_source_detector:true,authenticated_scope:true,independent_oracle:true,raw_field_discovery:true,source_corrected:true,no_unapproved_effect:true,feature_proven:false,integrated_proven:false,released_proven:false};
    mkdirSync("test-results/acceptance",{recursive:true});
    writeFileSync("test-results/acceptance/"+scenario+"-proof.json",JSON.stringify(proof)+"\n",{mode:0o600,flag:"wx"});
    writeFileSync("test-results/acceptance/"+scenario+"-scope.json",JSON.stringify({...scope,foreignBusinessId,sourceId,episodeId:episode.episode_id,replyId,queryOwnerId,expectedProviderCalls:ledger.calls})+"\n",{mode:0o600,flag:"wx"});
