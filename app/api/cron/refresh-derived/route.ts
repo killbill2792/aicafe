@@ -23,12 +23,12 @@ export async function GET(request:Request){
   // This additional rollout gate remains off until durable admission/recovery is proven.
   const ownerRunsEnabled=process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true" &&
     process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true";
-  const ownerRuns=ownerRunsEnabled ? (async()=>{
-    try{
-      const {processOldestDurableRun}=await import("@/lib/ai/supervisor/runs/worker.server");
-      return {...await processOldestDurableRun(),failed:0};
-    }catch{return {processed:0,state:null,failed:1};}
-  })() : Promise.resolve({processed:0,state:null,failed:0});
+  const ownerWorker=ownerRunsEnabled
+    ? await import("@/lib/ai/supervisor/runs/worker.server").catch(()=>null) : null;
+  const ownerRuns=ownerWorker ? (async()=>{
+    try{return {...await ownerWorker.processOldestDurableRun(),failed:0};}
+    catch{return {processed:0,state:null,failed:1};}
+  })() : Promise.resolve({processed:0,state:null,failed:ownerRunsEnabled?1:0});
   // Separate task capability, same authorized cron. Failures remain visible and
   // the database keeps unfinished commitments pending for the next invocation.
   let commitments:{scopes:number;delivered:number;failed:number};
