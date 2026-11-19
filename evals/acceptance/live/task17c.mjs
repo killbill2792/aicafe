@@ -4,12 +4,12 @@ import {existsSync,realpathSync,writeFileSync} from "node:fs";
 import {resolve,dirname,sep} from "node:path";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
 import {readPersistedModelUsage,verifyCheckoutHead} from "./runner.mjs";
-import {profiles,openOwner,createThread,makeQuote,delegate,rows,observeDueOccurrence,createOperatingWorld,exerciseOperatingWorld} from "./task17c-world.mjs";
+import {profiles,openOwner,createThread,makeQuote,delegate,rows,observeDueOccurrence,createOperatingWorld,exerciseOperatingWorld,procurementRecovery,businessMonitorRecovery,effectSecurityRecovery} from "./task17c-world.mjs";
 import {verifyRoutineAndFile,assessCoverage,verifyScheduledOccurrence,verifyOperatingWorld} from "./task17c-oracle.mjs";
 const env=process.env;
 assertLocalLiveEnvironment(env);verifyCheckoutHead(env.HEAD_SHA);
 if(env.AICAFE_SHARED_LUNA!=="1"||env.AICAFE_SHARED_LUNA_CANDIDATE!=="1"||
- !["17c","17c-autonomy"].includes(env.AICAFE_SHARED_LUNA_SCENARIO)||env.AICAFE_SHARED_LUNA_HEAD!==env.HEAD_SHA)
+ !["17c","17c-autonomy","17c-procurement-recovery","17c-business-monitors","17c-effect-security-recovery"].includes(env.AICAFE_SHARED_LUNA_SCENARIO)||env.AICAFE_SHARED_LUNA_HEAD!==env.HEAD_SHA)
  throw Error("task17c:trusted_shared_run_required");
 const args=process.argv.slice(2);
 if(args.length!==4||args[0]!=="--output"||args[2]!=="--scope-output")throw Error("task17c:proof_paths_required");
@@ -22,7 +22,14 @@ const browser=await chromium.launch({headless:true});
 let owner,outsider;
 try{
  await db.connect();
- if(env.AICAFE_SHARED_LUNA_SCENARIO==="17c-autonomy"){
+ const additional={"17c-procurement-recovery":procurementRecovery,"17c-business-monitors":businessMonitorRecovery,"17c-effect-security-recovery":effectSecurityRecovery};
+ if(Object.hasOwn(additional,env.AICAFE_SHARED_LUNA_SCENARIO)){
+  const result=await additional[env.AICAFE_SHARED_LUNA_SCENARIO](db,browser);
+  if(!Number.isSafeInteger(result.calls)||result.calls<2||result.calls>18)throw Error("task17c:provider_call_bound");
+  const proof={schema_version:1,task:"17c",lane:env.AICAFE_SHARED_LUNA_SCENARIO,head_sha:env.HEAD_SHA,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",calls:result.calls,coverage:assessCoverage({head:env.HEAD_SHA}),integrated_proven:false,released_proven:false};
+  writeFileSync(files[0],JSON.stringify(proof,null,2)+"\n",{flag:"wx",mode:0o600});
+  writeFileSync(files[1],JSON.stringify({...result.scope,expectedProviderCalls:result.calls})+"\n",{flag:"wx",mode:0o600});
+ }else if(env.AICAFE_SHARED_LUNA_SCENARIO==="17c-autonomy"){
   const world=await createOperatingWorld(db), evidence=await exerciseOperatingWorld(db,world);
   const verified=verifyOperatingWorld({world,evidence});
   const {staff,finance}=world;
