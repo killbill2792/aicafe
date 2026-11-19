@@ -36,7 +36,9 @@ describe("Task14B owner $0.80 hard-budget / $0.18 reservation gate",()=>{
    {...params,model:"gpt-4.1-mini"},
    {...params,service_tier:"priority"},
    {...params,tools:[{type:"web_search_preview"}]},
-   {...params,max_output_tokens:1201},
+   {...params,max_output_tokens:1201}, // missing tool_choice retains legacy limit
+   {...params,tool_choice:"auto",max_output_tokens:4097},
+   {...params,tool_choice:"none",max_output_tokens:1201},
    {...params,background:true},
   ])expect(()=>paidRequestReservation(bad,JSON.stringify(bad))).toThrow(/task14b_budget:/);
   expect(()=>paidRequestReservation(params,"x".repeat(120001))).toThrow("task14b_budget:input_limit");
@@ -81,4 +83,14 @@ describe("Task14B owner $0.80 hard-budget / $0.18 reservation gate",()=>{
   expect(record.reservedMicros).toBeLessThanOrEqual(TASK14B_MAX_RESERVED_MICROS);
   expect(successes).toBeLessThanOrEqual(TASK14B_MAX_PAID_CALLS);
  });
+});
+
+it("reserves the entire 4096-token tool request under the unchanged aggregate ledger cap",async()=>{
+ const expanded={...params,tool_choice:"auto",max_output_tokens:4096};
+ const json=JSON.stringify(expanded);
+ expect(paidRequestReservation(expanded,json).reservedMicros).toBe(Math.ceil(Buffer.byteLength(json)*0.10+4096*0.50));
+ await reserveTask14bPaidRequest(expanded,json);
+ expect(JSON.parse(readFileSync(file,"utf8"))).toMatchObject({attempts:1,reservedMicros:paidRequestReservation(expanded,json).reservedMicros});
+ const final={...params,tool_choice:"none",max_output_tokens:1200};
+ expect(paidRequestReservation(final,JSON.stringify(final)).reservedMicros).toBe(Math.ceil(Buffer.byteLength(JSON.stringify(final))*0.10+1200*0.50));
 });
