@@ -31,3 +31,17 @@ describe("parseStatementCsv", () => {
     expect(result.unrecognizedColumns).toBe(true);
   });
 });
+
+describe("source statement evidence",()=>{
+ it("rejects malformed values instead of zero and impossible dates",()=>{
+  const r=parseStatementCsv("Date,Description,Amount\n2026-02-30,A,10\n2026-02-28,B,garbage\n2026-02-28,C,1.234");
+  expect(r.invalidRows).toEqual([2,3,4]);expect(r.lines).toEqual([]);expect(r.statementEvidence).toBeNull();
+ });
+ it("checks each running balance and handles descending exports",()=>{
+  const header=" Date ,Description,Amount,Balance\n";
+  expect(parseStatementCsv(header+"2026-02-02,B,50,950\n2026-02-01,A,-100,900").statementEvidence)
+   .toMatchObject({from:"2026-02-01",to:"2026-02-02",openingCents:100000,closingCents:95000});
+  expect(parseStatementCsv(header+"2026-02-01,A,-100,900\n2026-02-02,B,50,940\n2026-02-03,C,50,1000").statementEvidence).toBeNull();
+  expect(parseStatementCsv(header+"2026-02-01,A,-100,900\n2026-02-02,B,50,\n2026-02-03,C,50,1000").statementEvidence).toBeNull();
+ });
+});

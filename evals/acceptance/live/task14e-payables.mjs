@@ -1,0 +1,32 @@
+#!/usr/bin/env node
+import {randomUUID} from "node:crypto";
+import {withFinanceJourney} from "./task14e-cash-position.mjs";
+await withFinanceJourney("14e-payables",async({scope,db,cafe,today,shift,read,count,turn,click,fail})=>{
+ const supplierId=randomUUID(),supplier="Disposable 14E dairy "+supplierId.slice(0,8),ref="invoice-"+randomUUID();
+ await db.query("insert into public.cafe_suppliers(id,business_id,display_name) values($1,$2,$3)",[supplierId,scope.businessId,supplier]);
+ const due=shift(today,3),currency=cafe.currency;
+ const invoice=await turn("I have a standalone invoice from saved supplier "+supplier+", reference "+ref+", issued "+today+", due "+due+", one dairy service line, subtotal and total "+currency+" 200.00, tax, freight and discount zero. No PO, no stock receipt and no confirmed settlement. Prepare only the invoice evidence card for my review.","invoice",["get_cashflow_evidence","propose_invoice_reconciliation"],"maya.supplier_invoice.v1");
+ const effect=invoice.proposal.canonical_effect_payload;
+ if(effect.purchaseOrderId!==null||effect.supplierId!==supplierId||effect.invoiceReference!==ref||effect.totalCents!==20000||effect.dueOn!==due||effect.expenseDate!==null)fail("invoice_source_mismatch");
+ if(await count("select count(*) n from public.supplier_invoices where business_id=$1 and supplier_id=$2",[scope.businessId,supplierId]))fail("invoice_before_owner_click");
+ await click(invoice.proposal,"Supplier invoice confirmation","Confirm invoice evidence","Invoice evidence recorded");
+ const first=(await read("select id,revision,total_cents,canonical_expense_id from public.supplier_invoices where business_id=$1 and supplier_id=$2 and invoice_reference=$3",[scope.businessId,supplierId,ref]))[0];
+ if(!first||Number(first.revision)!==1||Number(first.total_cents)!==20000||first.canonical_expense_id!==null)fail("invoice_receipt_mismatch");
+ const payee="Municipal office "+randomUUID().slice(0,8),billRef="permit-"+randomUUID();
+ const bill=await turn("This is a separate dated municipal permit bill, not an existing supplier or recurring setting: payee "+payee+", reference "+billRef+", issued "+today+", due "+due+", amount "+currency+" 75.00. Record this document as a bill claim for my approval, not as paid or an expense.","bill",["get_cashflow_evidence","propose_financial_bill"],"leo.financial_bill.v1");
+ const be=bill.proposal.canonical_effect_payload;
+ if(be.payee!==payee.toLowerCase()||be.reference!==billRef||be.amountCents!==7500||be.dueOn!==due)fail("bill_source_mismatch");
+ if(await count("select count(*) n from public.uploads where business_id=$1 and financial_bill_proposal_id=$2",[scope.businessId,bill.proposal.id]))fail("bill_before_owner_click");
+ await click(bill.proposal,"Review dated bill claim","Confirm bill evidence","Documentary bill recorded");
+ const billRow=(await read("select id,financial_bill_amount_cents from public.uploads where business_id=$1 and financial_bill_proposal_id=$2",[scope.businessId,bill.proposal.id]))[0];
+ if(!billRow||Number(billRow.financial_bill_amount_cents)!==7500)fail("bill_receipt_mismatch");
+ const correction=await turn("The same saved invoice "+ref+" for "+supplier+" is corrected, current total and subtotal "+currency+" 180.00, one dairy service line, same dates "+today+" and "+due+", zero tax freight discount. Correct its existing revision, not a second invoice; prepare the exact invoice evidence card only.","revision",["get_cashflow_evidence","propose_invoice_reconciliation"],"maya.supplier_invoice.v1");
+ const ce=correction.proposal.canonical_effect_payload;
+ if(ce.expectedInvoiceRevision!==1||ce.invoiceReference!==ref||ce.totalCents!==18000||ce.purchaseOrderId!==null)fail("revision_source_mismatch");
+ await click(correction.proposal,"Supplier invoice confirmation","Confirm invoice evidence","Invoice evidence recorded");
+ const revisions=await read("select id,revision,total_cents from public.supplier_invoices where business_id=$1 and supplier_id=$2 and invoice_reference=$3 order by revision",[scope.businessId,supplierId,ref]);
+ if(revisions.length!==2||Number(revisions[1].revision)!==2||Number(revisions[1].total_cents)!==18000)fail("revision_history_mismatch");
+ const report=await turn("Using the saved finance evidence and recurring bill configuration, explain the current corrected dairy invoice "+ref+" and permit bill "+billRef+" due "+due+". Which claims need review and what could I do first? Do not call any of them confirmed unpaid or paid; do not add another expense or proposal.","report",["get_cashflow_evidence","get_bills"]);
+ if(!/180(?:\.00)?\b/.test(report.answer)||!/75(?:\.00)?\b/.test(report.answer)||!/unknown|unverified|not confirmed|not verified/i.test(report.answer))fail("current_claims_or_uncertainty_missing");
+ return {checks:{standaloneInvoice:true,ownerBillClaim:true,revisionRetained:true,notVerifiedPayment:true},scope:{supplierId,invoiceId:revisions[1].id,billId:billRow.id,invoiceProposalId:invoice.proposal.id,billProposalId:bill.proposal.id,correctionProposalId:correction.proposal.id,reportReplyId:report.replyId}};
+}).catch(e=>{console.error(e instanceof Error?e.message:"task14e_payables_failed");process.exitCode=1});

@@ -119,6 +119,9 @@ export type AgentToolContext = {
   invoicePropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").InvoiceToolInput)=>Promise<{proposalId:string;revision:number}>;
   receivingPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").ReceivingInput)=>Promise<{proposalId:string;revision:number}>;
   receivingFollowup?:(purchaseOrderId:string)=>Promise<{proposalId:string;revision:number;purchaseOrderId:string;recipient:string}>;
+  financialSettlementPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").FinancialSettlementInput)=>Promise<{proposalId:string;revision:number}>;
+  financialBillPropose?:(input:import("@/lib/ai/supervisor/loop/supplierReceiving.server").FinancialBillInput)=>Promise<{proposalId:string;revision:number}>;
+  financialEvidenceRead?:(selection?:import("@/lib/data/financialEvidence.server").FinanceSelection)=>ReturnType<typeof import("@/lib/data/financialEvidence.server").readFinancialEvidence>;
   receivingRead?:(purchaseOrderId:string)=>ReturnType<typeof import("@/lib/data/supplierReceiving.server").readSupplierReconciliation>;
   purchasing?:{
     list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
@@ -381,6 +384,9 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_business_hours")return hoursTools.get_business_hours.execute(raw,ctx);
   if(name==="get_expenses")return moneyTools.get_expenses.execute(raw,ctx);
   if(name==="get_bills")return moneyTools.get_bills.execute(raw,ctx);
+  if(name==="get_cashflow_evidence")return moneyTools.get_cashflow_evidence.execute(raw,ctx);
+  if(name==="propose_financial_settlement")return moneyTools.propose_financial_settlement.execute(raw,ctx);
+  if(name==="propose_financial_bill")return moneyTools.propose_financial_bill.execute(raw,ctx);
   if(name==="get_break_even")return moneyTools.get_break_even.execute(raw,ctx);
   if(name==="get_cost_summary")return moneyTools.get_cost_summary.execute(raw,ctx);
   if(name==="get_product_costs")return suppliesTools.get_product_costs.execute(raw,ctx);

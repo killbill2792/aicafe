@@ -9,7 +9,7 @@ import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceCha
 import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
-import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
+import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialBillCapabilityId,financialSettlementCapabilityId} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 /** Intentional omissions require a safe owner-facing explanation here. */
@@ -25,6 +25,8 @@ describe("loop capability exposure",()=>{
    [supplierPurchaseOrderCapabilityId,"propose_supplier_purchase_order"],
    [supplierReceivingCapabilityId,"propose_purchase_receiving"],
    [supplierInvoiceCapabilityId,"propose_invoice_reconciliation"],
+   [financialBillCapabilityId,"propose_financial_bill"],
+   [financialSettlementCapabilityId,"propose_financial_settlement"],
    [goalCapabilityId,"propose_goal"],
    [eventReadinessCapabilityId,"propose_event_plan"],
    [gmailCapabilityId,"propose_gmail_action"],

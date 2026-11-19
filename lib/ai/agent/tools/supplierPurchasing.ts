@@ -57,7 +57,7 @@ export const supplierPurchasingTools={
  },
  propose_invoice_reconciliation:{
   agentId:"maya",schema:invoiceToolInputSchema,
-  description:"Draft invoice after PO/reconciliation and verified supplier document or owner report. Prior correction revision; unmatched orderLineId=null, unknown tax/freight/discount=null. gmailMessageId only verified sender. expenseDate/existingExpenseId=null unless explicit verified recognition/match. Owner click; no stock/payment.",
+  description:"Draft invoice after PO reconciliation, or purchaseOrderId=null and exact saved standaloneSupplierName for owner document/report only. Prior correction revision; unmatched orderLineId=null, unknown tax/freight/discount=null. gmailMessageId only verified sender. expenseDate/existingExpenseId=null unless explicit verified recognition/match. Owner click; no stock/payment.",
   execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
    const input=invoiceToolInputSchema.parse(raw);
    if(!ctx.invoicePropose)return {source:"supplier_purchase_proposal",proposalKind:"invoice",period:null,agentId:"maya",

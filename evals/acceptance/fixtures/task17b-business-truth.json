@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "source": "Existing catalog.test.ts synthetic recorded day, independently checked arithmetic; not actual café or migrated DB proof",
+  "day": {
+    "date": "2026-10-21",
+    "facts": {
+      "date": "2026-10-21",
+      "netSalesCents": 20000,
+      "ordersCount": 20,
+      "drinksCount": 23,
+      "ingredientsCents": 6000,
+      "wagesCents": 5000,
+      "staffTaxCents": 600,
+      "cardFeesCents": 400,
+      "voidsCents": 0,
+      "salesDataStatus": "actual",
+      "staffTaxStatus": "actual"
+    },
+    "items": [
+      {
+        "itemId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "units": 4,
+        "revenueCents": 2800,
+        "recipeLines": [
+          {
+            "ingredientId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "quantity": 2
+          }
+        ],
+        "ingredientPriceMicros": {
+          "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb": 1000000
+        },
+        "ownerCostCents": 90
+      }
+    ],
+    "ingredientPriceMicros": {
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb": 1000000
+    },
+    "runningCostsCents": 1000,
+    "orders": [
+      {
+        "closedAt": "2026-10-21T18:00:00Z",
+        "netSalesCents": 16000
+      }
+    ],
+    "timecards": [
+      {
+        "clockIn": "2026-10-21T17:00:00Z",
+        "clockOut": "2026-10-21T19:00:00Z",
+        "hourlyWageCents": 2000,
+        "breaks": []
+      }
+    ],
+    "timezone": "America/Los_Angeles",
+    "cogsCoverageVerified": true,
+    "laborCoverageVerified": true,
+    "itemRevenueVerified": true,
+    "attendanceCoverageVerified": true,
+    "transactionCountVerified": true,
+    "itemCostCoverageVerified": true,
+    "salesTotalCoverageVerified": true,
+    "validItemIds": [
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    ]
+  },
+  "expected": {
+    "net_sales": {
+      "value": 20000,
+      "unit": "cents",
+      "params": {},
+      "calculation": "20000 recorded net cents"
+    },
+    "orders": {
+      "value": 20,
+      "unit": "count",
+      "params": {},
+      "calculation": "20 verified orders"
+    },
+    "avg_ticket": {
+      "value": 1000,
+      "unit": "cents",
+      "params": {},
+      "calculation": "20000 / 20"
+    },
+    "item_units": {
+      "value": 4,
+      "unit": "count",
+      "params": {
+        "itemId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      },
+      "calculation": "4 recorded units"
+    },
+    "item_revenue": {
+      "value": 2800,
+      "unit": "cents",
+      "params": {
+        "itemId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      },
+      "calculation": "2800 item revenue"
+    },
+    "item_margin": {
+      "value": 2792,
+      "unit": "cents",
+      "params": {
+        "itemId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      },
+      "calculation": "2800 - 4 * 2 * 1"
+    },
+    "cogs_pct": {
+      "value": 3000,
+      "unit": "bps",
+      "params": {},
+      "calculation": "6000 / 20000 * 10000"
+    },
+    "labor_cost": {
+      "value": 5600,
+      "unit": "cents",
+      "params": {},
+      "calculation": "5000 + 600"
+    },
+    "labor_pct": {
+      "value": 2800,
+      "unit": "bps",
+      "params": {},
+      "calculation": "5600 / 20000 * 10000"
+    },
+    "sales_per_labor_hour": {
+      "value": 8000,
+      "unit": "cents",
+      "params": {
+        "fromHour": 10,
+        "toHour": 12
+      },
+      "calculation": "16000 / 2 actual local hours"
+    },
+    "operating_margin": {
+      "value": 3500,
+      "unit": "bps",
+      "params": {},
+      "calculation": "7000 / 20000 * 10000"
+    },
+    "net_profit": {
+      "value": 7000,
+      "unit": "cents",
+      "params": {},
+      "calculation": "20000 - 6000 - 5600 - 400 - 1000"
+    },
+    "ingredient_unit_cost": {
+      "value": 1000000,
+      "unit": "microcents_per_base_unit",
+      "params": {
+        "ingredientId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+      },
+      "calculation": "1000000 recorded microcents"
+    }
+  }
+}
