@@ -222,3 +222,76 @@ begin
   return jsonb_build_object('kind', 'claimed', 'step', to_jsonb(s),
     'idempotency_key', s.run_id::text || ':' || s.step_key);
 end $$;
+
+
+-- Do not acknowledge a final owner turn while a checkpoint operation is open.
+create or replace function public.supervisor_run_complete_step(
+  p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_run_id uuid, p_step_key text,
+  p_claim_token uuid, p_result_ref text
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.supervisor_runs; s public.supervisor_run_steps;
+begin
+  if coalesce(auth.role(),'') <> 'service_role' then raise exception 'service_role_only'; end if;
+  if p_result_ref is null or char_length(p_result_ref) not between 1 and 256
+    then raise exception 'invalid_result_ref'; end if;
+  select * into r from public.supervisor_runs where business_id = p_business_id
+    and owner_user_id = p_owner_user_id and thread_id = p_thread_id
+    and id = p_run_id for update;
+  if not found or r.status in ('completed', 'blocked') then raise exception 'run_unavailable'; end if;
+  select * into s from public.supervisor_run_steps where business_id = p_business_id
+    and run_id = p_run_id and step_key = p_step_key for update;
+  if not found or s.claim_token is distinct from p_claim_token
+    then raise exception 'step_claim_conflict'; end if;
+  if r.execution_version=2 and p_step_key='owner_turn' and
+    (s.checkpoint_phase<>'ready' or
+     not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id) or
+     not exists(select 1 from public.ai_messages m where m.id::text=p_result_ref
+       and m.business_id=p_business_id and m.owner_user_id=p_owner_user_id and m.thread_id=p_thread_id
+       and m.role='supervisor' and m.grounding->>'ownerMessageId'=r.request_key::text
+       and m.grounding->>'status'='verified' and m.grounding#>>'{agentMetadata,endReason}'='complete'))
+    then raise exception 'owner_turn_receipt_not_verified'; end if;
+  if s.status = 'completed' then
+    if s.result_ref <> p_result_ref then raise exception 'step_result_conflict'; end if;
+    return to_jsonb(s);
+  end if;
+  if s.status <> 'leased' or s.lease_until <= clock_timestamp()
+    then raise exception 'step_lease_expired'; end if;
+  update public.supervisor_run_steps set status = 'completed', result_ref = p_result_ref,
+    completed_at = now(), lease_until = null, updated_at = now()
+    where id = s.id returning * into s;
+  return to_jsonb(s);
+end $$;
+
+create or replace function public.supervisor_run_reconcile(
+  p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_run_id uuid, p_step_key text, p_verified_result_ref text
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.supervisor_runs; s public.supervisor_run_steps;
+begin
+  if coalesce(auth.role(),'') <> 'service_role' then raise exception 'service_role_only'; end if;
+  if p_verified_result_ref is null or char_length(p_verified_result_ref) not between 1 and 256
+    then raise exception 'invalid_result_ref'; end if;
+  select * into r from public.supervisor_runs where business_id = p_business_id
+    and owner_user_id = p_owner_user_id and thread_id = p_thread_id
+    and id = p_run_id for update;
+  if not found or r.status <> 'blocked' then raise exception 'run_not_blocked'; end if;
+  select * into s from public.supervisor_run_steps where business_id = p_business_id
+    and run_id = p_run_id and step_key = p_step_key for update;
+  if not found or s.status <> 'blocked' or s.retry_mode <> 'reconcile'
+    then raise exception 'step_not_reconcilable'; end if;
+  if r.execution_version=2 and s.checkpoint_phase<>'ready'
+    then raise exception 'checkpoint_operation_unreconciled'; end if;
+  -- Canonical owner turns may recover only an uncertain result and only with
+  -- the exact persisted scoped reply. A reply never proves an external effect.
+  if p_step_key='owner_turn' and (s.error_code is null or s.error_code not in ('lease_expired','turn_failed')
+    or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+    or not exists(select 1 from public.ai_messages m where m.id::text=p_verified_result_ref
+      and m.business_id=p_business_id and m.owner_user_id=p_owner_user_id and m.thread_id=p_thread_id
+      and m.role='supervisor' and m.grounding->>'ownerMessageId'=r.request_key::text
+      and m.grounding->>'status'='verified' and m.grounding#>>'{agentMetadata,endReason}'='complete'))
+    then raise exception 'owner_turn_receipt_not_verified'; end if;
+  update public.supervisor_run_steps set status = 'completed', result_ref = p_verified_result_ref,
+    completed_at = now(), error_code = null, updated_at = now()
+    where id = s.id returning * into s;
+  update public.supervisor_runs set status = 'running', updated_at = now() where id = r.id;
+  return to_jsonb(s);
+end $$;
