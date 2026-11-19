@@ -719,7 +719,18 @@ test("functional groups and explicit subsets select only registered scenarios",(
  for(const invalid of ["group-16","group-014","group-14,13c","14*","14","14c,14c","14c,","14c, 14b","all,14c","unknown",""]){
    assert.throws(()=>selectLunaScenarios(found,invalid),undefined,invalid);
  }
- for(const bad of [[],["14c","14c"],["group-14"],["all"],["14 c"],Array.from({length:21},(_,i)=>"case-"+i)]){
+ for(const bad of [[],["14c","14c"],["group-14"],["all"],["14 c"],Array.from({length:257},(_,i)=>"case-"+i)]){
    assert.throws(()=>selectLunaScenarios(bad,"all"),/inventory/);
  }
+});
+
+// Registration must not itself consume or expand a trusted paid-run budget.
+test("large registered catalog retains the strict selected-run limit",()=>{
+ const found=Array.from({length:25},(_,i)=>"case-"+i);
+ assert.deepEqual(selectLunaScenarios(found,"case-24"),["case-24"]);
+ assert.equal(selectLunaScenarios(found,found.slice(0,20).join(",")).length,20);
+ assert.throws(()=>selectLunaScenarios(found,"all"),/Requested scenario/);
+ assert.throws(()=>selectLunaScenarios(found,found.slice(0,21).join(",")),/Requested scenario/);
+ const grouped=Array.from({length:21},(_,i)=>"17-case-"+i);
+ assert.throws(()=>selectLunaScenarios(grouped,"group-17"),/Requested scenario/);
 });
