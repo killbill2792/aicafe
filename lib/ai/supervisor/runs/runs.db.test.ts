@@ -443,7 +443,11 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       expect(saved.rows).toMatchObject([{status:"blocked",checkpoint_seq:"5",checkpoint_phase:"effect_pending",checkpoint_receipts:[{operation,receipt},{operation:providerOp}]}]);
       await admin.query("update storage.objects set metadata=jsonb_build_object('size',42,'eTag','replaced') where id=$1",[objectId]);
       await expect(call(a,"supervisor_admit_owner_run_v2",admit)).rejects.toThrow("owner_run_input_conflict");
-      await admin.query("delete from storage.objects where id=$1",[objectId]);
+      // This PostgreSQL-only sandbox inserts a synthetic metadata row, not a
+      // real Storage API file or bytes. The lane has no Storage API credentials.
+      // Verify the platform guard and leave this unique metadata-only row for
+      // destruction with the disposable database; never disable protect_delete.
+      await expect(admin.query("delete from storage.objects where id=$1",[objectId])).rejects.toThrow("Direct deletion from storage tables is not allowed");
     }finally{
       for(const child of children)if(child.exitCode===null&&child.signalCode===null)await killAndConfirm(child);
       await Promise.all([a?.end(),b?.end(),denied?.end()]);
