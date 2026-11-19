@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "viewports": [
+    390,
+    1440
+  ],
+  "cases": [
+    {
+      "id": "D01",
+      "name": "saved conversation and routine identity",
+      "evidence": "fixture_presentation"
+    },
+    {
+      "id": "D02",
+      "name": "proactive private notice and foreign tenant denial",
+      "evidence": "fixture_presentation"
+    },
+    {
+      "id": "D03",
+      "name": "offline work and two-tab recovery without effect",
+      "evidence": "fixture_presentation"
+    },
+    {
+      "id": "D04",
+      "name": "private upload, readback, reselect and tenant denial",
+      "evidence": "actual_local_storage"
+    }
+  ],
+  "integration": {
+    "status": "NOT_PROVEN",
+    "dependencies": [
+      "17b",
+      "17c"
+    ],
+    "required": [
+      "full upstream screen/intent census",
+      "real autonomous event and effect receipts",
+      "actual delegated routine and file analysis",
+      "all approval and correction families",
+      "accessibility automation and remaining business screen parity"
+    ]
+  }
+}

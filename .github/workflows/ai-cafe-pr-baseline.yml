@@ -300,7 +300,7 @@ jobs:
           done
           test "$ready" -eq 1
       - name: Verify selector and required-proof negative cases
-        run: node --test scripts/e2e/targeted.test.mjs
+        run: node --test scripts/e2e/targeted.test.mjs scripts/e2e/task17d-evidence.test.mjs
       - name: Run selected real authenticated Playwright cases
         run: node scripts/e2e/targeted.mjs run
       - name: Verify exact-head executed case counts; never accept skipped/missing proof

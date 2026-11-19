@@ -180,7 +180,18 @@ const approvedTask16aKeys = [
 ] as const;
 const approvedTask16aSet = new Set(approvedTask16aKeys.map(key => "SupervisorMandateCenter."+key));
 
+const approvedTask14eAddCostKeys=["statementCashConfirm","statementCashDated","statementCashNickname","statementCashError"] as const;
+const approvedTask14eFinanceKeys=["heading","reverse","allocate","allocationRecorded","supplierInvoice","revision","invoiceClaim","transaction","closingBalance","statementRow","originalRow","reversedLink","allocationAmount","allocationNotice","confirmLink","decline","checkLink","linkError","billHeading","billRecorded","payee","reference","issued","due","amount","unknown","billNotice","confirmBill","checkBill","billError"] as const;
+const approvedTask14eSet=new Set([...approvedTask14eAddCostKeys.map(key=>"AddCost."+key),...approvedTask14eFinanceKeys.map(key=>"FinancialEvidenceApproval."+key)]);
+
 describe("redesign 16 cleanup integration", () => {
+  it("requires exact Task14E English-only evidence labels",()=>{
+    const en=localeMessages("en"),es=localeMessages("es"),ar=localeMessages("ar");
+    expect(Object.keys(en.FinancialEvidenceApproval??{}).sort()).toEqual([...approvedTask14eFinanceKeys].sort());
+    expect(es.FinancialEvidenceApproval).toBeUndefined();expect(ar.FinancialEvidenceApproval).toBeUndefined();
+    for(const key of approvedTask14eFinanceKeys){expect(en.FinancialEvidenceApproval[key].trim().length).toBeGreaterThan(0);}
+    for(const key of approvedTask14eAddCostKeys){expect(en.AddCost[key].trim().length).toBeGreaterThan(0);expect(es.AddCost[key]).toBeUndefined();expect(ar.AddCost[key]).toBeUndefined();}
+  });
   for (const locale of ["en", "es", "ar"]) {
     it(`keeps current owner-facing translations after cleanup in ${locale}`, () => {
       const messages = localeMessages(locale);
@@ -202,7 +213,7 @@ describe("redesign 16 cleanup integration", () => {
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
-          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key))
+          && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));

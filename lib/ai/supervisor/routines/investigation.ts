@@ -6,7 +6,7 @@ import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
  * proposal and effect gateway. A scheduled investigation cannot authorize work. */
 export const investigationReadTools=[
   "get_investigation_source","get_sales","get_profit","get_labor","get_expenses",
-  "get_bills","get_cost_summary","get_item_sales","get_ingredient_costs",
+  "get_bills","get_cashflow_evidence","get_cost_summary","get_item_sales","get_ingredient_costs",
   "get_product_costs","get_menu_items","get_price_monitor_status",
   "get_peak_hours","get_payroll_facts","get_staff_messages","get_staff_coordination_cases","get_schedule","get_week_schedule",
   "get_coverage_gaps","get_inventory","get_usage_variance","inspect_purchase_reconciliation","calculate",
@@ -23,7 +23,8 @@ const relevantByKind:Record<string,readonly AgentToolName[]>={
   staff_coverage:["get_staff_messages","get_staff_coordination_cases","get_labor","get_schedule","get_coverage_gaps","get_week_schedule"],
   staff_coordination:["get_staff_coordination_cases","get_staff_messages","get_schedule","get_week_schedule","get_coverage_gaps"],
   price_review:["get_menu_items","get_product_costs","get_item_sales","get_price_monitor_status"],
-  missing_bill:["get_expenses","get_bills","get_cost_summary"],
+  missing_bill:["get_expenses","get_bills","get_cost_summary","get_cashflow_evidence"],
+  money_update:["get_cashflow_evidence","get_expenses","get_bills","get_sales","get_labor"],
   voids:["get_sales","get_peak_hours","get_profit"],
   supply_check:["get_inventory","get_usage_variance","get_ingredient_costs"],
   supplier_receiving:["inspect_purchase_reconciliation","get_inventory","get_expenses","get_bills"],
@@ -52,7 +53,7 @@ const canonicalEvidenceDomain:Partial<Record<AgentToolName,string>>={
   get_schedule:"dated_schedule",get_week_schedule:"dated_schedule",
   get_coverage_gaps:"dated_schedule",
   get_expenses:"recorded_expenses",get_cost_summary:"recorded_expenses",
-  get_bills:"configured_recurring_bills",
+  get_bills:"configured_recurring_bills",get_cashflow_evidence:"historical_statement_and_invoice_claims",
   get_inventory:"stock_and_inventory",get_usage_variance:"stock_and_inventory",
   inspect_purchase_reconciliation:"receiving_and_invoice_source",
   get_ingredient_costs:"ingredient_prices",get_product_costs:"recipe_costs",
@@ -84,6 +85,9 @@ function observedValue(value:unknown,depth=0):boolean{
 }
 function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing))return false;
+  if(result.source==="cashflow_evidence")return (Array.isArray(result.documentedAccountBalances)&&result.documentedAccountBalances.length>0)||
+    (typeof result.recordedClaimCount==="number"&&result.recordedClaimCount>0)||
+    (typeof result.billClaimCount==="number"&&result.billClaimCount>0);
   const readerFailed=result.missing.some(reason=>
     /(?:unavailable|readfailed|readerfailed|readerror|unauthorized|denied)/iu.test(reason));
   return Object.entries(result).some(([key,value])=>{
@@ -213,6 +217,7 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "Only the supplier-receiving exception below permits an inert draft; never execute effects. ":"")+"Do NOT substitute unrelated sales reads " +
     "for incident-specific evidence. For this incident, relevant tools include: " +
     relevantInvestigationTools(source.kind).join(", ")+". " +
+    (["money_update","missing_bill"].includes(source.kind)?"Finance: check actual available statement/invoice evidence plus independent recorded bills, expenses, sales or labor. If integrations are absent, use surviving facts and explicit uncertainty. Separate dated balances, bill amounts and payment status; no payment actions. ":"") +
     "Use canonical numbers, coverage and timestamps; " +
     "do not infer zero from missing or stale evidence. Explain what changed, what is " +
     "known, what is unknown, and the smallest useful multi-step plan. Give the owner " +
@@ -319,6 +324,7 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     canonicalEvidenceDomain[c.name as AgentToolName]).filter(
       (domain):domain is string=>typeof domain==="string"&&domain.length>0));
   if(names.length<2||domains.size<2)return {ok:false,reason:"evidence_incomplete"};
+  if(expected.kind==="money_update"&&expected.sourceId.startsWith("financial-review:")&&!names.includes("get_cashflow_evidence"))return {ok:false,reason:"evidence_incomplete"};
   if(expected.kind==="supplier_receiving"){
     const selectors=source.result.selectors;
     const expectedPo=selectors&&typeof selectors==="object"&&"entityId" in selectors?selectors.entityId:null;

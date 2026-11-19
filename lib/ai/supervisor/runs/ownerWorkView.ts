@@ -11,6 +11,8 @@ export type OwnerWorkStatus =
 
 export type OwnerWorkItem = {
   id: string;
+  threadId: string | null;
+  threadTitle?: string | null;
   kind: "durable_run" | "agent_turn" | "approval" | "investigation";
   status: OwnerWorkStatus;
   title: string;
@@ -26,6 +28,7 @@ export type OwnerWorkItem = {
 };
 
 export type RunRow = {
+  thread_id?: string | null;
   id: string; request_key: string; status: "pending" | "running" | "blocked" | "completed";
   final_report_ref: string | null; updated_at: string; finished_at: string | null;
 };
@@ -35,11 +38,13 @@ export type StepRow = {
   retry_mode: "idempotent" | "reconcile"; lease_until: string | null;
 };
 export type JobRow = {
+  thread_id?: string | null;
   id: string; owner_message_id: string; status: "running" | "done" | "failed";
   reply_message_id: string | null; error_code: string | null; attempt: number;
   heartbeat_at: string; created_at: string;
 };
 export type ProposalRow = {
+  thread_id?: string | null;
   id: string; status: string; capability_id: string; effect_hash: string; updated_at: string;
 };
 export type AttemptRow = {
@@ -48,6 +53,7 @@ export type AttemptRow = {
 };
 
 export type InvestigationRow = {
+  thread_id?: string | null;
   episode_id: string;
   phase: "collect" | "investigate" | "awaiting_owner" | "resolved" | "blocked";
   failure_count: number; lease_token: string | null;
@@ -86,7 +92,7 @@ export function projectOwnerWork(input: {
       : staleLease ? (next?.retry_mode === "idempotent" ? "queued" : "uncertain")
       : next?.status === "leased" && next.attempts > 1 ? "retrying" : "running";
     work.push({
-      id: "run:" + run.id, kind: "durable_run", status, title: copy.runTitle,
+      id: "run:" + run.id, threadId: run.thread_id ?? null, kind: "durable_run", status, title: copy.runTitle,
       detail: status === "answer_ready"
         ? copy.runAnswerReady
         : status === "uncertain" ? copy.runUncertain
@@ -106,11 +112,11 @@ export function projectOwnerWork(input: {
       proposalId: null,
     });
   }
-  const ownerRuns = new Set(input.runs.map(run => run.request_key));
+  const ownerRuns = new Set(input.runs.map(run => (run.thread_id ?? "") + ":" + run.request_key));
   for (const job of input.jobs) {
     // The durable run already represents this same owner turn. Never show a
     // second status card for the underlying per-turn job.
-    if (ownerRuns.has(job.owner_message_id)) continue;
+    if (ownerRuns.has((job.thread_id ?? "") + ":" + job.owner_message_id)) continue;
     // A missing heartbeat is UNKNOWN, not proof the worker failed or the
     // external effect was rolled back. The durable run/receipt may still exist.
     const heartbeat = Date.parse(job.heartbeat_at);
@@ -121,7 +127,7 @@ export function projectOwnerWork(input: {
       : job.status === "failed" ? "failed"
       : stale ? "uncertain" : job.attempt > 1 ? "retrying" : "running";
     work.push({
-      id: "job:" + job.id, kind: "agent_turn", status,
+      id: "job:" + job.id, threadId: job.thread_id ?? null, kind: "agent_turn", status,
       title: copy.jobTitle,
       detail: status === "answer_ready" ? copy.jobAnswerReady
         : stale ? copy.jobStale
@@ -148,7 +154,7 @@ export function projectOwnerWork(input: {
       : inv.failure_count > 0 && !leased ? "retrying"
       : inv.phase === "collect" && !leased ? "queued" : "running";
     work.push({
-      id: "investigation:" + inv.episode_id, kind: "investigation", status,
+      id: "investigation:" + inv.episode_id, threadId: inv.thread_id ?? null, kind: "investigation", status,
       title: copy.investigationTitle,
       detail: status === "source_resolved" ? copy.investigationResolved
         : missing ? copy.investigationUncertain
@@ -173,7 +179,7 @@ export function projectOwnerWork(input: {
       : p.status === "stale" ? "failed"
       : p.status === "manual_pending" ? "uncertain" : "running";
     work.push({
-      id: "proposal:" + p.id, kind: "approval", status,
+      id: "proposal:" + p.id, threadId: p.thread_id ?? null, kind: "approval", status,
       title: copy.proposalTitle,
       detail: status === "approval_required" ? copy.proposalDraft
         : status === "verified_complete" ? copy.proposalVerified

@@ -14,6 +14,35 @@ function ctx(extra:Partial<AgentToolContext["tools"]>):AgentToolContext{
     getMenuCatalog:async()=>unavailable,...extra}};
 }
 describe("Leo scoped money reads",()=>{
+  it("returns unknown, not zero or an integration demand, when financial sources are absent",async()=>{
+    const r=await moneyTools.get_cashflow_evidence.execute({},ctx({}));
+    expect(r.availableCashCents).toBeNull();
+    expect(r.outstandingPaymentCents).toBeNull();
+    expect(r.recordedClaimCount).toBeNull();
+    expect(r.missing).toContain("supplierInvoiceEvidenceUnavailable");
+    await expect(moneyTools.get_cashflow_evidence.execute({businessId:"foreign"},ctx({}))).rejects.toThrow();
+  });
+  it("passes scoped invoice selectors to the authorized reader",async()=>{
+    let seen:unknown;
+    await moneyTools.get_cashflow_evidence.execute({invoiceReference:"exact-ref",invoiceOffset:20},{...ctx({}),financialEvidenceRead:async selection=>{seen=selection;throw Error("fixture");}});
+    expect(seen).toMatchObject({invoiceReference:"exact-ref",invoiceOffset:20});
+    await expect(moneyTools.get_cashflow_evidence.execute({invoiceOffset:-1},ctx({}))).rejects.toThrow();
+  });
+  it("retains supplier evidence when cash and deposits are not known",async()=>{
+    const {summarizeInvoiceClaims,summarizeStatementBalances}=await import("@/lib/metrics/core/cashflow");
+    const evidence=summarizeInvoiceClaims([{id:"invoice",supplier_id:"supplier",
+      purchase_order_id:"order",invoice_reference:"ref",revision:1,issued_on:"2026-10-01",
+      due_on:"2026-10-20",currency_code:"CAD",total_cents:2500}],"2026-10-22",false);
+    const r=await moneyTools.get_cashflow_evidence.execute({},{
+      ...ctx({}),currency:"CAD",financialEvidenceRead:async()=>({...evidence,...summarizeStatementBalances([],"2026-10-22",false),recurringObligations:[],recurringMissing:[],billClaimCount:0,billClaims:[],billClaimDetailsTruncated:false,billClaimMissing:[],invoiceReferenceFilter:null,selectedStatement:null,conditionalStress:[]})});
+    expect(r.recordedClaimTotalsByCurrency).toEqual([{currency:"CAD",recordedClaimCents:2500}]);
+    expect(r.availableCashCents).toBeNull();
+    expect(r.outstandingPaymentCents).toBeNull();
+    expect(r.missing).toContain("currentCashEvidenceMissing");
+    const failed=await moneyTools.get_cashflow_evidence.execute({},{
+      ...ctx({}),financialEvidenceRead:async()=>{throw Error("offline")}});
+    expect(failed.recordedClaimCount).toBeNull();
+  });
   it("fails closed instead of using old Supervisor economics without canonical snapshot",async()=>{
     const economics:Economics={
       monthlyBills:figure(30000,"actual","rent"),monthlyStaff:figure(30000,"actual","payroll"),

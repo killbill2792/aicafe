@@ -18,7 +18,11 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null;
   purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string;
     receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
-  invoice?:{purchaseOrderId:string;supplierName:string;invoiceReference:string;expectedInvoiceRevision:number;
+  bill?:{payee:string;reference:string;expectedRevision:number;issuedOn:string;dueOn:string|null;amountCents:number;currency:string};
+  settlement?:{financialKind:string;invoiceId:string;invoiceRevision:number;supplierName:string;invoiceReference:string;
+    invoiceTotalCents:number;currency:string;uploadId:string;rowIndex:number;allocationCents:number;reversesId:string|null;
+    transactionDate:string;transactionAmountCents:number;transactionBalanceCents:number};
+  invoice?:{purchaseOrderId:string|null;supplierName:string;invoiceReference:string;expectedInvoiceRevision:number;
     issuedOn:string;dueOn:string|null;currency:string;subtotalCents:number;taxCents:number|null;
     freightCents:number|null;discountCents:number|null;totalCents:number;expenseDate:string|null;existingExpenseId:string|null;
     sourceKind:string;lines:Array<{sourceItemName:string;quantityBase4:number|null;baseUnit:string|null;subtotalCents:number;orderLineId:string|null}>};
@@ -182,6 +186,53 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const goal=value.capabilityId==="leo.goal.v1";
   const eventPlan=value.capabilityId==="alex.event_readiness.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
+  const finance=dict.en.FinancialEvidenceApproval;
+  if(value.capabilityId==="leo.financial_bill.v1"&&value.bill){
+    const b=value.bill;
+    return <section aria-label={finance.billHeading} dir={locale==="ar"?"rtl":"ltr"} className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      <h3 className="text-xl font-bold">{finance.billHeading}</h3>
+      <p role="status" className="mt-2 font-semibold">{value.state==="applied"?finance.billRecorded:value.state}</p>
+      <dl className="mt-3 grid gap-2 rounded-xl bg-surface2 p-3">
+        <div><dt>{finance.payee}</dt><dd className="break-words">{b.payee}</dd></div>
+        <div><dt>{finance.reference}</dt><dd className="break-words">{b.reference}</dd></div>
+        <div><dt>{finance.issued}</dt><dd>{b.issuedOn}</dd></div>
+        <div><dt>{finance.due}</dt><dd>{b.dueOn??finance.unknown}</dd></div>
+        <div><dt>{finance.amount}</dt><dd>{new Intl.NumberFormat(locale,{style:"currency",currency:b.currency}).format(b.amountCents/100)}</dd></div>
+        {b.expectedRevision>0&&<div>{finance.revision} {b.expectedRevision+1}</div>}
+      </dl>
+      <p className="mt-3 text-sm text-ink-muted">{finance.billNotice}</p>
+      {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-3">
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">{finance.confirmBill}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.decline}</button>
+      </div>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.checkBill}</button>}
+      {error&&<p role="alert" className="mt-3 text-neg">{finance.billError}</p>}
+    </section>;
+  }
+  if(value.capabilityId==="leo.financial_settlement.v1"&&value.settlement){
+    const s=value.settlement,reversal=s.financialKind==="settlement_evidence_reversed";
+    const amount=(n:number)=>new Intl.NumberFormat(locale,{style:"currency",currency:s.currency}).format(n/100);
+    return <section aria-label={finance.heading} dir={locale==="ar"?"rtl":"ltr"}
+      className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      <h3 className="text-xl font-bold">{reversal?finance.reverse:finance.allocate}</h3>
+      <p role="status" className="mt-2 font-semibold">{value.state==="applied"?finance.allocationRecorded:value.state}</p>
+      <dl className="mt-3 grid gap-2 rounded-xl bg-surface2 p-3">
+        <div><dt className="text-ink-muted">{finance.supplierInvoice}</dt><dd className="break-words">{s.supplierName} · {s.invoiceReference} · {finance.revision} {s.invoiceRevision}</dd></div>
+        <div><dt className="text-ink-muted">{finance.invoiceClaim}</dt><dd>{amount(s.invoiceTotalCents)}</dd></div>
+        <div><dt className="text-ink-muted">{finance.transaction}</dt><dd>{s.transactionDate} · {amount(s.transactionAmountCents)} · {finance.closingBalance} {amount(s.transactionBalanceCents)}</dd></div>
+        <div><dt className="text-ink-muted">{finance.statementRow}</dt><dd className="break-all">{s.uploadId} · {finance.originalRow} {s.rowIndex+2}</dd></div>
+        {reversal&&<div><dt className="text-ink-muted">{finance.reversedLink}</dt><dd className="break-all">{s.reversesId}</dd></div>}
+        <div><dt className="text-ink-muted">{finance.allocationAmount}</dt><dd className="font-bold">{amount(s.allocationCents)}</dd></div>
+      </dl>
+      <p className="mt-3 text-sm text-ink-muted">{finance.allocationNotice}</p>
+      {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-3">
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">{finance.confirmLink}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.decline}</button>
+      </div>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">{finance.checkLink}</button>}
+      {error&&<p role="alert" className="mt-3 text-neg">{finance.linkError}</p>}
+    </section>;
+  }
   if(value.capabilityId==="maya.supplier_invoice.v1"&&value.invoice){
     const i=value.invoice;
     const amount=(n:number|null)=>n===null?"Unknown":new Intl.NumberFormat(locale,{style:"currency",currency:i.currency}).format(n/100);
@@ -189,7 +240,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
       <h3 className="text-xl font-bold">Review invoice · {i.supplierName}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Invoice evidence recorded":value.state}</p>
-      <p className="break-all">Purchase order: {i.purchaseOrderId}</p>
+      <p className="break-all">{i.purchaseOrderId?"Purchase order: "+i.purchaseOrderId:"Standalone supplier invoice (no purchase order)"}</p>
       <p className="break-words">Invoice {i.invoiceReference} · Issued {i.issuedOn} · Due {i.dueOn??"Unknown"}</p>
       <p>Source: {i.sourceKind.replaceAll("_"," ")}</p>
       {i.expectedInvoiceRevision>0&&<p>Corrects invoice revision {i.expectedInvoiceRevision}.</p>}

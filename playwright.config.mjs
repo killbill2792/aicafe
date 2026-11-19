@@ -10,7 +10,7 @@ if (process.env.PLAYWRIGHT_BASE_URL &&
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: "owner-journeys.spec.mjs",
+  testMatch: ["owner-journeys.spec.mjs", "task17d-owner-acceptance.spec.mjs"],
   workers: 1,
   fullyParallel: false,
   forbidOnly: true,

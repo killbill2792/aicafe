@@ -1,13 +1,17 @@
 "use client";
 
-import {useEffect,useRef,useState} from "react";
-import {BookOpen,Clock3,RefreshCcw,ShieldCheck,X} from "lucide-react";
+import {useEffect,useRef,useState,type ReactNode} from "react";
+import {BookOpen,Clock3,ListChecks,RefreshCcw,ShieldCheck,X} from "lucide-react";
 import {Link} from "@/i18n/navigation";
 import {createBrowserSupabaseClient} from "@/lib/supabase/client";
 import en from "@/messages/en.json";
 
+import SupervisorWorkStatus from "./SupervisorWorkStatus";
+import {useSupervisorWork} from "./useSupervisorWork";
+import type {OwnerWorkItem} from "@/lib/ai/supervisor/runs/ownerWorkView";
+
 const copy=en.SupervisorMandateCenter;
-type Tab="library"|"routines"|"permissions";
+type Tab="work"|"library"|"routines"|"permissions";
 type Thread={id:string;title:string|null;lastMessageAt?:string|null;createdAt:string};
 type Routine={id:string;title:string;cadence:"daily"|"weekly";localTime:string;
   status:"active"|"paused"|"revoked";weekdays:number[];timezone:string;revision:number};
@@ -27,11 +31,12 @@ const humanTime=(date:string)=>new Date(date).toLocaleString();
 const validLocalExpiry=(value:string,clock:number)=>Boolean(value.trim())&&
   Number.isFinite(new Date(value).valueOf())&&new Date(value).valueOf()>clock;
 
-export default function SupervisorMandatePanel({threadId,threads,approvals,onSelectThread,onClose}:{
+export default function SupervisorMandatePanel({threadId,threads,approvals,onSelectThread,onClose,initialTab="permissions",onOpenWork,disabled=false,languageSwitch}:{
   threadId:string|null;threads:Thread[];approvals:Array<{id:string;title:string;detail:string}>;
   onSelectThread:(id:string)=>void;onClose:()=>void;
+  initialTab?:Tab;onOpenWork:(item:OwnerWorkItem)=>void;disabled?:boolean;languageSwitch?:ReactNode;
 }){
-  const [tab,setTab]=useState<Tab>("permissions");
+  const [tab,setTab]=useState<Tab>(initialTab);
   const [mandates,setMandates]=useState<Mandate[]>([]);
   const [routines,setRoutines]=useState<Routine[]>([]);
   const [loading,setLoading]=useState(Boolean(threadId??threads[0]?.id));
@@ -48,15 +53,17 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
   const [now,setNow]=useState(0);
   const [refresh,setRefresh]=useState(0);
   const closeButton=useRef<HTMLButtonElement|null>(null);
-  const onCloseRef=useRef(onClose);
+  const dialog=useRef<HTMLDialogElement>(null);
   const mandateThreadId=threadId??threads[0]?.id??null;
+  const work=useSupervisorWork(mandateThreadId,tab==="work",true);
 
-  useEffect(()=>{onCloseRef.current=onClose;},[onClose]);
   useEffect(()=>{
+    const node=dialog.current;
+    if(!node)return;
+    const opener=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    node.showModal();
     closeButton.current?.focus();
-    const escape=(e:KeyboardEvent)=>{if(e.key==="Escape")onCloseRef.current();};
-    window.addEventListener("keydown",escape);
-    return()=>window.removeEventListener("keydown",escape);
+    return()=>{if(node.open)node.close();opener?.focus();};
   },[]);
   useEffect(()=>{
     const initial=window.setTimeout(()=>setNow(Date.now()),0);
@@ -174,11 +181,18 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
     mandateStatus(m,now)==="active");
   const expiredChallenge=Boolean(challenge&&Date.parse(challenge.expiresAt)<=now);
 
-  return <div className="absolute inset-0 z-40 flex justify-end">
-    <button type="button" aria-label={copy.close} onClick={onClose}
-      className="absolute inset-0 bg-fg/35"/>
-    <aside role="dialog" aria-modal="true" aria-label={copy.title}
-      className="relative z-10 flex h-full w-full max-w-[520px] flex-col border-s border-line bg-surface2 shadow-xl">
+  return <dialog ref={dialog} aria-modal="true" aria-label={copy.title}
+    onCancel={e=>{e.preventDefault();onClose();}}
+    onKeyDown={e=>{
+      if(e.key!=="Tab")return;
+      const elements=Array.from(e.currentTarget.querySelectorAll<HTMLElement>(
+        'button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]'
+      )).filter(node=>node.tabIndex>=0&&node.getClientRects().length);
+      const first=elements[0],last=elements.at(-1);
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
+    }}
+    className="fixed inset-y-0 end-0 start-auto m-0 h-full max-h-none w-full max-w-[520px] flex-col border-s border-line bg-surface2 text-ink shadow-xl backdrop:bg-fg/35 open:flex">
       <header className="flex items-center justify-between border-b border-line px-4 py-3">
         <h2 className="text-lg font-bold text-ink">{copy.title}</h2>
         <button ref={closeButton} type="button" onClick={onClose} aria-label={copy.close}
@@ -186,8 +200,8 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
           <X size={22} aria-hidden="true"/>
         </button>
       </header>
-      <nav aria-label={copy.title} className="grid grid-cols-3 gap-1 border-b border-line p-2">
-        {([["library",BookOpen,copy.library],["routines",Clock3,copy.routines],
+      <nav aria-label={copy.title} className="grid grid-cols-2 gap-1 sm:grid-cols-4 border-b border-line p-2">
+        {([["work",ListChecks,en.SupervisorWork.heading],["library",BookOpen,copy.library],["routines",Clock3,copy.routines],
           ["permissions",ShieldCheck,copy.permissions]] as const).map(([id,Icon,label])=>
           <button key={id} type="button" onClick={()=>{
               // An active-tab click does not change the fetch dependencies.
@@ -204,11 +218,13 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
           </button>)}
       </nav>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4" data-supervisor-controls={tab}>
+        {tab==="work"&&(mandateThreadId?<SupervisorWorkStatus items={work.items} unavailable={work.unavailable}
+          loading={work.loading} showEmpty onOpen={onOpenWork} disabled={disabled}/>:<p role="status">{copy.emptyChats}</p>)}
         {tab==="library"&&<section aria-label={copy.savedChats} className="space-y-2">
           <h3 className="font-bold text-ink">{copy.savedChats}</h3>
           {threads.length===0&&<p className="text-sm text-ink-muted">{copy.emptyChats}</p>}
           {threads.map(thread=><button key={thread.id} type="button"
-            onClick={()=>{onSelectThread(thread.id);onClose();}}
+            disabled={disabled} onClick={()=>{onSelectThread(thread.id);onClose();}}
             aria-current={thread.id===threadId?"page":undefined}
             className="block min-h-12 w-full rounded-xl border border-line bg-surface px-3 py-2 text-start text-[15px] font-medium text-ink hover:bg-pos-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
             {thread.title||copy.savedChats}
@@ -245,6 +261,8 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
             </button>
           </div>
           <p className="text-sm text-ink-muted">{copy.permissionHelp}</p>
+          <Link href={threadId?"/more/supervisor-access?thread="+encodeURIComponent(threadId):"/more/supervisor-access"}
+            className="inline-flex min-h-12 items-center rounded-xl border border-line px-4 text-sm font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{en.SupervisorAccess.title}</Link>
           <section aria-label={copy.oneTimeTitle} className="space-y-2 rounded-xl border border-line bg-surface p-3">
             <h4 className="text-sm font-semibold">{copy.oneTimeTitle}</h4>
             <p className="text-sm text-ink-muted">{copy.oneTimeHelp}</p>
@@ -328,6 +346,6 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
           <p className="text-sm text-ink-muted">{copy.notUnlimited}</p>
         </section>}
       </div>
-    </aside>
-  </div>;
+      {languageSwitch}
+  </dialog>;
 }

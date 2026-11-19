@@ -2,6 +2,7 @@ import {execFileSync, spawnSync} from "node:child_process";
 import {appendFileSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {dirname} from "node:path";
 import {pathToFileURL} from "node:url";
+import {verifyOwnerCases} from "./task17d-evidence.mjs";
 
 export const SCENARIOS = Object.freeze(["home", "staff", "menu", "money", "gmail", "purchasing"]);
 const ALL = SCENARIOS;
@@ -81,7 +82,7 @@ export function scenariosForPath(path) {
       path === "components/menu/PantryWorkspace.tsx" ||
       path === "components/menu/MenuCatalog.tsx" ||
       path.startsWith("lib/viewmodels/menu")) return ["menu"];
-  if (path === "app/[locale]/money/page.tsx" ||
+  if (path === "components/addcost/StatementUploader.tsx" || path === "app/[locale]/money/page.tsx" ||
       path === "components/money/MoneyViewSwitch.tsx" ||
       path.startsWith("lib/viewmodels/money")) return ["money"];
   if (path.startsWith("app/api/")) return [];
@@ -211,6 +212,10 @@ function verify() {
   if (!/^[a-f0-9]{40}$/.test(head ?? "")) throw new Error("Missing exact head SHA");
   const report = JSON.parse(readFileSync(result, "utf8"));
   const proof = summarizeReport(report, selected);
+  if (selected.includes("home")) {
+    proof.owner_17d = verifyOwnerCases(report);
+    if (proof.owner_17d.status !== "passed") proof.status = "failed";
+  }
   const receipt = {
     schema_version: 1,
     head_sha: head,
