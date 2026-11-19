@@ -1,4 +1,5 @@
 import {describe,expect,it} from "vitest";
+import {precedingInvestigationReport} from "./investigation";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import {checkNumbers} from "@/lib/ai/agent/checkNumbers";
 import {investigationPrompt,investigationReadTools,customerInvestigationTools,verifyInvestigationTurn,
@@ -438,4 +439,16 @@ it("customer investigations require an actual scoped aggregate and an independen
  expect(verify({...customer,result:{...customer.result,period:{from:"2026-08-01",to:"2026-08-07"}}},labor).ok).toBe(false);
  expect(investigationReadTools).toContain("describe_data");
  expect(investigationReadTools).toContain("query_data");
+});
+
+
+it("only the immediately preceding verified, same-thread proactive report is eligible for owner-turn context",()=>{
+  const owner={id:"owner",threadId:"thread",createdAt:"2026-01-01T10:02:00Z"};
+  const report={id:"report",role:"supervisor",threadId:"thread",createdAt:"2026-01-01T10:00:00Z",
+    grounding:{intent:"priority_investigation",status:"verified",evidence:[{source:"alert",identifier:"alert",revisionHash:"rev"}]}};
+  expect(precedingInvestigationReport([report],owner)).toEqual({report,sourceId:"alert",sourceRevision:"rev"});
+  expect(precedingInvestigationReport([{...report,threadId:"other"}],owner)).toBeNull();
+  expect(precedingInvestigationReport([{...report,grounding:{...report.grounding,status:"partial"}}],owner)).toBeNull();
+  expect(precedingInvestigationReport([report,{...report,id:"owner2",role:"owner",createdAt:"2026-01-01T10:01:00Z"}],owner)).toBeNull();
+  expect(precedingInvestigationReport([{...report,createdAt:"2026-01-01T10:03:00Z"}],owner)).toBeNull();
 });
