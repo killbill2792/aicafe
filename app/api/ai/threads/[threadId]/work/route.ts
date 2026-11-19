@@ -26,20 +26,25 @@ async function allPages(load: (start: number, end: number) => PromiseLike<Page>)
 
 /** Read only. The existing owner authorization and Postgres RLS own scope.
  * No worker, provider, approval or retry can be invoked from this endpoint. */
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { threadId } = await context.params;
     const id = parseInput(threadIdInput, threadId);
     const { scope, service } = await authenticatedConversationContext();
     await service.getThread(id);
+    // The owner-wide view is anchored in an authenticated thread; caller cannot supply a café or owner.
+    const ownerWide = new URL(request.url).searchParams.get("scope") === "owner";
     const db = await createServerSupabaseClient();
-    const runFields = "id,request_key,status,final_report_ref,updated_at,finished_at";
-    const jobFields = "id,owner_message_id,status,reply_message_id,error_code,attempt,heartbeat_at,created_at";
-    const proposalFields = "id,status,capability_id,effect_hash,updated_at";
-    const investigationFields = "episode_id,phase,failure_count,lease_token,lease_until,last_error,updated_at";
+    const runFields = "thread_id,id,request_key,status,final_report_ref,updated_at,finished_at";
+    const jobFields = "thread_id,id,owner_message_id,status,reply_message_id,error_code,attempt,heartbeat_at,created_at";
+    const proposalFields = "thread_id,id,status,capability_id,effect_hash,updated_at";
+    const investigationFields = "thread_id,episode_id,phase,failure_count,lease_token,lease_until,last_error,updated_at";
     const owner = (table: "supervisor_runs" | "ai_agent_jobs" | "supervisor_proposals" | "supervisor_investigations", fields: string) =>
-      db.from(table).select(fields).eq("business_id", scope.businessId)
-        .eq("owner_user_id", scope.ownerUserId).eq("thread_id", id);
+      {
+        const query = db.from(table).select(fields).eq("business_id", scope.businessId)
+          .eq("owner_user_id", scope.ownerUserId);
+        return ownerWide ? query : query.eq("thread_id", id);
+      };
 
     // Historical *completed* items are bounded. Every unfinished record,
     // including completed-without-report and terminal-without-effect-receipt,
@@ -91,9 +96,21 @@ export async function GET(_request: Request, context: RouteContext) {
       if (res.error) throw new Error("owner_work_evidence_unavailable");
       attempts.push(...(res.data ?? []) as AttemptRow[]);
     }
-    return conversationJson({ work: projectOwnerWork({
-      runs, steps, jobs, proposals, attempts, investigations,
-    }) });
+    const work = projectOwnerWork({ runs, steps, jobs, proposals, attempts, investigations });
+    if (ownerWide) {
+      const ids = [...new Set(work.flatMap(item => item.threadId ? [item.threadId] : []))];
+      const titles = new Map<string, string | null>();
+      for (let n=0; n<ids.length; n+=100) {
+        const res = await db.from("ai_threads").select("id,title").eq("business_id",scope.businessId)
+          .eq("owner_user_id",scope.ownerUserId).in("id",ids.slice(n,n+100));
+        if (res.error) throw new Error("owner_work_context_unavailable");
+        for (const thread of res.data ?? []) titles.set(thread.id,thread.title);
+      }
+      // Never navigate to a thread that the current owner cannot read.
+      return conversationJson({ work: work.filter(item => item.threadId && titles.has(item.threadId))
+        .map(item => ({...item,threadTitle:titles.get(item.threadId!) ?? null})) });
+    }
+    return conversationJson({ work });
   } catch (error) {
     return conversationError(error);
   }

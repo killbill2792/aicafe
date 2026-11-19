@@ -1258,10 +1258,11 @@ test("@gmail Task16C owner revokes live external access across mobile reload and
 });
 
 
-test("@home Task16D authenticated responsive Supervisor baseline", async ({browser},testInfo) => {
-  test.setTimeout(120_000);
+test("@home Task16D authenticated responsive Supervisor work across conversations", async ({browser},testInfo) => {
+  test.setTimeout(180_000);
   const owner=seededCafe(0);
   const threadId=randomUUID(), runId=randomUUID(), requestId=randomUUID();
+  const otherThread=randomUUID(),otherRun=randomUUID(),messageId=randomUUID();
   const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
     user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
   const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
@@ -1274,6 +1275,16 @@ test("@home Task16D authenticated responsive Supervisor baseline", async ({brows
       [runId,owner.businessId,owner.owner.userId,threadId,requestId,"a".repeat(64)]);
     await db.query("insert into public.supervisor_run_steps(business_id,run_id,step_key,step_index,retry_mode,status) values($1,$2,'owner_turn',1,'reconcile','pending')",
       [owner.businessId,runId]);
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",
+      [otherThread,owner.businessId,owner.owner.userId,randomUUID(),"Earlier supplier conversation"]);
+    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,created_at) values($1,$2,$3,$4,$4,'owner','text','Please investigate this supplier',gen_random_uuid(),now()-interval '2 days')",
+      [messageId,owner.businessId,otherThread,owner.owner.userId]);
+    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,created_at) select $1,$2,$3,$3,'owner','text','Later message '||n,gen_random_uuid(),now()-n*interval '1 minute' from generate_series(1,60) n",
+      [owner.businessId,otherThread,owner.owner.userId]);
+    await db.query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status) values($1,$2,$3,$4,$5,$6,'pending')",
+      [otherRun,owner.businessId,owner.owner.userId,otherThread,messageId,"b".repeat(64)]);
+    await db.query("insert into public.supervisor_run_steps(business_id,run_id,step_key,step_index,retry_mode,status) values($1,$2,'owner_turn',1,'reconcile','pending')",
+      [owner.businessId,otherRun]);
     const page=await context.newPage();
     await login(page,owner);
     await openOwnedPage(page,owner,"?thread="+threadId);
@@ -1302,16 +1313,32 @@ test("@home Task16D authenticated responsive Supervisor baseline", async ({brows
       await page.keyboard.press("Escape");
       await expect(drawer).toHaveCount(0);
       const focusRestored=await controls.evaluate(el=>document.activeElement===el);
-      console.info("[Task16D authenticated baseline]",JSON.stringify({...before,accessLink,tabContained,focusRestored}));
+      expect(before.documentWidth).toBeLessThanOrEqual(viewport.width);
+      expect(before.composerVisible).toBe(true);
+      expect(accessLink).toBe(1);expect(tabContained).toBe(true);expect(focusRestored).toBe(true);
+      console.info("[Task16D authenticated]",JSON.stringify({...before,accessLink,tabContained,focusRestored}));
     }
-    await openOwnedPage(page,owner,"more/supervisor-access");
+    await page.setViewportSize({width:390,height:844});
+    await page.getByRole("button",{name:"Supervisor work",exact:true}).click();
+    const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+    const earlier=drawer.locator('[data-work-id="run:'+otherRun+'"]');
+    await expect(earlier).toContainText("Earlier supplier conversation");
+    await earlier.getByRole("button").click();
+    const target=page.locator('[data-work-message="'+messageId+'"]');
+    await expect(target).toBeFocused({timeout:30_000});
+    await expect(target).toContainText("Please investigate this supplier");
+    expect((await db.query("select status from public.supervisor_runs where id=$1",[otherRun])).rows[0].status).toBe("pending");
+    await controls.click();
+    await drawer.getByRole("link",{name:"Supervisor access"}).click();
     await expect(page.getByRole("switch").first()).toBeVisible();
-    console.info("[Task16D authenticated baseline] canonical external access page rendered");
+    console.info("[Task16D authenticated] canonical external access page rendered");
+    await page.getByRole("link",{name:"Back",exact:true}).click();
+    await expect(page).toHaveURL(new RegExp("thread="+otherThread));
     await page.screenshot({path:testInfo.outputPath("baseline-access.png")});
   } finally {
     await context.close();
     if(connected){
-      await db.query("delete from public.ai_threads where id=$1 and business_id=$2",[threadId,owner.businessId]).catch(()=>{});
+      await db.query("delete from public.ai_threads where id=any($1::uuid[]) and business_id=$2",[[threadId,otherThread],owner.businessId]).catch(()=>{});
       await db.end();
     }
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown, ShieldCheck } from "lucide-react";
+import { Clock3, ListChecks, Mic, Plus, Send, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown, ShieldCheck } from "lucide-react";
 import { AgentAvatar } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
 import { Link } from "@/i18n/navigation";
@@ -29,6 +29,7 @@ import ChatJobProgress from "./ChatJobProgress";
 import SupervisorWorkStatus from "./SupervisorWorkStatus";
 import SupervisorMandatePanel from "./SupervisorMandatePanel";
 import { useSupervisorWork } from "./useSupervisorWork";
+import type {OwnerWorkItem} from "@/lib/ai/supervisor/runs/ownerWorkView";
 import { useAgentJobWatcher } from "./useAgentJobWatcher";
 import { answeredOwnerMessageIds, shouldShowRunningJob, chatExperienceCopy, failureLine, inFlightOwnerMessageIds, readSseFrames } from "./chatExperience";
 import { isJobStepAgent, type AgentJobStep } from "@/lib/ai/agent/jobState";
@@ -103,10 +104,10 @@ const record = (value: unknown): value is Record<string, unknown> =>
 function ReplyBlock({ block, copy, locale, threadId, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; threadId?:string; unverified?: {start:number;end:number;source?:'owner'|'estimate'|'unchecked';detail?:string}[] }) {
   if (!record(block)) return null;
   if(block.type==="proposal_card"&&typeof block.proposalId==="string"&&threadId)
-    return <SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/>;
+    return <div data-work-proposal={block.proposalId} tabIndex={-1}><SupervisorProposalCard threadId={threadId} proposalId={block.proposalId} locale={locale}/></div>;
   if(block.type==="experiment_card"&&typeof block.proposalId==="string"&&threadId)
-    return <SupervisorExperiment threadId={threadId} locale={locale}
-      copy={{en,es,ar}[locale].SupervisorExperiment} initialProposalId={block.proposalId}/>;
+    return <div data-work-proposal={block.proposalId} tabIndex={-1}><SupervisorExperiment threadId={threadId} locale={locale}
+      copy={{en,es,ar}[locale].SupervisorExperiment} initialProposalId={block.proposalId}/></div>;
   if(block.type==="memory_card"&&typeof block.ruleId==="string")
     return <MemoryCard ruleId={block.ruleId} locale={locale}/>;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
@@ -255,8 +256,10 @@ export default function SupervisorChatComposer({
   const pendingFollowUps=useRef(new Set<string>());
   const [optimisticOwner, setOptimisticOwner] = useState<{ id: string; text: string; clientMessageId: string } | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [controlsOpen,setControlsOpen]=useState(false);
+  const [controlsTab,setControlsTab]=useState<"work"|"permissions"|null>(null);
+  const controlsOpen=controlsTab!==null;
+  const [workTarget,setWorkTarget]=useState<OwnerWorkItem|null>(null);
+  const [workNotice,setWorkNotice]=useState("");
   const [elapsed, setElapsed] = useState(0);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -373,14 +376,6 @@ export default function SupervisorChatComposer({
     node.style.height = Math.min(node.scrollHeight, 160) + "px";
   }, [draft]);
   useEffect(() => {
-    if (!historyOpen) return;
-    const keydown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setHistoryOpen(false);
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [historyOpen]);
-  useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
     void fetch("/api/ai/threads", { signal: controller.signal, cache: "no-store" })
@@ -397,7 +392,7 @@ export default function SupervisorChatComposer({
     let stopped = false, checking = false;
     const controller = new AbortController();
     const refreshExternal = async () => {
-      if (stopped || checking || sending || document.visibilityState === "hidden") return;
+      if (stopped || checking || sending || workTarget || document.visibilityState === "hidden") return;
       checking = true;
       const selected = selectedThreadId.current;
       try {
@@ -421,14 +416,16 @@ export default function SupervisorChatComposer({
       if (document.visibilityState === "visible") void refreshExternal();
     };
     window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onFocus);
     document.addEventListener("visibilitychange", onVisible);
     const timer = window.setInterval(() => { void refreshExternal(); }, 25_000);
     return () => {
       stopped = true; controller.abort(); window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [enabled, sending]);
+  }, [enabled, sending, workTarget]);
   useEffect(() => {
     if (!enabled || !threadId || sending) return;
     const controller = new AbortController();
@@ -696,7 +693,7 @@ export default function SupervisorChatComposer({
     }
   }
   async function loadOlder() {
-    if (!threadId || nextOffset === null || loading) return;
+    if (!threadId || nextOffset === null || loading) return false;
     const requestedThread = threadId;
     const request = ++paginationRequest.current;
     // Older pages are loaded independently from SSE and can resolve in any
@@ -705,7 +702,7 @@ export default function SupervisorChatComposer({
     setLoading(true);
     try {
       const page = await loadMessages(requestedThread, nextOffset);
-      if (request !== paginationRequest.current || selectedThreadId.current !== requestedThread) return;
+      if (request !== paginationRequest.current || selectedThreadId.current !== requestedThread) return false;
       const node = transcript.current;
       prependAnchor.current = node
         ? { scrollTop: node.scrollTop, scrollHeight: node.scrollHeight }
@@ -717,14 +714,18 @@ export default function SupervisorChatComposer({
       setNextOffset(page.nextOffset);
       // Batched with setMessages, so only this version authorizes consumption.
       setPrependVersion((version) => version + 1);
+      return true;
     } catch {
       if (request === paginationRequest.current && selectedThreadId.current === requestedThread) setError(true);
+      return false;
     } finally {
       if (request === paginationRequest.current) setLoading(false);
     }
   }
   function selectThread(id: string | null) {
     if (sending) return;
+    setWorkTarget(null);setWorkNotice("");setControlsTab(null);
+    if(id&&id===threadId)return;
     cleanupRecording(); dispatchDictation({ type: "reset" });
     paginationRequest.current++;
     prependAnchor.current = null;
@@ -738,11 +739,39 @@ export default function SupervisorChatComposer({
     const title=threads.find((thread) => thread.id === id)?.title??null;
     setThreadTitle(title);
     setEventContext(id&&title?eventContextFromTitle(title,id):null);
-    setDraft(""); setMediaNotice(""); setError(false); setHistoryOpen(false);
+    setDraft(""); setMediaNotice(""); setError(false);
     setFailureCode(null); setQueuedOwner([]);
     retryId.current = null; threadRequestId.current = null;
     composer.current?.focus();
   }
+  function openWork(item:OwnerWorkItem){
+    if(sending||!item.threadId)return;
+    if(item.threadId!==threadId)selectThread(item.threadId);
+    setControlsTab(null);setWorkNotice("");setWorkTarget(item);
+  }
+  useEffect(()=>{
+    if(!workTarget||loadedThreadId!==workTarget.threadId||loading||sending||controlsOpen)return;
+    const frame=requestAnimationFrame(()=>{
+      const proposal=workTarget.proposalId;
+      const message=workTarget.proof?.kind==="verified_reply"?workTarget.proof.ref:workTarget.ownerMessageId;
+      if(!proposal&&!message){scrollToLatest();setWorkTarget(null);return;}
+      const selector=proposal?"[data-work-proposal]":"[data-work-message]";
+      const nodes=Array.from(transcript.current?.querySelectorAll<HTMLElement>(selector)??[]);
+      const linked=document.querySelector<HTMLElement>('[data-testid="experiment-deeplink"]');
+      if(linked&&proposal)nodes.push(linked);
+      const node=nodes.find(el=>proposal?el.dataset.workProposal===proposal:el.dataset.workMessage===message);
+      if(node){
+        pinned.current=false;node.scrollIntoView({block:"center"});node.focus({preventScroll:true});
+        setWorkTarget(null);return;
+      }
+      if(nextOffset!==null){
+        void loadOlder().then(ok=>{
+          if(!ok&&selectedThreadId.current===workTarget.threadId){setWorkNotice(en.SupervisorWork.stale);setWorkTarget(current=>current===workTarget?null:current);}
+        });
+      }else{setWorkNotice(en.SupervisorWork.stale);setWorkTarget(null);}
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[workTarget,loadedThreadId,loading,sending,controlsOpen,nextOffset,messages,loadOlder]);
   async function transcribeAudio(blob: Blob, durationSeconds: number, generation: number) {
     try {
       const extension=audioExtensionForMime(blob.type);
@@ -932,16 +961,16 @@ export default function SupervisorChatComposer({
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
     <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-surface/85 px-4 py-3 md:px-5">
-      <button type="button" onClick={() => {setControlsOpen(false);setHistoryOpen(true);}} disabled={!enabled}
-        aria-label={copy.historyTitle} title={copy.historyTitle}
+      <button type="button" onClick={() => setControlsTab("work")} disabled={!enabled}
+        aria-expanded={controlsTab==="work"} aria-label={en.SupervisorWork.heading} title={en.SupervisorWork.heading}
         className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
-        <History size={22} aria-hidden="true" />
+        <ListChecks size={22} aria-hidden="true" />
       </button>
       <h2 className="min-w-0 flex-1 truncate text-center text-[16px] font-bold text-ink">
         {threadTitle || copy.supervisor}
       </h2>
-      <button type="button" onClick={()=>{setHistoryOpen(false);setControlsOpen(true);}}
-        aria-expanded={controlsOpen}
+      <button type="button" onClick={()=>setControlsTab("permissions")}
+        aria-expanded={controlsTab==="permissions"}
         aria-label={en.SupervisorMandateCenter.open} title={en.SupervisorMandateCenter.open}
         className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <ShieldCheck size={21} aria-hidden="true"/>
@@ -972,6 +1001,7 @@ export default function SupervisorChatComposer({
     <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-4 md:px-6 md:py-5"
       onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-label={copy.threads}>
       <div ref={messageContent} className="flex min-h-full flex-col items-stretch justify-start gap-4">
+      {workNotice&&<p role="status" className="text-sm text-ink-muted">{workNotice}</p>}
       {chatStartPromise&&!hasChatMessages&&startReady&&
         <Suspense key={boardPeriod} fallback={<p role="status" className="p-3 text-[17px] text-ink-muted">{copy.sending}</p>}>
           <DeferredChatStart promise={chatStartPromise} suggestions={copy.suggestions} failureText={copy.unverified}
@@ -997,7 +1027,7 @@ export default function SupervisorChatComposer({
         className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold text-ink underline hover:bg-surface2">
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
-      {displayedMessages.map((message,messageIndex) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
+      {displayedMessages.map((message,messageIndex) => <div key={message.id} data-work-message={message.id} tabIndex={-1} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
         <SupervisorMessage message={message} copy={copy} locale={locale} cafeCurrency={cafeCurrency}
           linkedThreadId={threadId===initialThreadId?initialThreadId:undefined}
           linkedProposalId={threadId===initialThreadId?initialProposalId:undefined}
@@ -1063,7 +1093,7 @@ export default function SupervisorChatComposer({
             disabled={!canUseAi} className="min-h-10 rounded-xl bg-accent px-3 font-bold text-on-accent disabled:opacity-50">{copy.retryAnswer}</button>
         </div>}
       </div>)}
-      <SupervisorWorkStatus items={supervisorWork.items} unavailable={supervisorWork.unavailable} />
+      <SupervisorWorkStatus items={supervisorWork.items} unavailable={supervisorWork.unavailable} onOpen={openWork} disabled={sending}/>
       {queuedOwner.map((item) => <article key={item.id} className="ms-auto w-fit max-w-[80%] rounded-[22px] rounded-ee-md bg-accent-soft px-4 py-3 text-[17px] text-ink opacity-80 shadow-sm">
         <p className="whitespace-pre-wrap break-words">{item.text}</p>
       </article>)}
@@ -1080,7 +1110,7 @@ export default function SupervisorChatComposer({
       </div>
     </div>
     {showNewMessage && <button type="button" onClick={scrollToLatest} className="absolute bottom-28 left-1/2 z-10 inline-flex min-h-12 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
-    {initialProposalId && initialThreadId && threadId === initialThreadId && <div className="max-h-[50dvh] shrink-0 overflow-y-auto" data-testid="experiment-deeplink">
+    {initialProposalId && initialThreadId && threadId === initialThreadId && <div className="max-h-[50dvh] shrink-0 overflow-y-auto" data-testid="experiment-deeplink" data-work-proposal={initialProposalId} tabIndex={-1}>
       <SupervisorExperiment key={initialThreadId + ":" + initialProposalId}
         threadId={threadId} locale={locale} canUseAi={canUseAi}
         copy={{en,es,ar}[locale].SupervisorExperiment}
@@ -1175,46 +1205,10 @@ export default function SupervisorChatComposer({
             : mediaNotice}
       </div>
     </div>
-    {controlsOpen && <SupervisorMandatePanel key={threadId??threads[0]?.id??"no-thread"} threadId={threadId} threads={threads}
+    {controlsOpen && <SupervisorMandatePanel threadId={threadId} threads={threads}
       approvals={supervisorWork.items.filter(item=>item.status==="approval_required")
         .map(item=>({id:item.id,title:item.title,detail:item.detail}))}
-      onSelectThread={selectThread} onClose={()=>setControlsOpen(false)}/>}
-    {historyOpen && <div className="absolute inset-0 z-30 flex" role="presentation">
-      <button type="button" className="absolute inset-0 bg-fg/35" aria-label={copy.closeHistory}
-        onClick={() => setHistoryOpen(false)} />
-      <aside role="dialog" aria-modal="true" aria-label={copy.historyTitle}
-        className="relative z-10 flex h-full w-[min(88%,360px)] flex-col border-e border-line bg-surface2 shadow-xl">
-        <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
-          <h2 className="flex items-center gap-2 font-headline text-xl font-bold text-ink">
-            <History aria-hidden="true" size={22} />{copy.historyTitle}
-          </h2>
-          <button type="button" onClick={() => setHistoryOpen(false)}
-            aria-label={copy.closeHistory}
-            className="flex h-12 w-12 items-center justify-center rounded-xl text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
-            <X size={24} aria-hidden="true" />
-          </button>
-        </header>
-        <div className="flex-1 space-y-1 overflow-y-auto p-3">
-          <button type="button" onClick={() => selectThread(null)}
-            className="flex min-h-12 w-full items-center gap-2 rounded-xl px-3 text-start text-[17px] font-bold text-good hover:bg-surface2">
-            <Plus size={20} aria-hidden="true" /> {copy.startNewChat}
-          </button>
-          {threads.length === 0 && <p className="p-4 text-[16px] text-ink-muted">{copy.empty}</p>}
-          {threads.map((thread) => <button key={thread.id} type="button"
-            onClick={() => selectThread(thread.id)} disabled={sending}
-            aria-current={threadId === thread.id ? "page" : undefined}
-            className={"flex min-h-14 w-full flex-col justify-center gap-1 rounded-xl px-3 py-2 text-start hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink " +
-              (threadId === thread.id ? "bg-pos-soft" : "")}>
-            <span className="line-clamp-2 text-[16px] font-semibold text-ink">{thread.title || copy.newThread}</span>
-            <span className="text-[13px] text-ink-muted">
-              {new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(thread.lastMessageAt ?? thread.createdAt))}
-            </span>
-          </button>)}
-        </div>
-        {languageSwitch && <div className="shrink-0 border-t border-line px-5 py-3 md:hidden">
-          {languageSwitch}
-        </div>}
-      </aside>
-    </div>}
+      initialTab={controlsTab??"permissions"} onOpenWork={openWork} disabled={sending}
+      languageSwitch={languageSwitch} onSelectThread={selectThread} onClose={()=>setControlsTab(null)}/>}
   </section>;
 }
