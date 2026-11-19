@@ -75,6 +75,26 @@ export function matchVerifiedToastPriceEvidence(input:Candidate):
   observedAt:event.toast_observed_at!,startAt:effective??event.toast_observed_at!,
   startBasis:effective?"source_effective":"first_verified_observation"};
 }
+/** An unsolicited current-publication observation needs no owner proposal.
+ * The full-copy checkpoint must have completed by the worker's as-of time.
+ * Never use a pending per-item history stamp as proof of a complete menu. */
+export function matchVerifiedToastObservation(input:Candidate&{
+ historyId:string;notBefore:string;asOf:string;
+}):VerifiedToastPriceEvidence|UnverifiedToastPriceEvidence{
+ const deny=(reason:string):UnverifiedToastPriceEvidence=>({status:"unverified",reason});
+ if(!validTime(input.notBefore)||!validTime(input.asOf)||
+    Date.parse(input.notBefore)>Date.parse(input.asOf))
+  return deny("invalid_observation_discovery_boundary");
+ const verified=matchVerifiedToastPriceEvidence(input);
+ if(verified.status!=="verified")return verified;
+ if(verified.historyId!==input.historyId)
+  return deny("observation_history_identity_mismatch");
+ const observed=Date.parse(verified.observedAt),copied=Date.parse(input.receipt.menu_copied_at!);
+ if(observed<Date.parse(input.notBefore)||observed>Date.parse(input.asOf)||
+    copied<observed||copied>Date.parse(input.asOf))
+  return deny("observation_outside_completed_publication_boundary");
+ return verified;
+}
 type HistoricAudit={
  observed_at:string;old_pos_item_id:string|null;new_pos_item_id:string|null;
  old_price_cents:number|null;new_price_cents:number|null;
