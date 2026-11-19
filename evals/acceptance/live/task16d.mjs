@@ -35,8 +35,7 @@ async function createThread(context){
  if(!/^[0-9a-f-]{36}$/i.test(data.thread?.id??""))fail("thread_identity_missing");
  return data.thread.id;
 }
-async function ownerTurn(page,thread,text,phase){
- if(!["invoice","receipt_one","receipt_two"].includes(phase))fail("invalid_turn_phase");
+async function ownerTurn(page,thread,text){
  const clientMessageId=randomUUID();
  const result=await page.evaluate(async({thread,text,clientMessageId})=>{
   const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),180000);
@@ -87,12 +86,12 @@ async function ownerTurn(page,thread,text,phase){
    "max_output_tokens","content_filter","incomplete_other","missing_terminal","provider_failed","stream_error"
   ].includes(x)?x:"unknown"):[];
   console.log("task16d_safe_model_failure",JSON.stringify({
-   phase,code,endReason,stage:["setup","model","persist","finish"].includes(result.diagnosticStage)?
+   code,endReason,stage:["setup","model","persist","finish"].includes(result.diagnosticStage)?
      result.diagnosticStage:result.done?"completed_frame":"unknown",
    calls:Number.isSafeInteger(calls)&&calls>=0?calls:null,
    providerFailures,
    tools:result.names.filter(n=>[
-    "get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_purchase_receiving","propose_invoice_reconciliation"].includes(n))
+    "get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_invoice_reconciliation"].includes(n))
   }));
   fail("real_supervisor_"+code);
  }
@@ -162,9 +161,9 @@ async function main(){
    "where business_id=$1 and ingredient_id=$2 and voided_at is null",[scope.businessId,id.ingredient]))[0].n);
   const countExpenses=async()=>Number((await query(db,"select count(*) n from public.expenses where business_id=$1",[scope.businessId]))[0].n);
   const initialExpenseCount=await countExpenses();
-  const verifiedTurn=async(text,phase,tool)=>{
-   const turn=await ownerTurn(connection.page,thread,text,phase);
-   const required=["get_supplier_purchase_orders","inspect_purchase_reconciliation",tool];
+  const verifiedTurn=async(text)=>{
+   const turn=await ownerTurn(connection.page,thread,text);
+   const required=["get_supplier_purchase_orders","inspect_purchase_reconciliation","propose_invoice_reconciliation"];
    let at=-1;for(const name of required){at=turn.names.indexOf(name,at+1);if(at<0)fail("registered_tool_missing_"+name);}
    const msgs=await query(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 "+
     "and role='owner' and client_message_id=$3",[scope.businessId,thread,turn.clientMessageId]);
@@ -185,7 +184,7 @@ async function main(){
    " sent invoice "+invoiceRef+" issued "+today+" for the full 100 litres of "+item+
    " at "+cafe.currency+" 20 per 10-litre pack, total "+cafe.currency+
    " 200.00; tax, freight and discount all zero, no due date stated. We have not verified any physical delivery or made payment. "+
-   "Please prepare an invoice evidence confirmation for me, not an expense or stock update.","invoice","propose_invoice_reconciliation");
+   "Please prepare an invoice evidence confirmation for me, not an expense or stock update.");
   const ie=invoice.proposal.canonical_effect_payload;
   if(invoice.proposal.capability_id!=="maya.supplier_invoice.v1"||ie.purchaseOrderId!==id.po||
    ie.invoiceReference!==invoiceRef||ie.totalCents!==20000||ie.expenseDate!==null||
