@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/luna/scenarios/**'
       - 'scripts/acceptance/shared-luna*.mjs'
+      - 'scripts/acceptance/luna-evidence-validity*.mjs'
       - 'scripts/acceptance/task14b-broker*.mjs'
       - 'scripts/acceptance/luna-attest-*.mjs'
       - '.github/workflows/ai-cafe-luna-*.yml'
@@ -14,6 +15,7 @@ on:
     paths:
       - '.github/luna/scenarios/**'
       - 'scripts/acceptance/shared-luna*.mjs'
+      - 'scripts/acceptance/luna-evidence-validity*.mjs'
       - 'scripts/acceptance/task14b-broker*.mjs'
       - 'scripts/acceptance/luna-attest-*.mjs'
       - '.github/workflows/ai-cafe-luna-*.yml'
@@ -38,6 +40,6 @@ jobs:
       - name: Validate every registered feature PR scenario and its actual test path
         run: node scripts/acceptance/shared-luna.mjs validate-all
       - name: Run fail-closed declarative scenario and one-shot replay tests
-        run: node --test scripts/acceptance/shared-luna.test.mjs
+        run: node --test scripts/acceptance/shared-luna.test.mjs scripts/acceptance/luna-evidence-validity.test.mjs
       - name: Check key-isolated provider broker reservation and denial logic
         run: node --test scripts/acceptance/task14b-broker.test.mjs
