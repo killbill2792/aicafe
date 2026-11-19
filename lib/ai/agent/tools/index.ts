@@ -600,3 +600,31 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     missing:slice.quality.missingInputs,dataNotes:salesNotes,netSalesCents:netSalesCentsForPeriod(slice.value),
     days:slice.value.slice(-7).map(day=>({date:day.date,netSalesCents:day.netSalesCents}))};
 }
+
+/** Durable recovery safety classification. Membership is based on reviewed
+ * handlers, never a tool-name prefix or owner/model wording. Unknown or
+ * mixed read/write capabilities default to an effect boundary. */
+const repeatSafeOwnerTools:ReadonlySet<string>=new Set([
+ "describe_data","query_data","get_profit","get_sales","get_menu_items",
+ "get_peak_hours","get_employee_sales","get_payroll_facts","get_attention_items",
+ "get_investigation_source","get_staff","get_schedule","get_labor","get_staff_messages",
+ "get_team","get_week_schedule","get_labor_rules","get_coverage_gaps","get_shift_cost",
+ "get_business_hours","get_expenses","get_bills","get_cashflow_evidence","get_break_even",
+ "get_cost_summary","get_product_costs","get_ingredient_costs","get_usage_variance","get_inventory",
+ "get_staff_coordination_cases","get_supervisor_permissions","get_goal_status","get_price_monitor_status",
+ "get_supplier_purchase_orders","inspect_purchase_reconciliation","inspect_supplier_purchase",
+ "get_maintenance_cases","get_maintenance_staff_candidates","simulate_staff_absence",
+ "suggest_new_item_price","milk_swap_price","simulate_scenario","calculate","ask_owner",
+ "get_item_sales","get_price_recommendation","get_today_so_far","get_events","get_nearby_events",
+ "search_gmail","list_gmail_labels","read_gmail","read_gmail_thread","read_gmail_attachment",
+ "web_search","inspect_public_page","search_maintenance_vendor",
+]);
+export function isRepeatSafeOwnerTool(name:string,input:unknown):boolean{
+ if(repeatSafeOwnerTools.has(name))return true;
+ if(name==="manage_routine"||name==="manage_commitment"){
+   const schema=name==="manage_routine"?routineTools.manage_routine.schema:commitmentTools.manage_commitment.schema;
+   const parsed=schema.safeParse(input);
+   return parsed.success&&parsed.data.action==="list";
+ }
+ return false;
+}
