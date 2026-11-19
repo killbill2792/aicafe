@@ -508,7 +508,17 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
    for(let i=0;i<6;i++){
     const claim=await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30]);
     expect(claim.kind).toBe("claimed");
-    const seq=Number((await state()).checkpoint_seq),op=randomUUID(),t=claim.step.claim_token;
+    const t=claim.step.claim_token;
+    if(i===0){
+     const noop=randomUUID();
+     for(let n=0;n<2;n++){
+      const seq=Number((await state()).checkpoint_seq);
+      await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq,noop,"begin_effect","propose_price_change",null]);
+      await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq+1,noop,"complete",null,"noop:"+noop]);
+     }
+     expect(await state()).toMatchObject({checkpoint_progress_count:"0"});
+    }
+    const seq=Number((await state()).checkpoint_seq),op=randomUUID();
     await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq,op,"begin_read","get_sales",null]);
     await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq+1,op,"complete",null,"read:"+"a".repeat(32)+"_"+String(i).repeat(64)]);
     expect(await call(a,"supervisor_yield_owner_run_v2",[...scope,long.id,t,seq+2,15,"technical"])).toBe(true);

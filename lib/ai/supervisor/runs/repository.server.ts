@@ -246,7 +246,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
   if(current.checkpoint_phase==="effect_pending")throw new Error("checkpoint_effect_uncertain");
   if(current.checkpoint_phase!=="ready")
     await finish("abandoned:"+current.checkpoint_operation);
-  const priorEffects=current.checkpoint_receipts.filter(x=>x.phase==="effect_pending");
+  const priorEffects=current.checkpoint_receipts.filter(x=>x.phase==="effect_pending"&&!x.receipt.startsWith("noop:"));
   let replayed=false;
   let currentReadKey:string|null=null;
   return {
@@ -264,7 +264,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       replayed=false;
       const op=repeatSafe?randomUUID():operationKey(id,name,raw);
       currentReadKey=repeatSafe?operationKey(id,name,raw).replaceAll("-",""):null;
-      const previous=current.checkpoint_receipts.find(x=>x.operation===op);
+      const previous=current.checkpoint_receipts.find(x=>x.operation===op&&!x.receipt.startsWith("noop:"));
       if(previous){
         if(previous.phase!=="effect_pending"||previous.tool!==name)throw new Error("checkpoint_operation_conflict");
         const result=await recoverEffect(name,previous.receipt);
@@ -278,7 +278,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       await change(op,repeatSafe?"begin_read":"begin_effect",name,null);
       return null;
     },
-    endTool:async(result)=>{
+    endTool:async(result,noEffect=false)=>{
       await assertLive();
       if(replayed){replayed=false;return;}
       if(current.checkpoint_phase==="read_pending"){
@@ -303,6 +303,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
         const key=result.commitmentId??(result.commitment as {id?:unknown}|undefined)?.id;
         if(typeof key==="string")ref="commitment:"+key;
       }
+      if(!ref&&noEffect){await finish("noop:"+current.checkpoint_operation);return;}
       if(!ref)throw new Error("checkpoint_effect_receipt_unclassified");
       await recoverEffect(name,ref);await finish(ref);
     },

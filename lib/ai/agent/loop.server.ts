@@ -5,7 +5,7 @@ import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
 import { configuredSupervisorModel, PRODUCTION_SUPERVISOR_OPENAI_MODEL } from "@/lib/ai/conversations/modelConfig";
-import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, agentForTool, executeAgentTool, isRepeatSafeOwnerTool, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
+import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, agentForTool, executeAgentTool, isRepeatSafeOwnerTool, observeDurableToolEffect, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
 import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
 import {usageEvidenceRefresh} from "./usageEvidence";
@@ -503,6 +503,7 @@ export async function runAgentTurn(args: {
         const toolStart = now();
         let toolError: string | undefined;
         let checkpointOpened=false;
+        let observedEffect:ReturnType<typeof observeDurableToolEffect>|undefined;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
           if(args.toolNames&&!args.toolNames.includes(tool.name as AgentToolName))
@@ -517,10 +518,12 @@ export async function runAgentTurn(args: {
             ?await boundary(()=>args.checkpoint!.beginTool(tool.name,effectiveArgs,isRepeatSafeOwnerTool(tool.name,effectiveArgs)))
             :null;
           checkpointOpened=Boolean(args.checkpoint&&effectiveArgs!==null);
+          if(checkpointOpened&&!recovered&&effectiveArgs!==null&&!isRepeatSafeOwnerTool(tool.name,effectiveArgs))
+            observedEffect=observeDurableToolEffect(tool.name,toolContext,()=>boundary(()=>args.checkpoint!.assertLive()));
           result = recovered??await Promise.race([effectiveArgs===null?
             Promise.resolve({source:"ask_owner",period:null,missing:["alreadySaved"],
               error:"ownerFactAlreadySaved"} as AgentToolResult):
-            executeAgentTool(tool.name,effectiveArgs,toolContext),
+            executeAgentTool(tool.name,effectiveArgs,observedEffect?.context??toolContext).then(value=>{observedEffect?.settle();return value;}),
             new Promise<never>((_, reject) => {
               const left = workDeadline - now();
               if (left <= 0) reject(new Error("deadline"));
@@ -557,7 +560,7 @@ export async function runAgentTurn(args: {
             period:failedPeriod?{from:failedPeriod.from,to:failedPeriod.to}:null,
             missing: [detail.error],what:mapped.what, ...detail };
           toolError = diagnostic;
-        } finally { clearTimeout(toolTimer); }
+        } finally { observedEffect?.close();clearTimeout(toolTimer); }
         await args.beforeAcceptResult?.();
         // A rejected model-generated global cost card must still trigger the
         // code-owned recovery with a scoped item key (or a generic question).
@@ -601,7 +604,7 @@ export async function runAgentTurn(args: {
             }
           }
         }catch{ /* Invalid tool arguments already have a localized failure. */ }
-        if(checkpointOpened)await boundary(()=>args.checkpoint!.endTool(result));
+        if(checkpointOpened)await boundary(()=>args.checkpoint!.endTool(result,observedEffect?.noEffect()??false));
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         observeToolResult(resolveState,result);
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });

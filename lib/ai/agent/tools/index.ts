@@ -632,3 +632,58 @@ export function isRepeatSafeOwnerTool(name:string,input:unknown):boolean{
  }
  return false;
 }
+
+/** Reviewed mutation ports for tools whose handlers cannot write anywhere else.
+ * The observer is per invocation; it cannot be supplied by the model.
+ * Unknown/new writers never get no-effect proof. A timeout closes the port
+ * without pretending the already-dispatched work is cancelled. */
+const durableEffectPorts:Readonly<Record<string,readonly string[]>>={
+  propose_price_change:["proposals.proposePriceChange"],
+  propose_price_experiment:["proposals.proposePriceExperiment"],
+  propose_add_staff:["proposals.proposeStaff"],propose_staff_change:["proposals.proposeStaff"],
+  propose_schedule:["proposals.proposeStaff"],propose_shift_change:["proposals.proposeStaff"],
+  propose_availability_change:["proposals.proposeStaff"],propose_rule_change:["proposals.proposeStaff"],
+  propose_send_schedule:["proposals.proposeStaff"],draft_week_schedule:["proposals.proposeStaff"],
+  propose_purchases:["proposals.proposePurchases"],
+  propose_supplier_purchase_order:["purchasing.propose"],
+  propose_supplier_vendor_email:["purchasing.proposeVendorSend"],
+  record_supplier_order_outcome:["purchasing.recordOwnerOutcome"],
+  propose_purchase_receiving:["receivingPropose"],propose_invoice_reconciliation:["invoicePropose"],
+  propose_supplier_discrepancy_followup:["receivingFollowup"],
+  propose_financial_settlement:["financialSettlementPropose"],propose_financial_bill:["financialBillPropose"],
+  propose_goal:["goals.propose"],record_checkin:["goals.recordCheckin"],
+  propose_event_plan:["eventPlans.propose"],remember_cafe_fact:["memory.proposeFact"],
+  manage_commitment:["commitments.create","commitments.close"],
+  manage_routine:["routines.create","routines.change"],propose_gmail_action:["gmail.propose"],
+  propose_maintenance_staff_assignment:["maintenance.proposeStaff"],
+  propose_maintenance_vendor_request:["maintenance.propose"],
+  record_maintenance_repair_claim:["maintenance.recordRepairClaim"],
+};
+export function observeDurableToolEffect(name:string,context:AgentToolContext,beforeDispatch:()=>Promise<void>){
+  const paths=Object.hasOwn(durableEffectPorts,name)?durableEffectPorts[name]:undefined;
+  let dispatched=false,closed=false,settled=false;
+  const wrap=(target:object,fn:(...args:unknown[])=>unknown)=>async(...args:unknown[])=>{
+    if(closed)throw new Error("tool_deadline_exceeded");
+    await beforeDispatch();
+    if(closed)throw new Error("tool_deadline_exceeded");
+    dispatched=true;
+    return Reflect.apply(fn,target,args);
+  };
+  const observed=paths?new Proxy(context,{
+    get(target,key,receiver){
+      const value=Reflect.get(target,key,receiver);
+      if(typeof key!=="string")return value;
+      if(paths.includes(key)&&typeof value==="function")return wrap(target,value);
+      const nested=paths.filter(p=>p.startsWith(key+".")).map(p=>p.slice(key.length+1));
+      if(!nested.length||!value||typeof value!=="object")return value;
+      return new Proxy(value,{
+        get(port,method,portReceiver){
+          const fn=Reflect.get(port,method,portReceiver);
+          return typeof method==="string"&&nested.includes(method)&&typeof fn==="function"?wrap(port,fn):fn;
+        },
+      });
+    },
+  }):context;
+  return {context:observed,settle:()=>{settled=true;},close:()=>{closed=true;},
+    noEffect:()=>Boolean(paths&&settled&&!dispatched)};
+}

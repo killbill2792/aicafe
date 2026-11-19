@@ -340,3 +340,22 @@ describe("durable failure classification",()=>{
     expect(agentReplyPayload(result).reply.blocks).toContainEqual({type:"proposal_card",proposalId:id});
   });
 });
+
+describe("observed pre-effect refusal",()=>{
+  it("proves no write only after a reviewed handler has settled without touching a mutation port",async()=>{
+    const {observeDurableToolEffect}=await import("@/lib/ai/agent/tools");
+    const write=vi.fn(async()=>({proposalId:randomUUID(),revision:1,productName:"Latte",oldPriceCents:400,newPriceCents:500}));
+    const before=vi.fn(async()=>{});
+    const context={proposals:{proposePriceChange:write}} as unknown as AgentToolContext;
+    const guard=observeDurableToolEffect("propose_price_change",context,before);
+    expect(guard.noEffect()).toBe(false);
+    guard.settle();expect(guard.noEffect()).toBe(true);
+    await guard.context.proposals!.proposePriceChange({productId:randomUUID(),newPriceCents:500});
+    expect(before).toHaveBeenCalledOnce();expect(write).toHaveBeenCalledOnce();expect(guard.noEffect()).toBe(false);
+    const timed=observeDurableToolEffect("propose_price_change",context,before);
+    timed.close();await expect(timed.context.proposals!.proposePriceChange({productId:randomUUID(),newPriceCents:500})).rejects.toThrow("tool_deadline_exceeded");
+    expect(write).toHaveBeenCalledOnce();expect(timed.noEffect()).toBe(false);
+    const unknown=observeDurableToolEffect("unreviewed_writer",context,before);
+    unknown.settle();expect(unknown.noEffect()).toBe(false);
+  });
+});
