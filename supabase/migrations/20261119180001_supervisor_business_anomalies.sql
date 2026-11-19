@@ -119,7 +119,7 @@ grant execute on function public.supervisor_ensure_proactive_thread(uuid,uuid) t
 -- Persist exact question and answer references on the existing investigation.
 alter table public.supervisor_investigations add column pending_question_id uuid,
  add column last_owner_answer_id uuid, add column reported_owner_answer_id uuid;
--- New nullable column is empty on migration; the index enforces question identity.
+-- Reason: New nullable column is empty on migration; the index enforces question identity.
 -- squawk-ignore require-concurrent-index-creation
 create unique index supervisor_investigation_pending_question_idx on public.supervisor_investigations(pending_question_id) where pending_question_id is not null;
 create function public.supervisor_reset_investigation_answer_scope()
