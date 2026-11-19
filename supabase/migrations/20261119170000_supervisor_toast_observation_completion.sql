@@ -92,5 +92,175 @@ create trigger supervisor_8a_stamp_completed_toast_history
  after update of menu_checked_local_day on public.toast_optional_sync_state
  for each row execute function public.supervisor_8a_stamp_completed_toast_history();
 
+-- Retain old slot-zero observation records if any exist, but all new daily
+-- claims use their elapsed-window index, independent of café timezone/date.
+alter table public.supervisor_experiment_notice_receipts
+ drop constraint supervisor_experiment_notice_receipts_slot_check,
+ drop constraint supervisor_experiment_notice_receipts_check;
+alter table public.supervisor_experiment_notice_receipts
+ add constraint supervisor_8a_notice_slot_range check(
+ (kind='price_reminder' and slot in (1,2)) or
+ (kind in ('toast_price_initial','toast_price_final') and slot=0) or
+ (kind='toast_price_daily' and slot between 0 and 7)) not valid;
+alter table public.supervisor_experiment_notice_receipts validate constraint supervisor_8a_notice_slot_range;
+
+-- Observation measurements are café facts; approved proposal results remain
+-- private to the owner who authorized them. Delivery stays owner-specific.
+drop policy supervisor_8a_windows_owner_read on public.supervisor_monitor_windows;
+create policy supervisor_8a_windows_owner_read
+ on public.supervisor_monitor_windows for select to authenticated
+ using ((monitor_kind='toast_price_observation' or owner_user_id=(select auth.uid())) and exists(
+  select 1 from public.memberships m
+  where m.business_id=supervisor_monitor_windows.business_id
+   and m.user_id=(select auth.uid()) and m.role='owner'));
+
+create or replace function public.supervisor_8a_claim_notice(
+ p_business_id uuid,p_owner_user_id uuid,p_source_id uuid,
+ p_kind text,p_local_date date,p_slot smallint
+) returns uuid language plpgsql security definer set search_path=public as $
+declare v_id uuid;v_sent integer;v_existing public.supervisor_experiment_notice_receipts;
+begin
+ if auth.role() is distinct from 'service_role' then
+  raise exception 'service_role_only' using errcode='42501';end if;
+ if not exists(select 1 from public.memberships m
+   where m.business_id=p_business_id and m.user_id=p_owner_user_id
+    and m.role='owner') then return null;end if;
+ if p_kind not in ('price_reminder','toast_price_initial',
+  'toast_price_daily','toast_price_final') or p_local_date is null or
+  (p_kind='price_reminder' and p_slot not in (1,2)) or
+  (p_kind in ('toast_price_initial','toast_price_final') and p_slot<>0) or
+  (p_kind='toast_price_daily' and p_slot not between 1 and 7) then
+  raise exception 'invalid_notice_key' using errcode='22023';end if;
+ perform pg_advisory_xact_lock(hashtextextended(
+  concat_ws(':',p_business_id,p_owner_user_id,p_source_id,
+   case when p_kind='price_reminder' then p_local_date::text else p_kind||':'||p_slot::text end),0));
+ -- Recheck under the claim lock. A queued cron read may race an owner
+ -- cancellation OR the matching Toast source publication. Never reclaim a
+ -- failed lease when the exact approved change is already source-verified.
+ if p_kind='price_reminder' and not exists (
+  select 1 from public.supervisor_proposals p
+  where p.business_id=p_business_id and p.owner_user_id=p_owner_user_id
+   and p.id=p_source_id and p.status='manual_pending'
+   and p.approved_at is not null
+   and not exists (
+    select 1 from public.menu_price_history h
+    join public.toast_location_mappings l
+     on l.business_id=h.business_id
+     and l.restaurant_guid=h.toast_restaurant_guid
+    where h.business_id=p.business_id
+     and h.menu_item_id::text=p.canonical_effect_payload->>'productId'
+     and h.old_price_cents::text=p.canonical_effect_payload->>'oldPriceCents'
+     and h.new_price_cents::text=p.canonical_effect_payload->>'newPriceCents'
+     and h.source_type='connected_pos' and h.source_provider='toast'
+     and h.toast_publication_version is not null
+     and h.toast_observed_at>=p.approved_at
+     and l.verified_at is not null
+   )
+ ) then return null;end if;
+ if p_kind<>'price_reminder' and not exists (
+  select 1 from public.menu_price_history h
+  join public.toast_location_mappings l
+   on l.business_id=h.business_id
+   and l.restaurant_guid=h.toast_restaurant_guid
+  where h.business_id=p_business_id and h.id=p_source_id
+   and h.source_type='connected_pos' and h.source_provider='toast'
+   and h.toast_restaurant_guid is not null and l.verified_at is not null
+   and h.toast_publication_version is not null
+   and h.toast_observed_at is not null
+   and h.old_price_cents>0 and h.new_price_cents>0
+   and h.old_price_cents<>h.new_price_cents
+   and h.toast_publication_completed_at is not null
+   and h.toast_publication_completed_at<=now()
+   and exists (select 1 from public.supervisor_experiment_cutover_cafes g
+     where g.business_id=h.business_id and g.mode='new'
+     and g.parity_proven_at is not null and g.rollback_proven_at is not null
+     and g.release_approved_at is not null
+     and h.toast_observed_at>=g.toast_observation_enabled_at)
+   and exists (select 1 from public.supervisor_monitor_windows w
+     where w.business_id=h.business_id and w.monitor_kind='toast_price_observation'
+     and w.source_id=h.id and w.window_index=case when p_kind='toast_price_daily' then p_slot-1 else 0 end
+     and (p_kind<>'toast_price_daily' or w.evaluation_status<>'in_progress'))
+ ) then return null;end if;
+ select * into v_existing from public.supervisor_experiment_notice_receipts
+  where business_id=p_business_id and owner_user_id=p_owner_user_id
+   and source_id=p_source_id and kind=p_kind
+   and (p_kind<>'price_reminder' or local_date=p_local_date) and slot=p_slot
+  order by (state='posted') desc,created_at,id limit 1 for update;
+ if found then
+  if v_existing.state='posted' or
+   (v_existing.state='claimed' and v_existing.claimed_at>now()-interval '5 minutes') or
+   (v_existing.state='failed' and v_existing.retry_at>now()) or
+   v_existing.attempts>=30 then return null;end if;
+  update public.supervisor_experiment_notice_receipts
+  set state='claimed',claimed_at=now(),retry_at=null,attempts=attempts+1,
+   updated_at=now() where id=v_existing.id returning id into v_id;
+  return v_id;
+ end if;
+ if p_kind='price_reminder' then
+  select count(*) into v_sent from public.supervisor_experiment_notice_receipts
+   where business_id=p_business_id and owner_user_id=p_owner_user_id
+    and source_id=p_source_id and kind=p_kind and local_date=p_local_date;
+  if v_sent>=2 then return null;end if;
+ end if;
+ insert into public.supervisor_experiment_notice_receipts
+  (business_id,owner_user_id,source_id,kind,local_date,slot)
+  values(p_business_id,p_owner_user_id,p_source_id,p_kind,p_local_date,p_slot)
+  returning id into v_id;
+ return v_id;
+end;$;
+revoke all on function public.supervisor_8a_claim_notice(
+ uuid,uuid,uuid,text,date,smallint) from public,anon,authenticated;
+grant execute on function public.supervisor_8a_claim_notice(
+ uuid,uuid,uuid,text,date,smallint) to service_role;
+
+
+-- Bounded fair enumeration. A pinned approved proposal already owns its
+-- measurement. An eligible matching pending proposal gets first refusal;
+-- a later source event never restarts a previously pinned experiment.
+create function public.supervisor_8a_due_toast_observations(p_now timestamptz,p_limit integer)
+ returns table(history_id uuid,business_id uuid,enabled_at timestamptz)
+ language plpgsql security invoker set search_path='' as $
+begin
+ if auth.role() is distinct from 'service_role' then
+  raise exception 'service_role_only' using errcode='42501';end if;
+ if p_now is null or p_limit is null or p_limit not between 1 and 100 then
+  raise exception 'invalid_observation_batch' using errcode='22023';end if;
+ return query
+ select h.id,h.business_id,g.toast_observation_enabled_at
+ from public.menu_price_history h
+ join public.supervisor_experiment_cutover_cafes g on g.business_id=h.business_id
+ join public.toast_location_mappings l on l.business_id=h.business_id and l.restaurant_guid=h.toast_restaurant_guid
+ left join public.supervisor_monitor_windows w on w.business_id=h.business_id
+  and w.monitor_kind='toast_price_observation' and w.source_id=h.id and w.window_index=0
+ where g.mode='new' and g.parity_proven_at is not null
+  and g.rollback_proven_at is not null and g.release_approved_at is not null
+  and g.toast_observation_enabled_at is not null
+  and h.toast_publication_completed_at is not null
+  and h.toast_publication_completed_at<=p_now
+  and h.toast_observed_at>=g.toast_observation_enabled_at
+  and l.verified_at is not null
+  and exists(select 1 from public.memberships m where m.business_id=h.business_id and m.role='owner')
+  and (w.id is null or w.source_reference->>'closedAt' is null)
+  and not exists(select 1 from public.supervisor_monitor_windows a
+    where a.business_id=h.business_id and a.monitor_kind='approved_price'
+    and a.window_index=0 and a.source_reference->>'historyId'=h.id::text)
+  and not exists(select 1 from public.supervisor_proposals p
+    where p.business_id=h.business_id
+    and p.capability_id in ('alex.drink_price_experiment.v1','alex.menu_price_change.v1')
+    and p.status in ('manual_pending','manual_confirmed','committed')
+    and p.approved_at<=h.toast_observed_at
+    and p.canonical_effect_payload->>'productId'=h.menu_item_id::text
+    and p.canonical_effect_payload->>'oldPriceCents'=h.old_price_cents::text
+    and p.canonical_effect_payload->>'newPriceCents'=h.new_price_cents::text
+    and not exists(select 1 from public.supervisor_monitor_windows a
+      where a.business_id=h.business_id and a.monitor_kind='approved_price'
+      and a.source_id=p.id and a.window_index=0))
+ order by coalesce(w.updated_at,h.toast_publication_completed_at),h.id
+ limit p_limit;
+end;$;
+revoke all on function public.supervisor_8a_due_toast_observations(timestamptz,integer)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_8a_due_toast_observations(timestamptz,integer) to service_role;
+
 reset lock_timeout;
 reset statement_timeout;
