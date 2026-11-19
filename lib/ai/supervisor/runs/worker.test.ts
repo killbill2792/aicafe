@@ -379,3 +379,14 @@ it("sends the original assignment before the exact matched clarification and pre
  expect((saw as unknown[]).slice(-3)).toEqual([{role:"user",content:intent},{role:"assistant",content:question},{role:"user",content:"Regular"}]);
  expect(ctx.resolveState?.chosenIds.has(chosen)).toBe(true);
 });
+
+
+it("stores only reviewed canonical read selectors; never arbitrary source contents or owner financial facts",async()=>{
+ const {recoverableReadSelector}=await import("./contracts");
+ expect(recoverableReadSelector("get_sales",{period:"last_month"},{from:"2026-10-01",to:"2026-10-31"})).toEqual({period:{from:"2026-10-01",to:"2026-10-31"}});
+ expect(recoverableReadSelector("get_sales",{period:{from:"2026-10-01",to:"2026-10-31"}})).toEqual({period:{from:"2026-10-01",to:"2026-10-31"}});
+ expect(recoverableReadSelector("get_profit",{period:"today",ownerInputs:{netSalesCents:123}}, {from:"2026-11-19",to:"2026-11-19"})).toBeNull();
+ expect(recoverableReadSelector("search_gmail",{query:"private supplier invoice"})).toBeNull();
+ expect(recoverableReadSelector("propose_purchases",{})).toBeNull();
+ expect(recoverableReadSelector("get_inventory",{secret:"private"})).toBeNull();
+});

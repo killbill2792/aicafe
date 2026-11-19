@@ -146,12 +146,13 @@ begin
       or p_tool is not null or p_receipt_ref is null
       or (p_receipt_ref like 'noop:%' and (s.checkpoint_phase<>'effect_pending' or p_receipt_ref<>('noop:'||p_operation::text)))
       or (p_receipt_ref !~ '^[a-z][a-z0-9_]{0,39}:[a-zA-Z0-9_:-]{1,160}$'
+        and not (s.checkpoint_phase='read_pending' and p_receipt_ref ~ '^read:[a-f0-9]{32}_[a-f0-9]{64}:ref:[a-zA-Z0-9_-]{1,220}$')
         and p_receipt_ref !~ '^purchase_batch:[a-f0-9-]{36}(,[a-f0-9-]{36}){0,9}$')
       then raise exception 'checkpoint_receipt_invalid' using errcode='22023'; end if;
     update public.supervisor_run_steps set checkpoint_seq=checkpoint_seq+1,
       checkpoint_progress_count=checkpoint_progress_count+case
         when checkpoint_phase='effect_pending' and p_receipt_ref<>('noop:'||p_operation::text) then 1
-        when checkpoint_phase='read_pending' and p_receipt_ref ~ '^read:[a-f0-9]{32}_[a-f0-9]{64}$'
+        when checkpoint_phase='read_pending' and p_receipt_ref ~ '^read:[a-f0-9]{32}_[a-f0-9]{64}(:ref:[a-zA-Z0-9_-]{1,220})?$'
           and not exists(select 1 from jsonb_array_elements(checkpoint_receipts) e
              where e->>'phase'='read_pending' and split_part(e->>'receipt','_',1)=split_part(p_receipt_ref,'_',1)) then 1
         else 0 end,

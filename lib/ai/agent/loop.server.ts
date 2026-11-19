@@ -379,7 +379,8 @@ export async function runAgentTurn(args: {
     ...(approvedLocalTask14b?{store:false as const}:{}),
     // The complete ordered registry is identical for every owner request.
     // The model itself decides whether a draft, an inspection or neither fits.
-    tools: [...agentToolDefinitions.filter(t=>!args.toolNames||args.toolNames.includes(t.name as AgentToolName)),
+    tools: [...agentToolDefinitions.filter(t=>(!args.toolNames||args.toolNames.includes(t.name as AgentToolName))&&
+      (!args.checkpoint||t.name!=="record_maintenance_repair_claim")),
       ...(args.toolNames?.includes("get_investigation_source")&&args.context.investigation
         ? [investigationToolDefinition] : []),
       ...(args.toolNames?[]:args.extraTools??[])],
@@ -464,6 +465,39 @@ export async function runAgentTurn(args: {
     }
   };
   try {
+    // Recover only previously selected canonical read references, in the same
+    // scoped registry/budget. No provider transport and no autonomous writes.
+    // Leave at least half the tool allowance available to advance the assignment.
+    const priorReads=args.checkpoint?.readReferences?.()??[];
+    const replayCap=Math.min(3,Math.floor((workerBudget?.maxToolCalls??8)/2));
+    for(const saved of priorReads.slice(-replayCap)){
+      if(replayCap===0||budgetStop()||workDeadline-now()<5000)break;
+      if(args.toolNames&&!args.toolNames.includes(saved.name as AgentToolName))continue;
+      if(!isRepeatSafeOwnerTool(saved.name,saved.selector))continue;
+      await args.beforeAcceptResult?.();
+      await boundary(()=>args.checkpoint!.assertLive());
+      usage.toolCalls++;
+      const callId="call_recovered_"+usage.toolCalls;
+      const wire=JSON.stringify(saved.selector);
+      let timer:ReturnType<typeof setTimeout>|undefined;
+      let result:AgentToolResult;
+      try{
+        result=await Promise.race([executeAgentTool(saved.name,saved.selector,toolContext),
+          new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error("deadline")),Math.min(2500,workDeadline-now()));})]);
+      }catch{
+        result={source:saved.name,period:null,missing:["recovery_read_unavailable"]};
+      }finally{clearTimeout(timer);}
+      await args.beforeAcceptResult?.();
+      await boundary(()=>args.checkpoint!.assertLive());
+      results.push({callId,name:saved.name,arguments:wire,result});
+      observeToolResult(resolveState,result);
+      // A fresh real tool read, represented in the provider's native tool
+      // message format. It is not a new owner instruction or a model selection.
+      input.push({type:"function_call",call_id:callId,name:saved.name,arguments:wire},
+        {type:"function_call_output",call_id:callId,output:JSON.stringify(result)});
+      audit({kind:"tool_call",toolName:saved.name,inputSummary:"Recovered scoped reference",
+        outputSummary:result.missing.length?"Missing input(s)":"Refreshed",durationMs:0});
+    }
     for (let round = 0; round < maxModelToolCalls(); round++) {
       if (now() >= workDeadline) { endReason = "timeout"; break; }
       const cap = budgetStop();
@@ -512,7 +546,7 @@ export async function runAgentTurn(args: {
         let observedEffect:ReturnType<typeof observeDurableToolEffect>|undefined;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
-          if(args.toolNames&&!args.toolNames.includes(tool.name as AgentToolName))
+          if((args.toolNames&&!args.toolNames.includes(tool.name as AgentToolName))||(args.checkpoint&&tool.name==="record_maintenance_repair_claim"))
             throw new Error("tool_not_available");
           const parsedArgs=JSON.parse(tool.arguments);
           const questionArgs=tool.name==="ask_owner"?

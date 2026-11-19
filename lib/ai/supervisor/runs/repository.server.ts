@@ -5,7 +5,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import {
   decodeClaim, decodeRun, runScopeSchema, stepSpecSchema,
   type DurableRunRepository, type RunScope, type StepClaim, type StepSpec,
-  type DurableRun, ownerRunInputSchema, checkpointRowSchema, type OwnerRunInput, type CheckpointRow, type OwnerRunCheckpoint,
+  type DurableRun, recoverableReadSelector, type OwnerReadReference, ownerRunInputSchema, checkpointRowSchema, type OwnerRunInput, type CheckpointRow, type OwnerRunCheckpoint,
 } from "./contracts";
 
 const uuid = z.uuid();
@@ -258,7 +258,25 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
   const priorEffects=current.checkpoint_receipts.filter(x=>x.phase==="effect_pending"&&!x.receipt.startsWith("noop:"));
   let replayed=false;
   let currentReadKey:string|null=null;
+  let currentReadRaw:unknown=null;
+  const readReferences=():OwnerReadReference[]=>{
+    const refs=new Map<string,OwnerReadReference>();
+    for(const e of current.checkpoint_receipts){
+      if(e.phase!=="read_pending"||!e.tool)continue;
+      const match=/^read:[a-f0-9]{32}_[a-f0-9]{64}:ref:([a-zA-Z0-9_-]{1,220})$/.exec(e.receipt);
+      if(!match)continue;
+      try{
+        const raw=JSON.parse(Buffer.from(match[1],"base64url").toString("utf8"));
+        const selector=recoverableReadSelector(e.tool,raw);
+        if(selector)refs.set(e.tool+":"+stableJson(selector),{name:e.tool,selector});
+      }catch{/* Corrupt optional selector is never executable. */}
+    }
+    return [...refs.values()];
+  };
+  // Snapshot before replay adds to the journal; the next slice sees the new refs.
+  const previousReads=readReferences();
   return {
+    readReferences:()=>previousReads,
     assertLive,
     beginProvider:async()=>{
       await assertLive();
@@ -273,6 +291,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       replayed=false;
       const op=repeatSafe?randomUUID():operationKey(id,name,raw);
       currentReadKey=repeatSafe?operationKey(id,name,raw).replaceAll("-",""):null;
+      currentReadRaw=repeatSafe?raw:null;
       const previous=current.checkpoint_receipts.find(x=>x.operation===op&&!x.receipt.startsWith("noop:"));
       if(previous){
         if(previous.phase!=="effect_pending"||previous.tool!==name)throw new Error("checkpoint_operation_conflict");
@@ -292,7 +311,11 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       if(replayed){replayed=false;return;}
       if(current.checkpoint_phase==="read_pending"){
         if(!currentReadKey)throw Error("checkpoint_operation_missing");
-        await finish("read:"+currentReadKey+"_"+createHash("sha256").update(JSON.stringify(result)).digest("hex"));return;
+        const selector=!result.error&&result.missing.length===0
+          ?recoverableReadSelector(current.checkpoint_tool??"",currentReadRaw,result.period):null;
+        const encoded=selector?Buffer.from(JSON.stringify(selector)).toString("base64url"):null;
+        await finish("read:"+currentReadKey+"_"+createHash("sha256").update(JSON.stringify(result)).digest("hex")+
+          (encoded&&encoded.length<=220?":ref:"+encoded:""));return;
       }
       if(current.checkpoint_phase!=="effect_pending")throw new Error("checkpoint_operation_conflict");
       const name=current.checkpoint_tool??"";
@@ -325,7 +348,7 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
       const reads=[...new Set(current.checkpoint_receipts.filter(e=>e.phase==="read_pending"&&e.receipt.startsWith("read:")).map(e=>e.tool))];
       return "Verified server-owned continuation receipts for this same assignment (not new owner authority). "+
         "Do not re-create recorded operations; re-read current business evidence if needed. "+
-        JSON.stringify({completedOperations:receipts,previousReads:reads});
+        JSON.stringify({completedOperations:receipts,previousReads:reads,reviewedReadReferences:previousReads.slice(-24)});
     },
     canYield:()=>current.checkpoint_phase!=="effect_pending",
     yieldForRetry:(seconds,kind="retry")=>callRpc("supervisor_yield_owner_run_v2",{...identity,p_expected_seq:current.checkpoint_seq,p_delay_seconds:seconds,p_yield_kind:kind},v=>z.boolean().parse(v)),

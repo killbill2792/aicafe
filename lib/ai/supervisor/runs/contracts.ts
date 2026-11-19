@@ -93,6 +93,33 @@ export type CheckpointRow=z.infer<typeof checkpointRowSchema>;
 
 /** Passed into the existing one-agent loop, never model-controlled. A failure
  * at a checkpoint boundary must escape tool/provider error recovery. */
+/** Only reviewed canonical read selectors; never arbitrary model arguments,
+ * owner-supplied financial facts, private connector queries or source contents. */
+export function recoverableReadSelector(name:string,raw:unknown,resultPeriod?:unknown):Record<string,unknown>|null {
+  const empty=z.strictObject({});
+  const range=z.strictObject({from:z.iso.date(),to:z.iso.date()}).refine(x=>x.from<=x.to);
+  const week=z.strictObject({week_start:z.iso.date().nullable()});
+  const item=z.strictObject({itemId:z.uuid()});
+  if(["get_staff","get_inventory","get_labor_rules","get_bills","get_supervisor_permissions"].includes(name))
+    return empty.safeParse(raw).success?{}:null;
+  if(["get_peak_hours","get_employee_sales","get_payroll_facts"].includes(name)){
+    const parsed=range.safeParse(raw);return parsed.success?parsed.data:null;
+  }
+  if(["get_week_schedule","get_coverage_gaps"].includes(name)){
+    const parsed=week.safeParse(raw);return parsed.success&&parsed.data.week_start!==null?parsed.data:null;
+  }
+  if(name==="get_product_costs"){
+    const parsed=item.safeParse(raw);return parsed.success?parsed.data:null;
+  }
+  if(["get_profit","get_sales","get_labor","get_cost_summary"].includes(name)){
+    const parsed=z.strictObject({period:z.unknown(),ownerInputs:z.null().optional()}).safeParse(raw);
+    if(!parsed.success)return null;
+    const period=range.safeParse(resultPeriod??parsed.data.period);
+    return period.success?{period:period.data}:null;
+  }
+  return null;
+}
+export type OwnerReadReference={name:string;selector:Record<string,unknown>};
 export type OwnerRunCheckpoint = {
   assertLive:()=>Promise<void>;
   beginProvider:()=>Promise<void>;
@@ -100,6 +127,7 @@ export type OwnerRunCheckpoint = {
   beginTool:(name:string,raw:unknown,repeatSafe:boolean)=>Promise<import("@/lib/ai/agent/tools").AgentToolResult|null>;
   endTool:(result:import("@/lib/ai/agent/tools").AgentToolResult,noEffect?:boolean)=>Promise<void>;
   resumeContext:()=>Promise<string|null>;
+  readReferences?:()=>readonly OwnerReadReference[];
   restoredResults?:()=>Promise<import("@/lib/ai/agent/tools").AgentToolResult[]>;
   canYield:()=>boolean;
   yieldForRetry:(seconds:number,kind?:"retry"|"technical"|"contended")=>Promise<boolean>;
