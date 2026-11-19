@@ -34,7 +34,7 @@ import {SupervisorEffectGateway} from "@/lib/ai/supervisor/loop/effectGateway.se
 import {gmailCapabilityId,type GmailProposalInput} from "@/lib/ai/supervisor/loop/gmail.server";
 import {maintenanceContext} from "@/lib/ai/supervisor/loop/maintenance.server";
 import {gmailSearch,gmailListLabels,gmailRead,gmailReadThread,gmailReadAttachment} from "@/lib/connectors/gmail/provider.server";
-import {getConnectorAccount,allowsGmail} from "@/lib/connectors/registry.server";
+import {getConnectorAccount,allowsGmail,assertConnectorOwnerLive} from "@/lib/connectors/registry.server";
 import {gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import {ToolError} from "@/lib/ai/agent/toolErrors";
@@ -66,10 +66,11 @@ import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
-import {assertSelectedAttachmentAccess} from "@/lib/connectors/access.server";
+import {assertSelectedAttachmentAccess,assertExternalAccess,FILE_RESOURCE,WEB_RESOURCE} from "@/lib/connectors/access.server";
+import {projectOwnerPublicQuery} from "@/lib/ai/agent/tools/webSearch";
 import {ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
-import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
+import {authenticatedConversationContext,ConversationApiError} from "@/lib/ai/conversations/auth.server";
 import type {ConversationMessage, ConversationScope} from "@/lib/ai/conversations/contracts";
 import type {ConversationService} from "@/lib/ai/conversations/service";
 
@@ -80,7 +81,7 @@ export function errorCode(error: unknown): string {
   return error instanceof ConversationApiError ? error.code :
     error instanceof Error && ["file_read_access_revoked","attachment_access_revoked"]
       .includes(error.message) ? "supervisor_file_access_revoked" :
-    error instanceof Error && ["external_access_unavailable","external_access_invalid"]
+    error instanceof Error && ["external_access_unavailable","external_access_invalid","gmail_evidence_access_changed","public_web_evidence_access_changed","public_web_access_revoked"]
       .includes(error.message) ? "supervisor_permission_status_unavailable" :
     error instanceof Error && error.message==="connector_owner_access_revoked"
       ? "supervisor_owner_access_revoked" :
@@ -154,6 +155,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
   let failureStage: "setup" | "model" | "persist" | "finish" = "setup";
   let steps: Promise<void> = Promise.resolve();
   try {
+    if(owner.role!=="owner"||owner.contentType!=="text"||owner.threadId!==id||!owner.clientMessageId||owner.text!==p.ownerText)
+      throw new ConversationApiError(403,"owner_access_required");
     const external=p.externalClient!==undefined;
     // Browser work keeps its previous lazy RLS reads. External jobs use a
     // verified, explicitly scoped admin client without forging a session.
@@ -166,7 +169,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
          .then(facts => ({facts,failed:false}))
          .catch(() => {console.error('owner_facts_read_failed'); return {facts:[],failed:true};}),
     ]);
-    const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id).slice(-8);
+    // External content is historical, not fresh authority. Legacy unclassified
+    // assistant summaries remain owner-visible but are not re-admitted to the model.
+    const reusable=(m:ConversationMessage)=>m.role==="owner"||
+      (m.grounding?.agentMetadata as {externalEvidence?:unknown}|undefined)?.externalEvidence===false;
+    const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id&&reusable(m)).slice(-8);
     const previousEvidence:NumericEvidence[]=priorAssistant.flatMap(m=>{
       const candidate=m.grounding?.agentMetadata;
       if(!candidate||typeof candidate!=="object"||!Object.hasOwn(candidate,"evidence"))return [];
@@ -180,22 +187,55 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // running job (sent after this one) are excluded: they arrive as follow-ups.
     const ownerAt = Date.parse(owner.createdAt);
     const history = page.items.filter(m => m.id !== owner.id &&
-      (m.role === "owner" || m.role === "supervisor") &&
+      (m.role === "owner" || m.role === "supervisor") && reusable(m) &&
       !(job && m.role === "owner" && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
         content: historyContent(m) })).filter(m => m.content);
     const proposalScope={...scope,threadId:id,locale:p.locale,
       ...(external?{verifiedReadClient:p.externalClient}: {})};
     let selectedContentSha256:string|null=null;
+    // Per-turn checks bind admitted evidence to server-owned scope and revision.
+    const sourceChecks=new Map<string,()=>Promise<void>>();
+    const assertTurnSources=async()=>{
+      if(external){
+        await assertConnectorOwnerLive(scope);
+        await p.service.getThread(id);
+      }else{
+        // Reuse the browser's authenticated owner membership and RLS-thread
+        // boundary. Never substitute another active café after a scope switch.
+        const live=await authenticatedConversationContext();
+        if(live.scope.businessId!==scope.businessId||live.scope.ownerUserId!==scope.ownerUserId)
+          throw Error("connector_owner_access_revoked");
+        await live.service.getThread(id);
+      }
+      await assertCafeAiAccess(scope.businessId);
+      for(const check of sourceChecks.values())await check();
+    };
+    const withGmailEvidence=async<T>(read:()=>Promise<T>):Promise<T>=>{
+      const account=await getConnectorAccount(scope);
+      if(!account||!allowsGmail(account,"read"))throw Error("gmail_not_authorized_for_read");
+      const check=async()=>{
+        const live=await getConnectorAccount(scope);
+        if(!live||!allowsGmail(live,"read")||live.id!==account.id||
+           live.provider_subject!==account.provider_subject||live.generation!==account.generation)
+          throw Error("gmail_evidence_access_changed");
+      };
+      await assertTurnSources();
+      const value=await read();
+      await check();
+      sourceChecks.set("gmail",check);
+      return value;
+    };
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       ownerText:p.ownerText,
+      externalEvidencePresent:()=>sourceChecks.size>0,
       readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
       maintenance:{
         staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).staff(caseId),
         proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).proposeStaff(input),
         recordRepairClaim:async()=>{throw new Error("maintenance_worker_only");},
-        search:async(caseId,query)=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).search(caseId,query),
+        search:async(caseId,query)=>withGmailEvidence(async()=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).search(caseId,query)),
         propose:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).propose(input),
       },
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
@@ -214,7 +254,21 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
-      webSearch:(query,budget)=>ownerPublicWebSearch(scope,()=>searchWeb(query,budget)),
+      webSearch:(query,budget)=>ownerPublicWebSearch(scope,async()=>{
+         const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
+         const place=await readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts);
+         const publicTerms=projectOwnerPublicQuery(query,p.ownerText,place?.city);
+         if(!publicTerms)return {available:false as const,reason:"unsafeQuery" as const};
+         const check=async()=>{
+           if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)
+             throw Error("public_web_evidence_access_changed");
+         };
+         await assertTurnSources();
+         const value=await searchWeb(publicTerms,budget);
+         await check();
+         if(value.available)sourceChecks.set("public_web",check);
+         return value;
+       }),
       savedEvents:async(from,to,options)=>readSavedEventTimeline(await getDb(),
         {businessId:scope.businessId,ownerUserId:scope.ownerUserId},from,to,options),
       readWeekSchedule:weekStart=>external?
@@ -252,12 +306,12 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           const account=await getConnectorAccount(scope);
           if(contact.error||!contact.data?.email||!account||!allowsGmail(account,"read"))
             throw new ToolError("validation","invoice_supplier_contact_or_gmail_unavailable");
-          const message=await gmailRead(scope,gmailMessageId);
+          const message=await withGmailEvidence(()=>gmailRead(scope,gmailMessageId));
           const sender=message.message.headers.from??"";
           const address=(sender.match(/<([^<>]+)>\s*$/u)?.[1]??sender).trim().toLowerCase();
           const current=await getConnectorAccount(scope);
           if(message.message.id!==gmailMessageId||address!==String(contact.data.email).trim().toLowerCase()||
-            !current||current.id!==account.id||current.generation!==account.generation||!allowsGmail(current,"read"))
+            !current||current.id!==account.id||current.provider_subject!==account.provider_subject||current.generation!==account.generation||!allowsGmail(current,"read"))
             throw new ToolError("validation","invoice_document_identity_unverified");
           source={sourceKind:"gmail_message",sourceRef:"gmail:"+account.id+":"+account.generation+":"+gmailMessageId,
             sourceSha256:effectHash(message.message)};
@@ -423,11 +477,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         }
       },
       gmail:{
-        labels:()=>gmailListLabels(scope),
-        search:(query,limit)=>gmailSearch(scope,query,limit),
-        read:messageId=>gmailRead(scope,messageId),
-        thread:threadId=>gmailReadThread(scope,threadId),
-        attachment:(messageId,attachmentId)=>gmailReadAttachment(scope,messageId,attachmentId),
+        labels:()=>withGmailEvidence(()=>gmailListLabels(scope)),
+        search:(query,limit)=>withGmailEvidence(()=>gmailSearch(scope,query,limit)),
+        read:messageId=>withGmailEvidence(()=>gmailRead(scope,messageId)),
+        thread:threadId=>withGmailEvidence(()=>gmailReadThread(scope,threadId)),
+        attachment:(messageId,attachmentId)=>withGmailEvidence(()=>gmailReadAttachment(scope,messageId,attachmentId)),
         propose:async(input:GmailProposalInput)=>{
           // The authenticated turn binds the specific owner, thread, and message.
           const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,gmail:input}));
@@ -589,6 +643,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             }
             if(authorized&&proposal.status==="draft"){
               try{
+                await assertTurnSources();
                 const committed=await commitLoop(proposalScope,supervisorLoopRegistry,
                   new SupabaseLoopRepository(),proposal.id,proposal.revision,"owner_message",owner.id);
                 if(committed.proposal.status==="committed"){
@@ -625,7 +680,17 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     const recordedIds=process.env.WHATSAPP_SUPERVISOR_ENABLED==="true"
       ?await recordedWhatsAppImageIds(scope,id,owner.id):null;
     const selectedIds=recordedIds??p.attachmentIds??[];
+    for(const attachmentId of selectedIds){
+      const fileRevision=await assertExternalAccess(scope,"file_read",FILE_RESOURCE);
+      const selectedRevision=await assertExternalAccess(scope,"attachment",attachmentId);
+      sourceChecks.set("attachment:"+attachmentId,async()=>{
+        if(await assertExternalAccess(scope,"file_read",FILE_RESOURCE)!==fileRevision||
+           await assertExternalAccess(scope,"attachment",attachmentId)!==selectedRevision)
+          throw Error("attachment_access_revoked");
+      });
+    }
     const selected=await readOwnerAttachments(scope,id,selectedIds,p.externalClient);
+    await assertTurnSources();
     selectedContentSha256=selected.contentSha256;
     // Recheck on worker recovery and just before handing selected evidence
     // to Luna; old saved turns are never independent file-access grants.
@@ -637,10 +702,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
        ownerPdfs:selected.pdfs,ownerEvidence:selected.evidence,
        history, context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
-       beforeProviderRequest:selectedIds.length?async()=>{
-         for(const attachmentId of selectedIds)
-           await assertSelectedAttachmentAccess(scope,attachmentId);
-       }:undefined,
+       beforeProviderRequest:assertTurnSources,
+       beforeAcceptResult:assertTurnSources,
+       deferSensitiveOutput:()=>true,
       previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
       onTool:(name,agentId)=>{
         emit("tool",{name,agentId});
@@ -663,11 +727,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
          },
         onFollowUp: (count: number) => emit("followup", { count }),
       } : {}) });
+    result.externalEvidence=sourceChecks.size>0;
     completedTurn = result;
     failureStage = "persist";
     let reply: Awaited<ReturnType<typeof persistAgentReply>>;
     try {
       if (!result.text.trim()) throw new AgentEmptyReplyError();
+      await assertTurnSources();
       reply = await persistAgentReply(scope, owner, result);
     } finally {
       // Billable usage must be counted even for blank, oversized or failed writes.
