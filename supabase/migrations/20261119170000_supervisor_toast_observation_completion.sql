@@ -362,6 +362,35 @@ end;$$;
 revoke all on function public.supervisor_8a_finish_observation_work(uuid,uuid,uuid,jsonb,boolean) from public,anon,authenticated;
 grant execute on function public.supervisor_8a_finish_observation_work(uuid,uuid,uuid,jsonb,boolean) to service_role;
 
+-- Same deterministic owner-scoped thread convention as event lookahead.
+-- The service worker can open a Supervisor thread without inventing an owner
+-- message, only while membership and this observation's lease are current.
+create function public.supervisor_8a_observation_thread(
+ p_business_id uuid,p_owner_user_id uuid,p_history_id uuid,p_token uuid,p_request_id uuid
+) returns uuid language plpgsql security invoker set search_path='' as $$
+declare v_thread uuid;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_only' using errcode='42501';end if;
+ perform 1 from public.supervisor_monitor_windows w where w.business_id=p_business_id
+   and w.source_id=p_history_id and w.monitor_kind='toast_price_observation' and w.window_index=0
+   and w.observation_worker_token=p_token and w.observation_worker_until>clock_timestamp() for update;
+ if not found then return null;end if;
+ perform 1 from public.memberships m where m.business_id=p_business_id
+  and m.user_id=p_owner_user_id and m.role='owner' for share;
+ if not found then return null;end if;
+ select t.id into v_thread from public.ai_threads t where t.business_id=p_business_id
+  and t.owner_user_id=p_owner_user_id order by t.updated_at desc,t.id limit 1;
+ if v_thread is not null then return v_thread;end if;
+ insert into public.ai_threads(business_id,owner_user_id,client_request_id,title)
+  values(p_business_id,p_owner_user_id,p_request_id,'Toast price observations')
+  on conflict(business_id,owner_user_id,client_request_id) do nothing;
+ select t.id into v_thread from public.ai_threads t where t.business_id=p_business_id
+  and t.owner_user_id=p_owner_user_id and t.client_request_id=p_request_id;
+ return v_thread;
+end;$$;
+revoke all on function public.supervisor_8a_observation_thread(uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.supervisor_8a_observation_thread(uuid,uuid,uuid,uuid,uuid) to service_role;
+
 -- Capture the specific lease generation in the same transaction as the
 -- existing claim. A delayed previous worker must never borrow a new lease.
 create function public.supervisor_8a_claim_observation_notice(
@@ -436,7 +465,7 @@ begin
    for update;
   if not found then return false;end if;
   if (v_previous->>'measurementAsOf')::timestamptz>p_measurement_as_of then return false;end if;
-  if v_previous-'measurementAsOf'-'costEstimateAsOf' = v_payload-'measurementAsOf'-'costEstimateAsOf'
+  if v_previous-'measurementAsOf'-'costEstimateAsOf'-'threadId' = v_payload-'measurementAsOf'-'costEstimateAsOf'-'threadId'
    then return true;end if;
   update public.operating_tasks set payload=v_payload,confidence=p_confidence,updated_at=clock_timestamp()
    where business_id=n.business_id and id=p_task_id and owner_user_id=n.owner_user_id;
