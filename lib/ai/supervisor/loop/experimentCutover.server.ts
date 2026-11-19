@@ -670,14 +670,16 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
   const send=async(index:number,at:string,final:boolean,payload:Record<string,string|number|boolean|null>,text:string,confidence:"high"|"low")=>{
    const key=toastObservationNoticeKey({businessId,ownerUserId:owner.user_id,priceHistoryId:sourceId,
     windowIndex:index,localDate:date(at),final});
-   const prior=await db.from("supervisor_experiment_notice_receipts").select("id").eq("business_id",businessId)
+   const prior=await db.from("supervisor_experiment_notice_receipts").select("id,attempts,message_id").eq("business_id",businessId)
     .eq("owner_user_id",owner.user_id).eq("source_id",sourceId).eq("kind",key.kind).eq("slot",key.slot).eq("state","posted").limit(1).maybeSingle();
    if(prior.error)throw new Error("observation_notice_read_failed");
-   if(prior.data)return;
+   if(prior.data&&key.kind==="toast_price_initial")return;
+   if(prior.data&&!prior.data.message_id)throw new Error("observation_posted_receipt_missing_message");
    const result=await postToastObservationNotice(db,{key,threadId:thread.data!.id,timezone,
+    prior:prior.data??undefined,measurementAsOf:now,
     payload:{...payload,itemName,oldPriceCents:receipt.oldPriceCents,newPriceCents:receipt.newPriceCents,currency,observationOnly:true},
     text,confidence});
-   if(result==="posted")posted++;else allDelivered=false;
+   if(result==="posted"){if(!prior.data)posted++;}else allDelivered=false;
   };
   await send(0,receipt.observedAt,false,{title:"Toast price change detected",nonCausal:true},
    "Toast confirmed a published price change for "+itemName+" from "+format(receipt.oldPriceCents)+" to "+format(receipt.newPriceCents)+
