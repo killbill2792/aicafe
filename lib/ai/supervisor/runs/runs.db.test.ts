@@ -364,3 +364,78 @@ describe("Task 15C durable provider reservations survive actual worker death",()
     }
   },30000);
 });
+
+
+describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
+  (sandbox?it:it.skip)("preserves exact input and receipts across real lease loss; refuses uncertain effects, foreign scope and stale writers",async()=>{
+    const admin=await connect();
+    const businessId=randomUUID(),ownerId=randomUUID(),threadId=randomUUID(),messageId=randomUUID();
+    const scope=[businessId,ownerId,threadId];
+    let a:Client|undefined,b:Client|undefined,denied:Client|undefined;
+    const children:ChildProcess[]=[];
+    try{
+      await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",[ownerId,"checkpoint-"+ownerId+"@example.invalid"]);
+      await admin.query("insert into public.businesses(id,name,timezone,is_demo) values($1,$2,current_setting('TimeZone'),false)",[businessId,"Disposable v2 checkpoint café"]);
+      await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[businessId,ownerId]);
+      await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",[threadId,businessId,ownerId,randomUUID()]);
+      await admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','Review the selected document',$5)",[messageId,...scope,randomUUID()]);
+      const attachmentId=randomUUID();
+      await admin.query("insert into public.ai_attachments(id,business_id,owner_user_id,thread_id,object_path,original_name,media_type,bytes) values($1,$2,$3,$4,$5,'notes.txt','text/plain',42)",[attachmentId,...scope,scope.join("/")+"/"+attachmentId+"/notes.txt"]);
+      a=await connect(true);b=await connect(true);
+      const admit=[...scope,messageId,"c".repeat(64),"es",[attachmentId]];
+      const run=await call(a,"supervisor_admit_owner_run_v2",admit);
+      expect(run).toMatchObject({execution_version:2,request_key:messageId,input_locale:"es",input_attachment_ids:[attachmentId],status:"pending"});
+      expect((await call(b,"supervisor_admit_owner_run_v2",admit)).id).toBe(run.id);
+      await expect(call(a,"supervisor_admit_owner_run_v2",[...scope,messageId,"c".repeat(64),"en",[attachmentId]])).rejects.toThrow("owner_run_input_conflict");
+      await expect(call(a,"supervisor_admit_owner_run_v2",[...scope,messageId,"c".repeat(64),"es",[randomUUID()]])).rejects.toThrow("owner_run_input_unavailable");
+      denied=await connect();await denied.query("set role authenticated");
+      await expect(call(denied,"supervisor_admit_owner_run_v2",admit)).rejects.toThrow();
+      const privileges=await admin.query("select has_column_privilege('authenticated','public.supervisor_runs','input_attachment_ids','SELECT') as input,has_column_privilege('authenticated','public.supervisor_run_steps','checkpoint_receipts','SELECT') as receipts,has_column_privilege('authenticated','public.supervisor_run_steps','checkpoint_seq','SELECT') as progress");
+      expect(privileges.rows).toEqual([{input:false,receipts:false,progress:true}]);
+      const worker=randomUUID();
+      const auth=await call(a,"supervisor_run_claim",[...scope,run.id,worker,30]);
+      expect(auth.step.step_key).toBe("authorize_owner");
+      await call(a,"supervisor_run_complete_step",[...scope,run.id,"authorize_owner",auth.step.claim_token,"owner:"+messageId]);
+      const child=fork("scripts/acceptance/task15c-worker-child.mjs",[],{execArgv:[],stdio:["ignore","ignore","inherit","ipc"]});
+      children.push(child);
+      const first=await invoke(child,"claim",[...scope,run.id,randomUUID(),2]);
+      expect(first).toMatchObject({ok:true,pid:child.pid,result:{kind:"claimed",step:{step_key:"owner_turn",attempts:1}}});
+      const oldToken=first.result!.step!.claim_token;
+      const operation=randomUUID(),receipt="source:"+randomUUID();
+      const checkpoint=(token:string,seq:number,op:string,action:string,tool:string|null,ref:string|null)=>[...scope,run.id,token,seq,op,action,tool,ref];
+      expect(await call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,0,operation,"begin_read","get_sales",null)))
+        .toMatchObject({checkpoint_seq:1,checkpoint_phase:"read_pending",checkpoint_operation:operation});
+      expect(await call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,1,operation,"complete",null,receipt)))
+        .toMatchObject({checkpoint_seq:2,checkpoint_phase:"ready",checkpoint_receipts:[{operation,phase:"read_pending",tool:"get_sales",receipt}]});
+      // A second provider operation is pending when the actual worker dies.
+      const providerOp=randomUUID();
+      await call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,2,providerOp,"begin_provider",null,null));
+      await killAndConfirm(child);
+      await waitForActualLeaseExpiry(admin,run.id,"owner_turn");
+      const resumed=await call(b,"supervisor_run_claim",[...scope,run.id,randomUUID(),30]);
+      expect(resumed).toMatchObject({kind:"claimed",step:{step_key:"owner_turn",attempts:2,checkpoint_seq:3,checkpoint_phase:"provider_pending",checkpoint_operation:providerOp,checkpoint_receipts:[{operation,receipt}]}});
+      const token=resumed.step.claim_token;
+      expect(token).not.toBe(oldToken);
+      await expect(call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(oldToken,3,providerOp,"complete",null,"provider:"+randomUUID()))).rejects.toThrow("checkpoint_claim_conflict");
+      await expect(call(b,"supervisor_checkpoint_owner_run_v2",[randomUUID(),...checkpoint(token,3,providerOp,"complete",null,"provider:"+randomUUID()).slice(1)])).rejects.toThrow("checkpoint_run_unavailable");
+      await expect(call(b,"supervisor_run_complete_step",[...scope,run.id,"owner_turn",token,randomUUID()])).rejects.toThrow("owner_turn_receipt_not_verified");
+      await call(b,"supervisor_checkpoint_owner_run_v2",checkpoint(token,3,providerOp,"complete",null,"provider:"+randomUUID()));
+      await expect(call(b,"supervisor_checkpoint_owner_run_v2",checkpoint(token,4,operation,"begin_read","get_sales",null))).rejects.toThrow("checkpoint_operation_conflict");
+      // An uncertain effect cannot yield or receive a second operation key.
+      const effect=randomUUID();
+      await call(b,"supervisor_checkpoint_owner_run_v2",checkpoint(token,4,effect,"begin_effect","propose_supplier_purchase_order",null));
+      expect(await call(b,"supervisor_yield_owner_run_v2",[...scope,run.id,token,5,15])).toBe(false);
+      await expect(call(b,"supervisor_checkpoint_owner_run_v2",checkpoint(token,5,randomUUID(),"begin_read","get_sales",null))).rejects.toThrow("checkpoint_operation_conflict");
+      expect(await call(b,"supervisor_stop_durable_run",[...scope,run.id,"cancelled","owner_turn",token])).toBe(true);
+      await expect(call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(token,5,effect,"complete",null,"effect:"+randomUUID()))).rejects.toThrow("checkpoint_run_unavailable");
+      const saved=await admin.query("select r.status,s.checkpoint_seq,s.checkpoint_phase,s.checkpoint_receipts from public.supervisor_runs r join public.supervisor_run_steps s on s.run_id=r.id and s.business_id=r.business_id where r.id=$1 and s.step_key='owner_turn'",[run.id]);
+      expect(saved.rows).toMatchObject([{status:"blocked",checkpoint_seq:5,checkpoint_phase:"effect_pending",checkpoint_receipts:[{operation,receipt},{operation:providerOp}]}]);
+    }finally{
+      for(const child of children)if(child.exitCode===null&&child.signalCode===null)await killAndConfirm(child);
+      await Promise.all([a?.end(),b?.end(),denied?.end()]);
+      await admin.query("delete from public.businesses where id=$1",[businessId]);
+      await admin.query("delete from auth.users where id=$1",[ownerId]);
+      await admin.end();
+    }
+  },30000);
+});
