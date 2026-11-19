@@ -12,8 +12,8 @@ import {processDueInvestigations,
   type InvestigationModelProofSummary} from "@/lib/ai/supervisor/routines/investigation.server";
 import {executeAgentTool,type AgentToolContext} from "./index";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
-const scenario=process.env.AICAFE_SHARED_LUNA_SCENARIO==="pos0ef-customer-trends"?
- "pos0ef-customer-trends":"pos0ef-customer-identity";
+const scenario=process.env.AICAFE_SHARED_LUNA_SCENARIO==="pos0ef-customer-detail"?"pos0ef-customer-detail":
+ process.env.AICAFE_SHARED_LUNA_SCENARIO==="pos0ef-customer-trends"?"pos0ef-customer-trends":"pos0ef-customer-identity";
 const enabled=process.env.AICAFE_SHARED_LUNA==="1"&&process.env.AICAFE_SHARED_LUNA_SCENARIO===scenario&&process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY";
 const live=enabled?it:it.skip;
 const requireLocal=(value:string|undefined,kind:"db"|"api"):string=>{
@@ -68,7 +68,7 @@ live("retained customer identity or observed trend, real model investigation, is
    await admin.query("insert into public.locations(id,business_id,name) values($1,$2,\'Fixture location\')",[location,cafe]);
    await admin.query("select public.toast_save_configuration($1,\'https://ws-api.toasttab.com\',\'synthetic_client\',\'synthetic_ciphertext\',jsonb_build_array(jsonb_build_object(\'location_id\',$2::uuid,\'restaurant_guid\',$3::uuid)))",[cafe,location,rest]);
   }
-  if(scenario==="pos0ef-customer-trends"){
+  if(scenario==="pos0ef-customer-trends"||scenario==="pos0ef-customer-detail"){
    // Source-backed positive control: 35 linked account references, each
    // observed once in each complete closed week. No generated alert is seeded.
    const run=randomUUID(),product=randomUUID();
@@ -83,7 +83,9 @@ live("retained customer identity or observed trend, real model investigation, is
      const guest=ids[((offset+14)%7)*5+k],order=randomUUID(),check=randomUUID(),line=randomUUID();
      // Synthetic optional future provider field, deliberately absent from the typed dictionary.
      const preference=offset< -7&&k===0;
-     const payload={guid:order,source:"POS",checks:[{guid:check,amount:7,customer:{guid:guest,firstName:"Fixture",lastName:"Guest",...(preference?{visitPreference:{favoriteDrink:"fixture-latte"}}:{})},payments:[],selections:[{guid:line,item:{guid:product},displayName:"Fixture latte",quantity:1,price:7}]}]};
+     const detailName=scenario==="pos0ef-customer-detail"&&guest===ids[0]?{firstName:"Rowan",lastName:"Detail"}:
+      scenario==="pos0ef-customer-detail"&&[ids[1],ids[2]].includes(guest)?{firstName:"Alex",lastName:"Fixture"}:{firstName:"Fixture",lastName:"Guest"};
+     const payload={guid:order,source:"POS",checks:[{guid:check,amount:7,customer:{guid:guest,...detailName,...(preference?{visitPreference:{favoriteDrink:"fixture-latte"}}:{})},payments:[],selections:[{guid:line,item:{guid:product},displayName:"Fixture latte",quantity:1,price:7}]}]};
      const text=JSON.stringify(payload);
      await admin.query("insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key,run_id) values($1,$2,'order',$3,$4,$5,$6,$7)",[businessId,restaurant,day,text,createHash("sha256").update(text).digest("hex"),"trend:"+order,run]);
      receipts.push({day,order,check,guest,line,current:offset>=-7,preference});
@@ -134,6 +136,55 @@ live("retained customer identity or observed trend, real model investigation, is
    expect(JSON.stringify(saved)).not.toContain(foreignEventId);
    const noForeign=await ownerDb.from("cafe_events").select("id").eq("business_id",foreignBusinessId).eq("id",foreignEventId);
    expect(noForeign.error).toBeNull();expect(noForeign.data).toEqual([]);
+   const foreignOrder=randomUUID(),foreignPayload=JSON.stringify({guid:foreignOrder,checks:[{guid:randomUUID(),amount:5,customer:{guid:randomUUID()}}]});
+   await admin.query("insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key) values($1,$2,'order',$3,$4,$5,$6)",[foreignBusinessId,foreignRestaurant,date(-3),foreignPayload,createHash("sha256").update(foreignPayload).digest("hex"),"live:"+foreignOrder]);
+   expect((await admin.query("select count(*)::int n from public.customer_visits_for($1,$2,$3)",[foreignBusinessId,date(-14),date(-1)])).rows[0].n).toBe(1);
+   const scoped=await ownerDb.rpc("customer_visits_for",{p_business_id:foreignBusinessId,p_from:date(-14),p_to:date(-1)});
+   expect(scoped.error).toBeNull();expect(scoped.data).toEqual([]);
+   if(scenario==="pos0ef-customer-detail"){
+    // Independent receipt oracle, including two distinct guests with the
+    // same display name. No values are supplied in the owner question.
+    const individual=receipts.filter(r=>r.guest===ids[0]);
+    const duplicateName=receipts.filter(r=>[ids[1],ids[2]].includes(r.guest));
+    const oracle={visits:individual.length,net:individual.length*700,units:individual.length,
+      returning:individual.filter(r=>r.current).length,
+      alex:new Set(duplicateName.map(r=>r.guest)).size,
+      matured:previous.size,returned:current.filter(r=>previous.has(r.guest)).length};
+    expect(oracle).toEqual({visits:2,net:1400,units:2,returning:1,alex:2,matured:35,returned:35});
+    const readback=await admin.query("select count(observed_return_7d)::int matured,coalesce(sum(observed_return_7d),0)::int returned from public.customer_visits_for($1,$2,$3)",[businessId,date(-14),date(-1)]);
+    expect(readback.rows[0]).toEqual({matured:oracle.matured,returned:oracle.returned});
+    const window="From "+date(-14)+" through "+date(-1)+": ";
+    const detail=await runAgentTurn({context,provider,toolNames:["describe_data","query_data"],
+     ownerText:window+"Discover the available retained customer identity and product fields. Find the observed account reference for Rowan Detail using the stored customer name and stable reference, not a name-only join. Using registry queries, give the exact linked order visits, recorded net in integer cents, returning visits, favorite recorded menu item and its item units for that reference. Use labels Visits, Net cents, Returning, Favorite units; explain what the reference does and does not establish."});
+    const ambiguity=await runAgentTurn({context,provider,toolNames:["describe_data","query_data"],
+     ownerText:window+"How many distinct linked account references are stored under the customer name Alex Fixture? Do not combine them into one person or assume identical names establish identity. Also calculate the number of matured seven-day first-observed visit cohorts and the number that returned within seven days, using observed_return_7d with the nonnull denominator. Answer with exact labels Alex references, Cohort matured, Cohort returned, and briefly explain the limitations."});
+    for(const answer of [detail,ambiguity]){
+     expect(answer.endReason).toBe("complete");expect(answer.unverified).toEqual([]);
+     expect(answer.tools??[]).toContain("query_data");
+     expect(answer.toolInvocations?.some(call=>call.name==="query_data"&&call.result.customerEvidence===true&&
+      call.result.truncated!==true&&Array.isArray(call.result.rows)&&call.result.rows.length>0)).toBe(true);
+    }
+    const requireNumber=(answer:string,label:string,value:number)=>{
+     const match=answer.match(new RegExp(label+"[\\s*]*[:=][\\s*]*([0-9,]+)","i"));
+     expect(match?.[1]&&Number(match[1].replace(/,/g,""))).toBe(value);
+    };
+    for(const [label,value] of [["Visits",oracle.visits],["Net cents",oracle.net],["Returning",oracle.returning],["Favorite units",oracle.units]] as const)
+     requireNumber(detail.text,label,value);
+    expect(detail.text).toMatch(/fixture latte/i);
+    expect(detail.toolInvocations?.some(call=>call.name==="query_data"&&call.result.view==="cv_customer_products")).toBe(true);
+    for(const [label,value] of [["Alex references",oracle.alex],["Cohort matured",oracle.matured],["Cohort returned",oracle.returned]] as const)
+     requireNumber(ambiguity.text,label,value);
+    expect(ambiguity.text).toMatch(/distinct|separate|different|ambiguous/i);
+    const toolNames=[...new Set([...(detail.tools??[]),...(ambiguity.tools??[])])];
+    expect(toolNames).toContain("describe_data");
+    expect((await admin.query("select count(*)::int n from public.supervisor_effect_attempts where business_id=$1",[businessId])).rows[0].n).toBe(0);
+    expect(providerCompletions).toBe(ledger.calls);expect(ledger.calls).toBeGreaterThanOrEqual(2);
+    const proof={schema_version:1,task:scenario,head_sha:head,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",provider_calls:ledger.calls,provider_completions:providerCompletions,tool_names:toolNames,authenticated_scope:true,independent_oracle:true,distinct_same_name_references:true,matured_cohort_oracle:true,no_unapproved_effect:true,feature_proven:false,integrated_proven:false,released_proven:false};
+    mkdirSync("test-results/acceptance",{recursive:true});
+    writeFileSync("test-results/acceptance/"+scenario+"-proof.json",JSON.stringify(proof)+"\\n",{mode:0o600,flag:"wx"});
+    writeFileSync("test-results/acceptance/"+scenario+"-scope.json",JSON.stringify({...scope,foreignBusinessId,queryOwnerId,restaurant,expectedProviderCalls:ledger.calls})+"\\n",{mode:0o600,flag:"wx"});
+    return;
+   }
    const turn=await runAgentTurn({context,provider,toolNames:["query_data","describe_data"],
     ownerText:"From "+date(-14)+" through "+date(-1)+", using the retained customer evidence, how many distinct observed account references, linked order visits, returning linked visits, and net sales in integer cents were recorded? Return exact labeled integers: References, Visits, Returning, Net cents. Explain whether these are unique people and the identity coverage."});
    const turnTools=turn.tools??[];
@@ -160,11 +211,6 @@ live("retained customer identity or observed trend, real model investigation, is
     return call.result.rows.some(row=>row&&typeof row==="object"&&
      Object.entries(row).some(([key,value])=>key.startsWith("count_")&&Number(value)===expected.preference));
    })).toBe(true);
-   const foreignOrder=randomUUID(),foreignPayload=JSON.stringify({guid:foreignOrder,checks:[{guid:randomUUID(),amount:5,customer:{guid:randomUUID()}}]});
-   await admin.query("insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,payload,payload_sha256,capture_key) values($1,$2,'order',$3,$4,$5,$6)",[foreignBusinessId,foreignRestaurant,date(-3),foreignPayload,createHash("sha256").update(foreignPayload).digest("hex"),"live:"+foreignOrder]);
-   expect((await admin.query("select count(*)::int n from public.customer_visits_for($1,$2,$3)",[foreignBusinessId,date(-14),date(-1)])).rows[0].n).toBe(1);
-   const scoped=await ownerDb.rpc("customer_visits_for",{p_business_id:foreignBusinessId,p_from:date(-14),p_to:date(-1)});
-   expect(scoped.error).toBeNull();expect(scoped.data).toEqual([]);
    const refresh=async()=>{await refreshBusinessAnomalies(db,businessId,today,"UTC",now).catch(error=>{
     if(!(error instanceof Error)||error.message!=="business_anomaly_refresh_incomplete")throw error;
    });};
