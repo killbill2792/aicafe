@@ -27,7 +27,13 @@ export const gmailEffectInput=z.strictObject({
   maintenanceCaseRevision:z.iso.datetime({offset:true}).optional(),
   maintenanceDueAt:z.iso.datetime({offset:true}).nullable().optional(),
 });
-export const gmailEffectSchema=gmailEffectInput.extend({
+// Internal binding only: ordinary model Gmail input cannot supply this.
+export const supplierFollowupBindingSchema=z.strictObject({
+  purchaseOrderId:z.uuid(),contactId:z.uuid(),poRevision:z.number().int().positive(),
+  receiptVersions:z.number().int().min(0).max(100),invoiceVersions:z.number().int().min(0).max(100)
+});
+const boundGmailInput=gmailEffectInput.extend({supplierFollowup:supplierFollowupBindingSchema.optional()});
+export const gmailEffectSchema=boundGmailInput.extend({
   accountId:z.uuid(),generation:z.number().int().positive(),
   from:z.email(),
 });
@@ -68,7 +74,7 @@ function validate(input:GmailProposalInput){
     throw new Error("gmail_label_name_required");
 }
 export const gmailCapability=registerLoopCapability({
-  id:gmailCapabilityId,version:1,inputSchema:gmailEffectInput,effectSchema:gmailEffectSchema,
+  id:gmailCapabilityId,version:1,inputSchema:boundGmailInput,effectSchema:gmailEffectSchema,
   proposalDescription:"Prepare an inert Gmail owner approval card only on a clear owner request. Never send, alter or create a Gmail draft without the exact owner click. Read the connected Gmail account and selected original message first. Do not invent recipients or the mail body.",
   dependencyScope:(e)=>({gmailAccount:e.accountId,operation:e.operation,
     messageId:e.messageId,hash:effectHash(e)}),
@@ -81,6 +87,9 @@ export const gmailCapability=registerLoopCapability({
       if(input.maintenanceDueAt&&Date.parse(input.maintenanceDueAt)<=Date.now())
         throw new Error("maintenance_deadline_must_be_future");
     }
+    if(input.supplierFollowup&&(input.maintenanceCaseId!==undefined||input.operation!=="send"||input.to.length!==1||input.cc.length||input.bcc.length||
+      input.subject!=="Purchase order follow-up "+input.supplierFollowup.purchaseOrderId||input.messageId||input.threadId))
+      throw new Error("supplier_followup_invalid_preview");
     const owner={businessId:scope.businessId,ownerUserId:scope.ownerUserId};
     const account=await getConnectorAccount(owner);
     assertGmailCapability(account,input.operation==="send"?"send":input.operation==="draft"?"draft":"organize");

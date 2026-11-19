@@ -18,6 +18,13 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null;
   purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string;
     receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
+  invoice?:{purchaseOrderId:string;supplierName:string;invoiceReference:string;expectedInvoiceRevision:number;
+    issuedOn:string;dueOn:string|null;currency:string;subtotalCents:number;taxCents:number|null;
+    freightCents:number|null;discountCents:number|null;totalCents:number;expenseDate:string|null;existingExpenseId:string|null;
+    sourceKind:string;lines:Array<{sourceItemName:string;quantityBase4:number|null;baseUnit:string|null;subtotalCents:number;orderLineId:string|null}>};
+  receiving?:{purchaseOrderId:string;supplierName:string;receivingReference:string;receivedOn:string;
+    expectedReceiptRevision:number;lines:Array<{orderLineId:string;itemName:string;baseUnit:string;
+    receivedBase4:number;acceptedBase4:number;damagedBase4:number}>};
   vendorDispatch?:{state:string;purchaseOrderId:string|null;providerVerified:boolean};
   purchaseOrder?:{supplierName:string;currency:string;neededBy:string|null;
    subtotalCents:number;totalCents:null;shippingCents:null;taxCents:null;
@@ -175,6 +182,73 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
   const goal=value.capabilityId==="leo.goal.v1";
   const eventPlan=value.capabilityId==="alex.event_readiness.v1";
   const staffCopy=dict[locale].StaffApprovalCard;
+  if(value.capabilityId==="maya.supplier_invoice.v1"&&value.invoice){
+    const i=value.invoice;
+    const amount=(n:number|null)=>n===null?"Unknown":new Intl.NumberFormat(locale,{style:"currency",currency:i.currency}).format(n/100);
+    return <section aria-label="Supplier invoice confirmation" dir={locale==="ar"?"rtl":"ltr"}
+      className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      <h3 className="text-xl font-bold">Review invoice · {i.supplierName}</h3>
+      <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Invoice evidence recorded":value.state}</p>
+      <p className="break-all">Purchase order: {i.purchaseOrderId}</p>
+      <p className="break-words">Invoice {i.invoiceReference} · Issued {i.issuedOn} · Due {i.dueOn??"Unknown"}</p>
+      <p>Source: {i.sourceKind.replaceAll("_"," ")}</p>
+      {i.expectedInvoiceRevision>0&&<p>Corrects invoice revision {i.expectedInvoiceRevision}.</p>}
+      <ul className="mt-3 space-y-2">{i.lines.map((line,index)=><li key={index} className="rounded-xl border border-line p-3">
+        <strong>{line.sourceItemName}</strong>
+        <p>{line.quantityBase4===null?"Quantity unknown":line.quantityBase4/10000} {line.baseUnit??""} · {amount(line.subtotalCents)}</p>
+        {!line.orderLineId&&<p className="text-neg">Unmatched product — investigate before financial recognition.</p>}
+      </li>)}</ul>
+      <dl className="mt-3 grid grid-cols-2 gap-2">
+        <dt>Subtotal</dt><dd>{amount(i.subtotalCents)}</dd>
+        <dt>Tax</dt><dd>{amount(i.taxCents)}</dd>
+        <dt>Freight</dt><dd>{amount(i.freightCents)}</dd>
+        <dt>Discount</dt><dd>{amount(i.discountCents)}</dd>
+        <dt className="font-bold">Invoice claim</dt><dd className="font-bold">{amount(i.totalCents)}</dd>
+      </dl>
+      <p className="mt-3 text-sm text-ink-muted">{i.expenseDate?
+        "Also recognize the separately verified actual expense on "+i.expenseDate+". Confirm the expense really belongs in the financial records.":
+        "Record supplier invoice evidence only. No expense will be posted."} No stock or payment change will occur.</p>
+      {i.existingExpenseId&&<p className="break-all">Explicit existing expense match: {i.existingExpenseId}</p>}
+      {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-3">
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
+          className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">
+          {i.expenseDate?"Confirm invoice and recognize expense":"Confirm invoice evidence"}</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
+          className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Decline</button>
+      </div>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")}
+        className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Check existing invoice record</button>}
+      {error&&<p role="alert" className="mt-3 text-neg">Could not verify invoice. Do not record it again.</p>}
+    </section>;
+  }
+  if(value.capabilityId==="maya.supplier_receiving.v1"&&value.receiving){
+    const r=value.receiving;
+    const q=(n:number)=>new Intl.NumberFormat(locale,{maximumFractionDigits:4}).format(n/10000);
+    return <section aria-label="Physical delivery confirmation" dir={locale==="ar"?"rtl":"ltr"}
+      className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      <h3 className="text-xl font-bold">Confirm physical delivery · {r.supplierName}</h3>
+      <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Receiving recorded":value.state}</p>
+      <p className="mt-2 break-all">Purchase order: {r.purchaseOrderId}</p>
+      <p className="break-words">Delivery reference: {r.receivingReference} · {r.receivedOn}</p>
+      {r.expectedReceiptRevision>0&&<p>Correction of receiving revision {r.expectedReceiptRevision}; replaces prior recorded quantities.</p>}
+      <ul className="mt-3 space-y-2">{r.lines.map(line=><li key={line.orderLineId} className="rounded-xl border border-line p-3">
+        <strong>{line.itemName}</strong>
+        <p>Physically received: {q(line.receivedBase4)} {line.baseUnit}</p>
+        <p>Accepted into stock: {q(line.acceptedBase4)} {line.baseUnit}</p>
+        <p>Damaged: {q(line.damagedBase4)} {line.baseUnit}</p>
+      </li>)}</ul>
+      <p className="mt-3 text-sm text-ink-muted">Approve only if these goods physically arrived, the quantities and condition are correct, and this reference identifies the actual installment, not a duplicate. This records stock only; it does not pay or book an invoice.</p>
+      {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-3">
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")}
+          className="min-h-12 rounded-xl bg-accent px-5 font-bold text-on-accent disabled:opacity-50">Confirm receipt and record stock</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")}
+          className="min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Decline</button>
+      </div>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")}
+        className="mt-4 min-h-12 rounded-xl border border-line px-5 font-bold disabled:opacity-50">Check existing receipt</button>}
+      {error&&<p role="alert" className="mt-3 text-neg">Could not verify receiving. Do not re-record this delivery.</p>}
+    </section>;
+  }
   if(supplierPO&&value.purchaseOrder){
     const po=value.purchaseOrder;
     const poCopy=en.SupplierPurchaseOrderCard;

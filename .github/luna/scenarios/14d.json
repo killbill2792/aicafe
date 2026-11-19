@@ -1,0 +1,355 @@
+{
+  "id": "14d",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task14d.mjs",
+  "proof": "14d-proof.json",
+  "scope": "14d-scope.json",
+  "expectedTools": [
+    "get_supplier_purchase_orders",
+    "inspect_purchase_reconciliation",
+    "propose_invoice_reconciliation",
+    "propose_purchase_receiving"
+  ],
+  "assertions": [
+    {
+      "name": "approved-po",
+      "kind": "source",
+      "table": "public.purchase_orders",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "poId"
+        },
+        "status": {
+          "eq": "approved_for_ordering"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "documentary-invoice",
+      "kind": "source",
+      "table": "public.supplier_invoices",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "invoiceId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        },
+        "total_cents": {
+          "eq": "20000"
+        },
+        "revision": {
+          "eq": "1"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "first-verified-receipt",
+      "kind": "source",
+      "table": "public.purchase_receipts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "firstReceiptId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        },
+        "verification_kind": {
+          "eq": "owner_confirmed"
+        },
+        "revision": {
+          "eq": "1"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "second-verified-receipt",
+      "kind": "source",
+      "table": "public.purchase_receipts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "secondReceiptId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        },
+        "verification_kind": {
+          "eq": "owner_confirmed"
+        },
+        "revision": {
+          "eq": "1"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "only-two-receipts",
+      "kind": "source",
+      "table": "public.purchase_receipts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        }
+      },
+      "minCount": 2,
+      "maxCount": 2
+    },
+    {
+      "name": "only-one-invoice",
+      "kind": "source",
+      "table": "public.supplier_invoices",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "stock-first-installment",
+      "kind": "source",
+      "table": "public.pantry_stock_purchases",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "line_id": {
+          "scope": "firstStockId"
+        },
+        "ingredient_id": {
+          "scope": "ingredientId"
+        },
+        "quantity_base": {
+          "eq": "60000"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "stock-second-installment",
+      "kind": "source",
+      "table": "public.pantry_stock_purchases",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "line_id": {
+          "scope": "secondStockId"
+        },
+        "ingredient_id": {
+          "scope": "ingredientId"
+        },
+        "quantity_base": {
+          "eq": "40000"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "only-two-stock-lines",
+      "kind": "source",
+      "table": "public.pantry_stock_purchases",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "ingredient_id": {
+          "scope": "ingredientId"
+        }
+      },
+      "minCount": 2,
+      "maxCount": 2
+    },
+    {
+      "name": "invoice-owner-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "invoiceReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "invoice-verified-approval",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "invoiceProposalId"
+        },
+        "status": {
+          "eq": "committed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "first-owner-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "firstReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "first-verified-approval",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "firstProposalId"
+        },
+        "status": {
+          "eq": "committed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "second-owner-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "secondReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "second-verified-approval",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "secondProposalId"
+        },
+        "status": {
+          "eq": "committed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-receipt-denied",
+      "kind": "isolation",
+      "table": "public.purchase_receipts",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-invoice-denied",
+      "kind": "isolation",
+      "table": "public.supplier_invoices",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-stock-denied",
+      "kind": "isolation",
+      "table": "public.pantry_stock_purchases",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "ingredient_id": {
+          "scope": "ingredientId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

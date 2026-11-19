@@ -238,6 +238,14 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
       result.evidenceChecks+=done.checked;
       result.notices+=done.posted;
     }catch{result.failed++;}
+    // The existing tick projects durable source tasks before queuing the same
+    // Supervisor investigator. No separate receiving cron or owner message.
+    try{
+      const receiving=await db.rpc("supervisor_sync_supplier_receiving_tasks",{
+        p_business_id:businessId,p_owner_user_id:ownerUserId,p_now:now.toISOString(),
+      });
+      if(receiving.error)result.failed++;
+    }catch{result.failed++;}
     // This is the SAME verified owner/thread selected for the notice scanner.
     // A failed notice cannot prevent persistent investigation, and vice versa.
     if(enqueueInvestigations){
