@@ -58,36 +58,39 @@ export function eventAssessmentSourceHash(timeline:Pick<SavedEventTimeline,"city
   });
 }
 export type SavedEventAssessment={
-  startDate:string;factsHash:string;sourceHash:string;assessedOn?:string;
+  startDate:string;factsHash:string;sourceHash:string;assessedOn?:string;batchKey?:string;
 };
 /** A prior no-action is a durable assessment, not an alert. Approved/rejected
  * plans always win; a changed source or confirmed event can be reconsidered. */
+type EventAssessmentDay={date:string;events:CafeEvent[];hash:string;refresh?:boolean;batchKey?:string};
+const occurrenceKey=(ids:readonly string[])=>effectHash([...ids].sort()).slice(0,24);
+const eventPlanTaskKey=(date:string,ids:readonly string[])=>"event-plan:"+date+
+  (ids.length?":"+occurrenceKey(ids):"");
 export function pendingEventDays(events:readonly CafeEvent[],
-  plans:readonly {startDate:string;factsHash:string;status?:string}[],from:string,to:string,
-  assessments:readonly SavedEventAssessment[]=[],sourceHash=""):Array<{
-    date:string;events:CafeEvent[];hash:string;refresh?:boolean
-  }>{
-  const result:Array<{date:string;events:CafeEvent[];hash:string;refresh?:boolean}>=[];
+  plans:readonly {startDate:string;factsHash:string;status?:string;eventIds?:string[]}[],from:string,to:string,
+  assessments:readonly SavedEventAssessment[]=[],sourceHash=""):EventAssessmentDay[]{
+  const result:EventAssessmentDay[]=[];
   for(let day=from;day<=to;day=addDays(day,1)){
-    const found=events.filter(e=>e.status==="found"&&e.startDate<=day&&e.endDate>=day)
-      .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
-    if(!found.length)continue;
-    const hash=effectHash(eventPlanFacts(found));
-    const prior=assessments.find(a=>a.startDate===day&&a.factsHash===hash&&
-      a.sourceHash===sourceHash);
-    // Reassess an ongoing event on the actual local business day once, even
-    // when its public facts and previously approved actions have not changed.
-    // This is an evidence refresh, not permission to repeat an approval.
-    if(day===from&&prior?.assessedOn&&prior.assessedOn<day&&
-      found.some(e=>e.startDate<e.endDate)){
-      result.push({date:day,events:found,hash,refresh:true});continue;
+    const candidates=events.filter(e=>e.status==="found"&&e.startDate<=day&&e.endDate>=day)
+      .sort((a,b)=>a.id.localeCompare(b.id));
+    for(let offset=0;offset<candidates.length;offset+=8){
+      const found=candidates.slice(offset,offset+8);
+      const hash=effectHash(eventPlanFacts(found));
+      const batchKey=candidates.length>8?occurrenceKey(found.map(e=>e.id)):undefined;
+      const batch={date:day,events:found,hash,...(batchKey?{batchKey}:{})};
+      const prior=assessments.find(a=>a.startDate===day&&a.factsHash===hash&&a.sourceHash===sourceHash);
+      if(day===from&&prior?.assessedOn&&prior.assessedOn<day&&found.some(e=>e.startDate<e.endDate)){
+        result.push({...batch,refresh:true});continue;
+      }
+      if(prior)continue;
+      // A decision for one selected subset must not suppress a different batch.
+      if(!plans.some(p=>p.startDate===day&&(p.factsHash===hash||
+        (!p.eventIds?.length&&!batchKey&&p.status!==undefined&&
+          !["draft","stale","expired"].includes(p.status))||
+        (p.eventIds?.length&&found.every(e=>p.eventIds!.includes(e.id))&&
+          p.status!==undefined&&!["draft","stale","expired"].includes(p.status)))))
+        result.push(batch);
     }
-    if(prior)continue;
-    // This also preserves historical full-day drafts. Any approved or declined
-    // owner decision remains authoritative, regardless of new public evidence.
-    if(!plans.some(p=>p.startDate===day&&(p.factsHash===hash||
-      (p.status!==undefined&&p.status!=="draft"&&p.status!=="stale"&&p.status!=="expired"))))
-      result.push({date:day,events:found,hash});
   }
   return result;
 }
@@ -189,11 +192,14 @@ export async function scanCafe(db:Db,b:Business,today:string,
   }
   return count;
 }
-async function eventThread(db:Db,businessId:string,ownerId:string,day:string){
-  const key=stableMessageId("event-day-thread:"+businessId+":"+ownerId+":"+day);
+async function eventThread(db:Db,businessId:string,ownerId:string,day:string,event?:CafeEvent){
+  const key=stableMessageId("event-day-thread:"+businessId+":"+ownerId+":"+(event?"event:"+event.id:day));
+  const suffix=event?" · event:"+event.id:"";
+  const prefix="Events · "+day+(event?" · ":"");
+  const title=prefix+(event?.name.replace(/[\r\n<>]/g," ").trim().slice(0,Math.max(0,120-prefix.length-suffix.length))??"")+suffix;
   const created=await db.from("ai_threads").upsert({
     business_id:businessId,owner_user_id:ownerId,client_request_id:key,
-    title:"Events · "+day,
+    title,
   },{onConflict:"business_id,owner_user_id,client_request_id",ignoreDuplicates:true});
   requireOk(created.error);
   const existing=await db.from("ai_threads").select("id")
@@ -209,29 +215,29 @@ async function eventThread(db:Db,businessId:string,ownerId:string,day:string){
  * replay-safe without creating a second assessment store. */
 async function saveEventAssessment(db:Db,businessId:string,date:string,
   factsHash:string,sourceHash:string,outcome:"proposed"|"no_action",reason:string,
-  assessedOn:string){
+  assessedOn:string,batchKey?:string){
   const saved=await db.from("operating_tasks").upsert({
-    id:"event-assessment:"+date,business_id:businessId,agent_id:"alex",
+    id:"event-assessment:"+date+(batchKey?":"+batchKey:""),business_id:businessId,agent_id:"alex",
     kind:"event_assessment",entity_type:"event_day",entity_id:date,
     status:"handled",confidence:"low",
-    payload:{businessDate:date,factsHash,sourceHash,outcome,assessedOn,reason:reason.slice(0,500)},
+    payload:{businessDate:date,factsHash,sourceHash,outcome,assessedOn,batchKey:batchKey??null,reason:reason.slice(0,500)},
     evidence:[{source:"cafe_events",facts:{businessDate:date,factsHash}}],
   },{onConflict:"business_id,id"});
   requireOk(saved.error);
 }
 async function readEventAssessments(db:Db,businessId:string,from:string,to:string):
   Promise<SavedEventAssessment[]>{
-  const ids:string[]=[];
-  for(let d=from;d<=to;d=addDays(d,1))ids.push("event-assessment:"+d);
   const saved=await db.from("operating_tasks").select("id,status,payload")
-    .eq("business_id",businessId).eq("kind","event_assessment").in("id",ids).limit(90);
+    .eq("business_id",businessId).eq("kind","event_assessment").eq("entity_type","event_day")
+    .gte("entity_id",from).lte("entity_id",to).order("id").limit(1000);
   requireOk(saved.error);
   return (saved.data??[]).flatMap(row=>{
     const p=row.payload as Record<string,unknown>|null;
     return row.status==="handled"&&typeof p?.factsHash==="string"&&
       typeof p?.sourceHash==="string"?
-      [{startDate:row.id.slice("event-assessment:".length),
+      [{startDate:typeof p.businessDate==="string"?p.businessDate:row.id.slice("event-assessment:".length, "event-assessment:".length+10),
         factsHash:p.factsHash,sourceHash:p.sourceHash,
+        ...(typeof p.batchKey==="string"?{batchKey:p.batchKey}:{}),
         ...(typeof p.assessedOn==="string"?{assessedOn:p.assessedOn}:{})}]:[];
   });
 }
@@ -260,10 +266,12 @@ export function matchingEventPreparation(plans:SavedEventTimeline["plans"],
  * and D's scoped Toast/report evidence, and MAY use its existing web_search.
  * No separate investigator, money metric, or auto-approval is introduced. */
 export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|"ar",
-  today:string,day:{date:string;events:CafeEvent[];hash:string;refresh?:boolean},
+  today:string,day:EventAssessmentDay,
   ownerFacts:readonly SavedFact[],timeline:SavedEventTimeline,
   sourceHash:string):Promise<boolean>{
-  const threadId=await eventThread(db,b.id,ownerId,day.date);
+  const singleton=day.events.length===1?day.events[0]:undefined;
+  const priorThread=singleton?timeline.plans.find(p=>p.eventIds?.length===1&&p.eventIds[0]===singleton.id)?.threadId:undefined;
+  const threadId=priorThread??await eventThread(db,b.id,ownerId,day.date,singleton);
   const scope:OwnerLoopScope=await authorizedScheduledEventScope({
     businessId:b.id,ownerUserId:ownerId,threadId,locale,
   });
@@ -275,7 +283,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   requireOk(existing.error);
   if(existing.data){
     // Repair eligibility stays with recoverPlanDelivery, not a second model turn.
-    await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today);
+    await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today,day.batchKey);
     return false;
   }
   const facts=eventPlanFacts(day.events);
@@ -381,7 +389,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   });
   if(reused){
     await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
-      "no_action","Existing preparation decision remains applicable.",today);
+      "no_action","Existing preparation decision remains applicable.",today,day.batchKey);
     return false;
   }
   const proposal=turn.results.find(r=>r.source==="event_plan_proposal"&&
@@ -392,7 +400,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
       !turn.results.some(r=>r.source==="event_plan_proposal"||
         r.source==="propose_event_plan"))
       await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
-        "no_action",turn.text,today);
+        "no_action",turn.text,today,day.batchKey);
     return false;
   }
   const {reply,metadata}=turn.text.trim()?agentReplyPayload(turn):
@@ -400,8 +408,9 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   if(!selectedFactsHash)throw new Error("event_selected_facts_missing");
   const messageId=planMessageId(b.id,ownerId,day.date,
     selectedFactsHash,String(proposal.proposalId));
+  const taskId=eventPlanTaskKey(day.date,selectedEventIds);
   await notifyOwner(db,{
-    businessId:b.id,ownerUserId:ownerId,threadId,taskId:"event-plan:"+day.date,
+    businessId:b.id,ownerUserId:ownerId,threadId,taskId,
     kind:"event_plan",localDate:today,important:true,
   },async()=>{
   const message=await db.from("ai_messages").insert({
@@ -413,7 +422,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   });
   if(message.error&&message.error.code!=="23505")throw new Error("event_message_unavailable");
   const task=await db.from("operating_tasks").upsert({
-    id:"event-plan:"+day.date,business_id:b.id,agent_id:"alex",kind:"event_plan",
+    id:taskId,business_id:b.id,agent_id:"alex",kind:"event_plan",
     entity_type:"event_day",entity_id:day.date,status:"needs_owner",confidence:"low",
     payload:{businessDate:day.date,plannedOn:today,threadId,ownerNoticeDate:today,
       proposalId:proposal.proposalId,messageId,needsApproval:true,selectedEventIds},
@@ -422,7 +431,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   },{onConflict:"business_id,id"});
   requireOk(task.error);
   });
-  await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today);
+  await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today,day.batchKey);
   return true;
 }
 
@@ -437,22 +446,22 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
   // Only the newest eligible draft may own the day-keyed inbox notification.
   const seenDays=new Set<string>();
   const latest=plans.filter(p=>{
-    if(p.startDate<today||p.startDate>addDays(today,13)||seenDays.has(p.startDate))
-      return false;
-    // A later owner-approved/rejected plan supersedes older drafts too.
-    seenDays.add(p.startDate);
+    const key=eventPlanTaskKey(p.startDate,p.eventIds??[]);
+    if(p.startDate<today||p.startDate>addDays(today,13)||seenDays.has(key))return false;
+    // A later exact occurrence decision supersedes older drafts, not unrelated events.
+    seenDays.add(key);
     if(p.status!=="draft")return false;
     const matching=events.filter(e=>e.status==="found"&&
       e.startDate<=p.startDate&&e.endDate>=p.startDate)
-      .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
+      .sort((a,b)=>a.id.localeCompare(b.id));
     const selected=p.eventIds?.length?
-      matching.filter(e=>p.eventIds!.includes(e.id)):matching;
+      matching.filter(e=>p.eventIds!.includes(e.id)):matching.slice(0,8);
     return (!p.eventIds?.length||selected.length===p.eventIds.length)&&
       p.factsHash===effectHash(eventPlanFacts(selected));
   });
   if(!latest.length)return {repaired:0,created:0};
   const rows=await db.from("operating_tasks").select("id,payload").eq("business_id",businessId)
-    .in("id",latest.map(p=>"event-plan:"+p.startDate));
+    .in("id",[...new Set(latest.flatMap(p=>[eventPlanTaskKey(p.startDate,p.eventIds??[]),"event-plan:"+p.startDate]))]);
   requireOk(rows.error);
   const known=new Map<string,Record<string,unknown>>((rows.data??[]).map(t=>[
     t.id,t.payload&&typeof t.payload==="object"&&!Array.isArray(t.payload)
@@ -460,7 +469,11 @@ export async function recoverPlanDelivery(db:Db,businessId:string,ownerId:string
   ]));
   let repaired=0,created=0;
   for(const p of latest){
-    const taskId="event-plan:"+p.startDate;
+    const exactKey=eventPlanTaskKey(p.startDate,p.eventIds??[]),legacyKey="event-plan:"+p.startDate;
+    const legacy=known.get(legacyKey);
+    const legacyIds=Array.isArray(legacy?.selectedEventIds)?legacy.selectedEventIds.map(String):[];
+    const taskId=legacy&&(legacy.proposalId===p.proposalId||
+      legacyIds.length>0&&occurrenceKey(legacyIds)===occurrenceKey(p.eventIds??[]))?legacyKey:exactKey;
     const previous=known.get(taskId);
     // Scope the message to the proposal, not just the day's event facts:
     // owner-chat drafts can share a facts hash but have different approval cards.

@@ -31,6 +31,10 @@ describe("Supervisor selects specific café-relevant events without losing the c
    expect(selectedEventPlanFacts(city,city,date,hash,[a]).map(e=>e.id)).toEqual([a]);
    expect(selectedEventPlanFacts(city,city,date,hash,[b]).map(e=>e.id)).toEqual([b]);
  });
+ it("revalidates later crowded-day batches against their own exact IDs",()=>{
+   const others=Array.from({length:9},(_,i)=>event("00000000-0000-4000-8000-"+String(i).padStart(12,"0"),"Other "+i));
+   expect(selectedEventPlanFacts(city,[...others,...city],date,hash,[b])).toEqual(eventPlanFacts([city[1]]));
+ });
  it("rejects an unknown or duplicated UUID without creating a plan",()=>{
    expect(()=>selectedEventPlanFacts(city,city,date,hash,[a,a])).toThrow("event_facts_changed");
    expect(()=>selectedEventPlanFacts(city,city,date,hash,["99999999-9999-4999-8999-999999999999"]))

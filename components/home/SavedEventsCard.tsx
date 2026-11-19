@@ -90,9 +90,9 @@ export function eventDetailDay(event:Pick<CafeEvent,"startDate"|"endDate">,viewD
 }
 /** Preserve the exact tapped event across Home, chat and saved day reports. */
 export function eventChatTarget(date:string,event?:Pick<CafeEvent,"id"|"name">,
-  plan?:Pick<Plan,"summary"|"threadId">){
+  plan?:Pick<Plan,"summary"|"threadId"|"eventIds">){
   return {date,title:event?.name??plan?.summary??date,eventId:event?.id,
-    existingThreadId:event?undefined:plan?.threadId};
+    existingThreadId:event?(plan?.eventIds?.length===1&&plan.eventIds[0]===event.id?plan.threadId:undefined):plan?.threadId};
 }
 const planOn=(plans:readonly Plan[],date:string)=>
   plans.find(p=>p.startDate<=date&&p.endDate>=date);
@@ -543,7 +543,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const button="min-h-12 rounded-xl px-4 text-[17px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   const chat=(date:string,event?:CafeEvent)=>{
     if(chatDisabled)return;
-    const target=eventChatTarget(date,event,planOn(timeline.plans,date));
+    const target=eventChatTarget(date,event,event?eventPlanFor(timeline.plans,event.id,date):planOn(timeline.plans,date));
     onChatAboutDay(target.date,target.title,target.eventId,target.existingThreadId);
     setPanel(null);
   };

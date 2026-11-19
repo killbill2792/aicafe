@@ -56,6 +56,15 @@ describe("saved event readiness plan-once selection",()=>{
    expect(matchingEventPreparation([prior],{...input,actions:[{area:"prep",action:"Increase pastry stock"}]},"hash")).toBeUndefined();
    expect(matchingEventPreparation([prior],input,"corrected")).toBeUndefined();
  });
+ it("retains every crowded-day candidate across durable batches, even after the first batch is complete",()=>{
+   const crowded=Array.from({length:19},(_,i)=>event({id:String(i).padStart(36,"0")}));
+   const pending=pendingEventDays(crowded,[],"2026-11-03","2026-11-03",[],"s");
+   expect(pending.map(p=>p.events.length)).toEqual([8,8,3]);
+   expect(new Set(pending.flatMap(p=>p.events.map(e=>e.id))).size).toBe(19);
+   const first=pending[0];
+   const prior={startDate:first.date,factsHash:first.hash,sourceHash:"s",batchKey:first.batchKey};
+   expect(pendingEventDays(crowded,[],"2026-11-03","2026-11-03",[prior],"s")).toEqual(pending.slice(1));
+ });
  it("groups multiple confirmed events on one day, never inventing business impact",()=>{
    const first=event(),other=event({
      id:"22222222-2222-4222-8222-222222222222",name:"Market",

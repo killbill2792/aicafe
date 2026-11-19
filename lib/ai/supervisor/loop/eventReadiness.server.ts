@@ -243,13 +243,14 @@ export function selectedEventPlanFacts(
   current:readonly import("@/lib/data/cafeEvents.server").CafeEvent[],
   date:string,originalDayHash:string,ids:readonly string[]
 ){
-  const currentDay=current.filter(e=>e.status==="found"&&
-    e.startDate<=date&&e.endDate>=date).sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
+  const batchIds=new Set(original.map(e=>e.id));
+  const currentDay=current.filter(e=>batchIds.has(e.id)&&e.status==="found"&&
+    e.startDate<=date&&e.endDate>=date).sort((a,b)=>a.id.localeCompare(b.id));
   const initial=original.filter(e=>e.status==="found"&&
-    e.startDate<=date&&e.endDate>=date).sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
+    e.startDate<=date&&e.endDate>=date).sort((a,b)=>a.id.localeCompare(b.id));
   if(effectHash(eventPlanFacts(currentDay))!==originalDayHash||
     effectHash(eventPlanFacts(initial))!==originalDayHash||
-    !ids.length||ids.length>8||new Set(ids).size!==ids.length)
+    !ids.length||ids.length>8||initial.length>8||new Set(ids).size!==ids.length)
     throw new Error("event_facts_changed");
   const selected=currentDay.filter(e=>ids.includes(e.id));
   if(selected.length!==ids.length)throw new Error("event_facts_changed");

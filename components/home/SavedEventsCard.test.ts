@@ -165,6 +165,8 @@ describe("per-event chat selection",()=>{
     expect(first).toEqual({date:sameDay,title:"event-a",eventId:"event-a",existingThreadId:undefined});
     expect(second).toEqual({date:sameDay,title:"event-b",eventId:"event-b",existingThreadId:undefined});
     expect(second.eventId).not.toBe(first.eventId);
+    expect(eventChatTarget(sameDay,a,{...plan,eventIds:[a.id]}).existingThreadId).toBe(plan.threadId);
+    expect(eventChatTarget(sameDay,a,{...plan,eventIds:[a.id,b.id]}).existingThreadId).toBeUndefined();
   });
   it("keeps the day report's existing thread without pretending an event was tapped",()=>{
     expect(eventChatTarget(sameDay,undefined,{summary:"Shared outlook",threadId:"day-thread"}))
