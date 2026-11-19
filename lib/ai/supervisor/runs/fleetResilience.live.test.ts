@@ -4,7 +4,7 @@
  * The 25-hour follow-up schedule is simulated; lease expiry itself is real.
  * Disposable shared runner only; no new production pipeline or trusted runner. */
 import {randomUUID} from "node:crypto";
-import {mkdirSync,writeFileSync,mkdtempSync,existsSync,readFileSync,rmSync} from "node:fs";
+import {mkdirSync,writeFileSync,mkdtempSync,existsSync,readFileSync,rmSync,renameSync} from "node:fs";
 import {spawn} from "node:child_process";
 import {once} from "node:events";
 import {join} from "node:path";
@@ -50,9 +50,9 @@ childTest("interrupted investigation worker",async()=>{
  const collect=await processNextInvestigation(db,new Date());
  expect(collect).toMatchObject({processed:1,collected:1,failed:0});
  const interrupted:AgentProvider=async function*(){
-   writeFileSync(childMarker,JSON.stringify({pid:process.pid}),{flag:"wx",mode:0o600});
-   await new Promise<void>(resolve=>setTimeout(resolve,240_000));
-   throw Error("15c_expected_worker_kill");
+   writeFileSync(childMarker+".tmp",JSON.stringify({pid:process.pid}),{flag:"wx",mode:0o600});
+   renameSync(childMarker+".tmp",childMarker);
+   yield* await new Promise<never>((_resolve,reject)=>setTimeout(()=>reject(Error("15c_expected_worker_kill")),240_000));
  };
  await processNextInvestigation(db,new Date(),interrupted);
  throw Error("15c_interrupted_process_should_not_return");
@@ -68,14 +68,14 @@ async function waitUntil(check:()=>Promise<boolean>,timeoutMs:number){
 }
 
 run("real Luna recovers the same investigation after SIGKILL and real lease expiry",async()=>{
- const expectedHead=process.env.AICAFE_15C_LIVE_HEAD;
+ const expectedHead=process.env.AICAFE_SHARED_LUNA_HEAD;
  if(!/^[a-f0-9]{40}$/.test(expectedHead??""))
   throw Error("15c_live_missing_exact_head");
  if(configuredSupervisorModel()!=="gpt-6-luna")
   throw Error("15c_live_model_mismatch");
  if(!process.env.OPENAI_API_KEY)
   throw Error("15c_live_provider_key_unavailable");
- const url=localEndpoint(process.env.AICAFE_15C_LOCAL_DB_URL,"db");
+ const url=localEndpoint(process.env.ACCEPTANCE_DATABASE_URL,"db");
  const api=localEndpoint(process.env.NEXT_PUBLIC_SUPABASE_URL,"api");
  const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
  if(!key)throw Error("15c_live_disposable_service_key_missing");
@@ -205,7 +205,7 @@ run("real Luna recovers the same investigation after SIGKILL and real lease expi
     expect(originalPid).not.toBe(process.pid);
     const held=(await admin.query("select episode_id,phase,lease_token,step_version from public.supervisor_investigations where business_id=$1 and source_id=$2",
       [ids.business,tasks[0].id])).rows[0];
-    expect(held).toMatchObject({episode_id:episode,phase:"investigate",step_version:held.step_version});
+    expect(held).toMatchObject({episode_id:episode,phase:"investigate"});
     expect(Number(held.step_version)).toBe(1);
     expect(typeof held.lease_token).toBe("string");
     expiredToken=held.lease_token;
@@ -340,8 +340,8 @@ run("real Luna recovers the same investigation after SIGKILL and real lease expi
   // IDs are synthetic and NEVER uploaded. The trusted host broker runner
   // reads this private candidate/host handoff to independently SQL-verify
   // saved employee evidence, owner notice, true roster state and quota.
-  // Without the explicit disposable-only host flag, cleanup is immediate.
-  if(process.env.AICAFE_15C_HOST_ATTEST_DB==="1"){
+  // The shared runner independently verifies the retained disposable rows.
+  {
    writeFileSync("test-results/acceptance/15c-scope.json",
     JSON.stringify({businessId:ids.business,foreignBusinessId:ids.foreignBusiness,
      ownerUserId:ids.owner,foreignOwnerUserId:ids.foreignOwner,
@@ -353,12 +353,6 @@ run("real Luna recovers the same investigation after SIGKILL and real lease expi
   }
  }finally{
   await admin.query("reset role").catch(()=>{});
-  if(process.env.AICAFE_15C_HOST_ATTEST_DB!=="1"){
-   for(const id of [ids.business,ids.foreignBusiness])
-    await admin.query("delete from public.businesses where id=$1",[id]).catch(()=>{});
-   for(const id of [ids.owner,ids.foreignOwner,ids.employeeUser])
-    await admin.query("delete from auth.users where id=$1",[id]).catch(()=>{});
-  }
   // In the trusted host-gated test, the runner independently rereads this
   // disposable DB and destroys its whole local instance immediately after.
   await admin.end();
