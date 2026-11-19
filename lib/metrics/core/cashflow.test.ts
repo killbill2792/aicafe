@@ -75,8 +75,12 @@ describe("documented invoice settlement and recurring dates",()=>{
   expect(summarizeInvoiceClaims([a],asOf,false,[{...debit,financial_allocation_cents:10000}]).claims[0].paymentStatus).toBe("documented_covered");
  });
  it("does not inherit earlier allocations after a revision",()=>{
-  expect(summarizeInvoiceClaims([a,{...a,id:"new",revision:2}],asOf,false,[debit]).claims[0]).toMatchObject({
-   paymentStatus:"revision_review",documentedAllocatedCents:null,uncoveredRecordedClaimCents:null});
+  const original={...a,purchase_order_id:null,revision:3};
+  const current={...original,id:"new",revision:4};
+  const result=summarizeInvoiceClaims([original,current],asOf,false,[{...debit,source_revision:"3"}]);
+  expect(result.claims[0]).toMatchObject({invoiceId:"new",revision:4,paymentStatus:"revision_review",documentedAllocatedCents:null,uncoveredRecordedClaimCents:null});
+  expect(result.documentedSettlementLinks).toEqual([expect.objectContaining({eventId:"debit",invoiceId:original.id,invoiceRevision:3,documentedRemainingCents:5000})]);
+  expect(summarizeInvoiceClaims([original,current],asOf,false,[debit]).documentedSettlementLinks).toEqual([]);
  });
  it("fails closed on unsupported reversal and excessive allocations",()=>{
   for(const events of [[credit],[{...debit,financial_allocation_cents:20000}],[debit,{...credit,financial_allocation_cents:5001}]]){

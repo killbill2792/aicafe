@@ -31,7 +31,7 @@ export type SettlementEvidenceRow={
 export function summarizeInvoiceClaims(rows:readonly InvoiceClaimRow[],asOf:string,truncated:boolean,
  settlements:readonly SettlementEvidenceRow[]|null=null,claimOffset=0){
  const unavailable=(reason:string)=>({coverage:"incomplete" as const,missing:[reason],
-   recordedClaimCount:null,claims:[] as Claim[],claimDetailsTruncated:false,claimNextOffset:null as number|null,documentedSettlementLinks:[] as {eventId:string;invoiceId:string;uploadId:string;rowIndex:number|null;transactionDate:string;linkedCents:number;documentedRemainingCents:number}[],
+   recordedClaimCount:null,claims:[] as Claim[],claimDetailsTruncated:false,claimNextOffset:null as number|null,documentedSettlementLinks:[] as {eventId:string;invoiceId:string;invoiceRevision:number;uploadId:string;rowIndex:number|null;transactionDate:string;linkedCents:number;documentedRemainingCents:number}[],
    recordedClaimTotalsByCurrency:[] as {currency:string;recordedClaimCents:number}[],
    outstandingPaymentCents:null,settledPaymentCents:null});
  if(truncated)return unavailable("supplier_invoice_history_truncated");
@@ -108,7 +108,7 @@ export function summarizeInvoiceClaims(rows:readonly InvoiceClaimRow[],asOf:stri
   const row=rowById.get(v.row.financial_invoice_id);
   return v.amount>v.reversed&&row&&pageIdentities.has(JSON.stringify([row.supplier_id,row.invoice_reference]));
  }).sort(([a],[b])=>a.localeCompare(b)).slice(0,20).map(([eventId,v])=>({
-  eventId,invoiceId:v.row.financial_invoice_id,uploadId:v.row.financial_upload_id,
+  eventId,invoiceId:v.row.financial_invoice_id,invoiceRevision:Number(v.row.source_revision),uploadId:v.row.financial_upload_id,
   rowIndex:exactInteger(v.row.financial_row_index),transactionDate:v.row.financial_tx_date,
   linkedCents:v.amount,documentedRemainingCents:v.amount-v.reversed})):[];
  for(const claim of all){

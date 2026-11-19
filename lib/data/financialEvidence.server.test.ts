@@ -53,8 +53,19 @@ describe("finance source owner boundary",()=>{
   const selected=await readFinancialEvidence(scope,"2026-11-18",{invoiceReference:"LAST-DOCUMENT"});
   expect(selected.invoiceReferenceFilter).toBe("last-document");
   expect(selected.claims).toEqual([expect.objectContaining({invoiceId:"target",purchaseOrderId:null,documentedAllocatedCents:1000,paymentStatus:"documented_partial"})]);
-  expect(selected.documentedSettlementLinks).toEqual([expect.objectContaining({eventId:"allocation",invoiceId:"target"})]);
+  expect(selected.documentedSettlementLinks).toEqual([expect.objectContaining({eventId:"allocation",invoiceId:"target",invoiceRevision:1})]);
   expect(selected.conditionalStress.filter(r=>r.sourceClass==="supplier_claims")).toEqual([]);
+ });
+ it("returns the original standalone invoice revision for an exact-reference credit reversal",async()=>{
+  const original={...row,id:"old-claim",invoice_reference:"corrected",purchase_order_id:null as unknown as string,revision:3};
+  const corrected={...original,id:"corrected-claim",revision:4};
+  const db=database(undefined,[original,corrected],[{id:"old-allocation",business_id:"cafe",owner_user_id:"owner",
+   financial_invoice_id:original.id,financial_kind:"settlement_evidence_linked",financial_allocation_cents:1000,
+   financial_reverses_id:null,source_revision:"3",financial_tx_date:"2026-11-12",financial_upload_id:"statement",financial_row_index:0}]);
+  auth.mockReset().mockResolvedValue({client:db.client});
+  const result=await readFinancialEvidence(scope,"2026-11-18",{invoiceReference:"corrected"});
+  expect(result.claims).toEqual([expect.objectContaining({invoiceId:corrected.id,revision:4,paymentStatus:"revision_review"})]);
+  expect(result.documentedSettlementLinks).toEqual([expect.objectContaining({eventId:"old-allocation",invoiceId:original.id,invoiceRevision:3,documentedRemainingCents:1000})]);
  });
  it("does not query unauthorized scopes or return data after revocation",async()=>{
   const db=database();auth.mockReset().mockRejectedValueOnce(Error("unauthorized"));
