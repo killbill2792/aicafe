@@ -6,7 +6,8 @@
   "proof": "6-15c-owner-run-proof.json",
   "scope": "6-15c-owner-run-scope.json",
   "expectedTools": [
-    "calculate"
+    "calculate",
+    "get_supervisor_permissions"
   ],
   "assertions": [
     {
