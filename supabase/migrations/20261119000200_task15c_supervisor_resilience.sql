@@ -306,3 +306,47 @@ revoke all on function public.supervisor_claim_current_routine_occurrence(uuid,u
   from public,anon,authenticated;
 grant execute on function public.supervisor_claim_current_routine_occurrence(uuid,uuid,bigint,date,timestamptz,timestamptz)
   to service_role;
+
+-- Stop and its reason are one transaction. Never let an old process block a
+-- newer worker's live lease or leave a blocked run with a still-running step.
+create function public.supervisor_stop_durable_run(
+  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_run_id uuid,
+  p_error_code text,p_step_key text,p_claim_token uuid
+) returns boolean language plpgsql security invoker set search_path=public as $$
+declare r public.supervisor_runs;s public.supervisor_run_steps;v_now timestamptz;
+begin
+  if coalesce(auth.role(),'')<>'service_role' then
+    raise exception 'Service role required' using errcode='42501'; end if;
+  if p_error_code is null or p_error_code !~ '^[a-z_]{1,60}$' or
+    ((p_step_key is null)<>(p_claim_token is null)) then
+    raise exception 'Invalid stop identity' using errcode='22023'; end if;
+  select * into r from public.supervisor_runs where business_id=p_business_id
+    and owner_user_id=p_owner_user_id and thread_id=p_thread_id and id=p_run_id for update;
+  if not found or r.status not in ('pending','running') then return false; end if;
+  select * into s from public.supervisor_run_steps
+    where business_id=p_business_id and run_id=p_run_id and status<>'completed'
+    order by step_index limit 1 for update;
+  if not found then return false; end if;
+  v_now:=clock_timestamp();
+  if p_claim_token is not null then
+    if s.step_key<>p_step_key or s.status<>'leased'
+      or s.claim_token is distinct from p_claim_token or s.lease_until<=v_now
+      then return false; end if;
+  elsif s.status='leased' and s.lease_until>v_now then
+    return false;
+  end if;
+  -- Preserve uncertain effects when an untokened worker finds an expired
+  -- reconcile step. Only explicit revocation/cancellation is terminal.
+  if p_claim_token is null and s.status='leased' and s.retry_mode='reconcile'
+    and p_error_code not in ('authorization_revoked','cancelled') then
+    return false;
+  end if;
+  update public.supervisor_run_steps set status='blocked',error_code=p_error_code,
+    worker_id=null,claim_token=null,lease_until=null,updated_at=v_now where id=s.id;
+  update public.supervisor_runs set status='blocked',updated_at=v_now where id=r.id;
+  return true;
+end $$;
+revoke all on function public.supervisor_stop_durable_run(uuid,uuid,uuid,uuid,text,text,uuid)
+  from public,anon,authenticated;
+grant execute on function public.supervisor_stop_durable_run(uuid,uuid,uuid,uuid,text,text,uuid)
+  to service_role;
