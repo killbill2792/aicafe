@@ -19,6 +19,8 @@ describe("event_readiness uses the shared Supervisor lifecycle",()=>{
  it("validates inert one-to-three action plans with time ranges",()=>{
   expect(eventReadinessCapabilityId).toBe("alex.event_readiness.v1");
   expect(eventReadinessInput.parse(valid).actions).toHaveLength(1);
+  expect(eventReadinessInput.parse({...valid,importance:"high"}).importance).toBe("high");
+  expect(()=>eventReadinessInput.parse({...valid,importance:"certain"})).toThrow();
   expect(()=>eventReadinessInput.parse({...valid,actions:[]})).toThrow();
   expect(()=>eventReadinessInput.parse({...valid,eventIds:[eventId,eventId],x:"override"})).toThrow();
  });

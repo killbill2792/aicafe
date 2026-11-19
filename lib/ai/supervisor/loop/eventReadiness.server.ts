@@ -30,6 +30,7 @@ export const eventReadinessInput=z.strictObject({
  startDate:isoDay,endDate:isoDay,
  eventIds:z.array(z.uuid()).min(1).max(8),
  summary:z.string().trim().min(3).max(500),
+ importance:z.enum(["high","medium","low"]).optional(),
  expectedBusyHours:z.array(z.strictObject({start:time,end:time})).max(8),
  actions:z.array(action).min(1).max(3),
 });
@@ -256,7 +257,9 @@ export const eventReadinessCapability=registerLoopCapability({
      input.expectedBusyHours.some(h=>h.start>=h.end))throw new Error("invalid_event_plan");
    const found=(await readCanonicalCafeEvents(db,scope.businessId,input.startDate,input.endDate))
      .filter(e=>input.eventIds.includes(e.id)&&e.status==="found");
-   if(found.length!==input.eventIds.length)throw new Error("event_facts_unavailable");
+   if(found.length!==input.eventIds.length||
+     found.some(e=>e.startDate>input.startDate||e.endDate<input.endDate))
+     throw new Error("event_facts_unavailable");
    const facts=eventPlanFacts(found);
    return {effect:{...input,facts,factsHash:effectHash(facts)},
      baseline:{source:"cafe_events",eventNames:facts.map(f=>f.name),

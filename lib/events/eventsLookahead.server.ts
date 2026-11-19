@@ -58,23 +58,31 @@ export function eventAssessmentSourceHash(timeline:Pick<SavedEventTimeline,"city
   });
 }
 export type SavedEventAssessment={
-  startDate:string;factsHash:string;sourceHash:string;
+  startDate:string;factsHash:string;sourceHash:string;assessedOn?:string;
 };
 /** A prior no-action is a durable assessment, not an alert. Approved/rejected
  * plans always win; a changed source or confirmed event can be reconsidered. */
 export function pendingEventDays(events:readonly CafeEvent[],
   plans:readonly {startDate:string;factsHash:string;status?:string}[],from:string,to:string,
   assessments:readonly SavedEventAssessment[]=[],sourceHash=""):Array<{
-    date:string;events:CafeEvent[];hash:string
+    date:string;events:CafeEvent[];hash:string;refresh?:boolean
   }>{
-  const result:Array<{date:string;events:CafeEvent[];hash:string}>=[];
+  const result:Array<{date:string;events:CafeEvent[];hash:string;refresh?:boolean}>=[];
   for(let day=from;day<=to;day=addDays(day,1)){
     const found=events.filter(e=>e.status==="found"&&e.startDate<=day&&e.endDate>=day)
       .sort((a,b)=>a.id.localeCompare(b.id)).slice(0,8);
     if(!found.length)continue;
     const hash=effectHash(eventPlanFacts(found));
-    if(assessments.some(a=>a.startDate===day&&a.factsHash===hash&&
-      a.sourceHash===sourceHash))continue;
+    const prior=assessments.find(a=>a.startDate===day&&a.factsHash===hash&&
+      a.sourceHash===sourceHash);
+    // Reassess an ongoing event on the actual local business day once, even
+    // when its public facts and previously approved actions have not changed.
+    // This is an evidence refresh, not permission to repeat an approval.
+    if(day===from&&prior?.assessedOn&&prior.assessedOn<day&&
+      found.some(e=>e.startDate<e.endDate)){
+      result.push({date:day,events:found,hash,refresh:true});continue;
+    }
+    if(prior)continue;
     // This also preserves historical full-day drafts. Any approved or declined
     // owner decision remains authoritative, regardless of new public evidence.
     if(!plans.some(p=>p.startDate===day&&(p.factsHash===hash||
@@ -200,12 +208,13 @@ async function eventThread(db:Db,businessId:string,ownerId:string,day:string){
  * event-plan approval. Its stable day ID makes positive and no-action judgments
  * replay-safe without creating a second assessment store. */
 async function saveEventAssessment(db:Db,businessId:string,date:string,
-  factsHash:string,sourceHash:string,outcome:"proposed"|"no_action",reason:string){
+  factsHash:string,sourceHash:string,outcome:"proposed"|"no_action",reason:string,
+  assessedOn:string){
   const saved=await db.from("operating_tasks").upsert({
     id:"event-assessment:"+date,business_id:businessId,agent_id:"alex",
     kind:"event_assessment",entity_type:"event_day",entity_id:date,
     status:"handled",confidence:"low",
-    payload:{businessDate:date,factsHash,sourceHash,outcome,reason:reason.slice(0,500)},
+    payload:{businessDate:date,factsHash,sourceHash,outcome,assessedOn,reason:reason.slice(0,500)},
     evidence:[{source:"cafe_events",facts:{businessDate:date,factsHash}}],
   },{onConflict:"business_id,id"});
   requireOk(saved.error);
@@ -222,29 +231,51 @@ async function readEventAssessments(db:Db,businessId:string,from:string,to:strin
     return row.status==="handled"&&typeof p?.factsHash==="string"&&
       typeof p?.sourceHash==="string"?
       [{startDate:row.id.slice("event-assessment:".length),
-        factsHash:p.factsHash,sourceHash:p.sourceHash}]:[];
+        factsHash:p.factsHash,sourceHash:p.sourceHash,
+        ...(typeof p.assessedOn==="string"?{assessedOn:p.assessedOn}:{})}]:[];
   });
+}
+
+/** Exact unchanged action identities can reuse an existing decision. Never treat
+ * a previously declined proposal as approval or change an old effect in place. */
+export function matchingEventPreparation(plans:SavedEventTimeline["plans"],
+  input:{startDate:string;endDate:string;eventIds:string[];actions:unknown},factsHash:string){
+  const key=(actions:unknown)=>{
+    if(!Array.isArray(actions)||!actions.length)return null;
+    const values=actions.flatMap(value=>{
+      if(!value||typeof value.area!=="string"||typeof value.action!=="string")return [];
+      return [value.area+"|"+value.action.normalize("NFKC").trim().replace(/\s+/g," ").toLowerCase()];
+    });
+    return values.length===actions.length?JSON.stringify(values.sort()):null;
+  };
+  const requested=key(input.actions);
+  if(!requested)return undefined;
+  const ids=JSON.stringify([...input.eventIds].sort());
+  return plans.find(p=>["draft","approved","committed","manual_confirmed","rejected"].includes(p.status)&&
+    p.startDate<=input.startDate&&p.endDate>=input.endDate&&p.factsHash===factsHash&&
+    JSON.stringify([...(p.eventIds??[])].sort())===ids&&key(p.actions)===requested);
 }
 
 /** The existing scheduled Supervisor consumes E's canonical saved Events facade
  * and D's scoped Toast/report evidence, and MAY use its existing web_search.
  * No separate investigator, money metric, or auto-approval is introduced. */
 export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|"ar",
-  today:string,day:{date:string;events:CafeEvent[];hash:string},
+  today:string,day:{date:string;events:CafeEvent[];hash:string;refresh?:boolean},
   ownerFacts:readonly SavedFact[],timeline:SavedEventTimeline,
   sourceHash:string):Promise<boolean>{
   const threadId=await eventThread(db,b.id,ownerId,day.date);
   const scope:OwnerLoopScope=await authorizedScheduledEventScope({
     businessId:b.id,ownerUserId:ownerId,threadId,locale,
   });
-  const requestKey=stableMessageId("event-proposal:"+b.id+":"+ownerId+":"+day.date+":"+day.hash);
+  const requestKey=stableMessageId("event-proposal:"+b.id+":"+ownerId+":"+day.date+":"+day.hash+
+    (day.refresh?":day-of":""));
   const existing=await db.from("supervisor_proposals").select("id")
     .eq("business_id",b.id).eq("owner_user_id",ownerId).eq("request_key",requestKey)
     .maybeSingle();
   requireOk(existing.error);
   if(existing.data){
     // Repair eligibility stays with recoverPlanDelivery, not a second model turn.
-    await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","");
+    await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today);
     return false;
   }
   const facts=eventPlanFacts(day.events);
@@ -275,9 +306,13 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
       assessment:p.assessment,rationale:p.rationale,
     })),
     cafePerformance:evidence,
+    previousReadinessPlans:timeline.plans.filter(p=>p.eventIds?.some(id=>facts.some(f=>f.id===id)))
+      .slice(0,8).map(p=>({eventIds:p.eventIds,startDate:p.startDate,endDate:p.endDate,
+        status:p.status,summary:p.summary,actions:p.actions,expectedBusyHours:p.expectedBusyHours})),
   };
   let selectedEventIds:string[]=[];
   let selectedFactsHash:string|null=null;
+  let reused=false;
   const turn=await runAgentTurn({
     businessId:b.id,requestId:requestKey,ownerFacts,
     toolNames:["propose_event_plan","web_search","get_events"],
@@ -290,8 +325,14 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
       "before deciding. Do not ask the owner to research external information. "+
       "If there is no defensible café-specific preparation advice, explain uncertainty "+
       "briefly and do NOT call propose_event_plan. Otherwise call it once with 1–3 "+
-      "specific, inert owner-reviewable recommendations. Dates must both be "+
-      day.date+". Only include expectedBusyHours when a timed source and usable "+
+      "specific, inert owner-reviewable recommendations. Start on "+day.date+
+      ". You may cover the remaining verified dates of the SAME occurrence when "+
+      "the same actions are justified throughout; do not turn a first-day forecast into "+
+      "a multi-day hourly estimate. For different daily preparation, assess independently. "+
+      "Use existing readiness plans and historical outcomes before asking for another approval. "+
+      "If an unchanged plan is adequate or declined, do not repeat it; only recommend a materially "+
+      "different action when supported by new evidence. Assign high, medium or low importance "+
+      "based on café-specific evidence, not event size alone. Only include expectedBusyHours when a timed source and usable "+
       "café evidence justify an explicitly estimated window; else use []. "+
       "Never claim an event caused a sales change or invent attendance, uplift, "+
       "numeric forecast, changed busy hours or any action already taken.",
@@ -312,8 +353,17 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
         const latest=await readCanonicalCafeEvents(db,b.id,day.date,day.date);
         const selected=selectedEventPlanFacts(day.events,latest,day.date,
           day.hash,input.eventIds);
-        if(input.startDate!==day.date||input.endDate!==day.date)
+        if(input.startDate!==day.date||input.endDate<input.startDate||
+          input.endDate>addDays(input.startDate,13)||
+          selected.some(e=>e.endDate<input.endDate))
           throw new Error("event_facts_changed");
+        if(input.endDate!==input.startDate&&input.expectedBusyHours.length)
+          throw new Error("event_busy_hours_not_supported");
+        const prior=matchingEventPreparation(timeline.plans,input,effectHash(selected));
+        if(prior){
+          reused=true;
+          return {proposalId:prior.proposalId,revision:prior.revision,reused:true,status:prior.status};
+        }
         const timed=selected.some(e=>e.startTime&&e.endTime&&e.sourceUrl);
         if(input.expectedBusyHours.length>0&&
           (!timed||!evidence.usualHours.length))
@@ -326,6 +376,11 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
       }},
     },
   });
+  if(reused){
+    await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
+      "no_action","Existing preparation decision remains applicable.",today);
+    return false;
+  }
   const proposal=turn.results.find(r=>r.source==="event_plan_proposal"&&
     r.missing.length===0&&r.draft===true&&typeof r.proposalId==="string");
   if(!proposal){
@@ -334,7 +389,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
       !turn.results.some(r=>r.source==="event_plan_proposal"||
         r.source==="propose_event_plan"))
       await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
-        "no_action",turn.text);
+        "no_action",turn.text,today);
     return false;
   }
   const {reply,metadata}=turn.text.trim()?agentReplyPayload(turn):
@@ -364,7 +419,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   },{onConflict:"business_id,id"});
   requireOk(task.error);
   });
-  await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","");
+  await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,"proposed","",today);
   return true;
 }
 
