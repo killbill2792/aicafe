@@ -146,6 +146,12 @@ describe("Task 15C durable SQL lease process death (not full Supervisor restart)
       expect(resumed).toMatchObject({ ok: true, pid: second.pid, result: { kind: "claimed", step: { step_key: "read", attempts: 2 }, idempotency_key: held.result?.idempotency_key } });
       expect(resumed.pid).not.toBe(held.pid);
       expect(resumed.result?.step?.claim_token).not.toBe(held.result?.step?.claim_token);
+      // Neither a stale token nor an untokened worker may stop the replacement.
+      expect(await call(service, "supervisor_stop_durable_run",
+        [...scope, runId, "turn_failed", "read", held.result?.step?.claim_token])).toBe(false);
+      expect(await call(service, "supervisor_stop_durable_run",
+        [...scope, runId, "cancelled", null, null])).toBe(false);
+      expect((await admin.query("select status from public.supervisor_runs where id=$1",[runId])).rows[0].status).toBe("running");
       await expect(call(service, "supervisor_run_complete_step",
         [...scope, runId, "read", held.result?.step?.claim_token, "stale:receipt"])).rejects.toThrow();
       expect((await invoke(second, "complete",
