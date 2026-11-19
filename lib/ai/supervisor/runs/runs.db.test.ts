@@ -527,6 +527,7 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
    expect((await call(a,"supervisor_publish_owner_reply_v2",[...scope,partial.id,turn.step.claim_token,partialJob.id,partialReply,blocks,incomplete])).id).toBe(partialReply);
    expect(await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30])).toEqual({kind:"blocked"});
    expect((await admin.query("select status,final_report_ref from public.supervisor_runs where id=$1",[partial.id])).rows).toEqual([{status:"blocked",final_report_ref:null}]);
+   expect(await call(a,"supervisor_cancel_owner_run_v2",[...scope,partial.id])).toBe("blocked");
 
 
   }finally{

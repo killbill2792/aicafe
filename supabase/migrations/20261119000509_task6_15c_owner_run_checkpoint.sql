@@ -775,9 +775,9 @@ begin
  select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
    and owner_user_id=p_owner_user_id and thread_id=p_thread_id and execution_version=2 for update;
  if not found then return 'not_found'; end if;
- if r.status='completed' or exists(select 1 from public.ai_agent_jobs j
+ if r.status='completed' or (r.status<>'blocked' and exists(select 1 from public.ai_agent_jobs j
    where j.durable_run_id=r.id and j.business_id=r.business_id and j.owner_user_id=r.owner_user_id
-    and j.thread_id=r.thread_id and j.status='done' and j.reply_message_id is not null)
+    and j.thread_id=r.thread_id and j.status='done' and j.reply_message_id is not null))
     then return 'completed'; end if;
  select * into s from public.supervisor_run_steps where run_id=r.id and business_id=r.business_id
    and status<>'completed' order by step_index limit 1 for update;
