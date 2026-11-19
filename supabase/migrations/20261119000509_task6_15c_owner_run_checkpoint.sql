@@ -71,6 +71,8 @@ begin
       then raise exception 'owner_run_input_conflict' using errcode='23505'; end if;
     return to_jsonb(r);
   end if;
+  if exists(select 1 from public.ai_agent_jobs j where j.owner_message_id=p_owner_message_id)
+    then raise exception 'owner_run_input_conflict' using errcode='23505'; end if;
   v_started:=public.supervisor_run_start(p_business_id,p_owner_user_id,p_thread_id,
     p_owner_message_id,p_plan_hash,
     '[{"key":"authorize_owner","retry":"idempotent"},{"key":"owner_turn","retry":"reconcile"},{"key":"verify_report","retry":"idempotent"}]'::jsonb);
@@ -637,3 +639,96 @@ begin
 end $$;
 revoke all on function public.supervisor_publish_owner_reply_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,jsonb,jsonb) from public,anon,authenticated;
 grant execute on function public.supervisor_publish_owner_reply_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,jsonb,jsonb) to service_role;
+
+-- A clarification is an intermediate receipt, not the final canonical reply.
+-- Only an authenticated, explicitly matched answer can wake the same run.
+alter table public.supervisor_runs add column awaiting_question_id uuid,
+  add column answered_question_ids uuid[] not null default '{}',
+  add column owner_answer_ids uuid[] not null default '{}';
+create function public.supervisor_publish_owner_question_v2(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_run_id uuid,p_claim_token uuid,
+ p_job_id uuid,p_reply_id uuid,p_blocks jsonb,p_grounding jsonb
+) returns jsonb language plpgsql security invoker set search_path=public as $$
+declare r public.supervisor_runs;s public.supervisor_run_steps;j public.ai_agent_jobs;m public.ai_messages;
+begin
+ if coalesce(auth.role(),'')<>'service_role' or p_reply_id is null
+   or jsonb_typeof(p_blocks) is distinct from 'array' or jsonb_array_length(p_blocks) not between 1 and 30
+   or p_grounding->>'status' is distinct from 'requires_owner_input'
+   or p_grounding->>'durableQuestionId' is distinct from p_reply_id::text
+   or not exists(select 1 from jsonb_array_elements(p_blocks) b where b->>'type'='clarify')
+   or octet_length(p_blocks::text)>150000 or octet_length(p_grounding::text)>150000
+   then raise exception 'durable_question_invalid' using errcode='22023'; end if;
+ select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
+   and owner_user_id=p_owner_user_id and thread_id=p_thread_id for update;
+ if not found or r.execution_version<>2 or r.status<>'running'
+   or p_grounding->>'ownerMessageId' is distinct from r.request_key::text
+   or p_grounding->>'durableRunId' is distinct from r.id::text
+   or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+   then raise exception 'durable_reply_scope_mismatch' using errcode='42501'; end if;
+ select * into s from public.supervisor_run_steps where business_id=r.business_id and run_id=r.id
+   and step_key='owner_turn' for update;
+ if not found or s.status<>'leased' or s.claim_token is distinct from p_claim_token
+   or s.lease_until<=clock_timestamp() or s.checkpoint_phase<>'ready'
+   then raise exception 'durable_job_lease_lost' using errcode='40001'; end if;
+ select * into j from public.ai_agent_jobs where id=p_job_id and durable_run_id=r.id
+   and durable_claim_token=p_claim_token and business_id=r.business_id and owner_user_id=r.owner_user_id
+   and thread_id=r.thread_id and owner_message_id=r.request_key and status='running' for update;
+ if not found then raise exception 'durable_job_lease_lost' using errcode='40001'; end if;
+ insert into public.ai_messages(id,business_id,owner_user_id,thread_id,role,content_type,structured_content,grounding)
+ values(p_reply_id,r.business_id,r.owner_user_id,r.thread_id,'supervisor','blocks',p_blocks,p_grounding)
+ returning * into m;
+ update public.ai_agent_jobs set status='failed',error_code='awaiting_owner',finished_at=clock_timestamp(),
+   updated_at=clock_timestamp(),heartbeat_at=clock_timestamp() where id=j.id;
+ update public.supervisor_run_steps set status='blocked',error_code='awaiting_owner',
+   claim_token=null,worker_id=null,lease_until=null,updated_at=clock_timestamp() where id=s.id;
+ update public.supervisor_runs set status='blocked',awaiting_question_id=p_reply_id,updated_at=clock_timestamp()
+   where id=r.id;
+ return to_jsonb(m);
+end $$;
+revoke all on function public.supervisor_publish_owner_question_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,jsonb,jsonb) from public,anon,authenticated;
+grant execute on function public.supervisor_publish_owner_question_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,jsonb,jsonb) to service_role;
+
+create function public.supervisor_answer_owner_run_v2(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_question_id uuid,p_answer_id uuid
+) returns jsonb language plpgsql security invoker set search_path=public as $$
+declare r public.supervisor_runs;s public.supervisor_run_steps;q public.ai_messages;a public.ai_messages;v_index integer;
+begin
+ if coalesce(auth.role(),'')<>'service_role'
+   or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+   then raise exception 'owner_answer_denied' using errcode='42501'; end if;
+ select * into q from public.ai_messages where id=p_question_id and business_id=p_business_id
+   and owner_user_id=p_owner_user_id and thread_id=p_thread_id and role='supervisor'
+   and grounding->>'status'='requires_owner_input' and grounding->>'durableQuestionId'=id::text;
+ if not found then raise exception 'owner_question_unavailable' using errcode='42501'; end if;
+ select * into a from public.ai_messages where id=p_answer_id and business_id=p_business_id
+   and owner_user_id=p_owner_user_id and thread_id=p_thread_id and role='owner' and content_type='text'
+   and created_at>=q.created_at;
+ if not found then raise exception 'owner_answer_unavailable' using errcode='42501'; end if;
+ select * into r from public.supervisor_runs where id::text=q.grounding->>'durableRunId'
+   and business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id
+   and execution_version=2 and request_key::text=q.grounding->>'ownerMessageId' for update;
+ if not found then raise exception 'owner_question_unavailable' using errcode='42501'; end if;
+ v_index:=array_position(r.answered_question_ids,p_question_id);
+ if v_index is not null then
+   if r.owner_answer_ids[v_index] is distinct from p_answer_id then
+     raise exception 'owner_question_already_answered' using errcode='23505'; end if;
+   return to_jsonb(r);
+ end if;
+ if r.status<>'blocked' or r.awaiting_question_id is distinct from p_question_id
+   or cardinality(r.owner_answer_ids)>=20 or p_answer_id=any(r.owner_answer_ids)
+   or exists(select 1 from public.supervisor_runs x where x.business_id=p_business_id
+     and x.owner_user_id=p_owner_user_id and (x.request_key=p_answer_id or p_answer_id=any(x.owner_answer_ids)))
+   then raise exception 'owner_question_stale' using errcode='23505'; end if;
+ select * into s from public.supervisor_run_steps where run_id=r.id and business_id=r.business_id
+   and step_key='owner_turn' for update;
+ if not found or s.status<>'blocked' or s.error_code is distinct from 'awaiting_owner'
+   or s.checkpoint_phase<>'ready' then raise exception 'owner_question_stale' using errcode='23505'; end if;
+ update public.supervisor_run_steps set status='pending',error_code=null,next_retry_at=null,
+   attempts=0,updated_at=clock_timestamp() where id=s.id;
+ update public.supervisor_runs set status='pending',awaiting_question_id=null,
+   answered_question_ids=answered_question_ids||p_question_id,owner_answer_ids=owner_answer_ids||p_answer_id,
+   dispatch_after=null,updated_at=clock_timestamp() where id=r.id returning * into r;
+ return to_jsonb(r);
+end $$;
+revoke all on function public.supervisor_answer_owner_run_v2(uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.supervisor_answer_owner_run_v2(uuid,uuid,uuid,uuid,uuid) to service_role;
