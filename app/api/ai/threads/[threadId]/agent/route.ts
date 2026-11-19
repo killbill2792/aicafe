@@ -77,8 +77,15 @@ export async function POST(request: Request, context: RouteContext) {
     if(process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true"&&process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true"){
       const worker=await import("@/lib/ai/supervisor/runs/worker.server");
       let run:Awaited<ReturnType<typeof worker.admitDurableChat>>;
-      try{run=await worker.admitDurableChat({...scope,threadId:id},owner,{locale:input.locale,attachmentIds:input.attachmentIds??[]});}
+      try{
+        if(input.ownerInputResponse){
+          if(input.ownerInputResponse.action!=="supply"||input.attachmentIds?.length)throw new ConversationApiError(422,"invalid_owner_answer");
+          const {answerOwnerRun}=await import("@/lib/ai/supervisor/runs/repository.server");
+          run=await answerOwnerRun({...scope,threadId:id},input.ownerInputResponse.questionId,owner.id);
+        }else run=await worker.admitDurableChat({...scope,threadId:id},owner,{locale:input.locale,attachmentIds:input.attachmentIds??[]});
+      }
       catch(error){
+        if(error instanceof ConversationApiError)throw error;
         const cause=error instanceof Error?error.cause:null;
         const code=cause&&typeof cause==="object"&&"code" in cause?String(cause.code):"";
         throw new ConversationApiError(code==="23505"?409:503,code==="23505"?"idempotency_conflict":"conversation_storage_unavailable");
@@ -92,7 +99,7 @@ export async function POST(request: Request, context: RouteContext) {
           try{
             let sentReply=false;
             const state=await worker.processDurableRun(run.id,(type,data)=>{if(type==="done")sentReply=true;sink.emit(type,data);});
-            if(state==="busy")sink.emit("queued",{runId:run.id});
+            if(state==="busy"&&!sentReply)sink.emit("queued",{runId:run.id});
             else if(state==="blocked")sink.emit("error",{code:"agent_turn_failed",retryable:false,runId:run.id});
             else if(!sentReply) {
               // An earlier worker may have completed the reply between
