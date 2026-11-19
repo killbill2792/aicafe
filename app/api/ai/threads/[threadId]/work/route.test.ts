@@ -17,7 +17,7 @@ function database() {
   const filters: Record<string, Array<[string, string, unknown]>> = {};
   const source: Record<string, unknown[]> = {
     supervisor_runs: [], supervisor_run_steps: [], ai_agent_jobs: [],
-    supervisor_proposals: [], supervisor_effect_attempts: [], supervisor_investigations: [],
+    supervisor_proposals: [], supervisor_effect_attempts: [], supervisor_investigations: [], ai_threads: [],
   };
   const db = { from(table: string) {
     const predicates: Array<(row: Record<string,unknown>) => boolean> = [];
@@ -101,6 +101,29 @@ describe("GET /work owner isolation and receipt verification", () => {
     ]));
     expect(filters.supervisor_run_steps).toBeUndefined();
     expect(filters.supervisor_effect_attempts).toBeUndefined();
+  });
+  it("returns work from other owned threads but no other owner or café in owner-wide mode", async () => {
+    const {db,source,filters}=database();
+    const scope={business_id:"cafe-a",owner_user_id:"owner-a"};
+    source.ai_threads=[{...scope,id:thread,title:"First"}, {...scope,id:"other-thread",title:"Second"},
+      {...scope,owner_user_id:"someone-else",id:"private",title:"Private"}];
+    source.supervisor_proposals=[
+      {...scope,thread_id:thread,id:"first",status:"draft",effect_hash:"hash",updated_at:"2026-11-14"},
+      {...scope,thread_id:"other-thread",id:"second",status:"draft",effect_hash:"hash",updated_at:"2026-11-14"},
+      {...scope,thread_id:"private",owner_user_id:"someone-else",id:"private",status:"draft",effect_hash:"hash"},
+      {...scope,thread_id:"foreign",business_id:"cafe-b",id:"foreign",status:"draft",effect_hash:"hash"},
+    ];
+    client.mockResolvedValue(db);
+    const response=await GET(new Request("https://example.org?scope=owner"),{params:Promise.resolve({threadId:thread})});
+    expect(response.status).toBe(200);
+    const work=(await response.json()).work;
+    expect(work).toHaveLength(2);
+    expect(work).toEqual(expect.arrayContaining([
+      expect.objectContaining({id:"proposal:first",threadId:thread,threadTitle:"First",status:"approval_required"}),
+      expect.objectContaining({id:"proposal:second",threadId:"other-thread",threadTitle:"Second",status:"approval_required"}),
+    ]));
+    for(const table of ["supervisor_runs","ai_agent_jobs","supervisor_proposals","supervisor_investigations","ai_threads"])
+      expect(filters[table]).toEqual(expect.arrayContaining([["eq","business_id","cafe-a"],["eq","owner_user_id","owner-a"]]));
   });
   it("scopes nested steps/effects by business and IDs read from the authorized conversation", async () => {
     const { db, filters, source } = database();
