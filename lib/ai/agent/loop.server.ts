@@ -4,7 +4,7 @@ import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason } from "@/l
 import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
-import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
+import { configuredSupervisorModel, PRODUCTION_SUPERVISOR_OPENAI_MODEL } from "@/lib/ai/conversations/modelConfig";
 import { agentToolDefinitions, investigationToolDefinition, agentLabelsPrompt, agentForTool, executeAgentTool, type AgentToolContext, type AgentToolResult, type AgentToolName } from "./tools";
 import { statusFromResults } from "./status";
 import { checkNumbers,numberProvenance,compactEvidence,type NumericEvidence } from "./checkNumbers";
@@ -225,10 +225,13 @@ export async function runAgentTurn(args: {
     result:{source:'owner_facts',period:null,missing:['ownerFactsReadFailed'],error:'owner_facts_read_failed'}});
   const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0, model: undefined as string|undefined };
+  // Reserve unknown Luna output for subsequent work without reporting it as billed usage.
+  let unreportedOutput=0;
+  const meteredOutput=()=>usage.outputTokens+unreportedOutput;
   const budgetStop = () => workerBudget ? usageStopReason({
     elapsedMs: Math.max(0, now() - started), modelCalls: usage.modelCalls,
     toolCalls: usage.toolCalls, inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
+    outputTokens: meteredOutput(),
   }, workerBudget) : null;
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
   let askedQuestion:string|null=null;
@@ -244,6 +247,20 @@ export async function runAgentTurn(args: {
   const supplierWorkObserved=()=>startedTools.some(name=>
     name==="inspect_supplier_purchase"||name==="get_supplier_purchase_orders");
   const maxModelToolCalls=()=>supplierWorkObserved()?6:5;
+  const expandedLuna=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL;
+  const finalOutputReserve=1200, lunaToolOutputCap=4096;
+  // Reallocate the previous aggregate allowance, not increase it. Only actual
+  // execution of the existing supplier read unlocks the sixth work call.
+  const outputRemaining=(final:boolean)=>Math.max(0,Math.min(
+    workerBudget?workerBudget.maxOutputTokens-meteredOutput():Infinity,
+    expandedLuna?(maxModelToolCalls()+1)*finalOutputReserve-meteredOutput()-
+      (final?0:finalOutputReserve):Infinity));
+  const outputLimit=(final:boolean)=>Math.min(expandedLuna&&!final?lunaToolOutputCap:finalOutputReserve,
+    outputRemaining(final));
+  const reportedOutput=(event:Event)=> {
+    const u=(event.response as {usage?:{output_tokens?:unknown}}|undefined)?.usage?.output_tokens;
+    return typeof u==="number"&&Number.isSafeInteger(u)&&u>=0&&u<=1_000_000;
+  };
   const underlyingWebSearch=args.context.webSearch;
   args.context.ownerText=args.ownerText;
   args.context.turnResults=()=>results.filter(r=>r.name!=="calculate").map(r=>({name:r.name,result:r.result}));
@@ -251,11 +268,12 @@ export async function runAgentTurn(args: {
     ...args.context,
     webSearch:async query=>{
       const searchStarted=now();
-      let reserved=false,completed=false;
+      let reserved=false,completed=false,reported=false;
       try{
         const result=await underlyingWebSearch(query,{
           reserveModelCall:()=>{
-            if(usage.modelCalls>=maxModelToolCalls()||now()>=workDeadline||budgetStop())return false;
+            if(usage.modelCalls>=maxModelToolCalls()||now()>=workDeadline||budgetStop()||
+               (expandedLuna&&outputRemaining(false)<finalOutputReserve))return false;
             usage.modelCalls++;
             reserved=true;
             return true;
@@ -264,11 +282,13 @@ export async function runAgentTurn(args: {
             usage.inputTokens+=bill.inputTokens;
             usage.cachedTokens+=bill.cachedTokens;
             usage.outputTokens+=bill.outputTokens;
+            reported=Number.isSafeInteger(bill.outputTokens)&&bill.outputTokens>0;
           },
         });
         completed=result.available;
         return result;
       }finally{
+        if(reserved&&expandedLuna&&!reported)unreportedOutput+=finalOutputReserve;
         if(reserved)audit({kind:"model_call",inputSummary:"Web lookup; prompts withheld",
           outputSummary:completed?"Completed":"Incomplete",
           durationMs:Math.max(0,now()-searchStarted)});
@@ -283,7 +303,7 @@ export async function runAgentTurn(args: {
     process.env.NEXT_PUBLIC_SUPABASE_URL==="http://127.0.0.1:54321" &&
     typeof process.env.AICAFE_14B_BROKER_TOKEN==="string" &&
     process.env.AICAFE_14B_BROKER_TOKEN.length>=40;
-  const request = (final: boolean) => ({
+  const request = (final: boolean, outputCap:number) => ({
     model, instructions: agentInstructions(),
     ...(approvedLocalTask14b?{store:false as const}:{}),
     // The complete ordered registry is identical for every owner request.
@@ -293,12 +313,12 @@ export async function runAgentTurn(args: {
         ? [investigationToolDefinition] : []),
       ...(args.toolNames?[]:args.extraTools??[])],
     tool_choice: final ? "none" : "auto", stream: true,
-    max_output_tokens: Math.max(1,Math.min(1200,workerBudget ? workerBudget.maxOutputTokens - usage.outputTokens : 1200)), prompt_cache_key: agentPromptCacheKey(), input,
+    max_output_tokens: outputCap, prompt_cache_key: agentPromptCacheKey(), input,
   });
   const providerFailureCodes:ProviderFailureCode[]=[];
-  const recordIncompleteUsage=(event:Event)=>{
-    // Incomplete responses can still consume billed tokens. Count only safe
-    // integer provider usage; never attest model identity from an incomplete turn.
+  const recordReportedUsage=(event:Event)=>{
+    // Terminal responses can include billed tokens even when incomplete.
+    // Count only safe integer provider usage, never infer model identity here.
     const u=(event.response as {usage?:{input_tokens?:unknown;output_tokens?:unknown;
       input_tokens_details?:{cached_tokens?:unknown}}}|undefined)?.usage;
     const count=(n:unknown)=>typeof n==="number"&&Number.isSafeInteger(n)&&n>=0&&n<=1_000_000?n:0;
@@ -313,14 +333,15 @@ export async function runAgentTurn(args: {
     const modelStart = now();
     let modelError: string | undefined;
     let failureCode:ProviderFailureCode="stream_error";
-    let completed = false;
+    let completed = false, outputReported=false;
+    const outputCap=outputLimit(final);
     const remaining = (final ? deadline : workDeadline) - now();
     if (remaining <= 0) throw new Error("deadline");
-    if (budgetStop()) throw new Error("worker_budget");
+    if (budgetStop()||outputCap<=0) throw new Error("worker_budget");
     const timeout = setTimeout(() => controller.abort(), remaining);
     try {
       usage.modelCalls++;
-      for await (const event of provider(request(final), controller.signal)) {
+      for await (const event of provider(request(final,outputCap), controller.signal)) {
         if (now() >= (final ? deadline : workDeadline)) throw new Error("deadline");
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
           text += event.delta;
@@ -335,14 +356,11 @@ export async function runAgentTurn(args: {
           const actual=(event.response as {model?:unknown}|undefined)?.model;
           if(typeof actual==="string"&&actual.trim())usage.model=actual;
           completed = true;
-          const u = (event.response as { usage?: { input_tokens?: number; output_tokens?: number;
-            input_tokens_details?: { cached_tokens?: number } } } | undefined)?.usage;
-          usage.inputTokens += u?.input_tokens ?? 0;
-          usage.outputTokens += u?.output_tokens ?? 0;
-          usage.cachedTokens += u?.input_tokens_details?.cached_tokens ?? 0;
+          outputReported=reportedOutput(event);
+          recordReportedUsage(event);
         }
         if(event.type==="response.incomplete"){
-          failureCode=incompleteProviderCode(event);recordIncompleteUsage(event);
+          failureCode=incompleteProviderCode(event);outputReported=reportedOutput(event);recordReportedUsage(event);
           throw new Error("provider_incomplete");
         }
         if (event.type === "response.failed" || event.type === "error") {
@@ -366,6 +384,7 @@ export async function runAgentTurn(args: {
       }
       throw error;
     } finally {
+      if(expandedLuna&&!outputReported)unreportedOutput+=outputCap;
       clearTimeout(timeout);
       audit({ kind: "model_call", inputSummary: final ? "Final response; no tools" : "Model request; prompts withheld",
         outputSummary: completed ? "Completed" : "Incomplete", durationMs: Math.max(0, now() - modelStart), error: modelError });
@@ -377,7 +396,7 @@ export async function runAgentTurn(args: {
       const cap = budgetStop();
       if (cap) { endReason = cap; break; }
       if (round > 0) await readFollowUps();
-      if(usage.modelCalls>=maxModelToolCalls()){endReason="budget";break;}
+      if(usage.modelCalls>=maxModelToolCalls()||outputLimit(false)<=0){endReason="budget";break;}
       let calls: ToolCall[];
       try { calls = await call(false); }
       catch { endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
@@ -555,26 +574,28 @@ export async function runAgentTurn(args: {
       if (round === maxModelToolCalls()-1 || usage.modelCalls>=maxModelToolCalls() || usage.toolCalls >= 8 || budgetStop()) { endReason = budgetStop() ?? "budget"; break; }
     }
     if (!finished && endReason === "complete") endReason = "budget";
-    if (!finished && usage.modelCalls < maxModelToolCalls()+1 && now() < deadline && !budgetStop()) {
+    if (!finished && usage.modelCalls < maxModelToolCalls()+1 && now() < deadline && !budgetStop() && outputLimit(true)>0) {
       await readFollowUps();
       // Exactly one final no-tool request; never allow another model tool call.
       // Recovery is bounded even after provider disconnect/incomplete response.
       try {
         const finalController = new AbortController();
         const left = deadline - now();
-        if (left <= 0) { endReason = "timeout"; }
+        const outputCap=outputLimit(true);
+        if (outputCap<=0) {endReason="budget";}
+        else if (left <= 0) { endReason = "timeout"; }
         else {
           const timeout = setTimeout(() => finalController.abort(), left);
           const finalTextStart = text.length;
           const finalStart = now();
-          let completed = false;
+          let completed = false, outputReported=false;
           let finalError: string | undefined;
           let failureCode:ProviderFailureCode="stream_error";
           try {
             usage.modelCalls++;
-            for await (const event of provider(request(true), finalController.signal)) {
+            for await (const event of provider(request(true,outputCap), finalController.signal)) {
               if(event.type==="response.incomplete"){
-                failureCode=incompleteProviderCode(event);recordIncompleteUsage(event);
+                failureCode=incompleteProviderCode(event);outputReported=reportedOutput(event);recordReportedUsage(event);
                 throw new Error("provider_incomplete");
               }
               if (event.type === "response.failed" || event.type === "error") {
@@ -588,9 +609,8 @@ export async function runAgentTurn(args: {
                 const actual=(event.response as {model?:unknown}|undefined)?.model;
                 if(typeof actual==="string"&&actual.trim())usage.model=actual;
                 completed = true;
-                const u = (event.response as {usage?:{input_tokens?:number;output_tokens?:number;input_tokens_details?:{cached_tokens?:number}}}|undefined)?.usage;
-                usage.inputTokens += u?.input_tokens ?? 0; usage.outputTokens += u?.output_tokens ?? 0;
-                usage.cachedTokens += u?.input_tokens_details?.cached_tokens ?? 0;
+                outputReported=reportedOutput(event);
+                recordReportedUsage(event);
               }
             }
             if (!completed) {failureCode="missing_terminal";throw new Error("provider_incomplete");}
@@ -606,6 +626,7 @@ export async function runAgentTurn(args: {
             }
             throw error;
           } finally {
+            if(expandedLuna&&!outputReported)unreportedOutput+=outputCap;
             clearTimeout(timeout);
             audit({ kind: "model_call", inputSummary: "Final response; no tools",
               outputSummary: completed ? "Completed" : "Incomplete", durationMs: Math.max(0, now() - finalStart), error: finalError });
@@ -619,7 +640,7 @@ export async function runAgentTurn(args: {
   // run before the next continuation receives its remaining budget.
   recordWorkerTurnUsage({ elapsedMs: Math.max(0, usage.latencyMs),
     modelCalls: usage.modelCalls, toolCalls: usage.toolCalls,
-    inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
+    inputTokens: usage.inputTokens, outputTokens: meteredOutput() });
   const status = statusFromResults(results);
   const ownerStatements=[...(args.history??[]).filter(m=>m.role==="user").map(m=>m.content),
     args.ownerText,...absorbed.map(m=>m.text)].join("\n");
