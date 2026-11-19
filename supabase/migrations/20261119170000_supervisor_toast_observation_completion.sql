@@ -262,5 +262,75 @@ revoke all on function public.supervisor_8a_due_toast_observations(timestamptz,i
  from public,anon,authenticated;
 grant execute on function public.supervisor_8a_due_toast_observations(timestamptz,integer) to service_role;
 
+-- Atomic fenced in-app delivery for observation receipts. No provider call,
+-- no price proposal, and no external transport is made by this function.
+create function public.supervisor_8a_post_observation_notice(
+ p_receipt_id uuid,p_attempt bigint,p_thread_id uuid,p_task_id text,p_message_id uuid,
+ p_timezone text,p_payload jsonb,p_text text,p_confidence text
+) returns boolean language plpgsql security invoker set search_path='' as $
+declare n public.supervisor_experiment_notice_receipts; h public.menu_price_history;
+begin
+ if auth.role() is distinct from 'service_role' then
+  raise exception 'service_role_only' using errcode='42501';end if;
+ select * into n from public.supervisor_experiment_notice_receipts
+  where id=p_receipt_id and kind in ('toast_price_initial','toast_price_daily','toast_price_final')
+   and state='claimed' and attempts=p_attempt and claimed_at>clock_timestamp()-interval '5 minutes'
+  for update;
+ if not found then return false;end if;
+ perform 1 from public.memberships m where m.business_id=n.business_id
+  and m.user_id=n.owner_user_id and m.role='owner' for share;
+ if not found then return false;end if;
+ perform 1 from public.ai_threads t where t.id=p_thread_id
+  and t.business_id=n.business_id and t.owner_user_id=n.owner_user_id for share;
+ if not found then return false;end if;
+ select h0.* into h from public.menu_price_history h0
+  join public.supervisor_experiment_cutover_cafes g on g.business_id=h0.business_id
+  join public.toast_location_mappings l on l.business_id=h0.business_id and l.restaurant_guid=h0.toast_restaurant_guid
+  where h0.id=n.source_id and h0.business_id=n.business_id
+   and h0.toast_publication_completed_at is not null and l.verified_at is not null
+   and g.mode='new' and g.parity_proven_at is not null and g.rollback_proven_at is not null
+   and g.release_approved_at is not null and h0.toast_observed_at>=g.toast_observation_enabled_at;
+ if not found then return false;end if;
+ if p_task_id is distinct from ('toast-price-observation:'||n.owner_user_id::text||':'||n.source_id::text||':'||n.kind||':'||n.slot::text)
+  or p_message_id is null or p_payload is null or jsonb_typeof(p_payload) is distinct from 'object'
+  or p_text is null or length(trim(p_text))=0 or length(p_text)>1200
+  or p_timezone is null or p_confidence not in ('high','low')
+ then raise exception 'invalid_observation_delivery' using errcode='22023';end if;
+ insert into public.operating_tasks(
+  business_id,id,agent_id,owner_user_id,kind,status,confidence,entity_type,entity_id,
+  payload,evidence)
+ values(n.business_id,p_task_id,'alex',n.owner_user_id,'priority_notice','watching',
+  p_confidence,'menu_item',h.menu_item_id,
+  p_payload||jsonb_build_object('observationOnly',true,'priceHistoryId',h.id,
+    'threadId',p_thread_id,'ownerNoticeDate',n.local_date,'windowIndex',n.slot),
+  jsonb_build_array(jsonb_build_object('source','menu_price_history','facts',
+    jsonb_build_object('sourceId',h.id,'publicationVersion',h.toast_publication_version))))
+ on conflict(business_id,id) do nothing;
+ insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,
+  role,content_type,text_content,structured_content,grounding)
+ values(p_message_id,n.business_id,p_thread_id,n.owner_user_id,null,'supervisor','blocks',null,
+  jsonb_build_array(jsonb_build_object('type','text','text',p_text)),
+  jsonb_build_object('status',case when p_confidence='high' then 'estimated' else 'insufficient_evidence' end,
+   'intent','menu_pricing','evidence',jsonb_build_array(jsonb_build_object(
+    'source','operating_tasks','identifier',p_task_id,'asOf',n.local_date))))
+ on conflict(id) do nothing;
+ if not exists(select 1 from public.operating_tasks t where t.business_id=n.business_id
+   and t.id=p_task_id and t.owner_user_id=n.owner_user_id
+   and t.payload->>'priceHistoryId'=n.source_id::text)
+  or not exists(select 1 from public.ai_messages m where m.id=p_message_id
+   and m.business_id=n.business_id and m.owner_user_id=n.owner_user_id
+   and m.thread_id=p_thread_id and m.role='supervisor')
+ then raise exception 'observation_notice_delivery_identity_conflict' using errcode='23514';end if;
+ update public.supervisor_experiment_notice_receipts set state='posted',
+  posted_at=clock_timestamp(),task_id=p_task_id,message_id=p_message_id,
+  updated_at=clock_timestamp()
+  where id=n.id and attempts=p_attempt and state='claimed';
+ return found;
+end;$;
+revoke all on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text)
+ to service_role;
+
 reset lock_timeout;
 reset statement_timeout;
