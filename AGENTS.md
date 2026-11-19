@@ -30,6 +30,36 @@ Where an older line in this file conflicts with these rules, these rules win.
    Preserve real owner scope/architecture decisions, exact-head CI/Codex/merge gates
    and separately authorized product effects. Muse notes cannot approve an action.
    This paragraph supersedes every older live-dispatcher/owner-view instruction below.
+0a. **No invisible development work or owner blocker — mandatory for every coding chat.**
+   Read these latest-main rules again on every resumed coding turn (including existing drafts).
+   GitHub is evidence. Do not rely on repeatedly updated checklists. For each real owner
+   decision publish ONE NEW comment on the same PR, including drafts, using the
+   [owner-request marker](docs/rules/workflow-and-review.md#mandatory-muse-handoff).
+   Include exact head, recommendation, reason, and action required. Do not edit or delete
+   that request to indicate an answer; Muse imports its unique comment ID and owns the
+   local question/answer/delivery record. Post a NEW comment only for a genuinely new
+   or corrected request. Never put credentials or private cafe data in a PR. If there is
+   no PR yet, tell Muse via an existing planning entry when possible; absent publication
+   or readable chat, an unknown question is a communication failure, not active coding.
+   Before returning after a pending workflow, publish its run ID and specific next step;
+   otherwise Muse independently observes actual GitHub evidence. Local question records
+   do not authorize spend, architecture, production effects or an owner-required merge.
+0b. **Mandatory foreground workflow follow-through.** After a push, CI request/rerun, eligible
+   ready/Codex request, or separately authorized shared Luna launch, keep the SAME execution
+   session open and monitor the actual run or review. Poll at reasonable intervals (about 20–30
+   seconds); wait and recheck for at least 60 seconds if it is still pending and execution
+   is available. A fast terminal result can be handled immediately. Do not exit simply because
+   it is queued/running, or because one status read returned pending. Continue fixing failures,
+   retesting, reviewing and merging when eligible. If a genuine runtime/tool limit prevents
+   further foreground monitoring, publish the exact current-head handoff (run URL/ID, state,
+   last observed result and the next action) on the PR before returning. Do not claim background
+   work, clean review, passed tests or a merge without actual evidence. Muse resumes the SAME
+   chat when the real check/run finishes, not the owner. This rule applies to every requested
+   workflow, not only to green CI. Use the shared Luna runner from #520; no repeated paid runs
+   without a fresh valid owner authorization. In ordinary software work, merge once all
+   established gates pass and the scope permits coding-agent merge. If actual owner merge
+   authorization is required, publish the precise remaining decision instead of silently waiting.
+   These rules supersede any older instruction to stop immediately after requesting a workflow.
 1. **Product first.** Read "What AI Cafe is" above before any task, and build toward it.
 2. **The owner is the builder.** The owner's product decisions are final. You may push back once, with
    evidence and a better option. Then build what the owner chose. No refusing and no re-arguing.
@@ -119,18 +149,32 @@ Where an older line in this file conflicts with these rules, these rules win.
     states its exact delegated/off-turn trigger, model-selected registered tools, canonical sources
     and metrics, durable steps/owner update, authorization, verified effect receipt, safe retries,
     closure/follow-up, and explicitly owned future integration cases.
-    **Before an AI-behavior feature PR merges**, execute a real production-configured
-    `gpt-6-luna` journey with the actual registered Supervisor on disposable migrated local
-    Supabase; record provider/tool evidence, independently observed scoped DB/owner-screen/effect
-    results, positive and negative cases and exact code provenance. Real Luna acceptance is
-    separate from complete current-head CI, Codex code/security review, dependency/owner
-    gates. Mock/recorded tests, HTTP200, plausible prose or green CI cannot substitute.
+    **Owner-directed consolidated Luna acceptance (Nov 18, 2026):** every AI-behavior PR
+    implements and registers all applicable executable real Luna scenarios with reviewed
+    positive/negative, source/owner/tenant/effect assertions before coding integration.
+    Full current-head CI, deterministic/browser/DB/security tests, clean Codex and dependency/
+    owner gates remain mandatory. Genuine production-configured `gpt-6-luna` execution on the
+    actual registered Supervisor and disposable migrated Supabase may be consolidated on a
+    stable functional group, before Task17 or during Task17, by owner choice. Record exact
+    provenance and independently verified provider/tool/source/DB/UI/effect evidence.
+    A deferred or failed live case is NOT_PROVEN or FAIL, never PASS. Mock/recorded tests,
+    HTTP200, plausible prose or green CI cannot substitute.
+    **Owner-approved development-stage merge policy:** current production has no affected
+    operational data, per the owner's explicit clarification. During this development phase,
+    feature PRs (including presently open PRs) may merge to main with live Luna execution
+    deferred; deployment generation alone is not a reason to require per-PR Luna or create
+    a separate branch. Retain all CI, security, authorization and dependency gates.
+    No new paid test, live customer-data operation, external effect, production migration
+    or actual business release is authorized. If affected live operations/data are present
+    or detected, stop and obtain separate owner direction before exposing unproven behavior.
+    Complete real scenario acceptance and Task17 release gates before operational use.
     Use only separately owner-authorized one-shot bounded private trusted provider runs;
     never spend automatically in untrusted PR CI, replay consumed grants, or touch production.
     Pure docs/config or deterministic-only infrastructure PRs must state why no model-executed
     behavior changed; they still need normal CI/review/security and may not claim Luna proof.
-    **Three separately verified milestones:** a domain feature can merge after its own true
-    `feature_proven` gates; `integrated_proven` requires final Task17B exhaustive registry,
+    **Separate milestones:** coding-integration readiness is not `feature_proven`.
+    Individual feature proof requires genuine executed acceptance (possibly grouped).
+    `integrated_proven` requires final Task17B exhaustive registry,
     metric and owner-question coverage plus Task17C real Luna off-turn/restart/approval/effect
     recovery on the combined system; `released_proven` requires Task17D owner-screen and
     Task17E owner-authorized release proof. Missing later cross-module tests block **release**
@@ -167,9 +211,9 @@ Where an older line in this file conflicts with these rules, these rules win.
     the immutable head/merge gate or requesting once per doc tweak.
     A prior clean review never proves a changed-head PR. Resolve real findings with
     executed evidence, preserve existing acceptance/base/approval/merge gates, and
-    complete the proven merge. Do not run a background polling loop or invent
-    uninterrupted cloud execution; the existing dispatcher resumes the saved chat.
-    Publish explicit owner questions on the SAME PR, including drafts.
+    complete the proven merge. Follow mandatory foreground monitoring in rule 0b; never invent
+    background/cloud execution. Muse resumes the saved chat from the PR handoff when needed.
+    Publish explicit owner questions on the SAME PR, including drafts, per rule 0a.
 20. **No Vercel preview deployments/builds.** Vercel previews are disabled by owner decision for
     cost. Never enable automatic or manual Vercel preview builds for PRs, E2, or UI acceptance.
     When browser proof is needed, run the app in GitHub Actions with disposable test data and

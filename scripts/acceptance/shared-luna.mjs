@@ -240,6 +240,28 @@ async function verifyOwnerCommentRun(event,token){
   ensure(earliest===runId,
     "Owner comment already consumed by an earlier workflow run; use a NEW owner comment");
 }
+// Group selectors are a strict namespace over immutable registered scenario
+// IDs. Do not accept globs, partial matches, duplicates or candidate-provided
+// aliases. Individual IDs and 'all' retain their prior meaning.
+export function selectLunaScenarios(found,requested){
+  ensure(Array.isArray(found)&&found.length>=1&&found.length<=20&&
+    found.every(id=>idRe.test(id)&&id!=="all"&&!id.startsWith("group-"))&&
+    new Set(found).size===found.length,"Invalid registered scenario inventory");
+  ensure(typeof requested==="string"&&requested.length<=700,"Invalid scenario selection");
+  let selected;
+  if(requested==="all")selected=found;
+  else if(/^group-(?:[1-9][0-9]?)$/.test(requested)){
+    const group=requested.slice(6);
+    selected=found.filter(id=>new RegExp("^"+group+"(?:[a-z]|-)").test(id));
+  }else{
+    selected=requested.split(",");
+    ensure(selected.every(id=>idRe.test(id))&&new Set(selected).size===selected.length,
+      "Invalid or duplicate explicit scenario selection");
+  }
+  ensure(selected.length>0&&selected.length<=20&&selected.every(id=>found.includes(id)),
+    "Requested scenario is not registered on exact candidate head");
+  return [...selected].sort();
+}
 async function plan({revalidate=false}={}){
   const event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,"utf8"));
   ensure(process.env.GITHUB_ACTOR===OWNER&&process.env.GITHUB_TRIGGERING_ACTOR===OWNER&&
@@ -258,7 +280,7 @@ async function plan({revalidate=false}={}){
       Number.isSafeInteger(event.comment.id)&&event.comment.id>0,
       "Only newly created owner-authored PR comment may authorize provider work");
     const command=String(event.comment.body??"");
-    const match=/^\/aicafe-luna (pr|main) ([a-f0-9]{40}) (all|[a-z0-9][a-z0-9-]{0,31}) ((?:0|[1-3])\.[0-9]{2})$/.exec(command);
+    const match=/^\/aicafe-luna (pr|main) ([a-f0-9]{40}) ([a-z0-9][a-z0-9,-]{0,699}) ((?:0|[1-3])\.[0-9]{2})$/.exec(command);
     ensure(match,"Exact owner comment syntax required: /aicafe-luna pr|main HEAD_SHA SCENARIO MAX_USD");
     // A deleted/edited command is a withdrawn grant; never use a stale event
     // payload. Only read a comment, and never execute untrusted comment text.
@@ -290,9 +312,7 @@ async function plan({revalidate=false}={}){
   const found=[...paths].map(p=>/^\.github\/luna\/scenarios\/([a-z0-9][a-z0-9-]{0,31})\.json$/.exec(p))
     .filter(Boolean).map(m=>m[1]).sort();
   const requested=String(inputs.scenario??"all");
-  ensure(requested==="all"||idRe.test(requested),"Invalid scenario selection");
-  const selected=requested==="all"?found:[requested];
-  ensure(selected.length>0&&selected.length<=20&&selected.every(id=>found.includes(id)),"Requested scenario is not registered on exact candidate head");
+  const selected=selectLunaScenarios(found,requested);
   for(const id of selected){
     // This is an existence precheck. The locked coordinator validates contents
     // after checkout and before starting any paid broker.
@@ -432,6 +452,8 @@ function attest(){
   });
   const safe={scenario:id,head:audit.head,provider:"openai_responses",model:"gpt-6-luna",
     attempts:audit.attempts,reservedUpperUSD:audit.reservedMicros/1_000_000,
+    actualInputTokens:audit.receipts.reduce((sum,r)=>sum+r.actualInputTokens,0),
+    actualOutputTokens:audit.receipts.reduce((sum,r)=>sum+r.actualOutputTokens,0),
     providerSelectedTools:[...new Set(observed)].sort(),
     independentDatabaseReadbacks:checks,realModelAndDatabaseProof:true,
     independentOwnerUIAttestation:false,fullTask17IntegrationProof:false,

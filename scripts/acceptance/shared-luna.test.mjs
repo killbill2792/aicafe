@@ -4,7 +4,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,chmodSync,rmSync,symlin
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawnSync} from "node:child_process";
-import {validateScenario,readScenario} from "./shared-luna.mjs";
+import {validateScenario,readScenario,selectLunaScenarios} from "./shared-luna.mjs";
 import {TEST_CAFES} from "../seed/cafes.mjs";
 import {buildSeedSql,latestClosedDate} from "../seed/seedSql.mjs";
 const good={
@@ -708,4 +708,18 @@ test("actual shared workflow tail executes and selects artifacts according to jo
     {failed:true,brokerOutcome:"success"});
   assert.equal(raw.artifacts[0].payload.private,"never_export_raw_audit");
   assert.notDeepEqual(raw.artifacts,failure.artifacts);
+});
+
+test("functional groups and explicit subsets select only registered scenarios",()=>{
+ const found=["13c","13d","14b","14c","15c","14d","14-integration","140a"];
+ assert.deepEqual(selectLunaScenarios(found,"group-14"),["14-integration","14b","14c","14d"]);
+ assert.deepEqual(selectLunaScenarios(found,"15c,13d"),["13d","15c"]);
+ assert.deepEqual(selectLunaScenarios(found,"13c"),["13c"]);
+ assert.deepEqual(selectLunaScenarios(found,"all"),[...found].sort());
+ for(const invalid of ["group-16","group-014","group-14,13c","14*","14","14c,14c","14c,","14c, 14b","all,14c","unknown",""]){
+   assert.throws(()=>selectLunaScenarios(found,invalid),undefined,invalid);
+ }
+ for(const bad of [[],["14c","14c"],["group-14"],["all"],["14 c"],Array.from({length:21},(_,i)=>"case-"+i)]){
+   assert.throws(()=>selectLunaScenarios(bad,"all"),/inventory/);
+ }
 });
