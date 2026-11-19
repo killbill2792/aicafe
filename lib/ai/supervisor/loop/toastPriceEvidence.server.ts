@@ -80,11 +80,16 @@ export function matchVerifiedToastPriceEvidence(input:Candidate):
  * Never use a pending per-item history stamp as proof of a complete menu. */
 export function matchVerifiedToastObservation(input:Candidate&{
  historyId:string;notBefore:string;asOf:string;
+ receipt:Candidate["receipt"]&{menu_checked_local_day:string|null};
 }):VerifiedToastPriceEvidence|UnverifiedToastPriceEvidence{
  const deny=(reason:string):UnverifiedToastPriceEvidence=>({status:"unverified",reason});
  if(!validTime(input.notBefore)||!validTime(input.asOf)||
     Date.parse(input.notBefore)>Date.parse(input.asOf))
   return deny("invalid_observation_discovery_boundary");
+ if(!input.receipt.menu_checked_local_day||
+    !/^\d{4}-\d{2}-\d{2}$/.test(input.receipt.menu_checked_local_day)||
+    input.receipt.menu_last_updated?.startsWith("pending:"))
+  return deny("menu_publication_not_completed");
  const verified=matchVerifiedToastPriceEvidence(input);
  if(verified.status!=="verified")return verified;
  if(verified.historyId!==input.historyId)
