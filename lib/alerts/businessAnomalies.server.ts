@@ -162,7 +162,7 @@ async function customerDistribution(db:SupabaseClient,businessId:string,window:C
    !basket&&units&&guid(v)?v:
    dimension==="channel"&&typeof v==="string"&&["online","in_store","invoice","kiosk","toast_pickup","toast_delivery","other_recorded"].includes(v)?v:
    dimension==="daypart"&&Number.isInteger(v)&&Number(v)>=0&&Number(v)<=23?String(v):
-   dimension==="weekday"&&Number.isInteger(v)&&Number(v)>=0&&Number(v)<=6?String(v):null;
+   dimension==="weekday"&&Number.isInteger(v)&&Number(v)>=1&&Number(v)<=7?String(v):null;
   if(key===null||Object.hasOwn(buckets,key))return null;
   const field=basket?"pair_occurrence":"quantity";
   const n=units||basket?queryNumber(row,"sum_"+field):queryCount(row,"count_distinct_visit_ref");
@@ -204,6 +204,44 @@ export function compareBusinessFacts(family:BusinessSignal,subject:string,curren
  if(!finite(current)||!finite(previous)||previous<0||current<0)return null;
  if(previous===0&&current!==0)return null;
  return {family,subject,current,previous,unit,from,to,asOf,active:materiallyChanged(current,previous)&&(direction==="both"||(direction==="up"?current>previous:current<previous))};
+}
+/** Re-read the claimed customer metric via the same canonical detector functions.
+ * The source alert is not itself proof that the current records still agree. */
+export async function readCustomerTrendComparison(db:SupabaseClient,businessId:string,subject:string,window:CustomerRange){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(window.from)||!/^\d{4}-\d{2}-\d{2}$/.test(window.to)||window.from>window.to)return null;
+ const prior={from:day(window.from,-7),to:day(window.to,-7)};
+ const recent={from:day(window.to,-6),to:window.to},old={from:day(window.to,-13),to:day(window.to,-7)};
+ if(subject.startsWith("anonymous_")){
+  if(window.from!==recent.from)return null;
+  const [a,b]=await Promise.all([anonymousCustomerPeriod(db,businessId,window),anonymousCustomerPeriod(db,businessId,prior)]);
+  return a&&b?compareAnonymousCustomerPeriods(a,b).find(m=>m.key===subject)??null:null;
+ }
+ const cohort=/^observed_return_(7|30|60|90)d$/.exec(subject);
+ if(cohort){
+  const horizon=Number(cohort[1]) as 7|30|60|90;
+  const w={from:day(window.to,-horizon-6),to:day(window.to,-horizon)},p={from:day(w.from,-7),to:day(w.to,-7)};
+  if(window.from!==w.from)return null;
+  const [ca,cb,x,y]=await Promise.all([customerPeriod(db,businessId,w,false),customerPeriod(db,businessId,p,false),customerCohort(db,businessId,w,window.to,horizon),customerCohort(db,businessId,p,prior.to,horizon)]);
+  return ca&&cb&&x&&y?compareCustomerCohorts(x,y,ca,cb,horizon):null;
+ }
+ const distribution=/^returning_(product|modifier|basket|channel|daypart|weekday)_mix:/.exec(subject);
+ const cadence=subject==="observed_long_gap_share"||subject==="observed_reappearance_share";
+ const [a,b]=await Promise.all([customerPeriod(db,businessId,recent,!distribution&&!cadence),customerPeriod(db,businessId,old,!distribution&&!cadence)]);
+ if(!a||!b)return null;
+ if(distribution){
+  if(window.from!==recent.from)return null;
+  const dimension=distribution[1] as CustomerDistribution["dimension"];
+  const [x,y]=await Promise.all([customerDistribution(db,businessId,window,dimension,a.returningVisits),customerDistribution(db,businessId,prior,dimension,b.returningVisits)]);
+  return x&&y?compareCustomerDistributions(x,y,a,b).find(m=>m.key===subject)??null:null;
+ }
+ if(cadence){
+  const kind=subject==="observed_long_gap_share"?"lapse":"reappearance";
+  if(window.from!==(kind==="lapse"?day(window.to,-89):recent.from))return null;
+  const [x,y]=await Promise.all([customerCadence(db,businessId,window,kind),customerCadence(db,businessId,prior,kind)]);
+  return x&&y?compareCustomerCadence(kind,x,y,a,b):null;
+ }
+ if(window.from!==recent.from)return null;
+ return compareCustomerPeriods(a,b).find(m=>m.key===subject)??null;
 }
 const fact=(family:BusinessSignal,subject:string,current:number,previous:number,unit:string,active:boolean,from:string,to:string):Observation=>({family,subject,current,previous,unit,active,asOf:to,from,to});
 /** One scheduled consumer of existing canonical readers. Compare closed, equal-length weeks;
