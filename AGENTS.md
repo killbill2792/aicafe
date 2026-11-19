@@ -32,18 +32,18 @@ Where an older line in this file conflicts with these rules, these rules win.
    This paragraph supersedes every older live-dispatcher/owner-view instruction below.
 0a. **No invisible development work or owner blocker — mandatory for every coding chat.**
    Read these latest-main rules again on every resumed coding turn (including existing drafts).
-   The SAME PR description is the shared handoff record for Muse; a ChatGPT reply is not
-   a status record. Update the existing record on each meaningful transition, before requesting
-   a workflow and before returning to the owner. Use the exact marker and fields in
-   [workflow-and-review.md](docs/rules/workflow-and-review.md#mandatory-muse-handoff).
-   When genuinely blocked on an owner decision, publish the exact plain-language question as
-   `<!-- aicafe-owner-question ... -->` plus the `needs-owner-decision` label on that same PR,
-   even if draft. Include the recommendation, consequences, exact scope/head and the specific
-   action/approval required; never put secrets or private cafe data in a PR. Muse reads this
-   directly, alerts the owner, and routes the answer to the existing chat. Remove the active
-   marker and label only after verifying the actual decision or that the request is withdrawn;
-   keep the original decision and evidence in Comment disposition. Muse cannot approve spend,
-   architecture, production effects or an owner-required merge.
+   GitHub is evidence. Do not rely on repeatedly updated checklists. For each real owner
+   decision publish ONE NEW comment on the same PR, including drafts, using the
+   [owner-request marker](docs/rules/workflow-and-review.md#mandatory-muse-handoff).
+   Include exact head, recommendation, reason, and action required. Do not edit or delete
+   that request to indicate an answer; Muse imports its unique comment ID and owns the
+   local question/answer/delivery record. Post a NEW comment only for a genuinely new
+   or corrected request. Never put credentials or private cafe data in a PR. If there is
+   no PR yet, tell Muse via an existing planning entry when possible; absent publication
+   or readable chat, an unknown question is a communication failure, not active coding.
+   Before returning after a pending workflow, publish its run ID and specific next step;
+   otherwise Muse independently observes actual GitHub evidence. Local question records
+   do not authorize spend, architecture, production effects or an owner-required merge.
 0b. **Mandatory foreground workflow follow-through.** After a push, CI request/rerun, eligible
    ready/Codex request, or separately authorized shared Luna launch, keep the SAME execution
    session open and monitor the actual run or review. Poll at reasonable intervals (about 20–30
