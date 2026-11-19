@@ -33,7 +33,7 @@ async function until(check:()=>Promise<boolean>,ms:number){
  const interrupted:AgentProvider=()=>({[Symbol.asyncIterator](){return {next:async()=>{
   writeFileSync(marker!+".tmp",String(process.pid),{flag:"wx",mode:0o600});renameSync(marker!+".tmp",marker!);
   return await new Promise<never>((_r,reject)=>setTimeout(()=>reject(Error("14e_expected_kill")),240000));
- }}};}});
+ }};}});
  await processNextInvestigation(db,new Date(),interrupted);throw Error("14e_interrupted_worker_returned");
 },270000);
 (enabled&&!marker?it:it.skip)("14e financial review persists through restart and new source",async()=>{
