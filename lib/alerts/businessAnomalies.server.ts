@@ -175,18 +175,23 @@ async function customerDistribution(db:SupabaseClient,businessId:string,window:C
  return {dimension,buckets,total,complete:true};
 }
 
-async function anonymousCustomerPeriod(db:SupabaseClient,businessId:string,window:CustomerRange):Promise<AnonymousCustomerPeriod|null>{
+async function anonymousCustomerPeriod(db:SupabaseClient,businessId:string,window:CustomerRange):Promise<(AnonymousCustomerPeriod&{optionalReadFailed:boolean})|null>{
  const [checks,items]=await Promise.all([
   customerAggregate(db,businessId,"cv_toast_records",window,[customerMetrics("count","source_ref"),
    customerMetrics("count","data.aiCafeCustomer.netSalesCents"),customerMetrics("sum","data.aiCafeCustomer.netSalesCents")],checkFilters),
-  customerAggregate(db,businessId,"cv_customer_products",window,[customerMetrics("count","source_ref"),customerMetrics("count","quantity"),customerMetrics("sum","quantity")],
-   [{column:"fact_kind",op:"=",value:"item"}])]);
- if(checks.error||items.error)throw Error("anonymous_customer_reader_failed");
+  // Current eligible raw item rows are independent of identity enrichment.
+  // Presence count on the permitted derived reference requests the same
+  // unfiltered full-day coverage denominator; it does not attribute units.
+  customerAggregate(db,businessId,"cv_toast_records",window,[customerMetrics("count","source_ref"),
+   customerMetrics("count","data.quantity"),customerMetrics("sum","data.quantity"),
+   customerMetrics("count","data.aiCafeCustomer.identityRef")],
+   [{column:"record_type",op:"=",value:"item"},{column:"counts_in_sales",op:"=",value:true}])]);
+ if(checks.error)throw Error("anonymous_customer_check_read_failed");
  if(!checks.row)return null;
  const total=queryCount(checks.row,"count_source_ref"),known=queryCount(checks.row,"count_data.aiCafeCustomer.netSalesCents");
  if(total===null||known===null)return null;
- const units=items.complete&&items.row&&queryCount(items.row,"count_quantity")!==null&&queryCount(items.row,"count_quantity")===queryCount(items.row,"count_source_ref")?queryNumber(items.row,"sum_quantity"):null;
- return {checks:total,knownMoneyChecks:known,netCents:queryNumber(checks.row,"sum_data.aiCafeCustomer.netSalesCents"),itemUnits:units,complete:checks.complete};
+ const units=items.complete&&items.row&&queryCount(items.row,"count_data.quantity")!==null&&queryCount(items.row,"count_data.quantity")===queryCount(items.row,"count_source_ref")?queryNumber(items.row,"sum_data.quantity"):null;
+ return {checks:total,knownMoneyChecks:known,netCents:queryNumber(checks.row,"sum_data.aiCafeCustomer.netSalesCents"),itemUnits:units,complete:checks.complete,optionalReadFailed:!!items.error};
 }
 
 type Observation={family:BusinessSignal;subject:string;current:number;previous:number;unit:string;active:boolean;asOf:string;from:string;to:string};
@@ -494,6 +499,7 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
   try{
    const [a,b]=await Promise.all([anonymousCustomerPeriod(db,businessId,recent),anonymousCustomerPeriod(db,businessId,old)]);
    if(a&&b)for(const m of compareAnonymousCustomerPeriods(a,b))await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,from,to));
+   anonymousFailed=!!(a?.optionalReadFailed||b?.optionalReadFailed);
   }catch{anonymousFailed=true;}
   const [current,previous]=await Promise.all([
    customerPeriod(db,businessId,recent),customerPeriod(db,businessId,old)]);
