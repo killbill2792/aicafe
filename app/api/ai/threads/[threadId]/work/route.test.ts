@@ -42,6 +42,7 @@ function database() {
         predicates.push(row => !(field in row) || row[field] === value);
         return query;
       },
+      is(field:string,value:null){predicates.push(row=>row[field]==null&&value===null);return query;},
       neq(field: string, value: unknown) {
         predicates.push(row => row[field] !== value); return query;
       },
@@ -234,4 +235,14 @@ describe("POST /work scoped owner cancellation",()=>{
    cancel.mockResolvedValue("not_found");
    expect((await post({action:"cancel",runId})).status).toBe(404);
  });
+});
+
+it("projects saved v2 waiting work even with execution disabled; never shows its implementation job as another assignment",async()=>{
+  const {db,source}=database();
+  source.supervisor_runs=[{id:"run",request_key:"owner-msg",status:"blocked",execution_version:2,awaiting_question_id:"question",owner_answer_ids:[],final_report_ref:null,updated_at:"2026-11-15",finished_at:null}];
+  source.supervisor_run_steps=[{run_id:"run",step_key:"owner_turn",step_index:1,status:"blocked",attempts:1,error_code:"awaiting_owner",retry_mode:"reconcile",lease_until:null,checkpoint_phase:"ready"}];
+  source.ai_agent_jobs=[{id:"job",durable_run_id:"run",owner_message_id:"owner-msg",status:"failed",error_code:"awaiting_owner",reply_message_id:null}];
+  client.mockResolvedValue(db);
+  const response=await GET(new Request("https://example.org"),{params:Promise.resolve({threadId:thread})});
+  expect(await response.json()).toMatchObject({work:[{id:"run:run",status:"approval_required",questionId:"question",cancelAllowed:true}]});
 });

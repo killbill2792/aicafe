@@ -36,8 +36,9 @@ export async function GET(request: Request, context: RouteContext) {
     // The owner-wide view is anchored in an authenticated thread; caller cannot supply a café or owner.
     const ownerWide = new URL(request.url).searchParams.get("scope") === "owner";
     const db = await createServerSupabaseClient();
-    const v2=process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true";
-    const runFields = "thread_id,id,request_key,status,final_report_ref,updated_at,finished_at"+(v2?",execution_version,awaiting_question_id,owner_answer_ids":"");
+    // Execution flags control admission/dispatch, not an owner's right to read
+    // or cancel an existing assignment after a rollout is paused.
+    const runFields = "thread_id,id,request_key,status,final_report_ref,updated_at,finished_at,execution_version,awaiting_question_id,owner_answer_ids";
     const jobFields = "thread_id,id,owner_message_id,status,reply_message_id,error_code,attempt,heartbeat_at,created_at";
     const proposalFields = "thread_id,id,status,capability_id,effect_hash,updated_at";
     const investigationFields = "thread_id,episode_id,phase,failure_count,lease_token,lease_until,last_error,updated_at";
@@ -45,7 +46,8 @@ export async function GET(request: Request, context: RouteContext) {
       {
         const query = db.from(table).select(fields).eq("business_id", scope.businessId)
           .eq("owner_user_id", scope.ownerUserId);
-        return ownerWide ? query : query.eq("thread_id", id);
+        const scoped=ownerWide ? query : query.eq("thread_id", id);
+        return table==="ai_agent_jobs"?scoped.is("durable_run_id",null):scoped;
       };
 
     // Historical *completed* items are bounded. Every unfinished record,
@@ -85,13 +87,9 @@ export async function GET(request: Request, context: RouteContext) {
     const steps: StepRow[] = [], attempts: AttemptRow[] = [];
     for (let n=0; n<runs.length; n+=100) {
       const ids=runs.slice(n,n+100).map(r=>r.id);
-      const res = v2
-        ? await db.from("supervisor_run_steps")
-            .select("run_id,step_key,step_index,status,attempts,error_code,updated_at,retry_mode,lease_until,checkpoint_phase,next_retry_at")
-            .eq("business_id",scope.businessId).in("run_id",ids).order("step_index",{ascending:true})
-        : await db.from("supervisor_run_steps")
-            .select("run_id,step_key,step_index,status,attempts,error_code,updated_at,retry_mode,lease_until")
-            .eq("business_id",scope.businessId).in("run_id",ids).order("step_index",{ascending:true});
+      const res = await db.from("supervisor_run_steps")
+        .select("run_id,step_key,step_index,status,attempts,error_code,updated_at,retry_mode,lease_until,checkpoint_phase,next_retry_at")
+        .eq("business_id",scope.businessId).in("run_id",ids).order("step_index",{ascending:true});
       if (res.error) throw new Error("owner_work_evidence_unavailable");
       steps.push(...(res.data ?? []) as StepRow[]);
     }

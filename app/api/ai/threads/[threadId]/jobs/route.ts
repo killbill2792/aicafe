@@ -21,7 +21,7 @@ export async function GET(_request: Request, context: RouteContext) {
     const query = () => { const q=client.from("ai_agent_jobs")
       .select("id, thread_id, owner_message_id, status, attempt, error_code, reply_message_id, progress, inbox, consumed, heartbeat_at, created_at")
       .eq("business_id", scope.businessId).eq("thread_id", id);
-      return process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true"?q.is("durable_run_id",null):q;
+      return q.is("durable_run_id",null);
     };
     // Retries reuse their original row/created_at: a newer completed job must
     // never hide an older row that is running again.
