@@ -45,8 +45,8 @@ async function customerAggregate(db:SupabaseClient,businessId:string,view:"cv_to
  return {row:row??null,complete:result.customerCoverage?.complete===true&&result.missing.every(x=>x==="empty")&&(!("notes" in result)||!result.notes?.length),error:null,coverage:result.customerCoverage};
 }
 const checkFilters=[{column:"record_type",op:"=",value:"check"},{column:"counts_in_sales",op:"=",value:true}];
-type CustomerSourcePeriod=CustomerPeriod&{expectedLocationDays?:number};
-async function customerPeriod(db:SupabaseClient,businessId:string,window:CustomerRange):Promise<CustomerSourcePeriod|null>{
+type CustomerSourcePeriod=CustomerPeriod&{expectedLocationDays?:number; optionalReadFailed?:boolean};
+async function customerPeriod(db:SupabaseClient,businessId:string,window:CustomerRange,detail=true):Promise<CustomerSourcePeriod|null>{
  const checks=await customerAggregate(db,businessId,"cv_toast_records",window,[
   customerMetrics("count","source_ref"),customerMetrics("count","data.aiCafeCustomer.identityRef"),
   customerMetrics("count","data.aiCafeCustomer.displayName")],checkFilters);
@@ -60,26 +60,30 @@ async function customerPeriod(db:SupabaseClient,businessId:string,window:Custome
  // invented retention or visits in the absence of observed identifiers.
  if(linked===0)return {checks:total,linkedChecks:0,namedChecks:named,visits:0,references:0,
   firstVisits:0,returningVisits:0,knownMoneyVisits:0,averageSpendCents:null,complete:checks.complete,expectedLocationDays};
- const visits=await customerAggregate(db,businessId,"cv_customer_visits",window,[
+ const visitMetrics=[
   customerMetrics("count","source_ref"),customerMetrics("count_distinct","identity_ref"),
   customerMetrics("sum","first_observed_visit"),customerMetrics("sum","returning_visit"),
-  customerMetrics("count","net_sales_cents"),customerMetrics("avg","net_sales_cents"),
-  customerMetrics("count","period_account_revenue_share_squared"),
+  customerMetrics("count","net_sales_cents"),customerMetrics("avg","net_sales_cents")];
+ if(detail)visitMetrics.push(customerMetrics("count","period_account_revenue_share_squared"),
   customerMetrics("sum","period_account_revenue_share_squared"),
-  customerMetrics("count","order_duration_seconds"),customerMetrics("avg","order_duration_seconds")],[]);
+  customerMetrics("count","order_duration_seconds"),customerMetrics("avg","order_duration_seconds"));
+ const visits=await customerAggregate(db,businessId,"cv_customer_visits",window,visitMetrics,[]);
  if(visits.error)throw Error("customer_visit_read_failed");
  if(!visits.row)return {checks:total,linkedChecks:linked,namedChecks:named,visits:0,references:0,
   firstVisits:0,returningVisits:0,knownMoneyVisits:0,averageSpendCents:null,complete:false,expectedLocationDays};
- const contribution=await customerAggregate(db,businessId,"cv_customer_visits",window,[
-  customerMetrics("count","historical_recipe_contribution_cents"),customerMetrics("avg","historical_recipe_contribution_cents")],[]);
- if(contribution.error)throw Error("customer_contribution_read_failed");
- const behaviors=await customerAggregate(db,businessId,"cv_toast_records",window,[
-  customerMetrics("count","data.aiCafeCustomer.discountParticipation"),customerMetrics("avg","data.aiCafeCustomer.discountParticipation"),
-  customerMetrics("count","data.aiCafeCustomer.loyaltyParticipation"),customerMetrics("avg","data.aiCafeCustomer.loyaltyParticipation"),
-  customerMetrics("count","data.aiCafeCustomer.recordedRefundCents"),customerMetrics("avg","data.aiCafeCustomer.recordedRefundCents")],
-  [...checkFilters,{column:"data.aiCafeCustomer.identityRef",op:"is_not_null",value:null}]);
- if(behaviors.error)throw Error("customer_behavior_read_failed");
- const measured=(field:string)=>behaviors.complete&&behaviors.row&&queryCount(behaviors.row,"count_data.aiCafeCustomer."+field)===linked?
+ // Cohort comparisons only need linkage/visit coverage. Avoid repeatedly
+ // fetching unrelated cost and behavior summaries for every old window.
+ // Optional reader errors must not erase independently verified visit facts.
+ const [contribution,behaviors]=detail?await Promise.all([
+  customerAggregate(db,businessId,"cv_customer_visits",window,[
+   customerMetrics("count","historical_recipe_contribution_cents"),customerMetrics("avg","historical_recipe_contribution_cents")],[]),
+  customerAggregate(db,businessId,"cv_toast_records",window,[
+   customerMetrics("count","data.aiCafeCustomer.discountParticipation"),customerMetrics("avg","data.aiCafeCustomer.discountParticipation"),
+   customerMetrics("count","data.aiCafeCustomer.loyaltyParticipation"),customerMetrics("avg","data.aiCafeCustomer.loyaltyParticipation"),
+   customerMetrics("count","data.aiCafeCustomer.recordedRefundCents"),customerMetrics("avg","data.aiCafeCustomer.recordedRefundCents")],
+   [...checkFilters,{column:"data.aiCafeCustomer.identityRef",op:"is_not_null",value:null}])
+ ]):[null,null];
+ const measured=(field:string)=>behaviors?.complete&&behaviors.row&&queryCount(behaviors.row,"count_data.aiCafeCustomer."+field)===linked?
   queryNumber(behaviors.row,"avg_data.aiCafeCustomer."+field):null;
  const v=visits.row,visitsCount=queryCount(v,"count_source_ref"),references=queryCount(v,"count_distinct_identity_ref"),
   first=queryCount(v,"sum_first_observed_visit"),returning=queryCount(v,"sum_returning_visit"),
@@ -94,11 +98,11 @@ async function customerPeriod(db:SupabaseClient,businessId:string,window:Custome
   recordedRefundCentsPerCheck:measured("recordedRefundCents"),
   observedMeanOrderDurationSeconds:queryCount(v,"count_order_duration_seconds")===visitsCount?
    queryNumber(v,"avg_order_duration_seconds"):null,
-  knownContributionVisits:contribution.complete&&contribution.row?
+  knownContributionVisits:contribution?.complete&&contribution.row?
    queryCount(contribution.row,"count_historical_recipe_contribution_cents")??undefined:undefined,
-  averageRecipeContributionCents:contribution.complete&&contribution.row?
+  averageRecipeContributionCents:contribution?.complete&&contribution.row?
    queryNumber(contribution.row,"avg_historical_recipe_contribution_cents"):null,
-  complete:checks.complete&&visits.complete,expectedLocationDays};
+  complete:checks.complete&&visits.complete,expectedLocationDays,optionalReadFailed:!!(contribution?.error||behaviors?.error)};
 }
 async function customerCadence(db:SupabaseClient,businessId:string,window:CustomerRange,
  kind:"lapse"|"reappearance"):Promise<CustomerCadenceSample|null>{
@@ -441,12 +445,20 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
   // An unavailable/low-coverage source is a data-gap incident, not customer
   // churn or verified recovery. Never close an existing trend on missing data.
   await gap("customer_identity_coverage",!comparable);
-  if(!comparable||!current||!previous)return;
+  let optionalFailed=!!(current?.optionalReadFailed||previous?.optionalReadFailed);
+  if(!comparable||!current||!previous){
+   if(optionalFailed)throw Error("customer_optional_reader_failed");
+   return;
+  }
   for(const m of compareCustomerPeriods(current,previous))await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,from,to));
+  // Each optional family can fail independently. Keep other source-backed
+  // comparisons and persist the existing reader gap after all attempts.
   for(const dimension of ["product","channel","daypart"] as const){
-   const [a,b]=await Promise.all([customerDistribution(db,businessId,recent,dimension,current.returningVisits),
-    customerDistribution(db,businessId,old,dimension,previous.returningVisits)]);
-   if(a&&b)for(const m of compareCustomerDistributions(a,b,current,previous))await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,from,to));
+   try{
+    const [a,b]=await Promise.all([customerDistribution(db,businessId,recent,dimension,current.returningVisits),
+     customerDistribution(db,businessId,old,dimension,previous.returningVisits)]);
+    if(a&&b)for(const m of compareCustomerDistributions(a,b,current,previous))await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,from,to));
+   }catch{optionalFailed=true;}
   }
   // A lapse is a snapshot, not just a visit in the current week. Compare
   // equal 90-day active-reference lookbacks ending on the comparable dates.
@@ -454,26 +466,31 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
   const lapseA={from:day(today,-90),to},lapseB={from:day(today,-97),to:old.to};
   for(const kind of ["lapse","reappearance"] as const){
    const aWindow=kind==="lapse"?lapseA:recent,bWindow=kind==="lapse"?lapseB:old;
-   const [a,b]=await Promise.all([customerCadence(db,businessId,aWindow,kind),customerCadence(db,businessId,bWindow,kind)]);
-   const m=a&&b?compareCustomerCadence(kind,a,b,current,previous):null;
-   if(m)await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,aWindow.from,aWindow.to));
+   try{
+    const [a,b]=await Promise.all([customerCadence(db,businessId,aWindow,kind),customerCadence(db,businessId,bWindow,kind)]);
+    const m=a&&b?compareCustomerCadence(kind,a,b,current,previous):null;
+    if(m)await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,aWindow.from,aWindow.to));
+   }catch{optionalFailed=true;}
   }
   // Equal first-observed cohort weeks and equal elapsed follow-up windows per horizon.
   // Sequential horizons bound DB fan-out; unsupported windows do not resolve incidents.
   for(const horizon of [7,30,60,90] as const){
    const cohort={from:day(today,-horizon-7),to:day(today,-horizon-1)};
    const prior={from:day(today,-horizon-14),to:day(today,-horizon-8)};
-   const [cohortCoverage,priorCoverage]=await Promise.all([
-    horizon===7?Promise.resolve(previous):customerPeriod(db,businessId,cohort),
-    customerPeriod(db,businessId,prior)]);
-   if(!cohortCoverage||!priorCoverage||!customerCoverageReady(cohortCoverage)||!customerCoverageReady(priorCoverage))continue;
-   const [a,b]=await Promise.all([
-    customerCohort(db,businessId,cohort,to,horizon),customerCohort(db,businessId,prior,old.to,horizon)]);
-   if(a&&b){
-    const m=compareCustomerCohorts(a,b,cohortCoverage,priorCoverage,horizon);
-    if(m)await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,cohort.from,to));
-   }
+   try{
+    const [cohortCoverage,priorCoverage]=await Promise.all([
+     horizon===7?Promise.resolve(previous):customerPeriod(db,businessId,cohort,false),
+     customerPeriod(db,businessId,prior,false)]);
+    if(!cohortCoverage||!priorCoverage||!customerCoverageReady(cohortCoverage)||!customerCoverageReady(priorCoverage))continue;
+    const [a,b]=await Promise.all([
+     customerCohort(db,businessId,cohort,to,horizon),customerCohort(db,businessId,prior,old.to,horizon)]);
+    if(a&&b){
+     const m=compareCustomerCohorts(a,b,cohortCoverage,priorCoverage,horizon);
+     if(m)await persist(fact("customer_trend",m.key,m.current,m.previous,m.unit,m.active,cohort.from,to));
+    }
+   }catch{optionalFailed=true;}
   }
+  if(optionalFailed)throw Error("customer_optional_reader_failed");
  });
  const names=["catalog_history","sales","wages","expenses","ingredient_product_cost","inventory_usage","supplier_quotes","operating_margin","attendance","refunds","live_sales","hourly_staff_pressure","cost_recovery","customer_intelligence"];
  const results=await Promise.allSettled(work.map(async(run,index)=>{
