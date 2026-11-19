@@ -307,7 +307,7 @@ if(process.env.AICAFE_17C_TICK){
 }
 
 import {readPersistedModelUsage,requireObservedProductionModel} from "./runner.mjs";
-import {verifyProcurementOutcome,verifyMonitorOutcome,verifyRevocationOutcome,verifySupplierReminderOutcome} from "./task17c-oracle.mjs";
+import {verifyProcurementOutcome,verifyMonitorOutcome,verifyRevocationOutcome,verifySupplierReminderOutcome,verifySourceAlertLifecycle} from "./task17c-oracle.mjs";
 
 function dateAt(timezone,date=new Date()){
  const p=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date).map(x=>[x.type,x.value]));
@@ -495,5 +495,41 @@ export async function businessMonitorRecovery(db,browser){
  const verified=verifyMonitorOutcome({businessId:a.businessId,alertId,oldExpenseId,newExpenseId,amount,opened,repeated,pending,closed,finished,beforeNotices,afterNotices,ownerRows,effects,usage,expenses});
  const owner=await openOwner(browser,a);
  try{await owner.page.goto("/en?thread="+a.threadId);const work=await owner.context.request.get("/api/ai/threads/"+a.threadId+"/work");check(work.status()===200,"monitor_owner_work_unreadable");}finally{await owner.context.close();}
- return {scope:{businessId:a.businessId,ownerUserId:a.ownerUserId,threadId:a.threadId,foreignBusinessId:b.businessId,alertId,oldExpenseId,newExpenseId,amountCents:String(amount),...verified},calls:verified.providerCalls};
+ const additional=await exerciseAlertSources(db,first);
+ return {scope:{businessId:a.businessId,ownerUserId:a.ownerUserId,threadId:a.threadId,foreignBusinessId:b.businessId,alertId,oldExpenseId,newExpenseId,amountCents:String(amount),...verified,...additional},calls:verified.providerCalls};
+}
+
+// Source-only detector acceptance in independent throwaway cafe. The generated
+// rollup rows are explicit test fixtures, not proof of actual Toast ingestion.
+// Never insert alerts, investigation checkpoints or notice/receipt rows here.
+async function exerciseAlertSources(db,profile){
+ const cafe=await makeMonitorCafe(db,profile),businessId=cafe.businessId;
+ const today=dateAt(cafe.timezone),monthStart=today.slice(0,7)+"-01";
+ const start=new Date(monthStart+"T12:00:00Z");start.setUTCMonth(start.getUTCMonth()-3);
+ const from=start.toISOString().slice(0,10),voidCents=randomInt(12000,21000),wage=randomInt(1500,2300);
+ await db.query("insert into public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status,voids_status,voids_source) select $1,d::date,45000,60,50,8000,10000,1000,600,case when d::date=$3::date then $4::int else 0 end,'actual',case when d::date=$3::date then 'unknown' else 'complete' end,case when d::date=$3::date then null else 'toast' end from generate_series($2::date,$3::date,interval '1 day') d",[businessId,from,today,voidCents]);
+ const plannedEmployee=randomUUID(),actualEmployee=randomUUID(),plannedTimecard=randomUUID(),actualTimecard=randomUUID();
+ await db.query("insert into public.employees(id,business_id,display_name,active,wage_period,wage_amount_cents) values($1,$3,'Planned shift employee',true,'hour',$4),($2,$3,'Attendance employee',true,'hour',$4)",[plannedEmployee,actualEmployee,businessId,wage]);
+ const [clock]=await rows(db,"select extract(epoch from clock_timestamp())*1000 as ms");
+ const began=Number(clock.ms)-9*3600000,ended=began+7*3600000;
+ const timecard=(id,employee,source)=>db.query("insert into public.timecards(id,business_id,employee_id,clock_in,clock_out,hourly_wage_cents,breaks,source_type,source_provider) values($1,$2,$3,$4,$5,$6,'[]'::jsonb,$7,'Owner')",[id,businessId,employee,new Date(began).toISOString(),new Date(ended).toISOString(),wage,source]);
+ await timecard(plannedTimecard,plannedEmployee,"owner_schedule");
+ const refresh=()=>runWorker({mode:"refresh",scopes:[{businessId,timezone:cafe.timezone}]},120000);
+ const alerts=()=>rows(db,"select id,kind,status,impact_cents,payload from public.alerts where business_id=$1 and kind in ('voids','meal_break') order by kind,id",[businessId]);
+ await refresh();const negative=await alerts();
+ // Same source facts, now independently attested complete voids; recorded
+ // attendance is separate from the planned seven hours with no actual break.
+ await db.query("update public.daily_rollups set voids_status='complete',voids_source='toast' where business_id=$1 and business_date=$2",[businessId,today]);
+ await timecard(actualTimecard,actualEmployee,"owner_manual");
+ await refresh();const opened=await alerts();
+ await refresh();const repeated=await alerts();
+ const qualifying=[{start:new Date(began+4*3600000).toISOString(),end:new Date(began+4.5*3600000).toISOString(),paid:false}];
+ await db.query("update public.timecards set breaks=$2::jsonb where id=$1 and business_id=$3",[actualTimecard,JSON.stringify(qualifying),businessId]);
+ await db.query("update public.daily_rollups set voids_cents=0 where business_id=$1 and business_date=$2",[businessId,today]);
+ await refresh();const closed=await alerts();
+ await refresh();const repeatedClosed=await alerts();
+ const effects=await rows(db,"select id from public.supervisor_effect_attempts where business_id=$1",[businessId]);
+ const ownerRows=await rows(db,"select id from public.ai_messages where business_id=$1 and role='owner'",[businessId]);
+ const verified=verifySourceAlertLifecycle({negative,opened,repeated,closed,repeatedClosed,actualTimecard,plannedTimecard,wage,voidCents,effects,ownerRows});
+ return {sourceAlertBusinessId:businessId,sourceAlertDate:today,actualTimecard,plannedTimecard,...verified};
 }
