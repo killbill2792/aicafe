@@ -103,13 +103,15 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
  inputs.usage.mockResolvedValue({rows:[],provenance:{coverage:"incomplete"}});
  inputs.quotes.mockResolvedValue({quotes:[],ingredients:[],currency:"USD",truncated:false});
  inputs.snapshot.mockResolvedValue({});
- let low=false,changed=true,emptySource=false,emptyComplete=false;
+ let low=false,changed=true,emptySource=false,emptyComplete=false,optionalFailure=false;
  const implementation=async(raw:unknown)=>{
   const p=raw as {view:string;date_from:string;group_by?:string[];metrics:Array<{column:string}>};
   const recent=p.date_from==="2026-11-12"||p.date_from==="2026-08-21";
   if(emptySource)return {rows:[{count_source_ref:0,"count_data.aiCafeCustomer.identityRef":0,
    "count_data.aiCafeCustomer.displayName":0}],missing:["empty"],truncated:false,error:undefined,
    customerCoverage:{complete:emptyComplete,eligibleChecks:0,linkedChecks:0,expectedLocationDays:7}};
+  if(optionalFailure&&p.metrics.some(m=>m.column==="historical_recipe_contribution_cents"))
+   return {rows:[],missing:["source_read_failed"],error:"source_read_failed",truncated:false};
   if(p.view==="cv_customer_products"){
    if(p.group_by?.[0]==="product_ref"){
     const ids=["11111111-1111-4111-8111-111111111111","22222222-2222-4222-8222-222222222222"];
@@ -148,7 +150,13 @@ it("the scheduled anomaly pass reconciles only comparable customer evidence and 
   expect(incidents.get("customer_trend:observed_reappearance_share")).toBe(true);
   expect(incidents.get("customer_trend:returning_product_mix:11111111-1111-4111-8111-111111111111")).toBe(true);
   for(const horizon of [7,30,60,90])expect(incidents.get(`customer_trend:observed_return_${horizon}d`)).toBe(false);
-  low=true;rpc.mockClear();await run();
+  optionalFailure=true;rpc.mockClear();
+  await expect(run()).rejects.toThrow("business_anomaly_refresh_incomplete");
+  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"customer_trend:returning_visit_share",p_active:true}));
+  expect(rpc.mock.calls.some(([,p])=>p.p_key==="customer_trend:average_recipe_contribution")).toBe(false);
+  expect(incidents.get("data_gap:reader_unavailable:customer_intelligence")).toBe(true);
+  expect(incidents.get("customer_trend:average_recipe_contribution")).toBe(true);
+  optionalFailure=false;low=true;rpc.mockClear();await run();
   expect(incidents.get("data_gap:customer_identity_coverage")).toBe(true);
   expect(incidents.get("customer_trend:returning_visit_share")).toBe(true);
   expect(rpc.mock.calls.some(([,p])=>p.p_key==="customer_trend:returning_visit_share")).toBe(false);
