@@ -265,10 +265,19 @@ describe("Task 15C fleet dispatch on migrated PostgreSQL", () => {
         expect(reserved.has(selected.run_id)).toBe(false);
         expect([cancelled,leased]).not.toContain(selected.run_id);
       }
-      // Simulate expiry of the dispatch reservation only. The separate real
-      // process-death test waits for the actual execution lease to expire.
+      // Simulate ticks spaced beyond the dispatch cooldown (not execution
+      // lease expiry). Hold other fixture items to isolate one noisy café's
+      // never-reconciled old run and an ordinary waiting run. The old row's
+      // unchanged updated_at must NOT monopolize every such tick.
+      const fresh=(await admin.query("select id from public.supervisor_runs where business_id=$1 and status='pending' and last_dispatched_at is null order by id limit 1",[cafes[0]])).rows[0].id;
+      await admin.query("update public.supervisor_runs set dispatch_after=now()+interval '10 minutes' where business_id=any($1::uuid[]) and id<>all($2::uuid[])",[cafes,[recovery,fresh]]);
       await admin.query("update public.supervisor_runs set dispatch_after=now()-interval '1 second' where id=$1",[recovery]);
+      expect(await call(a,"supervisor_select_next_durable_run",[])).toEqual({run_id:fresh,recovery:false});
+      // Recovery remains eligible, not permanently demoted by fresh work.
+      await admin.query("update public.supervisor_runs set dispatch_after=now()-interval '1 second' where id=$1",[fresh]);
       expect(await call(a,"supervisor_select_next_durable_run",[])).toEqual({run_id:recovery,recovery:true});
+      await admin.query("update public.supervisor_runs set dispatch_after=now()-interval '1 second' where id=$1",[recovery]);
+      expect(await call(a,"supervisor_select_next_durable_run",[])).toEqual({run_id:fresh,recovery:false});
     } finally {
       await Promise.all([a?.end(),b?.end(),denied?.end()]);
       await admin.query("delete from public.businesses where id=any($1::uuid[])",[cafes]);

@@ -132,7 +132,12 @@ begin
         select 1 from public.supervisor_run_steps t
           where t.business_id=r.business_id and t.run_id=r.id
             and t.status='blocked' and t.step_key='owner_turn' and t.error_code in ('lease_expired','turn_failed'))))
-    order by s.served asc nulls first,r.updated_at asc,r.id asc
+    -- Rotate WITHIN the café as well as across cafés. An unreconciled
+    -- recovery row retains updated_at forever; after its attempt, its actual
+    -- dispatch time must yield to older waiting ordinary work. New arrivals
+    -- use their own queue timestamp, rather than resetting the café's turn.
+    order by s.served asc nulls first,
+      coalesce(r.last_dispatched_at,r.updated_at) asc,r.updated_at asc,r.id asc
     for update of r skip locked limit 1;
   if not found then return null; end if;
   v_recovery:=v.status='blocked';

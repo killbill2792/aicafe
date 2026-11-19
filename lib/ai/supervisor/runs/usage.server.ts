@@ -136,8 +136,31 @@ export async function reserveDurableProviderRequest(
     const model=params.model,output=params.max_output_tokens;
     if(typeof model!=="string"||typeof output!=="number"||!Number.isSafeInteger(output)||
        output<1||output>1200)throw new Error("durable_provider_request_invalid");
-    const serialized=JSON.stringify(params);
-    const multimedia=/"type":"input_(?:image|file)"/u.test(serialized);
+    // Measure text/framing separately from trusted attachment binary
+    // transport. The provider tokenizes the decoded media, not the base64
+    // representation. Strip only the binary data URL in a real user content
+    // item from this accounting COPY, never from the transmitted request.
+    // All text/tool outputs, filenames and ordinary URL bytes still count.
+    // Unknown media types are not discounted. Known inline media reserves the
+    // full existing short-context ceiling; measured usage remains fenced.
+    let multimedia=false;
+    const accountingInput=Array.isArray(params.input)?params.input.map(item=>{
+      if(!item||typeof item!=="object"||item.role!=="user"||!Array.isArray(item.content))return item;
+      return {...item,content:item.content.map((part:unknown)=>{
+        if(!part||typeof part!=="object")return part;
+        const p=part as Record<string,unknown>;
+        const field=p.type==="input_image"?"image_url":p.type==="input_file"?"file_data":null;
+        if(!field||typeof p[field]!=="string")return part;
+        multimedia=true;
+        const raw=p[field];
+        const prefix=p.type==="input_image"?
+          /^data:image\/(?:jpeg|png|webp);base64,/u.exec(raw)?.[0]:
+          /^data:application\/pdf;base64,/u.exec(raw)?.[0];
+        if(!prefix||raw.length<=prefix.length||!/^[+\/A-Za-z0-9]+={0,2}$/u.test(raw.slice(prefix.length)))return part;
+        return {...p,[field]:prefix};
+      })};
+    }):params.input;
+    const serialized=JSON.stringify({...params,input:accountingInput});
     const inputUpper=Math.max(Buffer.byteLength(serialized,"utf8")+4096,
       multimedia||kind==="hosted_web"?272000:1);
     const rates=standardModelTokenRates(model,params.service_tier,inputUpper);

@@ -52,7 +52,8 @@ describe("the registered agent loop uses the durable provider reservation before
     threadId:"00000000-0000-4000-8000-000000000003",runId:"00000000-0000-4000-8000-000000000004",
     ownerMessageId:"00000000-0000-4000-8000-000000000005",jobId:"00000000-0000-4000-8000-000000000006",
     claimToken:"00000000-0000-4000-8000-000000000007"};
-  const fixture=async(provider:import("@/lib/ai/agent/loop.server").AgentProvider,deny?:"reserve"|"complete")=>{
+  const fixture=async(provider:import("@/lib/ai/agent/loop.server").AgentProvider,deny?:"reserve"|"complete",
+    attachment?:{ownerImages?:readonly {mimeType:string;base64:string}[];ownerPdfs?:readonly {filename:string;base64:string}[];ownerEvidence?:readonly string[]})=>{
     const {runAgentTurn}=await import("@/lib/ai/agent/loop.server");
     const {withDurableProviderTurn,currentDurableUsageAccounting}=await import("./usage.server");
     const calls:Array<{name:string;args:Record<string,unknown>}>=[];
@@ -67,7 +68,7 @@ describe("the registered agent loop uses the durable provider reservation before
       const result=await withDurableProviderTurn({...scope,db:client,authorize:authorized,ownerDailyCap:600,
         budget:{maxElapsedMs:60000,maxModelCalls:6,maxToolCalls:8,maxInputTokens:60000,maxOutputTokens:7200}},
         async()=>{
-          const turn=await runAgentTurn({ownerText:"Hello",context:{timezone:"UTC",asOf:"2026-11-18",
+          const turn=await runAgentTurn({ownerText:"Hello",...attachment,context:{timezone:"UTC",asOf:"2026-11-18",
             locale:"en",tools:{}} as import("@/lib/ai/agent/tools").AgentToolContext,
             provider:async function*(params,signal){
               expect(calls.at(-1)?.name).toBe("supervisor_reserve_durable_model_call");
@@ -106,6 +107,44 @@ describe("the registered agent loop uses the durable provider reservation before
       expect(result.accounting).toEqual({runId:scope.runId,attemptIds:[first.p_attempt_id,second.p_attempt_id]});
       expect(result.authorized).toHaveBeenCalledTimes(2);
     });
+  it.each(["image","pdf"] as const)("reserves decoded %s context independently of binary transport bytes",async(kind)=>{
+    const base64=Buffer.alloc(300*1024,7).toString("base64");
+    const attachment=kind==="image"?{ownerImages:[{mimeType:"image/jpeg",base64}]}:
+      {ownerPdfs:[{filename:"invoice.pdf",base64}]};
+    let launched=0;
+    const result=await fixture(async function*(params,signal){
+      launched++;
+      // Real outgoing body is unchanged. The private accounting copy alone
+      // excludes encoded attachment bytes, never text or provider inputs.
+      expect(JSON.stringify(params)).toContain(base64);
+      yield* complete(params,signal);
+    },undefined,attachment);
+    expect(launched).toBe(1);
+    expect(result.calls[0].args.p_input_upper).toBe(272000);
+    expect(result.calls[1].name).toBe("supervisor_complete_investigation_model_call");
+    expect(result.turn.endReason).toBe("complete");
+  });
+  it("does not discount oversized ordinary text even when an inline attachment is present",async()=>{
+    const base64=Buffer.alloc(300*1024,7).toString("base64");
+    let launched=0;
+    const result=await fixture(async function*(params,signal){
+      launched++;yield* complete(params,signal);
+    },undefined,{ownerImages:[{mimeType:"image/jpeg",base64}],
+      ownerEvidence:["x".repeat(300000)]});
+    expect(launched).toBe(0);
+    expect(result.calls).toHaveLength(0);
+    expect(result.turn.endReason).toBe("provider_error");
+  });
+  it("does not treat an unrecognized data URL as discounted binary evidence",async()=>{
+    const base64=Buffer.alloc(300*1024,7).toString("base64");
+    let launched=0;
+    const result=await fixture(async function*(params,signal){
+      launched++;yield* complete(params,signal);
+    },undefined,{ownerImages:[{mimeType:"text/plain",base64}]});
+    expect(launched).toBe(0);
+    expect(result.calls).toHaveLength(0);
+    expect(result.turn.endReason).toBe("provider_error");
+  });
   it("refuses any provider transport or fallback after reservation persistence fails",async()=>{
     let launches=0;
     const result=await fixture(async function*(params,signal){launches++;yield* complete(params,signal);},"reserve");
