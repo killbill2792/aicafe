@@ -10,7 +10,7 @@ import {isAbsolute} from "node:path";
 export const TASK14B_MAX_RESERVED_MICROS=180_000; // eighteen-cent reserve under the owner's spending ceiling
 export const TASK14B_MAX_PAID_CALLS=18;
 export const TASK14B_MAX_REQUEST_BYTES=120_000;
-export const TASK14B_MAX_RESPONSE_TOKENS=4_096;
+export const TASK14B_MAX_RESPONSE_TOKENS=16_384;
 export const TASK14B_MAX_FINAL_RESPONSE_TOKENS=1_200;
 export type PaidBudgetRecord={head:string;attempts:number;reservedMicros:number};
 export function paidRequestReservation(params:Record<string,unknown>,json:string){
