@@ -467,7 +467,7 @@ begin
 
   if exists(select 1 from public.supervisor_runs r where r.business_id=p_business_id
     and r.owner_user_id=p_owner_user_id and r.thread_id=p_thread_id
-    and r.request_key=p_owner_message_id and r.execution_version=2)
+    and (r.request_key=p_owner_message_id or p_owner_message_id=any(r.owner_answer_ids)) and r.execution_version=2)
     then raise exception 'durable_job_owned' using errcode='55000'; end if;
   -- A turn whose server died (no heartbeat for 180s) is failed, never left spinning.
   update public.ai_agent_jobs
@@ -719,9 +719,9 @@ revoke all on function public.supervisor_publish_owner_question_v2(uuid,uuid,uui
 grant execute on function public.supervisor_publish_owner_question_v2(uuid,uuid,uuid,uuid,uuid,uuid,uuid,jsonb,jsonb) to service_role;
 
 create function public.supervisor_answer_owner_run_v2(
- p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_question_id uuid,p_answer_id uuid
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_question_id uuid,p_answer_id uuid,p_response jsonb default null
 ) returns jsonb language plpgsql security invoker set search_path=public as $$
-declare r public.supervisor_runs;s public.supervisor_run_steps;q public.ai_messages;a public.ai_messages;v_index integer;
+declare r public.supervisor_runs;s public.supervisor_run_steps;q public.ai_messages;a public.ai_messages;v_index integer;v_response jsonb;
 begin
  if coalesce(auth.role(),'')<>'service_role'
    or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
@@ -739,9 +739,14 @@ begin
    and business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id
    and execution_version=2 and request_key::text=q.grounding->>'ownerMessageId' for update;
  if not found then raise exception 'owner_question_unavailable' using errcode='42501'; end if;
+ v_response:=coalesce(p_response,jsonb_build_object('questionId',p_question_id,'action','supply'));
+ if jsonb_typeof(v_response)<>'object' or v_response->>'questionId' is distinct from p_question_id::text
+   or v_response->>'action' is distinct from 'supply' or (v_response-'questionId'-'action'-'value')<>'{}'::jsonb
+   or (v_response?'value' and (jsonb_typeof(v_response->'value')<>'string' or length(v_response->>'value')>200))
+   then raise exception 'owner_answer_invalid' using errcode='22023'; end if;
  v_index:=array_position(r.answered_question_ids,p_question_id);
  if v_index is not null then
-   if r.owner_answer_ids[v_index] is distinct from p_answer_id then
+   if r.owner_answer_ids[v_index] is distinct from p_answer_id or a.owner_input_response is distinct from v_response then
      raise exception 'owner_question_already_answered' using errcode='23505'; end if;
    return to_jsonb(r);
  end if;
@@ -754,6 +759,11 @@ begin
    and step_key='owner_turn' for update;
  if not found or s.status<>'blocked' or s.error_code is distinct from 'awaiting_owner'
    or s.checkpoint_phase<>'ready' then raise exception 'owner_question_stale' using errcode='23505'; end if;
+ update public.ai_messages set owner_input_prompt_message_id=p_question_id,owner_input_response=v_response
+   where id=p_answer_id and business_id=p_business_id and owner_user_id=p_owner_user_id
+     and thread_id=p_thread_id and role='owner' and owner_input_response is null
+     and owner_input_prompt_message_id is null;
+ if not found then raise exception 'owner_answer_already_bound' using errcode='23505'; end if;
  update public.supervisor_run_steps set status='pending',error_code=null,next_retry_at=null,
    checkpoint_retry_count=0,updated_at=clock_timestamp() where id=s.id;
  update public.supervisor_runs set status='pending',awaiting_question_id=null,
@@ -761,8 +771,8 @@ begin
    dispatch_after=null,updated_at=clock_timestamp() where id=r.id returning * into r;
  return to_jsonb(r);
 end $$;
-revoke all on function public.supervisor_answer_owner_run_v2(uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
-grant execute on function public.supervisor_answer_owner_run_v2(uuid,uuid,uuid,uuid,uuid) to service_role;
+revoke all on function public.supervisor_answer_owner_run_v2(uuid,uuid,uuid,uuid,uuid,jsonb) from public,anon,authenticated;
+grant execute on function public.supervisor_answer_owner_run_v2(uuid,uuid,uuid,uuid,uuid,jsonb) to service_role;
 
 -- Explicit authenticated owner cancellation fences the same claimed work.
 create function public.supervisor_cancel_owner_run_v2(
@@ -910,3 +920,6 @@ begin
 end $$;
 revoke all on function public.supervisor_owner_schedule_source_token_v2(uuid,uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.supervisor_owner_schedule_source_token_v2(uuid,uuid,uuid,uuid,uuid,uuid) to service_role;
+
+-- Owner-only work projection exposes matching question and consumed answer IDs, not checkpoint contents.
+grant select(awaiting_question_id,owner_answer_ids) on public.supervisor_runs to authenticated;

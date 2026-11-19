@@ -37,7 +37,7 @@ export async function GET(request: Request, context: RouteContext) {
     const ownerWide = new URL(request.url).searchParams.get("scope") === "owner";
     const db = await createServerSupabaseClient();
     const v2=process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true";
-    const runFields = "thread_id,id,request_key,status,final_report_ref,updated_at,finished_at"+(v2?",execution_version":"");
+    const runFields = "thread_id,id,request_key,status,final_report_ref,updated_at,finished_at"+(v2?",execution_version,awaiting_question_id,owner_answer_ids":"");
     const jobFields = "thread_id,id,owner_message_id,status,reply_message_id,error_code,attempt,heartbeat_at,created_at";
     const proposalFields = "thread_id,id,status,capability_id,effect_hash,updated_at";
     const investigationFields = "thread_id,episode_id,phase,failure_count,lease_token,lease_until,last_error,updated_at";

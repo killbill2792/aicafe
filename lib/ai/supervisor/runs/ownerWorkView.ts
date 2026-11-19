@@ -25,11 +25,12 @@ export type OwnerWorkItem = {
   errorCode: string | null;
   proof: { kind: "verified_reply" | "verified_effect"; ref: string; at: string | null } | null;
   proposalId: string | null;
+  executionVersion?:number; questionId?:string|null; relatedOwnerMessageIds?:string[]; cancelAllowed?:boolean;
 };
 
 export type RunRow = {
   thread_id?: string | null;
-  execution_version?:number;
+  execution_version?:number; awaiting_question_id?:string|null; owner_answer_ids?:string[];
   id: string; request_key: string; status: "pending" | "running" | "blocked" | "completed";
   final_report_ref: string | null; updated_at: string; finished_at: string | null;
 };
@@ -116,6 +117,8 @@ export function projectOwnerWork(input: {
       proof: status === "answer_ready" && run.final_report_ref
         ? { kind: "verified_reply", ref: run.final_report_ref, at: run.finished_at } : null,
       proposalId: null,
+      ...(run.execution_version===2?{executionVersion:2,questionId:waiting?run.awaiting_question_id??null:null,
+        relatedOwnerMessageIds:run.owner_answer_ids??[],cancelAllowed:["queued","running","retrying"].includes(status)||waiting}:{}),
     });
   }
   const ownerRuns = new Set(input.runs.map(run => (run.thread_id ?? "") + ":" + run.request_key));

@@ -199,7 +199,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     const ownerAt = Date.parse(owner.createdAt);
     const history = page.items.filter(m => m.id !== owner.id &&
       (m.role === "owner" || m.role === "supervisor") && reusable(m) &&
-      !(job && m.role === "owner" && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
+      !(job && (p.durableFence||m.role === "owner") && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
         content: historyContent(m) })).filter(m => m.content);
     for(const answer of p.matchedAnswers??[]){
@@ -778,6 +778,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
          },
         onFollowUp: (count: number) => emit("followup", { count }),
       } : {}) });
+    if(p.matchedAnswers?.length)result.absorbedOwnerMessageIds=[...new Set([...(result.absorbedOwnerMessageIds??[]),...p.matchedAnswers.map(a=>a.id)])];
     result.externalEvidence=sourceChecks.size>0;
     completedTurn = result;
     failureStage = "persist";

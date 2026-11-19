@@ -81,7 +81,7 @@ export async function POST(request: Request, context: RouteContext) {
         if(input.ownerInputResponse){
           if(input.ownerInputResponse.action!=="supply"||input.attachmentIds?.length)throw new ConversationApiError(422,"invalid_owner_answer");
           const {answerOwnerRun}=await import("@/lib/ai/supervisor/runs/repository.server");
-          run=await answerOwnerRun({...scope,threadId:id},input.ownerInputResponse.questionId,owner.id);
+          run=await answerOwnerRun({...scope,threadId:id},input.ownerInputResponse.questionId,owner.id,input.ownerInputResponse);
         }else run=await worker.admitDurableChat({...scope,threadId:id},owner,{locale:input.locale,attachmentIds:input.attachmentIds??[]});
       }
       catch(error){
@@ -94,6 +94,7 @@ export async function POST(request: Request, context: RouteContext) {
       const jobs=await import("@/lib/ai/agent/jobs.server");
       const sink=createTurnSink();
       return sseStream((emit,close,onCancel)=>{
+        emit("ack",{runId:run.id,ownerMessageId:owner.id,mode:"queued"});
         const detach=sink.attach({emit,close});onCancel(detach);
         const work=(async()=>{
           try{
