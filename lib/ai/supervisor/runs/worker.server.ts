@@ -7,15 +7,15 @@ import { authorizedExternalConversation } from "@/lib/ai/conversations/authorize
 import { readOwnerMessage } from "@/lib/ai/agent/jobs.server";
 import { runOneTurn, errorCode as agentTurnErrorCode } from "@/lib/ai/conversations/agentRunner.server";
 import { assertCafeAiAccess } from "@/lib/access/access.server";
-import { assertOwnerAgentTurnAvailable } from "@/lib/ai/conversations/usage.server";
+import { assertOwnerAgentTurnAvailable,ownerModelCallsLimit } from "@/lib/ai/conversations/usage.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentJob } from "@/lib/ai/agent/jobState";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { resumeSupervisorRun } from "./resume";
-import { SupabaseDurableRunRepository } from "./repository.server";
+import { selectNextDurableRun, SupabaseDurableRunRepository } from "./repository.server";
 import { runScopeSchema, type DurableRun, type DurableRunRepository, type RunScope } from "./contracts";
 import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExhausted,
-  type WorkerBudget, type WorkerUsage } from "./usage.server"; const uuid = z.uuid(); const plan = [
+  withDurableProviderTurn,type WorkerBudget, type WorkerUsage } from "./usage.server"; const uuid = z.uuid(); const plan = [
   { key: "authorize_owner", retry: "idempotent" as const },
   // An uncertain effect can never be blindly repeated.
   { key: "owner_turn", retry: "reconcile" as const }, { key: "verify_report", retry: "idempotent" as const },
@@ -57,32 +57,17 @@ async function verifiedReply(run: WorkerRun): Promise<VerifiedReply | null> {
  * and rejects blocked runs; late workers cannot report an uncertain effect
  * completed. An independently verified effect receipt is needed to unblock. */
 async function blockRun(run: WorkerRun, reason: string, token?: string, stepKey?: string) {
-  const db = createAdminSupabaseClient(); const { data, error } = await db.from("supervisor_runs")
-    .update({ status: "blocked", updated_at: new Date().toISOString() })
-    .eq("id", run.id).eq("business_id", run.scope.businessId)
-    .eq("owner_user_id", run.scope.ownerUserId).eq("thread_id", run.scope.threadId)
-    .in("status", ["pending", "running"]).select("id").maybeSingle();
-  if (error) throw new Error("worker_stop_not_persisted", { cause: error }); if (!data) {
-    const check = await db.from("supervisor_runs").select("status")
-      .eq("id", run.id).eq("business_id", run.scope.businessId)
-      .eq("owner_user_id", run.scope.ownerUserId).eq("thread_id", run.scope.threadId).maybeSingle();
-    if (check.error || check.data?.status !== "blocked") throw new Error("worker_stop_conflict"); }
-  // Persist a reason even when cancellation/budget denial precedes a claim.
-  // The run is already blocked; no later claim or completion may succeed.
-  const first = token && stepKey ? { step_key: stepKey } :
-    (await db.from("supervisor_run_steps").select("step_key").eq("business_id", run.scope.businessId)
-      .eq("run_id", run.id).neq("status", "completed")
-      .order("step_index", { ascending: true }).limit(1)).data?.[0]; if (first) {
-    let step = db.from("supervisor_run_steps").update({
-      status: "blocked", error_code: reason, worker_id: null, claim_token: null,
-      lease_until: null, updated_at: new Date().toISOString(),
-    }).eq("business_id", run.scope.businessId).eq("run_id", run.id)
-      .eq("step_key", first.step_key); step = token ? step.eq("claim_token", token).eq("status", "leased") :
-      step.eq("status", "pending"); const { error: stepError } = await step;
-    if (stepError) throw new Error("worker_stop_step_unavailable", { cause: stepError }); }
+  const { data, error } = await createAdminSupabaseClient().rpc("supervisor_stop_durable_run", {
+    p_business_id: run.scope.businessId, p_owner_user_id: run.scope.ownerUserId,
+    p_thread_id: run.scope.threadId, p_run_id: run.id, p_error_code: reason,
+    p_step_key: stepKey ?? null, p_claim_token: token ?? null,
+  });
+  if (error) throw new Error("worker_stop_not_persisted", { cause: error });
+  if (data !== true) throw new Error("worker_stop_conflict");
 }
+
 export type WorkerDependencies = { repository: DurableRunRepository; authorize: () => Promise<void>;
-  verified: () => Promise<VerifiedReply | null>; executeTurn: () => Promise<void>;
+  verified: () => Promise<VerifiedReply | null>; executeTurn: (claimToken:string,budget:WorkerBudget) => Promise<void>;
   cancelled: () => Promise<boolean>; stop: (reason: string, token?: string, key?: string) => Promise<void>;
   clock?: () => number; };
 /** Uses PR5's fenced resume runner, not a second lease implementation.
@@ -94,7 +79,13 @@ export async function executeDurableRun(
   const stop = async (reason: string, token?: string, key?: string): Promise<never> => {
     await deps.stop(reason, token, key); throw new Error("supervisor_worker_" + reason); };
   const check = async (token?: string, key?: string) => { try { await deps.authorize(); }
-    catch { await stop("authorization_revoked", token, key); }
+    catch (error) {
+      // An unavailable authorization read is not proof of revocation. Retain
+      // the current fenced lease and let its safe recovery path handle it.
+      if (error instanceof Error && error.message === "owner_revoked")
+        await stop("authorization_revoked", token, key);
+      throw error;
+    }
     if (await deps.cancelled()) await stop("cancelled", token, key);
     const u = (await deps.verified())?.usage ?? {
       elapsedMs: 0, modelCalls: 0, toolCalls: 0, inputTokens: 0, outputTokens: 0, };
@@ -111,12 +102,20 @@ export async function executeDurableRun(
             // deadline. All continuation turns share what is left.
             const remaining = { ...budget,
               maxElapsedMs: Math.max(0, budget.maxElapsedMs - Math.max(0, now() - started)) };
-            await withWorkerBudget(remaining, async () => { await deps.executeTurn();
+            await withWorkerBudget(remaining, async () => { await deps.executeTurn(claim.claimToken,budget);
               const spent = currentWorkerUsage(); if (spent) {
                 const aggregate = { ...spent, elapsedMs: Math.max(spent.elapsedMs, now() - started) };
                 const exceeded = usageStopReason(aggregate, budget);
                 if (exceeded) throw new Error("supervisor_worker_chain_" + exceeded); }
-            }); } catch (error) { await deps.stop("turn_failed", claim.claimToken, claim.key); throw error; }
+            }); } catch (error) {
+              const code = error instanceof Error ? error.message : "";
+              // Explicit exhausted budgets are terminal; a lost acknowledgement
+              // is uncertain and may only reconcile against the canonical reply.
+              await deps.stop(code === "supervisor_worker_chain_budget" ? "budget_exceeded"
+                : code === "supervisor_worker_chain_timeout" ? "time_exceeded"
+                : "turn_failed", claim.claimToken, claim.key);
+              throw error;
+            }
           receipt = await deps.verified(); }
         if (!receipt || receipt.endReason !== "complete" || receipt.ref !== finalRef)
           return stop("turn_incomplete", claim.claimToken, claim.key);
@@ -131,12 +130,12 @@ export async function executeDurableRun(
           return stop("report_unverified", claim.claimToken, claim.key); return receipt.ref; }
       return stop("unknown_step", claim.claimToken, claim.key); }); }
 /** A crashed worker is never replayed for an uncertain effect.
- * Reconcile ONLY a PR5 lease-expiry with a verified scoped canonical receipt.
+ * Reconcile only an expired or unconfirmed turn with a verified scoped canonical reply.
  * Owner cancellation and other blocked statuses never become runnable here. */
 export async function reconcileVerifiedOwnerStep(
   run: WorkerRun, repository: DurableRunRepository, reason: string | null,
   authorize: () => Promise<void>, verified: () => Promise<VerifiedReply | null>, ): Promise<boolean> {
-  if (reason !== "lease_expired") return false; try { await authorize(); }
+  if (reason !== "lease_expired" && reason !== "turn_failed") return false; try { await authorize(); }
   catch { return false; } // revoked or unverifiable owners never resume an effect
   const receipt = await verified();
   const { supervisorReplyIdFor } = await import("@/lib/ai/conversations/replyValidation");
@@ -222,11 +221,21 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
     .order("step_index", { ascending: true });
   if (stored.error || JSON.stringify((stored.data ?? []).map(s => ({ key: s.step_key, retry: s.retry_mode }))) !== JSON.stringify(plan))
     throw new Error("supervisor_worker_plan_unrecognized"); const authorize = async () => {
-    await authorizedExternalConversation(run.scope, run.scope.threadId);
-    await readOwnerMessage(run.scope, run.scope.threadId, run.requestKey); };
+    const { businessId, ownerUserId, threadId } = run.scope;
+    const authorized = await db.rpc("supervisor_routine_owner_authorized", {
+      p_business_id: businessId, p_owner_user_id: ownerUserId, p_thread_id: threadId,
+    });
+    if (authorized.error) throw new Error("worker_authorization_unavailable", { cause: authorized.error });
+    if (authorized.data !== true) throw new Error("owner_revoked");
+    const message = await db.from("ai_messages").select("id").eq("id", run.requestKey)
+      .eq("business_id", businessId).eq("owner_user_id", ownerUserId).eq("thread_id", threadId)
+      .eq("role", "owner").eq("content_type", "text").maybeSingle();
+    if (message.error) throw new Error("worker_authorization_unavailable", { cause: message.error });
+    if (!message.data) throw new Error("owner_revoked");
+  };
   const repository = new SupabaseDurableRunRepository(); if (row.status === "blocked") {
-    // Only an expired uncertain claim with an independently verified canonical
-    // reply may be reconciled. Cancellation/revocation/failed responses stay blocked.
+    // Only an expired or unconfirmed turn with an independently verified canonical
+    // reply may be reconciled. Cancellation/revocation/budget stops stay blocked.
     const blocked = (stored.data ?? []).filter(step => step.status === "blocked");
     if (blocked.length !== 1 || blocked[0].step_key !== "owner_turn" ||
       !(await reconcileVerifiedOwnerStep(run, repository, blocked[0].error_code,
@@ -237,7 +246,7 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
         .eq("id", run.id).eq("business_id", run.scope.businessId).maybeSingle();
       if (check.error || !check.data) throw new Error("supervisor_run_status_unavailable");
       return check.data.status === "blocked"; },
-    stop: (reason, token, key) => blockRun(run, reason, token, key), executeTurn: async () => {
+    stop: (reason, token, key) => blockRun(run, reason, token, key), executeTurn: async (claimToken,budget) => {
       const scope = run.scope, service = await authorizedExternalConversation(scope, scope.threadId);
       const owner = await readOwnerMessage(scope, scope.threadId, run.requestKey);
       const client = createAdminSupabaseClient(); const assertPaidAllowed = async () => {
@@ -252,34 +261,20 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
       if (started.mode === "done") return; // canonical reply verified independently
       if (started.mode !== "started") throw new Error("supervisor_existing_job_unfinished");
       await runDurableJobChain({ scope, owner, initialJob: started.job, jobs, assertPaidAllowed,
-        runTurn: (nextOwner, job) => runOneTurn({ scope, threadId: scope.threadId, owner: nextOwner,
+        runTurn: (nextOwner, job) => withDurableProviderTurn({
+          db:client,...scope,runId:run.id,ownerMessageId:nextOwner.id,jobId:job.id,claimToken,budget,
+          ownerDailyCap:ownerModelCallsLimit(),authorize:async()=>{
+            await authorizedExternalConversation(scope,scope.threadId);
+            await assertCafeAiAccess(scope.businessId);
+          },
+        },()=>runOneTurn({ scope, threadId: scope.threadId, owner: nextOwner,
           ownerText: nextOwner.text ?? "", locale: "en", service,
-          emit: () => {}, job, jobs, externalClient: client, }), }); }, }); }
+          emit: () => {}, job, jobs, externalClient: client, })), }); }, }); }
 export async function processOldestDurableRun(): Promise<{ processed: number; state: WorkerOutcome | null }> {
-  const db = createAdminSupabaseClient();
-  const { data, error } = await db.from("supervisor_runs").select("id")
-    .in("status", ["pending", "running"]).order("updated_at", { ascending: true })
-    .order("id", { ascending: true }).limit(1);
-  if (error) throw new Error("supervisor_worker_queue_unavailable");
-  let runId: string | undefined = data?.[0]?.id; let recovery = false; if (!runId) {
-    // Sweep only the explicitly reconcilable lease-expiry queue when normal
-    // work is idle. Never retry cancelled or budget-blocked owner turns.
-    const pending = await db.from("supervisor_run_steps").select("run_id")
-      .eq("status", "blocked").eq("step_key", "owner_turn")
-      .eq("error_code", "lease_expired")
-      .order("updated_at", { ascending: true }).limit(1);
-    if (pending.error) throw new Error("supervisor_worker_recovery_unavailable");
-    runId = pending.data?.[0]?.run_id; recovery = Boolean(runId); }
-  if (!runId) return { processed: 0, state: null }; const state = await processDurableRun(runId);
-  // Rotate held leases and uncertain receipts; neither may monopolize a café
-  // queue. Only canonical SQL reconciliation can unblock expired effects.
-  if (state === "busy" && !recovery) { const moved = await db.from("supervisor_runs")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", runId).in("status", ["pending", "running"]);
-    if (moved.error) throw new Error("supervisor_worker_queue_rotate_failed"); }
-  if (recovery && state === "blocked") { const moved = await db.from("supervisor_run_steps")
-      .update({ updated_at: new Date().toISOString() }).eq("run_id", runId)
-      .eq("step_key", "owner_turn").eq("status", "blocked")
-      .eq("error_code", "lease_expired");
-    if (moved.error) throw new Error("supervisor_worker_recovery_rotate_failed"); }
-  return { processed: 1, state }; }
+  const candidate = await selectNextDurableRun();
+  if (!candidate) return { processed: 0, state: null };
+  // Selection is already durably rotated before executing. A crash or
+  // thrown error cannot keep a poison candidate at the head of the fleet.
+  const state = await processDurableRun(candidate.runId);
+  return { processed: 1, state };
+}

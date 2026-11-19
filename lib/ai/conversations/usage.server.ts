@@ -7,6 +7,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { ConversationApiError } from "./auth.server";
 import type { ConversationScope } from "./contracts";
+import {currentDurableUsageAccounting} from "@/lib/ai/supervisor/runs/usage.server";
 export type SupervisorUsage = {model:string;inputTokens:number;outputTokens:number;modelCallCount:number;toolCallCount:number};
 
 /** A dollar rate is configured per million tokens; cost is stored in millionths of a USD.
@@ -67,7 +68,9 @@ export async function recordSupervisorUsage(params: {
     inputRate??standard?.input,outputRate??standard?.output):null;
   const admin = createAdminSupabaseClient();
   // Atomic additive write: failed attempt plus Retry never discard previously incurred usage.
-  const { error } = await admin.rpc("record_supervisor_usage_increment", {
+  const accounting=currentDurableUsageAccounting({...scope,threadId,ownerMessageId},usage.modelCallCount);
+  const { error } = await admin.rpc(accounting?"supervisor_record_durable_usage_increment":"record_supervisor_usage_increment", {
+    ...(accounting?{p_run_id:accounting.runId,p_attempt_ids:accounting.attemptIds}:{}),
     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
     p_thread_id:threadId,p_owner_message_id:ownerMessageId,
     p_model:usage.model,p_input_tokens:usage.inputTokens,p_output_tokens:usage.outputTokens,
@@ -97,7 +100,7 @@ export async function assertOwnerAgentTurnAvailable(scope: ConversationScope, sc
   // not a café calendar date or a date shown to the owner.
   const utcQuotaBucketDay = new Date().toISOString().slice(0, 10);
   const [interactive,proactive] = await Promise.all([
-    session.from("ai_usage_events").select("model_call_count")
+    session.from("ai_usage_events").select("model_call_count,reserved_model_call_count")
       .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
       .eq("attempt_day", utcQuotaBucketDay),
     session.from("supervisor_system_usage_events").select("model_call_count")
@@ -109,8 +112,9 @@ export async function assertOwnerAgentTurnAvailable(scope: ConversationScope, sc
   // The owner daily quota covers BOTH user-requested turns and unprompted
   // model calls. Attempts count even after a timeout/provider failure; they
   // are reserved before transport, not erased by failed investigations.
-  const calls = [...interactive.data,...proactive.data]
-    .reduce((total, entry) => total + entry.model_call_count, 0);
+  const calls = interactive.data.reduce((total,entry)=>
+    total+Number(entry.model_call_count)-Number(entry.reserved_model_call_count??0),0)
+    +proactive.data.reduce((total,entry)=>total+Number(entry.model_call_count),0);
   if (calls >= ownerModelCallsLimit())
     throw new ConversationApiError(429, "owner_usage_limit_reached");
 }

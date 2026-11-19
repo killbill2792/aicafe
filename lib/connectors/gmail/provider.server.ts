@@ -275,11 +275,35 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
      proposal.effect_hash!==effectHash||bound?.accountId!==effect.accountId||
      bound.generation!==effect.generation||bound.from!==effect.from)
     throw new Error("gmail_gateway_proposal_required");
+  // Task14C reuses this provider; supplier orders require an additional
+  // unique, source-backed PO reservation before any outbound provider POST.
+  const vendor=await db.from("purchase_order_dispatches")
+    .select("id,purchase_order_id,contact_id,recipient_email")
+    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+    .eq("proposal_id",proposalId).maybeSingle();
+  if(vendor.error)throw new Error("supplier_send_status_unavailable");
+  if(vendor.data&&effect.operation!=="send")throw new Error("supplier_send_operation_invalid");
+  // The PO approval card may be visible before its dispatch row is saved.
+  // Never let a PO-shaped Gmail proposal fall back to the ordinary Gmail
+  // sender in that gap. All Task14C messages have this fixed subject.
+  const namedPo=/^Purchase order ([a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/i.exec(effect.subject);
+  if(effect.operation==="send"&&namedPo&&!vendor.data)
+    throw new Error("supplier_dispatch_binding_missing");
+  if(vendor.data&&effect.subject!=="Purchase order "+vendor.data.purchase_order_id)
+    throw new Error("supplier_dispatch_subject_changed");
   const {data:attempt,error:attemptError}=await db.from("supervisor_effect_attempts")
     .select("state,authorization_kind").eq("business_id",scope.businessId)
     .eq("proposal_id",proposalId).eq("effect_hash",effectHash).maybeSingle();
   if(attemptError||attempt?.state!=="executing"||attempt.authorization_kind!=="click")
     throw new Error("gmail_gateway_owner_click_required");
+  if(vendor.data){
+    const reservation=await db.rpc("supervisor_reserve_supplier_gmail_send",{
+      p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+      p_proposal_id:proposalId,p_effect_hash:effectHash
+    });
+    if(reservation.error||reservation.data!==true)
+      throw new Error("supplier_send_reservation_failed");
+  }
   const rfc=effect.operation==="send"?gmailRfcId(proposalId,effect.from):null;
   const receipt={account_id:account.id,business_id:scope.businessId,owner_user_id:scope.ownerUserId,
     proposal_id:proposalId,effect_hash:effectHash,account_generation:account.generation,
@@ -295,6 +319,9 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     if(live?.id!==account.id||live.generation!==account.generation||!allowsGmail(live,required))
       throw new Error(effect.operation==="send"?
         "gmail_connection_revoked_before_send":"gmail_connection_revoked_before_effect");
+    // Permission can be withdrawn without changing the account generation.
+    // Recheck the exact operation immediately before irreversible transport.
+    assertGmailCapability(live,required);
   };
   let response:{id?:string;threadId?:string};
   let referenceId:string|null=null;
@@ -312,6 +339,31 @@ export async function performGmailEffect(scope:ConnectorOwner,effect:GmailEffect
     const threadId=effect.messageId?verifiedThreadId:effect.threadId;
     if(effect.operation==="send"){
       await ensureLive();
+      if(vendor.data){
+        // Revalidate contact/PO immediately before irreversible transport.
+        const [po,contact,dispatch,terminalReports]=await Promise.all([
+          db.from("purchase_orders").select("status,supplier_id").eq("business_id",scope.businessId)
+            .eq("owner_user_id",scope.ownerUserId).eq("id",vendor.data.purchase_order_id).maybeSingle(),
+          db.from("cafe_supplier_order_contacts").select("channel,email,revoked_at,supplier_id")
+            .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+            .eq("id",vendor.data.contact_id).maybeSingle(),
+          db.from("purchase_order_dispatches").select("state").eq("business_id",scope.businessId)
+            .eq("id",vendor.data.id).maybeSingle(),
+          // Terminal owner reports may arrive AFTER the SQL send reservation.
+          // Treat a committed acceptance/decline as revocation right up to the
+          // last provider POST preflight, not just when reservation was made.
+          db.from("purchase_order_channel_reports").select("id")
+            .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+            .eq("purchase_order_id",vendor.data.purchase_order_id)
+            .in("outcome",["supplier_accepted","supplier_declined"]).limit(1)
+        ]);
+        if(po.error||contact.error||dispatch.error||terminalReports.error||
+          (terminalReports.data??[]).length!==0||po.data?.status!=="approved_for_ordering"||
+          contact.data?.channel!=="gmail"||contact.data.revoked_at||
+          contact.data.email?.toLowerCase()!==vendor.data.recipient_email.toLowerCase()||
+          contact.data.supplier_id!==po.data?.supplier_id||dispatch.data?.state!=="reserved")
+          throw new Error("supplier_send_authorization_revoked_before_post");
+      }
       response=await scopedGmailApi(scope,account,required,token,"/messages/send",{method:"POST",body:{
         raw,...(threadId?{threadId}:{})}}) as {id?:string;threadId?:string};
     }else{

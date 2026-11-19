@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatInboxDay, inboxKey, isStaleShiftAlert, settleInboxTasks } from "./inboxLifecycle";
+import { formatInboxDay, inboxKey, isStaleShiftAlert, settleInboxTasks, retainActionablePrioritySource } from "./inboxLifecycle";
 import { projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
 import type { OperatingTask } from "./tasks";
 
@@ -75,6 +75,26 @@ describe("inbox lifecycle (read-only)", () => {
     expect(isStaleShiftAlert({ kind: "meal_break", payload: { date: "2026-10-28" } }, TODAY)).toBe(true);
     expect(isStaleShiftAlert({ kind: "meal_break", payload: { date: "2026-11-02" } }, TODAY)).toBe(false);
     expect(isStaleShiftAlert({ kind: "missing_bill", payload: { date: "2026-10-01" } }, TODAY)).toBe(false);
+  });
+
+  it("includes exactly one saved supplier dispatch question in the shared Needs-you inbox", () => {
+    const vendor = task("priority:vendor-order", {
+      agentId:"maya",kind:"priority_notice",status:"needs_owner",
+      payload:{title:"Approved order unresolved: was the supplier contacted by Gmail, phone or portal, and what did they confirm?",
+        threadId:"11111111-1111-4111-8111-111111111111",
+        sourceType:"supplier_dispatch",sourceId:"22222222-2222-4222-8222-222222222222"}
+    });
+    const generic = task("priority:ordinary-alert", {
+      kind:"priority_notice",status:"needs_owner",
+      payload:{title:"Other alert already represented",sourceType:"alert",sourceId:"alert1"}
+    });
+    expect(retainActionablePrioritySource(vendor)).toBe(true);
+    expect(retainActionablePrioritySource(generic)).toBe(false);
+    const visible = projectOperatingTasks(settleInboxTasks(
+      [vendor,generic].filter(retainActionablePrioritySource),null,NOW,TODAY));
+    expect(visible.needsYou.map(x=>x.id)).toEqual([vendor.id]);
+    expect(visible.members.find(x=>x.agentId==="maya")?.attentionCount).toBe(1);
+    expect(visible.watching).toHaveLength(0);
   });
 
   it("drops handled history after fourteen days", () => {

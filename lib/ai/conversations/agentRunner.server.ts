@@ -22,7 +22,9 @@ import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceCha
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
-import {readSupplierPurchaseOrders} from "@/lib/data/supplierPurchasing.server";
+import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
+import {proposeApprovedSupplierEmail} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
+import {recordOwnerSupplierOutcome,authenticatedSupplierOwnerTurn,explicitSingleOwnerPurchaseOrder} from "@/lib/purchasing/ownerSupplierOutcome.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
 import type {SupplierPurchaseOrderEffect} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -182,6 +184,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(external?{verifiedReadClient:p.externalClient}: {})};
     let selectedContentSha256:string|null=null;
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
+      ownerText:p.ownerText,
       readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
@@ -265,10 +268,60 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
               recovery:row.status==="approved"&&!attempt
                 ?"owner_retry_or_cancel" as const:"receipt_only" as const};
           }));
+          const [communications,mailbox]=await Promise.all([
+            readSupplierOrderCommunications(client,scope.businessId,scope.ownerUserId,
+              orders.orders.map(o=>o.id)),
+            getConnectorAccount({businessId:scope.businessId,ownerUserId:scope.ownerUserId})
+              .then(account=>({account,unavailable:false as const}))
+              .catch(()=>({account:null,unavailable:true as const}))
+          ]);
           return {...orders,drafts,draftsTruncated:draftRows.length>20,
-            unresolvedApprovals,unresolvedApprovalsTruncated:unresolvedRows.length>20};
+            unresolvedApprovals,unresolvedApprovalsTruncated:unresolvedRows.length>20,
+            vendorCommunications:communications,
+            gmailConnection:{status:mailbox.unavailable?"status_unavailable":
+                mailbox.account?.status??"not_connected",
+              connected:mailbox.account?.status==="active",
+              canSend:allowsGmail(mailbox.account,"send"),
+              canRead:allowsGmail(mailbox.account,"read")}};
         },
         inspect:input=>investigateSupplierPurchase(proposalScope,input),
+        recordOwnerOutcome:async input=>{
+          // Normal browser and WhatsApp owner turns run INSIDE a durable
+          // AgentJob. Bind it to the actual persisted owner message, rather
+          // than wrongly treating every non-null job as an autonomous cron.
+          // Without a job (the documented fallback), owner provenance must
+          // still be the same saved authenticated message, not model text.
+          if(!authenticatedSupplierOwnerTurn({
+            owner,ownerText:p.ownerText,threadId:id,job
+          })||input.note!==p.ownerText.trim())
+            throw new ToolError("unauthorized","supplier_owner_statement_required");
+          const {client}=await simulationOwnerReader(proposalScope);
+          // An explicit PO identifier always wins over a model-selected one.
+          // An unrelated UUID must never be silently interpreted as "this PO".
+          const explicitPo=explicitSingleOwnerPurchaseOrder(
+            p.ownerText,input.purchaseOrderId);
+          if(explicitPo===false)
+            throw new ToolError("validation",
+              "This owner message names multiple or mismatched purchase orders; report one exact PO at a time.");
+          // Without an explicit ID, require independently verified ONE
+          // approved PO, never a guessed model-selected target.
+          if(explicitPo===null){
+            const candidates=await client.from("purchase_orders").select("id")
+              .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+              .eq("status","approved_for_ordering").limit(2);
+            if(candidates.error||candidates.data?.length!==1||
+               candidates.data[0].id!==input.purchaseOrderId)
+              throw new ToolError("validation",
+                "Please identify which saved purchase order the supplier responded to.");
+          }
+          return recordOwnerSupplierOutcome(client,scope,input);
+        },
+        proposeVendorSend:async({purchaseOrderId})=>{
+          const key=proposalRequestKey(id,JSON.stringify({
+            ownerMessageId:owner.id,supplierVendorEmail:purchaseOrderId
+          }));
+          return proposeApprovedSupplierEmail(proposalScope,purchaseOrderId,key);
+        },
         propose:async input=>{
           // ONLY an explicitly bound proposal ID can authorize a replacement.
           // Keywords in owner text must NEVER cancel an unrelated PO approval.
@@ -591,6 +644,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       ...(result.endReason === "complete" ? {} : { error: result.endReason }) });
     emit("done", { reply, status: result.status, endReason: result.endReason,
       unverified: result.unverified, usage: result.usage,
+      ...(result.providerFailureCodes?{diagnosticProviderFailures:result.providerFailureCodes}:{}),
       ...(job ? { jobId: job.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] } : {}) });
     return { replyId: reply.id, replyText:result.text, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] };
   } catch (error) {
@@ -608,7 +662,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       process.env.NEXT_PUBLIC_SUPABASE_URL === "http://127.0.0.1:54321"
       ? { diagnosticStage: failureStage,
           ...(completedTurn ? { diagnosticEndReason: completedTurn.endReason,
-            diagnosticModelCalls: completedTurn.usage.modelCalls } : {}) }
+            diagnosticModelCalls: completedTurn.usage.modelCalls,
+            ...(completedTurn.providerFailureCodes?{diagnosticProviderFailures:completedTurn.providerFailureCodes}:{}) } : {}) }
       : {};
     emit("error", { code, ...localDiagnostic,
       ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),

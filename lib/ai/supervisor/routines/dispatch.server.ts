@@ -2,7 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {localDateAt,dueScheduleOnDate} from "./calendar";
 import {choosePriorities} from "./priority";
-import {claimRoutineOccurrence,finishRoutineOccurrence} from "./repository.server";
+import {claimRoutineOccurrence,finishRoutineOccurrence,listRoutineOccurrenceCandidates} from "./repository.server";
 import {postPriorityNotice} from "./notices.server";
 import {followUpStaffPublicationForBusiness} from "@/lib/scheduling/staffPublication.server";
 import type {PriorityDecision,PrioritySource,RoutineRecord} from "./contracts";
@@ -23,7 +23,7 @@ function safeSeverity(payload:unknown):string|null{
  * infer that a missing/failed provider is a verified zero. */
 export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
   now:Date,options?:{includeNotified?:boolean;limit?:number}):Promise<PriorityDecision[]>{
-  const [alerts,tasks,purchaseDrafts]=await Promise.all([
+  const [alerts,tasks,purchaseDrafts,approvedOrders]=await Promise.all([
     db.from("alerts").select("id,kind,status,payload,created_at")
       .eq("business_id",scope.businessId).in("status",["new","seen"])
       .order("created_at",{ascending:false}).limit(batchLimit),
@@ -49,9 +49,15 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
       .eq("status","draft")
       .lte("created_at",new Date(now.getTime()-2*60*60_000).toISOString())
       .order("created_at",{ascending:true}).limit(batchLimit),
+    options?.includeNotified?Promise.resolve({data:[] as DbRow[],error:null}):
+      db.from("purchase_orders").select("id,proposal_id,approved_at,revision,status")
+        .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+        .eq("status","approved_for_ordering")
+        .lte("approved_at",new Date(now.getTime()-2*60*60_000).toISOString())
+        .order("approved_at",{ascending:true}).limit(batchLimit),
   ]);
-  if(alerts.error||tasks.error||purchaseDrafts.error)
-    throw alerts.error??tasks.error??purchaseDrafts.error;
+  if(alerts.error||tasks.error||purchaseDrafts.error||approvedOrders.error)
+    throw alerts.error??tasks.error??purchaseDrafts.error??approvedOrders.error;
   const sources:PrioritySource[]=[];
   for(const raw of (alerts.data??[]) as DbRow[]){
     const payload=raw.payload as Record<string,unknown>|null;
@@ -88,6 +94,39 @@ export async function readActionablePriorities(db:SupabaseClient,scope:Scope,
       evidence:{revision:raw.revision,status:"draft"}
     });
   }
+  // Use the existing routine, owner inbox and notice SQL, never a second
+  // vendor-follow-up scheduler. Missing channels remain actionable evidence.
+  const open=approvedOrders.data??[];
+  if(open.length){
+    const ids=open.map(x=>x.id);
+    const [origins,dispatches,reports]=await Promise.all([
+      db.from("supervisor_proposals").select("id,thread_id")
+        .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+        .in("id",open.map(x=>x.proposal_id)),
+      db.from("purchase_order_dispatches").select("purchase_order_id,state")
+        .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+        .in("purchase_order_id",ids),
+      db.from("purchase_order_channel_reports").select("purchase_order_id,outcome,reported_at")
+        .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+        .in("purchase_order_id",ids).order("reported_at",{ascending:false}).limit(batchLimit*4)
+    ]);
+    if(origins.error||dispatches.error||reports.error)
+      throw new Error("supplier_dispatch_priority_source_unavailable");
+    for(const order of open){
+      const origin=(origins.data??[]).find(x=>x.id===order.proposal_id);
+      if(!origin?.thread_id)continue;
+      const last=(reports.data??[]).find(x=>x.purchase_order_id===order.id);
+      if(last&&["supplier_accepted","supplier_declined"].includes(last.outcome))continue;
+      const dispatch=(dispatches.data??[]).find(x=>x.purchase_order_id===order.id);
+      sources.push({businessId:scope.businessId,ownerUserId:scope.ownerUserId,
+        sourceType:"supplier_dispatch",sourceId:order.id,sourceThreadId:origin.thread_id,
+        kind:"supplier_order_followup",status:"approved_for_ordering",
+        createdAt:order.approved_at,
+        evidence:{revision:order.revision,
+          dispatchState:dispatch?.state??"not_prepared",
+          ownerReportedOutcome:last?.outcome??null}});
+    }
+  }
   // Rank the whole bounded source batch before applying the fresh-notice cap.
   // An existing notice is a receipt for that exact revision, not a reason to
   // starve later actionable sources while the first three stay open.
@@ -120,7 +159,7 @@ async function postForOwner(db:SupabaseClient,scope:Scope,now:Date,
   for(const decision of priorities){
     // Purchasing approval belongs in the saved proposal's original chat,
     // not an arbitrary latest owner thread. SQL rechecks both memberships.
-    const target=decision.source.sourceType==="supplier_po"?
+    const target=["supplier_po","supplier_dispatch"].includes(decision.source.sourceType)?
       decision.source.sourceThreadId??scope.threadId:scope.threadId;
     const outcome=await postPriorityNotice(db,{...scope,...opts,threadId:target},decision,now);
     if(outcome==="posted")posted++;
@@ -151,6 +190,10 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
   enqueueInvestigations?:(db:SupabaseClient,scope:Scope,now:Date)=>Promise<number>,
 ):Promise<RoutineDispatchResult>{
   if(!Number.isFinite(now.getTime()))throw new Error("Invalid routine now");
+  const started=Date.now();
+  // Keep the scheduler's supplied instant, but account for real elapsed
+  // execution when issuing/acknowledging leases later in this invocation.
+  const tickNow=()=>new Date(now.getTime()+Math.max(0,Date.now()-started));
   const localDate=localDateAt(now,timezone);
   const result:RoutineDispatchResult={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const [ownerRows,threadRows,routineRows]=await Promise.all([
@@ -208,38 +251,53 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
     if(!owners.has(routine.ownerUserId)||routine.timezone!==timezone){
       result.failed++;continue;
     }
-    let lease:{runId:string;leaseToken:string;revision:number}|null=null;
+    // Read persisted retries and missed dates, not just today's date. Each
+    // candidate uses the same occurrence identity and fenced claim as before.
+    // At most five candidates per routine per tick; later ticks catch up.
+    let candidates:Awaited<ReturnType<typeof listRoutineOccurrenceCandidates>>;
     try{
-      const due=dueScheduleOnDate(routine,routine.timezone,localDate,now);
-      if(!due)continue;
-      lease=await claimRoutineOccurrence(db,{businessId,routineId:routine.id,
-        localDate,dueAt:due,now});
-      if(!lease)continue;
-      // A routine check is an internal read/notice operation; never start a
-      // synthetic owner turn or send an external provider effect.
-      const done=await postForOwner(db,{
-        businessId,ownerUserId:routine.ownerUserId,threadId:routine.threadId,
-        localDate,
-      },now,{routine:{id:routine.id,runId:lease.runId,leaseToken:lease.leaseToken}});
-      const finished=await finishRoutineOccurrence(db,{
-        businessId,routineId:routine.id,runId:lease.runId,
-        leaseToken:lease.leaseToken,success:true,
-        receiptRef:"priority-check:"+done.checked,now:new Date(),
+      candidates=await listRoutineOccurrenceCandidates(db,{
+        businessId,routineId:routine.id,revision:routine.revision,now,
       });
-      if(!finished)throw new Error("Routine lease lost before completion");
-      result.runs++;
-      result.notices+=done.posted;
-      result.evidenceChecks+=done.checked;
-    }catch{
-      result.failed++;
-      if(lease){
-        try{
-          await finishRoutineOccurrence(db,{
-            businessId,routineId:routine.id,runId:lease.runId,
-            leaseToken:lease.leaseToken,success:false,
-            receiptRef:"bounded_check_failed",now:new Date(),
-          });
-        }catch{result.failed++;}
+    }catch{result.failed++;continue;}
+    for(const candidate of candidates){
+      let lease:{runId:string;leaseToken:string;revision:number}|null=null;
+      try{
+        const claimAt=tickNow();
+        const due=candidate.scheduledForUtc?new Date(candidate.scheduledForUtc):
+          dueScheduleOnDate(routine,routine.timezone,candidate.localDate,claimAt);
+        if(!due||!Number.isFinite(due.getTime())||due.getTime()<Date.parse(routine.updatedAt)||
+          due.getTime()>claimAt.getTime())continue;
+        lease=await claimRoutineOccurrence(db,{businessId,routineId:routine.id,
+          revision:routine.revision,localDate:candidate.localDate,dueAt:due,now:claimAt});
+        if(!lease)continue;
+        // A missed occurrence is a check of CURRENT evidence, never a claim
+        // we checked historically or a replay of a prior external action.
+        const asOf=tickNow();
+        const done=await postForOwner(db,{
+          businessId,ownerUserId:routine.ownerUserId,threadId:routine.threadId,
+          localDate:localDateAt(asOf,timezone),
+        },asOf,{routine:{id:routine.id,runId:lease.runId,leaseToken:lease.leaseToken}});
+        const finished=await finishRoutineOccurrence(db,{
+          businessId,routineId:routine.id,runId:lease.runId,
+          leaseToken:lease.leaseToken,success:true,
+          receiptRef:"priority-check:"+done.checked,now:tickNow(),
+        });
+        if(!finished)throw new Error("Routine lease lost before completion");
+        result.runs++;
+        result.notices+=done.posted;
+        result.evidenceChecks+=done.checked;
+      }catch{
+        result.failed++;
+        if(lease){
+          try{
+            await finishRoutineOccurrence(db,{
+              businessId,routineId:routine.id,runId:lease.runId,
+              leaseToken:lease.leaseToken,success:false,
+              receiptRef:"bounded_check_failed",now:tickNow(),
+            });
+          }catch{result.failed++;}
+        }
       }
     }
   }

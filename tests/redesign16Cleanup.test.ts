@@ -65,6 +65,48 @@ const approvedTask14bEnglishOnly: Record<string, readonly string[]> = {
     "unknown"
   ]
 };
+const approvedTask14cEnglishOnly: Record<string, readonly string[]> = {
+  "SupplierVendorCommunication": [
+    "title",
+    "intro",
+    "supplier",
+    "refresh",
+    "channel",
+    "gmail",
+    "phone",
+    "portal",
+    "inPerson",
+    "other",
+    "email",
+    "details",
+    "verify",
+    "revoke",
+    "saved",
+    "revoked",
+    "error",
+    "orders",
+    "order",
+    "outcome",
+    "unknown",
+    "notContacted",
+    "contacted",
+    "acknowledged",
+    "accepted",
+    "declined",
+    "note",
+    "saveOutcome",
+    "outcomeSaved",
+    "pending",
+    "status",
+    "poDraft",
+    "poUncertain",
+    "poSent",
+    "poCannotVerify",
+    "poOwnerNotice"
+  ]
+};
+const approvedTask14cSet = new Set(Object.entries(approvedTask14cEnglishOnly)
+  .flatMap(([namespace, keys]) => keys.map(key => namespace+"."+key)));
 // Task16C adds English-only owner controls. Enumerate exact keys so the
 // existing translation-parity guard still rejects every unexpected addition.
 const approvedTask16cEnglishOnly = ["title","subtitle","publicWeb","publicWebHelp","fileRead","fileReadHelp","fileList","fileListHelp","fileRevoked","filePaused","fileAllowed","revokeFile","revokeConfirm","loadMore","computer","computerUnavailable","loading","loadFailed","saveFailed","refresh","on","off","changePending","noFiles","gmailIntro","fileAccessRevokedMessage","statusUnavailableMessage","ownerAccessRevokedMessage"];
@@ -157,7 +199,8 @@ describe("redesign 16 cleanup integration", () => {
       const messages = localeMessages(locale);
       return Object.entries(messages)
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
-        .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key))
+        .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
+          && !approvedTask14cSet.has(key) && !approvedTask16aSet.has(key) && !approvedTask16cSet.has(key))
         .sort();
     };
     expect(keys("es")).toEqual(keys("en"));
@@ -176,6 +219,18 @@ describe("redesign 16 cleanup integration", () => {
     expect(ar.SupervisorMandateCenter).toBeUndefined();
   });
 
+  it("requires ONLY the exact English-only Task 14C vendor communication copy", () => {
+    const en = localeMessages("en"), es = localeMessages("es"), ar = localeMessages("ar");
+    for (const [namespace, allowedKeys] of Object.entries(approvedTask14cEnglishOnly)) {
+      expect(Object.keys(en[namespace] ?? {}).sort(), namespace).toEqual([...allowedKeys].sort());
+      for (const key of allowedKeys) {
+        expect(en[namespace]?.[key], namespace+"."+key).toEqual(expect.any(String));
+        expect(en[namespace][key].trim().length).toBeGreaterThan(0);
+      }
+      expect(es[namespace]).toBeUndefined();
+      expect(ar[namespace]).toBeUndefined();
+    }
+  });
   it("requires exactly the authorized Task16C English keys without touching other locales",()=> {
     const english=localeMessages("en"), spanish=localeMessages("es"), arabic=localeMessages("ar");
     expect(Object.keys(english.SupervisorAccess??{}).sort()).toEqual([...approvedTask16cEnglishOnly].sort());
