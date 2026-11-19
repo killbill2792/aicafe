@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 import {reserveTask14bPaidRequest} from "./task14bPaidBudget.server";
-import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason } from "@/lib/ai/supervisor/runs/usage.server";
+import { currentWorkerBudget, recordWorkerTurnUsage, usageStopReason,reserveDurableProviderRequest } from "@/lib/ai/supervisor/runs/usage.server";
 import {redactToolFailure,redactedErrorStack} from "./redactToolError";
 import {safeToolError} from "./toolErrors";
 import {createHash} from "node:crypto";
@@ -216,6 +216,19 @@ export async function runAgentTurn(args: {
     result:{source:'owner_facts',period:null,missing:['ownerFactsReadFailed'],error:'owner_facts_read_failed'}});
   const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0, model: undefined as string|undefined };
+  // Every actual Responses transport goes through the same durable reservation
+  // boundary, including the final recovery request. Ordinary chat and the
+  // already-metered scheduled investigation have no durable owner-turn scope.
+  const meteredProvider:AgentProvider=async function*(params,signal){
+    const reservation=await reserveDurableProviderRequest(params);
+    if(signal.aborted)throw new Error("provider_timeout");
+    reservation?.launched();usage.modelCalls++;
+    for await(const event of provider(params,signal)){
+      if(event.type==="response.completed"&&reservation)
+        await reservation.complete((event.response??{}) as {model?:unknown;service_tier?:unknown;usage?:unknown});
+      yield event;
+    }
+  };
   const budgetStop = () => workerBudget ? usageStopReason({
     elapsedMs: Math.max(0, now() - started), modelCalls: usage.modelCalls,
     toolCalls: usage.toolCalls, inputTokens: usage.inputTokens,
@@ -243,11 +256,22 @@ export async function runAgentTurn(args: {
     webSearch:async query=>{
       const searchStarted=now();
       let reserved=false,completed=false;
+      let measured:{input_tokens:number;output_tokens:number;input_tokens_details:{cached_tokens:number}}|undefined;
       try{
+        if(usage.modelCalls>=maxModelToolCalls()||now()>=workDeadline||budgetStop())
+          return {available:false,reason:"budget"};
+        let reservation:Awaited<ReturnType<typeof reserveDurableProviderRequest>>;
+        try{reservation=await reserveDurableProviderRequest({
+          model,max_output_tokens:1200,input:query,tools:[{type:"web_search"}],
+        },"hosted_web");}catch(error){
+          if(error instanceof Error&&error.message==="durable_hosted_web_unpriced")
+            return {available:false,reason:"budget"};
+          throw error;
+        }
         const result=await underlyingWebSearch(query,{
           reserveModelCall:()=>{
             if(usage.modelCalls>=maxModelToolCalls()||now()>=workDeadline||budgetStop())return false;
-            usage.modelCalls++;
+            reservation?.launched();usage.modelCalls++;
             reserved=true;
             return true;
           },
@@ -255,8 +279,11 @@ export async function runAgentTurn(args: {
             usage.inputTokens+=bill.inputTokens;
             usage.cachedTokens+=bill.cachedTokens;
             usage.outputTokens+=bill.outputTokens;
+            if(bill.inputTokens>0)measured={input_tokens:bill.inputTokens,output_tokens:bill.outputTokens,
+              input_tokens_details:{cached_tokens:bill.cachedTokens}};
           },
         });
+        if(reserved&&reservation&&measured)await reservation.complete({model,usage:measured});
         completed=result.available;
         return result;
       }finally{
@@ -297,8 +324,7 @@ export async function runAgentTurn(args: {
     if (budgetStop()) throw new Error("worker_budget");
     const timeout = setTimeout(() => controller.abort(), remaining);
     try {
-      usage.modelCalls++;
-      for await (const event of provider(request(final), controller.signal)) {
+      for await (const event of meteredProvider(request(final), controller.signal)) {
         if (now() >= (final ? deadline : workDeadline)) throw new Error("deadline");
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
           text += event.delta;
@@ -541,8 +567,7 @@ export async function runAgentTurn(args: {
           let completed = false;
           let finalError: string | undefined;
           try {
-            usage.modelCalls++;
-            for await (const event of provider(request(true), finalController.signal)) {
+            for await (const event of meteredProvider(request(true), finalController.signal)) {
               if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
               if (now() >= deadline) throw new Error("deadline");
               if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
