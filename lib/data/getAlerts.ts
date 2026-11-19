@@ -6,7 +6,7 @@ import {getOptionalAuthenticatedUser} from "@/lib/auth/requireUser";
 import { summarizeVoidsRollups, type VoidsSummary } from "@/lib/calc/voidsReview";
 import { formatInTimeZone } from "date-fns-tz";
 
-export type AlertKind = "missing_bill" | "voids" | "meal_break" | "early_clockin" | "underpriced" | "overstaffed" | "covered_milestone" | "unmatched_sales_items";
+export type AlertKind = "business_anomaly" | "missing_bill" | "voids" | "meal_break" | "early_clockin" | "underpriced" | "overstaffed" | "covered_milestone" | "unmatched_sales_items";
 
 export type AlertRow = {
   id: string;

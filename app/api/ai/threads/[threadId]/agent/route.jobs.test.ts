@@ -5,6 +5,8 @@ const JOB = "55555555-5555-4555-8555-555555555555";
 const NEXT = "66666666-6666-4666-8666-666666666666";
 const job = (id: string, owner = "msg-1") => ({ id, threadId: THREAD, ownerMessageId: owner, status: "running", attempt: 1,
   errorCode: null, replyMessageId: null, progress: [], inbox: [], consumed: [], heartbeatAt: "", createdAt: "" });
+const answerRpc=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({rpc:answerRpc})}));
 const durable = vi.hoisted(() => ({admit:vi.fn(), process:vi.fn()}));
 vi.mock("@/lib/ai/supervisor/runs/worker.server",()=>({admitDurableChat:durable.admit,processDurableRun:durable.process}));
 const fake = vi.hoisted(() => ({
@@ -83,6 +85,7 @@ const events = (body: string) => [...body.matchAll(/event: (\w+)\ndata: (.*)\n\n
 afterEach(()=>vi.unstubAllEnvs());
 beforeEach(() => {
   vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","false");vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","false");
+  answerRpc.mockReset();answerRpc.mockResolvedValue({data:null,error:null});
   durable.admit.mockReset();durable.process.mockReset();
   fake.mode = "started"; fake.startFails = false; fake.accessAllowed = true; fake.continuation = null; fake.finished = [];
   fake.steps = []; fake.loopArgs = []; fake.followUps = []; fake.kept = 0;
@@ -181,4 +184,27 @@ describe("durable owner admission",()=>{
     expect(out).toEqual([{type:"ack",data:{runId:NEXT,ownerMessageId:"msg-1",mode:"queued"}},{type:"queued",data:{runId:NEXT}}]);
     expect(fake.loopArgs).toHaveLength(0);
   });
+});
+
+describe("scheduled owner answer admission",()=>{
+ const questionId="99999999-9999-4999-8999-999999999999";
+ const response={questionId,action:"supply"};
+ const postAnswer=()=>POST(new Request("http://localhost:3000/api/ai/threads/"+THREAD+"/agent",{
+   method:"POST",headers:{origin:"http://localhost:3000","content-type":"application/json"},
+   body:JSON.stringify({clientMessageId:"22222222-2222-4222-8222-222222222222",text:"I will count it",locale:"en",ownerInputResponse:response}),
+ }),{params:Promise.resolve({threadId:THREAD})});
+ it("queues the exact existing investigation without admitting an owner run or calling a provider",async()=>{
+  answerRpc.mockResolvedValue({data:NEXT,error:null});
+  const out=events(await (await postAnswer()).text());
+  expect(out).toEqual([{type:"ack",data:{investigationId:NEXT,ownerMessageId:"msg-1",mode:"queued"}}]);
+  expect(answerRpc).toHaveBeenCalledWith("supervisor_answer_investigation_question",{
+   p_business_id:"business-1",p_owner_user_id:"owner-1",p_thread_id:THREAD,p_question_id:questionId,p_answer_id:"msg-1",p_response:response
+  });
+  expect(durable.admit).not.toHaveBeenCalled();expect(fake.loopArgs).toHaveLength(0);
+ });
+ it("does not run a new turn after a stale or consumed question",async()=>{
+  answerRpc.mockResolvedValue({data:null,error:{code:"23505"}});
+  expect((await postAnswer()).status).toBe(409);
+  expect(durable.admit).not.toHaveBeenCalled();expect(fake.loopArgs).toHaveLength(0);
+ });
 });

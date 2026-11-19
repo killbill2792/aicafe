@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
 import {readAllPosRows,posIdBatches} from "./pagedReads";
 import { itemIngredientCostCents } from "@/lib/calc";
+import {readTimecardsForInterval} from "@/lib/data/timecardsForInterval.server";
 import { timecardWagesForLocalDay } from "./timecardDay";
 import {laborWageStatusFromTimecards} from "@/lib/calc/profit";
 import { processingFeeForRollup } from "./processingFees";
@@ -136,13 +137,7 @@ export async function recomputeDailyRollup(
   const dayEndUtc = fromZonedTime(`${nextDay}T00:00:00`, timezone).toISOString();
   // Include any timecard that overlaps this café-local day, not only shifts
   // which started today. End is exclusive, including at DST boundaries.
-  const timecards=await readAllPosRows((first,last)=>supabase
-    .from("timecards")
-    .select("id, pos_timecard_id, clock_in, clock_out, hourly_wage_cents, wage_source, breaks, source_type, provider_regular_hours, provider_overtime_hours")
-    .eq("business_id", businessId)
-    .lt("clock_in", dayEndUtc)
-    .or("clock_out.is.null,clock_out.gt."+dayStartUtc)
-    .order("id").range(first,last),"daily timecards");
+  const timecards=await readTimecardsForInterval(supabase,businessId,dayStartUtc,dayEndUtc);
 
 
   // Only certified, closed Toast shifts can establish $0 pay. A staged shift

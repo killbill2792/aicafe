@@ -1,0 +1,146 @@
+{
+  "id": "15a-proactive-owner-answer",
+  "mode": "generic",
+  "engine": "vitest",
+  "entrypoint": "lib/ai/supervisor/routines/investigationOwnerAnswer.live.test.ts",
+  "proof": "15a-proactive-owner-answer-proof.json",
+  "scope": "15a-proactive-owner-answer-scope.json",
+  "expectedTools": [
+    "get_investigation_source",
+    "get_sales"
+  ],
+  "assertions": [
+    {
+      "name": "generated-source-still-open",
+      "kind": "source",
+      "table": "public.alerts",
+      "where": {
+        "id": {
+          "scope": "sourceId"
+        },
+        "business_id": {
+          "scope": "businessId"
+        },
+        "kind": {
+          "eq": "business_anomaly"
+        },
+        "status": {
+          "eq": "new"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "same-episode-consumed-answer",
+      "kind": "owner",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "source_id": {
+          "scope": "sourceId"
+        },
+        "episode_id": {
+          "scope": "episodeId"
+        },
+        "last_owner_answer_id": {
+          "scope": "answerId"
+        },
+        "reported_owner_answer_id": {
+          "scope": "answerId"
+        },
+        "phase": {
+          "eq": "awaiting_owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "exact-answer-message",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "id": {
+          "scope": "answerId"
+        },
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "owner_input_prompt_message_id": {
+          "scope": "questionId"
+        },
+        "role": {
+          "eq": "owner"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-followup",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "id": {
+          "scope": "replyId"
+        },
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-unauthorized-effect",
+      "kind": "source",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-foreign-episode",
+      "kind": "isolation",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "episode_id": {
+          "scope": "episodeId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

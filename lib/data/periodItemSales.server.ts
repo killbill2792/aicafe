@@ -45,7 +45,19 @@ export async function readPeriodItemSales(
     if(typeof id!=="string"||!id||!Number.isFinite(units)||units<0)return unknown();
     if(units>0)items.push({id,units});
   }
-  return {period,covered:true,soldItems:items};
+  // Only independent, date-bound persisted source history can certify the
+  // stored theoretical ingredients rollup. Missing history is never backfilled
+  // from a current recipe. A failed optional proof read remains unproven.
+  let proof:PeriodItemSalesEvidence["historicalIngredientCostProof"];
+  try{
+    const checked=await supabase.rpc("read_historical_ingredient_cost_proof",{
+      p_business_id:businessId,p_from:period.from,p_to:period.to,
+    });
+    if(!checked.error&&Array.isArray(checked.data)&&checked.data.length>0&&checked.data.length<1000&&
+      checked.data.every(row=>typeof row.business_date==="string"&&Number.isSafeInteger(row.ingredients_cents)&&row.ingredients_cents>=0))
+      proof={source:"historical_recomputation",days:checked.data.map(row=>({date:row.business_date,ingredientsCents:row.ingredients_cents}))};
+  }catch{/* explicit unknown */}
+  return {period,covered:true,soldItems:items,...(proof?{historicalIngredientCostProof:proof}:{})};
 }
 
 export type PeriodSoldLines={period:CafeStatePeriod;available:boolean;

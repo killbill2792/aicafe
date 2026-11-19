@@ -73,7 +73,7 @@ function awaitingPriceApplication(task: OperatingTask): boolean {
 }
 
 /** Pure persistence plan for the deterministic task families owned by the current projection. */
-export function reconcileOperatingTasks(existing: OperatingTask[], derived: OperatingTask[], now: Date): TaskReconciliation {
+export function reconcileOperatingTasks(existing: OperatingTask[], derived: OperatingTask[], now: Date, verifiedPriceEntities?: ReadonlySet<string>): TaskReconciliation {
   const existingById = new Map(existing.map((task) => [task.id, task]));
   const currentIds = new Set(derived.map((task) => task.id));
   const insert: OperatingTask[] = [];
@@ -137,7 +137,8 @@ export function reconcileOperatingTasks(existing: OperatingTask[], derived: Oper
   }
 
   const expire = existing
-    .filter((task) => isProjectionManagedTask(task) && !currentIds.has(task.id) && !retainedIds.has(task.id) && task.status !== "handled" && task.status !== "expired")
+    .filter((task) => isProjectionManagedTask(task) && (task.kind !== "price_review" ||
+      (task.entityId !== undefined && (verifiedPriceEntities?.has(task.entityId) || derived.some(current => isSamePriceReviewEntity(task,current))))) && !currentIds.has(task.id) && !retainedIds.has(task.id) && task.status !== "handled" && task.status !== "expired")
     .map((task) => ({ ...task, status: "expired" as const, resolvedAt: now.toISOString() }));
 
   return { insert, refresh, expire };

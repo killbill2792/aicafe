@@ -128,16 +128,28 @@ export function cafeStateFromSnapshot(
       .map(line=>`expense:${line.categoryCode}`);
   let businessCosts=businessCostSummaryFromSnapshot(snapshot,effectivePeriod);
   if(historical){
+    const prior=snapshot.periodItemSales,dates=new Map(prior?.historicalIngredientCostProof?.days.map(d=>[d.date,d.ingredientsCents])??[]);
+    const sold=days.filter(d=>d.ordersCount>0||d.netSalesCents!==0);
+    const historicalProof=observedDays===expectedDays&&days.every(d=>d.salesDataStatus==="actual")&&(
+      sold.length===0?days.every(d=>d.ingredientsCents===0):
+      prior?.covered===true&&prior.period.from===effectivePeriod.from&&prior.period.to===effectivePeriod.to&&
+      prior.historicalIngredientCostProof?.source==="historical_recomputation"&&dates.size===sold.length&&
+      sold.every(d=>dates.get(d.date)===d.ingredientsCents)&&days.filter(d=>!sold.includes(d)).every(d=>d.ingredientsCents===0));
+    const historicalMissing=[
+      ...(observedDays<expectedDays?[`salesCoverage:${observedDays}/${expectedDays}`]:[]),
+      ...(!historicalProof?["historicalIngredientCostCoverage"]:[]),...expenseMissing,
+      ...(new Set(recorded.map(d=>d.date)).size!==expectedDays?["laborCoveragePartial"]:[]),
+      ...recorded.filter(d=>!laborKnown(d)).map(d=>"laborWageUnknown:"+d.date),
+      ...days.filter(d=>d.netSalesCents>0&&d.cardFeesStatus==="missing").map(d=>"cardFees:"+d.date),
+    ];
     businessCosts={...businessCosts,period:effectivePeriod,
-      completeness:days.length?"partial":"unavailable",
+      completeness:days.length?(historicalMissing.length===0?"complete":"partial"):"unavailable",
       observed:{ingredients:days.length>0,loadedStaff:recorded.length>0,
         cardFees:days.length>0,runningCosts:historical.monthlyAmounts.some(row=>!row.isMissing)},
-      missingInputs:[
-        ...(observedDays<expectedDays?[`salesCoverage:${observedDays}/${expectedDays}`]:[]),
-        "historicalIngredientCostCoverage",...expenseMissing],
+      missingInputs:historicalMissing,
       estimatedInputs:[...expenseEstimated],
       coverage:{...businessCosts.coverage,salesDays:observedDays,
-        laborDays:new Set(recorded.map(day=>day.date)).size,expectedDays},
+        laborDays:new Set(recorded.map(day=>day.date)).size,expectedDays,historicalIngredientCostsProven:historicalProof},
     };
   }
   // Product completeness is an exact-period participation question.
@@ -168,7 +180,8 @@ export function cafeStateFromSnapshot(
     .ownerMonthlyPayrollExtrasCents;
   const financialQuality = quality(
     [...basicMissing, ...feeMissing, ...expenseMissing, ...missingProductCosts,
-      ...unknownLabor.map(day=>"laborWageUnknown:"+day.date)],
+      ...unknownLabor.map(day=>"laborWageUnknown:"+day.date),
+      ...(historical&&new Set(recorded.map(d=>d.date)).size!==expectedDays?["laborCoveragePartial"]:[])],
     [...expenseEstimated, ...feeEstimated, ...taxEstimated, ...estimatedProductCosts,
       ...wageEstimated.map(day=>"laborWageEstimate:"+day.date),
       ...(monthlyExtras?["laborOwnerExtras"]:[])],

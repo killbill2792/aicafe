@@ -41,7 +41,7 @@ export async function GET(request: Request, context: RouteContext) {
     const runFields = "thread_id,id,request_key,status,final_report_ref,updated_at,finished_at,execution_version,awaiting_question_id,owner_answer_ids";
     const jobFields = "thread_id,id,owner_message_id,status,reply_message_id,error_code,attempt,heartbeat_at,created_at";
     const proposalFields = "thread_id,id,status,capability_id,effect_hash,updated_at";
-    const investigationFields = "thread_id,episode_id,phase,failure_count,lease_token,lease_until,last_error,updated_at";
+    const investigationFields = "thread_id,episode_id,phase,failure_count,lease_token,lease_until,last_error,updated_at,pending_question_id,last_owner_answer_id";
     const owner = (table: "supervisor_runs" | "ai_agent_jobs" | "supervisor_proposals" | "supervisor_investigations", fields: string) =>
       {
         const query = db.from(table).select(fields).eq("business_id", scope.businessId)

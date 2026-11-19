@@ -58,6 +58,7 @@ export type AttemptRow = {
 export type InvestigationRow = {
   thread_id?: string | null;
   episode_id: string;
+  pending_question_id?:string|null;last_owner_answer_id?:string|null;
   phase: "collect" | "investigate" | "awaiting_owner" | "resolved" | "blocked";
   failure_count: number; lease_token: string | null;
   lease_until: string | null; last_error: string | null; updated_at: string;
@@ -160,6 +161,7 @@ export function projectOwnerWork(input: {
     const missing = ["source_missing", "source_reassigned"].includes(inv.last_error ?? "");
     const status: OwnerWorkStatus = inv.phase === "resolved" ? "source_resolved"
       : inv.phase === "blocked" ? (missing ? "uncertain" : "failed")
+      : inv.phase==="awaiting_owner"&&inv.pending_question_id?"approval_required"
       : inv.failure_count > 0 && !leased ? "retrying"
       : inv.phase === "collect" && !leased ? "queued" : "running";
     work.push({
@@ -174,6 +176,8 @@ export function projectOwnerWork(input: {
       nextStep: copy.investigationNext, updatedAt: inv.updated_at,
       ownerMessageId: null, step: inv.phase, attempt: inv.failure_count || null,
       errorCode: inv.last_error, proof: null, proposalId: null,
+      ...(inv.phase==="awaiting_owner"&&inv.pending_question_id?{questionId:inv.pending_question_id}:{}),
+      ...(inv.last_owner_answer_id?{relatedOwnerMessageIds:[inv.last_owner_answer_id]}:{}),
     });
   }
   const attempts = new Map(input.attempts.map(a => [a.proposal_id + ":" + a.effect_hash, a]));
