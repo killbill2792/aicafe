@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import {readFileSync,mkdtempSync,rmSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import vm from 'node:vm';
@@ -251,4 +251,37 @@ test('Muse-only mode rejects weak, empty, or missing dashboard credentials',()=>
  assert.throws(()=>ownerDashboardHandler({...base,musePassword:'short'}),/strong owner or Muse password/);
  assert.throws(()=>ownerDashboardHandler({...base,ownerPassword:'',musePassword:'muse-only-password'}),/strong owner or Muse password/);
  assert.doesNotThrow(()=>ownerDashboardHandler({...base,musePassword:'muse-only-password'}));
+});
+
+test('Muse dashboard imports question snapshots and records answers/delivery locally',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'aicafe-muse-questions-http-'));
+ const notesPath=join(dir,'notes.json'),factsPath=join(dir,'github-facts.json');
+ const q={id:'comment-101',pr_number:488,head_sha:'a'.repeat(40),
+  question:'May I run one bounded test?',url:'https://github.com/killbill2792/aicafe/pull/488#issuecomment-101',
+  author:'maintainer',created_at:'2026-11-18T00:00:00Z'};
+ const facts={version:1,prs:[{number:488,url:'https://github.com/killbill2792/aicafe/pull/488',owner_requests:[q]}]};
+ writeFileSync(factsPath,JSON.stringify(facts));
+ const server=startOwnerDashboard({musePassword:'muse-only-password',port:0,notesPath});
+ try{
+  await new Promise(resolve=>server.listening?resolve():server.once('listening',resolve));
+  const url='http://127.0.0.1:'+server.address().port,headers={Authorization:auth('muse','muse-only-password')};
+  const get=async()=>await (await fetch(url+'/api/muse-questions',{headers})).json();
+  const post=(path,edit,extra={})=>fetch(url+path,{method:'POST',headers:{...headers,'Content-Type':'application/json',...extra},body:JSON.stringify(edit)});
+  assert.equal((await fetch(url+'/api/muse-questions')).status,401);
+  assert.equal((await get()).entries[q.id].status,'open');
+  const edit=(expected_revision,action,detail,extra)=>post('/api/muse-questions',{id:q.id,expected_revision,action,detail},extra);
+  assert.equal((await edit(1,'answer','No spend approved',{Origin:'https://untrusted.example'})).status,403);
+  assert.equal((await edit(1,'answer','Owner says no spend')).status,200);
+  assert.equal((await edit(1,'answer','Forged')).status,409);
+  assert.equal((await edit(2,'claim_delivery','Prepare delivery')).status,400);
+  assert.equal((await post('/api/notes',{task_id:'15a',pr_number:488,chat_url:'https://chatgpt.com/c/1234',expected_revision:0,note:'known chat',stage:'working'})).status,200);
+  assert.equal((await edit(2,'claim_delivery','Prepare delivery')).status,200);
+  assert.equal((await edit(3,'claim_delivery','Duplicate')).status,400);
+  assert.equal((await edit(3,'confirm_delivery','Observed accepted message')).status,200);
+  assert.equal((await get()).entries[q.id].answer,'Owner says no spend');
+  assert.equal((await get()).entries[q.id].status,'delivered');
+  assert.equal((await edit(4,'close','Answer delivered and reviewed')).status,200);
+  assert.equal((await get()).entries[q.id].status,'closed');
+  assert.equal(readFileSync(factsPath,'utf8'),JSON.stringify(facts),'dashboard never rewrites GitHub observations');
+ }finally{await new Promise(resolve=>server.close(resolve));rmSync(dir,{recursive:true,force:true});}
 });
