@@ -592,28 +592,118 @@ test("failure diagnostics fail closed for missing, corrupt, stale, forged or ove
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
 
-test("actual shared workflow failure diagnostic emits a separate fail-only artifact",()=>{
-  const root=join(import.meta.dirname,"../..");
-  const yaml=readFileSync(join(root,".github/workflows/ai-cafe-luna-shared.yml"),"utf8");
-  const a=yaml.indexOf("      - name: Record a failure-only sanitized trusted broker diagnostic");
-  const b=yaml.indexOf("      - name: Upload failure diagnostic separately from acceptance proof",a);
-  const c=yaml.indexOf("      - name: Destroy broker and the disposable database",b);
-  assert.ok(a>yaml.indexOf("      - name: Independently verify model receipts")&&b>a&&c>b);
-  const section=yaml.slice(a,b),upload=yaml.slice(b,c);
-  assert.match(section,/failure\(\) && steps\.luna-broker\.outcome == 'success'/);
-  assert.match(upload,/failure\(\) && steps\.luna-broker\.outcome == 'success'/);
-  assert.match(upload,/path: .*luna-failure-diagnostic\.json/);
-  assert.doesNotMatch(upload,/luna-host-audit|next\.log|luna-sanitized-result/);
-  const command=section.split("\n").find(x=>x.trim().startsWith("run: ")).trim().slice(5);
+// Structured workflow fixture: evaluate only the expression grammar needed by
+// the diagnostic/acceptance tail. Unknown conditions fail, never silently skip.
+// Run real shell steps and model the upload action using its actual with inputs.
+function runDiagnosticTail(steps,root,{failed,brokerOutcome}){
   const dir=mkdtempSync(join(tmpdir(),"luna-failure-workflow-"));
+  const artifacts=[];
+  const head="a".repeat(40),scenario="14c";
+  const outcomes={"luna-broker":brokerOutcome};
+  const jobFailed=failed;
+  const unwrap=x=>String(x).trim().replace(/^\$\{\{\s*([\s\S]*?)\s*\}\}$/,"$1");
+  function evaluate(raw){
+    const expr=unwrap(raw??"success()");
+    const evaluateAtom=atom=>{
+      const a=atom.trim();
+      if(a==="always()")return true;
+      if(a==="failure()")return jobFailed;
+      if(a==="success()")return !jobFailed;
+      const match=/^steps\.([\w-]+)\.outcome\s*==\s*'([^']+)'$/.exec(a);
+      if(match)return outcomes[match[1]]===match[2];
+      throw Error("Unsupported workflow test condition: "+a);
+    };
+    // Evaluate every clause, including inactive alternatives, to reject unknown
+    // expressions rather than accidentally allowing untested workflow logic.
+    const values=expr.split("||").map(or=>or.split("&&").map(evaluateAtom));
+    return values.some(and=>and.every(Boolean));
+  }
+  function interpolate(value){
+    return String(value).replace(/\$\{\{\s*([^}]+?)\s*\}\}/g,(_,expr)=>{
+      if(expr==="runner.temp")return dir;
+      if(expr==="matrix.scenario")return scenario;
+      throw Error("Unsupported workflow test interpolation: "+expr);
+    });
+  }
   try{
     symlinkSync(root,join(dir,"coordinator"),"dir");
-    const run=spawnSync("bash",["-euo","pipefail","-c",command],{cwd:dir,encoding:"utf8",
-      env:{...process.env,RUNNER_TEMP:dir,HEAD_SHA:"a".repeat(40),GITHUB_RUN_ATTEMPT:"1"}});
-    assert.equal(run.status,0,run.stderr);
-    const result=JSON.parse(readFileSync(join(dir,"luna-failure-diagnostic.json"),"utf8"));
-    assert.equal(result.result,"FAILED");assert.equal(result.acceptanceProof,false);
-    assert.equal(result.auditStatus,"missing");
-    assert.throws(()=>readFileSync(join(dir,"luna-sanitized-result.json")),{code:"ENOENT"});
+    // Represents a prior trusted attestation only on a successful scenario.
+    const accepted={result:"PASS",fixture:"independent-attestation"};
+    if(!failed)writeFileSync(join(dir,"luna-sanitized-result.json"),JSON.stringify(accepted));
+    // A private host audit and candidate log must never be selected for upload.
+    const audit={head,attempts:0,reservedMicros:0,deniedCount:0,policyDenials:[],receipts:[],
+      private:"never_export_raw_audit"};
+    if(brokerOutcome==="success")writeFileSync(join(dir,"luna-host-audit.json"),JSON.stringify(audit));
+    writeFileSync(join(dir,"next.log"),"never_export_candidate_log");
+    for(const step of steps){
+      if(!evaluate(step.if))continue;
+      if(step.run){
+        const run=spawnSync("bash",["-euo","pipefail","-c",step.run],{cwd:dir,encoding:"utf8",
+          env:{...process.env,RUNNER_TEMP:dir,HEAD_SHA:head,GITHUB_RUN_ATTEMPT:"1"}});
+        assert.equal(run.status,0,run.stderr);
+      }else if(step.uses?.startsWith("actions/upload-artifact@")){
+        const name=interpolate(step.with.name),path=interpolate(step.with.path);
+        // Model single-file upload behavior. Reject wildcards, multiple paths
+        // and escaping the fixture, rather than silently ignoring extra files.
+        assert.ok(path.startsWith(dir+"/")&&!/[\n*?\[\]]/.test(path));
+        let bytes;
+        try{bytes=readFileSync(path,"utf8")}catch(e){
+          if(e.code==="ENOENT"&&step.with["if-no-files-found"]==="warn")continue;
+          throw e;
+        }
+        artifacts.push({name,file:path.slice(dir.length+1),payload:JSON.parse(bytes)});
+      }else throw Error("Unexpected workflow tail step");
+    }
+    let diagnostic=null;
+    try{diagnostic=JSON.parse(readFileSync(join(dir,"luna-failure-diagnostic.json"),"utf8"))}
+    catch(e){if(e.code!=="ENOENT")throw e}
+    return {artifacts,diagnostic,failed:jobFailed};
   }finally{rmSync(dir,{recursive:true,force:true})}
+}
+
+test("actual shared workflow tail executes and selects artifacts according to job and broker outcomes",()=>{
+  const root=join(import.meta.dirname,"../..");
+  // Ubuntu runner's Ruby stdlib YAML parser; no new npm install or paid calls.
+  const parsed=spawnSync("ruby",["-rjson","-ryaml","-e",
+    'puts JSON.generate(YAML.safe_load(File.read(ARGV.fetch(0))))',
+    join(root,".github/workflows/ai-cafe-luna-shared.yml")],{encoding:"utf8"});
+  assert.equal(parsed.status,0,parsed.stderr);
+  const all=JSON.parse(parsed.stdout).jobs["live-scenario"].steps;
+  const first=all.findIndex(s=>s.name==="Upload only the sanitized independent verdict");
+  const last=all.findIndex(s=>s.name==="Destroy broker and the disposable database");
+  assert.ok(first>=0&&last>first,"Missing executable workflow tail boundaries");
+  const tail=all.slice(first,last);
+  const success=runDiagnosticTail(tail,root,{failed:false,brokerOutcome:"success"});
+  assert.deepEqual(success,{failed:false,diagnostic:null,artifacts:[
+    {name:"luna-14c-exact-head-host-proof",file:"luna-sanitized-result.json",
+      payload:{result:"PASS",fixture:"independent-attestation"}}]});
+  for(const brokerOutcome of ["skipped","failure","cancelled"]){
+    assert.deepEqual(runDiagnosticTail(tail,root,{failed:true,brokerOutcome}),
+      {failed:true,diagnostic:null,artifacts:[]});
+  }
+  const failure=runDiagnosticTail(tail,root,{failed:true,brokerOutcome:"success"});
+  assert.deepEqual(failure.diagnostic,{
+    schemaVersion:1,result:"FAILED",acceptanceProof:false,head:"a".repeat(40),
+    auditStatus:"available",attempts:0,reservedUpperMicros:0,deniedCount:0,
+    policyDenials:[],receipts:[]});
+  assert.equal(failure.failed,true);
+  assert.deepEqual(failure.artifacts,[{name:"luna-14c-failure-diagnostic",
+    file:"luna-failure-diagnostic.json",payload:failure.diagnostic}]);
+  // Mutation controls prove that the behavioral runner catches overly broad
+  // or disabled conditions and a substituted artifact, not a spelling match.
+  const changed=(index,patch)=>tail.map((step,i)=>i===index?{...step,...patch}:step);
+  const record=tail.findIndex(s=>s.name==="Record a failure-only sanitized trusted broker diagnostic");
+  const upload=tail.findIndex(s=>s.name==="Upload failure diagnostic separately from acceptance proof");
+  assert.ok(record>=0&&upload>=0);
+  const tooBroad=runDiagnosticTail(changed(record,{if:"always()"}),root,
+    {failed:false,brokerOutcome:"success"});
+  assert.notEqual(tooBroad.diagnostic,null,"Mutation must create a forbidden success diagnostic");
+  // Upload is still required, so an absent diagnostic must fail the runner.
+  assert.throws(()=>runDiagnosticTail(changed(record,{if:"success()"}),root,
+    {failed:true,brokerOutcome:"success"}),{code:"ENOENT"});
+  const raw=runDiagnosticTail(changed(upload,{with:{...tail[upload].with,
+    path:"${{ runner.temp }}/luna-host-audit.json"}}),root,
+    {failed:true,brokerOutcome:"success"});
+  assert.equal(raw.artifacts[0].payload.private,"never_export_raw_audit");
+  assert.notDeepEqual(raw.artifacts,failure.artifacts);
 });
