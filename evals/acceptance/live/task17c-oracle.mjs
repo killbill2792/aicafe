@@ -138,8 +138,12 @@ export function verifyProcurementOutcome(x){
  assert.equal(payload.lines[0].quoteId,e.quoteId);
  assert.equal(payload.lines[0].packs,e.packs);
  assert.equal(x.preOrders.length,0);
+ assert.equal(x.preAttempts.length,0);
  assert.ok([401,403,404].includes(x.foreignStatus));
  assert.equal(x.foreignOrders.length,0);
+ assert.equal(x.foreignAttempts.length,0);
+ assert.equal(x.dropped,true);
+ assert.equal(x.serverStatus,200);
  assert.equal(x.committed.length,1);
  const order=x.committed[0];
  assert.equal(order.proposal_id,p.id);
@@ -147,6 +151,15 @@ export function verifyProcurementOutcome(x){
  assert.equal(Number(order.subtotal_cents),e.packs*e.price);
  assert.equal(order.currency_code,e.currency);
  assert.equal(order.effect_hash,p.effect_hash);
+ assert.equal(x.committedAttempts.length,1);
+ const attempt=x.committedAttempts[0];
+ assert.ok(attempt.attempt_key);
+ assert.equal(attempt.effect_hash,p.effect_hash);
+ assert.equal(attempt.authorization_kind,"click");
+ assert.equal(attempt.state,"verified");
+ assert.equal(attempt.receipt_ref,"purchase_orders:"+order.id);
+ assert.deepEqual(x.afterAttempts,x.committedAttempts,"replay cannot create a second effect reservation");
+ assert.deepEqual(x.approvals,[{owner_user_id:e.ownerUserId,effect_hash:p.effect_hash,authorization_kind:"click"}]);
  assert.ok([200,409,422].includes(x.replayStatus));
  assert.deepEqual(x.after,x.committed,"replayed approval cannot duplicate or mutate order");
  assert.deepEqual(x.finalProposal,[{id:p.id,status:"committed",effect_hash:p.effect_hash}]);
@@ -160,7 +173,9 @@ export function verifyRevocationOutcome(x){
  // accidentally satisfy the independent quantity oracle.
  assert.ok(new RegExp("(?:^|[^0-9])"+x.qty+"(?:[^0-9]|$)").test(good.replaceAll(x.canary,"")));
  assert.equal(x.blocked,"supervisor_file_access_revoked");
- assert.ok([401,403,404].includes(x.foreignStatus));
+ assert.equal(x.blockedUse.length,0);
+ assert.ok([401,403,404].includes(x.foreignStatus)||(x.foreignStatus===503&&x.foreignError==="access_change_unverified"));
+ assert.equal(x.prematureAccess.length,0);
  assert.ok(after.length>2);
  assert.ok(!after.includes(x.canary),"revoked private reference cannot recur");
  assert.deepEqual(x.access,[{allowed:false}]);
