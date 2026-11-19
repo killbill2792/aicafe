@@ -115,7 +115,7 @@ function observedCustomerGap(result:AgentToolResult):boolean{
   const {eligibleChecks,linkedChecks,expectedLocationDays,completeLocationDays}=v;
   if(!natural(eligibleChecks)||!natural(linkedChecks)||linkedChecks>eligibleChecks||
     !natural(expectedLocationDays)||!natural(completeLocationDays)||completeLocationDays>expectedLocationDays)return false;
-  return expectedLocationDays>0&&!v.complete||eligibleChecks>0&&linkedChecks<eligibleChecks;
+  return expectedLocationDays>0&&!v.complete||eligibleChecks>0&&(linkedChecks<30||linkedChecks/eligibleChecks<.8);
 }
 function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing))return false;
