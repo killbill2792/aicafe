@@ -167,14 +167,15 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       // Terminate the claimed second-café investigation by revoking membership.
       await admin.query("delete from public.memberships where business_id=$1 and user_id=$2",
         [cafes[1],owners[1]]);
+      expect(await rpc(b,"supervisor_finish_investigation",
+        finish(other,"collected",checkpoint,null,stamp(now,7)))).toBe(false);
       // Revocation must not be laundered through source settlement into a
       // private resolution message for the now-unauthorized recipient.
+      // The original live-lease revocation assertion above remains intact.
       await admin.query("update public.alerts set status='dismissed' where business_id=$1 and id=$2",
         [cafes[1],alerts[1]]);
       expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_resolution'",
         [cafes[1],threads[1]])).rows).toEqual([{n:0}]);
-      expect(await rpc(b,"supervisor_finish_investigation",
-        finish(other,"collected",checkpoint,null,stamp(now,7)))).toBe(false);
       // An owner can only see their own investigation, no privilege to write
       // its state, and no access to other cafés or owner-private thread facts.
       const own=await ownerClient.query("select source_id,phase from public.supervisor_investigations");
