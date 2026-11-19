@@ -273,7 +273,7 @@ test("allows only priced foreground Luna Responses calls and reserves worst-case
   {...params,stream:false},
   {...params,background:true},
   {...params,service_tier:"priority"},
-  {...params,max_output_tokens:4097},
+  {...params,max_output_tokens:16385},
   {...params,tool_choice:"none",max_output_tokens:1201},
   {...params,tools:[{type:"web_search_preview"}]},
   {...params,prompt_cache_retention:"24h"},
@@ -494,22 +494,22 @@ test("only trusted broker calls real-key transport and never exposes the key",as
 });
 
 test("expanded tool-capable allowance charges every reserved and replayed token while final and total limits remain fixed",()=>{
- const request=Buffer.from(JSON.stringify({...params,max_output_tokens:4096,store:false}));
+ const request=Buffer.from(JSON.stringify({...params,max_output_tokens:16384,store:false}));
  const r=reservationForRequest(request);
- assert.equal(r.params.max_output_tokens,4096);
- assert.equal(r.reservedMicros,Math.ceil(request.length*0.10+4096*0.50));
+ assert.equal(r.params.max_output_tokens,16384);
+ assert.equal(r.reservedMicros,Math.ceil(request.length*0.10+16384*0.50));
  const reason={type:"reasoning",id:"rs_expanded_cap",status:"completed",summary:[],encrypted_content:"U".repeat(512)};
- const registry=new Map([[createHash("sha256").update(reason.id+"\n"+reason.encrypted_content).digest("hex"),{id:reason.id,outputCeiling:4096}]]);
+ const registry=new Map([[createHash("sha256").update(reason.id+"\n"+reason.encrypted_content).digest("hex"),{id:reason.id,outputCeiling:16384}]]);
  const final=Buffer.from(JSON.stringify({...params,store:false,tool_choice:"none",max_output_tokens:1200,
   input:[...params.input,reason]}));
- assert.equal(reservationForRequest(final,registry).reservedMicros,Math.ceil(final.length*0.10+4096*0.10+1200*0.50));
+ assert.equal(reservationForRequest(final,registry).reservedMicros,Math.ceil(final.length*0.10+16384*0.10+1200*0.50));
  const b=new PaidReservation(head);
- for(const invalid of [{...params,max_output_tokens:4097},{...params,tool_choice:"none",max_output_tokens:1201}]){
+ for(const invalid of [{...params,max_output_tokens:16385},{...params,tool_choice:"none",max_output_tokens:1201}]){
   assert.throws(()=>b.reserve(Buffer.from(JSON.stringify(invalid))),/output_cap/);
  }
  assert.equal(b.attempts,0);
  assert.equal(b.reservedMicros,0);
- const large=Buffer.from(JSON.stringify({...params,max_output_tokens:4096,instructions:"I".repeat(100000)}));
+ const large=Buffer.from(JSON.stringify({...params,max_output_tokens:16384,instructions:"I".repeat(100000)}));
  while(b.attempts<MAX_CALLS){
   try{b.reserve(large)}catch(e){assert.match(String(e),/approved_budget_exhausted/);break}
  }
