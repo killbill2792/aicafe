@@ -127,11 +127,12 @@ function observedCustomerGap(result:AgentToolResult):boolean{
   return c.expectedLocationDays>0&&!c.complete||c.eligibleChecks>0&&
     (c.linkedChecks<CUSTOMER_MONITOR_POLICY.minimumLinkedChecks||c.linkedChecks/c.eligibleChecks<CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
 }
-function qualifiedCustomerTrendCoverage(result:AgentToolResult):boolean{
+function qualifiedCustomerTrendCoverage(result:AgentToolResult,anonymous=false):boolean{
   const c=customerCoverageReceipt(result);
   return !!c&&c.complete&&c.expectedLocationDays>0&&c.eligibleChecks>0&&
+    (anonymous?c.eligibleChecks>=CUSTOMER_MONITOR_POLICY.minimumLinkedChecks:
     c.linkedChecks>=CUSTOMER_MONITOR_POLICY.minimumLinkedChecks&&
-    c.linkedChecks/c.eligibleChecks>=CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage;
+    c.linkedChecks/c.eligibleChecks>=CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
 }
 function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing))return false;
@@ -284,7 +285,7 @@ export function investigationPrompt(source:SourceSynopsis,followUp:boolean,
     "for incident-specific evidence. For this incident, relevant tools include: " +
     relevantInvestigationTools(source.kind).join(", ")+". " +
     (["money_update","missing_bill"].includes(source.kind)?"Finance: check actual available statement/invoice evidence plus independent recorded bills, expenses, sales or labor. If integrations are absent, use surviving facts and explicit uncertainty. Separate dated balances, bill amounts and payment status; no payment actions. ":"") +
-    (source.kind==="business_anomaly"?"Use the exact incident family, subject, unit and comparison dates supplied by get_investigation_source. Recorded expenses are observed entries, not complete spending; stockout risk is a forecast not a confirmed shortage. Hourly staff pressure uses a reconciled allocation of recorded daily wages and tax, not an actual per-hour provider payroll figure, and does not prove a specific employee or shift is unnecessary. For stockout risk, physical shortage or supplier quote issues, after the source read use the available web_search tool for public supplier leads if current saved offers are insufficient. Public descriptions or prices are UNVERIFIED leads, never firm offers, stock or guaranteed delivery. Do not repeat private data in public search terms. Cite actual links only; if no lead or permission, ask for the missing supplier confirmation. For data gaps identify the missing source evidence. For customer_trend or customer identity coverage, use query_data numeric check/visit/product aggregates, not names; check source coverage and matured denominators, then independent staffing, inventory, menu/price or expense evidence. For customer trends around holidays or local events, use get_events for the same comparison dates when available; distinguish verified saved occurrence evidence from unverified listings, and do not infer attendance, customer acquisition or causation from an event listing. Use describe_data for unfamiliar retained fields, including optional fields without dedicated views. Do not treat two sales projections as independent, or missing identity as churn. Investigate the existing Toast source before asking the owner; do not ask them to supply stored POS facts. Notify only useful aggregate findings, no personal names/contact or account IDs. Correlation is not causation. ":"") +
+    (source.kind==="business_anomaly"?"Use the exact incident family, subject, unit and comparison dates supplied by get_investigation_source. Recorded expenses are observed entries, not complete spending; stockout risk is a forecast not a confirmed shortage. Hourly staff pressure uses a reconciled allocation of recorded daily wages and tax, not an actual per-hour provider payroll figure, and does not prove a specific employee or shift is unnecessary. For stockout risk, physical shortage or supplier quote issues, after the source read use the available web_search tool for public supplier leads if current saved offers are insufficient. Public descriptions or prices are UNVERIFIED leads, never firm offers, stock or guaranteed delivery. Do not repeat private data in public search terms. Cite actual links only; if no lead or permission, ask for the missing supplier confirmation. For data gaps identify the missing source evidence. For customer_trend or customer identity coverage, use query_data numeric check/visit/product aggregates, not names; check source coverage and matured denominators, then independent staffing, inventory, menu/price or expense evidence. For anonymous_check_spend or anonymous_items_per_check, use all eligible checks and recorded item quantities, not linked-person filters; report only transaction-level behaviour. Customer trend source includes an independent exact-metric re-read when available; do not claim the trend is verified when that read is absent or differs from the alert. For customer trends around holidays or local events, use get_events for the same comparison dates when available; distinguish verified saved occurrence evidence from unverified listings, and do not infer attendance, customer acquisition or causation from an event listing. Use describe_data for unfamiliar retained fields, including optional fields without dedicated views. Do not treat two sales projections as independent, or missing identity as churn. Investigate the existing Toast source before asking the owner; do not ask them to supply stored POS facts. Notify only useful aggregate findings, no personal names/contact or account IDs. Correlation is not causation. ":"") +
     "Use canonical numbers, coverage and timestamps; " +
     "do not infer zero from missing or stale evidence. Explain what changed, what is " +
     "known, what is unknown, and the smallest useful multi-step plan. Give the owner " +
@@ -378,9 +379,15 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
   // Distinguish a qualified report from an affirmative assertion of repair.
   if(expected.kind==="maintenance_issue"&&unsupportedMaintenanceRepairClaim(text))
     return {ok:false,reason:"model_incomplete"};
-  const selectors=source.result.selectors as {family?:string;subject?:string;from?:string;to?:string}|undefined;
+  const selectors=source.result.selectors as {family?:string;subject?:string;from?:string;to?:string;current?:number;previous?:number;unit?:string}|undefined;
   const customerIncident=expected.kind==="business_anomaly"&&(selectors?.family==="customer_trend"||
     selectors?.family==="data_gap"&&["customer_identity_coverage","reader_unavailable:customer_intelligence"].includes(selectors.subject??""));
+  const anonymousCustomer=selectors?.family==="customer_trend"&&selectors.subject?.startsWith("anonymous_")===true;
+  if(customerIncident&&selectors?.family==="customer_trend"){
+    const p=source.result.customerTrendProof as {key?:string;current?:number;previous?:number;unit?:string;active?:boolean}|null|undefined;
+    const equal=(x:unknown,y:unknown)=>typeof x==="number"&&typeof y==="number"&&Number.isFinite(x)&&Number.isFinite(y)&&Math.abs(x-y)<=1e-9*Math.max(1,Math.abs(x),Math.abs(y));
+    if(!p||p.key!==selectors.subject||p.unit!==selectors.unit||p.active!==true||!equal(p.current,selectors.current)||!equal(p.previous,selectors.previous))return {ok:false,reason:"evidence_incomplete"};
+  }
   if(!customerIncident&&calls.some(call=>call.name==="get_events"))return {ok:false,reason:"model_incomplete"};
   const customerTools:readonly AgentToolName[]=["get_events","query_data","get_labor","get_schedule","get_week_schedule",
     "get_inventory","get_usage_variance","get_menu_items","get_price_monitor_status","get_ingredient_costs","get_expenses","get_bills"];
@@ -406,7 +413,7 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     if(selectors?.family==="customer_trend")
       return call.result.missing.length===0&&typeof selectors.from==="string"&&typeof selectors.to==="string"&&
        period.from<=selectors.from&&period.to>=selectors.to&&
-       qualifiedCustomerTrendCoverage(call.result);
+       qualifiedCustomerTrendCoverage(call.result,anonymousCustomer);
     // Coverage alerts without dated selectors use an observed scoped gap.
     // If the claim has dates, require its entire period, not a stale/partial gap.
     return (!selectors?.from||!selectors.to||period.from<=selectors.from&&period.to>=selectors.to)&&
