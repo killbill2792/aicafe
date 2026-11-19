@@ -8,6 +8,7 @@ import {createWebSearch,type WebSearchBudget} from "@/lib/ai/agent/webSearch.ser
 import {ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
 import {readPrimaryLocation} from "@/lib/data/cafeLocation.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
+import {readCustomerTrendComparison} from "@/lib/alerts/businessAnomalies.server";
 import {publicSupplierLeadQuery} from "./supplierResearch";
 import {meteredInvestigationProvider} from "./investigationUsage.server";
 import type {AgentToolResult} from "@/lib/ai/agent/tools";
@@ -377,7 +378,19 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(
         db,c.business_id,c.owner_user_id,40)},
       investigation:{
-        read:async()=>{const result=await readIncidentEvidence(db,c);return {...result,vendorReadMissing:vendorPoll.missing,...(ownerReport?{ownerReport}: {})};},
+        read:async()=>{
+          const result=await readIncidentEvidence(db,c),selector=object(result.selectors);
+          // Reproduce the exact claimed metric with both periods using the
+          // detector's existing scoped SQL readers. Never promote a stale alert
+          // or an arbitrary model-selected subtotal into verified trend proof.
+          let customerTrendProof=null;
+          if(customerIncident&&selector?.family==="customer_trend"&&typeof selector.subject==="string"&&
+            typeof selector.from==="string"&&typeof selector.to==="string"){
+            try{customerTrendProof=await readCustomerTrendComparison(db,c.business_id,selector.subject,{from:selector.from,to:selector.to});}
+            catch{/* unavailable evidence must remain unresolved */}
+          }
+          return {...result,customerTrendProof,vendorReadMissing:vendorPoll.missing,...(ownerReport?{ownerReport}: {})};
+        },
         weekSchedule:(weekStart:string)=>readScopedWeekSchedule({weekStart},
           {client:db,businessId:c.business_id,ownerUserId:c.owner_user_id}),
       },
