@@ -224,6 +224,12 @@ export class SupabaseLoopRepository implements LoopRepository{
   }
   async saveReport(scope:OwnerLoopScope,p:LoopProposal,report:LoopReport,opts?:{midRun?:boolean}):Promise<void>{
     const db=createAdminSupabaseClient();
+    // Distinct elapsed-day notices are evidence-backed historical updates,
+    // not replacements for the latest or terminal canonical report.
+    if(report.status==="in_progress"&&opts?.midRun&&report.midRunKey?.startsWith("verified-source-day-")){
+      if(report.midRunText?.trim())await postMidRunUpdate(db,scope,p,report,report.midRunText);
+      return;
+    }
     const persisted={...report.result,source:report.source,
       recommendation:report.recommendation};
     let formattingOnly=false;
