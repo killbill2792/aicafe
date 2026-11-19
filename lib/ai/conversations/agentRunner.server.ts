@@ -70,7 +70,7 @@ import {assertSelectedAttachmentAccess,assertExternalAccess,FILE_RESOURCE,WEB_RE
 import {projectOwnerPublicQuery} from "@/lib/ai/agent/tools/webSearch";
 import {ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
-import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
+import {authenticatedConversationContext,ConversationApiError} from "@/lib/ai/conversations/auth.server";
 import type {ConversationMessage, ConversationScope} from "@/lib/ai/conversations/contracts";
 import type {ConversationService} from "@/lib/ai/conversations/service";
 
@@ -197,7 +197,17 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Per-turn checks bind admitted evidence to server-owned scope and revision.
     const sourceChecks=new Map<string,()=>Promise<void>>();
     const assertTurnSources=async()=>{
-      await assertConnectorOwnerLive(scope);
+      if(external){
+        await assertConnectorOwnerLive(scope);
+        await p.service.getThread(id);
+      }else{
+        // Reuse the browser's authenticated owner membership and RLS-thread
+        // boundary. Never substitute another active café after a scope switch.
+        const live=await authenticatedConversationContext();
+        if(live.scope.businessId!==scope.businessId||live.scope.ownerUserId!==scope.ownerUserId)
+          throw Error("connector_owner_access_revoked");
+        await live.service.getThread(id);
+      }
       await assertCafeAiAccess(scope.businessId);
       for(const check of sourceChecks.values())await check();
     };
