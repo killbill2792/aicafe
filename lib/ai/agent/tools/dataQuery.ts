@@ -45,8 +45,21 @@ const UNATTENDED_GROUPS=new Set(["business_date","record_type","status","source"
  "fact_kind","product_ref","item_group_ref","modifier_ref","option_group_ref","paired_product_ref","visit_class","order_channel","local_hour","business_weekday",
  "data.aiCafeCustomer.displayNameSource","data.aiCafeCustomer.restaurantRef","data.aiCafeCustomer.localHour",
  "data.aiCafeCustomer.orderChannel","data.aiCafeCustomer.diningOptionRef","data.aiCafeCustomer.businessWeekday"]);
+// Counts of non-null permitted raw fields support coverage investigation.
+// Numeric reductions are different: arbitrary numeric-looking customer/contact
+// fields must never enter an unattended report via min/max/sum/avg.
+const UNATTENDED_NUMERIC_UNITS=new Set(["cents","count","seconds","items","hours","cents/hour",
+ "quantity","days","indicator","ratio","ratio squared","units","hour 0 to 23","weekday"]);
+const UNATTENDED_RAW_NUMBERS=new Set(["data.quantity","data.numberOfGuests",
+ "data.aiCafeCustomer.netSalesCents","data.aiCafeCustomer.recordedRefundCents",
+ "data.aiCafeCustomer.discountParticipation","data.aiCafeCustomer.loyaltyParticipation",
+ "data.aiCafeCustomer.orderDurationSeconds","data.aiCafeCustomer.localHour","data.aiCafeCustomer.businessWeekday"]);
 function unattendedQueryAllowed(p:z.infer<typeof dataQuerySchema>):boolean{
  if(!p.metrics?.length)return false;
+ const columns=canonicalDictionary[p.view].columns as Readonly<Record<string,{unit:string}>>;
+ if(p.metrics.some(m=>m.fn!=="count"&&m.fn!=="count_distinct"&&
+  !(columns[m.column]&&UNATTENDED_NUMERIC_UNITS.has(columns[m.column].unit))&&
+  !(p.view==="cv_toast_records"&&UNATTENDED_RAW_NUMBERS.has(m.column))))return false;
  if([...(p.columns??[]),...(p.group_by??[])].some(k=>!UNATTENDED_GROUPS.has(k)))return false;
  return (p.filters??[]).every(f=>UNATTENDED_GROUPS.has(f.column)||
   (f.op==="is_null"||f.op==="is_not_null")&&f.value===null);
