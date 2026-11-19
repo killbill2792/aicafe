@@ -176,11 +176,11 @@
         "thread_id": {
           "scope": "threadId"
         },
-        "capability_id": {
-          "eq": "alex.gmail_effect.v1"
-        },
         "status": {
           "eq": "committed"
+        },
+        "id": {
+          "scope": "vendorProposalId"
         }
       },
       "minCount": 1,
@@ -197,11 +197,11 @@
         "thread_id": {
           "scope": "threadId"
         },
-        "capability_id": {
-          "eq": "leo.maintenance_staff_assignment.v1"
-        },
         "status": {
           "eq": "committed"
+        },
+        "id": {
+          "scope": "staffProposalId"
         }
       },
       "minCount": 1,

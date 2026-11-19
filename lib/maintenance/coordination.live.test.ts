@@ -237,7 +237,7 @@ live("real gpt-6-luna proposes vendor outreach and independently verified staff 
     expect(sent).toBe(1);
     mkdirSync("test-results/acceptance",{recursive:true});
     writeFileSync("test-results/acceptance/15b-proof.json",JSON.stringify({head_sha:head,observed_model:"gpt-6-luna",status:"passed",scope:"maintenance_disposable_gmail_transport",feature_proven:false,external_effect_proven:false,cross_cafe_owner_denied:true}),{mode:0o600,flag:"wx"});
-    writeFileSync("test-results/acceptance/15b-scope.json",JSON.stringify({businessId:scope.businessId,otherCafeId:foreignCafeId,ownerUserId:scope.ownerUserId,threadId:scope.threadId,taskId,expectedProviderCalls:ledger.calls}),{mode:0o600,flag:"wx"});
+    writeFileSync("test-results/acceptance/15b-scope.json",JSON.stringify({businessId:scope.businessId,otherCafeId:foreignCafeId,ownerUserId:scope.ownerUserId,threadId:scope.threadId,taskId,vendorProposalId:vendor.id,staffProposalId:staff.id,expectedProviderCalls:ledger.calls}),{mode:0o600,flag:"wx"});
     console.log("15b_live_source_model_notice_verified",JSON.stringify({
       head,model:"gpt-6-luna",providerCompletions,toolNames:proof.flatMap(p=>p.toolNames),
       source:"maintenance_case_events",effect:"disposable_transport_only_after_owner_approval",
