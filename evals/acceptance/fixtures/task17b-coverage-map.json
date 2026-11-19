@@ -32,5 +32,25 @@
     "entrypoint": "evals/acceptance/supervisor-census.test.ts",
     "truth": "evals/acceptance/fixtures/task17b-business-truth.json",
     "required": "independent arithmetic truth covers every currently registered metric, including no-data negatives"
-  }
+  },
+  "scenarioCandidates": [
+    {
+      "id": "17b-owner-security",
+      "entrypoint": "evals/acceptance/live/task17b-cross-domain.mjs",
+      "mapped": [
+        "tool:manage_routine",
+        "tool:get_supervisor_permissions",
+        "owner-selected CSV",
+        "create",
+        "edit",
+        "pause",
+        "resume",
+        "revoke",
+        "foreign café",
+        "attachment denial"
+      ],
+      "state": "UNTESTED",
+      "limitations": "Final source state and provider-selected tools have host manifest assertions; no autonomous execution, external delivery or independent browser proof yet."
+    }
+  ]
 }
