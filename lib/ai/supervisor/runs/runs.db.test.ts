@@ -171,6 +171,26 @@ describe("Task 15C durable SQL lease process death (not full Supervisor restart)
         { step_key: "read", status: "completed", attempts: 2, error_code: null, result_ref: "test:read-receipt" },
         { step_key: "effect", status: "blocked", attempts: 1, error_code: "lease_expired", result_ref: null },
       ]);
+      // The existing service-only health check must report the unresolved
+      // uncertainty without exposing owner/thread/source details.
+      await service.query("begin");
+      try {
+        const result=await call(service,"run_data_health_check",[8589934592000,30]);
+        expect(result.findings.find((f:{kind:string;business_id?:string})=>f.kind==="supervisor_work_recovery"&&f.business_id===businessId))
+          .toEqual({kind:"supervisor_work_recovery",business_id:businessId,expired_leases:0,
+            blocked_runs:1,retrying_investigations:0,failed_routines:0,stalled_runs:0});
+      } finally { await service.query("rollback"); }
+      // Five abandoned idempotent leases terminate, rather than returning
+      // an unbounded sixth claim while other cafés need progress. This
+      // injects the retry counter; the process kill above uses real time.
+      const poison=(await call(service,"supervisor_run_start",
+        [...scope,randomUUID(),"c".repeat(64),JSON.stringify([{key:"read",retry:"idempotent"}])])).id;
+      const claimed=await call(service,"supervisor_run_claim",[...scope,poison,randomUUID(),30]);
+      await admin.query("update public.supervisor_run_steps set attempts=5,lease_until=now()-interval '1 second' where run_id=$1",[poison]);
+      expect(await call(service,"supervisor_run_claim",[...scope,poison,randomUUID(),30])).toEqual({kind:"blocked"});
+      expect((await admin.query("select status,error_code,attempts from public.supervisor_run_steps where run_id=$1",[poison])).rows)
+        .toEqual([{status:"blocked",error_code:"retry_exhausted",attempts:5}]);
+      expect(await call(service,"supervisor_run_renew",[...scope,poison,"read",claimed.step.claim_token,30])).toBe(false);
     } finally {
       for (const child of children) {
         if (child.exitCode === null && child.signalCode === null) {

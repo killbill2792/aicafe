@@ -33,3 +33,15 @@ describe("existing durable worker SQL dispatch port", () => {
     await expect(selectNextDurableRun()).rejects.toThrow();
   });
 });
+
+describe("canonical admin recovery finding",()=>{
+  it("renders unresolved operational counts without model or private owner facts",async()=>{
+    const {parseFindings,describeFinding}=await import("@/lib/admin/dataHealth");
+    const row={kind:"supervisor_work_recovery",business_id:id,expired_leases:1,blocked_runs:2,
+      retrying_investigations:3,failed_routines:4,stalled_runs:5};
+    const parsed=parseFindings([row]);
+    expect(parsed).toEqual({known:[row],unknown:0});
+    expect(describeFinding(parsed.known[0],()=>"Fixture café")).toBe(
+      "Fixture café: Supervisor recovery — 1 expired leases, 2 blocked runs, 3 retrying investigations, 4 failed routines, 5 stalled runs.");
+  });
+});

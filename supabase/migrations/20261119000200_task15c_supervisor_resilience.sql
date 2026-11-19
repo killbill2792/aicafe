@@ -350,3 +350,181 @@ revoke all on function public.supervisor_stop_durable_run(uuid,uuid,uuid,uuid,te
   from public,anon,authenticated;
 grant execute on function public.supervisor_stop_durable_run(uuid,uuid,uuid,uuid,text,text,uuid)
   to service_role;
+
+-- Bound safe step reclaims and prevent renewals after a terminal stop.
+create or replace function public.supervisor_run_claim(
+  p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_run_id uuid, p_worker_id uuid, p_lease_seconds integer
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare r public.supervisor_runs; s public.supervisor_run_steps; v_now timestamptz;
+begin
+  if coalesce(auth.role(),'') <> 'service_role' then raise exception 'service_role_only'; end if;
+  if p_worker_id is null or p_lease_seconds is null or p_lease_seconds not between 1 and 3600
+    then raise exception 'invalid_lease'; end if;
+  select * into r from public.supervisor_runs where business_id = p_business_id
+    and owner_user_id = p_owner_user_id and thread_id = p_thread_id
+    and id = p_run_id for update;
+  if not found then raise exception 'run_not_found'; end if;
+  if r.status = 'completed' then
+    return jsonb_build_object('kind', 'completed'); end if;
+  if r.status = 'blocked' then
+    return jsonb_build_object('kind', 'blocked'); end if;
+  select * into s from public.supervisor_run_steps
+    where business_id = p_business_id and run_id = p_run_id and status <> 'completed'
+    order by step_index limit 1 for update;
+  if not found then return jsonb_build_object('kind', 'ready_for_report'); end if;
+  v_now:=clock_timestamp();
+  if s.status = 'blocked' then return jsonb_build_object('kind', 'blocked'); end if;
+  if s.status = 'leased' and s.lease_until > v_now then
+    return jsonb_build_object('kind', 'busy'); end if;
+  if s.status = 'leased' and s.retry_mode = 'reconcile' then
+    update public.supervisor_run_steps set status = 'blocked', error_code = 'lease_expired',
+      worker_id = null, claim_token = null, lease_until = null, updated_at = v_now
+      where id = s.id;
+    update public.supervisor_runs set status = 'blocked', updated_at = v_now where id = r.id;
+    return jsonb_build_object('kind', 'blocked');
+  end if;
+  -- A repeatedly abandoned read/verification step cannot retry forever.
+  -- Uncertain effect steps retain their independent-receipt-only branch above.
+  if s.retry_mode='idempotent' and s.attempts>=5 then
+    update public.supervisor_run_steps set status='blocked',error_code='retry_exhausted',
+      worker_id=null,claim_token=null,lease_until=null,updated_at=v_now where id=s.id;
+    update public.supervisor_runs set status='blocked',updated_at=v_now where id=r.id;
+    return jsonb_build_object('kind','blocked');
+  end if;
+  update public.supervisor_run_steps
+    set status = 'leased', worker_id = p_worker_id, claim_token = gen_random_uuid(),
+      lease_until = v_now + make_interval(secs => p_lease_seconds),
+      attempts = attempts + 1, error_code = null, updated_at = v_now
+    where id = s.id returning * into s;
+  update public.supervisor_runs set status = 'running', updated_at = v_now where id = r.id;
+  return jsonb_build_object('kind', 'claimed', 'step', to_jsonb(s),
+    'idempotency_key', s.run_id::text || ':' || s.step_key);
+end $$;
+
+create or replace function public.supervisor_run_renew(
+  p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid, p_run_id uuid, p_step_key text,
+  p_claim_token uuid, p_lease_seconds integer
+) returns boolean language plpgsql security definer set search_path = public as $$
+declare updated_count integer;
+begin
+  if coalesce(auth.role(),'') <> 'service_role' then raise exception 'service_role_only'; end if;
+  if p_lease_seconds is null or p_lease_seconds not between 1 and 3600
+    then raise exception 'invalid_lease'; end if;
+  update public.supervisor_run_steps set
+    lease_until = clock_timestamp() + make_interval(secs => p_lease_seconds), updated_at = clock_timestamp()
+  where business_id = p_business_id and run_id = p_run_id and step_key = p_step_key
+    and claim_token = p_claim_token and status = 'leased' and lease_until > clock_timestamp()
+    and exists (select 1 from public.supervisor_runs r where r.business_id = p_business_id
+      and r.id = p_run_id and r.owner_user_id = p_owner_user_id
+      and r.thread_id = p_thread_id and r.status='running');
+  get diagnostics updated_count = row_count;
+  return updated_count = 1;
+end $$;
+
+-- Retain existing data-health checks and append Supervisor recovery evidence.
+create or replace function public.run_data_health_check(p_plan_bytes bigint,p_days integer default 30)
+returns public.data_health_checks
+language plpgsql security definer set search_path=public as $health$
+declare
+ v_today date:=(now() at time zone 'utc')::date;
+ v_bytes bigint:=pg_database_size(current_database());
+ v_prev bigint; v_tables jsonb; v_findings jsonb:='[]'::jsonb; v_row public.data_health_checks;
+begin
+ if auth.role() <> 'service_role' and current_user not in ('postgres','supabase_admin')
+ then raise exception 'service role only'; end if;
+ if p_plan_bytes is null or p_plan_bytes<=0 or p_days not between 1 and 366
+ then raise exception 'invalid health check settings'; end if;
+
+ select coalesce(jsonb_agg(jsonb_build_object('table',t.relname,'bytes',t.bytes) order by t.bytes desc),'[]')
+ into v_tables
+ from (select c.relname,pg_total_relation_size(c.oid) bytes from pg_class c
+  join pg_namespace n on n.oid=c.relnamespace and n.nspname='public'
+  where c.relkind='r' order by 2 desc limit 8) t;
+
+ if v_bytes>p_plan_bytes*0.7 then
+  v_findings:=v_findings||jsonb_build_object('kind','database_near_limit',
+   'database_bytes',v_bytes,'plan_bytes',p_plan_bytes);
+ end if;
+
+ select h.database_bytes into v_prev from public.data_health_checks h
+ where h.checked_on<v_today order by h.checked_on desc limit 1;
+ if v_prev is not null and v_bytes-v_prev>greatest(50*1024*1024,v_prev*0.2) then
+  v_findings:=v_findings||jsonb_build_object('kind','sudden_growth',
+   'database_bytes',v_bytes,'previous_bytes',v_prev);
+ end if;
+
+ v_findings:=v_findings||coalesce((
+  select jsonb_agg(jsonb_build_object('kind','repeated_pos_records','business_id',x.business_id,
+    'entity',x.entity,'objects',x.objects,'extra_rows',x.extra_rows) order by x.business_id,x.entity)
+  from (select g.business_id,g.entity,count(*) objects,sum(g.n-1) extra_rows
+   from (select r.business_id,r.entity,count(*) n from public.toast_raw_records r
+    where r.entity_guid is not null and coalesce(r.capture_key,'') not like 'stage:%:key:%'
+    group by r.business_id,r.restaurant_guid,r.entity,r.entity_guid,r.business_date
+    having count(*)>1) g
+   group by g.business_id,g.entity) x),'[]'::jsonb);
+
+ v_findings:=v_findings||coalesce((
+  select jsonb_agg(jsonb_build_object('kind','total_mismatch','business_id',m.business_id,
+    'business_date',m.business_date,'import_net_cents',m.import_net,'stored_net_cents',m.stored_net,
+    'toast_net_cents',m.toast_net) order by m.business_id,m.business_date)
+  from (select d.business_id,d.business_date,sum(d.net_sales_cents) import_net,
+    case when count(d.toast_net_sales_cents)=count(*) then sum(d.toast_net_sales_cents) end toast_net,
+    (select coalesce(sum(o.net_sales_cents),0) from public.orders o
+     where o.business_id=d.business_id and o.business_date=d.business_date and not o.toast_excluded
+      and o.pos_order_id like 'toast:%') stored_net
+   from public.toast_day_status d join public.businesses b on b.id=d.business_id and not b.is_demo
+   where d.import_state='imported' and d.business_date>=v_today-p_days
+   group by d.business_id,d.business_date
+  ) m
+  where m.stored_net is distinct from m.import_net
+   or (m.toast_net is not null and m.toast_net is distinct from m.import_net)),'[]'::jsonb);
+
+ -- Use the existing daily operational health record. Counts only, no owner,
+ -- source, prompt, effect or connector payloads. Only unresolved/live revisions
+ -- are examined; a recovered work item disappears on the next check.
+ v_findings:=v_findings||coalesce((
+  select jsonb_agg(jsonb_build_object('kind','supervisor_work_recovery',
+    'business_id',x.business_id,'expired_leases',x.expired_leases,
+    'blocked_runs',x.blocked_runs,'retrying_investigations',x.retrying_investigations,
+    'failed_routines',x.failed_routines,'stalled_runs',x.stalled_runs) order by x.business_id)
+  from (
+    select work.business_id,count(*) filter(where work.problem='expired_lease') expired_leases,
+      count(*) filter(where work.problem='blocked_run') blocked_runs,
+      count(*) filter(where work.problem='investigation_retry') retrying_investigations,
+      count(*) filter(where work.problem='routine_failed') failed_routines,
+      count(*) filter(where work.problem='stalled_run') stalled_runs
+    from (
+      select s.business_id,'expired_lease' problem from public.supervisor_run_steps s
+        join public.supervisor_runs r on r.id=s.run_id and r.business_id=s.business_id
+        where r.status='running' and s.status='leased' and s.lease_until<=now()
+      union all select r.business_id,'blocked_run' from public.supervisor_runs r
+        where r.status='blocked' and exists(select 1 from public.supervisor_run_steps s
+          where s.business_id=r.business_id and s.run_id=r.id and s.status='blocked'
+            and coalesce(s.error_code,'unknown') not in ('authorization_revoked','cancelled'))
+      union all select r.business_id,'stalled_run' from public.supervisor_runs r
+        where r.status in ('pending','running') and r.updated_at<now()-interval '30 minutes'
+          and not exists(select 1 from public.supervisor_run_steps s where s.business_id=r.business_id
+            and s.run_id=r.id and s.status='leased' and s.lease_until>now())
+      union all select i.business_id,'expired_lease' from public.supervisor_investigations i
+        where i.phase in ('collect','investigate','awaiting_owner') and i.lease_until<=now()
+      union all select i.business_id,'investigation_retry' from public.supervisor_investigations i
+        where i.phase in ('collect','investigate','awaiting_owner') and i.failure_count>0
+          and i.last_error not in ('authorization_revoked','owner_quota_reached')
+      union all select o.business_id,case when o.state='failed' then 'routine_failed' else 'expired_lease' end
+        from public.supervisor_routine_occurrences o join public.supervisor_routines r
+          on r.business_id=o.business_id and r.id=o.routine_id and r.revision=o.revision
+        where r.status='active' and (o.state='failed' or (o.state='running' and o.lease_until<=now()))
+    ) work join public.businesses b on b.id=work.business_id and not b.is_demo
+    group by work.business_id
+  ) x),'[]'::jsonb);
+
+ insert into public.data_health_checks(checked_on,checked_at,database_bytes,plan_bytes,largest_tables,findings)
+ values(v_today,now(),v_bytes,p_plan_bytes,v_tables,v_findings)
+ on conflict(checked_on) do update set checked_at=excluded.checked_at,
+  database_bytes=excluded.database_bytes,plan_bytes=excluded.plan_bytes,
+  largest_tables=excluded.largest_tables,findings=excluded.findings
+ returning * into v_row;
+ return v_row;
+end $health$;
+revoke all on function public.run_data_health_check(bigint,integer) from public,anon,authenticated;
+grant execute on function public.run_data_health_check(bigint,integer) to service_role;

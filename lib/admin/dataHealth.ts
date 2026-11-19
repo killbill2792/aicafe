@@ -1,5 +1,7 @@
 /** Plain-words lines for the admin Data health page. Pure, so it is unit tested. */
 export type HealthFinding =
+  | {kind:"supervisor_work_recovery";business_id:string;expired_leases:number;blocked_runs:number;
+      retrying_investigations:number;failed_routines:number;stalled_runs:number}
   | {kind:"database_near_limit";database_bytes:number;plan_bytes:number}
   | {kind:"sudden_growth";database_bytes:number;previous_bytes:number}
   | {kind:"repeated_pos_records";business_id:string;entity:string;objects:number;extra_rows:number}
@@ -16,6 +18,8 @@ const money=(cents:number|null)=>cents===null?"none":(cents/100).toFixed(2);
 
 export function describeFinding(f:HealthFinding,cafeName:(id:string)=>string):string{
   switch(f.kind){
+    case "supervisor_work_recovery":
+      return `${cafeName(f.business_id)}: Supervisor recovery — ${f.expired_leases} expired leases, ${f.blocked_runs} blocked runs, ${f.retrying_investigations} retrying investigations, ${f.failed_routines} failed routines, ${f.stalled_runs} stalled runs.`;
     case "database_near_limit":
       return `Database is ${megabytes(f.database_bytes)}, over 70% of the ${megabytes(f.plan_bytes)} plan.`;
     case "sudden_growth":
@@ -33,7 +37,7 @@ export function parseFindings(value:unknown):{known:HealthFinding[];unknown:numb
   const known:HealthFinding[]=[];let unknown=0;
   for(const item of list){
     const kind=(item as {kind?:unknown})?.kind;
-    if(kind==="database_near_limit"||kind==="sudden_growth"||kind==="repeated_pos_records"||kind==="total_mismatch")
+    if(kind==="supervisor_work_recovery"||kind==="database_near_limit"||kind==="sudden_growth"||kind==="repeated_pos_records"||kind==="total_mismatch")
       known.push(item as HealthFinding);
     else unknown++;
   }
