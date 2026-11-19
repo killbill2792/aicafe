@@ -399,7 +399,7 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       const child=fork("scripts/acceptance/task15c-worker-child.mjs",[],{execArgv:[],stdio:["ignore","ignore","inherit","ipc"]});
       children.push(child);
       const first=await invoke(child,"claim",[...scope,run.id,randomUUID(),5]);
-      expect(first.toMatchObject({ok:true,pid:child.pid,result:{kind:"claimed",step:{step_key:"owner_turn",attempts:1}}});
+      expect(first).toMatchObject({ok:true,pid:child.pid,result:{kind:"claimed",step:{step_key:"owner_turn",attempts:1}}});
       const oldToken=first.result!.step!.claim_token;
       const job=await call(a,"supervisor_start_owner_job_v2",[...scope,run.id,oldToken]);
       expect(job).toMatchObject({owner_message_id:messageId,durable_run_id:run.id,status:"running"});
