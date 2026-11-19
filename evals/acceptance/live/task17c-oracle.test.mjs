@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {assessCoverage,requiredFamilies,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome} from "./task17c-oracle.mjs";
+import {readFileSync,readdirSync} from "node:fs";
+import {assessCoverage,requiredFamilies,proactiveRequirements,auditProactiveInventory,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome} from "./task17c-oracle.mjs";
 const head="a".repeat(40);
 test("missing, stale or candidate-only receipt cannot pass",()=>{
  const base={family:"chat_routine",head,model:"gpt-6-luna",status:"PASS"};
@@ -90,4 +91,32 @@ test("source alert lifecycle rejects healthy-cafe false positive and fabricated 
  for(const mutate of [x=>x.opened.push({...alert,business_id:"healthy"}),x=>x.repeated.push(alert),x=>x.pending[0].evidence.modelTools=["get_investigation_source"],x=>x.closed[0].status="new",x=>x.finished[0].episode_id="replacement",x=>x.afterNotices=[],x=>x.ownerRows=[{}],x=>x.effects=[{}],x=>x.expenses[1].amount_cents++,x=>x.usage[0].model="fallback"]){
   const bad=structuredClone(good);mutate(bad);assert.throws(()=>verifyMonitorOutcome(bad));
  }
+});
+
+test("proactive register covers actual signal, task and scheduled job inventories without treating a question as proactivity",()=>{
+ const root=new URL("../../../",import.meta.url);
+ const read=path=>readFileSync(new URL(path,root),"utf8");
+ const quoted=s=>[...s.matchAll(/"([^"]+)"/g)].map(m=>m[1]);
+ const signals=quoted(read("lib/operating/types.ts").match(/CAFE_SIGNAL_TYPES\s*=\s*\[([\s\S]*?)\]\s*as const/)[1]);
+ const taskKinds=quoted(read("lib/operating/tasks.ts").match(/export type OperatingTaskKind\s*=\s*([^;]+);/)[1]);
+ const cronPaths=JSON.parse(read("vercel.json")).crons.map(c=>c.path);
+ const manifestIds=readdirSync(new URL(".github/luna/scenarios/",root)).filter(x=>x.endsWith(".json")).map(x=>x.slice(0,-5));
+ const input={signals,taskKinds,cronPaths,manifestIds:[...new Set([...manifestIds,"17b-sales-labor","17b-supply-finance","17b-owner-security"])]};
+ const audit=auditProactiveInventory(input);
+ assert.equal(signals.length,14); // reviewed source baseline; new families need review
+ assert.ok(taskKinds.length>=16&&cronPaths.length>=12);
+ assert.deepEqual(audit.missingSignals,[]);
+ assert.deepEqual(audit.missingTaskKinds,[]);
+ assert.deepEqual(audit.missingCrons,[]);
+ assert.deepEqual(audit.retiredCrons,[]);
+ assert.deepEqual(audit.missingCandidates,[]);
+ assert.equal(audit.complete,false);
+ assert.ok(audit.unregistered.some(x=>x.family==="sales_drop_live"&&x.state==="trigger_gap"));
+ assert.ok(requiredFamilies.includes("goal_checkin_due_answer_missed"));
+ assert.ok(proactiveRequirements.find(x=>x.family==="event_discovery_no_action_or_plan").candidates.length===0);
+ const drift=auditProactiveInventory({...input,signals:[...signals,"NEW_SOURCE_SIGNAL"],taskKinds:[...taskKinds,"new_task"],cronPaths:[...cronPaths,"/api/cron/new-monitor"],manifestIds:[]});
+ assert.deepEqual(drift.missingSignals,["NEW_SOURCE_SIGNAL"]);
+ assert.deepEqual(drift.missingTaskKinds,["new_task"]);
+ assert.deepEqual(drift.missingCrons,["new-monitor"]);
+ assert.ok(drift.missingCandidates.length>0);
 });
