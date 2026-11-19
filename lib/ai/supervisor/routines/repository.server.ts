@@ -77,13 +77,29 @@ export async function changeOwnerRoutine(input:{
   if(error||!data)throw error??new Error("Routine change rejected");
   return asRoutine(data as RoutineRow);
 }
+/** Bounded candidates from current revision and durable occurrence identities. */
+export async function listRoutineOccurrenceCandidates(db:SupabaseClient,params:{
+  businessId:string;routineId:string;revision:number;now:Date
+}):Promise<{localDate:string;scheduledForUtc:string|null}[]>{
+  const {data,error}=await db.rpc("supervisor_due_routine_dates",{
+    p_business_id:params.businessId,p_routine_id:params.routineId,
+    p_revision:params.revision,p_now:params.now.toISOString(),
+  });
+  if(error)throw error;
+  return z.array(z.object({
+    local_date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    scheduled_for_utc:z.string().nullable(),
+  })).max(5).parse(data).map(row=>({
+    localDate:row.local_date,scheduledForUtc:row.scheduled_for_utc,
+  }));
+}
 export type ClaimedRoutine={runId:string;leaseToken:string;revision:number};
 export async function claimRoutineOccurrence(db:SupabaseClient,params:{
-  businessId:string;routineId:string;localDate:string;dueAt:Date;now:Date
+  businessId:string;routineId:string;revision:number;localDate:string;dueAt:Date;now:Date
 }):Promise<ClaimedRoutine|null>{
-  const {data,error}=await db.rpc("claim_supervisor_routine_occurrence",{
+  const {data,error}=await db.rpc("supervisor_claim_current_routine_occurrence",{
     p_business_id:params.businessId,p_routine_id:params.routineId,
-    p_local_date:params.localDate,p_scheduled_for_utc:params.dueAt.toISOString(),
+    p_revision:params.revision,p_local_date:params.localDate,p_scheduled_for_utc:params.dueAt.toISOString(),
     p_now:params.now.toISOString(),
   });
   if(error)throw error;

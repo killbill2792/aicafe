@@ -34,7 +34,7 @@ const hex=(s:string)=>s.repeat(64);
 describe("Task 15A migrated, agentic investigation SQL integration",()=>{
   (sandbox?it:it.skip)("multi-café owner isolation, concurrent claims, persistent steps, recovery, revocation and verified follow-up",async()=>{
     const admin=await connect("postgres");
-    let a:Client|undefined,b:Client|undefined,ownerClient:Client|undefined;
+    let a:Client|undefined,b:Client|undefined,ownerClient:Client|undefined,closingActor:Client|undefined;
     const cafes=[randomUUID(),randomUUID()];
     const owners=[randomUUID(),randomUUID()];
     const threads=[randomUUID(),randomUUID()];
@@ -131,8 +131,18 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(other.business_id).toBe(cafes[1]);
       // A source closure is a verified terminal condition, not proof of a POS
       // price change, purchase, staff effect or external message delivery.
-      await admin.query("update public.alerts set status='dismissed' where business_id=$1 and id=$2",
-        [cafes[0],alerts[0]]);
+      // A real second authenticated owner closes a shared, RLS-authorized
+      // source while the assigned investigation owner is offline. They are
+      // not authorized to read the assigned owner's private thread.
+      closingActor=await connect("owner",owners[1]);
+      const foreignClosure=await closingActor.query(
+        "update public.alerts set status='dismissed' where business_id=$1 and id=$2",[cafes[0],alerts[0]]);
+      expect(foreignClosure.rowCount).toBe(0);
+      await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",
+        [cafes[0],owners[1]]);
+      const authorizedClosure=await closingActor.query(
+        "update public.alerts set status='dismissed' where business_id=$1 and id=$2",[cafes[0],alerts[0]]);
+      expect(authorizedClosure.rowCount).toBe(1);
       const closed=await admin.query("select phase,last_error from public.supervisor_investigations where business_id=$1 and owner_user_id=$2",
         [cafes[0],owners[0]]);
       expect(closed.rows).toEqual([{phase:"resolved",last_error:"source_closed"}]);
@@ -146,11 +156,26 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       const resolution=await admin.query("select grounding->>'intent' intent from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_resolution'",
         [cafes[0],threads[0]]);
       expect(resolution.rows).toEqual([{intent:"priority_investigation_resolution"}]);
+      expect((await closingActor.query("select id from public.ai_messages where business_id=$1 and thread_id=$2",
+        [cafes[0],threads[0]])).rows).toEqual([]);
+      await closingActor.query("update public.alerts set status='dismissed' where business_id=$1 and id=$2",
+        [cafes[0],alerts[0]]);
+      expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_resolution'",
+        [cafes[0],threads[0]])).rows).toEqual([{n:1}]);
+      await admin.query("delete from public.memberships where business_id=$1 and user_id=$2",
+        [cafes[0],owners[1]]);
       // Terminate the claimed second-café investigation by revoking membership.
       await admin.query("delete from public.memberships where business_id=$1 and user_id=$2",
         [cafes[1],owners[1]]);
       expect(await rpc(b,"supervisor_finish_investigation",
         finish(other,"collected",checkpoint,null,stamp(now,7)))).toBe(false);
+      // Revocation must not be laundered through source settlement into a
+      // private resolution message for the now-unauthorized recipient.
+      // The original live-lease revocation assertion above remains intact.
+      await admin.query("update public.alerts set status='dismissed' where business_id=$1 and id=$2",
+        [cafes[1],alerts[1]]);
+      expect((await admin.query("select count(*)::int n from public.ai_messages where business_id=$1 and thread_id=$2 and grounding->>'intent'='priority_investigation_resolution'",
+        [cafes[1],threads[1]])).rows).toEqual([{n:0}]);
       // An owner can only see their own investigation, no privilege to write
       // its state, and no access to other cafés or owner-private thread facts.
       const own=await ownerClient.query("select source_id,phase from public.supervisor_investigations");
@@ -257,7 +282,7 @@ describe("Task 15A migrated, agentic investigation SQL integration",()=>{
       expect(revived.source_id).toBe(vanished);
       expect(revived.phase).toBe("collect");
     }finally{
-      await Promise.all([a?.end(),b?.end(),ownerClient?.end()]);
+      await Promise.all([a?.end(),b?.end(),ownerClient?.end(),closingActor?.end()]);
       await admin.query("delete from public.businesses where id=any($1::uuid[])",[cafes]);
       await admin.query("delete from auth.users where id=any($1::uuid[])",[owners]);
       await admin.end();

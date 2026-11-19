@@ -1,12 +1,13 @@
 import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({
-  claim:vi.fn(),finish:vi.fn(),notice:vi.fn(),
+  claim:vi.fn(),finish:vi.fn(),notice:vi.fn(),candidates:vi.fn(),
   staff:vi.fn(async()=>({published:0,attempted:0,blocked:0})),
   reconcile:vi.fn(async()=>({data:{completed:0,expired:0},error:null})),
 }));
 vi.mock("./repository.server",()=>({
   claimRoutineOccurrence:mocks.claim,finishRoutineOccurrence:mocks.finish,
+  listRoutineOccurrenceCandidates:mocks.candidates,
 }));
 vi.mock("./notices.server",()=>({postPriorityNotice:mocks.notice}));
 vi.mock("@/lib/scheduling/staffPublication.server",()=>({
@@ -100,12 +101,30 @@ describe("bounded independent routine dispatch",()=>{
     expect(result).toMatchObject({notices:1,investigationsQueued:1,failed:0});
   });
   it("never starts another run after the DB rejects a duplicate claim",async()=>{
+    mocks.candidates.mockResolvedValue([{localDate:"2026-11-11",scheduledForUtc:null}]);
     mocks.claim.mockResolvedValue(null);
     const result=await dispatchRoutinesForBusiness(db({routines:[routine]}),
       "cafe","America/Los_Angeles",new Date("2026-11-11T18:00:00Z"));
     expect(result.routinesChecked).toBe(1);
     expect(result.runs).toBe(0);
     expect(mocks.finish).not.toHaveBeenCalled();
+    expect(mocks.claim).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({localDate:"2026-11-11",revision:1}));
+  });
+  it("replays missed authorized dates using their original identity and current evidence",async()=>{
+    mocks.candidates.mockReset().mockResolvedValue([
+      {localDate:"2026-11-09",scheduledForUtc:null},
+      {localDate:"2026-11-10",scheduledForUtc:null},
+      {localDate:"2026-11-11",scheduledForUtc:"2026-11-11T16:00:00Z"},
+    ]);
+    mocks.claim.mockReset().mockResolvedValue({runId:"saved-run",leaseToken:"new-lease",revision:1});
+    mocks.finish.mockReset().mockResolvedValue(true);
+    const result=await dispatchRoutinesForBusiness(db({routines:[routine]}),"cafe","America/Los_Angeles",
+      new Date("2026-11-12T18:00:00Z"));
+    expect(result).toMatchObject({runs:2,failed:0});
+    expect(mocks.claim.mock.calls.map(call=>call[1].localDate)).toEqual(["2026-11-10","2026-11-11"]);
+    expect(mocks.claim.mock.calls.every(call=>call[1].revision===1)).toBe(true);
+    expect(mocks.finish).toHaveBeenCalledTimes(2);
+    expect(mocks.finish.mock.calls.every(call=>call[1].runId==="saved-run"&&call[1].success)).toBe(true);
   });
   it("one revoked owner's missing thread cannot halt other owners",async()=>{
     const result=await dispatchRoutinesForBusiness(db({
