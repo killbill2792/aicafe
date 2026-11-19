@@ -10,8 +10,8 @@ const row={id:"invoice",supplier_id:"supplier",purchase_order_id:"po",invoice_re
  business_id:"cafe",owner_user_id:"owner"};
 function database(){
  const eq=vi.fn();
- const from=vi.fn(()=>{
-  let result=[row,{...row,id:"other-cafe",business_id:"other"},
+ const from=vi.fn((table:string)=>{
+  let result=table==="uploads"?[]:[row,{...row,id:"other-cafe",business_id:"other"},
    {...row,id:"other-owner",owner_user_id:"other"}];
   const q={select(){return q},eq(field:string,value:unknown){eq(field,value);
     result=result.filter(r=>r[field as keyof typeof row]===value);return q},
@@ -27,7 +27,7 @@ describe("finance source owner boundary",()=>{
  it("filters both café and owner, reauthorizes and preserves unknown payment",async()=>{
   const db=database();auth.mockReset().mockResolvedValue({client:db.client});
   const r=await readFinancialEvidence(scope,"2026-11-18");
-  expect(db.eq.mock.calls).toEqual([["business_id","cafe"],["owner_user_id","owner"]]);
+  expect(db.eq.mock.calls).toEqual([["business_id","cafe"],["owner_user_id","owner"],["business_id","cafe"],["financial_owner_user_id","owner"],["kind","statement"],["status","done"]]);
   expect(auth).toHaveBeenCalledTimes(2);
   expect(r.claims).toHaveLength(1);
   expect(r.claims[0]).toMatchObject({invoiceId:"invoice",dueDatePosition:"on_as_of",paymentStatus:"unknown"});

@@ -60,3 +60,42 @@ export function summarizeInvoiceClaims(rows:readonly InvoiceClaimRow[],asOf:stri
       .map(([currency,recordedClaimCents])=>({currency,recordedClaimCents})),
    outstandingPaymentCents:null,settledPaymentCents:null};
 }
+
+export type StatementBalanceRow={
+ id:string;financial_account_key:string;financial_currency:string;financial_from:string;
+ financial_to:string;financial_closing_cents:number|string;financial_source_sha256:string;
+};
+type DocumentedBalance={uploadId:string;accountKey:string;currency:string;from:string;asOf:string;
+ closingCents:number;source:"owner_confirmed_statement";freshness:"dated_not_live"};
+/** Select one latest statement per account, never sum snapshots or currencies.
+ * A conflicting latest period or unknown account coverage is explicitly unresolved. */
+export function summarizeStatementBalances(rows:readonly StatementBalanceRow[],asOf:string,truncated:boolean){
+ const unavailable=(reason:string)=>({documentedAccountBalances:[] as DocumentedBalance[],
+  statementCoverage:"incomplete" as const,statementMissing:[reason,"bankAccountCoverageUnknown"]});
+ if(truncated||!validDate(asOf))return unavailable("statementHistoryIncomplete");
+ const latest=new Map<string,DocumentedBalance>(), conflicts=new Set<string>();
+ const keysByHash=new Map<string,string>();
+ for(const r of [...rows].sort((a,b)=>String(b.financial_to).localeCompare(String(a.financial_to)))){
+  const n=r.financial_closing_cents;
+  const amount=typeof n==="number"?n:typeof n==="string"&&/^-?\d+$/.test(n)?Number(n):NaN;
+  if(!r.id||!validDate(r.financial_from)||!validDate(r.financial_to)||r.financial_from>r.financial_to||
+   !/^[0-9a-f]{64}$/.test(r.financial_account_key)||!/^[0-9a-f]{64}$/.test(r.financial_source_sha256)||
+   !/^[A-Z]{3}$/.test(r.financial_currency)||!Number.isSafeInteger(amount))return unavailable("statementEvidenceInvalid");
+  if(r.financial_to>asOf)continue;
+  const key=r.financial_account_key;
+  const previous=keysByHash.get(r.financial_source_sha256);
+  if(previous&&previous!==key){conflicts.add(previous);conflicts.add(key);}
+  keysByHash.set(r.financial_source_sha256,key);
+  const old=latest.get(key);
+  if(old){
+   if(old.currency!==r.financial_currency||(old.asOf===r.financial_to&&old.closingCents!==amount))conflicts.add(key);
+   continue;
+  }
+  latest.set(key,{uploadId:r.id,accountKey:key,currency:r.financial_currency,from:r.financial_from,
+   asOf:r.financial_to,closingCents:amount,source:"owner_confirmed_statement",freshness:"dated_not_live"});
+ }
+ const balances=[...latest.entries()].filter(([key])=>!conflicts.has(key)).map(([,v])=>v);
+ return {documentedAccountBalances:balances.slice(0,20),statementCoverage:"recorded_accounts_only" as const,
+  statementMissing:["bankAccountCoverageUnknown",...(conflicts.size?["statementBalanceConflict"]:[]),
+   ...(balances.length>20?["statementAccountDetailsTruncated"]:[]),...(!rows.length?["statementEvidenceMissing"]:[])]};
+}

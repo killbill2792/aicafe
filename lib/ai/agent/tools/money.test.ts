@@ -23,12 +23,12 @@ describe("Leo scoped money reads",()=>{
     await expect(moneyTools.get_cashflow_evidence.execute({businessId:"foreign"},ctx({}))).rejects.toThrow();
   });
   it("retains supplier evidence when cash and deposits are not known",async()=>{
-    const {summarizeInvoiceClaims}=await import("@/lib/metrics/core/cashflow");
+    const {summarizeInvoiceClaims,summarizeStatementBalances}=await import("@/lib/metrics/core/cashflow");
     const evidence=summarizeInvoiceClaims([{id:"invoice",supplier_id:"supplier",
       purchase_order_id:"order",invoice_reference:"ref",revision:1,issued_on:"2026-10-01",
       due_on:"2026-10-20",currency_code:"CAD",total_cents:2500}],"2026-10-22",false);
     const r=await moneyTools.get_cashflow_evidence.execute({},{
-      ...ctx({}),currency:"CAD",financialEvidenceRead:async()=>evidence});
+      ...ctx({}),currency:"CAD",financialEvidenceRead:async()=>({...evidence,...summarizeStatementBalances([],"2026-10-22",false)})});
     expect(r.recordedClaimTotalsByCurrency).toEqual([{currency:"CAD",recordedClaimCents:2500}]);
     expect(r.availableCashCents).toBeNull();
     expect(r.outstandingPaymentCents).toBeNull();

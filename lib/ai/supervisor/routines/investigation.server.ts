@@ -10,6 +10,7 @@ import {withWorkerBudget} from "@/lib/ai/supervisor/runs/usage.server";
 import {notifyOwner} from "@/lib/operating/notifyOwner.server";
 import {readActionablePriorities} from "./dispatch.server";
 import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
+import {readFinancialEvidence} from "@/lib/data/financialEvidence.server";
 import {readSupplierReconciliation} from "@/lib/data/supplierReceiving.server";
 import {prepareSupplierDiscrepancyFollowup} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
@@ -297,6 +298,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       tools:createOwnerScopedCafeTools(scope,db),locale:"en" as const,
       asOf:identity.asOf,timezone:identity.timezone,currency:identity.currency,
       canonicalData:async()=>({db,businessId:c.business_id}),
+      ...(["money_update","missing_bill"].includes(synopsis.kind)?{financialEvidenceRead:()=>readFinancialEvidence({...scope,verifiedReadClient:db},identity.asOf)}:{}),
       ...(synopsis.kind==="maintenance_issue"?{maintenance:maintenanceContext(db,maintenanceScope,{lease:maintenanceLease})}:{}),
       ...(synopsis.kind==="supplier_receiving"?{receivingRead:async(purchaseOrderId:string)=>{
         // Never let an unattended model use a different PO from its SQL claim.

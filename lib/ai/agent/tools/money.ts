@@ -206,13 +206,13 @@ export const moneyTools={
   },
   get_cashflow_evidence:{
     agentId:"leo",schema:empty,
-    description:"Dated invoice claims, not unpaid debt; use alongside bills, sales, labor and owner facts.",
+    description:"Dated statement balances and invoice claims, not live cash or unpaid debt.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
       const base={source:"cashflow_evidence",period:null,agentId:"leo" as const,
         asOf:ctx.timezone?ctx.asOf:null,currency:ctx.currency??null,
         availableCashCents:null,outstandingPaymentCents:null,settledPaymentCents:null,
-        expectedDepositsCents:null};
+        expectedDepositsCents:null,documentedAccountBalances:[]};
       const missing=["currentCashEvidenceMissing","expectedDepositEvidenceMissing"];
       if(!ctx.financialEvidenceRead||!ctx.timezone)return {...base,recordedClaimCount:null,
         recordedClaimTotalsByCurrency:[],claims:[],missing:[...missing,"supplierInvoiceEvidenceUnavailable"]};

@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {summarizeInvoiceClaims,type InvoiceClaimRow} from "./cashflow";
+import {summarizeInvoiceClaims,summarizeStatementBalances,type InvoiceClaimRow} from "./cashflow";
 const asOf="2026-11-18";
 const a:InvoiceClaimRow={id:"first",supplier_id:"supplier",purchase_order_id:"po",
  invoice_reference:"invoice",revision:1,issued_on:"2026-11-01",due_on:"2026-11-17",
@@ -39,5 +39,21 @@ describe("recorded invoice claims",()=>{
   expect(r.claims).toHaveLength(20);
   expect(r.claimDetailsTruncated).toBe(true);
   expect(r.recordedClaimTotalsByCurrency).toEqual([{currency:"CAD",recordedClaimCents:220000}]);
+ });
+});
+
+describe("historical statement evidence",()=>{
+ const a={id:"s1",financial_account_key:"a".repeat(64),financial_currency:"CAD",financial_from:"2026-10-01",
+  financial_to:"2026-10-31",financial_closing_cents:10000,financial_source_sha256:"b".repeat(64)};
+ it("selects latest by account and preserves as-of, not current cash",()=>{
+  const r=summarizeStatementBalances([a,{...a,id:"s2",financial_to:"2026-11-15",financial_closing_cents:12000,
+   financial_source_sha256:"c".repeat(64)},{...a,id:"future",financial_to:"2026-12-31"}],asOf,false);
+  expect(r.documentedAccountBalances).toEqual([expect.objectContaining({uploadId:"s2",asOf:"2026-11-15",
+   closingCents:12000,freshness:"dated_not_live"})]);
+  expect(r.statementMissing).toContain("bankAccountCoverageUnknown");
+ });
+ it("does not claim a balance for conflicting latest statements or truncated evidence",()=>{
+  expect(summarizeStatementBalances([a,{...a,id:"different",financial_closing_cents:20000}],asOf,false).documentedAccountBalances).toEqual([]);
+  expect(summarizeStatementBalances([a],asOf,true).documentedAccountBalances).toEqual([]);
  });
 });
