@@ -253,11 +253,11 @@ export function unsupportedExternalEffectClaim(text:string):boolean{
 /** Examine each assertion independently. Attribution or uncertainty in one
  * clause must not authorize an unqualified repair assertion elsewhere. */
 export function unsupportedMaintenanceRepairClaim(text:string):boolean{
-  const assertion=/\b(?:machine|equipment|appliance|refrigerator|freezer|boiler|repair|case)\b(?:\s+(?:itself|unit|issue|problem))?\s+(?:is|has been|was)\s+(?:(?:now|fully|successfully|already)\s+)*(?:fixed|repaired|resolved|closed|verified working|back in service)\b/giu;
+  const assertion=/\b(?:machine|equipment|appliance|refrigerator|freezer|boiler|repair|case)\b(?:(?:\s+(?:itself|unit|issue|problem))|(?:\s+(?:in|at|on|near|by|with)\s+(?:(?!\b(?:is|was|has|but|however|and|yet)\b)[^.!?;,\n]){1,55}?))?\s+(?:is|has been|was)\s+(?:(?:now|fully|successfully|already)\s+)*(?:fixed|repaired|resolved|closed|verified working|back in service)\b/giu;
   for(const sentence of text.split(/[.!?;\n]+/u)){
     for(const match of sentence.matchAll(assertion)){
       const before=sentence.slice(0,match.index);
-      const prefix=before.split(/\b(?:but|however|yet|although|whereas|and)\b|[,:\u2014]/iu).at(-1)??"";
+      const prefix=before.split(/\b(?:but|however|although|whereas|and)\b|[,:\u2014]/iu).at(-1)??"";
       const negated=/\b(?:cannot|can't|can not|could not|couldn't|do not|don't|did not|haven't|have not|has not|not yet|unable to)\s+(?:yet\s+)?(?:confirm|verify|establish|say|conclude|know|determine)\s+(?:whether\s+|that\s+)?(?:the\s+)?$/iu.test(prefix)||
         /\b(?:whether|if)\s+(?:the\s+)?$/iu.test(prefix);
       const attributed=/\b(?:technician|vendor|supplier|employee|staff|worker|owner|repairer)\b[^,;.!?\n]{0,35}\b(?:says?|said|reports?|reported|claims?|claimed|states?|stated|believes?|believed)\s+(?:that\s+)?(?:the\s+)?$/iu.test(prefix);

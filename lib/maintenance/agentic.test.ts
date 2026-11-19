@@ -62,11 +62,15 @@ describe("Task15B agent-directed and independently checked maintenance investiga
       "We cannot confirm the machine is fixed until an employee tests it.",
       "The vendor reports that the equipment was fixed. An independent check remains required.",
       "Check whether the boiler is repaired before resuming service.",
+      "We cannot yet confirm the machine is fixed.",
+      "The technician reports that the machine at the counter is repaired.",
     ])expect(verifyInvestigationTurn(turn([incident,sales,schedule],text),expected).ok,text).toBe(true);
     for(const text of [
       "The technician says the machine is repaired, but the equipment is now verified working.",
       "We cannot confirm the machine is fixed. The case is closed.",
       "The machine itself was successfully repaired.",
+      "The machine at the counter is fixed.",
+      "The technician says the machine is repaired, and the boiler in the kitchen is now fixed.",
     ])expect(verifyInvestigationTurn(turn([incident,sales,schedule],text),expected),text).toEqual({ok:false,reason:"model_incomplete"});
   });
   it("instructs model to replan when a vendor contact is missing, without inventing a send",()=>{
