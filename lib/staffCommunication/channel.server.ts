@@ -32,7 +32,7 @@ export async function currentStaffIdentity():Promise<EmployeeIdentity|null>{
  return employee?{id:employee.id,businessId:employee.business_id,name:employee.display_name}:null;
 }
 export type StaffRequest={
- id:string;kind:string;title:string;prompt:string;status:string;created_at:string;
+ id:string;kind:string;title:string;prompt:string;status:string;created_at:string;source_type?:string;
 };
 export type StaffMessage={
  id:string;request_id:string|null;response_code:string;body:string|null;
@@ -52,7 +52,7 @@ export async function getStaffInbox():Promise<{
  const db=await createServerSupabaseClient();
  const [requestRows,messageRows]=await Promise.all([
   db.from("staff_communication_requests")
-   .select("id,kind,title,prompt,status,created_at")
+   .select("id,kind,title,prompt,status,created_at,source_type")
    .eq("business_id",identity.businessId).eq("employee_id",identity.id)
    .in("status",["open","responded"])
    .order("created_at",{ascending:false}).limit(100),

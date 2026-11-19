@@ -3,6 +3,7 @@ import { z } from "zod";
 import {askOwnerTools} from "./askOwner";
 import {dataQueryTools,type DataQueryContext} from "./dataQuery";
 import {gmailTools} from "./gmail";
+import {maintenanceTools} from "./maintenance";
 import {resolveEntity,resolveChosenEntity,ownerNamedTarget,choicePayload,ownerChoiceGuard,periodChoicePayload,resolveOwnerPeriod,rememberedCandidate} from "../resolve";
 
 import {money,count} from "../explain";
@@ -110,6 +111,7 @@ export type AgentToolContext = {
     thread(threadId:string):Promise<Record<string,unknown>>;
     attachment(messageId:string,attachmentId:string):Promise<Record<string,unknown>>;
     propose(input:import("@/lib/ai/supervisor/loop/gmail.server").GmailProposalInput):Promise<{proposalId:string;revision:number;account:string}>};
+  maintenance?:ReturnType<typeof import("@/lib/ai/supervisor/loop/maintenance.server").maintenanceContext>;
   /** Owner-scoped purchasing capability in the ONE Supervisor. No model-supplied café IDs or approvals. */
   purchasing?:{
     list():Promise<{orders:SupplierOrderStatus[];truncated:boolean;
@@ -179,7 +181,7 @@ const posReadTools={
   get_payroll_facts:{schema:posPeriodSchema,description:"Read imported pay-period facts without inferring missing wages or taxes."}
 };
 export const schemas = { ...askOwnerTools, ...dataQueryTools, ...posReadTools, ...attentionTools, ...incidentEvidenceTools, get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
-  ...staffTools,...staffCoordinationTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...permissionTools,...gmailTools } as const;
+  ...staffTools,...staffCoordinationTools, ...scheduleReadTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools,...todayTools,...draftScheduleTools,...newItemPriceTools,...milkSwapTools,...scenarioTools,...calculateTools,...proposalTools,...priceExperimentTools,...priceMonitorTools,...goalTools,...staffProposalTools,...purchasesTools,...supplierPurchasingTools,...eventsTools,...savedEventsTools,...eventPlanTools,...webSearchTools,...commitmentTools,...routineTools,...permissionTools,...gmailTools,...maintenanceTools } as const;
 export type AgentToolName = keyof typeof schemas;
 /** Input fields backed by the shared entity/period resolver. A new tool whose
  * strict schema accepts a target must declare the corresponding field here;
@@ -206,14 +208,16 @@ export const resolverExemptions:Partial<Record<AgentToolName,readonly string[]>>
   // A public web search phrase is not a café catalog identifier.
   web_search:["query"],
   // Free-form Gmail search is owner text, not an internal catalogue identity.
-  search_gmail:["query"],
+  search_gmail:["query"],search_maintenance_vendor:["query"],
+  // Exact case-linked employee IDs are resolved by the scoped maintenance candidate reader.
+  propose_maintenance_staff_assignment:["employeeId"],
   inspect_public_page:["url"],
   propose_event_plan:["summary","actions","expectedBusyHours"],
   manage_commitment:["title","due_date","due_time","origin","commitment_id"],
   manage_routine:["title","routine_id"]
 };
 
-export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in staffCoordinationTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name in permissionTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools||name in supplierPurchasingTools?"maya":"alex";}
+export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name==="get_payroll_facts"||name in staffTools||name in staffCoordinationTools||name in scheduleReadTools||name in hoursTools||name in draftScheduleTools||name in staffProposalTools?"olivia":name in moneyTools||name in goalTools||name in commitmentTools||name in routineTools||name in maintenanceTools||name in permissionTools||name==="get_profit"?"leo":name in suppliesTools||name in purchasesTools||name in supplierPurchasingTools?"maya":"alex";}
 const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period. Closed days only; for today, a todaySoFar provisional reading is attached when today is not imported. If stale, say last updated HH:MM rather than so far today.",
@@ -229,6 +233,27 @@ function requireEveryProperty(node:unknown):unknown{
   for(const [key,value] of Object.entries(node))out[key]=requireEveryProperty(value);
   if(out.properties&&typeof out.properties==="object"&&!Array.isArray(out.properties))
     out.required=Object.keys(out.properties);
+  // JSON Schema's nullable primitive type array is equivalent to the
+  // two-branch union. Preserve every constraint and enum member. Avoid
+  // rewriting objects, arrays, references or complex combinators.
+  // This keeps the complete registry in the bounded broker request.
+  if(Object.keys(out).length===1&&Array.isArray(out.anyOf)&&out.anyOf.length===2){
+    const alternatives=out.anyOf as Record<string,unknown>[];
+    const nil=alternatives.find(x=>x&&Object.keys(x).length===1&&x.type==="null");
+    const value=alternatives.find(x=>x!==nil);
+    const allowed:Record<string,readonly string[]>={
+      string:["type","format","pattern","minLength","maxLength","description","enum"],
+      number:["type","minimum","maximum","exclusiveMinimum","exclusiveMaximum","multipleOf","description","enum"],
+      integer:["type","minimum","maximum","exclusiveMinimum","exclusiveMaximum","multipleOf","description","enum"],
+      boolean:["type","description","enum"],
+    };
+    if(nil&&value&&typeof value.type==="string"&&Object.hasOwn(allowed,value.type)&&
+       Object.keys(value).every(key=>allowed[value.type as string].includes(key))&&
+       (!Object.hasOwn(value,"enum")||Array.isArray(value.enum))){
+      const compact={...value,type:[value.type,"null"]};
+      return Array.isArray(value.enum)?{...compact,enum:[...value.enum,null]}:compact;
+    }
+  }
   return out;
 }
 const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
@@ -270,6 +295,12 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="read_gmail_thread")return gmailTools.read_gmail_thread.execute(raw,ctx);
   if(name==="read_gmail_attachment")return gmailTools.read_gmail_attachment.execute(raw,ctx);
   if(name==="propose_gmail_action")return gmailTools.propose_gmail_action.execute(raw,ctx);
+  if(name==="get_maintenance_cases")return maintenanceTools.get_maintenance_cases.execute(raw,ctx);
+  if(name==="get_maintenance_staff_candidates")return maintenanceTools.get_maintenance_staff_candidates.execute(raw,ctx);
+  if(name==="propose_maintenance_staff_assignment")return maintenanceTools.propose_maintenance_staff_assignment.execute(raw,ctx);
+  if(name==="record_maintenance_repair_claim")return maintenanceTools.record_maintenance_repair_claim.execute(raw,ctx);
+  if(name==="search_maintenance_vendor")return maintenanceTools.search_maintenance_vendor.execute(raw,ctx);
+  if(name==="propose_maintenance_vendor_request")return maintenanceTools.propose_maintenance_vendor_request.execute(raw,ctx);
   if(name==="describe_data"){
     // Field names for one Toast record type need the café-scoped reader.
     const scoped=raw&&typeof raw==="object"&&typeof (raw as {record_type?:unknown}).record_type==="string";
