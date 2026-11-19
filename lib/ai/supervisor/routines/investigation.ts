@@ -1,5 +1,6 @@
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
+import {CUSTOMER_MONITOR_POLICY} from "@/lib/metrics/core/customers";
 
 /** Task 15A uses the SAME registered Supervisor model/tool loop, restricted to
  * evidence reads. Only a verified owner's later turn can reach the registered
@@ -115,7 +116,8 @@ function observedCustomerGap(result:AgentToolResult):boolean{
   const {eligibleChecks,linkedChecks,expectedLocationDays,completeLocationDays}=v;
   if(!natural(eligibleChecks)||!natural(linkedChecks)||linkedChecks>eligibleChecks||
     !natural(expectedLocationDays)||!natural(completeLocationDays)||completeLocationDays>expectedLocationDays)return false;
-  return expectedLocationDays>0&&!v.complete||eligibleChecks>0&&(linkedChecks<30||linkedChecks/eligibleChecks<.8);
+  return expectedLocationDays>0&&!v.complete||eligibleChecks>0&&
+    (linkedChecks<CUSTOMER_MONITOR_POLICY.minimumLinkedChecks||linkedChecks/eligibleChecks<CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
 }
 function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing))return false;
