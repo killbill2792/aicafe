@@ -25,6 +25,7 @@ import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId,prepareSupplie
 import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
 import {readSupplierReconciliation} from "@/lib/data/supplierReceiving.server";
+import {readFinancialEvidence} from "@/lib/data/financialEvidence.server";
 import {proposeApprovedSupplierEmail} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
 import {recordOwnerSupplierOutcome,authenticatedSupplierOwnerTurn,explicitSingleOwnerPurchaseOrder} from "@/lib/purchasing/ownerSupplierOutcome.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
@@ -277,6 +278,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         if(draft.status!=="draft")throw new ToolError("validation","Receiving proposal no longer editable.");
         return {proposalId:draft.id,revision:draft.revision};
       },
+      financialEvidenceRead:()=>readFinancialEvidence(proposalScope,identity.asOf),
       receivingRead:async purchaseOrderId=>{
         const {client}=await simulationOwnerReader(proposalScope);
         return readSupplierReconciliation(client,scope.businessId,scope.ownerUserId,purchaseOrderId);

@@ -1,0 +1,372 @@
+{
+  "id": "14d-autonomous",
+  "mode": "generic",
+  "engine": "vitest",
+  "entrypoint": "lib/ai/supervisor/routines/supplierReceiving.live.test.ts",
+  "proof": "14d-autonomous-proof.json",
+  "scope": "14d-autonomous-scope.json",
+  "expectedTools": [
+    "get_investigation_source",
+    "inspect_purchase_reconciliation",
+    "propose_supplier_discrepancy_followup"
+  ],
+  "assertions": [
+    {
+      "name": "resolved-receiving-investigation",
+      "kind": "source",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "source_id": {
+          "scope": "taskId"
+        },
+        "episode_id": {
+          "scope": "episodeId"
+        },
+        "phase": {
+          "eq": "resolved"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "handled-receiving-task",
+      "kind": "source",
+      "table": "public.operating_tasks",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "taskId"
+        },
+        "status": {
+          "eq": "handled"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "verified-canonical-closure",
+      "kind": "source",
+      "table": "public.purchase_reconciliation_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        },
+        "event_kind": {
+          "eq": "closure_verified"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "unique-followup-reservation",
+      "kind": "source",
+      "table": "public.purchase_reconciliation_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        },
+        "event_kind": {
+          "eq": "followup_reserved"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "verified-provider-receipt",
+      "kind": "source",
+      "table": "public.connector_provider_receipts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        },
+        "state": {
+          "eq": "verified"
+        },
+        "operation": {
+          "eq": "send"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "exact-click-effect",
+      "kind": "source",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        },
+        "state": {
+          "eq": "verified"
+        },
+        "authorization_kind": {
+          "eq": "click"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "committed-followup",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "proposalId"
+        },
+        "status": {
+          "eq": "committed"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "owner-followup-card",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "ownerNoticeId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "only-one-invoice",
+      "kind": "source",
+      "table": "public.supplier_invoices",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "only-two-receipts",
+      "kind": "source",
+      "table": "public.purchase_receipts",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        }
+      },
+      "minCount": 2,
+      "maxCount": 2
+    },
+    {
+      "name": "only-two-stock-effects",
+      "kind": "source",
+      "table": "public.pantry_stock_purchases",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 2,
+      "maxCount": 2
+    },
+    {
+      "name": "no-expense-effect",
+      "kind": "source",
+      "table": "public.expenses",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "invoice-approved",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "invoiceProposalId"
+        },
+        "status": {
+          "eq": "committed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "first-receipt-approved",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "firstProposalId"
+        },
+        "status": {
+          "eq": "committed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "second-receipt-approved",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "id": {
+          "scope": "secondProposalId"
+        },
+        "status": {
+          "eq": "committed"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "interrupted-reservation",
+      "kind": "source",
+      "table": "public.supervisor_system_usage_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "status": {
+          "eq": "attempted"
+        },
+        "model": {
+          "eq": "gpt-6-luna"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "actual-investigation-model",
+      "kind": "source",
+      "table": "public.supervisor_system_usage_events",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "status": {
+          "eq": "completed"
+        },
+        "model": {
+          "eq": "gpt-6-luna"
+        }
+      },
+      "minCount": 4,
+      "maxCount": 18
+    },
+    {
+      "name": "foreign-investigation-denied",
+      "kind": "isolation",
+      "table": "public.supervisor_investigations",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "source_id": {
+          "scope": "taskId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-gmail-effect-denied",
+      "kind": "isolation",
+      "table": "public.connector_provider_receipts",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "proposal_id": {
+          "scope": "proposalId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-receipt-denied",
+      "kind": "isolation",
+      "table": "public.purchase_receipts",
+      "where": {
+        "business_id": {
+          "scope": "otherCafeId"
+        },
+        "purchase_order_id": {
+          "scope": "poId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
