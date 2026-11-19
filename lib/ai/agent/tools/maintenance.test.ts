@@ -2,20 +2,21 @@ import {describe,expect,it,vi} from "vitest";
 import type {AgentToolContext} from "./index";
 import {maintenanceTools} from "./maintenance";
 
-function source(cases:unknown[],history:unknown[]){
+function source(cases:unknown[],history:unknown[],role="owner"){
   const touches:Array<{table:string;column:string;value:unknown}>=[];
   const make=(table:string,result:unknown[])=>{
     const query={
       select:()=>query,
       eq:(column:string,value:unknown)=>{touches.push({table,column,value});return query;},
       in:(column:string,value:unknown)=>{touches.push({table,column,value});return query;},
+      maybeSingle:async()=>({data:table==="ai_threads"?{owner_user_id:"owner-a"}:{role},error:null}),
       order:()=>query,
       limit:vi.fn(async()=>({data:result,error:null})),
     };
     return query;
   };
   const db={from:vi.fn((table:string)=>make(table,table==="operating_tasks"?cases:history))};
-  const ctx={canonicalData:async()=>({db,businessId:"cafe-owner"})} as unknown as AgentToolContext;
+  const ctx={threadId:"verified-thread",canonicalData:async()=>({db,businessId:"cafe-owner"})} as unknown as AgentToolContext;
   return {ctx,db,touches};
 }
 
@@ -40,17 +41,30 @@ describe("Task 15B canonical maintenance owner-chat reads",()=>{
     }]});
     expect(touches).toContainEqual({table:"operating_tasks",column:"business_id",value:"cafe-owner"});
     expect(touches).toContainEqual({table:"maintenance_case_events",column:"business_id",value:"cafe-owner"});
-    expect(db.from).toHaveBeenCalledTimes(2);
+    expect(touches).toContainEqual({table:"ai_threads",column:"id",value:"verified-thread"});
+    expect(touches).toContainEqual({table:"memberships",column:"user_id",value:"owner-a"});
+    expect(touches).toContainEqual({table:"operating_tasks",column:"owner_user_id",value:"owner-a"});
+    expect(db.from).toHaveBeenCalledTimes(4);
   });
   it("returns safe unavailable evidence when no authenticated canonical reader exists",async()=>{
     const absent=await maintenanceTools.get_maintenance_cases.execute({},
       {asOf:"2026-11-16",locale:"en",timezone:"UTC",tools:{} } as unknown as AgentToolContext);
     expect(absent).toMatchObject({missing:["maintenance_source_unavailable"],cases:[]});
   });
+  it("fails closed when the conversation owner loses owner access or has no verified thread",async()=>{
+    const {ctx,db}=source([],[],"staff");
+    expect(await maintenanceTools.get_maintenance_cases.execute({},ctx))
+      .toMatchObject({missing:["maintenance_source_unavailable"],cases:[]});
+    expect(db.from).not.toHaveBeenCalledWith("operating_tasks");
+    db.from.mockClear();
+    expect(await maintenanceTools.get_maintenance_cases.execute({},{...ctx,threadId:undefined}))
+      .toMatchObject({missing:["maintenance_source_unavailable"],cases:[]});
+    expect(db.from).not.toHaveBeenCalled();
+  });
   it("does not query irrelevant private evidence when no case exists",async()=>{
     const {ctx,db}=source([],[]);
     const data=await maintenanceTools.get_maintenance_cases.execute({},ctx);
     expect(data).toMatchObject({missing:[],cases:[],truncated:false});
-    expect(db.from).toHaveBeenCalledTimes(1);
+    expect(db.from).toHaveBeenCalledTimes(3);
   });
 });

@@ -11,14 +11,23 @@ export const maintenanceTools={
     description:"Read saved maintenance cases, equipment reports, follow-up blockers and independently verified repair state for this authenticated café. This is read only. Never interpret vendor send, owner report, repair claim or spending as completed without the corresponding source receipt.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       maintenanceTools.get_maintenance_cases.schema.parse(raw);
-      if(!ctx.canonicalData)
+      if(!ctx.canonicalData||!ctx.threadId)
         return {source:"maintenance_cases",period:null,agentId:"leo",
           missing:["maintenance_source_unavailable"],cases:[]};
       try{
         const {db,businessId}=await ctx.canonicalData();
+        // External turns use a privileged client. Resolve the owner from the
+        // server-bound conversation, never from model arguments or café alone.
+        const thread=await db.from("ai_threads").select("owner_user_id")
+          .eq("business_id",businessId).eq("id",ctx.threadId).maybeSingle();
+        const ownerId=thread.data?.owner_user_id;
+        if(thread.error||!ownerId)throw new Error("maintenance_scope_unavailable");
+        const member=await db.from("memberships").select("role")
+          .eq("business_id",businessId).eq("user_id",ownerId).maybeSingle();
+        if(member.error||member.data?.role!=="owner")throw new Error("maintenance_scope_unavailable");
         const cases=await db.from("operating_tasks")
           .select("id,status,payload,created_at,updated_at,due_at")
-          .eq("business_id",businessId).eq("kind","maintenance_issue")
+          .eq("business_id",businessId).eq("owner_user_id",ownerId).eq("kind","maintenance_issue")
           .order("updated_at",{ascending:false}).limit(20);
         if(cases.error||!cases.data)
           return {source:"maintenance_cases",period:null,agentId:"leo",
