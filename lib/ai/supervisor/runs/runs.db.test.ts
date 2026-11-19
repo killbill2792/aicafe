@@ -504,7 +504,7 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
    await call(a,"supervisor_run_complete_step",[...scope,long.id,"authorize_owner",authorization.step.claim_token,"owner:"+longId]);
    const state=async()=>(await admin.query("select checkpoint_retry_count,checkpoint_progress_count,checkpoint_seq from public.supervisor_run_steps where run_id=$1 and step_key='owner_turn'",[long.id])).rows[0];
    // Move only the due timestamp in this disposable fixture; actual lease expiry is tested above.
-   const due=async()=>{await admin.query("update public.supervisor_runs set dispatch_after=clock_timestamp()-interval '1 second' where id=$1",[long.id]);};
+   const due=async()=>{await admin.query("update public.supervisor_runs set dispatch_after=clock_timestamp()-interval '1 second' where id=$1",[long.id]);await admin.query("update public.supervisor_run_steps set next_retry_at=clock_timestamp()-interval '1 second' where run_id=$1 and step_key='owner_turn'",[long.id]);};
    for(let i=0;i<6;i++){
     const claim=await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30]);
     expect(claim.kind).toBe("claimed");
