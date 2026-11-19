@@ -247,7 +247,8 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         const priceRows=await readOwnerPriceMonitorProposals(db,ownerScope,
           [priceExperimentCapabilityId,menuPriceChangeCapabilityId],BOARD_PROPOSAL_STATUSES);
         const reports=await readOwnerPriceMonitorReports(db,ownerScope,priceRows.map(r=>r.id),BOARD_REPORT_STATUSES);
-        return [...mapPriceMonitorRows(priceRows,reports,identity.asOf,identity.timezone),
+        const starts=await readOwnerVerifiedPriceWindows(db,ownerScope,priceRows.map(r=>r.id));
+        return [...mapPriceMonitorRows(priceRows,reports,identity.asOf,identity.timezone,new Map(starts.map(s=>[s.source_id,s.start_at])),new Date().toISOString()),
           ...await readOwnerToastObservations(db,ownerScope)];
       },
       // Toast credentials are service-role only; the café comes from the authenticated scope.
