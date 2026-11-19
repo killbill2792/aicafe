@@ -258,18 +258,8 @@ export async function processDurableRun(runId: string): Promise<WorkerOutcome> {
 export async function processOldestDurableRun(): Promise<{ processed: number; state: WorkerOutcome | null }> {
   const candidate = await selectNextDurableRun();
   if (!candidate) return { processed: 0, state: null };
-  const db = createAdminSupabaseClient();
-  const { runId, recovery } = candidate;
-  const state = await processDurableRun(runId);
-  // Rotate held leases and uncertain receipts; neither may monopolize a café
-  // queue. Only canonical SQL reconciliation can unblock expired effects.
-  if (state === "busy" && !recovery) { const moved = await db.from("supervisor_runs")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", runId).in("status", ["pending", "running"]);
-    if (moved.error) throw new Error("supervisor_worker_queue_rotate_failed"); }
-  if (recovery && state === "blocked") { const moved = await db.from("supervisor_run_steps")
-      .update({ updated_at: new Date().toISOString() }).eq("run_id", runId)
-      .eq("step_key", "owner_turn").eq("status", "blocked")
-      .eq("error_code", "lease_expired");
-    if (moved.error) throw new Error("supervisor_worker_recovery_rotate_failed"); }
-  return { processed: 1, state }; }
+  // Selection is already durably rotated before executing. A crash or
+  // thrown error cannot keep a poison candidate at the head of the fleet.
+  const state = await processDurableRun(candidate.runId);
+  return { processed: 1, state };
+}
