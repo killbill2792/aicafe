@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {compareCustomerPeriods,compareCustomerCohorts,compareCustomerDistributions,compareCustomerCadence,customerCoverageReady,identityCoverage,type CustomerPeriod} from "./customers";
+import {compareCustomerPeriods,compareCustomerCohorts,compareCustomerDistributions,compareCustomerCadence,compareAnonymousCustomerPeriods,customerCoverageReady,identityCoverage,type CustomerPeriod} from "./customers";
 const base:CustomerPeriod={checks:100,linkedChecks:90,namedChecks:80,visits:80,references:60,
  firstVisits:60,returningVisits:20,knownMoneyVisits:80,averageSpendCents:900,complete:true};
 describe("customer monitoring evidence gates",()=>{
@@ -72,4 +72,18 @@ it("compares signed historical recipe contribution only with complete visit cost
  expect(compareCustomerPeriods(current,previous)).toContainEqual(expect.objectContaining({key:"average_recipe_contribution",active:true,current:-100,previous:300}));
  expect(compareCustomerPeriods({...current,knownContributionVisits:79},previous).some(x=>x.key==="average_recipe_contribution")).toBe(false);
  expect(compareCustomerPeriods({...current,averageRecipeContributionCents:null},previous).some(x=>x.key==="average_recipe_contribution")).toBe(false);
+});
+
+it("anonymous check and basket measures remain available without person attribution",()=>{
+ const a={checks:100,knownMoneyChecks:100,netCents:60000,itemUnits:250,complete:true},b={...a,netCents:100000,itemUnits:150};
+ expect(compareAnonymousCustomerPeriods(a,b)).toEqual(expect.arrayContaining([
+  expect.objectContaining({key:"anonymous_check_spend",current:600,previous:1000,active:true}),
+  expect.objectContaining({key:"anonymous_items_per_check",current:2.5,previous:1.5,active:true})]));
+ expect(compareAnonymousCustomerPeriods({...a,knownMoneyChecks:99,itemUnits:null},b)).toEqual([]);
+ expect(compareAnonymousCustomerPeriods({...a,complete:false},b)).toEqual([]);
+});
+it("historical value is compared only with all active references costed in recorded money",()=>{
+ const a={...base,knownHistoryAccounts:60,averageHistoryAccountCents:2000},b={...base,knownHistoryAccounts:60,averageHistoryAccountCents:1000};
+ expect(compareCustomerPeriods(a,b)).toContainEqual(expect.objectContaining({key:"observed_history_value",current:2000,previous:1000,active:true}));
+ expect(compareCustomerPeriods({...a,knownHistoryAccounts:59},b).some(x=>x.key==="observed_history_value")).toBe(false);
 });
