@@ -22,7 +22,8 @@ import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExha
 ]; const rowSchema = z.object({ id: z.uuid(), business_id: z.uuid(), owner_user_id: z.uuid(),
   thread_id: z.uuid(), request_key: z.uuid(), status: z.enum(["pending", "running", "blocked", "completed"]),
   execution_version:z.number().int().min(1).max(2).default(1),input_locale:z.string().nullable().optional(),
-  input_attachment_ids:z.array(z.uuid()).max(3).optional(),
+  input_attachment_ids:z.array(z.uuid()).max(3).optional(),owner_answer_ids:z.array(z.uuid()).max(20).optional(),
+  awaiting_question_id:z.uuid().nullable().optional(),
 });
 export type WorkerRun = { id: string; scope: RunScope; requestKey: string };
 export type VerifiedReply = { ref: string; endReason: string; usage: WorkerUsage };
@@ -222,7 +223,7 @@ export async function runDurableJobChain(input: { scope: RunScope; owner: Conver
 export async function processDurableRun(runId: string,emit:(type:string,data:unknown)=>void=()=>{}): Promise<WorkerOutcome> {
   const id = uuid.parse(runId), db = createAdminSupabaseClient();
   const { data, error } = await db.from("supervisor_runs")
-    .select("id,business_id,owner_user_id,thread_id,request_key,status,execution_version,input_locale,input_attachment_ids")
+    .select("id,business_id,owner_user_id,thread_id,request_key,status,execution_version,input_locale,input_attachment_ids,owner_answer_ids,awaiting_question_id")
     .eq("id", id).single(); if (error || !data) throw new Error("supervisor_run_unavailable");
   const row = rowSchema.parse(data); if (row.status === "completed") return "completed";
   const version2=row.execution_version===2;
@@ -249,6 +250,7 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
     if (!message.data) throw new Error("owner_revoked");
   };
   const repository = new SupabaseDurableRunRepository(); if (row.status === "blocked") {
+    if(version2&&row.awaiting_question_id)return "busy";
     // Only an expired or unconfirmed turn with an independently verified canonical
     // reply may be reconciled. Cancellation/revocation/budget stops stay blocked.
     const blocked = (stored.data ?? []).filter(step => step.status === "blocked");
@@ -289,17 +291,18 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
         emit("ack",{jobId:job.id,runId:run.id,mode:job.status==="done"?"done":"started"});
         if(job.status==="done")return;
         const checkpoint=await openOwnerRunCheckpoint(scope,run.id,claimToken,job.id);
+        const matchedAnswers=await Promise.all((row.owner_answer_ids??[]).map(id=>readOwnerMessage(scope,scope.threadId,id)));
         const outcome=await withDurableProviderTurn({
           db:client,...scope,runId:run.id,ownerMessageId:owner.id,jobId:job.id,claimToken,budget,
           ownerDailyCap:ownerModelCallsLimit(),authorize:async()=>{
             await checkpoint.assertLive();await assertPaidAllowed();
           },
         },()=>runOneTurn({scope,threadId:scope.threadId,owner,ownerText:owner.text??"",locale:selected.locale,
-          attachmentIds:selected.attachmentIds,service,emit,job,jobs,externalClient:client,checkpoint,
+          attachmentIds:selected.attachmentIds,service,emit,job,jobs,externalClient:client,checkpoint,matchedAnswers,
           durableFence:{runId:run.id,jobId:job.id,claimToken},
           recordDurableStep:step=>jobs.updateDurableAgentJob(identity,job.id,"progress",step).catch(()=>undefined),
         }));
-        if("replyId" in outcome)return;
+        if("replyId" in outcome)return outcome.awaitingOwner?"yielded":undefined;
         // No automatic retry after an uncertain effect, cancellation, or
         // revoked authority. Retry only a safe boundary, using the SAME run.
         const retryable=["durable_retry_pending","agent_turn_failed","reply_storage_failed","attachment_unavailable",
