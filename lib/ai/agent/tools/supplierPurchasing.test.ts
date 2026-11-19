@@ -4,7 +4,80 @@ import type {AgentToolContext} from "./index";
 const input={items:[{ingredientId:"11111111-1111-4111-8111-111111111111",
  itemName:"Milk",quantity:5,unit:"gal"}],neededBy:"2026-11-17",preferredSupplier:null};
 const newProposal={...input,replaceProposalId:null};
+describe("Task14C: canonical owner-reported supplier outcomes from Supervisor chat",()=>{
+ const po="77777777-7777-4777-8777-777777777777";
+ const note="The supplier accepted this PO by phone.";
+ const payload={purchaseOrderId:po,channel:"phone",outcome:"supplier_accepted"};
+ it("persists the current authenticated owner's explicit outcome through the canonical port",async()=>{
+  const recordOwnerOutcome=vi.fn().mockResolvedValue({
+    reportId:"66666666-6666-4666-8666-666666666666",
+    reportedAt:"2026-11-18T12:00:00Z",alreadyRecorded:false,
+    source:"owner_reported",providerVerified:false,outcome:"supplier_accepted"
+  });
+  const result=await supplierPurchasingTools.record_supplier_order_outcome.execute(payload,{
+    ownerText:note,purchasing:{recordOwnerOutcome}
+  } as unknown as AgentToolContext);
+  expect(recordOwnerOutcome).toHaveBeenCalledExactlyOnceWith({...payload,note});
+  expect(result).toMatchObject({saved:true,source:"supplier_owner_report",
+    outcome:"supplier_accepted",supplierAcceptanceSource:"owner_reported",providerVerified:false});
+ });
+ it("rejects an outcome copied from earlier history or invented by the model",async()=>{
+  const recordOwnerOutcome=vi.fn();
+  const stale=await supplierPurchasingTools.record_supplier_order_outcome.execute(payload,{
+    ownerText:"Did the supplier accept this order?",purchasing:{recordOwnerOutcome}
+  } as unknown as AgentToolContext);
+  const negated=await supplierPurchasingTools.record_supplier_order_outcome.execute(
+    payload,{
+      ownerText:"The supplier did not accept the PO.",purchasing:{recordOwnerOutcome}
+    } as unknown as AgentToolContext);
+  expect(stale).toMatchObject({saved:false,missing:["explicit_current_owner_report_required"]});
+  expect(negated).toMatchObject({saved:false,missing:["explicit_current_owner_report_required"]});
+  expect(recordOwnerOutcome).not.toHaveBeenCalled();
+ });
+ it("requires a working canonical writer instead of claiming a chat-only save",async()=>{
+  const result=await supplierPurchasingTools.record_supplier_order_outcome.execute(payload,{
+    ownerText:note
+  } as unknown as AgentToolContext);
+  expect(result).toMatchObject({saved:false,missing:["owner_report_writer_unavailable"]});
+ });
+});
+
 describe("Task14B: one agent, real purchasing work—not chat-only advice",()=>{
+ it("drafts one Gmail vendor send only from the approved-PO authority port",async()=>{
+  const id="77777777-7777-4777-8777-777777777777";
+  const proposeVendorSend=vi.fn().mockResolvedValue({
+    proposalId:"33333333-3333-4333-8333-333333333333",
+    revision:1,purchaseOrderId:id,supplierName:"Sample Dairy",
+    recipient:"verified@supplier.example",account:"owner@example.com",note:"Awaiting owner click"
+  });
+  const result=await supplierPurchasingTools.propose_supplier_vendor_email.execute(
+    {purchaseOrderId:id},{
+      purchasing:{proposeVendorSend}
+    } as unknown as AgentToolContext);
+  expect(proposeVendorSend).toHaveBeenCalledExactlyOnceWith({purchaseOrderId:id});
+  expect(result).toMatchObject({proposalCreated:true,sent:false,
+    approvalRequired:true,purchaseOrderId:id});
+ });
+ it("does not silently stop if Gmail is unavailable or supplier uses a portal",async()=>{
+  const id="77777777-7777-4777-8777-777777777777";
+  const noPort=await supplierPurchasingTools.propose_supplier_vendor_email.execute(
+    {purchaseOrderId:id},{} as AgentToolContext);
+  expect(noPort).toMatchObject({proposalCreated:false,
+    missing:["purchasing_unavailable"]});
+  expect(noPort.ownerQuestion).toContain("normally contact");
+ });
+ it("shows canonical channel, verified Gmail permissions and explicit owner question",async()=>{
+  const list=vi.fn().mockResolvedValue({orders:[],truncated:false,drafts:[],
+    draftsTruncated:false,unresolvedApprovals:[],unresolvedApprovalsTruncated:false,
+    vendorCommunications:[{purchaseOrderId:"a",state:"not_prepared",channel:"portal",
+      providerVerified:false,ownerQuestion:"Which portal did you use?"}],
+    gmailConnection:{connected:false,canSend:false,canRead:false}});
+  const result=await supplierPurchasingTools.get_supplier_purchase_orders.execute({},
+    {purchasing:{list}} as unknown as AgentToolContext);
+  expect(result.gmailConnection).toMatchObject({canSend:false});
+  expect(result.vendorCommunications).toMatchObject([
+    {state:"not_prepared",channel:"portal",providerVerified:false}]);
+ });
  it("investigates server-side evidence before a proposal and does not claim a full cost",async()=>{
   const inspect=vi.fn().mockResolvedValue({offers:[{
    supplierName:"Farm A",currency:"CAD",subtotalCents:2250,totalCents:null,

@@ -78,7 +78,7 @@ export async function GET(_request: Request, context: RouteContext) {
     const steps: StepRow[] = [], attempts: AttemptRow[] = [];
     for (let n=0; n<runs.length; n+=100) {
       const res = await db.from("supervisor_run_steps")
-        .select("run_id,step_key,step_index,status,attempts,error_code,updated_at")
+        .select("run_id,step_key,step_index,status,attempts,error_code,updated_at,retry_mode,lease_until")
         .eq("business_id",scope.businessId).in("run_id",runs.slice(n,n+100).map(r=>r.id))
         .order("step_index",{ascending:true});
       if (res.error) throw new Error("owner_work_evidence_unavailable");

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { agentInstructions, agentPromptCacheKey, runAgentTurn, task14bInlineContinuation, type AgentProvider, type OwnerFollowUp } from "./loop.server";
 import { STYLE_RULES } from "./style";
+import { withWorkerBudget,withDurableProviderTurn } from "@/lib/ai/supervisor/runs/usage.server";
+import { meteredInvestigationProvider } from "@/lib/ai/supervisor/routines/investigationUsage.server";
 import { memoryToolDefinition } from "./tools/memory";
 import { routineToolDefinition } from "./tools/routines";
 import type { AgentToolContext } from "./tools";
@@ -204,13 +206,13 @@ describe("answer style ()", () => {
   it("adds the style rules with a new cache key when on", async () => {
     const { requests, provider } = recording([[text("Hi."), completed]]);
     await runAgentTurn({ ownerText: "Hi", context, provider });
-    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v10-owner-permission-read");
+    expect(requests[0].prompt_cache_key).toBe("cafe-agent-v13-vendor-next-step");
     expect(String(requests[0].instructions)).toContain(STYLE_RULES);
     expect(String(requests[0].instructions)).toContain("replaceProposalId=null");
     expect(String(requests[0].instructions)).toContain("NEVER infer replacement authority");
     expect(String(requests[0].instructions)).toContain("call get_supervisor_permissions");
     expect(String(requests[0].instructions)).toContain("A genuinely uncertain result requires receipt-only reconciliation");
-    expect(agentPromptCacheKey()).toBe("cafe-agent-v10-owner-permission-read");
+    expect(agentPromptCacheKey()).toBe("cafe-agent-v13-vendor-next-step");
   });
 });
 
@@ -336,5 +338,244 @@ describe("mid-run follow-ups ()", () => {
     expect(result.absorbedOwnerMessageIds).toHaveLength(5);
     expect(box.asked).toEqual([5]);
     expect(requests.length).toBeLessThanOrEqual(6);
+  });
+});
+
+describe("incomplete provider response diagnostics and fail-closed tool recovery",()=>{
+  function isolated(){
+    vi.stubEnv("AI_CAFE_LIVE_ACCEPTANCE","OWNER_APPROVED_LOCAL_ONLY");
+    vi.stubEnv("APP_URL","http://127.0.0.1:3000");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL","http://127.0.0.1:54321");
+    vi.stubEnv("AICAFE_14B_BROKER_TOKEN","z".repeat(64));
+    vi.stubEnv("AICAFE_TASK14B_BUDGET_LEDGER","");
+  }
+  it("charges explicit incomplete usage, discards all partial output and never executes its tools",async()=>{
+    isolated();
+    try{
+      const {requests,provider}=recording([
+        [text("Unverified partial text"),call("get_menu_items",'{"query":null,"limit":null}',"partial_call"),
+          {type:"response.incomplete",response:{incomplete_details:{reason:"max_output_tokens"},
+            model:"unverified_model",usage:{input_tokens:100,output_tokens:1200,input_tokens_details:{cached_tokens:20}}}}],
+        [text("I could not verify the requested information."),completed]
+      ]);
+      const tools=vi.fn(),reset=vi.fn();
+      const result=await runAgentTurn({ownerText:"What milk products do I have?",context:{...context},
+        provider,onTool:tools,onReset:reset});
+      expect(result.endReason).toBe("provider_error");
+      expect(result.providerFailureCodes).toEqual(["max_output_tokens"]);
+      expect(result.text).toBe("I could not verify the requested information.");
+      expect(reset).toHaveBeenCalledWith("Unverified partial text".length);
+      expect(tools).not.toHaveBeenCalled();
+      expect(result.results).toEqual([]);
+      expect(result.usage).toMatchObject({modelCalls:2,toolCalls:0,inputTokens:140,outputTokens:1208,cachedTokens:30});
+      expect(result.usage.model).not.toBe("unverified_model");
+      expect(requests).toHaveLength(2);
+      expect(requests[1].tool_choice).toBe("none");
+      expect(JSON.stringify(requests[1].input)).not.toContain("partial_call");
+    }finally{vi.unstubAllEnvs()}
+  });
+  it.each([
+    ["content_filter","content_filter"],
+    ["untrusted private upstream detail","incomplete_other"]
+  ])("reports only fixed incomplete reasons (%s)",async(reason,expected)=>{
+    isolated();
+    try{
+      const {provider}=recording([[{type:"response.incomplete",response:{incomplete_details:{reason}}}],
+        [text("Recovery answer."),completed]]);
+      const result=await runAgentTurn({ownerText:"Help with supplier order.",context:{...context},provider});
+      expect(result.providerFailureCodes).toEqual([expected]);
+      expect(result.endReason).toBe("provider_error");
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("distinguishes a missing terminal frame from a failed recovery request",async()=>{
+    isolated();
+    try{
+      const {provider,requests}=recording([[text("Partial")],[{type:"response.failed"}]]);
+      const result=await runAgentTurn({ownerText:"Help with supplier order.",context:{...context},provider});
+      expect(result.providerFailureCodes).toEqual(["missing_terminal","provider_failed"]);
+      expect(result.endReason).toBe("provider_error");
+      expect(result.text).toBe("");
+      expect(requests).toHaveLength(2);
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("does not return diagnostic categories in ordinary owner turns",async()=>{
+    vi.stubEnv("AI_CAFE_LIVE_ACCEPTANCE","");
+    try{
+      const {provider}=recording([[{type:"response.incomplete",response:{incomplete_details:{reason:"content_filter"}}}],
+        [text("Recovery answer."),completed]]);
+      const result=await runAgentTurn({ownerText:"Help with supplier order.",context:{...context},provider});
+      expect(result.providerFailureCodes).toBeUndefined();
+      expect(result.endReason).toBe("provider_error");
+    }finally{vi.unstubAllEnvs()}
+  });
+});
+
+describe("Luna tool reasoning stays within the owner-approved aggregate output allowance",()=>{
+  const doneWith=(n:number)=>({type:"response.completed",response:{model:"gpt-6-luna",
+    usage:{input_tokens:40,output_tokens:n}}});
+  const menu=(id:string)=>call("get_menu_items",'{"query":null,"limit":null}',id);
+  const limits=(requests:Record<string,unknown>[])=>requests.map(r=>[r.tool_choice,r.max_output_tokens]);
+  it("allows 16384 then only the remaining 23800 work allocation, retaining final 1200",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    try{
+      const {requests,provider}=recording([[menu("a"),doneWith(16384)],[menu("b"),doneWith(7416)],[text("Summary."),doneWith(1200)]]);
+      const r=await runAgentTurn({ownerText:"Read my menu.",context:{...context},provider});
+      expect(limits(requests)).toEqual([["auto",16384],["auto",7416],["none",1200]]);
+      expect(r.usage.outputTokens).toBe(25000);
+      expect(r.usage.toolCalls).toBe(2);
+      expect(r.endReason).toBe("budget");
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("supplier reads retain the same 25000 aggregate limit",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    try{
+      const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","po"),doneWith(16384)],
+        [menu("b"),doneWith(7416)],[text("Summary."),doneWith(1200)]]);
+      const ctx={...context,purchasing:{
+        list:async()=>({orders:[],truncated:false,drafts:[],draftsTruncated:false,unresolvedApprovals:[],unresolvedApprovalsTruncated:false}),
+        inspect:vi.fn(),propose:vi.fn()
+      }} as AgentToolContext;
+      const r=await runAgentTurn({ownerText:"Read my supplier orders.",context:ctx,provider});
+      expect(r.tools).toContain("get_supplier_purchase_orders");
+      expect(limits(requests)).toEqual([["auto",16384],["auto",7416],["none",1200]]);
+      expect(r.usage.outputTokens).toBe(25000);
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("never exceeds a durable worker's remaining output",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    try{
+      const {requests,provider}=recording([[menu("a"),doneWith(900)],[text("Summary."),doneWith(800)]]);
+      const r=await withWorkerBudget({maxElapsedMs:60000,maxModelCalls:6,maxToolCalls:8,maxInputTokens:100000,maxOutputTokens:1700},
+        ()=>runAgentTurn({ownerText:"Read the menu.",context:{...context},provider}));
+      expect(limits(requests)).toEqual([["auto",1200],["auto",800]]);
+      expect(r.usage.outputTokens).toBe(1700);
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("keeps the durable reservation ceiling while interactive Luna has the expanded allowance",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    const rpc=vi.fn(async()=>({data:null,error:null}));
+    const scope={db:{rpc} as unknown as import("@supabase/supabase-js").SupabaseClient,
+      businessId:"00000000-0000-4000-8000-000000000001",
+      ownerUserId:"00000000-0000-4000-8000-000000000002",
+      threadId:"00000000-0000-4000-8000-000000000003",
+      runId:"00000000-0000-4000-8000-000000000004",
+      ownerMessageId:"00000000-0000-4000-8000-000000000005",
+      jobId:"00000000-0000-4000-8000-000000000006",
+      claimToken:"00000000-0000-4000-8000-000000000007",
+      budget:{maxElapsedMs:60000,maxModelCalls:6,maxToolCalls:8,maxInputTokens:60000,maxOutputTokens:7200},
+      ownerDailyCap:600,authorize:async()=>{}};
+    try{
+      const {requests,provider}=recording([[menu("a"),doneWith(900)],[text("Summary."),doneWith(100)]]);
+      const r=await withDurableProviderTurn(scope,()=>withWorkerBudget(scope.budget,
+        ()=>runAgentTurn({ownerText:"Read my menu.",context:{...context},provider})));
+      expect(r.endReason).toBe("complete");
+      expect(limits(requests)).toEqual([["auto",1200],["auto",1200]]);
+      expect(rpc.mock.calls).toHaveLength(4);
+      expect(rpc).toHaveBeenCalledWith("supervisor_reserve_durable_model_call",expect.objectContaining({p_output_cap:1200}));
+      expect(rpc).toHaveBeenCalledWith("supervisor_complete_investigation_model_call",expect.objectContaining({p_output_tokens:900}));
+    }finally{vi.unstubAllEnvs()}
+  });
+  it.each([false,true])("preserves the actual scheduled investigation reservation and recovery caps (fault=%s)",async(fault)=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    const rpc=vi.fn(async()=>({data:null,error:null}));
+    const db={rpc} as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const scope={businessId:"00000000-0000-4000-8000-000000000001",
+      ownerUserId:"00000000-0000-4000-8000-000000000002",
+      threadId:"00000000-0000-4000-8000-000000000003",
+      sourceType:"alert" as const,sourceId:"00000000-0000-4000-8000-000000000004",
+      leaseToken:"00000000-0000-4000-8000-000000000005"};
+    try{
+      const responses=recording(fault?
+        [[{type:"response.failed"}],[text("Investigation summary."),doneWith(100)]]:
+        [[menu("a"),doneWith(900)],[text("Investigation summary."),doneWith(100)]]);
+      const metered=meteredInvestigationProvider(db,scope,responses.provider);
+      const r=await withWorkerBudget({maxElapsedMs:55000,maxModelCalls:6,maxToolCalls:7,
+        maxInputTokens:72000,maxOutputTokens:4800},()=>runAgentTurn({
+          ownerText:"Investigate the saved alert.",context:{...context},provider:metered.provider,
+          toolNames:["get_menu_items"]}));
+      expect(metered.problem()).toBeNull();
+      expect(limits(responses.requests)).toEqual([["auto",1200],[fault?"none":"auto",1200]]);
+      expect(r.usage.modelCalls).toBe(2);
+      expect(r.endReason).toBe(fault?"provider_error":"complete");
+      expect(rpc).toHaveBeenCalledWith("supervisor_reserve_investigation_model_call",
+        expect.objectContaining({p_output_cap:1200,p_source_id:scope.sourceId,p_lease_token:scope.leaseToken}));
+      expect(rpc).toHaveBeenCalledWith("supervisor_complete_investigation_model_call",
+        expect.objectContaining({p_output_tokens:100}));
+      expect(rpc.mock.calls).toHaveLength(fault?3:4);
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("reserves unknown completed usage conservatively instead of claiming billed tokens",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
+    try{
+      const {requests,provider}=recording([[menu("a"),{type:"response.completed",response:{model:"gpt-6-luna"}}],
+        [menu("b"),doneWith(7416)],[text("Summary."),doneWith(1200)]]);
+      const r=await runAgentTurn({ownerText:"Read the menu.",context:{...context},provider});
+      expect(limits(requests)).toEqual([["auto",16384],["auto",7416],["none",1200]]);
+      expect(r.usage.outputTokens).toBe(8616);
+    }finally{vi.unstubAllEnvs()}
+  });
+  it("ordinary other models keep the prior 1200 cap even on recovery",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-4.1-mini");
+    try{
+      const {requests,provider}=recording([[{type:"response.failed"}],[text("Recovery."),completed]]);
+      await runAgentTurn({ownerText:"Read the menu.",context:{...context},provider});
+      expect(limits(requests)).toEqual([["auto",1200],["none",1200]]);
+    }finally{vi.unstubAllEnvs()}
+  });
+});
+
+describe("saved supplier order communication is distinct from creating a new PO",()=>{
+  const po="77777777-7777-4777-8777-777777777777";
+  function purchasing(){
+    return {
+      list:vi.fn().mockResolvedValue({
+        orders:[{id:po,status:"approved_for_ordering"}],truncated:false,drafts:[],
+        draftsTruncated:false,unresolvedApprovals:[],unresolvedApprovalsTruncated:false,
+        vendorCommunications:[{purchaseOrderId:po,channel:"gmail",state:"not_prepared",providerVerified:false}],
+        gmailConnection:{status:"active",connected:true,canRead:true,canSend:true}
+      }),inspect:vi.fn(),propose:vi.fn(),recordOwnerOutcome:vi.fn(),
+      proposeVendorSend:vi.fn().mockResolvedValue({proposalId:"33333333-3333-4333-8333-333333333333",
+        revision:1,purchaseOrderId:po,supplierName:"Sample Dairy",
+        recipient:"verified@supplier.example",account:"owner@example.com",note:"Awaiting owner click"})
+    };
+  }
+  it("sends coherent stable instructions and executes a recorded read/prepare sequence without creating a PO",async()=>{
+    const ports=purchasing();
+    const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","read_po"),completed],
+      [call("propose_supplier_vendor_email",JSON.stringify({purchaseOrderId:po}),"draft_email"),completed],
+      [text("The email approval is prepared. Nothing has been sent."),completed]]);
+    const result=await runAgentTurn({ownerText:"Prepare an email approval for my existing approved order "+po+
+      ". Do not create another order or send anything.",
+      context:{...context,purchasing:ports} as unknown as AgentToolContext,provider});
+    expect(result.tools).toEqual(["get_supplier_purchase_orders","propose_supplier_vendor_email"]);
+    expect(ports.list).toHaveBeenCalledTimes(1);
+    expect(ports.proposeVendorSend).toHaveBeenCalledExactlyOnceWith({purchaseOrderId:po});
+    expect(ports.propose).not.toHaveBeenCalled();
+    expect(ports.inspect).not.toHaveBeenCalled();
+    expect(ports.recordOwnerOutcome).not.toHaveBeenCalled();
+    expect(result.results).toContainEqual(expect.objectContaining({
+      source:"supplier_vendor_dispatch",proposalCreated:true,sent:false,approvalRequired:true}));
+    expect(requests[0].tool_choice).toBe("auto");
+    expect(requests[0].instructions).toBe(agentInstructions());
+    expect(String(requests[0].instructions)).toContain("That prohibition does not forbid a separately requested, inert communication approval");
+    expect(String(requests[0].instructions)).toContain("Only the exact separate owner click can authorize sending");
+    expect(String(requests[0].instructions)).toContain("An empty Gmail history alone is not a barrier");
+    expect(String(requests[0].instructions)).not.toContain("or an explicit 'do not create an order', use read-only tools only");
+    const names=(requests[0].tools as Array<{name:string}>).map(x=>x.name);
+    expect(names).toEqual((requests[1].tools as Array<{name:string}>).map(x=>x.name));
+    expect(names).toEqual(expect.arrayContaining(["get_supplier_purchase_orders","propose_supplier_purchase_order","propose_supplier_vendor_email","get_menu_items"]));
+  });
+  it("preserves read-only comparison/status requests without preparing any action",async()=>{
+    const ports=purchasing();
+    const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","read_po"),completed],
+      [text("The order is saved and approved internally."),completed]]);
+    const r=await runAgentTurn({ownerText:"Review my saved order status only, no action.",
+      context:{...context,purchasing:ports} as unknown as AgentToolContext,provider});
+    expect(r.tools).toEqual(["get_supplier_purchase_orders"]);
+    expect(ports.propose).not.toHaveBeenCalled();
+    expect(ports.proposeVendorSend).not.toHaveBeenCalled();
+    expect(ports.recordOwnerOutcome).not.toHaveBeenCalled();
+    expect(requests[0].instructions).toBe(agentInstructions());
+    expect(String(requests[0].instructions)).toContain("For comparison-only requests use read-only tools only.");
   });
 });
