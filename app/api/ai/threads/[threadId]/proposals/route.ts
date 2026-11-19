@@ -15,6 +15,7 @@ import {menuPriceChangeCapabilityId,StaleProposalError}
 import {isStaffCapabilityId,readStaffProposalToken} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
+import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {gmailCapabilityId,gmailEffectSchema,readMaintenanceCase} from "@/lib/ai/supervisor/loop/gmail.server";
@@ -67,7 +68,7 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
   // non-actionable in its historical chat message. Redirecting it to the new
   // draft makes two Approve buttons appear for the same pending order.
   // Existing non-supplier edit ancestry retains its prior redirect behavior.
-  for(let depth=0;p.capabilityId!==supplierPurchaseOrderCapabilityId&&
+  for(let depth=0;p.capabilityId!==supplierPurchaseOrderCapabilityId&&p.capabilityId!==supplierReceivingCapabilityId&&p.capabilityId!==supplierInvoiceCapabilityId&&
       p.status==="rejected"&&depth<20;depth++){
     const childId=await latestEditedProposalId(scope,p.id,p.capabilityId);
     if(!childId)break;
@@ -75,6 +76,16 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
     assertProposalScope(scope,p);
   }
   assertProposalScope(scope,p);
+  if(p.capabilityId===supplierInvoiceCapabilityId){
+    const effect=supervisorLoopRegistry.get(supplierInvoiceCapabilityId).parseEffect(p.canonicalEffectPayload);
+    return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
+      productName:"Supplier invoice · "+effect.supplierName,currency:effect.currency,invoice:effect};
+  }
+  if(p.capabilityId===supplierReceivingCapabilityId){
+    const effect=supervisorLoopRegistry.get(supplierReceivingCapabilityId).parseEffect(p.canonicalEffectPayload);
+    return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
+      productName:"Physical receipt · "+effect.supplierName,receiving:effect};
+  }
   if(p.capabilityId===supplierPurchaseOrderCapabilityId){
     const effect=supervisorLoopRegistry.get(supplierPurchaseOrderCapabilityId).parseEffect(p.canonicalEffectPayload);
     // Task14C: approved internal PO != vendor send. Rehydrate the actual
@@ -260,6 +271,8 @@ export async function POST(request:Request,{params}:Params){
           await new SupervisorEffectGateway().reconcileGmail(scope,p.id,p.revision):
           p.capabilityId===supplierPurchaseOrderCapabilityId?
           await new SupervisorEffectGateway().reconcileSupplierPurchaseOrder(scope,p.id,p.revision):
+          [supplierReceivingCapabilityId,supplierInvoiceCapabilityId].includes(p.capabilityId)?
+          await new SupervisorEffectGateway().reconcileSupplierReceiving(scope,p.id,p.revision):
           await repo.reconcileEffect(scope,p.id,p.revision);
         return conversationJson({state:reconciled.status==="executing"?"uncertain":"applied",
           proposal:await view(scope,repo,reconciled)},reconciled.status==="executing"?409:200);
@@ -276,7 +289,8 @@ export async function POST(request:Request,{params}:Params){
       return conversationJson({error:"publication_cancellation_not_supported"},422);
     const purchase=p.capabilityId===purchaseCapabilityId;
     const supplierPO=p.capabilityId===supplierPurchaseOrderCapabilityId;
-    if(!staff&&!purchase&&!supplierPO&&p.capabilityId!==maintenanceStaffCapabilityId&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
+    const receiving=[supplierReceivingCapabilityId,supplierInvoiceCapabilityId].includes(p.capabilityId);
+    if(!staff&&!purchase&&!supplierPO&&!receiving&&p.capabilityId!==maintenanceStaffCapabilityId&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
       p.capabilityId!==goalCapabilityId&&p.capabilityId!==eventReadinessCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
     if(p.capabilityId===gmailCapabilityId||p.capabilityId===maintenanceStaffCapabilityId){
@@ -309,7 +323,7 @@ export async function POST(request:Request,{params}:Params){
           proposal:await view(scope,repo,latest)},409);
       }
     }
-    if(supplierPO){
+    if(supplierPO||receiving){
       // A persisted approved row with no effect attempt is a recoverable,
       // already-authorized owner click. An HTTP response can be lost AFTER
       // the approval transaction, BEFORE the effect claim; keep the original

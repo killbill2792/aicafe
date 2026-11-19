@@ -21,8 +21,10 @@ import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperim
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
+import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId,prepareSupplierDiscrepancyFollowup,type InvoiceSource} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
+import {readSupplierReconciliation} from "@/lib/data/supplierReceiving.server";
 import {proposeApprovedSupplierEmail} from "@/lib/ai/supervisor/loop/vendorDispatch.server";
 import {recordOwnerSupplierOutcome,authenticatedSupplierOwnerTurn,explicitSingleOwnerPurchaseOrder} from "@/lib/purchasing/ownerSupplierOutcome.server";
 import {simulationOwnerReader} from "@/lib/ai/supervisor/loop/simulationOwner.server";
@@ -276,6 +278,51 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         }),
         list:async()=>listOwnerRoutines({scope,threadId:id,client:await getDb()}),
         change:async input=>changeOwnerRoutine(input,{scope,threadId:id,client:await getDb()}),
+      },
+      invoicePropose:async ({gmailMessageId,...input})=>{
+        let source:InvoiceSource={
+          sourceKind:selectedContentSha256?"owner_attachment":"owner_report",
+          sourceRef:(selectedContentSha256?"owner-attachment:":"owner-message:")+owner.id,
+          sourceSha256:selectedContentSha256??createHash("sha256").update(p.ownerText).digest("hex"),
+        };
+        if(gmailMessageId){
+          const {client}=await simulationOwnerReader(proposalScope);
+          const orders=await readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId,input.purchaseOrderId);
+          if(orders.orders.length!==1||!orders.orders[0].supplierId)throw new ToolError("validation","invoice_supplier_unverified");
+          const contact=await client.from("cafe_supplier_order_contacts").select("email")
+            .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+            .eq("supplier_id",orders.orders[0].supplierId).eq("channel","gmail").is("revoked_at",null).maybeSingle();
+          const account=await getConnectorAccount(scope);
+          if(contact.error||!contact.data?.email||!account||!allowsGmail(account,"read"))
+            throw new ToolError("validation","invoice_supplier_contact_or_gmail_unavailable");
+          const message=await gmailRead(scope,gmailMessageId);
+          const sender=message.message.headers.from??"";
+          const address=(sender.match(/<([^<>]+)>\s*$/u)?.[1]??sender).trim().toLowerCase();
+          const current=await getConnectorAccount(scope);
+          if(message.message.id!==gmailMessageId||address!==String(contact.data.email).trim().toLowerCase()||
+            !current||current.id!==account.id||current.generation!==account.generation||!allowsGmail(current,"read"))
+            throw new ToolError("validation","invoice_document_identity_unverified");
+          source={sourceKind:"gmail_message",sourceRef:"gmail:"+account.id+":"+account.generation+":"+gmailMessageId,
+            sourceSha256:effectHash(message.message)};
+        }
+        const candidate={...input,...source};
+        const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,invoice:candidate}));
+        const draft=await proposeLoop(proposalScope,supervisorLoopRegistry,new SupabaseLoopRepository(),
+          supplierInvoiceCapabilityId,candidate,key);
+        if(draft.status!=="draft")throw new ToolError("validation","Invoice proposal no longer editable.");
+        return {proposalId:draft.id,revision:draft.revision};
+      },
+      receivingFollowup:purchaseOrderId=>prepareSupplierDiscrepancyFollowup(proposalScope,purchaseOrderId),
+      receivingPropose:async input=>{
+        const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,receiving:input}));
+        const draft=await proposeLoop(proposalScope,supervisorLoopRegistry,new SupabaseLoopRepository(),
+          supplierReceivingCapabilityId,input,key);
+        if(draft.status!=="draft")throw new ToolError("validation","Receiving proposal no longer editable.");
+        return {proposalId:draft.id,revision:draft.revision};
+      },
+      receivingRead:async purchaseOrderId=>{
+        const {client}=await simulationOwnerReader(proposalScope);
+        return readSupplierReconciliation(client,scope.businessId,scope.ownerUserId,purchaseOrderId);
       },
       purchasing:{
         list:async()=>{
