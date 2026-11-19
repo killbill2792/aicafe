@@ -325,12 +325,12 @@ async function savedTurn(db,scope,turn){
  check(reply.length===1,"saved_reply_missing");
  return {reply:reply[0],calls:Number(usage.model_call_count)};
 }
-async function withOwners(browser,test){
- const {first,foreign}=profiles();
+async function withOwners(browser,test,dedicated=null){
+ const {first:seeded,foreign}=profiles(),first=dedicated??seeded;
  const owner=await openOwner(browser,first);let outsider;
  try{
   outsider=await openOwner(browser,foreign);
-  const threadId=await createThread(owner.context);
+  const threadId=dedicated?.threadId??await createThread(owner.context);
   const scope={businessId:first.businessId,ownerUserId:first.owner.userId,foreignBusinessId:foreign.businessId,threadId};
   return await test({first,foreign,owner,outsider,scope});
  }finally{await outsider?.context.close();await owner.context.close();}
@@ -340,6 +340,7 @@ async function effectCounts(db,businessId){
  return x;
 }
 export async function procurementRecovery(db,browser){
+ const cafe=await makeMonitorCafe(db,profiles().first);
  return withOwners(browser,async({first,owner,outsider,scope})=>{
   const {businessId,ownerUserId,threadId}=scope;
   const ingredientId=randomUUID(),quoteId=randomUUID(),otherQuoteId=randomUUID();
@@ -365,9 +366,10 @@ export async function procurementRecovery(db,browser){
   const reminderMessages=(sourceType,sourceId)=>rows(db,"select id,thread_id,structured_content from public.ai_messages where business_id=$1 and owner_user_id=$2 and role='supervisor' and grounding->>\'intent\'='priority_notice' and grounding->\'evidence\' @> jsonb_build_array(jsonb_build_object('source',$3::text,'identifier',$4::text)) order by id",[businessId,ownerUserId,sourceType,sourceId]);
   const noticeTick=async(asOf)=>runWorker({mode:"procurement_notice",scopes:workerScope,asOf:new Date(asOf).toISOString()},120000);
   const draftClock=Number((await rows(db,"select extract(epoch from created_at)*1000 as ms from public.supervisor_proposals where business_id=$1 and id=$2",[businessId,proposal.id]))[0].ms);
-  const earlyDraft=await reminders("supplier_po",proposal.id);
   // The owner closes the entire context while the real dispatcher runs.
   await owner.context.close();
+  await noticeTick(draftClock+119*60000);
+  const earlyDraft=await reminders("supplier_po",proposal.id);
   await noticeTick(draftClock+121*60000);
   const draftNotice=await reminders("supplier_po",proposal.id),draftMessage=await reminderMessages("supplier_po",proposal.id);
   await noticeTick(draftClock+122*60000);
@@ -412,17 +414,18 @@ export async function procurementRecovery(db,browser){
   check((await rows(db,"select id from public.supervisor_proposals where business_id=$1 and thread_id=$2",[businessId,threadId])).length===1,"status_read_created_proposal");
   const approvedClock=Number((await rows(db,"select extract(epoch from approved_at)*1000 as ms from public.purchase_orders where business_id=$1 and id=$2",[businessId,orderId]))[0].ms);
   const ownerBefore=await rows(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner' order by id",[businessId,threadId]);
-  const earlyDispatch=await reminders("supplier_dispatch",orderId);
   await owner.context.close();
+  await noticeTick(approvedClock+119*60000);
+  const earlyDispatch=await reminders("supplier_dispatch",orderId);
   await noticeTick(approvedClock+121*60000);
   const dispatchNotice=await reminders("supplier_dispatch",orderId),dispatchMessage=await reminderMessages("supplier_dispatch",orderId);
   await noticeTick(approvedClock+122*60000);
   const repeatedDispatch=await reminders("supplier_dispatch",orderId),repeatedDispatchMessage=await reminderMessages("supplier_dispatch",orderId);
   const ownerAfter=await rows(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner' order by id",[businessId,threadId]);
-  const delivery=await rows(db,"select id from public.purchase_order_dispatches where business_id=$1 and purchase_order_id=$2",[businessId,orderId]);
+  const delivery=await rows(db,"select purchase_order_id from public.purchase_order_dispatches where business_id=$1 and purchase_order_id=$2",[businessId,orderId]);
   const reminderProof=verifySupplierReminderOutcome({threadId,earlyDraft,draftNotice,draftMessage,repeatedDraft,repeatedDraftMessage,handledDraft,earlyDispatch,dispatchNotice,dispatchMessage,repeatedDispatch,repeatedDispatchMessage,ownerBefore,ownerAfter,delivery,ordersBefore:after,ordersAfter:await readOrders(),attemptsBefore:afterAttempts,attemptsAfter:await readAttempts(),countsBefore:before,countsAfter:await effectCounts(db,businessId)});
   return {scope:{...scope,proposalId:proposal.id,orderId,quoteId,subtotalCents:String(packs*price),currency:first.currency,effectHash:proposal.effect_hash,attemptKey:committedAttempts[0].attempt_key,receiptRef:committedAttempts[0].receipt_ref,replyId:last.reply.id,...reminderProof},calls:saved.calls+last.calls};
- });
+ },cafe);
 }
 export async function effectSecurityRecovery(db,browser){
  return withOwners(browser,async({owner,outsider,scope})=>{
@@ -461,7 +464,7 @@ async function makeMonitorCafe(db,profile){
  await db.query("insert into public.cafe_access(business_id,mode) values($1,'grandfathered') on conflict(business_id) do update set mode='grandfathered',access_end=null",[businessId]);
  await db.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[businessId,ownerUserId]);
  await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",[threadId,businessId,ownerUserId,randomUUID()]);
- return {businessId,ownerUserId,threadId,name,timezone:profile.timezone,owner:{email,password}};
+ return {businessId,ownerUserId,threadId,name,timezone:profile.timezone,currency:profile.currency,owner:{email,password,userId:ownerUserId}};
 }
 export async function businessMonitorRecovery(db,browser){
  const {first,foreign}=profiles(),a=await makeMonitorCafe(db,first),b=await makeMonitorCafe(db,foreign);
