@@ -321,3 +321,53 @@ export const financialSettlementCapability=registerLoopCapability({
  monitor:async()=>null,
  report:async()=>({status:"complete",result:{},recommendation:"keep",source:"purchase_reconciliation_events"})
 });
+
+/** Documentary non-supplier bill claims live in the existing uploads source store. */
+export const financialBillCapabilityId="leo.financial_bill.v1";
+export const financialBillInputSchema=z.strictObject({
+ payee:z.string().trim().min(2).max(120),reference:ref,
+ expectedRevision:z.number().int().nonnegative().safe(),issuedOn:z.iso.date(),
+ dueOn:z.iso.date().nullable(),amountCents:cents.positive(),currency:z.string().regex(/^[A-Z]{3}$/)
+});
+export type FinancialBillInput=z.infer<typeof financialBillInputSchema>;
+const financialBillEffectSchema=z.strictObject({...financialBillInputSchema.shape,
+ sourceKind:z.enum(["owner_report","owner_attachment"]),sourceRef:z.string().min(1).max(400),
+ sourceSha256:z.string().regex(/^[a-f0-9]{64}$/)
+});
+export const financialBillCapability=registerLoopCapability({
+ id:financialBillCapabilityId,version:1,inputSchema:financialBillEffectSchema,effectSchema:financialBillEffectSchema,
+ proposalDescription:"Record a dated non-supplier bill claim from an owner report or attachment after an exact owner click. Not an expense, settlement, payment or bank instruction.",
+ dependencyScope:e=>({kind:"financial_bill",payee:e.payee,reference:e.reference}),
+ simulate:async(scope,input)=>{
+  const {client}=await simulationOwnerReader(scope);
+  const payee=input.payee.trim().toLowerCase(),reference=input.reference.trim().toLowerCase();
+  if(input.dueOn!==null&&input.dueOn<input.issuedOn)throw Error("financial_bill_date_invalid");
+  const supplier=await client.from("cafe_suppliers").select("id").eq("business_id",scope.businessId).eq("normalized_name",payee).maybeSingle();
+  if(supplier.error||supplier.data)throw Error("financial_bill_use_supplier_invoice");
+  const prior=await client.from("uploads").select("financial_bill_revision,financial_currency")
+   .eq("business_id",scope.businessId).eq("financial_owner_user_id",scope.ownerUserId)
+   .eq("kind","bill_claim").eq("financial_bill_payee",payee).eq("financial_bill_reference",reference)
+   .order("financial_bill_revision",{ascending:false}).limit(1);
+  if(prior.error||Number(prior.data?.[0]?.financial_bill_revision??0)!==input.expectedRevision||
+   (prior.data?.[0]&&prior.data[0].financial_currency!==input.currency))throw Error("financial_bill_revision_changed");
+  await simulationOwnerReader(scope);
+  return {effect:financialBillEffectSchema.parse({...input,payee,reference}),
+   baseline:{ownerMustConfirmDocument:true,noMoneyMovement:true,paymentStatus:"unknown"},
+   monitorSpec:{durationDays:1,metricScope:"financial_bill"}};
+ },
+ commit:async(scope,effect,proposalId)=>{
+  if(!proposalId)throw Error("financial_bill_proposal_required");
+  const db=await createServerSupabaseClient();
+  const {data:{user},error:authError}=await db.auth.getUser();
+  if(authError||user?.id!==scope.ownerUserId)throw Error("financial_owner_required");
+  const {data,error}=await db.rpc("supervisor_commit_financial_bill",{
+   p_business_id:scope.businessId,p_thread_id:scope.threadId,p_proposal_id:proposalId,p_effect_hash:effectHash(effect)});
+  if(error||typeof data!=="string")throw Error("financial_bill_effect_unverified");
+  const proof=await createAdminSupabaseClient().rpc("supervisor_financial_bill_proof",{
+   p_business_id:scope.businessId,p_proposal_id:proposalId,p_effect_hash:effectHash(effect)});
+  if(proof.error||proof.data!==data)throw Error("financial_bill_receipt_unverified");
+  return {status:"verified",evidenceSource:"uploads"};
+ },
+ monitor:async()=>null,
+ report:async()=>({status:"complete",result:{},recommendation:"keep",source:"uploads"})
+});

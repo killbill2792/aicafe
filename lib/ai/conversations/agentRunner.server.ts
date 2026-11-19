@@ -21,7 +21,7 @@ import {priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperim
 import {menuPriceChangeCapabilityId} from "@/lib/ai/supervisor/loop/menuPriceChange.server";
 import {staffCapabilityId} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
-import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId,prepareSupplierDiscrepancyFollowup,type InvoiceSource} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
+import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId,financialBillCapabilityId,prepareSupplierDiscrepancyFollowup,type InvoiceSource} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import {supplierPurchaseOrderCapabilityId,supplierPurchaseOrderEffectSchema,investigateSupplierPurchase} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
 import {readSupplierPurchaseOrders,readSupplierOrderCommunications} from "@/lib/data/supplierPurchasing.server";
 import {readFinancialEvidence} from "@/lib/data/financialEvidence.server";
@@ -339,6 +339,17 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
         const draft=await proposeLoop(proposalScope,supervisorLoopRegistry,new SupabaseLoopRepository(),
           financialSettlementCapabilityId,input,key);
         if(draft.status!=="draft")throw new ToolError("validation","Settlement proposal no longer editable.");
+        return {proposalId:draft.id,revision:draft.revision};
+      },
+      financialBillPropose:async input=>{
+        await assertTurnSources();
+        const candidate={...input,sourceKind:selectedContentSha256?"owner_attachment":"owner_report",
+          sourceRef:(selectedContentSha256?"owner-attachment:":"owner-message:")+owner.id,
+          sourceSha256:selectedContentSha256??createHash("sha256").update(p.ownerText).digest("hex")};
+        const key=proposalRequestKey(id,JSON.stringify({ownerMessageId:owner.id,bill:candidate}));
+        const draft=await proposeLoop(proposalScope,supervisorLoopRegistry,new SupabaseLoopRepository(),
+          financialBillCapabilityId,candidate,key);
+        if(draft.status!=="draft")throw new ToolError("validation","Bill proposal no longer editable.");
         return {proposalId:draft.id,revision:draft.revision};
       },
       financialEvidenceRead:selection=>readFinancialEvidence(proposalScope,identity.asOf,selection),

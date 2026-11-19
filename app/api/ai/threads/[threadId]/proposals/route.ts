@@ -15,7 +15,7 @@ import {menuPriceChangeCapabilityId,StaleProposalError}
 import {isStaffCapabilityId,readStaffProposalToken} from "@/lib/ai/supervisor/loop/staffProposals.server";
 import {purchaseCapabilityId} from "@/lib/ai/supervisor/loop/purchases.server";
 import {supplierPurchaseOrderCapabilityId} from "@/lib/ai/supervisor/loop/purchaseOrders.server";
-import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
+import {supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId,financialBillCapabilityId} from "@/lib/ai/supervisor/loop/supplierReceiving.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {gmailCapabilityId,gmailEffectSchema,readMaintenanceCase} from "@/lib/ai/supervisor/loop/gmail.server";
@@ -76,6 +76,11 @@ async function view(scope:OwnerLoopScope,repo:SupabaseLoopRepository,p:LoopPropo
     assertProposalScope(scope,p);
   }
   assertProposalScope(scope,p);
+  if(p.capabilityId===financialBillCapabilityId){
+    const effect=supervisorLoopRegistry.get(financialBillCapabilityId).parseEffect(p.canonicalEffectPayload);
+    return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
+      productName:effect.payee,currency:effect.currency,bill:effect};
+  }
   if(p.capabilityId===financialSettlementCapabilityId){
     const effect=supervisorLoopRegistry.get(financialSettlementCapabilityId).parseEffect(p.canonicalEffectPayload);
     return {...card(p,p.status==="executing"?executionState:p.status==="approved"?"pending":undefined),
@@ -276,7 +281,7 @@ export async function POST(request:Request,{params}:Params){
           await new SupervisorEffectGateway().reconcileGmail(scope,p.id,p.revision):
           p.capabilityId===supplierPurchaseOrderCapabilityId?
           await new SupervisorEffectGateway().reconcileSupplierPurchaseOrder(scope,p.id,p.revision):
-          [supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId].includes(p.capabilityId)?
+          [supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId,financialBillCapabilityId].includes(p.capabilityId)?
           await new SupervisorEffectGateway().reconcileSupplierReceiving(scope,p.id,p.revision):
           await repo.reconcileEffect(scope,p.id,p.revision);
         return conversationJson({state:reconciled.status==="executing"?"uncertain":"applied",
@@ -294,7 +299,7 @@ export async function POST(request:Request,{params}:Params){
       return conversationJson({error:"publication_cancellation_not_supported"},422);
     const purchase=p.capabilityId===purchaseCapabilityId;
     const supplierPO=p.capabilityId===supplierPurchaseOrderCapabilityId;
-    const receiving=[supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId].includes(p.capabilityId);
+    const receiving=[supplierReceivingCapabilityId,supplierInvoiceCapabilityId,financialSettlementCapabilityId,financialBillCapabilityId].includes(p.capabilityId);
     if(!staff&&!purchase&&!supplierPO&&!receiving&&p.capabilityId!==maintenanceStaffCapabilityId&&p.capabilityId!==gmailCapabilityId&&p.capabilityId!==menuPriceChangeCapabilityId&&p.capabilityId!==priceExperimentCapabilityId&&
       p.capabilityId!==goalCapabilityId&&p.capabilityId!==eventReadinessCapabilityId)
       return conversationJson({error:"proposal_not_found"},404);
