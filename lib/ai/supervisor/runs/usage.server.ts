@@ -128,6 +128,10 @@ export async function reserveDurableProviderRequest(
   const ctx=durableProviderTurns.getStore();if(!ctx)return null;
   const {scope}=ctx;
   if(ctx.denied)throw new Error("durable_provider_reservation_unavailable");
+  // An unpriced optional hosted lookup may be unavailable without preventing
+  // a grounded answer from the other already-authorized sources.
+  if(kind==="hosted_web"&&!process.env.SUPERVISOR_WORKER_HOSTED_WEB_RESERVE_MICROS)
+    throw new Error("durable_hosted_web_unpriced");
   try{
     const model=params.model,output=params.max_output_tokens;
     if(typeof model!=="string"||typeof output!=="number"||!Number.isSafeInteger(output)||

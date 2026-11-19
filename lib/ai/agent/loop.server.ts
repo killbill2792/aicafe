@@ -260,9 +260,14 @@ export async function runAgentTurn(args: {
       try{
         if(usage.modelCalls>=maxModelToolCalls()||now()>=workDeadline||budgetStop())
           return {available:false,reason:"budget"};
-        const reservation=await reserveDurableProviderRequest({
+        let reservation:Awaited<ReturnType<typeof reserveDurableProviderRequest>>;
+        try{reservation=await reserveDurableProviderRequest({
           model,max_output_tokens:1200,input:query,tools:[{type:"web_search"}],
-        },"hosted_web");
+        },"hosted_web");}catch(error){
+          if(error instanceof Error&&error.message==="durable_hosted_web_unpriced")
+            return {available:false,reason:"budget"};
+          throw error;
+        }
         const result=await underlyingWebSearch(query,{
           reserveModelCall:()=>{
             if(usage.modelCalls>=maxModelToolCalls()||now()>=workDeadline||budgetStop())return false;

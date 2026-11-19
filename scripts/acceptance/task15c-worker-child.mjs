@@ -17,6 +17,7 @@ await db.query("set role service_role");
 const operations = {
   claim: "select public.supervisor_run_claim($1,$2,$3,$4,$5,$6) as result",
   complete: "select public.supervisor_run_complete_step($1,$2,$3,$4,$5,$6,$7) as result",
+  reserve: "select public.supervisor_reserve_durable_model_call($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) as result",
 };
 process.on("message", async (request) => {
   try {

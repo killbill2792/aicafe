@@ -79,7 +79,7 @@ describe("durable Supervisor runs on migrated disposable PostgreSQL", () => {
 type ChildReply = { ok: boolean; pid: number; result?: { kind?: string; idempotency_key?: string;
   step?: { step_key: string; claim_token: string; attempts: number } } };
 
-function invoke(child: ChildProcess, operation: "claim" | "complete", args: unknown[]): Promise<ChildReply> {
+function invoke(child: ChildProcess, operation: "claim" | "complete" | "reserve", args: unknown[]): Promise<ChildReply> {
   return new Promise((resolve, reject) => {
     const cleanup = () => {
       clearTimeout(timer); child.off("message", message); child.off("exit", exit); child.off("error", error);
@@ -276,4 +276,82 @@ describe("Task 15C fleet dispatch on migrated PostgreSQL", () => {
       await admin.end();
     }
   },120000);
+});
+
+
+describe("Task 15C durable provider reservations survive actual worker death",()=>{
+  (sandbox?it:it.skip)("fences concurrent reservations, preserves unknown spend, deduplicates summary accounting and blocks stale/revoked scope",async()=>{
+    const admin=await connect();
+    const businessId=randomUUID(),ownerId=randomUUID(),threadId=randomUUID(),messageId=randomUUID();
+    const scope=[businessId,ownerId,threadId];
+    let a:Client|undefined,b:Client|undefined,foreign:Client|undefined,child:ChildProcess|undefined;
+    try{
+      await admin.query("insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now())",
+        [ownerId,"provider-reservation-"+ownerId+"@example.invalid"]);
+      await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable provider reservation cafe','UTC',false)",[businessId]);
+      await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[businessId,ownerId]);
+      await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",[threadId,businessId,ownerId,randomUUID()]);
+      await admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,role,content_type,text_content,client_message_id) values ($1,$2,$3,$4,'owner','text','Check the cafe',$5)",
+        [messageId,...scope,randomUUID()]);
+      a=await connect(true);b=await connect(true);
+      const job=(await call(a,"ai_agent_job_start",[...scope,messageId])).job;
+      const runId=(await call(a,"supervisor_run_start",[...scope,messageId,"d".repeat(64),
+        JSON.stringify([{key:"owner_turn",retry:"reconcile"}])])).id;
+      child=fork("scripts/acceptance/task15c-worker-child.mjs",[],{execArgv:[],stdio:["ignore","ignore","inherit","ipc"]});
+      const hold=await invoke(child,"claim",[...scope,runId,randomUUID(),6]);
+      expect(hold).toMatchObject({ok:true,pid:child.pid,result:{kind:"claimed",step:{step_key:"owner_turn",attempts:1}}});
+      const token=hold.result?.step?.claim_token;
+      const args=(id:string,overrides?:{token?:string;business?:string;owner?:string;run?:string;job?:string;calls?:number;input?:number;output?:number;cost?:number;daily?:number})=>[
+        id,overrides?.business??businessId,overrides?.owner??ownerId,threadId,overrides?.run??runId,messageId,
+        overrides?.job??job.id,overrides?.token??token,"gpt-6-luna",100,50,100,
+        overrides?.calls??2,overrides?.input??200,overrides?.output??100,overrides?.cost??200,overrides?.daily??2,
+      ];
+      const unknown=randomUUID();
+      expect(await invoke(child,"reserve",args(unknown))).toMatchObject({ok:true,pid:child.pid});
+      await killAndConfirm(child);
+      // An ACK lost with the process is not a refund or evidence of zero usage.
+      expect((await admin.query("select status,input_tokens,output_tokens,estimated_cost_micros from public.supervisor_system_usage_events where attempt_id=$1",[unknown])).rows)
+        .toEqual([{status:"attempted",input_tokens:null,output_tokens:null,estimated_cost_micros:null}]);
+      foreign=await connect();
+      await foreign.query("set role authenticated");
+      await expect(call(foreign,"supervisor_reserve_durable_model_call",args(randomUUID()))).rejects.toThrow();
+      for(const bad of [{token:randomUUID()},{business:randomUUID()},{owner:randomUUID()},
+        {run:randomUUID()},{job:randomUUID()}])
+        await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),bad))).rejects.toThrow("durable_reservation_not_authorized");
+      for(const cap of [{calls:1},{input:199},{output:99},{cost:199}])
+        await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),cap))).rejects.toThrow("durable_provider_budget_exhausted");
+      const ids=[randomUUID(),randomUUID()];
+      const competing=await Promise.allSettled([call(a,"supervisor_reserve_durable_model_call",args(ids[0])),
+        call(b,"supervisor_reserve_durable_model_call",args(ids[1]))]);
+      expect(competing.filter(v=>v.status==="fulfilled")).toHaveLength(1);
+      const next=ids[competing.findIndex(v=>v.status==="fulfilled")];
+      await call(a,"supervisor_complete_investigation_model_call",[next,...scope,"gpt-6-luna",70,10,12]);
+      // Exact already-reserved identifiers are accounted once in the ordinary
+      // turn summary; the unknown row remains conservatively charged.
+      const summary=[...scope,messageId,runId,[unknown,next],"gpt-6-luna",70,10,2,0,12];
+      await call(a,"supervisor_record_durable_usage_increment",summary);
+      await expect(call(b,"supervisor_record_durable_usage_increment",summary)).rejects.toThrow("durable_usage_scope_or_replay");
+      expect((await admin.query("select model_call_count,reserved_model_call_count,input_tokens,output_tokens from public.ai_usage_events where owner_message_id=$1",[messageId])).rows)
+        .toEqual([{model_call_count:2,reserved_model_call_count:"2",input_tokens:70,output_tokens:10}]);
+      expect((await admin.query("select count(*)::int n,count(*) filter(where accounted_at is not null)::int accounted from public.supervisor_system_usage_events where business_id=$1",[businessId])).rows)
+        .toEqual([{n:2,accounted:2}]);
+      // The two persisted reservations exhaust the existing owner-day quota,
+      // even though the aggregate also records their two attempted calls.
+      await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),{calls:3,input:300,output:150,cost:300}))).rejects.toThrow("owner_usage_limit_reached");
+      await admin.query("delete from public.memberships where business_id=$1 and user_id=$2",[businessId,ownerId]);
+      await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),{daily:5}))).rejects.toThrow("durable_reservation_not_authorized");
+      await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[businessId,ownerId]);
+      await waitForActualLeaseExpiry(admin,runId,"owner_turn");
+      expect(await call(b,"supervisor_run_claim",[...scope,runId,randomUUID(),30])).toEqual({kind:"blocked"});
+      await expect(call(b,"supervisor_reserve_durable_model_call",args(randomUUID(),{daily:5}))).rejects.toThrow("durable_reservation_not_authorized");
+      expect((await admin.query("select status, input_tokens, reserved_cost_micros from public.supervisor_system_usage_events where attempt_id=$1",[unknown])).rows)
+        .toEqual([{status:"attempted",input_tokens:null,reserved_cost_micros:"100"}]);
+    }finally{
+      if(child&&child.exitCode===null&&child.signalCode===null)await killAndConfirm(child);
+      await Promise.all([a?.end(),b?.end(),foreign?.end()]);
+      await admin.query("delete from public.businesses where id=$1",[businessId]);
+      await admin.query("delete from auth.users where id=$1",[ownerId]);
+      await admin.end();
+    }
+  },30000);
 });
