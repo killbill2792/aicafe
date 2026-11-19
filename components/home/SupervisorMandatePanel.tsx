@@ -346,6 +346,6 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
           <p className="text-sm text-ink-muted">{copy.notUnlimited}</p>
         </section>}
       </div>
-      {languageSwitch&&<div className="shrink-0 border-t border-line px-5 py-3 md:hidden">{languageSwitch}</div>}
+      {languageSwitch}
   </dialog>;
 }

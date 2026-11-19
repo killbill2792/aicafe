@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, ListChecks, Mic, Plus, Send, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown, ShieldCheck } from "lucide-react";
+import { Clock3, History, ListChecks, Mic, Plus, Send, Sparkles, Square, ThumbsUp, ThumbsDown, X, AlertCircle, Paperclip, LoaderCircle, UsersRound, ArrowDown, ShieldCheck } from "lucide-react";
 import { AgentAvatar } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
 import { Link } from "@/i18n/navigation";
@@ -256,7 +256,7 @@ export default function SupervisorChatComposer({
   const pendingFollowUps=useRef(new Set<string>());
   const [optimisticOwner, setOptimisticOwner] = useState<{ id: string; text: string; clientMessageId: string } | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
-  const [controlsTab,setControlsTab]=useState<"work"|"permissions"|null>(null);
+  const [controlsTab,setControlsTab]=useState<"work"|"library"|"permissions"|null>(null);
   const controlsOpen=controlsTab!==null;
   const [workTarget,setWorkTarget]=useState<OwnerWorkItem|null>(null);
   const [workNotice,setWorkNotice]=useState("");
@@ -960,7 +960,12 @@ export default function SupervisorChatComposer({
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
-    <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-surface/85 px-4 py-3 md:px-5">
+    <header className="flex shrink-0 items-center justify-between gap-1 border-b border-line bg-surface/85 px-2 py-3 md:gap-3 md:px-5">
+      <button type="button" onClick={()=>setControlsTab("library")} disabled={!enabled}
+        aria-expanded={controlsTab==="library"} aria-label={copy.historyTitle} title={copy.historyTitle}
+        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+        <History size={22} aria-hidden="true"/>
+      </button>
       <button type="button" onClick={() => setControlsTab("work")} disabled={!enabled}
         aria-expanded={controlsTab==="work"} aria-label={en.SupervisorWork.heading} title={en.SupervisorWork.heading}
         className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
@@ -1209,6 +1214,6 @@ export default function SupervisorChatComposer({
       approvals={supervisorWork.items.filter(item=>item.status==="approval_required")
         .map(item=>({id:item.id,title:item.title,detail:item.detail}))}
       initialTab={controlsTab??"permissions"} onOpenWork={openWork} disabled={sending}
-      languageSwitch={languageSwitch} onSelectThread={selectThread} onClose={()=>setControlsTab(null)}/>}
+      languageSwitch={languageSwitch&&<div className="shrink-0 border-t border-line px-5 py-3 md:hidden">{languageSwitch}</div>} onSelectThread={selectThread} onClose={()=>setControlsTab(null)}/>}
   </section>;
 }
