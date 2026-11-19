@@ -94,3 +94,20 @@ describe("shared owner-scoped live web transport boundary",()=>{
     expect(lookup).not.toHaveBeenCalled();expect(transport).not.toHaveBeenCalled();
   });
 });
+
+ it("discards a public response completed across revoke and regrant",async()=>{
+  let revision=0;
+  checks.permission.mockImplementation(async()=>revision);
+  const answer=await ownerPublicWebSearch(owner,async()=>{
+   revision=2;
+   return {available:true,answer:"stale result",sources:[]};
+  });
+  expect(answer).toEqual({available:false,reason:"permissionDenied"});
+ });
+ it("rejects an in-flight provider response whose permission revision changed",async()=>{
+  let revision=0;
+  checks.permission.mockImplementation(async()=>revision);
+  transport.mockImplementationOnce(async()=>{revision=2;return new Response("stale result");});
+  await expect(withOwnerPublicWebScope(owner,()=>ownerPublicWebFetch("https://example.invalid/result"))).rejects.toThrow("permissionDenied");
+  expect(transport).toHaveBeenCalledTimes(1);
+ });
