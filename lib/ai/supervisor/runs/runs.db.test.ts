@@ -505,10 +505,21 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
    const state=async()=>(await admin.query("select checkpoint_retry_count,checkpoint_progress_count,checkpoint_seq from public.supervisor_run_steps where run_id=$1 and step_key='owner_turn'",[long.id])).rows[0];
    // Move only the due timestamp in this disposable fixture; actual lease expiry is tested above.
    const due=async()=>{await admin.query("update public.supervisor_runs set dispatch_after=clock_timestamp()-interval '1 second' where id=$1",[long.id]);await admin.query("update public.supervisor_run_steps set next_retry_at=clock_timestamp()-interval '1 second' where run_id=$1 and step_key='owner_turn'",[long.id]);};
+   let previousToken:string|null=null;
+   const spentIds:string[]=[];
    for(let i=0;i<6;i++){
     const claim=await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30]);
     expect(claim.kind).toBe("claimed");
     const t=claim.step.claim_token;
+    if(i<2){
+      const job=await call(a,"supervisor_start_owner_job_v2",[...scope,long.id,t]);
+      const args=(attempt:string,token:string)=>[attempt,...scope,long.id,longId,job.id,token,"gpt-6-luna",100,50,100,1,100,50,10000,1000];
+      if(previousToken)await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),previousToken))).rejects.toThrow("durable_reservation_not_authorized");
+      const id=randomUUID();spentIds.push(id);
+      await call(a,"supervisor_reserve_durable_model_call",args(id,t));
+      await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),t))).rejects.toThrow("durable_provider_budget_exhausted");
+      previousToken=t;
+    }
     if(i===0){
      const noop=randomUUID();
      for(let n=0;n<2;n++){
@@ -526,6 +537,7 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
     await due();
    }
    expect(await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30])).toEqual({kind:"blocked"});
+   expect((await admin.query("select count(*)::int n,count(distinct durable_claim_token)::int slices,count(*) filter(where status='attempted')::int unknown from public.supervisor_system_usage_events where attempt_id=any($1::uuid[])",[spentIds])).rows).toEqual([{n:2,slices:2,unknown:2}]);
    const partialId=randomUUID();await insert(partialId,"Find missing data");
    const partial=await call(a,"supervisor_admit_owner_run_v2",[...scope,partialId,"f".repeat(64),"en",[]]);
    const author=await call(a,"supervisor_run_claim",[...scope,partial.id,randomUUID(),30]);

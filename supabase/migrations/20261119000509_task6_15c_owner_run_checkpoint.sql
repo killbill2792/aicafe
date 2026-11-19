@@ -800,3 +800,95 @@ begin
 end $$;
 revoke all on function public.supervisor_cancel_owner_run_v2(uuid,uuid,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.supervisor_cancel_owner_run_v2(uuid,uuid,uuid,uuid) to service_role;
+
+-- One existing usage ledger, no reset of past spend. Only the new v2 technical
+-- slice changes when its live claim changes. #537's later replacement of the
+-- same RPC must retain this boundary while removing commercial caps.
+alter table public.supervisor_system_usage_events add column durable_claim_token uuid;
+create index supervisor_system_usage_durable_claim_idx on public.supervisor_system_usage_events
+  (business_id,owner_user_id,source_id,durable_claim_token) where source_type='durable_run';
+create or replace function public.supervisor_reserve_durable_model_call(
+  p_attempt_id uuid,p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,
+  p_run_id uuid,p_owner_message_id uuid,p_job_id uuid,p_claim_token uuid,
+  p_model text,p_input_upper integer,p_output_cap integer,p_cost_upper bigint,
+  p_max_calls integer,p_max_input_upper bigint,p_max_output_cap bigint,
+  p_max_cost bigint,p_owner_daily_cap integer
+) returns void language plpgsql security definer set search_path=public as $$
+declare r public.supervisor_runs;v_day date;v_prior bigint;v_system bigint;
+  v_calls bigint;v_input bigint;v_output bigint;v_cost bigint;
+begin
+  if coalesce(auth.role(),'')<>'service_role' or p_attempt_id is null
+    or p_claim_token is null or length(coalesce(p_model,'')) not between 1 and 80
+    or p_input_upper is null or p_input_upper not between 1 and 272000
+    or p_output_cap is null or p_output_cap not between 1 and 1200
+    or p_cost_upper is null or p_cost_upper<1
+    or p_max_calls is null or p_max_calls not between 1 and 1000
+    or p_max_input_upper is null or p_max_input_upper<1
+    or p_max_output_cap is null or p_max_output_cap<1
+    or p_max_cost is null or p_max_cost<1
+    or p_owner_daily_cap is null or p_owner_daily_cap not between 1 and 1000000
+    then raise exception 'durable_reservation_invalid' using errcode='42501'; end if;
+  -- Same run-then-step lock order as claim/finish/stop. A replaced worker
+  -- cannot buy another provider call, even with a previously valid token.
+  select * into r from public.supervisor_runs where id=p_run_id and business_id=p_business_id
+    and owner_user_id=p_owner_user_id and thread_id=p_thread_id for update;
+  if not found or r.status<>'running' then
+    raise exception 'durable_reservation_not_authorized' using errcode='42501'; end if;
+  perform 1 from public.supervisor_run_steps s where s.business_id=p_business_id
+    and s.run_id=p_run_id and s.step_key='owner_turn' and s.status='leased'
+    and s.claim_token=p_claim_token and s.lease_until>clock_timestamp() for update;
+  if not found or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+    or not exists(select 1 from public.ai_messages m where m.id=p_owner_message_id
+      and m.business_id=p_business_id and m.owner_user_id=p_owner_user_id
+      and m.thread_id=p_thread_id and m.role='owner')
+    or not exists(select 1 from public.ai_agent_jobs j where j.id=p_job_id
+      and j.business_id=p_business_id and j.owner_user_id=p_owner_user_id
+      and j.thread_id=p_thread_id and j.owner_message_id=p_owner_message_id
+      and j.status='running' and j.heartbeat_at>clock_timestamp()-interval '180 seconds'
+      and (r.execution_version=1 or (j.durable_run_id=r.id and j.durable_claim_token=p_claim_token
+        and j.owner_message_id=r.request_key)))
+    then raise exception 'durable_reservation_not_authorized' using errcode='42501'; end if;
+  v_day:=(clock_timestamp() at time zone 'UTC')::date;
+  -- Share the existing investigation owner/day lock, not a new job pipeline.
+  perform pg_advisory_xact_lock(hashtextextended(
+    p_business_id::text||':'||p_owner_user_id::text||':'||v_day::text,0));
+  select coalesce(sum(e.model_call_count-e.reserved_model_call_count),0) into v_prior
+    from public.ai_usage_events e where e.business_id=p_business_id
+      and e.owner_user_id=p_owner_user_id and e.attempt_day=v_day;
+  select count(*) into v_system from public.supervisor_system_usage_events e
+    where e.business_id=p_business_id and e.owner_user_id=p_owner_user_id and e.attempt_day=v_day;
+  if v_prior+v_system>=p_owner_daily_cap then
+    raise exception 'owner_usage_limit_reached' using errcode='P0001'; end if;
+  select count(*),coalesce(sum(e.reserved_input_upper),0),
+    coalesce(sum(e.reserved_output_cap),0)
+    into v_calls,v_input,v_output from public.supervisor_system_usage_events e
+    where e.business_id=p_business_id and e.owner_user_id=p_owner_user_id
+      and e.source_type='durable_run' and e.source_id=p_run_id::text
+      and (r.execution_version=1 or e.durable_claim_token=p_claim_token);
+  -- Technical limits are per live v2 claim. Commercial caps and actual
+  -- historical/unknown spend still cover the entire run, until the shared
+  -- Max policy migration removes commercial caps. V1 is unchanged.
+  select coalesce(sum(e.reserved_cost_micros),0) into v_cost
+    from public.supervisor_system_usage_events e where e.business_id=p_business_id
+      and e.owner_user_id=p_owner_user_id and e.source_type='durable_run' and e.source_id=p_run_id::text;
+  if v_calls+1>p_max_calls or v_input+p_input_upper>p_max_input_upper
+    or v_output+p_output_cap>p_max_output_cap or v_cost+p_cost_upper>p_max_cost then
+    raise exception 'durable_provider_budget_exhausted' using errcode='P0001'; end if;
+  if not exists(select 1 from public.supervisor_run_steps s where s.business_id=p_business_id
+    and s.run_id=p_run_id and s.step_key='owner_turn' and s.claim_token=p_claim_token
+    and s.status='leased' and s.lease_until>clock_timestamp())
+    or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+    then raise exception 'durable_reservation_not_authorized' using errcode='42501'; end if;
+  insert into public.supervisor_system_usage_events(
+    attempt_id,business_id,owner_user_id,thread_id,source_type,source_id,owner_message_id,
+    model,attempt_day,reserved_input_upper,reserved_output_cap,reserved_cost_micros,durable_claim_token)
+  values(p_attempt_id,p_business_id,p_owner_user_id,p_thread_id,'durable_run',p_run_id::text,
+    p_owner_message_id,p_model,v_day,p_input_upper,p_output_cap,p_cost_upper,
+    case when r.execution_version=2 then p_claim_token else null end);
+end $$;
+revoke all on function public.supervisor_reserve_durable_model_call(
+  uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,integer,integer,bigint,integer,bigint,bigint,bigint,integer)
+  from public,anon,authenticated;
+grant execute on function public.supervisor_reserve_durable_model_call(
+  uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,integer,integer,bigint,integer,bigint,bigint,bigint,integer)
+  to service_role;
