@@ -137,7 +137,13 @@
     "claimHelp": "Only record what the technician or staff reported. This does not close the issue.",
     "verifyHelp": "Confirm operational condition from your own check, not only the technician's claim."
   },
-    "SupervisorWork": {
+    "SupervisorDurableWork": {
+    "runAwaitingOwner": "Waiting for your answer to the saved question.",
+    "runAwaitingOwnerNext": "Answer the question in this conversation to continue the same assignment.",
+    "runCancelled": "This assignment was cancelled.",
+    "runRetrying": "Progress is saved. Supervisor will retry this assignment safely."
+  },
+  "SupervisorWork": {
     "heading": "Supervisor work",
     "stale": "Current status cannot be verified. Saved work may still be running; no action has been repeated.",
     "more": "Show more saved work",
@@ -147,10 +153,6 @@
       "stepAuthorizeOwner": "Checking your authorization",
       "stepOwnerTurn": "Investigating and carrying out the approved work",
       "stepVerifyReport": "Verifying the saved result",
-      "runAwaitingOwner": "Waiting for your answer to the saved question.",
-      "runAwaitingOwnerNext": "Answer the question in this conversation to continue the same assignment.",
-      "runCancelled": "This assignment was cancelled.",
-      "runRetrying": "Progress is saved. Supervisor will retry this assignment safely.",
       "runTitle": "Supervisor work",
       "runAnswerReady": "Supervisor saved an answer. This does not verify any external action.",
       "runUncertain": "A saved step needs reconciliation; its outcome is not known.",
