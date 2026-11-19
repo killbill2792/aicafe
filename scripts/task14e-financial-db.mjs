@@ -147,6 +147,32 @@ try{
  await claimInvoice(billDuplicate);await role("authenticated",a.owner);await denied(()=>one(billCommit,commitArgs(billDuplicate)));
  await role("authenticated",b.owner);assert.equal(await one("select id from public.uploads where id=$1",[billId]),null);
  await role("service_role");
+ // Independently verified full coverage closes the exact current invoice; a credit reopens it.
+ const closedEffect={...effect,invoiceReference:"closure-check",expectedInvoiceRevision:0,totalCents:1000,subtotalCents:1000,lines:[{...effect.lines[0],subtotalCents:1000}]};
+ const closeInvoice=await draftInvoice(closedEffect);await claimInvoice(closeInvoice);
+ await role("authenticated",a.owner);const closureInvoice=(await one(commit,commitArgs(closeInvoice))).value;
+ await role("service_role");
+ const closureRows=[{i:0,date:"2026-02-01",amountCents:-1000,balanceCents:8000},{i:1,date:"2026-02-02",amountCents:200,balanceCents:8200}];
+ const closureUpload=(await one(capture,[a.business,a.owner,"6".repeat(64),args[3],"CAD","2026-02-01","2026-02-02",9000,8200,JSON.stringify(closureRows)])).id;
+ const closureLink={...effectSettlement,invoiceId:closureInvoice.invoiceId,invoiceRevision:1,invoiceReference:"closure-check",invoiceTotalCents:1000,uploadId:closureUpload,sourceHash:"6".repeat(64),allocationCents:1000,transactionDate:closureRows[0].date,transactionAmountCents:-1000,transactionBalanceCents:8000};
+ const closureProposal=await draftSettlement(closureLink);await claimInvoice(closureProposal);
+ await role("authenticated",a.owner);const closureEvent=(await one(settlement,commitArgs(closureProposal))).id;
+ await role("service_role");
+ async function verifyReceipt(proposal){
+  const attempt=await one("select attempt_key from public.supervisor_effect_attempts where business_id=$1 and proposal_id=$2",[a.business,proposal.id]);
+  const current=await one("select revision from public.supervisor_proposals where business_id=$1 and id=$2",[a.business,proposal.id]);
+  await one("select public.supervisor_finish_effect_attempt($1,$2,$3,$4,$5,$6,'uncertain',null,null)",[a.business,a.owner,thread,proposal.id,attempt.attempt_key,current.revision]);
+  assert.equal((await one("select to_jsonb(public.supervisor_reconcile_supplier_receiving($1,$2,$3,$4,$5)) p",[a.business,a.owner,thread,proposal.id,current.revision])).p.status,"committed");
+ }
+ const closureTask=()=>one("select status,resolved_at from public.operating_tasks where business_id=$1 and entity_type='supplier_invoice' and entity_id=$2",[a.business,closureInvoice.invoiceId]);
+ await one(sync,[a.business,a.owner]);assert.equal((await closureTask()).status,"watching");
+ await verifyReceipt(closureProposal);await one(sync,[a.business,a.owner]);
+ assert.equal((await closureTask()).status,"handled");assert.ok((await closureTask()).resolved_at);
+ const reopen=await draftSettlement({...closureLink,financialKind:"settlement_evidence_reversed",rowIndex:1,allocationCents:200,reversesId:closureEvent,transactionDate:closureRows[1].date,transactionAmountCents:200,transactionBalanceCents:8200});
+ await claimInvoice(reopen);await role("authenticated",a.owner);assert.ok((await one(settlement,commitArgs(reopen))).id);
+ await role("service_role");await verifyReceipt(reopen);await one(sync,[a.business,a.owner]);
+ assert.equal((await closureTask()).status,"watching");assert.equal((await closureTask()).resolved_at,null);
+ assert.equal((await one("select status from public.operating_tasks where business_id=$1 and id=$2",[a.business,"financial-review:"+a.owner])).status,"watching");
  await db.query("delete from public.memberships where business_id=$1 and user_id=$2",[a.business,a.owner]);
  await denied(()=>one(capture,args));
  assert.equal(Number((await one("select count(*) n from public.expenses where business_id=$1",[a.business])).n),0);
