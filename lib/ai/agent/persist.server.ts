@@ -1,6 +1,6 @@
 import "server-only";
 import { ZodError } from "zod";
-import { persistGroundedSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
+import { persistGroundedSupervisorReply, type DurableReplyFence } from "@/lib/ai/conversations/replyWriter.server";
 import { recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import type { ConversationMessage, ConversationScope, GroundedSupervisorReply } from "@/lib/ai/conversations/contracts";
 import type { AgentTurn } from "./loop.server";
@@ -137,10 +137,11 @@ export function agentReplyPayload(turn: AgentTurn) {
     ...(turn.absorbedOwnerMessageIds?.length?{absorbedOwnerMessageIds:[...turn.absorbedOwnerMessageIds]}:{}),
   } };
 }
-export async function persistAgentReply(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn) {
+export async function persistAgentReply(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn, durableFence?:DurableReplyFence) {
   const { reply, metadata } = agentReplyPayload(turn);
   let saved: ConversationMessage;
-  try { saved = await persistGroundedSupervisorReply(scope, owner, reply, metadata); }
+  if(durableFence&&(turn.endReason!=="complete"||reply.status!=="verified"))throw new AgentEmptyReplyError();
+  try { saved = await persistGroundedSupervisorReply(scope, owner, reply, metadata, durableFence); }
   catch (error) {
     // Field paths and issue codes only (never reply text), so a rejected card can be traced.
     const issues = error instanceof ZodError ? error.issues.slice(0, 5).map(i => i.path.join(".") + ":" + i.code) : [];
