@@ -40,7 +40,7 @@ begin
     and owner_user_id=p_owner_user_id and thread_id=p_thread_id for update;
   if not found or r.status<>'running' then
     raise exception 'durable_reservation_not_authorized' using errcode='42501'; end if;
-  v_slice:=coalesce(to_jsonb(r)->>'execution_version'='2',false);
+  v_slice:=r.execution_version=2;
   if v_slice and r.request_key is distinct from p_owner_message_id then
     raise exception 'durable_reservation_not_authorized' using errcode='42501'; end if;
   perform 1 from public.supervisor_run_steps s where s.business_id=p_business_id
@@ -54,8 +54,8 @@ begin
       and j.business_id=p_business_id and j.owner_user_id=p_owner_user_id
       and j.thread_id=p_thread_id and j.owner_message_id=p_owner_message_id
       and j.status='running' and j.heartbeat_at>clock_timestamp()-interval '180 seconds'
-      and (not v_slice or (to_jsonb(j)->>'durable_run_id'=p_run_id::text and to_jsonb(j)->>'durable_claim_token'=p_claim_token::text
-        and not (r.input_attachment_version_hash is distinct from public.supervisor_owner_attachment_fingerprint_v2(r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids)))))
+      and (not v_slice or (j.durable_run_id=p_run_id and j.durable_claim_token=p_claim_token
+        and public.supervisor_owner_job_fence_v2(p_business_id,p_owner_user_id,p_thread_id,p_run_id,p_claim_token))))
     then raise exception 'durable_reservation_not_authorized' using errcode='42501'; end if;
   v_day:=(clock_timestamp() at time zone 'UTC')::date;
   -- Share the existing investigation owner/day lock, not a new job pipeline.
@@ -68,8 +68,6 @@ begin
     where e.business_id=p_business_id and e.owner_user_id=p_owner_user_id and e.attempt_day=v_day;
   if p_owner_daily_cap is not null and v_prior+v_system>=p_owner_daily_cap then
     raise exception 'owner_usage_limit_reached' using errcode='P0001'; end if;
-  -- The JSON lookup preserves compatibility until #536's version column exists.
-  v_slice:=coalesce(to_jsonb(r)->>'execution_version'='2',false);
   select count(*) filter(where not v_slice or e.durable_claim_token=p_claim_token),
     coalesce(sum(e.reserved_input_upper) filter(where not v_slice or e.durable_claim_token=p_claim_token),0),
     coalesce(sum(e.reserved_output_cap) filter(where not v_slice or e.durable_claim_token=p_claim_token),0),coalesce(sum(e.reserved_cost_micros),0)
@@ -88,6 +86,7 @@ begin
     and s.run_id=p_run_id and s.step_key='owner_turn' and s.claim_token=p_claim_token
     and s.status='leased' and s.lease_until>clock_timestamp())
     or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
+    or (v_slice and not public.supervisor_owner_job_fence_v2(p_business_id,p_owner_user_id,p_thread_id,p_run_id,p_claim_token))
     then raise exception 'durable_reservation_not_authorized' using errcode='42501'; end if;
   insert into public.supervisor_system_usage_events(
     attempt_id,business_id,owner_user_id,thread_id,source_type,source_id,owner_message_id,
