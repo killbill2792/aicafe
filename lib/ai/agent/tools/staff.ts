@@ -74,8 +74,8 @@ export const staffTools = {
       for(let ws=monday;ws<=dateEnd;ws=dateOffset(ws,7)){
         let response:Awaited<ReturnType<typeof getWeekSchedule>>;
         try{response=ctx.investigation?
-          await ctx.investigation.weekSchedule(ws):
-          await getWeekSchedule({weekStart:ws});}
+          await ctx.investigation.weekSchedule(ws):ctx.readWeekSchedule?
+          await ctx.readWeekSchedule(ws):await getWeekSchedule({weekStart:ws});}
         catch{missingInputs.push("scheduleReadFailed:"+ws);notes.push(
           {en,es,ar}[ctx.locale].DataNotes.staffScheduleWeekReadFailed.replace("{date}",ws));continue;}
         if(!response.ok){missingInputs.push("scheduleReadFailed:"+ws+":"+response.error);

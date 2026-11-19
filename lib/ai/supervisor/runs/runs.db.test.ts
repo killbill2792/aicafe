@@ -513,6 +513,10 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
     const t=claim.step.claim_token;
     if(i<2){
       const job=await call(a,"supervisor_start_owner_job_v2",[...scope,long.id,t]);
+      expect(await call(a,"supervisor_owner_schedule_source_token_v2",[...scope,long.id,t,job.id])).toMatch(/^[a-f0-9]{32}$/);
+      await expect(call(a,"supervisor_owner_schedule_source_token_v2",[randomUUID(),ownerId,threadId,long.id,t,job.id])).rejects.toThrow("durable_schedule_scope_unavailable");
+      await expect(call(a,"supervisor_owner_schedule_source_token_v2",[...scope,long.id,t,randomUUID()])).rejects.toThrow("durable_schedule_scope_unavailable");
+      if(previousToken)await expect(call(a,"supervisor_owner_schedule_source_token_v2",[...scope,long.id,previousToken,job.id])).rejects.toThrow("durable_schedule_scope_unavailable");
       const args=(attempt:string,token:string)=>[attempt,...scope,long.id,longId,job.id,token,"gpt-6-luna",100,50,100,1,100,50,10000,1000];
       if(previousToken)await expect(call(a,"supervisor_reserve_durable_model_call",args(randomUUID(),previousToken))).rejects.toThrow("durable_reservation_not_authorized");
       const id=randomUUID();spentIds.push(id);

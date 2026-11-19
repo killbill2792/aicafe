@@ -892,3 +892,21 @@ revoke all on function public.supervisor_reserve_durable_model_call(
 grant execute on function public.supervisor_reserve_durable_model_call(
   uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,integer,integer,bigint,integer,bigint,bigint,bigint,integer)
   to service_role;
+
+-- Read-only Olivia preview uses the same canonical source hash as the website.
+-- A service worker cannot manufacture a browser session, or read another
+-- café's planning token. Bind every read to its exact active job/lease.
+create function public.supervisor_owner_schedule_source_token_v2(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_run_id uuid,p_claim_token uuid,p_job_id uuid
+) returns text language plpgsql security definer set search_path=public as $$
+begin
+ if not public.supervisor_owner_job_fence_v2(p_business_id,p_owner_user_id,p_thread_id,p_run_id,p_claim_token)
+   or not exists(select 1 from public.ai_agent_jobs j
+     where j.id=p_job_id and j.business_id=p_business_id and j.owner_user_id=p_owner_user_id
+       and j.thread_id=p_thread_id and j.durable_run_id=p_run_id
+       and j.durable_claim_token=p_claim_token and j.status='running')
+   then raise exception 'durable_schedule_scope_unavailable' using errcode='42501'; end if;
+ return public.scheduling_pr3_source_token_internal(p_business_id);
+end $$;
+revoke all on function public.supervisor_owner_schedule_source_token_v2(uuid,uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.supervisor_owner_schedule_source_token_v2(uuid,uuid,uuid,uuid,uuid,uuid) to service_role;

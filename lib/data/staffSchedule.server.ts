@@ -181,10 +181,10 @@ export async function getTeam(raw:unknown){
    posShifts:result.data.posShifts,posScheduleError:result.data.posScheduleError,timezone:result.data.timezone,
    totals:result.data.total}}:result;
 }
-export async function getShiftCost(raw:unknown){
+export async function getShiftCost(raw:unknown,explicit?:{client:SupabaseClient;businessId:string;ownerUserId:string}){
  const p=shiftInput.safeParse(raw);if(!p.success)return {ok:false as const,error:"invalid_input"};
  const ws=plusDays(p.data.date,-((new Date(p.data.date+"T12:00:00Z").getUTCDay()+6)%7));
- const schedule=await getWeekSchedule({weekStart:ws});if(!schedule.ok)return schedule;
+ const schedule=await getWeekSchedule({weekStart:ws},explicit);if(!schedule.ok)return schedule;
  const person=schedule.data.team.find(person=>person.id===p.data.employeeId);
  if(!person)return {ok:false as const,error:"unknown_employee"};
  const roleAverage=roleWageAverages(schedule.data.team),defaultWage=businessWageEstimate(schedule.data.team);

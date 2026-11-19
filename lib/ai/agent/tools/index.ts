@@ -173,6 +173,13 @@ export type AgentToolContext = {
   webSearch?:(query:string,budget?:import("../webSearch.server").WebSearchBudget)=>Promise<import("../webSearch.server").WebSearchResult>;
   /** Same canonical café readers used by Staff and saved owner questions. */
   readWeekSchedule?:(weekStart:string)=>ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>;
+  readLaborRules?:()=>ReturnType<typeof import("@/lib/data/staffRules.server").getTeamRules>;
+  readShiftCost?:(raw:unknown)=>ReturnType<typeof import("@/lib/data/staffSchedule.server").getShiftCost>;
+  oliviaPreview?:{
+    week:typeof import("@/lib/actions/oliviaPlanning").previewOliviaWeek;
+    absence:typeof import("@/lib/actions/oliviaPlanning").previewOliviaAbsenceWhatIf;
+    ownerSavings:typeof import("@/lib/actions/oliviaPlanning").previewOliviaOwnerSavings;
+  };
   ownerFacts?:readonly import("@/lib/ownerFacts/inject").SavedFact[];
   menuPriceEvidence?:(items:ReadonlyArray<{id:string;priceCents:number}>)=>Promise<Record<string,import("@/lib/data/menuPriceEvidence.server").MenuPriceEvidence>>;
   readPriceMonitors?:()=>Promise<Array<{proposalId:string;threadId:string;productName:string;status:string;startDate:string|null;durationDays:number|null;day:number|null;oldPriceCents:number|null;newPriceCents:number|null;reportStatus:string|null}>>;
@@ -378,7 +385,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if(name==="get_staff_messages")return scheduleReadTools.get_staff_messages.execute(raw,ctx);
   if(name==="get_team")return scheduleReadTools.get_team.execute(raw,ctx);
   if(name==="get_week_schedule")return scheduleReadTools.get_week_schedule.execute(raw,ctx);
-  if(name==="get_labor_rules")return scheduleReadTools.get_labor_rules.execute(raw);
+  if(name==="get_labor_rules")return scheduleReadTools.get_labor_rules.execute(raw,ctx);
   if(name==="get_coverage_gaps")return scheduleReadTools.get_coverage_gaps.execute(raw,ctx);
   if(name==="get_shift_cost")return scheduleReadTools.get_shift_cost.execute(raw,ctx);
   if(name==="get_business_hours")return hoursTools.get_business_hours.execute(raw,ctx);

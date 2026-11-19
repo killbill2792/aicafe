@@ -6,7 +6,11 @@ import {recordedWhatsAppImageIds} from "@/lib/ai/conversations/authorizedTurn.se
 import {fileEvidence} from "@/lib/ai/conversations/fileEvidence.server";
 import {possiblePriorReceipt} from "@/lib/ai/conversations/receiptDuplicate";
 import {verifySignature,MAX_UPLOAD_BYTES} from "@/lib/ai/conversations/attachments";
-import {getWeekSchedule as scopedWeekSchedule} from "@/lib/data/staffSchedule.server";
+import {getWeekSchedule as scopedWeekSchedule,getShiftCost as scopedShiftCost} from "@/lib/data/staffSchedule.server";
+import {getTeamRules as scopedTeamRules} from "@/lib/data/staffRules.server";
+import {readStaffMessagesForVerifiedOwner} from "@/lib/staffCommunication/channel.server";
+import {readClaimedStaffCoordination} from "@/lib/staffCoordination/cases.server";
+import {withDurableOliviaReadScope} from "@/lib/scheduling/oliviaReadScope.server";
 import {TeamRulesService} from "@/lib/ai/policies/service";
 import {SupabaseTeamRulesRepository} from "@/lib/ai/policies/repository.server";
 import {getWeekSchedule} from "@/lib/actions/schedule";
@@ -238,6 +242,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       sourceChecks.set("gmail",check);
       return value;
     };
+    const durableRead=p.durableFence&&p.externalClient?{...scope,threadId:id,...p.durableFence,client:p.externalClient}:null;
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
       ownerText:p.ownerText,
       externalEvidencePresent:()=>sourceChecks.size>0,
@@ -286,6 +291,17 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       readWeekSchedule:weekStart=>external?
         getDb().then(client=>scopedWeekSchedule({weekStart},{client,businessId:scope.businessId,ownerUserId:scope.ownerUserId})):
         getWeekSchedule({weekStart}),
+      ...(durableRead?{
+        readShiftCost:raw=>scopedShiftCost(raw,durableRead),
+        readLaborRules:()=>scopedTeamRules(durableRead),
+        staffMessages:{read:()=>readStaffMessagesForVerifiedOwner(durableRead.client,scope.businessId,scope.ownerUserId)},
+        staffCoordinationRead:()=>readClaimedStaffCoordination(durableRead.client,scope),
+        oliviaPreview:{
+          week:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaWeek(raw)),
+          absence:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaAbsenceWhatIf(raw)),
+          ownerSavings:raw=>withDurableOliviaReadScope(durableRead,async()=> (await import("@/lib/actions/oliviaPlanning")).previewOliviaOwnerSavings(raw)),
+        },
+      }:{}),
       ownerFacts:ownerFactRead.facts,
       // Use the same verified café/owner/thread in browser and WhatsApp turns.
       // An external Meta turn has no browser cookies and needs no reauth.
