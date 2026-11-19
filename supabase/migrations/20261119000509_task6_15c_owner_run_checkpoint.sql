@@ -1,13 +1,16 @@
 -- Task 6 / 15C: additive v2 owner-run admission and fenced checkpoint primitives.
 -- Existing version-1 runs retain the original reconcile-only behavior.
 -- No new scheduler, queue, provider transport, or production activation.
+set lock_timeout='3s';
+set statement_timeout='30s';
+
 alter table public.supervisor_runs
-  add column execution_version smallint not null default 1 check(execution_version in (1,2)),
+  add column execution_version bigint not null default 1 check(execution_version in (1,2)),
   add column input_locale text check(input_locale in ('en','es','ar')),
   add column input_attachment_ids uuid[] not null default '{}' check(cardinality(input_attachment_ids)<=3);
 
 alter table public.supervisor_run_steps
-  add column checkpoint_seq integer not null default 0 check(checkpoint_seq>=0),
+  add column checkpoint_seq bigint not null default 0 check(checkpoint_seq>=0),
   add column checkpoint_phase text not null default 'ready'
     check(checkpoint_phase in ('ready','provider_pending','read_pending','effect_pending')),
   add column checkpoint_operation uuid,
@@ -20,7 +23,7 @@ alter table public.supervisor_run_steps
     (checkpoint_phase='ready' and checkpoint_operation is null and checkpoint_tool is null)
     or (checkpoint_phase='provider_pending' and checkpoint_operation is not null and checkpoint_tool is null)
     or (checkpoint_phase in ('read_pending','effect_pending') and checkpoint_operation is not null
-      and checkpoint_tool is not null));
+      and checkpoint_tool is not null)) not valid;
 
 -- The work projection may read nonsecret progress, not selected input or
 -- checkpoint receipts. Existing RLS still scopes every owner-readable row.
