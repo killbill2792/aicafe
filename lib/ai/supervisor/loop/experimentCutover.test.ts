@@ -1,16 +1,21 @@
 import {describe,expect,it,vi} from "vitest";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {LoopProposal,LoopRepository} from "./engine";
-const testReader=vi.hoisted(()=>({read:vi.fn(),elapsed:vi.fn()}));
+const testReader=vi.hoisted(()=>({read:vi.fn(),elapsed:vi.fn(),notice:vi.fn()}));
 vi.mock("server-only",()=>({}));
-vi.mock("./toastPriceEvidence.server",()=>({
+vi.mock("./toastPriceEvidence.server",async importOriginal=>({
+ ...await importOriginal<typeof import("./toastPriceEvidence.server")>(),
  readVerifiedToastPriceEvidence:(...args:unknown[])=>testReader.read(...args),
+}));
+vi.mock("./experimentNotices.server",async importOriginal=>({
+ ...await importOriginal<typeof import("./experimentNotices.server")>(),
+ postToastObservationNotice:(...args:unknown[])=>testReader.notice(...args),
 }));
 vi.mock("./rollingExperimentSales.server",async importOriginal=>{
  const real=await importOriginal<typeof import("./rollingExperimentSales.server")>();
  return {...real,readElapsedWindowObservations:(...args:unknown[])=>testReader.elapsed(...args)};
 });
-import {resolveExperimentCutoverMode,readVerifiedActivationAnchor,runVerifiedToastPriceTick,trialSourceInterruption,contextChangeBreaksApprovedPrice,subsequentToastPriceBoundary,priceExposureBoundary,windowHasSourceGap} from "./experimentCutover.server";
+import {resolveExperimentCutoverMode,readVerifiedActivationAnchor,runVerifiedToastPriceTick,trialSourceInterruption,contextChangeBreaksApprovedPrice,subsequentToastPriceBoundary,priceExposureBoundary,windowHasSourceGap,runToastObservationBatch} from "./experimentCutover.server";
 
 describe("Task 8a experiment single-writer cutover",()=>{
  it("defaults to legacy when release evidence is absent",()=>{
@@ -199,6 +204,68 @@ describe("verified new-mode daily delivery",()=>{
  });
 });
 
+describe("Task 8a observation worker provisional publication recovery",()=>{
+ it("does not publish an early final or price comparison until the later checkpoint completes",async()=>{
+  const businessId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",itemId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const historyId="cccccccc-cccc-4ccc-8ccc-cccccccccccc",restaurant="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const posItemId="toast:"+restaurant+":eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const ownerId="99999999-9999-4999-8999-999999999999",start="2026-11-01T18:00:00Z";
+  const observed="2026-11-03T07:00:00Z";
+  const event={id:historyId,business_id:businessId,menu_item_id:itemId,source_type:"connected_pos",source_provider:"toast",
+   toast_restaurant_guid:restaurant,toast_publication_version:"menu-v1",toast_publication_pos_item_id:posItemId,
+   toast_observed_at:start,toast_effective_at:null,toast_publication_completed_at:"2026-11-01T18:01:00Z",
+   old_price_cents:500,new_price_cents:550};
+  let later={toast_observed_at:observed,toast_effective_at:null,
+   toast_publication_completed_at:null as string|null,toast_publication_pos_item_id:null as string|null,
+   old_price_cents:550,new_price_cents:500};
+  let anchor:unknown=null;
+  const writes:Record<string,unknown>[]=[];
+  function query(response:unknown):unknown{
+   return new Proxy({},{get:(_t,prop)=>prop==="then"?
+    (resolve:(value:unknown)=>void)=>Promise.resolve(response).then(resolve):
+    (..._args:unknown[])=>query(response)});
+  }
+  const db={from:(table:string)=>({select:(columns:string,options?:{head?:boolean})=>{
+   const response=table==="menu_price_history"?
+    options?.head?{data:null,count:0,error:null}:
+    columns.startsWith("id,business_id")?{data:event,error:null}:{data:[later],count:1,error:null}:
+    table==="toast_location_mappings"?{data:{restaurant_guid:restaurant,verified_at:"2026-10-31T00:00:00Z"},error:null}:
+    table==="businesses"?{data:{timezone:"America/Los_Angeles",currency:"USD"},error:null}:
+    table==="memberships"?{data:[{user_id:ownerId}],count:1,error:null}:
+    table==="menu_items"?{data:{name:"Latte",catalog_source:"toast",is_active:true,pos_item_id:posItemId,
+     price_cents:500,toast_publication_state:"active",pos_pricing_strategy:"BASE_PRICE",toast_publication_observed_at:observed},error:null}:
+    table==="supervisor_monitor_windows"?{data:{source_reference:anchor,owner_user_id:ownerId},error:null}:
+    table==="supervisor_toast_price_context_changes"?{data:[],count:0,error:null}:
+    table==="supervisor_experiment_notice_receipts"?{data:null,error:null}: {data:null,error:{message:"not needed"}};
+   return query(response);
+  }}),rpc:async(name:string,args:Record<string,unknown>)=>{
+   if(name==="supervisor_8a_due_toast_observations")return {data:[{history_id:historyId,business_id:businessId,enabled_at:"2026-10-31T00:00:00Z"}],error:null};
+   if(name==="supervisor_8a_claim_observation_work")return {data:"worker-token",error:null};
+   if(name==="supervisor_8a_observation_thread")return {data:"owner-thread",error:null};
+   if(name==="supervisor_8a_write_observation_window"){writes.push(args);return {data:true,error:null};}
+   if(name==="supervisor_8a_finish_observation_work"){anchor=args.p_ref;return {data:true,error:null};}
+   throw Error("unexpected RPC "+name);
+  }} as unknown as SupabaseClient;
+  testReader.notice.mockReset().mockResolvedValue("posted");
+  testReader.elapsed.mockReset().mockImplementation(async(_db:unknown,_biz:unknown,_item:unknown,window:unknown,asOf:string)=>({
+   window,status:"actual",units:4,revenueCents:2000,countedLines:1,unknownTimeLines:0,source:"order_lines.ordered_at",asOf
+  }));
+  const first=await runToastObservationBatch(db,"2026-11-04T19:00:00Z");
+  expect(first.failed).toBe(0);
+  expect(anchor).toMatchObject({interruptedAt:null,sourceGapAt:"2026-11-03T07:00:00.000Z",finalDue:false,
+   cumulative:{observedUnits:null,observedRevenueCents:null,volumeChangeBps:null}});
+  expect(writes.some(x=>x.p_index===1&&x.p_evaluation==="insufficient_evidence"&&x.p_units===null&&x.p_revenue===null)).toBe(true);
+  expect(testReader.notice.mock.calls.some(x=>x[1].key.kind==="toast_price_final")).toBe(false);
+  // Later checkpoint completes for the very same row/size, establishing the cut.
+  later={...later,toast_publication_completed_at:"2026-11-04T20:00:00Z",toast_publication_pos_item_id:posItemId};
+  testReader.notice.mockClear();
+  const second=await runToastObservationBatch(db,"2026-11-04T21:00:00Z");
+  expect(second.failed).toBe(0);
+  expect(anchor).toMatchObject({interruptedAt:"2026-11-03T07:00:00.000Z",sourceGapAt:null,finalDue:true});
+  expect(testReader.notice.mock.calls.some(x=>x[1].key.kind==="toast_price_final")).toBe(true);
+ });
+});
+
 describe("Task 8a exact interval and source pricing continuity",()=>{
  const receipt={startAt:"2026-11-11T18:00:00.000Z",
   posItemId:"toast:dddddddd-dddd-4ddd-8ddd-dddddddddddd:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -328,6 +395,7 @@ it.skipIf(process.env.AICAFE_8A_DISPOSABLE_WORKER!=="1")("8a disposable real cro
  // Restore real collaborators, not the unit doubles defined above.
  vi.doUnmock("./toastPriceEvidence.server");
  vi.doUnmock("./rollingExperimentSales.server");
+ vi.doUnmock("./experimentNotices.server");
  vi.resetModules();
  const {createAdminSupabaseClient}=await import("@/lib/supabase/admin");
  const {runToastObservationBatch}=await import("./experimentCutover.server");
