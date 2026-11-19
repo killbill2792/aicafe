@@ -217,5 +217,9 @@ export function projectOwnerWork(input: {
   const settled = (s: OwnerWorkStatus) =>
     ["verified_complete","answer_ready","source_resolved","cancelled"].includes(s);
   // Keep ALL unresolved work addressable; only confirmed past results are bounded.
-  return [...sorted.filter(x => !settled(x.status)), ...sorted.filter(x => settled(x.status)).slice(0,2)];
+  // Settled history is chronological, not status-ranked: a just-cancelled
+  // assignment must not vanish behind older successful replies or incidents.
+  const recent=sorted.filter(x=>settled(x.status)).sort((a,b)=>
+    (Date.parse(b.updatedAt)||0)-(Date.parse(a.updatedAt)||0)||a.id.localeCompare(b.id));
+  return [...sorted.filter(x => !settled(x.status)), ...recent.slice(0,2)];
 }

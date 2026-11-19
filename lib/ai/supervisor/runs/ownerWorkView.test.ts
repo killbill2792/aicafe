@@ -133,3 +133,14 @@ it("shows awaiting-owner and retrying v2 work without inventing completion",()=>
 });
 
 it("only offers cancellation and exact question binding on live v2 assignments",()=>{const r={...run,execution_version:2,awaiting_question_id:"q",owner_answer_ids:["a"],status:"blocked" as const};const waiting=view({runs:[r],steps:[{...step,status:"blocked",error_code:"awaiting_owner"}]})[0];expect(waiting).toMatchObject({executionVersion:2,questionId:"q",relatedOwnerMessageIds:["a"],cancelAllowed:true});const stopped=view({runs:[r],steps:[{...step,status:"blocked",error_code:"cancelled_effect_uncertain"}]})[0];expect(stopped).toMatchObject({questionId:null,cancelAllowed:false,status:"uncertain"});});
+
+
+it("keeps a newly cancelled assignment in recent history even with older completed records",()=>{
+ const latest="2026-11-14T10:05:00.000Z";
+ const cancelled={...run,id:"new",request_key:"new-owner",execution_version:2,status:"blocked" as const,updated_at:latest,awaiting_question_id:null};
+ const items=view({runs:[cancelled,{...run,id:"completed",status:"completed",final_report_ref:"reply",finished_at:when}],
+ steps:[{...step,run_id:"new",status:"blocked",error_code:"cancelled",updated_at:latest}],
+ investigations:[{episode_id:"old",phase:"resolved",failure_count:0,lease_token:null,lease_until:null,last_error:null,updated_at:when}]});
+ expect(items[0]).toMatchObject({id:"run:new",status:"cancelled",questionId:null,cancelAllowed:false});
+ expect(items).toHaveLength(2);
+});
