@@ -51,6 +51,8 @@ import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment
 import {BOARD_PROPOSAL_STATUSES,BOARD_REPORT_STATUSES} from "@/lib/operating/board";
 import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
+import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
+import type {DurableReplyFence} from "./replyWriter.server";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
 import {createOwnerRoutine,listOwnerRoutines,changeOwnerRoutine} from "@/lib/ai/supervisor/routines/repository.server";
@@ -96,6 +98,9 @@ type TurnParams = {
   service: ConversationService;
   emit: Emit; job: AgentJob | null; jobs: JobsModule | null;
   attachmentIds?:string[];
+  checkpoint?:OwnerRunCheckpoint;
+  durableFence?:DurableReplyFence;
+  recordDurableStep?:(step:import("@/lib/ai/agent/jobState").AgentJobStep)=>Promise<void>;
   /** Only a caller that reverified a signed, consented Meta owner binding can supply this. */
   externalClient?:SupabaseClient;
 };
@@ -198,6 +203,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // Per-turn checks bind admitted evidence to server-owned scope and revision.
     const sourceChecks=new Map<string,()=>Promise<void>>();
     const assertTurnSources=async()=>{
+      await p.checkpoint?.assertLive();
       if(external){
         await assertConnectorOwnerLive(scope);
         await p.service.getThread(id);
@@ -725,13 +731,15 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
        history, context,cafeProfile,businessId:scope.businessId,requestId:owner.id,
        onAuditStep: step => { if (auditSteps.length < 64) auditSteps.push(step); },
        beforeProviderRequest:assertTurnSources,
+       ...(p.checkpoint?{checkpoint:p.checkpoint}:{}),
        beforeAcceptResult:assertTurnSources,
        deferSensitiveOutput:()=>true,
       previousEvidence, ownerFacts:ownerFactRead.facts, ownerFactsReadFailed:ownerFactRead.failed,
       onTool:(name,agentId)=>{
         emit("tool",{name,agentId});
         // Ordered, best-effort persistence so a reloaded page can show the same steps.
-        if (job && jobs && isJobStepAgent(agentId)) steps = steps.then(() => jobs.recordAgentJobStep(job.id, { tool: name, agent: agentId }));
+        if (job && jobs && isJobStepAgent(agentId)) steps = steps.then(() => p.recordDurableStep
+          ?p.recordDurableStep({tool:name,agent:agentId}):jobs.recordAgentJobStep(job.id, { tool: name, agent: agentId }));
       },
       onDelta: delta => emit("delta", { text: delta }),
       onReset: discardChars => emit("reset", { discardChars }),
@@ -756,7 +764,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     try {
       if (!result.text.trim()) throw new AgentEmptyReplyError();
       await assertTurnSources();
-      reply = await persistAgentReply(scope, owner, result);
+      // Keep transient or budget-limited slices nonterminal. Their real
+      // provider usage is recorded by the existing finally block below.
+      if(p.durableFence&&(result.endReason!=="complete"||result.status.status!=="complete"))
+        throw new Error("durable_retry_pending");
+      reply = p.durableFence?await persistAgentReply(scope, owner, result,p.durableFence):await persistAgentReply(scope, owner, result);
     } finally {
       // Billable usage must be counted even for blank, oversized or failed writes.
       try { await recordAgentTurnUsage(scope, owner, result); }
@@ -785,7 +797,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
   } catch (error) {
     if(!logged)console.info("agent_turn",{turn:"agent",endReason:"error",status:"unavailable",
       modelCalls:0,toolCalls:0,tools:[],latencyMs:Date.now()-startedAt,unverifiedCount:0});
-    const code = errorCode(error);
+    const code = p.durableFence&&error instanceof Error&&error.message==="durable_retry_pending"?"durable_retry_pending":errorCode(error);
     console.error("agent_sse_error",{code});
     scheduleTurnAudit({ scope, owner, startedAt, endedAt: Date.now(), turn: completedTurn,
       answer: completedTurn?.text, steps: auditSteps,
@@ -800,7 +812,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             diagnosticModelCalls: completedTurn.usage.modelCalls,
             ...(completedTurn.providerFailureCodes?{diagnosticProviderFailures:completedTurn.providerFailureCodes}:{}) } : {}) }
       : {};
-    emit("error", { code, ...localDiagnostic,
+    if(code!=="durable_retry_pending")emit("error", { code, ...localDiagnostic,
       ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}),
       ...(job ? { jobId: job.id } : {}) });
     return { errorCode: code };
