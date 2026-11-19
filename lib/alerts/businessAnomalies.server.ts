@@ -95,17 +95,33 @@ export async function refreshBusinessAnomalies(db:SupabaseClient,businessId:stri
    const beforePrices=Object.fromEntries(b.value.items.filter(i=>finite(i.costPerBaseUnitMicros)).map(i=>[i.id,i.costPerBaseUnitMicros!]));
    const afterPrices=Object.fromEntries(a.value.items.filter(i=>finite(i.costPerBaseUnitMicros)).map(i=>[i.id,i.costPerBaseUnitMicros!]));
    const {items}=await getMenuItemsForEdit({client:db,businessId});
-   const sales=await facts.productSales(businessId,recent);
+   const [sales,prior]=await Promise.all([facts.productSales(businessId,recent),db.rpc("supervisor_prior_recipe_evidence",{p_business_id:businessId,p_as_of:old.to})]);
+   if(prior.error)throw prior.error;
+   const priorRows=Array.isArray(prior.data)?prior.data as Array<{product_id:string;ingredient_id:string;quantity:number;price_micros:number|null}>:[];
+   let historyMissing=false;
    const ranked:Array<{id:string;contribution:number}>=[];
    for(const item of items.filter(i=>i.active&&i.costSource==="recipe"&&i.priceCents>0)){
-    const before=evaluateRecipeCost(item.recipe,beforePrices),after=evaluateRecipeCost(item.recipe,afterPrices);
-    if(before.status!=="READY"||after.status!=="READY"||before.costCents===null||after.costCents===null)continue;
-    await persist(compareBusinessFacts("product_cost",item.id,after.costCents,before.costCents,"cents_per_current_recipe",old.to,today,today));
-    const marginBefore=item.priceCents-before.costCents,marginAfter=item.priceCents-after.costCents;
-    if(marginBefore>0)await persist(fact("product_contribution",item.id,marginAfter,marginBefore,"cents_per_current_recipe",marginAfter<=marginBefore*.8,old.to,today));
+    const rows=priorRows.filter(r=>r.product_id===item.id);
+    const observed=rows.length>0&&rows.every(r=>finite(r.quantity)&&r.quantity>0&&finite(r.price_micros)&&r.price_micros!>0);
+    if(!observed)historyMissing=true;
+    const before=observed?evaluateRecipeCost(rows.map(r=>({ingredientId:r.ingredient_id,quantity:r.quantity})),Object.fromEntries(rows.map(r=>[r.ingredient_id,r.price_micros!]))):evaluateRecipeCost(item.recipe,beforePrices);
+    const after=evaluateRecipeCost(item.recipe,afterPrices);
+    if(after.status!=="READY"||after.costCents===null)continue;
+    const marginAfter=item.priceCents-after.costCents;
+    if(before.status==="READY"&&before.costCents!==null){
+     const unit=observed?"cents_per_observed_recipe":"cents_per_current_recipe";
+     const cost=compareBusinessFacts("product_cost",item.id,after.costCents,before.costCents,unit,old.to,today,today);
+     // Current-configuration sensitivity is useful positive review evidence, but
+     // cannot close a previously observed recipe incident without actual history.
+     if(observed||cost?.active)await persist(cost);
+     const marginBefore=item.priceCents-before.costCents;
+     const active=marginBefore>0&&marginAfter<=marginBefore*.8;
+     if(marginBefore>0&&(observed||active))await persist(fact("product_contribution",item.id,marginAfter,marginBefore,unit,active,old.to,today));
+    }
     const sold=sales.available&&clean(sales.quality)?sales.value.find(v=>v.id===item.id)?.units:null;
     if(finite(sold)&&sold>0&&marginAfter>0)ranked.push({id:item.id,contribution:marginAfter*sold});
    }
+   await gap("product_recipe_history",historyMissing);
    const total=ranked.reduce((s,x)=>s+x.contribution,0);
    if(sales.available&&clean(sales.quality)&&sales.value.filter(v=>v.units>0).every(v=>ranked.some(x=>x.id===v.id))&&ranked.length>=5&&total>0)for(const row of ranked)
     await persist(fact("high_contribution",row.id,row.contribution,total,"current_recipe_contribution_cents",row.contribution/total>=.25,from,to));

@@ -72,3 +72,21 @@ it("a failed reader persists an explicit gap without blocking independently veri
  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:reader_unavailable:expenses",p_active:true}));
  expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"sales_decline:cafe",p_active:true}));
 });
+
+it("uses observed old recipe quantities and never resolves their incident on missing history",async()=>{
+ const q={missingInputs:[],estimatedInputs:[],staleInputs:[]};
+ inputs.sales.mockResolvedValue({available:false,value:null,quality:q});
+ inputs.expenses.mockResolvedValue({available:false,value:null,quality:q});
+ inputs.costs.mockResolvedValue({value:{items:[{id:"ing",baseUnit:"g",costPerBaseUnitMicros:1000000}]},quality:q});
+ inputs.products.mockResolvedValue({available:false,value:null,quality:q});
+ inputs.menu.mockResolvedValue({items:[{id:"product",active:true,costSource:"recipe",priceCents:500,recipe:[{ingredientId:"ing",quantity:150}]}]});
+ inputs.wages.mockResolvedValue([]);
+ let history:Array<{product_id:string;ingredient_id:string;quantity:number;price_micros:number}>|null=[{product_id:"product",ingredient_id:"ing",quantity:100,price_micros:1000000}];
+ const rpc=vi.fn(async(name:string,_args:unknown)=>({data:name==="supervisor_prior_recipe_evidence"?history:true,error:null}));
+ const run=()=>refreshBusinessAnomalies({rpc} as never,"cafe","2026-11-19","America/Los_Angeles",new Date("2026-11-19T20:00:00Z"));
+ await run();expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"product_cost:product",p_active:true,p_payload:expect.objectContaining({current:150,previous:100,unit:"cents_per_observed_recipe"})}));
+ history=null;rpc.mockClear();await run();expect(rpc).not.toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"product_cost:product",p_active:false}));
+ expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"data_gap:product_recipe_history",p_active:true}));
+ history=[{product_id:"product",ingredient_id:"ing",quantity:150,price_micros:1000000}];rpc.mockClear();await run();
+ expect(rpc).toHaveBeenCalledWith("supervisor_reconcile_business_anomaly",expect.objectContaining({p_key:"product_cost:product",p_active:false}));
+});

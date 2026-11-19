@@ -193,3 +193,48 @@ begin
 end $$;
 revoke all on function public.read_historical_ingredient_cost_proof(uuid,date,date) from public,anon;
 grant execute on function public.read_historical_ingredient_cost_proof(uuid,date,date) to authenticated,service_role;
+
+-- Prior observed recipe configuration and prices. No current recipe is
+-- substituted for missing history. Keep the single RPC result bounded.
+create function public.supervisor_prior_recipe_evidence(p_business_id uuid,p_as_of date)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare cutoff timestamptz; result jsonb; row_count bigint;
+begin
+ if coalesce(auth.role(),'')<>'service_role' or p_business_id is null or p_as_of is null then
+  raise exception 'catalog_history_scope_invalid' using errcode='42501';end if;
+ select (p_as_of+1)::timestamp at time zone b.timezone into cutoff
+ from public.businesses b join public.catalog_cost_history_start h on h.business_id=b.id
+ where b.id=p_business_id and not b.is_demo
+ and h.observed_at<(p_as_of+1)::timestamp at time zone b.timezone
+ and p_as_of<(statement_timestamp() at time zone b.timezone)::date;
+ if cutoff is null then return null;end if;
+ with recipe as (
+  select distinct on(h.entity_id,h.row_id) h.entity_id,h.row_id,h.quantity,h.present
+  from public.catalog_cost_history h join public.menu_items m on m.id=h.entity_id and m.business_id=p_business_id
+  where h.business_id=p_business_id and h.kind='recipe_line' and h.observed_at<cutoff
+  order by h.entity_id,h.row_id,h.observed_at desc,h.id desc
+ ), combo as (
+  select distinct on(h.entity_id,h.row_id) h.entity_id,h.present
+  from public.catalog_cost_history h where h.business_id=p_business_id and h.kind='combo_component' and h.observed_at<cutoff
+  order by h.entity_id,h.row_id,h.observed_at desc,h.id desc
+ ), price_revisions as (
+  select distinct on(h.entity_id,h.row_id) h.entity_id,h.row_id,h.effective_from,h.price_micros,h.price_recorded_at,h.present
+  from public.catalog_cost_history h where h.business_id=p_business_id and h.kind='ingredient_price' and h.observed_at<cutoff
+  order by h.entity_id,h.row_id,h.observed_at desc,h.id desc
+ ), prices as (
+  select distinct on(p.entity_id) p.entity_id,p.price_micros
+  from price_revisions p where p.present and p.effective_from<=p_as_of
+  order by p.entity_id,p.effective_from desc,p.price_recorded_at desc,p.row_id desc
+ ), evidence as (
+  select r.entity_id as product_id,r.row_id as ingredient_id,r.quantity,
+   case when i.id is not null then p.price_micros else null end as price_micros
+  from recipe r left join public.ingredients i on i.id=r.row_id and i.business_id=p_business_id
+  left join prices p on p.entity_id=r.row_id
+  where r.present and not exists(select 1 from combo c where c.entity_id=r.entity_id and c.present)
+  limit 5001
+ ) select count(*),jsonb_agg(to_jsonb(e)) into row_count,result from evidence e;
+ if row_count>5000 then raise exception 'catalog_history_truncated';end if;
+ return coalesce(result,'[]'::jsonb);
+end $$;
+revoke all on function public.supervisor_prior_recipe_evidence(uuid,date) from public,anon,authenticated;
+grant execute on function public.supervisor_prior_recipe_evidence(uuid,date) to service_role;
