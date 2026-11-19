@@ -234,7 +234,11 @@ async function until(check:()=>Promise<boolean>,timeout:number){
   expect(pending).toMatchObject({episode_id:episode,phase:"awaiting_owner"});
   expect(pending.evidence.modelTools).toContain("get_investigation_source");
   expect(pending.evidence.modelTools).toContain("inspect_purchase_reconciliation");
-  expect(pending.evidence.modelTools).toContain("propose_supplier_discrepancy_followup");
+  // The checkpoint stores the filtered verified read tools; the successful
+  // follow-up invocation is represented by receivingFollowupProposalId below.
+  expect(calls).toHaveLength(1);
+  expect(calls[0].verified).toBe(true);
+  expect(calls[0].toolNames).toContain("propose_supplier_discrepancy_followup");
   expect(pending.evidence.modelTools.some((t:string)=>["get_inventory","get_expenses","get_bills"].includes(t))).toBe(true);
   const proposalId=String(pending.evidence.receivingFollowupProposalId??"");
   expect(proposalId).toMatch(/^[a-f0-9-]{36}$/);
