@@ -99,8 +99,12 @@ export async function readSavedEventTimeline(db:SupabaseClient,scope:OwnerScope,
  ]);
  const plans=proposals.flatMap(p=>{
    const effect=p.canonical_effect_payload as Record<string,unknown>|null;
-   if(!effect||typeof effect.startDate!=="string"||typeof effect.endDate!=="string"||
-     effect.startDate>to||effect.endDate<from)return [];
+   if(!effect||typeof effect.startDate!=="string"||typeof effect.endDate!=="string")return [];
+   const activeIdentity=Array.isArray(effect.eventIds)&&events.some(e=>
+     e.endDate>=from&&e.startDate<=to&&(effect.eventIds as unknown[]).includes(e.id));
+   // Earlier exact-occurrence decisions remain visible for subsequent days.
+   // Legacy date-only proposals retain their original date-window semantics.
+   if((effect.startDate>to||effect.endDate<from)&&!activeIdentity)return [];
    return [{p,effect}];
  });
  const reports=await readOwnerReports(db,scope,plans.map(x=>x.p.id),{limit:200});

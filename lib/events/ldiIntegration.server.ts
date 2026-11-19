@@ -161,10 +161,10 @@ async function sourcesForCity(db:Db,cityKey:string):Promise<CityResearchSource[]
   }
   return [...defaults,...venue];
 }
-async function allCoverage(db:Db,cityKey:string):Promise<CoverageRow[]>{
+async function allCoverage(db:Db,cityKey:string,today:string):Promise<CoverageRow[]>{
   return rows<CoverageRow>((from,to)=>db.from("city_source_coverage")
     .select("source_key,window_from,window_to,scan_from,scan_to,window_reason,status,search_attempted,is_scan_root,last_completed_at,last_checked_at,failure_category")
-    .eq("city_key",cityKey).order("scan_from").order("window_from")
+    .eq("city_key",cityKey).gte("scan_to",addDays(today,-14)).order("scan_from").order("window_from")
     .range(from,to),5000);
 }
 function matchingCoverage(all:CoverageRow[],key:string,from:string,to:string){
@@ -587,7 +587,7 @@ export async function scanSharedResearch(db:Db,input:{
   if(input.window.reason==="initial"&&input.budget.cityTasks===6)
     input.budget.cityTasks=Math.max(input.budget.cityTasks,
       sources.length*4);
-  let all=await allCoverage(db,cityKey);
+  let all=await allCoverage(db,cityKey,input.today);
   // Only root/source-slice rows determine completion. Saturation creates
   // child coverage records, but a child must never complete its parent.
   // The scheduled caller determines initial city windows from the canonical
@@ -653,7 +653,7 @@ export async function scanSharedResearch(db:Db,input:{
         .eq("window_from",item.from).eq("window_to",item.to);
       assertOk(saved.error);
     }
-    all=await allCoverage(db,cityKey);
+    all=await allCoverage(db,cityKey,input.today);
   }
   const intended=sources.flatMap(source=>cityResearchDateSlices(window.from,window.to)
     .map(slice=>({source,key:sourceKey(source),...slice})));
@@ -661,7 +661,7 @@ export async function scanSharedResearch(db:Db,input:{
   // otherwise seven sources on every one-day extension would permanently
   // outgrow the six-task daily budget. A grouped request must be contiguous,
   // use one source, and never exceed B's seven-day subwindow.
-  all=await allCoverage(db,cityKey);
+  all=await allCoverage(db,cityKey,input.today);
   const pending=planCityResearchJobs(all,sources,input.today);
   const selected:CityResearchJob[]=[];
   for(const job of pending){
@@ -683,7 +683,7 @@ export async function scanSharedResearch(db:Db,input:{
       }
     }));
   }
-  all=await allCoverage(db,cityKey);
+  all=await allCoverage(db,cityKey,input.today);
   // A saturated seven-day B attempt may have searched two subwindows, each
   // still too crowded for the 5-event compact answer. Subsequent retries
   // work on those narrower saved child windows. Only after they collectively
@@ -707,12 +707,12 @@ export async function scanSharedResearch(db:Db,input:{
       .eq("status",status);
     assertOk(updated.error);
   }
-  all=await allCoverage(db,cityKey);
+  all=await allCoverage(db,cityKey,input.today);
   const completed=intended.every(item=>{const row=matchingCoverage(all,item.key,item.from,item.to);
     return row?row.is_scan_root&&complete(row.status):
       window.reason==="new_day"&&coveredByCompletedRoots(all,item.key,item.from,item.to);
   });
-  await retryCityEnrichment(db,scope,requestedWindow.from,requestedWindow.to,input.budget);
+  await retryCityEnrichment(db,scope,input.today,addDays(input.today,13),input.budget);
   // B may have completed new entering roots while retrying an older window.
   // Associate the whole requested range even before the older root finishes.
   const associations=await associateCityFacts(db,input.businessId,cityKey,

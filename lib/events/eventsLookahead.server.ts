@@ -88,7 +88,7 @@ export function pendingEventDays(events:readonly CafeEvent[],
         (!p.eventIds?.length&&!batchKey&&p.status!==undefined&&
           !["draft","stale","expired"].includes(p.status))||
         (p.eventIds?.length&&found.every(e=>p.eventIds!.includes(e.id))&&
-          p.status!==undefined&&!["draft","stale","expired"].includes(p.status)))))
+          p.factsHash===hash&&p.status!==undefined&&!["draft","stale","expired"].includes(p.status)))))
         result.push(batch);
     }
   }
@@ -275,7 +275,7 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
   const scope:OwnerLoopScope=await authorizedScheduledEventScope({
     businessId:b.id,ownerUserId:ownerId,threadId,locale,
   });
-  const requestKey=stableMessageId("event-proposal:"+b.id+":"+ownerId+":"+day.date+":"+day.hash+
+  const requestKey=stableMessageId("event-proposal:"+b.id+":"+ownerId+":"+day.date+":"+day.hash+":"+sourceHash+
     (day.refresh?":day-of":""));
   const existing=await db.from("supervisor_proposals").select("id")
     .eq("business_id",b.id).eq("owner_user_id",ownerId).eq("request_key",requestKey)
@@ -396,9 +396,9 @@ export async function draftDay(db:Db,b:Business,ownerId:string,locale:"en"|"es"|
     r.missing.length===0&&r.draft===true&&typeof r.proposalId==="string");
   if(!proposal){
     // Budget exhaustion/provider errors are NOT a completed no-action review.
-    if(turn.endReason==="complete"&&turn.text.trim()&&
+    if(turn.endReason==="complete"&&turn.text.trim()&&!proposalAttempted&&
       !turn.results.some(r=>r.source==="event_plan_proposal"||
-        r.source==="propose_event_plan"))
+        r.source==="propose_event_plan"||(r.source==="web_search"&&r.missing.length>0)))
       await saveEventAssessment(db,b.id,day.date,day.hash,sourceHash,
         "no_action",turn.text,today,day.batchKey);
     return false;
