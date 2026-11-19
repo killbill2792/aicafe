@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {verifyOwnerCases} from "./task17d-evidence.mjs";
+import {verifyOwnerCases,assessCensus} from "./task17d-evidence.mjs";
 const matrix={cases:[{id:"D01"}],viewports:[390,1440]};
 const spec=(id,status="passed",extra={})=>({title:"@home 17D:"+id+" actual test",tests:[{
   status:"expected",expectedStatus:"passed",results:[{status}],...extra
@@ -26,4 +26,19 @@ test("domain-specific selection must enforce its own 17D cases without claiming 
   assert.equal(verifyOwnerCases(report(spec("D09-390"),spec("D09-1440")),contract,["money"]).status,"passed");
   assert.equal(verifyOwnerCases(report(spec("D01-390"),spec("D01-1440")),contract,["money"]).status,"failed");
   assert.equal(verifyOwnerCases(report(),contract,["staff"]).status,"not_selected");
+});
+
+test("unmapped new upstream registry/operation never becomes owner acceptance",()=>{
+  const tool={id:"tool:manage_routine",kind:"tool",key:"manage_routine",fingerprint:"a".repeat(64)};
+  const novel={id:"tool:new_tool",kind:"tool",key:"new_tool",fingerprint:"b".repeat(64)};
+  const census={head:"c".repeat(40),rows:[tool,novel]};
+  const contract={cases:[{id:"D01"}],censusCandidates:{"tool:manage_routine":["D01"]},
+    autonomyCandidates:{chat_routine:["D01"],retired:["D01"]}};
+  const p=assessCensus(census,["chat_routine","new_monitor"],contract);
+  assert.equal(p.unmapped,1);assert.equal(p.unmappedAutonomy,1);
+  assert.deepEqual(p.staleMappings,["autonomy:retired"]);
+  assert.ok(p.rows.every(r=>r.status==="UNTESTED"));assert.equal(p.integrated_proven,false);
+  assert.throws(()=>assessCensus({...census,rows:[tool,tool]},["chat_routine"],contract),/Invalid upstream/);
+  assert.throws(()=>assessCensus(census,[],contract),/Missing upstream/);
+  assert.throws(()=>assessCensus(census,["chat_routine"],{...contract,censusCandidates:{"tool:manage_routine":["D99"]}}),/Unknown browser/);
 });

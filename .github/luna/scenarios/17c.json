@@ -162,6 +162,69 @@
       },
       "minCount": 0,
       "maxCount": 0
+    },
+    {
+      "name": "actual-completed-routine-occurrence",
+      "kind": "source",
+      "table": "public.supervisor_routine_occurrences",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "routine_id": {
+          "scope": "routineId"
+        },
+        "run_id": {
+          "scope": "routineRunId"
+        },
+        "local_date": {
+          "scope": "routineLocalDate"
+        },
+        "revision": {
+          "eq": "1"
+        },
+        "state": {
+          "eq": "completed"
+        },
+        "attempts": {
+          "eq": "1"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-duplicate-occurrence",
+      "kind": "source",
+      "table": "public.supervisor_routine_occurrences",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "routine_id": {
+          "scope": "routineId"
+        },
+        "local_date": {
+          "scope": "routineLocalDate"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-occurrence-isolation",
+      "kind": "isolation",
+      "table": "public.supervisor_routine_occurrences",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "routine_id": {
+          "scope": "routineId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
     }
   ]
 }

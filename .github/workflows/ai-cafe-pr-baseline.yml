@@ -385,6 +385,32 @@ jobs:
         run: npm ci
       - name: Mutation-test owner-domain selection and proof validation
         run: node --test scripts/acceptance/owner-gate.test.mjs
+      - name: Mutation-test exhaustive Supervisor census accounting
+        run: node --test scripts/acceptance/supervisor-coverage.test.mjs
+      - name: Discover Supervisor capabilities and run independent metric goldens
+        env:
+          AICAFE_CENSUS_OUTPUT: test-results/acceptance/supervisor-census.json
+        run: npx vitest run evals/acceptance/supervisor-census.test.ts
+      - name: Map actual 17B and 17C inventory to owner-browser gaps
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/e2e/task17d-evidence.mjs census test-results/acceptance/supervisor-census.json test-results/acceptance/task17d-census-gaps.json
+      - name: Upload explicit 17D owner-browser census gaps (not acceptance)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-task17d-census-gaps
+          path: test-results/acceptance/task17d-census-gaps.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload preliminary exact-head coverage census (not acceptance)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-supervisor-coverage-census
+          path: test-results/acceptance/supervisor-census.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Execute all selected registered domain regressions
         run: node scripts/acceptance/owner-gate.mjs run
       - name: Verify exact-head proof and actual case execution

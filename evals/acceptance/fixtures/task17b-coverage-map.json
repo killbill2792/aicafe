@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "baselineHead": "cf88dc7bcd2c878b35b449a998f7169f0e8a174b",
+  "baselineRun": 44540707378,
+  "baselineInventoryDigest": "f23e2df34f1d9f6de9e1456ef7526b038f294c27553380265efa4bb104541969",
+  "baselineRows": 2599,
+  "status": "BOOTSTRAP_UNVERIFIED",
+  "meaning": "Exact initial registry census. Outstanding end-to-end gaps remain untested. A changed digest must be reviewed alongside executable mappings; never use an updated snapshot to claim acceptance.",
+  "legacyTools": {
+    "13c": [
+      "get_staff_messages",
+      "get_week_schedule",
+      "get_schedule",
+      "get_coverage_gaps",
+      "get_investigation_source"
+    ],
+    "13d": [
+      "get_staff_coordination_cases",
+      "get_week_schedule",
+      "get_schedule",
+      "get_coverage_gaps",
+      "get_investigation_source"
+    ],
+    "14b": [
+      "inspect_supplier_purchase",
+      "propose_supplier_purchase_order",
+      "get_supplier_purchase_orders"
+    ]
+  },
+  "legacyNotes": "Existing trusted host attesters require one of the roster readers, not necessarily all three. All links are candidates, never execution proof.",
+  "deterministicMetricOracle": {
+    "entrypoint": "evals/acceptance/supervisor-census.test.ts",
+    "truth": "evals/acceptance/fixtures/task17b-business-truth.json",
+    "required": "independent arithmetic truth covers every currently registered metric, including no-data negatives"
+  },
+  "scenarioCandidates": [
+    {
+      "id": "17b-owner-security",
+      "mapped": [
+        "tool:manage_routine",
+        "tool:get_supervisor_permissions",
+        "attachment read",
+        "explicit trusted owner instruction",
+        "create",
+        "edit",
+        "pause",
+        "resume",
+        "revoke",
+        "foreign café",
+        "attachment denial"
+      ],
+      "state": "UNTESTED",
+      "limitations": "external content is read-only; owner repeats exact instructions in separate turn. Intermediate source and UI candidate checks; trusted host final-state only."
+    },
+    {
+      "id": "17b-sales-labor",
+      "mapped": [
+        "tool:get_sales",
+        "tool:get_labor",
+        "tool:query_data",
+        "historical sales and labor",
+        "correction",
+        "discount/refund/tip/tax/fee arithmetic"
+      ],
+      "state": "UNTESTED"
+    },
+    {
+      "id": "17b-supply-finance",
+      "mapped": [
+        "tool:get_menu_items",
+        "tool:get_product_costs",
+        "tool:get_bills",
+        "tool:get_expenses",
+        "tool:get_cashflow_evidence",
+        "menu/recipe unit margin",
+        "recurring bills and documented expenses",
+        "missing bank balance"
+      ],
+      "state": "UNTESTED"
+    }
+  ],
+  "reviewedMemorySchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "fact": {
+        "type": "string",
+        "minLength": 5,
+        "maxLength": 300
+      },
+      "applies_to": {
+        "type": "string",
+        "enum": [
+          "supervisor",
+          "alex",
+          "olivia",
+          "maya",
+          "leo"
+        ]
+      }
+    },
+    "required": [
+      "fact",
+      "applies_to"
+    ],
+    "additionalProperties": false
+  }
+}

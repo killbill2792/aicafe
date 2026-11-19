@@ -41,7 +41,7 @@ for(const width of [390,1440]) {
         [cafe.businessId,id,cafe.owner.userId,JSON.stringify(payload),id]);
       try {
         const {page}=await session();
-        await page.goto("/en/operations");
+        await page.goto("/en/operations?agent=leo&status=needs_you&task="+encodeURIComponent(id));
         const card=page.locator('article[data-task-kind="priority_notice"]').filter({hasText:title});
         await expect(card).toHaveCount(1);await expect(card).toBeVisible();
         const rows=await query("select status,payload,owner_user_id from public.operating_tasks where business_id=$1 and id=$2",[cafe.businessId,id]);
@@ -209,7 +209,7 @@ for(const width of [390,1440]) {
       const t=await thread(),episode=randomUUID(),source=randomUUID(),run=randomUUID();
       const hash=createHash("sha256").update(source).digest("hex");
       await query("insert into public.supervisor_investigations(business_id,owner_user_id,thread_id,source_type,source_id,revision_hash,stable_key,episode_id,phase,last_error) values($1,$2,$3,'alert',$4,$5,$5,$6,'blocked','source_missing')",[cafe.businessId,cafe.owner.userId,t.id,source,hash,episode]);
-      await query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status) values($1,$2,$3,$4,$5,$6,'completed')",[run,cafe.businessId,cafe.owner.userId,t.id,randomUUID(),hash]);
+      await query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status,finished_at) values($1,$2,$3,$4,$5,$6,'completed',now())",[run,cafe.businessId,cafe.owner.userId,t.id,randomUUID(),hash]);
       const {page}=await session();await open(page,t);
       const investigation=page.locator('[data-work-id="investigation:'+episode+'"]');
       const durable=page.locator('[data-work-id="run:'+run+'"]');

@@ -120,5 +120,118 @@
       "all approval and correction families",
       "accessibility automation and remaining business screen parity"
     ]
+  },
+  "censusCandidates": {
+    "screen-candidate:app/[locale]/page.tsx": [
+      "D01",
+      "D03",
+      "D04",
+      "D05",
+      "D06",
+      "D07",
+      "D08"
+    ],
+    "screen-candidate:app/[locale]/operations/page.tsx": [
+      "D02"
+    ],
+    "screen-candidate:app/[locale]/more/page.tsx": [
+      "D08"
+    ],
+    "screen-candidate:app/[locale]/more/bills/page.tsx": [
+      "D09"
+    ],
+    "screen-candidate:app/[locale]/more/supervisor-access/page.tsx": [
+      "D10"
+    ],
+    "screen-candidate:app/[locale]/login/page.tsx": [
+      "D08"
+    ],
+    "tool:manage_routine": [
+      "D01",
+      "luna:17d"
+    ],
+    "tool:get_supervisor_permissions": [
+      "D10",
+      "luna:17d"
+    ],
+    "tool:get_bills": [
+      "D09"
+    ],
+    "tool:inspect_supplier_purchase": [
+      "D05"
+    ],
+    "tool:propose_supplier_purchase_order": [
+      "D05"
+    ],
+    "effect:maya.supplier_purchase_order.v1": [
+      "D05"
+    ],
+    "routine-status:active": [
+      "D01",
+      "luna:17d"
+    ],
+    "routine-status:paused": [
+      "luna:17d"
+    ],
+    "routine-status:revoked": [
+      "luna:17d"
+    ]
+  },
+  "autonomyCandidates": {
+    "sales_decline": [],
+    "inventory_depletion": [],
+    "supplier_cost_change": [],
+    "late_purchase_order": [],
+    "receiving_invoice_discrepancy": [],
+    "staff_absence": [],
+    "staff_coverage": [],
+    "equipment_failure": [],
+    "pricing_experiment": [],
+    "cashflow": [
+      "D09"
+    ],
+    "event_goals_briefs": [],
+    "chat_routine": [
+      "D01",
+      "luna:17d"
+    ],
+    "chat_files": [
+      "D04",
+      "D10",
+      "luna:17d"
+    ],
+    "concurrent_cafes": [
+      "D01",
+      "D02",
+      "D04",
+      "D08",
+      "D09",
+      "D10"
+    ],
+    "worker_restart": [
+      "D03",
+      "D07"
+    ],
+    "provider_outage": [
+      "D03",
+      "D10"
+    ],
+    "expired_lease": [
+      "D03"
+    ],
+    "uncertain_receipt": [
+      "D03",
+      "D07"
+    ],
+    "duplicate_event": [],
+    "revoked_access": [
+      "D10"
+    ],
+    "offline_owner": [
+      "D03"
+    ],
+    "authorized_effect_recovery": [
+      "D05"
+    ]
   }
 }
