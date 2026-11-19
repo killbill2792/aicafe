@@ -10,7 +10,8 @@ import {runAgentTurn,openAIProvider,type AgentProvider} from "@/lib/ai/agent/loo
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import {processDueInvestigations,
   type InvestigationModelProofSummary} from "@/lib/ai/supervisor/routines/investigation.server";
-import type {AgentToolContext} from "./index";
+import {executeAgentTool,type AgentToolContext} from "./index";
+import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 const scenario=process.env.AICAFE_SHARED_LUNA_SCENARIO==="pos0ef-customer-trends"?
  "pos0ef-customer-trends":"pos0ef-customer-identity";
 const enabled=process.env.AICAFE_SHARED_LUNA==="1"&&process.env.AICAFE_SHARED_LUNA_SCENARIO===scenario&&process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY";
@@ -115,8 +116,24 @@ live("retained customer identity or observed trend, real model investigation, is
     {auth:{persistSession:false,autoRefreshToken:false}});
    const signed=await ownerDb.auth.signInWithPassword({email:login.data.user.email!,password});
    if(signed.error)throw Error("customer_owner_sign_in");
+   // Actual saved event source, not a seeded alert or candidate-generated
+   // report. A different tenant's verified event is a negative control.
+   const eventId=randomUUID(),foreignEventId=randomUUID();
+   for(const [id,cafe,name] of [[eventId,businessId,"Fixture neighborhood fair"],[foreignEventId,foreignBusinessId,"Foreign fixture event"]]){
+    await admin.query("insert into public.cafe_events(id,business_id,name,kind,start_date,end_date,source_url,status,last_verified_at) values($1,$2,$3,'community',$4,$4,'https://example.invalid/fixture-event','found',$5)",[id,cafe,name,date(-3),now.toISOString()]);
+   }
    const context={asOf:today,timezone:"UTC",currency:"USD",locale:"en",tools:{} as AgentToolContext["tools"],
-    canonicalData:async()=>({db:ownerDb,businessId})} as AgentToolContext;
+    canonicalData:async()=>({db:ownerDb,businessId}),
+    savedEvents:(from:string,to:string,options?:{cityEventId?:string})=>
+     readSavedEventTimeline(ownerDb,{businessId,ownerUserId:queryOwnerId},from,to,options)} as AgentToolContext;
+   // Deterministic preflight through the actual registered tool and reader;
+   // not included in the model-selected tool receipt below.
+   const saved=await executeAgentTool("get_events",{from:date(-7),to:date(-1),cityEventId:null},context);
+   expect(saved.source).toBe("cafe_events");expect(saved.missing).toEqual([]);
+   expect(saved.events).toEqual(expect.arrayContaining([expect.objectContaining({id:eventId,startDate:date(-3),status:"found"})]));
+   expect(JSON.stringify(saved)).not.toContain(foreignEventId);
+   const noForeign=await ownerDb.from("cafe_events").select("id").eq("business_id",foreignBusinessId).eq("id",foreignEventId);
+   expect(noForeign.error).toBeNull();expect(noForeign.data).toEqual([]);
    const turn=await runAgentTurn({context,provider,toolNames:["query_data","describe_data"],
     ownerText:"From "+date(-14)+" through "+date(-1)+", using the retained customer evidence, how many distinct observed account references, linked order visits, returning linked visits, and net sales in integer cents were recorded? Return exact labeled integers: References, Visits, Returning, Net cents. Explain whether these are unique people and the identity coverage."});
    const turnTools=turn.tools??[];
@@ -170,7 +187,7 @@ live("retained customer identity or observed trend, real model investigation, is
    const replyId=messages[0].id;
    const workerTools=[...new Set(proofs.flatMap(p=>p.toolNames))];
    expect(workerTools).toContain("get_investigation_source");expect(workerTools).toContain("query_data");
-   expect(workerTools.some(t=>["get_labor","get_schedule","get_week_schedule","get_inventory","get_usage_variance","get_menu_items","get_price_monitor_status","get_ingredient_costs","get_expenses","get_bills"].includes(t))).toBe(true);
+   expect(workerTools.some(t=>["get_labor","get_schedule","get_week_schedule","get_inventory","get_usage_variance","get_menu_items","get_price_monitor_status","get_ingredient_costs","get_expenses","get_bills","get_events"].includes(t))).toBe(true);
    expect(proofs.every(p=>!p.externalEffectClaim&&p.unverifiedCount===0)).toBe(true);
    // Loss of source coverage must not clear the open incident.
    await admin.query("update public.toast_day_status set coverage_complete=false where business_id=$1 and business_date=$2",[businessId,date(-3)]);
@@ -191,7 +208,7 @@ live("retained customer identity or observed trend, real model investigation, is
    expect((await admin.query("select count(*)::int n from public.supervisor_effect_attempts where business_id=$1",[businessId])).rows[0].n).toBe(0);
    const toolNames=[...new Set([...turnTools,...(fallback.tools??[]),...workerTools])];
    expect(providerCompletions).toBe(ledger.calls);expect(ledger.calls).toBeGreaterThanOrEqual(3);
-   const proof={schema_version:1,task:scenario,head_sha:head,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",provider_calls:ledger.calls,provider_completions:providerCompletions,tool_names:toolNames,actual_source_detector:true,authenticated_scope:true,independent_oracle:true,raw_field_discovery:true,source_corrected:true,no_unapproved_effect:true,feature_proven:false,integrated_proven:false,released_proven:false};
+   const proof={schema_version:1,task:scenario,head_sha:head,status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",provider_calls:ledger.calls,provider_completions:providerCompletions,tool_names:toolNames,actual_source_detector:true,authenticated_scope:true,independent_oracle:true,raw_field_discovery:true,saved_event_scope_preflight:true,source_corrected:true,no_unapproved_effect:true,feature_proven:false,integrated_proven:false,released_proven:false};
    mkdirSync("test-results/acceptance",{recursive:true});
    writeFileSync("test-results/acceptance/"+scenario+"-proof.json",JSON.stringify(proof)+"\n",{mode:0o600,flag:"wx"});
    writeFileSync("test-results/acceptance/"+scenario+"-scope.json",JSON.stringify({...scope,foreignBusinessId,sourceId,episodeId:episode.episode_id,replyId,queryOwnerId,expectedProviderCalls:ledger.calls})+"\n",{mode:0o600,flag:"wx"});
