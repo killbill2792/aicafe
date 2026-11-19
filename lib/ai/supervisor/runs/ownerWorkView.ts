@@ -65,6 +65,7 @@ export type InvestigationRow = {
 // All owner-visible phrasing comes from the required English message catalog.
 // Never let a server or model-authored work state bypass this locale source.
 const copy = english.SupervisorWork.copy;
+const durableCopy = english.SupervisorDurableWork;
 
 const stepNames: Record<string, string> = {
   authorize_owner: copy.stepAuthorizeOwner,
@@ -98,14 +99,14 @@ export function projectOwnerWork(input: {
       : next?.status === "leased" && next.attempts > 1 ? "retrying" : "running";
     work.push({
       id: "run:" + run.id, threadId: run.thread_id ?? null, kind: "durable_run", status, title: copy.runTitle,
-      detail: waiting?copy.runAwaitingOwner:cancelled?copy.runCancelled:status === "retrying"?copy.runRetrying:status === "answer_ready"
+      detail: waiting?durableCopy.runAwaitingOwner:cancelled?durableCopy.runCancelled:status === "retrying"?durableCopy.runRetrying:status === "answer_ready"
         ? copy.runAnswerReady
         : status === "uncertain" ? copy.runUncertain
         : status === "failed" ? copy.runFailed
         : status === "queued" ? copy.runQueued
         : next ? (stepNames[next.step_key] ?? copy.runGeneric)
         : copy.runChecking,
-      nextStep: waiting?copy.runAwaitingOwnerNext:cancelled?copy.runCancelled:status === "uncertain" ? copy.runUncertainNext
+      nextStep: waiting?durableCopy.runAwaitingOwnerNext:cancelled?durableCopy.runCancelled:status === "uncertain" ? copy.runUncertainNext
         : status === "failed" ? copy.runFailedNext
         : status === "answer_ready" ? copy.runAnswerNext
         : copy.runActiveNext,
