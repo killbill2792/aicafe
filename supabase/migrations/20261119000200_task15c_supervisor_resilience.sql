@@ -536,23 +536,22 @@ alter table public.supervisor_system_usage_events
   add column owner_message_id uuid,
   add column reserved_cost_micros bigint,
   add column accounted_at timestamptz;
--- Reason: widen the exact existing guard for durable owner runs; the replacement preserves both original values and all existing rows.
+-- Install the widened guard FIRST. Existing rows satisfy it by the older
+-- constraint, and NOT VALID already checks every new/updated row without a
+-- blocking whole-table validation during this migration.
+alter table public.supervisor_system_usage_events add constraint supervisor_system_usage_events_source_scope_check
+  check (source_type in ('alert','operating_task','durable_run')) not valid;
+-- Reason: the widened replacement above retains both old valid values and is already enforced for new writes; no data or invariant is removed.
 -- squawk-ignore ban-drop-constraint
-alter table public.supervisor_system_usage_events
-  drop constraint supervisor_system_usage_events_source_type_check,
-  add constraint supervisor_system_usage_events_source_type_check
-    check (source_type in ('alert','operating_task','durable_run')) not valid;
+alter table public.supervisor_system_usage_events drop constraint supervisor_system_usage_events_source_type_check;
 alter table public.supervisor_system_usage_events
   add constraint supervisor_system_durable_attempt_scope
     check ((source_type='durable_run')=(owner_message_id is not null)
       and (reserved_cost_micros is null or reserved_cost_micros>=0)
       and (source_type<>'durable_run' or reserved_cost_micros is not null)) not valid;
-alter table public.supervisor_system_usage_events validate constraint supervisor_system_usage_events_source_type_check;
-alter table public.supervisor_system_usage_events validate constraint supervisor_system_durable_attempt_scope;
 alter table public.ai_usage_events add column reserved_model_call_count bigint not null default 0;
 alter table public.ai_usage_events add constraint ai_usage_reservation_count_scope
   check (reserved_model_call_count between 0 and model_call_count) not valid;
-alter table public.ai_usage_events validate constraint ai_usage_reservation_count_scope;
 create index supervisor_system_usage_run_idx on public.supervisor_system_usage_events
   (business_id,owner_user_id,source_id) where source_type='durable_run';
 
