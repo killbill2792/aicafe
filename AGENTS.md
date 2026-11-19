@@ -129,12 +129,15 @@ Where an older line in this file conflicts with these rules, these rules win.
     provenance and independently verified provider/tool/source/DB/UI/effect evidence.
     A deferred or failed live case is NOT_PROVEN or FAIL, never PASS. Mock/recorded tests,
     HTTP200, plausible prose or green CI cannot substitute.
-    **Release isolation prerequisite:** the deferred merge rule applies only after the
-    trusted enforcement and actual production isolation required by binding acceptance
-    are independently verified. If a merge can expose changed unproven behavior in
-    production, retain the existing pre-merge live gate or use an explicitly approved
-    isolated integration branch. No production activation, deployment or migration is
-    authorized by this policy. No blanket waiver for active existing PRs.
+    **Owner-approved development-stage merge policy:** current production has no affected
+    operational data, per the owner's explicit clarification. During this development phase,
+    feature PRs (including presently open PRs) may merge to main with live Luna execution
+    deferred; deployment generation alone is not a reason to require per-PR Luna or create
+    a separate branch. Retain all CI, security, authorization and dependency gates.
+    No new paid test, live customer-data operation, external effect, production migration
+    or actual business release is authorized. If affected live operations/data are present
+    or detected, stop and obtain separate owner direction before exposing unproven behavior.
+    Complete real scenario acceptance and Task17 release gates before operational use.
     Use only separately owner-authorized one-shot bounded private trusted provider runs;
     never spend automatically in untrusted PR CI, replay consumed grants, or touch production.
     Pure docs/config or deterministic-only infrastructure PRs must state why no model-executed

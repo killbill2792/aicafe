@@ -5,10 +5,9 @@
 Owner request (Nov 18, 2026), updating Nov 17: keep parallel feature PRs coding
 and register all applicable executable scenarios in the existing runner.
 Consolidate paid execution on a stable functional group, before Task17 or
-during Task17, by owner choice. Follow the binding release-isolation and
-enforcement prerequisite in acceptance-quality.md before deferring live
-execution at coding merge; otherwise retain existing pre-merge live gates
-for production-exposed changes. No paid run on every push, new production
+during Task17, by owner choice. Under the owner-approved development-stage
+boundary in acceptance-quality.md, merge completed PRs with live execution
+deferred; no extra paid acceptance gate for main deployment generation. No paid run on every push, new production
 data source, table, operator agent, authorization bypass or dev dispatcher.
 
 The single trusted entry point is GitHub Actions:
@@ -203,19 +202,20 @@ remain required where relevant.
 2. A feature developer keeps working on their existing PR and adds all
    applicable scenario manifests + executable live tests. Normal CI can stay
    parallel. Each case stays NOT_PROVEN until verified real execution.
-3. For an optional early single-feature run or a required production-exposed
-   pre-merge case, when code is stable and free CI is green, the owner posts
+3. Only for an optional early single-feature run explicitly requested by
+   the owner, when code is stable and free CI is green, the owner posts
    /aicafe-luna pr HEAD_SHA SCENARIO 0.20 on THAT SAME PR, or selects
    GitHub Actions > AI CAFE Shared Owner-Gated Luna Scenarios > Run
    workflow on main and supplies matching inputs. The owner comment
    or manual dispatch is the paid approval. It must be independent of
    untrusted candidate code. Codex final-head security review is required for
-   coding integration; verified model evidence is required before exposure.
-   Deferred merges require independently proven release isolation and the
-   trusted enforcement specified in acceptance-quality.md.
+   coding integration; verified model evidence is required before operational
+   release. No individual paid test is required merely to merge in the
+   owner-approved development phase.
 4. For consolidated acceptance, select the stable approved group or bounded
-   subset when supported by the trusted selector; until implemented, the
-   existing runner accepts only one scenario or all. For all registered
+   subset using group-13, group-14, group-15, group-16 or comma-separated
+   exact registered scenario IDs. The group prefix selects registered cases
+   only and does not establish coverage completeness. For all registered
    scenarios on current main, use /aicafe-luna main HEAD_SHA all BUDGET or
    manual dispatch with pr_number=0 and scenario=all. Compute the ceiling from
    the actual number of cases (18 cents reserved per scenario, at most 20)

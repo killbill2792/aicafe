@@ -23,18 +23,16 @@ to consolidate later. All mandatory cases must pass before release.
   evidence on the actual combined code. Group completeness is not proof.
   Report not run as NOT_PROVEN, executed failure as FAIL, verified pass
   as PASS with original SHA. Previous failures remain visible and tracked.
-- Production boundary: deferral of paid tests is allowed for DEV integration
-  only when independent evidence demonstrates that the changed unproven
-  execution cannot reach production, including existing enabled paths,
-  autonomous cron/worker, tools, direct APIs, UI, external effects and
-  migrations. A flag hidden in UI or an owner-approval card is insufficient.
-  If merging to main exposes changed unproven behavior, do not merge it
-  there under the deferred policy: use an owner-approved isolated
-  integration branch or equivalent enforced release boundary, or satisfy
-  the existing live acceptance gate. No production deployment/activation
-  or new environment is authorized by this PR. Do not change live Vercel
-  settings or production migrations implicitly. Verify actual host/branch
-  routing and executable negative tests before enabling policy in main.
+- Development/production boundary: the owner explicitly clarified that
+  current production has no affected operational data and approved deferred
+  real Luna execution for development merges to main. Do not require a
+  new branch or live test merely because Vercel generates a deployment.
+  Preserve all authorization, tenant isolation, effect and security controls.
+  If affected live operations/data are present or detected, stop and obtain
+  separate owner direction before exposing unproven behavior. No real café
+  testing, external effect, live migration, deployment-setting change or
+  operational activation is authorized. Full actual acceptance and separate
+  Task17 release authorization remain mandatory before operational use.
 - Task17B/17C/17D/17E preserve complete registered scenario coverage,
   cross-domain autonomy, real restart/effect/owner evidence, UI and
   independent release signoff. No unproven feature release.
@@ -123,12 +121,12 @@ merge, preserving its content and compare both parents.
 This draft sets the approved direction, not an active waiver. Before
 rollout: reconcile binding AGENTS/rules/task briefs and independent
 checks; implement provenance, inventory, group selection, validity and
-release enforcement; verify actual production isolation or owner-approved
-separate integration route; add adversarial tests (missing/dynamic
+release enforcement; respect the owner-approved development-stage boundary
+and retain operational release gates; add adversarial tests (missing/dynamic
 coverage, false receipts, wrong SHA/group, changed safety inputs,
 missing/expired artifacts, incomplete reads, budget bounds, fail-closed
 release and no-cost real historical artifact verification where available).
-Execute exact-head CI, clean Codex code/security and leave infrastructure
-merge to owner. Verify real Muse host import separately. Preserve existing
+Execute exact-head CI and clean Codex code/security; infrastructure merge
+must follow the repository's owner authorization rule. Verify real Muse host import separately. Preserve existing
 rules until revised policy is safely merged. No paid run for this draft,
 no new spend approval, no production changes or feature branch edits.
