@@ -99,6 +99,7 @@ type TurnParams = {
   emit: Emit; job: AgentJob | null; jobs: JobsModule | null;
   attachmentIds?:string[];
   checkpoint?:OwnerRunCheckpoint;
+  matchedAnswers?:ConversationMessage[];
   durableFence?:DurableReplyFence;
   recordDurableStep?:(step:import("@/lib/ai/agent/jobState").AgentJobStep)=>Promise<void>;
   /** Only a caller that reverified a signed, consented Meta owner binding can supply this. */
@@ -151,7 +152,7 @@ async function readOwnerAttachments(scope:ConversationScope,threadId:string,ids:
  return {images,pdfs,evidence,contentSha256:fingerprint.digest("hex")};
 }
 /** One owner turn: tools → loop → persist → usage. Emits done/error and never throws. */
-export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; replyText:string; absorbedOwnerMessageIds: string[] } | { errorCode: string }> {
+export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; replyText:string; absorbedOwnerMessageIds: string[]; awaitingOwner?:boolean } | { errorCode: string }> {
   const { scope, threadId: id, owner, emit, job, jobs } = p;
   let logged = false;
   const startedAt = Date.now();
@@ -197,6 +198,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       !(job && m.role === "owner" && Number.isFinite(ownerAt) && Date.parse(m.createdAt) > ownerAt)).slice(-8)
       .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
         content: historyContent(m) })).filter(m => m.content);
+    for(const answer of p.matchedAnswers??[]){
+      if(answer.role!=="owner"||answer.threadId!==id||answer.contentType!=="text"||!answer.text)throw new Error("owner_answer_scope_mismatch");
+      history.push({role:"user",content:"Answer to the persisted clarification for this assignment: "+answer.text});
+    }
     const proposalScope={...scope,threadId:id,locale:p.locale,
       ...(external?{verifiedReadClient:p.externalClient}: {})};
     let selectedContentSha256:string|null=null;
@@ -766,7 +771,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       await assertTurnSources();
       // Keep transient or budget-limited slices nonterminal. Their real
       // provider usage is recorded by the existing finally block below.
-      if(p.durableFence&&(result.endReason!=="complete"||result.status.status!=="complete"))
+      if(p.durableFence&&!result.results.some(r=>r.source==="ask_owner"&&r.missing.length===0)&&(result.endReason!=="complete"||result.status.status!=="complete"))
         throw new Error("durable_retry_pending");
       reply = p.durableFence?await persistAgentReply(scope, owner, result,p.durableFence):await persistAgentReply(scope, owner, result);
     } finally {
@@ -793,7 +798,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       unverified: result.unverified, usage: result.usage,
       ...(result.providerFailureCodes?{diagnosticProviderFailures:result.providerFailureCodes}:{}),
       ...(job ? { jobId: job.id, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] } : {}) });
-    return { replyId: reply.id, replyText:result.text, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [] };
+    return { replyId: reply.id, replyText:result.text, absorbedOwnerMessageIds: result.absorbedOwnerMessageIds ?? [], ...(p.durableFence&&reply.grounding?.status==="requires_owner_input"?{awaitingOwner:true}: {}) };
   } catch (error) {
     if(!logged)console.info("agent_turn",{turn:"agent",endReason:"error",status:"unavailable",
       modelCalls:0,toolCalls:0,tools:[],latencyMs:Date.now()-startedAt,unverifiedCount:0});
