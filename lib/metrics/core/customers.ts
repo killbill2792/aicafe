@@ -9,6 +9,7 @@ export type CustomerPeriod={
  observedDiscountShare?:number|null;observedLoyaltyShare?:number|null;recordedRefundCentsPerCheck?:number|null;
  observedMeanOrderDurationSeconds?:number|null;
  knownContributionVisits?:number;averageRecipeContributionCents?:number|null;
+ knownHistoryAccounts?:number;averageHistoryAccountCents?:number|null;
  complete:boolean;
 };
 export type CustomerCohort={matured:number;observedReturns:number;complete:boolean};
@@ -56,6 +57,14 @@ export function compareCustomerPeriods(current:CustomerPeriod,previous:CustomerP
   measure("observed_first_visits",current.firstVisits,previous.firstVisits,"first_observed_visits"),
   measure("returning_visit_share",current.returningVisits/current.visits,previous.returningVisits/previous.visits,"observed_visit_ratio",true),
   measure("visits_per_reference",current.visits/current.references,previous.visits/previous.references,"visits_per_observed_reference"),
+  current.knownMoneyVisits===current.visits&&previous.knownMoneyVisits===previous.visits&&
+   valid(current.averageSpendCents)&&valid(previous.averageSpendCents)?
+   measure("period_net_per_reference",current.averageSpendCents*current.visits/current.references,
+    previous.averageSpendCents*previous.visits/previous.references,"recorded_period_cents_per_observed_reference",false,true):null,
+  current.knownHistoryAccounts===current.references&&previous.knownHistoryAccounts===previous.references&&
+   valid(current.averageHistoryAccountCents)&&valid(previous.averageHistoryAccountCents)?
+   measure("observed_history_value",current.averageHistoryAccountCents,previous.averageHistoryAccountCents,
+    "recorded_history_cents_per_active_reference_not_forecast",false,true):null,
   valid(current.linkedRevenueConcentration)&&valid(previous.linkedRevenueConcentration)&&
     current.linkedRevenueConcentration<=1&&previous.linkedRevenueConcentration<=1&&
     current.knownMoneyVisits===current.visits&&previous.knownMoneyVisits===previous.visits?
@@ -90,10 +99,10 @@ export function compareCustomerCohorts(current:CustomerCohort,previous:CustomerC
  * nonpersonal product reference or a constrained dimension label. A missing
  * bucket is zero only after the entire untruncated distribution is verified.
  * This is a review heuristic using observed units/visits, not causal proof. */
-export type CustomerDistribution={dimension:"product"|"channel"|"daypart";buckets:Readonly<Record<string,number>>;total:number;complete:boolean};
+export type CustomerDistribution={dimension:"product"|"modifier"|"basket"|"channel"|"daypart"|"weekday";buckets:Readonly<Record<string,number>>;total:number;complete:boolean};
 export function compareCustomerDistributions(current:CustomerDistribution,previous:CustomerDistribution,
  currentPeriod:CustomerPeriod,previousPeriod:CustomerPeriod):CustomerMeasure[]{
- const check=(d:CustomerDistribution)=>d.complete&&valid(d.total)&&d.total>=30&&
+ const check=(d:CustomerDistribution)=>d.complete&&valid(d.total)&&d.total>=CUSTOMER_MONITOR_POLICY.minimumVisits&&
   Object.values(d.buckets).every(n=>valid(n)&&n>=0)&&
   Math.abs(Object.values(d.buckets).reduce((sum,n)=>sum+n,0)-d.total)<.000001;
  if(current.dimension!==previous.dimension||!comparable(currentPeriod,previousPeriod)||!check(current)||!check(previous))return [];
@@ -117,4 +126,17 @@ export function compareCustomerCadence(kind:"lapse"|"reappearance",current:Custo
  return measure(kind==="lapse"?"observed_long_gap_share":"observed_reappearance_share",
   current.flagged/current.eligible,previous.flagged/previous.eligible,
   kind==="lapse"?"cadence_qualified_observed_reference_ratio":"cadence_qualified_observed_visit_ratio",true);
+}
+
+/** Transaction evidence remains useful when no stable guest identifiers exist.
+ * Compare all eligible checks, never claim distinct customers or retention. */
+export type AnonymousCustomerPeriod={checks:number;knownMoneyChecks:number;netCents:number|null;itemUnits:number|null;complete:boolean};
+export function compareAnonymousCustomerPeriods(a:AnonymousCustomerPeriod,b:AnonymousCustomerPeriod):CustomerMeasure[]{
+ if(![a,b].every(x=>x.complete&&count(x.checks)&&x.checks>=CUSTOMER_MONITOR_POLICY.minimumLinkedChecks&&count(x.knownMoneyChecks)&&x.knownMoneyChecks<=x.checks))return [];
+ const out=[
+  a.knownMoneyChecks===a.checks&&b.knownMoneyChecks===b.checks&&valid(a.netCents)&&valid(b.netCents)?
+   measure("anonymous_check_spend",a.netCents/a.checks,b.netCents/b.checks,"recorded_cents_per_eligible_check",false,true):null,
+  valid(a.itemUnits)&&valid(b.itemUnits)?measure("anonymous_items_per_check",a.itemUnits/a.checks,b.itemUnits/b.checks,"recorded_item_units_per_eligible_check"):null,
+ ];
+ return out.filter((x):x is CustomerMeasure=>x!==null);
 }
