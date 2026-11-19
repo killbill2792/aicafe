@@ -2,7 +2,7 @@
 // One-shot Muse-side PR observer. GitHub is a READ-ONLY evidence source.
 // Run under Muse's EXISTING timer; this never sends chat, requests reviews,
 // approves work, merges PRs, or depends on GitHub Actions reconciliation.
-import {readFileSync,writeFileSync,renameSync,mkdirSync,existsSync} from 'node:fs';
+import {readFileSync,writeFileSync,renameSync,mkdirSync,existsSync,unlinkSync} from 'node:fs';
 import {dirname,join} from 'node:path';
 import {homedir} from 'node:os';
 import {createHash} from 'node:crypto';
@@ -12,6 +12,7 @@ import {parseCodexReviewState,parseOwnerQuestion} from './github.mjs';
 
 const millis=t=>{const n=Date.parse(t||'');return Number.isFinite(n)?n:null;};
 const identity=a=>createHash('sha256').update(JSON.stringify(a)).digest('hex').slice(0,24);
+const trusted=a=>['OWNER','MEMBER','COLLABORATOR'].includes(a);
 
 export const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
  repository(owner:$owner,name:$repo){
@@ -43,7 +44,6 @@ function codexStatus(comments,head){
 // marker and label. Only a trusted same-repository PR/body or trusted comment
 // may supply its text. A label with incomplete evidence still blocks nudges.
 function ownerQuestion(p,repo){
- const trusted=a=>['OWNER','MEMBER','COLLABORATOR'].includes(a);
  const sameRepo=typeof repo==='string'&&p.headRepository?.nameWithOwner===repo;
  const body=sameRepo&&trusted(p.authorAssociation)?parseOwnerQuestion(p.body):null;
  const labeled=(p.labels?.nodes||[]).some(l=>l.name==='needs-owner-decision');
@@ -57,9 +57,46 @@ function ownerQuestion(p,repo){
   return {status:'missing_details',question:'Owner decision requested; exact question missing. Ask the coding chat to publish it on this PR.',url:p.url};
  }
  if(markerPresent)return {status:'missing_details',question:'Invalid or multiple owner-question markers. Ask the coding chat for one precise decision.',url:p.url};
- if(!p.labels||p.labels.pageInfo?.hasNextPage)
+ if(!p.labels||p.labels.pageInfo?.hasNextPage||!Array.isArray(p.labels.nodes))
   return {status:'unverified',question:'Owner decision label evidence incomplete; inspect the PR before continuing.',url:p.url};
  return null;
+}
+// The coder's report is a handoff, never proof of successful execution.
+function workflowHandoff(p,repo){
+ if(!trusted(p.authorAssociation)||p.headRepository?.nameWithOwner!==repo)return null;
+ const matches=[...(p.body||'').matchAll(/<!-- aicafe-workflow-handoff (\{[^\n]{1,2000}\}) -->/g)];
+ if(matches.length!==1)return null;
+ try{
+  const h=JSON.parse(matches[0][1]);
+  if(h.head!==p.headRefOid||!['working','waiting_ci','waiting_codex','waiting_luna','blocked_external'].includes(h.state)||
+   typeof h.next!=='string'||!h.next.trim()||h.next.length>500||
+   typeof h.id!=='string'||!/^[a-zA-Z0-9_.-]{1,80}$/.test(h.id))return null;
+  const run=h.run_url==null?null:String(h.run_url);
+  const prefix='https://github.com/'+repo+'/actions/runs/';
+  const runId=run?.startsWith(prefix)?run.slice(prefix.length):null;
+  if(run!==null&&(!runId||!/^\d{1,20}$/.test(runId)))return null;
+  if(h.state==='waiting_luna'&&!runId)return null;
+  return {state:h.state,head:h.head,id:h.id,next:h.next,run_url:run,run_id:runId};
+ }catch{return null;}
+}
+// Use the same authenticated connector for a named shared Luna run. The
+// candidate SHA comes from the handoff; the run's server head can be main.
+// A terminal run is only a reason to resume, never Luna acceptance evidence.
+export async function observeHandoffRuns(facts,readRun){
+ for(const p of facts.prs||[]){
+  const h=p.workflow_handoff;
+  if(h?.state!=='waiting_luna')continue;
+  h.observed='unknown';
+  try{
+   const run=await readRun(h.run_id);
+   if(String(run?.id)!==h.run_id||run.html_url!==h.run_url||
+    run.name!=='AI CAFE Shared Owner-Gated Luna Scenarios')continue;
+   h.observed=run.status==='completed'?'completed':
+    ['queued','in_progress','pending','waiting','requested'].includes(run.status)?'pending':'unknown';
+   h.conclusion=h.observed==='completed'?run.conclusion:null;
+  }catch{/* Unknown is not a pass; the next existing poll can retry. */}
+ }
+ return facts;
 }
 export function normalizeGithubFacts(response,now=new Date().toISOString()){
  const repo=response?.data?.repository;
@@ -76,7 +113,8 @@ export function normalizeGithubFacts(response,now=new Date().toISOString()){
    ci:check==='SUCCESS'?'observed_green':check==='FAILURE'||check==='ERROR'?'failure':
       check==='PENDING'?'pending':'unknown',
    codex:codexStatus(p.comments?.nodes,p.headRefOid),
-   owner_question:ownerQuestion(p,repo.nameWithOwner)});
+   owner_question:ownerQuestion(p,repo.nameWithOwner),
+   workflow_handoff:workflowHandoff(p,repo.nameWithOwner)});
  }
  return {version:1,observed_at:now,source:'github_graphql_read_only',
   prs,merged_prs:(repo.recentlyMerged?.nodes||[]).filter(p=>p.mergedAt)
@@ -133,7 +171,7 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
    chat_url:entry?.chat_url||null,pr_url:p.url,owner_question:true,reason:q.question});
  }
  for(const entry of Object.values(records)){
-  if(!entry.pr_number||['waiting_owner','paused'].includes(entry.stage))continue;
+  if(!entry.pr_number||entry.stage==='paused')continue;
   const p=byPr.get(entry.pr_number);
   if(!p){
    if(!(facts.merged_prs||[]).some(v=>v.number===entry.pr_number))
@@ -143,9 +181,32 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
   }
   if(p.owner_question)continue;
   const head=p.head_sha;
-  const before=seen.find(v=>v.number===p.number);
-  let kind=null,reason=null;
-  if(p.ci==='failure'){kind='fix_ci';reason='Investigate current-head failing checks and rerun';}
+  const before=seen.find(v=>v.number===p.number),h=p.workflow_handoff;
+  if(entry.stage==='waiting_owner'&&!before?.owner_question&&!h)continue;
+  let kind=null,reason=null,extra='';
+  if(h?.state==='waiting_luna'){
+   if(h.observed!=='completed'){
+    if(h.observed!=='pending')blocked.push({task_id:entry.task_id,pr_number:p.number,
+     reason:'Luna run status unknown; verify '+h.run_url});
+    continue;
+   }
+   kind='continue_chat';reason='Shared Luna run completed ('+(h.conclusion||'unknown')+'); verify actual artifacts and '+h.next;
+   extra='luna:'+h.id+':'+h.run_id;
+  }else if(h?.state==='blocked_external'){
+   blocked.push({task_id:entry.task_id,pr_number:p.number,reason:h.next});continue;
+  }else if(h?.state==='waiting_ci'){
+   if(!['observed_green','failure'].includes(p.ci))continue;
+   kind=p.ci==='failure'?'fix_ci':'continue_chat';
+   reason='Reported CI wait ended ('+p.ci+'); '+h.next;extra='ci:'+h.id;
+  }else if(h?.state==='waiting_codex'){
+   if(!['clean','findings'].includes(p.codex))continue;
+   kind=p.codex==='findings'?'fix_codex':'continue_chat';
+   reason='Reported Codex wait ended ('+p.codex+'); '+h.next;extra='codex:'+h.id;
+  }else if(before?.owner_question?.status==='requested'){
+   kind='continue_chat';reason='Owner question removed; verify actual owner decision before continuing';
+   extra=identity(['owner_answer',before.owner_question.question]);
+  }
+  else if(p.ci==='failure'){kind='fix_ci';reason='Investigate current-head failing checks and rerun';}
   else if(p.codex==='findings'){kind='fix_codex';reason='Address exact-head Codex findings and retest';}
   else if(!p.draft&&p.ci==='observed_green'&&p.codex==='clean'){
    kind='verify_merge';reason='Verify required CI, approval, security and acceptance gates; merge only if eligible';
@@ -159,7 +220,7 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
   if(!kind)continue;
   if(!entry.chat_url){blocked.push({task_id:entry.task_id,pr_number:p.number,
     reason:'missing_verified_chat_url'});continue;}
-  emit(kind,entry.task_id,p.number,head,entry.chat_url,reason);
+  emit(kind,entry.task_id,p.number,head,entry.chat_url,reason,extra);
  }
  // Only a PR observed open on a previous successful snapshot may trigger next-task planning.
  for(const p of facts.merged_prs||[]){
@@ -207,7 +268,14 @@ export async function runMuseLite({repo,token,home=join(homedir(),'.local','stat
   error='GitHub read backoff until '+prior.github_backoff_until;
   facts=previous;
  }else{
-  try{facts=await fetchGithubFacts({repo,token,fetchImpl,now});}
+  try{facts=await fetchGithubFacts({repo,token,fetchImpl,now});
+   await observeHandoffRuns(facts,async id=>{
+    const res=await fetchImpl('https://api.github.com/repos/'+repo+'/actions/runs/'+id,{
+     headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json'}});
+    if(!res.ok)throw Error('Run read unavailable HTTP '+res.status);
+    return res.json();
+   });
+  }
   catch(e){facts=previous;error=String(e.message||e);}
  }
  const result=museActions(error?null:facts,previous,notes,{now});
