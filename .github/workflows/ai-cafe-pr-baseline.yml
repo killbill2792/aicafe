@@ -225,6 +225,20 @@ jobs:
           wait "$npm_ci" || npm_ci_status=$?
           cat "$RUNNER_TEMP/npm-ci.log"
           exit "$npm_ci_status"
+      - name: Inspect pristine migrated canonical schema and authenticated query paths
+        env:
+          AICAFE_CENSUS_DISPOSABLE_DB: '1'
+          AICAFE_CENSUS_DB_OUTPUT: test-results/acceptance/supervisor-migrated-census.json
+          OPENAI_API_KEY: ''
+        run: npx vitest run evals/acceptance/supervisor-census.test.ts -t 'actual migrated canonical SQL views'
+      - name: Upload exact-head migrated canonical census
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aicafe-supervisor-migrated-census
+          path: test-results/acceptance/supervisor-migrated-census.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Run every SQL and database test
         run: bash scripts/db/run-all.sh
       - name: Stop local Supabase

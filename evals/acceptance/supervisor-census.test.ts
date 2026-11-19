@@ -1,6 +1,8 @@
 import {describe,it,expect,vi} from "vitest";
 import {execFileSync} from "node:child_process";
 import {readFileSync} from "node:fs";
+import {Client} from "pg";
+import {TEST_CAFES} from "../../scripts/seed/cafes.mjs";
 import {resolve} from "node:path";
 import ts from "typescript";
 import {z} from "zod";
@@ -196,3 +198,87 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   expect(rpc).not.toHaveBeenCalled();
  });
 });
+
+// Separate, explicitly selected required DB lane. The ordinary deterministic
+// suite never connects to a database or obtains provider credentials.
+if(process.env.AICAFE_CENSUS_DISPOSABLE_DB==="1"){
+ it("actual migrated canonical SQL views, named paths and two-owner RLS match the registered dictionary",async()=>{
+  const db=new Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  await db.connect();
+  try{
+   await db.query("BEGIN READ ONLY");
+   const catalog=await db.query("select table_name,column_name from information_schema.columns where table_schema='public' and table_name=any($1::text[])",[[...canonicalViewNames]]);
+   const views=await db.query("select c.relname,c.reloptions,pg_get_viewdef(c.oid,true) definition from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='v' and c.relname=any($1::text[])",[[...canonicalViewNames]]);
+   const verifiedViews=[];
+   for(const [name,contract] of Object.entries(canonicalDictionary)){
+    const columns=catalog.rows.filter(r=>r.table_name===name).map(r=>String(r.column_name)).sort();
+    expect(columns,name+" dictionary columns").toEqual(Object.keys(contract.columns).sort());
+    const view=views.rows.find(r=>r.relname===name);
+    expect(view?.reloptions,name+" invoker").toContain("security_invoker=true");
+    expect(view?.definition,name+" no diagnostic fallback").not.toMatch(/toast_raw_samples(?:_latest)?/i);
+    verifiedViews.push(name);
+   }
+   const functions=await db.query("select proname,pg_get_functiondef(p.oid) definition from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and proname=any($1::text[])",[["ai_query_view","ai_toast_fields","toast_records_for"]]);
+   for(const name of ["ai_query_view","ai_toast_fields","toast_records_for"]){
+    const definitions=functions.rows.filter(r=>r.proname===name);
+    expect(definitions.length,name).toBeGreaterThan(0);
+    for(const d of definitions)expect(d.definition,name+" no diagnostic fallback").not.toMatch(/toast_raw_samples(?:_latest)?/i);
+   }
+   const paths=[...new Set(Object.values(toastOfficialFieldCatalog).flatMap(f=>f.fields.map(([field])=>field)))];
+   const forbidden=["data.access_token","data.checks.0.payments.0.cardNumber","data.customer.client_secret","data.paymentToken","data.password"];
+   const checked=await db.query("select field,public.ai_query_path(field) is not null as allowed from unnest($1::text[]) as fields(field)",[[...paths,...forbidden]]);
+   for(const field of checked.rows){
+    expect(field.allowed,field.field+" SQL/TS path parity").toBe(isDataField(field.field));
+    if(forbidden.includes(field.field))expect(field.allowed,field.field).toBe(false);
+   }
+   const profiles=TEST_CAFES.slice(0,2);
+   expect(profiles).toHaveLength(2);
+   const identity=profiles.map(c=>({businessId:c.businessId!,ownerId:c.owner!.userId}));
+   expect(identity[0].businessId).not.toBe(identity[1].businessId);
+   let positiveRows=0,foreignNegatives=0,queries=0;
+   for(const [index,cafe] of identity.entries()){
+    const other=identity[1-index];
+    const day=(await db.query("select max(business_date)::text as day from public.daily_rollups where business_id=$1",[cafe.businessId])).rows[0]?.day;
+    expect(day,"seeded closed day").toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await db.query("SAVEPOINT scoped_owner");
+    try{
+     await db.query("select set_config('request.jwt.claim.sub',$1,true),set_config('request.jwt.claims',$2,true)",[cafe.ownerId,JSON.stringify({sub:cafe.ownerId,role:"authenticated"})]);
+     await db.query("SET LOCAL ROLE authenticated");
+     for(const [name,contract] of Object.entries(canonicalDictionary)){
+      // Same RPC the registered tool uses. Never retrieve full Toast JSON.
+      // Query every allowed column in chunks within the 20-column bound.
+      const fields=Object.keys(contract.columns).filter(c=>c!=="business_id"&&!(name==="cv_toast_records"&&c==="data"));
+      for(let offset=0;offset<fields.length;offset+=19){
+       const selected=["business_id",...fields.slice(offset,offset+19)];
+       const q="select public.ai_query_view($1,$2,$3::text[],'[]'::jsonb,null,'[]'::jsonb,$4::date,$4::date,null,1) as got";
+       const own=(await db.query(q,[cafe.businessId,name,selected,day])).rows[0].got;
+       expect(Array.isArray(own.rows),name+" result").toBe(true);
+       for(const result of own.rows){
+        expect(result.business_id,name+" owner scope").toBe(cafe.businessId);
+        expect(Object.keys(result).sort(),name+" projected field set").toEqual(selected.sort());
+        positiveRows++;
+       }
+       const denied=(await db.query(q,[other.businessId,name,selected,day])).rows[0].got;
+       expect(denied.rows,name+" foreign owner rows").toEqual([]);
+       expect(Number(denied.sourceCount),name+" foreign row count").toBe(0);
+       foreignNegatives++;queries++;
+      }
+     }
+    }finally{
+     await db.query("ROLLBACK TO SAVEPOINT scoped_owner");
+     await db.query("RELEASE SAVEPOINT scoped_owner");
+    }
+   }
+   // Some configured sources legitimately have no records in these synthetic
+   // cafés. A working SQL projection/denial is not a live-data receipt.
+   expect(positiveRows,"actual owner rows, not only emptiness").toBeGreaterThan(0);
+   const proof={head:git("rev-parse","HEAD"),views:verifiedViews,declaredColumns:catalog.rowCount,officialPathChecks:checked.rowCount,
+    ownerProjectionQueries:queries,ownerRowsObserved:positiveRows,foreignZeroRowChecks:foreignNegatives,
+    providerModelProof:false,liveToastProof:false,scope:"active_migrated_schema_and_scoped_projection_only"};
+   console.log("Task17B migrated canonical proof:",JSON.stringify(proof));
+   if(process.env.AICAFE_CENSUS_DB_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_DB_OUTPUT,proof);
+  }finally{
+   try{await db.query("ROLLBACK");}finally{await db.end();}
+  }
+ },120000);
+}
