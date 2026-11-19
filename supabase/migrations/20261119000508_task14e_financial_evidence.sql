@@ -2,7 +2,6 @@
 -- Not a bank connection, complete account inventory, payment authority or ledger.
 set lock_timeout='3s';
 set statement_timeout='30s';
-
 alter table public.uploads
  add column financial_owner_user_id uuid,
  add column financial_source_sha256 text,
@@ -79,7 +78,6 @@ alter table public.uploads add constraint uploads_financial_bill_proposal_fk
 create index uploads_financial_account_idx on public.uploads
  (business_id,financial_owner_user_id,financial_account_key,financial_to desc)
  where financial_owner_user_id is not null;
-
 -- Existing member upload policies must not expose or permit forged finance evidence.
 create policy financial_upload_owner_read on public.uploads as restrictive for select to authenticated
  using(financial_owner_user_id is null or (financial_owner_user_id=(select auth.uid()) and exists(
@@ -91,7 +89,6 @@ create policy financial_upload_no_direct_update on public.uploads as restrictive
  using(financial_owner_user_id is null) with check(financial_owner_user_id is null);
 create policy financial_upload_no_direct_delete on public.uploads as restrictive for delete to authenticated
  using(financial_owner_user_id is null);
-
 -- Trusted server passes re-parsed original CSV (only normalized transaction facts, no descriptions).
 -- The DB repeats scope/date/currency/chain checks and serializes replay with the source unique key.
 create function public.supervisor_record_statement_evidence(
@@ -161,8 +158,6 @@ end $$;
 revoke all on function public.supervisor_record_statement_evidence(uuid,uuid,text,text,text,date,date,bigint,bigint,jsonb)
  from public,anon,authenticated;
 grant execute on function public.supervisor_record_statement_evidence(uuid,uuid,text,text,text,date,date,bigint,bigint,jsonb) to service_role;
-
-
 -- One stable money review episode per owner; source changes drive existing
 -- investigations. A past due date alone never establishes overdue payment.
 create policy financial_review_owner_read on public.operating_tasks as restrictive for select to authenticated
@@ -177,8 +172,9 @@ create policy financial_review_no_direct_delete on public.operating_tasks as res
  using(id not like 'financial-review:%');
 create function public.supervisor_sync_financial_review(p_business_id uuid,p_owner_user_id uuid,p_now timestamptz)
  returns integer language plpgsql security invoker set search_path=public as $$
-declare v_day date;v_facts jsonb;v_count integer;v_invoice_count bigint;v_statement_count bigint;
- v_invoice_version text;v_statement_version text;
+declare v_day date;v_facts jsonb;v_count integer;v_changed integer;v_invoice_count bigint;v_statement_count bigint;
+ v_bill_count bigint;v_invoice_version text;v_statement_version text;v_bill_version text;v_event_version text;
+ v_cost_version text;v_expense_version text;v_claim record;v_task_id text;v_closed boolean;v_linked numeric;v_unverified boolean;
 begin
  if auth.role() is distinct from 'service_role' then raise exception 'service_role_only' using errcode='42501';end if;
  perform 1 from public.memberships m where m.business_id=p_business_id and m.user_id=p_owner_user_id and m.role='owner' for share;
@@ -199,10 +195,29 @@ begin
  into v_statement_count,v_statement_version from public.uploads
  where business_id=p_business_id and financial_owner_user_id=p_owner_user_id
  and financial_to<=v_day and kind='statement' and status='done';
- if v_invoice_count=0 and v_statement_count=0 then return 0;end if;
+ with latest as (
+  select distinct on(financial_bill_payee_key,financial_bill_reference) id,financial_bill_revision,financial_bill_due_on
+  from public.uploads where business_id=p_business_id and financial_owner_user_id=p_owner_user_id
+   and kind='bill_claim' and status='done' and financial_bill_issued_on<=v_day
+  order by financial_bill_payee_key,financial_bill_reference,financial_bill_revision desc)
+ select count(*),md5(coalesce(string_agg(id::text||':'||financial_bill_revision::text||':'||
+   case when financial_bill_due_on is null then 'undated' when financial_bill_due_on<v_day then 'past_date' else 'coming_due' end,
+  ',' order by id),''))
+ into v_bill_count,v_bill_version from latest where financial_bill_due_on is null or financial_bill_due_on<=v_day+7;
+ select md5(coalesce(string_agg(f.id::text||':'||coalesce(p.status,'missing'),',' order by f.id),''))
+ into v_event_version from public.purchase_reconciliation_events f
+ left join public.supervisor_proposals p on p.business_id=f.business_id and f.event_key='financial-settlement:'||p.id::text
+ where f.business_id=p_business_id and f.owner_user_id=p_owner_user_id and f.financial_kind is not null;
+ select md5(coalesce(string_agg(id::text||':'||amount_cents::text||':'||frequency||':'||coalesce(due_day::text,'?'),',' order by id),''))
+ into v_cost_version from public.recurring_costs where business_id=p_business_id
+ and active_from<=v_day and (active_to is null or active_to>=v_day);
+ select md5(coalesce(string_agg(id::text||':'||amount_cents::text||':'||status||':'||spent_on::text,',' order by id),''))
+ into v_expense_version from public.expenses where business_id=p_business_id and spent_on between v_day-30 and v_day;
+ if v_invoice_count=0 and v_statement_count=0 and v_bill_count=0 then return 0;end if;
  v_facts:=jsonb_build_array(jsonb_build_object('source','financial_evidence','facts',jsonb_build_object(
-  'invoiceClaimsNeedingReview',v_invoice_count,'statementDocuments',v_statement_count,
-  'invoiceSourceVersion',v_invoice_version,'statementSourceVersion',v_statement_version,
+  'invoiceClaimsNeedingReview',v_invoice_count,'statementDocuments',v_statement_count,'datedBillClaims',v_bill_count,
+  'invoiceSourceVersion',v_invoice_version,'statementSourceVersion',v_statement_version,'billSourceVersion',v_bill_version,
+  'settlementSourceVersion',v_event_version,'recurringSourceVersion',v_cost_version,'recentExpenseVersion',v_expense_version,
   'paymentStatusKnown',false,'liveCashKnown',false)));
  insert into public.operating_tasks(business_id,id,owner_user_id,agent_id,kind,entity_type,
   entity_id,status,confidence,payload,evidence,created_at)
@@ -212,11 +227,57 @@ begin
  on conflict(business_id,id) do update set evidence=excluded.evidence,status='watching',resolved_at=null,updated_at=p_now
  where operating_tasks.kind='money_update' and operating_tasks.owner_user_id=p_owner_user_id
   and operating_tasks.evidence is distinct from excluded.evidence;
- get diagnostics v_count=row_count;return v_count;
+ get diagnostics v_count=row_count;
+ -- An identified obligation may close independently of unknown whole-café cash.
+ -- The current revision must be fully documented, with committed click receipts
+ -- and no open allocations on earlier revisions. Changes reopen the same task.
+ for v_claim in
+  select distinct on(supplier_id,invoice_reference) id,supplier_id,invoice_reference,revision,total_cents,issued_on,due_on
+  from public.supplier_invoices where business_id=p_business_id and owner_user_id=p_owner_user_id and issued_on<=v_day
+  order by supplier_id,invoice_reference,revision desc
+ loop
+  v_task_id:='financial-review:invoice:'||p_owner_user_id::text||':'||md5(v_claim.supplier_id::text||':'||v_claim.invoice_reference);
+  if v_claim.due_on is not null and v_claim.due_on>v_day+7 and not exists(
+   select 1 from public.operating_tasks t where t.business_id=p_business_id and t.id=v_task_id)
+  then continue;end if;
+  select coalesce(sum(case when f.financial_kind='settlement_evidence_linked' then f.financial_allocation_cents else -f.financial_allocation_cents end)
+   filter(where f.financial_invoice_id=v_claim.id),0),
+   coalesce(bool_or(p.id is null or p.status<>'committed' or a.state is distinct from 'verified'
+      or public.supervisor_financial_settlement_proof(p_business_id,p.id,p.effect_hash) is distinct from f.id),false)
+   into v_linked,v_unverified
+   from public.purchase_reconciliation_events f
+   join public.supplier_invoices i on i.business_id=f.business_id and i.id=f.financial_invoice_id
+   left join public.supervisor_proposals p on p.business_id=f.business_id and f.event_key='financial-settlement:'||p.id::text
+   left join public.supervisor_effect_attempts a on a.business_id=p.business_id and a.proposal_id=p.id
+    and a.effect_hash=p.effect_hash and a.authorization_kind='click'
+   where f.business_id=p_business_id and f.owner_user_id=p_owner_user_id and f.financial_kind is not null
+    and f.financial_tx_date<=v_day and i.supplier_id=v_claim.supplier_id and i.invoice_reference=v_claim.invoice_reference;
+  v_closed:=v_claim.total_cents>0 and v_linked=v_claim.total_cents and not v_unverified and not exists(
+   select 1 from public.supplier_invoices old join public.purchase_reconciliation_events f
+    on f.business_id=old.business_id and f.financial_invoice_id=old.id
+    where old.business_id=p_business_id and old.owner_user_id=p_owner_user_id and old.supplier_id=v_claim.supplier_id
+     and old.invoice_reference=v_claim.invoice_reference and old.revision<v_claim.revision
+     and f.financial_kind='settlement_evidence_linked'
+     and f.financial_allocation_cents>(select coalesce(sum(rev.financial_allocation_cents),0)
+        from public.purchase_reconciliation_events rev where rev.business_id=p_business_id and rev.financial_reverses_id=f.id));
+  v_facts:=jsonb_build_array(jsonb_build_object('source','financial_invoice_review','facts',jsonb_build_object(
+    'invoiceId',v_claim.id,'revision',v_claim.revision,'documentedCoverageVerified',v_closed,
+    'settlementSourceVersion',v_event_version,'dueDatePosition',case when v_claim.due_on is null then 'undated' when v_claim.due_on<v_day then 'past_date' else 'coming_due' end)));
+  insert into public.operating_tasks(business_id,id,owner_user_id,agent_id,kind,entity_type,entity_id,status,confidence,payload,evidence,created_at,resolved_at)
+  values(p_business_id,v_task_id,p_owner_user_id,'leo','money_update','supplier_invoice',v_claim.id::text,
+    case when v_closed then 'handled' else 'watching' end,'low',
+    jsonb_build_object('title','Supplier invoice evidence review','documentedCoverageVerified',v_closed,'liveCashKnown',false),
+    v_facts,p_now,case when v_closed then p_now else null end)
+  on conflict(business_id,id) do update set evidence=excluded.evidence,payload=excluded.payload,
+    entity_id=excluded.entity_id,status=excluded.status,resolved_at=excluded.resolved_at,updated_at=p_now
+  where operating_tasks.kind='money_update' and operating_tasks.owner_user_id=p_owner_user_id
+    and (operating_tasks.evidence is distinct from excluded.evidence or operating_tasks.status is distinct from excluded.status);
+  get diagnostics v_changed=row_count;v_count:=v_count+v_changed;
+ end loop;
+ return v_count;
 end $$;
 revoke all on function public.supervisor_sync_financial_review(uuid,uuid,timestamptz) from public,anon,authenticated;
 grant execute on function public.supervisor_sync_financial_review(uuid,uuid,timestamptz) to service_role;
-
 -- Extend the existing document identity rather than synthesize a PO or another ledger.
 -- Reason: approved standalone document support; existing PO-specific foreign keys and readers remain, new standalone owner policies and parent validation below.
 -- squawk-ignore ban-drop-not-null
@@ -472,7 +533,6 @@ end $$;
 revoke all on function public.supervisor_commit_supplier_invoice(uuid,uuid,uuid,text)
  from public,anon,authenticated,service_role;
 grant execute on function public.supervisor_commit_supplier_invoice(uuid,uuid,uuid,text) to authenticated;
-
 create or replace function public.supervisor_supplier_invoice_effect_proof(
  p_business_id uuid,p_proposal_id uuid,p_effect_hash text
 ) returns uuid language sql stable security invoker set search_path=public as $$
@@ -521,8 +581,6 @@ $$;
 revoke all on function public.supervisor_supplier_invoice_effect_proof(uuid,uuid,text)
  from public,anon,authenticated;
 grant execute on function public.supervisor_supplier_invoice_effect_proof(uuid,uuid,text) to service_role;
-
-
 -- Documentary allocation evidence, not a second payment ledger. Existing
 -- reconciliation events remain append-only; only the click-gated RPC can insert.
 alter table public.purchase_reconciliation_events
@@ -567,7 +625,6 @@ create policy financial_event_owner_scope on public.purchase_reconciliation_even
  using(financial_kind is null or (owner_user_id=(select auth.uid()) and exists(
  select 1 from public.memberships m where m.business_id=purchase_reconciliation_events.business_id
  and m.user_id=(select auth.uid()) and m.role='owner')));
-
 create function public.supervisor_commit_financial_settlement(
  p_business_id uuid,p_thread_id uuid,p_proposal_id uuid,p_effect_hash text
 ) returns uuid language plpgsql security definer set search_path=public as $$
@@ -681,7 +738,6 @@ begin
 end $$;
 revoke all on function public.supervisor_commit_financial_settlement(uuid,uuid,uuid,text) from public,anon,authenticated,service_role;
 grant execute on function public.supervisor_commit_financial_settlement(uuid,uuid,uuid,text) to authenticated;
-
 -- Receipt readback is documentary only, even if the current invoice was
 -- subsequently corrected; a changed invoice does not erase a past event.
 create function public.supervisor_financial_settlement_proof(p_business_id uuid,p_proposal_id uuid,p_effect_hash text)
@@ -710,7 +766,6 @@ create function public.supervisor_financial_settlement_proof(p_business_id uuid,
 $$;
 revoke all on function public.supervisor_financial_settlement_proof(uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.supervisor_financial_settlement_proof(uuid,uuid,text) to service_role;
-
 -- Separate documentary bills, not recurring configuration, invoices or expenses.
 -- The exact owner click captures the dated claim under its real source identity.
 create function public.supervisor_commit_financial_bill(
@@ -802,7 +857,6 @@ create function public.supervisor_financial_bill_proof(p_business_id uuid,p_prop
 $$;
 revoke all on function public.supervisor_financial_bill_proof(uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.supervisor_financial_bill_proof(uuid,uuid,text) to service_role;
-
 create or replace function public.supervisor_reconcile_supplier_receiving(
  p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_proposal_id uuid,p_revision integer
 ) returns public.supervisor_proposals language plpgsql security definer set search_path=public as $$
