@@ -435,18 +435,28 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
     let stockPurchaseProposalId:string|undefined;
     let stockEmailProposalId:string|undefined;
     let ownerQuestion:string|undefined;
+    let stockProcurementStatus:string|undefined;
     if(synopsis.kind==="business_anomaly"){
       const source=await readIncidentEvidence(db,c),selector=object(source.selectors);
       if(["stockout_risk","stock_shortage"].includes(String(selector?.family))&&typeof selector?.subject==="string"){
         try{
           const draft=await prepareProactiveStockDraft(db,{...scope,threadId:c.thread_id,locale:"en",verifiedReadClient:db},c.source_id,c.episode_id,c.lease_token,selector.subject,identity.asOf);
-          if(draft.state==="draft"){stockPurchaseProposalId=draft.proposalId;report={...report,text:report.text.slice(0,1300)+"\nA supplier order draft is saved for your review and approval. No order has been sent."};}
-          else if(draft.state==="existing"){
+          // Keep the verified model reply intact. The existing fenced
+          // checkpoint publishes server-owned procurement status separately.
+          if(draft.state==="draft"){
+            stockPurchaseProposalId=draft.proposalId;
+            stockProcurementStatus="A supplier order draft is available for your review and approval. This draft does not send an order.";
+          }else if(draft.state==="existing"){
             stockEmailProposalId=draft.emailProposalId;ownerQuestion=draft.question;
-            if(draft.summary)report={...report,text:report.text.slice(0,1250)+"\n"+draft.summary};
+            stockProcurementStatus=draft.summary;
+          }else if(draft.state==="missing"){
+            stockProcurementStatus="Please confirm the missing stock count, supplier quote or delivery details. No purchase was authorized by this check.";
+            report={...report,missing:[...new Set([...report.missing,"stock_purchase_evidence_missing"])]};
           }
-          else if(draft.state==="missing")report={...report,text:report.text.slice(0,1300)+"\nPlease confirm the missing stock count, supplier quote or delivery details. No order has been sent.",missing:[...new Set([...report.missing,"stock_purchase_evidence_missing"])]};
-        }catch{report={...report,text:report.text.slice(0,1300)+"\nI could not verify the purchase draft. I will recheck the stock and supplier records; no purchase was authorized.",missing:[...new Set([...report.missing,"stock_purchase_draft_unverified"])]};}
+        }catch{
+          stockProcurementStatus="I could not verify the purchase draft. I will recheck the stock and supplier records; no purchase was authorized.";
+          report={...report,missing:[...new Set([...report.missing,"stock_purchase_draft_unverified"])]};
+        }
       }
       if(report.missing.length&&!ownerQuestion&&!stockPurchaseProposalId&&!stockEmailProposalId){
         const family=String(selector?.family??"");
@@ -468,6 +478,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       lastOwnerUpdate:new Date().toISOString(),unchangedChecks:0,
       ...(stockPurchaseProposalId?{stockPurchaseProposalId}:{}),
       ...(stockEmailProposalId?{stockEmailProposalId}:{}),
+      ...(stockProcurementStatus?{stockProcurementStatus}:{}),
       ...(ownerQuestion?{ownerQuestion}:{}),
       ...(synopsis.kind==="maintenance_issue"?{maintenanceReadMissing:vendorPoll.missing}:{}),
     };

@@ -125,6 +125,8 @@ export type InvestigationCheckpoint={
   ownerQuestion?:string;
   sourceRevision?:string;
   stockEmailProposalId?:string;
+  /** Server-observed procurement status, never part of the model narrative. */
+  stockProcurementStatus?:string;
   receivingClosureEvidence?:{poRevision:number;receiptVersions:number;invoiceVersions:number};
 };
 /** Source names and payloads may contain untrusted text. The model receives a

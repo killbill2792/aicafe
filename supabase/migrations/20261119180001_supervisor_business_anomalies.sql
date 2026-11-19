@@ -230,6 +230,16 @@ begin
     v_msg:=(substr(v_hash,1,8)||'-'||substr(v_hash,9,4)||'-4'||
       substr(v_hash,14,3)||'-a'||substr(v_hash,18,3)||'-'||substr(v_hash,21,12))::uuid;
     v_blocks:=jsonb_build_array(jsonb_build_object('type','text','text',btrim(p_narrative)));
+    -- Keep verified model text complete; publish server-observed purchasing
+    -- status as a separate existing note block for the exact leased stock source.
+    if p_source_type='alert' and jsonb_typeof(p_evidence->'stockProcurementStatus')='string'
+      and length(btrim(p_evidence->>'stockProcurementStatus')) between 1 and 1100
+      and exists(select 1 from public.alerts a where a.business_id=p_business_id
+        and a.id::text=p_source_id and a.kind='business_anomaly'
+        and a.payload->>'family' in ('stockout_risk','stock_shortage')) then
+      v_blocks:=v_blocks||jsonb_build_array(jsonb_build_object('type','warning',
+        'code','stock_procurement_status','text','Procurement status: '||btrim(p_evidence->>'stockProcurementStatus')));
+    end if;
     -- Keep one unanswered question across repeated reminders.
     if v.pending_question_id is null and p_evidence->>'ownerQuestion' is not null
       and length(btrim(p_evidence->>'ownerQuestion')) between 1 and 200 then
