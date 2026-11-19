@@ -37,27 +37,51 @@ export type ToastObservationWindow={
 export function planVerifiedToastPriceObservations(
  rows:readonly VerifiedToastPriceDelta[],asOf:string,
 ):ToastObservationWindow[]{
- const now=Date.parse(asOf);
+ const instant=(value:string)=>/(Z|[+-]\d{2}:?\d{2})$/.test(value)?Date.parse(value):NaN;
+ const now=instant(asOf);
  if(!Number.isFinite(now))return [];
  const DAY_MS=24*60*60*1000;
- const valid=rows.filter(r=>{
-  const t=Date.parse(r.observedAt);
+ const startOf=(r:VerifiedToastPriceDelta)=>instant(r.sourceEffectiveAt??r.observedAt);
+ const contextOf=(r:VerifiedToastPriceDelta)=>JSON.stringify([r.businessId,r.restaurantGuid.toLowerCase(),r.posItemId.toLowerCase(),r.contextKey]);
+ const eventOf=(r:VerifiedToastPriceDelta)=>JSON.stringify([contextOf(r),r.publicationVersion]);
+ const candidates=rows.filter(r=>{
+  const t=instant(r.observedAt),start=startOf(r);
   const idPrefix="toast:"+r.restaurantGuid.toLowerCase()+":";
   return r.sourceType==="connected_pos"&&r.sourceProvider==="toast"&&
    Boolean(r.businessId&&r.restaurantGuid&&r.menuItemId&&r.contextKey&&
      r.publicationVersion&&r.posItemId.toLowerCase().startsWith(idPrefix))&&
-   Number.isFinite(t)&&t<=now&&
+   Number.isFinite(t)&&t<=now&&Number.isFinite(start)&&start<=t&&
    Number.isSafeInteger(r.oldPriceCents)&&r.oldPriceCents>0&&
    Number.isSafeInteger(r.newPriceCents)&&r.newPriceCents>0&&
    r.oldPriceCents!==r.newPriceCents;
- }).sort((a,b)=>Date.parse(a.observedAt)-Date.parse(b.observedAt));
+ });
+ // Retries preserve the immutable event. Conflicting contents for the same
+ // identity invalidate the whole affected timeline, not an arbitrary winner.
+ const events=new Map<string,VerifiedToastPriceDelta>();
+ const ambiguous=new Set<string>();
+ for(const row of candidates){
+  const key=eventOf(row),previous=events.get(key);
+  if(previous&&(previous.menuItemId!==row.menuItemId||
+    previous.oldPriceCents!==row.oldPriceCents||previous.newPriceCents!==row.newPriceCents||
+    instant(previous.observedAt)!==instant(row.observedAt)||startOf(previous)!==startOf(row)))
+   ambiguous.add(contextOf(row));
+  else if(!previous)events.set(key,row);
+ }
+ const valid=[...events.values()].sort((a,b)=>startOf(a)-startOf(b));
+ const last=new Map<string,VerifiedToastPriceDelta>();
+ for(const row of valid){
+  const key=contextOf(row),previous=last.get(key);
+  if(previous&&(startOf(previous)===startOf(row)||previous.menuItemId!==row.menuItemId||
+    previous.newPriceCents!==row.oldPriceCents||instant(previous.observedAt)>instant(row.observedAt)))
+   ambiguous.add(key);
+  last.set(key,row);
+ }
  const output:ToastObservationWindow[]=[];
  for(let i=0;i<valid.length;i++){
-  const r=valid[i],start=Date.parse(r.observedAt);
-  const next=valid.slice(i+1).find(n=>n.businessId===r.businessId&&
-   n.restaurantGuid===r.restaurantGuid&&n.posItemId===r.posItemId&&
-   n.contextKey===r.contextKey);
-  const nextStart=next?Date.parse(next.observedAt):Infinity;
+  const r=valid[i],start=startOf(r);
+  if(ambiguous.has(contextOf(r)))continue;
+  const next=valid.slice(i+1).find(n=>contextOf(n)===contextOf(r));
+  const nextStart=next?startOf(next):Infinity;
   for(let day=1;day<=7;day++){
    const from=start+(day-1)*DAY_MS,naturalEnd=start+day*DAY_MS;
    if(from>=nextStart)break;
@@ -70,7 +94,7 @@ export function planVerifiedToastPriceObservations(
     sourceEffectiveAt:r.sourceEffectiveAt,day,
     from:new Date(from).toISOString(),to:new Date(end).toISOString(),
     due:now>=end,interrupted:end<naturalEnd,coverage:"not_assessed",
-    deliveryKey:JSON.stringify([r.businessId,r.restaurantGuid,r.posItemId,
+    deliveryKey:JSON.stringify([r.businessId,r.restaurantGuid.toLowerCase(),r.posItemId.toLowerCase(),
       r.contextKey,r.publicationVersion,day])});
   }
  }
