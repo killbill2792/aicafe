@@ -19,6 +19,16 @@ export async function GET(request:Request){
   let checked=0,refreshed=0,failed=0;
   const routines={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const now=new Date();
+  // The legacy manual worker flag alone must not activate scheduled chat work.
+  // This additional rollout gate remains off until durable admission/recovery is proven.
+  const ownerRunsEnabled=process.env.SUPERVISOR_RUN_WORKER_ENABLED==="true" &&
+    process.env.SUPERVISOR_DURABLE_CHAT_ENABLED==="true";
+  const ownerRuns=ownerRunsEnabled ? (async()=>{
+    try{
+      const {processOldestDurableRun}=await import("@/lib/ai/supervisor/runs/worker.server");
+      return {...await processOldestDurableRun(),failed:0};
+    }catch{return {processed:0,state:null,failed:1};}
+  })() : Promise.resolve({processed:0,state:null,failed:0});
   // Separate task capability, same authorized cron. Failures remain visible and
   // the database keeps unfinished commitments pending for the next invocation.
   let commitments:{scopes:number;delivered:number;failed:number};
@@ -28,7 +38,8 @@ export async function GET(request:Request){
   for(let offset=0;;offset+=pageSize){
     const {data,error}=await db.from("businesses").select("id,timezone,is_demo")
       .order("id",{ascending:true}).range(offset,offset+pageSize-1);
-    if(error)return respond(503,{error:"refresh_unavailable",checked,refreshed,failed});
+    if(error)return respond(503,{error:"refresh_unavailable",checked,refreshed,failed,
+      ...(ownerRunsEnabled?{ownerRuns:await ownerRuns}:{})});
     const rows=data??[];
     for(let i=0;i<rows.length;i+=5){
       await Promise.all(rows.slice(i,i+5).map(async business=>{
@@ -62,6 +73,8 @@ export async function GET(request:Request){
   let investigations={processed:0,collected:0,investigated:0,followUps:0,rechecked:0,failed:0};
   try{investigations=await processDueInvestigations(db,now,2);}
   catch{investigations.failed++;}
-  return respond(failed||commitments.failed||routines.failed||investigations.failed?207:200,
-    {checked,refreshed,failed,commitments,routines,investigations});
+  const ownerResult=await ownerRuns;
+  return respond(failed||commitments.failed||routines.failed||investigations.failed||ownerResult.failed?207:200,
+    {checked,refreshed,failed,commitments,routines,investigations,
+      ...(ownerRunsEnabled?{ownerRuns:ownerResult}:{})});
 }
