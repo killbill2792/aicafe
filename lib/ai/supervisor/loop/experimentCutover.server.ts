@@ -524,12 +524,20 @@ export async function runToastObservationBatch(db:SupabaseClient,now:string):
  if(due.error)throw new Error("toast_observation_discovery_failed");
  for(const row of (due.data??[]) as ObservationDue[]){
   result.checked++;
-  try{result.reported+=await runCompletedToastObservation(db,row,now);}
-  catch{result.failed++;}
+  let token:string|null=null;
+  try{
+   const claim=await db.rpc("supervisor_8a_claim_observation_work",{p_business_id:row.business_id,p_history_id:row.history_id,p_now:now});
+   if(claim.error)throw new Error("observation_work_claim_failed");
+   token=claim.data;
+   if(token)result.reported+=await runCompletedToastObservation(db,row,now,token);
+  }catch{
+   result.failed++;
+   if(token)await db.rpc("supervisor_8a_finish_observation_work",{p_business_id:row.business_id,p_history_id:row.history_id,p_token:token,p_ref:null,p_failed:true});
+  }
  }
  return result;
 }
-async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue,now:string):Promise<number>{
+async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue,now:string,workerToken:string):Promise<number>{
  const {business_id:businessId,history_id:sourceId}=due;
  const source=await db.from("menu_price_history").select(observationColumns)
   .eq("business_id",businessId).eq("id",sourceId).maybeSingle();
@@ -550,7 +558,7 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
  if(location.error||cafe.error||owners.error||current.error||existing.error||
    owners.count!==(owners.data?.length??0)||!cafe.data?.timezone||!cafe.data?.currency)
   throw new Error("observation_scope_unavailable");
- if(!owners.data?.length)return 0;
+ if(!owners.data?.length)throw new Error("observation_owner_revoked");
  const receipt=matchCompletedToastObservation({businessId,historyId:sourceId,
   notBefore:due.enabled_at,asOf:now,event,location:location.data});
  if(receipt.status!=="verified")throw new Error("invalid_observation_source");
@@ -589,15 +597,14 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
  const endAt=cut??finalEndAt;
  const ref={...activationReference(receipt),itemName,currency,interruptedAt:cut,
   sourceContinuity:continuity.reason??"verified",asOf:now};
- const measurementOwner=existing.data?.owner_user_id??owners.data[0].user_id;
- // Establish the seven durable slots before delivery. Retrying a discovery
- // can never create a second independent watch for the same history UUID.
- const initialized=await db.from("supervisor_monitor_windows").upsert(windows.map(window=>({
-  business_id:businessId,owner_user_id:measurementOwner,monitor_kind:"toast_price_observation",
-  source_id:sourceId,window_index:window.index,source_reference:ref,
-  start_at:window.startAt,end_at:window.endAt,
- })),{onConflict:"business_id,monitor_kind,source_id,window_index",ignoreDuplicates:true});
- if(initialized.error)throw new Error("observation_window_initialization_failed");
+ // Every window write and delivery is fenced by the durable anchor lease.
+ const writeWindow=async(index:number,reference:unknown,coverage:string,units:number|null,revenue:number|null,unknown:number,evaluation:string)=>{
+  const saved=await db.rpc("supervisor_8a_write_observation_window",{p_business_id:businessId,p_history_id:sourceId,
+   p_token:workerToken,p_index:index,p_ref:reference,p_coverage:coverage,p_units:units,p_revenue:revenue,
+   p_unknown:unknown,p_evaluation:evaluation});
+  if(saved.error||saved.data!==true)throw new Error("observation_measurement_lease_lost");
+ };
+ for(const window of windows)await writeWindow(window.index,ref,"unknown",null,null,0,"in_progress");
  const measurements:ObservationMeasurement[]=[];
  let unitCost:number|null=null;
  if(windows.some(w=>Date.parse(w.startAt)<Date.parse(endAt)&&
@@ -632,17 +639,9 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
    contributionChangeEstimateCents:comparison.contributionChangeEstimateCents,
    contributionMarginEstimateBps:comparison.contributionMarginEstimateBps,
    volumeChangeBps:comparison.volumeChangeBps,revenueChangeBps:comparison.revenueChangeBps};
-  const saved=await db.from("supervisor_monitor_windows").upsert({
-   business_id:businessId,owner_user_id:measurementOwner,monitor_kind:"toast_price_observation",
-   source_id:sourceId,window_index:window.index,source_reference:{...ref,measurement},
-   start_at:window.startAt,end_at:window.endAt,
-   coverage_status:!partial&&measured.status==="actual"?"actual":"partial",
-   units:partial?null:measured.units,revenue_cents:partial?null:measured.revenueCents,
-   unknown_time_lines:measured.unknownTimeLines,
-   evaluation_status:!partial&&measured.status==="actual"?"complete":"insufficient_evidence",
-   updated_at:now,
-  },{onConflict:"business_id,monitor_kind,source_id,window_index"});
-  if(saved.error)throw new Error("observation_measurement_write_failed");
+  await writeWindow(window.index,{...ref,measurement},!partial&&measured.status==="actual"?"actual":"partial",
+   partial?null:measured.units,partial?null:measured.revenueCents,measured.unknownTimeLines,
+   !partial&&measured.status==="actual"?"complete":"insufficient_evidence");
   measurements.push(measurement);
  }
  const total=(key:"units"|"revenueCents"|"baselineUnits"|"baselineRevenueCents"|"contributionEstimateCents")=>
@@ -676,7 +675,7 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
    if(prior.data&&key.kind==="toast_price_initial")return;
    if(prior.data&&!prior.data.message_id)throw new Error("observation_posted_receipt_missing_message");
    const result=await postToastObservationNotice(db,{key,threadId:thread.data!.id,timezone,
-    prior:prior.data??undefined,measurementAsOf:now,
+    prior:prior.data??undefined,measurementAsOf:now,workerToken,
     payload:{...payload,itemName,oldPriceCents:receipt.oldPriceCents,newPriceCents:receipt.newPriceCents,currency,observationOnly:true},
     text,confidence});
    if(result==="posted"){if(!prior.data)posted++;}else allDelivered=false;
@@ -705,11 +704,11 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
  // Keep checking corrections for the existing fourteen-day correction period.
  // A missing owner thread or undelivered receipt remains actionable backlog.
  const settled=finalDue&&allDelivered&&Date.parse(now)>Date.parse(endAt)+14*observationDayMs;
- const anchor=await db.from("supervisor_monitor_windows").update({
-  source_reference:{...ref,...(measurements[0]?{measurement:measurements[0]}:{}),cumulative,finalDue,
-   ...(settled?{closedAt:now}:{})},updated_at:now,
- }).eq("business_id",businessId).eq("monitor_kind","toast_price_observation")
- .eq("source_id",sourceId).eq("window_index",0);
- if(anchor.error)throw new Error("observation_anchor_write_failed");
+ const anchor=await db.rpc("supervisor_8a_finish_observation_work",{
+  p_business_id:businessId,p_history_id:sourceId,p_token:workerToken,p_failed:false,
+  p_ref:{...ref,...(measurements[0]?{measurement:measurements[0]}:{}),cumulative,finalDue,
+   ...(settled?{closedAt:now}:{})},
+ });
+ if(anchor.error||anchor.data!==true)throw new Error("observation_anchor_lease_lost");
  return posted;
 }
