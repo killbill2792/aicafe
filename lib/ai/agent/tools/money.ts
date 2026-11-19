@@ -206,7 +206,7 @@ export const moneyTools={
   },
   get_cashflow_evidence:{
     agentId:"leo",schema:empty,
-    description:"Current recorded supplier invoice claims, currency and due dates, not unpaid debt or cash. Combine with bills, expenses, sales, labor and dated owner facts. No bank connection required.",
+    description:"Dated invoice claims, not unpaid debt; use alongside bills, sales, labor and owner facts.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       empty.parse(raw);
       const base={source:"cashflow_evidence",period:null,agentId:"leo" as const,
@@ -226,7 +226,7 @@ export const moneyTools={
     },
   },
   get_break_even:{
-    agentId:"leo",schema:breakEvenInput,description:"Canonical break-even from the SAME saved financial snapshot and core calculator as Money and Plan. period=month (default) forecasts the full calendar month; month_to_date uses ONLY elapsed recorded wages and prorated fixed bills, NEVER future labor; today calculates the current day's cost target (provisional if today has no recorded labor), NOT the monthly average. Quote periodBreakEvenCents for today/MTD and monthlyBreakEvenCents only for the full-month forecast; use dailyBreakEvenCents as the relevant per-open-day target. Historical Toast processing fees are actual when feeStatus=actual; a fee rate extrapolated to FUTURE sales is a forecast, not missing/estimated imported fees. Employer payroll tax may be a saved-rate estimate even with actual Toast wages. Reuse saved ingredient/packaging percent when recipes are incomplete. Never ask for actual Toast wages/fees already imported or an owner input that the result already has; ask only a truly missing ingredient rate or recorded fact. Pass owner overrides only when the owner explicitly says them. Return structured evidence; do not recalculate break-even in the model.",
+    agentId:"leo",schema:breakEvenInput,description:"Canonical Money/Plan break-even. month forecasts full month; month_to_date uses elapsed wages/prorated bills, never future labor; today uses today's costs, not monthly average. Quote periodBreakEvenCents for today/MTD, monthlyBreakEvenCents for month, dailyBreakEvenCents per open day. Historical Toast fees may be actual; future rates/payroll tax may be estimates. Reuse saved ingredient rate. Never re-ask imported wages/fees or returned inputs. Only explicit owner overrides; never recalculate.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const owner=breakEvenInput.parse(raw),provided=owner.ownerInputs;
       if(ctx.readEconomics){

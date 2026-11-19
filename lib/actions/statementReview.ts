@@ -25,6 +25,7 @@ export async function reviewStatementCsv(csvText: string): Promise<StatementRevi
 
   const access=await getCafeAccess(businessId);
   const parsed = parseStatementCsv(csvText);
+  if(parsed.sourceErrors||parsed.unrecognizedColumns||parsed.invalidRows.length) return {ok:false,error:"The statement contains unrecognized columns or invalid transaction rows. Correct the source file and retry."};
   if (parsed.lines.length === 0) return { ok: false, error: "No transaction lines were found in that file." };
 
   // Only money-out lines get categorized (docs/06-integrations.md step 4: skip deposits/transfers
