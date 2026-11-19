@@ -175,7 +175,7 @@ describe("Task 15C durable SQL lease process death (not full Supervisor restart)
       // uncertainty without exposing owner/thread/source details.
       await service.query("begin");
       try {
-        const result=await call(service,"run_data_health_check",[8589934592000,30]);
+        const result=(await service.query("select to_jsonb(public.run_data_health_check($1,$2)) as result",[8589934592000,30])).rows[0].result;
         expect(result.findings.find((f:{kind:string;business_id?:string})=>f.kind==="supervisor_work_recovery"&&f.business_id===businessId))
           .toEqual({kind:"supervisor_work_recovery",business_id:businessId,expired_leases:0,
             blocked_runs:1,retrying_investigations:0,failed_routines:0,stalled_runs:0});
