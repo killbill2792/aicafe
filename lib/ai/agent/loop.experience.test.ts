@@ -409,35 +409,35 @@ describe("incomplete provider response diagnostics and fail-closed tool recovery
   });
 });
 
-describe("Luna tool reasoning shares the old aggregate output allowance",()=>{
+describe("Luna tool reasoning stays within the owner-approved aggregate output allowance",()=>{
   const doneWith=(n:number)=>({type:"response.completed",response:{model:"gpt-6-luna",
     usage:{input_tokens:40,output_tokens:n}}});
   const menu=(id:string)=>call("get_menu_items",'{"query":null,"limit":null}',id);
   const limits=(requests:Record<string,unknown>[])=>requests.map(r=>[r.tool_choice,r.max_output_tokens]);
-  it("allows 4096 then only the remaining ordinary allocation, retaining final 1200",async()=>{
+  it("allows 16384 then only the remaining 23800 work allocation, retaining final 1200",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
-      const {requests,provider}=recording([[menu("a"),doneWith(4096)],[menu("b"),doneWith(1904)],[text("Summary."),doneWith(1200)]]);
+      const {requests,provider}=recording([[menu("a"),doneWith(16384)],[menu("b"),doneWith(7416)],[text("Summary."),doneWith(1200)]]);
       const r=await runAgentTurn({ownerText:"Read my menu.",context:{...context},provider});
-      expect(limits(requests)).toEqual([["auto",4096],["auto",1904],["none",1200]]);
-      expect(r.usage.outputTokens).toBe(7200);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",7416],["none",1200]]);
+      expect(r.usage.outputTokens).toBe(25000);
       expect(r.usage.toolCalls).toBe(2);
       expect(r.endReason).toBe("budget");
     }finally{vi.unstubAllEnvs()}
   });
-  it("unlocks only the existing supplier step allowance after a registered read",async()=>{
+  it("supplier reads retain the same 25000 aggregate limit",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
-      const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","po"),doneWith(4096)],
-        [menu("b"),doneWith(3104)],[text("Summary."),doneWith(1200)]]);
+      const {requests,provider}=recording([[call("get_supplier_purchase_orders","{}","po"),doneWith(16384)],
+        [menu("b"),doneWith(7416)],[text("Summary."),doneWith(1200)]]);
       const ctx={...context,purchasing:{
         list:async()=>({orders:[],truncated:false,drafts:[],draftsTruncated:false,unresolvedApprovals:[],unresolvedApprovalsTruncated:false}),
         inspect:vi.fn(),propose:vi.fn()
       }} as AgentToolContext;
       const r=await runAgentTurn({ownerText:"Read my supplier orders.",context:ctx,provider});
       expect(r.tools).toContain("get_supplier_purchase_orders");
-      expect(limits(requests)).toEqual([["auto",4096],["auto",3104],["none",1200]]);
-      expect(r.usage.outputTokens).toBe(8400);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",7416],["none",1200]]);
+      expect(r.usage.outputTokens).toBe(25000);
     }finally{vi.unstubAllEnvs()}
   });
   it("never exceeds a durable worker's remaining output",async()=>{
@@ -454,10 +454,10 @@ describe("Luna tool reasoning shares the old aggregate output allowance",()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     try{
       const {requests,provider}=recording([[menu("a"),{type:"response.completed",response:{model:"gpt-6-luna"}}],
-        [menu("b"),doneWith(1904)],[text("Summary."),doneWith(1200)]]);
+        [menu("b"),doneWith(7416)],[text("Summary."),doneWith(1200)]]);
       const r=await runAgentTurn({ownerText:"Read the menu.",context:{...context},provider});
-      expect(limits(requests)).toEqual([["auto",4096],["auto",1904],["none",1200]]);
-      expect(r.usage.outputTokens).toBe(3104);
+      expect(limits(requests)).toEqual([["auto",16384],["auto",7416],["none",1200]]);
+      expect(r.usage.outputTokens).toBe(8616);
     }finally{vi.unstubAllEnvs()}
   });
   it("ordinary other models keep the prior 1200 cap even on recovery",async()=>{

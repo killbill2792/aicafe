@@ -249,12 +249,14 @@ export async function runAgentTurn(args: {
     name==="inspect_supplier_purchase"||name==="get_supplier_purchase_orders");
   const maxModelToolCalls=()=>supplierWorkObserved()?6:5;
   const expandedLuna=model===PRODUCTION_SUPERVISOR_OPENAI_MODEL;
-  const finalOutputReserve=1200, lunaToolOutputCap=4096;
-  // Reallocate the previous aggregate allowance, not increase it. Only actual
-  // execution of the existing supplier read unlocks the sixth work call.
+  const finalOutputReserve=1200, lunaToolOutputCap=16_384, lunaTurnOutputCap=25_000;
+  // The owner-approved Luna turn cap includes the final response reserve.
+  // Actual usage (or the full request cap if unreported) reduces the next
+  // request; the worker's remaining budget can impose a smaller ceiling.
+  // Only an executed supplier read unlocks the sixth work call.
   const outputRemaining=(final:boolean)=>Math.max(0,Math.min(
     workerBudget?workerBudget.maxOutputTokens-meteredOutput():Infinity,
-    expandedLuna?(maxModelToolCalls()+1)*finalOutputReserve-meteredOutput()-
+    expandedLuna?lunaTurnOutputCap-meteredOutput()-
       (final?0:finalOutputReserve):Infinity));
   const outputLimit=(final:boolean)=>Math.min(expandedLuna&&!final?lunaToolOutputCap:finalOutputReserve,
     outputRemaining(final));
