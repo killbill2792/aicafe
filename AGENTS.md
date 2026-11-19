@@ -30,6 +30,36 @@ Where an older line in this file conflicts with these rules, these rules win.
    Preserve real owner scope/architecture decisions, exact-head CI/Codex/merge gates
    and separately authorized product effects. Muse notes cannot approve an action.
    This paragraph supersedes every older live-dispatcher/owner-view instruction below.
+0a. **No invisible development work or owner blocker — mandatory for every coding chat.**
+   Read these latest-main rules again on every resumed coding turn (including existing drafts).
+   The SAME PR description is the shared handoff record for Muse; a ChatGPT reply is not
+   a status record. Update the existing record on each meaningful transition, before requesting
+   a workflow and before returning to the owner. Use the exact marker and fields in
+   [workflow-and-review.md](docs/rules/workflow-and-review.md#mandatory-muse-handoff).
+   When genuinely blocked on an owner decision, publish the exact plain-language question as
+   `<!-- aicafe-owner-question ... -->` plus the `needs-owner-decision` label on that same PR,
+   even if draft. Include the recommendation, consequences, exact scope/head and the specific
+   action/approval required; never put secrets or private cafe data in a PR. Muse reads this
+   directly, alerts the owner, and routes the answer to the existing chat. Remove the active
+   marker and label only after verifying the actual decision or that the request is withdrawn;
+   keep the original decision and evidence in Comment disposition. Muse cannot approve spend,
+   architecture, production effects or an owner-required merge.
+0b. **Mandatory foreground workflow follow-through.** After a push, CI request/rerun, eligible
+   ready/Codex request, or separately authorized shared Luna launch, keep the SAME execution
+   session open and monitor the actual run or review. Poll at reasonable intervals (about 20–30
+   seconds); wait and recheck for at least 60 seconds if it is still pending and execution
+   is available. A fast terminal result can be handled immediately. Do not exit simply because
+   it is queued/running, or because one status read returned pending. Continue fixing failures,
+   retesting, reviewing and merging when eligible. If a genuine runtime/tool limit prevents
+   further foreground monitoring, publish the exact current-head handoff (run URL/ID, state,
+   last observed result and the next action) on the PR before returning. Do not claim background
+   work, clean review, passed tests or a merge without actual evidence. Muse resumes the SAME
+   chat when the real check/run finishes, not the owner. This rule applies to every requested
+   workflow, not only to green CI. Use the shared Luna runner from #520; no repeated paid runs
+   without a fresh valid owner authorization. In ordinary software work, merge once all
+   established gates pass and the scope permits coding-agent merge. If actual owner merge
+   authorization is required, publish the precise remaining decision instead of silently waiting.
+   These rules supersede any older instruction to stop immediately after requesting a workflow.
 1. **Product first.** Read "What AI Cafe is" above before any task, and build toward it.
 2. **The owner is the builder.** The owner's product decisions are final. You may push back once, with
    evidence and a better option. Then build what the owner chose. No refusing and no re-arguing.
@@ -167,9 +197,9 @@ Where an older line in this file conflicts with these rules, these rules win.
     the immutable head/merge gate or requesting once per doc tweak.
     A prior clean review never proves a changed-head PR. Resolve real findings with
     executed evidence, preserve existing acceptance/base/approval/merge gates, and
-    complete the proven merge. Do not run a background polling loop or invent
-    uninterrupted cloud execution; the existing dispatcher resumes the saved chat.
-    Publish explicit owner questions on the SAME PR, including drafts.
+    complete the proven merge. Follow mandatory foreground monitoring in rule 0b; never invent
+    background/cloud execution. Muse resumes the saved chat from the PR handoff when needed.
+    Publish explicit owner questions on the SAME PR, including drafts, per rule 0a.
 20. **No Vercel preview deployments/builds.** Vercel previews are disabled by owner decision for
     cost. Never enable automatic or manual Vercel preview builds for PRs, E2, or UI acceptance.
     When browser proof is needed, run the app in GitHub Actions with disposable test data and
