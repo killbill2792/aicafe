@@ -195,7 +195,15 @@ test('edited source cannot replace prior question; spoof and untrusted URLs reje
 test('earlier comment pages are imported and incomplete scan remains visible',async()=>{
  const raw=github('SUCCESS',[request(102,'Second')]),p=raw.data.repository.pullRequests.nodes[0];
  p.comments.pageInfo={hasPreviousPage:true,startCursor:'old'};
- assert.equal(normalizeGithubFacts(raw,now).prs[0].owner_request_read_incomplete,true);
+ const incomplete=normalizeGithubFacts(raw,now);
+ assert.equal(incomplete.prs[0].owner_request_read_incomplete,true);
+ for(const stage of ['working','waiting_owner']){
+  const out=museActions(incomplete,previous,notes(stage),{now});
+  assert.equal(out.actions.length,0);
+  assert.match(out.blocked[0].reason,/scan incomplete/);
+ }
+ const missing=structuredClone(incomplete);delete missing.prs[0].owner_request_read_incomplete;
+ assert.equal(museActions(missing,previous,notes(),{now}).actions.length,0);
  await completeOwnerRequestPages(raw,async(n,cursor)=>{
   assert.equal(n,488);assert.equal(cursor,'old');
   return {data:{repository:{pullRequest:{comments:{nodes:[request(101,'First')],pageInfo:{hasPreviousPage:false}}}}}};
