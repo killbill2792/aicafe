@@ -4,8 +4,8 @@ import {existsSync,realpathSync,writeFileSync} from "node:fs";
 import {resolve,dirname,sep} from "node:path";
 import {assertLocalLiveEnvironment} from "./preflight.mjs";
 import {readPersistedModelUsage,verifyCheckoutHead} from "./runner.mjs";
-import {profiles,openOwner,createThread,makeQuote,delegate,rows} from "./task17c-world.mjs";
-import {verifyRoutineAndFile,assessCoverage} from "./task17c-oracle.mjs";
+import {profiles,openOwner,createThread,makeQuote,delegate,rows,observeDueOccurrence} from "./task17c-world.mjs";
+import {verifyRoutineAndFile,assessCoverage,verifyScheduledOccurrence} from "./task17c-oracle.mjs";
 const env=process.env;
 assertLocalLiveEnvironment(env);verifyCheckoutHead(env.HEAD_SHA);
 if(env.AICAFE_SHARED_LUNA!=="1"||env.AICAFE_SHARED_LUNA_CANDIDATE!=="1"||
@@ -40,6 +40,12 @@ try{
   proposals:await rows(db,"select id from public.supervisor_proposals where business_id=$1 and thread_id=$2",[scope.businessId,threadId]),
   foreignRows:await rows(db,"select id from public.supervisor_routines where business_id=$1 and thread_id=$2",[scope.foreignBusinessId,threadId])
  });
+ const occurrence=await observeDueOccurrence(db,scope,expected,routineId);
+ const routineRunId=verifyScheduledOccurrence({expected,...occurrence});
+ const ownerAfter=await rows(db,"select id from public.ai_messages where business_id=$1 and thread_id=$2 and role='owner'",[scope.businessId,threadId]);
+ if(ownerAfter.length!==1||ownerAfter[0].id!==ownerRows[0].id)throw Error("task17c:unexpected_new_owner_prompt");
+ const effectsAfter=await rows(db,"select id from public.supervisor_proposals where business_id=$1 and thread_id=$2",[scope.businessId,threadId]);
+ if(effectsAfter.length!==0)throw Error("task17c:unapproved_effect_proposal");
  outsider=await openOwner(browser,foreign);
  const rejected=await outsider.context.request.get("/api/ai/threads/"+threadId);
  if(![401,403,404].includes(rejected.status()))throw Error("task17c:foreign_thread_denial_unverified");
@@ -59,10 +65,10 @@ try{
  if(providerCalls>18)throw Error("task17c:shared_call_cap_exceeded");
  const proof={schema_version:1,task:"17c",lane:"chat-routine-file-delegation",head_sha:env.HEAD_SHA,
    status:"passed",observed_model:"gpt-6-luna",provider:"openai_responses",
-   calls:providerCalls,registeredTools:result.names,coverage:assessCoverage({head:env.HEAD_SHA}),
+   calls:providerCalls,registeredTools:result.names,actualRoutineOccurrence:true,duplicateTickStable:true,realDatabaseClock:true,distinctWorkerProcesses:true,coverage:assessCoverage({head:env.HEAD_SHA}),
    integrated_proven:false,released_proven:false};
  writeFileSync(files[0],JSON.stringify(proof,null,2)+"\n",{flag:"wx",mode:0o600});
- writeFileSync(files[1],JSON.stringify({...scope,routineId,replyId:result.done.reply.id,expectedProviderCalls:providerCalls})+"\n",{flag:"wx",mode:0o600});
+ writeFileSync(files[1],JSON.stringify({...scope,routineId,routineRunId,routineLocalDate:expected.localDate,replyId:result.done.reply.id,expectedProviderCalls:providerCalls})+"\n",{flag:"wx",mode:0o600});
  console.log("Task17C initial chat delegation lane complete; full autonomous acceptance is NOT_PROVEN.");
 }finally{
  await outsider?.context.close().catch(()=>{});
