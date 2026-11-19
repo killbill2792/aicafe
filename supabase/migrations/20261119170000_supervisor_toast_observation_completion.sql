@@ -105,12 +105,10 @@ alter table public.supervisor_experiment_notice_receipts
 -- Install the replacement first, avoiding a full scan under migration lock.
 -- Reason: widen daily observation slots only; the installed replacement preserves all other kind/slot restrictions.
 -- squawk-ignore ban-drop-constraint
-alter table public.supervisor_experiment_notice_receipts
- drop constraint supervisor_experiment_notice_receipts_slot_check;
+alter table public.supervisor_experiment_notice_receipts drop constraint supervisor_experiment_notice_receipts_slot_check;
 -- Reason: the installed replacement preserves the original kind/slot restrictions except the widened elapsed-day index.
 -- squawk-ignore ban-drop-constraint
-alter table public.supervisor_experiment_notice_receipts
- drop constraint supervisor_experiment_notice_receipts_check;
+alter table public.supervisor_experiment_notice_receipts drop constraint supervisor_experiment_notice_receipts_check;
 
 -- Observation measurements are café facts; approved proposal results remain
 -- private to the owner who authorized them. Delivery stays owner-specific.
