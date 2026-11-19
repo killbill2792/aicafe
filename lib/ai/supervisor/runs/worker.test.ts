@@ -264,3 +264,44 @@ describe("Codex P1: aggregate budget across bounded agent continuations", () => 
     expect(db.status).toBe("blocked"); expect(db.finalRef).toBeNull();
   });
 });
+
+describe("v2 checkpoint boundaries in the actual agent loop",()=>{
+  const context={timezone:"America/Los_Angeles",asOf:"2026-11-10",locale:"en",tools:{}} as AgentToolContext;
+  function fixture(){
+    const trace:string[]=[];
+    const checkpoint:import("./contracts").OwnerRunCheckpoint={
+      assertLive:async()=>{trace.push("authorize");},
+      beginProvider:async()=>{trace.push("begin");},
+      endProvider:async ok=>{trace.push(ok?"receipt":"abandon");},
+      beginTool:async()=>null,endTool:async()=>{},
+      resumeContext:async()=>null,canYield:()=>true,yieldForRetry:async()=>true,
+    };
+    return {trace,checkpoint};
+  }
+  it("records the provider boundary before dispatch and its receipt before a complete reply",async()=>{
+    const {trace,checkpoint}=fixture();
+    const provider:AgentProvider=async function*(){
+      trace.push("transport");
+      yield {type:"response.output_text.delta",delta:"Done."};
+      yield {type:"response.completed",response:{usage:{input_tokens:30,output_tokens:4,input_tokens_details:{cached_tokens:0}}}};
+    };
+    const result=await runAgentTurn({ownerText:"Hello",context,provider,checkpoint});
+    expect(result.endReason).toBe("complete");
+    expect(trace.filter(x=>x!=="authorize")).toEqual(["begin","transport","receipt"]);
+  });
+  it("does not dispatch if the checkpoint cannot be durably written",async()=>{
+    const {checkpoint}=fixture();
+    checkpoint.beginProvider=async()=>{throw Error("checkpoint_storage_unavailable");};
+    const provider=vi.fn<AgentProvider>(async function*(){yield {type:"response.output_text.delta",delta:"must not execute"};});
+    await expect(runAgentTurn({ownerText:"Hello",context,provider,checkpoint})).rejects.toThrow();
+    expect(provider).not.toHaveBeenCalled();
+  });
+  it("does not finish a run when its owner turn durably yielded",async()=>{
+    const db=new Ledger(),env=setup(db);
+    env.deps.version2=true;
+    env.deps.executeTurn=async()=>"yielded";
+    expect(await executeDurableRun(run,budget,env.deps)).toBe("busy");
+    expect(db.rows.find(x=>x.key==="owner_turn")?.state).not.toBe("completed");
+    expect(db.finalRef).toBeNull();
+  });
+});
