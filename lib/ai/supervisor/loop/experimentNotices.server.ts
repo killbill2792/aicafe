@@ -156,7 +156,7 @@ export function toastObservationNoticeKey(input:{
 export async function postToastObservationNotice(db:SupabaseClient,input:{
  key:OwnerNoticeKey;threadId:string;timezone:string;
  payload:Record<string,string|number|boolean|null>;text:string;confidence:"high"|"low";
- measurementAsOf?:string;prior?:{id:string;attempts:number;message_id:string};
+ measurementAsOf?:string;workerToken?:string;prior?:{id:string;attempts:number;message_id:string};
 }):Promise<"posted"|"not_claimed"|"not_authorized">{
  const k=input.key;
  if(k.kind==="price_reminder")throw new Error("wrong_observation_notice_kind");
@@ -178,7 +178,7 @@ export async function postToastObservationNotice(db:SupabaseClient,input:{
    p_receipt_id:lease.receipt_id,p_attempt:lease.attempt,p_thread_id:input.threadId,
    p_task_id:id,p_message_id:messageId,p_timezone:input.timezone,p_payload:input.payload,
    p_text:(input.prior?"Updated observation: ":"")+input.text,p_confidence:input.confidence,
-   p_prior_message_id:input.prior?.message_id??null,p_measurement_as_of:input.measurementAsOf??null,
+   p_prior_message_id:input.prior?.message_id??null,p_measurement_as_of:input.measurementAsOf??null,p_worker_token:input.workerToken??null,
   });
   if(saved.error)throw new Error("observation_notice_delivery_failed");
   return saved.data===true;
