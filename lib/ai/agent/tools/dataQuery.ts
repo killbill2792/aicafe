@@ -192,7 +192,7 @@ function customerDerivedFields(recordType:string){
 }
 const isCustomerDerived=(field:string)=>field.startsWith("data.aiCafeCustomer.");
 const isCustomerIdentityField=(field:string)=>isCustomerDerived(field)||
- /(?:^|\.)(?:customer|appliedLoyaltyInfo|tabName|cardholder|cardholderName|cardPaymentId|loyaltyIdentifier)(?:\.|$)/i.test(field);
+ /(?:^|\.)(?:customer|customerInfo|customerDetails|guest|guestInfo|loyalty|loyaltyAccount|appliedLoyaltyInfo|tabName|cardholder|cardholderName|cardPaymentId|loyaltyIdentifier|payer|payerName)(?:\.|$)/i.test(field);
 const fieldMatches=(field:string,prefix:string|null)=>prefix===null||field.startsWith(prefix);
 export const dataQueryTools={
  describe_data:{
