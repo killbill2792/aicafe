@@ -123,6 +123,7 @@ test("Git-local CI classification retains the original docs, code, E2E and Super
 test("Task16C allows only existing exact external-access infrastructure with mandatory tests",()=>{
  const paths=[
   "lib/connectors/access.server.ts","lib/connectors/access.test.ts",
+  "lib/connectors/publicWeb.server.ts","lib/connectors/publicWeb.test.ts",
   "lib/connectors/registry.live.test.ts",
   "supabase/migrations/20261118100000_supervisor_external_access.sql",
  ];
@@ -131,9 +132,13 @@ test("Task16C allows only existing exact external-access infrastructure with man
  const files=selectedFiles(domains);
  for(const file of [
   "lib/connectors/access.test.ts","lib/connectors/registry.live.test.ts",
-  "lib/connectors/gmail/provider.test.ts",
+  "lib/connectors/gmail/provider.test.ts","lib/connectors/publicWeb.test.ts",
+  "lib/events/eventsLookahead.scan.test.ts","lib/events/eventVerification.server.test.ts",
+  "lib/events/eventsLookahead.integration.f.test.ts","app/api/events/outlook/route.test.ts",
  ])assert.ok(files.includes(file),"Missing Task16C authenticated source/effect regression: "+file);
  assert.throws(()=>domainsForPaths(["lib/connectors/accessArbitrary/provider.ts"]),
+   /unknown_connector_contract/);
+ assert.throws(()=>domainsForPaths(["lib/connectors/publicWebArbitrary.server.ts"]),
    /unknown_connector_contract/);
 });
 
