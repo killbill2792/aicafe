@@ -57,3 +57,7 @@ describe("historical statement evidence",()=>{
   expect(summarizeStatementBalances([a],asOf,true).documentedAccountBalances).toEqual([]);
  });
 });
+
+it("excludes invoice claims not yet issued on the requested as-of date",()=>{
+ expect(summarizeInvoiceClaims([{...a,issued_on:"2026-11-19"}],asOf,false).recordedClaimCount).toBe(0);
+});

@@ -43,21 +43,13 @@ export async function reviewStatementCsv(csvText: string): Promise<StatementRevi
   );
 
   const byIndex = new Map(moneyOutLines.map((l) => [l.i, l]));
-  const lines: ReviewLine[] = categorized
-    .map((c) => {
-      const original = byIndex.get(c.i);
-      if (!original) return null;
-      return {
-        i: c.i,
-        date: original.date,
-        description: c.vendor || original.description,
-        amountCents: Math.abs(original.amountCents),
-        category: c.category,
-        reason: c.reason,
-        confidence: c.confidence,
-      };
-    })
-    .filter((l): l is ReviewLine => l !== null);
+  const matched=new Map(categorized.filter(c=>byIndex.has(c.i)).map(c=>[c.i,c]));
+  const lines: ReviewLine[]=moneyOutLines.map(original=>{
+    const c=matched.get(original.i);
+    return {i:original.i,date:original.date,description:c?.vendor||original.description,
+      amountCents:Math.abs(original.amountCents),category:c?.category??"other",
+      reason:c?.reason??"Could not categorize automatically",confidence:c?.confidence??0};
+  });
 
   const {data:business}=await supabase.from("businesses").select("currency").eq("id",businessId).maybeSingle();
   const currency=typeof business?.currency==="string"&&/^[A-Z]{3}$/.test(business.currency)?business.currency:null;

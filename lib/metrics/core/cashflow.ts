@@ -35,6 +35,7 @@ export function summarizeInvoiceClaims(rows:readonly InvoiceClaimRow[],asOf:stri
   if(!row.id||!row.supplier_id||!row.invoice_reference||!revision||total===null||
    !/^[A-Z]{3}$/.test(row.currency_code)||!validDate(row.issued_on)||
    (row.due_on!==null&&!validDate(row.due_on)))return unavailable("supplier_invoice_evidence_invalid");
+  if(row.issued_on>asOf)continue;
   const key=JSON.stringify([row.supplier_id,row.invoice_reference]);
   const old=latest.get(key);
   if(old&&(old.purchaseOrderId!==row.purchase_order_id||old.currency!==row.currency_code||
@@ -97,5 +98,5 @@ export function summarizeStatementBalances(rows:readonly StatementBalanceRow[],a
  const balances=[...latest.entries()].filter(([key])=>!conflicts.has(key)).map(([,v])=>v);
  return {documentedAccountBalances:balances.slice(0,20),statementCoverage:"recorded_accounts_only" as const,
   statementMissing:["bankAccountCoverageUnknown",...(conflicts.size?["statementBalanceConflict"]:[]),
-   ...(balances.length>20?["statementAccountDetailsTruncated"]:[]),...(!rows.length?["statementEvidenceMissing"]:[])]};
+   ...(balances.length>20?["statementAccountDetailsTruncated"]:[]),...(!balances.length?["statementEvidenceMissing"]:[])]};
 }
