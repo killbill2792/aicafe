@@ -1,4 +1,5 @@
 import {describe,expect,it,vi} from "vitest";
+import {comparePriceExposure} from "@/lib/calc/priceExperiment";
 vi.mock("server-only",()=>({}));
 import {planElapsed24HourWindows,summarizeElapsedWindow,
  planVerifiedFinalCloseInterval,withUnattributedSourceLines} from "./rollingExperimentSales.server";
@@ -81,4 +82,22 @@ describe("Task 8a actual source-timed 24-hour periods",()=>{
   expect(()=>summarizeElapsedWindow(window,[],true,window.endAt,window.startAt)).toThrow();
  });
 
+});
+
+describe("shared price exposure economics",()=>{
+ it("detects falling contribution despite a higher selling price without inventing causality",()=>{
+  expect(comparePriceExposure({units:80,revenueCents:44000,baselineUnits:100,baselineRevenueCents:50000,unitCostEstimateCents:200})).toMatchObject({
+   volumeChangeBps:-2000,revenueChangeBps:-1200,contributionEstimateCents:28000,
+   baselineContributionEstimateCents:30000,contributionChangeEstimateCents:-2000,
+   contributionMarginEstimateBps:6364,recommendation:"review_revert",nonCausal:true,
+   costBasis:"current_cost_estimate"});
+ });
+ it("preserves actual observed sales independently of absent cost or comparison",()=>{
+  expect(comparePriceExposure({units:80,revenueCents:44000,baselineUnits:null,baselineRevenueCents:null,unitCostEstimateCents:null}))
+   .toMatchObject({observedRevenueCents:44000,contributionEstimateCents:null,volumeChangeBps:null,recommendation:"adjust",costBasis:"missing"});
+ });
+ it("does not turn unknown denominators into zero percent, and preserves negative revenue",()=>{
+  expect(comparePriceExposure({units:0,revenueCents:-500,baselineUnits:0,baselineRevenueCents:0,unitCostEstimateCents:null}))
+   .toMatchObject({observedRevenueCents:-500,contributionEstimateCents:-500,contributionMarginEstimateBps:null,volumeChangeBps:null,recommendation:"adjust"});
+ });
 });
