@@ -63,7 +63,8 @@ import type { AgentTurn, AgentAuditStep } from "@/lib/ai/agent/loop.server";
 import {loadOwnerFacts} from "@/lib/ownerFacts/store.server";
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
-import {assertExternalAccess,assertSelectedAttachmentAccess,WEB_RESOURCE} from "@/lib/connectors/access.server";
+import {assertSelectedAttachmentAccess} from "@/lib/connectors/access.server";
+import {ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
 import type {ConversationMessage, ConversationScope} from "@/lib/ai/conversations/contracts";
@@ -203,16 +204,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       // Location comes from the café profile or the owner's saved answer, never from the model.
       cafeLocation:async()=>readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts),
       // Saved event answers never initiate the paid nearby-event discovery job.
-      webSearch:async(query,budget)=>{
-        await assertCafeAiAccess(scope.businessId);
-        try{await assertExternalAccess(scope,"public_web",WEB_RESOURCE);}
-        catch(error){
-          return {available:false as const,reason:
-            error instanceof Error&&error.message==="public_web_access_revoked"?
-            "permissionDenied" as const:"permissionsUnavailable" as const};
-        }
-        return searchWeb(query,budget);
-      },
+      webSearch:(query,budget)=>ownerPublicWebSearch(scope,()=>searchWeb(query,budget)),
       savedEvents:async(from,to,options)=>readSavedEventTimeline(await getDb(),
         {businessId:scope.businessId,ownerUserId:scope.ownerUserId},from,to,options),
       readWeekSchedule:weekStart=>external?

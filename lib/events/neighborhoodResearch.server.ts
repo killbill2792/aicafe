@@ -1,4 +1,5 @@
 import "server-only";
+import {ownerPublicWebFetch} from "@/lib/connectors/publicWeb.server";
 import {DEFAULT_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import {
   NEIGHBORHOOD_MAX_OUTPUT_TOKENS, NEIGHBORHOOD_SCOPES, NEIGHBORHOOD_SCOPE_IDS,
@@ -32,7 +33,7 @@ export function createNeighborhoodResearch(deps: {
   model?: string;
   now?: () => Date;
 } = {}) {
-  const doFetch = deps.fetch ?? fetch;
+  const doFetch = deps.fetch ?? ownerPublicWebFetch;
   const now = deps.now ?? (() => new Date());
   return async (input: {
     address: NeighborhoodAddress;

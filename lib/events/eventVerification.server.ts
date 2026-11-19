@@ -1,4 +1,5 @@
 import "server-only";
+import {ownerPublicWebFetch,ownerPublicWebAllowed,withOwnerPublicWebScope,PublicWebPermissionError} from "@/lib/connectors/publicWeb.server";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import {responseOutputText} from "./nearbyEvents";
@@ -50,7 +51,7 @@ function citedUrls(body:unknown):string[]{
 /** Narrow source check, not a general events search. No source omission can cancel anything. */
 export async function verifyEventSource(event:CafeEvent):Promise<CheckResult>{
   if(!event.sourceUrl||!process.env.OPENAI_API_KEY)return null;
-  const response=await fetch("https://api.openai.com/v1/responses",{
+  const response=await ownerPublicWebFetch("https://api.openai.com/v1/responses",{
     method:"POST",signal:AbortSignal.timeout(25_000),
     headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.OPENAI_API_KEY},
     body:JSON.stringify({model:process.env.EVENTS_SEARCH_OPENAI_MODEL?.trim()||
@@ -208,17 +209,25 @@ export async function verifyUpcomingEventChanges(db:Db,businessId:string,ownerId
     }
   }
   const queue=importantVerificationQueue(timeline.events,timeline.plans,today,now);
+  const webScope={businessId,ownerUserId:ownerId};
   for(const event of queue){
+    // Do not advance a verification timestamp merely because authorization was denied.
+    // Previously verified pending notices above can still be delivered.
+    if(!await ownerPublicWebAllowed(webScope))break;
     try{
-      // Provider timeouts also count as attempted/failed, not as a fresh confirmation.
-      const checked=await check(event).catch(()=>null);
+      // Each actual provider transport also rechecks the live permission.
+      const checked=await withOwnerPublicWebScope(webScope,()=>check(event)).catch(error=>{
+        if(error instanceof PublicWebPermissionError)throw error;
+        return null;
+      });
       const change=await writeAttempt(db,businessId,event,now.toISOString(),checked);
       if(change){
         changed++;
         const plan=planned(event);
         if(plan)await deliverChange(db,businessId,ownerId,timezone,today,event,plan,change);
       }
-    }catch{
+    }catch(error){
+      if(error instanceof PublicWebPermissionError)break;
       // No guessing, no status clearing, no cross-café data in logs.
       console.warn("event_verification_failed",{stage:"verify_or_notify"});
     }

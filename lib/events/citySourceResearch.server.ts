@@ -1,4 +1,5 @@
 import "server-only";
+import {ownerPublicWebFetch} from "@/lib/connectors/publicWeb.server";
 import {DEFAULT_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import {responseOutputText} from "./nearbyEvents";
 import {addDays} from "./holidays";
@@ -45,7 +46,7 @@ function sourceValid(source:CityResearchSource):boolean{
 export function createCitySourceResearch(deps:{
   fetch?:RequestFetch;apiKey?:string;model?:string;now?:()=>Date;maxSearches?:number;
 }={}):CitySourceResearch{
-  const doFetch=deps.fetch??fetch;
+  const doFetch=deps.fetch??ownerPublicWebFetch;
   const now=deps.now??(()=>new Date());
   const maxSearches=Math.min(MAX_SEARCHES,Math.max(1,Math.floor(deps.maxSearches??MAX_SEARCHES)));
   return async input=>{

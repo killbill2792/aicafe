@@ -1,4 +1,8 @@
-import {describe,expect,it,vi} from "vitest";
+import {beforeEach,describe,expect,it,vi} from "vitest";
+const webPermission=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/access/access.server",()=>({assertCafeAiAccess:vi.fn(async()=>{})}));
+vi.mock("@/lib/connectors/access.server",()=>({assertExternalAccess:webPermission,WEB_RESOURCE:"public"}));
+beforeEach(()=>{webPermission.mockReset().mockResolvedValue(0);});
 import type {SupabaseClient} from "@supabase/supabase-js";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {verifyUpcomingEventChanges} from "./eventVerification.server";
@@ -70,6 +74,17 @@ function fakeDb(options:{failFirstTaskRead?:boolean}={}){
 }
 const timeline=(events:CafeEvent[]=[event]):SavedEventTimeline=>({events,plans:[plan]});
 describe("persisted change alerts through the existing inbox and chat",()=>{
+ it("does not call source verification or advance timestamps for blocked or unreadable permissions",async()=>{
+   for(const reason of ["public_web_access_revoked","external_access_unavailable"]){
+     webPermission.mockRejectedValue(new Error(reason));
+     const {db,writes}=fakeDb(),check=vi.fn(async()=>null);
+     expect(await verifyUpcomingEventChanges(db,"cafe-one","owner-one","UTC",
+       "2026-11-01",timeline(),new Date("2026-11-01T12:00:00Z"),check)).toBe(0);
+     expect(check).not.toHaveBeenCalled();
+     expect(writes).toHaveLength(0);
+     expect(webPermission).toHaveBeenCalledWith({businessId:"cafe-one",ownerUserId:"owner-one"},"public_web","public");
+   }
+ });
  it("cancellation five days early saves status, source, chat and one owner task without touching approvals",async()=>{
    const {db,writes}=fakeDb();
    const count=await verifyUpcomingEventChanges(db,"cafe-one","owner-one","America/Los_Angeles",

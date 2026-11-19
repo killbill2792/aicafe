@@ -1,4 +1,5 @@
 import "server-only";
+import {ownerPublicWebFetch} from "@/lib/connectors/publicWeb.server";
 import {DEFAULT_SUPERVISOR_OPENAI_MODEL} from "@/lib/ai/conversations/modelConfig";
 import {holidaysBetween} from "./holidays";
 import {MAX_EVENTS,nearbyEventsJsonSchema,nearbyEventsPrompt,parseNearbyEvents,
@@ -23,7 +24,7 @@ const outputKinds=["message","reasoning","web_search_call"] as const;
 
 /** A failed search is not the same as an empty, successfully searched list. */
 export function createNearbyEventsSearch(deps:{fetch?:Fetch;now?:()=>number;apiKey?:string|undefined;model?:string}={}):NearbyEventsSearch{
-  const doFetch=deps.fetch??fetch,now=deps.now??Date.now;
+  const doFetch=deps.fetch??ownerPublicWebFetch,now=deps.now??Date.now;
   return async input=>{
     const apiKey=deps.apiKey??process.env.OPENAI_API_KEY;
     if(!apiKey)return {available:false,outcome:"failed",reason:"notConfigured",category:"not_configured"};

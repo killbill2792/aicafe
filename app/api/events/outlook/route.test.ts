@@ -2,6 +2,8 @@ import {describe,it,expect,vi,beforeEach} from "vitest";
 
 const calls:string[]=[];
 const peak=vi.fn();
+const webPermission=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/connectors/access.server",()=>({assertExternalAccess:webPermission,WEB_RESOURCE:"public"}));
 vi.mock("@/lib/ai/conversations/auth.server",async(original)=>({...await original<typeof import("@/lib/ai/conversations/auth.server")>(),
   authenticatedConversationContext:vi.fn(async()=>{calls.push("auth");return {scope:{businessId:"cafe-1",ownerUserId:"u"}};})}));
 const access=vi.fn();
@@ -26,6 +28,7 @@ const req=()=>new Request("http://x/api/events/outlook?locale=en");
 describe("Coming up endpoint",()=>{
   beforeEach(()=>{
     calls.length=0;access.mockReset();search.mockClear();
+    webPermission.mockReset().mockResolvedValue(0);
     peak.mockReset().mockResolvedValue({available:false,value:null,
       quality:{level:"low",missingInputs:["noHourlySalesFacts"],estimatedInputs:[],staleInputs:[]}});
   });
@@ -53,6 +56,15 @@ describe("Coming up endpoint",()=>{
     expect(body.notCovered).toEqual(expect.arrayContaining(["toastImportIncompleteDays","hourly import partial"]));
   });
 
+  it("retains calendar outlook without provider search after owner revocation",async()=>{
+    access.mockResolvedValue(undefined);
+    webPermission.mockRejectedValue(new Error("public_web_access_revoked"));
+    const res=await GET(req());
+    expect(res.status).toBe(200);
+    expect(search).not.toHaveBeenCalled();
+    expect(webPermission).toHaveBeenCalledWith({businessId:"cafe-1",ownerUserId:"u"},"public_web","public");
+    expect((await res.json()).notCovered).toContain("localEventsSearchFailed");
+  });
   it("checks access first, then builds the outlook",async()=>{
     access.mockResolvedValue(undefined);
     const res=await GET(req());
