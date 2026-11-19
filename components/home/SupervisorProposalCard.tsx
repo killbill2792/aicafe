@@ -28,6 +28,7 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   publication?:{state:"pending"|"published"|"cancelled";week?:string;expected?:number;
     accepted?:number;delivered?:number;read?:number;pending?:number;
     failed?:number;uncertain?:number;missing?:number};
+  maintenanceAssignment?:{equipmentLabel:string;employeeName:string;prompt:string;purpose:"task"|"verify_working";dueAt:string|null};
   gmail?:{operation:string;action:string|null;from:string;to:string[];cc:string[];bcc:string[];
     subject:string;body:string;messageId:string|null;threadId:string|null;labelId:string|null;labelName:string|null;
     maintenanceCaseId?:string;maintenanceDueAt?:string|null};};
@@ -209,6 +210,26 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
         className="mt-3 min-h-12 rounded-xl border border-line px-5 font-bold">
         {poCopy.reconcile}</button>}
       {error&&<p role="alert" className="mt-3 text-neg">{poCopy.approvalError}</p>}
+    </section>;
+  }
+  if(value.maintenanceAssignment){
+    const a=value.maintenanceAssignment;
+    return <section aria-label="Maintenance staff approval" className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
+      <h3 className="text-xl font-bold">{a.purpose==="verify_working"?"Independent equipment check":"Maintenance assignment"}</h3>
+      <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Assigned · repair not established by assignment":value.state==="pending"?"Owner approval required":value.state}</p>
+      <dl className="mt-3 space-y-2">
+        <div><dt className="text-sm text-ink-muted">Equipment</dt><dd>{a.equipmentLabel}</dd></div>
+        <div><dt className="text-sm text-ink-muted">Employee</dt><dd>{a.employeeName}</dd></div>
+        <div><dt className="text-sm text-ink-muted">Exact instructions</dt><dd className="whitespace-pre-wrap break-words">{a.prompt}</dd></div>
+        <div><dt className="text-sm text-ink-muted">Follow-up due</dt><dd>{a.dueAt??"No explicit deadline"}</dd></div>
+      </dl>
+      <p className="mt-3 text-sm text-ink-muted">Approval creates a private staff request, not a repair or expense authorization.</p>
+      {value.state==="pending"&&<div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" disabled={busy} onClick={()=>void invoke("approve")} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent disabled:opacity-50">Approve assignment</button>
+        <button type="button" disabled={busy} onClick={()=>void invoke("cancel")} className="min-h-12 rounded-xl border border-line px-4 font-bold disabled:opacity-50">Decline</button>
+      </div>}
+      {value.state==="uncertain"&&<button type="button" disabled={busy} onClick={()=>void invoke("reconcile")} className="mt-3 min-h-12 rounded-xl border border-line px-4 font-bold">Check receipt</button>}
+      {error&&<p role="alert" className="mt-3 text-neg">Assignment could not be confirmed. Review the current card before retrying.</p>}
     </section>;
   }
   if(gmail&&value.gmail){

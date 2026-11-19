@@ -56,7 +56,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   const vendorApprovals=await authenticatedConversationContext().then(async({scope})=>{
     const db=await createServerSupabaseClient();
     const {data,error}=await db.from("supervisor_proposals").select("id,thread_id,canonical_effect_payload")
-      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("capability_id","alex.gmail_effect.v1")
+      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).in("capability_id",["alex.gmail_effect.v1","leo.maintenance_staff_assignment.v1"])
       .in("status",["draft","approved","executing"]).not("canonical_effect_payload->>maintenanceCaseId","is",null)
       .order("created_at",{ascending:false}).limit(100);
     if(error)throw error;
