@@ -25,7 +25,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import type {LoopProposal,LoopRepository,OwnerLoopScope,LoopReport} from "./engine";
 import {readVerifiedToastPriceEvidence,matchCompletedToastObservation,type CompletedToastHistory,type VerifiedToastPriceEvidence} from "./toastPriceEvidence.server";
 import {readElapsedWindowObservations,planElapsed24HourWindows} from "./rollingExperimentSales.server";
-import {postVerifiedSourceReminder,postToastObservationNotice,toastObservationNoticeKey} from "./experimentNotices.server";
+import {postVerifiedSourceReminder,postToastObservationNotice,toastObservationNoticeKey,stableNoticeUuid} from "./experimentNotices.server";
 
 import {formatInTimeZone} from "date-fns-tz";
 import {getPricingInputs} from "@/lib/data/getPricingInputs";
@@ -662,8 +662,8 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
  const date=(s:string)=>formatInTimeZone(new Date(s),timezone,"yyyy-MM-dd");
  let posted=0,allDelivered=true;
  for(const owner of owners.data){
-  const thread=await db.from("ai_threads").select("id").eq("business_id",businessId)
-   .eq("owner_user_id",owner.user_id).order("updated_at",{ascending:false}).order("id").limit(1).maybeSingle();
+  const thread=await db.rpc("supervisor_8a_observation_thread",{p_business_id:businessId,p_owner_user_id:owner.user_id,
+   p_history_id:sourceId,p_token:workerToken,p_request_id:stableNoticeUuid("toast-observation-thread:"+businessId+":"+owner.user_id)});
   if(thread.error)throw new Error("observation_owner_thread_read_failed");
   if(!thread.data){allDelivered=false;continue;}
   const send=async(index:number,at:string,final:boolean,payload:Record<string,string|number|boolean|null>,text:string,confidence:"high"|"low")=>{
@@ -674,7 +674,7 @@ async function runCompletedToastObservation(db:SupabaseClient,due:ObservationDue
    if(prior.error)throw new Error("observation_notice_read_failed");
    if(prior.data&&key.kind==="toast_price_initial")return;
    if(prior.data&&!prior.data.message_id)throw new Error("observation_posted_receipt_missing_message");
-   const result=await postToastObservationNotice(db,{key,threadId:thread.data!.id,timezone,
+   const result=await postToastObservationNotice(db,{key,threadId:thread.data,timezone,
     prior:prior.data??undefined,measurementAsOf:now,workerToken,
     payload:{...payload,itemName,oldPriceCents:receipt.oldPriceCents,newPriceCents:receipt.newPriceCents,currency,observationOnly:true},
     text,confidence});
