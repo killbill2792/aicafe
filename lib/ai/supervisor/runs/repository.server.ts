@@ -271,3 +271,11 @@ export async function openOwnerRunCheckpoint(scope:RunScope,runId:string,token:s
     yieldForRetry:seconds=>callRpc("supervisor_yield_owner_run_v2",{...identity,p_expected_seq:current.checkpoint_seq,p_delay_seconds:seconds},v=>z.boolean().parse(v)),
   };
 }
+
+/** An explicit question ID and saved owner answer are required; arbitrary chat cannot wake work. */
+export async function answerOwnerRun(scope:RunScope,questionId:string,answerId:string):Promise<DurableRun>{
+ const s=runScopeSchema.parse(scope);
+ const result=await callRpc("supervisor_answer_owner_run_v2",{p_business_id:s.businessId,p_owner_user_id:s.ownerUserId,p_thread_id:s.threadId,p_question_id:uuid.parse(questionId),p_answer_id:uuid.parse(answerId)},decodeRun);
+ if(result.businessId!==s.businessId||result.ownerUserId!==s.ownerUserId||result.threadId!==s.threadId)throw new Error("Supervisor run outside owner scope");
+ return result;
+}
