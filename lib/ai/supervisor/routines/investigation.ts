@@ -1,6 +1,6 @@
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
-import {CUSTOMER_MONITOR_POLICY} from "@/lib/metrics/core/customers";
+import {CUSTOMER_MONITOR_POLICY,customerTrendEvidenceFields} from "@/lib/metrics/core/customers";
 
 /** Task 15A uses the SAME registered Supervisor model/tool loop, restricted to
  * evidence reads. Only a verified owner's later turn can reach the registered
@@ -413,7 +413,10 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     if(selectors?.family==="customer_trend")
       return call.result.missing.length===0&&typeof selectors.from==="string"&&typeof selectors.to==="string"&&
        period.from<=selectors.from&&period.to>=selectors.to&&
-       qualifiedCustomerTrendCoverage(call.result,anonymousCustomer);
+       qualifiedCustomerTrendCoverage(call.result,anonymousCustomer)&&
+       Array.isArray(call.result.rows)&&customerTrendEvidenceFields(selectors.subject??"").some(field=>
+        (call.result.rows as unknown[]).some(row=>row&&typeof row==="object"&&
+         Object.keys(row).some(key=>key===field||["count","count_distinct","sum","avg","min","max"].some(fn=>key===fn+"_"+field))));
     // Coverage alerts without dated selectors use an observed scoped gap.
     // If the claim has dates, require its entire period, not a stale/partial gap.
     return (!selectors?.from||!selectors.to||period.from<=selectors.from&&period.to>=selectors.to)&&
