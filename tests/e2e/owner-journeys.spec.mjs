@@ -1256,3 +1256,96 @@ test("@gmail Task16C owner revokes live external access across mobile reload and
     }
   }
 });
+
+
+test("@home Task16D authenticated responsive Supervisor work across conversations", async ({browser},testInfo) => {
+  test.setTimeout(180_000);
+  const owner=seededCafe(0);
+  const threadId=randomUUID(), runId=randomUUID(), requestId=randomUUID();
+  const otherThread=randomUUID(),otherRun=randomUUID(),messageId=randomUUID();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const context=await browser.newContext({baseURL:"http://127.0.0.1:3000",serviceWorkers:"block"});
+  let connected=false;
+  try {
+    await db.connect();connected=true;
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",
+      [threadId,owner.businessId,owner.owner.userId,randomUUID(),"Supervisor owner journey"]);
+    await db.query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status) values($1,$2,$3,$4,$5,$6,'pending')",
+      [runId,owner.businessId,owner.owner.userId,threadId,requestId,"a".repeat(64)]);
+    await db.query("insert into public.supervisor_run_steps(business_id,run_id,step_key,step_index,retry_mode,status) values($1,$2,'owner_turn',1,'reconcile','pending')",
+      [owner.businessId,runId]);
+    await db.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id,title) values($1,$2,$3,$4,$5)",
+      [otherThread,owner.businessId,owner.owner.userId,randomUUID(),"Earlier supplier conversation"]);
+    await db.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,created_at) values($1,$2,$3,$4,$4,'owner','text','Please investigate this supplier',gen_random_uuid(),now()-interval '2 days')",
+      [messageId,owner.businessId,otherThread,owner.owner.userId]);
+    await db.query("insert into public.ai_messages(business_id,thread_id,owner_user_id,author_user_id,role,content_type,text_content,client_message_id,created_at) select $1,$2,$3,$3,'owner','text','Later message '||n,gen_random_uuid(),now()-n*interval '1 minute' from generate_series(1,60) n",
+      [owner.businessId,otherThread,owner.owner.userId]);
+    await db.query("insert into public.supervisor_runs(id,business_id,owner_user_id,thread_id,request_key,plan_hash,status) values($1,$2,$3,$4,$5,$6,'pending')",
+      [otherRun,owner.businessId,owner.owner.userId,otherThread,messageId,"b".repeat(64)]);
+    await db.query("insert into public.supervisor_run_steps(business_id,run_id,step_key,step_index,retry_mode,status) values($1,$2,'owner_turn',1,'reconcile','pending')",
+      [owner.businessId,otherRun]);
+    const page=await context.newPage();
+    await login(page,owner);
+    await openOwnedPage(page,owner,"?thread="+threadId);
+    const controls=page.getByRole("button",{name:"Library, routines and permissions"});
+    const work=page.getByRole("region",{name:"Supervisor work"});
+    for (const viewport of [{width:390,height:844},{width:1440,height:900}]) {
+      await page.setViewportSize(viewport);
+      await expect(controls).toBeVisible();
+      await expect(work.locator('[data-work-status="queued"]')).toBeVisible();
+      const before=await page.evaluate(()=>({
+        viewport:window.innerWidth, documentWidth:document.documentElement.scrollWidth,
+        composerVisible:!!document.querySelector("#supervisor-home-composer")?.getBoundingClientRect().height,
+      }));
+      await page.screenshot({path:testInfo.outputPath("baseline-chat-"+viewport.width+".png")});
+      await controls.click();
+      const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+      await expect(drawer).toBeVisible();
+      await drawer.getByRole("button",{name:"Library",exact:true}).click();
+      await expect(drawer.getByRole("button",{name:"Supervisor owner journey"})).toBeVisible();
+      await drawer.getByRole("button",{name:"Permissions",exact:true}).click();
+      await page.screenshot({path:testInfo.outputPath("baseline-controls-"+viewport.width+".png")});
+      const accessLink=await drawer.locator('a[href*="supervisor-access"]').count();
+      await drawer.evaluate(el=>{const elements=[...el.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled]),select:not([disabled])')].filter(e=>e.getClientRects().length);elements.at(-1)?.focus();});
+      await page.keyboard.press("Tab");
+      const tabContained=await drawer.evaluate(el=>el.contains(document.activeElement));
+      await page.keyboard.press("Escape");
+      await expect(drawer).toHaveCount(0);
+      const focusRestored=await controls.evaluate(el=>document.activeElement===el);
+      expect(before.documentWidth).toBeLessThanOrEqual(viewport.width);
+      expect(before.composerVisible).toBe(true);
+      expect(accessLink).toBe(1);expect(tabContained).toBe(true);expect(focusRestored).toBe(true);
+      console.info("[Task16D authenticated]",JSON.stringify({...before,accessLink,tabContained,focusRestored}));
+    }
+    await page.setViewportSize({width:390,height:844});
+    await page.getByRole("button",{name:"Supervisor work",exact:true}).click();
+    const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
+    const earlier=drawer.locator('[data-work-id="run:'+otherRun+'"]');
+    await expect(earlier).toContainText("Earlier supplier conversation");
+    // Initial target-thread message read fails; no terminal job exists to reload it.
+    const initialMessages=`**/api/ai/threads/${otherThread}/messages?offset=0`;
+    await page.route(initialMessages,route=>route.fulfill({status:503,body:"{}"}));
+    await earlier.getByRole("button").click();
+    await expect(page.getByText("I couldn't finish that answer.",{exact:true})).toBeVisible();
+    await page.unroute(initialMessages);
+    await page.evaluate(()=>window.dispatchEvent(new Event("online")));
+    const target=page.locator('[data-work-message="'+messageId+'"]');
+    await expect(target).toBeFocused({timeout:30_000});
+    await expect(target).toContainText("Please investigate this supplier");
+    expect((await db.query("select status from public.supervisor_runs where id=$1",[otherRun])).rows[0].status).toBe("pending");
+    await controls.click();
+    await drawer.getByRole("link",{name:"Supervisor access"}).click();
+    await expect(page.getByRole("switch").first()).toBeVisible();
+    console.info("[Task16D authenticated] canonical external access page rendered");
+    await page.getByRole("link",{name:"Back",exact:true}).click();
+    await expect(page).toHaveURL(new RegExp("thread="+otherThread));
+    await page.screenshot({path:testInfo.outputPath("baseline-access.png")});
+  } finally {
+    await context.close();
+    if(connected){
+      await db.query("delete from public.ai_threads where id=any($1::uuid[]) and business_id=$2",[[threadId,otherThread],owner.businessId]).catch(()=>{});
+      await db.end();
+    }
+  }
+});
