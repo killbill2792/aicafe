@@ -12,6 +12,7 @@ const mocks=vi.hoisted(()=>({
   incomplete:[] as string[],
   pending:[] as (typeof row)[],
   reminded:vi.fn(),
+  observed:vi.fn(),
   timezone:"America/Los_Angeles" as string|null,
 }));
 vi.mock("date-fns-tz",()=>({formatInTimeZone:()=> "2026-11-15"}));
@@ -86,6 +87,7 @@ vi.mock("@/lib/ai/supervisor/loop/experimentCutover.server",()=>({
  priceProposalCutoverMode:async()=> "legacy",
  runVerifiedToastPriceTick:vi.fn(async()=> "waiting_source"),
  remindPendingToastPrice:(...args:unknown[])=>mocks.reminded(...args),
+ runToastObservationBatch:(...args:unknown[])=>mocks.observed(...args),
 }));
 import {GET} from "./route";
 describe("delayed Supervisor monitor archival",()=>{
@@ -95,6 +97,7 @@ describe("delayed Supervisor monitor archival",()=>{
     mocks.transition.mockResolvedValue({});
     mocks.sampled=[];mocks.incomplete=[];mocks.pending=[];
     mocks.reminded.mockReset().mockResolvedValue("not_due");
+    mocks.observed.mockReset().mockResolvedValue({checked:0,reported:0,failed:0});
     mocks.timezone="America/Los_Angeles";
     row.monitor_spec={durationDays:7,metricScope:"latte"};row.monitoring_start_date="2026-10-01";
   });
@@ -156,4 +159,12 @@ describe("delayed Supervisor monitor archival",()=>{
     await run();
     expect(mocks.seen).toHaveBeenCalledWith("2026-10-06");
   });
+  it("runs independent price discovery through the same authenticated cron",async()=>{
+    mocks.observed.mockResolvedValue({checked:1,reported:1,failed:0});
+    const response=await GET(new Request("https://cafe.test/api/cron/supervisor-experiments",{
+      headers:{authorization:"Bearer test-secret"}}));
+    expect(mocks.observed).toHaveBeenCalledOnce();
+    expect(await response.json()).toMatchObject({toastObservations:{checked:1,reported:1,failed:0}});
+  });
+
 });
