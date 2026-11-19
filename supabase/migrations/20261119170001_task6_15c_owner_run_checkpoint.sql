@@ -7,6 +7,7 @@ set statement_timeout='30s';
 alter table public.supervisor_runs
   add column execution_version bigint not null default 1 check(execution_version in (1,2)),
   add column input_locale text check(input_locale in ('en','es','ar')),
+  add column input_attachment_version_hash text check(input_attachment_version_hash ~ '^[a-f0-9]{64}$'),
   add column input_attachment_ids uuid[] not null default '{}' check(cardinality(input_attachment_ids)<=3);
 
 alter table public.supervisor_run_steps
@@ -39,13 +40,36 @@ grant select(id,business_id,run_id,step_key,step_index,retry_mode,status,worker_
   checkpoint_seq,checkpoint_phase,next_retry_at)
   on public.supervisor_run_steps to authenticated;
 
+-- Bind selection to the actual private object generation and resource access
+-- revision, not just an attachment row ID. No file bytes, name or path leave
+-- this service-only fingerprint. Revocation/regrant is a new authorization.
+create function public.supervisor_owner_attachment_fingerprint_v2(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_ids uuid[]
+) returns text language sql security definer set search_path=public as $$
+ select case when cardinality(p_ids)=0 then encode(sha256(convert_to('[]','UTF8')),'hex')
+ when count(*)=cardinality(p_ids) and bool_and(coalesce(g.allowed,true) and coalesce(f.allowed,true))
+ then encode(sha256(convert_to(jsonb_agg(jsonb_build_array(a.id,a.object_path,a.original_name,a.media_type,a.bytes,
+   a.created_at,o.id,to_jsonb(o)->>'version',o.updated_at,o.metadata,
+   coalesce(g.revision,0),coalesce(f.revision,0)) order by picked.ord)::text,'UTF8')),'hex') else null end
+ from unnest(p_ids) with ordinality picked(id,ord)
+ join public.ai_attachments a on a.id=picked.id and a.business_id=p_business_id
+   and a.owner_user_id=p_owner_user_id and a.thread_id=p_thread_id
+ join storage.objects o on o.bucket_id='ai-chat-private' and o.name=a.object_path
+ left join public.supervisor_external_access g on g.business_id=p_business_id and g.owner_user_id=p_owner_user_id
+   and g.kind='file_read' and g.resource_key='all'
+ left join public.supervisor_external_access f on f.business_id=p_business_id and f.owner_user_id=p_owner_user_id
+   and f.kind='attachment' and f.resource_key=a.id::text;
+$$;
+revoke all on function public.supervisor_owner_attachment_fingerprint_v2(uuid,uuid,uuid,uuid[]) from public,anon,authenticated;
+grant execute on function public.supervisor_owner_attachment_fingerprint_v2(uuid,uuid,uuid,uuid[]) to service_role;
+
 -- Admission uses the original owner message ID as the immutable request key.
 -- Only the trusted caller supplies the fixed plan hash; never model or browser.
 create function public.supervisor_admit_owner_run_v2(
   p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_owner_message_id uuid,
   p_plan_hash text,p_locale text,p_attachment_ids uuid[]
 ) returns jsonb language plpgsql security invoker set search_path=public as $$
-declare r public.supervisor_runs; v_started jsonb;
+declare r public.supervisor_runs; v_started jsonb; v_fingerprint text;
 begin
   if coalesce(auth.role(),'')<>'service_role'
     or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
@@ -61,6 +85,8 @@ begin
       and a.business_id=p_business_id and a.owner_user_id=p_owner_user_id
       and a.thread_id=p_thread_id)<>cardinality(p_attachment_ids)
     then raise exception 'owner_run_input_unavailable' using errcode='42501'; end if;
+  v_fingerprint:=public.supervisor_owner_attachment_fingerprint_v2(p_business_id,p_owner_user_id,p_thread_id,p_attachment_ids);
+  if v_fingerprint is null then raise exception 'owner_run_input_unavailable' using errcode='42501'; end if;
   -- Serialize admission with the existing one-running-thread job entrypoint.
   perform pg_advisory_xact_lock(hashtextextended('ai_agent_job:'||p_thread_id::text,0));
   -- Same advisory lock as supervisor_run_start. An existing legacy run
@@ -72,7 +98,7 @@ begin
   if found then
     if r.execution_version<>2 or r.thread_id<>p_thread_id
       or r.plan_hash is distinct from p_plan_hash or r.input_locale is distinct from p_locale
-      or r.input_attachment_ids is distinct from p_attachment_ids
+      or r.input_attachment_ids is distinct from p_attachment_ids or r.input_attachment_version_hash is distinct from v_fingerprint
       then raise exception 'owner_run_input_conflict' using errcode='23505'; end if;
     return to_jsonb(r);
   end if;
@@ -84,7 +110,7 @@ begin
     p_owner_message_id,p_plan_hash,
     '[{"key":"authorize_owner","retry":"idempotent"},{"key":"owner_turn","retry":"reconcile"},{"key":"verify_report","retry":"idempotent"}]'::jsonb);
   update public.supervisor_runs set execution_version=2,input_locale=p_locale,
-    input_attachment_ids=p_attachment_ids where id=(v_started->>'id')::uuid returning * into r;
+    input_attachment_ids=p_attachment_ids,input_attachment_version_hash=v_fingerprint where id=(v_started->>'id')::uuid returning * into r;
   return to_jsonb(r);
 end $$;
 revoke all on function public.supervisor_admit_owner_run_v2(uuid,uuid,uuid,uuid,text,text,uuid[]) from public,anon,authenticated;
@@ -108,6 +134,7 @@ begin
   if not found or r.execution_version<>2 or r.status<>'running'
     or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
     then raise exception 'checkpoint_run_unavailable' using errcode='42501'; end if;
+  if r.input_attachment_version_hash is distinct from public.supervisor_owner_attachment_fingerprint_v2(r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids) then raise exception 'owner_run_attachment_changed' using errcode='42501'; end if;
   select * into s from public.supervisor_run_steps where business_id=p_business_id
     and run_id=p_run_id and step_key='owner_turn' for update;
   v_now:=clock_timestamp();
@@ -214,6 +241,12 @@ begin
   if r.execution_version=2 then
     if not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id) then
       update public.supervisor_run_steps set status='blocked',error_code='authorization_revoked',
+        worker_id=null,claim_token=null,lease_until=null,updated_at=v_now where id=s.id;
+      update public.supervisor_runs set status='blocked',updated_at=v_now where id=r.id;
+      return jsonb_build_object('kind','blocked');
+    end if;
+    if r.input_attachment_version_hash is distinct from public.supervisor_owner_attachment_fingerprint_v2(r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids) and s.step_key<>'verify_report' then
+      update public.supervisor_run_steps set status='blocked',error_code=case when s.checkpoint_phase='effect_pending' then 'effect_uncertain' else 'attachment_changed' end,
         worker_id=null,claim_token=null,lease_until=null,updated_at=v_now where id=s.id;
       update public.supervisor_runs set status='blocked',updated_at=v_now where id=r.id;
       return jsonb_build_object('kind','blocked');
@@ -349,7 +382,7 @@ create function public.supervisor_owner_job_fence_v2(
     on s.business_id=r.business_id and s.run_id=r.id
     where r.id=p_run_id and r.business_id=p_business_id
      and r.owner_user_id=p_owner_user_id and r.thread_id=p_thread_id
-     and r.execution_version=2 and r.status='running' and s.step_key='owner_turn'
+     and r.execution_version=2 and r.status='running' and not (r.input_attachment_version_hash is distinct from public.supervisor_owner_attachment_fingerprint_v2(r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids)) and s.step_key='owner_turn'
      and s.status='leased' and s.claim_token=p_claim_token and s.lease_until>clock_timestamp());
 $$;
 revoke all on function public.supervisor_owner_job_fence_v2(uuid,uuid,uuid,uuid,uuid) from public,anon,authenticated;
@@ -632,6 +665,7 @@ begin
    or p_grounding->>'durableRunId' is distinct from r.id::text
    or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
    then raise exception 'durable_reply_scope_mismatch' using errcode='42501'; end if;
+ if r.input_attachment_version_hash is distinct from public.supervisor_owner_attachment_fingerprint_v2(r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids) then raise exception 'owner_run_attachment_changed' using errcode='42501'; end if;
  select * into s from public.supervisor_run_steps where business_id=r.business_id and run_id=r.id
    and step_key='owner_turn' for update;
  if not found or s.status<>'leased' or s.claim_token is distinct from p_claim_token
@@ -695,6 +729,7 @@ begin
    or p_grounding->>'durableRunId' is distinct from r.id::text
    or not public.supervisor_routine_owner_authorized(p_business_id,p_owner_user_id,p_thread_id)
    then raise exception 'durable_reply_scope_mismatch' using errcode='42501'; end if;
+ if r.input_attachment_version_hash is distinct from public.supervisor_owner_attachment_fingerprint_v2(r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids) then raise exception 'owner_run_attachment_changed' using errcode='42501'; end if;
  select * into s from public.supervisor_run_steps where business_id=r.business_id and run_id=r.id
    and step_key='owner_turn' for update;
  if not found or s.status<>'leased' or s.claim_token is distinct from p_claim_token
@@ -857,7 +892,7 @@ begin
       and j.thread_id=p_thread_id and j.owner_message_id=p_owner_message_id
       and j.status='running' and j.heartbeat_at>clock_timestamp()-interval '180 seconds'
       and (r.execution_version=1 or (j.durable_run_id=r.id and j.durable_claim_token=p_claim_token
-        and j.owner_message_id=r.request_key)))
+        and j.owner_message_id=r.request_key and not (r.input_attachment_version_hash is distinct from public.supervisor_owner_attachment_fingerprint_v2(r.business_id,r.owner_user_id,r.thread_id,r.input_attachment_ids)))))
     then raise exception 'durable_reservation_not_authorized' using errcode='42501'; end if;
   v_day:=(clock_timestamp() at time zone 'UTC')::date;
   -- Share the existing investigation owner/day lock, not a new job pipeline.

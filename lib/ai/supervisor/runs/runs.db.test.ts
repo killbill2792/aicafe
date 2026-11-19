@@ -379,13 +379,16 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')",[businessId,ownerId]);
       await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",[threadId,businessId,ownerId,randomUUID()]);
       await admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values($1,$2,$3,$4,$3,'owner','text','Review the selected document',$5)",[messageId,...scope,randomUUID()]);
-      const attachmentId=randomUUID();
-      await admin.query("insert into public.ai_attachments(id,business_id,owner_user_id,thread_id,object_path,original_name,media_type,bytes) values($1,$2,$3,$4,$5,'notes.txt','text/plain',42)",[attachmentId,...scope,scope.join("/")+"/"+attachmentId+"/notes.txt"]);
+      const attachmentId=randomUUID(),objectId=randomUUID();
+      const objectPath=scope.join("/")+"/"+attachmentId+"/notes.txt";
+      await admin.query("insert into public.ai_attachments(id,business_id,owner_user_id,thread_id,object_path,original_name,media_type,bytes) values($1,$2,$3,$4,$5,'notes.txt','text/plain',42)",[attachmentId,...scope,objectPath]);
+      await admin.query("insert into storage.objects(id,bucket_id,name,metadata) values($1,'ai-chat-private',$2,$3)",[objectId,objectPath,JSON.stringify({size:42,eTag:"initial"})]);
       a=await connect(true);b=await connect(true);
       const admit=[...scope,messageId,"c".repeat(64),"es",[attachmentId]];
       const run=await call(a,"supervisor_admit_owner_run_v2",admit);
       expect(run).toMatchObject({execution_version:2,request_key:messageId,input_locale:"es",input_attachment_ids:[attachmentId],status:"pending"});
       expect((await call(b,"supervisor_admit_owner_run_v2",admit)).id).toBe(run.id);
+      expect(run.input_attachment_version_hash).toMatch(/^[a-f0-9]{64}$/);
       await expect(call(a,"supervisor_admit_owner_run_v2",[...scope,messageId,"c".repeat(64),"en",[attachmentId]])).rejects.toThrow("owner_run_input_conflict");
       await expect(call(a,"supervisor_admit_owner_run_v2",[...scope,messageId,"c".repeat(64),"es",[randomUUID()]])).rejects.toThrow("owner_run_input_unavailable");
       denied=await connect();await denied.query("set role authenticated");
@@ -438,6 +441,9 @@ describe("Task 6/15C v2 durable owner admission and checkpoint fencing",()=>{
       await expect(call(a,"supervisor_checkpoint_owner_run_v2",checkpoint(token,5,effect,"complete",null,"effect:"+randomUUID()))).rejects.toThrow("checkpoint_run_unavailable");
       const saved=await admin.query("select r.status,s.checkpoint_seq,s.checkpoint_phase,s.checkpoint_receipts from public.supervisor_runs r join public.supervisor_run_steps s on s.run_id=r.id and s.business_id=r.business_id where r.id=$1 and s.step_key='owner_turn'",[run.id]);
       expect(saved.rows).toMatchObject([{status:"blocked",checkpoint_seq:"5",checkpoint_phase:"effect_pending",checkpoint_receipts:[{operation,receipt},{operation:providerOp}]}]);
+      await admin.query("update storage.objects set metadata=jsonb_build_object('size',42,'eTag','replaced') where id=$1",[objectId]);
+      await expect(call(a,"supervisor_admit_owner_run_v2",admit)).rejects.toThrow("owner_run_input_conflict");
+      await admin.query("delete from storage.objects where id=$1",[objectId]);
     }finally{
       for(const child of children)if(child.exitCode===null&&child.signalCode===null)await killAndConfirm(child);
       await Promise.all([a?.end(),b?.end(),denied?.end()]);
