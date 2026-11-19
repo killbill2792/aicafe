@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Link } from "@/i18n/navigation";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { formatCafeCurrency } from "@/lib/format/cafeCurrency";
 import PlainIcon from "@/components/icons/PlainIcon";
 import { saveRecurringCost, deleteRecurringCost } from "@/lib/actions/expenses";
@@ -153,23 +153,24 @@ function BillForm({
 
 export default function BillsManager({
   bills,
-  currency,
+  currency = null,
   currencyMissingLabel,
   categoryLabels,
   labels,
   initialCategory = null,
 }: {
   bills: RecurringCostRow[];
-  currency: string | null;
-  currencyMissingLabel: string;
+  currency?: string | null;
+  currencyMissingLabel?: string;
   categoryLabels: Record<ExpenseCategoryCode, string>;
   labels: BillFormLabels & { addHint: string; missing: string; edit: string; addAnother: string; totalMonthly: string; variableCostHint: string };
   initialCategory?: ExpenseCategoryCode | null;
 }) {
   const locale = useLocale();
+  const common = useTranslations("Common");
   const money = (cents:number) => {
     const result=formatCafeCurrency(cents,locale,currency);
-    return result.currencyMissing ? result.text+" ("+currencyMissingLabel+")" : result.text;
+    return result.currencyMissing ? result.text+" ("+(currencyMissingLabel ?? common("currencyNotSet"))+")" : result.text;
   };
   const firstOtherBill = bills.find((bill) => bill.categoryCode === OTHER_CATEGORY);
   const initialOpenKey = initialCategory === OTHER_CATEGORY ? firstOtherBill?.id ?? NEW_OTHER_KEY : initialCategory;
