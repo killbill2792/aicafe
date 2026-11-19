@@ -145,6 +145,28 @@ type CurrentMenuPrice={
  pos_pricing_strategy:string|null;
  toast_publication_observed_at:string|null;
 };
+type LaterToastPriceHistory={
+ toast_observed_at:string|null;toast_effective_at:string|null;
+ toast_publication_completed_at:string|null;toast_publication_pos_item_id:string|null;
+ old_price_cents:number|null;new_price_cents:number|null;
+};
+/** Per-item history is provisional until the whole restaurant publication
+ * checkpoint completes. Completion must be visible at the evaluation instant. */
+export function subsequentToastPriceBoundary(row:LaterToastPriceHistory|null|undefined,
+ receipt:{posItemId:string;newPriceCents:number},asOf:string){
+ if(!row)return {firstPriceChangeAt:null,firstUnverifiedPriceChangeAt:null};
+ const observed=Date.parse(row.toast_observed_at??"");
+ const completed=Date.parse(row.toast_publication_completed_at??"");
+ const effective=Date.parse(row.toast_effective_at??row.toast_observed_at??"");
+ const now=Date.parse(asOf);
+ const verified=Number.isFinite(observed)&&Number.isFinite(completed)&&
+  Number.isFinite(effective)&&effective<=observed&&observed<=completed&&completed<=now&&
+  row.toast_publication_pos_item_id===receipt.posItemId&&
+  row.old_price_cents===receipt.newPriceCents&&Number.isSafeInteger(row.new_price_cents)&&
+  (row.new_price_cents??0)>0&&row.new_price_cents!==receipt.newPriceCents;
+ return {firstPriceChangeAt:verified?new Date(effective).toISOString():null,
+  firstUnverifiedPriceChangeAt:!verified&&Number.isFinite(observed)&&observed<=now?new Date(observed).toISOString():null};
+}
 /** Source changes after the Nth elapsed 24h boundary belong to a *different*
  * observation, not the approved experiment. The active menu can have moved
  * on since the closed window, so distinguish a post-end publication from an
@@ -153,7 +175,7 @@ export function trialSourceInterruption(input:{
  receipt:{startAt:string;posItemId:string;newPriceCents:number};
  finalEndAt:string;asOf:string;current:CurrentMenuPrice|null;
  firstPriceChangeAt:string|null;firstContextChangeAt:string|null;
- priorInterruptionAt:string|null;
+ firstUnverifiedPriceChangeAt?:string|null;priorInterruptionAt:string|null;
 }):{at:string|null;reason:"verified_price_changed"|"unverified_gap"|null}{
  const start=Date.parse(input.receipt.startAt);
  const end=Date.parse(input.finalEndAt);
@@ -175,6 +197,7 @@ export function trialSourceInterruption(input:{
  };
  const history=occurred(input.firstPriceChangeAt);
  const context=occurred(input.firstContextChangeAt);
+ const incomplete=occurred(input.firstUnverifiedPriceChangeAt??null);
  const prior=occurred(input.priorInterruptionAt);
  let gap:number|null=null;
  if(!matches){
@@ -192,11 +215,26 @@ export function trialSourceInterruption(input:{
  }
  const events=[...(history!==null?[{at:history,reason:"verified_price_changed" as const}]:[]),
   ...(context!==null?[{at:context,reason:"unverified_gap" as const}]:[]),
+  ...(incomplete!==null?[{at:incomplete,reason:"unverified_gap" as const}]:[]),
   ...(prior!==null?[{at:prior,reason:"unverified_gap" as const}]:[]),
   ...(gap!==null?[{at:gap,reason:"unverified_gap" as const}]:[])]
   .sort((a,b)=>a.at-b.at);
  return events[0]?{at:new Date(events[0].at).toISOString(),
   reason:events[0].reason}:{at:null,reason:null};
+}
+/** Only a verified change ends exposure early. A source gap preserves the
+ * elapsed deadline and makes affected windows unknown until recovery. */
+export function priceExposureBoundary(continuity:ReturnType<typeof trialSourceInterruption>,finalEndAt:string){
+ const interruptedAt=continuity.reason==="verified_price_changed"?continuity.at:null;
+ const sourceGapAt=continuity.reason==="unverified_gap"?continuity.at:null;
+ return {interruptedAt,sourceGapAt,endAt:interruptedAt??finalEndAt};
+}
+export const windowHasSourceGap=(segmentEnd:string,sourceGapAt:string|null)=>
+ sourceGapAt!==null&&Date.parse(segmentEnd)>Date.parse(sourceGapAt);
+function unverifiedPriceWindow(window:ReturnType<typeof planElapsed24HourWindows>[number],now:string,segmentEndAt?:string):
+ Awaited<ReturnType<typeof readElapsedWindowObservations>>{
+ return {window,status:"insufficient_evidence",units:null,revenueCents:null,countedLines:0,
+  unknownTimeLines:0,source:"order_lines.ordered_at",asOf:now,...(segmentEndAt?{segmentEndAt}:{})};
 }
 /** The ONE new-path monitor handler for verified Toast prices only. Callers
  * must select mode=new first and must bypass the old calendar-day writer.
@@ -280,7 +318,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   db.from("menu_items").select(
    "catalog_source,is_active,pos_item_id,price_cents,toast_publication_state,pos_pricing_strategy,toast_publication_observed_at")
    .eq("business_id",row.business_id).eq("id",effect.productId).maybeSingle(),
-  db.from("menu_price_history").select("toast_observed_at,new_price_cents")
+  db.from("menu_price_history").select("toast_observed_at,toast_effective_at,toast_publication_completed_at,toast_publication_pos_item_id,old_price_cents,new_price_cents")
    .eq("business_id",row.business_id).eq("menu_item_id",effect.productId)
    .eq("source_type","connected_pos").eq("source_provider","toast")
    .eq("toast_restaurant_guid",receipt.restaurantGuid)
@@ -313,15 +351,15 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   Number.isFinite(Date.parse(storedAt))?storedAt:null;
  const continuity=trialSourceInterruption({
   receipt,finalEndAt,asOf:now,current:current.data,
-  firstPriceChangeAt:changes.data?.[0]?.toast_observed_at??null,
+  ...subsequentToastPriceBoundary(changes.data?.[0],receipt,now),
   firstContextChangeAt:firstContextChange?.observed_at??null,
-  priorInterruptionAt:typeof storedAt==="string"?storedAt:null,
+  priorInterruptionAt:typeof storedAt==="string"?storedAt:initial.data?.source_reference?.sourceGapAt??null,
  });
- const interruptionAt=continuity.at;
+ const {interruptedAt:interruptionAt,sourceGapAt,endAt:exposureEnd}=priceExposureBoundary(continuity,finalEndAt);
  const sourceReference={...activationReference(receipt),
-  ...(interruptionAt?{interruptedAt:interruptionAt,
-   sourceContinuity:continuity.reason}:{})};
- if(interruptionAt&&!priorInterruption){
+  ...(interruptionAt?{interruptedAt:interruptionAt,sourceContinuity:continuity.reason}:{}),
+  ...(sourceGapAt?{sourceGapAt,sourceContinuity:"unverified_gap"}:{})};
+ if((interruptionAt&&interruptionAt!==priorInterruption)||sourceGapAt){
   const saved=await db.from("supervisor_monitor_windows")
    .update({source_reference:sourceReference,updated_at:new Date().toISOString()})
    .eq("business_id",row.business_id).eq("monitor_kind","approved_price")
@@ -329,19 +367,14 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   if(saved.error)throw new Error("source_interruption_receipt_failed");
  }
  const complete=[] as Awaited<ReturnType<typeof readElapsedWindowObservations>>[];
- const exposureEnd=interruptionAt??finalEndAt;
  for(const window of windows){
   if(Date.parse(window.startAt)>=Date.parse(exposureEnd))break;
   const segmentEnd=new Date(Math.min(Date.parse(window.endAt),Date.parse(exposureEnd))).toISOString();
   if(Date.parse(segmentEnd)>Date.parse(now))break;
   const partial=Date.parse(segmentEnd)<Date.parse(window.endAt);
-  // A verified later price change bounds an observed partial segment.
-  // An unverified context gap is not evidence of a continuous partial exposure.
-  const measured=partial&&continuity.reason==="unverified_gap"?{
-   window,status:"insufficient_evidence" as const,segmentEndAt:segmentEnd,
-   units:null,revenueCents:null,countedLines:0,unknownTimeLines:1,
-   source:"order_lines.ordered_at" as const,asOf:now,
-  }:await readElapsedWindowObservations(db,row.business_id,
+  // Never read price exposure contaminated by an unverified source gap.
+  const measured=windowHasSourceGap(segmentEnd,sourceGapAt)?
+   unverifiedPriceWindow(window,now,partial?segmentEnd:undefined):await readElapsedWindowObservations(db,row.business_id,
    effect.productId,window,now,timezone,partial?segmentEnd:undefined);
   const written=await db.from("supervisor_monitor_windows").upsert({
    business_id:row.business_id,owner_user_id:row.owner_user_id,
@@ -373,13 +406,14 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
     ". Elapsed 24-hour day "+day+" of "+days+" ended at "+m.window.endAt+". "+
     (actual?"Observed "+m.units+" units and "+new Intl.NumberFormat("en-US",{style:"currency",currency:effect.currency}).format(m.revenueCents!/100)+" net revenue. ":
      "Some timestamps or sales coverage are missing. ")+
-    (interruptionAt?"A later price or source gap interrupted the trial; please decide whether to stop or authorize a separate new phase. ":"")+
+    (sourceGapAt?"A later publication or price context is not fully verified. I will retry; affected exposure remains unknown. ":
+      interruptionAt?"A later verified price change interrupted the trial; please decide whether to stop or authorize a separate new phase. ":"")+
     "These are observations, not proof that the price caused sales changes.",
    result:{productId:effect.productId,productName:effect.productName,
     coveredWindows:complete.filter(c=>c.status==="actual").length,
     elapsedWindows:day,totalWindows:days,windowStartAt:receipt.startAt,
     windowEndAt:m.window.endAt,observedUnits:m.units,observedRevenueCents:m.revenueCents,
-    sourceContinuity:interruptionAt?"interrupted":"verified",nonCausal:true},
+    sourceContinuity:sourceGapAt?"unverified_gap":interruptionAt?"interrupted":"verified",sourceGapAt,nonCausal:true},
    delivery:{agentId:"alex",taskKind:"price_experiment_report",entityType:"menu_item",entityId:effect.productId,
     confidence:actual?"high":"low",payload:{productId:effect.productId,productName:effect.productName,
      itemName:effect.productName,outcomeStatus:"in_progress",recommendation:"adjust",
@@ -392,7 +426,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   await repo.saveReport(scope,proposal,interim,{midRun:true});
  }
  if(Date.parse(now)<Date.parse(exposureEnd))return "monitoring";
- const actual=!interruptionAt&&complete.length===days&&complete.every(c=>c.status==="actual");
+ const actual=!interruptionAt&&!sourceGapAt&&complete.length===days&&complete.every(c=>c.status==="actual");
  const exposureKnown=complete.length>0&&complete.every(c=>c.status==="actual");
  const units=exposureKnown?complete.reduce((a,b)=>a+(b.units??0),0):null;
  const revenue=exposureKnown?complete.reduce((a,b)=>a+(b.revenueCents??0),0):null;
@@ -435,7 +469,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   windowEndAt:finalEndAt,sourceBasis:receipt.startBasis,
   extraTradingInterval:{status:"not_verified",revenueCents:null},
   nonCausal:true,sourcePublicationVersion:receipt.publicationVersion,
-  sourceContinuity:interruptionAt?"interrupted":"verified",interruptedAt:interruptionAt};
+  sourceContinuity:sourceGapAt?"unverified_gap":interruptionAt?"interrupted":"verified",interruptedAt:interruptionAt,sourceGapAt};
  const status=actual?"complete":"insufficient_evidence";
  const report:LoopReport={status,result,recommendation,
   source:"order_lines.ordered_at+orders.closed_at",
@@ -451,8 +485,8 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
     sourceBasis:receipt.startBasis,sourceCoverage:status,
     extraTradingStatus:"not_verified",nonCausal:true,
     sourcePublicationVersion:receipt.publicationVersion,
-    sourceContinuity:interruptionAt?"interrupted":"verified",
-    interruptionAt},
+    sourceContinuity:sourceGapAt?"unverified_gap":interruptionAt?"interrupted":"verified",
+    interruptionAt,sourceGapAt},
    confidence:actual?"high":"low",
    evidence:[{source:"order_lines",facts:{actualWindowCount:result.coveredWindows,
     totalWindowCount:days,status,nonCausal:true}}],
@@ -461,8 +495,9 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
     " elapsed 24-hour sales windows. "+(actual?
     "The recorded lines were complete for those windows.":
     interruptionAt?
-    "A later source price change or unverifiable price gap interrupted this phase. Please decide whether to stop or authorize a separate new phase.":
-    "Some source timestamps or certified coverage were missing.")+
+    "A later verified source price change interrupted this phase. Please decide whether to stop or authorize a separate new phase.":
+     sourceGapAt?"A later publication or price context remains unverified; affected exposure is unknown. I will keep retrying within the correction period.":
+     "Some source timestamps or certified coverage were missing.")+
     " Recommendation: "+recommendation+"; historical product cost and net café profit remain unverified. Contribution comparisons use an explicitly estimated current cost. These are observed sales, not proof that the price change caused them. "+
     "Any trading after the final window remains separately unverified.",
   }};
@@ -602,7 +637,7 @@ async function prepareCompletedToastObservation(db:SupabaseClient,due:Observatio
  const windows=planElapsed24HourWindows(receipt.startAt,7);
  const finalEndAt=windows[6].endAt;
  const [later,context,baselineChanges]=await Promise.all([
-  db.from("menu_price_history").select("toast_observed_at,toast_effective_at,toast_publication_completed_at,new_price_cents",{count:"exact"})
+  db.from("menu_price_history").select("toast_observed_at,toast_effective_at,toast_publication_completed_at,toast_publication_pos_item_id,old_price_cents,new_price_cents",{count:"exact"})
    .eq("business_id",businessId).eq("menu_item_id",receipt.menuItemId)
    .eq("source_type","connected_pos").eq("source_provider","toast")
    .eq("toast_restaurant_guid",receipt.restaurantGuid)
@@ -621,16 +656,13 @@ async function prepareCompletedToastObservation(db:SupabaseClient,due:Observatio
  if(later.error||context.error||baselineChanges.error||
    later.count!==(later.data?.length??0)||context.count!==(context.data?.length??0)||baselineChanges.count===null)
   throw new Error("observation_continuity_unavailable");
- const first=later.data?.[0];
- const nextAt=first?.toast_publication_completed_at?(first.toast_effective_at??first.toast_observed_at):
-  first?.toast_observed_at??null;
- const prior=existing.data?.source_reference?.interruptedAt;
+ const prior=existing.data?.source_reference?.interruptedAt??existing.data?.source_reference?.sourceGapAt;
  const continuity=trialSourceInterruption({receipt,finalEndAt,asOf:now,current:current.data,
-  firstPriceChangeAt:nextAt,firstContextChangeAt:(context.data??[]).find(c=>contextChangeBreaksApprovedPrice(c,receipt))?.observed_at??null,
+  ...subsequentToastPriceBoundary(later.data?.[0],receipt,now),
+  firstContextChangeAt:(context.data??[]).find(c=>contextChangeBreaksApprovedPrice(c,receipt))?.observed_at??null,
   priorInterruptionAt:typeof prior==="string"?prior:null});
- const cut=continuity.at;
- const endAt=cut??finalEndAt;
- const ref={...activationReference(receipt),itemName,currency,interruptedAt:cut,
+ const {interruptedAt:cut,sourceGapAt,endAt}=priceExposureBoundary(continuity,finalEndAt);
+ const ref={...activationReference(receipt),itemName,currency,interruptedAt:cut,sourceGapAt,
   sourceContinuity:continuity.reason??"verified",asOf:now};
  // Every window write and delivery is fenced by the durable anchor lease.
  const writeWindow=async(index:number,reference:unknown,coverage:string,units:number|null,revenue:number|null,unknown:number,evaluation:string)=>{
@@ -658,11 +690,13 @@ async function prepareCompletedToastObservation(db:SupabaseClient,due:Observatio
   const segmentEndAt=new Date(Math.min(Date.parse(window.endAt),Date.parse(endAt))).toISOString();
   if(Date.parse(now)<Date.parse(segmentEndAt))break;
   const partial=Date.parse(segmentEndAt)<Date.parse(window.endAt);
-  const measured=await readElapsedWindowObservations(db,businessId,receipt.menuItemId,window,now,timezone,
-   partial?segmentEndAt:undefined);
+  const measured=windowHasSourceGap(segmentEndAt,sourceGapAt)?
+   unverifiedPriceWindow(window,now,partial?segmentEndAt:undefined):
+   await readElapsedWindowObservations(db,businessId,receipt.menuItemId,window,now,timezone,
+    partial?segmentEndAt:undefined);
   const baselineWindow={index:window.index,startAt:new Date(Date.parse(window.startAt)-7*observationDayMs).toISOString(),
    endAt:new Date(Date.parse(window.endAt)-7*observationDayMs).toISOString()};
-  const baseline=baselineChanges.count===0?await readElapsedWindowObservations(db,businessId,receipt.menuItemId,
+  const baseline=!windowHasSourceGap(segmentEndAt,sourceGapAt)&&baselineChanges.count===0?await readElapsedWindowObservations(db,businessId,receipt.menuItemId,
    baselineWindow,now,timezone,partial?new Date(Date.parse(segmentEndAt)-7*observationDayMs).toISOString():undefined):null;
   const comparison=comparePriceExposure({units:measured.units,revenueCents:measured.revenueCents,
    baselineUnits:baseline?.units??null,baselineRevenueCents:baseline?.revenueCents??null,unitCostEstimateCents:unitCost});
@@ -684,7 +718,7 @@ async function prepareCompletedToastObservation(db:SupabaseClient,due:Observatio
  const finalDue=Date.parse(now)>=Date.parse(endAt);
  const comparison=comparePriceExposure({units:total("units"),revenueCents:total("revenueCents"),
   baselineUnits:total("baselineUnits"),baselineRevenueCents:total("baselineRevenueCents"),unitCostEstimateCents:unitCost});
- const cumulative={...comparison,completedExposureWindows:measurements.length,interruptedAt:cut,nonCausal:true,
+ const cumulative={...comparison,completedExposureWindows:measurements.length,interruptedAt:cut,sourceGapAt,nonCausal:true,
   costEstimateAsOf:unitCost===null?null:now,actualHistoricalCogsCents:null,netCafeProfitCents:null};
  const format=(cents:number|null)=>cents===null?"unknown":new Intl.NumberFormat("en-US",{style:"currency",currency}).format(cents/100);
  const pct=(bps:number|null)=>bps===null?"unknown":new Intl.NumberFormat("en-US",{style:"percent",maximumFractionDigits:1}).format(bps/10000);
@@ -721,15 +755,15 @@ async function prepareCompletedToastObservation(db:SupabaseClient,due:Observatio
   for(const m of measurements){
    await send(m.index+1,m.segmentEndAt,false,{title:"Toast price observation day "+(m.index+1),units:m.units,
     revenueCents:m.revenueCents,baselineRevenueCents:m.baselineRevenueCents,contributionEstimateCents:m.contributionEstimateCents,
-    segmentEndAt:m.segmentEndAt,baselineUnits:m.baselineUnits,volumeChangeBps:m.volumeChangeBps,revenueChangeBps:m.revenueChangeBps,
+    segmentEndAt:m.segmentEndAt,sourceGapAt:windowHasSourceGap(m.segmentEndAt,sourceGapAt)?sourceGapAt:null,baselineUnits:m.baselineUnits,volumeChangeBps:m.volumeChangeBps,revenueChangeBps:m.revenueChangeBps,
     contributionMarginEstimateBps:m.contributionMarginEstimateBps,contributionChangeEstimateCents:m.contributionChangeEstimateCents,nonCausal:true},
     itemName+": observation day "+(m.index+1)+" ending "+m.segmentEndAt+
-    ". "+(m.units===null?"Sales coverage is incomplete.":m.units+" units, net revenue "+format(m.revenueCents)+".")+
+    ". "+(windowHasSourceGap(m.segmentEndAt,sourceGapAt)?"A later Toast publication or price context is not fully verified. I will retry; affected price exposure is unknown. ":m.units===null?"Sales coverage is incomplete.":m.units+" units, net revenue "+format(m.revenueCents)+".")+
     " Comparable prior revenue: "+format(m.baselineRevenueCents)+". Estimated contribution using current cost: "+format(m.contributionEstimateCents)+
     ". Volume change "+pct(m.volumeChangeBps)+", revenue change "+pct(m.revenueChangeBps)+", estimated contribution margin "+pct(m.contributionMarginEstimateBps)+". "+advice(m.revenueCents,m.baselineRevenueCents,m.contributionChangeEstimateCents)+" This does not establish causation.",m.status==="actual"?"high":"low");
   }
   if(finalDue)await send(7,endAt,true,{title:"Toast price observation summary",...cumulative},
-   itemName+": "+(cut?"Price exposure was interrupted; ":"Seven elapsed days ended; ")+
+   itemName+": "+(cut?"A verified later price change interrupted exposure; ":sourceGapAt?"Seven elapsed days ended with an unverified source gap; I will keep retrying within the correction period; ":"Seven elapsed days ended; ")+
    "observed units "+(cumulative.observedUnits??"unknown")+", net revenue "+format(cumulative.observedRevenueCents)+
    ", comparable prior revenue "+format(cumulative.baselineRevenueCents)+
    ", estimated contribution using current cost "+format(cumulative.contributionEstimateCents)+
