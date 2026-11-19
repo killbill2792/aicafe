@@ -505,6 +505,7 @@ describe("saved supplier order communication is distinct from creating a new PO"
     expect(requests[0].instructions).toBe(agentInstructions());
     expect(String(requests[0].instructions)).toContain("That prohibition does not forbid a separately requested, inert communication approval");
     expect(String(requests[0].instructions)).toContain("Only the exact separate owner click can authorize sending");
+    expect(String(requests[0].instructions)).toContain("An empty Gmail history alone is not a barrier");
     expect(String(requests[0].instructions)).not.toContain("or an explicit 'do not create an order', use read-only tools only");
     const names=(requests[0].tools as Array<{name:string}>).map(x=>x.name);
     expect(names).toEqual((requests[1].tools as Array<{name:string}>).map(x=>x.name));
