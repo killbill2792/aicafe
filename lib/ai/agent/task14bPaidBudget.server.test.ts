@@ -37,7 +37,7 @@ describe("Task14B owner $0.80 hard-budget / $0.18 reservation gate",()=>{
    {...params,service_tier:"priority"},
    {...params,tools:[{type:"web_search_preview"}]},
    {...params,max_output_tokens:1201}, // missing tool_choice retains legacy limit
-   {...params,tool_choice:"auto",max_output_tokens:4097},
+   {...params,tool_choice:"auto",max_output_tokens:16385},
    {...params,tool_choice:"none",max_output_tokens:1201},
    {...params,background:true},
   ])expect(()=>paidRequestReservation(bad,JSON.stringify(bad))).toThrow(/task14b_budget:/);
@@ -85,10 +85,10 @@ describe("Task14B owner $0.80 hard-budget / $0.18 reservation gate",()=>{
  });
 });
 
-it("reserves the entire 4096-token tool request under the unchanged aggregate ledger cap",async()=>{
- const expanded={...params,tool_choice:"auto",max_output_tokens:4096};
+it("reserves the entire 16384-token tool request under the unchanged aggregate ledger cap",async()=>{
+ const expanded={...params,tool_choice:"auto",max_output_tokens:16384};
  const json=JSON.stringify(expanded);
- expect(paidRequestReservation(expanded,json).reservedMicros).toBe(Math.ceil(Buffer.byteLength(json)*0.10+4096*0.50));
+ expect(paidRequestReservation(expanded,json).reservedMicros).toBe(Math.ceil(Buffer.byteLength(json)*0.10+16384*0.50));
  await reserveTask14bPaidRequest(expanded,json);
  expect(JSON.parse(readFileSync(file,"utf8"))).toMatchObject({attempts:1,reservedMicros:paidRequestReservation(expanded,json).reservedMicros});
  const final={...params,tool_choice:"none",max_output_tokens:1200};
