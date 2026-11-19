@@ -299,3 +299,30 @@ export function verifyMonitorOutcome(x){
  assert.ok(x.usage.every(r=>r.status==="completed"&&r.model==="gpt-6-luna"&&Number(r.input_tokens)>0));
  return {episodeId:episode.episode_id,noticeId:x.beforeNotices[0].id,resolutionNoticeId:x.afterNotices[0].id,providerCalls:x.usage.length};
 }
+
+export function verifySupplierReminderOutcome(x){
+ const checkNotice=(notices,messages,repeated,repeatedMessages,expectedText)=>{
+  assert.equal(notices.length,1);
+  assert.equal(notices[0].status,"needs_owner");
+  assert.equal(notices[0].thread_id,x.threadId);
+  assert.equal(messages.length,1);
+  assert.equal(messages[0].thread_id,x.threadId);
+  assert.match(JSON.stringify(messages[0].structured_content),expectedText);
+  assert.deepEqual(repeated,notices,"duplicate tick changed source notice");
+  assert.deepEqual(repeatedMessages,messages,"duplicate tick changed chat notice");
+ };
+ assert.deepEqual(x.earlyDraft,[]);
+ assert.deepEqual(x.earlyDispatch,[]);
+ checkNotice(x.draftNotice,x.draftMessage,x.repeatedDraft,x.repeatedDraftMessage,/Supplier purchase-order draft needs your approval/i);
+ checkNotice(x.dispatchNotice,x.dispatchMessage,x.repeatedDispatch,x.repeatedDispatchMessage,/Approved order unresolved/i);
+ assert.deepEqual(x.handledDraft,[{...x.draftNotice[0],status:"handled"}]);
+ assert.notEqual(x.draftNotice[0].id,x.dispatchNotice[0].id);
+ assert.notEqual(x.draftMessage[0].id,x.dispatchMessage[0].id);
+ assert.deepEqual(x.ownerAfter,x.ownerBefore,"no new owner prompt for reminder");
+ assert.deepEqual(x.delivery,[],"reminder must not dispatch a PO");
+ assert.deepEqual(x.ordersAfter,x.ordersBefore);
+ assert.deepEqual(x.attemptsAfter,x.attemptsBefore);
+ assert.deepEqual(x.countsAfter,x.countsBefore);
+ return {draftNoticeId:x.draftNotice[0].id,draftNoticeMessageId:x.draftMessage[0].id,
+  dispatchNoticeId:x.dispatchNotice[0].id,dispatchNoticeMessageId:x.dispatchMessage[0].id};
+}
