@@ -240,6 +240,14 @@ jobs:
           path: test-results/acceptance/supervisor-migrated-census.json
           if-no-files-found: warn
           retention-days: 14
+      - name: Execute inherited POS owner-query parity preflight (SQL only, zero provider)
+        if: ${{ !cancelled() && steps.local_db.outcome == 'success' }}
+        env:
+          POS0E_E2_SQL_ONLY: '1'
+          AGENT_LIVE_EVAL: '0'
+          OPENAI_API_KEY: ''
+          AICAFE_QUERY_PARITY_LOCAL_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: npx vitest run lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts
       - name: Run every SQL and database test
         if: ${{ !cancelled() && steps.local_db.outcome == 'success' }}
         run: bash scripts/db/run-all.sh
@@ -402,8 +410,8 @@ jobs:
         run: npm ci
       - name: Mutation-test owner-domain selection and proof validation
         run: node --test scripts/acceptance/owner-gate.test.mjs
-      - name: Mutation-test exhaustive Supervisor census accounting
-        run: node --test scripts/acceptance/supervisor-coverage.test.mjs
+      - name: Mutation-test exhaustive Supervisor census and inherited operator evaluator accounting
+        run: node --test scripts/acceptance/supervisor-coverage.test.mjs evals/acceptance/task13b-operator-parity.test.mjs
       - name: Discover Supervisor capabilities and run independent metric goldens
         env:
           AICAFE_CENSUS_OUTPUT: test-results/acceptance/supervisor-census.json

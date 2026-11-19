@@ -145,7 +145,22 @@
       "lib/ai/supervisor/routines/staffCoverage.live.test.ts": "600ee522092ffa31b178762ab1c5914f34f92cee",
       "lib/ai/supervisor/routines/supplierReceiving.live.test.ts": "083df29c73f608c9448e8232c197666a9e831c68",
       "lib/ai/supervisor/runs/fleetResilience.live.test.ts": "db8a743a3f27e3a9b459d4e7be17bd0e2ef82526",
-      "lib/maintenance/coordination.live.test.ts": "9d60ce09c6f84b086c651707e6026abf587b6538"
+      "lib/maintenance/coordination.live.test.ts": "9d60ce09c6f84b086c651707e6026abf587b6538",
+      "evals/acceptance/task13b-operator-parity.mjs": "ca50128d9c1d6f56334ef3718d9c67f5f29598c3",
+      "evals/acceptance/task13b-operator-parity.test.mjs": "4d731e6e8b5a06cab5b498d53bd9efe0dbe71e42",
+      "evals/supervisor/assertions.cjs": "9841488a7c1d599ad627cd38e4af5a2eb5cf2b28",
+      "evals/supervisor/promptfooconfig.yaml": "e6f8c14fc813792e018899ed2709db57acddc1b0",
+      "evals/supervisor/provider.ts": "d3b87f7dc9c08b4ef8c48ef32b8912cfc559f005",
+      "evals/supervisor/replays.json": "0f96c021eeee32ce55ec6f6fdf4a1503a8b0bea3",
+      "evals/supervisor/run.mjs": "693d135219cdf2d06d0eb2a740d1885755ee00ab",
+      "evals/supervisor/seed.json": "2b54e41440696409ca552b7f6006a3eba93af046",
+      "evals/supervisor/verify-truth.mjs": "3cb53e9f9a36a69ae0c4e3899af55dd10563c7ac",
+      "evals/supervisor/wording-grader.mjs": "ec480438280b309978d1d821e7c3dce9f9d10fdf",
+      "lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts": "5b14a117e46e9471160f67c0075edd6198135dbb",
+      "lib/ai/supervisor/routines/investigation.live.test.ts": "84c6091a64cf47ae23d4c30d751266e183d629f7",
+      "lib/ai/supervisor/routines/investigation.liveBudget.ts": "f44a080f995e7e7ceff49ce7d71b2344206886ba",
+      "lib/connectors/registry.live.test.ts": "b25f5649dcd29e586163d333e2dacd08c6f7dbd0",
+      "lib/metrics/core/eventReadiness.live.test.ts": "f3dc26c48dfb86ee8862a794f8119b636ffd1755"
     }
   },
   "requiredScenarioGroups": {
@@ -348,6 +363,45 @@
         "17d"
       ],
       "missing": "complete source-backed cross-domain briefing, owner actions and independently verified UI"
+    }
+  ],
+  "legacyPaidSuites": [
+    {
+      "path": "lib/ai/agent/tools/dataQuery.ownerParity.live.test.ts",
+      "owner": "POS0f / 17B",
+      "mode": "legacy_paid_unregistered",
+      "status": "UNTESTED",
+      "safePreflight": "POS0E_E2_SQL_ONLY=1; no provider",
+      "requiredMigration": "Preserve each retained-field, identity, discount, units, guests, current-day and correction question; split into separately bounded shared runner scenarios with independent SQL truth and host receipts. Do not execute old AGENT_LIVE_EVAL paid flag."
+    },
+    {
+      "path": "lib/ai/supervisor/routines/investigation.live.test.ts",
+      "owner": "15A / 17C",
+      "mode": "legacy_paid_unregistered",
+      "status": "UNTESTED",
+      "requiredMigration": "Preserve autonomous unprompted detection, exact incident, persisted update, no user impersonation, 25-hour follow-up, watching and verified closure using shared trusted worker, not old direct provider workflow."
+    }
+  ],
+  "legacyNonProviderSuites": [
+    {
+      "path": "evals/supervisor/promptfooconfig.yaml",
+      "mode": "recorded_only",
+      "required": "run existing promptfoo suite on all Task17 integration changes"
+    },
+    {
+      "path": "evals/acceptance/task13b-operator-parity.test.mjs",
+      "mode": "evaluator_unit_only",
+      "required": "Preserve independent evaluator test; competitor comparisons no longer product acceptance requirement under binding Nov 16 first-party contract"
+    },
+    {
+      "path": "lib/metrics/core/eventReadiness.live.test.ts",
+      "mode": "deterministic",
+      "required": "Full Vitest regressions; .live filename does not imply provider use"
+    },
+    {
+      "path": "lib/connectors/registry.live.test.ts",
+      "mode": "deterministic",
+      "required": "Full Vitest and Gmail domain safety suite"
     }
   ]
 }

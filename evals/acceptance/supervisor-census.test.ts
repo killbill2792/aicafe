@@ -119,7 +119,7 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   const inventory=makeInventory(rows);
   const manifestPaths=paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json"));
   const manifests=manifestIndex(root,manifestPaths,coverageMap.legacyTools);
-  const combinedScenarioPlan=scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies);
+  const combinedScenarioPlan={...scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies),legacyPaidSuites:coverageMap.legacyPaidSuites,legacyNonProviderSuites:coverageMap.legacyNonProviderSuites};
   const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics,registrationGaps,testReferences:findTestReferences(new Set(Object.keys(fullSchemas)))});
   if(process.env.AICAFE_CENSUS_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_OUTPUT,{...report,combinedScenarioPlan});
   expect(report.totals.UNTESTED+report.totals.FAIL).toBe(inventory.length);
@@ -147,8 +147,14 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   // A parent branch cannot attest scenarios from an unmerged child. When the
   // combined tree contains either downstream manifest, require its entire group.
   for(const group of plan.groups.filter(g=>["17c","17d"].includes(g.group)&&g.registered.length))expect(group.missing,group.group).toEqual([]);
+  // Some pre-shared-runner suites have a live flag AND a provider transport.
+  // Preserve them, detect newly found unregistered legacy paid sources, and
+  // record their migration obligation separately from the manifest count.
+  const entrypoints=new Set(paths.filter(p=>/^\.github\/luna\/scenarios\/.+\.json$/.test(p)).map(p=>JSON.parse(source(p)).entrypoint));
+  const unregistered=paths.filter(p=>p.endsWith(".live.test.ts")&&!entrypoints.has(p)&&/OPENAI_API_KEY|openAIProvider/.test(source(p))).sort();
+  expect(unregistered,"legacy real-provider test must have shared registration or explicit pending migration").toEqual(coverageMap.legacyPaidSuites.map(s=>s.path).sort());
   expect(plan.complete).toBe(false);
-  console.log("Task17B consolidated scenario plan:",JSON.stringify(plan));
+  console.log("Task17B consolidated scenario plan:",JSON.stringify({...plan,legacyPaidSuites:coverageMap.legacyPaidSuites,legacyNonProviderSuites:coverageMap.legacyNonProviderSuites}));
  });
  it("checks each actual registered schema rejects unexpected tenant authority",()=>{
   for(const [name,entry] of Object.entries(fullSchemas)){

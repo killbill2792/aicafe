@@ -45,10 +45,11 @@ const includes=(p,re)=>re.test(p.toLowerCase());
 
 /** Map actual changed paths to canonical owner domains, including test-only edits.
  * New, unknown external connectors MUST get an explicit domain contract. */
+const combinedAcceptancePaths=paths=>paths.some(p=>p==="evals/acceptance/supervisor-census.test.ts"||p==="evals/acceptance/fixtures/task17b-coverage-map.json"||/^\.github\/luna\/scenarios\/17[bcd](?:-|\.)/.test(p));
 export function domainsForPaths(paths){
  if(!Array.isArray(paths)||paths.some(p=>typeof p!=="string"||!p||p.includes("\0")))fail("invalid_changed_paths");
  const found=new Set();
- const consolidated=paths.some(p=>p==="evals/acceptance/supervisor-census.test.ts"||p==="evals/acceptance/fixtures/task17b-coverage-map.json"||/^\.github\/luna\/scenarios\/17[bcd](?:-|\.)/.test(p));
+ const consolidated=combinedAcceptancePaths(paths);
  for(const p of paths){
   const sharedConnector=/^lib\/connectors\/(?:crypto|registry)(?:\.server|\.test|\.live\.test)?\.[cm]?[jt]s$/.test(p) ||
     /^lib\/connectors\/(?:access|publicWeb)(?:\.server|\.test)\.ts$/.test(p);
@@ -88,7 +89,7 @@ export function classifyBaselinePaths(paths){
   /(?:\.e2e\.|\.spec\.)/.test(p)||p.startsWith("playwright.config.")||
   /^scripts\/[^/]*(?:visual|screenshots)/.test(p)||
   /^\.github\/workflows\/[^/]*(?:visual|screenshots)\.yml$/.test(p);
- const code=paths.some(p=>!docs(p)),supervisor=paths.some(p=>p.startsWith("lib/ai/"));
+ const code=paths.some(p=>!docs(p)),supervisor=paths.some(p=>p.startsWith("lib/ai/"))||combinedAcceptancePaths(paths);
  const hasE2e=paths.some(e2e),hasDocs=paths.some(docs);
  return {code,e2e:hasE2e,supervisor,"docs-only":hasDocs,"non-docs":code};
 }

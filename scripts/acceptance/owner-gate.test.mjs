@@ -158,3 +158,10 @@ test("Task17 combined acceptance selects every existing owner-domain suite inste
  }
  assert.deepEqual(domainsForPaths([".github/luna/scenarios/14b.json"]),[]);
 });
+
+test("Task17 integration runs the previous real-loop recorded promptfoo questions, not only new fixture tests",()=>{
+ for(const path of ["evals/acceptance/supervisor-census.test.ts",".github/luna/scenarios/17d.json"]){
+  assert.equal(classifyBaselinePaths([path]).supervisor,true);
+ }
+ assert.equal(classifyBaselinePaths([".github/luna/scenarios/14b.json"]).supervisor,false);
+});
