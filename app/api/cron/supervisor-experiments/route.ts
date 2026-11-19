@@ -6,7 +6,7 @@ import {monitorLoop,midRunDay,utcDateOffset,type LoopProposal,type OwnerLoopScop
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import {goalCapabilityId} from "@/lib/ai/supervisor/loop/goal.server";
-import {priceCapabilityIds,priceProposalCutoverMode,runVerifiedToastPriceTick,remindPendingToastPrice} from "@/lib/ai/supervisor/loop/experimentCutover.server";
+import {priceCapabilityIds,priceProposalCutoverMode,runVerifiedToastPriceTick,remindPendingToastPrice,runToastObservationBatch} from "@/lib/ai/supervisor/loop/experimentCutover.server";
 import {eventReadinessCapabilityId} from "@/lib/ai/supervisor/loop/eventReadiness.server";
 import {postGoalCheckin} from "@/lib/ai/supervisor/loop/goalCheckins.server";
 import {goalEffectSchema,checkinDue} from "@/lib/calc/goals/goalSpec";
@@ -157,8 +157,15 @@ export async function GET(request:Request){
    if(rotated.error)failed++;
   }
  }
- return respond(poRecoveryUnavailable||poRecovery.failed?503:200,{
+ // Independent discovery uses the same authenticated scheduler, even when no
+ // owner has created a proposal or opened a chat. It runs after approval
+ // processing so an exact approved source gets its existing pinned receipt.
+ let observations={checked:0,reported:0,failed:0};
+ try{observations=await runToastObservationBatch(db,new Date().toISOString());}
+ catch{observations.failed++;}
+ return respond(poRecoveryUnavailable||poRecovery.failed||observations.failed?503:200,{
   checked:due.length,sampled,reported,failed,
+  toastObservations:observations,
   supplierPurchaseOrders:{...poRecovery,unavailable:poRecoveryUnavailable}
  });
 }
