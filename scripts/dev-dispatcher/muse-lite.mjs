@@ -24,7 +24,7 @@ export const QUERY=`query MuseMonitor($owner:String!,$repo:String!){
     headRepository{nameWithOwner}
     labels(first:100){pageInfo{hasNextPage} nodes{name}}
     headRef{target{... on Commit{committedDate statusCheckRollup{state}}}}
-    comments(last:100){pageInfo{hasPreviousPage startCursor} nodes{databaseId body createdAt url authorAssociation author{login}}}
+    comments(last:100){pageInfo{hasPreviousPage startCursor} nodes{body createdAt url authorAssociation author{login}}}
    }
   }
   recentlyMerged:pullRequests(states:MERGED,first:25,orderBy:{field:UPDATED_AT,direction:DESC}){
@@ -46,7 +46,7 @@ function ownerRequests(p,repo){
  if(p.headRepository?.nameWithOwner!==repo)return [];
  return (p.comments?.nodes||[]).flatMap(c=>{
   const m=String(c.body||'').match(/^<!-- aicafe-owner-request:v1 ([a-f0-9]{40}) -->\s*([\s\S]{1,2000})$/);
-  const id=String(c.databaseId||'');
+  const id=String(c.url||'').match(/#issuecomment-([1-9]\d{0,19})$/)?.[1]||'';
   if(!m||!trusted(c.authorAssociation)||!c.author?.login||c.author.login.endsWith('[bot]')||
      !/^[1-9]\d{0,19}$/.test(id)||c.url!==p.url+'#issuecomment-'+id||!m[2].trim())return [];
   return [{id:'comment-'+id,pr_number:p.number,head_sha:m[1],question:m[2].trim(),url:c.url,
@@ -113,17 +113,42 @@ export function normalizeGithubFacts(response,now=new Date().toISOString()){
   prs,merged_prs:(repo.recentlyMerged?.nodes||[]).filter(p=>p.mergedAt)
     .map(p=>({number:p.number,title:p.title,url:p.url,merged_at:p.mergedAt}))};
 }
+// Same read-only connection, only paginate PRs whose latest page is incomplete.
+export const OWNER_REQUEST_PAGE_QUERY=`query MuseCommentPage($owner:String!,$repo:String!,$number:Int!,$before:String!){
+ repository(owner:$owner,name:$repo){pullRequest(number:$number){comments(last:100,before:$before){
+ pageInfo{hasPreviousPage startCursor} nodes{body createdAt url authorAssociation author{login}}
+ }}}
+}`;
+export async function completeOwnerRequestPages(response,readPage){
+ for(const p of response?.data?.repository?.pullRequests?.nodes||[]){
+  const seen=new Set();let count=0;
+  while(p.comments?.pageInfo?.hasPreviousPage&&count++<20){
+   const cursor=p.comments.pageInfo.startCursor;
+   if(!cursor||seen.has(cursor))break;
+   seen.add(cursor);
+   const result=await readPage(p.number,cursor);
+   const page=result?.data?.repository?.pullRequest?.comments;
+   if(result?.errors?.length||!Array.isArray(page?.nodes)||!page.pageInfo)break;
+   p.comments={nodes:[...page.nodes,...p.comments.nodes],pageInfo:page.pageInfo};
+  }
+ }
+ return response;
+}
 export async function fetchGithubFacts({repo,token,fetchImpl=fetch,
  now=new Date().toISOString()}={}){
  if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo||'')||!token)
   throw Error('Read-only GitHub credentials and repository required');
  const [owner,name]=repo.split('/');
- const response=await fetchImpl('https://api.github.com/graphql',{
-  method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json',
-   'Content-Type':'application/json'},
-  body:JSON.stringify({query:QUERY,variables:{owner,repo:name}})});
- if(!response.ok)throw Error('GitHub read unavailable HTTP '+response.status);
- return normalizeGithubFacts(await response.json(),now);
+ const read=async(query,variables)=>{
+  const response=await fetchImpl('https://api.github.com/graphql',{
+   method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json',
+    'Content-Type':'application/json'},body:JSON.stringify({query,variables})});
+  if(!response.ok)throw Error('GitHub read unavailable HTTP '+response.status);
+  return response.json();
+ };
+ const response=await read(QUERY,{owner,repo:name});
+ await completeOwnerRequestPages(response,(number,before)=>read(OWNER_REQUEST_PAGE_QUERY,{owner,repo:name,number,before}));
+ return normalizeGithubFacts(response,now);
 }
 export function museActions(facts,previous,notes,{now=new Date().toISOString(),
  idleMinutes=10,ownerReminderMinutes=7,freshMinutes=15,questions={entries:{}}}={}){
@@ -200,7 +225,7 @@ export function museActions(facts,previous,notes,{now=new Date().toISOString(),
   }else if((millis(p.committed_at)!==null&&clock-millis(p.committed_at)>=idleMinutes*60000)&&
     p.ci!=='pending'&&p.codex!=='pending'){
    kind='continue_chat';reason='No recent progress; check if chat is idle. Ask it to publish any unreported owner request as a new PR comment, otherwise continue. Verify publication; if absent report communication failure';
-   extra='idle:'+Math.floor(clock/(idleMinutes*60000));
+   extra='idle-recovery';
   }
   if(!kind)continue;
   if(!entry.chat_url){blocked.push({task_id:entry.task_id,pr_number:p.number,
