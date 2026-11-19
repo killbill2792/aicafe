@@ -496,6 +496,27 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
    await call(a,"supervisor_run_complete_step",[...scope,run.id,"verify_report",verify.step.claim_token,final]);
    expect((await call(a,"supervisor_run_finish",[...scope,run.id,final])).status).toBe("completed");
    expect((await admin.query("select count(*)::int n from public.ai_messages where id=$1",[final])).rows[0].n).toBe(1);
+   // A consumed answer cannot become a second independent assignment.
+   await expect(call(a,"supervisor_admit_owner_run_v2",[...scope,answerId,"d".repeat(64),"en",[]])).rejects.toThrow();
+   const longId=randomUUID();await insert(longId,"Continue a multi-step report");
+   const long=await call(a,"supervisor_admit_owner_run_v2",[...scope,longId,"e".repeat(64),"en",[]]);
+   const authorization=await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30]);
+   await call(a,"supervisor_run_complete_step",[...scope,long.id,"authorize_owner",authorization.step.claim_token,"owner:"+longId]);
+   const state=async()=>(await admin.query("select checkpoint_retry_count,checkpoint_progress_count,checkpoint_seq from public.supervisor_run_steps where run_id=$1 and step_key='owner_turn'",[long.id])).rows[0];
+   // Move only the due timestamp in this disposable fixture; actual lease expiry is tested above.
+   const due=async()=>{await admin.query("update public.supervisor_runs set dispatch_after=clock_timestamp()-interval '1 second' where id=$1",[long.id]);};
+   for(let i=0;i<6;i++){
+    const claim=await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30]);
+    expect(claim.kind).toBe("claimed");
+    const seq=Number((await state()).checkpoint_seq),op=randomUUID(),t=claim.step.claim_token;
+    await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq,op,"begin_read","get_sales",null]);
+    await call(a,"supervisor_checkpoint_owner_run_v2",[...scope,long.id,t,seq+1,op,"complete",null,"read:"+"a".repeat(32)+"_"+String(i).repeat(64)]);
+    expect(await call(a,"supervisor_yield_owner_run_v2",[...scope,long.id,t,seq+2,15,"technical"])).toBe(true);
+    expect(await state()).toMatchObject({checkpoint_retry_count:String(i),checkpoint_progress_count:"1"});
+    await due();
+   }
+   expect(await call(a,"supervisor_run_claim",[...scope,long.id,randomUUID(),30])).toEqual({kind:"blocked"});
+
   }finally{
    await a?.end();await admin.query("delete from public.businesses where id=$1",[businessId]);
    await admin.query("delete from auth.users where id=$1",[ownerId]);await admin.end();
