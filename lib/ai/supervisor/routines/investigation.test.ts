@@ -389,6 +389,7 @@ it("customer investigations require an actual scoped aggregate and an independen
  const schema={name:"describe_data",result:{source:"toast_fields",period:null,missing:[],retainedFields:30,fields:[{field:"data.customer.guid"}]}};
  const verify=(...calls:unknown[])=>verifyInvestigationTurn(turn({toolInvocations:[src,...calls]}),target);
  expect(verify(customer,labor).ok).toBe(true);
+ expect(verify({...customer,result:{...customer.result,rows:[{sum_net_sales_cents:8000}]}},labor).ok).toBe(false);
  for(const proof of [null,{...src.result.customerTrendProof,key:"average_visit_spend"},{...src.result.customerTrendProof,current:.4},{...src.result.customerTrendProof,previous:.4},{...src.result.customerTrendProof,active:false}]){
   expect(verifyInvestigationTurn(turn({toolInvocations:[{...src,result:{...src.result,customerTrendProof:proof}},customer,labor]}),target).ok).toBe(false);
  }
