@@ -155,6 +155,11 @@ begin
      and h.toast_publication_version is not null
      and h.toast_observed_at>=p.approved_at
      and l.verified_at is not null
+     and (h.toast_publication_completed_at is not null or exists (
+       select 1 from public.toast_optional_sync_state s
+       where s.business_id=h.business_id and s.restaurant_guid=h.toast_restaurant_guid
+       and s.menu_last_updated=h.toast_publication_version
+       and s.menu_checked_local_day is not null and s.menu_copied_at>=h.toast_observed_at))
    )
  ) then return null;end if;
  if p_kind<>'price_reminder' and not exists (
@@ -349,6 +354,104 @@ revoke all on function public.supervisor_8a_post_observation_notice(uuid,bigint,
  from public,anon,authenticated;
 grant execute on function public.supervisor_8a_post_observation_notice(uuid,bigint,uuid,text,uuid,text,jsonb,text,text)
  to service_role;
+
+create or replace function public.supervisor_8a_guard_toast_manual_confirmation()
+ returns trigger language plpgsql set search_path=public as $$
+declare v_item public.menu_items;v_product text;v_before text;v_target text;
+begin
+ if tg_op<>'UPDATE' or new.status is not distinct from old.status
+   or new.status<>'manual_confirmed' or
+   old.capability_id not in ('alex.drink_price_experiment.v1',
+    'alex.menu_price_change.v1')
+ then return new;end if;
+ v_product:=old.canonical_effect_payload->>'productId';
+ if v_product is null or v_product !~*
+   '^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$'
+ then raise exception 'price_item_identity_missing' using errcode='22023';end if;
+ select * into v_item from public.menu_items
+ where business_id=old.business_id and id=v_product::uuid;
+ if not found then
+  raise exception 'price_item_missing' using errcode='23514';end if;
+ if v_item.catalog_source is distinct from 'toast'
+ then return new;end if; -- disconnected/manual cafés preserve their flow
+ v_before:=old.canonical_effect_payload->>'oldPriceCents';
+ v_target:=old.canonical_effect_payload->>'newPriceCents';
+ if v_before is null or v_before!~'^[0-9]+$' or
+    v_target is null or v_target!~'^[0-9]+$'
+ then raise exception 'toast_price_baseline_missing' using errcode='22023';end if;
+ -- A prior Task 8a worker may have verified and durably pinned the exact
+ -- Toast source activation, then failed before the lifecycle transition.
+ -- A later price revert, unpublication or contextual menu cannot invalidate
+ -- THAT historical verification. The worker separately records interruption
+ -- and cannot claim full-window evidence for changed source context.
+ if old.approved_at is not null and exists (
+  select 1 from public.supervisor_monitor_windows w
+  join public.menu_price_history h
+   on h.id::text=w.source_reference->>'historyId'
+   and h.business_id=w.business_id and h.menu_item_id=v_item.id
+  join public.toast_location_mappings l
+   on l.business_id=h.business_id and l.restaurant_guid=h.toast_restaurant_guid
+  where w.business_id=old.business_id and w.owner_user_id=old.owner_user_id
+   and w.source_id=old.id and w.monitor_kind='approved_price'
+   and w.window_index=0 and l.verified_at is not null
+   and h.source_type='connected_pos' and h.source_provider='toast'
+   and h.toast_restaurant_guid is not null and h.toast_observed_at is not null
+   and h.toast_publication_version is not null
+   and h.old_price_cents=v_before::bigint and h.new_price_cents=v_target::bigint
+   and h.old_price_cents is distinct from h.new_price_cents
+   and h.toast_observed_at>=old.approved_at
+   and (h.toast_effective_at is null or h.toast_effective_at>=old.approved_at)
+   and w.start_at=coalesce(h.toast_effective_at,h.toast_observed_at)
+   and w.source_reference->>'businessId'=old.business_id::text
+   and w.source_reference->>'menuItemId'=v_item.id::text
+   and w.source_reference->>'historyId'=h.id::text
+   and w.source_reference->>'restaurantGuid'=h.toast_restaurant_guid::text
+   and w.source_reference->>'publicationVersion'=h.toast_publication_version
+   and (w.source_reference->>'observedAt')::timestamptz=h.toast_observed_at
+   and (w.source_reference->>'oldPriceCents')::bigint=v_before::bigint
+   and (w.source_reference->>'newPriceCents')::bigint=v_target::bigint
+   and w.source_reference->>'posItemId' like
+     'toast:'||h.toast_restaurant_guid::text||':%'
+   and (w.source_reference->>'posItemId' ~*
+     ':[0-9a-f-]{36}:[0-9a-f-]{36}$' or
+      w.source_reference->>'posItemId' ~*
+     ':[0-9a-f-]{36}:size:[0-9a-f-]{36}$')
+ ) then return new;end if;
+ if v_item.toast_publication_state is distinct from 'active' or
+  v_item.pos_pricing_strategy not in ('BASE_PRICE','SIZE_PRICE') or
+  v_item.pos_pricing_strategy is null or
+  v_item.price_cents is distinct from v_target::bigint or
+  not exists(
+    select 1 from public.menu_price_history h
+    join public.toast_location_mappings l
+     on l.business_id=h.business_id and l.restaurant_guid=h.toast_restaurant_guid
+    join public.toast_optional_sync_state s
+     on s.business_id=l.business_id and s.restaurant_guid=l.restaurant_guid
+   where h.business_id=old.business_id and h.menu_item_id=v_item.id
+    and h.source_type='connected_pos' and h.source_provider='toast'
+    and h.old_price_cents=v_before::bigint and h.new_price_cents=v_target::bigint
+    and h.old_price_cents is distinct from h.new_price_cents
+    and h.toast_observed_at is not null and h.toast_restaurant_guid is not null
+    and old.approved_at is not null
+    and h.toast_observed_at >= old.approved_at
+    and (h.toast_effective_at is null or h.toast_effective_at >= old.approved_at)
+    and l.verified_at is not null
+    and s.menu_checked_local_day is not null
+    and s.menu_last_updated not like 'pending:%'
+    and s.menu_copied_at>=h.toast_observed_at
+    and s.menu_last_updated=h.toast_publication_version
+    and v_item.toast_publication_version=h.toast_publication_version
+    and v_item.toast_publication_observed_at=h.toast_observed_at
+    and v_item.pos_item_id like 'toast:'||h.toast_restaurant_guid::text||':%'
+    and (case when v_item.pos_pricing_strategy='SIZE_PRICE'
+      then v_item.pos_item_id ~* ':[0-9a-f-]{36}:size:[0-9a-f-]{36}$'
+      else v_item.pos_item_id ~* ':[0-9a-f-]{36}:[0-9a-f-]{36}$'
+     end)
+  ) then
+   raise exception 'toast_price_not_source_verified' using errcode='23514';
+ end if;
+ return new;
+end;$$;
 
 reset lock_timeout;
 reset statement_timeout;
