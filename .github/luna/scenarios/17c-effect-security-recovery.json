@@ -1,0 +1,155 @@
+{
+  "id": "17c-effect-security-recovery",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/task17c.mjs",
+  "proof": "17c-effect-security-recovery-proof.json",
+  "scope": "17c-effect-security-recovery-scope.json",
+  "expectedTools": [
+    "get_menu_items",
+    "get_supplier_purchase_orders"
+  ],
+  "assertions": [
+    {
+      "name": "owner-file",
+      "kind": "source",
+      "table": "public.ai_attachments",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "attachmentId"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "revoked-file",
+      "kind": "source",
+      "table": "public.supervisor_external_access",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "kind": {
+          "eq": "attachment"
+        },
+        "resource_key": {
+          "scope": "attachmentId"
+        },
+        "allowed": {
+          "eq": "false"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "before-revocation-owner-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "firstReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "after-revocation-owner-reply",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        },
+        "id": {
+          "scope": "lastReplyId"
+        },
+        "role": {
+          "eq": "supervisor"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "no-unapproved-proposal",
+      "kind": "owner",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {
+          "scope": "businessId"
+        },
+        "owner_user_id": {
+          "scope": "ownerUserId"
+        },
+        "thread_id": {
+          "scope": "threadId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-file-not-exposed",
+      "kind": "isolation",
+      "table": "public.ai_attachments",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "attachmentId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-access-not-granted",
+      "kind": "isolation",
+      "table": "public.supervisor_external_access",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "resource_key": {
+          "scope": "attachmentId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}
