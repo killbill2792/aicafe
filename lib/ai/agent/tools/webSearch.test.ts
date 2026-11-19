@@ -1,6 +1,6 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
 import {createWebSearch,extractWebSearchAnswer} from "../webSearch.server";
-import {ownerPublicPage,publicPageInput} from "./webSearch";
+import {ownerPublicPage,ownerPublicSearchTerms,publicPageInput} from "./webSearch";
 import {agentToolDefinitions,executeAgentTool,type AgentToolContext} from "./index";
 
 const input={asOf:"2026-10-30",timezone:"America/Chicago",locale:"en"} as AgentToolContext;
@@ -144,3 +144,13 @@ describe("general web_search",()=>{
       .toMatchObject({notCovered:["webSearchUnavailable"],sources:[]});
   });
 });
+
+ describe("owner designated public search projection",()=>{
+  it("allows public questions but never model-derived private search terms",()=>{
+   expect(ownerPublicSearchTerms("What is the weather tomorrow?","San Jose")).toBe("What is the weather tomorrow? in San Jose");
+   expect(ownerPublicSearchTerms("Search the web for coffee bean prices")).toBe("coffee bean prices");
+   for(const text of ["Summarize my invoice","Search for private payroll","Search online for \nsecret","Search for %41%42","Search for abc@example.com"])
+    expect(ownerPublicSearchTerms(text)).toBeNull();
+   expect(ownerPublicPage("https://supplier.example.com/prices?token=private","Read https://supplier.example.com/prices?token=private")).toBeNull();
+  });
+ });

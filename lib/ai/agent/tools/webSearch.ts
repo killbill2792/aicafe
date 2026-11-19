@@ -2,6 +2,21 @@ import {z} from "zod";
 import type {AgentToolContext,AgentToolResult} from "./index";
 
 /** The model can ask a public question, never select a café or supply credentials. */
+/** Only owner-designated public terms leave the private Supervisor context.
+ * Never concatenate model-proposed terms, prior messages or tool data. */
+export function ownerPublicSearchTerms(ownerText:string,city?:string|null):string|null{
+ const text=ownerText.normalize("NFKC").trim();
+ if(!text||text.length>250||/[\r\n<>{}\[\]@%$€£"\\]/u.test(text)||
+    /\b(?:password|secret|token|payroll|invoice|bank|sales|customer|employee|private|confidential|revenue|profit|wages|receipt|account number)\b/iu.test(text))return null;
+ const explicit=text.match(/^(?:please\s+)?(?:search(?: the web| online)? for|look up|check online(?: for)?|find online)\s+(.+)$/iu);
+ const natural=/^(?:please\s+)?(?:what(?:'s| is| are)|where(?:'s| is| are)|when(?:'s| is| are)|how|check|find)\b/iu.test(text)&&
+   /\b(?:weather|forecast|festival|parade|road closures?|public holidays?|news|opening hours|public events?)\b/iu.test(text);
+ const terms=(explicit?.[1]??(natural?text:null))?.trim();
+ if(!terms||! /^[\p{L}\p{N}\p{M} ,.'?()&/-]+$/u.test(terms)||/https?:|\.\./iu.test(terms))return null;
+ const place=city?.trim();
+ return place&&/^[\p{L}\p{M} .'-]{1,80}$/u.test(place)&&terms.length+place.length+4<=250
+   ?terms+" in "+place:terms;
+}
 export const webSearchInput=z.strictObject({query:z.string().trim().min(2).max(250)});
 
 /** Only the exact public page link that the owner supplied in this turn may be inspected.
@@ -15,7 +30,8 @@ export function ownerPublicPage(url:string,ownerText:string):string|null{
  if(!ownerText.includes(url))return null;
  try{
   const page=new URL(url);
-  if(page.protocol!=="https:"||page.username||page.password||page.port||
+  if(page.protocol!=="https:"||page.username||page.password||page.port||page.search||page.hash||
+    /%/u.test(page.pathname)||
     !page.hostname.includes(".")||page.hostname.endsWith(".local")||
     page.hostname.endsWith(".localhost")||page.hostname.endsWith(".internal")||
     page.hostname==="localhost"||page.hostname.startsWith("127.")||
@@ -40,7 +56,8 @@ export const webSearchTools={
       if(!found.available)
         return {source:"public_page",period:null,agentId:"alex",
          missing:[found.reason==="permissionDenied"?"public_web_access_revoked":
-           found.reason==="permissionsUnavailable"?"public_web_permissions_unavailable":"public_page_unavailable"]};
+           found.reason==="permissionsUnavailable"?"public_web_permissions_unavailable":
+           found.reason==="unsafeQuery"?"public_search_terms_required":"public_page_unavailable"]};
       const matches=found.sources.filter(source=>ownerPublicPage(source.url,url)===target);
       if(!matches.length)
         return {source:"public_page",period:null,agentId:"alex",missing:["exact_page_not_verified"]};
@@ -59,7 +76,7 @@ export const webSearchTools={
         notCovered:["webSearchUnavailable"],answer:null,sources:[]};
       const found=await ctx.webSearch(query);
       if(!found.available)return {source:"web_search",period:null,agentId:"alex",missing:[],
-        notCovered:["webSearchFailed"],failure:found.reason,answer:null,sources:[]};
+        notCovered:[found.reason==="unsafeQuery"?"publicSearchTermsRequired":"webSearchFailed"],failure:found.reason,answer:null,sources:[]};
       return {source:"web_search",period:null,agentId:"alex",missing:[],
         answer:found.answer,sources:found.sources};
     },

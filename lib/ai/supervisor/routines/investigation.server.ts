@@ -315,7 +315,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
       maxElapsedMs:55_000,maxModelCalls:6,maxToolCalls:7,
       maxInputTokens:72_000,maxOutputTokens:4800,
     },()=>runAgentTurn({
-      provider:metered.provider,ownerText:investigationPrompt(synopsis,c.phase==="awaiting_owner",
+      serviceOrigin:true,provider:metered.provider,ownerText:investigationPrompt(synopsis,c.phase==="awaiting_owner",
         c.narrative??null),
       context,toolNames:synopsis.kind==="maintenance_issue"?maintenanceInvestigationTools:investigationReadTools,businessId:c.business_id,
       requestId:c.stable_key,
