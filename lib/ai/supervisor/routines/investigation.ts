@@ -103,21 +103,35 @@ function verifiedEventEvidence(result:AgentToolResult,from:string,to:string):boo
       (!event.verificationFailedAt||Date.parse(event.verificationFailedAt)<=Date.parse(event.lastVerifiedAt));
   });
 }
-/** A bounded SQL coverage receipt can prove a source problem even when the
- * result contains no order rows. Never certify zero customers from it. */
-function observedCustomerGap(result:AgentToolResult):boolean{
+/** Validate the actual unfiltered period denominator before accepting any
+ * customer finding. A complete flag alone is not evidence of sufficient identity. */
+function customerCoverageReceipt(result:AgentToolResult){
   if(result.source!=="canonical_data"||result.error||result.truncated||result.customerEvidence!==true||
-    result.aggregateOnly!==true||!result.period)return false;
+    result.aggregateOnly!==true||!result.period||result.period.from>result.period.to)return null;
   const c=result.customerCoverage;
-  if(!c||typeof c!=="object")return false;
+  if(!c||typeof c!=="object")return null;
   const v=c as Record<string,unknown>;
-  if(v.scope!=="all_eligible_checks_in_period"||typeof v.complete!=="boolean")return false;
+  if(v.scope!=="all_eligible_checks_in_period"||typeof v.complete!=="boolean")return null;
   const natural=(x:unknown):x is number=>typeof x==="number"&&Number.isSafeInteger(x)&&x>=0;
   const {eligibleChecks,linkedChecks,expectedLocationDays,completeLocationDays}=v;
   if(!natural(eligibleChecks)||!natural(linkedChecks)||linkedChecks>eligibleChecks||
-    !natural(expectedLocationDays)||!natural(completeLocationDays)||completeLocationDays>expectedLocationDays)return false;
-  return expectedLocationDays>0&&!v.complete||eligibleChecks>0&&
-    (linkedChecks<CUSTOMER_MONITOR_POLICY.minimumLinkedChecks||linkedChecks/eligibleChecks<CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
+    !natural(expectedLocationDays)||!natural(completeLocationDays)||completeLocationDays>expectedLocationDays||
+    v.complete&&completeLocationDays!==expectedLocationDays)return null;
+  return {eligibleChecks,linkedChecks,expectedLocationDays,completeLocationDays,complete:v.complete};
+}
+/** A bounded SQL coverage receipt can prove a source problem even when the
+ * result contains no order rows. Never certify zero customers from it. */
+function observedCustomerGap(result:AgentToolResult):boolean{
+  const c=customerCoverageReceipt(result);
+  if(!c)return false;
+  return c.expectedLocationDays>0&&!c.complete||c.eligibleChecks>0&&
+    (c.linkedChecks<CUSTOMER_MONITOR_POLICY.minimumLinkedChecks||c.linkedChecks/c.eligibleChecks<CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage);
+}
+function qualifiedCustomerTrendCoverage(result:AgentToolResult):boolean{
+  const c=customerCoverageReceipt(result);
+  return !!c&&c.complete&&c.expectedLocationDays>0&&c.eligibleChecks>0&&
+    c.linkedChecks>=CUSTOMER_MONITOR_POLICY.minimumLinkedChecks&&
+    c.linkedChecks/c.eligibleChecks>=CUSTOMER_MONITOR_POLICY.minimumIdentityCoverage;
 }
 function hasObservedEvidence(result:AgentToolResult):boolean{
   if(!Array.isArray(result.missing))return false;
@@ -372,7 +386,12 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     "get_inventory","get_usage_variance","get_menu_items","get_price_monitor_status","get_ingredient_costs","get_expenses","get_bills"];
   const familyTools:Record<string,readonly AgentToolName[]>={sales_decline:["get_sales","get_profit","get_labor","get_item_sales"],sales_growth:["get_sales","get_profit","get_labor","get_item_sales"],labor_cost:["get_labor","get_sales","get_profit"],recorded_expense_rise:["get_expenses","get_bills","get_profit"],recorded_refund_rise:["get_sales","get_profit","get_item_sales"],order_refund_rise:["get_sales","get_profit","get_item_sales"],ingredient_cost:["get_ingredient_costs","get_product_costs","get_menu_items"],product_cost:["get_product_costs","get_ingredient_costs","get_menu_items"],product_contribution:["get_product_costs","get_ingredient_costs","get_item_sales"],high_contribution:["get_product_costs","get_item_sales"],operating_margin:["get_profit","get_sales","get_expenses","get_labor"],cost_recovery_lag:["get_profit","get_bills","get_expenses","get_sales"],cost_recovery_ahead:["get_profit","get_bills","get_expenses","get_sales"],stock_shortage:["get_inventory","get_usage_variance","get_ingredient_costs"],stockout_risk:["get_inventory","get_usage_variance","get_ingredient_costs"],consumption_variance:["get_usage_variance","get_ingredient_costs","get_item_sales"],overstaffed_hour:["get_labor","get_peak_hours","get_sales","get_schedule","get_week_schedule"],early_clock_in:["get_labor","get_schedule","get_week_schedule"],missed_clock_evidence:["get_labor","get_schedule","get_week_schedule"],supplier_quote:["get_ingredient_costs","get_product_costs","get_inventory"]};
   const allowed=new Set<string>(customerIncident?customerTools:expected.kind==="business_anomaly"&&selectors?.family&&familyTools[selectors.family]?familyTools[selectors.family]:relevantInvestigationTools(expected.kind));
-  const corroborated=calls.filter(call=>allowed.has(call.name)&&
+  // Date-bearing independent facts must relate to the actual incident window.
+  // Undated catalog/configuration facts may still describe the present setup.
+  const matchesIncidentPeriod=(result:AgentToolResult)=>!customerIncident||
+    !selectors?.from||!selectors.to||!result.period||
+    (result.period.from<=result.period.to&&result.period.from<=selectors.to&&result.period.to>=selectors.from);
+  const corroborated=calls.filter(call=>allowed.has(call.name)&&matchesIncidentPeriod(call.result)&&
     call.result.source!=="investigation_source"&&
     typeof call.result.source==="string"&&call.result.source.length>0&&
     (hasObservedEvidence(call.result)||customerIncident&&selectors?.family==="data_gap"&&
@@ -387,9 +406,11 @@ export function verifyInvestigationTurn(turn:AgentTurn,expected:ExpectedInvestig
     if(selectors?.family==="customer_trend")
       return call.result.missing.length===0&&typeof selectors.from==="string"&&typeof selectors.to==="string"&&
        period.from<=selectors.from&&period.to>=selectors.to&&
-       !!call.result.customerCoverage&&typeof call.result.customerCoverage==="object"&&
-       (call.result.customerCoverage as Record<string,unknown>).complete===true;
-    return observedCustomerGap(call.result); // only a scoped gap receipt, not an unrelated subtotal
+       qualifiedCustomerTrendCoverage(call.result);
+    // Coverage alerts without dated selectors use an observed scoped gap.
+    // If the claim has dates, require its entire period, not a stale/partial gap.
+    return (!selectors?.from||!selectors.to||period.from<=selectors.from&&period.to>=selectors.to)&&
+      observedCustomerGap(call.result);
   }))return {ok:false,reason:"evidence_incomplete"};
   const names=[...new Set(corroborated.map(c=>c.name))];
   // A result's display source may be "scheduled_shifts" versus
