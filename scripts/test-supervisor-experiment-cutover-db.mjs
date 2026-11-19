@@ -366,7 +366,8 @@ async function run(){
  check((await correct(messageId,randomUUID(),"Old stale revision")).posted===false,"previous correction generation cannot overwrite current report");
  check((await correct(correctionId,randomUUID(),"Corrected revenue")).posted===true,"unchanged replay returns successfully without another message");
  check((await one(admin,"select count(*)::int n from public.ai_messages where business_id=$1 and id in ($2,$3)",[ids.business,messageId,correctionId])).n===2,"original and exactly one corrected chat message are preserved");
- check((await one(admin,"select payload->>'title' as title from public.operating_tasks where business_id=$1 and id=$2",[ids.business,taskId])).title==="Corrected revenue","one existing inbox card shows corrected content");
+ check((await one(admin,"select status,payload->>'title' as title from public.operating_tasks where business_id=$1 and id=$2",[ids.business,taskId])).status==="handled","original immutable notice is settled");
+ check((await one(admin,"select t.payload->>'title' as title from public.supervisor_experiment_notice_receipts n join public.operating_tasks t on t.business_id=n.business_id and t.id=n.task_id where n.id=$1",[daily.receipt_id])).title==="Corrected revenue","same receipt references latest immutable correction");
 
  const ownWindow=await role(workerA,"authenticated",ids.owner,async c=>
   one(c,"select count(*)::int as n from public.supervisor_monitor_windows where business_id=$1",[ids.business]));
