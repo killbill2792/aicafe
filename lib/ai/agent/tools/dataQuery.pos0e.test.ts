@@ -421,3 +421,16 @@ it("allows unattended coverage counts but blocks numeric reductions of arbitrary
  }
  expect(rpc).toHaveBeenCalledTimes(4);
 });
+
+it("labels raw guest and loyalty paths as customer evidence without inventing derived identity",async()=>{
+ const coverage={scope:"all_eligible_checks_in_period",eligibleChecks:5,linkedChecks:2,namedChecks:3,
+  knownMoneyChecks:5,linkedKnownMoneyChecks:2,recordedNetCents:500,linkedRecordedNetCents:200,
+  expectedLocationDays:1,completeLocationDays:1,complete:true};
+ const rpc=vi.fn(async()=>({data:{rows:[{}],sourceCount:5,customerCoverage:coverage},error:null}));
+ const ctx={db:{rpc} as never,businessId:cafeA};
+ for(const column of ["data.customer.guid","data.guest.preferences.favoriteDrink","data.loyaltyAccount.guid","data.payer.name"]){
+  const result=await dataQueryTools.query_data.execute({...query,view:"cv_toast_records",columns:null,group_by:null,filters:null,
+   metrics:[{fn:"count",column}],order_by:null},ctx);
+  expect(result).toMatchObject({customerEvidence:true,customerCoverage:coverage});
+ }
+});
