@@ -1,6 +1,8 @@
 import {describe,it,expect,vi} from "vitest";
 import {execFileSync} from "node:child_process";
 import {readFileSync} from "node:fs";
+import {Client} from "pg";
+import {TEST_CAFES} from "../../scripts/seed/cafes.mjs";
 import {resolve} from "node:path";
 import ts from "typescript";
 import {z} from "zod";
@@ -13,7 +15,7 @@ import {routineStatusSchema,routineScheduleSchema} from "@/lib/ai/supervisor/rou
 import {metricCatalog,metricKeySchema,computeMetric,type MetricKey,type MetricDailyInput} from "@/lib/calc/metrics/catalog";
 import {canonicalDictionary,canonicalViewNames,toastOfficialFieldCatalog,isDataField} from "@/lib/data/canonical/dictionary";
 import {connectorOperations} from "@/lib/connectors/registry.server";
-import {row,schemaCases,manifestIndex,makeInventory,buildCensusReport,writeCensus,verifyBootstrapSnapshot} from "../../scripts/acceptance/supervisor-coverage.mjs";
+import {row,schemaCases,manifestIndex,makeInventory,buildCensusReport,writeCensus,verifyBootstrapSnapshot,verifyInheritedScenarios,scenarioCoveragePlan} from "../../scripts/acceptance/supervisor-coverage.mjs";
 import truth from "./fixtures/task17b-business-truth.json";
 import coverageMap from "./fixtures/task17b-coverage-map.json";
 const deterministicMetrics:string[]=[];
@@ -80,7 +82,7 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
  it("censuses actual registered tools, gated operations, canonical fields, effects and surfaces",()=>{
   const visible=new Map(fullDefinitions.map(t=>[t.name,t]));
   expect(visible.size).toBe(fullDefinitions.length);
-  expect([...visible.keys()].sort()).toEqual(Object.keys(fullSchemas).sort());
+  const registrationGaps=Object.keys(fullSchemas).filter(name=>!visible.has(name)).sort();
   const rows=Object.entries(fullSchemas).flatMap(([name,entry])=>{
    const schema="schema" in entry?entry.schema:entry;
    const json=schemaJson(schema);
@@ -117,9 +119,10 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   const inventory=makeInventory(rows);
   const manifestPaths=paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json"));
   const manifests=manifestIndex(root,manifestPaths,coverageMap.legacyTools);
-  const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics,testReferences:findTestReferences(new Set(visible.keys()))});
-  if(process.env.AICAFE_CENSUS_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_OUTPUT,report);
-  expect(report.totals.UNTESTED).toBe(inventory.length);
+  const combinedScenarioPlan={...scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies),legacyPaidSuites:coverageMap.legacyPaidSuites,legacyNonProviderSuites:coverageMap.legacyNonProviderSuites};
+  const report=buildCensusReport(inventory,manifests,{head:git("rev-parse","HEAD"),runId:process.env.GITHUB_RUN_ID??null,deterministicMetrics,registrationGaps,testReferences:findTestReferences(new Set(Object.keys(fullSchemas)))});
+  if(process.env.AICAFE_CENSUS_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_OUTPUT,{...report,combinedScenarioPlan});
+  expect(report.totals.UNTESTED+report.totals.FAIL).toBe(inventory.length);
   expect(report.complete).toBe(false);
   // The omitted memory tool is an explicit independently reviewed addition.
   const expectedMemory=coverageMap.reviewedMemorySchema;
@@ -129,9 +132,30 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
     row("tool",memoryToolDefinition.name,{input:expectedMemory,advertised:true}),
     ...schemaCases("tool-input",memoryToolDefinition.name,expectedMemory),
   ]});
-  console.log("Task17B census (discovery only):",JSON.stringify({head:report.head,totals:report.totals,byKind:report.byKind,manifests:report.manifests,unknownManifestTools:report.unknownManifestTools}));
+  console.log("Task17B census (discovery only):",JSON.stringify({head:report.head,totals:report.totals,byKind:report.byKind,manifests:report.manifests,unknownManifestTools:report.unknownManifestTools,registrationGaps:report.registrationGaps}));
+  expect(registrationGaps,"defined but not advertised to the actual model; do not accept hidden tools").toEqual([]);
  });
 
+ it("preserves every inherited Luna manifest and executable test and reports separately registered cross-functional cases",()=>{
+  const expected=coverageMap.inheritedScenarioBaseline.artifacts;
+  const actual=Object.fromEntries(Object.keys(expected).filter(path=>paths.includes(path)).map(path=>[path,git("hash-object",path)]));
+  verifyInheritedScenarios(expected,actual);
+  const manifests=manifestIndex(root,paths.filter(p=>p.startsWith(".github/luna/scenarios/")&&p.endsWith(".json")),coverageMap.legacyTools);
+  const plan=scenarioCoveragePlan(manifests.ids,coverageMap.requiredScenarioGroups,coverageMap.crossFunctionalFamilies);
+  expect(plan.unknown,"new scenario needs explicit combined plan").toEqual([]);
+  for(const group of plan.groups.filter(g=>!["17c","17d"].includes(g.group)))expect(group.missing,group.group).toEqual([]);
+  // A parent branch cannot attest scenarios from an unmerged child. When the
+  // combined tree contains either downstream manifest, require its entire group.
+  for(const group of plan.groups.filter(g=>["17c","17d"].includes(g.group)&&g.registered.length))expect(group.missing,group.group).toEqual([]);
+  // Some pre-shared-runner suites have a live flag AND a provider transport.
+  // Preserve them, detect newly found unregistered legacy paid sources, and
+  // record their migration obligation separately from the manifest count.
+  const entrypoints=new Set(paths.filter(p=>/^\.github\/luna\/scenarios\/.+\.json$/.test(p)).map(p=>JSON.parse(source(p)).entrypoint));
+  const unregistered=paths.filter(p=>p.endsWith(".live.test.ts")&&!entrypoints.has(p)&&/OPENAI_API_KEY|openAIProvider/.test(source(p))).sort();
+  expect(unregistered,"legacy real-provider test must have shared registration or explicit pending migration").toEqual(coverageMap.legacyPaidSuites.map(s=>s.path).sort());
+  expect(plan.complete).toBe(false);
+  console.log("Task17B consolidated scenario plan:",JSON.stringify({...plan,legacyPaidSuites:coverageMap.legacyPaidSuites,legacyNonProviderSuites:coverageMap.legacyNonProviderSuites}));
+ });
  it("checks each actual registered schema rejects unexpected tenant authority",()=>{
   for(const [name,entry] of Object.entries(fullSchemas)){
    const schema="schema" in entry?entry.schema:entry;
@@ -196,3 +220,87 @@ describe("Task17B first-party changing capability inventory (no provider)",()=>{
   expect(rpc).not.toHaveBeenCalled();
  });
 });
+
+// Separate, explicitly selected required DB lane. The ordinary deterministic
+// suite never connects to a database or obtains provider credentials.
+if(process.env.AICAFE_CENSUS_DISPOSABLE_DB==="1"){
+ it("actual migrated canonical SQL views, named paths and two-owner RLS match the registered dictionary",async()=>{
+  const db=new Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  await db.connect();
+  try{
+   await db.query("BEGIN READ ONLY");
+   const catalog=await db.query("select table_name,column_name from information_schema.columns where table_schema='public' and table_name=any($1::text[])",[[...canonicalViewNames]]);
+   const views=await db.query("select c.relname,c.reloptions,pg_get_viewdef(c.oid,true) definition from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='v' and c.relname=any($1::text[])",[[...canonicalViewNames]]);
+   const verifiedViews=[];
+   for(const [name,contract] of Object.entries(canonicalDictionary)){
+    const columns=catalog.rows.filter(r=>r.table_name===name).map(r=>String(r.column_name)).sort();
+    expect(columns,name+" dictionary columns").toEqual(Object.keys(contract.columns).sort());
+    const view=views.rows.find(r=>r.relname===name);
+    expect(view?.reloptions,name+" invoker").toContain("security_invoker=true");
+    expect(view?.definition,name+" no diagnostic fallback").not.toMatch(/toast_raw_samples(?:_latest)?/i);
+    verifiedViews.push(name);
+   }
+   const functions=await db.query("select proname,pg_get_functiondef(p.oid) definition from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and proname=any($1::text[])",[["ai_query_view","ai_toast_fields","toast_records_for"]]);
+   for(const name of ["ai_query_view","ai_toast_fields","toast_records_for"]){
+    const definitions=functions.rows.filter(r=>r.proname===name);
+    expect(definitions.length,name).toBeGreaterThan(0);
+    for(const d of definitions)expect(d.definition,name+" no diagnostic fallback").not.toMatch(/toast_raw_samples(?:_latest)?/i);
+   }
+   const paths=[...new Set(Object.values(toastOfficialFieldCatalog).flatMap(f=>f.fields.map(([field])=>field)))];
+   const forbidden=["data.access_token","data.checks.0.payments.0.cardNumber","data.customer.client_secret","data.paymentToken","data.password"];
+   const checked=await db.query("select field,public.ai_query_path(field) is not null as allowed from unnest($1::text[]) as fields(field)",[[...paths,...forbidden]]);
+   for(const field of checked.rows){
+    expect(field.allowed,field.field+" SQL/TS path parity").toBe(isDataField(field.field));
+    if(forbidden.includes(field.field))expect(field.allowed,field.field).toBe(false);
+   }
+   const profiles=TEST_CAFES.slice(0,2);
+   expect(profiles).toHaveLength(2);
+   const identity=profiles.map(c=>({businessId:c.businessId!,ownerId:c.owner!.userId}));
+   expect(identity[0].businessId).not.toBe(identity[1].businessId);
+   let positiveRows=0,foreignNegatives=0,queries=0;
+   for(const [index,cafe] of identity.entries()){
+    const other=identity[1-index];
+    const day=(await db.query("select max(business_date)::text as day from public.daily_rollups where business_id=$1",[cafe.businessId])).rows[0]?.day;
+    expect(day,"seeded closed day").toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await db.query("SAVEPOINT scoped_owner");
+    try{
+     await db.query("select set_config('request.jwt.claim.sub',$1,true),set_config('request.jwt.claims',$2,true)",[cafe.ownerId,JSON.stringify({sub:cafe.ownerId,role:"authenticated"})]);
+     await db.query("SET LOCAL ROLE authenticated");
+     for(const [name,contract] of Object.entries(canonicalDictionary)){
+      // Same RPC the registered tool uses. Never retrieve full Toast JSON.
+      // Query every allowed column in chunks within the 20-column bound.
+      const fields=Object.keys(contract.columns).filter(c=>c!=="business_id"&&!(name==="cv_toast_records"&&c==="data"));
+      for(let offset=0;offset<fields.length;offset+=19){
+       const selected=["business_id",...fields.slice(offset,offset+19)];
+       const q="select public.ai_query_view($1,$2,$3::text[],'[]'::jsonb,null,'[]'::jsonb,$4::date,$4::date,null,1) as got";
+       const own=(await db.query(q,[cafe.businessId,name,selected,day])).rows[0].got;
+       expect(Array.isArray(own.rows),name+" result").toBe(true);
+       for(const result of own.rows){
+        expect(result.business_id,name+" owner scope").toBe(cafe.businessId);
+        expect(Object.keys(result).sort(),name+" projected field set").toEqual(selected.sort());
+        positiveRows++;
+       }
+       const denied=(await db.query(q,[other.businessId,name,selected,day])).rows[0].got;
+       expect(denied.rows,name+" foreign owner rows").toEqual([]);
+       expect(Number(denied.sourceCount),name+" foreign row count").toBe(0);
+       foreignNegatives++;queries++;
+      }
+     }
+    }finally{
+     await db.query("ROLLBACK TO SAVEPOINT scoped_owner");
+     await db.query("RELEASE SAVEPOINT scoped_owner");
+    }
+   }
+   // Some configured sources legitimately have no records in these synthetic
+   // cafés. A working SQL projection/denial is not a live-data receipt.
+   expect(positiveRows,"actual owner rows, not only emptiness").toBeGreaterThan(0);
+   const proof={head:git("rev-parse","HEAD"),views:verifiedViews,declaredColumns:catalog.rowCount,officialPathChecks:checked.rowCount,
+    ownerProjectionQueries:queries,ownerRowsObserved:positiveRows,foreignZeroRowChecks:foreignNegatives,
+    providerModelProof:false,liveToastProof:false,scope:"active_migrated_schema_and_scoped_projection_only"};
+   console.log("Task17B migrated canonical proof:",JSON.stringify(proof));
+   if(process.env.AICAFE_CENSUS_DB_OUTPUT)writeCensus(process.env.AICAFE_CENSUS_DB_OUTPUT,proof);
+  }finally{
+   try{await db.query("ROLLBACK");}finally{await db.end();}
+  }
+ },120000);
+}

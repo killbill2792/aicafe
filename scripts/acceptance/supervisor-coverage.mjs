@@ -66,21 +66,22 @@ export function manifestIndex(root,paths,legacyTools={}){
 /** A mapping alone never represents an executed test. Bootstrap records every
  * gap; the release check deliberately rejects even one UNTESTED row. */
 /** @param {any[]} rows @param {any} manifests
- * @param {{head?:string,runId?:string|null,deterministicMetrics?:string[],testReferences?:Map<string,{path:string,title:string}[]>}} options */
-export function buildCensusReport(rows,manifests,{head,runId=null,deterministicMetrics=[],testReferences=new Map()}={}){
+ * @param {{head?:string,runId?:string|null,deterministicMetrics?:string[],testReferences?:Map<string,{path:string,title:string}[]>,registrationGaps?:string[]}} options */
+export function buildCensusReport(rows,manifests,{head,runId=null,deterministicMetrics=[],testReferences=new Map(),registrationGaps=[]}={}){
  if(!/^[a-f0-9]{40}$/.test(head??""))throw Error("invalid_head");
  const inventory=makeInventory(rows);
  const tools=new Set(inventory.filter(r=>r.kind==="tool").map(r=>r.key));
  const unknownManifestTools=[...manifests.index.keys()].filter(t=>!tools.has(t)).sort();
+ const gaps=new Set(registrationGaps);
  const mapped=inventory.map(r=>({...r,
    candidateScenarios:r.kind==="tool"?[...(manifests.index.get(r.key)??[])].sort():[],
    candidateDeterministicCases:r.kind==="tool"?testReferences.get(r.key)??[]:[],
    deterministicMetricOracle:r.kind==="metric"&&deterministicMetrics.includes(r.key)?"PASS":"UNTESTED",
-   status:"UNTESTED",reason:"independent_end_to_end_receipt_not_verified"}));
- const byKind={};
- for(const r of mapped){const a=byKind[r.kind]??={PASS:0,FAIL:0,UNTESTED:0,UNSUPPORTED:0};a[r.status]++;}
+   status:r.kind==="tool"&&gaps.has(r.key)?"FAIL":"UNTESTED",reason:r.kind==="tool"&&gaps.has(r.key)?"defined_and_dispatched_but_not_advertised_to_registered_model":"independent_end_to_end_receipt_not_verified"}));
+ const byKind={},totals={PASS:0,FAIL:0,UNTESTED:0,UNSUPPORTED:0};
+ for(const r of mapped){const a=byKind[r.kind]??={PASS:0,FAIL:0,UNTESTED:0,UNSUPPORTED:0};a[r.status]++;totals[r.status]++;}
  return {schemaVersion:1,head,runId,providerModelProof:false,complete:false,
-  manifests:manifests.ids,unknownManifestTools,totals:{PASS:0,FAIL:0,UNTESTED:mapped.length,UNSUPPORTED:0},
+  manifests:manifests.ids,unknownManifestTools,registrationGaps:[...gaps].sort(),totals,
   byKind,inventoryDigest:fingerprint(inventory),rows:mapped};
 }
 export function inventoryDelta(previous,current){
@@ -113,3 +114,28 @@ export function requireComplete(report){
  throw Error("supervisor_acceptance_not_proven:trusted_receipt_reconciliation_pending");
 }
 export function writeCensus(path,report){mkdirSync(dirname(path),{recursive:true});writeFileSync(path,JSON.stringify(report,null,2)+"\n",{mode:0o600});}
+
+/** Preserve inherited paid-test specifications and executable entrypoints.
+ * A reviewed replacement needs an explicit baseline revision, not deletion. */
+export function verifyInheritedScenarios(expected,actual){
+ if(!expected||typeof expected!=="object"||Object.keys(expected).length<1)throw Error("empty_inherited_scenario_contract");
+ for(const [path,sha] of Object.entries(expected)){
+  if(!/^[a-f0-9]{40}$/.test(sha)||actual[path]!==sha)throw Error("inherited_scenario_missing_or_changed:"+path);
+ }
+}
+export function scenarioCoveragePlan(ids,groups,families){
+ const observed=new Set(ids);
+ if(observed.size!==ids.length)throw Error("duplicate_registered_scenario");
+ const required=Object.values(groups).flat();
+ if(!required.length||new Set(required).size!==required.length)throw Error("invalid_required_scenario_groups");
+ const known=new Set(required);
+ const unknown=ids.filter(id=>!known.has(id)).sort();
+ const groupRows=Object.entries(groups).map(([group,expected])=>({group,registered:expected.filter(id=>observed.has(id)),missing:expected.filter(id=>!observed.has(id))}));
+ const crossFunctional=families.map(f=>{
+  if(new Set(f.modules).size<2||f.candidates.some(id=>!known.has(id))||!f.missing)throw Error("invalid_cross_functional_contract:"+f.id);
+  return {...f,registered:f.candidates.filter(id=>observed.has(id)),unregistered:f.candidates.filter(id=>!observed.has(id)),status:"UNTESTED"};
+ });
+ return {registered:ids.length,required:required.length,unknown,groups:groupRows,crossFunctional,
+  allRegistered:unknown.length===0&&groupRows.every(g=>g.missing.length===0),
+  providerProof:false,complete:false};
+}

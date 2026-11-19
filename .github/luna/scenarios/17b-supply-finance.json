@@ -10,7 +10,9 @@
     "get_product_costs",
     "get_expenses",
     "get_bills",
-    "get_cashflow_evidence"
+    "get_cashflow_evidence",
+    "get_item_sales",
+    "get_supplier_purchase_orders"
   ],
   "assertions": [
     {

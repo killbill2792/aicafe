@@ -112,7 +112,7 @@ async function verifyBusinessJourney({id,db,read,first,second,scope,cafe,foreign
   await checked("How did we do on "+days[0].day+"? Read my actual sales and staff costs for that exact closed local day. Report integer minor units in "+cafe.currency+" (not dollars): one line each labelled Net sales, Wages, Payroll tax and Loaded labor. No changes.",["get_sales","get_labor"],{"Net sales":a.net,Wages:a.wages,"Payroll tax":a.staffTax,"Loaded labor":a.loaded});
   await checked("Sorry, I meant "+days[1].day+" instead. Same four figures for the corrected day only, with the same labels and minor units.",["get_sales","get_labor"],{"Net sales":b.net,Wages:b.wages,"Payroll tax":b.staffTax,"Loaded labor":b.loaded});
   if(a.net===b.net&&a.loaded===b.loaded)fail("correction_fixture_not_distinct");
-  const answer=await checked("For "+days[1].day+", how many recorded orders did we have and how much in net sales? Get the exact canonical order or day count, not the number of returned rows. Use integer labels Orders and Net sales. No changes.",["query_data"],{Orders:b.orders,"Net sales":b.net});
+  const answer=await checked("For "+days[1].day+", how many recorded orders did we have and how much in net sales? Combine actual labor and sales: calculate the average ticket rounded to the nearest minor unit and loaded labor as basis points of net sales. Use integer labels Orders, Net sales, Average ticket, Labor basis points. No changes.",["query_data","get_labor"],{Orders:b.orders,"Net sales":b.net,"Average ticket":Math.round(b.net/b.orders),"Labor basis points":Math.round(10000*b.loaded/b.net)});
   if(!answer)fail("count_reply_empty");
   Object.assign(scope,{salesDay:days[0].day,correctedDay:days[1].day,salesCents:String(a.net),correctedSalesCents:String(b.net),wageCents:String(a.wages),staffTaxCents:String(a.staffTax)});
  }else{
@@ -124,13 +124,16 @@ async function verifyBusinessJourney({id,db,read,first,second,scope,cafe,foreign
   if(!recipe.length||recipe.some(r=>r.cost_per_base_unit_micros===null||!Number.isFinite(Number(r.quantity))))fail("complete_recipe_source_required");
   const cost=Math.round(recipe.reduce((sum,r)=>sum+Number(r.quantity)*integer(r.cost_per_base_unit_micros),0)/1000000);
   const price=integer(item.price_cents);
-  await checked("What do we charge for "+item.name+" and what does one cost us to make from the saved recipe? Give the actual item, then integer "+cafe.currency+" minor-unit lines labelled Price and Recipe cost (rounded to nearest cent). No price change.",["get_menu_items","get_product_costs"],{Price:price,"Recipe cost":cost});
+  const [sold]=await read("select o.business_date::text as day,sum(l.quantity)::numeric as units,sum(l.net_sales_cents)::bigint as revenue from public.order_lines l join public.orders o on o.id=l.order_id where o.business_id=$1 and l.menu_item_id=$2 and l.voided is not true and o.toast_excluded is not true and o.superseded_by is null group by o.business_date having sum(l.quantity)>0 order by o.business_date desc limit 1",[s,item.id]);
+  if(!sold)fail("seeded_item_sales_missing");
+  const units=integer(sold.units),revenue=integer(sold.revenue);
+  await checked("What do we charge today for "+item.name+" and what does one cost us to make from the saved recipe? How many of that exact item sold on "+sold.day+" and what recorded net revenue did it bring? Calculate today's price minus today's recipe cost; do not call that historical or total profit. Give the actual item then integer "+cafe.currency+" minor-unit lines Price, Recipe cost, Unit contribution, Net revenue, plus integer Units. No price change.",["get_menu_items","get_product_costs","get_item_sales"],{Price:price,"Recipe cost":cost,"Unit contribution":price-cost,"Net revenue":revenue,Units:units});
   const [expense]=await read("select spent_on::text as day,sum(amount_cents)::bigint as total from public.expenses where business_id=$1 and status='actual' group by spent_on order by spent_on desc limit 1",[s]);
   if(!expense)fail("recorded_expense_fixture_missing");
   await checked("How much did we actually record in expenses on "+expense.day+"? Do not count estimated recurring bills as spent cash. Use integer minor-unit line Actual expenses, and explain the difference from configured monthly bills.",["get_expenses","get_bills"],{"Actual expenses":integer(expense.total)});
-  const answer=await checked("Now can I pay the next supplier bill with money currently in my bank account? Read our evidence and tell me if LIVE cash is actually verified. Do not pay, send or create anything.",["get_cashflow_evidence"],{});
+  const answer=await checked("Now check my saved purchase orders and financial evidence together. Can I pay the next supplier bill out of money currently in my bank account? Distinguish purchase commitments from documented payables and verified LIVE cash; do not invent a balance or change, send or pay anything.",["get_supplier_purchase_orders","get_cashflow_evidence"],{});
   if(!/cash|bank/i.test(answer)||!/unknown|not (?:verified|connected|available|know|provided|known|able)|cannot|can't|unavailable|no live/i.test(answer))fail("missing_live_cash_boundary");
-  Object.assign(scope,{menuItemId:item.id,menuPrice:String(price),expenseDay:expense.day});
+  Object.assign(scope,{menuItemId:item.id,menuPrice:String(price),expenseDay:expense.day,itemSalesDay:sold.day});
  }
  if((await second.context.request.get("/api/ai/threads/"+thread)).status()===200)fail("foreign_business_thread_visible");
  if((await read("select id from public.supervisor_proposals where business_id=$1 and thread_id=$2",[s,thread])).length)fail("read_only_business_effect_created");

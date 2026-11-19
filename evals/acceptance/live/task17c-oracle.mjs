@@ -1,11 +1,110 @@
 import assert from "node:assert/strict";
-export const requiredFamilies=Object.freeze([
+// Coverage is about the producer, not just the tool that can answer a prompt.
+// These are acceptance obligations, not claims that the producer exists or passed.
+// Keep separate cases for deterministic delivery, real model investigation, and
+// unsupported/undiscovered source triggers. A linked manifest is a candidate only.
+export const proactiveRequirements=Object.freeze([
+ ["sales_rise_opportunity","SALES_INCREASED","",["17b-sales-labor"],"trigger_gap"],
+ ["sales_drop_live","SALES_DECLINED","",["17b-sales-labor"],"trigger_gap"],
+ ["ingredient_cost_rise","INGREDIENT_COST_INCREASED","",["17b-supply-finance","14b"],"trigger_gap"],
+ ["product_cost_change","PRODUCT_COST_CHANGED","",["17b-supply-finance"],"trigger_gap"],
+ ["product_margin_decline","PRODUCT_PROFITABILITY_DECLINED","",["17b-supply-finance"],"trigger_gap"],
+ ["high_contribution_opportunity","PRODUCT_HIGH_CONTRIBUTION","",["17b-supply-finance"],"trigger_gap"],
+ ["labor_cost_change","LABOR_COST_CHANGED","",["17b-sales-labor"],"trigger_gap"],
+ ["expense_spike","EXPENSE_INCREASED","",["14e-autonomous-followup","17b-supply-finance"],"trigger_gap"],
+ ["operating_margin_decline","OPERATING_MARGIN_DECLINED","",["17b-sales-labor","17b-supply-finance"],"trigger_gap"],
+ ["pricing_review_snooze_reopen","PRICE_REVIEW_REQUIRED","price_review",[],"projection_only"],
+ ["stock_count_low","INVENTORY_LOW","supply_check",["14b"],"trigger_gap"],
+ ["forecast_stockout","STOCKOUT_RISK","supply_check",["14b"],"trigger_gap"],
+ ["supplier_quote_change","SUPPLIER_COST_CHANGED","",["14b","17c-procurement-recovery"],"trigger_gap"],
+ ["missing_or_stale_source","DATA_INCOMPLETE","data_quality",["15c"],"partial"],
+ ["missing_bill_autonomous_resolution","","",["17c-business-monitors"],"registered"],
+ ["unusual_voids_verified_coverage","","",["17c-business-monitors"],"source_only"],
+ ["meal_break_actual_not_schedule","","",["17c-business-monitors"],"source_only"],
+ ["refund_spike","","",[],"trigger_gap"],
+ ["no_clock_in_at_shift_start","","staff_coverage",["13c","15c"],"trigger_gap"],
+ ["early_clock_in","","",[],"trigger_gap"],
+ ["overstaffed_hour","","",[],"trigger_gap"],
+ ["faster_cost_recovery","","",[],"trigger_gap"],
+ ["staff_publish_delivery_followup","","staff_coverage",["13c","15c"],"partial"],
+ ["staff_leave_swap_recruitment","","staff_coordination",["13d"],"registered"],
+ ["staff_unanswered_request","","staff_coverage",["13c","17c-autonomy"],"partial"],
+ ["staff_decline_revision","","staff_coverage",["17c-autonomy","15c"],"registered"],
+ ["supplier_draft_overdue","","",["17c-procurement-recovery"],"registered"],
+ ["supplier_approved_unsent","","",["17c-procurement-recovery","14c"],"registered"],
+ ["supplier_delivery_late","","supplier_receiving",["14d-autonomous"],"partial"],
+ ["supplier_short_delivery_invoice","","supplier_receiving",["14d-autonomous"],"registered"],
+ ["payable_due_overdue_duplicate","","money_update",["14e-payables","14e-autonomous-followup"],"partial"],
+ ["changed_statement_cash_risk","","money_update",["14e-autonomous-followup","17c-autonomy"],"registered"],
+ ["maintenance_assignment_vendor_sla","","maintenance_issue",["15b"],"registered"],
+ ["experiment_awaiting_pos_confirmation","","price_experiment_report",[],"missing_live_case"],
+ ["experiment_daily_guardrail_revert","","price_experiment_report",[],"missing_live_case"],
+ ["experiment_missing_day_correction_final","","price_experiment_report",[],"missing_live_case"],
+ ["goal_daily_progress_final","","goal_report",["16a"],"partial"],
+ ["goal_checkin_due_answer_missed","","goal_checkin",[],"missing_live_case"],
+ ["event_discovery_no_action_or_plan","","event_plan",[],"missing_live_case"],
+ ["event_change_cancel_truthful_replan","","event_change",[],"missing_live_case"],
+ ["event_live_surprise_and_report","","event_report",[],"missing_live_case"],
+ ["morning_brief_due_coverage_retry","","daily_brief",[],"missing_live_case"],
+ ["commitment_due_once_close","","commitment",["17c"],"partial"],
+ ["priority_notice_cap_mute_dedupe","","priority_notice",["17c-autonomy","17c-business-monitors"],"partial"],
+ ["routine_pause_revoke_catchup_dst","","",["17b-owner-security","17c"],"partial"],
+ ["whatsapp_consent_window_receipt","","",[],"missing_live_case"],
+ ["gmail_inbound_reply_revocation","","",["14d-autonomous","15b","16c"],"partial"],
+ ["ownerless_thread_or_revoked_owner","","",["15c"],"partial"],
+ ["provider_timeout_quota_backoff","","",["15c","17c-autonomy"],"partial"],
+ ["multi_cafe_concurrency_fairness","","",["17c-autonomy","15c"],"partial"],
+ ["standing_mandate_expiry_limit","","",["16a"],"partial"],
+ ["healthy_control_and_no_false_notice","","",["17c-business-monitors"],"registered"],
+ ["unmatched_item_import_recovery","","",[],"missing_live_case"],
+ ["pos_disconnect_stale_partial_recovery","","",["17b-sales-labor"],"partial"],
+ ["source_revision_repeat_reopen","","",["17c-autonomy","17c-business-monitors"],"registered"],
+ ["goal_progress_guardrail_no_auto_effect","","goal_report",[],"missing_live_case"],
+].map(([family,signal,taskKind,candidates,state])=>Object.freeze({family,signal,taskKind,candidates:Object.freeze(candidates),state})));
+
+export const cronProactiveCoverage=Object.freeze({
+ "team-alerts":["whatsapp_consent_window_receipt"],
+ "supervisor-experiments":["experiment_awaiting_pos_confirmation","experiment_daily_guardrail_revert","experiment_missing_day_correction_final","goal_daily_progress_final","goal_checkin_due_answer_missed","authorized_effect_recovery"],
+ "admin-question-patterns":["internal_analytics_not_owner_agent"],
+ "toast-sync":["pos_disconnect_stale_partial_recovery","unmatched_item_import_recovery"],
+ "square-sync":["pos_disconnect_stale_partial_recovery","unmatched_item_import_recovery"],
+ "refresh-derived":["missing_bill_autonomous_resolution","unusual_voids_verified_coverage","meal_break_actual_not_schedule","staff_unanswered_request","supplier_draft_overdue","supplier_approved_unsent","commitment_due_once_close","routine_pause_revoke_catchup_dst","changed_statement_cash_risk","supplier_short_delivery_invoice"],
+ "daily-brief":["morning_brief_due_coverage_retry","whatsapp_consent_window_receipt"],
+ "today-live":["sales_drop_live","no_clock_in_at_shift_start","event_live_surprise_and_report"],
+ "events-lookahead":["event_discovery_no_action_or_plan","event_change_cancel_truthful_replan","event_live_surprise_and_report"],
+ "whatsapp-supervisor":["whatsapp_consent_window_receipt","authorized_effect_recovery"],
+ "data-health":["missing_or_stale_source","pos_disconnect_stale_partial_recovery"],
+ "menu-labels":["missing_or_stale_source"]
+});
+export const manualCronCoverage=Object.freeze({"supervisor-run-worker":["worker_restart","offline_owner","authorized_effect_recovery"]});
+export function auditProactiveInventory({signals,taskKinds,cronPaths,routePaths=cronPaths,manifestIds}){
+ const required=new Set(proactiveRequirements.map(x=>x.family));
+ assert.equal(required.size,proactiveRequirements.length,"duplicate proactive requirement");
+ const absent=(expected,actual)=>[...new Set(expected)].filter(x=>!actual.has(x)).sort();
+ const mappedSignals=new Set(proactiveRequirements.map(x=>x.signal).filter(Boolean));
+ const mappedKinds=new Set(proactiveRequirements.map(x=>x.taskKind).filter(Boolean));
+ const cronNames=new Set(Object.keys(cronProactiveCoverage));
+ const actualCrons=cronPaths.map(p=>p.replace(/^\/api\/cron\//,""));
+ const actualRoutes=routePaths.map(p=>p.replace(/^\/api\/cron\//,""));
+ const designedRoutes=new Set([...cronNames,...Object.keys(manualCronCoverage)]);
+ const missingCandidates=proactiveRequirements.flatMap(x=>x.candidates.filter(id=>!manifestIds.includes(id)).map(id=>x.family+":"+id));
+ return {missingSignals:absent(signals,mappedSignals),missingTaskKinds:absent(taskKinds,mappedKinds),
+  missingCrons:absent(actualCrons,cronNames),retiredCrons:absent([...cronNames],new Set(actualCrons)),
+  missingRoutes:absent(actualRoutes,designedRoutes),retiredRoutes:absent([...designedRoutes],new Set(actualRoutes)),
+  unscheduledWorkers:Object.keys(manualCronCoverage).filter(x=>!actualCrons.includes(x)),
+  missingCandidates:[...new Set(missingCandidates)].sort(),
+  unregistered:proactiveRequirements.filter(x=>x.state!=="registered").map(x=>({family:x.family,state:x.state})),
+  complete:false}; // inventory alone can NEVER prove proactive behavior
+}
+
+export const requiredFamilies=Object.freeze([...new Set([
  "sales_decline","inventory_depletion","supplier_cost_change","late_purchase_order",
  "receiving_invoice_discrepancy","staff_absence","staff_coverage","equipment_failure",
  "pricing_experiment","cashflow","event_goals_briefs","chat_routine","chat_files",
  "concurrent_cafes","worker_restart","provider_outage","expired_lease","uncertain_receipt",
- "duplicate_event","revoked_access","offline_owner","authorized_effect_recovery"
-]);
+ "duplicate_event","revoked_access","offline_owner","authorized_effect_recovery",
+ ...proactiveRequirements.map(x=>x.family)
+])]);
 export function verifyRoutineAndFile({scope,expected,routines,reply,attachments,ownerRows,usage,proposals,foreignRows}){
  assert.equal(routines.length,1,"one routine, not zero or duplicate");
  const routine=routines[0];
@@ -138,8 +237,12 @@ export function verifyProcurementOutcome(x){
  assert.equal(payload.lines[0].quoteId,e.quoteId);
  assert.equal(payload.lines[0].packs,e.packs);
  assert.equal(x.preOrders.length,0);
+ assert.equal(x.preAttempts.length,0);
  assert.ok([401,403,404].includes(x.foreignStatus));
  assert.equal(x.foreignOrders.length,0);
+ assert.equal(x.foreignAttempts.length,0);
+ assert.equal(x.dropped,true);
+ assert.equal(x.serverStatus,200);
  assert.equal(x.committed.length,1);
  const order=x.committed[0];
  assert.equal(order.proposal_id,p.id);
@@ -147,6 +250,15 @@ export function verifyProcurementOutcome(x){
  assert.equal(Number(order.subtotal_cents),e.packs*e.price);
  assert.equal(order.currency_code,e.currency);
  assert.equal(order.effect_hash,p.effect_hash);
+ assert.equal(x.committedAttempts.length,1);
+ const attempt=x.committedAttempts[0];
+ assert.ok(attempt.attempt_key);
+ assert.equal(attempt.effect_hash,p.effect_hash);
+ assert.equal(attempt.authorization_kind,"click");
+ assert.equal(attempt.state,"verified");
+ assert.equal(attempt.receipt_ref,"purchase_orders:"+order.id);
+ assert.deepEqual(x.afterAttempts,x.committedAttempts,"replay cannot create a second effect reservation");
+ assert.deepEqual(x.approvals,[{owner_user_id:e.ownerUserId,effect_hash:p.effect_hash,authorization_kind:"click"}]);
  assert.ok([200,409,422].includes(x.replayStatus));
  assert.deepEqual(x.after,x.committed,"replayed approval cannot duplicate or mutate order");
  assert.deepEqual(x.finalProposal,[{id:p.id,status:"committed",effect_hash:p.effect_hash}]);
@@ -160,7 +272,9 @@ export function verifyRevocationOutcome(x){
  // accidentally satisfy the independent quantity oracle.
  assert.ok(new RegExp("(?:^|[^0-9])"+x.qty+"(?:[^0-9]|$)").test(good.replaceAll(x.canary,"")));
  assert.equal(x.blocked,"supervisor_file_access_revoked");
- assert.ok([401,403,404].includes(x.foreignStatus));
+ assert.equal(x.blockedUse.length,0);
+ assert.ok([401,403,404].includes(x.foreignStatus)||(x.foreignStatus===503&&x.foreignError==="access_change_unverified"));
+ assert.equal(x.prematureAccess.length,0);
  assert.ok(after.length>2);
  assert.ok(!after.includes(x.canary),"revoked private reference cannot recur");
  assert.deepEqual(x.access,[{allowed:false}]);
@@ -189,4 +303,52 @@ export function verifyMonitorOutcome(x){
  assert.ok(x.usage.length>=2&&x.usage.length<=18);
  assert.ok(x.usage.every(r=>r.status==="completed"&&r.model==="gpt-6-luna"&&Number(r.input_tokens)>0));
  return {episodeId:episode.episode_id,noticeId:x.beforeNotices[0].id,resolutionNoticeId:x.afterNotices[0].id,providerCalls:x.usage.length};
+}
+
+export function verifySupplierReminderOutcome(x){
+ const checkNotice=(notices,messages,repeated,repeatedMessages,expectedText)=>{
+  assert.equal(notices.length,1);
+  assert.equal(notices[0].status,"needs_owner");
+  assert.equal(notices[0].thread_id,x.threadId);
+  assert.equal(messages.length,1);
+  assert.equal(messages[0].thread_id,x.threadId);
+  assert.match(JSON.stringify(messages[0].structured_content),expectedText);
+  assert.deepEqual(repeated,notices,"duplicate tick changed source notice");
+  assert.deepEqual(repeatedMessages,messages,"duplicate tick changed chat notice");
+ };
+ assert.deepEqual(x.earlyDraft,[]);
+ assert.deepEqual(x.earlyDispatch,[]);
+ checkNotice(x.draftNotice,x.draftMessage,x.repeatedDraft,x.repeatedDraftMessage,/Supplier purchase-order draft needs your approval/i);
+ checkNotice(x.dispatchNotice,x.dispatchMessage,x.repeatedDispatch,x.repeatedDispatchMessage,/Approved order unresolved/i);
+ assert.deepEqual(x.handledDraft,[{...x.draftNotice[0],status:"handled"}]);
+ assert.notEqual(x.draftNotice[0].id,x.dispatchNotice[0].id);
+ assert.notEqual(x.draftMessage[0].id,x.dispatchMessage[0].id);
+ assert.deepEqual(x.ownerAfter,x.ownerBefore,"no new owner prompt for reminder");
+ assert.deepEqual(x.delivery,[],"reminder must not dispatch a PO");
+ assert.deepEqual(x.ordersAfter,x.ordersBefore);
+ assert.deepEqual(x.attemptsAfter,x.attemptsBefore);
+ assert.deepEqual(x.countsAfter,x.countsBefore);
+ return {draftNoticeId:x.draftNotice[0].id,draftNoticeMessageId:x.draftMessage[0].id,
+  dispatchNoticeId:x.dispatchNotice[0].id,dispatchNoticeMessageId:x.dispatchMessage[0].id};
+}
+
+export function verifySourceAlertLifecycle(x){
+ assert.deepEqual(x.negative,[],"unknown void coverage and planned attendance cannot trigger an alert");
+ assert.equal(x.opened.length,2);
+ const meal=x.opened.find(a=>a.kind==="meal_break"),voids=x.opened.find(a=>a.kind==="voids");
+ assert.ok(meal&&voids);
+ assert.equal(meal.status,"new");
+ assert.equal(voids.status,"new");
+ assert.equal(meal.payload.timecardId,x.actualTimecard);
+ assert.notEqual(meal.payload.timecardId,x.plannedTimecard);
+ assert.equal(Number(meal.impact_cents),x.wage);
+ assert.equal(Number(voids.impact_cents),x.voidCents);
+ assert.equal(voids.payload.voidsThisMonthCents,x.voidCents);
+ assert.equal(voids.payload.avgVoidsPrevious3MonthsCents,0);
+ assert.deepEqual(x.repeated,x.opened);
+ assert.deepEqual(x.closed,x.opened.map(a=>({...a,status:"resolved"})),"only authoritative correction resolves alert");
+ assert.deepEqual(x.repeatedClosed,x.closed);
+ assert.deepEqual(x.effects,[]);
+ assert.deepEqual(x.ownerRows,[]);
+ return {mealAlertId:meal.id,voidAlertId:voids.id};
 }

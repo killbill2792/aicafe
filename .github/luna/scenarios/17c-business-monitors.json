@@ -190,6 +190,132 @@
       },
       "minCount": 0,
       "maxCount": 0
+    },
+    {
+      "name": "void-source-correction",
+      "kind": "source",
+      "table": "public.daily_rollups",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        },
+        "business_date": {
+          "scope": "sourceAlertDate"
+        },
+        "voids_cents": {
+          "eq": "0"
+        },
+        "voids_status": {
+          "eq": "complete"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "resolved-void-detector",
+      "kind": "source",
+      "table": "public.alerts",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        },
+        "id": {
+          "scope": "voidAlertId"
+        },
+        "kind": {
+          "eq": "voids"
+        },
+        "status": {
+          "eq": "resolved"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "resolved-meal-detector",
+      "kind": "source",
+      "table": "public.alerts",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        },
+        "id": {
+          "scope": "mealAlertId"
+        },
+        "kind": {
+          "eq": "meal_break"
+        },
+        "status": {
+          "eq": "resolved"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "actual-attendance-source",
+      "kind": "source",
+      "table": "public.timecards",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        },
+        "id": {
+          "scope": "actualTimecard"
+        },
+        "source_type": {
+          "eq": "owner_manual"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "planned-not-actual-source",
+      "kind": "source",
+      "table": "public.timecards",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        },
+        "id": {
+          "scope": "plannedTimecard"
+        },
+        "source_type": {
+          "eq": "owner_schedule"
+        }
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "detector-cafe-no-unauthorized-effect",
+      "kind": "owner",
+      "table": "public.supervisor_effect_attempts",
+      "where": {
+        "business_id": {
+          "scope": "sourceAlertBusinessId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "foreign-void-alert-denied",
+      "kind": "isolation",
+      "table": "public.alerts",
+      "where": {
+        "business_id": {
+          "scope": "foreignBusinessId"
+        },
+        "id": {
+          "scope": "voidAlertId"
+        }
+      },
+      "minCount": 0,
+      "maxCount": 0
     }
   ]
 }
