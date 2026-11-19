@@ -136,8 +136,8 @@ describe("persisted verified price activation survives later Menus version",()=>
  });
 });
 
-describe("verified new-mode midpoint delivery",()=>{
- it("delivers one midpoint key through the existing report writer, not a second cron",async()=>{
+describe("verified new-mode daily delivery",()=>{
+ it("delivers stable elapsed-day keys through the existing report writer, not a second cron",async()=>{
   const businessId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const itemId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   const restaurant="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
@@ -181,18 +181,19 @@ describe("verified new-mode midpoint delivery",()=>{
   const run=(tick:string)=>runVerifiedToastPriceTick(db,repo,row,scope,tick,
    "America/Los_Angeles",{} as LoopProposal);
   expect(await run("2026-11-03T19:00:00Z")).toBe("monitoring");
-  expect(saveReport).not.toHaveBeenCalled();
+  expect(saveReport).toHaveBeenCalledTimes(2);
+  saveReport.mockClear();
   expect(await run(now)).toBe("monitoring");
-  expect(saveReport).toHaveBeenCalledTimes(1);
-  const [savedScope,_proposal,report,opts]=saveReport.mock.calls[0];
+  expect(saveReport).toHaveBeenCalledTimes(4);
+  const [savedScope,_proposal,report,opts]=saveReport.mock.calls[3];
   expect(savedScope).toEqual(scope);
-  expect(report).toMatchObject({status:"in_progress",midRunKey:"verified-source-half",
+  expect(report).toMatchObject({status:"in_progress",midRunKey:"verified-source-day-4",
    result:{coveredWindows:4,totalWindows:7,windowStartAt:start,nonCausal:true}});
   expect(opts).toEqual({midRun:true});
-  expect(report.midRunText).toContain("elapsed 24-hour windows");
+  expect(report.midRunText).toContain("Elapsed 24-hour day 4");
   expect(await run("2026-11-06T19:00:00Z")).toBe("monitoring");
-  expect(saveReport.mock.calls[1][2].midRunKey).toBe(report.midRunKey);
-  expect(saveReport.mock.calls[1][3]).toEqual({midRun:true});
+  expect(saveReport.mock.calls[7][2].midRunKey).toBe(report.midRunKey);
+  expect(saveReport.mock.calls[7][3]).toEqual({midRun:true});
   expect(await run("2026-11-08T19:00:00Z")).toBe("reported");
   expect(saveReport.mock.calls.at(-1)?.[2].status).toBe("complete");
  });
