@@ -1,4 +1,5 @@
 import "server-only";
+import {randomUUID} from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { ConversationMessage, ConversationScope, GroundedSupervisorReply } from "./contracts";
 import { supervisorReplyIdFor, validateGroundedReply } from "./replyValidation";
@@ -55,7 +56,10 @@ export async function persistGroundedSupervisorReply(
   const existing = await getExistingSupervisorReply(scope, ownerMessage);
   if (existing&&!durableFence) return existing;
   const admin = createAdminSupabaseClient();
-  const id = supervisorReplyIdFor(ownerMessage.id);
+  const question=durableFence&&safe.status==="requires_owner_input";
+  const card=question?safe.blocks.find(b=>b.type==="clarify"):undefined;
+  const questionId=card&&"questionId" in card?card.questionId:randomUUID();
+  const id = question?questionId:supervisorReplyIdFor(ownerMessage.id);
   const grounding = {
     status: safe.status,
     intent: safe.intent,
@@ -66,9 +70,10 @@ export async function persistGroundedSupervisorReply(
     ...(safe.ownerInput?{ownerInput:safe.ownerInput}:{}),
     ...(agentMetadata ? { agentMetadata } : {}),
     ...(durableFence?{durableRunId:durableFence.runId}:{}),
+    ...(question?{durableQuestionId:questionId}:{}),
   };
   if(durableFence){
-    const {data,error}=await admin.rpc("supervisor_publish_owner_reply_v2",{
+    const {data,error}=await admin.rpc(question?"supervisor_publish_owner_question_v2":"supervisor_publish_owner_reply_v2",{
       p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_thread_id:ownerMessage.threadId,
       p_run_id:durableFence.runId,p_claim_token:durableFence.claimToken,p_job_id:durableFence.jobId,
       p_reply_id:id,p_blocks:safe.blocks,p_grounding:grounding,
