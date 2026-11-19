@@ -149,18 +149,32 @@ Where an older line in this file conflicts with these rules, these rules win.
     states its exact delegated/off-turn trigger, model-selected registered tools, canonical sources
     and metrics, durable steps/owner update, authorization, verified effect receipt, safe retries,
     closure/follow-up, and explicitly owned future integration cases.
-    **Before an AI-behavior feature PR merges**, execute a real production-configured
-    `gpt-6-luna` journey with the actual registered Supervisor on disposable migrated local
-    Supabase; record provider/tool evidence, independently observed scoped DB/owner-screen/effect
-    results, positive and negative cases and exact code provenance. Real Luna acceptance is
-    separate from complete current-head CI, Codex code/security review, dependency/owner
-    gates. Mock/recorded tests, HTTP200, plausible prose or green CI cannot substitute.
+    **Owner-directed consolidated Luna acceptance (Nov 18, 2026):** every AI-behavior PR
+    implements and registers all applicable executable real Luna scenarios with reviewed
+    positive/negative, source/owner/tenant/effect assertions before coding integration.
+    Full current-head CI, deterministic/browser/DB/security tests, clean Codex and dependency/
+    owner gates remain mandatory. Genuine production-configured `gpt-6-luna` execution on the
+    actual registered Supervisor and disposable migrated Supabase may be consolidated on a
+    stable functional group, before Task17 or during Task17, by owner choice. Record exact
+    provenance and independently verified provider/tool/source/DB/UI/effect evidence.
+    A deferred or failed live case is NOT_PROVEN or FAIL, never PASS. Mock/recorded tests,
+    HTTP200, plausible prose or green CI cannot substitute.
+    **Owner-approved development-stage merge policy:** current production has no affected
+    operational data, per the owner's explicit clarification. During this development phase,
+    feature PRs (including presently open PRs) may merge to main with live Luna execution
+    deferred; deployment generation alone is not a reason to require per-PR Luna or create
+    a separate branch. Retain all CI, security, authorization and dependency gates.
+    No new paid test, live customer-data operation, external effect, production migration
+    or actual business release is authorized. If affected live operations/data are present
+    or detected, stop and obtain separate owner direction before exposing unproven behavior.
+    Complete real scenario acceptance and Task17 release gates before operational use.
     Use only separately owner-authorized one-shot bounded private trusted provider runs;
     never spend automatically in untrusted PR CI, replay consumed grants, or touch production.
     Pure docs/config or deterministic-only infrastructure PRs must state why no model-executed
     behavior changed; they still need normal CI/review/security and may not claim Luna proof.
-    **Three separately verified milestones:** a domain feature can merge after its own true
-    `feature_proven` gates; `integrated_proven` requires final Task17B exhaustive registry,
+    **Separate milestones:** coding-integration readiness is not `feature_proven`.
+    Individual feature proof requires genuine executed acceptance (possibly grouped).
+    `integrated_proven` requires final Task17B exhaustive registry,
     metric and owner-question coverage plus Task17C real Luna off-turn/restart/approval/effect
     recovery on the combined system; `released_proven` requires Task17D owner-screen and
     Task17E owner-authorized release proof. Missing later cross-module tests block **release**
