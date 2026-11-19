@@ -243,6 +243,8 @@ begin
  then raise exception 'invoice_click_required' using errcode='42501';end if;
  perform 1 from public.memberships where business_id=p_business_id and user_id=v_owner and role='owner' for share;
  if not found then raise exception 'invoice_owner_required' using errcode='42501';end if;
+ -- Serialize invoice revisions and documentary settlement allocations for the same café.
+ perform pg_advisory_xact_lock(hashtextextended('financial-invoice:'||p_business_id::text,0));
  e:=p.canonical_effect_payload;
  if e->>'purchaseOrderId' is null then
   if e->>'poRevision' is not null or e->>'expenseDate' is not null
@@ -479,3 +481,235 @@ $$;
 revoke all on function public.supervisor_supplier_invoice_effect_proof(uuid,uuid,text)
  from public,anon,authenticated;
 grant execute on function public.supervisor_supplier_invoice_effect_proof(uuid,uuid,text) to service_role;
+
+
+-- Documentary allocation evidence, not a second payment ledger. Existing
+-- reconciliation events remain append-only; only the click-gated RPC can insert.
+alter table public.purchase_reconciliation_events
+ add column financial_kind text,
+ add column financial_invoice_id uuid,
+ add column financial_upload_id uuid,
+ add column financial_row_index bigint,
+ add column financial_tx_date date,
+ add column financial_tx_amount_cents bigint,
+ add column financial_tx_balance_cents bigint,
+ add column financial_allocation_cents bigint,
+ add column financial_reverses_id uuid;
+create unique index financial_upload_cafe_id on public.uploads(business_id,id);
+create unique index financial_event_cafe_id on public.purchase_reconciliation_events(business_id,id);
+alter table public.purchase_reconciliation_events add constraint financial_event_invoice_fk
+ foreign key(business_id,financial_invoice_id) references public.supplier_invoices(business_id,id) not valid;
+alter table public.purchase_reconciliation_events add constraint financial_event_upload_fk
+ foreign key(business_id,financial_upload_id) references public.uploads(business_id,id) not valid;
+alter table public.purchase_reconciliation_events add constraint financial_event_reverse_fk
+ foreign key(business_id,financial_reverses_id) references public.purchase_reconciliation_events(business_id,id) not valid;
+alter table public.purchase_reconciliation_events add constraint financial_event_shape check (
+ (num_nonnulls(financial_kind,financial_invoice_id,financial_upload_id,financial_row_index,financial_tx_date,
+ financial_tx_amount_cents,financial_tx_balance_cents,financial_allocation_cents,financial_reverses_id)=0)
+ or ((num_nonnulls(financial_kind,financial_invoice_id,financial_upload_id,financial_row_index,financial_tx_date,
+ financial_tx_amount_cents,financial_tx_balance_cents,financial_allocation_cents)=8
+ and event_kind='evidence_observed' and event_key like 'financial-settlement:%'
+ and financial_row_index between 0 and 9999
+ and financial_allocation_cents between 1 and 9007199254740991
+ and abs(financial_tx_amount_cents::numeric)<=9007199254740991
+ and abs(financial_tx_balance_cents::numeric)<=9007199254740991
+ and financial_allocation_cents<=abs(financial_tx_amount_cents::numeric)
+ and ((financial_kind='settlement_evidence_linked' and financial_tx_amount_cents<0 and financial_reverses_id is null)
+ or (financial_kind='settlement_evidence_reversed' and financial_tx_amount_cents>0 and financial_reverses_id is not null))) is true)
+) not valid;
+alter table public.purchase_reconciliation_events validate constraint financial_event_invoice_fk;
+alter table public.purchase_reconciliation_events validate constraint financial_event_upload_fk;
+alter table public.purchase_reconciliation_events validate constraint financial_event_reverse_fk;
+alter table public.purchase_reconciliation_events validate constraint financial_event_shape;
+create unique index financial_event_proposal_uq on public.purchase_reconciliation_events(business_id,event_key)
+ where financial_kind is not null;
+create index financial_event_transaction_idx on public.purchase_reconciliation_events
+ (business_id,financial_tx_date,financial_tx_amount_cents,financial_tx_balance_cents) where financial_kind is not null;
+create index financial_event_invoice_idx on public.purchase_reconciliation_events(business_id,financial_invoice_id)
+ where financial_kind is not null;
+create policy financial_event_owner_scope on public.purchase_reconciliation_events as restrictive for select to authenticated
+ using(financial_kind is null or (owner_user_id=(select auth.uid()) and exists(
+ select 1 from public.memberships m where m.business_id=purchase_reconciliation_events.business_id
+ and m.user_id=(select auth.uid()) and m.role='owner')));
+
+create function public.supervisor_commit_financial_settlement(
+ p_business_id uuid,p_thread_id uuid,p_proposal_id uuid,p_effect_hash text
+) returns uuid language plpgsql security definer set search_path=public as $$
+declare
+ v_owner uuid:=auth.uid();p public.supervisor_proposals;a public.supervisor_effect_attempts;
+ inv public.supplier_invoices;u public.uploads;original public.purchase_reconciliation_events;
+ original_upload public.uploads;existing public.purchase_reconciliation_events;
+ e jsonb;tx jsonb;v_count bigint;v_index bigint;v_amount bigint;v_balance bigint;
+ v_date date;v_alloc bigint;v_total numeric;v_remaining numeric;v_kind text;v_id uuid;
+begin
+ if v_owner is null then raise exception 'financial_owner_required' using errcode='42501';end if;
+ perform 1 from public.memberships m join public.businesses b on b.id=m.business_id
+ where m.business_id=p_business_id and m.user_id=v_owner and m.role='owner' and not b.is_demo for share of m;
+ if not found then raise exception 'financial_owner_required' using errcode='42501';end if;
+ select * into p from public.supervisor_proposals where business_id=p_business_id and owner_user_id=v_owner
+  and thread_id=p_thread_id and id=p_proposal_id for update;
+ if p.id is null or p.capability_id<>'leo.financial_settlement.v1' or p.capability_version<>1
+  or p.status<>'executing' or p.effect_hash is distinct from p_effect_hash
+ then raise exception 'financial_settlement_claim_required' using errcode='42501';end if;
+ select * into a from public.supervisor_effect_attempts where business_id=p_business_id and proposal_id=p.id
+  and effect_hash=p_effect_hash and authorization_kind='click' and state='executing' for update;
+ if a.id is null or not exists(select 1 from public.supervisor_approvals x
+  where x.business_id=p_business_id and x.proposal_id=p.id and x.owner_user_id=v_owner
+  and x.effect_hash=p_effect_hash and x.authorization_kind='click' and x.approved_revision=p.revision-2)
+ then raise exception 'financial_settlement_click_required' using errcode='42501';end if;
+ perform pg_advisory_xact_lock(hashtextextended('financial-invoice:'||p_business_id::text,0));
+ e:=p.canonical_effect_payload;
+ v_kind:=e->>'financialKind';v_index:=(e->>'rowIndex')::bigint;v_alloc:=(e->>'allocationCents')::bigint;
+ if v_kind is null or v_kind not in ('settlement_evidence_linked','settlement_evidence_reversed')
+  or v_index is null or v_index not between 0 and 9999 or v_alloc is null or v_alloc not between 1 and 9007199254740991
+ then raise exception 'financial_settlement_invalid' using errcode='22023';end if;
+ select * into existing from public.purchase_reconciliation_events where business_id=p_business_id
+  and event_key='financial-settlement:'||p.id::text and owner_user_id=v_owner;
+ if existing.id is not null then
+  if existing.financial_invoice_id::text is distinct from e->>'invoiceId' or existing.financial_kind<>v_kind
+   or existing.financial_upload_id::text is distinct from e->>'uploadId' or existing.financial_row_index<>v_index
+   or existing.financial_allocation_cents<>v_alloc or existing.financial_reverses_id::text is distinct from e->>'reversesId'
+  then raise exception 'financial_settlement_replay_conflict';end if;
+  return existing.id;
+ end if;
+ select * into inv from public.supplier_invoices where business_id=p_business_id and owner_user_id=v_owner
+  and id=(e->>'invoiceId')::uuid;
+ if inv.id is null or inv.revision is distinct from (e->>'invoiceRevision')::bigint
+  or inv.supplier_id::text is distinct from e->>'supplierId' or inv.invoice_reference is distinct from e->>'invoiceReference'
+  or inv.currency_code is distinct from e->>'currency' or inv.total_cents is distinct from (e->>'invoiceTotalCents')::bigint
+ then raise exception 'financial_settlement_invoice_changed' using errcode='P0001';end if;
+ if v_kind='settlement_evidence_linked' and exists(select 1 from public.supplier_invoices i
+  where i.business_id=p_business_id and i.supplier_id=inv.supplier_id and i.invoice_reference=inv.invoice_reference
+   and i.revision>inv.revision)
+ then raise exception 'financial_settlement_invoice_revision_changed' using errcode='P0001';end if;
+ select * into u from public.uploads where business_id=p_business_id and financial_owner_user_id=v_owner
+  and id=(e->>'uploadId')::uuid and kind='statement' and status='done';
+ if u.id is null or u.financial_source_sha256 is distinct from e->>'sourceHash'
+  or u.financial_currency is distinct from inv.currency_code or u.financial_account_key is distinct from e->>'accountKey'
+ then raise exception 'financial_settlement_source_changed' using errcode='P0001';end if;
+ select count(*) into v_count from jsonb_array_elements(u.financial_transactions) x where (x->>'i')::bigint=v_index;
+ if v_count<>1 then raise exception 'financial_settlement_row_ambiguous' using errcode='22023';end if;
+ select x into tx from jsonb_array_elements(u.financial_transactions) x where (x->>'i')::bigint=v_index;
+ v_date:=(tx->>'date')::date;v_amount:=(tx->>'amountCents')::bigint;v_balance:=(tx->>'balanceCents')::bigint;
+ if v_date::text is distinct from e->>'transactionDate' or v_amount is distinct from (e->>'transactionAmountCents')::bigint
+  or v_balance is distinct from (e->>'transactionBalanceCents')::bigint or v_alloc>abs(v_amount::numeric)
+  or (v_kind='settlement_evidence_linked' and v_amount>=0) or (v_kind='settlement_evidence_reversed' and v_amount<=0)
+ then raise exception 'financial_settlement_transaction_changed' using errcode='22023';end if;
+ -- Same date, signed movement and ending balance is a conservative stable
+ -- transaction identity across overlapping exports and alternate nicknames.
+ -- Ambiguous repeated tuples inside a source cannot be allocated.
+ select count(*) into v_count from jsonb_array_elements(u.financial_transactions) x where
+  x->>'date'=v_date::text and (x->>'amountCents')::bigint=v_amount and (x->>'balanceCents')::bigint=v_balance;
+ if v_count<>1 then raise exception 'financial_settlement_row_ambiguous' using errcode='22023';end if;
+ select coalesce(sum(f.financial_allocation_cents),0) into v_total from public.purchase_reconciliation_events f
+ where f.business_id=p_business_id and f.financial_kind=v_kind and f.financial_tx_date=v_date
+ and f.financial_tx_amount_cents=v_amount and f.financial_tx_balance_cents=v_balance;
+ if v_total+v_alloc>abs(v_amount::numeric) then raise exception 'financial_settlement_transaction_overallocated' using errcode='P0001';end if;
+ if v_kind='settlement_evidence_linked' then
+  if e->>'reversesId' is not null then raise exception 'financial_settlement_unexpected_reversal' using errcode='22023';end if;
+  -- An invoice correction cannot silently inherit earlier allocations.
+  -- Until the older documented links are explicitly reversed review is required.
+  if exists(select 1 from public.supplier_invoices prev
+   join public.purchase_reconciliation_events f on f.business_id=prev.business_id and f.financial_invoice_id=prev.id
+   where prev.business_id=p_business_id and prev.supplier_id=inv.supplier_id and prev.invoice_reference=inv.invoice_reference
+    and prev.revision<inv.revision and f.financial_kind='settlement_evidence_linked'
+    and f.financial_allocation_cents>(select coalesce(sum(rev.financial_allocation_cents),0)
+       from public.purchase_reconciliation_events rev where rev.business_id=p_business_id and rev.financial_reverses_id=f.id))
+  then raise exception 'financial_settlement_previous_revision_unresolved' using errcode='P0001';end if;
+  select coalesce(sum(case when f.financial_kind='settlement_evidence_linked' then f.financial_allocation_cents
+    else -f.financial_allocation_cents end),0) into v_total from public.purchase_reconciliation_events f
+   where f.business_id=p_business_id and f.financial_invoice_id=inv.id and f.financial_kind is not null;
+  if v_total<0 or v_total+v_alloc>inv.total_cents then raise exception 'financial_settlement_invoice_overallocated' using errcode='P0001';end if;
+ else
+  select * into original from public.purchase_reconciliation_events f where f.business_id=p_business_id
+   and f.owner_user_id=v_owner and f.id=(e->>'reversesId')::uuid and f.financial_kind='settlement_evidence_linked'
+   and f.financial_invoice_id=inv.id;
+  select * into original_upload from public.uploads where business_id=p_business_id
+   and financial_owner_user_id=v_owner and id=original.financial_upload_id;
+  if original.id is null or original_upload.id is null or original_upload.financial_account_key<>u.financial_account_key
+   or original_upload.financial_currency<>u.financial_currency or v_date<original.financial_tx_date
+  then raise exception 'financial_settlement_reversal_source_mismatch' using errcode='22023';end if;
+  select original.financial_allocation_cents-coalesce(sum(f.financial_allocation_cents),0) into v_remaining
+   from public.purchase_reconciliation_events f where f.business_id=p_business_id and f.financial_reverses_id=original.id;
+  if v_alloc>v_remaining then raise exception 'financial_settlement_reversal_overallocated' using errcode='P0001';end if;
+ end if;
+ insert into public.purchase_reconciliation_events(business_id,purchase_order_id,supplier_id,owner_user_id,
+  event_key,event_kind,source_ref,source_revision,financial_kind,financial_invoice_id,financial_upload_id,
+  financial_row_index,financial_tx_date,financial_tx_amount_cents,financial_tx_balance_cents,
+  financial_allocation_cents,financial_reverses_id)
+ values(p_business_id,inv.purchase_order_id,inv.supplier_id,v_owner,'financial-settlement:'||p.id::text,
+  'evidence_observed','statement:'||u.id::text||':'||v_index::text,inv.revision,v_kind,inv.id,u.id,
+  v_index,v_date,v_amount,v_balance,v_alloc,original.id)
+ returning id into v_id;
+ return v_id;
+end $$;
+revoke all on function public.supervisor_commit_financial_settlement(uuid,uuid,uuid,text) from public,anon,authenticated,service_role;
+grant execute on function public.supervisor_commit_financial_settlement(uuid,uuid,uuid,text) to authenticated;
+
+-- Receipt readback is documentary only, even if the current invoice was
+-- subsequently corrected; a changed invoice does not erase a past event.
+create function public.supervisor_financial_settlement_proof(p_business_id uuid,p_proposal_id uuid,p_effect_hash text)
+ returns uuid language sql stable security invoker set search_path=public as $$
+ select f.id from public.purchase_reconciliation_events f
+ join public.supervisor_proposals p on p.business_id=f.business_id and p.id=p_proposal_id and p.owner_user_id=f.owner_user_id
+ join public.supplier_invoices i on i.business_id=f.business_id and i.id=f.financial_invoice_id
+ join public.uploads u on u.business_id=f.business_id and u.id=f.financial_upload_id and u.financial_owner_user_id=f.owner_user_id
+ where f.business_id=p_business_id and p.capability_id='leo.financial_settlement.v1'
+ and p.effect_hash=p_effect_hash and f.event_key='financial-settlement:'||p.id::text
+ and f.financial_invoice_id::text=p.canonical_effect_payload->>'invoiceId'
+ and f.source_revision=(p.canonical_effect_payload->>'invoiceRevision')::bigint
+ and f.financial_kind=p.canonical_effect_payload->>'financialKind'
+ and f.financial_upload_id::text=p.canonical_effect_payload->>'uploadId'
+ and f.financial_row_index=(p.canonical_effect_payload->>'rowIndex')::bigint
+ and f.financial_tx_date::text=p.canonical_effect_payload->>'transactionDate'
+ and f.financial_tx_amount_cents=(p.canonical_effect_payload->>'transactionAmountCents')::bigint
+ and f.financial_tx_balance_cents=(p.canonical_effect_payload->>'transactionBalanceCents')::bigint
+ and f.financial_allocation_cents=(p.canonical_effect_payload->>'allocationCents')::bigint
+ and f.financial_reverses_id::text is not distinct from p.canonical_effect_payload->>'reversesId'
+ and i.owner_user_id=f.owner_user_id and u.financial_source_sha256=p.canonical_effect_payload->>'sourceHash'
+ and exists(select 1 from jsonb_array_elements(u.financial_transactions) tx where
+   (tx->>'i')::bigint=f.financial_row_index and tx->>'date'=f.financial_tx_date::text
+   and (tx->>'amountCents')::bigint=f.financial_tx_amount_cents and (tx->>'balanceCents')::bigint=f.financial_tx_balance_cents)
+ limit 1
+$$;
+revoke all on function public.supervisor_financial_settlement_proof(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.supervisor_financial_settlement_proof(uuid,uuid,text) to service_role;
+create or replace function public.supervisor_reconcile_supplier_receiving(
+ p_business_id uuid,p_owner_user_id uuid,p_thread_id uuid,p_proposal_id uuid,p_revision integer
+) returns public.supervisor_proposals language plpgsql security definer set search_path=public as $$
+declare p public.supervisor_proposals;a public.supervisor_effect_attempts;proof uuid;
+begin
+ if auth.role() is distinct from 'service_role' or not exists(select 1 from public.memberships m
+  where m.business_id=p_business_id and m.user_id=p_owner_user_id and m.role='owner')
+ then raise exception 'receiving_owner_required' using errcode='42501';end if;
+ select * into p from public.supervisor_proposals where id=p_proposal_id
+  and business_id=p_business_id and owner_user_id=p_owner_user_id and thread_id=p_thread_id for update;
+ if p.id is null or p.revision<>p_revision or p.capability_id not in ('maya.supplier_receiving.v1','maya.supplier_invoice.v1','leo.financial_settlement.v1')
+  or p.capability_version<>1 then raise exception 'receiving_claim_required' using errcode='42501';end if;
+ select * into a from public.supervisor_effect_attempts where business_id=p_business_id
+  and proposal_id=p.id and effect_hash=p.effect_hash and authorization_kind='click' for update;
+ if a.state='verified' and p.status='committed' then return p;end if;
+ if a.id is null or p.status<>'executing' or a.state not in ('executing','uncertain')
+ then raise exception 'receiving_claim_required' using errcode='42501';end if;
+ -- A live attempt is never taken over. Only the existing proof can settle.
+ if a.state='executing' and a.created_at>now()-interval '5 minutes' then return p;end if;
+ if p.capability_id='leo.financial_settlement.v1' then
+  proof:=public.supervisor_financial_settlement_proof(p_business_id,p.id,p.effect_hash);
+ elsif p.capability_id='maya.supplier_invoice.v1' then
+  proof:=public.supervisor_supplier_invoice_effect_proof(p_business_id,p.id,p.effect_hash);
+ else
+  proof:=public.supervisor_supplier_receiving_effect_proof(p_business_id,p.id,p.effect_hash);
+ end if;
+ if proof is null then
+  update public.supervisor_effect_attempts set state='uncertain' where id=a.id and state='executing';
+  return p;
+ end if;
+ update public.supervisor_effect_attempts set state='verified',receipt_ref=(case when p.capability_id='leo.financial_settlement.v1' then 'purchase_reconciliation_events:' when p.capability_id='maya.supplier_invoice.v1' then 'supplier_invoices:' else 'purchase_receipts:' end)||proof::text,
+  verified_at=now() where id=a.id;
+ update public.supervisor_proposals set status='committed',revision=revision+1,committed_at=now(),
+  monitoring_start_date=a.business_date+1,updated_at=now() where id=p.id returning * into p;
+ return p;
+end $$;
+revoke all on function public.supervisor_reconcile_supplier_receiving(uuid,uuid,uuid,uuid,integer)
+ from public,anon,authenticated;
+grant execute on function public.supervisor_reconcile_supplier_receiving(uuid,uuid,uuid,uuid,integer) to service_role;
