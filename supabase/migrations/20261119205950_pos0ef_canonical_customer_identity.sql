@@ -1052,7 +1052,7 @@ begin
    union all select m->>'column' from jsonb_array_elements(coalesce(p_metrics,'[]'::jsonb)) m
   ) requested
   where requested.field like 'data.aiCafeCustomer.%'
-   or requested.field ~* '(^|\.)(customer|appliedLoyaltyInfo|tabName|cardholder|cardholderName|cardPaymentId|loyaltyIdentifier)(\.|$)'))
+   or requested.field ~* '(^|\.)(customer|customerInfo|customerDetails|guest|guestInfo|loyalty|loyaltyAccount|appliedLoyaltyInfo|tabName|cardholder|cardholderName|cardPaymentId|loyaltyIdentifier|payer|payerName)(\.|$)'))
   then
   v_customer_coverage:=public.customer_query_coverage(p_business_id,p_date_from,p_date_to);
  end if;
