@@ -153,11 +153,12 @@ export function toastObservationNoticeKey(input:{
 /** A database lease is not a delivery receipt. Recheck membership, the exact
  * owner thread, gate and lease generation inside the atomic existing-output
  * transaction. A process dying before commit leaves the same claim retryable. */
-export async function postToastObservationNotice(db:SupabaseClient,input:{
+export type ObservationNoticeInput={
  key:OwnerNoticeKey;threadId:string;timezone:string;
  payload:Record<string,string|number|boolean|null>;text:string;confidence:"high"|"low";
  measurementAsOf?:string;workerToken?:string;prior?:{id:string;attempts:number;message_id:string};
-}):Promise<"posted"|"not_claimed"|"not_authorized">{
+};
+export async function postToastObservationNotice(db:SupabaseClient,input:ObservationNoticeInput):Promise<"posted"|"not_claimed"|"not_authorized">{
  const k=input.key;
  if(k.kind==="price_reminder")throw new Error("wrong_observation_notice_kind");
  const {data:claim,error}=input.prior?{data:[{receipt_id:input.prior.id,attempt:input.prior.attempts}],error:null}:await db.rpc("supervisor_8a_claim_observation_notice",{
@@ -184,4 +185,56 @@ export async function postToastObservationNotice(db:SupabaseClient,input:{
   return saved.data===true;
  });
  return result.result===true?"posted":"not_authorized";
+}
+
+
+/** Only new notices may share an immutable chat digest. Each source/window
+ * retains its original task and receipt; the database commits the whole group
+ * or none. Corrections continue through the single-receipt revision path. */
+export async function postToastObservationDigest(db:SupabaseClient,inputs:readonly ObservationNoticeInput[]):Promise<Set<string>>{
+ const posted=new Set<string>();
+ if(!inputs.length)return posted;
+ const first=inputs[0];
+ if(inputs.some(i=>i.prior||i.key.businessId!==first.key.businessId||i.key.ownerUserId!==first.key.ownerUserId||
+    i.threadId!==first.threadId||!i.workerToken||!i.measurementAsOf))
+  throw new Error("invalid_observation_digest_scope");
+ const records:{input:ObservationNoticeInput;receipt_id:string;attempt:number;task_id:string;summary:string}[]=[];
+ for(const input of inputs){
+  const k=input.key;
+  const claim=await db.rpc("supervisor_8a_claim_observation_notice",{p_business_id:k.businessId,p_owner_user_id:k.ownerUserId,
+   p_source_id:k.sourceId,p_kind:k.kind,p_local_date:k.localDate,p_slot:k.slot});
+  if(claim.error)throw new Error("observation_digest_claim_failed");
+  if(!claim.data?.[0])continue;
+  const p=input.payload;
+  const name=String(p.itemName??"Menu item").replace(/\s+/g," ").slice(0,64);
+  const money=(value:unknown)=>typeof value==="number"?new Intl.NumberFormat("en-US",{style:"currency",currency:String(p.currency)}).format(value/100):"unknown";
+  const summary=k.kind==="toast_price_initial"?name+": "+money(p.oldPriceCents)+" → "+money(p.newPriceCents):
+   name+" ("+(k.kind==="toast_price_final"?"final":"day "+k.slot)+"): "+String(p.observedUnits??p.units??"unknown")+" units, revenue "+
+   money(p.observedRevenueCents??p.revenueCents)+", estimated contribution "+money(p.contributionEstimateCents)+".";
+  records.push({input,receipt_id:claim.data[0].receipt_id,attempt:claim.data[0].attempt,
+   task_id:"toast-price-observation:"+k.ownerUserId+":"+k.sourceId+":"+k.kind+":"+k.slot,summary});
+ }
+ // Bound both message size and transaction size. Normal single-product
+ // activity keeps the full original initial/daily/final notices.
+ for(let i=0;i<records.length;){
+  const chunk:typeof records=[];
+  let size=165;
+  while(i<records.length&&chunk.length<10&&size+records[i].summary.length<1180){
+   const row=records[i++];chunk.push(row);size+=row.summary.length+3;
+  }
+  if(!chunk.length)throw new Error("observation_digest_entry_too_large");
+  const id=stableNoticeUuid(first.key.businessId+":"+first.key.ownerUserId+":digest:"+chunk.map(x=>x.receipt_id).sort().join(":"));
+  const text="Toast price observations — "+chunk.length+" updates. Each item has its own saved evidence and follow-up. No causal conclusion or price action.\n"+chunk.map(x=>x.summary).join("\n");
+  const outcome=await notifyOwner(db,{businessId:first.key.businessId,ownerUserId:first.key.ownerUserId,threadId:first.threadId,
+   taskId:chunk[0].task_id,kind:"priority_notice",localDate:first.key.localDate,important:true,required:true},async()=>{
+   const saved=await db.rpc("supervisor_8a_post_observation_digest",{p_business_id:first.key.businessId,p_owner_user_id:first.key.ownerUserId,
+    p_thread_id:first.threadId,p_message_id:id,p_text:text,p_entries:chunk.map(x=>({receiptId:x.receipt_id,attempt:x.attempt,
+     taskId:x.task_id,timezone:x.input.timezone,payload:x.input.payload,confidence:x.input.confidence,
+     measurementAsOf:x.input.measurementAsOf,workerToken:x.input.workerToken}))});
+   if(saved.error)throw new Error("observation_digest_delivery_failed");
+   return saved.data===true;
+  });
+  if(outcome.result===true)for(const row of chunk)posted.add(row.task_id);
+ }
+ return posted;
 }
