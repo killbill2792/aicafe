@@ -188,6 +188,8 @@ live("retained customer identity or observed trend, real model investigation, is
    const workerTools=[...new Set(proofs.flatMap(p=>p.toolNames))];
    expect(workerTools).toContain("get_investigation_source");expect(workerTools).toContain("query_data");
    expect(workerTools.some(t=>["get_labor","get_schedule","get_week_schedule","get_inventory","get_usage_variance","get_menu_items","get_price_monitor_status","get_ingredient_costs","get_expenses","get_bills","get_events"].includes(t))).toBe(true);
+   // A persisted deterministic fallback is not proof of a verified positive trend.
+   expect(proofs.some(p=>p.verified&&p.toolNames.includes("query_data"))).toBe(true);
    expect(proofs.every(p=>!p.externalEffectClaim&&p.unverifiedCount===0)).toBe(true);
    // Loss of source coverage must not clear the open incident.
    await admin.query("update public.toast_day_status set coverage_complete=false where business_id=$1 and business_date=$2",[businessId,date(-3)]);
