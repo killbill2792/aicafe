@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import type {AgentTurn} from "@/lib/ai/agent/loop.server";
 import {checkNumbers} from "@/lib/ai/agent/checkNumbers";
-import {investigationPrompt,investigationReadTools,verifyInvestigationTurn,
+import {investigationPrompt,investigationReadTools,customerInvestigationTools,verifyInvestigationTurn,
   relevantInvestigationTools,unsupportedExternalEffectClaim,type SourceSynopsis} from "./investigation";
 const source:SourceSynopsis={
   kind:"labor_variance",status:"new",severity:"high",quality:"partial",
@@ -386,6 +386,16 @@ it("customer investigations require an actual scoped aggregate and an independen
  const schema={name:"describe_data",result:{source:"toast_fields",period:null,missing:[],retainedFields:30,fields:[{field:"data.customer.guid"}]}};
  const verify=(...calls:unknown[])=>verifyInvestigationTurn(turn({toolInvocations:[src,...calls]}),target);
  expect(verify(customer,labor).ok).toBe(true);
+ const event={name:"get_events",result:{source:"cafe_events",period:{from:"2026-11-12",to:"2026-11-18"},missing:[],
+  events:[{name:"Fixture event",status:"found",startDate:"2026-11-14",endDate:"2026-11-15",lastVerifiedAt:"2026-11-13T08:00:00Z"}]}};
+ expect(customerInvestigationTools).toContain("get_events");
+ expect(investigationReadTools).not.toContain("get_events");
+ expect(verify(customer,event).ok).toBe(true);
+ for(const change of [{status:"cancelled"},{lastVerifiedAt:null},{verificationFailedAt:"2026-11-14T08:00:00Z"},
+  {startDate:"2026-10-01",endDate:"2026-10-02"}]){
+  expect(verify(customer,{...event,result:{...event.result,events:[{...event.result.events[0],...change}]}}).ok).toBe(false);
+ }
+ expect(verify(customer,{...event,result:{...event.result,events:[],cityEventTotal:20}}).ok).toBe(false);
  expect(verify(customer,sales).ok).toBe(false);
  expect(verify(schema,labor).ok).toBe(false);
  expect(verify({...customer,result:{...customer.result,rows:[],rowCount:0}},labor).ok).toBe(false);
