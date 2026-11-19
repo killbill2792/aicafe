@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync,readdirSync} from "node:fs";
-import {assessCoverage,requiredFamilies,proactiveRequirements,auditProactiveInventory,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome,verifySupplierReminderOutcome} from "./task17c-oracle.mjs";
+import {assessCoverage,requiredFamilies,proactiveRequirements,auditProactiveInventory,verifyRoutineAndFile,verifyScheduledOccurrence,verifyOperatingWorld,verifyProcurementOutcome,verifyRevocationOutcome,verifyMonitorOutcome,verifySupplierReminderOutcome,verifySourceAlertLifecycle} from "./task17c-oracle.mjs";
 const head="a".repeat(40);
 test("missing, stale or candidate-only receipt cannot pass",()=>{
  const base={family:"chat_routine",head,model:"gpt-6-luna",status:"PASS"};
@@ -101,7 +101,8 @@ test("proactive register covers actual signal, task and scheduled job inventorie
  const taskKinds=quoted(read("lib/operating/tasks.ts").match(/export type OperatingTaskKind\s*=\s*([^;]+);/)[1]);
  const cronPaths=JSON.parse(read("vercel.json")).crons.map(c=>c.path);
  const manifestIds=readdirSync(new URL(".github/luna/scenarios/",root)).filter(x=>x.endsWith(".json")).map(x=>x.slice(0,-5));
- const input={signals,taskKinds,cronPaths,manifestIds};
+ const routePaths=readdirSync(new URL("app/api/cron/",root),{withFileTypes:true}).filter(x=>x.isDirectory()).map(x=>"/api/cron/"+x.name);
+ const input={signals,taskKinds,cronPaths,routePaths,manifestIds};
  const audit=auditProactiveInventory(input);
  assert.ok(signals.length>=14); // all additions must also appear in the obligation list
  assert.ok(taskKinds.length>=16&&cronPaths.length>=12);
@@ -109,15 +110,19 @@ test("proactive register covers actual signal, task and scheduled job inventorie
  assert.deepEqual(audit.missingTaskKinds,[]);
  assert.deepEqual(audit.missingCrons,[]);
  assert.deepEqual(audit.retiredCrons,[]);
+ assert.deepEqual(audit.missingRoutes,[]);
+ assert.deepEqual(audit.retiredRoutes,[]);
+ assert.ok(audit.unscheduledWorkers.includes("supervisor-run-worker"));
  assert.deepEqual(audit.missingCandidates,[]);
  assert.equal(audit.complete,false);
  assert.ok(audit.unregistered.some(x=>x.family==="sales_drop_live"&&x.state==="trigger_gap"));
  assert.ok(requiredFamilies.includes("goal_checkin_due_answer_missed"));
  assert.ok(proactiveRequirements.find(x=>x.family==="event_discovery_no_action_or_plan").candidates.length===0);
- const drift=auditProactiveInventory({...input,signals:[...signals,"NEW_SOURCE_SIGNAL"],taskKinds:[...taskKinds,"new_task"],cronPaths:[...cronPaths,"/api/cron/new-monitor"],manifestIds:[]});
+ const drift=auditProactiveInventory({...input,signals:[...signals,"NEW_SOURCE_SIGNAL"],taskKinds:[...taskKinds,"new_task"],cronPaths:[...cronPaths,"/api/cron/new-monitor"],routePaths:[...routePaths,"/api/cron/new-worker"],manifestIds:[]});
  assert.deepEqual(drift.missingSignals,["NEW_SOURCE_SIGNAL"]);
  assert.deepEqual(drift.missingTaskKinds,["new_task"]);
  assert.deepEqual(drift.missingCrons,["new-monitor"]);
+ assert.deepEqual(drift.missingRoutes,["new-worker"]);
  assert.ok(drift.missingCandidates.length>0);
 });
 
@@ -129,5 +134,15 @@ test("overdue draft and unsent order notices need exact original thread, no dupl
  assert.equal(verifySupplierReminderOutcome(fixture).dispatchNoticeId,"dispatch-notice");
  for(const mutate of [x=>x.earlyDraft.push({}),x=>x.draftNotice[0].thread_id="wrong",x=>x.handledDraft[0].status="needs_owner",x=>x.dispatchMessage[0].structured_content=[{text:"I sent the order"}],x=>x.repeatedDispatch.push(sent),x=>x.ownerAfter.push({id:"prompt"}),x=>x.delivery.push({}),x=>x.attemptsAfter.push({}),x=>x.countsAfter.remote++]){
   const bad=structuredClone(fixture);mutate(bad);assert.throws(()=>verifySupplierReminderOutcome(bad));
+ }
+});
+
+test("void and meal break source detectors must distinguish complete evidence and actual attendance",()=>{
+ const a={id:"meal",kind:"meal_break",status:"new",impact_cents:1800,payload:{timecardId:"actual"}};
+ const b={id:"void",kind:"voids",status:"new",impact_cents:12000,payload:{voidsThisMonthCents:12000,avgVoidsPrevious3MonthsCents:0}};
+ const fixture={negative:[],opened:[a,b],repeated:[structuredClone(a),structuredClone(b)],closed:[{...a,status:"resolved"},{...b,status:"resolved"}],repeatedClosed:[{...a,status:"resolved"},{...b,status:"resolved"}],actualTimecard:"actual",plannedTimecard:"planned",wage:1800,voidCents:12000,effects:[],ownerRows:[]};
+ assert.equal(verifySourceAlertLifecycle(fixture).voidAlertId,"void");
+ for(const mutate of [x=>x.negative.push(a),x=>x.opened[0].payload.timecardId="planned",x=>x.opened[1].impact_cents++,x=>x.repeated.push(b),x=>x.closed[0].status="new",x=>x.repeatedClosed.pop(),x=>x.effects.push({}),x=>x.ownerRows.push({})]){
+  const bad=structuredClone(fixture);mutate(bad);assert.throws(()=>verifySourceAlertLifecycle(bad));
  }
 });
