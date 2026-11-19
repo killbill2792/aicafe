@@ -9,6 +9,7 @@ import {ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
 import {readPrimaryLocation} from "@/lib/data/cafeLocation.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {readCustomerTrendComparison} from "@/lib/alerts/businessAnomalies.server";
+import {customerTrendEvidenceFields} from "@/lib/metrics/core/customers";
 import {publicSupplierLeadQuery} from "./supplierResearch";
 import {meteredInvestigationProvider} from "./investigationUsage.server";
 import type {AgentToolResult} from "@/lib/ai/agent/tools";
@@ -389,7 +390,7 @@ export async function processNextInvestigation(db:SupabaseClient,now:Date,
             try{customerTrendProof=await readCustomerTrendComparison(db,c.business_id,selector.subject,{from:selector.from,to:selector.to});}
             catch{/* unavailable evidence must remain unresolved */}
           }
-          return {...result,customerTrendProof,vendorReadMissing:vendorPoll.missing,...(ownerReport?{ownerReport}: {})};
+          return {...result,customerTrendProof,...(customerTrendProof?{customerTrendQueryFields:customerTrendEvidenceFields(customerTrendProof.key)}:{}),vendorReadMissing:vendorPoll.missing,...(ownerReport?{ownerReport}: {})};
         },
         weekSchedule:(weekStart:string)=>readScopedWeekSchedule({weekStart},
           {client:db,businessId:c.business_id,ownerUserId:c.owner_user_id}),
