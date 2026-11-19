@@ -137,7 +137,7 @@ const invoiceLine=z.strictObject({
  quantityBase4:quantity.positive().nullable(),subtotalCents:cents
 });
 export const invoiceInputSchema=z.strictObject({
- purchaseOrderId:z.uuid(),invoiceReference:ref,expectedInvoiceRevision:z.number().int().nonnegative().safe(),
+ purchaseOrderId:z.uuid().nullable(),standaloneSupplierName:z.string().trim().min(2).max(120).nullable().optional(),invoiceReference:ref,expectedInvoiceRevision:z.number().int().nonnegative().safe(),
  issuedOn:z.iso.date(),dueOn:z.iso.date().nullable(),currency:z.string().regex(/^[A-Z]{3}$/),
  subtotalCents:cents,taxCents:cents.nullable(),freightCents:cents.nullable(),
  discountCents:cents.nullable(),totalCents:cents,lines:z.array(invoiceLine).min(1).max(50),
@@ -154,7 +154,7 @@ const invoiceSourceSchema=z.strictObject({
 });
 const invoiceProposalInput=z.strictObject({...invoiceInputSchema.shape,...invoiceSourceSchema.shape});
 const invoiceEffectSchema=z.strictObject({...invoiceProposalInput.shape,
- poRevision:z.number().int().positive().safe(),supplierId:z.uuid(),supplierName:z.string().min(1).max(120),
+ poRevision:z.number().int().positive().safe().nullable(),supplierId:z.uuid(),supplierName:z.string().min(1).max(120),
  expenseDedupeKey:z.string().regex(/^[a-f0-9]{64}$/).nullable(),
  lines:z.array(z.strictObject({...invoiceLine.shape,ingredientId:z.uuid().nullable(),baseUnit:z.enum(["g","ml","each"]).nullable()})).min(1).max(50)
 });
@@ -165,6 +165,26 @@ export const supplierInvoiceCapability=registerLoopCapability({
  dependencyScope:effect=>({kind:"supplier_invoice",purchaseOrderId:effect.purchaseOrderId}),
  simulate:async(scope,input)=>{
   const {client}=await simulationOwnerReader(scope);
+  if(input.purchaseOrderId===null){
+   if(!input.standaloneSupplierName||input.expenseDate||input.existingExpenseId||input.sourceKind==="gmail_message"||input.lines.some(l=>l.orderLineId!==null))
+    throw new Error("standalone_invoice_requires_owner_document_no_expense_or_order_line");
+   const {data:supplier,error}=await client.from("cafe_suppliers").select("id,display_name")
+    .eq("business_id",scope.businessId).eq("normalized_name",input.standaloneSupplierName.trim().toLowerCase()).maybeSingle();
+   const reference=input.invoiceReference.trim().toLowerCase();
+   if(error||!supplier)throw new Error("standalone_invoice_supplier_not_saved");
+   const prior=await client.from("supplier_invoices").select("purchase_order_id,revision,owner_user_id")
+    .eq("business_id",scope.businessId).eq("supplier_id",supplier.id).eq("invoice_reference",reference)
+    .order("revision",{ascending:false}).limit(1);
+   if(prior.error||Number(prior.data?.[0]?.revision??0)!==input.expectedInvoiceRevision||
+    (prior.data?.[0]&&(prior.data[0].purchase_order_id!==null||prior.data[0].owner_user_id!==scope.ownerUserId)))
+     throw new Error("invoice_identity_or_revision_changed");
+   return {effect:invoiceEffectSchema.parse({...input,invoiceReference:reference,
+    poRevision:null,supplierId:supplier.id,supplierName:supplier.display_name,expenseDedupeKey:null,
+    lines:input.lines.map(l=>({...l,ingredientId:null,baseUnit:null}))}),
+    baseline:{ownerConfirmsInvoice:true,expenseRecognitionRequested:false,stockEffect:false,paymentEffect:false,exactInvoice:false},
+    monitorSpec:{durationDays:1,metricScope:"supplier_invoice"}};
+  }
+  if(input.standaloneSupplierName)throw new Error("invoice_choose_one_identity");
   const result=await readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId,input.purchaseOrderId);
   const po=result.orders[0];
   if(result.truncated||result.orders.length!==1||!po||po.id!==input.purchaseOrderId||

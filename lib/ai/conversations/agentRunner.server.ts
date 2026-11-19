@@ -244,6 +244,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           sourceSha256:selectedContentSha256??createHash("sha256").update(p.ownerText).digest("hex"),
         };
         if(gmailMessageId){
+          if(!input.purchaseOrderId)throw new ToolError("validation","standalone_invoice_requires_owner_confirmed_document");
           const {client}=await simulationOwnerReader(proposalScope);
           const orders=await readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId,input.purchaseOrderId);
           if(orders.orders.length!==1||!orders.orders[0].supplierId)throw new ToolError("validation","invoice_supplier_unverified");

@@ -18,7 +18,7 @@ export type ProposalView={proposalId:string;revision:number;state:string;capabil
   currentPriceCents?:number|null;editedByOwner?:boolean;subjectName?:string|null;
   purchase?:{name:string;ingredientId:string|null;quantity:number;unit:string;costCents:number|null;date:string;source:string;
     receiptGroupId?:string|null;receiptLineIndex?:number|null;receiptVendor?:string|null;receiptTotalCents?:number|null};
-  invoice?:{purchaseOrderId:string;supplierName:string;invoiceReference:string;expectedInvoiceRevision:number;
+  invoice?:{purchaseOrderId:string|null;supplierName:string;invoiceReference:string;expectedInvoiceRevision:number;
     issuedOn:string;dueOn:string|null;currency:string;subtotalCents:number;taxCents:number|null;
     freightCents:number|null;discountCents:number|null;totalCents:number;expenseDate:string|null;existingExpenseId:string|null;
     sourceKind:string;lines:Array<{sourceItemName:string;quantityBase4:number|null;baseUnit:string|null;subtotalCents:number;orderLineId:string|null}>};
@@ -189,7 +189,7 @@ export default function SupervisorProposalCard({threadId,proposalId,locale}:{
       className="w-full min-w-0 max-w-2xl rounded-[22px] border border-line bg-surface p-5 text-ink shadow-sm">
       <h3 className="text-xl font-bold">Review invoice · {i.supplierName}</h3>
       <p role="status" className="mt-2 font-semibold">{value.state==="applied"?"Invoice evidence recorded":value.state}</p>
-      <p className="break-all">Purchase order: {i.purchaseOrderId}</p>
+      <p className="break-all">{i.purchaseOrderId?"Purchase order: "+i.purchaseOrderId:"Standalone supplier invoice (no purchase order)"}</p>
       <p className="break-words">Invoice {i.invoiceReference} · Issued {i.issuedOn} · Due {i.dueOn??"Unknown"}</p>
       <p>Source: {i.sourceKind.replaceAll("_"," ")}</p>
       {i.expectedInvoiceRevision>0&&<p>Corrects invoice revision {i.expectedInvoiceRevision}.</p>}
