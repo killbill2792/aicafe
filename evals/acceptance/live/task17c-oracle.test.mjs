@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {assessCoverage,requiredFamilies,verifyRoutineAndFile} from "./task17c-oracle.mjs";
+import {assessCoverage,requiredFamilies,verifyRoutineAndFile,verifyScheduledOccurrence} from "./task17c-oracle.mjs";
 const head="a".repeat(40);
 test("missing, stale or candidate-only receipt cannot pass",()=>{
  const base={family:"chat_routine",head,model:"gpt-6-luna",status:"PASS"};
@@ -29,5 +29,14 @@ test("independent exact source and schedule assertions reject mutations",()=>{
   x=>x.proposals.push({id:"unexpected"}),x=>x.foreignRows.push({id:"leak"}),x=>x.usage.model="gpt-4.1-mini",
   x=>x.ownerRows.push({id:"new-owner-prompt"}),x=>x.attachments[0].owner_user_id="wrong"]){
   const x=sample();mutate(x);assert.throws(()=>verifyRoutineAndFile(x));
+ }
+});
+
+test("separate worker ticks must complete and retain one stable occurrence",()=>{
+ const row={run_id:"61361659-d37e-4408-8b4b-ea4325c3ebe8",local_date:"2026-11-19",revision:1,state:"completed",attempts:1,receipt_ref:"priority-check:1"};
+ const good={expected:{localDate:row.local_date},firstPid:100,secondPid:200,before:[row],after:[{...row}]};
+ assert.equal(verifyScheduledOccurrence(good),row.run_id);
+ for(const mutate of [x=>x.before=[],x=>x.after[0].attempts=2,x=>x.secondPid=100,x=>x.before[0].state="pending",x=>x.after[0].run_id="changed",x=>x.before[0].receipt_ref=null]){
+  const copy=structuredClone(good);mutate(copy);assert.throws(()=>verifyScheduledOccurrence(copy));
  }
 });
