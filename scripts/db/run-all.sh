@@ -225,6 +225,7 @@ supabase_lane() {
   check supabase "Task14B purchasing: approved PO, dedupe, owner RLS and receipt recovery" env TASK14B_DISPOSABLE_DB=1 node scripts/test-task14b-procurement-db.mjs
   check supabase "Task14C supplier Gmail: one-click authorization, one send and source receipt" env TASK14C_DISPOSABLE_DB=1 node scripts/task14c-vendor-dispatch-db.mjs
   check supabase "Task14D receipt/invoice source identity, RLS and no direct effects" env TASK14D_DISPOSABLE_DB=1 node scripts/task14d-receiving-db.mjs
+  check supabase "Task14E historical statement and financial review RLS" env TASK14E_DISPOSABLE_DB=1 node scripts/task14e-financial-db.mjs
   sql_step pos0d-menu-config-sql-integration.sql "POS0d verified published menu/price and non-destructive replay"
   sql_step pos0b-staff-labor-sql-integration.sql "POS0b labor revisions, RLS and tenant isolation"
   sql_step toast-messy-import-sql-integration.sql "Messy days store one clean import"

@@ -1,6 +1,7 @@
 import "server-only";
 import {z} from "zod";
 import {effectHash,registerLoopCapability,proposeLoop,type OwnerLoopScope} from "./engine";
+import {readFinancialStatement} from "@/lib/data/financialEvidence.server";
 import {readSupplierReconciliation} from "@/lib/data/supplierReceiving.server";
 import {proposalRequestKey} from "./requestKeys";
 import {simulationOwnerReader} from "./simulationOwner.server";
@@ -137,7 +138,7 @@ const invoiceLine=z.strictObject({
  quantityBase4:quantity.positive().nullable(),subtotalCents:cents
 });
 export const invoiceInputSchema=z.strictObject({
- purchaseOrderId:z.uuid(),invoiceReference:ref,expectedInvoiceRevision:z.number().int().nonnegative().safe(),
+ purchaseOrderId:z.uuid().nullable(),standaloneSupplierName:z.string().trim().min(2).max(120).nullable().optional(),invoiceReference:ref,expectedInvoiceRevision:z.number().int().nonnegative().safe(),
  issuedOn:z.iso.date(),dueOn:z.iso.date().nullable(),currency:z.string().regex(/^[A-Z]{3}$/),
  subtotalCents:cents,taxCents:cents.nullable(),freightCents:cents.nullable(),
  discountCents:cents.nullable(),totalCents:cents,lines:z.array(invoiceLine).min(1).max(50),
@@ -154,7 +155,7 @@ const invoiceSourceSchema=z.strictObject({
 });
 const invoiceProposalInput=z.strictObject({...invoiceInputSchema.shape,...invoiceSourceSchema.shape});
 const invoiceEffectSchema=z.strictObject({...invoiceProposalInput.shape,
- poRevision:z.number().int().positive().safe(),supplierId:z.uuid(),supplierName:z.string().min(1).max(120),
+ poRevision:z.number().int().positive().safe().nullable(),supplierId:z.uuid(),supplierName:z.string().min(1).max(120),
  expenseDedupeKey:z.string().regex(/^[a-f0-9]{64}$/).nullable(),
  lines:z.array(z.strictObject({...invoiceLine.shape,ingredientId:z.uuid().nullable(),baseUnit:z.enum(["g","ml","each"]).nullable()})).min(1).max(50)
 });
@@ -165,6 +166,26 @@ export const supplierInvoiceCapability=registerLoopCapability({
  dependencyScope:effect=>({kind:"supplier_invoice",purchaseOrderId:effect.purchaseOrderId}),
  simulate:async(scope,input)=>{
   const {client}=await simulationOwnerReader(scope);
+  if(input.purchaseOrderId===null){
+   if(!input.standaloneSupplierName||input.expenseDate||input.existingExpenseId||input.sourceKind==="gmail_message"||input.lines.some(l=>l.orderLineId!==null))
+    throw new Error("standalone_invoice_requires_owner_document_no_expense_or_order_line");
+   const {data:supplier,error}=await client.from("cafe_suppliers").select("id,display_name")
+    .eq("business_id",scope.businessId).eq("normalized_name",input.standaloneSupplierName.trim().toLowerCase()).maybeSingle();
+   const reference=input.invoiceReference.trim().toLowerCase();
+   if(error||!supplier)throw new Error("standalone_invoice_supplier_not_saved");
+   const prior=await client.from("supplier_invoices").select("purchase_order_id,revision,owner_user_id")
+    .eq("business_id",scope.businessId).eq("supplier_id",supplier.id).eq("invoice_reference",reference)
+    .order("revision",{ascending:false}).limit(1);
+   if(prior.error||Number(prior.data?.[0]?.revision??0)!==input.expectedInvoiceRevision||
+    (prior.data?.[0]&&(prior.data[0].purchase_order_id!==null||prior.data[0].owner_user_id!==scope.ownerUserId)))
+     throw new Error("invoice_identity_or_revision_changed");
+   return {effect:invoiceEffectSchema.parse({...input,invoiceReference:reference,
+    poRevision:null,supplierId:supplier.id,supplierName:supplier.display_name,expenseDedupeKey:null,
+    lines:input.lines.map(l=>({...l,ingredientId:null,baseUnit:null}))}),
+    baseline:{ownerConfirmsInvoice:true,expenseRecognitionRequested:false,stockEffect:false,paymentEffect:false,exactInvoice:false},
+    monitorSpec:{durationDays:1,metricScope:"supplier_invoice"}};
+  }
+  if(input.standaloneSupplierName)throw new Error("invoice_choose_one_identity");
   const result=await readSupplierPurchaseOrders(client,scope.businessId,scope.ownerUserId,input.purchaseOrderId);
   const po=result.orders[0];
   if(result.truncated||result.orders.length!==1||!po||po.id!==input.purchaseOrderId||
@@ -223,4 +244,130 @@ export const supplierInvoiceCapability=registerLoopCapability({
  },
  monitor:async()=>null,
  report:async()=>({status:"complete",result:{},recommendation:"keep",source:"supplier_invoices"})
+});
+
+/** Existing effect registry/gateway; evidence allocation only, never a payment.
+ * The model selects exact saved identifiers; server derives all source values.
+ */
+export const financialSettlementCapabilityId="leo.financial_settlement.v1";
+export const financialSettlementInputSchema=z.strictObject({
+ financialKind:z.enum(["settlement_evidence_linked","settlement_evidence_reversed"]),
+ invoiceId:z.uuid(),invoiceRevision:z.number().int().positive().safe(),
+ uploadId:z.uuid(),rowIndex:z.number().int().nonnegative().max(9999),
+ allocationCents:z.number().int().positive().safe(),reversesId:z.uuid().nullable()
+});
+export type FinancialSettlementInput=z.infer<typeof financialSettlementInputSchema>;
+const signedCents=z.number().int().safe();
+const settlementEffectSchema=z.strictObject({...financialSettlementInputSchema.shape,
+ supplierId:z.uuid(),supplierName:z.string().min(1).max(120),invoiceReference:ref,
+ invoiceTotalCents:cents,currency:z.string().regex(/^[A-Z]{3}$/),
+ sourceHash:z.string().regex(/^[a-f0-9]{64}$/),accountKey:z.string().regex(/^[a-f0-9]{64}$/),
+ transactionDate:z.iso.date(),transactionAmountCents:signedCents,transactionBalanceCents:signedCents
+});
+export const financialSettlementCapability=registerLoopCapability({
+ id:financialSettlementCapabilityId,version:1,inputSchema:financialSettlementInputSchema,effectSchema:settlementEffectSchema,
+ proposalDescription:"Document verified statement debit allocation or credit reversal against an exact invoice revision. Owner must confirm the association; never sends money or marks unknown payments paid.",
+ dependencyScope:e=>({kind:"financial_settlement",invoiceId:e.invoiceId}),
+ simulate:async(scope,input)=>{
+  const {client}=await simulationOwnerReader(scope);
+  const read=await client.from("supplier_invoices")
+   .select("id,supplier_id,invoice_reference,revision,total_cents,currency_code")
+   .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("id",input.invoiceId).maybeSingle();
+  const invoice=read.data;
+  if(read.error||!invoice||Number(invoice.revision)!==input.invoiceRevision)throw Error("financial_invoice_revision_changed");
+  const supplier=await client.from("cafe_suppliers").select("display_name").eq("business_id",scope.businessId).eq("id",invoice.supplier_id).maybeSingle();
+  if(supplier.error||!supplier.data?.display_name)throw Error("financial_supplier_unavailable");
+  const source=await readFinancialStatement(scope,input.uploadId),tx=source.transactions.find(r=>r.i===input.rowIndex);
+  if(!tx||source.currency!==invoice.currency_code||input.allocationCents>Math.abs(tx.amountCents))
+   throw Error("financial_statement_allocation_invalid");
+  if(input.financialKind==="settlement_evidence_linked"){
+   if(tx.amountCents>=0||input.reversesId!==null)throw Error("financial_debit_required");
+   const latest=await client.from("supplier_invoices").select("id")
+    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("supplier_id",invoice.supplier_id)
+    .eq("invoice_reference",invoice.invoice_reference).order("revision",{ascending:false}).limit(1);
+   if(latest.error||latest.data?.[0]?.id!==invoice.id)throw Error("financial_invoice_revision_changed");
+  }else{
+   if(tx.amountCents<=0||!input.reversesId)throw Error("financial_credit_and_original_link_required");
+   const original=await client.from("purchase_reconciliation_events")
+    .select("financial_invoice_id,financial_kind,financial_allocation_cents,financial_tx_date,financial_upload_id")
+    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).eq("id",input.reversesId).maybeSingle();
+   if(original.error||!original.data||original.data.financial_kind!=="settlement_evidence_linked"||
+    original.data.financial_invoice_id!==invoice.id||Number(original.data.financial_allocation_cents)<input.allocationCents||
+    tx.date<original.data.financial_tx_date)throw Error("financial_reversal_evidence_invalid");
+   const oldSource=await readFinancialStatement(scope,original.data.financial_upload_id);
+   if(oldSource.accountKey!==source.accountKey||oldSource.currency!==source.currency)throw Error("financial_reversal_account_mismatch");
+  }
+  await simulationOwnerReader(scope);
+  return {effect:settlementEffectSchema.parse({...input,supplierId:invoice.supplier_id,supplierName:supplier.data.display_name,
+   invoiceReference:invoice.invoice_reference,invoiceTotalCents:Number(invoice.total_cents),currency:source.currency,
+   sourceHash:source.sourceHash,accountKey:source.accountKey,transactionDate:tx.date,
+   transactionAmountCents:tx.amountCents,transactionBalanceCents:tx.balanceCents}),
+   baseline:{documentaryEvidenceOnly:true,noMoneyMovement:true,ownerMustConfirmAssociation:true},
+   monitorSpec:{durationDays:1,metricScope:"financial_settlement"}};
+ },
+ commit:async(scope,effect,proposalId)=>{
+  if(!proposalId)throw Error("financial_proposal_required");
+  const db=await createServerSupabaseClient();
+  const {data:{user},error:authError}=await db.auth.getUser();
+  if(authError||user?.id!==scope.ownerUserId)throw Error("financial_owner_required");
+  const {data,error}=await db.rpc("supervisor_commit_financial_settlement",{
+   p_business_id:scope.businessId,p_thread_id:scope.threadId,p_proposal_id:proposalId,p_effect_hash:effectHash(effect)});
+  if(error||typeof data!=="string")throw Error("financial_settlement_effect_unverified");
+  const proof=await createAdminSupabaseClient().rpc("supervisor_financial_settlement_proof",{
+   p_business_id:scope.businessId,p_proposal_id:proposalId,p_effect_hash:effectHash(effect)});
+  if(proof.error||proof.data!==data)throw Error("financial_settlement_receipt_unverified");
+  return {status:"verified",evidenceSource:"purchase_reconciliation_events+uploads+supplier_invoices"};
+ },
+ monitor:async()=>null,
+ report:async()=>({status:"complete",result:{},recommendation:"keep",source:"purchase_reconciliation_events"})
+});
+
+/** Documentary non-supplier bill claims live in the existing uploads source store. */
+export const financialBillCapabilityId="leo.financial_bill.v1";
+export const financialBillInputSchema=z.strictObject({
+ payee:z.string().trim().min(2).max(120),reference:ref,
+ expectedRevision:z.number().int().nonnegative().safe(),issuedOn:z.iso.date(),
+ dueOn:z.iso.date().nullable(),amountCents:cents.positive(),currency:z.string().regex(/^[A-Z]{3}$/)
+});
+export type FinancialBillInput=z.infer<typeof financialBillInputSchema>;
+const financialBillEffectSchema=z.strictObject({...financialBillInputSchema.shape,
+ sourceKind:z.enum(["owner_report","owner_attachment"]),sourceRef:z.string().min(1).max(400),
+ sourceSha256:z.string().regex(/^[a-f0-9]{64}$/)
+});
+export const financialBillCapability=registerLoopCapability({
+ id:financialBillCapabilityId,version:1,inputSchema:financialBillEffectSchema,effectSchema:financialBillEffectSchema,
+ proposalDescription:"Record a dated non-supplier bill claim from an owner report or attachment after an exact owner click. Not an expense, settlement, payment or bank instruction.",
+ dependencyScope:e=>({kind:"financial_bill",payee:e.payee,reference:e.reference}),
+ simulate:async(scope,input)=>{
+  const {client}=await simulationOwnerReader(scope);
+  const payee=input.payee.trim().toLowerCase(),reference=input.reference.trim().toLowerCase();
+  if(input.dueOn!==null&&input.dueOn<input.issuedOn)throw Error("financial_bill_date_invalid");
+  const supplier=await client.from("cafe_suppliers").select("id").eq("business_id",scope.businessId).eq("normalized_name",payee).maybeSingle();
+  if(supplier.error||supplier.data)throw Error("financial_bill_use_supplier_invoice");
+  const prior=await client.from("uploads").select("financial_bill_revision,financial_currency")
+   .eq("business_id",scope.businessId).eq("financial_owner_user_id",scope.ownerUserId)
+   .eq("kind","bill_claim").eq("financial_bill_payee",payee).eq("financial_bill_reference",reference)
+   .order("financial_bill_revision",{ascending:false}).limit(1);
+  if(prior.error||Number(prior.data?.[0]?.financial_bill_revision??0)!==input.expectedRevision||
+   (prior.data?.[0]&&prior.data[0].financial_currency!==input.currency))throw Error("financial_bill_revision_changed");
+  await simulationOwnerReader(scope);
+  return {effect:financialBillEffectSchema.parse({...input,payee,reference}),
+   baseline:{ownerMustConfirmDocument:true,noMoneyMovement:true,paymentStatus:"unknown"},
+   monitorSpec:{durationDays:1,metricScope:"financial_bill"}};
+ },
+ commit:async(scope,effect,proposalId)=>{
+  if(!proposalId)throw Error("financial_bill_proposal_required");
+  const db=await createServerSupabaseClient();
+  const {data:{user},error:authError}=await db.auth.getUser();
+  if(authError||user?.id!==scope.ownerUserId)throw Error("financial_owner_required");
+  const {data,error}=await db.rpc("supervisor_commit_financial_bill",{
+   p_business_id:scope.businessId,p_thread_id:scope.threadId,p_proposal_id:proposalId,p_effect_hash:effectHash(effect)});
+  if(error||typeof data!=="string")throw Error("financial_bill_effect_unverified");
+  const proof=await createAdminSupabaseClient().rpc("supervisor_financial_bill_proof",{
+   p_business_id:scope.businessId,p_proposal_id:proposalId,p_effect_hash:effectHash(effect)});
+  if(proof.error||proof.data!==data)throw Error("financial_bill_receipt_unverified");
+  return {status:"verified",evidenceSource:"uploads"};
+ },
+ monitor:async()=>null,
+ report:async()=>({status:"complete",result:{},recommendation:"keep",source:"uploads"})
 });
