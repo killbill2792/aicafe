@@ -55,7 +55,7 @@ import {requirePositivePriceIncrease} from "@/lib/ai/agent/tools/priceExperiment
 import {BOARD_PROPOSAL_STATUSES,BOARD_REPORT_STATUSES} from "@/lib/operating/board";
 import {metricCatalog} from "@/lib/calc/metrics/catalog";
 import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
-import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
+import {ownerRunStatement,type OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import type {DurableReplyFence} from "./replyWriter.server";
 import { runAgentTurn, type OwnerFollowUp } from "@/lib/ai/agent/loop.server";
 import {createOwnerCommitment,listOwnerCommitments,closeOwnerCommitment} from "@/lib/operating/commitments.server";
@@ -168,6 +168,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
   try {
     if(owner.role!=="owner"||owner.contentType!=="text"||owner.threadId!==id||!owner.clientMessageId||owner.text!==p.ownerText)
       throw new ConversationApiError(403,"owner_access_required");
+    if(p.matchedAnswers?.length&&(!p.durableFence||!p.checkpoint||!job||job.id!==p.durableFence.jobId||job.ownerMessageId!==owner.id||job.threadId!==id))
+      throw new ConversationApiError(403,"owner_access_required");
+    // The original message remains the job/source identity. Only exact saved
+    // answers revalidated by the durable worker extend the present owner statement.
+    const currentOwnerStatement=ownerRunStatement(p.ownerText,p.matchedAnswers);
     const external=p.externalClient!==undefined;
     // Browser work keeps its previous lazy RLS reads. External jobs use a
     // verified, explicitly scoped admin client without forging a session.
@@ -241,16 +246,16 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     };
     const durableRead=p.durableFence&&p.externalClient?{...scope,threadId:id,...p.durableFence,client:p.externalClient}:null;
     const context: AgentToolContext = { tools, asOf: identity.asOf, locale: p.locale,timezone:identity.timezone,currency:identity.currency,
-      ownerText:p.ownerText,
+      ownerText:currentOwnerStatement,
       externalEvidencePresent:()=>sourceChecks.size>0,
       readPermissions:()=>new SupervisorEffectGateway().listMandates({businessId:scope.businessId,ownerUserId:scope.ownerUserId}),
       canonicalData:async()=>({db:await getDb(),businessId:scope.businessId}),
       maintenance:{
-        staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).staff(caseId),
-        proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).proposeStaff(input),
+        staff:async caseId=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).staff(caseId),
+        proposeStaff:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).proposeStaff(input),
         recordRepairClaim:async()=>{throw new Error("maintenance_worker_only");},
-        search:async(caseId,query)=>withGmailEvidence(async()=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).search(caseId,query)),
-        propose:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:p.ownerText}}).propose(input),
+        search:async(caseId,query)=>withGmailEvidence(async()=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).search(caseId,query)),
+        propose:async input=>maintenanceContext(await getDb(),proposalScope,{ownerMessage:{id:owner.id,text:currentOwnerStatement}}).propose(input),
       },
       menuPriceEvidence:items=>readMenuPriceEvidence(scope.businessId,items,identity.asOf,p.externalClient),
       readEconomics:async()=>readSupervisorEconomics(await getDb(),scope.businessId,identity.asOf),
@@ -273,7 +278,7 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       webSearch:(query,budget)=>ownerPublicWebSearch(scope,async()=>{
          const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
          const place=await readCafeLocation(await getDb(),scope.businessId,ownerFactRead.facts);
-         const publicTerms=projectOwnerPublicQuery(query,p.ownerText,place?.city);
+         const publicTerms=projectOwnerPublicQuery(query,currentOwnerStatement,place?.city);
          if(!publicTerms)return {available:false as const,reason:"unsafeQuery" as const};
          const check=async()=>{
            if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)
@@ -442,13 +447,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
           // still be the same saved authenticated message, not model text.
           if(!authenticatedSupplierOwnerTurn({
             owner,ownerText:p.ownerText,threadId:id,job
-          })||input.note!==p.ownerText.trim())
+          })||input.note!==currentOwnerStatement.trim())
             throw new ToolError("unauthorized","supplier_owner_statement_required");
           const {client}=await simulationOwnerReader(proposalScope);
           // An explicit PO identifier always wins over a model-selected one.
           // An unrelated UUID must never be silently interpreted as "this PO".
           const explicitPo=explicitSingleOwnerPurchaseOrder(
-            p.ownerText,input.purchaseOrderId);
+            currentOwnerStatement,input.purchaseOrderId);
           if(explicitPo===false)
             throw new ToolError("validation",
               "This owner message names multiple or mismatched purchase orders; report one exact PO at a time.");
@@ -652,9 +657,9 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             // for the review card, but save through the canonical stock-only source.
             const attached=(p.attachmentIds?.length??0)>0;
             const stockOnlyReceipt=input.source==="receipt_chat"&&attached&&
-              authorizesInventoryWrite(p.ownerText,attached)&&
-              receivedPurchaseDocument(input.documentKind,p.ownerText)&&
-              !/\b(expense|accounting|bookkeeping|payable|pay the bill)\b/iu.test(p.ownerText);
+              authorizesInventoryWrite(currentOwnerStatement,attached)&&
+              receivedPurchaseDocument(input.documentKind,currentOwnerStatement)&&
+              !/\b(expense|accounting|bookkeeping|payable|pay the bill)\b/iu.test(currentOwnerStatement);
             const sourceForEffect=stockOnlyReceipt?"chat_text":input.source;
             const proposal=await proposeLoop(proposalScope,supervisorLoopRegistry,
               new SupabaseLoopRepository(),purchaseCapabilityId,{...line,source:sourceForEffect,
@@ -669,13 +674,13 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
             const ambiguousPriorLine=input.source==="receipt_chat"&&
               ambiguousEarlierReceiptIngredient(existing,requestKey,line);
             const authorized=!previouslyRecorded&&!possiblyRephotographed&&!ambiguousPriorLine&&
-              authorizesInventoryWrite(p.ownerText,attached)&&
-              !/\b(not received|not delivered|ordered only|pending delivery|quote)\b/iu.test(p.ownerText)&&
+              authorizesInventoryWrite(currentOwnerStatement,attached)&&
+              !/\b(not received|not delivered|ordered only|pending delivery|quote)\b/iu.test(currentOwnerStatement)&&
               (input.source==="receipt_chat"
                 ?stockOnlyReceipt&&Boolean(input.receiptVendor&&input.receiptTotalCents)&&
                  line.costCents!==null
-                :!attached&&ownerTextSupportsTypedLine(p.ownerText,line)&&
-                  ownerTextSupportsTypedFinancials(p.ownerText,line,identity.asOf,input.lines.length,identity.currency))&&
+                :!attached&&ownerTextSupportsTypedLine(currentOwnerStatement,line)&&
+                  ownerTextSupportsTypedFinancials(currentOwnerStatement,line,identity.asOf,input.lines.length,identity.currency))&&
               Boolean((proposal.canonicalEffectPayload as {ingredientId?:string|null}).ingredientId);
             if(ambiguousPriorLine){
               output.push({proposalId:proposal.id,revision:proposal.revision,name:line.name,

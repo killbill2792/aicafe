@@ -16,7 +16,7 @@ import {verifiedRecommendedPriceInReply} from "./pricingReply";
 import {injectSavedOwnerInputs,formatSavedOwnerFacts,type SavedFact} from "@/lib/ownerFacts/inject";
 import {questionFromReasons} from "@/lib/ownerFacts/questions";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
-import type {OwnerRunCheckpoint,MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
+import {ownerRunStatement,type OwnerRunCheckpoint,type MatchedOwnerAnswer} from "@/lib/ai/supervisor/runs/contracts";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
@@ -317,7 +317,7 @@ export async function runAgentTurn(args: {
     return typeof u==="number"&&Number.isSafeInteger(u)&&u>=0&&u<=1_000_000;
   };
   const underlyingWebSearch=args.context.webSearch;
-  args.context.ownerText=args.serviceOrigin?"":args.ownerText;
+  args.context.ownerText=args.serviceOrigin?"":ownerRunStatement(args.ownerText,matched);
   args.context.turnResults=()=>results.filter(r=>r.name!=="calculate").map(r=>({name:r.name,result:r.result}));
   const toolContext:AgentToolContext=underlyingWebSearch?{
     ...args.context,
@@ -563,7 +563,7 @@ export async function runAgentTurn(args: {
           result = recovered??await Promise.race([effectiveArgs===null?
             Promise.resolve({source:"ask_owner",period:null,missing:["alreadySaved"],
               error:"ownerFactAlreadySaved"} as AgentToolResult):
-            executeAgentTool(tool.name,effectiveArgs,observedEffect?.context??toolContext).then(value=>{observedEffect?.settle();return value;}),
+            executeAgentTool(tool.name,effectiveArgs,observedEffect?.context??toolContext).finally(()=>observedEffect?.settle()),
             new Promise<never>((_, reject) => {
               const left = workDeadline - now();
               if (left <= 0) reject(new Error("deadline"));

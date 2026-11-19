@@ -692,6 +692,6 @@ export function observeDurableToolEffect(name:string,context:AgentToolContext,be
       });
     },
   }):context;
-  return {context:observed,settle:()=>{settled=true;},close:()=>{closed=true;},
+  return {context:observed,settle:()=>{if(!closed)settled=true;},close:()=>{closed=true;},
     noEffect:()=>Boolean(paths&&settled&&!dispatched)};
 }

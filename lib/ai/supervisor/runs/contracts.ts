@@ -136,3 +136,10 @@ export type OwnerRunCheckpoint = {
 /** The database binds the original question to the explicit owner response. */
 export const matchedOwnerAnswerSchema=z.object({questionId:z.uuid(),answerId:z.uuid(),question:z.string().trim().min(1).max(8000),answer:z.string().trim().min(1).max(4000)});
 export type MatchedOwnerAnswer=z.infer<typeof matchedOwnerAnswerSchema>;
+
+/** Only the original authenticated owner statement and exact persisted,
+ * same-run owner answers. Never include assistant questions, later unrelated
+ * transcript messages, attachment text or model-generated claims. */
+export function ownerRunStatement(original:string,answers:readonly MatchedOwnerAnswer[]=[]):string{
+  return answers.length?[original,...answers.map(pair=>pair.answer)].join("\n"):original;
+}

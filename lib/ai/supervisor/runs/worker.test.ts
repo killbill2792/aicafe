@@ -355,6 +355,7 @@ describe("observed pre-effect refusal",()=>{
     const timed=observeDurableToolEffect("propose_price_change",context,before);
     timed.close();await expect(timed.context.proposals!.proposePriceChange({productId:randomUUID(),newPriceCents:500})).rejects.toThrow("tool_deadline_exceeded");
     expect(write).toHaveBeenCalledOnce();expect(timed.noEffect()).toBe(false);
+    timed.settle();expect(timed.noEffect()).toBe(false); // late settlement cannot override a timeout
     const unknown=observeDurableToolEffect("unreviewed_writer",context,before);
     unknown.settle();expect(unknown.noEffect()).toBe(false);
   });
@@ -416,4 +417,81 @@ it("refreshes a prior scoped read before the next model request and charges the 
  expect(trace.slice(0,4)).toEqual(["fenced","fenced","reserve","transport"]);
  expect(result.usage.toolCalls).toBe(1);
  expect(result.results).toContainEqual(expect.objectContaining({source:"current_staff",count:2}));
+});
+
+describe("Codex P1: real loop pre-dispatch rejection and matched owner authorization",()=>{
+  const complete={type:"response.completed",response:{usage:{input_tokens:30,output_tokens:8,input_tokens_details:{cached_tokens:0}}}};
+  const call=(name:string,input:unknown,id:string)=>({type:"response.output_item.done",item:{type:"function_call",name,arguments:JSON.stringify(input),call_id:id}});
+  const fixture=()=>{
+    const endTool=vi.fn(async(_result:unknown,_noEffect?:boolean)=>{});
+    const checkpoint:import("./contracts").OwnerRunCheckpoint={
+      assertLive:async()=>{},beginProvider:async()=>{},endProvider:async()=>{},
+      beginTool:async()=>null,endTool,resumeContext:async()=>null,
+      canYield:()=>true,yieldForRetry:async()=>true,
+    };
+    return {checkpoint,endTool};
+  };
+  it("allows a missing-date rejection to be corrected without stranding a reviewed writer",async()=>{
+    const {checkpoint,endTool}=fixture();
+    const create=vi.fn(async()=>({id:randomUUID(),title:"Follow up",status:"open"}));
+    const context={timezone:"UTC",asOf:"2026-11-19",locale:"en",tools:{},threadId:scope.threadId,
+      commitments:{create,list:async()=>[],close:async()=>false}} as unknown as AgentToolContext;
+    const base={action:"create",title:"Follow up",due_date:null,due_time:null,origin:"owner_chat",commitment_id:null};
+    let round=0;
+    const provider:AgentProvider=async function*(){
+      if(round===0)yield call("manage_commitment",base,"missing-date");
+      else if(round===1)yield call("manage_commitment",{...base,due_date:"2026-11-20"},"corrected-date");
+      else yield {type:"response.output_text.delta",delta:"Your reminder is saved."};
+      round++;yield complete;
+    };
+    await runAgentTurn({ownerText:"Remind me tomorrow",context,provider,checkpoint});
+    expect(create).toHaveBeenCalledOnce();
+    expect(endTool).toHaveBeenNthCalledWith(1,expect.objectContaining({source:"manage_commitment",error:expect.any(String)}),true);
+    expect(endTool).toHaveBeenNthCalledWith(2,expect.objectContaining({source:"operating_tasks",saved:true}),false);
+  });
+  it("keeps a rejected dispatched mutation uncertain",async()=>{
+    const {checkpoint,endTool}=fixture();
+    const create=vi.fn(async()=>{throw Error("lost database acknowledgement");});
+    const context={timezone:"UTC",asOf:"2026-11-19",locale:"en",tools:{},threadId:scope.threadId,
+      commitments:{create,list:async()=>[],close:async()=>false}} as unknown as AgentToolContext;
+    let round=0;
+    const provider:AgentProvider=async function*(){
+      if(round++===0)yield call("manage_commitment",{action:"create",title:"Follow up",due_date:"2026-11-20",due_time:null,origin:"owner_chat",commitment_id:null},"uncertain");
+      else yield {type:"response.output_text.delta",delta:"The save could not be verified."};
+      yield complete;
+    };
+    await runAgentTurn({ownerText:"Remind me tomorrow",context,provider,checkpoint});
+    expect(create).toHaveBeenCalledOnce();
+    expect(endTool).toHaveBeenCalledWith(expect.objectContaining({source:"manage_commitment",error:expect.any(String)}),false);
+  });
+  it("uses only the original and exact matched owner answer, never the assistant wording or unrelated history, for a supplier outcome",async()=>{
+    const {ownerRunStatement}=await import("./contracts");
+    const purchaseOrderId=randomUUID(),questionId=randomUUID(),answerId=randomUUID();
+    const original="The supplier accepted purchase order "+purchaseOrderId;
+    const input={purchaseOrderId,channel:"phone",outcome:"supplier_accepted"};
+    const saved=vi.fn(async()=>({reportId:randomUUID(),reportedAt:"2026-11-19T10:00:00Z",alreadyRecorded:false,
+      source:"owner_reported" as const,providerVerified:false as const,outcome:"supplier_accepted" as const}));
+    const exercise=async(answer:string,serviceOrigin=false)=>{
+      const {checkpoint}=fixture();
+      const context={timezone:"UTC",asOf:"2026-11-19",locale:"en",tools:{},purchasing:{recordOwnerOutcome:saved}} as unknown as AgentToolContext;
+      let round=0;
+      const provider:AgentProvider=async function*(){
+        if(round++===0)yield call("record_supplier_order_outcome",input,"report");
+        else yield {type:"response.output_text.delta",delta:"Checked the report."};
+        yield complete;
+      };
+      const matchedOwnerAnswers=[{questionId,answerId,question:"Did you call by phone?",answer}];
+      await runAgentTurn({ownerText:original,context,history:[{role:"user",content:"An unrelated phone call last week"}],
+        provider,checkpoint,matchedOwnerAnswers,serviceOrigin});
+      return ownerRunStatement(original,matchedOwnerAnswers);
+    };
+    const expected=await exercise("We used the phone.");
+    expect(saved).toHaveBeenCalledExactlyOnceWith({...input,note:expected.trim()});
+    expect(expected).toBe(original+"\nWe used the phone.");
+    saved.mockClear();
+    await exercise("Not sure");
+    expect(saved).not.toHaveBeenCalled();
+    await exercise("We used the phone.",true);
+    expect(saved).not.toHaveBeenCalled();
+  });
 });
