@@ -291,7 +291,7 @@ describe("Task 15C durable provider reservations survive actual worker death",()
       await admin.query("insert into public.businesses(id,name,timezone,is_demo) values ($1,'Disposable provider reservation cafe','UTC',false)",[businessId]);
       await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')",[businessId,ownerId]);
       await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",[threadId,businessId,ownerId,randomUUID()]);
-      await admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,role,content_type,text_content,client_message_id) values ($1,$2,$3,$4,'owner','text','Check the cafe',$5)",
+      await admin.query("insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id) values ($1,$2,$3,$4,$3,'owner','text','Check the cafe',$5)",
         [messageId,...scope,randomUUID()]);
       a=await connect(true);b=await connect(true);
       const job=(await call(a,"ai_agent_job_start",[...scope,messageId])).job;
