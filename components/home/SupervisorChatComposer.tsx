@@ -392,7 +392,9 @@ export default function SupervisorChatComposer({
     let stopped = false, checking = false;
     const controller = new AbortController();
     const refreshExternal = async () => {
-      if (stopped || checking || sending || workTarget || document.visibilityState === "hidden") return;
+      // Protect older-page navigation only after the target conversation has loaded.
+      // Failed initial reads must still recover via focus/online/periodic refresh.
+      if (stopped || checking || sending || (workTarget && loadedThreadId === workTarget.threadId) || document.visibilityState === "hidden") return;
       checking = true;
       const selected = selectedThreadId.current;
       try {
@@ -425,7 +427,7 @@ export default function SupervisorChatComposer({
       window.removeEventListener("online", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [enabled, sending, workTarget]);
+  }, [enabled, sending, workTarget, loadedThreadId]);
   useEffect(() => {
     if (!enabled || !threadId || sending) return;
     const controller = new AbortController();

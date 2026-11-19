@@ -1323,7 +1323,13 @@ test("@home Task16D authenticated responsive Supervisor work across conversation
     const drawer=page.getByRole("dialog",{name:"Supervisor controls"});
     const earlier=drawer.locator('[data-work-id="run:'+otherRun+'"]');
     await expect(earlier).toContainText("Earlier supplier conversation");
+    // Initial target-thread message read fails; no terminal job exists to reload it.
+    const initialMessages=`**/api/ai/threads/${otherThread}/messages?offset=0`;
+    await page.route(initialMessages,route=>route.fulfill({status:503,body:"{}"}));
     await earlier.getByRole("button").click();
+    await expect(page.getByText("I couldn't finish that answer.",{exact:true})).toBeVisible();
+    await page.unroute(initialMessages);
+    await page.evaluate(()=>window.dispatchEvent(new Event("online")));
     const target=page.locator('[data-work-message="'+messageId+'"]');
     await expect(target).toBeFocused({timeout:30_000});
     await expect(target).toContainText("Please investigate this supplier");
