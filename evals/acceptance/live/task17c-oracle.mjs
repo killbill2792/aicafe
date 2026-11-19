@@ -1,11 +1,105 @@
 import assert from "node:assert/strict";
-export const requiredFamilies=Object.freeze([
+// Coverage is about the producer, not just the tool that can answer a prompt.
+// These are acceptance obligations, not claims that the producer exists or passed.
+// Keep separate cases for deterministic delivery, real model investigation, and
+// unsupported/undiscovered source triggers. A linked manifest is a candidate only.
+export const proactiveRequirements=Object.freeze([
+ ["sales_rise_opportunity","SALES_INCREASED","",["17b-sales-labor"],"trigger_gap"],
+ ["sales_drop_live","SALES_DECLINED","",["17b-sales-labor"],"trigger_gap"],
+ ["ingredient_cost_rise","INGREDIENT_COST_INCREASED","",["17b-supply-finance","14b"],"trigger_gap"],
+ ["product_cost_change","PRODUCT_COST_CHANGED","",["17b-supply-finance"],"trigger_gap"],
+ ["product_margin_decline","PRODUCT_PROFITABILITY_DECLINED","",["17b-supply-finance"],"trigger_gap"],
+ ["high_contribution_opportunity","PRODUCT_HIGH_CONTRIBUTION","",["17b-supply-finance"],"trigger_gap"],
+ ["labor_cost_change","LABOR_COST_CHANGED","",["17b-sales-labor"],"trigger_gap"],
+ ["expense_spike","EXPENSE_INCREASED","",["14e-autonomous-followup","17b-supply-finance"],"trigger_gap"],
+ ["operating_margin_decline","OPERATING_MARGIN_DECLINED","",["17b-sales-labor","17b-supply-finance"],"trigger_gap"],
+ ["pricing_review_snooze_reopen","PRICE_REVIEW_REQUIRED","price_review",[],"projection_only"],
+ ["stock_count_low","INVENTORY_LOW","supply_check",["14b"],"trigger_gap"],
+ ["forecast_stockout","STOCKOUT_RISK","supply_check",["14b"],"trigger_gap"],
+ ["supplier_quote_change","SUPPLIER_COST_CHANGED","",["14b","17c-procurement-recovery"],"trigger_gap"],
+ ["missing_or_stale_source","DATA_INCOMPLETE","data_quality",["15c"],"partial"],
+ ["missing_bill_autonomous_resolution","","",["17c-business-monitors"],"registered"],
+ ["unusual_voids_verified_coverage","","",[],"missing_live_case"],
+ ["meal_break_actual_not_schedule","","",[],"missing_live_case"],
+ ["refund_spike","","",[],"trigger_gap"],
+ ["no_clock_in_at_shift_start","","staff_coverage",["13c","15c"],"partial"],
+ ["early_clock_in","","",[],"trigger_gap"],
+ ["overstaffed_hour","","",[],"trigger_gap"],
+ ["faster_cost_recovery","","",[],"trigger_gap"],
+ ["staff_publish_delivery_followup","","staff_coverage",["13c","15c"],"partial"],
+ ["staff_leave_swap_recruitment","","staff_coordination",["13d"],"registered"],
+ ["staff_unanswered_request","","staff_coverage",["13c","17c-autonomy"],"partial"],
+ ["staff_decline_revision","","staff_coverage",["17c-autonomy","15c"],"registered"],
+ ["supplier_draft_overdue","","",["17c-procurement-recovery"],"registered"],
+ ["supplier_approved_unsent","","",["17c-procurement-recovery","14c"],"registered"],
+ ["supplier_delivery_late","","supplier_receiving",["14d-autonomous"],"partial"],
+ ["supplier_short_delivery_invoice","","supplier_receiving",["14d-autonomous"],"registered"],
+ ["payable_due_overdue_duplicate","","money_update",["14e-payables","14e-autonomous-followup"],"partial"],
+ ["changed_statement_cash_risk","","money_update",["14e-autonomous-followup","17c-autonomy"],"registered"],
+ ["maintenance_assignment_vendor_sla","","maintenance_issue",["15b"],"registered"],
+ ["experiment_awaiting_pos_confirmation","","price_experiment_report",[],"missing_live_case"],
+ ["experiment_daily_guardrail_revert","","price_experiment_report",[],"missing_live_case"],
+ ["experiment_missing_day_correction_final","","price_experiment_report",[],"missing_live_case"],
+ ["goal_daily_progress_final","","goal_report",["16a"],"partial"],
+ ["goal_checkin_due_answer_missed","","goal_checkin",[],"missing_live_case"],
+ ["event_discovery_no_action_or_plan","","event_plan",[],"missing_live_case"],
+ ["event_change_cancel_truthful_replan","","event_change",[],"missing_live_case"],
+ ["event_live_surprise_and_report","","event_report",[],"missing_live_case"],
+ ["morning_brief_due_coverage_retry","","daily_brief",[],"missing_live_case"],
+ ["commitment_due_once_close","","commitment",["17c"],"partial"],
+ ["priority_notice_cap_mute_dedupe","","priority_notice",["17c-autonomy","17c-business-monitors"],"partial"],
+ ["routine_pause_revoke_catchup_dst","","",["17b-owner-security","17c"],"partial"],
+ ["whatsapp_consent_window_receipt","","",[],"missing_live_case"],
+ ["gmail_inbound_reply_revocation","","",["14d-autonomous","15b","16c"],"partial"],
+ ["ownerless_thread_or_revoked_owner","","",["15c"],"partial"],
+ ["provider_timeout_quota_backoff","","",["15c","17c-autonomy"],"partial"],
+ ["multi_cafe_concurrency_fairness","","",["17c-autonomy","15c"],"partial"],
+ ["standing_mandate_expiry_limit","","",["16a"],"partial"],
+ ["healthy_control_and_no_false_notice","","",["17c-business-monitors"],"registered"],
+ ["unmatched_item_import_recovery","","",[],"missing_live_case"],
+ ["pos_disconnect_stale_partial_recovery","","",["17b-sales-labor"],"partial"],
+ ["source_revision_repeat_reopen","","",["17c-autonomy","17c-business-monitors"],"registered"],
+ ["goal_progress_guardrail_no_auto_effect","","goal_report",[],"missing_live_case"],
+].map(([family,signal,taskKind,candidates,state])=>Object.freeze({family,signal,taskKind,candidates:Object.freeze(candidates),state})));
+
+export const cronProactiveCoverage=Object.freeze({
+ "team-alerts":["whatsapp_consent_window_receipt"],
+ "supervisor-experiments":["experiment_awaiting_pos_confirmation","experiment_daily_guardrail_revert","experiment_missing_day_correction_final","goal_daily_progress_final","goal_checkin_due_answer_missed","authorized_effect_recovery"],
+ "admin-question-patterns":["internal_analytics_not_owner_agent"],
+ "toast-sync":["pos_disconnect_stale_partial_recovery","unmatched_item_import_recovery"],
+ "square-sync":["pos_disconnect_stale_partial_recovery","unmatched_item_import_recovery"],
+ "refresh-derived":["missing_bill_autonomous_resolution","unusual_voids_verified_coverage","meal_break_actual_not_schedule","staff_unanswered_request","supplier_draft_overdue","supplier_approved_unsent","commitment_due_once_close","routine_pause_revoke_catchup_dst","changed_statement_cash_risk","supplier_short_delivery_invoice"],
+ "daily-brief":["morning_brief_due_coverage_retry","whatsapp_consent_window_receipt"],
+ "today-live":["sales_drop_live","no_clock_in_at_shift_start","event_live_surprise_and_report"],
+ "events-lookahead":["event_discovery_no_action_or_plan","event_change_cancel_truthful_replan","event_live_surprise_and_report"],
+ "whatsapp-supervisor":["whatsapp_consent_window_receipt","authorized_effect_recovery"],
+ "data-health":["missing_or_stale_source","pos_disconnect_stale_partial_recovery"],
+ "menu-labels":["missing_or_stale_source"]
+});
+export function auditProactiveInventory({signals,taskKinds,cronPaths,manifestIds}){
+ const required=new Set(proactiveRequirements.map(x=>x.family));
+ assert.equal(required.size,proactiveRequirements.length,"duplicate proactive requirement");
+ const absent=(expected,actual)=>[...new Set(expected)].filter(x=>!actual.has(x)).sort();
+ const mappedSignals=new Set(proactiveRequirements.map(x=>x.signal).filter(Boolean));
+ const mappedKinds=new Set(proactiveRequirements.map(x=>x.taskKind).filter(Boolean));
+ const cronNames=new Set(Object.keys(cronProactiveCoverage));
+ const actualCrons=cronPaths.map(p=>p.replace(/^\/api\/cron\//,""));
+ const missingCandidates=proactiveRequirements.flatMap(x=>x.candidates.filter(id=>!manifestIds.includes(id)).map(id=>x.family+":"+id));
+ return {missingSignals:absent(signals,mappedSignals),missingTaskKinds:absent(taskKinds,mappedKinds),
+  missingCrons:absent(actualCrons,cronNames),retiredCrons:absent([...cronNames],new Set(actualCrons)),
+  missingCandidates:[...new Set(missingCandidates)].sort(),
+  unregistered:proactiveRequirements.filter(x=>x.state!=="registered").map(x=>({family:x.family,state:x.state})),
+  complete:false}; // inventory alone can NEVER prove proactive behavior
+}
+
+export const requiredFamilies=Object.freeze([...new Set([
  "sales_decline","inventory_depletion","supplier_cost_change","late_purchase_order",
  "receiving_invoice_discrepancy","staff_absence","staff_coverage","equipment_failure",
  "pricing_experiment","cashflow","event_goals_briefs","chat_routine","chat_files",
  "concurrent_cafes","worker_restart","provider_outage","expired_lease","uncertain_receipt",
- "duplicate_event","revoked_access","offline_owner","authorized_effect_recovery"
-]);
+ "duplicate_event","revoked_access","offline_owner","authorized_effect_recovery",
+ ...proactiveRequirements.map(x=>x.family)
+])]);
 export function verifyRoutineAndFile({scope,expected,routines,reply,attachments,ownerRows,usage,proposals,foreignRows}){
  assert.equal(routines.length,1,"one routine, not zero or duplicate");
  const routine=routines[0];
