@@ -52,6 +52,15 @@ describe("LDI G — selective café outlook from the one saved Supervisor ledger
     expect(eventPlanFor([historic],"new",day)).toBeUndefined();
     expect(historic.summary).toBe("Historical day-only report");
   });
+  it("keeps a previously high-priority occurrence visible on later unassessed dates without borrowing its analysis",()=>{
+    const festival={...cafeEvent("festival"),endDate:"2026-11-06"};
+    const first={...plan("festival"),importance:"high" as const};
+    const snapshot={events:[festival,cafeEvent("other")],plans:[first]};
+    for(const date of ["2026-11-04","2026-11-05","2026-11-06"])
+      expect(cafeHighlightedEvents(snapshot,date).map(e=>e.id)).toEqual(["festival"]);
+    expect(eventPlanFor(snapshot.plans,"festival","2026-11-05")).toBeUndefined();
+    expect(cafeHighlightedEvents(snapshot,"2026-11-07")).toEqual([]);
+  });
   it("rejects a stale event analysis from a different day",()=>{
     const late={...plan("id-17"),startDate:"2026-11-05",endDate:"2026-11-05"};
     expect(cafeHighlightedEvents({events:[cafeEvent("id-17")],plans:[late]},day)).toEqual([]);

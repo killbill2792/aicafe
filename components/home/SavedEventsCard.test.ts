@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
-import {eventListDays,eventStripDays,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,SavedEventListCard,selectedSavedEvent,eventDetailDay,eventPlanFor,SavedEventAnalysis} from "./SavedEventsCard";
+import {eventListDays,eventStripDays,eventLifecycle,cityCatalogDateRange,latestEventQuestion,eventVenueMapUrl,VenueMapLink,EventsTabs,eventChatTarget,EventAdviceItem,SavedEventListCard,selectedSavedEvent,eventDetailDay,eventPlanFor,SavedEventAnalysis} from "./SavedEventsCard";
 import type {CafeEvent,SavedEventTimeline} from "@/lib/data/cafeEvents.server";
 
 const event=(id:string,startDate:string,endDate=startDate):CafeEvent=>({
@@ -31,19 +31,33 @@ describe("saved events Home calendar",()=>{
       "2026-11-03","2026-11-04","2026-11-05",
     ]);
   });
-  it("groups multi-day events once, keeps today separate, and shows the past 14 days",()=>{
+  it("projects every inclusive multi-day event date, keeps today separate, and shows the past 14 days",()=>{
     expect(eventListDays(fixture,"past",false)).toEqual(["2026-10-20"]);
     expect(eventListDays(fixture,"now",false)).toEqual(["2026-10-30"]);
-    expect(eventListDays(fixture,"upcoming",false)).toEqual(["2026-10-31","2026-11-05"]);
+    expect(eventListDays(fixture,"upcoming",false)).toEqual(["2026-10-31","2026-11-01","2026-11-02","2026-11-05"]);
   });
   it("only marks a day as affecting the café when an actual saved plan covers it",()=>{
-    expect(eventListDays(fixture,"upcoming",true)).toEqual(["2026-10-31"]);
+    expect(eventListDays(fixture,"upcoming",true)).toEqual(["2026-10-31","2026-11-01","2026-11-02"]);
     expect(eventListDays(fixture,"now",true)).toEqual([]);
     expect(eventListDays({...fixture,plans:[]},"upcoming",true)).toEqual([]);
   });
   it("does not drop an event already underway at the edge of the date window",()=>{
     const cross={...fixture,events:[event("long","2026-10-24","2026-11-02")],plans:[]};
-    expect(eventListDays(cross,"upcoming",false)).toEqual(["2026-10-31"]);
+    expect(eventListDays(cross,"upcoming",false)).toEqual(["2026-10-31","2026-11-01","2026-11-02"]);
+  });
+});
+
+describe("event lifecycle and month search boundaries",()=>{
+  it("reports the actual lifecycle against the café-local date without changing event identity",()=>{
+    const e=event("conference","2026-11-17","2026-11-19");
+    expect(["2026-11-16","2026-11-17","2026-11-18","2026-11-19","2026-11-20"].map(d=>
+      eventLifecycle(e,d))).toEqual(["upcoming","eventStarting","eventOngoing","eventEnding","eventCompleted"]);
+    expect(eventLifecycle({...e,status:"cancelled"},"2026-11-18")).toBe("cancelled");
+    expect(eventLifecycle(event("single","2026-11-18"),"2026-11-18")).toBe("now");
+  });
+  it("searches the full displayed month including earlier dates and dates beyond fortnight",()=>{
+    expect(cityCatalogDateRange("2026-11")).toEqual({from:"2026-11-01",to:"2026-11-30"});
+    expect(cityCatalogDateRange("2028-02")).toEqual({from:"2028-02-01",to:"2028-02-29"});
   });
 });
 

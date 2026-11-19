@@ -29,7 +29,7 @@ export function eventReportFactsHash(result:EventResult,status:string,planSummar
   eventNames:readonly string[],currency:string|null):string{
   // The narrative is formatted in the café's currency. A configuration change
   // must invalidate cached text even when the underlying cents never change.
-  return effectHash({result,status,planSummary,eventNames,currency,narrativeFormatVersion:3});
+  return effectHash({result,status,planSummary,eventNames,currency,narrativeFormatVersion:4});
 }
 /** The factual fallback is not advice; it is sent even when a paid model
  * cannot run. No unknown amount is treated as zero. */
@@ -141,9 +141,12 @@ export async function eventFinalNarrative(scope:OwnerLoopScope,proposalId:string
       businessId:scope.businessId,
       requestId:"event-final:"+proposalId+":"+hash,
       toolNames:[],
-      ownerText:"Scheduled event-day FINAL report, not an owner request. Write a short, "+
-        "clear owner-facing report card comparing the certified actual and usual hourly "+
-        "sales and available Toast item, menu, named-discount and shift evidence. "+
+      ownerText:"Scheduled event FINAL report, not an owner request. Lead with the business outcome, "+
+        "the most meaningful verified comparisons across days, what worked or needs attention, "+
+        "and a practical lesson for the next event. Use available Toast item, menu, named-discount "+
+        "and shift evidence. Hourly figures support the conclusion; do not recite an hourly ledger. "+
+        "Report independent reliable findings even when other inputs are missing; distinguish "+
+        "an incomplete window from verified days, and never infer causation. "+
         "Never ask which physical suggestions were performed. Never imply a checklist "+
         "marker proves implementation, or that separate item sales prove a combo "+
         "or discount was offered. If POS lacks an identifiable discount name, "+

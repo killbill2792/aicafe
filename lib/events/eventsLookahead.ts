@@ -39,8 +39,15 @@ export function cityScanWindows(today:string,state:EventScanState|null,locationH
   if(cityCoverage==="unsearched")
     return [{from:today,to:addDays(today,13),reason:"initial"}];
   const windows=eventScanWindows(today,state,locationHash);
-  if(cityCoverage==="partial"&&!windows.some(w=>w.from<=today&&w.to>=today))
-    return [{from:today,to:addDays(today,13),reason:"new_day"},...windows];
+  if(cityCoverage==="partial"){
+    const horizon=addDays(today,13);
+    // One overlapping window is not proof all fourteen local dates are queued.
+    // The shared source ledger resumes only unresolved slices on the retry.
+    let covered=true;
+    for(let day=today;day<=horizon;day=addDays(day,1))
+      if(!windows.some(w=>w.from<=day&&w.to>=day)){covered=false;break;}
+    if(!covered)return [{from:today,to:horizon,reason:"new_day"},...windows];
+  }
   return windows;
 }
 /** Replay every date of a recently ended event window, preserving the
